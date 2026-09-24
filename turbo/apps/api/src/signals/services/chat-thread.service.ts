@@ -60,6 +60,7 @@ import {
 import type { Tx } from "../../lib/db-types";
 import { now, nowDate } from "../../lib/time";
 import { isLockNotAvailable } from "../../lib/pg-errors";
+import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { inferMimetype } from "./chat-event-shared.service";
@@ -976,38 +977,32 @@ interface DeleteChatThreadArgs {
   readonly eventId?: string;
 }
 
-async function deleteChatThreadInTransaction(
+async function lockChatThreadForDeletion(
   tx: Tx,
   args: DeleteChatThreadArgs,
+  splitWrites: boolean,
 ) {
-  // Native authority is always fenced before the destination row. A
-  // delivery that already owns the schedule lock therefore commits first;
-  // this delete then bumps the epoch before the thread cascade is allowed.
-  await revokeMorningBriefNativeThreadAuthority(
-    tx,
-    {
-      orgId: args.orgId,
-      userId: args.userId,
-      chatThreadId: args.threadId,
-    },
-    nowDate(),
-  );
-
   const ownedThreadCondition = and(
     eq(chatThreads.id, args.threadId),
     eq(chatThreads.userId, args.userId),
     chatThreadOrganizationCondition(tx, args.orgId),
   );
+  if (!splitWrites) {
+    // Preactivation writers still enter through the legacy thread UPDATE.
+    // Preserve their thread-first ordering and wait semantics until activation.
+    const [ownedThread] = await tx
+      .select({ id: chatThreads.id, agentId: chatThreads.agentId })
+      .from(chatThreads)
+      .where(ownedThreadCondition)
+      .for("update");
+    return ownedThread;
+  }
   const [authorizedThread] = await tx
     .select({ id: chatThreads.id })
     .from(chatThreads)
     .where(ownedThreadCondition);
   if (!authorizedThread) {
-    return {
-      deleted: false,
-      activeRuns: [] as readonly ThreadRunToCancel[],
-      disabledAutomations: [],
-    };
+    return undefined;
   }
 
   // Output owns its run before reserving event IDs; an ordinary append owns
@@ -1035,11 +1030,7 @@ async function deleteChatThreadInTransaction(
     .where(ownedThreadCondition)
     .for("update", { noWait: true });
   if (!ownedThread?.agentId) {
-    return {
-      deleted: false,
-      activeRuns: [] as readonly ThreadRunToCancel[],
-      disabledAutomations: [],
-    };
+    return undefined;
   }
 
   // Include an attachment committed between discovery and the strong fence.
@@ -1051,6 +1042,36 @@ async function deleteChatThreadInTransaction(
     .where(eq(agentRuns.chatThreadId, ownedThread.id))
     .orderBy(asc(agentRuns.id))
     .for("no key update", { noWait: true });
+
+  return ownedThread;
+}
+
+async function deleteChatThreadInTransaction(
+  tx: Tx,
+  args: DeleteChatThreadArgs,
+  splitWrites: boolean,
+) {
+  // Native authority is always fenced before the destination row. A
+  // delivery that already owns the schedule lock therefore commits first;
+  // this delete then bumps the epoch before the thread cascade is allowed.
+  await revokeMorningBriefNativeThreadAuthority(
+    tx,
+    {
+      orgId: args.orgId,
+      userId: args.userId,
+      chatThreadId: args.threadId,
+    },
+    nowDate(),
+  );
+
+  const ownedThread = await lockChatThreadForDeletion(tx, args, splitWrites);
+  if (!ownedThread?.agentId) {
+    return {
+      deleted: false,
+      activeRuns: [] as readonly ThreadRunToCancel[],
+      disabledAutomations: [],
+    };
+  }
 
   // Capture related active runs while the thread row blocks new FK attaches.
   // Terminal runs (completed/failed/cancelled) are left untouched; only
@@ -1132,11 +1153,12 @@ export async function deleteChatThreadContent(
   args: DeleteChatThreadArgs,
   signal: AbortSignal,
 ) {
+  const splitWrites = await isSplitChatEventWriteEnabled(db);
   for (let attempt = 0; ; attempt++) {
     signal.throwIfAborted();
     const result = await settle(
       db.transaction(async (tx) => {
-        return await deleteChatThreadInTransaction(tx, args);
+        return await deleteChatThreadInTransaction(tx, args, splitWrites);
       }),
     );
     signal.throwIfAborted();
@@ -1145,7 +1167,7 @@ export async function deleteChatThreadContent(
     }
     // A failed NOWAIT also rolls back native authority revocation. Retry only
     // this bounded control transaction, never an allocator or external effect.
-    if (!isLockNotAvailable(result.error) || attempt >= 2) {
+    if (!splitWrites || !isLockNotAvailable(result.error) || attempt >= 2) {
       throw result.error;
     }
   }

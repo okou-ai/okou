@@ -38,6 +38,7 @@ import {
   revokeMorningBriefNativeAuthority,
 } from "./morning-brief-native-schedule.service";
 import { nowDate } from "../../lib/time";
+import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 
 export function agentExistsInOrg(args: {
   readonly orgId: string;
@@ -243,17 +244,22 @@ export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
   if (lifecycle.kind !== "ready") {
     return lifecycle;
   }
-  // The Agent cascade strongly locks its threads before deleting sequence
-  // children. A direct append already owns a sequence before its thread FK
-  // check, so take existing sequences first. NOWAIT preserves the established
-  // Run lock order and the caller's transient 55P03 conflict response.
-  await tx
-    .select({ id: chatEventSequences.chatThreadId })
-    .from(chatEventSequences)
-    .innerJoin(chatThreads, eq(chatThreads.id, chatEventSequences.chatThreadId))
-    .where(eq(chatThreads.agentId, args.agentId))
-    .orderBy(asc(chatEventSequences.chatThreadId))
-    .for("update", { of: chatEventSequences, noWait: true });
+  if (await isSplitChatEventWriteEnabled(tx)) {
+    // The Agent cascade strongly locks its threads before deleting sequence
+    // children. A direct append already owns a sequence before its thread FK
+    // check, so take existing sequences first. NOWAIT preserves the established
+    // Run lock order and the caller's transient 55P03 conflict response.
+    await tx
+      .select({ id: chatEventSequences.chatThreadId })
+      .from(chatEventSequences)
+      .innerJoin(
+        chatThreads,
+        eq(chatThreads.id, chatEventSequences.chatThreadId),
+      )
+      .where(eq(chatThreads.agentId, args.agentId))
+      .orderBy(asc(chatEventSequences.chatThreadId))
+      .for("update", { of: chatEventSequences, noWait: true });
+  }
   const revokedAt = nowDate();
   for (const owner of nativeOwners) {
     await revokeMorningBriefNativeAuthority(

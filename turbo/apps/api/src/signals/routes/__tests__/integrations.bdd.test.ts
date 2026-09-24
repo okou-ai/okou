@@ -2555,7 +2555,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     const runId = await pollSlackRun(runnerGroup);
     const claim = await runs.claimRunnerJob(runId);
-    expect(claim.prompt).toBe(`@Slack User (${botUserId})`);
+    expect(claim.prompt).toBe("@Slack User");
     expect(claim.appendSystemPrompt).toContain("https://example.com/article");
     expect(claim.appendSystemPrompt).toContain("[ID] F_ARTICLE_SCREENSHOT");
     await completeSlackTriggeredRun({
@@ -2737,9 +2737,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
       if (!canonicalInputMessage) {
         throw new Error("Expected the canonical Slack input message");
       }
-      // The Slack context row is the complete launch snapshot: the bot user ID
-      // the system prompt renders and the canonical asset the agent prompt
-      // renders both live here.
+      // Optional context enriches system instructions. The original text and
+      // canonical attachment remain independently readable in the public event.
       await expect(
         readChatEventContextFixture(canonicalInputMessage.id),
       ).resolves.toMatchObject({
@@ -2805,7 +2804,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       );
       const canonicalInputRun = await runs.readRun(actor, run1Id);
       expect(canonicalInputRun.prompt).toBe(
-        `@Slack User (${botUserId}) admit this event once with @Slack User (${mentionedSlackUserId})\n\n[Web file] source-notes.txt (text/plain)\n   [ID] ${canonicalInputAssetId}`,
+        `[Web file] source-notes.txt (text/plain)\n   [ID] ${canonicalInputAssetId}\n\n@Slack User admit this event once with @Slack User`,
       );
       // The Slack delivery rules follow the integration block as their own
       // section rather than sitting in `# Agent Tools`.

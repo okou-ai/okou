@@ -203,6 +203,50 @@ try {
     maxBuffer: 20 * 1024 * 1024,
   });
   assert.equal(await isSplitChatEventWriteEnabled(db), false);
+  await test("legacy deletion waits for the thread before taking child locks", async () => {
+    const f = await fixture("running");
+    const control = new Client({ connectionString: databaseUrl.toString() });
+    await control.connect();
+    await control.query("BEGIN");
+    await control.query(
+      "SELECT id FROM chat_threads WHERE id = $1 FOR NO KEY UPDATE",
+      [f.threadId],
+    );
+    let deletionSettled = false;
+    const deletion = settleIncludingAbort(
+      deleteChatThreadContent(
+        db,
+        {
+          threadId: f.threadId,
+          userId: f.userId,
+          orgId: f.orgId,
+        },
+        signal,
+      ),
+    ).then((result) => {
+      deletionSettled = true;
+      return result;
+    });
+    try {
+      await waitForBlockedQuery('from "chat_threads"', () => {
+        return deletionSettled;
+      });
+      // Legacy control can finish under its existing thread-first order.
+      await control.query(
+        "SELECT id FROM agent_runs WHERE id = $1 FOR NO KEY UPDATE NOWAIT",
+        [f.runId],
+      );
+    } finally {
+      await control.query("ROLLBACK");
+      await deletion;
+      await control.end();
+    }
+    const deleted = await deletion;
+    assert.ok(deleted.ok && deleted.value.deleted);
+    assert.deepEqual(deleted.value.activeRuns, [
+      { runId: f.runId, orgId: f.orgId },
+    ]);
+  });
   await db
     .update(chatEventWriteControl)
     .set({ activatedAt: new Date() })

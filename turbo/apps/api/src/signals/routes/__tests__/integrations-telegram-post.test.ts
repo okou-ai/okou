@@ -3307,7 +3307,10 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         throw new Error("Expected Telegram retry run");
       }
       const claim = await claimTelegramRun(run.id, runnerGroup);
-      expect(claim.prompt).not.toContain("[Web file]");
+      expect(claim.prompt).toContain(
+        `[Web file] retry.pdf (application/pdf)\n   [ID] ${fileId}`,
+      );
+      expect(claim.prompt).toContain("[FILE_ID] retry-file");
       await postFile(5802);
       await expect(
         listIntegrationInputFileParts(context, actor),
@@ -3335,7 +3338,10 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           okouToken: claim.platformEnvironment.OKOU_TOKEN,
         });
       } else {
-        expect(delivery.prompt).not.toContain("[Web file]");
+        expect(delivery.prompt).toContain(
+          `[Web file] retry.pdf (application/pdf)\n   [ID] ${fileId}`,
+        );
+        expect(delivery.prompt).toContain("[FILE_ID] retry-file");
       }
     },
   );
@@ -3401,16 +3407,18 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       const claim = await claimTelegramRun(run.id, runnerGroup);
       expect(claim.prompt).toContain("[Telegram file]");
       expect(claim.prompt).toContain("[FILE_ID] oversized-file");
-      expect(claim.prompt).not.toContain("[Web file]");
+      expect(claim.prompt).toContain("inspect this large report");
       expect(uploads).toHaveLength(0);
-      await expect(
-        listIntegrationInputFileParts(context, actor),
-      ).resolves.toStrictEqual([
+      const files = await listIntegrationInputFileParts(context, actor);
+      expect(files).toStrictEqual([
         expect.objectContaining({
           fileId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
           filenameSnapshot: "large.pdf",
         }),
       ]);
+      expect(claim.prompt).toContain(
+        `[Web file] large.pdf (application/pdf)\n   [ID] ${files[0]?.fileId}`,
+      );
       if (failure === "declared size") {
         expect(context.mocks.telegram.getFile).not.toHaveBeenCalled();
       }

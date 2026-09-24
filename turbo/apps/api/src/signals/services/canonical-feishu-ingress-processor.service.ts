@@ -348,18 +348,23 @@ function feishuInboundUserMessage(
   chatOpenUrl: string,
   assets: readonly IntegrationInputAsset[],
 ) {
+  // Start with the original prompt text so rich-post mentions survive when
+  // canonical assets replace their native file blocks.
+  const text = message.files.reduce((prompt, file) => {
+    return readyIntegrationInputAsset(assets, file.fileId)
+      ? prompt
+          .replace(
+            formatFeishuMessageContent(
+              { text: "", files: [file] },
+              message.platform,
+            ),
+            "",
+          )
+          .trim()
+      : prompt;
+  }, message.promptText);
   return createUserMessageDocument({
-    text: message.files.length
-      ? formatFeishuMessageContent(
-          {
-            text: message.text,
-            files: message.files.filter((file) => {
-              return !readyIntegrationInputAsset(assets, file.fileId);
-            }),
-          },
-          message.platform,
-        )
-      : message.promptText,
+    text,
     files: integrationInputMessageFiles(assets),
     nonContentPart: createChatEventSourcePart({
       kind: message.platform,

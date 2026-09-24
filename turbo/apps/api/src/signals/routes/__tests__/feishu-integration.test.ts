@@ -4310,7 +4310,12 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
       const run = requireValue(listed.runs[0], "Expected native file run");
       await runsApi.heartbeatRunner(runnerGroup);
       const claim = await runsApi.claimRunnerJob(run.id);
-      expect(claim.prompt).not.toContain("[Web file]");
+      expect(claim.prompt).toContain(
+        `[Web file] retry-policy.pdf (application/pdf)\n   [ID] ${fileId}`,
+      );
+      expect(claim.prompt).toContain(
+        `[${provider.name} file] retry-policy.pdf`,
+      );
       upstreamFailed = false;
       await postFile();
       await expect(
@@ -4340,7 +4345,12 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
           okouToken: claim.platformEnvironment.OKOU_TOKEN,
         });
       } else {
-        expect(delivery.prompt).not.toContain("[Web file]");
+        expect(delivery.prompt).toContain(
+          `[Web file] retry-policy.pdf (application/pdf)\n   [ID] ${fileId}`,
+        );
+        expect(delivery.prompt).toContain(
+          `[${provider.name} file] retry-policy.pdf`,
+        );
       }
     },
   );
@@ -4809,7 +4819,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
               {
                 type: "text",
                 text: expect.stringContaining(
-                  "Image comparison\nCompare these images with [the brief](https://example.com/brief)",
+                  `Image comparison\n${chatType === "group" ? "@Nova" : ""}Compare these images with [the brief](https://example.com/brief)`,
                 ),
               },
               expect.objectContaining({ type: "source", kind: platform }),
