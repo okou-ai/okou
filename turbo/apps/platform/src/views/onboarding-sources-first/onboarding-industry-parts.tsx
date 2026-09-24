@@ -1,9 +1,18 @@
 import { Badge } from "@okouai/ui";
+import {
+  Globe,
+  HeartPulse,
+  LockKeyhole,
+  Scale,
+  ShieldCheck,
+  type LucideIcon,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { securityPageUrl } from "./onboarding-security.ts";
 
 /** A framework and its status, as the public security page states them. */
 interface ComplianceItem {
+  readonly icon: LucideIcon;
   readonly name: string;
   readonly status: string;
 }
@@ -22,30 +31,35 @@ function useComplianceItems(): readonly ComplianceItem[] {
 
   return [
     {
+      icon: ShieldCheck,
       name: t(($) => {
         return $.onboarding.sourcesFirst.compliance.frameworks.soc2;
       }),
       status: inProgress,
     },
     {
+      icon: Scale,
       name: t(($) => {
         return $.onboarding.sourcesFirst.compliance.frameworks.ccpa;
       }),
       status: compliant,
     },
     {
+      icon: Globe,
       name: t(($) => {
         return $.onboarding.sourcesFirst.compliance.frameworks.gdpr;
       }),
       status: compliant,
     },
     {
+      icon: HeartPulse,
       name: t(($) => {
         return $.onboarding.sourcesFirst.compliance.frameworks.hipaa;
       }),
       status: aligned,
     },
     {
+      icon: LockKeyhole,
       name: t(($) => {
         return $.onboarding.sourcesFirst.compliance.frameworks.iso27001;
       }),
@@ -84,6 +98,7 @@ export function OnboardingCompliance() {
           return (
             <li key={item.name}>
               <Badge className="text-xs text-muted-foreground">
+                <item.icon className="text-foreground" aria-hidden="true" />
                 <span>{item.name}</span>
                 <span className="font-medium text-foreground">
                   {item.status}
