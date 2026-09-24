@@ -29,12 +29,10 @@ export function CloudflareAccessConnectorCard({
       interactive
       action={
         <Link
-          pathname={ROUTES.connectorCloudflareAccess}
-          options={
-            configuredCount === 0
-              ? { searchParams: new URLSearchParams({ add: "1" }) }
-              : undefined
-          }
+          pathname={ROUTES.connectors}
+          options={{
+            searchParams: new URLSearchParams({ scope: "private-network" }),
+          }}
           aria-label={t(($) => {
             return $.cloudflareAccess.manage;
           })}

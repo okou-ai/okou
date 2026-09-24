@@ -288,6 +288,24 @@ pub fn validate_files(files: &[StorageFile]) -> io::Result<()> {
 
 /// Encode a complete bounded set of mount groups.
 pub fn encode(groups: &[(&str, &[StorageFile])]) -> io::Result<Vec<u8>> {
+    let size = encoded_payload_len(groups)?;
+    let mut out = Vec::with_capacity(size);
+    out.extend_from_slice(&(groups.len() as u32).to_be_bytes());
+    for (mount, files) in groups {
+        put_bytes(&mut out, mount.as_bytes());
+        out.extend_from_slice(&(files.len() as u32).to_be_bytes());
+        for file in *files {
+            put_bytes(&mut out, file.path.as_bytes());
+            out.extend_from_slice(&file.mode.to_be_bytes());
+            out.extend_from_slice(&file.mtime.to_be_bytes());
+            put_bytes(&mut out, &file.content);
+        }
+    }
+    Ok(out)
+}
+
+/// Validate the complete group set and return its encoded length without copying file content.
+pub fn encoded_payload_len(groups: &[(&str, &[StorageFile])]) -> io::Result<usize> {
     if groups.is_empty() || groups.len() > MAX_MOUNTS {
         return Err(invalid());
     }
@@ -307,19 +325,7 @@ pub fn encode(groups: &[(&str, &[StorageFile])]) -> io::Result<Vec<u8>> {
             return Err(invalid());
         }
     }
-    let mut out = Vec::with_capacity(size);
-    out.extend_from_slice(&(groups.len() as u32).to_be_bytes());
-    for (mount, files) in groups {
-        put_bytes(&mut out, mount.as_bytes());
-        out.extend_from_slice(&(files.len() as u32).to_be_bytes());
-        for file in *files {
-            put_bytes(&mut out, file.path.as_bytes());
-            out.extend_from_slice(&file.mode.to_be_bytes());
-            out.extend_from_slice(&file.mtime.to_be_bytes());
-            put_bytes(&mut out, &file.content);
-        }
-    }
-    Ok(out)
+    Ok(size)
 }
 
 fn put_bytes(out: &mut Vec<u8>, bytes: &[u8]) {
@@ -512,8 +518,14 @@ mod tests {
             .iter()
             .map(|mount| (mount.as_str(), files.as_slice()))
             .collect();
-        assert!(encode(&groups[..14]).is_ok());
+        let size = encoded_payload_len(&groups[..14]).unwrap();
+        assert_eq!(encode(&groups[..14]).unwrap().len(), size);
+        assert!(encoded_payload_len(&groups).is_err());
         assert!(encode(&groups).is_err());
+        assert!(
+            encoded_payload_len(&[("/mount", files.as_slice()), ("/mount", files.as_slice())])
+                .is_err()
+        );
     }
 
     #[test]

@@ -1,7 +1,3 @@
-import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog";
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
@@ -17,54 +13,20 @@ import {
 import { now } from "../../../lib/time.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  connectedGmailSource,
+  mockOnboardingConnectorCatalog,
+} from "./onboarding-catalog-test-helpers.ts";
 
 const context = testContext();
 
-const SLACK_QUESTION = "Give Okou a job without leaving Slack.";
+const SLACK_QUESTION = "Keep work moving in Slack";
 const IMESSAGE_TILE = "iMessage";
 const CONNECTION_CODE = "12345678";
 
 /** One connected source, which every step after the source step requires. */
 function mockConnectedSource(): void {
-  const connector: PublicConnectorCatalogStatusItem = {
-    slug: "gmail",
-    label: "Gmail",
-    description: "Connect Gmail to continue",
-    icon: {
-      url: "https://icons.example.test/onboarding-gmail.svg",
-      invertInDarkMode: false,
-    },
-    category: "productivity",
-    generation: [],
-    tags: [],
-    authMethods: [
-      {
-        id: "oauth",
-        label: "OAuth",
-        description: null,
-        grantKind: "auth-code",
-        manualFields: [],
-        startOptions: [],
-      },
-    ],
-    permissionSummary: {
-      hasPermissions: false,
-      permissionCount: 0,
-      hasCategories: false,
-      hasDefaultPolicyOverrides: false,
-    },
-    connection: null,
-    connected: true,
-    connectionStatus: "connected",
-    scopeMismatch: false,
-    authMethodSupportsRefresh: false,
-    tokenExpiresAt: null,
-    singleAuthCodeAuthMethodId: "oauth",
-    connectNotice: null,
-  };
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [connector] });
-  });
+  mockOnboardingConnectorCatalog(context, [connectedGmailSource()]);
 }
 
 /**
@@ -112,7 +74,7 @@ function mockChatChannelInstalls(): void {
   });
 }
 
-async function openSlackStep(agentPhone: boolean): Promise<void> {
+async function openSlackStep(): Promise<void> {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
@@ -127,7 +89,6 @@ async function openSlackStep(agentPhone: boolean): Promise<void> {
     path: ROUTES.onboardingSlack,
     featureSwitches: {
       [FeatureSwitchKey.OnboardingSourcesFirst]: true,
-      [FeatureSwitchKey.AgentPhoneEntry]: agentPhone,
     },
   });
 
@@ -135,15 +96,6 @@ async function openSlackStep(agentPhone: boolean): Promise<void> {
     screen.findByRole("heading", { name: SLACK_QUESTION }),
   ).resolves.toBeInTheDocument();
 }
-
-test("The AgentPhone tile is absent while its switch is off", async () => {
-  await openSlackStep(false);
-
-  expect(queryChannelTile(IMESSAGE_TILE)).toBeUndefined();
-  // The channels that do not depend on that switch are untouched.
-  expect(queryChannelTile("Telegram")).toBeDefined();
-  expect(queryChannelTile("Teams")).toBeDefined();
-});
 
 test("The AgentPhone tile offers the real link and reports the real status", async () => {
   context.mocks.api(integrationsAgentPhoneContract.createLinkCode, () => {
@@ -156,7 +108,7 @@ test("The AgentPhone tile offers the real link and reports the real status", asy
     };
   });
 
-  await openSlackStep(true);
+  await openSlackStep();
 
   await waitFor(() => {
     expect(getChannelTile(IMESSAGE_TILE)).toBeEnabled();

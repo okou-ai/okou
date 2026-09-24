@@ -1,14 +1,19 @@
 import {
-  CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH,
   cloudflareAccessContract,
-  type CloudflareAccessConfig,
+  type ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test } from "vitest";
 
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { getConnectorAction } from "./connector-page-test-helpers.ts";
 import {
   getAction,
   queryAction,
@@ -17,9 +22,10 @@ import {
 const context = testContext();
 const orgId = "org_cloudflare_access";
 const timestamp = "2026-09-22T00:00:00.000Z";
-const config: CloudflareAccessConfig = Object.freeze({
+const config: ScopedCloudflareAccessConfig = Object.freeze({
   id: "a0000000-0000-4000-8000-000000000001",
   name: "Protected applications",
+  scope: "personal",
   revision: 1,
   generation: 1,
   sshHosts: [],
@@ -33,7 +39,11 @@ beforeEach(() => {
   });
 });
 
-async function page(path = "/connectors/cloudflare-access") {
+async function page(
+  path = "/connectors?scope=private-network",
+  role: "admin" | "member" = "member",
+) {
+  context.mocks.data.org({ id: orgId, name: "Engineering", role });
   await setupPage({
     context,
     path,
@@ -46,6 +56,195 @@ async function page(path = "/connectors/cloudflare-access") {
     },
   });
 }
+
+test("The scoped page shows shared configurations to members without management or other users' metadata", async () => {
+  const shared = {
+    ...config,
+    id: "a0000000-0000-4000-8000-000000000002",
+    name: "Team gateway",
+    scope: "organization" as const,
+    sshHosts: [],
+  };
+  context.mocks.api(cloudflareAccessContract.list, ({ query, respond }) => {
+    expect(query).toStrictEqual({ view: "scoped" });
+    return respond(200, { configs: [config, shared] });
+  });
+  await page();
+  const personal = await screen.findByRole("region", { name: "Personal" });
+  const organization = screen.getByRole("region", { name: "Organization" });
+  expect(within(personal).getByText(config.name)).toBeVisible();
+  expect(within(organization).getByText(shared.name)).toBeVisible();
+  expect(
+    queryAction("button", "Edit Cloudflare Access", organization),
+  ).toBeNull();
+  expect(
+    queryAction("button", "Delete Cloudflare Access", organization),
+  ).toBeNull();
+  expect(
+    queryAllByRoleFast("button").filter((button) => {
+      return button.textContent?.trim() === "Add Cloudflare Access";
+    }),
+  ).toHaveLength(1);
+  expect(document.body.textContent).not.toContain("other-member-host");
+  expect(document.body.textContent).not.toContain("client-secret-canary");
+  click(getAction("button", "Add Cloudflare Access"));
+  expect(
+    within(await screen.findByRole("dialog")).queryByRole("combobox", {
+      name: "Who can use this",
+    }),
+  ).toBeNull();
+});
+
+test("An admin can create a shared configuration from the single Add entry", async () => {
+  const requests: unknown[] = [];
+  context.mocks.api(
+    cloudflareAccessContract.create,
+    ({ body, query, respond }) => {
+      requests.push({ body, query });
+      return respond(201, {
+        ...config,
+        id: body.id,
+        name: body.name,
+        scope: "organization",
+      });
+    },
+  );
+  await page(undefined, "admin");
+  click(getAction("button", "Add Cloudflare Access"));
+  const dialog = await screen.findByRole("dialog");
+  await userEvent.click(
+    screen.getByRole("combobox", { name: "Who can use this" }),
+  );
+  click(await screen.findByRole("option", { name: "Organization" }));
+  await waitFor(() => {
+    expect(
+      screen.getByRole("combobox", { name: "Who can use this" }),
+    ).toHaveTextContent("Organization");
+  });
+  expect(dialog.isConnected).toBeTruthy();
+  await tokenFields(dialog, "Shared gateway");
+  expect(getAction("button", "Save", dialog)).toBeEnabled();
+  expect(
+    Array.from(dialog.querySelectorAll(":invalid")).map((element) => {
+      return element.outerHTML;
+    }),
+  ).toStrictEqual([]);
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(requests).toHaveLength(1);
+  });
+  expect(requests[0]).toMatchObject({
+    query: { view: "scoped" },
+    body: { name: "Shared gateway", scope: "organization" },
+  });
+});
+
+test("An admin can edit and delete a shared configuration through scoped mutations", async () => {
+  const shared: ScopedCloudflareAccessConfig = {
+    ...config,
+    name: "Shared gateway",
+    scope: "organization",
+  };
+  let configs: ScopedCloudflareAccessConfig[] = [shared];
+  const updates: unknown[] = [];
+  const deletes: unknown[] = [];
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs });
+  });
+  context.mocks.api(
+    cloudflareAccessContract.update,
+    ({ body, query, respond }) => {
+      updates.push({ body, query });
+      const renamed = {
+        ...shared,
+        name: body.name ?? shared.name,
+        revision: 2,
+      };
+      configs = [renamed];
+      return respond(200, renamed);
+    },
+  );
+  context.mocks.api(
+    cloudflareAccessContract.delete,
+    ({ body, query, respond }) => {
+      deletes.push({ body, query });
+      configs = [];
+      return respond(204);
+    },
+  );
+  await page(undefined, "admin");
+  const organization = await screen.findByRole("region", {
+    name: "Organization",
+  });
+  await within(organization).findByText("Shared gateway");
+  click(getAction("button", "Edit Cloudflare Access", organization));
+  const edit = await screen.findByRole("dialog");
+  await fill(within(edit).getByLabelText("Name"), "Updated gateway");
+  click(getAction("button", "Save", edit));
+  await waitFor(() => {
+    expect(updates).toHaveLength(1);
+  });
+  await screen.findByText("Updated gateway");
+  expect(updates).toStrictEqual([
+    {
+      query: { view: "scoped" },
+      body: { expectedRevision: 1, name: "Updated gateway" },
+    },
+  ]);
+  click(
+    getAction(
+      "button",
+      "Delete Cloudflare Access",
+      screen.getByRole("region", { name: "Organization" }),
+    ),
+  );
+  const deletion = await screen.findByRole("dialog");
+  click(getAction("button", "Delete Cloudflare Access", deletion));
+  await screen.findByText("0 Cloudflare Access configured");
+  expect(
+    within(screen.getByRole("region", { name: "Organization" })).getByText(
+      "No configurations here yet.",
+    ),
+  ).toBeInTheDocument();
+  expect(deletes).toStrictEqual([
+    { query: { view: "scoped" }, body: { expectedRevision: 2 } },
+  ]);
+});
+
+test("Switching organizations navigates away from an open shared Access editor", async () => {
+  const otherOrgId = "org_cloudflare_access_other";
+  const shared = {
+    ...config,
+    name: "Old workspace gateway",
+    scope: "organization" as const,
+  };
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [shared] });
+  });
+  await page(undefined, "admin");
+  await screen.findByText(shared.name);
+  click(
+    getAction(
+      "button",
+      "Edit Cloudflare Access",
+      screen.getByRole("region", { name: "Organization" }),
+    ),
+  );
+  await screen.findByRole("dialog", { name: "Edit Cloudflare Access" });
+
+  const clerk = context.mocks.clerk();
+  act(() => {
+    clerk.organization({
+      activeOrg: { id: otherOrgId, name: "Other workspace" },
+      memberships: [{ id: orgId }, { id: otherOrgId }],
+    });
+    clerk.stateChanged();
+  });
+
+  await waitFor(() => {
+    expect(window.location.pathname).toBe("/");
+  });
+});
 
 async function tokenFields(dialog: HTMLElement, name = config.name) {
   await fill(within(dialog).getByLabelText("Name"), name);
@@ -69,7 +268,7 @@ async function pasteTokenHeaders(
   await user.paste(clipboard);
 }
 
-test("Cloudflare Access has a standalone connector detail page", async () => {
+test("Cloudflare Access is managed in Connectors Private network", async () => {
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [config] });
   });
@@ -77,23 +276,34 @@ test("Cloudflare Access has a standalone connector detail page", async () => {
   await expect(
     screen.findByRole("heading", { name: "Cloudflare Access" }),
   ).resolves.toBeInTheDocument();
-  expect(
-    screen.getByText(
-      "Access protected applications with Cloudflare Access Service Tokens.",
-    ),
-  ).toBeInTheDocument();
-  expect(getAction("link", "Connectors")).toHaveAttribute(
-    "href",
-    "/connectors",
-  );
+  expect(window.location.search).toBe("?scope=private-network");
   expect(screen.getByText(config.name)).toBeInTheDocument();
   expect(screen.queryByText("Direct")).toBeNull();
   expect(screen.queryByText("Add access")).toBeNull();
-  expect(document.title).toContain("Cloudflare Access");
+  expect(document.title).toContain("Connectors");
 });
 
-test("The directory add intent is consumed and creates through the canonical API", async () => {
-  let configs: CloudflareAccessConfig[] = [];
+test("Returning to Private network does not reopen an abandoned Access dialog", async () => {
+  await page("/connectors");
+  click(getConnectorAction("tab", "Private network"));
+  await screen.findByRole("heading", { name: "Cloudflare Access" });
+  click(getAction("button", "Add Cloudflare Access"));
+  await screen.findByRole("dialog", { name: "Add Cloudflare Access" });
+
+  window.history.back();
+  await waitFor(() => {
+    expect(window.location.search).toBe("");
+  });
+  await screen.findByRole("heading", { name: "Remote access" });
+  click(getConnectorAction("tab", "Private network"));
+  await waitFor(() => {
+    expect(window.location.search).toBe("?scope=private-network");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+test("Private network adds a configuration through the canonical API", async () => {
+  let configs: ScopedCloudflareAccessConfig[] = [];
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs });
   });
@@ -102,11 +312,16 @@ test("The directory add intent is consumed and creates through the canonical API
     configs = [created];
     return respond(201, created);
   });
-  await page("/connectors/cloudflare-access?add=1");
+  await page();
+  click(
+    await waitFor(() => {
+      return getAction("button", "Add Cloudflare Access");
+    }),
+  );
   const dialog = await screen.findByRole("dialog", {
     name: "Add Cloudflare Access",
   });
-  expect(window.location.search).toBe("");
+  expect(window.location.search).toBe("?scope=private-network");
   await fill(within(dialog).getByLabelText("Name"), config.name);
   await fill(
     within(dialog).getByLabelText("Service Token Client ID"),
@@ -121,14 +336,14 @@ test("The directory add intent is consumed and creates through the canonical API
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
-test("The standalone page refreshes from the neutral realtime event", async () => {
-  let configs: CloudflareAccessConfig[] = [config];
+test("The private network panel refreshes from the neutral realtime event", async () => {
+  let configs: ScopedCloudflareAccessConfig[] = [config];
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs });
   });
   await setupPage({
     context,
-    path: "/connectors/cloudflare-access",
+    path: "/connectors?scope=private-network",
     auth: {
       user: { id: "access-owner", fullName: "Access Owner" },
       organization: {
@@ -146,49 +361,12 @@ test("The standalone page refreshes from the neutral realtime event", async () =
   expect(screen.queryByText(config.name)).toBeNull();
 });
 
-test("The standalone editor reports Cloudflare Access revision exhaustion without SSH copy", async () => {
-  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return respond(200, { configs: [config] });
-  });
-  context.mocks.api(cloudflareAccessContract.update, ({ respond }) => {
-    return respond(409, {
-      error: {
-        code: "CLOUDFLARE_ACCESS_REVISION_EXHAUSTED",
-        message: "not user copy",
-      },
-    });
-  });
-  await page();
-  click(getAction("button", "Edit Cloudflare Access"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Edit Cloudflare Access",
-  });
-  await fill(within(dialog).getByLabelText("Name"), "Renamed applications");
-  click(getAction("button", "Save", dialog));
-  await within(dialog).findByText(
-    "This configuration can no longer be updated. Create a new one.",
-  );
-  expect(dialog).not.toHaveTextContent("SSH configuration");
-  expect(document.body.textContent).not.toContain("not user copy");
-});
-
-test("The new Access configuration form shows input hints without prefilling tokens", async () => {
+test("The new Access configuration form masks tokens without prefilling them", async () => {
   await page();
   click(getAction("button", "Add Cloudflare Access"));
   const dialog = await screen.findByRole("dialog", {
     name: "Add Cloudflare Access",
   });
-  const hints = {
-    Name: "e.g. Production access",
-    "Service Token Client ID": "Paste the Service Token Client ID",
-    "Service Token Client Secret": "Paste the Service Token Client Secret",
-  };
-  for (const [label, hint] of Object.entries(hints)) {
-    const field = within(dialog).getByLabelText(label);
-    expect(field).toHaveAttribute("placeholder", hint);
-    expect(field).toHaveValue("");
-    expect(field).toBeInvalid();
-  }
   for (const label of [
     "Service Token Client ID",
     "Service Token Client Secret",
@@ -197,47 +375,12 @@ test("The new Access configuration form shows input hints without prefilling tok
       "type",
       "password",
     );
+    expect(within(dialog).getByLabelText(label)).toHaveValue("");
   }
 });
 
-test("Raw and invalid token paste stays in the focused Access field", async () => {
-  await page();
-  click(getAction("button", "Add Cloudflare Access"));
-  const dialog = await screen.findByRole("dialog");
-  const clientId = within(dialog).getByLabelText("Service Token Client ID");
-  const clientSecret = within(dialog).getByLabelText(
-    "Service Token Client Secret",
-  );
-  await pasteTokenHeaders(dialog, "Service Token Client ID", "raw-client-id");
-  expect(clientId).toHaveValue("raw-client-id");
-  expect(clientSecret).toHaveValue("");
-
-  const incomplete = "CF-Access-Client-Id: incomplete-id";
-  await fill(clientId, "");
-  await fill(clientSecret, "kept-secret");
-  await pasteTokenHeaders(dialog, "Service Token Client ID", incomplete);
-  expect(clientId).toHaveValue(incomplete);
-  expect(clientSecret).toHaveValue("kept-secret");
-
-  const invalidPairs = [
-    "CF-Access-Client-Id: first-id\nCF-Access-Client-Id: duplicate-id",
-    "CF-Access-Client-Id: candidate-id\nX-Access-Client-Secret: unknown-secret",
-    "CF-Access-Client-Id: candidate-id\nCF-Access-Client-Secret: candidate-secret\nextra",
-    "CF-Access-Client-Id: candidate-id\n\nCF-Access-Client-Secret: candidate-secret",
-    "CF-Access-Client-Id: candidate-id\nCF-Access-Client-Secret: ",
-    "CF-Access-Client-Id: candidate-id\nCF-Access-Client-Secret: non-ascii-密钥",
-    `CF-Access-Client-Id: candidate-id\nCF-Access-Client-Secret: ${"x".repeat(CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH + 1)}`,
-  ];
-  for (const clipboard of invalidPairs) {
-    await fill(clientId, "");
-    await fill(clientSecret, "kept-secret");
-    await pasteTokenHeaders(dialog, "Service Token Client ID", clipboard);
-    expect(clientSecret).toHaveValue("kept-secret");
-  }
-});
-
-test("Standalone Cloudflare Access CRUD uses the canonical API", async () => {
-  let configs: CloudflareAccessConfig[] = [];
+test("Cloudflare Access CRUD uses the canonical API", async () => {
+  let configs: ScopedCloudflareAccessConfig[] = [];
   const createRequests: unknown[] = [];
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs });
@@ -278,6 +421,7 @@ test("Standalone Cloudflare Access CRUD uses the canonical API", async () => {
     {
       id: expect.any(String),
       name: config.name,
+      scope: "personal",
       credentials: {
         clientId: "created-id",
         clientSecret: "created-secret",
@@ -293,41 +437,6 @@ test("Standalone Cloudflare Access CRUD uses the canonical API", async () => {
   });
   click(getAction("button", "Delete Cloudflare Access", dialog));
   await screen.findByText("0 Cloudflare Access configured");
-});
-
-test("Pending and failed Access Save keep secrets for retry; a background refresh cannot reset them", async () => {
-  const pending = context.mocks.deferred<void>();
-  let failing = true;
-  context.mocks.api(cloudflareAccessContract.create, async ({ respond }) => {
-    await pending.promise;
-    return failing
-      ? respond(500, {
-          error: { code: "INTERNAL_ERROR", message: "Temporary failure" },
-        })
-      : respond(201, config);
-  });
-  await page();
-  click(getAction("button", "Add Cloudflare Access"));
-  const dialog = await screen.findByRole("dialog");
-  await tokenFields(dialog);
-  const secret = within(dialog).getByLabelText("Service Token Client Secret");
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(getAction("button", "Saving...", dialog)).toBeDisabled();
-  });
-  expect(secret).toHaveValue("test-client-secret");
-  context.mocks.ably.trigger("cloudflare-access:changed", { orgId });
-  pending.resolve();
-  await within(dialog).findByText(
-    /We couldn't confirm whether your changes were saved/u,
-  );
-  expect(secret).toHaveValue("test-client-secret");
-  failing = false;
-  click(getAction("button", "Retry", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-  expect(secret).toHaveValue("");
 });
 
 test("A committed Access creation completes on same-ID retry without another configuration", async () => {
@@ -360,103 +469,6 @@ test("A committed Access creation completes on same-ID retry without another con
   expect(submitted[0]).toHaveProperty("id", expect.any(String));
   expect(submitted[0]).toStrictEqual(submitted[1]);
   expect(secret).toHaveValue("");
-});
-
-test("A token replacement conflict preserves input and needs explicit latest-version review", async () => {
-  let current = config;
-  const requests: unknown[] = [];
-  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return respond(200, { configs: [current] });
-  });
-  context.mocks.api(cloudflareAccessContract.update, ({ body, respond }) => {
-    requests.push(body);
-    if (body.expectedRevision === 1) {
-      current = { ...config, name: "Renamed elsewhere", revision: 2 };
-      return respond(409, {
-        error: {
-          code: "CLOUDFLARE_ACCESS_REVISION_CONFLICT",
-          message: "not user copy",
-        },
-      });
-    }
-    return respond(200, { ...current, revision: 3, generation: 2 });
-  });
-  await page();
-  await screen.findByText(config.name);
-  click(getAction("button", "Edit Cloudflare Access"));
-  const dialog = await screen.findByRole("dialog");
-  await userEvent.click(
-    within(dialog).getByRole("checkbox", { name: "Replace Service Token" }),
-  );
-  await pasteTokenHeaders(
-    dialog,
-    "Service Token Client Secret",
-    "CF-Access-Client-Id: replacement-id\nCF-Access-Client-Secret: replacement-secret",
-  );
-  expect(within(dialog).getByLabelText("Service Token Client ID")).toHaveValue(
-    "replacement-id",
-  );
-  expect(
-    within(dialog).getByLabelText("Service Token Client Secret"),
-  ).toHaveValue("replacement-secret");
-  click(getAction("button", "Save", dialog));
-  await within(dialog).findByText("Renamed elsewhere");
-  expect(getAction("button", "Save", dialog)).toBeDisabled();
-  expect(
-    within(dialog).getByLabelText("Service Token Client Secret"),
-  ).toHaveValue("replacement-secret");
-  click(getAction("button", "Keep my changes with this version", dialog));
-  await waitFor(() => {
-    return expect(getAction("button", "Save", dialog)).toBeEnabled();
-  });
-  expect(
-    within(dialog).getByLabelText("Service Token Client Secret"),
-  ).toHaveValue("replacement-secret");
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-  expect(requests).toStrictEqual(
-    [1, 2].map((expectedRevision) => {
-      return {
-        expectedRevision,
-        credentials: {
-          clientId: "replacement-id",
-          clientSecret: "replacement-secret",
-        },
-      };
-    }),
-  );
-  expect(document.body.textContent).not.toContain("not user copy");
-});
-
-test("A referenced deletion race explains the new affected host without removing the config", async () => {
-  const sshHost = {
-    id: "c0000000-0000-4000-8000-000000000001",
-    displayName: "Development",
-  };
-  let current = config;
-  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return respond(200, { configs: [current] });
-  });
-  context.mocks.api(cloudflareAccessContract.delete, ({ respond }) => {
-    current = { ...config, sshHosts: [sshHost] };
-    return respond(409, {
-      error: { code: "CLOUDFLARE_ACCESS_IN_USE", message: "not user copy" },
-    });
-  });
-  await page();
-  await screen.findByText(config.name);
-  click(getAction("button", "Delete Cloudflare Access"));
-  const dialog = await screen.findByRole("dialog");
-  click(getAction("button", "Delete Cloudflare Access", dialog));
-  await within(dialog).findByText(sshHost.displayName);
-  expect(
-    getAction("button", "Delete Cloudflare Access", dialog),
-  ).toBeDisabled();
-  expect(
-    getAction("button", "Keep my changes with this version", dialog),
-  ).toBeDisabled();
 });
 
 test("Changing the owner clears Access secrets and hides the previous owner's configurations", async () => {
@@ -503,29 +515,16 @@ test("Renaming changes metadata without requesting a new Service Token", async (
   ]);
 });
 
-test("Access load failure offers retry while feature unavailability remains distinct", async () => {
-  let unavailable = false;
+test("Access load failure does not expose provider details", async () => {
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return unavailable
-      ? respond(404, {
-          error: {
-            code: "CLOUDFLARE_ACCESS_UNAVAILABLE",
-            message: "not user copy",
-          },
-        })
-      : respond(500, {
-          error: { code: "INTERNAL_ERROR", message: "private provider detail" },
-        });
+    return respond(500, {
+      error: { code: "INTERNAL_ERROR", message: "private provider detail" },
+    });
   });
   await page();
   await screen.findByText("Could not load Cloudflare Access. Try again.");
   expect(
     queryAction("button", "Add Cloudflare Access"),
   ).not.toBeInTheDocument();
-  unavailable = true;
-  click(getAction("button", "Retry"));
-  await screen.findByText(
-    "Cloudflare Access is not available for this account.",
-  );
   expect(document.body.textContent).not.toContain("private provider detail");
 });

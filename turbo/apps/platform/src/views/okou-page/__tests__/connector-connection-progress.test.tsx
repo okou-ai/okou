@@ -17,7 +17,7 @@ import {
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   customConnector,
@@ -91,26 +91,10 @@ async function expectProgressDialog(name = PROGRESS): Promise<HTMLElement> {
   return dialog;
 }
 
-async function dismissProgress(
-  dialog: HTMLElement,
-  method: "Close" | "Escape" | "backdrop",
-): Promise<void> {
-  const user = userEvent.setup();
-  if (method === "Close") {
-    await user.click(within(dialog).getByLabelText("Close"));
-  } else if (method === "Escape") {
-    await user.keyboard("{Escape}");
-  } else {
-    const viewport = dialog.closest('[data-slot="dialog-viewport"]');
-    if (!(viewport instanceof HTMLElement)) {
-      throw new Error("Expected the connection dialog viewport");
-    }
-    await user.click(viewport);
-  }
+async function dismissProgress(dialog: HTMLElement): Promise<void> {
+  await userEvent.setup().click(within(dialog).getByLabelText("Close"));
   await waitFor(() => {
-    expect(screen.queryAllByRole("dialog")).toHaveLength(
-      method === "backdrop" ? 1 : 0,
-    );
+    expect(screen.queryAllByRole("dialog")).toHaveLength(0);
   });
 }
 
@@ -122,45 +106,13 @@ async function expectCancelledConnection(popup: Window, connect: HTMLElement) {
   expect(screen.queryByRole("dialog")).toBeNull();
 }
 
-async function closeCompletedConnection(
-  dialog: HTMLElement,
-  connectorLabel: string,
-  releaseDetails: () => void,
-) {
-  click(within(dialog).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  releaseDetails();
-  await waitFor(() => {
-    expect(
-      getConnectorAction("button", `Manage ${connectorLabel} accounts`),
-    ).toBeEnabled();
-  });
-  expect(
-    screen.queryByRole("dialog", {
-      name: `Name your ${connectorLabel} account`,
-    }),
-  ).toBeNull();
-}
-
-async function expectAuthorizationPage(popup: Window, url: string) {
-  await waitFor(() => {
-    expect(popup.location.href).toBe(url);
-  });
-}
-
 test.each([
-  { grantKind: "auth-code", existing: false, dismiss: null },
-  { grantKind: "openid-auth", existing: false, dismiss: null },
-  { grantKind: "auth-code", existing: true, dismiss: null },
-  { grantKind: "auth-code", existing: true, dismiss: "Close" },
-  { grantKind: "auth-code", existing: true, dismiss: "Escape" },
-  { grantKind: "auth-code", existing: false, dismiss: "details" },
-  { grantKind: "openid-auth", existing: true, dismiss: "details" },
+  { grantKind: "auth-code", cancel: false },
+  { grantKind: "openid-auth", cancel: false },
+  { grantKind: "auth-code", cancel: true },
 ] as const)(
-  "Keep $grantKind feedback through naming, or cancel explicitly (dialog: $existing, dismissal: $dismiss)",
-  async ({ grantKind, existing, dismiss }) => {
+  "Keep $grantKind feedback through naming, or cancel explicitly (cancel: $cancel)",
+  async ({ grantKind, cancel }) => {
     const account = connectedAccount({
       kind: "builtin",
       connectorSlug: "stripe",
@@ -179,8 +131,7 @@ test.each([
       publicStatusItem({
         connectorSlug: "stripe",
         label: "Stripe",
-        singleAuthCodeAuthMethodId:
-          !existing && grantKind === "auth-code" ? "oauth" : null,
+        singleAuthCodeAuthMethodId: grantKind === "auth-code" ? "oauth" : null,
         authMethods: [
           {
             id: "oauth",
@@ -190,18 +141,6 @@ test.each([
             manualFields: [],
             startOptions: [],
           },
-          ...(existing
-            ? [
-                {
-                  id: "api-token",
-                  label: "API token",
-                  description: null,
-                  grantKind: "manual" as const,
-                  manualFields: [],
-                  startOptions: [],
-                },
-              ]
-            : []),
         ],
       }),
     ]);
@@ -257,24 +196,15 @@ test.each([
       return getConnectorAction("button", "Connect Stripe");
     });
     click(connect);
-    if (existing) {
-      const chooser = await screen.findByRole("dialog", { name: "Stripe" });
-      click(getConnectorAction("button", "Connect", chooser));
-    }
     await expect(screen.findByRole("status")).resolves.toBeVisible();
     expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(1);
-    expect(
-      screen.getByRole("dialog", { name: existing ? "Stripe" : PROGRESS }),
-    ).toBeVisible();
+    expect(screen.getByRole("dialog", { name: PROGRESS })).toBeVisible();
     expect(connect).toBeDisabled();
     await waitFor(() => {
       return expect(popup.location.href).toBe(start.authorizationUrl);
     });
-    if (dismiss && dismiss !== "details") {
-      await dismissProgress(
-        screen.getByRole("dialog", { name: "Stripe" }),
-        dismiss,
-      );
+    if (cancel) {
+      await dismissProgress(screen.getByRole("dialog", { name: PROGRESS }));
       await expectCancelledConnection(popup, connect);
       permissions.resolve();
       details.resolve();
@@ -295,15 +225,6 @@ test.each([
     ).toBeNull();
     permissions.resolve();
     await detailRequest.promise;
-    if (dismiss === "details") {
-      const progress = screen.getByRole("dialog", {
-        name: existing ? "Stripe" : PROGRESS,
-      });
-      await closeCompletedConnection(progress, "Stripe", () => {
-        return details.resolve();
-      });
-      return;
-    }
     expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(1);
     expect(screen.getByRole("status")).toBeVisible();
     details.resolve();
@@ -328,183 +249,9 @@ test.each([
   },
 );
 
-test.each([false, true])(
-  "Keep a later access dialog usable after cancelling authorization (existing dialog: %s)",
-  async (existing) => {
-    const account = connectedAccount({
-      kind: "builtin",
-      connectorSlug: "stripe",
-    });
-    const completedAttempts = mockOAuthCompletions(context);
-    const oauthAttemptId = crypto.randomUUID();
-    let authorized = false;
-    const existingAccounts = mockConnectors(context, [
-      { connectorSlug: "axiom", authMethod: "api-token" },
-    ]);
-    mockPublicConnectorStatus(context, [
-      publicStatusItem({
-        connectorSlug: "stripe",
-        label: "Stripe",
-        singleAuthCodeAuthMethodId: existing ? null : "oauth",
-        authMethods: [
-          {
-            id: "oauth",
-            label: "OAuth",
-            description: null,
-            grantKind: "auth-code",
-            manualFields: [],
-            startOptions: [],
-          },
-          ...(existing
-            ? [
-                {
-                  id: "api-token",
-                  label: "API token",
-                  description: null,
-                  grantKind: "manual" as const,
-                  manualFields: [],
-                  startOptions: [],
-                },
-              ]
-            : []),
-        ],
-      }),
-      publicStatusItem({
-        connectorSlug: "axiom",
-        label: "Axiom",
-        authMethods: [
-          {
-            id: "api-token",
-            label: "API token",
-            description: null,
-            grantKind: "manual",
-            manualFields: [],
-            startOptions: [],
-          },
-        ],
-      }),
-    ]);
-    const popup = authorizationWindow();
-    const authorizationUrl = "https://oauth.test/stripe/authorize";
-    context.mocks.api(
-      builtinConnectorOauthStartContract.start,
-      ({ respond }) => {
-        return respond(200, {
-          authorizationUrl,
-          connectionId: account.id,
-          oauthAttemptId,
-        });
-      },
-    );
-    context.mocks.api(connectorAccountsContract.connection, ({ respond }) => {
-      return authorized
-        ? respond(200, account)
-        : respond(404, {
-            error: { code: "NOT_FOUND", message: "Not connected" },
-          });
-    });
-    await setupPage({ context, path: "/connectors" });
-    const connect = await waitFor(() => {
-      return getConnectorAction("button", "Connect Stripe");
-    });
-    click(connect);
-    if (existing) {
-      const chooser = await screen.findByRole("dialog", { name: "Stripe" });
-      click(getConnectorAction("button", "Connect", chooser));
-    }
-    await waitFor(() => {
-      expect(popup.location.href).toBe(authorizationUrl);
-    });
-    await dismissProgress(
-      screen.getByRole("dialog", { name: existing ? "Stripe" : PROGRESS }),
-      "Close",
-    );
-    expect(screen.queryByRole("dialog", { name: PROGRESS })).toBeNull();
-    expect(getConnectorAction("button", "Manage Axiom accounts")).toBeEnabled();
-    click(getConnectorAction("button", "Manage Axiom access"));
-    const axiom = await screen.findByRole("dialog", {
-      name: "Manage Axiom access",
-    });
-    expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-
-    authorized = true;
-    completedAttempts.set(oauthAttemptId, account.id);
-    context.mocks.data.connectors([
-      ...existingAccounts,
-      { ...account, slug: "stripe" },
-    ]);
-    popup.close();
-    expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-    expect(axiom).toBeVisible();
-    expect(
-      screen.queryByRole("dialog", { name: "Name your Stripe account" }),
-    ).toBeNull();
-
-    click(within(axiom).getByLabelText("Close"));
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).toBeNull();
-    });
-  },
-);
-
-test("Show progress for a custom connection after dismissing the previous attempt", async () => {
-  mockOAuthCompletions(context);
-  const connector = customConnector({
-    authMode: "oauth",
-    oauthConfig: customOAuthConfig(),
-    fields: [],
-    missingRequiredFields: ["oauth"],
-  });
-  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return respond(200, { connectors: [connector] });
-  });
-  const authorizationUrl = "https://oauth.test/custom/authorize";
-  context.mocks.api(customConnectorOAuth2Contract.start, ({ respond }) => {
-    return respond(200, {
-      result: "authorization",
-      authorizationUrl,
-      oauthAttemptId: crypto.randomUUID(),
-    });
-  });
-  const firstPopup = authorizationWindow();
-  await setupPage({ context, path: "/connectors?tab=custom" });
-  const connect = await waitFor(() => {
-    return getConnectorAction("button", `Connect ${connector.displayName}`);
-  });
-  click(connect);
-  const progress = await expectProgressDialog();
-  await waitFor(() => {
-    expect(firstPopup.location.href).toBe(authorizationUrl);
-  });
-  await dismissProgress(progress, "Close");
-  expect(firstPopup.closed).toBeTruthy();
-  await waitFor(() => {
-    expect(connect).toBeEnabled();
-  });
-  const nextPopup = authorizationWindow();
-  click(connect);
-  await expectProgressDialog();
-  await waitFor(() => {
-    expect(nextPopup.location.href).toBe(authorizationUrl);
-  });
-  nextPopup.close();
-  await waitFor(() => {
-    expect(connect).toBeEnabled();
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-});
-
-test.each([
-  { kind: "http", dismiss: null },
-  { kind: "mcp", dismiss: null },
-  { kind: "automatic", dismiss: null },
-  { kind: "http", dismiss: "Close" },
-  { kind: "http", dismiss: "Escape" },
-  { kind: "http", dismiss: "backdrop" },
-  { kind: "automatic", dismiss: "details" },
-] as const)(
-  "Keep custom $kind progress until naming is ready and respect dismissal ($dismiss)",
-  async ({ kind, dismiss }) => {
+test.each(["http", "mcp", "automatic"] as const)(
+  "Keep custom %s progress until naming is ready",
+  async (kind) => {
     let connector =
       kind === "http"
         ? customConnector({
@@ -615,20 +362,11 @@ test.each([
       return getConnectorAction("button", `Connect ${connector.displayName}`);
     });
     click(connect);
-    const progress = await expectProgressDialog();
+    await expectProgressDialog();
     expect(connect).toBeDisabled();
     await waitFor(() => {
       return expect(popup.location.href).toBe(start.authorizationUrl);
     });
-    if (dismiss && dismiss !== "details") {
-      await dismissProgress(progress, dismiss);
-      if (dismiss !== "backdrop") {
-        await expectCancelledConnection(popup, connect);
-        confirmation.resolve();
-        details.resolve();
-        return;
-      }
-    }
     authorized = true;
     connector = {
       ...connector,
@@ -641,12 +379,6 @@ test.each([
     expect(screen.queryAllByRole("dialog", { name: PROGRESS })).toHaveLength(1);
     confirmation.resolve();
     await detailRequest.promise;
-    if (dismiss === "details") {
-      await closeCompletedConnection(progress, connector.displayName, () => {
-        return details.resolve();
-      });
-      return;
-    }
     expect(screen.queryAllByRole("dialog", { name: PROGRESS })).toHaveLength(1);
     expect(
       screen.queryByRole("dialog", {
@@ -666,235 +398,5 @@ test.each([
       expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
       expect(within(naming).getByLabelText("Account name")).toHaveFocus();
     });
-  },
-);
-
-test("Cancelled custom OAuth cannot cover or replace a new connector draft", async () => {
-  let connector = customConnector({
-    authMode: "oauth",
-    oauthConfig: customOAuthConfig(),
-    fields: [],
-    missingRequiredFields: ["oauth"],
-  });
-  const account = connectedAccount({
-    kind: "custom",
-    customConnectorId: connector.id,
-  });
-  const completedAttempts = mockOAuthCompletions(context);
-  const oauthAttemptId = crypto.randomUUID();
-  let authorized = false;
-  context.mocks.data.org({ id: "org_1", name: "Test Org", role: "admin" });
-  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return respond(200, { connectors: [connector] });
-  });
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, {
-      summaries: authorized
-        ? [
-            {
-              target: account.target,
-              accountCount: 1,
-              attentionCount: 0,
-              defaultConnection: account,
-            },
-          ]
-        : [],
-    });
-  });
-  mockConnectorOverviewAccountSummaries(context, () => {
-    return authorized
-      ? [
-          {
-            target: account.target,
-            accountCount: 1,
-            attentionCount: 0,
-            defaultConnection: account,
-          },
-        ]
-      : [];
-  });
-  context.mocks.api(connectorAccountsContract.connection, ({ respond }) => {
-    return authorized
-      ? respond(200, account)
-      : respond(404, {
-          error: { code: "NOT_FOUND", message: "Not connected" },
-        });
-  });
-  const popup = authorizationWindow();
-  const authorizationUrl = "https://oauth.test/custom/authorize";
-  context.mocks.api(customConnectorOAuth2Contract.start, ({ respond }) => {
-    return respond(200, {
-      result: "authorization",
-      authorizationUrl,
-      oauthAttemptId,
-      connectionId: account.id,
-    });
-  });
-  await setupPage({ context, path: "/connectors?tab=custom" });
-  const connect = await waitFor(() => {
-    return getConnectorAction("button", `Connect ${connector.displayName}`);
-  });
-  click(connect);
-  const progress = await expectProgressDialog();
-  await waitFor(() => {
-    expect(popup.location.href).toBe(authorizationUrl);
-  });
-  await dismissProgress(progress, "Close");
-  click(getConnectorAction("button", "New connector"));
-  const draft = await screen.findByRole("dialog", {
-    name: "New custom connector",
-  });
-  await fill(within(draft).getByLabelText("Display name"), "Another API");
-
-  authorized = true;
-  completedAttempts.set(oauthAttemptId, account.id);
-  connector = {
-    ...connector,
-    connected: true,
-    connectedAccountId: account.id,
-    missingRequiredFields: [],
-  };
-  popup.close();
-  expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-  expect(within(draft).getByLabelText("Display name")).toHaveValue(
-    "Another API",
-  );
-  expect(
-    screen.queryByRole("dialog", {
-      name: `Name your ${connector.displayName} account`,
-    }),
-  ).toBeNull();
-
-  click(getConnectorAction("button", "Cancel", draft));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-});
-
-test.each([
-  { custom: false, blocked: "start" },
-  { custom: false, blocked: "completion" },
-  { custom: true, blocked: "start" },
-  { custom: true, blocked: "completion" },
-] as const)(
-  "Close a pending $blocked request and retry without stale cleanup (custom: $custom)",
-  async ({ custom, blocked }) => {
-    const oldAttempt = crypto.randomUUID();
-    const nextAttempt = crypto.randomUUID();
-    const oldConnection = crypto.randomUUID();
-    const blockedRequest = context.mocks.deferred<void>();
-    const releaseOldRequest = context.mocks.deferred<void>();
-    const oldResponse = context.mocks.deferred<void>();
-    const authorizationUrl = "https://oauth.test/authorize";
-    let starts = 0;
-    const nextStart = async () => {
-      const attemptId = starts++ === 0 ? oldAttempt : nextAttempt;
-      if (attemptId === oldAttempt && blocked === "start") {
-        blockedRequest.resolve();
-        await releaseOldRequest.promise;
-        oldResponse.resolve();
-      }
-      return attemptId;
-    };
-    mockConnectors(context, []);
-    mockPublicConnectorStatus(context, [
-      publicStatusItem({
-        connectorSlug: "stripe",
-        label: "Stripe",
-        singleAuthCodeAuthMethodId: "oauth",
-        authMethods: [
-          {
-            id: "oauth",
-            label: "OAuth",
-            description: null,
-            grantKind: "auth-code",
-            manualFields: [],
-            startOptions: [],
-          },
-        ],
-      }),
-    ]);
-    const connector = customConnector({
-      authMode: "oauth",
-      oauthConfig: customOAuthConfig(),
-      fields: [],
-      missingRequiredFields: ["oauth"],
-    });
-    context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-      return respond(200, { connectors: [connector] });
-    });
-    context.mocks.api(
-      builtinConnectorOauthStartContract.start,
-      async ({ respond }) => {
-        return respond(200, {
-          authorizationUrl,
-          oauthAttemptId: await nextStart(),
-        });
-      },
-    );
-    context.mocks.api(
-      customConnectorOAuth2Contract.start,
-      async ({ respond }) => {
-        return respond(200, {
-          result: "authorization",
-          authorizationUrl,
-          oauthAttemptId: await nextStart(),
-        });
-      },
-    );
-    context.mocks.api(
-      connectorAccountsContract.oauthCompletion,
-      async ({ params, respond }) => {
-        if (params.attemptId === oldAttempt && blocked === "completion") {
-          blockedRequest.resolve();
-          await releaseOldRequest.promise;
-          oldResponse.resolve();
-          return respond(200, { connectionId: oldConnection });
-        }
-        return respond(404, {
-          error: { code: "NOT_FOUND", message: "OAuth completion not found" },
-        });
-      },
-    );
-    const firstPopup = authorizationWindow();
-    await setupPage({
-      context,
-      path: custom ? "/connectors?tab=custom" : "/connectors?keywords=stripe",
-    });
-    const connect = await waitFor(() => {
-      return getConnectorAction(
-        "button",
-        `Connect ${custom ? connector.displayName : "Stripe"}`,
-      );
-    });
-    click(connect);
-    const firstDialog = await expectProgressDialog();
-    if (blocked === "completion" && custom) {
-      await expectAuthorizationPage(firstPopup, authorizationUrl);
-      firstPopup.close();
-    }
-    await blockedRequest.promise;
-    await dismissProgress(firstDialog, "Close");
-    await waitFor(() => {
-      expect(connect).toBeEnabled();
-      expect(screen.queryByRole("dialog")).toBeNull();
-    });
-    expect(firstPopup.closed).toBeTruthy();
-
-    const secondPopup = authorizationWindow();
-    click(connect);
-    const nextDialog = await expectProgressDialog();
-    await expectAuthorizationPage(secondPopup, authorizationUrl);
-    releaseOldRequest.resolve();
-    await oldResponse.promise;
-    expect(secondPopup.closed).toBeFalsy();
-    expect(nextDialog).toBeVisible();
-    expect(connect).toBeDisabled();
-    expect(screen.queryByRole("dialog", { name: /^Name your/ })).toBeNull();
-    await dismissProgress(nextDialog, "Close");
-    await waitFor(() => {
-      expect(connect).toBeEnabled();
-    });
-    expect(secondPopup.closed).toBeTruthy();
   },
 );

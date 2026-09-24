@@ -25,7 +25,7 @@ import {
   updateOnboardingUi$,
 } from "../../signals/onboarding/onboarding-state.ts";
 import { completeOnboarding$ } from "../../signals/onboarding/onboarding-actions.ts";
-import { connectorCatalogStatusBySlug$ } from "../../signals/external/connectors.ts";
+import { onboardingWorkflowConnectorsBySlug$ } from "../../signals/onboarding/onboarding-workflow-connectors.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { searchParams$ } from "../../signals/route.ts";
@@ -208,7 +208,9 @@ function WorkflowCard({
           {workflow.description}
         </span>
       </span>
-      <span className="relative z-10 flex items-center gap-3">
+      {/* This positioned footer follows the whole-card button, so tree order
+          already keeps its controls above that button. */}
+      <span className="relative flex items-center gap-3">
         <WorkflowConnectorPills connectorSlugs={workflow.connectorSlugs} />
         <IconTooltipButton
           type="button"
@@ -332,13 +334,15 @@ function CategoryConnectorBackground({
 }: {
   readonly category: OnboardingWorkflowCategory;
 }) {
-  const catalogBySlugLoadable = useLastLoadable(connectorCatalogStatusBySlug$);
-  if (catalogBySlugLoadable.state !== "hasData") {
+  const connectorsLoadable = useLastLoadable(
+    onboardingWorkflowConnectorsBySlug$,
+  );
+  if (connectorsLoadable.state !== "hasData") {
     return null;
   }
   const connectors = representativeCategoryConnectors(category).flatMap(
     (connectorSlug) => {
-      const icon = catalogBySlugLoadable.data.get(connectorSlug)?.icon;
+      const icon = connectorsLoadable.data.get(connectorSlug)?.icon;
       return icon ? [{ connectorSlug, icon }] : [];
     },
   );

@@ -25,7 +25,7 @@ const OPENROUTER_ERROR_RESPONSE_MAX_BYTES = 64 * 1024;
 
 /**
  * The default model for internal fast-path generation: recommended follow-ups,
- * notification summaries, initial thinking copy, and run/activity summaries.
+ * notification summaries and run/activity summaries.
  * Chat and shared-thread titles use a separate, lighter model configured in
  * chat-title.service.ts.
  */

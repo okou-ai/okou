@@ -436,6 +436,19 @@ function clerkEdgeSessionJson(html) {
   return JSON.parse(matches[0][1]);
 }
 
+const SHARED_DATABASE_WORKER_PRELOAD_PATTERN =
+  /<script>window\.__okouSharedDatabaseWorkerBootstrap\.start\(([\s\S]*?)\);<\/script>/u;
+
+function sharedDatabaseWorkerPreloadArguments(html) {
+  const matches = [
+    ...html.matchAll(
+      new RegExp(SHARED_DATABASE_WORKER_PRELOAD_PATTERN.source, "gu"),
+    ),
+  ];
+  assert.equal(matches.length, 1);
+  return JSON.parse(`[${matches[0][1]}]`);
+}
+
 function prefetchedApiJson(html, path) {
   for (const match of html.matchAll(
     /<script\b[^>]*data-okou-api-bootstrap=""[^>]*>([\s\S]*?)<\/script>/giu,
@@ -485,7 +498,6 @@ function assertNoClerkSecrets(snapshot) {
     "sk_test_secret-must-not-render",
     "sk_live_secret-must-not-render",
     "session-token-must-not-render",
-    "org_must-not-render",
     "claim-must-not-render",
     "handshake-cookie-must-not-render",
     "refreshed-cookie-must-not-render",
@@ -517,16 +529,24 @@ function clerkCoreScript(html) {
   return script;
 }
 
-function assertBootstrapAvatar(html) {
-  assert.doesNotMatch(html, /app-bootstrap-skeleton__avatar-placeholder/u);
-  const avatar =
-    /<svg\b[^>]*class="app-bootstrap-skeleton__avatar-layers"[^>]*>[\s\S]*?<\/svg>/iu.exec(
-      html,
-    )?.[0];
-  assert.ok(avatar, "bootstrap avatar must remain inline");
-  assert.equal(parseAttributes(avatar).get("viewBox"), "0 0 518 512");
-  assert.equal([...avatar.matchAll(/<path\b/giu)].length, 20);
-  assert.doesNotMatch(html, /data-app-bootstrap-avatar-layer/u);
+function assertBootstrapWordmark(html) {
+  assert.match(
+    html,
+    /--app-skeleton-wordmark:\s*url\("\.\/scripts\/app-skeleton-assets\/wordmark-sprite\.webp\?inline"\)/u,
+  );
+  assert.match(
+    html,
+    /<div\b[^>]*class="app-bootstrap-skeleton__wordmark"[^>]*aria-hidden="true"[^>]*>/iu,
+  );
+  assert.equal(
+    [...html.matchAll(/class="app-bootstrap-skeleton__letter"/gu)].length,
+    4,
+  );
+  assert.equal(
+    [...html.matchAll(/class="app-bootstrap-skeleton__glyph"/gu)].length,
+    4,
+  );
+  assert.doesNotMatch(html, /app-bootstrap-skeleton__avatar/u);
   assert.doesNotMatch(html, /assets\/avatar-svg\//u);
 }
 
@@ -654,7 +674,7 @@ assert.equal(
   ),
   false,
 );
-assertBootstrapAvatar(okouPage.html);
+assertBootstrapWordmark(okouPage.html);
 assert.equal(clerkCoreScript(okouPage.html), expectedClerkCoreScript);
 assert.equal(clerkBootstrap(okouPage.html), expectedClerkBootstrap);
 
@@ -747,6 +767,10 @@ const edgePreviewBaseline = await responseSnapshot(
   edgePreviewEnvironment,
 );
 assert.doesNotMatch(edgePreviewBaseline.body, /okou-clerk-edge-session/u);
+assert.doesNotMatch(
+  edgePreviewBaseline.body,
+  SHARED_DATABASE_WORKER_PRELOAD_PATTERN,
+);
 assertNoClerkSecrets(edgePreviewBaseline);
 assert.equal(failingClerkClientFactoryCalls, 1);
 
@@ -917,7 +941,7 @@ const authenticatedWorker = workerModule.createWorker(
           token: "session-token-must-not-render",
           toAuth() {
             return {
-              orgId: "org_must-not-render",
+              orgId: "org_current",
               sessionClaims: { private: "claim-must-not-render" },
               sessionId: currentSessionId,
               userId: currentUserId,
@@ -951,6 +975,10 @@ assert.deepEqual(clerkEdgeSessionJson(authenticated.body), {
 assert.deepEqual(Object.keys(clerkEdgeSessionJson(authenticated.body)).sort(), [
   "sessionId",
   "userId",
+]);
+assert.deepEqual(sharedDatabaseWorkerPreloadArguments(authenticated.body), [
+  currentUserId,
+  "org_current",
 ]);
 assertNoClerkSecrets(authenticated);
 
@@ -1058,6 +1086,10 @@ assert.deepEqual(clerkEdgeSessionJson(authenticatedWithoutOrganization.body), {
   sessionId: "sess_without_organization",
 });
 assert.equal(apiFetchCallsWithoutOrganization, 0);
+assert.doesNotMatch(
+  authenticatedWithoutOrganization.body,
+  SHARED_DATABASE_WORKER_PRELOAD_PATTERN,
+);
 assertNoClerkSecrets(authenticatedWithoutOrganization);
 
 const prefetchPagePath =
@@ -1147,6 +1179,13 @@ const prefixHtml =
 assert.match(prefixHtml, /id="root"/u);
 assert.match(prefixHtml, /id="app-bootstrap-skeleton"/u);
 assert.doesNotMatch(prefixHtml, /data-okou-api-bootstrap/u);
+// The Worker preload must not wait for the API prefetch budget.
+// The page adds its URL bypass to the Worker URL, so the edge forwards it.
+assert.deepEqual(sharedDatabaseWorkerPreloadArguments(prefixHtml), [
+  "user_prefetch",
+  "org_prefetch",
+  "query-secret",
+]);
 assert.doesNotMatch(prefixHtml, /<\/body>/u);
 
 agentBody.resolve([{ agentId: "agent-prefetched" }]);

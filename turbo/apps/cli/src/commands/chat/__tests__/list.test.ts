@@ -47,6 +47,7 @@ function snapshotThread(options: {
   readonly agentId: string;
   readonly title: string;
   readonly sortAt: string;
+  readonly archived?: boolean;
 }) {
   return {
     ...options,
@@ -539,6 +540,52 @@ describe("okou chat list command", () => {
     mockConsoleLog.mockClear();
     await chatCommand.parseAsync(["node", "cli", "list", "--unread"]);
     expect(mockConsoleLog).toHaveBeenCalledWith("No unread chat threads found");
+  });
+
+  it("lists only archived threads with --archived", async () => {
+    mockStableThreadSnapshot([
+      snapshotThread({
+        id: THREAD_ID,
+        agentId: AGENT_ID,
+        title: "✅ Active row",
+        sortAt: "2026-07-24T03:00:00.000Z",
+      }),
+      snapshotThread({
+        id: OTHER_THREAD_ID,
+        agentId: AGENT_ID,
+        title: "Archived row",
+        sortAt: "2026-07-24T04:00:00.000Z",
+        archived: true,
+      }),
+    ]);
+
+    await chatCommand.parseAsync([
+      "node",
+      "cli",
+      "list",
+      "--archived",
+      "--json",
+    ]);
+    expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toStrictEqual(
+      {
+        agentId: AGENT_ID,
+        total: 1,
+        threads: [
+          expect.objectContaining({
+            id: OTHER_THREAD_ID,
+            title: "Archived row",
+            archived: true,
+          }),
+        ],
+      },
+    );
+
+    mockConsoleLog.mockClear();
+    await chatCommand.parseAsync(["node", "cli", "list"]);
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(output).toContain("ARCHIVED");
+    expect(output).toContain("✅ Active row");
+    expect(output).toContain("Archived row");
   });
 
   it("requires an agent id from --agent or OKOU_AGENT_ID", async () => {

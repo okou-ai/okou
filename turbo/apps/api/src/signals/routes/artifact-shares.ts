@@ -67,6 +67,9 @@ const update$ = command(async ({ get, set }, signal: AbortSignal) => {
     { ...body, userId: auth.userId, orgId: auth.orgId },
     signal,
   );
+  if (result && "status" in result) {
+    return result;
+  }
   return result
     ? { status: 200 as const, body: result }
     : notFound("Artifact not found");

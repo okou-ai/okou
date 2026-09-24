@@ -149,7 +149,7 @@ dependencies = [
 
 [[package]]
 name = "api-contracts"
-version = "0.41.0"
+version = "0.43.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -983,7 +983,7 @@ checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
 name = "claude-mock"
-version = "0.22.3"
+version = "0.22.5"
 dependencies = [
  "api-contracts",
  "guest-contracts",
@@ -1010,7 +1010,7 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "codex-mock"
-version = "0.11.34"
+version = "0.11.36"
 dependencies = [
  "chrono",
  "clap",
@@ -1311,6 +1311,7 @@ dependencies = [
  "const-oid",
  "crypto-common 0.2.2",
  "ctutils",
+ "zeroize",
 ]
 
 [[package]]
@@ -1727,7 +1728,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.98.1"
+version = "0.98.5"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -1766,7 +1767,7 @@ dependencies = [
 
 [[package]]
 name = "guest-contracts"
-version = "0.17.0"
+version = "0.17.2"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -1781,7 +1782,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-client"
-version = "0.22.6"
+version = "0.22.8"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -1800,7 +1801,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-proto"
-version = "0.21.30"
+version = "0.21.32"
 dependencies = [
  "guest-contracts",
  "proptest",
@@ -1808,7 +1809,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.21.40"
+version = "0.21.42"
 dependencies = [
  "chrono",
  "guest-contracts",
@@ -1824,7 +1825,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.21"
+version = "0.12.23"
 dependencies = [
  "guest-contracts",
  "guest-control-client",
@@ -1840,7 +1841,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.16.289"
+version = "0.16.291"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -1859,7 +1860,7 @@ dependencies = [
 
 [[package]]
 name = "guest-storage-apply"
-version = "0.24.16"
+version = "0.24.19"
 dependencies = [
  "flate2",
  "guest-contracts",
@@ -1877,7 +1878,7 @@ dependencies = [
 
 [[package]]
 name = "guest-telemetry"
-version = "0.3.101"
+version = "0.3.103"
 dependencies = [
  "chrono",
  "guest-contracts",
@@ -1889,7 +1890,7 @@ dependencies = [
 
 [[package]]
 name = "guest-tool-exec"
-version = "0.1.90"
+version = "0.1.92"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -1911,7 +1912,7 @@ dependencies = [
 
 [[package]]
 name = "guest-write-file"
-version = "0.1.184"
+version = "0.1.186"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -3340,14 +3341,23 @@ dependencies = [
 
 [[package]]
 name = "rfb-client"
-version = "0.11.0"
+version = "0.13.0"
 dependencies = [
+ "aes",
+ "crypto-bigint",
  "des",
  "flate2",
+ "getrandom 0.3.4",
+ "hex",
+ "hmac",
+ "md-5",
+ "pbkdf2",
  "png",
  "rcgen",
  "rustls",
  "serde_json",
+ "sha2",
+ "subtle",
  "tempfile",
  "thiserror",
  "tokio",
@@ -3448,13 +3458,12 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.213.2"
+version = "0.213.9"
 dependencies = [
  "api-contracts",
  "async-trait",
  "aws-sdk-s3",
  "aws-smithy-mocks",
- "base64 0.23.1",
  "bytes",
  "chrono",
  "clap",
@@ -3465,7 +3474,6 @@ dependencies = [
  "guest-agent",
  "guest-contracts",
  "guest-control-client",
- "guest-control-proto",
  "guest-init",
  "guest-state-restore",
  "guest-storage-apply",
@@ -3475,20 +3483,20 @@ dependencies = [
  "hex",
  "http-body",
  "httpmock",
- "hyper",
- "idna",
  "libc",
  "log",
  "nbd-cow",
  "nix",
  "reqwest",
+ "runner-executor",
  "runner-host",
+ "runner-lifecycle",
  "runner-network",
  "runner-provider",
  "runner-remote",
  "runner-rpc-client",
- "runner-rpc-proto",
  "runner-storage",
+ "runner-supervisor",
  "runner-types",
  "rustix",
  "sandbox",
@@ -3505,14 +3513,10 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-util",
- "tower-layer",
- "tower-service",
  "tracing",
  "tracing-appender",
- "tracing-log",
  "tracing-subscriber",
  "tracing-test-support",
- "unicode-normalization",
  "url",
  "uuid",
  "which",
@@ -3520,9 +3524,58 @@ dependencies = [
 ]
 
 [[package]]
-name = "runner-host"
-version = "0.1.3"
+name = "runner-executor"
+version = "0.1.4"
 dependencies = [
+ "api-contracts",
+ "async-trait",
+ "aws-sdk-s3",
+ "base64 0.23.1",
+ "bytes",
+ "chrono",
+ "flate2",
+ "futures-util",
+ "guest-contracts",
+ "guest-control-proto",
+ "guest-storage-apply",
+ "hex",
+ "httpmock",
+ "hyper",
+ "libc",
+ "nix",
+ "reqwest",
+ "runner-host",
+ "runner-lifecycle",
+ "runner-network",
+ "runner-provider",
+ "runner-remote",
+ "runner-rpc-proto",
+ "runner-storage",
+ "runner-types",
+ "rustix",
+ "sandbox",
+ "sandbox-mock",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "tracing-test-support",
+ "url",
+ "uuid",
+ "zstd",
+]
+
+[[package]]
+name = "runner-host"
+version = "0.1.6"
+dependencies = [
+ "chrono",
  "futures-util",
  "hex",
  "libc",
@@ -3541,8 +3594,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "runner-lifecycle"
+version = "0.1.5"
+dependencies = [
+ "api-contracts",
+ "async-trait",
+ "chrono",
+ "futures-util",
+ "guest-contracts",
+ "hex",
+ "libc",
+ "nix",
+ "runner-host",
+ "runner-storage",
+ "runner-types",
+ "sandbox",
+ "sandbox-mock",
+ "serde",
+ "serde_json",
+ "sha2",
+ "shell-quote",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "tracing-test-support",
+ "uuid",
+]
+
+[[package]]
 name = "runner-network"
-version = "0.1.1"
+version = "0.1.4"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3573,7 +3657,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.3.0"
+version = "0.3.4"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3607,7 +3691,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.1.0"
+version = "0.2.3"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3680,7 +3764,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.1.2"
+version = "0.1.5"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3719,8 +3803,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "runner-supervisor"
+version = "0.1.1"
+dependencies = [
+ "futures-util",
+ "runner-executor",
+ "runner-host",
+ "runner-lifecycle",
+ "runner-storage",
+ "runner-types",
+ "sandbox",
+ "sandbox-mock",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "runner-types"
-version = "0.1.4"
+version = "0.1.6"
 dependencies = [
  "api-contracts",
  "idna",
@@ -3979,7 +4081,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox"
-version = "0.23.4"
+version = "0.23.5"
 dependencies = [
  "async-trait",
  "serde",
@@ -3993,7 +4095,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.43.20"
+version = "0.43.22"
 dependencies = [
  "async-trait",
  "clap",
@@ -4028,7 +4130,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-mock"
-version = "0.11.18"
+version = "0.11.20"
 dependencies = [
  "async-trait",
  "guest-contracts",
@@ -4276,7 +4378,7 @@ dependencies = [
 
 [[package]]
 name = "session-history-selector"
-version = "0.3.115"
+version = "0.3.117"
 dependencies = [
  "guest-contracts",
  "proptest",
@@ -4654,18 +4756,18 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.20"
+version = "2.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec86235f5fcc2a73650310756d2ac5b138a5780bbbdfae3eeccec992c435ba4f"
+checksum = "09e52cb86a36cede5cb101bf8908837b3e4c6e5e59fe7fd85c23fb56200d189e"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.20"
+version = "2.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc04cd3e1236dd4a98afca4569f2deb3f120e5422a4023be2cb683f8486292af"
+checksum = "fe5197923287db20a58125f0bc85c062f7f2c892de97b18c356f9efb14b28524"
 dependencies = [
  "proc-macro2",
  "quote",

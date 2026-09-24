@@ -105,15 +105,8 @@ use tokio::sync::OwnedMutexGuard;
 use tokio::task::JoinSet;
 use tracing::{info, warn};
 
-use super::active_runs::{ActiveRunGuard, ActiveRunReuseProof};
 use super::factory_lifecycle::SharedFactory;
 use super::finalizing_claim::{FinalizingClaimRequest, spawn_finalizing_claim};
-use super::idle_lifecycle::{
-    IdleDestroyTracker, IdlePressureRequest, IdlePressureSelection, ReservedIdleActivation,
-    SharedIdlePool, add_preparing_run_with_idle_status_snapshot,
-    add_running_run_with_idle_status_snapshot, destroy_idle_jobs_and_wait,
-    select_idle_entries_for_pressure, set_idle_status_snapshot, spawn_idle_destroy_job,
-};
 use super::job_spawn::{JobProfile, SpawnContext, SpawnJobRequest, spawn_job};
 use super::ownership::{OwnershipTransitions, RunSandbox};
 #[cfg(test)]
@@ -138,11 +131,18 @@ use crate::status::{StatusPersistenceError, StatusTracker};
 use crate::telemetry::JobTelemetry;
 use runner_host::paths::short_digest;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
+use runner_lifecycle::active_runs::{ActiveRunGuard, ActiveRunReuseProof};
 use runner_provider::{
     ClaimedJob, JobCandidate, JobProvider, RunnerPreferenceRemovalReason, RunnerPreferenceTier,
 };
 use runner_provider::{
     RunCancellationHandle, RunCancellationRegistration, RunCancellationRegistry,
+};
+use runner_supervisor::idle_lifecycle::{
+    IdleDestroyTracker, IdlePressureRequest, IdlePressureSelection, ReservedIdleActivation,
+    SharedIdlePool, add_preparing_run_with_idle_status_snapshot,
+    add_running_run_with_idle_status_snapshot, destroy_idle_jobs_and_wait,
+    select_idle_entries_for_pressure, set_idle_status_snapshot, spawn_idle_destroy_job,
 };
 use runner_types::ids::RunId;
 use runner_types::types::{

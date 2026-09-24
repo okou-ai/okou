@@ -5,44 +5,50 @@ mod config;
 mod deps;
 mod duration;
 mod error;
-mod executor;
+use runner_executor::executor;
 mod group;
-mod guest_timezone;
-mod helper_exec;
-mod http;
-mod idle_pool;
-mod idle_prune_control;
-mod idle_reuse_preparation;
+use runner_host::idle_prune_control;
+use runner_lifecycle::guest_timezone;
+use runner_lifecycle::idle_pool;
+#[cfg(test)]
+use runner_lifecycle::idle_reuse_preparation;
+use runner_provider::http;
 mod image_hash;
 mod io_limits;
-mod lifecycle;
-mod live_runner_instances;
+use runner_host::live_runner_instances;
+use runner_lifecycle::lifecycle;
 mod network_log_http_adapter;
-mod network_provider_adapter;
-mod pre_spawn_admission;
-mod prefetch;
+use runner_executor::pre_spawn_admission;
+use runner_lifecycle::prefetch;
 mod profile;
 #[cfg(test)]
 mod provider_test_support;
-mod resource_budget;
-mod restored_session_identity;
+use runner_lifecycle::resource_budget;
+use runner_lifecycle::restored_session_identity;
 mod retry;
 mod run_resolution;
 mod runtime_overrides;
-mod status;
+use runner_lifecycle::status;
 mod status_file;
-mod telemetry;
+use runner_executor::telemetry;
 #[cfg(test)]
-mod test_fixtures;
-mod workspace_image_cache;
-mod workspace_mount;
-mod workspace_promotion;
+use runner_executor::test_fixtures;
+#[cfg(test)]
+mod test_fixtures_http_body;
+use runner_lifecycle::workspace_image_cache;
+use runner_lifecycle::workspace_mount;
+use runner_lifecycle::workspace_promotion;
 
 use runner_network::{
     ca, dns, kmsg_log, network_log_drain, network_log_manager, network_logs, proxy,
 };
 use runner_remote::{guest_rpc, run_usage, ssh, vnc};
-use runner_storage::{r2_cache, storage_cache, storage_fingerprints, storage_plan};
+use runner_storage::{r2_cache, storage_cache, storage_fingerprints};
+
+#[cfg(test)]
+use runner_storage::storage_plan;
+#[cfg(test)]
+use sandbox::helper_exec;
 
 // Runner build.rs owns the embedded addon inventory and passes it to runner-network.
 include!(concat!(env!("OUT_DIR"), "/addon_files.rs"));

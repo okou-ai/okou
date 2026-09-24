@@ -254,16 +254,11 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     thread_id: z.uuid(),
   }),
   z.object({
-    action: z.literal("insert-legacy-artifact-catalog-file"),
+    action: z.literal("seed-pending-artifact-catalog-file"),
     user_id: z.string(),
     org_id: z.string(),
     filename: z.string(),
     url: z.url(),
-  }),
-  z.object({
-    action: z.literal("set-computer-use-host-as-previous-api"),
-    thread_id: z.uuid(),
-    computer_use_host_id: z.uuid(),
   }),
   z.object({
     action: z.literal("set-browser-tab-snapshot-as-previous-api"),

@@ -21,7 +21,7 @@ use super::{
     terminal,
 };
 use crate::{
-    test_fixtures::http::{HttpClient, HttpClientConfig},
+    test_fixtures::http::{HttpClientConfig, http_client},
     vnc::VncRuntime,
 };
 
@@ -204,12 +204,11 @@ async fn run_case(password: bool, security: Security) {
     let mut harness = Harness::new(Reply::default()).await;
     *harness.network.target.lock().unwrap() =
         SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), ssh_port);
-    let http = HttpClient::new(HttpClientConfig {
+    let http = http_client(HttpClientConfig {
         api_url: harness.api.base_url(),
         vercel_bypass: None,
         client_session_id: "openssh-tigervnc-acceptance".into(),
-    })
-    .unwrap();
+    });
     let vnc = VncRuntime::official(http, TOKEN, harness.identity)
         .unwrap()
         .unwrap();
@@ -245,7 +244,8 @@ async fn run_case(password: bool, security: Security) {
                         {"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"direct"},
                         {"authMethod":"username_password","securityType":"x509_plain","transportType":"direct"},
                         {"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"ssh"},
-                        {"authMethod":"username_password","securityType":"x509_plain","transportType":"ssh"}
+                        {"authMethod":"username_password","securityType":"x509_plain","transportType":"ssh"},
+                        {"authMethod":"apple_dh_username_password","securityType":"apple_dh","transportType":"ssh"}
                     ]
                 }));
             then.status(200).json_body(json!({

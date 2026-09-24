@@ -485,35 +485,41 @@ async function serveHostedSite(
   );
 }
 
-/** Alias ownership is immutable; permission state is read separately on every request. */
+/** File aliases are immutable; HTML aliases can move from snapshots to site pointers. */
 async function readDeliveryRecord(
   request: Request,
   bucket: R2Bucket,
   key: string,
+  targetKind: "file" | "html",
   execution: ExecutionContext,
 ): Promise<ArtifactDeliveryRecord | null> {
-  const cache = await caches.open("artifact-delivery-v1");
+  // Never consult old HTML registry entries: a warm pre-migration cache must
+  // not keep a named site bound to its former snapshot for another day.
+  const cache =
+    targetKind === "file" ? await caches.open("artifact-delivery-v1") : null;
   const cacheKey = new Request(
     new URL(`/__artifact-delivery/${encodeURIComponent(key)}`, request.url),
   );
-  const cached = await cache.match(cacheKey);
+  const cached = await cache?.match(cacheKey);
   if (cached) return artifactDeliveryRecordSchema.parse(await cached.json());
   const object = await bucket.get(key);
   if (!object) return null;
   const record = artifactDeliveryRecordSchema.parse(
     await new Response(object.body).json(),
   );
-  execution.waitUntil(
-    cache.put(
-      cacheKey,
-      new Response(JSON.stringify(record), {
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "public, max-age=86400",
-        },
-      }),
-    ),
-  );
+  if (cache) {
+    execution.waitUntil(
+      cache.put(
+        cacheKey,
+        new Response(JSON.stringify(record), {
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "public, max-age=86400",
+          },
+        }),
+      ),
+    );
+  }
   return record;
 }
 
@@ -604,6 +610,7 @@ async function serveArtifactDelivery(
         request,
         env.HOSTED_SITES_BUCKET,
         artifactDeliveryKey(brand, fileHost ? "file" : "html", alias),
+        fileHost ? "file" : "html",
         execution,
       );
       if (!record) return null;

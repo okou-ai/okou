@@ -510,6 +510,9 @@
       "description": "エージェントに名前を付け、それを使用できる人を設定します。",
       "namePlaceholder": "例: リサーチアシスタント",
       "newAgentAlt": "新しいエージェント",
+      "responsibilityLabel": "このエージェントに何を手伝ってほしいですか？",
+      "responsibilityPlaceholder": "例: 毎週月曜日に HubSpot から先週のパイプラインを要約し、対応が必要な商談を知らせる。",
+      "setupFailed": "エージェントのセットアップは完了しませんでした。再試行する前にエージェント一覧を確認してください。",
       "success": "{{agentName}} が正常に作成されました",
       "title": "新しいエージェントを作成する",
       "visibility": {

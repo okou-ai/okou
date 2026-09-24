@@ -4,9 +4,9 @@ VNC is an independent remote-access capability alongside SSH. The
 `VncAccess` (`vncAccess`) feature switch is disabled by default, including for
 staff. Explicit owner/Agent grants, metadata inventory and private Runner
 authority are described in [Runner VNC authority](runner-vnc-authority.md).
-The Runner, owner configuration and Agent inventory support the exact X509Vnc
-and X509Plain profiles. The feature remains unavailable until a separate
-activation decision.
+The Runner, owner configuration and Agent inventory support the exact X509Vnc,
+X509Plain and SSH-protected Apple DH profiles. The feature remains unavailable
+until a separate activation decision.
 
 ## Supported profiles and rollout state
 
@@ -21,6 +21,18 @@ activation decision.
 Acceptance must name the exact server and Runner versions and distinguish
 engine-only evidence, controlled Runner integration and a real Agent session.
 Neither the matrix nor a merged implementation turns on the feature.
+
+Apple Screen Sharing adds an exact `apple_dh_username_password` / `apple_dh`
+pair. The Rust engine authenticates Apple RFB security type 30, which neither
+authenticates the VNC server nor encrypts the subsequent desktop session.
+Owner configuration therefore admits it only through a saved, independently
+authorized SSH host and a literal `127.0.0.1` or `::1` RFB destination on that
+host. Its credential fields are each 1–63 UTF-8 bytes without NUL. Old Runners
+do not advertise the Apple/SSH tuple and receive `unsupported_profile` before
+decryption. The owner-managed SSH host key authenticates the selected SSH
+server, but cannot prove that server does not proxy its loopback connection
+onward; owners must select a Mac host they control. This profile also remains
+behind the default-off `VncAccess` switch.
 
 ## Owner API
 
@@ -42,7 +54,8 @@ A credential contains a display name and typed `authentication`. Classic
 `{ method: "username_password", username, password }` accepts a username of
 **1–255 UTF-8 bytes** and a password of **1–1023 UTF-8 bytes**. Embedded NUL is
 rejected and password spaces are preserved. Metadata exposes `authMethod` and
-exposes `username` only for `username_password`; it never exposes a password or
+exposes `username` only for `username_password` or
+`apple_dh_username_password`; it never exposes a password or
 ciphertext. Credentials can be shared by multiple saved connections belonging
 to the same user and organization.
 
@@ -53,8 +66,10 @@ either `{ mode: "system" }` or `{ mode: "custom_ca", caBundle: "..." }`.
 Each security variant may also carry `serverName`, a separately canonicalized
 DNS name or IP identity for future certificate verification. Omitting it means
 use the saved VNC host; it never replaces the socket destination.
-The exact stored pairs are `vnc_password` / `x509_vnc` and
-`username_password` / `x509_plain`.
+The exact stored pairs are `vnc_password` / `x509_vnc`,
+`username_password` / `x509_plain`, and
+`apple_dh_username_password` / `apple_dh`. Apple DH has no X.509 trust bundle
+or certificate identity, and its route is restricted as described above.
 A custom bundle is at most 64 KiB and contains at most eight public CA
 certificates. Private keys, non-CA certificates, malformed material and insecure
 trust modes are rejected. Saving configuration does not dial or verify the host.
@@ -97,9 +112,10 @@ credential.
 
 ## Owner setup in the app
 
-With `vncAccess` enabled, open **Connectors → Remote access → VNC**.
-The independent VNC page at `/connectors/vnc` manages hosts and reusable
-credentials. Choose **Direct from Runner** or **Through saved SSH host**. The
+With `vncAccess` enabled, open **Connectors → Remote control** at
+`/connectors?scope=remote-control&type=vnc`. The VNC type filter shows saved
+connections and reusable credentials; VNC controls are absent when the switch
+is disabled. Choose **Direct from Runner** or **Through saved SSH host**. The
 SSH choice lists the current owner's secret-free saved SSH hosts; SSH
 credentials and learned host-key material are not copied into VNC state. A
 missing or deleted selection blocks saving and preserves the draft until the
@@ -114,10 +130,11 @@ and authenticates the onward RFB connection. Switching routes preserves the
 draft endpoint, security, credential and SSH selection instead of rewriting
 them.
 
-Select a saved VNC credential or create one. The initial supported profile is
+Select a saved VNC credential or create one. The certificate-verified choices are
 VeNCrypt X509Vnc (certificate-verified TLS plus a classic VNC password) or
 VeNCrypt X509Plain (certificate-verified TLS plus username/password
-authentication). Classic passwords must contain 1–8 printable ASCII characters.
+authentication); Mac Screen Sharing is available as a separate SSH-only Apple
+DH choice. Classic passwords must contain 1–8 printable ASCII characters.
 X509Plain usernames accept 1–255 UTF-8 bytes and passwords accept 1–1023 UTF-8
 bytes. Spaces are significant and embedded NUL is rejected. Changing profiles
 clears draft authentication material and only exact compatible credentials are
@@ -138,6 +155,13 @@ An SSH host referenced by a VNC route cannot be deleted. Rebind every dependent
 VNC route, switch it explicitly to Direct where that destination is valid, or
 delete it first. The app reports this dependency without cascading, clearing or
 silently converting the VNC route.
+
+For Mac Screen Sharing, choose the Apple DH profile and a saved SSH host for
+that same Mac, then enter `127.0.0.1` or `::1` as the RFB destination. The app
+hides direct transport and X.509 trust fields for this profile and only shows
+Apple-compatible credentials. The SSH route protects the full VNC session;
+Apple DH alone does not. Saving does not verify the Mac's Screen Sharing
+configuration or prove the SSH server has no downstream proxy.
 
 Adding the first VNC host automatically grants access to every Agent currently
 visible to the owner, including another workspace member's public Agents. The
@@ -244,7 +268,9 @@ New credential requirements
 and length limits must not inherit classic VNC's eight-byte limit. Binding or
 changing a credential must remain compatible with every referencing connection;
 authentication changes invalidate those connection generations.
-Persisted discriminator meanings are immutable: a later profile extends the
+Persisted discriminator meanings are immutable: Apple DH extends the values
+with a distinct method and profile and does not reinterpret X509Plain. A later
+profile extends the
 allowed values and adds its concrete typed fields or references, but cannot
 reinterpret an existing value or require clearing saved VNC state. Every schema
 extension must exercise its migration against populated credentials, connections
@@ -266,7 +292,7 @@ the exact server versions tested and distinguish client authentication, server
 identity verification and full-session encryption.
 
 The Rust protocol engine and private Runner contract support the policy-selected
-X509Vnc and X509Plain authentication flows. SSH authentication belongs to an
+X509Vnc, X509Plain and SSH-only Apple DH authentication flows. SSH authentication belongs to an
 outer transport and does not become a VNC password method. Shared/exclusive mode
 is a per-session Agent choice, independent of authentication. The VNC server
 decides how to admit clients; shared sessions can interact with the same desktop.
@@ -288,6 +314,12 @@ the direct-default transport discriminator, nullable SSH reference, optional
 X.509 server identity, restrictive same-owner foreign key, lookup index and
 shape checks. Existing and old-writer rows remain direct because the database
 default is intentionally retained.
+
+The Apple DH generated migration expands only the exact profile and credential
+shape checks. It leaves retained X509 rows, generations, grants and the direct
+default untouched. API readers of Apple rows and Runner support must be
+deployed before admitting those rows; rollback below that reader floor is unsafe
+once they exist. No merge enables the switch or authorizes production rollout.
 
 The configuration API remains unavailable until the feature is explicitly
 enabled; merging this change does not enable it, authorize an out-of-band

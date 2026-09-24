@@ -8,6 +8,238 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.668.0](https://github.com/okou-ai/okou/compare/api-v1.667.0...api-v1.668.0) (2026-09-24)
+
+
+### Features
+
+* **app:** manage shared cloudflare access and recover ssh bindings ([#36449](https://github.com/okou-ai/okou/issues/36449)) ([f129327](https://github.com/okou-ai/okou/commit/f129327db18170f2bf9f43fae9bc9ec2245a9cf5))
+
+
+### Bug Fixes
+
+* **hosting:** migrate snapshot aliases to rolling site pointers ([#36537](https://github.com/okou-ai/okou/issues/36537)) ([af047ab](https://github.com/okou-ai/okou/commit/af047ab6c6581147c5dfd0c81f9380015bc9302b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.502.0
+    * @okouai/core bumped to 8.707.1
+    * @okouai/db bumped to 1.292.3
+    * @okouai/pi-agent-runtime bumped to 1.40.5
+
+## [1.667.0](https://github.com/okou-ai/okou/compare/api-v1.666.0...api-v1.667.0) (2026-09-24)
+
+
+### Features
+
+* require an agent responsibility and open a setup thread on create ([#36385](https://github.com/okou-ai/okou/issues/36385)) ([2129fd9](https://github.com/okou-ai/okou/commit/2129fd9d4c5d83bd217d5575f0879bbfcfec3238))
+
+
+### Bug Fixes
+
+* **api:** recover invalid home task recommendation caches ([#36494](https://github.com/okou-ai/okou/issues/36494)) ([e3afce0](https://github.com/okou-ai/okou/commit/e3afce0781bfb3ad7756eed6890364f1066ee634))
+* **api:** retry temporary gmail refresh responses ([#36489](https://github.com/okou-ai/okou/issues/36489)) ([2108c6d](https://github.com/okou-ai/okou/commit/2108c6dd1feb5035f278bf1912103a9b506ed9f4))
+* **api:** stop suggesting npx as cli fallback ([#36502](https://github.com/okou-ai/okou/issues/36502)) ([d1c05e2](https://github.com/okou-ai/okou/commit/d1c05e25be8c8e40c9d0db9fb83072536ade5ed4))
+* **connector:** avoid unknown grants from incomplete aws checks ([#36490](https://github.com/okou-ai/okou/issues/36490)) ([a172bd9](https://github.com/okou-ai/okou/commit/a172bd956108f332743bc22036d8fad8a69ff62a))
+* **firewall:** enforce aws query requirements with action and target ([#36528](https://github.com/okou-ai/okou/issues/36528)) ([4e9d00e](https://github.com/okou-ai/okou/commit/4e9d00e79192bdd6468b3767e74e32e36855ee52))
+
+
+### Refactoring
+
+* **browser:** remove direct takeover action card ([#36446](https://github.com/okou-ai/okou/issues/36446)) ([c67a5a5](https://github.com/okou-ai/okou/commit/c67a5a5d643c5600ea7f78a68a7a5859edaa1657))
+
+
+### Performance Improvements
+
+* **api:** remove redundant launch diagnostic CTE join ([#36515](https://github.com/okou-ai/okou/issues/36515)) ([9f86fb1](https://github.com/okou-ai/okou/commit/9f86fb16e75ddbcc18b7518c2ddba683827df6af))
+* **platform:** serve onboarding workflow connector marks from a dedicated endpoint ([#36481](https://github.com/okou-ai/okou/issues/36481)) ([a0047e6](https://github.com/okou-ai/okou/commit/a0047e6e1b2fb2648cf894589d397bbec0a34228))
+* trim duplicate and eager startup requests ([#36487](https://github.com/okou-ai/okou/issues/36487)) ([cb824d2](https://github.com/okou-ai/okou/commit/cb824d2c0827051eabf912a07fa9aab70b36e289))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.501.0
+    * @okouai/connectors bumped to 3.15.4
+    * @okouai/core bumped to 8.707.0
+    * @okouai/db bumped to 1.292.2
+    * @okouai/pi-agent-runtime bumped to 1.40.4
+
+## [1.666.0](https://github.com/okou-ai/okou/compare/api-v1.665.0...api-v1.666.0) (2026-09-24)
+
+
+### Features
+
+* **platform:** share a single assistant message with its prompt ([#36479](https://github.com/okou-ai/okou/issues/36479)) ([e3f9aba](https://github.com/okou-ai/okou/commit/e3f9aba6d6a53ddc8cfa14659cbde8c6d76f1443))
+
+
+### Bug Fixes
+
+* **desktop:** renew verified sessions without restarting computer use ([#36431](https://github.com/okou-ai/okou/issues/36431)) ([c788e68](https://github.com/okou-ai/okou/commit/c788e68fdd564eb427e3c857eca4720bef4bcddb))
+* **firewall:** align aws permission overlap with ordinary rules ([#36442](https://github.com/okou-ai/okou/issues/36442)) ([ebedb8d](https://github.com/okou-ai/okou/commit/ebedb8db0d4680df5fc84fad02bcf33ca7d99da9))
+
+
+### Performance Improvements
+
+* **api:** bound chat search to 500 keyword candidates and 100 results ([#36456](https://github.com/okou-ai/okou/issues/36456)) ([a0e6363](https://github.com/okou-ai/okou/commit/a0e6363ad61b112002aeec1812972c9a0c451a3d))
+* **api:** coalesce web chat queue-first dispatch preflight ([#36457](https://github.com/okou-ai/okou/issues/36457)) ([4fd0518](https://github.com/okou-ai/okou/commit/4fd0518c819e774c23308c7f4ec39cc04c04cae7))
+* serve composer slash workflows from a dedicated endpoint ([#36483](https://github.com/okou-ai/okou/issues/36483)) ([dd7f335](https://github.com/okou-ai/okou/commit/dd7f335ccb14eb39343545f7647892566db01e6f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.500.0
+    * @okouai/connectors bumped to 3.15.3
+    * @okouai/core bumped to 8.706.0
+    * @okouai/db bumped to 1.292.1
+    * @okouai/pi-agent-runtime bumped to 1.40.3
+
+## [1.665.0](https://github.com/okou-ai/okou/compare/api-v1.664.1...api-v1.665.0) (2026-09-23)
+
+
+### Features
+
+* add chat remote access defaults and override endpoints ([#36365](https://github.com/okou-ai/okou/issues/36365)) ([dc8cb0d](https://github.com/okou-ai/okou/commit/dc8cb0d6ad929c2a2a8d46271a95aa28a56174b9))
+* **api:** enable organization cloudflare access sharing ([#36396](https://github.com/okou-ai/okou/issues/36396)) ([018ed55](https://github.com/okou-ai/okou/commit/018ed55169aac0d1321ef50107817237eebb6e11))
+* **vnc:** admit apple dh through saved ssh loopback ([#36398](https://github.com/okou-ai/okou/issues/36398)) ([0646ce8](https://github.com/okou-ai/okou/commit/0646ce8df1312d2f8e09e2953843ab963c5a08eb))
+
+
+### Bug Fixes
+
+* **codex:** provide model metadata for okou presets ([#36366](https://github.com/okou-ai/okou/issues/36366)) ([8f978bb](https://github.com/okou-ai/okou/commit/8f978bb3a2140d02880faec252b97075c0734ec8))
+* prepare codex oauth workspace routing before cli upgrade ([#36402](https://github.com/okou-ai/okou/issues/36402)) ([422349a](https://github.com/okou-ai/okou/commit/422349af6b60adf89b7719a440b89ba76c10e25f))
+
+
+### Refactoring
+
+* **db:** retire artifact and chat legacy triggers ([#36416](https://github.com/okou-ai/okou/issues/36416)) ([376a2fb](https://github.com/okou-ai/okou/commit/376a2fbb80052c54ff1f51fbbd421e17d354f0ad))
+* drop the pro-suspend downgrade request alias ([#36450](https://github.com/okou-ai/okou/issues/36450)) ([5557b5f](https://github.com/okou-ai/okou/commit/5557b5f67bf1af62954f222011578b9c4a99964d))
+* remove thread activity summary feature switch ([#36379](https://github.com/okou-ai/okou/issues/36379)) ([b9a889e](https://github.com/okou-ai/okou/commit/b9a889e992e335323bcabef36777a776efe0b8c6))
+
+
+### Performance Improvements
+
+* **api:** parallelize chat thread snapshot compaction ([#36409](https://github.com/okou-ai/okou/issues/36409)) ([23083a9](https://github.com/okou-ai/okou/commit/23083a9f37bfe178ba77c9706eef40febc533e0d))
+* **api:** reduce queue-first admission sql work ([#36415](https://github.com/okou-ai/okou/issues/36415)) ([b21493e](https://github.com/okou-ai/okou/commit/b21493eb0ef41607c8deb68d13b6c54e48c64a25))
+* **api:** route large storage cache lookups by size ([#36376](https://github.com/okou-ai/okou/issues/36376)) ([63475b0](https://github.com/okou-ai/okou/commit/63475b0e60306c776e3b3a24c9060add33590c4c))
+* load connector catalog data only where it renders ([#36391](https://github.com/okou-ai/okou/issues/36391)) ([0a61ba4](https://github.com/okou-ai/okou/commit/0a61ba404f2bfb5a4b9b4883d63db6d73b094eb2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.499.0
+    * @okouai/core bumped to 8.705.0
+    * @okouai/db bumped to 1.292.0
+    * @okouai/pi-agent-runtime bumped to 1.40.2
+
+## [1.664.1](https://github.com/okou-ai/okou/compare/api-v1.664.0...api-v1.664.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **api:** hide claude code reset entry when no reset is left ([#36387](https://github.com/okou-ai/okou/issues/36387)) ([0269a3a](https://github.com/okou-ai/okou/commit/0269a3aeebc489df5b4151b2cd3e4d27c6527827))
+* **connector-check:** support aws firewall diagnostics ([#36324](https://github.com/okou-ai/okou/issues/36324)) ([f7149e3](https://github.com/okou-ai/okou/commit/f7149e311fe55bc099268a108c207d18a8a39e47))
+
+
+### Performance Improvements
+
+* **api:** load connector catalog per slug for startup reads ([#36384](https://github.com/okou-ai/okou/issues/36384)) ([394946b](https://github.com/okou-ai/okou/commit/394946b57d1f65e8806972d8f74183fdb5cbb695))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.498.1
+    * @okouai/connectors bumped to 3.15.2
+    * @okouai/core bumped to 8.704.1
+    * @okouai/db bumped to 1.291.1
+    * @okouai/pi-agent-runtime bumped to 1.40.1
+
+## [1.664.0](https://github.com/okou-ai/okou/compare/api-v1.663.1...api-v1.664.0) (2026-09-23)
+
+
+### Features
+
+* add scoped cloudflare access foundation ([#36274](https://github.com/okou-ai/okou/issues/36274)) ([076b125](https://github.com/okou-ai/okou/commit/076b125ca6e884f9355279ca6f7c4c7f2dba7c61))
+* initialize user preferences on first read ([#36215](https://github.com/okou-ai/okou/issues/36215)) ([524db18](https://github.com/okou-ai/okou/commit/524db18c20b40d68bad99c77e7882fd12daad9e8))
+* move chat thread snapshots to r2 ([#36320](https://github.com/okou-ai/okou/issues/36320)) ([f5f5d6a](https://github.com/okou-ai/okou/commit/f5f5d6aec5358f740258c478dda7215485bc26b9))
+* **onboarding:** show generated user profile before slack ([#36361](https://github.com/okou-ai/okou/issues/36361)) ([abeeb80](https://github.com/okou-ai/okou/commit/abeeb80551532438a7fe68733e20aff1b87a89b8))
+* **pi:** upgrade to 0.87.1 and admit new models ([#36239](https://github.com/okou-ai/okou/issues/36239)) ([4a51b9b](https://github.com/okou-ai/okou/commit/4a51b9be36b393c55a9339250fd1d9d692f14a7d))
+
+
+### Bug Fixes
+
+* **api:** inline mcp tool schemas and add display titles ([#36337](https://github.com/okou-ai/okou/issues/36337)) ([7c29cd7](https://github.com/okou-ai/okou/commit/7c29cd73923328da93acc202aaa1ab102585b912))
+* **api:** retain original artifact link in integration prompt ([#36369](https://github.com/okou-ai/okou/issues/36369)) ([a7fc0cd](https://github.com/okou-ai/okou/commit/a7fc0cd0130a8e6ff62872c229b22ae1a8611fad))
+* **model-provider:** authorize codex oauth across chatgpt backend api ([#36344](https://github.com/okou-ai/okou/issues/36344)) ([300433e](https://github.com/okou-ai/okou/commit/300433e7d394945f21005ab74edcb960257587d2))
+* **social:** respect socialkit collection outcomes ([#36338](https://github.com/okou-ai/okou/issues/36338)) ([b670935](https://github.com/okou-ai/okou/commit/b670935e0c5985b320e17b71284707f44c70d84d))
+
+
+### Refactoring
+
+* **api:** clean artifact catalog before run cascades ([#36301](https://github.com/okou-ai/okou/issues/36301)) ([065f970](https://github.com/okou-ai/okou/commit/065f970bbb8c21c10ef709495d5824d0a6183e50))
+* remove welcomeThread feature switch ([#36378](https://github.com/okou-ai/okou/issues/36378)) ([6fcec15](https://github.com/okou-ai/okou/commit/6fcec15ebdcb6d8b7ceda9da9fced7b0467ae05c))
+
+
+### Performance Improvements
+
+* **indicators:** bound reads and show morning brief delivery time ([#36317](https://github.com/okou-ai/okou/issues/36317)) ([c3b62b1](https://github.com/okou-ai/okou/commit/c3b62b1b68e6e2b1b4805e9f582d92d764239e87))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.498.0
+    * @okouai/core bumped to 8.704.0
+    * @okouai/db bumped to 1.291.0
+    * @okouai/pi-agent-runtime bumped to 1.40.0
+
+## [1.663.1](https://github.com/okou-ai/okou/compare/api-v1.663.0...api-v1.663.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **agentphone:** deliver imessage replies and keep typing active ([#36276](https://github.com/okou-ai/okou/issues/36276)) ([85d1d63](https://github.com/okou-ai/okou/commit/85d1d63e9b34057b8b740ab59953a9bae00f3dd7))
+* **api:** clean artifact catalog during relational erasure ([#36304](https://github.com/okou-ai/okou/issues/36304)) ([94bfa0e](https://github.com/okou-ai/okou/commit/94bfa0e2eaca7b49db446f9b56e4370f0c62ecd8))
+* **api:** extend skill import token lifetime to one day ([#36300](https://github.com/okou-ai/okou/issues/36300)) ([9c163fa](https://github.com/okou-ai/okou/commit/9c163faab42127066312b27606a481e5b1789a02))
+* **api:** narrow computer-use host session row locks by route ([#36329](https://github.com/okou-ai/okou/issues/36329)) ([80b1ea0](https://github.com/okou-ai/okou/commit/80b1ea0b5cf18a2e3933630a59aaae04f77b8feb)), closes [#36176](https://github.com/okou-ai/okou/issues/36176)
+* **api:** refresh onboarding subscription model seeds ([#36314](https://github.com/okou-ai/okou/issues/36314)) ([054b264](https://github.com/okou-ai/okou/commit/054b2645a02547258137f15828264ac5cf57d5ba))
+* **api:** synchronize send draft clears with existing child rows ([#36308](https://github.com/okou-ai/okou/issues/36308)) ([996001b](https://github.com/okou-ai/okou/commit/996001bdda7cfef7151043b7779439f5c7ccd298))
+* **model-provider:** authenticate codex workspace discovery ([#36335](https://github.com/okou-ai/okou/issues/36335)) ([0ce8d6b](https://github.com/okou-ai/okou/commit/0ce8d6b881ccbb57476eabe29fe013702ea1aa90))
+* prefer installed okou cli in agent instructions ([#36298](https://github.com/okou-ai/okou/issues/36298)) ([39f8244](https://github.com/okou-ai/okou/commit/39f8244b068c71322bf4803b3af23e50012ba348))
+
+
+### Refactoring
+
+* **api:** write browser state when creating hosted chat threads ([#36294](https://github.com/okou-ai/okou/issues/36294)) ([dbf800a](https://github.com/okou-ai/okou/commit/dbf800afbdea6faca4a5baeae444ea6c48602c70))
+* retire chat thread unreads get endpoint ([#36271](https://github.com/okou-ai/okou/issues/36271)) ([125f010](https://github.com/okou-ai/okou/commit/125f010e0c056b8051f04a5be40049dd5cafc2c6))
+
+
+### Performance Improvements
+
+* **api:** attribute admission lock time by attempt ([#36280](https://github.com/okou-ai/okou/issues/36280)) ([2d2846b](https://github.com/okou-ai/okou/commit/2d2846bfcc33afaf5e6a66117d561906dec9a470))
+* **api:** reuse captured subscription identity for run environment ([#36284](https://github.com/okou-ai/okou/issues/36284)) ([8c4e103](https://github.com/okou-ai/okou/commit/8c4e10314bb8c4c6be0c3a7fc2493f37536c060d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.497.1
+    * @okouai/core bumped to 8.703.1
+    * @okouai/db bumped to 1.290.1
+    * @okouai/pi-agent-runtime bumped to 1.39.3
+
 ## [1.663.0](https://github.com/okou-ai/okou/compare/api-v1.662.0...api-v1.663.0) (2026-09-23)
 
 

@@ -4,7 +4,6 @@ import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { derivePlatformServiceOrigin } from "@okouai/core/platform-service-origin";
 
 import { resolvePlatformEnvironment } from "../lib/platform-host.ts";
-import { CONNECTION_DIAGNOSTICS_PARAM } from "../lib/connection-diagnostics-param.ts";
 import { VERCEL_PROTECTION_BYPASS_NAME } from "../lib/preview-bypass-name.ts";
 import { apiClient$ } from "../signals/api-client.ts";
 import { setApiClientRuntime$ } from "../signals/api-client-runtime.ts";
@@ -13,7 +12,6 @@ import { setAuthenticatedIdentity$ } from "../signals/auth-context.ts";
 import {
   connectionDiagnostics$,
   setupConnectionDiagnostics$,
-  writeConnectionDiagnostic$,
 } from "../signals/connection-diagnostics.ts";
 import {
   computerUseHosts$,
@@ -220,12 +218,6 @@ export const bootstrapWorker$ = command(
     const apiBaseUrl = derivePlatformServiceOrigin(location.origin, "api");
     const vercelProtectionBypass = params.get(VERCEL_PROTECTION_BYPASS_NAME);
     set(setupConnectionDiagnostics$, signal);
-    // The tab bakes the capture decision into the Worker URL, so a Worker
-    // started for a debugging tab records from its very first event.
-    set(writeConnectionDiagnostic$, {
-      action: "set-enabled",
-      enabled: params.has(CONNECTION_DIAGNOSTICS_PARAM),
-    });
     const oauthApiBaseUrl =
       resolvePlatformEnvironment() === "production"
         ? derivePlatformServiceOrigin(location.origin, "www")
@@ -265,8 +257,7 @@ export const handleSharedDatabaseRealtimeMessage$ = command(
           ? { kind: "chat-thread-event" }
           : null;
     if (dataKey?.kind === "chat-event") {
-      // A native delivery has no Run terminal event. Refresh its server unread
-      // watermark before the tab handles the message-created invalidation.
+      // Refresh indicators before the tab handles the message invalidation.
       set(reloadWorkerComputed$, "chat-thread-indicators");
     }
     if (dataKey) {

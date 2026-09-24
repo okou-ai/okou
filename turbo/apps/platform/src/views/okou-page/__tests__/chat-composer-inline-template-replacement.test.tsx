@@ -52,7 +52,7 @@ test("Replacing an inline template preserves a previously sent reference", async
       },
     ],
   });
-  context.mocks.api(workflowsCollectionContract.list, ({ respond }) => {
+  context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
     return respond(200, []);
   });
 

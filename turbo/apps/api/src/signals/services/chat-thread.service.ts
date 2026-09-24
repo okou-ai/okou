@@ -9,7 +9,6 @@ import {
   type Indicator,
   type Indicators,
   persistedAttachmentSchema,
-  indicatorSchema,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
@@ -24,7 +23,10 @@ import {
   hostedArtifactKindSchema,
 } from "@okouai/api-contracts/contracts/host";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatEvents } from "@okouai/db/schema/chat-event";
+import {
+  chatEventTerminalPredicate,
+  chatEvents,
+} from "@okouai/db/schema/chat-event";
 import {
   chatEventSearchMessages,
   chatEventSearchMessageWatermarks,
@@ -35,7 +37,6 @@ import {
   runUploadedFiles,
 } from "@okouai/db/schema/run-uploaded-file";
 import { agents } from "@okouai/db/schema/agent";
-import { unionAll } from "drizzle-orm/pg-core";
 import {
   and,
   asc,
@@ -47,16 +48,13 @@ import {
   inArray,
   isNotNull,
   isNull,
+  max,
   notExists,
   or,
   type SQL,
   sql,
 } from "drizzle-orm";
 
-import {
-  nullableDriverValueDecoder,
-  zodEnumDriverValueDecoder,
-} from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";
 import { now, nowDate } from "../../lib/time";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
@@ -252,9 +250,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const ACTIVE_RUN_STATUSES = ["queued", "pending", "running"] as const;
+const INDICATOR_AGENT_LIMIT = 128;
+const INDICATOR_ACTIVE_LIMIT = 50;
 const INDICATOR_UNREAD_LIMIT = 50;
+const INDICATOR_UNREAD_CANDIDATE_LIMIT = 128;
 const INDICATOR_UNREAD_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
-const indicatorDecoder = zodEnumDriverValueDecoder(indicatorSchema);
 
 function noActiveRunsForCurrentThreadCondition(db: Pick<Db, "select">): SQL {
   return notExists(
@@ -357,13 +357,197 @@ export function chatThreadUnreads(args: {
   });
 }
 
+type IndicatorOwner = { readonly userId: string; readonly orgId: string };
+type IndicatorThreadRow = {
+  readonly threadId: string;
+  readonly agentId: string | null;
+};
+type UnreadIndicatorRow = IndicatorThreadRow & {
+  readonly unreadAt: Date;
+};
+
+async function loadIndicatorAgentIds(
+  db: ReadonlyDb,
+  args: IndicatorOwner,
+): Promise<readonly string[]> {
+  const rows = await db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.orgId, args.orgId),
+        or(eq(agents.visibility, "public"), eq(agents.owner, args.userId)),
+      ),
+    )
+    .orderBy(desc(agents.updatedAt), desc(agents.id))
+    .limit(INDICATOR_AGENT_LIMIT);
+  return rows.map((row) => {
+    return row.id;
+  });
+}
+
+async function loadActiveIndicatorRows(
+  db: ReadonlyDb,
+  args: IndicatorOwner,
+  agentIds: readonly string[],
+): Promise<readonly IndicatorThreadRow[]> {
+  const activeRunRows = await db
+    .select({ threadId: agentRuns.chatThreadId })
+    .from(agentRuns)
+    .where(
+      and(
+        eq(agentRuns.userId, args.userId),
+        eq(agentRuns.orgId, args.orgId),
+        inArray(agentRuns.status, [...ACTIVE_RUN_STATUSES]),
+        isNotNull(agentRuns.triggerSource),
+        isNotNull(agentRuns.chatThreadId),
+        exists(
+          db
+            .select({ id: chatThreads.id })
+            .from(chatThreads)
+            .where(
+              and(
+                eq(chatThreads.id, agentRuns.chatThreadId),
+                eq(chatThreads.userId, args.userId),
+                inArray(chatThreads.agentId, agentIds),
+              ),
+            ),
+        ),
+      ),
+    )
+    .groupBy(agentRuns.chatThreadId)
+    .orderBy(desc(max(agentRuns.createdAt)))
+    .limit(INDICATOR_ACTIVE_LIMIT);
+  const activeIds = activeRunRows.flatMap((row) => {
+    return row.threadId === null ? [] : [row.threadId];
+  });
+  if (activeIds.length === 0) {
+    return [];
+  }
+  return await db
+    .select({ threadId: chatThreads.id, agentId: chatThreads.agentId })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.userId, args.userId),
+        inArray(chatThreads.id, activeIds),
+        inArray(chatThreads.agentId, agentIds),
+      ),
+    )
+    .limit(INDICATOR_ACTIVE_LIMIT);
+}
+
+async function loadUnreadIndicatorRows(
+  db: ReadonlyDb,
+  args: IndicatorOwner,
+  agentIds: readonly string[],
+  unreadCutoff: Date,
+): Promise<readonly UnreadIndicatorRow[]> {
+  // The newest threads with messages after their read watermark are the only
+  // candidates, so the per-thread reads below have a fixed upper bound.
+  const candidates = await db
+    .select({
+      threadId: chatThreads.id,
+      agentId: chatThreads.agentId,
+      lastReadAt: chatThreads.lastReadAt,
+    })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.userId, args.userId),
+        inArray(chatThreads.agentId, agentIds),
+        gte(chatThreads.lastMessageAt, unreadCutoff),
+        or(
+          isNull(chatThreads.lastReadAt),
+          gt(chatThreads.lastMessageAt, chatThreads.lastReadAt),
+        ),
+      ),
+    )
+    .orderBy(desc(chatThreads.lastMessageAt), desc(chatThreads.id))
+    .limit(INDICATOR_UNREAD_CANDIDATE_LIMIT);
+  if (candidates.length === 0) {
+    return [];
+  }
+  const candidateIds = candidates.map((row) => {
+    return row.threadId;
+  });
+
+  const [terminalRows, activeRows] = await Promise.all([
+    db
+      .selectDistinctOn([chatEvents.chatThreadId], {
+        threadId: chatEvents.chatThreadId,
+        createdAt: chatEvents.createdAt,
+      })
+      .from(chatEvents)
+      .where(
+        and(
+          inArray(chatEvents.chatThreadId, candidateIds),
+          chatEventTerminalPredicate(chatEvents.eventType),
+          gte(chatEvents.createdAt, unreadCutoff),
+        ),
+      )
+      .orderBy(
+        chatEvents.chatThreadId,
+        desc(chatEvents.createdAt),
+        desc(chatEvents.id),
+      ),
+    db
+      .selectDistinct({ threadId: agentRuns.chatThreadId })
+      .from(agentRuns)
+      .where(
+        and(
+          inArray(agentRuns.chatThreadId, candidateIds),
+          inArray(agentRuns.status, [...ACTIVE_RUN_STATUSES]),
+          isNotNull(agentRuns.triggerSource),
+        ),
+      ),
+  ]);
+
+  const latestTerminalAt = new Map<string, Date>();
+  for (const row of terminalRows) {
+    latestTerminalAt.set(row.threadId, row.createdAt);
+  }
+  const activeIds = new Set(
+    activeRows.map((row) => {
+      return row.threadId;
+    }),
+  );
+
+  const unreadRows: UnreadIndicatorRow[] = [];
+  for (const candidate of candidates) {
+    const unreadAt = latestTerminalAt.get(candidate.threadId);
+    if (
+      unreadAt === undefined ||
+      activeIds.has(candidate.threadId) ||
+      (candidate.lastReadAt !== null &&
+        unreadAt.getTime() <= candidate.lastReadAt.getTime())
+    ) {
+      continue;
+    }
+    unreadRows.push({
+      threadId: candidate.threadId,
+      agentId: candidate.agentId,
+      unreadAt,
+    });
+  }
+  unreadRows.sort((left, right) => {
+    const byTime = right.unreadAt.getTime() - left.unreadAt.getTime();
+    if (byTime !== 0) {
+      return byTime;
+    }
+    return right.threadId < left.threadId ? -1 : 1;
+  });
+  return unreadRows.slice(0, INDICATOR_UNREAD_LIMIT);
+}
+
 /**
- * Active and unread indicators for the user's agents and threads in the
- * current organization. Active threads are complete; unread threads are the
- * latest 50 terminal markers from the last seven days. Active threads are
- * computed once and reused to keep unread classification within one database
- * snapshot. Unread agent aggregates take precedence so unread actions remain
- * available while another thread for the same agent is active.
+ * Active and unread indicators for up to 128 visible agents in the current
+ * organization. Agent IDs are loaded first and passed to the bounded thread
+ * reads, so those reads do not join against or correlate to the agents table.
+ * Each indicator source returns at most 50 rows. Only Run terminal markers
+ * contribute unread indicators; they are resolved for at most 128 candidate
+ * threads with uncorrelated reads. Unread agent state takes precedence over
+ * active state.
  */
 export function chatIndicators(args: {
   readonly userId: string;
@@ -371,104 +555,33 @@ export function chatIndicators(args: {
 }): Computed<Promise<Indicators>> {
   return computed(async (get): Promise<Indicators> => {
     const db = get(db$);
+    const agentIds = await loadIndicatorAgentIds(db, args);
+    if (agentIds.length === 0) {
+      return { agents: {}, threads: {}, unreadAt: {} };
+    }
     const unreadCutoff = new Date(now() - INDICATOR_UNREAD_LOOKBACK_MS);
-    const activeThreads = db.$with("active_threads").as(
-      db
-        .selectDistinct({
-          threadId: chatThreads.id,
-          agentId: chatThreads.agentId,
-        })
-        .from(agentRuns)
-        .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
-        .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-        .where(
-          and(
-            eq(chatThreads.userId, args.userId),
-            eq(agents.orgId, args.orgId),
-            inArray(agentRuns.status, [...ACTIVE_RUN_STATUSES]),
-            isNotNull(agentRuns.triggerSource),
-          ),
-        ),
-    );
-    const latestReadWatermark = latestReadWatermarkEventSubquery(
-      db,
-      chatThreads.id,
-    );
-    const unreadThreads = db.$with("unread_threads").as(
-      db
-        .select({
-          threadId: chatThreads.id,
-          agentId: chatThreads.agentId,
-          unreadAt: latestReadWatermark.createdAt,
-        })
-        .from(chatThreads)
-        .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-        .leftJoin(activeThreads, eq(activeThreads.threadId, chatThreads.id))
-        .crossJoinLateral(latestReadWatermark)
-        .where(
-          and(
-            eq(chatThreads.userId, args.userId),
-            eq(agents.orgId, args.orgId),
-            isNull(activeThreads.threadId),
-            gte(chatThreads.lastMessageAt, unreadCutoff),
-            or(
-              isNull(chatThreads.lastReadAt),
-              gt(chatThreads.lastMessageAt, chatThreads.lastReadAt),
-            ),
-            gte(latestReadWatermark.createdAt, unreadCutoff),
-            or(
-              isNull(chatThreads.lastReadAt),
-              gt(latestReadWatermark.createdAt, chatThreads.lastReadAt),
-            ),
-          ),
-        )
-        .orderBy(desc(latestReadWatermark.createdAt), desc(chatThreads.id))
-        .limit(INDICATOR_UNREAD_LIMIT),
-    );
-    const indicatorRows = db.$with("indicator_rows").as(
-      unionAll(
-        db
-          .select({
-            threadId: activeThreads.threadId,
-            agentId: activeThreads.agentId,
-            indicator: sql`'active'`.mapWith(indicatorDecoder).as("indicator"),
-            unreadAt: sql`NULL`
-              .mapWith(nullableDriverValueDecoder(chatEvents.createdAt))
-              .as("unread_at"),
-          })
-          .from(activeThreads),
-        db
-          .select({
-            threadId: unreadThreads.threadId,
-            agentId: unreadThreads.agentId,
-            indicator: sql`'unread'`.mapWith(indicatorDecoder).as("indicator"),
-            unreadAt: unreadThreads.unreadAt,
-          })
-          .from(unreadThreads),
-      ),
-    );
-    const rows = await db
-      .with(activeThreads, unreadThreads, indicatorRows)
-      .select()
-      .from(indicatorRows);
+    const [activeRows, unreadRows] = await Promise.all([
+      loadActiveIndicatorRows(db, args, agentIds),
+      loadUnreadIndicatorRows(db, args, agentIds, unreadCutoff),
+    ]);
 
     const agentIndicators: Record<string, Indicator> = {};
     const threads: Record<string, Indicator> = {};
     const unreadAt: Record<string, string> = {};
-    for (const row of rows) {
-      threads[row.threadId] = row.indicator;
-      if (row.indicator === "unread") {
-        if (row.unreadAt === null) {
-          throw new Error("Unread indicator is missing its read watermark");
-        }
-        unreadAt[row.threadId] = row.unreadAt.toISOString();
+    for (const row of activeRows) {
+      threads[row.threadId] = "active";
+      if (row.agentId !== null) {
+        agentIndicators[row.agentId] = "active";
       }
-      if (
-        row.agentId !== null &&
-        (row.indicator === "unread" ||
-          agentIndicators[row.agentId] === undefined)
-      ) {
-        agentIndicators[row.agentId] = row.indicator;
+    }
+    for (const row of unreadRows) {
+      if (threads[row.threadId] === "active") {
+        continue;
+      }
+      threads[row.threadId] = "unread";
+      unreadAt[row.threadId] = row.unreadAt.toISOString();
+      if (row.agentId !== null) {
+        agentIndicators[row.agentId] = "unread";
       }
     }
     return { agents: agentIndicators, threads, unreadAt };

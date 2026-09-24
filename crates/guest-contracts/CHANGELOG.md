@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.17.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.17.1...guest-contracts-v0.17.2) (2026-09-23)
+
+
+### Performance Improvements
+
+* **runner:** avoid redundant storage payload copy ([#36413](https://github.com/okou-ai/okou/issues/36413)) ([cf8de50](https://github.com/okou-ai/okou/commit/cf8de509095c36bdd1f3ac86a2388b675488a228))
+
+## [0.17.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.17.0...guest-contracts-v0.17.1) (2026-09-23)
+
 ## [0.17.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.16.1...guest-contracts-v0.17.0) (2026-09-22)
 
 

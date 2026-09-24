@@ -521,7 +521,9 @@ async function fetchUsageMetadata(
   return {
     ...resetMetadataFromUsage(usage),
     ...(subscriptionUsage ? { subscriptionUsage } : {}),
-    ...(grants
+    // The field's presence is what offers the reset entry, so an account with
+    // nothing left to redeem omits it instead of showing a spent action.
+    ...(grants?.credits
       ? {
           subscriptionResetCredits: grants.credits,
           subscriptionResetCreditsNextExpiresAt: grants.nextExpiresAt,

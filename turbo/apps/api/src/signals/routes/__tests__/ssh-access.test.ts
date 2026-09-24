@@ -9,6 +9,8 @@ import {
   sshHostsContract,
 } from "@okouai/api-contracts/contracts/ssh-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   testSshConnectionStateContract,
   type TestSshConnectionStateActionBody,
@@ -25,8 +27,10 @@ import { sshAccessRoutes } from "../ssh-access";
 import { agentsRoutes } from "../agents";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { runnerSshRoutes } from "../runner-ssh";
+import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { testSshConnectionStateRoutes } from "../test-ssh-connection-state";
 import { createRouteMocks } from "./helpers/route-test";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -115,6 +119,90 @@ async function fixture(overrides: Partial<RuntimeBody> = {}) {
 }
 
 describe("owner SSH grants and live Run inventory", () => {
+  it("filters multiple SSH hosts by the Run's chat, current defaults, and sparse overrides", async () => {
+    const f = await fixture({ chat: true, access: false });
+    const first = await createHost();
+    const second = await createHost("second.example.com");
+    if (!f.threadId) {
+      throw new Error("Missing fixture chat thread");
+    }
+    const threadId = f.threadId;
+    await updateFeatureSwitchesForUser(context, f, {
+      [FeatureSwitchKey.ThreadRemoteAccess]: true,
+    });
+    authenticate(f);
+    const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
+      chatRemoteAccessContract,
+    );
+    const listIds = async () => {
+      return (
+        await accept(inventory().list({ headers: f.token() }), [200])
+      ).body.hosts.map((host) => {
+        return host.id;
+      });
+    };
+    await expect(listIds()).resolves.toStrictEqual([]);
+    await accept(
+      remote.updateHostDefault({
+        headers,
+        params: { protocol: "ssh", connectionId: second.body.id },
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    await expect(listIds()).resolves.toStrictEqual([second.body.id]);
+    const otherThread = await fixture({
+      userId: f.userId,
+      orgId: f.orgId,
+      chat: true,
+      access: false,
+    });
+    const otherThreadIds = async () => {
+      return (
+        await accept(inventory().list({ headers: otherThread.token() }), [200])
+      ).body.hosts.map((host) => {
+        return host.id;
+      });
+    };
+    await expect(otherThreadIds()).resolves.toStrictEqual([second.body.id]);
+    await accept(
+      remote.setThreadOverride({
+        headers,
+        params: { threadId, protocol: "ssh", connectionId: first.body.id },
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    await expect(listIds()).resolves.toStrictEqual(
+      [first.body.id, second.body.id].sort(),
+    );
+    await expect(otherThreadIds()).resolves.toStrictEqual([second.body.id]);
+    await accept(
+      remote.updateHostDefault({
+        headers,
+        params: { protocol: "ssh", connectionId: second.body.id },
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    await expect(listIds()).resolves.toStrictEqual([first.body.id]);
+    await accept(
+      remote.clearThreadOverride({
+        headers,
+        params: { threadId, protocol: "ssh", connectionId: first.body.id },
+      }),
+      [200],
+    );
+    await expect(listIds()).resolves.toStrictEqual([]);
+    const withoutChat = await fixture({
+      userId: f.userId,
+      orgId: f.orgId,
+      chat: false,
+      access: true,
+    });
+    await accept(inventory().list({ headers: withoutChat.token() }), [404]);
+  });
+
   async function createAgent(visibility: "public" | "private") {
     context.mocks.s3.send.mockResolvedValue({});
     const result = await accept(

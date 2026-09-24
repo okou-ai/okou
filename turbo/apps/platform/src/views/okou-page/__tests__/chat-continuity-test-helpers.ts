@@ -278,6 +278,7 @@ export function installContinuityWorkspace(
         modelSettings: thread.modelSettings ?? {},
         serviceTier: thread.serviceTier,
         pinnedAt: thread.pinnedAt,
+        archived: thread.archived ?? false,
         computerUseHostId: thread.computerUseHostId,
         cloudBrowserEnabled: thread.cloudBrowserEnabled ?? false,
         selectedVideoModel: thread.selectedVideoModel ?? null,

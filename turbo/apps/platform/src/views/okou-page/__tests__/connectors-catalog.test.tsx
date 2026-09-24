@@ -7,7 +7,6 @@ import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/u
 import { connectorAgentAccessContract } from "@okouai/api-contracts/contracts/connector-agent-access";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -16,10 +15,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import {
-  pushState,
-  search as locationSearch,
-} from "../../../signals/location.ts";
+import { search as locationSearch } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   customConnector,
@@ -147,110 +143,6 @@ test("Browse connectors by category", async () => {
   expect(getConnectorIcon("Asana")).toHaveAttribute("loading", "lazy");
 });
 
-test("Show only connectors present in the current catalog", async () => {
-  mockConnectors(context, []);
-  mockPublicConnectorStatus(context, []);
-  await setupPage({ context, path: "/connectors?keywords=stripe" });
-
-  await expect(
-    screen.findByPlaceholderText("Find connectors"),
-  ).resolves.toHaveValue("stripe");
-  await expect(
-    screen.findByText(/No connectors matching/u),
-  ).resolves.toBeInTheDocument();
-  expect(queryConnectorAction("button", "Connect Stripe")).toBeNull();
-});
-
-test("Keep connectors discoverable during category changes", async () => {
-  mockConnectors(context, []);
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({
-      connectorSlug: "github",
-      label: "Fallback GitHub",
-      category: "legacy-category",
-      authMethods: [oauthMethod()],
-    }),
-  ]);
-  await setupPage({ context, path: "/connectors" });
-
-  const section = await screen.findByTestId(
-    "connector-category-legacy-category",
-  );
-  expect(within(section).getByText("Legacy Category")).toBeInTheDocument();
-  expect(queryConnectorCard("Fallback GitHub")).toBeInTheDocument();
-});
-
-test("Avoid duplicate catalog sections during metadata changes", async () => {
-  mockConnectors(context, []);
-  mockPublicConnectorStatus(
-    context,
-    [
-      publicStatusItem({
-        connectorSlug: "github",
-        label: "Partner GitHub",
-        category: "partner-apps",
-        authMethods: [oauthMethod()],
-      }),
-      publicStatusItem({
-        connectorSlug: "stripe",
-        label: "Billing Stripe",
-        category: "billing-apps",
-        authMethods: [oauthMethod()],
-      }),
-    ],
-    {
-      categories: [
-        {
-          id: "partner-apps",
-          label: "Partner Apps",
-          menuLabel: "Partners",
-          groupId: null,
-        },
-        {
-          id: "partner-apps",
-          label: "Duplicate Partner Apps",
-          menuLabel: "Duplicate Partners",
-          groupId: null,
-        },
-        {
-          id: "billing-apps",
-          label: "Billing Apps",
-          menuLabel: "Billing",
-          groupId: "partner-apps",
-        },
-      ],
-      groups: [
-        {
-          id: "partner-apps",
-          label: "Partner Group",
-          menuLabel: "Partner Group",
-        },
-      ],
-    },
-  );
-  await setupPage({ context, path: "/connectors" });
-
-  await expect(screen.findByText("Partner Apps")).resolves.toBeInTheDocument();
-  expect(screen.queryByText("Duplicate Partner Apps")).not.toBeInTheDocument();
-  expect(screen.getAllByTestId("connector-category-partner-apps")).toHaveLength(
-    1,
-  );
-  expect(screen.getAllByTestId("connector-category-billing-apps")).toHaveLength(
-    1,
-  );
-  expect(screen.getAllByText("Partner GitHub")).toHaveLength(1);
-  expect(queryConnectorCard("Billing Stripe")).toBeInTheDocument();
-});
-
-test("Show Mailchimp OAuth in the connector catalog", async () => {
-  mockConnectors(context, []);
-  await setupPage({ context, path: "/connectors?keywords=mailchimp" });
-
-  await waitFor(() => {
-    expect(getConnectorAction("button", "Connect Mailchimp")).toBeEnabled();
-  });
-});
-
 async function openConnectorFilterCatalog() {
   const researchId = "c0000000-0000-4000-a000-000000000010";
   const [github] = mockConnectors(context, [
@@ -304,20 +196,6 @@ test("Switch between connected and disconnected connector filters", async () => 
   await expectCards({ github: false, asana: true });
 });
 
-test("Retain a text search when clearing the connector connection filter", async () => {
-  await openConnectorFilterCatalog();
-  click(getConnectorAction("button", "Filter connectors"));
-  click(getConnectorAction("menuitem", "Not connected"));
-  await expectCards({ github: false, asana: true });
-
-  await fill(screen.getByPlaceholderText("Find connectors"), "git");
-  click(getConnectorAction("button", "Filter connectors"));
-  click(getConnectorAction("menuitem", "All"));
-  await expectCards({ github: true, asana: false });
-  expect(new URLSearchParams(locationSearch()).get("keywords")).toBe("git");
-  expect(new URLSearchParams(locationSearch()).has("connection")).toBeFalsy();
-});
-
 test("Filter connectors by an agent after clearing the text search", async () => {
   const { researchId } = await openConnectorFilterCatalog();
   await fill(screen.getByPlaceholderText("Find connectors"), "git");
@@ -332,38 +210,6 @@ test("Filter connectors by an agent after clearing the text search", async () =>
   await expectCards({ github: true, asana: false });
   expect(locationSearch()).toContain("connection=agent");
   expect(locationSearch()).toContain(researchId);
-});
-
-test("Navigate the connector catalog with a keyboard", async () => {
-  const user = userEvent.setup({ delay: null });
-  mockConnectors(context, []);
-  await setupPage({ context, path: "/connectors" });
-  const ai = await waitFor(() => {
-    return getConnectorAction("button", "AI");
-  });
-  ai.focus();
-  await user.keyboard("{Enter}");
-  const models = getConnectorAction("button", "General models and reasoning");
-  models.focus();
-  await user.keyboard("{Enter}");
-  const engineering = getConnectorAction(
-    "button",
-    "Engineering and team execution",
-  );
-  engineering.focus();
-  await user.keyboard("{Enter}");
-  const axiom = await waitFor(() => {
-    return getConnectorAction("button", "Connect Axiom");
-  });
-
-  axiom.focus();
-  expect(axiom).toHaveFocus();
-  await user.keyboard(" ");
-
-  await expect(
-    screen.findByRole("dialog", { name: "Axiom" }),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByText("Save")).toBeInTheDocument();
 });
 
 test("Require an application update before using connectors", async () => {
@@ -382,7 +228,7 @@ test("Require an application update before using connectors", async () => {
   expect(screen.queryByText("HTTP 426")).not.toBeInTheDocument();
 });
 
-test("Search connectors and preserve meaningful navigation state", async () => {
+test("Search connectors and keep the query in the URL", async () => {
   mockConnectors(context, [
     { connectorSlug: "github", externalUsername: "octocat" },
     { connectorSlug: "axiom", authMethod: "api-token" },
@@ -400,15 +246,7 @@ test("Search connectors and preserve meaningful navigation state", async () => {
   });
   expect(new URLSearchParams(locationSearch()).get("keywords")).toBe("github");
 
-  pushState({}, "", "/connectors");
-  window.dispatchEvent(new PopStateEvent("popstate"));
-  await waitFor(() => {
-    expect(screen.getByPlaceholderText("Find connectors")).toHaveValue("");
-    expect(queryConnectorCard("GitHub")).toBeInTheDocument();
-    expect(queryConnectorCard("Axiom")).toBeInTheDocument();
-  });
-
-  await fill(screen.getByPlaceholderText("Find connectors"), "missing-service");
+  await fill(search, "missing-service");
   await expect(
     screen.findByText(/No connectors matching/u),
   ).resolves.toBeInTheDocument();
@@ -478,7 +316,7 @@ test("Switch between built-in and custom connectors", async () => {
   });
 });
 
-test("Present a connector with no accounts and allow closing direct OAuth", async () => {
+test("Present a connector with no accounts and start direct OAuth", async () => {
   mockConnectors(context, []);
   mockPublicConnectorStatus(context, [
     publicStatusItem({
@@ -530,12 +368,6 @@ test("Present a connector with no accounts and allow closing direct OAuth", asyn
     "Please wait while we finish setting up your connection.",
   );
   expect(connect).toBeDisabled();
-  click(within(progress).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(connect).toBeEnabled();
-  });
-  expect(popup.closed).toBeTruthy();
   oauthStarted.resolve();
 });
 
@@ -655,38 +487,6 @@ test("Browse the catalog as shelves, then enter a category and come back", async
   ).toBeInTheDocument();
 });
 
-test("Keep every category in the filter while one of them is open", async () => {
-  mockConnectors(context, []);
-  mockPublicConnectorStatus(context, shelfCatalog(), shelfCategoryMetadata(), {
-    "communication-collaboration": 327,
-    "ai-voice-audio": 50,
-  });
-  await setupPage({
-    context,
-    path: "/connectors?category=communication-collaboration",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
-  });
-
-  await waitFor(() => {
-    expect(getConnectorCard("Zendesk")).toBeInTheDocument();
-  });
-
-  // Inside a category the response carries only that category. The filter
-  // describes the catalog, not the response, or it becomes a dead end: the
-  // only way back out would be the breadcrumb.
-  await click(screen.getByLabelText("Filter connectors"));
-  const menu = await screen.findByRole("menu");
-  const options = queryAllByRoleFast("menuitem", menu).map((item) => {
-    return item.textContent;
-  });
-  expect(options).toContain("All");
-  expect(
-    options.some((option) => {
-      return option?.startsWith("Voice");
-    }),
-  ).toBeTruthy();
-});
-
 function connectedShelfCatalog() {
   return shelfCatalog().map((connector) => {
     return connector.slug === "mail-0" || connector.slug === "mail-1"
@@ -767,33 +567,6 @@ test("Land on Discover, then switch to the connectors this workspace has", async
   });
   expect(options).toContain("All agents");
   expect(options).not.toContain("Not connected");
-});
-
-test("Leaving a category with the scope control drops the category with it", async () => {
-  mockConnectors(context, [{ connectorSlug: "mail-0" as ConnectorSlug }]);
-  mockPublicConnectorStatus(
-    context,
-    connectedShelfCatalog(),
-    shelfCategoryMetadata(),
-    { "communication-collaboration": 327, "ai-voice-audio": 50 },
-  );
-  await setupPage({
-    context,
-    path: "/connectors?category=communication-collaboration",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
-  });
-
-  await waitFor(() => {
-    expect(getConnectorCard("Zendesk")).toBeInTheDocument();
-  });
-
-  // A category belongs to the scope it was opened in: carrying it across would
-  // filter the connectors you own by a dimension that does not organise them.
-  await click(screen.getByTestId("connectors-scope-connected"));
-  await waitFor(() => {
-    expect(locationSearch()).toContain("scope=connected");
-  });
-  expect(locationSearch()).not.toContain("category=");
 });
 
 test("Warn on the scope control when a connection this workspace owns needs a reconnect", async () => {

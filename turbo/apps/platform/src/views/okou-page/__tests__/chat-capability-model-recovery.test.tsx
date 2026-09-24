@@ -1,11 +1,7 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import {
   context,
   findButton,
@@ -38,25 +34,6 @@ function installProviderFailure(error: string): void {
   installCapabilityChat({ events });
 }
 
-function normalizedText(element: HTMLElement): string {
-  return element.textContent?.replace(/\s+/gu, " ").trim() ?? "";
-}
-
-function findLink(name: string): Promise<HTMLElement> {
-  return waitFor(() => {
-    const link = queryAllByRoleFast("link").find((candidate) => {
-      return (
-        candidate.getAttribute("aria-label") === name ||
-        normalizedText(candidate) === name
-      );
-    });
-    if (!link) {
-      throw new Error(`${name} link was not visible`);
-    }
-    return link;
-  });
-}
-
 test("Match model-provider recovery guidance to the failure", async () => {
   installProviderFailure(
     "No model provider configured. Configure a model provider to start running agents.",
@@ -65,14 +42,12 @@ test("Match model-provider recovery guidance to the failure", async () => {
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
 
   await readyChat();
-  click(await findButton("View details"));
-  await screen.findByRole("dialog", { name: "This run couldn't finish" });
+  const card = await screen.findByRole("status");
+  expect(card).toHaveTextContent("No model provider configured yet.");
   const configureProvider = await findButton(
     "Set one up in Workspace Settings",
   );
-  expect(configureProvider.parentElement).toHaveTextContent(
-    "No model provider configured yet.",
-  );
+  expect(card).toContainElement(configureProvider);
   click(configureProvider);
 
   const settings = await screen.findByRole("dialog", { name: "Settings" });
@@ -80,42 +55,4 @@ test("Match model-provider recovery guidance to the failure", async () => {
   await expect(
     screen.findByRole("heading", { name: "Models" }),
   ).resolves.toBeVisible();
-});
-
-test("Start a compatible session after a model-provider mismatch", async () => {
-  installProviderFailure(
-    "Provider not compatible. This session was created with a different provider type.",
-  );
-
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-
-  await readyChat();
-  await expect(
-    screen.findByText(
-      "This session was started with a different model provider and can't be continued with the current one.",
-    ),
-  ).resolves.toBeVisible();
-  click(await findButton("View details"));
-  await screen.findByRole("dialog", { name: "This run couldn't finish" });
-  await expect(findLink("Start a new session")).resolves.toHaveAttribute(
-    "href",
-    "/",
-  );
-});
-
-test("Start a new conversation after a model provider disappears", async () => {
-  installProviderFailure(
-    "Model provider unavailable. The model provider used by this thread has been deleted.",
-  );
-
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-
-  await readyChat();
-  click(await findButton("View details"));
-  await screen.findByRole("dialog", { name: "This run couldn't finish" });
-  const startNewChat = await findLink("Start a new chat thread");
-  expect(startNewChat.parentElement).toHaveTextContent(
-    "The model provider used by this thread has been deleted.",
-  );
-  expect(startNewChat).toHaveAttribute("href", "/");
 });

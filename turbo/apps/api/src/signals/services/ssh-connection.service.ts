@@ -35,8 +35,8 @@ import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
 import { checkSshCreationId } from "./ssh-creation.service";
 import {
   cloudflareAccessFailure,
-  findCloudflareAccessConfig,
   insertCloudflareAccessConfig,
+  lockCloudflareAccessConfigForBinding,
   prepareCloudflareAccessConfig,
 } from "./cloudflare-access.service";
 import { publishCloudflareAccessMutationInvalidation } from "./cloudflare-access-client-invalidation.service";
@@ -176,14 +176,21 @@ function toSshConnectionResponse(
   }
 
   return {
-    ...(row.cloudflareAccessId === null
-      ? {}
-      : {
+    ...(row.needsRebind
+      ? {
           transport: {
             type: "cloudflare_access" as const,
-            configId: row.cloudflareAccessId,
+            needsRebind: true as const,
           },
-        }),
+        }
+      : row.cloudflareAccessId === null
+        ? {}
+        : {
+            transport: {
+              type: "cloudflare_access" as const,
+              configId: row.cloudflareAccessId,
+            },
+          }),
     id: row.id,
     displayName: row.displayName,
     host: row.host,
@@ -206,7 +213,7 @@ function toSshConnectionResponse(
 }
 
 async function validateAccessBinding(
-  db: Pick<ReadonlyDb, "select">,
+  tx: Transaction,
   owner: { readonly orgId: string; readonly userId: string },
   binding: { readonly configId: string | null; readonly creating: boolean },
   host: string,
@@ -222,7 +229,11 @@ async function validateAccessBinding(
   if (configId === null) {
     return null;
   }
-  const config = await findCloudflareAccessConfig(db, owner, configId);
+  const config = await lockCloudflareAccessConfigForBinding(
+    tx,
+    owner,
+    configId,
+  );
   return config ? null : cloudflareAccessFailure("notFound");
 }
 
@@ -263,7 +274,7 @@ function publishSshConnectionMutationInvalidation(
 }
 
 async function validateAccessTransition(
-  db: Pick<ReadonlyDb, "select">,
+  tx: Transaction,
   args: {
     readonly orgId: string;
     readonly userId: string;
@@ -282,7 +293,7 @@ async function validateAccessTransition(
           ? args.body.transport.configId
           : null;
   const bindingFailure = await validateAccessBinding(
-    db,
+    tx,
     args,
     {
       configId: accessId,
@@ -294,6 +305,70 @@ async function validateAccessTransition(
     port,
   );
   return bindingFailure ?? { ok: true, value: accessId };
+}
+
+function shouldClearLearnedHostKey(
+  current: SshConnectionRow,
+  host: string,
+  port: number,
+  selectedAccessId: string | null,
+): boolean {
+  return (
+    (host !== current.host || port !== current.port) &&
+    current.cloudflareAccessId === null &&
+    selectedAccessId === null
+  );
+}
+
+async function lockAccessBeforeHostUpdate(
+  tx: Transaction,
+  args: UpdateSshConnectionArgs,
+  preflight: SshConnectionRow,
+): Promise<boolean> {
+  // Rotation locks the configuration before collecting host rows. Take the
+  // same lock before this host's row lock, including for an unchanged binding.
+  const transport = args.body.transport;
+  const targetAccessId =
+    transport === undefined
+      ? preflight.cloudflareAccessId
+      : transport.type === "cloudflare_access" && "configId" in transport
+        ? transport.configId
+        : null;
+  return (
+    targetAccessId === null ||
+    Boolean(
+      await lockCloudflareAccessConfigForBinding(tx, args, targetAccessId),
+    )
+  );
+}
+
+async function lockOwnerHostForUpdate(
+  tx: Transaction,
+  args: UpdateSshConnectionArgs,
+): Promise<SshConnectionResult<SshConnectionRow>> {
+  await lockSshOwner(tx, args);
+  // A previous request may have changed the binding after the optimistic
+  // preflight. The owner lock makes this fresh read stable against host writes.
+  const currentBinding = await findOwnerConnection(tx, args);
+  if (!currentBinding) {
+    return failure("notFound");
+  }
+  if (!(await lockAccessBeforeHostUpdate(tx, args, currentBinding))) {
+    return cloudflareAccessFailure("notFound");
+  }
+  const [current] = await tx
+    .select()
+    .from(sshConnections)
+    .where(
+      and(
+        eq(sshConnections.id, args.connectionId),
+        eq(sshConnections.orgId, args.orgId),
+        eq(sshConnections.userId, args.userId),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  return current ? { ok: true, value: current } : failure("notFound");
 }
 
 async function findOwnerConnection(
@@ -535,22 +610,11 @@ export async function updateSshConnection(
   const result = await args.db.transaction<
     SshConnectionMutationResult<SshConnectionResponse>
   >(async (tx) => {
-    await lockSshOwner(tx, args);
-    const [current] = await tx
-      .select()
-      .from(sshConnections)
-      .where(
-        and(
-          eq(sshConnections.id, args.connectionId),
-          eq(sshConnections.orgId, args.orgId),
-          eq(sshConnections.userId, args.userId),
-        ),
-      )
-      .limit(1)
-      .for("update");
-    if (!current) {
-      return failure("notFound");
+    const locked = await lockOwnerHostForUpdate(tx, args);
+    if (!locked.ok) {
+      return locked;
     }
+    const current = locked.value;
     const host = canonicalHost?.value ?? current.host;
     const port = args.body.port ?? current.port;
     const binding = await validateAccessTransition(
@@ -565,6 +629,14 @@ export async function updateSshConnection(
     }
     if (current.generation !== args.body.expectedGeneration) {
       return failure("generationConflict");
+    }
+    if (current.needsRebind && args.body.transport === undefined) {
+      return {
+        ok: false,
+        kind: "bad_request",
+        code: SSH_ERROR_CODES.INVALID_INPUT,
+        message: "Choose a transport to recover this SSH host",
+      };
     }
     if (current.generation === 2_147_483_647) {
       return sshCredentialFailure("exhausted");
@@ -588,10 +660,12 @@ export async function updateSshConnection(
       preparedAccess,
       binding.value,
     );
-    const endpointChanged =
-      (host !== current.host || port !== current.port) &&
-      current.cloudflareAccessId === null &&
-      selectedAccess.id === null;
+    const endpointChanged = shouldClearLearnedHostKey(
+      current,
+      host,
+      port,
+      selectedAccess.id,
+    );
     const [updated] = await tx
       .update(sshConnections)
       .set({
@@ -600,6 +674,7 @@ export async function updateSshConnection(
         port,
         credentialId: credential.id,
         cloudflareAccessId: selectedAccess.id,
+        needsRebind: false,
         learnedHostKeyAlgorithm: endpointChanged
           ? null
           : current.learnedHostKeyAlgorithm,

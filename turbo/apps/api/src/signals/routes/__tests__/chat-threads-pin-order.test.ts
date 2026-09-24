@@ -14,6 +14,7 @@ import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createRouteMocks } from "./helpers/route-test";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { mockChatThreadSnapshotStorage } from "./helpers/chat-thread-snapshot-storage";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { chatThreadPinOrderRoutes } from "../chat-threads-pin-order";
@@ -169,6 +170,7 @@ describe("pinned thread ordering", () => {
           return thread.id;
         }),
     ).toStrictEqual([fixture.threadId, second.id]);
+    mockChatThreadSnapshotStorage(context);
     const compact = setupApp({
       context,
       routes: testChatThreadSnapshotCompactionRoutes,

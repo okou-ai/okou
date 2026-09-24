@@ -112,6 +112,14 @@ export const sshConnectionMetadataSchema = z
 export const sshConnectionResponseSchema = z.union([
   sshConnectionMetadataSchema,
   sshConnectionMetadataSchema.extend({ transport: accessTransportSchema }),
+  sshConnectionMetadataSchema.extend({
+    transport: z
+      .object({
+        type: z.literal("cloudflare_access"),
+        needsRebind: z.literal(true),
+      })
+      .strict(),
+  }),
 ]);
 
 export const sshConnectionsListResponseSchema = z

@@ -381,6 +381,57 @@ describe("VNC owner configuration", () => {
     );
   });
 
+  it("bounds Apple DH credential fields before encryption and returns no password", async () => {
+    const kms = useSecretKmsProbe();
+    await owner();
+    for (const [username, password] of [
+      ["", "secret"],
+      ["operator", ""],
+      ["é".repeat(32), "secret"],
+      ["operator", "é".repeat(32)],
+      ["oper\u0000ator", "secret"],
+      ["operator", "sec\u0000ret"],
+    ]) {
+      const result = await rawRequest("/api/vnc/credentials", {
+        id: randomUUID(),
+        name: "Mac login",
+        authentication: {
+          method: "apple_dh_username_password",
+          username,
+          password,
+        },
+      });
+      expect(result.status).toBe(400);
+      expect(result.body).toMatchObject({
+        error: { code: "VNC_INVALID_INPUT" },
+      });
+    }
+    expect(kms.generateDataKeyCalls).toBe(0);
+
+    const username = `${"é".repeat(31)}x`;
+    const password = "p".repeat(63);
+    const created = await accept(
+      credentials().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          name: "Mac login",
+          authentication: {
+            method: "apple_dh_username_password",
+            username,
+            password,
+          },
+        },
+      }),
+      [201],
+    );
+    expect(created.body).toMatchObject({
+      authMethod: "apple_dh_username_password",
+      username,
+    });
+    expect(JSON.stringify(created.body)).not.toContain(password);
+  });
+
   it("rejects unsupported authentication and security profiles without changing saved configuration", async () => {
     useSecretKmsProbe();
     await owner();
@@ -718,7 +769,9 @@ describe("VNC owner configuration", () => {
     );
     expect(created.body.host).toBe("2001:db8::1");
     expect(created.body.security.type).toBe("x509_vnc");
-    expect(created.body.security.trust.mode).toBe("custom_ca");
+    expect(created.body.security).toMatchObject({
+      trust: { mode: "custom_ca" },
+    });
   });
 
   it("isolates owners and rejects foreign creation IDs and credentials", async () => {
@@ -875,7 +928,9 @@ describe("VNC owner configuration", () => {
     expect(second.body.credentialId).not.toBe(first.body.credentialId);
     expect(second.body.host).toBe(first.body.host);
     expect(second.body.port).toBe(first.body.port);
-    expect(second.body.security.trust.mode).toBe("custom_ca");
+    expect(second.body.security).toMatchObject({
+      trust: { mode: "custom_ca" },
+    });
     expect(
       (await accept(connections().summary({ headers }), [200])).body,
     ).toStrictEqual({ configuredCount: 2 });

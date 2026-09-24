@@ -1,4 +1,4 @@
-//! Verified RFB 3.8 / VeNCrypt 0.2 X509 authentication, bounded captures and serialized input.
+//! Bounded RFB authentication, captures and serialized input.
 //!
 //! [`authenticate`] consumes an already connected stream. The caller owns
 //! destination/authorization policy; this crate never resolves or connects a host.
@@ -9,6 +9,8 @@
 
 #![forbid(unsafe_code)]
 
+mod apple_dh;
+mod apple_srp;
 mod authentication;
 mod capture;
 mod framebuffer;
@@ -16,6 +18,7 @@ mod input;
 mod memory;
 mod pixels;
 mod session;
+mod transport;
 mod trust;
 mod wire;
 mod zrle;
@@ -27,16 +30,16 @@ use std::{fmt, io, time::Duration};
 
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::time::Instant;
-use tokio_rustls::client::TlsStream;
 use zeroize::Zeroizing;
 
 pub use capture::{Capture, CaptureMetadata};
 pub use framebuffer::{Cursor, FramebufferConnection};
 pub use input::{Input, InputOutcome, Key, MouseButton, ScrollAxis};
 pub use session::{Geometry, Session};
+pub use transport::AuthenticatedStream;
 pub use trust::TrustRoots;
 
-/// Maximum lifetime of the complete negotiation, including TLS and authentication.
+/// Maximum lifetime of the complete selected authentication negotiation.
 pub const MAX_HANDSHAKE_DURATION: Duration = Duration::from_secs(30);
 
 /// Per-connection sharing request sent in RFB ClientInit. The server controls
@@ -57,9 +60,9 @@ pub enum SharingMode {
 /// whether a server, firewall, proxy, or another network component caused silence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthenticationStage {
-    /// Waiting for or responding to the RFB 3.8 version banner.
+    /// Waiting for or responding to the selected RFB version banner.
     RfbVersion,
-    /// Negotiating the required VeNCrypt 0.2 X509 security profile.
+    /// Negotiating the exact caller-selected RFB security profile.
     SecurityNegotiation,
     /// Establishing the certificate-verified TLS transport.
     TlsHandshake,
@@ -69,6 +72,10 @@ pub enum AuthenticationStage {
     VncAuthentication,
     /// Sending X509Plain credentials and completing the SecurityResult exchange.
     X509PlainAuthentication,
+    /// Completing Apple DH security type 30 and SecurityResult.
+    AppleDhAuthentication,
+    /// Completing Apple Direct SRP security type 36 and SecurityResult.
+    AppleSrpAuthentication,
 }
 
 impl AuthenticationStage {
@@ -81,6 +88,8 @@ impl AuthenticationStage {
             Self::X509NoneAuthentication => "x509_none_authentication",
             Self::VncAuthentication => "vnc_authentication",
             Self::X509PlainAuthentication => "x509_plain_authentication",
+            Self::AppleDhAuthentication => "apple_dh_authentication",
+            Self::AppleSrpAuthentication => "apple_srp_authentication",
         }
     }
 }
@@ -155,6 +164,68 @@ impl fmt::Debug for PlainCredentials {
     }
 }
 
+/// Validated Apple DH / ARD username and password. Each field fits its 64-byte
+/// NUL-terminated wire slot without truncation; owned bytes are erased on drop.
+pub struct AppleDhCredentials {
+    username: Zeroizing<Vec<u8>>,
+    password: Zeroizing<Vec<u8>>,
+}
+
+impl AppleDhCredentials {
+    pub fn new(username: String, password: String) -> Result<Self, Error> {
+        Self::new_zeroizing(username, Zeroizing::new(password))
+    }
+
+    pub fn new_zeroizing(username: String, mut password: Zeroizing<String>) -> Result<Self, Error> {
+        let username = Zeroizing::new(username.into_bytes());
+        let password = Zeroizing::new(std::mem::take(&mut *password).into_bytes());
+        if !(1..=63).contains(&username.len()) || username.contains(&0) {
+            return Err(Error::InvalidAppleDhUsername);
+        }
+        if !(1..=63).contains(&password.len()) || password.contains(&0) {
+            return Err(Error::InvalidAppleDhPassword);
+        }
+        Ok(Self { username, password })
+    }
+}
+
+impl fmt::Debug for AppleDhCredentials {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("AppleDhCredentials([REDACTED])")
+    }
+}
+
+/// Validated Apple Direct SRP username and password. Owned password bytes are
+/// erased on drop; Debug never exposes either credential.
+pub struct AppleSrpCredentials {
+    username: Zeroizing<Vec<u8>>,
+    password: Zeroizing<Vec<u8>>,
+}
+
+impl AppleSrpCredentials {
+    pub fn new(username: String, password: String) -> Result<Self, Error> {
+        Self::new_zeroizing(username, Zeroizing::new(password))
+    }
+
+    pub fn new_zeroizing(username: String, mut password: Zeroizing<String>) -> Result<Self, Error> {
+        let username = Zeroizing::new(username.into_bytes());
+        let password = Zeroizing::new(std::mem::take(&mut *password).into_bytes());
+        if !(1..=255).contains(&username.len()) || username.contains(&0) {
+            return Err(Error::InvalidAppleSrpUsername);
+        }
+        if !(1..=1023).contains(&password.len()) || password.contains(&0) {
+            return Err(Error::InvalidAppleSrpPassword);
+        }
+        Ok(Self { username, password })
+    }
+}
+
+impl fmt::Debug for AppleSrpCredentials {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("AppleSrpCredentials([REDACTED])")
+    }
+}
+
 /// Exact certificate-TLS VeNCrypt authentication selected by the caller.
 ///
 /// `None` verifies the server and encrypts the session, but does not
@@ -200,15 +271,72 @@ impl fmt::Debug for X509Authentication {
 /// An authenticated connection, positioned immediately after SecurityResult.
 /// It retains no client credentials. Dropping it drops the underlying owned stream.
 pub struct Authenticated<S> {
-    stream: TlsStream<S>,
+    stream: AuthenticatedStream<S>,
 }
 
 impl<S> Authenticated<S> {
-    /// Transfer ownership of the verified TLS stream to the RFB session engine.
+    /// Transfer ownership of the selected post-authentication stream to the RFB engine.
     /// The next client message is ClientInit; ServerInit has not been read.
-    pub fn into_stream(self) -> TlsStream<S> {
+    pub fn into_stream(self) -> AuthenticatedStream<S> {
         self.stream
     }
+}
+
+/// Authenticate exactly Apple DH / ARD security type 30 on a caller-owned stream.
+///
+/// This legacy exchange protects only the credential block. It does not verify
+/// the server or encrypt subsequent RFB traffic. The caller must provide an
+/// independently authenticated, full-session protective transport when crossing
+/// an untrusted network. No product profile currently admits this engine path.
+pub async fn authenticate_apple_dh<S>(
+    stream: S,
+    credentials: AppleDhCredentials,
+    deadline: Instant,
+) -> Result<Authenticated<S>, Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin + 'static,
+{
+    let deadline = deadline.min(Instant::now() + MAX_HANDSHAKE_DURATION);
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::RfbVersion,
+        });
+    }
+    let authenticated = apple_dh::authenticate(stream, credentials, deadline).await?;
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::AppleDhAuthentication,
+        });
+    }
+    Ok(authenticated)
+}
+
+/// Authenticate exactly Apple Direct SRP (RFB security type 36) on a caller-owned
+/// stream. The server is authenticated by its SRP proof before the stream is
+/// returned, but post-authentication RFB traffic is not encrypted. The caller
+/// must provide a verified protective transport across untrusted networks.
+/// This engine is not yet admitted by any product profile.
+pub async fn authenticate_apple_srp<S>(
+    stream: S,
+    credentials: AppleSrpCredentials,
+    deadline: Instant,
+) -> Result<Authenticated<S>, Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin + 'static,
+{
+    let deadline = deadline.min(Instant::now() + MAX_HANDSHAKE_DURATION);
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::RfbVersion,
+        });
+    }
+    let authenticated = apple_srp::authenticate(stream, credentials, deadline).await?;
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::AppleSrpAuthentication,
+        });
+    }
+    Ok(authenticated)
 }
 
 /// Authenticate an owned stream using one exact certificate-TLS VeNCrypt profile.
@@ -285,13 +413,27 @@ pub enum Error {
     InvalidPlainUsername,
     #[error("Plain password must contain 1-1023 UTF-8 bytes without NUL")]
     InvalidPlainPassword,
+    #[error("Apple DH username must contain 1-63 UTF-8 bytes without NUL")]
+    InvalidAppleDhUsername,
+    #[error("Apple DH password must contain 1-63 UTF-8 bytes without NUL")]
+    InvalidAppleDhPassword,
+    #[error("invalid or unsupported Apple DH parameters")]
+    InvalidAppleDhParameters,
+    #[error("Apple SRP username must contain 1-255 UTF-8 bytes without NUL")]
+    InvalidAppleSrpUsername,
+    #[error("Apple SRP password must contain 1-1023 UTF-8 bytes without NUL")]
+    InvalidAppleSrpPassword,
+    #[error("invalid or unsupported Apple SRP parameters or framing")]
+    InvalidAppleSrpParameters,
+    #[error("OS cryptographic randomness failed")]
+    Randomness,
     #[error("invalid TLS server name")]
     InvalidServerName,
     #[error("custom trust requires 1-8 valid DER certificates totaling at most 64 KiB")]
     InvalidTrustRoots,
-    #[error("unsupported RFB version; RFB 3.8 is required")]
+    #[error("unsupported RFB version for selected profile")]
     UnsupportedRfbVersion,
-    #[error("server does not offer the required VeNCrypt X509 profile")]
+    #[error("server does not offer the required RFB security profile")]
     UnsupportedSecurity,
     #[error("server rejected security negotiation")]
     NegotiationRejected,

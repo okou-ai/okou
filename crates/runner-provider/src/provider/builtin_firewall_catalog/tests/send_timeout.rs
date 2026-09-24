@@ -18,10 +18,11 @@ impl Refresh {
         let dir = tempfile::tempdir().unwrap();
         let cache_path = dir.path().join("builtin-firewall-catalog-cache.json");
         let api = ApiClient::new(
-            HttpClient::create(HttpClientConfig {
+            HttpClient::new(HttpClientConfig {
                 api_url: server.url(),
                 vercel_bypass: None,
                 client_session_id: "catalog-send-timeout-test".to_string(),
+                runner_version: env!("CARGO_PKG_VERSION"),
             })
             .unwrap(),
             "private-runner-token".to_string(),

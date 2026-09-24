@@ -1,9 +1,11 @@
 import { computed } from "ccstate";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../../lib/accept.ts";
 import { i18n } from "../../../i18n/index.ts";
 import { agents$ } from "../../agent.ts";
 import { vncSummary$, vncClients$ } from "../../vnc.ts";
 import { vncAgentAccessRows$ } from "../../vnc-access.ts";
+import { featureSwitch$ } from "../../external/feature-switch.ts";
 import {
   connectorsCategoryFilter$,
   connectorsConnectionFilter$,
@@ -18,6 +20,12 @@ export const filteredVncSummary$ = computed(async (get) => {
     return null;
   }
   const filter = get(connectorsConnectionFilter$);
+  if (
+    get(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess] &&
+    (filter.kind === "agent" || filter.kind === "unshared")
+  ) {
+    return null;
+  }
   const search = get(connectorsSearch$).trim().toLowerCase();
   const description = i18n.t(($) => {
     return $.vnc.description;

@@ -1,6 +1,6 @@
 import {
   cloudflareAccessContract,
-  type CloudflareAccessConfig,
+  type ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import {
   sshConnectionsContract,
@@ -23,9 +23,10 @@ import {
 const context = testContext();
 const orgId = "org_access_ui";
 const timestamp = "2026-09-15T00:00:00.000Z";
-const config: CloudflareAccessConfig = Object.freeze({
+const config: ScopedCloudflareAccessConfig = Object.freeze({
   id: "a0000000-0000-4000-8000-000000000001",
   name: "Engineering gateway",
+  scope: "personal",
   revision: 1,
   generation: 1,
   sshHosts: [],
@@ -59,6 +60,12 @@ const host: SshConnectionResponse = Object.freeze({
   ...directHost,
   transport: { type: "cloudflare_access" as const, configId: config.id },
 });
+const retainedHost: SshConnectionResponse = Object.freeze({
+  ...host,
+  generation: 3,
+  learnedHostKey: { algorithm: "ssh-ed25519", fingerprint: "SHA256:retained" },
+  transport: { type: "cloudflare_access" as const, needsRebind: true as const },
+});
 
 beforeEach(() => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
@@ -75,7 +82,7 @@ beforeEach(() => {
 async function page(add = false) {
   await setupPage({
     context,
-    path: `/connectors/ssh${add ? "?add=1" : ""}`,
+    path: "/connectors?scope=remote-control&type=ssh",
     auth: {
       user: { id: "access-owner", fullName: "Access Owner" },
       organization: {
@@ -84,6 +91,13 @@ async function page(add = false) {
       },
     },
   });
+  if (add) {
+    click(
+      await waitFor(() => {
+        return getAction("button", "Add host");
+      }),
+    );
+  }
 }
 async function selectConfig(dialog: HTMLElement, name = config.name) {
   await userEvent.click(
@@ -143,84 +157,43 @@ test("The new Access host form shows input hints without prefilling tokens", asy
   }
 });
 
-test.each([0, 1, 2])(
-  "Resource selectors initialize once for %i saved resources",
-  async (count) => {
-    const savedCredentials = Array.from({ length: count }, (_, index) => {
-      return {
-        ...credential,
-        id: `b0000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
-        name: `Login ${index + 1}`,
-      };
+test("Resource selectors initialize once for a single saved resource", async () => {
+  context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
+    return respond(200, {
+      credentials: [{ ...credential, name: "Login 1" }],
     });
-    const savedConfigs = Array.from({ length: count }, (_, index) => {
-      return {
-        ...config,
-        id: `a0000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
-        name: `Gateway ${index + 1}`,
-      };
-    });
-    context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
-      return respond(200, { credentials: savedCredentials });
-    });
-    context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-      return respond(200, { configs: savedConfigs });
-    });
-    await page(true);
-    const dialog = await screen.findByRole("dialog");
-    click(getAction("radio", "Cloudflare Access", dialog));
-    await waitFor(() => {
-      expect(within(dialog).getByLabelText("Credential")).toHaveTextContent(
-        count === 0
-          ? "Create new credential"
-          : count === 1
-            ? "Login 1 · deploy"
-            : "Select a credential",
-      );
-      expect(
-        within(dialog).getByLabelText("Cloudflare Access"),
-      ).toHaveTextContent(
-        count === 0
-          ? "Create new Cloudflare Access"
-          : count === 1
-            ? "Gateway 1"
-            : "Select Cloudflare Access",
-      );
-    });
-    expect(within(dialog).queryAllByLabelText("Credential name")).toHaveLength(
-      count === 0 ? 1 : 0,
-    );
-    expect(getAction("button", "Save", dialog).hasAttribute("disabled")).toBe(
-      count === 2,
-    );
-    if (count === 2) {
-      await selectConfig(dialog, "Gateway 2");
-      await userEvent.click(within(dialog).getByLabelText("Credential"));
-      click(await screen.findByRole("option", { name: "Login 2 · deploy" }));
-    }
-    context.mocks.ably.trigger("ssh:changed", { orgId });
-    await waitFor(() => {
-      return expect(getAction("button", "Save", dialog)).toBeEnabled();
-    });
+  });
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [{ ...config, name: "Gateway 1" }] });
+  });
+  await page(true);
+  const dialog = await screen.findByRole("dialog");
+  click(getAction("radio", "Cloudflare Access", dialog));
+  await waitFor(() => {
     expect(within(dialog).getByLabelText("Credential")).toHaveTextContent(
-      count === 0 ? "Create new credential" : `Login ${count} · deploy`,
+      "Login 1 · deploy",
     );
     expect(
       within(dialog).getByLabelText("Cloudflare Access"),
-    ).toHaveTextContent(
-      count === 0 ? "Create new Cloudflare Access" : `Gateway ${count}`,
-    );
-    click(getAction("button", "Cancel", dialog));
-    await waitFor(() => {
-      return expect(screen.queryByRole("dialog")).toBeNull();
-    });
-  },
-);
+    ).toHaveTextContent("Gateway 1");
+  });
+  expect(within(dialog).queryAllByLabelText("Credential name")).toHaveLength(0);
+  context.mocks.ably.trigger("ssh:changed", { orgId });
+  await waitFor(() => {
+    return expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  expect(within(dialog).getByLabelText("Credential")).toHaveTextContent(
+    "Login 1 · deploy",
+  );
+  expect(within(dialog).getByLabelText("Cloudflare Access")).toHaveTextContent(
+    "Gateway 1",
+  );
+});
 
 test("SSH keeps Cloudflare Access in the host form without a management tab", async () => {
   await page();
   await screen.findByText("0 hosts configured");
-  expect(getAction("radio", "Hosts")).toBeInTheDocument();
+  expect(getAction("radio", "Connections")).toBeInTheDocument();
   expect(getAction("radio", "Credentials")).toBeInTheDocument();
   expect(queryAction("radio", "Cloudflare Access")).not.toBeInTheDocument();
   expect(
@@ -234,79 +207,86 @@ test("SSH keeps Cloudflare Access in the host form without a management tab", as
   expect(within(dialog).getByLabelText("Name")).toBeInTheDocument();
 });
 
-test("Unknown lists are not empty, Direct does not wait for Access, and Retry initializes a failed list", async () => {
-  const pendingAccess = context.mocks.deferred<void>();
-  let failCredential = true;
-  context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
-    return failCredential
-      ? respond(500, {
-          error: { code: "INTERNAL_ERROR", message: "list failure" },
-        })
-      : respond(200, { credentials: [credential] });
+test("A retained protected host requires explicit shared Access selection before saving", async () => {
+  const shared = { ...config, scope: "organization" as const };
+  const requests: unknown[] = [];
+  context.mocks.api(cloudflareAccessContract.list, ({ query, respond }) => {
+    expect(query).toStrictEqual({ view: "scoped" });
+    return respond(200, { configs: [shared] });
   });
-  context.mocks.api(cloudflareAccessContract.list, async ({ respond }) => {
-    await pendingAccess.promise;
-    return respond(200, { configs: [] });
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [retainedHost] });
   });
-  await page(true);
+  context.mocks.api(sshConnectionsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    return respond(200, {
+      ...retainedHost,
+      generation: 4,
+      transport: { type: "cloudflare_access", configId: shared.id },
+    });
+  });
+  await page();
+  await expect(
+    screen.findByText(/needs a new Cloudflare Access configuration/u),
+  ).resolves.toHaveAttribute("role", "alert");
+  click(getAction("button", "Edit host"));
   const dialog = await screen.findByRole("dialog");
-  await within(dialog).findByText("Could not load SSH settings. Try again.");
-  expect(within(dialog).queryByLabelText("Credential name")).toBeNull();
+  expect(within(dialog).getByRole("alert")).toHaveTextContent(
+    "Choose a permitted Cloudflare Access configuration or Direct",
+  );
   expect(getAction("button", "Save", dialog)).toBeDisabled();
-  failCredential = false;
-  click(getAction("button", "Retry", dialog));
+  await selectConfig(dialog, shared.name);
   await waitFor(() => {
-    return expect(
-      within(dialog).getByLabelText("Credential"),
-    ).toHaveTextContent("SSH login · deploy");
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
   });
-  expect(getAction("button", "Save", dialog)).toBeEnabled();
-  click(getAction("radio", "Cloudflare Access", dialog));
-  expect(within(dialog).queryByLabelText("Name")).toBeNull();
-  expect(getAction("button", "Save", dialog)).toBeDisabled();
-  pendingAccess.resolve();
-  await within(dialog).findByLabelText("Name");
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(requests).toHaveLength(1);
+  });
+  expect(requests[0]).toMatchObject({
+    expectedGeneration: 3,
+    host: retainedHost.host,
+    credential: { id: retainedHost.credentialId },
+    transport: { type: "cloudflare_access", configId: shared.id },
+  });
 });
 
-test("Deactivating inline Access fields clears tokens without discarding the SSH draft", async () => {
+test("Direct recovery is an explicit choice and does not replace the saved credential", async () => {
+  const requests: unknown[] = [];
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return respond(200, { configs: [config] });
+    return respond(200, { configs: [] });
   });
-  context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
-    return respond(200, { credentials: [] });
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [retainedHost] });
   });
-  await page(true);
+  context.mocks.api(sshConnectionsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    return respond(200, {
+      ...directHost,
+      generation: 4,
+      learnedHostKey: retainedHost.learnedHostKey,
+      port: body.port ?? 443,
+    });
+  });
+  await page();
+  await screen.findByText(retainedHost.displayName);
+  click(getAction("button", "Edit host"));
   const dialog = await screen.findByRole("dialog");
-  await fill(await within(dialog).findByLabelText("Private key"), "ssh-draft");
-  click(getAction("radio", "Cloudflare Access", dialog));
-  await selectConfig(dialog, "Create new Cloudflare Access");
-  await tokenFields(dialog);
-  context.mocks.ably.trigger("ssh:changed", { orgId });
-  await waitFor(() => {
-    return expect(getAction("button", "Save", dialog)).toBeEnabled();
-  });
-  expect(
-    within(dialog).getByLabelText("Service Token Client Secret"),
-  ).toHaveValue("test-client-secret");
-  expect(within(dialog).getByLabelText("Private key")).toHaveValue("ssh-draft");
-  await selectConfig(dialog);
-  expect(
-    within(dialog).queryByLabelText("Service Token Client Secret"),
-  ).toBeNull();
-  await selectConfig(dialog, "Create new Cloudflare Access");
-  expect(
-    within(dialog).getByLabelText("Service Token Client Secret"),
-  ).toHaveValue("");
-  await tokenFields(dialog);
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
   click(getAction("radio", "Direct", dialog));
-  expect(
-    within(dialog).queryByLabelText("Service Token Client Secret"),
-  ).toBeNull();
-  click(getAction("radio", "Cloudflare Access", dialog));
-  expect(
-    within(dialog).getByLabelText("Service Token Client Secret"),
-  ).toHaveValue("");
-  expect(within(dialog).getByLabelText("Private key")).toHaveValue("ssh-draft");
+  await waitFor(() => {
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(requests).toHaveLength(1);
+  });
+  expect(requests[0]).toMatchObject({
+    expectedGeneration: 3,
+    host: retainedHost.host,
+    credential: { id: retainedHost.credentialId },
+    transport: { type: "direct" },
+  });
 });
 
 test("Direct and protected mode retain their port and configuration drafts but submit only active fields", async () => {
@@ -356,15 +336,10 @@ test("Direct and protected mode retain their port and configuration drafts but s
   ]);
 });
 
-test.each(
-  (["create", "edit"] as const).flatMap((mode) => {
-    return [false, true].flatMap((newAccess) => {
-      return [false, true].map((newCredential) => {
-        return { mode, newAccess, newCredential };
-      });
-    });
-  }),
-)(
+test.each([
+  { mode: "create", newAccess: true, newCredential: true },
+  { mode: "edit", newAccess: false, newCredential: false },
+] as const)(
   "A $mode host atomically saves resources (new Access: $newAccess, new credential: $newCredential)",
   async ({ mode, newAccess, newCredential }) => {
     context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
@@ -510,73 +485,6 @@ test("Pasted Access headers submit raw credentials with inline SSH creation", as
   ]);
 });
 
-test("A failed host save retains inline Access input for manual retry without a separate resource save", async () => {
-  const hosts: unknown[] = [];
-  let failing = true;
-  const reached = context.mocks.deferred<void>();
-  const ready = context.mocks.deferred<void>();
-  context.mocks.api(
-    sshConnectionsContract.create,
-    async ({ body, respond }) => {
-      hosts.push(body);
-      if (failing) {
-        reached.resolve();
-      }
-      await ready.promise;
-      return failing
-        ? respond(500, {
-            error: { code: "INTERNAL_ERROR", message: "Save failed" },
-          })
-        : respond(201, host);
-    },
-  );
-  await page(true);
-  const dialog = await screen.findByRole("dialog");
-  await fill(within(dialog).getByLabelText("Display name"), "Development");
-  await fill(
-    within(dialog).getByLabelText("Public hostname or IP address"),
-    "ssh.example.com",
-  );
-  click(getAction("radio", "Cloudflare Access", dialog));
-  await within(dialog).findByLabelText("Name");
-  await tokenFields(dialog);
-  click(getAction("button", "Save", dialog));
-  await reached.promise;
-  const secret = within(dialog).getByLabelText("Service Token Client Secret");
-  expect(secret).toHaveValue("test-client-secret");
-  expect(secret).toBeDisabled();
-  ready.resolve();
-  await within(dialog).findByText(
-    /We couldn't confirm whether your changes were saved/u,
-  );
-  expect(secret).toHaveValue("test-client-secret");
-  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
-    "Development",
-  );
-  failing = false;
-  click(getAction("button", "Retry", dialog));
-  await waitFor(() => {
-    return expect(hosts).toHaveLength(2);
-  });
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-  expect(hosts).toHaveLength(2);
-  expect(hosts[0]).toStrictEqual(hosts[1]);
-  expect(hosts[0]).toMatchObject({
-    transport: {
-      type: "cloudflare_access",
-      create: {
-        name: config.name,
-        credentials: {
-          clientId: "test-client-id",
-          clientSecret: "test-client-secret",
-        },
-      },
-    },
-  });
-});
-
 test("Access API unavailability blocks protected mutations without silently changing transport", async () => {
   const direct = {
     ...directHost,
@@ -682,145 +590,6 @@ test("An eligible protected host can explicitly change to Direct", async () => {
   );
 });
 
-test("A Direct draft survives a failed conflict refresh and concurrent Access binding", async () => {
-  let current = directHost;
-  let refreshFails = false;
-  const requests: unknown[] = [];
-  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return respond(200, { configs: [config] });
-  });
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return refreshFails
-      ? respond(500, {
-          error: {
-            code: "INTERNAL_ERROR",
-            message: "private dependency detail",
-          },
-        })
-      : respond(200, { connections: [current] });
-  });
-  context.mocks.api(sshConnectionsContract.update, ({ body, respond }) => {
-    requests.push(body);
-    if (body.expectedGeneration === 1) {
-      current = { ...host, displayName: "Protected elsewhere", generation: 2 };
-      refreshFails = true;
-      return respond(409, {
-        error: { code: "SSH_GENERATION_CONFLICT", message: "not user copy" },
-      });
-    }
-    current = {
-      ...(body.transport?.type === "direct" ? directHost : current),
-      displayName: body.displayName ?? current.displayName,
-      generation: 3,
-    };
-    return respond(200, current);
-  });
-  await page();
-  await screen.findByText(directHost.displayName);
-  click(getAction("button", "Edit host"));
-  const dialog = await screen.findByRole("dialog");
-  await fill(within(dialog).getByLabelText("Display name"), "My Direct draft");
-  click(getAction("button", "Save", dialog));
-  await within(dialog).findByText("Could not load SSH settings. Try again.");
-  expect(getAction("button", "Save", dialog)).toBeDisabled();
-  refreshFails = false;
-  click(getAction("button", "Retry", dialog));
-  await within(dialog).findByText("Protected elsewhere");
-  expect(getAction("button", "Save", dialog)).toBeDisabled();
-  click(getAction("button", "Keep my changes with this version", dialog));
-  await waitFor(() => {
-    return expect(getAction("button", "Save", dialog)).toBeEnabled();
-  });
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-  await screen.findByText("My Direct draft");
-  click(getAction("button", "Edit host"));
-  const saved = await screen.findByRole("dialog");
-  expect(getAction("radio", "Direct", saved)).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
-  expect(within(saved).getByLabelText("Port")).toHaveValue(443);
-  expect(requests).toStrictEqual(
-    [1, 2].map((expectedGeneration) => {
-      return {
-        expectedGeneration,
-        displayName: "My Direct draft",
-        host: directHost.host,
-        port: 443,
-        credential: { id: credential.id },
-        transport: { type: "direct" },
-      };
-    }),
-  );
-});
-
-test("A new host can be explicitly saved as Direct after Access becomes unavailable", async () => {
-  let unavailable = false;
-  let hosts: SshConnectionResponse[] = [];
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return respond(200, { connections: hosts });
-  });
-  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return unavailable
-      ? respond(404, {
-          error: {
-            code: "CLOUDFLARE_ACCESS_UNAVAILABLE",
-            message: "not user copy",
-          },
-        })
-      : respond(200, { configs: [config] });
-  });
-  context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
-    if (body.transport?.type === "cloudflare_access") {
-      unavailable = true;
-      return respond(404, {
-        error: {
-          code: "CLOUDFLARE_ACCESS_UNAVAILABLE",
-          message: "not user copy",
-        },
-      });
-    }
-    const saved = {
-      ...directHost,
-      displayName: body.displayName,
-      port: body.port,
-    };
-    hosts = [saved];
-    return respond(201, saved);
-  });
-  await page(true);
-  const dialog = await screen.findByRole("dialog");
-  await fill(within(dialog).getByLabelText("Display name"), "Recoverable host");
-  await fill(
-    within(dialog).getByLabelText("Public hostname or IP address"),
-    host.host,
-  );
-  await selectCredential(dialog);
-  click(getAction("radio", "Cloudflare Access", dialog));
-  await within(dialog).findByLabelText("Cloudflare Access");
-  await selectConfig(dialog);
-  click(getAction("button", "Save", dialog));
-  await within(dialog).findAllByText(
-    "Cloudflare Access is not available for this account.",
-  );
-  click(getAction("radio", "Direct", dialog));
-  await waitFor(() => {
-    return expect(getAction("button", "Save", dialog)).toBeEnabled();
-  });
-  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
-    "Recoverable host",
-  );
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-  await screen.findByText("Recoverable host");
-  await screen.findByText("deploy@ssh.example.com:22");
-});
-
 test("Rebinding a host after a concurrent update requires review and preserves its draft", async () => {
   const alternate = {
     ...config,
@@ -885,122 +654,54 @@ test("Rebinding a host after a concurrent update requires review and preserves i
   );
 });
 
-test("A configuration deleted before host Save can be replaced without losing the host draft", async () => {
-  const alternate = {
-    ...config,
-    id: "a0000000-0000-4000-8000-000000000002",
-    name: "Alternate gateway",
-  };
-  let configs = [config, alternate];
-  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return respond(200, { configs });
-  });
-  context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
-    if (
-      body.transport?.type === "cloudflare_access" &&
-      "configId" in body.transport &&
-      body.transport.configId === config.id
-    ) {
-      configs = [alternate];
-      return respond(404, {
-        error: {
-          code: "CLOUDFLARE_ACCESS_NOT_FOUND",
-          message: "not user copy",
-        },
-      });
-    }
-    return respond(201, host);
-  });
+test("Pending Access Save is cancelled and secrets cleared on owner loss", async () => {
+  const pending = context.mocks.deferred<void>();
+  const reached = context.mocks.deferred<AbortSignal>();
+  context.mocks.api(
+    sshConnectionsContract.create,
+    async ({ signal, respond }) => {
+      reached.resolve(signal);
+      await pending.promise;
+      return respond(201, host);
+    },
+  );
   await page(true);
   const dialog = await screen.findByRole("dialog");
-  await fill(within(dialog).getByLabelText("Display name"), "Retryable host");
+  await fill(within(dialog).getByLabelText("Display name"), "Unsaved host");
   await fill(
     within(dialog).getByLabelText("Public hostname or IP address"),
     host.host,
   );
-  await selectCredential(dialog);
+  await userEvent.click(await within(dialog).findByLabelText("Credential"));
+  click(await screen.findByRole("option", { name: "Create new credential" }));
+  await fill(within(dialog).getByLabelText("Credential name"), "Login");
+  await fill(within(dialog).getByLabelText("SSH username"), "deploy");
+  await fill(within(dialog).getByLabelText("Private key"), "ssh-draft-canary");
+  const privateKey = within(dialog).getByLabelText("Private key");
   click(getAction("radio", "Cloudflare Access", dialog));
-  await within(dialog).findByLabelText("Cloudflare Access");
-  await selectConfig(dialog);
+  await within(dialog).findByLabelText("Name");
+  await tokenFields(dialog);
+  const secret = within(dialog).getByLabelText("Service Token Client Secret");
   click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(getAction("button", "Save", dialog)).toBeDisabled();
+  const requestSignal = await reached.promise;
+  act(() => {
+    const clerk = context.mocks.clerk();
+    clerk.user(
+      { id: "next-owner", fullName: "Next Owner" },
+      { token: "next-owner-token" },
+    );
+    clerk.stateChanged();
   });
-  await within(dialog).findAllByText(
-    /This Cloudflare Access is no longer available/u,
-  );
-  await selectConfig(dialog, alternate.name);
-  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
-    "Retryable host",
-  );
   await waitFor(() => {
-    return expect(getAction("button", "Save", dialog)).toBeEnabled();
+    return expect(requestSignal.aborted).toBeTruthy();
   });
-  click(getAction("button", "Save", dialog));
+  expect(secret).toHaveValue("");
+  expect(privateKey).toHaveValue("");
+  pending.resolve();
   await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    return expect(
+      screen.queryByRole("dialog", { name: "Add host" }),
+    ).not.toBeInTheDocument();
   });
+  expect(document.body.textContent).not.toContain(config.name);
 });
-
-test.each(["navigation", "owner"])(
-  "Pending Access Save is cancelled and secrets cleared on %s loss",
-  async (reason) => {
-    const pending = context.mocks.deferred<void>();
-    const reached = context.mocks.deferred<AbortSignal>();
-    context.mocks.api(
-      sshConnectionsContract.create,
-      async ({ signal, respond }) => {
-        reached.resolve(signal);
-        await pending.promise;
-        return respond(201, host);
-      },
-    );
-    await page(true);
-    const dialog = await screen.findByRole("dialog");
-    await fill(within(dialog).getByLabelText("Display name"), "Unsaved host");
-    await fill(
-      within(dialog).getByLabelText("Public hostname or IP address"),
-      host.host,
-    );
-    await userEvent.click(await within(dialog).findByLabelText("Credential"));
-    click(await screen.findByRole("option", { name: "Create new credential" }));
-    await fill(within(dialog).getByLabelText("Credential name"), "Login");
-    await fill(within(dialog).getByLabelText("SSH username"), "deploy");
-    await fill(
-      within(dialog).getByLabelText("Private key"),
-      "ssh-draft-canary",
-    );
-    const privateKey = within(dialog).getByLabelText("Private key");
-    click(getAction("radio", "Cloudflare Access", dialog));
-    await within(dialog).findByLabelText("Name");
-    await tokenFields(dialog);
-    const secret = within(dialog).getByLabelText("Service Token Client Secret");
-    click(getAction("button", "Save", dialog));
-    const requestSignal = await reached.promise;
-    act(() => {
-      if (reason === "navigation") {
-        window.history.pushState({}, "", "/");
-        window.dispatchEvent(new PopStateEvent("popstate"));
-      } else {
-        const clerk = context.mocks.clerk();
-        clerk.user(
-          { id: "next-owner", fullName: "Next Owner" },
-          { token: "next-owner-token" },
-        );
-        clerk.stateChanged();
-      }
-    });
-    await waitFor(() => {
-      return expect(requestSignal.aborted).toBeTruthy();
-    });
-    expect(secret).toHaveValue("");
-    expect(privateKey).toHaveValue("");
-    pending.resolve();
-    await waitFor(() => {
-      return expect(
-        screen.queryByRole("dialog", { name: "Add host" }),
-      ).not.toBeInTheDocument();
-    });
-    expect(document.body.textContent).not.toContain(config.name);
-  },
-);

@@ -24,9 +24,9 @@ import {
   builtinPollingOAuthAuthCodeSlug$,
   type BuiltinConnectorConnectionResult,
 } from "../../signals/okou-page/settings/connectors.ts";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
+  directedAuthorizeCatalogItem$,
   directedAuthorizeSlug$,
   directedAuthorizeAgentId$,
   directedAuthorizeAgentName$,
@@ -45,6 +45,7 @@ import { Check, Loader2 } from "lucide-react";
 import { DirectedCardShell } from "./directed-shared.tsx";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { assistantName$ } from "../../signals/branding.ts";
 import { defaultBuiltinConnectorAccountOptions } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 
@@ -120,14 +121,15 @@ function useDirectedAuthorizeParams(): {
 
 function useDirectedAuthorizeCatalogState(connectorSlug: ConnectorSlug | null) {
   const justConnected = useGet(justConnectedBuiltinSlugs$);
-  const allLoadable = useLastLoadable(connectorCatalogStatus$);
-  const catalogLoaded = allLoadable.state === "hasData";
-  const allData = catalogLoaded ? allLoadable.data.connectors : [];
-  const item = connectorSlug
-    ? allData.find((connector) => {
-        return connector.slug === connectorSlug;
-      })
-    : undefined;
+  const itemLoadable = useLastLoadable(directedAuthorizeCatalogItem$);
+  // The last entry is kept across a reload, never shown for another slug.
+  const catalogLoaded =
+    itemLoadable.state === "hasData" &&
+    (itemLoadable.data === null || itemLoadable.data.slug === connectorSlug);
+  const item =
+    catalogLoaded && connectorSlug
+      ? (itemLoadable.data ?? undefined)
+      : undefined;
   const isConnected =
     connectorSlug !== null &&
     (justConnected.has(connectorSlug) || item?.connected === true);
@@ -137,7 +139,7 @@ function useDirectedAuthorizeCatalogState(connectorSlug: ConnectorSlug | null) {
     catalogLoading:
       connectorSlug !== null &&
       !justConnected.has(connectorSlug) &&
-      allLoadable.state === "loading",
+      !catalogLoaded,
     unavailable:
       connectorSlug !== null && catalogLoaded && !item && !isConnected,
   };
@@ -158,6 +160,7 @@ function useDirectedAuthorizePermissionState(
   const enabledConnectorSlugs =
     enabledData === null ? [] : enabledData.enabledConnectorSlugs;
   return {
+    agentMissing: enabledData?.agentMissing ?? false,
     isAuthorized:
       connectorSlug !== null &&
       agentId !== null &&
@@ -188,6 +191,34 @@ function canAuthorizeConnector(
   isConnected: boolean,
 ): boolean {
   return isConnected || (item ? item.authMethods.length > 0 : false);
+}
+
+function directedAuthorizeTitle(
+  t: TFunction<"common">,
+  agentMissing: boolean,
+  isAuthorized: boolean,
+  connectorLabel: string,
+  agentName: string,
+): string {
+  if (agentMissing) {
+    return t(($) => {
+      return $.authorization.permission.errors.agentNotFound;
+    });
+  }
+  if (isAuthorized) {
+    return t(
+      ($) => {
+        return $.connectors.directed.authorized;
+      },
+      { connector: connectorLabel },
+    );
+  }
+  return t(
+    ($) => {
+      return $.connectors.directed.needsConnector;
+    },
+    { agent: agentName, connector: connectorLabel },
+  );
 }
 
 function useDirectedAuthorizeConnectModalOpen(
@@ -402,7 +433,7 @@ function DirectedAuthorizeCard() {
   const agentName = useDirectedAuthorizeAgentName(params?.agentId ?? null);
   const { item, isConnected, catalogLoading, unavailable } =
     useDirectedAuthorizeCatalogState(connectorSlugForState);
-  const { isAuthorized, permissionLoading } =
+  const { agentMissing, isAuthorized, permissionLoading } =
     useDirectedAuthorizePermissionState(
       connectorSlugForState,
       params?.agentId ?? null,
@@ -462,32 +493,26 @@ function DirectedAuthorizeCard() {
     <>
       <DirectedCardShell
         icon={<ConnectorIcon icon={item?.icon} size={20} />}
-        title={
-          isAuthorized
-            ? t(
-                ($) => {
-                  return $.connectors.directed.authorized;
-                },
-                { connector: connectorLabel },
-              )
-            : t(
-                ($) => {
-                  return $.connectors.directed.needsConnector;
-                },
-                { agent: agentName, connector: connectorLabel },
-              )
-        }
+        title={directedAuthorizeTitle(
+          t,
+          agentMissing,
+          isAuthorized,
+          connectorLabel,
+          agentName,
+        )}
         description={connectorDescription}
         isLoading={isLoading}
       >
         <div className="flex items-center justify-center">
-          <AuthorizeAction
-            isAuthorized={isAuthorized}
-            isConnecting={isConnecting}
-            disabled={!canAuthorize}
-            agentName={agentName}
-            onAuthorize={handleAuthorize}
-          />
+          {!agentMissing && (
+            <AuthorizeAction
+              isAuthorized={isAuthorized}
+              isConnecting={isConnecting}
+              disabled={!canAuthorize}
+              agentName={agentName}
+              onAuthorize={handleAuthorize}
+            />
+          )}
         </div>
       </DirectedCardShell>
       <DirectedAuthorizeConnectModal

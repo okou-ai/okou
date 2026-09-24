@@ -49,6 +49,7 @@ const READ_PERMISSIONS = [
 ] as const;
 
 interface PermissionEditorOptions {
+  readonly grouped?: boolean;
   readonly permissionDefault?: "allow" | "deny" | "ask";
   readonly unknownPolicy?: "allow" | "deny" | "ask";
   readonly grants?: readonly UserPermissionGrantResponse[];
@@ -89,11 +90,12 @@ function connectedSlackFixture(): BuiltinConnectorResponse {
 }
 
 function permissionMetadata({
+  grouped = true,
   permissionDefault = "allow",
   unknownPolicy = "deny",
 }: Pick<
   PermissionEditorOptions,
-  "permissionDefault" | "unknownPolicy"
+  "grouped" | "permissionDefault" | "unknownPolicy"
 >): PublicConnectorCatalogPermissionDetail {
   return {
     connectorSlug: "slack",
@@ -104,14 +106,16 @@ function permissionMetadata({
     },
     permissionCount: READ_PERMISSIONS.length,
     permissions: [...READ_PERMISSIONS],
-    categories: {
-      categories: Object.fromEntries(
-        READ_PERMISSIONS.map((permission) => {
-          return [permission.name, "Read"];
-        }),
-      ),
-      displayOrder: ["Read"],
-    },
+    categories: grouped
+      ? {
+          categories: Object.fromEntries(
+            READ_PERMISSIONS.map((permission) => {
+              return [permission.name, "Read"];
+            }),
+          ),
+          displayOrder: ["Read"],
+        }
+      : null,
     defaultPolicy: {
       permissionDefault,
       unknownPolicy,
@@ -230,7 +234,11 @@ async function openPermissionEditor(
   if (!drawer) {
     throw new Error("Slack permissions drawer not found");
   }
-  await waitForRoleElementByText("button", "Read (3)", drawer);
+  if (options.grouped === false) {
+    await within(drawer).findByText("bookmarks:read", { selector: "code" });
+  } else {
+    await waitForRoleElementByText("button", "Read (3)", drawer);
+  }
   return drawer;
 }
 
@@ -257,6 +265,15 @@ function unknownPermissionRow(drawer: HTMLElement): HTMLElement {
   const row = label.parentElement?.parentElement;
   if (!row) {
     throw new Error("Other endpoints row not found");
+  }
+  return row;
+}
+
+function allPermissionsRow(drawer: HTMLElement): HTMLElement {
+  const label = within(drawer).getByText("Select all (3)");
+  const row = label.parentElement;
+  if (!row) {
+    throw new Error("All permissions row not found");
   }
   return row;
 }
@@ -428,54 +445,99 @@ test("Undoing a deny does not create an unnecessary always grant", async () => {
   expect(appliedRequests).toHaveLength(0);
 });
 
-test("Undoing a connector restore disables Apply", async () => {
+test("Activating an already allowed bulk policy also allows other endpoints only on Apply", async () => {
+  const appliedRequests: ApplyUserPermissionGrantsRequest[] = [];
   const drawer = await openPermissionEditor({
-    grants: [
-      permissionGrant({
-        permission: "bookmarks:read",
-        action: "deny",
-        expiresAt: null,
-      }),
-    ],
+    grouped: false,
+    unknownPolicy: "ask",
+    appliedRequests,
   });
-  await expandReadGroup(drawer);
-  const bookmarkRow = permissionRow(drawer, "bookmarks:read");
-  const applyButton = roleElementByText("button", "Apply", drawer);
+  const all = allPermissionsRow(drawer);
+  const unknown = unknownPermissionRow(drawer);
+  const apply = roleElementByText("button", "Apply", drawer);
 
-  expectPolicy(bookmarkRow, "Deny");
-  expect(applyButton).toBeDisabled();
-  click(roleElementByText("button", "Restore", drawer));
+  expectPolicy(all, "Allow");
+  expect(roleElementByText("button", "Allow", unknown)).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  expect(apply).toBeDisabled();
 
-  expectPolicy(bookmarkRow, "Allow");
-  expect(applyButton).toBeEnabled();
-  click(roleElementByText("button", "Deny", bookmarkRow));
+  click(roleElementByText("button", "Allow", all));
 
-  expectPolicy(bookmarkRow, "Deny");
-  expect(applyButton).toBeDisabled();
+  expectPolicy(all, "Allow");
+  expectPolicy(unknown, "Allow");
+  expect(apply).toBeEnabled();
+  expect(appliedRequests).toHaveLength(0);
+  click(apply);
+  await expect(
+    screen.findByText("Permissions updated"),
+  ).resolves.toBeInTheDocument();
+  expectSinglePatch(appliedRequests, [
+    { permission: UNKNOWN_PERMISSION_GRANT, action: "allow" },
+  ]);
 });
 
-test("Unknown-permission policy can return to its saved value", async () => {
+test("Ask and mixed permissions remain distinct while group commands keep their scope", async () => {
+  const appliedRequests: ApplyUserPermissionGrantsRequest[] = [];
   const drawer = await openPermissionEditor({
-    unknownPolicy: "allow",
-    grants: [
-      permissionGrant({
-        permission: UNKNOWN_PERMISSION_GRANT,
-        action: "deny",
-        expiresAt: null,
-      }),
-    ],
+    permissionDefault: "ask",
+    unknownPolicy: "ask",
+    appliedRequests,
   });
-  const unknownRow = unknownPermissionRow(drawer);
-  const applyButton = roleElementByText("button", "Apply", drawer);
+  await expandReadGroup(drawer);
+  const group = groupHeader(drawer);
+  const bookmark = permissionRow(drawer, "bookmarks:read");
+  const unknown = unknownPermissionRow(drawer);
+  expect(roleElementByText("button", "Allow", bookmark)).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  expect(roleElementByText("button", "Deny", bookmark)).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  expect(within(group).queryByText("Mixed")).not.toBeInTheDocument();
 
-  expectPolicy(unknownRow, "Deny");
-  expect(applyButton).toBeDisabled();
-  click(roleElementByText("button", "Restore", drawer));
+  click(roleElementByText("button", "Allow", bookmark));
+  expect(within(group).getByText("Mixed")).toBeInTheDocument();
+  click(roleElementByText("button", "Allow", group));
+  expectPolicy(group, "Allow");
+  expect(within(group).queryByText("Mixed")).not.toBeInTheDocument();
+  await chooseDuration(drawer, "Read", "Allow for 7d");
+  expect(within(group).getByLabelText("Read allow options")).toHaveTextContent(
+    "7d",
+  );
 
-  expectPolicy(unknownRow, "Allow");
-  expect(applyButton).toBeEnabled();
-  click(roleElementByText("button", "Deny", unknownRow));
-
-  expectPolicy(unknownRow, "Deny");
-  expect(applyButton).toBeDisabled();
+  click(roleElementByText("button", "Deny", group));
+  expectPolicy(group, "Deny");
+  expect(
+    within(group).queryByLabelText("Read allow options"),
+  ).not.toBeInTheDocument();
+  for (const permission of READ_PERMISSIONS) {
+    const row = permissionRow(drawer, permission.name);
+    expectPolicy(row, "Deny");
+    expect(
+      within(row).queryByLabelText(`${permission.name} allow options`),
+    ).not.toBeInTheDocument();
+  }
+  expect(roleElementByText("button", "Deny", unknown)).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  expect(roleElementByText("button", "Allow", unknown)).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  expect(appliedRequests).toHaveLength(0);
+  click(roleElementByText("button", "Apply", drawer));
+  await expect(
+    screen.findByText("Permissions updated"),
+  ).resolves.toBeInTheDocument();
+  expectSinglePatch(
+    appliedRequests,
+    READ_PERMISSIONS.map((permission) => {
+      return { permission: permission.name, action: "deny" };
+    }),
+  );
 });

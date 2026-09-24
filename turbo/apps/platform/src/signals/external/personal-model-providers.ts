@@ -17,7 +17,7 @@ import { invalidateOrgModelPolicies$ } from "./org-model-policies.ts";
  */
 const internalReloadPersonalModelProviders$ = state(0);
 
-/** Exact recovery reads share mutation invalidation without listing sibling usage. */
+/** Account reads outside the shared list share its mutation invalidation. */
 export const personalModelProviderAccountRevision$ = computed((get) => {
   return get(internalReloadPersonalModelProviders$);
 });

@@ -510,6 +510,9 @@
       "description": "Name your agent and set who can use it.",
       "namePlaceholder": "e.g. Research Assistant",
       "newAgentAlt": "New agent",
+      "responsibilityLabel": "What do you want this agent to help you do?",
+      "responsibilityPlaceholder": "e.g. Every Monday, summarize last week's pipeline from HubSpot and flag deals that need attention.",
+      "setupFailed": "Agent setup did not finish. Check the agent list before trying again.",
       "success": "{{agentName}} created successfully",
       "title": "Create a new agent",
       "visibility": {

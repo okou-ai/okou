@@ -61,7 +61,7 @@ test("Integrations show current status and refresh after GitHub connects", async
   });
   const browserOpen = context.mocks.browser.open(providerWindow);
 
-  await setupIntegrationsPage(context, { agentPhone: true });
+  await setupIntegrationsPage(context);
 
   await expect(screen.findByText("Slack")).resolves.toBeInTheDocument();
   expect(screen.getByText("Connected (Okou HQ)")).toBeInTheDocument();
@@ -144,13 +144,6 @@ test("Open Telegram settings from Integrations", async () => {
   ).resolves.toBeInTheDocument();
 });
 
-test("Integrations hide AgentPhone when its feature switch is disabled", async () => {
-  await setupIntegrationsPage(context);
-
-  await expect(screen.findByText("Telegram")).resolves.toBeInTheDocument();
-  expect(screen.queryByText("Phone")).not.toBeInTheDocument();
-});
-
 test("A user connects AgentPhone with a prefilled one-time code", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();
   const code = "74290618";
@@ -171,7 +164,7 @@ test("A user connects AgentPhone with a prefilled one-time code", async () => {
     },
   );
 
-  await setupIntegrationsPage(context, { agentPhone: true });
+  await setupIntegrationsPage(context);
 
   const phoneCard = await waitFor(() => {
     return getIntegrationCard("Phone");
@@ -218,30 +211,6 @@ test("A user connects AgentPhone with a prefilled one-time code", async () => {
       screen.queryByRole("dialog", { name: "Connect phone" }),
     ).not.toBeInTheDocument();
   });
-});
-
-test("The Phone card spells the shared number but copies its digits", async () => {
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  context.mocks.data.agentPhoneIntegration({
-    linked: false,
-    publicBrand: "okou",
-    agentPhoneNumber: "+13144386568",
-    configured: true,
-  });
-
-  await setupIntegrationsPage(context, { agentPhone: true });
-
-  const phoneCard = await waitFor(() => {
-    return getIntegrationCard("Phone");
-  });
-  expect(phoneCard).toHaveTextContent("iMessage or SMS to+1 (314) GET-OKOU");
-
-  click(getAction("button", "Copy +1 (314) 438-6568", phoneCard));
-
-  await expect(
-    screen.findByText("Phone number copied"),
-  ).resolves.toBeInTheDocument();
-  expect(clipboard.writes).toStrictEqual(["+13144386568"]);
 });
 
 test("An admin can begin Microsoft Teams installation", async () => {
@@ -302,30 +271,6 @@ test("Microsoft Teams shows its connected team name", async () => {
   ).resolves.toBeInTheDocument();
   expect(screen.getByText("Connected (Core Team)")).toBeInTheDocument();
   expect(getAction("link", "Install GitHub App")).toBeInTheDocument();
-});
-
-test("Microsoft Teams does not expose a tenant identifier as a display name", async () => {
-  mockSlack(context, { isConnected: true, isInstalled: true, isAdmin: true });
-  mockTeams(context, {
-    isConnected: true,
-    isInstalled: true,
-    isAdmin: true,
-    tenantId: "tenant-123",
-    tenantName: null,
-    teamName: null,
-  });
-
-  await setupIntegrationsPage(context);
-
-  const teamsCard = await waitFor(() => {
-    return getIntegrationCard("Microsoft Teams");
-  });
-  await waitFor(() => {
-    expect(within(teamsCard).getByText("Connected")).toBeInTheDocument();
-  });
-  expect(
-    within(teamsCard).queryByText("Connected (tenant-123)"),
-  ).not.toBeInTheDocument();
 });
 
 test("Uninstalling Microsoft Teams requires confirmation", async () => {

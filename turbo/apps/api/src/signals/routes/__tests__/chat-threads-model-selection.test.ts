@@ -286,6 +286,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       agentId: fixture.agentId,
       title: "Launch plan",
       pinnedAt: null,
+      archived: false,
       selectedModel: "claude-sonnet-5",
       modelSettings: {},
       serviceTier: null,

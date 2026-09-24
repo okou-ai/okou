@@ -6,11 +6,16 @@ import { agentSshAccess } from "@okouai/db/schema/agent-ssh-access";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNotNull, or } from "drizzle-orm";
 
 import type { Db, ReadonlyDb } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
+import {
+  runThreadExists,
+  runThreadSshAccess,
+  runUsesThreadRemoteAccess,
+} from "./run-thread-remote-access.service";
 
 interface Owner {
   readonly orgId: string;
@@ -83,6 +88,7 @@ export async function updateAgentSshAccess(
 function runSshHostRows(
   db: ReadonlyDb,
   owner: Owner & { readonly runId: string },
+  threadMode: boolean,
 ) {
   // A left join preserves the authorized empty inventory in the same snapshot.
   return db
@@ -95,6 +101,7 @@ function runSshHostRows(
       algorithm: sshConnections.learnedHostKeyAlgorithm,
       fingerprint: sshConnections.learnedHostKeyFingerprint,
       accessId: sshConnections.cloudflareAccessId,
+      needsRebind: sshConnections.needsRebind,
       accessConfigId: cloudflareAccessConfigs.id,
     })
     .from(agentRuns)
@@ -114,7 +121,7 @@ function runSshHostRows(
         visibleJoinedAgentCondition(owner.userId),
       ),
     )
-    .innerJoin(
+    .leftJoin(
       agentSshAccess,
       and(
         eq(agentSshAccess.agentId, agents.id),
@@ -127,6 +134,7 @@ function runSshHostRows(
       and(
         eq(sshConnections.orgId, agentRuns.orgId),
         eq(sshConnections.userId, agentRuns.userId),
+        threadMode ? runThreadSshAccess(db) : undefined,
       ),
     )
     .leftJoin(
@@ -142,7 +150,13 @@ function runSshHostRows(
       and(
         eq(cloudflareAccessConfigs.id, sshConnections.cloudflareAccessId),
         eq(cloudflareAccessConfigs.orgId, owner.orgId),
-        eq(cloudflareAccessConfigs.userId, owner.userId),
+        or(
+          eq(cloudflareAccessConfigs.scope, "organization"),
+          and(
+            eq(cloudflareAccessConfigs.scope, "personal"),
+            eq(cloudflareAccessConfigs.userId, owner.userId),
+          ),
+        ),
       ),
     )
     .where(
@@ -151,6 +165,7 @@ function runSshHostRows(
         eq(agentRuns.orgId, owner.orgId),
         eq(agentRuns.userId, owner.userId),
         eq(agentRuns.status, "running"),
+        threadMode ? runThreadExists(db) : isNotNull(agentSshAccess.agentId),
       ),
     )
     .orderBy(asc(sshConnections.displayName), asc(sshConnections.id));
@@ -161,7 +176,8 @@ export async function listRunSshHosts(
   owner: Owner & { readonly runId: string },
   signal: AbortSignal,
 ) {
-  const rows = await runSshHostRows(db, owner);
+  const threadMode = await runUsesThreadRemoteAccess(db, owner.runId, signal);
+  const rows = await runSshHostRows(db, owner, threadMode);
   if (rows.length === 0) {
     return null;
   }
@@ -169,6 +185,9 @@ export async function listRunSshHosts(
   return {
     hosts: rows.flatMap((row) => {
       if (row.id === null) {
+        return [];
+      }
+      if (row.needsRebind) {
         return [];
       }
       if (row.accessId !== null) {

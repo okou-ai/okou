@@ -46,27 +46,6 @@ export function noAuthMethod(
   };
 }
 
-export function manualAuthMethod(
-  id: ConnectorAuthMethodId = "api-key",
-): PublicConnectorCatalogAuthMethodDetail {
-  return {
-    id,
-    label: "API key",
-    description: "Enter the service credential.",
-    grantKind: "manual",
-    manualFields: [
-      {
-        id: "apiKey",
-        label: "API key",
-        required: true,
-        placeholder: "Enter API key",
-        inputType: "password",
-      },
-    ],
-    startOptions: [],
-  };
-}
-
 export function catalogConnector(args: {
   readonly slug: ConnectorSlug;
   readonly label: string;

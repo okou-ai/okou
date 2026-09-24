@@ -339,12 +339,7 @@ export function MarkdownCardView({
       return <BrowserSessionCard signals={card.signals} />;
     }
     case "browser-user-action": {
-      return (
-        <BrowserUserActionCard
-          signals={card.signals}
-          browserSessionSignals={card.browserSessionSignals}
-        />
-      );
+      return <BrowserUserActionCard signals={card.signals} />;
     }
   }
 }
@@ -488,7 +483,7 @@ function ConnectorActionCardSkeleton() {
   return (
     <Skeleton
       data-testid="connector-action-card-loading"
-      className={cn("h-full w-full rounded-[var(--okou-card-radius)]")}
+      className={cn("h-full w-full rounded-[var(--okou-chat-card-radius)]")}
     />
   );
 }
@@ -519,7 +514,9 @@ function CatalogConnectorActionCard({
   return (
     <ConnectorCard
       variant="action"
-      className={cn("h-full justify-between")}
+      className={cn(
+        "h-full justify-between rounded-[var(--okou-chat-card-radius)] border-border/70 px-4",
+      )}
       icon={<ConnectorIcon icon={catalogItem.icon} size={22} />}
       label={catalogItem.label}
       description={catalogItem.description}
@@ -564,7 +561,9 @@ function CustomConnectorActionCard({
   return (
     <ConnectorCard
       variant="action"
-      className={cn("h-full justify-between")}
+      className={cn(
+        "h-full justify-between rounded-[var(--okou-chat-card-radius)] border-border/70 px-4",
+      )}
       icon={
         <CustomConnectorIcon
           id={connector.id}

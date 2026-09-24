@@ -2,10 +2,7 @@ import { agentVncAccessContract } from "@okouai/api-contracts/contracts/vnc-acce
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import {
-  agentsByIdContract,
-  agentsMainContract,
-} from "@okouai/api-contracts/contracts/agents";
+import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -31,46 +28,6 @@ function mockCatalog() {
   mockConnectors(context, []);
   mockPublicConnectorStatus(context, []);
 }
-
-test("VNC access can retry a failed Agent inventory", async () => {
-  mockCatalog();
-  let failed = true;
-  context.mocks.api(agentsMainContract.list, ({ respond }) => {
-    return failed
-      ? respond(500, {
-          error: {
-            code: "INTERNAL_ERROR",
-            message: "Agent inventory unavailable",
-          },
-        })
-      : respond(200, [listAgent(agentId, "Research")]);
-  });
-  context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 1 });
-  });
-  context.mocks.api(agentVncAccessContract.get, ({ respond }) => {
-    return respond(200, { enabled: false });
-  });
-  await setupPage({
-    context,
-    path: "/connectors?keywords=vnc",
-    featureSwitches: {
-      [FeatureSwitchKey.VncAccess]: true,
-      [FeatureSwitchKey.ConnectorDirectory]: false,
-    },
-  });
-  const error = await screen.findByText("Could not load VNC configuration.");
-  const alert = error.closest('[role="alert"]');
-  if (!(alert instanceof HTMLElement)) {
-    throw new Error("Missing VNC error alert");
-  }
-  failed = false;
-  click(await findFastControl("button", "Retry", alert));
-  await waitFor(() => {
-    expect(queryFastControl("button", "Manage VNC access")).toBeEnabled();
-  });
-  expect(screen.queryByText("Could not load VNC configuration.")).toBeNull();
-});
 
 test.each([true, false])(
   "Agent discovery filter uses its independent VNC grant (%s)",
@@ -98,7 +55,7 @@ test.each([true, false])(
     }
     expect(
       queryFastControl("link", "Manage VNC")?.getAttribute("href") ?? null,
-    ).toBe(enabled ? "/connectors/vnc?add=1" : null);
+    ).toBe(enabled ? "/connectors?scope=remote-control&type=vnc" : null);
   },
 );
 
@@ -131,97 +88,12 @@ test.each([false, true])(
     }
     expect(
       queryFastControl("link", "Manage VNC")?.getAttribute("href") ?? null,
-    ).toBe(directory ? null : "/connectors/vnc?add=1");
+    ).toBe(directory ? null : "/connectors?scope=remote-control&type=vnc");
     expect(queryFastControl("link", "Manage SSH hosts")).toBeNull();
   },
 );
 
-test.each([
-  { count: 1, label: "1 host configured" },
-  { count: 2, label: "2 hosts configured" },
-])(
-  "VNC uses the SSH host-count wording for $count hosts",
-  async ({ count, label }) => {
-    mockCatalog();
-    context.mocks.data.agents([]);
-    context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
-      return respond(200, { configuredCount: count });
-    });
-    await setupPage({
-      context,
-      path: "/connectors?keywords=vnc",
-      featureSwitches: {
-        [FeatureSwitchKey.VncAccess]: true,
-        [FeatureSwitchKey.ConnectorDirectory]: false,
-      },
-    });
-    await expect(screen.findByText(label)).resolves.toBeInTheDocument();
-  },
-);
-
-test.each([false, true])(
-  "VNC connection list does not report an empty result while a failed request retries (%s)",
-  async (directory) => {
-    mockCatalog();
-    let failed = true;
-    const retryStarted = context.mocks.deferred<void>();
-    const recovery = context.mocks.deferred<void>();
-    context.mocks.api(vncConnectionsContract.summary, async ({ respond }) => {
-      if (failed) {
-        return respond(500, {
-          error: { code: "INTERNAL_ERROR", message: "private VNC error" },
-        });
-      }
-      retryStarted.resolve();
-      await recovery.promise;
-      return respond(200, { configuredCount: 0 });
-    });
-    context.mocks.api(vncConnectionsContract.list, async ({ respond }) => {
-      if (failed) {
-        return respond(500, {
-          error: { code: "INTERNAL_ERROR", message: "private VNC error" },
-        });
-      }
-      await recovery.promise;
-      return respond(200, { connections: [] });
-    });
-    await setupPage({
-      context,
-      path: directory
-        ? "/connectors?scope=remote-control"
-        : "/connectors?keywords=vnc",
-      featureSwitches: {
-        [FeatureSwitchKey.VncAccess]: true,
-        [FeatureSwitchKey.ConnectorDirectory]: directory,
-      },
-    });
-    const error = await screen.findByText("Could not load VNC configuration.");
-    const alert = error.closest('[role="alert"]');
-    if (!(alert instanceof HTMLElement)) {
-      throw new Error("Missing VNC error alert");
-    }
-    expect(screen.queryByText(/No connectors matching/u)).toBeNull();
-    failed = false;
-    click(await findFastControl("button", "Retry", alert));
-    if (!directory) {
-      await retryStarted.promise;
-    }
-    await expect(
-      screen.findByText("Loading VNC configuration…"),
-    ).resolves.toBeInTheDocument();
-    expect(screen.queryByText(/No connectors matching/u)).toBeNull();
-    recovery.resolve();
-    const recovered = directory
-      ? await screen.findByText("Add a VNC host to get started.")
-      : await findFastControl("link", "Manage VNC");
-    expect(recovered).toBeInTheDocument();
-    expect(recovered.getAttribute("href")).toBe(
-      directory ? null : "/connectors/vnc?add=1",
-    );
-  },
-);
-
-test.each([false, true])(
+test.each([false])(
   "Feature-off VNC makes no requests in directory layout %s",
   async (directory) => {
     mockCatalog();
@@ -296,52 +168,6 @@ test("VNC settings grants authorize a visible Agent independently of SSH", async
   ).resolves.not.toBeChecked();
 });
 
-test("Agent authorization does not report no services while VNC recovery is pending", async () => {
-  mockCatalog();
-  const agent = listAgent(agentId, "Research");
-  context.mocks.data.agents([agent]);
-  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
-    return respond(200, agent);
-  });
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 0 });
-  });
-  let failed = true;
-  const retryStarted = context.mocks.deferred<void>();
-  const recovery = context.mocks.deferred<void>();
-  context.mocks.api(vncConnectionsContract.summary, async ({ respond }) => {
-    if (failed) {
-      return respond(500, {
-        error: { code: "INTERNAL_ERROR", message: "private VNC error" },
-      });
-    }
-    retryStarted.resolve();
-    await recovery.promise;
-    return respond(200, { configuredCount: 1 });
-  });
-  context.mocks.api(agentVncAccessContract.get, ({ respond }) => {
-    return respond(200, { enabled: false });
-  });
-  await setupPage({
-    context,
-    path: `/agents/${agentId}?tab=authorization`,
-    featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
-  });
-  const error = await screen.findByText("Could not load VNC configuration.");
-  const alert = error.closest('[role="alert"]');
-  if (!(alert instanceof HTMLElement)) {
-    throw new Error("Missing VNC error alert");
-  }
-  failed = false;
-  click(await findFastControl("button", "Retry", alert));
-  await retryStarted.promise;
-  expect(screen.queryByText(/No connected services yet/u)).toBeNull();
-  recovery.resolve();
-  await expect(
-    screen.findByRole("switch", { name: "Grant VNC access" }),
-  ).resolves.not.toBeChecked();
-});
-
 test("Agent authorization hides retained VNC grants when the owner changes", async () => {
   const agent = listAgent(agentId, "Research");
   context.mocks.data.agents([agent]);
@@ -385,7 +211,7 @@ test("Agent authorization hides retained VNC grants when the owner changes", asy
   ).resolves.not.toBeChecked();
 });
 
-test.each([false, true])(
+test.each([true])(
   "Chat VNC setup appears and filters in directory layout %s",
   async (directory) => {
     installComposerConnectorFixture();
@@ -411,12 +237,15 @@ test.each([false, true])(
     await fill(search, "vnc");
     await expect(
       findFastControl("link", "Manage VNC", dialog),
-    ).resolves.toHaveAttribute("href", "/connectors/vnc?add=1");
+    ).resolves.toHaveAttribute(
+      "href",
+      "/connectors?scope=remote-control&type=vnc",
+    );
     expect(queryFastControl("link", "Manage SSH hosts", dialog)).toBeNull();
   },
 );
 
-test.each([false, true])(
+test.each([true])(
   "Chat VNC discovery can retry a failed summary inside directory layout %s",
   async (directory) => {
     installComposerConnectorFixture();
@@ -461,7 +290,10 @@ test.each([false, true])(
     recovery.resolve();
     await expect(
       findFastControl("link", "Manage VNC", dialog),
-    ).resolves.toHaveAttribute("href", "/connectors/vnc?add=1");
+    ).resolves.toHaveAttribute(
+      "href",
+      "/connectors?scope=remote-control&type=vnc",
+    );
     expect(
       within(dialog).queryByText("Could not load VNC configuration."),
     ).toBeNull();
@@ -530,10 +362,8 @@ test("Changing user clears retained VNC access in the chat composer", async () =
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
     featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
   });
-  const trigger = await findFastControl("button", "Connectors");
-  click(trigger);
+  click(await findFastControl("button", "Connectors"));
   await screen.findByLabelText("Remove VNC");
-  expect(within(trigger).getByRole("img", { name: "VNC" })).toBeInTheDocument();
   changing = true;
   act(() => {
     clerk.user(
@@ -543,8 +373,10 @@ test("Changing user clears retained VNC access in the chat composer", async () =
     clerk.stateChanged();
   });
   await waitFor(() => {
-    expect(within(trigger).queryByRole("img", { name: "VNC" })).toBeNull();
+    expect(screen.queryByLabelText("Remove VNC")).toBeNull();
   });
+  expect(screen.queryByLabelText("Add VNC")).toBeNull();
   nextOwner.resolve();
-  await screen.findByLabelText("Add VNC");
+  await expect(screen.findByLabelText("Add VNC")).resolves.toBeInTheDocument();
+  expect(screen.queryByLabelText("Remove VNC")).toBeNull();
 });

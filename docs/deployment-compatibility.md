@@ -1,5 +1,80 @@
 # Deployment Compatibility
 
+## Codex 0.156.1 OAuth workspace routing
+
+The API supplies the selected workspace ID as `CODEX_OAUTH_ACCOUNT_ID` for
+Codex OAuth runs. The guest writes that ID into `auth.json` and both placeholder
+JWT claims. Access and refresh tokens remain placeholders; the firewall still
+injects real credentials into outbound requests.
+
+The API retains the existing placeholder `CHATGPT_ACCOUNT_ID` for the firewall
+and Pi. PR #36402 deployed the additive ID field while the Runner stayed on
+Codex 0.155.1. The Runner now upgrades to 0.156.1 after that API rollout and
+old claimable contexts have drained. An older Runner ignores the additive field.
+A newer Runner served by an older API, or claiming a context without the field,
+still writes the original placeholder account ID; that combination is not
+supported with Codex 0.156.1 and may fail workspace routing. An explicitly
+empty field remains rejected. API rollback before #36402 therefore also
+requires rolling back the Runner. Removing the missing-field compatibility
+branch is tracked by #36420.
+
+## Chat thread archived flag (2026-09-24)
+
+Migration `1208_chat_thread_archived` adds `chat_threads.archived` (default
+`false`) and the `archived` / `unarchived` thread event kinds. It does not
+backfill: chats whose title starts with ✅ stay unarchived, and archiving no
+longer rewrites titles. Snapshot, metadata and replay readers treat an absent
+`archived` field as `false`, so snapshots compacted before this migration and
+responses from an older API remain valid. Those tolerant reads are rollout
+fallbacks tracked for removal by #36551.
+
+Old API code after the migration stays legal: the column has a default and the
+enum values are additive. New API code must not be promoted before the
+migration, because thread metadata, snapshot compaction and user export read
+`archived` unconditionally; the normal migration-before-promotion release order
+covers this.
+
+Only the new archive routes append the new event kinds, and those routes, the
+CLI commands that call them and the Web archive controls are all behind the
+`ChatThreadArchiving` switch. Web bundles, CLI builds
+and iOS builds from before this change parse thread event kinds strictly and
+fail to read a stream that contains an archive event until they update. A
+rollback of the API below this change leaves already appended archive events in
+the stream for those older readers; roll forward instead.
+
+## Chat thread snapshot R2 handoff (2026-09-23)
+
+Migration `1204_chat_thread_snapshot_r2_pointer` adds a nullable R2 object key to
+`chat_thread_snapshots`. Existing rows continue to carry the legacy
+`chat_threads` JSONB and the API returns the same inline snapshot for them.
+The new API can return a short-lived,
+scope-checked download URL for a row with an object key; the new App and CLI
+materialize that object before caching or replaying its paired event cursor.
+
+The global compaction cron writes R2 snapshots as soon as this API deploys.
+Production promotes the API before the App, and previously loaded App bundles
+can remain open. The API therefore reads the R2 archive and serves the legacy
+inline response to clients that do not send `X-Chat-Thread-Snapshot-R2: 1`.
+The new App and CLI send that capability header and receive the short-lived R2
+URL. Package versions alone cannot identify the capability because older
+deployments use the same versions. This compatibility read does not access the
+retired JSONB payload.
+
+The compaction job writes a compressed,
+content-addressed JSON snapshot to R2 and publishes its object key together
+with the event cursor. It stores an empty JSONB array instead of the retired
+projection. Rows without an object key remain readable through the legacy
+JSONB response until the job backfills them. A failed upload or a losing
+conditional database update leaves the prior snapshot and cursor intact.
+
+The hourly job also removes unreferenced snapshot objects older than seven
+days in bounded hash partitions. It retains objects referenced by a current
+snapshot or a user export. Rolling back to an API that only understands inline
+JSONB after the first R2 write would leave R2-backed snapshots unreadable;
+the production rollback resolver enforces the canonical main commit that first
+introduced `chat-thread-snapshot-object.ts` as the API reader floor. Recovery
+must stay at or above that floor or roll forward.
+
 ## Artifact catalog API handoff (2026-09-23)
 
 The API now enqueues file catalog work in the same transaction as its ordinary
@@ -19,6 +94,39 @@ release. Their removal requires the remaining file writers, parent-deletion
 paths, event and computer-access writers to use explicit operations, followed
 by evidence that all old API instances and rollback binaries have drained.
 
+Run deletion now locks its files and deletes file/image/video catalog rows in
+the same transaction before the Run cascade removes their source entities.
+Agent deletion uses the same operation before its Session/Run cascade. Repeated
+deletes coexist with the old triggers because deleting an absent catalog row is
+idempotent. The direct hosted-site and account-erasure paths need their own
+source-scoped cleanup before the delete triggers can be retired.
+
+## Artifact and chat trigger retirement (contract step)
+
+Migration `1206_retire_artifact_chat_triggers` removes the eleven triggers named
+in #33749 and their six unreferenced functions. It is a **contract step**, not
+an API expand step. It cannot ship while any serving API instance or supported
+rollback binary still relies on trigger-owned catalog writes/deletes, chat event
+seq or snapshot cursor derivation, append-only rejection, or computer-host/browser
+normalization. An old API against the contracted schema is not supported.
+
+Before applying this migration in production, confirm the explicit API paths from
+#36258, #36294, #36301 and #36304 have deployed to **all** serving instances.
+Any further production writer fixes discovered in this Draft PR must also ship
+before contraction; the migration cannot be its own expand release. The
+production rollback resolver rejects API targets before canonical
+main commit `065f970bbb8c21c10ef709495d5824d0a6183e50` (#36301, the last
+preparation to merge): the first supported rollback release is
+`3a2a331d50503a73407029ed9074e7d6930778da` (API 1.664.0). Older entries
+in the rollback dashboard remain visible but are rejected before artifact or
+host access. Record serving deployment and rollback evidence with the release.
+Verify the migration and its permanent inventory against a
+replayed database, plus API no-trigger integration coverage for ordinary file
+writes and deletion cascades, hosted-site/presentation deletion, chat event and
+snapshot concurrency/retries, and computer host selection on create/update.
+Do not infer production readiness from a merged commit or a passing isolated
+test. Preserve the shipped historical SQL migrations.
+
 This document focuses on three independently deployed surfaces that have
 cross-version API or persisted-state compatibility boundaries:
 
@@ -35,6 +143,55 @@ they interact with these frontend, backend, or runner boundaries.
 New versions are normally deployed together, but they do not become active at
 the same instant. Code and tests must account for periods where different
 surfaces are on different versions.
+
+## User preference initialization (2026-09-23)
+
+`GET /api/user-preferences` now returns `409 USER_PREFERENCES_UNINITIALIZED`
+when the member lacks either a valid timezone or a locale. The App accepts that
+response, then calls `POST /api/user-preferences/initialize` with browser
+timezone and the locale selected during initial resource loading. It uses the
+POST result directly. An invalid or unavailable browser timezone falls back to
+`America/Los_Angeles`; an unsupported browser locale falls back to `en-US`.
+The App also initializes if an older API returns `200` with a missing field.
+
+The App Worker prefetches a successful GET into the HTML, which the App consumes
+without another browser GET. Prefetch is best effort, bounded to 500 ms, and
+does not embed `409`; the client GET remains the fallback when prefetch misses.
+
+The new API continues to accept the older App's optional timezone-only POST.
+An empty body fills missing timezone and locale with Pacific Time and English.
+Initialization preserves each already stored field independently, so a member
+missing only locale keeps their timezone and vice versa. Concurrent writes to
+missing fields remain last-writer-wins without a transaction. Against the old
+API, a new App may receive an initialize result with no locale; it then uses
+the regular preferences update to save locale before returning preferences.
+An old App that reads preferences before its startup POST against the new API
+can temporarily receive `409`; its existing POST then initializes the member.
+
+Morning Brief enrollment remains a separate durable obligation. The POST
+attempts it after saving missing preferences, and the enrollment worker admits up to
+20 timezone-bearing members without enrollment rows on each tick before
+processing due work. Qualification checks the Clerk membership and rollout
+boundary; existing `cancelled`, `ineligible`, and `completed` rows are not
+recreated. No schema migration is needed.
+
+## Pi 0.87.1 model admission (2026-09-23)
+
+The API and commit-addressed CLI now pin Pi 0.87.1. Its native catalog contains
+`claude-opus-5-5`, `gpt-6-sol`, and `gpt-6-luna`, so the Pi admission table can
+route those models through Pi when their existing product policy and PiLoop
+switch allow it. This change does not make a model newly addable to an
+organization. GPT-6 Sol and Luna continue to use the global OpenRouter endpoint
+because neither is in the US endpoint allowlist.
+
+New Pi starts require the matching commit-addressed CLI artifact. Older CLI
+artifacts pinned to Pi 0.86.1 cannot resolve these three catalog models. Queued
+and active runs keep their captured CLI URL and model configuration; do not
+rewrite those contexts during rollout. The 0.87.1 SDK also adds
+`context_edit` session entries. Older readers can parse their JSONL but do not
+apply those edits when reconstructing context, so a rollback to a 0.86.1 CLI
+must wait until affected sessions have drained or use a forward fix with an
+explicit reader compatibility check.
 
 ## Chat unread endpoint retirement (2026-09-23)
 
@@ -488,6 +645,37 @@ rather than copying its bytes into a snapshot. This matches the behavior the
 `privateArtifacts` switch already produced when it was off, so an older API or
 App serving beside this one stays consistent. Existing private hosted
 deployments keep their rows and readers.
+
+Historical named HTML snapshot aliases can be converted to the same rolling
+public-site model. A new public upload may replace its own site's `publication`
+alias after validating the database owner, site, brand, source deployment,
+policy and retained token alias. It publishes the active pointer before changing
+the named registry record to `legacy-site`; conditional writes and site/share
+row locks preserve unrelated aliases and make interrupted completions retryable.
+An older completion also retains a newer R2 pointer if a previous database
+transaction failed after publishing it. The named URL and its download both
+follow the active deployment; `dpl-<deployment-id>` URLs remain immutable.
+
+The HTML delivery registry now bypasses the Worker's former 24-hour cache,
+including entries warmed by an older Worker. Deploy that Worker and the API
+writer change, and drain older serving API instances, before running the
+[bounded historical pointer migration](../turbo/packages/db/scripts/migrations/018-hosted-publication-pointers/README.md).
+The migration bootstraps the currently public snapshot without changing its
+bytes or presentation kind, verifies one canary before the remaining sites,
+and has no schema migration. Production execution uses an explicit reviewed
+site list and a private saved plan; public Actions artifacts contain only
+aggregate results. Deployment of this code does not run the migration.
+
+Old HTML share writes to Public or Organization return an actionable `400`;
+owner revocation remains supported. Snapshot policies lose only their named
+`publicSlug` during conversion, so the retained token still reads that snapshot
+and can be revoked independently of the public site. A fresh owner upload may
+replace its own revoked snapshot alias without reviving the token, but the
+historical bootstrap refuses revoked snapshots. File sharing is unchanged.
+Do not restore the older HTML snapshot writer after conversion: it can claim
+the named alias again or reject a redeploy. Roll forward with these ownership,
+token-reader and registry-cache fixes retained; never revert a migrated alias
+after its site has accepted a newer publication.
 
 Delivery caches accordingly. HTML documents are served `no-store` on public
 aliases, private previews and shared snapshots, because a redeploy replaces them
@@ -2416,9 +2604,10 @@ clients below the floor receive `426` before route matching. This floor increase
 is deliberately separate from the release that first published the replacement
 App, because production promotes the API before the App.
 
-Standalone Access mutations now publish only `cloudflare-access:changed`.
-Effective Service Token replacement still invalidates Runner authority for every
-referencing protected host. Actual SSH host writes continue publishing
+Standalone Access create, rename and delete publish only
+`cloudflare-access:changed`. Effective Service Token replacement also publishes
+`ssh:changed` to referencing host owners and invalidates Runner authority for
+every referencing protected host. Actual SSH host writes continue publishing
 `ssh:changed` and invalidating Runner authority; inline Access creation also
 publishes `cloudflare-access:changed` because it changes both resources. Neither
 browser event contains a token, configuration ID or host ID.
@@ -2435,7 +2624,7 @@ Access management and protected host creation require no additional opt-in.
 Already-bound hosts are never silently converted to Direct. Removing a binding
 requires owner authorization and an explicit Direct selection. Changing owner
 clears open secret forms and cancels their pending UI work. API authorization and
-same-owner foreign keys remain authoritative; frontend visibility is not an
+database ownership checks remain authoritative; frontend visibility is not an
 access check.
 
 SSH save retries (#34503) require a client-generated resource `id` on host creation
@@ -2486,6 +2675,68 @@ failure eviction and Run/sandbox teardown remain effective. The accepted
 Run-lifetime missed-notification window includes observed outages; this introduces
 no reconnect grace deadline, periodic reauthorization or new TTL. No coordinated
 API rollout or migration is required for this Runner change.
+
+### Organization Cloudflare Access foundation (#36260)
+
+Migration `1203` adds `scope` to the existing Access table and `needs_rebind` to
+SSH hosts. Existing Access rows default to `personal`, existing hosts default to
+`needs_rebind=false`, and their IDs, encrypted credentials, bindings and
+generations are unchanged. An SSH Access reference must remain in the same
+organization; a database trigger additionally rejects another user's personal
+Access. Organization rows have no user owner. A host with a null Access ID and
+`needs_rebind=true` remains a protected, unusable host with its 443/FQDN target
+and host-key pin intact, not a Direct host. Runner resolution, pinning and
+observations return unavailable, and Agent inventory omits it before any token
+decryption. The old SSH management response cannot represent this state and
+fails closed; no production path creates it in this foundation release.
+
+The outgoing API remains compatible with the migrated schema for existing
+personal/Direct data: omitted columns receive their defaults, and its existing
+`INSERT ... RETURNING` and update shapes remain legal. The new API requires
+`1203`, so migration-before-API-promotion is mandatory. This release does not
+expose organization creation, binding or conversion. Do not enable organization
+writes until the foundation is deployed and every serving API authority reader
+and Runner path has been verified; an older API or rollback target that joins
+Access by user ID cannot safely serve shared bindings. Do not enable conversion
+or write `needs_rebind=true` until the rebind-capable App is verified live and
+the later App compatibility floor is raised. A rollback to pre-foundation API
+after either new state is written is unsafe without first restoring a compatible
+authority reader; rolling back code does not roll back persisted state.
+
+### Scoped organization Cloudflare Access backend (#36265)
+
+The canonical Access API accepts an explicit `view=scoped` query on list and
+mutations. Without it, the list and mutation responses keep the exact
+personal-only shape expected by the currently deployed App, and organization
+rows cannot be managed through the old request shape. A scoped response adds
+`scope`; organization rows are visible to current members, but only current
+admins may create, rename, rotate or delete them. The discriminator is not an
+authorization credential. Inline SSH Access creation remains personal, while
+members may select same-organization shared rows for their own SSH hosts.
+Shared responses contain only the requesting member's SSH host references.
+Secrets remain write-only.
+
+Effective shared token rotation advances every referencing SSH host generation
+in the same transaction and publishes host-owner Runner/SSH invalidations and
+an organization Access-list signal after commit. The organization signal uses
+the org realtime channel, not a cached member list; the scoped App must
+subscribe to that channel. These notices remain best-effort, so a missed
+notice retains the documented active-Run cache window. Referenced deletion is
+blocked across all members. Personal records still erase with their owner;
+shared records survive a member erasure and are removed with the organization
+after SSH references. This release adds no conversion or `needs_rebind=true`
+writer.
+
+**Activation gate:** migration `1203` must have run in production, and every
+serving API authority reader and SSH Runner must include the #36260 foundation
+before this API begins creating or binding shared rows. The first foundation
+release reported successful migrations and Runner promotion, but its global
+health step was non-blocking; promotion alone is not proof of the entire live
+fleet. Verify actual serving versions before production activation. Once a
+shared row is bound, rolling back to a pre-foundation API or Runner is unsafe
+without first restoring a compatible authority reader. The temporary
+personal-only projection is retired only after #36261's rebind-capable App is
+live and #36262 raises the verified minimum App version.
 
 ## Feishu and Lark integration identity
 
@@ -3362,7 +3613,7 @@ data operation.
 The row is deliberately not an audit record. Its token hash is the primary
 key; searchable ownership, agent/thread authorization, provider-session
 identity, state, the strict versioned payload, and the two operational
-transition timestamps are the only persisted fields. Variant-specific callback
+transition timestamps are the only persisted fields. Input callback identities
 and exact-target data live only in that payload. Do not add a copied Browser
 expiry, originating run, diagnostic reason, or created/updated timestamps.
 
@@ -3395,12 +3646,20 @@ capture no page or DOM metadata and have no open endpoint. The existing
 thread-scoped Browser card opens the current Browser and its normal viewer
 heartbeat owns Browser access and lease renewal.
 
-The native input preflight endpoint is additive under the same switch. Deploy
-the API before a Platform build that requires preflight to open the editable
-form. An older Platform on the newer API still relies on the unchanged submit
-validation. Preflight performs one bounded provider lookup and read-only CDP
-connection per explicit form entry. A confirmed target mismatch marks a pending
-request stale; transient provider failures leave it pending for retry.
+The native input preflight endpoint uses the same team-only switch. It performs
+one bounded provider lookup and read-only CDP connection per explicit form
+entry, returning the verified control subtype and current applicable site
+constraints. A confirmed target mismatch marks a pending request stale;
+transient provider failures leave it pending for retry. The editable form uses
+that preflight response. Apply rechecks site constraints before any mutation.
+Per `docs/fallback.md`, this pre-GA feature does not require compatibility with
+earlier Platform, API, or persisted-action shapes.
+The general number field kind expands the strict shared request and preflight
+response contract while `BrowserNativeInput` remains team-only. The API derives
+number `min`, `max`, and `step` from the live control, transports submitted
+values as strings, and accepts an explicit empty value only for an optional
+number field. Existing persisted version-1 actions remain readable; no schema
+migration or old-client compatibility branch is required for this pre-GA change.
 
 The Browser action GET response can also report `callbackDelivered` for a
 terminal success or cancellation. It derives this fact from the matching

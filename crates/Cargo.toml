@@ -21,11 +21,14 @@ members = [
     "linux-mountinfo",
     "nbd-cow",
     "runner",
+    "runner-executor",
     "runner-host",
+    "runner-lifecycle",
     "runner-network",
     "runner-provider",
     "runner-remote",
     "runner-storage",
+    "runner-supervisor",
     "runner-types",
     "sandbox",
     "sandbox-firecracker",
@@ -66,10 +69,13 @@ guest-workspace-mount = { path = "guest-workspace-mount" }
 linux-mountinfo = { path = "linux-mountinfo" }
 nbd-cow = { path = "nbd-cow" }
 runner-host = { path = "runner-host" }
+runner-executor = { path = "runner-executor" }
+runner-lifecycle = { path = "runner-lifecycle" }
 runner-network = { path = "runner-network" }
 runner-provider = { path = "runner-provider" }
 runner-remote = { path = "runner-remote" }
 runner-storage = { path = "runner-storage" }
+runner-supervisor = { path = "runner-supervisor" }
 runner-types = { path = "runner-types" }
 sandbox = { path = "sandbox" }
 sandbox-firecracker = { path = "sandbox-firecracker" }
@@ -84,6 +90,7 @@ guest-control-proto = { path = "guest-control-proto" }
 
 # External dependencies
 # Keep versions here and select features explicitly in each consuming crate.
+aes = { version = "0.9", default-features = false }
 aho-corasick = { version = "1", default-features = false }
 async-trait = { version = "0.1", default-features = false }
 aws-sdk-s3 = { version = "1", default-features = false }
@@ -93,9 +100,11 @@ bitvec = { version = "1", default-features = false }
 bytes = { version = "1", default-features = false }
 chrono = { version = "0.4", default-features = false }
 clap = { version = "4", default-features = false }
+crypto-bigint = { version = "0.7", default-features = false }
 des = { version = "0.9", default-features = false }
 flate2 = { version = "1", default-features = false }
 futures-util = { version = "0.3", default-features = false }
+getrandom = { version = "0.3", default-features = false }
 hex = { version = "0.4", default-features = false }
 hmac = { version = "0.13.0", default-features = false }
 http-body = { version = "1", default-features = false }
@@ -104,6 +113,7 @@ hyper = { version = "1", default-features = false }
 idna = { version = "1", default-features = false }
 libc = { version = "0.2", default-features = false }
 log = { version = "0.4", default-features = false }
+md-5 = { version = "0.11", default-features = false }
 nix = { version = "0.31", default-features = false }
 pin-project-lite = { version = "0.2", default-features = false }
 pkcs5 = { version = "0.8", default-features = false }
@@ -126,6 +136,7 @@ serde_json = { version = "1", default-features = false }
 serde_path_to_error = { version = "0.1", default-features = false }
 serde_yaml_ng = { version = "0.10", default-features = false }
 sha2 = { version = "0.11", default-features = false }
+subtle = { version = "2.6", default-features = false }
 tar = { version = "0.4", default-features = false }
 tempfile = { version = "3", default-features = false }
 thiserror = { version = "2", default-features = false }

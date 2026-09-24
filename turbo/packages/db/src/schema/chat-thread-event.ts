@@ -33,6 +33,8 @@ export const chatThreadEventKind = pgEnum("chat_thread_event_kind", [
   "video_model_updated",
   "image_model_updated",
   "sort_touched",
+  "archived",
+  "unarchived",
 ]);
 
 export type ChatThreadEventKind =

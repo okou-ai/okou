@@ -31,7 +31,7 @@ function privateArtifactFinalReplyLine(args: {
   readonly surface: string;
   readonly uploadCommand: string;
 }): string {
-  return `- Private artifacts in the final reply: weigh this only while composing the final reply, never during the run. A private \`/artifacts/...\` address is not openable from ${args.surface}, so a link alone shows the user nothing. When you judge that ${args.surface} can display that kind of file — a hosted website or HTML page never qualifies — upload it with \`${args.uploadCommand}\` so the user has something they can open there. If you upload it, also keep the original private artifact address in the final reply so the owner can open it after returning to the web app.`;
+  return `- Private artifacts in the final reply: weigh this only while composing the final reply, never during the run. A private \`/artifacts/...\` address is not openable from ${args.surface}, so a link alone shows the user nothing. When you judge that ${args.surface} can display that kind of file — a hosted website or HTML page never qualifies — upload it with \`${args.uploadCommand}\` so the user has something they can open there. If you upload it, also keep the original private \`/artifacts/...\` address from before the upload in the final reply, not the address returned by \`${args.uploadCommand}\`, so the owner can open the original artifact after returning to the web app.`;
 }
 
 function integrationNoteLines(

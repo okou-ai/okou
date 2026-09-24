@@ -7,12 +7,15 @@ control and RPC services, shared contracts, and developer/test support.
 
 | Crate                    | Responsibility                                                                                        |
 | ------------------------ | ----------------------------------------------------------------------------------------------------- |
-| runner                   | Host-side run orchestration, sandbox lifecycle, images and operational CLI                            |
-| runner-host              | Runner host filesystem, process, lock, path and logging primitives                                    |
+| runner                   | Process-wide composition, `start` orchestration, operational CLI and build packaging                  |
+| runner-executor          | Claimed-run sandbox execution, session history, results, diagnostics and per-run telemetry             |
+| runner-host              | Runner host filesystem, live process registry, local control IPC, locks, paths and logging primitives |
+| runner-lifecycle         | Active-run handoff, idle sandbox, memory prefetch, status, workspace image and cache snapshot lifecycle |
 | runner-network           | Runner proxy, DNS, CA, network log capture and bounded upload                                         |
 | runner-provider          | API/local job discovery, claiming, completion, active input, cancellation and queue coordination      |
 | runner-remote            | Guest RPC, remote usage, SSH authority/sessions/files, and VNC sessions                               |
 | runner-storage           | Storage planning, archive delivery, host archive cache and R2 template cache                         |
+| runner-supervisor        | Start-loop idle replenishment, pressure selection and tracked cleanup above domain owners             |
 | runner-types             | Shared Runner identifiers, API payloads, storage manifest types and validation                        |
 | sandbox                  | Provider-neutral sandbox interfaces and shared lifecycle/control types                                |
 | sandbox-firecracker      | Firecracker provider: VM lifecycle, networking, NBD COW and snapshot restore                          |
@@ -56,6 +59,9 @@ Runner -> runner-provider -> runner-host -> runner-types
 Runner -> runner-network  -> runner-host -> runner-types
 Runner -> runner-remote   -> runner-network, runner-provider, runner-host, runner-types
 Runner -> runner-storage  -> runner-host -> runner-types
+Runner -> runner-lifecycle -> runner-storage, runner-host, runner-types, sandbox
+Runner -> runner-executor -> runner-provider, runner-storage, runner-network, runner-remote, runner-lifecycle, runner-host, runner-types
+Runner -> runner-supervisor -> runner-executor, runner-lifecycle, runner-host, runner-types, sandbox
 Runner -> guest-control-client -> guest-control-server (guest-init child)
 Guest  -> runner-rpc-client    -> Runner service endpoint
 Guest  -> process-control-ipc  -> guest-local process control / placement

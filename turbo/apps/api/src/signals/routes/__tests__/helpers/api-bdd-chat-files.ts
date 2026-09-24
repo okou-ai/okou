@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   chatEventsContract,
   chatSearchContract,
+  chatThreadArchiveContract,
   chatThreadArtifactsContract,
   chatThreadByIdContract,
   chatThreadComputerUseHostContract,
@@ -19,6 +20,7 @@ import {
   chatThreadRenameContract,
   chatThreadUnpinContract,
   chatThreadsContract,
+  chatThreadSnapshotArchiveSchema,
   type ChatEvent,
   type ChatSearchResponse,
   type ChatThreadArtifactRun,
@@ -95,6 +97,7 @@ import { chatThreadPinOrderRoutes } from "../../chat-threads-pin-order";
 import { chatThreadRenameRoutes } from "../../chat-threads-rename";
 import { chatThreadRoutes } from "../../chat-threads";
 import { chatThreadUnpinRoutes } from "../../chat-threads-unpin";
+import { chatThreadArchiveRoutes } from "../../chat-threads-archive";
 import { chatThreadsArtifactsSyncRoutes } from "../../chat-threads-artifacts-sync";
 import { hostRoutes } from "../../host";
 import { modelPoliciesRoutes } from "../../model-policies";
@@ -241,6 +244,7 @@ const chatFilesRoutes = [
   ...chatThreadPinRoutes,
   ...chatThreadPinOrderRoutes,
   ...chatThreadUnpinRoutes,
+  ...chatThreadArchiveRoutes,
   ...chatThreadRenameRoutes,
   ...chatThreadImageModelRoutes,
   ...chatThreadVideoModelRoutes,
@@ -441,6 +445,10 @@ export function createChatFilesBddApi(context: TestContext) {
     return chatFilesApp(context)(chatThreadUnpinContract);
   }
 
+  function threadArchiveClient() {
+    return chatFilesApp(context)(chatThreadArchiveContract);
+  }
+
   function threadPinOrderClient() {
     return chatFilesApp(context)(chatThreadPinOrderContract);
   }
@@ -605,6 +613,20 @@ export function createChatFilesBddApi(context: TestContext) {
       if (response.body.latestSeqId === undefined) {
         throw new Error("Expected snapshot sequence cursor");
       }
+      if ("url" in response.body) {
+        const archiveResponse = await fetch(response.body.url);
+        if (!archiveResponse.ok) {
+          throw new Error("Failed to download chat thread snapshot");
+        }
+        const archive = chatThreadSnapshotArchiveSchema.parse(
+          await archiveResponse.json(),
+        );
+        return {
+          chatThreads: archive.chatThreads,
+          latestEventId: response.body.latestEventId,
+          latestSeqId: response.body.latestSeqId,
+        };
+      }
       return {
         ...response.body,
         latestSeqId: response.body.latestSeqId,
@@ -655,8 +677,14 @@ export function createChatFilesBddApi(context: TestContext) {
         threadsClient().snapshot({ headers }),
         [200],
       );
+      const chatThreads =
+        "url" in snapshot.body
+          ? chatThreadSnapshotArchiveSchema.parse(
+              await (await fetch(snapshot.body.url)).json(),
+            ).chatThreads
+          : snapshot.body.chatThreads;
       const agentByThreadId = new Map(
-        snapshot.body.chatThreads.map((thread) => {
+        chatThreads.map((thread) => {
           return [thread.id, thread.agentId];
         }),
       );
@@ -1035,6 +1063,25 @@ export function createChatFilesBddApi(context: TestContext) {
           params: { id: threadId },
           query: unpinQuery(query),
         }),
+        statuses,
+      );
+    },
+
+    async requestSetThreadArchived(
+      actor: ApiTestUser | null,
+      threadId: string,
+      archived: boolean,
+      statuses: readonly (204 | 401 | 404)[],
+      query: EventIdQuery = {},
+    ) {
+      const client = threadArchiveClient();
+      const request = {
+        headers: authenticate(context, actor),
+        params: { id: threadId },
+        query: unpinQuery(query),
+      };
+      return await accept(
+        archived ? client.archive(request) : client.unarchive(request),
         statuses,
       );
     },

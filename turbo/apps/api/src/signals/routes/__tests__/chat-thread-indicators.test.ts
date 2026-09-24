@@ -240,4 +240,106 @@ describe("GET /api/indicators", () => {
       unreadAt: { [ownerUnread.threadId]: ownerUnread.unreadAt },
     });
   });
+
+  it("reports a finished thread with a new active Run as active instead of unread", async () => {
+    prepareChatRuntime();
+    const actor = bdd.user();
+    const agentId = await createEntitledAgent(actor, "Rerun indicator agent");
+    const rerun = await createCancelledThread({
+      actor,
+      agentId,
+      prompt: "Rerun indicator thread",
+    });
+    const unread = await createCancelledThread({
+      actor,
+      agentId,
+      prompt: "Still unread indicator thread",
+    });
+    const followUp = await chat.requestSendEvent(
+      actor,
+      { agentId, threadId: rerun.threadId, prompt: "Follow-up active Run" },
+      [201],
+    );
+    if (followUp.status !== 201 || followUp.body.runId === null) {
+      throw new Error("Expected the follow-up to create an active Run");
+    }
+    await seedMembership(actor);
+
+    const indicators = await accept(
+      client().indicators({
+        headers: {
+          authorization: `Bearer ${okouToken({
+            actor,
+            capabilities: ["chat-thread:read"],
+          })}`,
+        },
+      }),
+      [200],
+    );
+    expect(indicators.body).toStrictEqual({
+      agents: { [agentId]: "unread" },
+      threads: {
+        [rerun.threadId]: "active",
+        [unread.threadId]: "unread",
+      },
+      unreadAt: { [unread.threadId]: unread.unreadAt },
+    });
+  });
+
+  it("limits active threads after filtering out inaccessible Agents", async () => {
+    prepareChatRuntime();
+    const actor = bdd.user();
+    const peer = bdd.user({ orgId: orgIdOf(actor) });
+    const visibleAgentId = await createEntitledAgent(
+      actor,
+      "Visible active indicator agent",
+    );
+    const hiddenAgent = await bdd.createAgent(peer, {
+      displayName: "Hidden active indicator agent",
+      visibility: "public",
+    });
+    const visible = await chat.requestSendEvent(
+      actor,
+      { agentId: visibleAgentId, prompt: "Visible active indicator" },
+      [201],
+    );
+    if (visible.status !== 201 || visible.body.runId === null) {
+      throw new Error("Expected a visible active Run");
+    }
+
+    for (let index = 0; index < 50; index += 1) {
+      const hidden = await chat.requestSendEvent(
+        actor,
+        {
+          agentId: hiddenAgent.agentId,
+          prompt: `Later hidden active indicator ${index}`,
+        },
+        [201],
+      );
+      if (hidden.status !== 201 || hidden.body.runId === null) {
+        throw new Error("Expected a hidden active Run");
+      }
+    }
+    await bdd.updateAgent(peer, hiddenAgent.agentId, {
+      visibility: "private",
+    });
+    await seedMembership(actor);
+
+    const indicators = await accept(
+      client().indicators({
+        headers: {
+          authorization: `Bearer ${okouToken({
+            actor,
+            capabilities: ["chat-thread:read"],
+          })}`,
+        },
+      }),
+      [200],
+    );
+    expect(indicators.body).toStrictEqual({
+      agents: { [visibleAgentId]: "active" },
+      threads: { [visible.body.threadId]: "active" },
+      unreadAt: {},
+    });
+  }, 180_000);
 });

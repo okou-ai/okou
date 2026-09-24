@@ -47,6 +47,7 @@ import {
   writeRunMetadata,
 } from "../services/agent-run-metadata-write.service";
 import { transitionAgentRunsToTerminal } from "../services/agent-run-terminal-transition.service";
+import { deleteArtifactCatalogForHostedSiteId } from "../services/artifact-catalog-deletion.service";
 import { cleanupSandboxes$ } from "../services/cron-cleanup-sandboxes.service";
 import { insertChatEvent } from "../services/chat-event.service";
 import {
@@ -707,7 +708,10 @@ async function deleteRunOwnershipForAction(
   }
   const hostedSiteId = readString(body, "hosted_site_id");
   if (hostedSiteId) {
-    await db.delete(hostedSites).where(eq(hostedSites.id, hostedSiteId));
+    await db.transaction(async (tx) => {
+      await deleteArtifactCatalogForHostedSiteId(tx, hostedSiteId);
+      await tx.delete(hostedSites).where(eq(hostedSites.id, hostedSiteId));
+    });
   }
   signal.throwIfAborted();
   return actionOk();

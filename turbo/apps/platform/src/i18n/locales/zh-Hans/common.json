@@ -1410,6 +1410,7 @@
       "rename": "重命名",
       "saving": "正在保存…",
       "send": "发送",
+      "shareMessage": "分享消息",
       "stop": "停止",
       "view": "查看"
     },
@@ -1728,21 +1729,19 @@
       "applyFailed": "无法添加信息。你填写的内容仍然保留，请重试。",
       "applying": "正在添加信息",
       "applyingDescription": "浏览器正在完成这个请求。",
-      "callbackFailed": "未能通知 Agent，请再次点击“继续”。",
+      "callbackFailed": "未能通知 Agent。",
       "cancel": "取消",
       "cancelFailed": "无法取消这个请求，请重试。",
       "cancelled": "请求已取消",
-      "cancelledDescription": "没有添加任何信息。继续以通知 Agent。",
       "cancelling": "正在取消…",
+      "clearValue": "清空网页中的值",
       "completed": "信息已添加",
-      "completedDescription": "信息已添加到浏览器。继续以通知 Agent。",
-      "continue": "继续",
-      "continuing": "正在继续…",
+      "continue": "通知 Agent",
+      "continuing": "正在通知 Agent…",
       "delivered": "已通知 Agent",
-      "deliveredDescription": "Agent 现在可以继续了。",
-      "description": "请输入这个网站所需的信息。",
       "expired": "请求已过期",
       "expiredDescription": "浏览器已关闭，或这个请求已不再有效。",
+      "keepValue": "保留网页中的值",
       "loadFailed": "无法加载这个请求",
       "loadFailedDescription": "请稍后重试。",
       "loadingDescription": "正在检查这个请求…",
@@ -1759,31 +1758,6 @@
       "unavailable": "请求不可用",
       "uncertain": "请检查浏览器",
       "uncertainDescription": "浏览器可能已收到这些信息。重试前，请先让 Agent 检查。"
-    },
-    "browserInteraction": {
-      "applying": "正在完成浏览器交互",
-      "applyingDescription": "浏览器正在完成此请求。",
-      "callbackFailed": "未能通知 Agent。请再次点击继续。",
-      "cancel": "取消",
-      "cancelFailed": "无法取消此请求。请重试。",
-      "cancelled": "请求已取消",
-      "cancelledDescription": "浏览器接管已取消。点击继续以通知 Agent。",
-      "cancelling": "正在取消…",
-      "completed": "浏览器交互已完成",
-      "completedDescription": "浏览器交互已记录。点击继续以通知 Agent。",
-      "completeFailed": "无法完成此请求。请重试。",
-      "completing": "正在完成…",
-      "continue": "继续",
-      "continuing": "正在继续…",
-      "delivered": "已通知 Agent",
-      "deliveredDescription": "Agent 现在可以继续。",
-      "description": "打开浏览器并完成此步骤，然后点击完成。",
-      "done": "完成",
-      "stale": "浏览器已不可用",
-      "staleDescription": "请让 Agent 创建新请求。",
-      "title": "接管浏览器",
-      "uncertain": "请检查浏览器",
-      "uncertainDescription": "交互可能已完成。重试前，请先让 Agent 检查。"
     },
     "cards": {
       "viewDetails": "查看详情"
@@ -1909,36 +1883,63 @@
       "loadMessages": "消息加载失败",
       "noModelProviderAction": "在工作区设置中配置一个",
       "noModelProviderPrefix": "还没有配置模型提供方。",
-      "noModelProviderSuffix": "即可开始使用。",
       "providerDeletedAction": "开始一个新的聊天会话",
       "providerDeletedPrefix": "这个会话使用的模型提供方已被删除。",
-      "providerDeletedSuffix": "即可继续。",
       "providerIncompatibleAction": "开始新会话",
       "providerIncompatiblePrefix": "这个会话是用另一个模型提供方开始的，无法用当前的提供方继续。",
       "recovery": {
+        "accessProgramDescription": "稍后再试，仍可在这段聊天中继续。",
+        "accessProgramTitle": "Codex 暂时无法访问",
         "autonomyLimitDescription": "连续自动运行的次数已达上限。确认后可以继续。",
         "autonomyLimitTitle": "已达自动运行上限",
-        "capacityDescription": "稍后再试，或者换一个模型。",
+        "capacityDescription": "可以稍等片刻再试，或换个模型继续。",
         "capacityTitle": "这个模型现在很忙",
         "claudeCode": "Claude Code",
         "codex": "Codex",
+        "connectionLostTitle": "回复中途断开了",
+        "contextWindowTitle": "这个聊天太长了",
         "continue": "继续",
-        "newRunCurrentSettings": "继续会按你当前的设置开始一次新的运行。",
-        "originalAccount": "这次运行用的是你的个人订阅：{{account}}。",
-        "originalAccountUnavailable": "这次运行用的是个人订阅，原来的账户已不再连接。",
-        "originalAccountUnknown": "这次运行用的是个人订阅，无法确认它原来的账户。",
-        "resetAndTryAgain": "重置后重试",
+        "filesystemFullDescription": "这次运行没法再保存文件。请重试后继续。",
+        "filesystemFullTitle": "这次运行的存储空间用完了",
+        "fiveHourReset": "5 小时额度于 {{time}} 重置",
+        "inputTooLargeDescription": "请缩短消息内容后重新发送。",
+        "inputTooLargeTitle": "你的消息太大",
+        "invalidApiKeyTitle": "API 密钥需要更新",
+        "invalidCredentialsTitle": "模型连接需要更新",
+        "newChat": "新聊天",
+        "newChatDescription": "新建一段聊天，并带上想继续使用的重要信息。",
+        "openClaude": "打开 Claude",
+        "outputLimitDescription": "回复还没完成就停止了。点击“继续”可以接着生成。",
+        "outputLimitTitle": "回复达到了长度上限",
+        "personalAccount": "个人订阅 {{account}}",
+        "personalAccountDisconnected": "个人订阅已断开",
+        "providerBalanceDescription": "请检查模型服务商账户的余额，补足后再试。",
+        "providerBalanceTitle": "模型服务商账户额度不足",
+        "providerConnectionDescription": "到“模型服务商”中重新连接或更新账户，然后再试。",
+        "providerQueueTimeoutTitle": "模型等待启动的时间过长",
+        "providerRateLimitedTitle": "当前模型请求过多",
+        "providerServerErrorTitle": "模型服务商暂时出错",
+        "providerStreamTimeoutTitle": "模型响应已超时",
+        "reconnectTitle": "重新连接模型账户",
         "resetsAt": "{{time}} 重置",
+        "resetUsageRemaining": "重置 · 剩 {{value}} 次",
+        "safetyDescription": "这个请求未通过模型的安全检查。可以换个说法，或选择其他模型。",
+        "safetyTitle": "模型无法处理这个请求",
         "selectModel": "切换模型",
-        "timeoutDescription": "这次运行已达时间上限。点击继续可以接着做。",
+        "sessionHistoryTitle": "这段聊天已达到上限",
+        "termsDescription": "先在 Claude 接受最新条款，再回来重试。",
+        "termsTitle": "需要接受 Claude 新条款",
+        "timeoutDescription": "可以从上次停止的地方继续。",
         "timeoutTitle": "已达时间上限",
         "tryAgain": "重试",
-        "unavailableDescription": "已连接的 ChatGPT 账户不支持这个模型。换一个模型继续。",
+        "unavailableDescription": "请选择当前服务商账户支持的其他模型。",
         "unavailableTitle": "所选模型不可用",
         "usageDescription": "等用量额度重置后可以继续，也可以现在换个模型。",
-        "usageTitle": "{{framework}} 已达用量上限"
+        "usageFallbackTitle": "模型服务商用量已达上限",
+        "usageTitle": "{{framework}} 已达用量上限",
+        "weeklyReset": "周额度于 {{time}} 重置"
       },
-      "runCancelled": "思考到一半暂停了，你随时可以继续。"
+      "runCancelled": "运行已暂停，可随时继续。"
     },
     "feedback": {
       "emailDraftDescription": "邮件草稿",
@@ -2076,6 +2077,20 @@
       "removeQueuedMessage": "移除排队消息",
       "skipAutomationEvent": "跳过自动化事件"
     },
+    "remoteAccess": {
+      "defaultEnabled": "聊天默认启用",
+      "enabledCount_other": "已启用 {{count}} 个",
+      "loadFailed": "无法加载远程访问权限。",
+      "loading": "正在加载远程访问…",
+      "off": "关闭",
+      "on": "开启",
+      "requiresSsh": "还需要访问 SSH 主机 {{name}}。",
+      "retry": "重试",
+      "startChat": "开始聊天后可修改主机权限。",
+      "title": "远程访问",
+      "unavailableSsh": "不可用的 SSH 主机",
+      "useDefault": "使用默认设置"
+    },
     "replaceDraft": {
       "description": "继续将清空你当前的输入框草稿，并开始一个工作流提示词。",
       "title": "替换输入框草稿？"
@@ -2118,17 +2133,7 @@
       "relatedArtifacts": "相关成果",
       "selectedModelAppliesAfterCurrentRun": "下次运行将使用{{model}}",
       "thinking": {
-        "assembling": "正在拼合各个部分…",
-        "brewing": "正在酝酿回复…",
-        "default": "思考中…",
-        "mapping": "正在理清思路…",
-        "onIt": "这就去办…",
-        "piecingTogether": "正在把线索拼起来…",
-        "shaping": "正在打磨回复…",
-        "sketching": "正在勾勒细节…",
-        "spinningUp": "正在启动…",
-        "tuningIn": "正在进入状态…",
-        "wiring": "正在串联起来…"
+        "default": "思考中…"
       },
       "viewActivityLogs": "查看活动日志",
       "viewLangfuseTrace": "查看Langfuse追踪",
@@ -2146,10 +2151,13 @@
       "createFailed": "无法创建分享对话，请重试。",
       "deselectGroup": "取消选择该组消息",
       "linkCopied": "链接已复制",
+      "messageShareFailed": "分享链接创建失败，请重试。",
       "publicDescription": "选中的消息及其附件将公开可见。",
+      "selectAll": "全选",
       "selectedCount_other": "已选{{count}}条",
       "selectGroup": "选择该组消息",
       "shareLink": "分享对话链接",
+      "shareLinkCopied": "分享链接已复制",
       "start": "分享消息",
       "tooLarge": "选择的消息过多，请减少后再分享"
     },
@@ -2859,7 +2867,6 @@
       "ariaLabel": "聊天会话",
       "changeIcon": "更换图标",
       "emoji": {
-        "archive": "归档",
         "done": "完成",
         "idea": "想法",
         "no": "否",
@@ -2936,12 +2943,12 @@
     "configuration": "Cloudflare Access",
     "createNew": "新建Cloudflare Access",
     "delete": "删除Cloudflare Access",
-    "deleteHelp": "确定删除这个未被使用的Cloudflare Access？其中保存的Service Token无法恢复。",
+    "deleteHelp": "确定删除这个 Cloudflare Access？保存的 Service Token 无法恢复。如果仍有主机使用它，则无法删除。",
     "description": "使用 Cloudflare Access 服务令牌访问受保护的应用。",
     "edit": "编辑Cloudflare Access",
-    "empty": "还没有 Cloudflare Access。添加服务令牌即可访问受保护的应用。",
     "failed": "无法保存 Cloudflare Access 更改，请重试。",
-    "inUse": "该Cloudflare Access正在被主机使用。请先查看受影响的主机，为它们重新绑定或删除它们。",
+    "forbidden": "只有组织管理员可以修改共享的 Cloudflare Access。",
+    "inUse": "有 SSH 主机正在使用此 Cloudflare Access。主机所有者须先重新绑定或删除该主机。",
     "inUseHelp": "删除之前，请为这些主机选择其他Cloudflare Access、明确改为直连，或删除这些主机。",
     "invalidInput": "部分 Cloudflare Access 设置无效，请检查各字段后重试。",
     "keepChanges": "在该版本上保留我的更改",
@@ -2952,6 +2959,9 @@
     "missing": "该Cloudflare Access已不可用。请选择其他项或新建一个。",
     "name": "名称",
     "namePlaceholder": "例如：生产环境访问",
+    "organization": "组织",
+    "organizationHelp": "组织成员都可以使用此服务令牌，只有管理员可以修改。",
+    "personal": "个人",
     "replace": "替换Service Token",
     "resourceIdConflict": "该资源 ID 无法使用。请关闭表单并重新打开后再试。",
     "retry": "重试",
@@ -2959,13 +2969,15 @@
     "revisionExhausted": "该配置已无法继续更新，请新建一个。",
     "save": "保存",
     "saveUncertain": "我们无法确认你的更改是否已保存。请重试这次保存，或关闭后先查看列表，再决定是否重新添加。",
+    "scope": "谁可以使用",
+    "sectionEmpty": "这里还没有配置。",
     "select": "选择Cloudflare Access",
     "summary_other": "已配置{{count}}个Cloudflare Access",
     "title": "Cloudflare Access",
     "tokenHelp": "使用 Cloudflare Access 服务令牌访问受保护的应用。",
     "unavailable": "该账号无法使用Cloudflare Access。",
-    "unused": "未被任何主机使用",
-    "usedBy_other": "正在被{{count}}台主机使用："
+    "unused": "你的主机尚未使用",
+    "usedBy_other": "你的{{count}}台主机正在使用："
   },
   "connectors": {
     "access": {
@@ -4229,17 +4241,19 @@
       "documentTitles": {
         "experience": "你的AI使用经验",
         "industry": "选择你的领域",
+        "profile": "你的用户画像",
         "ready": "Okou已就绪",
         "skills": "导入你的技能",
         "slack": "把Okou添加到Slack",
         "sources": "连接你的工作",
-        "team": "邀请一位同事"
+        "team": "邀请团队成员"
       },
       "experience": {
-        "copy": "连接你已经在付费的套餐，任务就在那边运行，不消耗Okou积分。",
-        "no": "没有，我刚开始接触",
-        "noCopy": "Okou会帮你挑一个上手任务。",
-        "title": "你用过Codex或Claude Code吗？"
+        "copy": "可以从引导开始，也可以接入你已有的 Codex 或 Claude Code 订阅。",
+        "no": "我是 AI Agent 新手",
+        "noCopy": "Okou 会帮你找到合适的第一项任务。",
+        "title": "你想怎样开始使用 Okou？",
+        "trust": "连接 Codex 或 Claude Code 订阅后，任务使用你已有的额度，不消耗 Okou credits，可以放心多用。现在或以后连接都可以。"
       },
       "industries": {
         "coaching": {
@@ -4288,12 +4302,23 @@
         }
       },
       "industry": {
-        "copy": "Okou会据此挑选你的第一个任务，以及从哪些数据源开始。",
+        "copy": "选择你的工作领域，Okou 会据此推荐相关工具和适合你的第一项任务。",
         "title": "你主要做哪类工作？"
+      },
+      "profile": {
+        "communicationStyle": "你的沟通方式",
+        "copy": "根据你连接的账号，初步了解你的工作。",
+        "failed": "暂时无法生成用户画像。你可以重试或继续。",
+        "heading": "你的用户画像",
+        "loading": "正在根据你连接的工作内容生成用户画像…",
+        "priorities": "可能关注的重点",
+        "professionalIdentity": "你的工作",
+        "retry": "重试",
+        "title": "这是我们对你的初步了解"
       },
       "skills": {
         "copied": "已复制",
-        "copy": "将此提示词粘贴到你的{{provider}}会话中，它会把你本机的技能导入Okou。",
+        "copy": "在 {{provider}} 中运行这段提示词，导入你已经写好的技能，Okou 马上就能用上。",
         "copyError": "无法复制提示词。",
         "copyPrompt": "复制提示词",
         "importedCopy": "已导入为Okou工作流。",
@@ -4304,7 +4329,7 @@
         "promptLabel": "技能导入提示词",
         "promptTitle": "在{{provider}}中运行",
         "startError": "无法打开导入会话。",
-        "title": "把你已经写好的技能带过来。",
+        "title": "把你已有的技能导入 Okou",
         "tryAgain": "重试",
         "waiting": "导入的技能会在到达后显示在这里。"
       },
@@ -4316,7 +4341,7 @@
         "connectedCopy": "打开Slack，@Okou就能派任务。",
         "connectedStatus": "已添加到你的工作区",
         "connectedTitle": "Slack已连接",
-        "copy": "添加一次，之后在工作发生的地方@Okou就行。",
+        "copy": "在对话中 @Okou 交代任务，团队可以在同一处看到结果。",
         "name": "Slack",
         "otherAdded": "已添加",
         "otherImessage": "iMessage",
@@ -4345,12 +4370,13 @@
         "previewWorkspace": "Northwind",
         "rowCopy": "在你添加它的任何频道里都能用。",
         "rowTitle": "Okou for Slack",
-        "title": "不用离开Slack，就能给Okou派活。"
+        "title": "在 Slack 中继续推进工作"
       },
       "sources": {
-        "copy": "它在云端运行，直接用你团队已有的工具。产出提升10倍，协作更顺，成本更低。先连接一个数据源开始。",
-        "note": "连接哪些账号，由你决定。",
-        "title": "Okou为你所用，也服务你的整个团队。"
+        "copy": "Okou 越了解你的工作，就越聪明。连接一个你每天在用的工具，从一项基于真实工作的任务开始。",
+        "permissions": "Okou 会参考少量信息为你定制第一项任务；Agent 能做什么、授权多久，都由你决定。",
+        "securityLink": "了解 Okou 如何保护你的数据",
+        "title": "连接一个工作工具"
       },
       "startingPrompt": {
         "exact": {
@@ -4684,32 +4710,33 @@
         "connecting": "连接中…",
         "failedNote": "无法连接{{provider}}。你可以重试，也可以先继续，稍后再连接。",
         "retry": "重试",
-        "rowCopy": "用你自己的套餐运行，不消耗Okou积分。",
+        "rowCopy": "连接后可使用你的套餐运行，不消耗 Okou 积分。",
         "unconfirmedNote": "无法确认{{provider}}的连接状态。你可以重试，也可以先继续，稍后再连接。"
       },
       "team": {
-        "copy": "现在就邀请同事，也可以稍后从工作区菜单邀请。",
+        "copy": "邀请团队成员，一起使用共享的工作流。",
         "invite": "发送邀请",
         "invited": "已邀请",
-        "label": "同事的邮箱",
-        "note": "他们会加入这个工作区，各自的账号仍归自己所有。",
+        "label": "团队成员的邮箱",
+        "note": "他们可以马上开始使用 Okou。",
         "notSent": "未发送",
-        "panelTitle": "邀请同事",
-        "placeholder": "teammate@company.com",
+        "panelTitle": "邀请团队成员",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "他们连接的账号仍归自己所有——未经他们同意不会共享任何内容。",
-          "workflows": "这里的每个人都能运行工作区里已有的工作流。",
-          "workspace": "他们会直接进入这个工作区，用上你刚刚连接的数据源。"
+          "accounts": "需要时连接自己的工具。",
+          "workflows": "可以运行团队已搭建的所有工作流。",
+          "workspace": "加入你的工作区。"
         },
         "sending": "发送中…",
-        "title": "把一起做这些事的同事带进来。"
+        "title": "让整个团队一起用好 Okou",
+        "trust": "大家使用同一套工作流，各自连接自己的工具。"
       },
       "welcome": {
-        "copy": "从第一个任务开始，它是照着你刚连接的工作内容挑的。",
+        "copy": "看看为你的工作推荐的任务，按目标调整，再让 Okou 开始执行。",
         "offerTitle": "首小时咨询免费，另赠最多100积分——",
         "promptLabel": "你的起始提示词",
         "start": "开始使用Okou",
-        "title": "Okou已经准备好了"
+        "title": "从一项有价值的任务开始"
       }
     },
     "templatePicker": {
@@ -4832,8 +4859,7 @@
       "preparedDescription": "{{assistantName}}会从你的工具里准备好下一步。",
       "preparedTitle": "工作流已就绪",
       "reviewDescription": "{{assistantName}}会完成工作流并给出结果。",
-      "reviewTitle": "等你确认",
-      "source": "数据源"
+      "reviewTitle": "等你确认"
     },
     "workflowPicker": {
       "categoryDescription": "开箱即用的方案，可以按你的工具和目标调整。",
@@ -6372,17 +6398,17 @@
       }
     },
     "paidTools": {
-      "description": "选择你可以使用哪些付费内置工具。",
-      "disabledForCreation": "{{tool}}已在你的付费工具设置中关闭。",
+      "description": "这些工具会消耗内置积分，Okou 在执行任务时会按需自动使用。关闭后，Okou 在执行过程中就不会再使用该工具。",
+      "disabledForCreation": "{{tool}}已在你的内置工具设置中关闭。",
       "loadError": "无法加载你的工具设置。",
       "loading": "正在加载你的工具设置…",
-      "openSettings": "打开付费工具设置",
+      "openSettings": "打开内置工具设置",
       "retry": "重试",
       "saveError": "修改没有保存成功。",
       "saving": "正在保存…",
       "scope": "这些设置只对你在{{workspace}}中的使用生效。",
       "timing": "修改对之后的运行生效。正在运行和已准备好的任务可能仍沿用原来的设置。",
-      "title": "付费工具",
+      "title": "内置工具",
       "tools": {
         "avatar-video-generation": {
           "description": "生成数字人口播视频。",
@@ -6599,6 +6625,7 @@
         "checkEmailSubscription": "投递状态请查看上方的邮件订阅。",
         "conflict": "晨报的安装状态不一致，暂时无法使用。请在状态同步完成后重试。",
         "description": "每天早上 7:00（按你的时区）接收当日重点。",
+        "lastDelivered": "上次投递：{{date}}",
         "loading": "正在加载晨报设置…",
         "missingDefaultAgent": "启用晨报前，请先选择一个可用的默认智能体。",
         "missingTimezone": "启用晨报前，请先设置有效的时区。",
@@ -6846,8 +6873,10 @@
       "keepChanges": "在该版本上保留我的更改",
       "latest": "最新保存的设置",
       "mode": "连接方式",
+      "needsRebind": "这台主机需要重新绑定 Cloudflare Access。编辑主机并选择新配置或直连；在此之前无法连接。",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "对外发布的主机名",
+      "rebindHelp": "选择有权使用的 Cloudflare Access 配置或直连，然后保存以恢复这台主机。保存前不会更改连接方式。",
       "reviewHelp": "你的草稿已保留。请先确认最新保存的设置，再应用你的更改。",
       "title": "Cloudflare Access",
       "unavailable": "该账号无法使用Cloudflare Access。"
@@ -6890,7 +6919,6 @@
       "unused": "未被任何主机使用"
     },
     "credentialsHelp": "凭据只写入不回显，并且保存在沙箱之外。请粘贴完整的密钥，空白字符会原样保留。关闭此表单时各字段会被清空。",
-    "credentialsTab": "凭据",
     "delete": "删除主机",
     "deleteHelp": "确定删除该主机？它的凭据会保留。智能体将不再在可用主机列表中看到它。",
     "description": "让你的智能体在远程机器上执行命令。",
@@ -6917,7 +6945,6 @@
     "fingerprint": "已记录的主机密钥",
     "host": "公网主机名或IP地址",
     "hostSection": "主机",
-    "hostsTab": "主机",
     "label": "SSH",
     "loadFailed": "无法加载SSH设置，请重试。",
     "loading": "正在加载SSH主机…",
@@ -6946,7 +6973,6 @@
     },
     "summary_one": "已配置{{count}}台主机",
     "summary_other": "已配置{{count}}台主机",
-    "title": "SSH远程访问",
     "unavailable": "该账号无法使用SSH访问。",
     "username": "SSH用户名"
   },
@@ -7047,6 +7073,8 @@
     "configured": "已配置",
     "credential": {
       "add": "添加凭据",
+      "appleDhFieldHelp": "每项 1–63 个 UTF-8 字节，不允许 NUL 字符。",
+      "appleDhMethod": "Apple DH 用户名和密码",
       "authentication": "认证方式",
       "createNew": "新建凭据",
       "delete": "删除凭据",
@@ -7076,7 +7104,6 @@
       "usernamePasswordHint": "输入该用户名对应的密码",
       "usernamePasswordMethod": "用户名和密码"
     },
-    "credentialsTab": "凭据",
     "delete": "删除主机",
     "deleteHelp": "删除这台已保存的主机？它使用的可复用凭据会保留。",
     "description": "让你的智能体查看和控制远程桌面。",
@@ -7099,7 +7126,6 @@
     },
     "host": "主机名或IP地址",
     "hostHint": "例如：desktop.example.com",
-    "hostsTab": "主机",
     "label": "VNC",
     "loadFailed": "无法加载VNC配置。",
     "loading": "正在加载VNC配置…",
@@ -7115,6 +7141,8 @@
     },
     "saving": "正在保存…",
     "security": {
+      "appleDh": "Mac 屏幕共享 (Apple DH)",
+      "appleDhHelp": "需要通过已保存的 SSH 连接访问 macOS 屏幕共享。RFB 目标必须是该 Mac 上的 127.0.0.1 或 ::1；SSH 保护整个 VNC 会话。 请使用你控制的 Mac SSH 主机；其主机密钥无法排除后续代理转发。",
       "caBundle": "CA证书（PEM）",
       "caHelp": "最多8个CA证书，总大小64 KiB。请勿粘贴私钥或服务器证书。",
       "caHint": "粘贴签发该服务器证书的公开CA证书",
@@ -7132,8 +7160,8 @@
     },
     "summary_one": "已配置{{count}}台主机",
     "summary_other": "已配置{{count}}台主机",
-    "title": "VNC远程访问",
     "transport": {
+      "appleDhDestinationHelp": "Apple DH 请填写 127.0.0.1 或 ::1；这是通过所选 SSH 主机访问的 Mac 本机回环地址。",
       "destination": "RFB目标",
       "destinationHelp": "使用SSH路由时，将从所选SSH服务器访问此主机和端口，而不是由Runner直接访问。",
       "direct": "Runner直连",

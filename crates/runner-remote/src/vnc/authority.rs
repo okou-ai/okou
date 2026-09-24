@@ -4,7 +4,9 @@ use api_contracts::generated::{
     routes::runners::runs::by_run_id::vnc as routes, types::runners::vnc::*,
 };
 use base64::Engine;
-use rfb_client::{PlainCredentials, TrustRoots, VncPassword, X509Authentication};
+use rfb_client::{
+    AppleDhCredentials, PlainCredentials, TrustRoots, VncPassword, X509Authentication,
+};
 use rustls::pki_types::CertificateDer;
 use serde::{Serialize, de::DeserializeOwned};
 use uuid::Uuid;
@@ -13,9 +15,8 @@ use zeroize::Zeroizing;
 use super::Failure;
 use runner_types::ids::RunId;
 
-use crate::RemoteApiRequestFactory;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
-use std::sync::Arc;
+use runner_provider::HttpClient;
 
 const MAX_API_BYTES: usize = 512 * 1024;
 const MAX_CA_BYTES: usize = 64 * 1024;
@@ -23,7 +24,7 @@ const MAX_CA_CERTIFICATES: usize = 8;
 const MAX_PLAIN_USERNAME_BYTES: usize = 255;
 
 pub(super) struct Authority {
-    http: Arc<dyn RemoteApiRequestFactory>,
+    http: HttpClient,
     transport: reqwest::Client,
     token: Zeroizing<String>,
     identity: RunnerProcessIdentity,
@@ -34,10 +35,17 @@ pub(super) struct Credential {
     pub(super) host: String,
     pub(super) port: u16,
     pub(super) generation: i64,
-    pub(super) server_name: String,
     pub(super) transport: Transport,
-    pub(super) authentication: X509Authentication,
-    pub(super) roots: TrustRoots,
+    pub(super) authentication: Authentication,
+}
+
+pub(super) enum Authentication {
+    X509 {
+        server_name: String,
+        authentication: X509Authentication,
+        roots: TrustRoots,
+    },
+    AppleDh(AppleDhCredentials),
 }
 
 #[derive(Clone, Copy)]
@@ -46,9 +54,166 @@ pub(super) enum Transport {
     Ssh { connection: Uuid, generation: i64 },
 }
 
+fn valid_port_and_generation(port: u64, generation: i64) -> Result<u16, Failure> {
+    let port = u16::try_from(port).map_err(|_| Failure::Authority)?;
+    if port == 0 || !(1..=i64::from(i32::MAX)).contains(&generation) {
+        return Err(Failure::Authority);
+    }
+    Ok(port)
+}
+
+fn parse_transport(
+    transport: ResolveResponseResolvedTransportTransport,
+    supports_ssh: bool,
+) -> Result<Transport, Failure> {
+    match transport {
+        ResolveResponseResolvedTransportTransport::Direct => Ok(Transport::Direct),
+        ResolveResponseResolvedTransportTransport::Ssh {
+            connection_id,
+            generation,
+        } => {
+            if !supports_ssh || !(1..=i64::from(i32::MAX)).contains(&generation) {
+                return Err(Failure::Authority);
+            }
+            Ok(Transport::Ssh {
+                connection: connection_id.parse().map_err(|_| Failure::Authority)?,
+                generation,
+            })
+        }
+    }
+}
+
+fn apple_dh_credential(
+    host: String,
+    port: u64,
+    generation: i64,
+    transport: ResolveResponseResolvedTransportTransport,
+    authentication: ResolveResponseResolvedAuthentication,
+    security: ResolveResponseResolvedSecurity,
+    supports_ssh: bool,
+) -> Result<Credential, Failure> {
+    let port = valid_port_and_generation(port, generation)?;
+    if !supports_ssh || !matches!(host.as_str(), "127.0.0.1" | "::1") {
+        return Err(Failure::Authority);
+    }
+    let transport = match parse_transport(transport, supports_ssh)? {
+        ssh @ Transport::Ssh { .. } => ssh,
+        Transport::Direct => return Err(Failure::Authority),
+    };
+    let credentials = match (authentication, security) {
+        (
+            ResolveResponseResolvedAuthentication::AppleDhUsernamePassword { username, password },
+            ResolveResponseResolvedSecurity::AppleDh,
+        ) => AppleDhCredentials::new_zeroizing(username, password.into_zeroizing())
+            .map_err(|_| Failure::InvalidCredential)?,
+        _ => return Err(Failure::Authority),
+    };
+    Ok(Credential {
+        host,
+        port,
+        generation,
+        transport,
+        authentication: Authentication::AppleDh(credentials),
+    })
+}
+
+#[cfg(test)]
+mod apple_dh_tests {
+    use super::*;
+    use serde_json::{Value, json};
+
+    fn parse(value: Value, supports_ssh: bool) -> Result<Credential, Failure> {
+        let response: ResolveResponse = serde_json::from_value(value).unwrap();
+        let ResolveResponse::ResolvedAppleDh {
+            host,
+            port,
+            generation,
+            transport,
+            authentication,
+            security,
+        } = response
+        else {
+            panic!("expected Apple DH outcome");
+        };
+        apple_dh_credential(
+            host,
+            port,
+            generation,
+            transport,
+            authentication,
+            security,
+            supports_ssh,
+        )
+    }
+
+    fn response() -> Value {
+        json!({
+            "outcome": "resolved_apple_dh",
+            "host": "127.0.0.1",
+            "port": 5900,
+            "generation": 3,
+            "transport": {
+                "type": "ssh",
+                "connectionId": "00000000-0000-4000-8000-000000000001",
+                "generation": 4
+            },
+            "authentication": {
+                "method": "apple_dh_username_password",
+                "username": "operator",
+                "password": "secret"
+            },
+            "security": { "type": "apple_dh" }
+        })
+    }
+
+    #[test]
+    fn accepts_only_exact_ssh_loopback_apple_tuple() {
+        let valid = parse(response(), true).unwrap();
+        assert!(matches!(
+            valid.transport,
+            Transport::Ssh { generation: 4, .. }
+        ));
+        assert!(matches!(valid.authentication, Authentication::AppleDh(_)));
+        assert_eq!(valid.host, "127.0.0.1");
+        let mut ipv6 = response();
+        ipv6["host"] = json!("::1");
+        assert!(parse(ipv6, true).is_ok());
+        assert!(matches!(parse(response(), false), Err(Failure::Authority)));
+
+        for (pointer, value) in [
+            ("/host", json!("localhost")),
+            ("/host", json!("mac.example.com")),
+            ("/port", json!(0)),
+            ("/generation", json!(0)),
+            ("/transport", json!({ "type": "direct" })),
+            ("/transport/generation", json!(0)),
+            (
+                "/authentication",
+                json!({ "method": "username_password", "username": "operator", "password": "secret" }),
+            ),
+            (
+                "/security",
+                json!({ "type": "x509_plain", "trust": { "mode": "system" } }),
+            ),
+        ] {
+            let mut invalid = response();
+            *invalid.pointer_mut(pointer).unwrap() = value;
+            assert!(parse(invalid, true).is_err(), "accepted {pointer}");
+        }
+        for (field, value) in [("username", "x".repeat(64)), ("password", "x".repeat(64))] {
+            let mut invalid = response();
+            invalid["authentication"][field] = json!(value);
+            assert!(matches!(
+                parse(invalid, true),
+                Err(Failure::InvalidCredential)
+            ));
+        }
+    }
+}
+
 impl Authority {
     pub(super) fn new(
-        http: Arc<dyn RemoteApiRequestFactory>,
+        http: HttpClient,
         token: String,
         identity: RunnerProcessIdentity,
     ) -> Result<Self, Failure> {
@@ -130,6 +295,11 @@ impl Authority {
                     security_type: ResolveRequestSupportedProfileSecurityType::X509Plain,
                     transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
                 },
+                ResolveRequestSupportedProfile {
+                    auth_method: ResolveRequestSupportedProfileAuthMethod::AppleDhUsernamePassword,
+                    security_type: ResolveRequestSupportedProfileSecurityType::AppleDh,
+                    transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
+                },
             ]);
         }
         let request = ResolveRequest {
@@ -153,6 +323,24 @@ impl Authority {
                 ResolveResponse::Unavailable => return Err(Failure::Unavailable),
                 ResolveResponse::UnsupportedProfile => return Err(Failure::UnsupportedProfile),
                 ResolveResponse::Resolved { .. } => return Err(Failure::Authority),
+                ResolveResponse::ResolvedAppleDh {
+                    host,
+                    port,
+                    generation,
+                    transport,
+                    authentication,
+                    security,
+                } => {
+                    return apple_dh_credential(
+                        host,
+                        port,
+                        generation,
+                        transport,
+                        authentication,
+                        security,
+                        supports_ssh,
+                    );
+                }
                 ResolveResponse::ResolvedTransport {
                     host,
                     port,
@@ -171,26 +359,9 @@ impl Authority {
                     security,
                 ),
             };
-        let port = u16::try_from(port).map_err(|_| Failure::Authority)?;
-        if port == 0 || !(1..=i64::from(i32::MAX)).contains(&generation) {
-            return Err(Failure::Authority);
-        }
+        let port = valid_port_and_generation(port, generation)?;
         super::network::validate_host(&host)?;
-        let transport = match transport {
-            ResolveResponseResolvedTransportTransport::Direct => Transport::Direct,
-            ResolveResponseResolvedTransportTransport::Ssh {
-                connection_id,
-                generation,
-            } => {
-                if !supports_ssh || !(1..=i64::from(i32::MAX)).contains(&generation) {
-                    return Err(Failure::Authority);
-                }
-                Transport::Ssh {
-                    connection: connection_id.parse().map_err(|_| Failure::Authority)?,
-                    generation,
-                }
-            }
-        };
+        let transport = parse_transport(transport, supports_ssh)?;
         let (authentication, trust) = match (authentication, security) {
             (
                 ResolveResponseResolvedAuthentication::VncPassword { password },
@@ -226,10 +397,12 @@ impl Authority {
             host,
             port,
             generation,
-            server_name,
             transport,
-            authentication,
-            roots,
+            authentication: Authentication::X509 {
+                server_name,
+                authentication,
+                roots,
+            },
         })
     }
 

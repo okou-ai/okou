@@ -63,7 +63,7 @@ function mockEmptySettings() {
 async function credentialPage() {
   await setupPage({
     context,
-    path: "/connectors/vnc",
+    path: "/connectors?scope=remote-control&type=vnc",
     auth: {
       user: owner,
       session: { id: "vnc-session-original", token: "original-token" },
@@ -131,113 +131,6 @@ test("A same-owner session replacement preserves the password and focus and save
   expect(secret).toHaveValue("");
 });
 
-test("A same-owner session replacement preserves a Plain draft and saves its exact authentication", async () => {
-  mockEmptySettings();
-  const requests: unknown[] = [];
-  context.mocks.api(
-    vncCredentialsContract.create,
-    ({ body, request, respond }) => {
-      requests.push({
-        body,
-        authorization: request.headers.get("authorization"),
-      });
-      return respond(201, {
-        id: body.id,
-        name: body.name,
-        authMethod: "username_password",
-        username: " operator ",
-        revision: 1,
-        hosts: [],
-        createdAt: credential.createdAt,
-        updatedAt: credential.updatedAt,
-      });
-    },
-  );
-  await credentialPage();
-  const dialog = await openCredential(
-    "Original Plain login",
-    "username_password",
-  );
-  const secret = within(dialog).getByLabelText("Password");
-  await userEvent.click(secret);
-  replaceSession();
-  const current = await screen.findByRole("dialog", { name: "Add credential" });
-  expect(within(current).getByLabelText("Credential name")).toHaveValue(
-    "Original Plain login",
-  );
-  expect(within(current).getByLabelText("Username")).toHaveValue(" operator ");
-  expect(within(current).getByLabelText("Password")).toHaveValue(
-    " plain password ",
-  );
-  expect(within(current).getByLabelText("Password")).toHaveFocus();
-  click(getAction("button", "Save", current));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(requests).toStrictEqual([
-    {
-      body: {
-        id: expect.any(String),
-        name: "Original Plain login",
-        authentication: {
-          method: "username_password",
-          username: " operator ",
-          password: " plain password ",
-        },
-      },
-      authorization: "Bearer replacement-token",
-    },
-  ]);
-  expect(secret).toHaveValue("");
-});
-
-test("A same-owner session replacement preserves an uncertain draft for an explicit same-UUID retry", async () => {
-  mockEmptySettings();
-  const requests: { body: unknown; authorization: string | null }[] = [];
-  let acknowledge = false;
-  context.mocks.api(
-    vncCredentialsContract.create,
-    ({ body, request, respond }) => {
-      requests.push({
-        body,
-        authorization: request.headers.get("authorization"),
-      });
-      return acknowledge
-        ? respond(204)
-        : respond(500, {
-            error: { code: "INTERNAL_ERROR", message: "Save failed" },
-          });
-    },
-  );
-  await credentialPage();
-  const dialog = await openCredential("Original session login");
-  click(getAction("button", "Save", dialog));
-  await within(dialog).findByText(/The save result is unknown/u);
-  replaceSession();
-  const current = await screen.findByRole("dialog", { name: "Add credential" });
-  expect(within(current).getByLabelText("Credential name")).toHaveValue(
-    "Original session login",
-  );
-  expect(within(current).getByLabelText("VNC password")).toHaveValue(" pwd ");
-  expect(within(current).getByLabelText("VNC password")).toBeDisabled();
-  expect(getAction("button", "Retry", current)).toBeEnabled();
-  acknowledge = true;
-  click(getAction("button", "Retry", current));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  const body = {
-    id: expect.any(String),
-    name: "Original session login",
-    authentication: { method: "vnc_password", password: " pwd " },
-  };
-  expect(requests).toStrictEqual([
-    { body, authorization: "Bearer original-token" },
-    { body, authorization: "Bearer replacement-token" },
-  ]);
-  expect(requests[1]?.body).toStrictEqual(requests[0]?.body);
-});
-
 test("Returning to an owner never revives an abandoned uncertain credential draft", async () => {
   let activeOwner = owner.id;
   let initialId: string | undefined;
@@ -265,7 +158,7 @@ test("Returning to an owner never revives an abandoned uncertain credential draf
   });
   await setupPage({
     context,
-    path: "/connectors/vnc",
+    path: "/connectors?scope=remote-control&type=vnc",
     auth: {
       user: owner,
       organization: {

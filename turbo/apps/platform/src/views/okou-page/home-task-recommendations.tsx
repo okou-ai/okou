@@ -8,10 +8,12 @@ import {
   Sparkles,
   Workflow,
 } from "lucide-react";
-import type { HomeTaskRecommendation } from "@okouai/api-contracts/contracts/home-task-recommendations";
+import type {
+  HomeTaskRecommendation,
+  HomeTaskRecommendationConnector,
+} from "@okouai/api-contracts/contracts/home-task-recommendations";
 import { Button, Skeleton, surfaceVariants } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import {
   homeTaskRecommendations$,
   homeTaskRecommendationsEnabled$,
@@ -28,20 +30,21 @@ import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 
 function RecommendationConnectors({
   slugs,
+  connectors,
 }: {
   readonly slugs: readonly string[];
+  readonly connectors: readonly HomeTaskRecommendationConnector[];
 }) {
-  const connectors = useLastResolved(connectorCatalogStatus$)?.connectors;
   if (slugs.length === 0) {
     return null;
   }
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
       {slugs.map((slug) => {
-        // A slug the catalog does not know is not drawn. The ranking model is
-        // told to use the member's own inventory, and a mark the product
-        // cannot name would claim a capability nobody can verify.
-        const connector = connectors?.find((candidate) => {
+        // A slug the response carries no metadata for is not drawn. The
+        // ranking model is told to use the member's own inventory, and a mark
+        // the product cannot name would claim a capability nobody can verify.
+        const connector = connectors.find((candidate) => {
           return candidate.slug === slug;
         });
         return connector ? (
@@ -91,9 +94,11 @@ function RecommendationTarget({
 
 function RecommendationCard({
   recommendation,
+  connectors,
   onStart,
 }: {
   readonly recommendation: HomeTaskRecommendation;
+  readonly connectors: readonly HomeTaskRecommendationConnector[];
   readonly onStart: (recommendation: HomeTaskRecommendation) => void;
 }) {
   return (
@@ -120,7 +125,10 @@ function RecommendationCard({
             target={recommendation.target}
             purpose={recommendation.purpose}
           />
-          <RecommendationConnectors slugs={recommendation.connectors} />
+          <RecommendationConnectors
+            slugs={recommendation.connectors}
+            connectors={connectors}
+          />
         </span>
         <ArrowRight
           className="size-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
@@ -250,6 +258,7 @@ export function HomeTaskRecommendations({
                 <RecommendationCard
                   key={recommendation.id}
                   recommendation={recommendation}
+                  connectors={visibleSet?.connectors ?? []}
                   onStart={handleStart}
                 />
               );

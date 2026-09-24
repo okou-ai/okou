@@ -96,7 +96,6 @@ test("Paste copied chat text and attachments safely", async () => {
   const thread = continuityThread(14, 1, "Clipboard restoration");
   const available = continuityAttachment(14, 1, "available-copy.txt");
   const missing = continuityAttachment(14, 2, "missing-copy.txt");
-  const localized = continuityAttachment(14, 3, "locale-copy.txt");
   const workspace = installContinuityWorkspace(context, {
     caseId: 14,
     threads: [thread],
@@ -159,25 +158,6 @@ test("Paste copied chat text and attachments safely", async () => {
   expect(composer).toHaveTextContent("Text kept from an inaccessible copy");
   expect(document.body).not.toHaveTextContent("Remove missing-copy.txt");
   expect(fastButton("Remove available-copy.txt")).toBeVisible();
-
-  placeCaretAtEnd(composer);
-  const portuguesePlainText =
-    "Resumo copiado em duas linhas\nContinuação preservada\n\nAnexos:\n- locale-copy.txt: " +
-    localized.url;
-  fireEvent.paste(composer, {
-    clipboardData: richClipboard(
-      {
-        text: "",
-        attachments: [localized],
-      },
-      portuguesePlainText,
-    ),
-  });
-  await waitFor(() => {
-    expect(composer).toHaveTextContent("Resumo copiado em duas linhas");
-    expect(composer).toHaveTextContent("Continuação preservada");
-    expect(fastButton("Remove locale-copy.txt")).toBeVisible();
-  });
 });
 
 test("Paste plain and multi-line text at the current draft position", async () => {

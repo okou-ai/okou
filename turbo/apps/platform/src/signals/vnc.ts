@@ -25,6 +25,7 @@ import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { apiClient$ } from "./api-client.ts";
 import { reloadAgents$, reloadAgentById$ } from "./agent.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
+import { invalidateRemoteAccess$ } from "./remote-access-refresh.ts";
 import { onRef, resetSignal, settle, waitForOperation } from "./utils.ts";
 
 export const vncIdentity$ = computed(async (get) => {
@@ -75,6 +76,7 @@ export const invalidateVnc$ = command(({ set }) => {
   set(reload$, (value) => {
     return value + 1;
   });
+  set(invalidateRemoteAccess$);
 });
 
 export const retryVnc$ = command(({ set }) => {
@@ -140,7 +142,6 @@ export interface VncDialogState {
   readonly credential: VncCredentialResponse | null;
 }
 const dialog$ = state<VncDialogState | null>(null);
-const view$ = state<"hosts" | "credentials">("hosts");
 export type VncProfile = VncSecurity["type"];
 export type VncAuthMethod = VncCredentialResponse["authMethod"];
 
@@ -151,6 +152,9 @@ export function vncAuthMethodForProfile(profile: VncProfile): VncAuthMethod {
     }
     case "x509_plain": {
       return "username_password";
+    }
+    case "apple_dh": {
+      return "apple_dh_username_password";
     }
   }
   void (profile satisfies never);
@@ -164,6 +168,9 @@ function vncProfileForAuthMethod(method: VncAuthMethod): VncProfile {
     }
     case "username_password": {
       return "x509_plain";
+    }
+    case "apple_dh_username_password": {
+      return "apple_dh";
     }
   }
   void (method satisfies never);
@@ -226,9 +233,6 @@ export const vncDialog$ = computed(async (get) => {
   const dialog = get(dialog$);
   return dialog?.identity === (await get(vncIdentity$)) ? dialog : null;
 });
-export const vncView$ = computed((get) => {
-  return get(view$);
-});
 export const vncEditor$ = computed((get) => {
   return get(editor$);
 });
@@ -240,11 +244,6 @@ export const vncSaveMessage$ = computed((get) => {
 });
 export const vncConflict$ = computed((get) => {
   return get(conflict$);
-});
-export const changeVncView$ = command(({ set }, value: string) => {
-  if (value === "hosts" || value === "credentials") {
-    set(view$, value);
-  }
 });
 export const chooseVncCredential$ = command(
   ({ get, set }, selection: string | null) => {
@@ -259,12 +258,19 @@ export const chooseVncProfile$ = command(
   ({ get, set }, profile: string | null) => {
     if (
       !get(editorLocked$) &&
-      (profile === "x509_vnc" || profile === "x509_plain")
+      (profile === "x509_vnc" ||
+        profile === "x509_plain" ||
+        profile === "apple_dh")
     ) {
       set(editor$, (current): Editor => {
         return current.profile === profile
           ? current
-          : { ...current, profile, selection: "" };
+          : {
+              ...current,
+              profile,
+              selection: "",
+              transport: profile === "apple_dh" ? "ssh" : current.transport,
+            };
       });
     }
   },
@@ -280,7 +286,8 @@ export const chooseVncTransport$ = command(
   ({ get, set }, transport: string | null) => {
     if (
       !get(editorLocked$) &&
-      (transport === "direct" || transport === "ssh")
+      (transport === "direct" || transport === "ssh") &&
+      (transport !== "direct" || get(editor$).profile !== "apple_dh")
     ) {
       set(editor$, (current): Editor => {
         return { ...current, transport };
@@ -322,11 +329,6 @@ export const closeVncDialog$ = command(({ set }) => {
     sshConnectionId: "",
     replace: false,
   });
-});
-export const refreshVnc$ = command(({ set }) => {
-  set(closeVncDialog$);
-  set(view$, "hosts");
-  set(invalidateVnc$);
 });
 export const mountVncForm$ = onRef(
   command(({ get, set }, form: HTMLFormElement, signal: AbortSignal) => {
@@ -373,8 +375,15 @@ function initialVncEditor(
   return {
     selection: connection?.credentialId ?? (kind === "create" ? "" : "new"),
     profile: initialVncProfile(connection, credential),
-    trust: connection?.security.trust.mode ?? "system",
-    transport: sshConnectionId ? "ssh" : "direct",
+    trust:
+      connection?.security.type === "apple_dh"
+        ? "system"
+        : (connection?.security.trust.mode ?? "system"),
+    transport:
+      sshConnectionId ||
+      initialVncProfile(connection, credential) === "apple_dh"
+        ? "ssh"
+        : "direct",
     sshConnectionId: sshConnectionId ?? "",
     replace: false,
   };
@@ -468,6 +477,16 @@ function credentialFields(form: HTMLFormElement, profile: VncProfile) {
         },
       };
     }
+    case "apple_dh": {
+      return {
+        name,
+        authentication: {
+          method: "apple_dh_username_password" as const,
+          username: textField(form, "username"),
+          password: textField(form, "password"),
+        },
+      };
+    }
   }
   void (profile satisfies never);
   throw new Error("Unsupported VNC profile");
@@ -493,7 +512,8 @@ interface Editor {
 }
 
 function connectionFields(form: HTMLFormElement, editor: Editor) {
-  const serverName = textField(form, "serverName").trim();
+  const serverName =
+    editor.profile === "apple_dh" ? "" : textField(form, "serverName").trim();
   return {
     displayName: textField(form, "displayName"),
     host: textField(form, "host"),
@@ -506,17 +526,20 @@ function connectionFields(form: HTMLFormElement, editor: Editor) {
       editor.selection === "new"
         ? { create: credentialFields(form, editor.profile) }
         : { id: editor.selection },
-    security: {
-      type: editor.profile,
-      ...(serverName ? { serverName } : {}),
-      trust:
-        editor.trust === "system"
-          ? { mode: "system" as const }
-          : {
-              mode: "custom_ca" as const,
-              caBundle: textField(form, "caBundle"),
-            },
-    },
+    security:
+      editor.profile === "apple_dh"
+        ? { type: "apple_dh" as const }
+        : {
+            type: editor.profile,
+            ...(serverName ? { serverName } : {}),
+            trust:
+              editor.trust === "system"
+                ? { mode: "system" as const }
+                : {
+                    mode: "custom_ca" as const,
+                    caBundle: textField(form, "caBundle"),
+                  },
+          },
   };
 }
 

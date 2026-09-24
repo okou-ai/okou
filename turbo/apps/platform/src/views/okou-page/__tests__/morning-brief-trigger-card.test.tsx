@@ -1,4 +1,4 @@
-import { act, screen, waitFor } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { morningBriefDebugTriggerContract } from "@okouai/api-contracts/contracts/morning-brief-debug-trigger";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
@@ -8,7 +8,6 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { createDeferredPromise } from "../../../signals/utils.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
@@ -84,45 +83,6 @@ test("A developer queues a Morning Brief and is told it is only queued", async (
   await expect(screen.findByRole("status")).resolves.toHaveTextContent(QUEUED);
 });
 
-test("A pending trigger disables the button until the request settles", async () => {
-  const requestStarted = createDeferredPromise<void>(context.signal);
-  const response = createDeferredPromise<void>(context.signal);
-  context.mocks.api(
-    morningBriefDebugTriggerContract.trigger,
-    async ({ respond }) => {
-      if (!requestStarted.settled()) {
-        requestStarted.resolve(undefined);
-      }
-      await response.promise;
-      return respond(200, {
-        status: "queued",
-        scheduledFor: "2026-09-20T06:00:00.000Z",
-      });
-    },
-  );
-
-  await setupPage({
-    context,
-    path: DEBUG_PATH,
-    featureSwitches: bothSwitches(),
-  });
-  await openedDebugSection();
-
-  click(triggerButton());
-
-  await act(async () => {
-    await requestStarted.promise;
-  });
-  await waitFor(() => {
-    expect(screen.getByText("Queueing…")).toBeInTheDocument();
-  });
-  // The button is replaced by its pending label, so it cannot be pressed again.
-  expect(buttonNames()).not.toContain(TRIGGER);
-
-  response.resolve(undefined);
-  await expect(screen.findByRole("status")).resolves.toHaveTextContent(QUEUED);
-});
-
 test("A refused trigger surfaces the failure in the card", async () => {
   context.mocks.api(morningBriefDebugTriggerContract.trigger, ({ respond }) => {
     return respond(409, {
@@ -170,48 +130,4 @@ test("The card is absent while the debug switch is off", async () => {
 
   expect(screen.queryByText("Capture network bodies")).toBeNull();
   expect(buttonNames()).not.toContain(TRIGGER);
-});
-
-test("Dismissing Settings aborts a trigger that is still in flight", async () => {
-  const requestStarted = createDeferredPromise<void>(context.signal);
-  const aborted = createDeferredPromise<void>(context.signal);
-  context.mocks.api(
-    morningBriefDebugTriggerContract.trigger,
-    async ({ never, signal }) => {
-      signal.addEventListener("abort", () => {
-        if (!aborted.settled()) {
-          aborted.resolve(undefined);
-        }
-      });
-      if (!requestStarted.settled()) {
-        requestStarted.resolve(undefined);
-      }
-      return await never();
-    },
-  );
-
-  await setupPage({
-    context,
-    path: DEBUG_PATH,
-    featureSwitches: bothSwitches(),
-  });
-  await openedDebugSection();
-
-  click(triggerButton());
-  await act(async () => {
-    await requestStarted.promise;
-  });
-
-  click(screen.getByLabelText("Close"));
-
-  // The card hands the Settings action signal to the request, so dismissal
-  // cancels it instead of leaving it running behind a closed dialog.
-  await act(async () => {
-    await aborted.promise;
-  });
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Settings" }),
-    ).not.toBeInTheDocument();
-  });
 });

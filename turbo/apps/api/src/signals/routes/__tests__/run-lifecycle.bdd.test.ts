@@ -1105,6 +1105,24 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
+  it("prefers the installed CLI while retaining the legacy package URL in new run claims", async () => {
+    const api = createRunsApi(context);
+    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const run = await api.createRun(actor, {
+      agentId,
+      prompt: "use the Okou CLI",
+      modelProvider: "anthropic-api-key",
+    });
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(run.runId);
+    expect(claim.appendSystemPrompt).toContain(
+      "You have access to the Okou CLI. Run commands with: `okou <command>`.",
+    );
+    expect(claim.appendSystemPrompt).not.toContain("If `okou` is unavailable");
+    expect(claim.platformEnvironment.CLI_PKG_URL).toBeTruthy();
+    await api.requestCancelRun(actor, run.runId, [200]);
+  });
+
   it("advertises artifact sharing only when private artifacts are enabled", async () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
@@ -5960,6 +5978,11 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       throw new Error("Expected limited-free bootstrap agent");
     }
     const agentId = onboarding.defaultAgentId;
+    // This entitlement case claims the Runner job. Pi admission is covered by
+    // the dedicated route tests, so keep its execution path explicit.
+    await createConnectorBddApi(context).updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.PiLoop]: false,
+    });
     await expect(api.readBillingStatus(actor)).resolves.toMatchObject({
       tier: "limited-free-1",
       credits: 1000,
@@ -6627,6 +6650,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
         "codex-oauth-token",
         "CHATGPT_ACCOUNT_ID",
       ),
+      CODEX_OAUTH_ACCOUNT_ID: "workspace-id",
       OPENAI_MODEL: "gpt-5.6-sol",
     });
     expect(claim.environment).not.toHaveProperty("CHATGPT_REFRESH_TOKEN");
@@ -6853,6 +6877,15 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     expect(claim.environment?.CHATGPT_ACCESS_TOKEN).toBe(
       modelProviderPlaceholder("codex-oauth-token", "CHATGPT_ACCESS_TOKEN"),
     );
+    expect(claim.environment?.CHATGPT_ACCOUNT_ID).toBe(
+      modelProviderPlaceholder("codex-oauth-token", "CHATGPT_ACCOUNT_ID"),
+    );
+    // The saved account ID comes from the ID-token claim, not auth.json's
+    // informational tokens.account_id field.
+    expect(claim.environment?.CODEX_OAUTH_ACCOUNT_ID).toBe(
+      "ws_acct_bdd_id_token",
+    );
+    expect(claim.environment).not.toHaveProperty("CHATGPT_REFRESH_TOKEN");
     expect(
       claim.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN,
     ).toMatchObject({
@@ -13840,6 +13873,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       "skip permissions already allowed",
       "Diagnose failed connector requests before attributing them to Okou permission policy",
       "okou connector check --url <FAILED_URL> --method <METHOD> [--connector <slug>]",
+      "For AWS SigV4 connector failures, run `okou connector check --help` before the URL check",
+      "URL and method alone may yield `unknown-endpoint`",
+      "use only observed, non-secret request details",
       "Only request access when the check reports a deny or ask outcome",
       "Request missing permissions",
       "exact `okou connector permission-request` command printed by the immediately preceding URL check",
@@ -15879,11 +15915,7 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
       }),
     ).toContain("Codex follow-up note");
     const codexThinking = afterCodex.events.filter((message) => {
-      return (
-        message.eventType === "output.thinking" &&
-        message.runId === runId &&
-        message.runEventId !== "thinking:initial"
-      );
+      return message.eventType === "output.thinking" && message.runId === runId;
     });
     expect(codexThinking).toStrictEqual([
       expect.objectContaining({

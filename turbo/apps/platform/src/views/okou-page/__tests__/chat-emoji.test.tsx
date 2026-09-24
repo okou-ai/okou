@@ -1,5 +1,6 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { chatThreadRenameContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -10,6 +11,8 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import emojiGroupsUrl from "../../../data/chat-thread-emoji.json?url";
+import { CHAT_THREAD_EMOJI_FIXTURE } from "../../../mocks/handlers/chat-thread-emoji.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
@@ -84,6 +87,8 @@ async function openEmojiPicker(): Promise<HTMLInputElement> {
   if (!(searchInput instanceof HTMLInputElement)) {
     throw new Error("Emoji search is not an input");
   }
+  // The category sections arrive with the emoji data fetched on open.
+  await screen.findByText("Smileys & Emotion");
   return searchInput;
 }
 
@@ -107,8 +112,8 @@ function nextAnimationFrame(): Promise<void> {
   return frame.promise;
 }
 
-test("Keep the check-mark thread icon Done when archiving is disabled", async () => {
-  await setupEmojiPage("Emoji planning", false);
+test("Keep the check-mark thread icon Done when archiving is enabled", async () => {
+  await setupEmojiPage("Emoji planning", true);
   await waitFor(() => {
     expect(buttonByLabel("Change icon")).toBeInTheDocument();
   });
@@ -122,8 +127,13 @@ test("Keep the check-mark thread icon Done when archiving is disabled", async ()
   ).not.toBeInTheDocument();
 });
 
-test("Name the check-mark thread icon Archive when archiving is enabled", async () => {
-  await setupEmojiPage("Emoji planning", true);
+test("Show frequently used emoji while the full emoji set loads", async () => {
+  const emojiData = context.mocks.deferred<void>();
+  context.mocks.http.get(emojiGroupsUrl, async () => {
+    await emojiData.promise;
+    return HttpResponse.json(CHAT_THREAD_EMOJI_FIXTURE);
+  });
+  await setupEmojiPage();
   await waitFor(() => {
     expect(buttonByLabel("Change icon")).toBeInTheDocument();
   });
@@ -131,10 +141,13 @@ test("Name the check-mark thread icon Archive when archiving is enabled", async 
   click(buttonByLabel("Change icon"));
   await screen.findByLabelText("Search emoji");
 
-  expect(emojiButton("Archive")).toHaveTextContent("✅");
-  expect(
-    document.querySelector('[data-chat-thread-emoji][aria-label="Done"]'),
-  ).not.toBeInTheDocument();
+  expect(screen.getByText("Frequently used")).toBeInTheDocument();
+  expect(screen.queryByText("Smileys & Emotion")).toBeNull();
+
+  emojiData.resolve();
+
+  await screen.findByText("Smileys & Emotion");
+  expect(emojiButton("grinning face")).toHaveTextContent("😀");
 });
 
 test("Retain a thread icon when resizing from mobile to desktop", async () => {
@@ -176,6 +189,7 @@ test("Change a thread icon before its save finishes", async () => {
 
   click(changeIcon);
   const searchInput = await screen.findByLabelText("Search emoji");
+  await screen.findByText("Smileys & Emotion");
   click(emojiButton("grinning face"));
   await waitFor(() => {
     expect(changeIcon).toHaveTextContent("😀");
@@ -216,12 +230,11 @@ test.each([
     const viewport = context.mocks.browser.matchMedia(desktop);
     const searchInput = await openEmojiPicker();
 
-    // "eye" has 20 matches in the production emoji data. Search through the
-    // page before remounting so this responsive contract does not repeatedly
-    // build the unrelated full emoji grid.
+    // "eye" matches two emoji in the test emoji data. Search before
+    // remounting so the remounted picker has to keep the query.
     await fill(searchInput, "eye");
     await waitFor(() => {
-      expect(queryAllByRoleFast("button", emojiFeed())).toHaveLength(20);
+      expect(queryAllByRoleFast("button", emojiFeed())).toHaveLength(2);
     });
 
     act(() => {
@@ -236,7 +249,7 @@ test.each([
       expect(searchInputs).toHaveLength(1);
       expect(searchInputs[0]).toHaveFocus();
       expect(searchInputs[0]).toHaveValue("eye");
-      expect(queryAllByRoleFast("button", emojiFeed())).toHaveLength(20);
+      expect(queryAllByRoleFast("button", emojiFeed())).toHaveLength(2);
     });
     expect(screen.getAllByTestId("chat-thread-header-title")).toHaveLength(1);
     expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(

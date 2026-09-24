@@ -1,4 +1,3 @@
-import type { IDBPDatabase } from "idb";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import {
   computerUseHostsContract,
@@ -21,8 +20,6 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { ChatThreadEventQueryResult } from "../../../shared-database/data-key.ts";
-import { createChatIdbOpener } from "../../../signals/external/chat-idb-opener.ts";
-import { createStrictIdbChatThreadEventStores } from "../../../signals/external/idb-chat-thread-event-store.ts";
 
 export const CHAT_LIST_AGENT_ID = "c7000000-0000-4000-a000-000000000001";
 
@@ -99,17 +96,6 @@ export function chatListEvent(
   };
 }
 
-function authIdentity(auth: Exclude<SetupPageAuth, null>): {
-  readonly userId: string;
-  readonly orgId: string;
-} {
-  const orgId = auth.organization?.activeOrg?.id;
-  if (!orgId) {
-    throw new Error("Chat list cache fixture requires an active organization");
-  }
-  return { userId: auth.user.id, orgId };
-}
-
 export function cachedChatListEvents(
   caseId: number,
   chatThreads: readonly ChatThreadSnapshotProjection[],
@@ -123,33 +109,6 @@ export function cachedChatListEvents(
     },
     events: [...events],
   };
-}
-
-/** Seed IndexedDB only when the page story exercises persistence across reloads. */
-export async function seedPersistentChatListCache(
-  caseId: number,
-  auth: Exclude<SetupPageAuth, null>,
-  chatThreads: readonly ChatThreadSnapshotProjection[],
-  events: readonly ChatThreadEvent[] = [],
-): Promise<void> {
-  const identity = authIdentity(auth);
-  const opener = createChatIdbOpener({ onVersionChange: () => {} });
-  const database: IDBPDatabase = await opener.openChatIdb(
-    identity.userId,
-    identity.orgId,
-  );
-  const stores = createStrictIdbChatThreadEventStores(() => {
-    return Promise.resolve(database);
-  });
-  await stores.writeStore.replaceFromSnapshot(
-    {
-      chatThreads,
-      latestEventId: chatListEventId(caseId, 1),
-      latestSeqId: 1,
-    },
-    events,
-  );
-  database.close();
 }
 
 interface ChatListStreamOptions {

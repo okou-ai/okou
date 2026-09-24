@@ -1,0 +1,1227 @@
+import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
+import { useTranslation } from "react-i18next";
+import { Plus } from "lucide-react";
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogBody,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  Input,
+  Textarea,
+  Checkbox,
+  SegmentControl,
+  SegmentControlItem,
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@okouai/ui";
+import {
+  SSH_DISPLAY_NAME_MAX_LENGTH,
+  SSH_HOST_MAX_LENGTH,
+  SSH_USERNAME_MAX_LENGTH,
+  SSH_PRIVATE_KEY_MAX_LENGTH,
+  SSH_PASSPHRASE_MAX_LENGTH,
+  type SshConnectionResponse,
+} from "@okouai/api-contracts/contracts/ssh-connections";
+import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
+import {
+  type SshDialogState,
+  sshCredentials$,
+  sshCredentialEditor$,
+  chooseSshCredential$,
+  chooseSshAuthMethod$,
+  replaceSshAuthentication$,
+  openSshCredentialDialog$,
+  sshConnections$,
+  sshConflict$,
+  sshConflictReview$,
+  acceptSshConflictReview$,
+  sshDialog$,
+  openSshDialog$,
+  closeSshDialog$,
+  saveSsh$,
+  sshSaveUncertain$,
+  sshSaveMessage$,
+  cancelSshPrivateKeyFile$,
+  importSshPrivateKeyFile$,
+  mountSshPrivateKey$,
+  mountSshForm$,
+  sshPrivateKeyFileResult$,
+  sshTransportEditor$,
+  chooseSshTransport$,
+} from "../../signals/ssh.ts";
+import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
+import { AccessSelection } from "./ssh-cloudflare-access.tsx";
+import {
+  SSH_PASSWORD_MAX_LENGTH,
+  type SshCredentialResponse,
+} from "@okouai/api-contracts/contracts/ssh-credentials";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { detach, Reason } from "../../signals/utils.ts";
+import { SshLoadError } from "./ssh-load-error.tsx";
+import { localizedSshError } from "../../lib/ssh-error.ts";
+import { SshAttention, SshHostWarning } from "./ssh-connection-status.tsx";
+import { RemoteHostDefaultToggle } from "./remote-access-controls.tsx";
+
+function EndpointFields({
+  connection,
+  disabled,
+}: {
+  readonly connection: SshConnectionResponse | null;
+  readonly disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const editor = useGet(sshTransportEditor$);
+  const choose = useSet(chooseSshTransport$);
+  const protectedHost = editor.mode === "cloudflare_access";
+  return (
+    <fieldset className="grid min-w-0 gap-4">
+      <legend className="mb-3 text-sm font-semibold">
+        {t(($) => {
+          return $.ssh.hostSection;
+        })}
+      </legend>
+      <label className="grid gap-2">
+        {t(($) => {
+          return $.ssh.displayName;
+        })}
+        <Input
+          name="displayName"
+          placeholder={t(($) => {
+            return $.ssh.placeholders.displayName;
+          })}
+          required
+          pattern=".*\S.*"
+          maxLength={SSH_DISPLAY_NAME_MAX_LENGTH}
+          defaultValue={connection?.displayName}
+        />
+      </label>
+      <div className="grid gap-2">
+        <span id="ssh-connection-mode">
+          {t(($) => {
+            return $.ssh.cloudflare.mode;
+          })}
+        </span>
+        <SegmentControl
+          className="justify-self-start"
+          aria-labelledby="ssh-connection-mode"
+          disabled={disabled}
+          value={editor.mode}
+          onValueChange={choose}
+        >
+          <SegmentControlItem value="direct">
+            {t(($) => {
+              return $.ssh.cloudflare.direct;
+            })}
+          </SegmentControlItem>
+          <SegmentControlItem value="cloudflare_access">
+            {t(($) => {
+              return $.ssh.cloudflare.title;
+            })}
+          </SegmentControlItem>
+        </SegmentControl>
+      </div>
+      <div
+        className={
+          protectedHost
+            ? "grid gap-4"
+            : "grid gap-4 sm:grid-cols-[minmax(0,1fr)_6rem]"
+        }
+      >
+        <label className="grid gap-2">
+          {t(($) => {
+            return protectedHost ? $.ssh.cloudflare.publishedHost : $.ssh.host;
+          })}
+          <Input
+            name="host"
+            placeholder={t(($) => {
+              return $.ssh.placeholders.host;
+            })}
+            required
+            pattern=".*\S.*"
+            maxLength={SSH_HOST_MAX_LENGTH}
+            defaultValue={connection?.host}
+          />
+        </label>
+        <label
+          hidden={protectedHost}
+          className={protectedHost ? "hidden" : "grid gap-2"}
+        >
+          {t(($) => {
+            return $.ssh.port;
+          })}
+          <Input
+            name="port"
+            disabled={protectedHost}
+            type="number"
+            className="[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+            required
+            min={1}
+            max={65_535}
+            defaultValue={
+              connection && !("transport" in connection) ? connection.port : 22
+            }
+          />
+        </label>
+      </div>
+    </fieldset>
+  );
+}
+
+function PrivateKeyFields() {
+  const { t } = useTranslation();
+  const importFile = useSet(importSshPrivateKeyFile$);
+  const cancelRead = useSet(cancelSshPrivateKeyFile$);
+  const mountPrivateKey = useSet(mountSshPrivateKey$);
+  const result = useLoadable(sshPrivateKeyFileResult$);
+  const signal = useGet(pageSignal$);
+  return (
+    <>
+      <p className="text-sm text-muted-foreground">
+        {t(($) => {
+          return $.ssh.credentialsHelp;
+        })}
+      </p>
+      <div className="grid gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <label htmlFor="ssh-private-key">
+            {t(($) => {
+              return $.ssh.privateKey;
+            })}
+          </label>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={(event) => {
+              const input = event.currentTarget
+                .closest("form")
+                ?.elements.namedItem("ssh-private-key-file");
+              if (!(input instanceof HTMLInputElement)) {
+                throw new Error(
+                  "SSH credential form is missing its file input",
+                );
+              }
+              input.click();
+            }}
+          >
+            {t(($) => {
+              return $.ssh.chooseFile;
+            })}
+          </Button>
+        </div>
+        <input
+          id="ssh-private-key-file"
+          type="file"
+          className="hidden"
+          aria-label={t(($) => {
+            return $.ssh.choosePrivateKeyFile;
+          })}
+          onChange={(event) => {
+            detach(importFile(event.currentTarget, signal), Reason.DomCallback);
+          }}
+        />
+        <Textarea
+          id="ssh-private-key"
+          ref={mountPrivateKey}
+          name="privateKey"
+          placeholder={t(($) => {
+            return $.ssh.placeholders.privateKey;
+          })}
+          required
+          maxLength={SSH_PRIVATE_KEY_MAX_LENGTH}
+          autoComplete="off"
+          spellCheck={false}
+          onInput={() => {
+            cancelRead();
+          }}
+        />
+        {result.state === "loading" && (
+          <p role="status" className="text-sm text-muted-foreground">
+            {t(($) => {
+              return $.ssh.fileReading;
+            })}
+          </p>
+        )}
+        {result.state === "hasData" && result.data !== null && (
+          <p role="alert" className="text-sm text-destructive">
+            {result.data === "size"
+              ? t(($) => {
+                  return $.ssh.fileSizeError;
+                })
+              : t(($) => {
+                  return $.ssh.fileReadError;
+                })}
+          </p>
+        )}
+      </div>
+      <label className="grid gap-2">
+        {t(($) => {
+          return $.ssh.passphrase;
+        })}
+        <Input
+          name="passphrase"
+          placeholder={t(($) => {
+            return $.ssh.placeholders.passphrase;
+          })}
+          type="password"
+          maxLength={SSH_PASSPHRASE_MAX_LENGTH}
+          autoComplete="new-password"
+        />
+      </label>
+    </>
+  );
+}
+
+function CredentialFields({
+  credential,
+  disabled,
+}: {
+  readonly credential: SshCredentialResponse | null;
+  readonly disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const editor = useGet(sshCredentialEditor$);
+  const chooseMethod = useSet(chooseSshAuthMethod$);
+  const replace = useSet(replaceSshAuthentication$);
+  return (
+    <>
+      <label className="grid gap-2">
+        {t(($) => {
+          return $.ssh.credential.name;
+        })}
+        <Input
+          name="credentialName"
+          placeholder={t(($) => {
+            return $.ssh.placeholders.credentialName;
+          })}
+          required
+          pattern=".*\S.*"
+          maxLength={SSH_DISPLAY_NAME_MAX_LENGTH}
+          defaultValue={credential?.name}
+        />
+      </label>
+      <label className="grid gap-2">
+        {t(($) => {
+          return $.ssh.username;
+        })}
+        <Input
+          name="username"
+          placeholder={t(($) => {
+            return $.ssh.placeholders.username;
+          })}
+          required
+          pattern=".*\S.*"
+          maxLength={SSH_USERNAME_MAX_LENGTH}
+          defaultValue={credential?.username}
+        />
+      </label>
+      {credential && (
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox
+            disabled={disabled}
+            checked={editor.replace}
+            onCheckedChange={(checked) => {
+              return replace(checked);
+            }}
+          />
+          {t(($) => {
+            return $.ssh.credential.replaceAuthentication;
+          })}
+        </label>
+      )}
+      {(!credential || editor.replace) && (
+        <>
+          <div className="grid gap-2">
+            <span id="ssh-auth-method-label">
+              {t(($) => {
+                return $.ssh.credential.authentication;
+              })}
+            </span>
+            <SegmentControl
+              className="justify-self-start"
+              disabled={disabled}
+              aria-labelledby="ssh-auth-method-label"
+              value={editor.method}
+              onValueChange={chooseMethod}
+            >
+              <SegmentControlItem value="private_key">
+                {t(($) => {
+                  return $.ssh.privateKey;
+                })}
+              </SegmentControlItem>
+              <SegmentControlItem value="password">
+                {t(($) => {
+                  return $.ssh.credential.password;
+                })}
+              </SegmentControlItem>
+            </SegmentControl>
+          </div>
+          {editor.method === "password" ? (
+            <label key="password" className="grid gap-2">
+              {t(($) => {
+                return $.ssh.credential.password;
+              })}
+              <Input
+                name="password"
+                placeholder={t(($) => {
+                  return $.ssh.placeholders.password;
+                })}
+                type="password"
+                required
+                maxLength={SSH_PASSWORD_MAX_LENGTH}
+                autoComplete="new-password"
+              />
+            </label>
+          ) : (
+            <PrivateKeyFields key="private-key" />
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+function CredentialSelection({ disabled }: { readonly disabled: boolean }) {
+  const { t } = useTranslation();
+  const credentials = useLoadable(sshCredentials$);
+  const editor = useGet(sshCredentialEditor$);
+  const choose = useSet(chooseSshCredential$);
+  const credentialItems = [
+    ...(credentials.state === "hasData" && credentials.data
+      ? credentials.data.map((credential) => {
+          return {
+            value: credential.id,
+            label: `${credential.name} · ${credential.username}`,
+          };
+        })
+      : []),
+    {
+      value: "new",
+      label: t(($) => {
+        return $.ssh.credential.createNew;
+      }),
+    },
+  ];
+  return (
+    <fieldset className="grid min-w-0 gap-4">
+      <legend className="mb-3 text-sm font-semibold">
+        <label htmlFor="ssh-selected-credential">
+          {t(($) => {
+            return $.ssh.credential.label;
+          })}
+        </label>
+      </legend>
+      <div className="grid gap-2">
+        {credentials.state === "hasError" ? (
+          <SshLoadError />
+        ) : credentials.state === "loading" ? (
+          <p role="status">
+            {t(($) => {
+              return $.ssh.credential.loading;
+            })}
+          </p>
+        ) : !credentials.data ? (
+          <p>
+            {t(($) => {
+              return $.ssh.unavailable;
+            })}
+          </p>
+        ) : (
+          <Select
+            items={credentialItems}
+            disabled={disabled}
+            value={editor.selection || null}
+            onValueChange={(value, details) => {
+              if (value === null) {
+                details.cancel();
+                return;
+              }
+              choose(value);
+            }}
+          >
+            <SelectTrigger id="ssh-selected-credential">
+              <SelectValue
+                placeholder={t(($) => {
+                  return $.ssh.credential.select;
+                })}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {credentialItems.map((item) => {
+                return (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+      {credentials.state === "hasData" &&
+        credentials.data &&
+        editor.selection &&
+        editor.selection !== "new" &&
+        !credentials.data.some((credential) => {
+          return credential.id === editor.selection;
+        }) && (
+          <p role="alert">
+            {t(($) => {
+              return $.ssh.errors.credentialUnavailable;
+            })}
+          </p>
+        )}
+      {editor.selection === "new" && (
+        <div className="grid gap-4 rounded-lg border bg-muted/30 p-4">
+          <CredentialFields credential={null} disabled={disabled} />
+        </div>
+      )}
+    </fieldset>
+  );
+}
+
+function CredentialImpact({
+  credential,
+}: {
+  readonly credential: SshCredentialResponse;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="grid gap-1 text-sm text-muted-foreground">
+      <p>
+        {credential.hosts.length === 0
+          ? t(($) => {
+              return $.ssh.credential.unused;
+            })
+          : t(
+              ($) => {
+                return $.ssh.credential.sharedHelp;
+              },
+              {
+                count: credential.hosts.length,
+              },
+            )}
+      </p>
+      {credential.hosts.length > 0 && (
+        <ul className="list-inside list-disc">
+          {credential.hosts.map((host) => {
+            return <li key={host.id}>{host.displayName}</li>;
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function SshConflictReview() {
+  const { t } = useTranslation();
+  const conflict = useGet(sshConflict$);
+  const review = useLoadable(sshConflictReview$);
+  const acceptReview = useSet(acceptSshConflictReview$);
+  const signal = useGet(pageSignal$);
+  if (!conflict) {
+    return null;
+  }
+  const current = review.state === "hasData" ? review.data : null;
+  const hostConflict = conflict === SSH_ERROR_CODES.GENERATION_CONFLICT;
+  return (
+    <div className="grid gap-3 rounded-lg border p-4 text-sm">
+      <p role="alert">
+        {localizedSshError(conflict) ??
+          t(($) => {
+            return $.ssh.errors.failed;
+          })}
+      </p>
+      {review.state === "hasError" && <SshLoadError />}
+      {review.state === "loading" && (
+        <p role="status">
+          {t(($) => {
+            return hostConflict ? $.ssh.loading : $.ssh.credential.loading;
+          })}
+        </p>
+      )}
+      {current && (
+        <>
+          <h3 className="font-semibold">
+            {t(($) => {
+              return $.ssh.cloudflare.latest;
+            })}
+          </h3>
+          {current.credential && (
+            <>
+              <p>
+                {current.credential.name} · {current.credential.username}
+              </p>
+              <CredentialImpact credential={current.credential} />
+            </>
+          )}
+          {current.connection && (
+            <div className="grid gap-1">
+              <p>{current.connection.displayName}</p>
+              <p className="break-all">
+                {current.connection.username}@{current.connection.host}:
+                {current.connection.port}
+              </p>
+              <p>{current.connection.credentialName}</p>
+              <p>
+                {"transport" in current.connection
+                  ? t(($) => {
+                      return $.ssh.cloudflare.title;
+                    })
+                  : t(($) => {
+                      return $.ssh.cloudflare.direct;
+                    })}
+              </p>
+            </div>
+          )}
+          <p>
+            {t(($) => {
+              return $.ssh.cloudflare.reviewHelp;
+            })}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={
+              current.kind === "delete-credential" &&
+              (current.credential?.hosts.length ?? 0) > 0
+            }
+            onClick={() => {
+              return detach(acceptReview(current, signal), Reason.DomCallback);
+            }}
+          >
+            {t(($) => {
+              return $.ssh.cloudflare.keepChanges;
+            })}
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function useDialogCopy(kind: SshDialogState["kind"] | undefined) {
+  const { t } = useTranslation();
+  switch (kind) {
+    case "create": {
+      return {
+        title: t(($) => {
+          return $.ssh.add;
+        }),
+        description: null,
+      };
+    }
+    case "edit": {
+      return {
+        title: t(($) => {
+          return $.ssh.edit;
+        }),
+        description: t(($) => {
+          return $.ssh.editHelp;
+        }),
+      };
+    }
+    case "delete": {
+      return {
+        title: t(($) => {
+          return $.ssh.delete;
+        }),
+        description: t(($) => {
+          return $.ssh.deleteHelp;
+        }),
+      };
+    }
+    case "reset": {
+      return {
+        title: t(($) => {
+          return $.ssh.reset;
+        }),
+        description: t(($) => {
+          return $.ssh.resetHelp;
+        }),
+      };
+    }
+    case "create-credential": {
+      return {
+        title: t(($) => {
+          return $.ssh.credential.add;
+        }),
+        description: null,
+      };
+    }
+    case "edit-credential": {
+      return {
+        title: t(($) => {
+          return $.ssh.credential.edit;
+        }),
+        description: null,
+      };
+    }
+    case "delete-credential": {
+      return {
+        title: t(($) => {
+          return $.ssh.credential.delete;
+        }),
+        description: t(($) => {
+          return $.ssh.credential.deleteHelp;
+        }),
+      };
+    }
+    case undefined: {
+      return { title: "", description: null };
+    }
+  }
+}
+
+interface SshFormProps {
+  readonly dialog: SshDialogState;
+  readonly isSaving: boolean;
+  readonly save: (form: HTMLFormElement, signal: AbortSignal) => Promise<void>;
+}
+
+function SshSaveNotice({ isSaving }: { readonly isSaving: boolean }) {
+  const { t } = useTranslation();
+  const uncertain = useGet(sshSaveUncertain$);
+  const message = useGet(sshSaveMessage$);
+  if (isSaving || (!uncertain && !message)) {
+    return null;
+  }
+  return (
+    <p role="alert" className="text-sm text-muted-foreground">
+      {uncertain
+        ? t(($) => {
+            return $.ssh.saveRecovery.uncertain;
+          })
+        : (localizedSshError(message ?? "") ??
+          t(($) => {
+            return $.ssh.errors.invalidInput;
+          }))}
+    </p>
+  );
+}
+
+function SshFormActions({
+  isSaving,
+  blocked,
+  destructive,
+  title,
+}: {
+  readonly isSaving: boolean;
+  readonly blocked: boolean;
+  readonly destructive: boolean;
+  readonly title: string;
+}) {
+  const { t } = useTranslation();
+  const close = useSet(closeSshDialog$);
+  const uncertain = useGet(sshSaveUncertain$);
+  return (
+    <div className="flex shrink-0 justify-end gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        disabled={isSaving}
+        onClick={close}
+      >
+        {t(($) => {
+          return $.ssh.cancel;
+        })}
+      </Button>
+      <Button
+        type="submit"
+        disabled={isSaving || (!uncertain && blocked)}
+        variant={destructive ? "destructive" : "default"}
+      >
+        {isSaving
+          ? t(($) => {
+              return $.connectors.actions.saving;
+            })
+          : uncertain
+            ? t(($) => {
+                return $.ssh.retry;
+              })
+            : destructive
+              ? title
+              : t(($) => {
+                  return $.ssh.save;
+                })}
+      </Button>
+    </div>
+  );
+}
+
+function hasResourceSelection(
+  resources: readonly { readonly id: string }[] | null,
+  selection: string | null,
+) {
+  return (
+    resources !== null &&
+    (selection === "new" ||
+      resources.some((resource) => {
+        return resource.id === selection;
+      }))
+  );
+}
+
+function useSshHostSaveBlocked(dialog: SshDialogState, isSaving: boolean) {
+  const configs = useLoadable(cloudflareAccessConfigs$);
+  const transport = useGet(sshTransportEditor$);
+  const conflict = useGet(sshConflict$);
+  const fileResult = useLoadable(sshPrivateKeyFileResult$);
+  const credentials = useLoadable(sshCredentials$);
+  const credentialEditor = useGet(sshCredentialEditor$);
+  const hostEditor = dialog.kind === "create" || dialog.kind === "edit";
+  const unavailableProtectedHost =
+    dialog.connection !== null &&
+    "transport" in dialog.connection &&
+    "configId" in dialog.connection.transport &&
+    configs.state === "hasData" &&
+    configs.data === null;
+  const invalidAccess =
+    hostEditor &&
+    transport.mode === "cloudflare_access" &&
+    (configs.state !== "hasData" ||
+      !hasResourceSelection(configs.data, transport.configId));
+  const invalidCredential =
+    hostEditor &&
+    (credentials.state !== "hasData" ||
+      !hasResourceSelection(credentials.data, credentialEditor.selection));
+  return (
+    isSaving ||
+    fileResult.state === "loading" ||
+    unavailableProtectedHost ||
+    invalidAccess ||
+    invalidCredential ||
+    !!conflict
+  );
+}
+
+function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
+  const { t } = useTranslation();
+  const uncertain = useGet(sshSaveUncertain$);
+  const fieldsDisabled = isSaving || uncertain;
+  const transport = useGet(sshTransportEditor$);
+  const mountForm = useSet(mountSshForm$);
+  const signal = useGet(pageSignal$);
+  const blocked = useSshHostSaveBlocked(dialog, isSaving);
+  const { title } = useDialogCopy(dialog.kind);
+  const hostEditor = dialog.kind === "create" || dialog.kind === "edit";
+  const destructive = ["delete", "reset", "delete-credential"].includes(
+    dialog.kind,
+  );
+  return (
+    <form
+      ref={mountForm}
+      className="flex min-h-0 min-w-0 flex-col gap-4"
+      autoComplete="off"
+      aria-busy={isSaving}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (isSaving || (!uncertain && blocked)) {
+          return;
+        }
+        // Keep retryable input only in this form, never in ccstate or caches.
+        detach(save(event.currentTarget, signal), Reason.DomCallback);
+      }}
+    >
+      <DialogBody className="grid gap-4">
+        {!destructive && (
+          <fieldset
+            disabled={fieldsDisabled}
+            className={hostEditor ? "grid min-w-0 gap-6" : "grid min-w-0 gap-4"}
+          >
+            {hostEditor ? (
+              <>
+                {dialog.connection &&
+                  "transport" in dialog.connection &&
+                  "needsRebind" in dialog.connection.transport && (
+                    <p
+                      role="alert"
+                      className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+                    >
+                      {t(($) => {
+                        return $.ssh.cloudflare.rebindHelp;
+                      })}
+                    </p>
+                  )}
+                <EndpointFields
+                  connection={dialog.connection}
+                  disabled={fieldsDisabled}
+                />
+                {transport.mode === "cloudflare_access" && (
+                  <AccessSelection disabled={fieldsDisabled} />
+                )}
+                <CredentialSelection disabled={fieldsDisabled} />
+              </>
+            ) : (
+              <CredentialFields
+                credential={dialog.credential}
+                disabled={fieldsDisabled}
+              />
+            )}
+          </fieldset>
+        )}
+        {dialog.credential && (
+          <CredentialImpact credential={dialog.credential} />
+        )}
+        <SshConflictReview />
+        <SshSaveNotice isSaving={isSaving} />
+      </DialogBody>
+      <SshFormActions
+        isSaving={isSaving}
+        blocked={blocked}
+        destructive={destructive}
+        title={title}
+      />
+    </form>
+  );
+}
+
+export function SshDialog() {
+  const data = useLoadable(sshDialog$);
+  const close = useSet(closeSshDialog$);
+  const [saving, save] = useLoadableSet(saveSsh$);
+  const dialog = data.state === "hasData" ? data.data : null;
+  const { title, description } = useDialogCopy(dialog?.kind);
+  const isSaving = saving.state === "loading";
+  if (!dialog) {
+    return null;
+  }
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !isSaving) {
+          close();
+        }
+      }}
+    >
+      <DialogContent
+        contentClassName="flex flex-col"
+        key={`${dialog.identity}:${dialog.kind}:${dialog.connection?.id ?? dialog.credential?.id ?? "new"}`}
+      >
+        <DialogHeader className="shrink-0">
+          <DialogTitle>{title}</DialogTitle>
+          {description && <DialogDescription>{description}</DialogDescription>}
+        </DialogHeader>
+        <SshHostForm dialog={dialog} isSaving={isSaving} save={save} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function HostCard({
+  connection,
+}: {
+  readonly connection: SshConnectionResponse;
+}) {
+  const { t } = useTranslation();
+  const open = useSet(openSshDialog$);
+  const signal = useGet(pageSignal$);
+  const configs = useLoadable(cloudflareAccessConfigs$);
+  const configId =
+    "transport" in connection && "configId" in connection.transport
+      ? connection.transport.configId
+      : null;
+  const needsRebind =
+    "transport" in connection && "needsRebind" in connection.transport;
+  const unavailable =
+    configId !== null && configs.state === "hasData" && configs.data === null;
+  const config =
+    configs.state === "hasData"
+      ? configs.data?.find((value) => {
+          return value.id === configId;
+        })
+      : null;
+  return (
+    <article className="grid gap-3 rounded-xl border bg-card p-5">
+      <h2 className="font-semibold">{connection.displayName}</h2>
+      {needsRebind ? (
+        <p
+          role="alert"
+          className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+        >
+          {t(($) => {
+            return $.ssh.cloudflare.needsRebind;
+          })}
+        </p>
+      ) : (
+        <SshHostWarning
+          connectionId={connection.id}
+          generation={connection.generation}
+        />
+      )}
+      <p className="text-sm text-muted-foreground">
+        {connection.credentialName}
+      </p>
+      <p className="break-all text-sm">
+        {connection.username}@{connection.host}:{connection.port}
+      </p>
+      {configId && (
+        <p className="text-sm text-muted-foreground">
+          {unavailable
+            ? t(($) => {
+                return $.ssh.cloudflare.unavailable;
+              })
+            : config
+              ? t(
+                  ($) => {
+                    return $.ssh.cloudflare.protectedHost;
+                  },
+                  { name: config.name },
+                )
+              : t(($) => {
+                  return $.ssh.cloudflare.title;
+                })}
+        </p>
+      )}
+      <p className="break-all text-sm">
+        {connection.learnedHostKey ? (
+          <>
+            {t(($) => {
+              return $.ssh.fingerprint;
+            })}
+            : {connection.learnedHostKey.algorithm}{" "}
+            <code>{connection.learnedHostKey.fingerprint}</code>
+          </>
+        ) : (
+          t(($) => {
+            return $.ssh.notLearned;
+          })
+        )}
+      </p>
+      <RemoteHostDefaultToggle protocol="ssh" connectionId={connection.id} />
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="outline"
+          disabled={unavailable}
+          onClick={() => {
+            return detach(open("edit", connection, signal), Reason.DomCallback);
+          }}
+        >
+          {t(($) => {
+            return $.ssh.edit;
+          })}
+        </Button>
+        <Button
+          variant="outline"
+          disabled={unavailable || !connection.learnedHostKey}
+          onClick={() => {
+            return detach(
+              open("reset", connection, signal),
+              Reason.DomCallback,
+            );
+          }}
+        >
+          {t(($) => {
+            return $.ssh.reset;
+          })}
+        </Button>
+        <Button
+          variant="outline"
+          disabled={unavailable}
+          onClick={() => {
+            return detach(
+              open("delete", connection, signal),
+              Reason.DomCallback,
+            );
+          }}
+        >
+          {t(($) => {
+            return $.ssh.delete;
+          })}
+        </Button>
+      </div>
+    </article>
+  );
+}
+
+export function SshHosts() {
+  const { t } = useTranslation();
+  const hosts = useLoadable(sshConnections$);
+  const open = useSet(openSshDialog$);
+  const signal = useGet(pageSignal$);
+  if (hosts.state === "loading") {
+    return (
+      <p className="text-sm text-muted-foreground">
+        {t(($) => {
+          return $.ssh.loading;
+        })}
+      </p>
+    );
+  }
+  if (hosts.state === "hasError") {
+    return <SshLoadError />;
+  }
+  if (!hosts.data) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        {t(($) => {
+          return $.ssh.unavailable;
+        })}
+      </p>
+    );
+  }
+  return (
+    <div className="grid gap-5">
+      {hosts.data.length > 0 ? <SshAttention /> : null}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          {t(
+            ($) => {
+              return $.ssh.summary;
+            },
+            {
+              count: hosts.data.length,
+            },
+          )}
+        </p>
+        <Button
+          onClick={() => {
+            return detach(open("create", null, signal), Reason.DomCallback);
+          }}
+        >
+          <Plus size={16} aria-hidden="true" />
+          {t(($) => {
+            return $.ssh.add;
+          })}
+        </Button>
+      </div>
+      {hosts.data.length === 0 && (
+        <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+          {t(($) => {
+            return $.ssh.empty;
+          })}
+        </p>
+      )}
+      {hosts.data.map((connection) => {
+        return <HostCard key={connection.id} connection={connection} />;
+      })}
+    </div>
+  );
+}
+
+export function SshCredentials() {
+  const { t } = useTranslation();
+  const credentials = useLoadable(sshCredentials$);
+  const open = useSet(openSshCredentialDialog$);
+  const signal = useGet(pageSignal$);
+  if (credentials.state === "loading") {
+    return (
+      <p role="status">
+        {t(($) => {
+          return $.ssh.credential.loading;
+        })}
+      </p>
+    );
+  }
+  if (credentials.state === "hasError") {
+    return <SshLoadError />;
+  }
+  if (!credentials.data) {
+    return (
+      <p>
+        {t(($) => {
+          return $.ssh.unavailable;
+        })}
+      </p>
+    );
+  }
+  return (
+    <div className="grid gap-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          {t(
+            ($) => {
+              return $.ssh.credential.summary;
+            },
+            { count: credentials.data.length },
+          )}
+        </p>
+        <Button
+          onClick={() => {
+            return detach(
+              open("create-credential", null, signal),
+              Reason.DomCallback,
+            );
+          }}
+        >
+          <Plus size={16} aria-hidden="true" />
+          {t(($) => {
+            return $.ssh.credential.add;
+          })}
+        </Button>
+      </div>
+      {credentials.data.length === 0 && (
+        <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+          {t(($) => {
+            return $.ssh.credential.empty;
+          })}
+        </p>
+      )}
+      {credentials.data.map((credential) => {
+        return (
+          <article
+            key={credential.id}
+            className="grid gap-3 rounded-xl border bg-card p-5"
+          >
+            <h2 className="font-semibold">{credential.name}</h2>
+            <p className="text-sm">
+              {credential.username} ·{" "}
+              {credential.authMethod === "password"
+                ? t(($) => {
+                    return $.ssh.credential.password;
+                  })
+                : t(($) => {
+                    return $.ssh.privateKey;
+                  })}
+            </p>
+            <CredentialImpact credential={credential} />
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  return detach(
+                    open("edit-credential", credential, signal),
+                    Reason.DomCallback,
+                  );
+                }}
+              >
+                {t(($) => {
+                  return $.ssh.credential.edit;
+                })}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={credential.hosts.length > 0}
+                onClick={() => {
+                  return detach(
+                    open("delete-credential", credential, signal),
+                    Reason.DomCallback,
+                  );
+                }}
+              >
+                {t(($) => {
+                  return $.ssh.credential.delete;
+                })}
+              </Button>
+            </div>
+            {credential.hosts.length > 0 && (
+              <p className="text-sm text-muted-foreground">
+                {t(($) => {
+                  return $.ssh.credential.inUseHelp;
+                })}
+              </p>
+            )}
+          </article>
+        );
+      })}
+    </div>
+  );
+}

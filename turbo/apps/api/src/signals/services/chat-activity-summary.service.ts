@@ -43,7 +43,6 @@ import {
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import {
   activityClock,
-  activityEnabled,
   activityContentTransaction,
   eligibleActivityRun,
   lockActivitySnapshot,
@@ -453,9 +452,6 @@ export async function requestActivitySummary(
     );
   if (!owned) {
     return { kind: "not-found" as const };
-  }
-  if (!(await activityEnabled(db, identity.orgId, identity.userId))) {
-    return { kind: "disabled" as const };
   }
   // Only claim lock contention degrades to unavailable. All other storage
   // failures propagate to the app's standard error handling; the viewer keeps

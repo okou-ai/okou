@@ -16,11 +16,15 @@ import { agentSshAccess } from "@okouai/db/schema/agent-ssh-access";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { sshConnectionObservations } from "@okouai/db/schema/ssh-connection-observation";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
-import { and, eq, lt, ne, or, sql } from "drizzle-orm";
+import { and, eq, isNotNull, lt, ne, or, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import { decryptStoredSecretValue } from "./crypto.utils";
+import {
+  runThreadSshAccess,
+  runUsesThreadRemoteAccess,
+} from "./run-thread-remote-access.service";
 
 type SshResolveInput = RunnerSshResolveRequest & {
   readonly runId: string;
@@ -34,10 +38,12 @@ function currentConnectionQuery(
   db: Pick<Db, "select">,
   input: SshResolveInput,
   lockAuthority: boolean,
+  threadMode: boolean,
 ) {
   const query = db
     .select({
       id: sshConnections.id,
+      agentId: agents.id,
       orgId: agentRuns.orgId,
       userId: agentRuns.userId,
       host: sshConnections.host,
@@ -51,6 +57,7 @@ function currentConnectionQuery(
       encryptedPrivateKey: sshCredentials.encryptedPrivateKey,
       encryptedPassphrase: sshCredentials.encryptedPassphrase,
       accessId: sshConnections.cloudflareAccessId,
+      needsRebind: sshConnections.needsRebind,
       access: {
         id: cloudflareAccessConfigs.id,
         generation: cloudflareAccessConfigs.generation,
@@ -75,7 +82,7 @@ function currentConnectionQuery(
         or(eq(agents.visibility, "public"), eq(agents.owner, agentRuns.userId)),
       ),
     )
-    .innerJoin(
+    .leftJoin(
       agentSshAccess,
       and(
         eq(agentSshAccess.agentId, agents.id),
@@ -104,7 +111,13 @@ function currentConnectionQuery(
       and(
         eq(cloudflareAccessConfigs.id, sshConnections.cloudflareAccessId),
         eq(cloudflareAccessConfigs.orgId, agentRuns.orgId),
-        eq(cloudflareAccessConfigs.userId, agentRuns.userId),
+        or(
+          eq(cloudflareAccessConfigs.scope, "organization"),
+          and(
+            eq(cloudflareAccessConfigs.scope, "personal"),
+            eq(cloudflareAccessConfigs.userId, agentRuns.userId),
+          ),
+        ),
       ),
     )
     .where(
@@ -116,11 +129,12 @@ function currentConnectionQuery(
           agentRuns.runnerHeartbeatGeneration,
           input.runnerIdentity.heartbeatGeneration,
         ),
+        threadMode ? runThreadSshAccess(db) : isNotNull(agentSshAccess.agentId),
       ),
     );
   return lockAuthority
     ? query.for("share", {
-        of: [agentRuns, agentSessions, agents, agentSshAccess, sshCredentials],
+        of: [agentRuns, agentSessions, agents, sshCredentials],
       })
     : query;
 }
@@ -131,9 +145,36 @@ async function currentConnection(
   lockAuthority: boolean,
   signal: AbortSignal,
 ) {
-  const [row] = await currentConnectionQuery(db, input, lockAuthority);
+  const threadMode = await runUsesThreadRemoteAccess(db, input.runId, signal);
+  const [row] = await currentConnectionQuery(
+    db,
+    input,
+    lockAuthority,
+    threadMode,
+  );
   signal.throwIfAborted();
   if (!row) {
+    return null;
+  }
+  if (lockAuthority && !threadMode) {
+    // The nullable grant join cannot be row-locked with the outer query.
+    const [grant] = await db
+      .select({ agentId: agentSshAccess.agentId })
+      .from(agentSshAccess)
+      .where(
+        and(
+          eq(agentSshAccess.agentId, row.agentId),
+          eq(agentSshAccess.orgId, row.orgId),
+          eq(agentSshAccess.userId, row.userId),
+        ),
+      )
+      .for("share");
+    signal.throwIfAborted();
+    if (!grant) {
+      return null;
+    }
+  }
+  if (row.needsRebind) {
     return null;
   }
   if (row.accessId === null) {
@@ -153,7 +194,13 @@ async function currentConnection(
         and(
           eq(cloudflareAccessConfigs.id, row.accessId),
           eq(cloudflareAccessConfigs.orgId, row.orgId),
-          eq(cloudflareAccessConfigs.userId, row.userId),
+          or(
+            eq(cloudflareAccessConfigs.scope, "organization"),
+            and(
+              eq(cloudflareAccessConfigs.scope, "personal"),
+              eq(cloudflareAccessConfigs.userId, row.userId),
+            ),
+          ),
           eq(cloudflareAccessConfigs.generation, row.access.generation),
         ),
       )

@@ -23,12 +23,12 @@ export type ConnectorsScope =
 const CONNECTORS_SCOPE_PARAM = "scope";
 
 export const connectorsScope$ = computed((get): ConnectorsScope => {
-  // Only the directory offers the control that sets this, so without it the
-  // page has one list and one scope.
-  if (!get(connectorDirectoryEnabled$)) {
-    return "discover";
-  }
   const raw = get(searchParams$).get(CONNECTORS_SCOPE_PARAM);
+  if (!get(connectorDirectoryEnabled$)) {
+    return raw === "remote-control" || raw === "private-network"
+      ? raw
+      : "discover";
+  }
   if (
     raw === "connected" ||
     raw === "custom" ||
@@ -53,6 +53,12 @@ export const setConnectorsScope$ = command(
     } else {
       params.set(CONNECTORS_SCOPE_PARAM, value);
     }
+    if (value === "remote-control" || value === "private-network") {
+      params.delete("tab");
+    }
+    if (value !== "remote-control") {
+      params.delete("type");
+    }
     // Every other control belongs to the scope that was just left: a category
     // means nothing among the connectors you already have, and an agent means
     // nothing in a catalog of four thousand.
@@ -75,6 +81,7 @@ export const openConnectorDirectoryScope$ = command(
     const params = new URLSearchParams(get(searchParams$));
     params.delete("connection");
     params.delete(CONNECTORS_SCOPE_PARAM);
+    params.delete("type");
     params.delete("category");
     if (scope.kind === "custom") {
       params.set(CONNECTORS_SCOPE_PARAM, "custom");
@@ -90,6 +97,7 @@ export const showCreatedDirectoryConnector$ = command(
   ({ get, set }, connectorId: string) => {
     const params = new URLSearchParams(get(searchParams$));
     params.set(CONNECTORS_SCOPE_PARAM, "custom");
+    params.delete("type");
     params.delete("category");
     params.delete("keywords");
     params.delete("connection");

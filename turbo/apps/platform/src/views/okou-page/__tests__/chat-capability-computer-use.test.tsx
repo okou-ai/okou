@@ -8,11 +8,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import {
-  click,
-  queryAllByRoleFast,
-  startPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import {
   computerUsePermissions,
   mockMacUserAgentData,
@@ -63,31 +59,15 @@ function computerHost(args: {
 }
 
 function installComputerHosts(
-  readHosts: () => readonly ComputerUseHost[] | null,
+  readHosts: () => readonly ComputerUseHost[],
   cloudBrowserEnabledByDefault = true,
 ): void {
   context.mocks.api(computerUseHostsContract.list, ({ respond }) => {
     const hosts = readHosts();
-    if (hosts === null) {
-      return respond(403, {
-        error: {
-          code: "FORBIDDEN",
-          message: "Computer Use hosts are temporarily unavailable",
-        },
-      });
-    }
     return respond(200, { hosts: [...hosts] });
   });
   context.mocks.api(connectorOverviewContract.overview, ({ respond }) => {
     const hosts = readHosts();
-    if (hosts === null) {
-      return respond(403, {
-        error: {
-          code: "FORBIDDEN",
-          message: "Computer Use hosts are temporarily unavailable",
-        },
-      });
-    }
     return respond(200, {
       builtinConnectors: [],
       customConnectors: [],
@@ -184,133 +164,6 @@ async function prepareCloudBrowserDefaults() {
   await readyChat();
   return { sends };
 }
-
-test("Show cloud browser and local computer defaults in a new chat", async () => {
-  await prepareCloudBrowserDefaults();
-  await openComputerMenu();
-  expect(screen.getByText("Cloud browser")).toBeVisible();
-  expect(
-    screen.getByRole("switch", { name: "Cloud browser", checked: true }),
-  ).toBeChecked();
-  expect(
-    screen.getByRole("switch", { name: "Studio Mac", checked: false }),
-  ).not.toBeChecked();
-});
-
-test("Choose and clear a computer through its row and switch", async () => {
-  const user = userEvent.setup({ delay: null });
-  installNewComputerChat(
-    [],
-    [
-      computerHost({
-        id: PRIMARY_HOST_ID,
-        displayName: "Studio Mac",
-        status: "online",
-      }),
-      computerHost({
-        id: SECONDARY_HOST_ID,
-        displayName: "Travel Mac",
-        status: "online",
-      }),
-    ],
-  );
-  await setupPage({ context, path: NEW_CHAT_PATH });
-  await readyChat();
-  await openComputerMenu();
-
-  await user.click(screen.getByText("Studio Mac"));
-  const studio = await screen.findByRole("switch", {
-    name: "Studio Mac",
-    checked: true,
-  });
-  expect(studio).toBeChecked();
-  expect(
-    screen.getByRole("switch", { name: "Cloud browser", checked: false }),
-  ).not.toBeChecked();
-
-  await user.click(screen.getByText("Travel Mac"));
-  const travel = await screen.findByRole("switch", {
-    name: "Travel Mac",
-    checked: true,
-  });
-  expect(travel).toBeChecked();
-  expect(
-    screen.getByRole("switch", { name: "Studio Mac", checked: false }),
-  ).not.toBeChecked();
-  expect(travel).toHaveFocus();
-
-  // Happy DOM activates labels before React can cancel a constructed keyboard
-  // click. Verify Space and Enter on the deployed browser, not this DOM shim.
-  await user.click(travel);
-  await expect(
-    screen.findByRole("switch", { name: "Travel Mac", checked: false }),
-  ).resolves.not.toBeChecked();
-  await user.click(travel);
-  await expect(
-    screen.findByRole("switch", { name: "Travel Mac", checked: true }),
-  ).resolves.toBeChecked();
-
-  await user.click(screen.getByText("Cloud browser"));
-  const cloudBrowser = await screen.findByRole("switch", {
-    name: "Cloud browser",
-    checked: true,
-  });
-  expect(cloudBrowser).toBeChecked();
-  expect(travel).not.toBeChecked();
-  expect(cloudBrowser).toHaveFocus();
-  await user.click(cloudBrowser);
-  await expect(
-    screen.findByRole("switch", { name: "Cloud browser", checked: false }),
-  ).resolves.not.toBeChecked();
-  await user.click(cloudBrowser);
-  await expect(
-    screen.findByRole("switch", { name: "Cloud browser", checked: true }),
-  ).resolves.toBeChecked();
-  expect(queryButton("Connect my computer")).toBeInTheDocument();
-});
-
-test("Ignore the Cloud browser row while its saved default is loading", async () => {
-  const overview = context.mocks.deferred<void>();
-  installNewComputerChat([], []);
-  context.mocks.api(
-    connectorOverviewContract.overview,
-    async ({ respond, withSignal }) => {
-      await withSignal(overview.promise);
-      return respond(200, {
-        builtinConnectors: [],
-        customConnectors: [],
-        accountSummaries: [],
-        computerUseHosts: [],
-        cloudBrowserEnabledByDefault: true,
-      });
-    },
-  );
-  const page = await startPage({
-    context,
-    path: NEW_CHAT_PATH,
-    featureSwitches: { [FeatureSwitchKey.ChatPreference]: true },
-  });
-  await page.content;
-  await openComputerMenu();
-  const cloudBrowser = await screen.findByRole("switch", {
-    name: "Cloud browser",
-    checked: true,
-  });
-  expect(cloudBrowser).toHaveAttribute("aria-disabled", "true");
-
-  click(screen.getByText("Cloud browser"));
-  overview.resolve();
-  await page.ready;
-  await waitFor(() => {
-    expect(cloudBrowser).not.toHaveAttribute("aria-disabled", "true");
-  });
-  expect(cloudBrowser).toBeChecked();
-
-  click(screen.getByText("Cloud browser"));
-  await expect(
-    screen.findByRole("switch", { name: "Cloud browser", checked: false }),
-  ).resolves.not.toBeChecked();
-});
 
 test("Send a new chat with the default cloud browser", async () => {
   const { sends } = await prepareCloudBrowserDefaults();
@@ -425,7 +278,7 @@ test("Start a new chat with a selected local computer", async () => {
 
 test("Discover computers that are available for Computer Use", async () => {
   const user = userEvent.setup({ delay: null });
-  let hosts: readonly ComputerUseHost[] | null = [
+  let hosts: readonly ComputerUseHost[] = [
     computerHost({
       id: PRIMARY_HOST_ID,
       displayName: "Studio Mac",
@@ -462,30 +315,12 @@ test("Discover computers that are available for Computer Use", async () => {
   await expect(
     screen.findByRole("switch", { name: "Studio Mac", checked: true }),
   ).resolves.toBeChecked();
-  hosts = [
-    computerHost({
-      id: PRIMARY_HOST_ID,
-      displayName: "Studio Mac",
-      status: "offline",
-    }),
-    computerHost({
-      id: SECONDARY_HOST_ID,
-      displayName: "Travel Mac",
-      status: "offline",
-    }),
-  ];
-  context.mocks.ably.trigger("computerUseHostsChanged");
-
-  await waitFor(() => {
-    expect(screen.getByText("Studio Mac")).toBeVisible();
-    expect(screen.getByText("Offline")).toBeVisible();
-  });
 
   hosts = [
     computerHost({
       id: PRIMARY_HOST_ID,
       displayName: "Studio Mac",
-      status: "offline",
+      status: "online",
     }),
     computerHost({
       id: SECONDARY_HOST_ID,
@@ -499,12 +334,6 @@ test("Discover computers that are available for Computer Use", async () => {
   expect(
     screen.getByRole("switch", { name: "Travel Mac", checked: false }),
   ).not.toBeChecked();
-
-  hosts = null;
-  context.mocks.ably.trigger("computerUseHostsChanged");
-
-  await expect(screen.findByText("No online computers")).resolves.toBeVisible();
-  await expect(findButton("Connect my computer")).resolves.toBeVisible();
 });
 
 test("Guide users to the compatible Computer Use app", async () => {

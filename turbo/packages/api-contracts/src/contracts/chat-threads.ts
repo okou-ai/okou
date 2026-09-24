@@ -343,6 +343,10 @@ const chatThreadSnapshotProjectionSchema = z.object({
   pinnedAt: z.string().nullable(),
   // Optional for existing snapshots and browser caches without manual ordering.
   pinOrder: z.string().nullable().optional(),
+  // Rollout fallback: snapshots compacted before migration 1208 and Web/CLI
+  // caches from older builds omit it. Remove once they are recompacted and the
+  // client floor excludes those builds (#36551).
+  archived: z.boolean().optional(),
   renamedAt: z.string().nullable(),
   selectedModel: z.string().nullable().default(null),
   modelSettings: modelSettingsSchema.optional(),
@@ -361,6 +365,10 @@ const chatThreadSnapshotProjectionSchema = z.object({
   selectedImageModel: z.string().nullable().optional(),
 });
 
+export const chatThreadSnapshotArchiveSchema = z.object({
+  chatThreads: z.array(chatThreadSnapshotProjectionSchema),
+});
+
 const chatThreadEventSchema = z.object({
   id: chatThreadEventIdSchema,
   /** Server-assigned strict position within the user/org event stream. */
@@ -377,6 +385,8 @@ const chatThreadEventSchema = z.object({
     "video_model_updated",
     "image_model_updated",
     "sort_touched",
+    "archived",
+    "unarchived",
   ]),
   chatThreadId: z.string().uuid(),
   agentId: z.string().uuid(),
@@ -1092,6 +1102,9 @@ const chatThreadMetadataSchema = z.object({
   reasoningEffort: reasoningEffortSchema.nullable().optional(),
   serviceTier: chatThreadServiceTierSchema.nullable(),
   pinnedAt: z.string().nullable(),
+  // Rollout fallback for a new App reaching an API from before archiving.
+  // Remove once that API is outside the rollback window (#36551).
+  archived: z.boolean().optional(),
   computerUseHostId: z.string().uuid().nullable(),
   cloudBrowserEnabled: z.boolean(),
   selectedVideoModel: z.string().nullable(),
@@ -1279,11 +1292,19 @@ export const chatThreadsContract = c.router({
     path: "/api/chat-threads/snapshot",
     headers: authHeadersSchema,
     responses: {
-      200: z.object({
-        chatThreads: z.array(chatThreadSnapshotProjectionSchema),
-        latestEventId: chatThreadEventIdSchema.nullable(),
-        latestSeqId: z.number().int().positive().nullable(),
-      }),
+      200: z.union([
+        z.object({
+          url: z.string().url(),
+          expiresInSeconds: z.number().int().positive(),
+          latestEventId: chatThreadEventIdSchema.nullable(),
+          latestSeqId: z.number().int().positive().nullable(),
+        }),
+        z.object({
+          chatThreads: z.array(chatThreadSnapshotProjectionSchema),
+          latestEventId: chatThreadEventIdSchema.nullable(),
+          latestSeqId: z.number().int().positive().nullable(),
+        }),
+      ]),
       401: apiErrorSchema,
       403: apiErrorSchema,
     },
@@ -1573,6 +1594,46 @@ export const chatThreadUnpinContract = c.router({
       404: apiErrorSchema,
     },
     summary: "Remove the pin from a chat thread",
+  },
+});
+
+/**
+ * Archive / unarchive a chat thread. Both are idempotent: they set the
+ * `archived` flag and append the matching thread event without touching the
+ * title.
+ */
+export const chatThreadArchiveContract = c.router({
+  archive: {
+    method: "POST",
+    path: "/api/chat-threads/:id/archive",
+    headers: authHeadersSchema,
+    pathParams: chatThreadIdPathParamsSchema,
+    query: z.object({ eventId: chatThreadEventIdSchema.optional() }).optional(),
+    body: c.noBody(),
+    responses: {
+      204: c.noBody(),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Archive a chat thread",
+  },
+  unarchive: {
+    method: "POST",
+    path: "/api/chat-threads/:id/unarchive",
+    headers: authHeadersSchema,
+    pathParams: chatThreadIdPathParamsSchema,
+    query: z.object({ eventId: chatThreadEventIdSchema.optional() }).optional(),
+    body: c.noBody(),
+    responses: {
+      204: c.noBody(),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Unarchive a chat thread",
   },
 });
 
@@ -1878,9 +1939,9 @@ const chatSearchResultSchema = z.object({
   matchedRanges: z.array(chatSearchMatchRangeSchema),
 });
 
-export const CHAT_SEARCH_RESULT_LIMIT = 25;
+export const CHAT_SEARCH_RESULT_LIMIT = 100;
 
-/** The newest matching messages, capped at 25 without pagination. */
+/** Up to 100 newest messages within an unordered set of 500 keyword matches. No pagination or full-history newest guarantee. */
 const chatSearchResponseSchema = z.object({
   results: z.array(chatSearchResultSchema).max(CHAT_SEARCH_RESULT_LIMIT),
 });
@@ -1906,7 +1967,7 @@ export const chatSearchContract = c.router({
       401: apiErrorSchema,
       403: apiErrorSchema,
     },
-    summary: "Search up to 25 newest chat messages within caller's org",
+    summary: "Search up to 100 messages from 500 scoped keyword candidates",
   },
 });
 

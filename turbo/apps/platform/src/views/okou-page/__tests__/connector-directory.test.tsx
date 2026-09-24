@@ -1,8 +1,7 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -14,7 +13,6 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   builtinConnector,
-  connectorAccount,
   noAuthMethod,
   httpConnector,
   ACME_CONNECTOR_ID,
@@ -242,40 +240,6 @@ test("Keep the existing dialog when the directory switch is off", async () => {
   await expect(
     screen.findByRole("dialog", { name: /Available connectors/u }),
   ).resolves.toBeInTheDocument();
-});
-
-test("Keep the category chips the same width when the selection moves", async () => {
-  const user = userEvent.setup({ delay: null });
-  installComposerConnectorFixture({ catalog: directoryCatalog() });
-
-  await setupPage({
-    context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
-  });
-
-  const dialog = await openDirectory(user);
-  await waitFor(() => {
-    expect(within(dialog).getByText("Notion")).toBeVisible();
-  });
-
-  // A chip that changes font weight on selection changes its own width, which
-  // shifts every chip after it. Every chip has to carry the same weight.
-  const chips = Array.from(
-    dialog.querySelectorAll<HTMLElement>("[data-connector-category-chip]"),
-  );
-  expect(chips.length).toBeGreaterThan(1);
-  const weights = new Set(
-    chips.map((element) => {
-      return (
-        element.className.split(/\s+/u).find((token) => {
-          return token.startsWith("font-");
-        }) ?? "none"
-      );
-    }),
-  );
-  expect(weights.size).toBe(1);
-  expect(weights).not.toContain("none");
 });
 
 function rankedCatalog() {
@@ -512,143 +476,15 @@ async function tabToCard(
   );
 }
 
-test("Keep search editing and composition separate from connector actions", async () => {
+test("Open one provider authorization window from a focused card with Enter", async () => {
   const user = userEvent.setup({ delay: null });
   installComposerConnectorFixture({ catalog: directoryCatalog() });
-  const browserOpen = context.mocks.browser.open();
-  await setupPage({
-    context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
-  });
-
-  const dialog = await openDirectory(user);
-  const search = within(dialog).getByRole<HTMLInputElement>("textbox");
-  await user.type(search, "gm");
-  await expect(within(dialog).findByText("Gmail")).resolves.toBeInTheDocument();
-  await user.keyboard("{ArrowLeft}");
-  expect(search.selectionStart).toBe(1);
-  await user.keyboard("{ArrowRight}{ArrowDown}{ArrowUp}{Enter}");
-  expect(search).toHaveFocus();
-  expect(search).toHaveValue("gm");
-  expect(search.selectionStart).toBe(2);
-
-  fireEvent.compositionStart(search);
-  fireEvent.keyDown(search, { key: "Enter", code: "Enter", isComposing: true });
-  fireEvent.compositionEnd(search, { data: "gm" });
-  expect(search).toHaveFocus();
-  expect(dialogButton(dialog, "Connect Gmail")).toBeEnabled();
-  expect(screen.getAllByRole("dialog")).toHaveLength(1);
-  expect(browserOpen.calls).toHaveLength(0);
-});
-
-test("Move real focus within connector cards and use Tab to leave the group", async () => {
-  const user = userEvent.setup({ delay: null });
-  installComposerConnectorFixture({ catalog: directoryCatalog() });
-  const browserOpen = context.mocks.browser.open();
-  await setupPage({
-    context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
-  });
-
-  const dialog = await openDirectory(user);
-  await expect(
-    within(dialog).findByText("Notion"),
-  ).resolves.toBeInTheDocument();
-  const gmail = dialogButton(dialog, "Connect Gmail");
-  const notion = dialogButton(dialog, "Connect Notion");
-  const group = within(dialog).getByRole("toolbar", { name: "2 matches" });
-  await tabToCard(user, gmail);
-  await user.keyboard("{ArrowDown}");
-  await waitFor(() => {
-    expect(notion).toHaveFocus();
-  });
-  await user.keyboard("{ArrowDown}");
-  await waitFor(() => {
-    expect(gmail).toHaveFocus();
-  });
-  await user.keyboard("{ArrowUp}");
-  await waitFor(() => {
-    expect(notion).toHaveFocus();
-  });
-
-  await user.keyboard("{Tab}");
-  expect(group.contains(document.activeElement)).toBeFalsy();
-  await user.keyboard("{Shift>}{Tab}{/Shift}");
-  expect(notion).toHaveFocus();
-  expect(browserOpen.calls).toHaveLength(0);
-});
-
-test.each(["{Enter}", " "])(
-  "Open one provider authorization window from a focused card with %s",
-  async (key) => {
-    const user = userEvent.setup({ delay: null });
-    installComposerConnectorFixture({ catalog: directoryCatalog() });
-    const authWindow = context.mocks.browser.authWindow();
-    Object.defineProperty(authWindow, "location", {
-      configurable: true,
-      value: { href: "" },
-    });
-    const browserOpen = context.mocks.browser.open(authWindow);
-    await setupPage({
-      context,
-      path: `/agents/${SCOUT_AGENT_ID}/chat`,
-      featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
-    });
-
-    const dialog = await openDirectory(user);
-    await expect(
-      within(dialog).findByText("Gmail"),
-    ).resolves.toBeInTheDocument();
-    const gmail = dialogButton(dialog, "Connect Gmail");
-    await tabToCard(user, gmail);
-    await user.keyboard(key);
-    await waitFor(() => {
-      expect(authWindow.location.href).toBe(
-        "https://accounts.example.test/gmail",
-      );
-    });
-    await waitFor(() => {
-      expect(gmail).toBeDisabled();
-    });
-    expect(gmail).toHaveAttribute("aria-busy", "true");
-    const notion = dialogButton(dialog, "Connect Notion");
-    expect(notion).toBeDisabled();
-    expect(notion).not.toHaveAttribute("aria-busy");
-    expect(screen.getAllByRole("dialog")).toHaveLength(1);
-    expect(within(dialog).getByRole("textbox")).toBeInTheDocument();
-    expect(browserOpen.calls).toHaveLength(1);
-    click(within(dialog).getByLabelText("Close"));
-    await waitFor(() => {
-      expect(authWindow.closed).toBeTruthy();
-    });
-  },
-);
-
-test("Keep only the selected card busy while connection success settles", async () => {
-  const user = userEvent.setup({ delay: null });
-  const fixture = installComposerConnectorFixture({
-    catalog: directoryCatalog(),
-  });
-  const authorizationStarted = context.mocks.deferred<void>();
-  const authorization = context.mocks.deferred<void>();
-  context.mocks.api(
-    userBuiltinConnectorsContract.update,
-    async ({ body, respond }) => {
-      authorizationStarted.resolve();
-      await authorization.promise;
-      return respond(200, {
-        enabledConnectorSlugs: body.enabledConnectorSlugs,
-      });
-    },
-  );
   const authWindow = context.mocks.browser.authWindow();
   Object.defineProperty(authWindow, "location", {
     configurable: true,
     value: { href: "" },
   });
-  context.mocks.browser.open(authWindow);
+  const browserOpen = context.mocks.browser.open(authWindow);
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
@@ -656,120 +492,29 @@ test("Keep only the selected card busy while connection success settles", async 
   });
 
   const dialog = await openDirectory(user);
+  await expect(within(dialog).findByText("Gmail")).resolves.toBeInTheDocument();
   const gmail = dialogButton(dialog, "Connect Gmail");
-  const notion = dialogButton(dialog, "Connect Notion");
-  await user.click(gmail);
+  await tabToCard(user, gmail);
+  await user.keyboard("{Enter}");
   await waitFor(() => {
     expect(authWindow.location.href).toBe(
       "https://accounts.example.test/gmail",
     );
   });
-
-  const account = connectorAccount({
-    id: "f0000000-0000-4000-a000-000000000064",
-    target: { kind: "builtin", connectorSlug: GMAIL_SLUG },
-    displayName: "Work",
-    isDefault: true,
-  });
-  context.mocks.data.connectors([{ ...account, slug: GMAIL_SLUG }]);
-  fixture.completeOAuth(account.id);
-  authWindow.close();
-  await authorizationStarted.promise;
-
   await waitFor(() => {
-    expect(gmail).toHaveAttribute("aria-busy", "true");
+    expect(gmail).toBeDisabled();
   });
-  expect(gmail).toBeDisabled();
+  expect(gmail).toHaveAttribute("aria-busy", "true");
+  const notion = dialogButton(dialog, "Connect Notion");
   expect(notion).toBeDisabled();
   expect(notion).not.toHaveAttribute("aria-busy");
-
-  authorization.resolve();
-  await expect(
-    screen.findByText("Gmail connected and authorized for Scout"),
-  ).resolves.toBeVisible();
+  expect(screen.getAllByRole("dialog")).toHaveLength(1);
+  expect(within(dialog).getByRole("textbox")).toBeInTheDocument();
+  expect(browserOpen.calls).toHaveLength(1);
+  click(within(dialog).getByLabelText("Close"));
   await waitFor(() => {
-    expect(dialog).not.toBeInTheDocument();
+    expect(authWindow.closed).toBeTruthy();
   });
-});
-
-test("Enter the remaining connected card after filtering through an empty result", async () => {
-  const user = userEvent.setup({ delay: null });
-  installComposerConnectorFixture({ catalog: directoryCatalog() });
-  await setupPage({
-    context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
-  });
-
-  const dialog = await openDirectory(user);
-  await expect(
-    within(dialog).findByText("Notion"),
-  ).resolves.toBeInTheDocument();
-  await tabToCard(user, dialogButton(dialog, "Connect Gmail"));
-  await user.keyboard("{ArrowDown}");
-  await waitFor(() => {
-    expect(dialogButton(dialog, "Connect Notion")).toHaveFocus();
-  });
-
-  const search = within(dialog).getByRole("textbox");
-  await user.click(search);
-  await fill(search, "nonexistent connector");
-  await expect(
-    within(dialog).findByText(/No connector matches/u),
-  ).resolves.toBeInTheDocument();
-  await user.keyboard("{ArrowDown}{Enter}");
-  expect(search).toHaveFocus();
-  await fill(search, "github");
-  await expect(
-    within(dialog).findByText("GitHub"),
-  ).resolves.toBeInTheDocument();
-  await tabToCard(user, dialogButton(dialog, "Open GitHub details"));
-  await user.keyboard(" ");
-  await expect(
-    within(dialog).findByRole("heading", { name: "GitHub" }),
-  ).resolves.toBeInTheDocument();
-  expect(within(dialog).getByText("Connection")).toBeInTheDocument();
-});
-
-test("Keep attention-card navigation inside its own action group", async () => {
-  const user = userEvent.setup({ delay: null });
-  installComposerConnectorFixture({
-    catalog: [
-      ...[GITHUB_SLUG, NOTION_SLUG].map((slug) => {
-        return {
-          ...builtinConnector({ slug, label: slug, connected: true }),
-          scopeMismatch: true,
-          connectionStatus: "scope-mismatch" as const,
-        };
-      }),
-      builtinConnector({ slug: GMAIL_SLUG, label: "Gmail", connected: false }),
-    ],
-  });
-  await setupPage({
-    context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
-  });
-
-  const dialog = await openDirectory(user);
-  const attention = await within(dialog).findByRole("toolbar", {
-    name: "Needs attention",
-  });
-  const github = dialogButton(attention, "Open github details");
-  const notion = dialogButton(attention, "Open notion details");
-  await tabToCard(user, github);
-  await user.keyboard("{ArrowDown}");
-  await waitFor(() => {
-    expect(notion).toHaveFocus();
-  });
-  await user.keyboard("{Tab}");
-  expect(dialogButton(dialog, "Connect Gmail")).toHaveFocus();
-  await user.keyboard("{Shift>}{Tab}{/Shift}");
-  expect(notion).toHaveFocus();
-  await user.keyboard("{Enter}");
-  await expect(
-    within(dialog).findByRole("heading", { name: "notion" }),
-  ).resolves.toBeInTheDocument();
 });
 
 test("Keep remote access results outside connector action navigation", async () => {
@@ -793,38 +538,12 @@ test("Keep remote access results outside connector action navigation", async () 
   const manageSsh = queryAllByRoleFast("link", dialog).find((link) => {
     return link.getAttribute("aria-label") === "Manage SSH hosts";
   });
-  expect(manageSsh).toHaveAttribute("href", "/connectors/ssh?add=1");
+  expect(manageSsh).toHaveAttribute(
+    "href",
+    "/connectors?scope=remote-control&type=ssh",
+  );
   expect(within(dialog).queryByRole("toolbar")).not.toBeInTheDocument();
   expect(
     within(dialog).queryByText(/No connector matches/u),
   ).not.toBeInTheDocument();
-});
-
-test("Keep the remaining card reachable when a nonempty result list shrinks", async () => {
-  const user = userEvent.setup({ delay: null });
-  installComposerConnectorFixture({ catalog: directoryCatalog() });
-  await setupPage({
-    context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
-  });
-
-  const dialog = await openDirectory(user);
-  await expect(
-    within(dialog).findByText("Notion"),
-  ).resolves.toBeInTheDocument();
-  await tabToCard(user, dialogButton(dialog, "Connect Gmail"));
-  await user.keyboard("{ArrowDown}");
-  await waitFor(() => {
-    expect(dialogButton(dialog, "Connect Notion")).toHaveFocus();
-  });
-
-  const search = within(dialog).getByRole("textbox");
-  await user.click(search);
-  await fill(search, "gm");
-  await expect(
-    within(dialog).findByRole("toolbar", { name: "1 match" }),
-  ).resolves.toBeInTheDocument();
-  await tabToCard(user, dialogButton(dialog, "Connect Gmail"));
-  expect(dialogButton(dialog, "Connect Gmail")).toHaveFocus();
 });

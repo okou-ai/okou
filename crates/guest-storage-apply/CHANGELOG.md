@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.24.19](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.18...guest-storage-apply-v0.24.19) (2026-09-24)
+
+
+### Performance Improvements
+
+* **guest:** attribute local archive phases ([#36521](https://github.com/okou-ai/okou/issues/36521)) ([e11ed66](https://github.com/okou-ai/okou/commit/e11ed662fa7ac110e6cafa103e2ab05bc601dfe3))
+
+## [0.24.18](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.17...guest-storage-apply-v0.24.18) (2026-09-23)
+
+## [0.24.17](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.16...guest-storage-apply-v0.24.17) (2026-09-23)
+
 ## [0.24.16](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.15...guest-storage-apply-v0.24.16) (2026-09-23)
 
 

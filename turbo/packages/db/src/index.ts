@@ -41,6 +41,8 @@ import * as variableSchema from "./schema/variable";
 import * as composeJobSchema from "./schema/compose-job";
 import * as connectorSchema from "./schema/connector";
 import * as chatThreadConnectorSelectionSchema from "./schema/chat-thread-connector-selection";
+import * as chatThreadSshAccessOverrideSchema from "./schema/chat-thread-ssh-access-override";
+import * as chatThreadVncAccessOverrideSchema from "./schema/chat-thread-vnc-access-override";
 import * as builtinConnectorExternalCodeSessionSchema from "./schema/connector-external-code-session";
 import * as modelProviderAuthSessionSchema from "./schema/model-provider-auth-session";
 import * as builtinConnectorOauthDeviceAuthorizationSessionSchema from "./schema/connector-oauth-device-authorization-session";
@@ -217,6 +219,8 @@ export const schema = {
   ...composeJobSchema,
   ...connectorSchema,
   ...chatThreadConnectorSelectionSchema,
+  ...chatThreadSshAccessOverrideSchema,
+  ...chatThreadVncAccessOverrideSchema,
   ...builtinConnectorExternalCodeSessionSchema,
   ...modelProviderAuthSessionSchema,
   ...builtinConnectorOauthDeviceAuthorizationSessionSchema,

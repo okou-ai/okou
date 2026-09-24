@@ -27,9 +27,7 @@ import {
  * - `capability`: the pinned Pi runtime cannot resolve the model. The dynamic
  *   gate in `isPiRouteRuntimeCapable` does clear itself once the pinned SDK
  *   catalog carries the identity, but a model also pinned `pi: false` here for
- *   this reason — currently `claude-opus-5-5`, `gpt-6-sol`, and `gpt-6-luna` —
- *   still needs a
- *   human to flip the table.
+ *   this reason still needs a human to flip the table.
  *   Keeping the static exclusion is deliberate: a model must not reach Pi
  *   without a recorded decision and a billing check.
  */
@@ -67,12 +65,7 @@ export const PI_MODEL_POLICY = {
     exception: "frontier-vendor-harness",
     reason: "The Fable frontier line runs on the Claude Code vendor harness.",
   },
-  "claude-opus-5-5": {
-    pi: false,
-    exception: "capability",
-    reason:
-      "Absent from the pinned Pi SDK native catalog; use the Claude Code harness until runtime support is verified.",
-  },
+  "claude-opus-5-5": { pi: true, route: "claude-native" },
   "claude-opus-5": { pi: true, route: "claude-native" },
   "claude-opus-4-8": { pi: true, route: "claude-native" },
   "claude-sonnet-5": { pi: true, route: "claude-native" },
@@ -82,17 +75,8 @@ export const PI_MODEL_POLICY = {
     exception: "frontier-vendor-harness",
     reason: "The Astra frontier line runs on the Codex vendor harness.",
   },
-  "gpt-6-sol": {
-    pi: false,
-    exception: "capability",
-    reason:
-      "Pre-launch and absent from the pinned Pi SDK catalog on every route.",
-  },
-  "gpt-6-luna": {
-    pi: false,
-    exception: "capability",
-    reason: "Absent from the pinned Pi SDK catalog on every route.",
-  },
+  "gpt-6-sol": { pi: true, route: "gpt-codex" },
+  "gpt-6-luna": { pi: true, route: "gpt-codex" },
   "gpt-5.6-sol": { pi: true, route: "gpt-codex" },
   "gpt-5.6-terra": { pi: true, route: "gpt-codex" },
   "gpt-5.6-luna": { pi: true, route: "gpt-codex" },

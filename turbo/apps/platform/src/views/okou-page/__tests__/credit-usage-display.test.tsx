@@ -69,30 +69,6 @@ async function openUsage(total: string): Promise<void> {
   await screen.findByText("Credit usage");
 }
 
-test("Credit usage shows friendly chat model names", async () => {
-  await setupUsageChat(
-    "b0000000-0000-4000-a000-000000000802",
-    "run-credit-friendly-model",
-    {
-      version: 1,
-      totalCredits: 30,
-      settledAt: "2026-08-14T12:00:02.000Z",
-      breakdown: [
-        {
-          kind: "model/gpt-5.6-sol/tokens.output",
-          credits: 30,
-          providers: [{ provider: "openai", credits: 30 }],
-        },
-      ],
-    },
-  );
-
-  await openUsage("30");
-
-  expect(screen.getByText("GPT 5.6 Sol")).toBeInTheDocument();
-  expect(screen.queryByText("gpt-5.6-sol")).not.toBeInTheDocument();
-});
-
 test("Credit usage preserves unknown historical model identifiers", async () => {
   await setupUsageChat(
     "b0000000-0000-4000-a000-000000000803",

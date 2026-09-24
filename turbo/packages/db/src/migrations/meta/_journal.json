@@ -876,6 +876,48 @@
       "when": 1790147243462,
       "tag": "1202_wooden_william_stryker",
       "breakpoints": true
+    },
+    {
+      "idx": 1203,
+      "version": "7",
+      "when": 1790154759182,
+      "tag": "1203_cloudflare_access_org_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 1204,
+      "version": "7",
+      "when": 1790160222955,
+      "tag": "1204_chat_thread_snapshot_r2_pointer",
+      "breakpoints": true
+    },
+    {
+      "idx": 1205,
+      "version": "7",
+      "when": 1790167181737,
+      "tag": "1205_broken_hex",
+      "breakpoints": true
+    },
+    {
+      "idx": 1206,
+      "version": "7",
+      "when": 1790179906297,
+      "tag": "1206_retire_artifact_chat_triggers",
+      "breakpoints": true
+    },
+    {
+      "idx": 1207,
+      "version": "7",
+      "when": 1790181675893,
+      "tag": "1207_smart_oracle",
+      "breakpoints": true
+    },
+    {
+      "idx": 1208,
+      "version": "7",
+      "when": 1790215089991,
+      "tag": "1208_chat_thread_archived",
+      "breakpoints": true
     }
   ]
 }

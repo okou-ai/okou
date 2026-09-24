@@ -1,9 +1,9 @@
 import { AppWindow } from "lucide-react";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
-import { cn, DialogClose } from "@okouai/ui";
+import { cn } from "@okouai/ui";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import type { ComponentProps, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import type { BrowserSessionSignals } from "../../signals/chat-page/browser-session-block.ts";
 import { resolveArtifactImageTransformOrigin } from "../../lib/platform-host.ts";
@@ -19,7 +19,7 @@ import { ChatCard } from "./components/chat-card.tsx";
 
 interface BrowserSessionCardProps {
   readonly signals: BrowserSessionSignals;
-  readonly openMode?: "new-page" | "sidebar" | "sidebar-and-close-dialog";
+  readonly openMode?: "new-page" | "sidebar";
 }
 
 const BROWSER_SESSION_CARD_SHELL_CLASS =
@@ -46,16 +46,6 @@ function BrowserSessionCardShell({
       {children}
     </div>
   );
-}
-
-function BrowserSessionCardAction({
-  closeDialogOnOpen,
-  ...props
-}: ComponentProps<typeof ChatCard> & {
-  readonly closeDialogOnOpen: boolean;
-}) {
-  const card = <ChatCard {...props} />;
-  return closeDialogOnOpen ? <DialogClose render={card} /> : card;
 }
 
 function BrowserSessionStatus({ live }: { readonly live: boolean }) {
@@ -151,10 +141,7 @@ function BrowserSessionUnavailable({
   const openSidebar = useSet(openThreadBrowserSession$);
   const unavailable = signals === undefined;
   return (
-    <BrowserSessionCardAction
-      closeDialogOnOpen={
-        openMode === "sidebar-and-close-dialog" && signals !== undefined
-      }
+    <ChatCard
       render={
         openMode === "new-page" && signals ? (
           <a
@@ -208,7 +195,7 @@ function BrowserSessionUnavailable({
         <BrowserSessionStatus live={false} />
       </span>
       <BrowserSessionPreview />
-    </BrowserSessionCardAction>
+    </ChatCard>
   );
 }
 
@@ -237,8 +224,7 @@ function BrowserSessionCardState({
   const selected = selectedBrowserThreadId === signals.threadId;
   const live = session.status === "active";
   return (
-    <BrowserSessionCardAction
-      closeDialogOnOpen={openMode === "sidebar-and-close-dialog"}
+    <ChatCard
       render={
         openMode === "new-page" ? (
           <a
@@ -292,7 +278,7 @@ function BrowserSessionCardState({
         screenshotUrl={session.screenshotUrl ?? undefined}
         load={signals.screenshotImageLoad}
       />
-    </BrowserSessionCardAction>
+    </ChatCard>
   );
 }
 

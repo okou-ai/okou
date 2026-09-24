@@ -15,11 +15,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use tracing::{error, warn};
 
-use super::active_runs::{ActiveRunGuard, ActiveRunReusePublisher, ActiveRuns};
-use super::blank_pool::BlankPoolDiagnostics;
 use super::factory_lifecycle::SharedFactory;
-use super::heartbeat::WorkspaceCacheStateSnapshot;
-use super::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool};
 use super::job_lifecycle::{
     ActiveBudgetLease, CompletionPayload, FinalizationReady, RunCleanupDisposition, RunCleanupState,
 };
@@ -31,7 +27,6 @@ use super::sandbox_finalization::{
 };
 #[cfg(test)]
 use super::{OuterJobPanicPoint, StartLoopTestObserver, maybe_panic_outer_job};
-use crate::error::RunnerError;
 use crate::executor::{
     self, ExecutorConfig, RunnerPreSpawnConcurrency, RunnerPreSpawnPhase, RunnerPreSpawnTiming,
     SessionHistoryRestorePlan,
@@ -44,8 +39,12 @@ use crate::resource_budget::{BudgetLease, ResourceBudget};
 use crate::status::StatusTracker;
 use crate::storage_fingerprints::StorageFingerprints;
 use crate::telemetry::JobTelemetry;
+use runner_lifecycle::active_runs::{ActiveRunGuard, ActiveRunReusePublisher, ActiveRuns};
+use runner_lifecycle::workspace_image_cache::snapshot::WorkspaceCacheStateSnapshot;
 use runner_provider::{ClaimedJob, CompletionReportTiming, JobProvider};
 use runner_provider::{RunCancellationHandle, RunCancellationRegistration, RunCancellationSignals};
+use runner_supervisor::blank_pool::BlankPoolDiagnostics;
+use runner_supervisor::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool};
 use runner_types::ids::RunId;
 use runner_types::types::{ExecutionContext, SandboxReuseResult};
 
@@ -697,10 +696,10 @@ pub(super) async fn run_job(
                         .await
                     {
                         Ok(true) => Ok(()),
-                        Ok(false) => Err(RunnerError::Internal(format!(
+                        Ok(false) => Err(runner_executor::ExecutorError::Internal(format!(
                             "sandbox {sandbox_id} prepared after active status changed for run {run_id}"
                         ))),
-                        Err(error) => Err(RunnerError::Internal(format!(
+                        Err(error) => Err(runner_executor::ExecutorError::Internal(format!(
                             "persist prepared sandbox {sandbox_id} as running for run {run_id}: {error}"
                         ))),
                     }
@@ -925,8 +924,6 @@ mod tests {
 
     use sandbox::SandboxId;
 
-    use super::super::active_runs::ActiveRuns;
-    use super::super::idle_lifecycle::SharedIdlePool;
     use super::super::job_lifecycle::RunCleanupState;
     use super::super::orphan_reap::OrphanedActiveRuns;
     use crate::http::{HttpClient, HttpClientConfig};
@@ -938,7 +935,9 @@ mod tests {
     use crate::resource_budget::ResourceBudget;
     use crate::restored_session_identity::RestoredSessionIdentity;
     use crate::status::StatusTracker;
+    use runner_lifecycle::active_runs::ActiveRuns;
     use runner_provider::RunCancellationRegistry;
+    use runner_supervisor::idle_lifecycle::SharedIdlePool;
     use runner_types::ids::RunId;
 
     fn test_http_client() -> HttpClient {
@@ -946,6 +945,7 @@ mod tests {
             api_url: "http://localhost".into(),
             vercel_bypass: None,
             client_session_id: "runner-session-test".to_string(),
+            runner_version: env!("CARGO_PKG_VERSION"),
         })
         .unwrap()
     }

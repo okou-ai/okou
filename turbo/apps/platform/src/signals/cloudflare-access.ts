@@ -4,7 +4,8 @@ import type {
 } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
   cloudflareAccessContract,
-  type CloudflareAccessConfig,
+  scopedCloudflareAccessConfigSchema,
+  type ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/cloudflare-access-errors";
 import { command, computed, state } from "ccstate";
@@ -14,6 +15,7 @@ import { accept } from "../lib/accept.ts";
 import { apiClient$ } from "./api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { clerk$, currentOrgInfo$, user$ } from "./auth.ts";
+import { isOrgAdmin$ } from "./org.ts";
 import { setAblyPayloadLoop$ } from "./realtime.ts";
 import { onRef, resetSignal } from "./utils.ts";
 
@@ -73,12 +75,18 @@ export const cloudflareAccessConfigs$ = computed(async (get) => {
     return null;
   }
   const result = await accept(
-    (await get(cloudflareAccessClient$)).client.list(),
+    (await get(cloudflareAccessClient$)).client.list({
+      query: { view: "scoped" },
+    }),
     [200, 404],
     undefined,
     { showErrorToast: false },
   );
-  return result.status === 200 ? result.body.configs : null;
+  return result.status === 200
+    ? result.body.configs.map((config) => {
+        return scopedCloudflareAccessConfigSchema.parse(config);
+      })
+    : null;
 });
 
 export const cloudflareAccessSummary$ = computed(async (get) => {
@@ -131,10 +139,15 @@ export const subscribeCloudflareAccessChanged$ = command(
 export interface CloudflareAccessDialogState {
   readonly identity: string;
   readonly kind: "create" | "edit" | "delete";
-  readonly config: CloudflareAccessConfig | null;
+  readonly config: ScopedCloudflareAccessConfig | null;
+  readonly scope: "personal" | "organization";
 }
 
 const dialog$ = state<CloudflareAccessDialogState | null>(null);
+const createScope$ = state<"personal" | "organization">("personal");
+export const cloudflareAccessCreateScope$ = computed((get) => {
+  return get(createScope$);
+});
 const conflict$ = state<string | null>(null);
 const reviewedRevision$ = state<number | null>(null);
 const replaceToken$ = state(false);
@@ -195,11 +208,33 @@ export const replaceCloudflareAccessToken$ = command(
   },
 );
 
+export const chooseCloudflareAccessScope$ = command(
+  async (
+    { get, set },
+    scope: "personal" | "organization",
+    signal: AbortSignal,
+  ) => {
+    const dialog = await get(cloudflareAccessDialog$);
+    signal.throwIfAborted();
+    if (
+      !dialog ||
+      dialog.kind !== "create" ||
+      (scope === "organization" && !(await get(isOrgAdmin$)))
+    ) {
+      return;
+    }
+    signal.throwIfAborted();
+    if (get(dialog$) === dialog) {
+      set(createScope$, scope);
+    }
+  },
+);
+
 export const openCloudflareAccessDialog$ = command(
   async (
     { get, set },
     kind: CloudflareAccessDialogState["kind"],
-    config: CloudflareAccessConfig | null,
+    config: ScopedCloudflareAccessConfig | null,
     signal: AbortSignal,
   ) => {
     const identity = await get(cloudflareAccessIdentity$);
@@ -207,10 +242,20 @@ export const openCloudflareAccessDialog$ = command(
     if (!identity) {
       return;
     }
+    if (config?.scope === "organization" && !(await get(isOrgAdmin$))) {
+      return;
+    }
+    signal.throwIfAborted();
     set(conflict$, null);
     set(reviewedRevision$, null);
     set(replaceToken$, false);
-    set(dialog$, { identity, kind, config });
+    set(createScope$, "personal");
+    set(dialog$, {
+      identity,
+      kind,
+      config,
+      scope: config?.scope ?? "personal",
+    });
   },
 );
 
@@ -220,11 +265,6 @@ export const closeCloudflareAccessDialog$ = command(({ set }) => {
   set(replaceToken$, false);
   set(reviewedRevision$, null);
   set(dialog$, null);
-});
-
-export const refreshCloudflareAccess$ = command(({ set }) => {
-  set(closeCloudflareAccessDialog$);
-  set(invalidateCloudflareAccess$);
 });
 
 function textField(form: HTMLFormElement, name: string): string {
@@ -262,10 +302,11 @@ async function updateCloudflareAccessConfig(
     const result = await accept(
       client.delete({
         params,
+        query: { view: "scoped" },
         body: { expectedRevision },
         fetchOptions: { signal },
       }),
-      [204, 404, 409],
+      [204, 403, 404, 409],
       signal,
     );
     return result.status === 204 ? null : result.body.error.code;
@@ -277,6 +318,7 @@ async function updateCloudflareAccessConfig(
   const result = await accept(
     client.update({
       params,
+      query: { view: "scoped" },
       body: {
         expectedRevision,
         ...(name !== config.name ? { name } : {}),
@@ -284,7 +326,7 @@ async function updateCloudflareAccessConfig(
       },
       fetchOptions: { signal },
     }),
-    [200, 404, 409],
+    [200, 403, 404, 409],
     signal,
   );
   return result.status === 200 ? null : result.body.error.code;
@@ -297,7 +339,7 @@ const finishCloudflareAccessCreate$ = command(
     result:
       | { readonly status: 201 | 204 }
       | {
-          readonly status: 400 | 404 | 409 | 500;
+          readonly status: 400 | 403 | 404 | 409 | 500;
           readonly body: { readonly error: { readonly code: string } };
         },
     retrying: boolean,
@@ -342,24 +384,40 @@ export const saveCloudflareAccess$ = command(
     const retrying = get(cloudflareAccessSaveUncertain$);
     let conflict: string | null = null;
     if (dialog.kind === "create") {
+      const scope = get(createScope$);
       const retry = get(unresolvedSave$);
       const id = retry?.dialog === dialog ? retry.id : crypto.randomUUID();
+      if (scope === "organization" && !(await get(isOrgAdmin$))) {
+        set(conflict$, CLOUDFLARE_ACCESS_ERROR_CODES.FORBIDDEN);
+        return;
+      }
+      signal.throwIfAborted();
       const body = cloudflareAccessContract.create.body.parse({
         id,
         name: textField(form, "accessName"),
         credentials: credentialsFromForm(form),
+        scope,
       });
       set(saveMessage$, null);
       set(unresolvedSave$, { dialog, id });
       const result = await accept(
-        clients.client.create({ body, fetchOptions: { signal } }),
-        [201, 204, 400, 404, 409, 500],
+        clients.client.create({
+          query: { view: "scoped" },
+          body,
+          fetchOptions: { signal },
+        }),
+        [201, 204, 400, 403, 404, 409, 500],
         signal,
       );
       if (!set(finishCloudflareAccessCreate$, dialog, result, retrying)) {
         return;
       }
     } else {
+      if (dialog.scope === "organization" && !(await get(isOrgAdmin$))) {
+        set(conflict$, CLOUDFLARE_ACCESS_ERROR_CODES.FORBIDDEN);
+        return;
+      }
+      signal.throwIfAborted();
       conflict = await updateCloudflareAccessConfig(
         clients.client,
         dialog,

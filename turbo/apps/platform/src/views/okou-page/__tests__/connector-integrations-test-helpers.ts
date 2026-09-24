@@ -70,12 +70,6 @@ export function mockSlack(
     reinstallUrl: null,
     scopeMismatch: false,
     workspaceName: null,
-    environment: {
-      requiredSecrets: [],
-      requiredVars: [],
-      missingSecrets: [],
-      missingVars: [],
-    },
   };
   context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
     return respond(200, { ...defaults, ...overrides });
@@ -131,7 +125,6 @@ export function mockFeishu(
 export function setupIntegrationsPage(
   context: TestContext,
   options: {
-    readonly agentPhone?: boolean;
     readonly feishu?: boolean;
     readonly lark?: boolean;
   } = {},
@@ -140,7 +133,6 @@ export function setupIntegrationsPage(
     context,
     path: "/works",
     featureSwitches: {
-      [FeatureSwitchKey.AgentPhoneEntry]: options.agentPhone ?? false,
       [FeatureSwitchKey.FeishuIntegration]: options.feishu ?? false,
       [FeatureSwitchKey.LarkIntegration]: options.lark ?? false,
     },

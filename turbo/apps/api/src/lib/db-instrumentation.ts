@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { lookup as dnsLookup, type LookupAddress } from "node:dns";
 import { Socket, type LookupFunction, type SocketConnectOpts } from "node:net";
 import { performance } from "node:perf_hooks";
@@ -13,6 +14,7 @@ import {
 import { createStore, state } from "ccstate";
 import type { Pool, PoolClient } from "pg";
 
+import { singleton } from "./singleton";
 import { deriveSqlSpanName } from "./sql-span-name";
 
 const POOL_QUERY_SPAN_KEY = createContextKey("vm0.pg.pool-query-span");
@@ -37,6 +39,26 @@ const LOOKUP_HEDGE_DELAY_MS = 150;
 type AnyArgs = readonly unknown[];
 type PgQuery = (...args: AnyArgs) => unknown;
 type PoolAcquirePath = "idle" | "new" | "queued";
+export interface PgPoolAcquisition {
+  readonly durationMs: number;
+  readonly path: PoolAcquirePath;
+}
+
+export interface PgPoolAcquisitionCapture {
+  readonly acquisitions: PgPoolAcquisition[];
+}
+
+const scopedPgPoolAcquisitionCapture = singleton(() => {
+  return new AsyncLocalStorage<PgPoolAcquisitionCapture>();
+});
+
+export async function withPgPoolAcquisitionCapture<T>(
+  capture: PgPoolAcquisitionCapture,
+  operation: () => Promise<T>,
+): Promise<T> {
+  return await scopedPgPoolAcquisitionCapture().run(capture, operation);
+}
+
 type PoolRelease = (error?: Error | boolean) => void;
 type PoolConnectCallback = (
   error: Error | undefined,
@@ -484,17 +506,22 @@ export function instrumentPgPool(pool: Pool, tracer: Tracer): Pool {
     const callback = args[args.length - 1];
     if (isPoolConnectCallback(callback)) {
       const markedSpan = context.active().getValue(POOL_QUERY_SPAN_KEY);
-      if (!(markedSpan instanceof PoolQuerySpan)) {
+      const capture = scopedPgPoolAcquisitionCapture.peek()?.getStore();
+      if (!(markedSpan instanceof PoolQuerySpan) && !capture) {
         return Reflect.apply(originalConnect, pool, args);
       }
 
       const startedAt = performance.now();
       const path = acquisitionPath(pool);
       const wrappedCallback: PoolConnectCallback = (error, client, release) => {
-        markedSpan.span.setAttributes({
-          [POOL_ACQUIRE_DURATION_ATTRIBUTE]: performance.now() - startedAt,
-          [POOL_ACQUIRE_PATH_ATTRIBUTE]: path,
-        });
+        const durationMs = performance.now() - startedAt;
+        if (markedSpan instanceof PoolQuerySpan) {
+          markedSpan.span.setAttributes({
+            [POOL_ACQUIRE_DURATION_ATTRIBUTE]: durationMs,
+            [POOL_ACQUIRE_PATH_ATTRIBUTE]: path,
+          });
+        }
+        capture?.acquisitions.push({ durationMs, path });
         callback(error, client, release);
       };
       const wrappedArgs = [...args.slice(0, -1), wrappedCallback] as const;

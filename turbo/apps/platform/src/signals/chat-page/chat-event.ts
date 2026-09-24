@@ -5,6 +5,7 @@ import { toast } from "@okouai/ui/components/ui/sonner";
 import { navigateToChat$ } from "../okou-page/nav.ts";
 import { currentChatThreadId$, chatThreads$ } from "../agent-chat.ts";
 import {
+  chatThreadArchiveContract,
   chatThreadByIdContract,
   chatThreadPinContract,
   chatThreadUnpinContract,
@@ -277,6 +278,45 @@ export const pinChatThread$ = command(
 export const unpinChatThread$ = command(
   ({ set }, threadId: string, signal: AbortSignal) => {
     return set(setChatThreadPinned$, { threadId, pinned: false }, signal);
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Archive / unarchive thread
+// ---------------------------------------------------------------------------
+
+export const setChatThreadArchived$ = command(
+  async (
+    { get, set },
+    {
+      threadId,
+      archived,
+    }: { readonly threadId: string; readonly archived: boolean },
+    signal: AbortSignal,
+  ) => {
+    signal.throwIfAborted();
+    const eventId = crypto.randomUUID();
+    const existingThread = get(eventDrivenChatThreads$).find((thread) => {
+      return thread.id === threadId;
+    });
+    if (existingThread) {
+      set(registerOptimisticChatThreadEvent$, {
+        id: eventId,
+        kind: archived ? "archived" : "unarchived",
+        chatThreadId: threadId,
+        agentId: existingThread.agentId,
+      });
+    }
+    const client = get(apiClient$)(chatThreadArchiveContract);
+    const request = {
+      params: { id: threadId },
+      query: { eventId },
+      fetchOptions: { signal },
+    };
+    await accept(
+      archived ? client.archive(request) : client.unarchive(request),
+      [204],
+    );
   },
 );
 

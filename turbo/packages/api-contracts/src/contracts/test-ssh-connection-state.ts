@@ -72,6 +72,23 @@ export const testSshConnectionStateActionBodySchema = z.discriminatedUnion(
         passphrase: z.string().nullable(),
       })
       .strict(),
+    z
+      .object({
+        action: z.literal("set-needs-rebind"),
+        orgId: z.string().min(1),
+        userId: z.string().min(1),
+        connectionId: z.uuid(),
+      })
+      .strict(),
+    z
+      .object({
+        action: z.literal("bind-shared-access"),
+        orgId: z.string().min(1),
+        userId: z.string().min(1),
+        connectionId: z.uuid(),
+        sourceConfigId: z.uuid(),
+      })
+      .strict(),
   ],
 );
 
@@ -79,9 +96,11 @@ export const testSshConnectionStateActionResponseSchema = z
   .object({
     ok: z.literal(true),
     generation: z.int().positive().optional(),
+    configId: z.uuid().optional(),
     privateKeyMatches: z.boolean().optional(),
     passphraseMatches: z.boolean().optional(),
     runId: z.uuid().optional(),
+    threadId: z.uuid().optional(),
     agentId: z.uuid().optional(),
     sandboxToken: z.string().optional(),
     held: z.boolean().optional(),

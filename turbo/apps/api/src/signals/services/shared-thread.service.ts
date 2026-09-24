@@ -16,6 +16,7 @@ import { command, computed, type Computed } from "ccstate";
 
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
+import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import {
   recordSharedThreadPhase,
@@ -68,6 +69,8 @@ interface CreateSharedThreadArgs {
   readonly eventIds: readonly string[];
   readonly publicBrand: PublicBrand;
   readonly canReadAttachments: boolean;
+  /** Client-generated ID, so the caller can copy the link before creation. */
+  readonly id?: string;
 }
 
 type CreateSharedThreadResult =
@@ -76,7 +79,8 @@ type CreateSharedThreadResult =
   | { readonly kind: "attachments-forbidden" }
   | { readonly kind: "no-shareable-messages" }
   | { readonly kind: "artifact-unavailable" }
-  | { readonly kind: "too-large" };
+  | { readonly kind: "too-large" }
+  | { readonly kind: "id-conflict" };
 
 interface SharedThreadSourceRow {
   readonly eventType: ChatEventRow["eventType"];
@@ -252,6 +256,20 @@ async function ownsSharedThreadSource(
   return thread !== undefined;
 }
 
+async function sharedThreadIdExists(
+  database: Db,
+  id: string,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const [row] = await database
+    .select({ id: sharedThreads.id })
+    .from(sharedThreads)
+    .where(eq(sharedThreads.id, id))
+    .limit(1);
+  signal.throwIfAborted();
+  return row !== undefined;
+}
+
 function sharedThreadMessageColumns(messages: readonly SharedMessage[]) {
   // Previous API readers validate messages strictly. Keep attachment metadata
   // outside that persisted shape so those readers can still serve the text.
@@ -351,9 +369,13 @@ const persistSharedThread$ = command(
   ) => {
     const { id, title, createdAt, messages, plan } = snapshot;
     const database = set(writeDb$);
+    // A caller-supplied ID may name another user's share. Cleanup may only
+    // revoke storage this request created with its create-only policy write.
+    let policyClaimed = false;
     async function persistAndPublish() {
       if (plan) {
         await set(initializeSharedThreadArtifacts$, plan, signal);
+        policyClaimed = true;
       }
       // A durable, denied identity lets deletion/revocation find in-flight
       // snapshots. Only artifact snapshots may exist before the title settles.
@@ -418,7 +440,7 @@ const persistSharedThread$ = command(
       }
     }
     return await onRejection(persistAndPublish(), async () => {
-      if (plan) {
+      if (plan && policyClaimed) {
         // Cleanup owns a bounded lifetime even after the HTTP client disconnects.
         // Retain the identity if cleanup fails, so deletion can be retried.
         const cleanupSignal = AbortSignal.timeout(30_000);
@@ -439,7 +461,13 @@ const persistSharedThread$ = command(
           await tx
             .delete(artifacts)
             .where(
-              eq(artifacts.logicalKey, sharedThreadArtifactLogicalKey(id)),
+              and(
+                eq(artifacts.logicalKey, sharedThreadArtifactLogicalKey(id)),
+                eq(
+                  artifacts.authorUserId,
+                  sharedThreadArtifactAuthorUserId(args.userId),
+                ),
+              ),
             );
           await tx
             .delete(sharedThreads)
@@ -533,6 +561,9 @@ const prepareAndPersistSharedThread$ = command(
       if (publication.error instanceof SharedThreadArtifactUnavailable) {
         return { kind: "artifact-unavailable" } as const;
       }
+      if (args.id !== undefined && isUniqueViolation(publication.error)) {
+        return { kind: "id-conflict" } as const;
+      }
       throw publication.error;
     }
     await publishUserSignal(
@@ -555,6 +586,12 @@ export const createSharedThread$ = command(
     if (!(await ownsSharedThreadSource(database, args, signal))) {
       return { kind: "thread-not-found" };
     }
+    if (
+      args.id !== undefined &&
+      (await sharedThreadIdExists(database, args.id, signal))
+    ) {
+      return { kind: "id-conflict" };
+    }
 
     const selectedEventIds = [...new Set(args.eventIds)];
     const rows = await get(
@@ -569,7 +606,7 @@ export const createSharedThread$ = command(
     );
     signal.throwIfAborted();
 
-    const shareId = randomUUID();
+    const shareId = args.id ?? randomUUID();
     const prepared = await set(
       prepareSharedThreadMessages$,
       args,

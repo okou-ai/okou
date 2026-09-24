@@ -1435,6 +1435,7 @@
       "rename": "Renombrar",
       "saving": "Guardando...",
       "send": "Enviar",
+      "shareMessage": "Compartir mensaje",
       "stop": "Detener",
       "view": "Ver"
     },
@@ -1760,21 +1761,19 @@
       "applyFailed": "No se pudo añadir la información. Tus datos siguen aquí. Inténtalo de nuevo.",
       "applying": "Añadiendo información",
       "applyingDescription": "El navegador está finalizando esta solicitud.",
-      "callbackFailed": "No se notificó al agente. Vuelve a pulsar Continuar.",
+      "callbackFailed": "No se notificó al agente.",
       "cancel": "Cancelar",
       "cancelFailed": "No se pudo cancelar la solicitud. Inténtalo de nuevo.",
       "cancelled": "Solicitud cancelada",
-      "cancelledDescription": "No se añadió ninguna información. Continúa para avisar al agente.",
       "cancelling": "Cancelando…",
+      "clearValue": "Borrar el valor del sitio web",
       "completed": "Información añadida",
-      "completedDescription": "La información se añadió al navegador. Continúa para avisar al agente.",
-      "continue": "Continuar",
-      "continuing": "Continuando…",
+      "continue": "Avisar al agente",
+      "continuing": "Avisando al agente…",
       "delivered": "Agente notificado",
-      "deliveredDescription": "El agente ya puede continuar.",
-      "description": "Introduce la información solicitada para este sitio.",
       "expired": "Solicitud caducada",
       "expiredDescription": "El navegador se cerró o esta solicitud ya no está activa.",
+      "keepValue": "Conservar el valor del sitio web",
       "loadFailed": "No se pudo cargar esta solicitud",
       "loadFailedDescription": "Inténtalo de nuevo en un momento.",
       "loadingDescription": "Comprobando esta solicitud…",
@@ -1791,31 +1790,6 @@
       "unavailable": "Solicitud no disponible",
       "uncertain": "Comprueba el navegador",
       "uncertainDescription": "Es posible que el navegador haya recibido la información. Pide al agente que lo compruebe antes de volver a intentarlo."
-    },
-    "browserInteraction": {
-      "applying": "Completando la interacción con el navegador",
-      "applyingDescription": "El navegador está finalizando esta solicitud.",
-      "callbackFailed": "No se notificó al agente. Vuelve a pulsar Continuar.",
-      "cancel": "Cancelar",
-      "cancelFailed": "No se pudo cancelar esta solicitud. Inténtalo de nuevo.",
-      "cancelled": "Solicitud cancelada",
-      "cancelledDescription": "La entrega del navegador se canceló. Continúa para notificar al agente.",
-      "cancelling": "Cancelando…",
-      "completed": "Interacción con el navegador completada",
-      "completedDescription": "Tu interacción con el navegador quedó registrada. Continúa para notificar al agente.",
-      "completeFailed": "No se pudo completar esta solicitud. Inténtalo de nuevo.",
-      "completing": "Completando…",
-      "continue": "Continuar",
-      "continuing": "Continuando…",
-      "delivered": "Agente notificado",
-      "deliveredDescription": "El agente ya puede continuar.",
-      "description": "Abre el navegador, completa este paso y selecciona Hecho.",
-      "done": "Hecho",
-      "stale": "El navegador ya no está disponible",
-      "staleDescription": "Pide al agente que cree una nueva solicitud.",
-      "title": "Toma el control del navegador",
-      "uncertain": "Comprueba el navegador",
-      "uncertainDescription": "Es posible que la interacción se haya completado. Pide al agente que lo compruebe antes de volver a intentarlo."
     },
     "cards": {
       "viewDetails": "Ver detalles"
@@ -1950,36 +1924,63 @@
       "loadMessages": "No se pudieron cargar los mensajes",
       "noModelProviderAction": "Configura uno en la configuración del espacio de trabajo",
       "noModelProviderPrefix": "Aún no hay un proveedor de modelo configurado.",
-      "noModelProviderSuffix": "para empezar.",
       "providerDeletedAction": "Inicia un nuevo hilo de chat",
       "providerDeletedPrefix": "El proveedor de modelos utilizado en este hilo ha sido eliminado.",
-      "providerDeletedSuffix": "para continuar.",
       "providerIncompatibleAction": "Empieza una nueva sesión",
       "providerIncompatiblePrefix": "Esta sesión se inició con un modelo diferente y no se puede continuar con el actual.",
       "recovery": {
+        "accessProgramDescription": "Vuelve a intentarlo dentro de un momento. Puedes dejar este chat abierto.",
+        "accessProgramTitle": "El acceso a Codex no está disponible temporalmente",
         "autonomyLimitDescription": "Se ha alcanzado el límite de ejecuciones automáticas consecutivas. Confirma para continuar.",
         "autonomyLimitTitle": "Límite de ejecuciones automáticas alcanzado",
-        "capacityDescription": "Inténtalo de nuevo en unos minutos o cambia de modelo.",
+        "capacityDescription": "Vuelve a intentarlo en un momento o elige otro modelo para seguir trabajando.",
         "capacityTitle": "Este modelo está ocupado ahora mismo",
         "claudeCode": "Claude Code",
         "codex": "Codex",
+        "connectionLostTitle": "La respuesta se interrumpió",
+        "contextWindowTitle": "Este chat es demasiado largo",
         "continue": "Continuar",
-        "newRunCurrentSettings": "Al continuar, se inicia una nueva ejecución con tu configuración actual.",
-        "originalAccount": "Esta ejecución usó tu suscripción personal: {{account}}.",
-        "originalAccountUnavailable": "Esta ejecución usó una suscripción personal. La cuenta original ya no está conectada.",
-        "originalAccountUnknown": "Esta ejecución usó una suscripción personal. No se pudo verificar la cuenta original.",
-        "resetAndTryAgain": "Restablecer e intentar de nuevo",
+        "filesystemFullDescription": "Este proceso no pudo guardar más archivos. Vuelve a intentarlo para continuar.",
+        "filesystemFullTitle": "Este proceso se quedó sin espacio",
+        "fiveHourReset": "El límite de 5 h se restablece {{time}}",
+        "inputTooLargeDescription": "Acorta el mensaje y vuelve a enviarlo.",
+        "inputTooLargeTitle": "Tu mensaje es demasiado grande",
+        "invalidApiKeyTitle": "La clave de API debe actualizarse",
+        "invalidCredentialsTitle": "La conexión con tu modelo necesita atención",
+        "newChat": "Nuevo chat",
+        "newChatDescription": "Inicia un chat nuevo e incluye los detalles importantes que quieras conservar.",
+        "openClaude": "Abrir Claude",
+        "outputLimitDescription": "La respuesta se detuvo antes de terminar. Pulsa «Continuar» para retomarla.",
+        "outputLimitTitle": "La respuesta alcanzó el límite de longitud",
+        "personalAccount": "Suscripción personal {{account}}",
+        "personalAccountDisconnected": "Suscripción personal desconectada",
+        "providerBalanceDescription": "Comprueba el saldo de tu cuenta del proveedor y vuelve a intentarlo.",
+        "providerBalanceTitle": "Tu cuenta del proveedor necesita más saldo",
+        "providerConnectionDescription": "Abre Proveedores de modelos para volver a conectar o actualizar tu cuenta y, después, inténtalo de nuevo.",
+        "providerQueueTimeoutTitle": "El modelo no se inició a tiempo",
+        "providerRateLimitedTitle": "Hay demasiadas solicitudes al modelo ahora mismo",
+        "providerServerErrorTitle": "El proveedor de modelos tuvo un error temporal",
+        "providerStreamTimeoutTitle": "La respuesta del modelo agotó el tiempo",
+        "reconnectTitle": "Vuelve a conectar tu cuenta de modelo",
         "resetsAt": "Se restablece {{time}}",
+        "resetUsageRemaining": "Restablecer · quedan {{value}}",
+        "safetyDescription": "La solicitud no superó las comprobaciones de seguridad del modelo. Prueba a reformularla o a elegir otro modelo.",
+        "safetyTitle": "El modelo no pudo ayudar con esta solicitud",
         "selectModel": "Cambiar de modelo",
-        "timeoutDescription": "Esta ejecución alcanzó su límite de tiempo. Continúa para seguir trabajando.",
+        "sessionHistoryTitle": "Este chat llegó a su límite",
+        "termsDescription": "Acepta las condiciones más recientes en Claude y vuelve para intentarlo de nuevo.",
+        "termsTitle": "Debes aceptar los términos de Claude",
+        "timeoutDescription": "Puedes continuar desde donde se detuvo este proceso.",
         "timeoutTitle": "Se alcanzó el límite de tiempo",
         "tryAgain": "Intentar de nuevo",
-        "unavailableDescription": "Este modelo no es compatible con la cuenta de ChatGPT conectada. Cambia a otro modelo para continuar.",
+        "unavailableDescription": "Elige otro modelo que funcione con tu cuenta del proveedor.",
         "unavailableTitle": "El modelo seleccionado no está disponible",
         "usageDescription": "Puedes continuar cuando se restablezca tu límite de uso o cambiar de modelo ahora.",
-        "usageTitle": "Se alcanzó el límite de {{framework}}"
+        "usageFallbackTitle": "Se alcanzó el límite del proveedor de modelos",
+        "usageTitle": "Se alcanzó el límite de {{framework}}",
+        "weeklyReset": "El límite semanal se restablece {{time}}"
       },
-      "runCancelled": "Se detuvo a mitad de la respuesta; puedes retomarla cuando quieras."
+      "runCancelled": "Ejecución pausada — continúa."
     },
     "feedback": {
       "emailDraftDescription": "un borrador de correo electrónico",
@@ -2124,6 +2125,22 @@
       "removeQueuedMessage": "Eliminar mensaje en cola",
       "skipAutomationEvent": "Omitir evento de automatización"
     },
+    "remoteAccess": {
+      "defaultEnabled": "Habilitado de forma predeterminada para chats",
+      "enabledCount_one": "{{count}} activo",
+      "enabledCount_many": "{{count}} activos",
+      "enabledCount_other": "{{count}} activos",
+      "loadFailed": "No se pudo cargar el acceso remoto.",
+      "loading": "Cargando acceso remoto…",
+      "off": "Desactivado",
+      "on": "Activado",
+      "requiresSsh": "También requiere acceso al host SSH {{name}}.",
+      "retry": "Reintentar",
+      "startChat": "Inicia un chat para cambiar el acceso a los hosts.",
+      "title": "Acceso remoto",
+      "unavailableSsh": "host SSH no disponible",
+      "useDefault": "Usar valor predeterminado"
+    },
     "replaceDraft": {
       "description": "Si continúas, se borrará el borrador actual del editor y se abrirá un prompt de flujo de trabajo.",
       "title": "¿Reemplazar el borrador del editor?"
@@ -2170,17 +2187,7 @@
       "relatedArtifacts": "Artefactos relacionados",
       "selectedModelAppliesAfterCurrentRun": "Tu modelo seleccionado {{model}} entrará en vigor después de esta ejecución",
       "thinking": {
-        "assembling": "Ensamblando las piezas...",
-        "brewing": "Preparando una respuesta...",
-        "default": "Pensando...",
-        "mapping": "Trazándolo...",
-        "onIt": "En ello...",
-        "piecingTogether": "Juntando las cosas...",
-        "shaping": "Moldeando la respuesta...",
-        "sketching": "Esbozando los detalles...",
-        "spinningUp": "Arrancando...",
-        "tuningIn": "Sintonizando...",
-        "wiring": "Conectándolo todo..."
+        "default": "Pensando..."
       },
       "viewActivityLogs": "Ver registros de actividad",
       "viewLangfuseTrace": "Ver traza de Langfuse",
@@ -2198,12 +2205,15 @@
       "createFailed": "No se pudo crear la conversación compartida. Inténtalo de nuevo.",
       "deselectGroup": "Deseleccionar grupo de mensajes",
       "linkCopied": "Enlace copiado",
+      "messageShareFailed": "No se pudo crear el enlace compartido. Inténtalo de nuevo.",
       "publicDescription": "Los mensajes seleccionados y sus archivos adjuntos serán públicos.",
+      "selectAll": "Seleccionar todo",
       "selectedCount_one": "{{count}} seleccionado",
       "selectedCount_many": "{{count}} seleccionados",
       "selectedCount_other": "{{count}} seleccionados",
       "selectGroup": "Seleccionar grupo de mensajes",
       "shareLink": "Enlace de conversación compartida",
+      "shareLinkCopied": "Enlace para compartir copiado",
       "start": "Compartir mensajes",
       "tooLarge": "Selecciona menos mensajes para compartir"
     },
@@ -2913,7 +2923,6 @@
       "ariaLabel": "Hilo de chat",
       "changeIcon": "Cambiar icono",
       "emoji": {
-        "archive": "Archivar",
         "done": "Completado",
         "idea": "Idea",
         "no": "No",
@@ -2990,12 +2999,12 @@
     "configuration": "Cloudflare Access",
     "createNew": "Crear nuevo Cloudflare Access",
     "delete": "Eliminar Cloudflare Access",
-    "deleteHelp": "¿Eliminar este Cloudflare Access sin uso? El Service Token guardado no se podrá recuperar.",
+    "deleteHelp": "¿Eliminar este Cloudflare Access? El Service Token guardado no se podrá recuperar. No se puede eliminar mientras lo use algún host.",
     "description": "Accede a aplicaciones protegidas con tokens de servicio de Cloudflare Access.",
     "edit": "Editar Cloudflare Access",
-    "empty": "Aún no hay Cloudflare Access. Añade un token de servicio para acceder a aplicaciones protegidas.",
     "failed": "No se pudo guardar el cambio de Cloudflare Access. Inténtalo de nuevo.",
-    "inUse": "Un host utiliza este Cloudflare Access. Revisa los hosts afectados y cambia su configuración o elimínalos primero.",
+    "forbidden": "Solo los administradores de la organización pueden modificar Cloudflare Access compartido.",
+    "inUse": "Un host SSH utiliza este Cloudflare Access. Su propietario debe cambiar su vínculo o eliminarlo primero.",
     "inUseHelp": "Selecciona otro Cloudflare Access para estos hosts, cámbialos explícitamente a Directa o elimínalos antes de eliminar este.",
     "invalidInput": "Algunos ajustes de Cloudflare Access no son válidos. Revisa los campos e inténtalo de nuevo.",
     "keepChanges": "Aplicar mis cambios a esta versión",
@@ -3006,6 +3015,9 @@
     "missing": "Este Cloudflare Access ya no está disponible. Selecciona otro o crea uno.",
     "name": "Nombre",
     "namePlaceholder": "p. ej., Acceso a producción",
+    "organization": "Organización",
+    "organizationHelp": "Todos los miembros de esta organización pueden usar este Service Token. Solo los administradores pueden modificarlo.",
+    "personal": "Personal",
     "replace": "Reemplazar Service Token",
     "resourceIdConflict": "No se puede usar este ID de recurso. Cierra y vuelve a abrir el formulario para intentarlo de nuevo.",
     "retry": "Reintentar",
@@ -3013,6 +3025,8 @@
     "revisionExhausted": "Esta configuración ya no se puede actualizar. Crea una nueva.",
     "save": "Guardar",
     "saveUncertain": "No pudimos confirmar si se guardaron los cambios. Reintenta el mismo guardado, o cierra y revisa la lista antes de añadirlos de nuevo.",
+    "scope": "Quién puede usarlo",
+    "sectionEmpty": "Todavía no hay configuraciones aquí.",
     "select": "Selecciona Cloudflare Access",
     "summary_one": "{{count}} Cloudflare Access configurado",
     "summary_many": "{{count}} Cloudflare Access configurados",
@@ -3020,10 +3034,10 @@
     "title": "Cloudflare Access",
     "tokenHelp": "Accede a aplicaciones protegidas con tokens de servicio de Cloudflare Access.",
     "unavailable": "Cloudflare Access no está disponible para esta cuenta.",
-    "unused": "Ningún host las utiliza",
-    "usedBy_one": "Usada por {{count}} host:",
-    "usedBy_many": "Usada por {{count}} hosts:",
-    "usedBy_other": "Usada por {{count}} hosts:"
+    "unused": "Ninguno de tus hosts la usa",
+    "usedBy_one": "La usan {{count}} de tus hosts:",
+    "usedBy_many": "La usan {{count}} de tus hosts:",
+    "usedBy_other": "La usan {{count}} de tus hosts:"
   },
   "connectors": {
     "access": {
@@ -4299,17 +4313,19 @@
       "documentTitles": {
         "experience": "Tu experiencia con IA",
         "industry": "Elige tu área",
+        "profile": "Tu perfil",
         "ready": "Okou está listo",
         "skills": "Importa tus skills",
         "slack": "Añadir Okou a Slack",
         "sources": "Conecta tu trabajo",
-        "team": "Invita a alguien del equipo"
+        "team": "Invitar a un miembro del equipo"
       },
       "experience": {
-        "copy": "Conecta el plan que ya pagas y tu trabajo se ejecuta ahí, no con créditos de Okou.",
-        "no": "No, es nuevo para mí",
-        "noCopy": "Okou elige una primera tarea por ti.",
-        "title": "¿Has usado Codex o Claude Code?"
+        "copy": "Empieza con ayuda o trae el plan de Codex o Claude Code que ya utilizas.",
+        "no": "Soy nuevo en los agentes de IA",
+        "noCopy": "Okou te ayuda a encontrar una primera tarea útil.",
+        "title": "¿Cómo quieres empezar con Okou?",
+        "trust": "Las tareas se ejecutan con tu plan de Codex o Claude Code en lugar de créditos de Okou, así puedes hacer más sin preocuparte por el consumo. Conéctalo ahora o más adelante."
       },
       "industries": {
         "coaching": {
@@ -4358,12 +4374,23 @@
         }
       },
       "industry": {
-        "copy": "Okou lo usa para elegir tu primera tarea y las fuentes desde las que empieza.",
+        "copy": "Así Okou puede mostrarte herramientas relevantes y sugerir una primera tarea adaptada a tu trabajo.",
         "title": "¿A qué tipo de trabajo te dedicas?"
+      },
+      "profile": {
+        "communicationStyle": "Cómo te comunicas",
+        "copy": "Una primera mirada a tu trabajo a partir de las cuentas que conectaste.",
+        "failed": "No pudimos crear tu perfil ahora. Inténtalo de nuevo o continúa.",
+        "heading": "Tu perfil",
+        "loading": "Creando tu perfil a partir de tu trabajo conectado…",
+        "priorities": "Posibles prioridades",
+        "professionalIdentity": "Tu trabajo",
+        "retry": "Volver a intentar",
+        "title": "Esto es lo que hemos aprendido sobre ti"
       },
       "skills": {
         "copied": "Copiado",
-        "copy": "Pega este prompt en tu propia sesión de {{provider}} y traerá a Okou las skills de tu ordenador.",
+        "copy": "Ejecuta este prompt en {{provider}} para importar las skills que ya has creado y que Okou pueda usarlas desde el primer día.",
         "copyError": "No se pudo copiar el prompt.",
         "copyPrompt": "Copiar prompt",
         "importedCopy": "Importado como workflow de Okou.",
@@ -4374,7 +4401,7 @@
         "promptLabel": "Prompt de importación de skills",
         "promptTitle": "Ejecuta esto en {{provider}}",
         "startError": "No se pudo abrir la sesión de importación.",
-        "title": "Trae las skills que ya escribiste.",
+        "title": "Trae tus skills a Okou",
         "tryAgain": "Intentar de nuevo",
         "waiting": "Las skills importadas aparecen aquí a medida que llegan."
       },
@@ -4386,7 +4413,7 @@
         "connectedCopy": "Abre Slack y menciona a @Okou para encargarle una tarea.",
         "connectedStatus": "Añadido a tu workspace",
         "connectedTitle": "Slack está conectado",
-        "copy": "Añádelo una vez y menciona a @Okou donde ya ocurre el trabajo.",
+        "copy": "Menciona a @Okou para encargarle una tarea y compartir el resultado en la misma conversación.",
         "name": "Slack",
         "otherAdded": "Añadido",
         "otherImessage": "iMessage",
@@ -4415,12 +4442,13 @@
         "previewWorkspace": "Northwind",
         "rowCopy": "Funciona en cualquier canal donde lo añadas.",
         "rowTitle": "Okou for Slack",
-        "title": "Encárgale trabajo a Okou sin salir de Slack."
+        "title": "Sigue trabajando desde Slack"
       },
       "sources": {
-        "copy": "Trabaja en la nube, desde las herramientas que tu equipo ya usa. 10 veces más resultados, menos fricción operativa, menor coste. Conecta una fuente para empezar.",
-        "note": "Tú eliges qué cuentas conectar.",
-        "title": "Okou es para ti, y se comparte con todo tu equipo."
+        "copy": "Cuanto más sabe Okou de tu trabajo, más inteligente se vuelve. Conecta una herramienta que uses a diario y empieza con una tarea basada en tu trabajo real.",
+        "permissions": "Okou usa una pequeña muestra para adaptar tu primera tarea. Tú decides qué pueden hacer los Agents y durante cuánto tiempo.",
+        "securityLink": "Cómo protege Okou tus datos",
+        "title": "Conecta una herramienta de trabajo"
       },
       "startingPrompt": {
         "exact": {
@@ -4754,32 +4782,33 @@
         "connecting": "Conectando…",
         "failedNote": "No hemos podido conectar {{provider}}. Puedes volver a intentarlo o conectarlo más tarde.",
         "retry": "Volver a intentarlo",
-        "rowCopy": "Se ejecuta en tu plan, no con créditos de Okou.",
+        "rowCopy": "Conéctalo para ejecutar tareas con tu plan en lugar de créditos de Okou.",
         "unconfirmedNote": "No hemos podido comprobar tu conexión con {{provider}}. Puedes volver a intentarlo o conectarlo más tarde."
       },
       "team": {
-        "copy": "Invita a alguien ahora, o hazlo luego desde el menú del workspace.",
+        "copy": "Invita a un miembro del equipo a usar contigo los flujos de trabajo compartidos.",
         "invite": "Enviar invitación",
         "invited": "Invitado",
-        "label": "Correo de tu compañero",
-        "note": "Se unen a este workspace; sus cuentas siguen siendo suyas.",
+        "label": "Correo del miembro del equipo",
+        "note": "Podrá empezar a trabajar con Okou de inmediato.",
         "notSent": "No enviada",
-        "panelTitle": "Invita a alguien del equipo",
-        "placeholder": "teammate@company.com",
+        "panelTitle": "Invitar a un miembro del equipo",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "Sus cuentas conectadas siguen siendo suyas: no se comparte nada sin ellos.",
-          "workflows": "Cualquiera aquí puede ejecutar los workflows que ya tiene este workspace.",
-          "workspace": "Entran en este workspace, con las fuentes que acabas de conectar."
+          "accounts": "Conecta sus propias herramientas cuando las necesite.",
+          "workflows": "Puede ejecutar cualquier flujo de trabajo de tu equipo.",
+          "workspace": "Se une a tu espacio de trabajo."
         },
         "sending": "Enviando…",
-        "title": "Trae a la gente que hace este trabajo contigo."
+        "title": "Haz que Okou sea útil para todo tu equipo",
+        "trust": "Todos usan los mismos flujos de trabajo y conectan sus propias herramientas."
       },
       "welcome": {
-        "copy": "Empieza con una primera tarea, elegida para el trabajo que acabas de conectar.",
+        "copy": "Revisa una tarea sugerida para tu trabajo, ajústala a tu objetivo y deja que Okou empiece.",
         "offerTitle": "La primera hora de consultoría corre de nuestra cuenta, más hasta 100 créditos —",
         "promptLabel": "Tu prompt inicial",
         "start": "Empezar con Okou",
-        "title": "Okou está listo para ti"
+        "title": "Empieza con una tarea que importe"
       }
     },
     "templatePicker": {
@@ -4902,8 +4931,7 @@
       "preparedDescription": "{{assistantName}} prepara el siguiente paso con tus herramientas.",
       "preparedTitle": "Flujo de trabajo preparado",
       "reviewDescription": "{{assistantName}} completa el flujo de trabajo y devuelve el resultado.",
-      "reviewTitle": "Listo para la revisión",
-      "source": "Fuente"
+      "reviewTitle": "Listo para la revisión"
     },
     "workflowPicker": {
       "categoryDescription": "Configuraciones listas para usar que puedes adaptar a tus herramientas y objetivos.",
@@ -6449,7 +6477,7 @@
       }
     },
     "paidTools": {
-      "description": "Elige las herramientas de pago que Okou puede usar en tus tareas. Cada uso consume créditos.",
+      "description": "Estas herramientas consumen créditos integrados y Okou las usa automáticamente mientras trabaja en tus tareas. Si desactivas una herramienta, Okou no la usará.",
       "disabledForCreation": "{{tool}} está desactivado para ti",
       "loadError": "No se pudieron cargar tus ajustes.",
       "loading": "Cargando tus ajustes…",
@@ -6459,7 +6487,7 @@
       "saving": "Guardando…",
       "scope": "Estos ajustes solo se aplican a ti en {{workspace}}.",
       "timing": "Los cambios se aplican a las próximas ejecuciones. Las tareas en curso o ya preparadas pueden mantener los ajustes anteriores.",
-      "title": "Herramientas de pago",
+      "title": "Herramientas integradas",
       "tools": {
         "avatar-video-generation": {
           "description": "Crea vídeos con avatares que hablan.",
@@ -6677,6 +6705,7 @@
         "checkEmailSubscription": "Consulta la suscripción por correo de arriba para ver el estado de entrega.",
         "conflict": "Morning Brief no está disponible temporalmente porque el estado de su instalación no es coherente. Vuelve a intentarlo cuando finalice la conciliación.",
         "description": "Prioridades diarias a las 7:00 en tu zona horaria.",
+        "lastDelivered": "Última entrega: {{date}}",
         "loading": "Cargando la configuración de Morning Brief...",
         "missingDefaultAgent": "Elige un Agente predeterminado que se pueda utilizar antes de activar Morning Brief.",
         "missingTimezone": "Establece una zona horaria válida antes de activar Morning Brief.",
@@ -6924,8 +6953,10 @@
       "keepChanges": "Aplicar mis cambios a esta versión",
       "latest": "Últimos ajustes guardados",
       "mode": "Conexión",
+      "needsRebind": "Este host necesita una nueva configuración de Cloudflare Access. Edítalo para volver a vincularlo o elegir Direct. No podrá conectarse hasta entonces.",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Nombre de host publicado",
+      "rebindHelp": "Elige una configuración de Cloudflare Access permitida o Direct para recuperar este host. No cambiará nada hasta que guardes.",
       "reviewHelp": "Tu borrador se conserva. Confirma los últimos ajustes guardados antes de aplicar tus cambios.",
       "title": "Cloudflare Access",
       "unavailable": "Cloudflare Access no está disponible para esta cuenta."
@@ -6974,7 +7005,6 @@
       "unused": "Ningún host las utiliza"
     },
     "credentialsHelp": "Las credenciales son de solo escritura y permanecen fuera del sandbox. Pega la clave completa; se conservan los espacios. Los campos se borran al cerrar el formulario.",
-    "credentialsTab": "Credenciales",
     "delete": "Eliminar host",
     "deleteHelp": "¿Eliminar este host? Sus credenciales se conservarán. Los Agents dejarán de verlo en el inventario.",
     "description": "Configura hosts SSH para que tus agentes ejecuten comandos remotos.",
@@ -7001,7 +7031,6 @@
     "fingerprint": "Clave del host guardada",
     "host": "Nombre de host público o dirección IP",
     "hostSection": "Host",
-    "hostsTab": "Hosts",
     "label": "SSH",
     "loadFailed": "No se pudo cargar la configuración SSH. Inténtalo de nuevo.",
     "loading": "Cargando hosts SSH…",
@@ -7031,7 +7060,6 @@
     "summary_one": "{{count}} host configurado",
     "summary_many": "{{count}} hosts configurados",
     "summary_other": "{{count}} hosts configurados",
-    "title": "Hosts SSH",
     "unavailable": "El acceso SSH no está disponible para esta cuenta.",
     "username": "Nombre de usuario SSH"
   },
@@ -7134,6 +7162,8 @@
     "configured": "Configurado",
     "credential": {
       "add": "Añadir credenciales",
+      "appleDhFieldHelp": "Cada campo admite de 1 a 63 bytes UTF-8. No se permite NUL.",
+      "appleDhMethod": "Nombre de usuario y contraseña de Apple DH",
       "authentication": "Método de autenticación",
       "createNew": "Crear credenciales",
       "delete": "Eliminar credenciales",
@@ -7166,7 +7196,6 @@
       "usernamePasswordHint": "Introduce la contraseña de este usuario",
       "usernamePasswordMethod": "Nombre de usuario y contraseña"
     },
-    "credentialsTab": "Credenciales",
     "delete": "Eliminar host",
     "deleteHelp": "¿Eliminar este host guardado? Sus credenciales reutilizables se conservarán.",
     "description": "Permite que tus agentes vean y controlen tus escritorios remotos.",
@@ -7189,7 +7218,6 @@
     },
     "host": "Nombre de host o dirección IP",
     "hostHint": "p. ej., desktop.example.com",
-    "hostsTab": "Hosts",
     "label": "VNC",
     "loadFailed": "No se pudo cargar la configuración de VNC.",
     "loading": "Cargando la configuración de VNC…",
@@ -7205,6 +7233,8 @@
     },
     "saving": "Guardando…",
     "security": {
+      "appleDh": "Compartir pantalla de Mac (Apple DH)",
+      "appleDhHelp": "Requiere Compartir pantalla de macOS mediante una conexión SSH guardada. El destino RFB debe ser 127.0.0.1 o ::1 en ese Mac. SSH protege toda la sesión VNC. Usa un host SSH de Mac que controles; su clave de host no descarta un proxy posterior.",
       "caBundle": "Certificados de CA (PEM)",
       "caHelp": "Hasta 8 certificados de CA, 64 KiB en total. No pegues una clave privada ni un certificado de servidor.",
       "caHint": "Pega los certificados públicos de CA que emitieron el certificado del servidor",
@@ -7223,8 +7253,8 @@
     "summary_one": "{{count}} host configurado",
     "summary_many": "{{count}} hosts configurados",
     "summary_other": "{{count}} hosts configurados",
-    "title": "Acceso remoto VNC",
     "transport": {
+      "appleDhDestinationHelp": "Para Apple DH, introduce 127.0.0.1 o ::1. Es la dirección de bucle local del Mac, accesible mediante el host SSH seleccionado.",
       "destination": "Destino RFB",
       "destinationHelp": "En las rutas SSH, se accede a este host y puerto desde el servidor SSH seleccionado, no directamente desde el Runner.",
       "direct": "Directa desde Runner",

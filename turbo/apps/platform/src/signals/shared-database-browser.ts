@@ -1,9 +1,7 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { derivePlatformServiceOrigin } from "@okouai/core/platform-service-origin";
 import { command, state } from "ccstate";
 import sharedDatabaseWorkerAssetUrl from "virtual:shared-database-worker";
 
-import { CONNECTION_DIAGNOSTICS_PARAM } from "../lib/connection-diagnostics-param.ts";
 import {
   flushClientTelemetry,
   recordClientTelemetry,
@@ -26,7 +24,6 @@ import { SingleConnectionSharedDatabaseBridge } from "../shared-database/single-
 import { SharedDatabaseWorkerLoadError } from "../shared-database/worker-load-error.ts";
 import { reportSharedWorkerFailure } from "./shared-worker-failure.ts";
 import { clerk$, clerkUser$ } from "./auth.ts";
-import { featureSwitch$ } from "./external/feature-switch.ts";
 import { readClerkToken, waitForClerkSession } from "./clerk-token.ts";
 import {
   applyChatThreadReadCursorUpdated$,
@@ -49,7 +46,6 @@ export interface SharedDatabaseBridgeHost {
     getToken: SharedDatabaseTokenProvider,
     events: SharedDatabaseBridgeEvents,
     signal: AbortSignal,
-    diagnosticsEnabled: boolean,
   ): SharedDatabaseBridge;
 }
 
@@ -66,12 +62,40 @@ function handleSharedDatabaseWorkerUnavailable(
   );
 }
 
+type PreloadedSharedDatabaseWorker = NonNullable<
+  NonNullable<Window["__okouSharedDatabaseWorkerBootstrap"]>["preloaded"]
+>;
+
+/**
+ * Takes the Worker that `index.html` started from the edge-verified identity.
+ * The edge only sees a preview bypass in the page URL, so a bypass restored
+ * from the cookie yields a different URL and the preloaded Worker is unused.
+ */
+function claimPreloadedSharedWorker(
+  url: URL,
+  name: string,
+): PreloadedSharedDatabaseWorker | null {
+  const bootstrap = window.__okouSharedDatabaseWorkerBootstrap;
+  if (!bootstrap) {
+    throw new Error("Shared database worker bootstrap is unavailable");
+  }
+  const { preloaded } = bootstrap;
+  if (!preloaded) {
+    return null;
+  }
+  delete bootstrap.preloaded;
+  if (preloaded.url !== url.href || preloaded.name !== name) {
+    preloaded.worker.port.close();
+    return null;
+  }
+  return preloaded;
+}
+
 function createBrowserSharedDatabaseBridge(
   identity: SharedDatabaseIdentity,
   getToken: SharedDatabaseTokenProvider,
   events: SharedDatabaseBridgeEvents,
   signal: AbortSignal,
-  diagnosticsEnabled: boolean,
 ): SharedDatabaseBridge {
   const workerUrl = new URL(sharedDatabaseWorkerAssetUrl, location.href);
   const workerParams = new URLSearchParams({
@@ -83,20 +107,15 @@ function createBrowserSharedDatabaseBridge(
   if (vercelProtectionBypass) {
     workerParams.set(VERCEL_PROTECTION_BYPASS_NAME, vercelProtectionBypass);
   }
-  if (diagnosticsEnabled) {
-    workerParams.set(CONNECTION_DIAGNOSTICS_PARAM, "1");
-  }
   // Preserve Vite's bare `worker_file` query marker. Rebuilding the query with
   // URLSearchParams normalizes it to `worker_file=`, which skips Vite's worker
   // environment bootstrap in development.
   workerUrl.search += `${workerUrl.search ? "&" : "?"}${workerParams.toString()}`;
-  const worker = new SharedWorker(workerUrl, {
-    // The capture decision is part of the URL, so it has to be part of the
-    // name too: a tab that disagrees gets its own Worker instead of a
-    // URLMismatchError against the running one.
-    name: `okou_${identity.userId}_${identity.orgId}${diagnosticsEnabled ? "_diagnostics" : ""}`,
-    type: "module",
-  });
+  const workerName = `okou_${identity.userId}_${identity.orgId}`;
+  const preloaded = claimPreloadedSharedWorker(workerUrl, workerName);
+  const worker =
+    preloaded?.worker ??
+    new SharedWorker(workerUrl, { name: workerName, type: "module" });
   const portBridge = new MessagePortSharedDatabaseBridge(
     worker.port,
     events,
@@ -104,33 +123,33 @@ function createBrowserSharedDatabaseBridge(
     getToken,
   );
   let failureReported = false;
-  worker.addEventListener(
-    "error",
-    onDomEventFn(async (event: ErrorEvent) => {
-      // This page owns recovery; do not also propagate the native error.
-      event.preventDefault();
-      if (failureReported) {
-        return;
-      }
-      failureReported = true;
-      const workerError: unknown = event.error;
-      reportSharedWorkerFailure();
-      recordClientTelemetry(
-        startClientTelemetryMeasurement(),
-        {
-          event_name: "shared_worker.failure",
-          phase: "error-event",
-          // The full URL contains identity and preview credentials.
-          script_path: workerUrl.pathname,
-        },
-        "error",
-      );
-      portBridge.fail(new SharedDatabaseWorkerLoadError(workerError));
-      // Begin sending before the user refreshes, without delaying recovery.
-      await flushClientTelemetry();
-    }),
-    { signal },
-  );
+  const handleWorkerError = onDomEventFn(async (event: ErrorEvent) => {
+    // This page owns recovery; do not also propagate the native error.
+    event.preventDefault();
+    if (failureReported) {
+      return;
+    }
+    failureReported = true;
+    const workerError: unknown = event.error;
+    reportSharedWorkerFailure();
+    recordClientTelemetry(
+      startClientTelemetryMeasurement(),
+      {
+        event_name: "shared_worker.failure",
+        phase: "error-event",
+        // The full URL contains identity and preview credentials.
+        script_path: workerUrl.pathname,
+      },
+      "error",
+    );
+    portBridge.fail(new SharedDatabaseWorkerLoadError(workerError));
+    // Begin sending before the user refreshes, without delaying recovery.
+    await flushClientTelemetry();
+  });
+  worker.addEventListener("error", handleWorkerError, { signal });
+  if (preloaded?.error) {
+    handleWorkerError(preloaded.error);
+  }
   return portBridge;
 }
 
@@ -190,8 +209,6 @@ const prepareSharedDatabaseBridge$ = command(
       userId: user.id,
       orgId: clerk.organization.id,
     };
-    const diagnosticsEnabled =
-      get(featureSwitch$)[FeatureSwitchKey.OkouDebug] ?? false;
     const bridgeHost = get(sharedDatabaseBridgeHostState$);
     const getToken: SharedDatabaseTokenProvider = (requestSignal) => {
       return readClerkToken(clerk, requestSignal);
@@ -203,7 +220,6 @@ const prepareSharedDatabaseBridge$ = command(
           getToken,
           events,
           connectionSignal,
-          diagnosticsEnabled,
         );
       },
       events: {

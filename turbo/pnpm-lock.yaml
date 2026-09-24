@@ -23,15 +23,15 @@ patchedDependencies:
   '@base-ui/react@1.7.0':
     hash: 025b884fddd56e019980b91478c7caa3bc97c340d33390515812e1b85e87ed6e
     path: patches/@base-ui__react@1.7.0.patch
-  '@earendil-works/pi-agent-core@0.86.1':
-    hash: 5d207f51a1da5cc9bcd19768b5160f5532effe66adafd05dd359febad6329007
-    path: patches/@earendil-works__pi-agent-core@0.86.1.patch
-  '@earendil-works/pi-ai@0.86.1':
-    hash: 8e9ef48ef67f3d1cb767108e28fa3b34e87a25373042dd1b3e9ed8d8dc044693
-    path: patches/@earendil-works__pi-ai@0.86.1.patch
-  '@earendil-works/pi-coding-agent@0.86.1':
-    hash: ca80c531a74d2346f400548756b95085af6218c9e640a80c10ac3ded73947e94
-    path: patches/@earendil-works__pi-coding-agent@0.86.1.patch
+  '@earendil-works/pi-agent-core@0.87.1':
+    hash: ef1d9f76dcbb7bf4a4786c3651170af05dc5b22a301a05646d90c87f0374ad7f
+    path: patches/@earendil-works__pi-agent-core@0.87.1.patch
+  '@earendil-works/pi-ai@0.87.1':
+    hash: 3d2d61e4b40669f071d1ecd6ff8ba59d5fee4db50bd418f109e26317cc989902
+    path: patches/@earendil-works__pi-ai@0.87.1.patch
+  '@earendil-works/pi-coding-agent@0.87.1':
+    hash: cb7cfe0c3412d032d6a23437aa13c2934c8d349904e0de6c6f732cea71e22f77
+    path: patches/@earendil-works__pi-coding-agent@0.87.1.patch
   '@langfuse/pi-observability-plugin@0.1.2':
     hash: 152b878e4c1f1fd43cd905f27f0cbad2a9e64531fefa1cd41937c554c20979d1
     path: patches/@langfuse__pi-observability-plugin@0.1.2.patch
@@ -246,8 +246,8 @@ importers:
         version: 4.5.4
     devDependencies:
       '@earendil-works/pi-coding-agent':
-        specifier: 0.86.1
-        version: 0.86.1(patch_hash=ca80c531a74d2346f400548756b95085af6218c9e640a80c10ac3ded73947e94)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
+        specifier: 0.87.1
+        version: 0.87.1(patch_hash=cb7cfe0c3412d032d6a23437aa13c2934c8d349904e0de6c6f732cea71e22f77)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
       '@hono/node-server-v1':
         specifier: npm:@hono/node-server@1.19.14
         version: '@hono/node-server@1.19.14(hono@4.13.5)'
@@ -355,8 +355,8 @@ importers:
   apps/cli:
     devDependencies:
       '@earendil-works/pi-coding-agent':
-        specifier: 0.86.1
-        version: 0.86.1(patch_hash=ca80c531a74d2346f400548756b95085af6218c9e640a80c10ac3ded73947e94)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
+        specifier: 0.87.1
+        version: 0.87.1(patch_hash=cb7cfe0c3412d032d6a23437aa13c2934c8d349904e0de6c6f732cea71e22f77)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
       '@modelcontextprotocol/client':
         specifier: ^2.0.0
         version: 2.0.0
@@ -1148,14 +1148,14 @@ importers:
   packages/pi-agent-runtime:
     dependencies:
       '@earendil-works/pi-ai':
-        specifier: 0.86.1
-        version: 0.86.1(patch_hash=8e9ef48ef67f3d1cb767108e28fa3b34e87a25373042dd1b3e9ed8d8dc044693)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
+        specifier: 0.87.1
+        version: 0.87.1(patch_hash=3d2d61e4b40669f071d1ecd6ff8ba59d5fee4db50bd418f109e26317cc989902)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
       '@earendil-works/pi-coding-agent':
-        specifier: 0.86.1
-        version: 0.86.1(patch_hash=ca80c531a74d2346f400548756b95085af6218c9e640a80c10ac3ded73947e94)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
+        specifier: 0.87.1
+        version: 0.87.1(patch_hash=cb7cfe0c3412d032d6a23437aa13c2934c8d349904e0de6c6f732cea71e22f77)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
       '@langfuse/pi-observability-plugin':
         specifier: 0.1.2
-        version: 0.1.2(patch_hash=152b878e4c1f1fd43cd905f27f0cbad2a9e64531fefa1cd41937c554c20979d1)(@earendil-works/pi-coding-agent@0.86.1(patch_hash=ca80c531a74d2346f400548756b95085af6218c9e640a80c10ac3ded73947e94)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4))(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))
+        version: 0.1.2(patch_hash=152b878e4c1f1fd43cd905f27f0cbad2a9e64531fefa1cd41937c554c20979d1)(@earendil-works/pi-coding-agent@0.87.1(patch_hash=cb7cfe0c3412d032d6a23437aa13c2934c8d349904e0de6c6f732cea71e22f77)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4))(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))
       '@okouai/api-contracts':
         specifier: workspace:*
         version: link:../api-contracts
@@ -1802,30 +1802,30 @@ packages:
   '@drizzle-team/brocli@0.10.2':
     resolution: {integrity: sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w==}
 
-  '@earendil-works/chord@0.86.1':
-    resolution: {integrity: sha512-GzUr5n4tFBHUYxN9CjcRHK8QWo9tbxNrZu6iWPQ+PFiFrLASvSZOKeAVAgh3gHv/t0X5OvUpFlrMQ/nEFfCYpg==}
+  '@earendil-works/chord@0.87.1':
+    resolution: {integrity: sha512-bg7IkJGFcEaMqqYgOGUiq5Ky9RghpRfrlZ8I/v/1b4bBZ02A7t3E+6uhPRbadwWb/kWsnVFbZsqOKRN4a3LLCg==}
     engines: {node: '>=22.19.0'}
 
-  '@earendil-works/pi-agent-core@0.86.1':
-    resolution: {integrity: sha512-8TbBzhYsDeu5V1Zl2NsyrBqJAzX1EiEL3Np3ZjGpy0pSDdGRVOpcyW1qruLqfWmEqGcnxmvgnTMLS/wJNZO2XQ==}
+  '@earendil-works/pi-agent-core@0.87.1':
+    resolution: {integrity: sha512-Zev3B0HK7YS5A4EZQ2XnEqiJuirx6QBiltJ+LpmjV5a/+2IU0cfKtIfnkNkORK707XOvKBY2WRtk7cAwHpbh2Q==}
     engines: {node: '>=22.19.0'}
 
-  '@earendil-works/pi-ai@0.86.1':
-    resolution: {integrity: sha512-1XHhI6D/fyQdsBieHC/E/4zGKVOoGe4yDyX67VXvzoYkFsX/qE7NpZE7E1RC8e6Bz8B9oG/P+MQFXikv2/BGEg==}
-    engines: {node: '>=22.19.0'}
-    hasBin: true
-
-  '@earendil-works/pi-coding-agent@0.86.1':
-    resolution: {integrity: sha512-vZBuNfJnruxZyemZ3O05V0S/Ylze08ahFTIQ1Mik++gVdOevPl89gt/Uv0U97BPAJaj9cj6Vf9rcIgKtUrd0BA==}
+  '@earendil-works/pi-ai@0.87.1':
+    resolution: {integrity: sha512-X/3PfQBnnoeVdO9Cv8zHghUMglzlgNZYGNzoPnbRoGnHl3Rw3TlA2UKSUB7BRHUOxMryHXYa8dnjWZlbRheDZA==}
     engines: {node: '>=22.19.0'}
     hasBin: true
 
-  '@earendil-works/pi-telemetry@0.86.1':
-    resolution: {integrity: sha512-SOcEqOS3oVGgKeahs2jHB906d8hFjuLP+RBee8xKYMRgw5KAeWHNg+YABfL0ALlp3Bt6tW4b632MLghc3vnTog==}
+  '@earendil-works/pi-coding-agent@0.87.1':
+    resolution: {integrity: sha512-m8ArJUtVcQMSe1lLE/Ei7vX/JV7O39sWmWBsXV2NOU70F0qCp8GubA24pT3LnwTmM6LL2xV80/h6sQg85n69ew==}
+    engines: {node: '>=22.19.0'}
+    hasBin: true
+
+  '@earendil-works/pi-telemetry@0.87.1':
+    resolution: {integrity: sha512-MC6TRQH5lgMXpcN+Vku2WMI2T8BsiUPzMQHGo81uqFZD3/9O79WWJAysEDGuzduP6R4tvtgwMLwmqIxynM10JQ==}
     engines: {node: '>=22.19.0'}
 
-  '@earendil-works/pi-tui@0.86.1':
-    resolution: {integrity: sha512-FU/zU/zG4RWokcZt+BVXXcieWi5ggvYnWP2kkB5XXjMaHRoy5BDhcZJ9JAnLTN9MwrCRoXgPQxOI0bFqwYeZkQ==}
+  '@earendil-works/pi-tui@0.87.1':
+    resolution: {integrity: sha512-YEH2vRyOeiO7hhN6j6AE6YwKSq2Kz2f3XR8bj1TbR+aGE/JsnY1hLPMI2pvaZfRM1n9Y00tejxFQ4zbzvF7nkQ==}
     engines: {node: '>=22.19.0'}
 
   '@electron-forge/cli@7.11.2':
@@ -11553,15 +11553,15 @@ snapshots:
 
   '@drizzle-team/brocli@0.10.2': {}
 
-  '@earendil-works/chord@0.86.1':
+  '@earendil-works/chord@0.87.1':
     dependencies:
       esbuild: 0.28.2
 
-  '@earendil-works/pi-agent-core@0.86.1(patch_hash=5d207f51a1da5cc9bcd19768b5160f5532effe66adafd05dd359febad6329007)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)':
+  '@earendil-works/pi-agent-core@0.87.1(patch_hash=ef1d9f76dcbb7bf4a4786c3651170af05dc5b22a301a05646d90c87f0374ad7f)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)':
     dependencies:
-      '@earendil-works/chord': 0.86.1
-      '@earendil-works/pi-ai': 0.86.1(patch_hash=8e9ef48ef67f3d1cb767108e28fa3b34e87a25373042dd1b3e9ed8d8dc044693)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
-      '@earendil-works/pi-telemetry': 0.86.1
+      '@earendil-works/chord': 0.87.1
+      '@earendil-works/pi-ai': 0.87.1(patch_hash=3d2d61e4b40669f071d1ecd6ff8ba59d5fee4db50bd418f109e26317cc989902)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
+      '@earendil-works/pi-telemetry': 0.87.1
       diff: 8.0.4
       ignore: 7.0.8
       typebox: 1.3.27
@@ -11575,11 +11575,11 @@ snapshots:
       - ws
       - zod
 
-  '@earendil-works/pi-ai@0.86.1(patch_hash=8e9ef48ef67f3d1cb767108e28fa3b34e87a25373042dd1b3e9ed8d8dc044693)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)':
+  '@earendil-works/pi-ai@0.87.1(patch_hash=3d2d61e4b40669f071d1ecd6ff8ba59d5fee4db50bd418f109e26317cc989902)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)':
     dependencies:
       '@anthropic-ai/sdk': 0.124.0(zod@4.5.4)
       '@aws-sdk/client-bedrock-runtime': 3.1127.0
-      '@earendil-works/pi-telemetry': 0.86.1
+      '@earendil-works/pi-telemetry': 0.87.1
       '@google/genai': 2.21.0(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)
       '@smithy/node-http-handler': 4.12.1
       http-proxy-agent: 9.1.0
@@ -11596,12 +11596,12 @@ snapshots:
       - ws
       - zod
 
-  '@earendil-works/pi-coding-agent@0.86.1(patch_hash=ca80c531a74d2346f400548756b95085af6218c9e640a80c10ac3ded73947e94)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)':
+  '@earendil-works/pi-coding-agent@0.87.1(patch_hash=cb7cfe0c3412d032d6a23437aa13c2934c8d349904e0de6c6f732cea71e22f77)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)':
     dependencies:
-      '@earendil-works/chord': 0.86.1
-      '@earendil-works/pi-agent-core': 0.86.1(patch_hash=5d207f51a1da5cc9bcd19768b5160f5532effe66adafd05dd359febad6329007)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
-      '@earendil-works/pi-ai': 0.86.1(patch_hash=8e9ef48ef67f3d1cb767108e28fa3b34e87a25373042dd1b3e9ed8d8dc044693)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
-      '@earendil-works/pi-tui': 0.86.1
+      '@earendil-works/chord': 0.87.1
+      '@earendil-works/pi-agent-core': 0.87.1(patch_hash=ef1d9f76dcbb7bf4a4786c3651170af05dc5b22a301a05646d90c87f0374ad7f)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
+      '@earendil-works/pi-ai': 0.87.1(patch_hash=3d2d61e4b40669f071d1ecd6ff8ba59d5fee4db50bd418f109e26317cc989902)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
+      '@earendil-works/pi-tui': 0.87.1
       '@silvia-odwyer/photon-node': 0.3.4
       chalk: 6.0.0
       cross-spawn: 7.0.6
@@ -11626,9 +11626,9 @@ snapshots:
       - ws
       - zod
 
-  '@earendil-works/pi-telemetry@0.86.1': {}
+  '@earendil-works/pi-telemetry@0.87.1': {}
 
-  '@earendil-works/pi-tui@0.86.1':
+  '@earendil-works/pi-tui@0.87.1':
     dependencies:
       get-east-asian-width: 1.6.0
       marked: 18.0.11
@@ -13032,9 +13032,9 @@ snapshots:
       '@opentelemetry/exporter-trace-otlp-http': 0.222.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base': 2.11.0(@opentelemetry/api@1.9.1)
 
-  '@langfuse/pi-observability-plugin@0.1.2(patch_hash=152b878e4c1f1fd43cd905f27f0cbad2a9e64531fefa1cd41937c554c20979d1)(@earendil-works/pi-coding-agent@0.86.1(patch_hash=ca80c531a74d2346f400548756b95085af6218c9e640a80c10ac3ded73947e94)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4))(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))':
+  '@langfuse/pi-observability-plugin@0.1.2(patch_hash=152b878e4c1f1fd43cd905f27f0cbad2a9e64531fefa1cd41937c554c20979d1)(@earendil-works/pi-coding-agent@0.87.1(patch_hash=cb7cfe0c3412d032d6a23437aa13c2934c8d349904e0de6c6f732cea71e22f77)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4))(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))':
     dependencies:
-      '@earendil-works/pi-coding-agent': 0.86.1(patch_hash=ca80c531a74d2346f400548756b95085af6218c9e640a80c10ac3ded73947e94)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
+      '@earendil-works/pi-coding-agent': 0.87.1(patch_hash=cb7cfe0c3412d032d6a23437aa13c2934c8d349904e0de6c6f732cea71e22f77)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
       '@langfuse/otel': 5.10.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.221.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))
       '@langfuse/tracing': 5.10.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/api': 1.9.1

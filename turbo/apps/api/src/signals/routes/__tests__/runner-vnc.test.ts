@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import {
   runnerVncContract,
   type RunnerVncCheckRequest,
@@ -10,6 +11,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { createDeferredPromise } from "../../utils";
 import { runnerVncRoutes } from "../runner-vnc";
+import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -54,6 +56,112 @@ function check(
 }
 
 describe("private Runner VNC authority", () => {
+  it("uses current chat VNC and exact SSH dependency access during an active Run", async () => {
+    const f = await api.fixture({
+      grant: false,
+      runtime: { chat: true, access: false },
+    });
+    if (!f.threadId) {
+      throw new Error("Missing fixture chat thread");
+    }
+    const threadId = f.threadId;
+    await updateFeatureSwitchesForUser(context, f, {
+      [FeatureSwitchKey.VncAccess]: true,
+      [FeatureSwitchKey.ThreadRemoteAccess]: true,
+    });
+    api.authenticate(f);
+    const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
+      chatRemoteAccessContract,
+    );
+    const vncHost = { protocol: "vnc" as const, connectionId: f.connectionId };
+    await expect(api.resolve(f)).resolves.toStrictEqual({
+      outcome: "unavailable",
+    });
+    await accept(
+      remote.updateHostDefault({
+        headers: vncSessionHeaders,
+        params: vncHost,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    await expect(api.resolve(f)).resolves.toMatchObject({
+      outcome: "resolved",
+    });
+    expect((await check(f, 1)).body).toStrictEqual({ outcome: "valid" });
+    await accept(
+      remote.setThreadOverride({
+        headers: vncSessionHeaders,
+        params: { threadId, ...vncHost },
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    await expect(api.resolve(f)).resolves.toStrictEqual({
+      outcome: "unavailable",
+    });
+    expect((await check(f, 1)).body).toStrictEqual({ outcome: "unavailable" });
+    await accept(
+      remote.clearThreadOverride({
+        headers: vncSessionHeaders,
+        params: { threadId, ...vncHost },
+      }),
+      [200],
+    );
+    const ssh = await accept(
+      setupApp({ context, routes: sshConnectionsRoutes })(
+        sshConnectionsContract,
+      ).create({
+        headers: vncSessionHeaders,
+        body: {
+          id: randomUUID(),
+          displayName: "VNC gateway",
+          host: "gateway.example.com",
+          credential: inlineSshKey("deploy", "private-key"),
+        },
+      }),
+      [201],
+    );
+    await accept(
+      api.connections().update({
+        headers: vncSessionHeaders,
+        params: { connectionId: f.connectionId },
+        body: {
+          expectedGeneration: 1,
+          transport: { type: "ssh", connectionId: ssh.body.id },
+          security: { ...vncSecurity, serverName: "desktop.internal" },
+        },
+      }),
+      [200],
+    );
+    await expect(
+      api.resolve(f, { supportedProfiles: [...vncTransportProfiles] }),
+    ).resolves.toStrictEqual({ outcome: "unavailable" });
+    await accept(
+      remote.updateHostDefault({
+        headers: vncSessionHeaders,
+        params: { protocol: "ssh", connectionId: ssh.body.id },
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    await expect(
+      api.resolve(f, { supportedProfiles: [...vncTransportProfiles] }),
+    ).resolves.toMatchObject({ outcome: "resolved_transport" });
+    await accept(
+      remote.setThreadOverride({
+        headers: vncSessionHeaders,
+        params: { threadId, protocol: "ssh", connectionId: ssh.body.id },
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    await expect(
+      api.resolve(f, { supportedProfiles: [...vncTransportProfiles] }),
+    ).resolves.toStrictEqual({ outcome: "unavailable" });
+    expect((await check(f, 2)).body).toStrictEqual({ outcome: "unavailable" });
+  });
+
   it("requires an explicit VNC grant and preserves the exact secret only in the no-store handoff", async () => {
     const f = await api.fixture({ grant: false });
     const kms = useSecretKmsProbe();
@@ -501,6 +609,137 @@ describe("private Runner VNC authority", () => {
         })
       ).body,
     ).toStrictEqual({ outcome: "unavailable" });
+  });
+
+  it("admits Apple DH only for an authorized SSH-to-Mac-loopback profile", async () => {
+    const f = await api.fixture();
+    const ssh = await accept(
+      setupApp({ context, routes: sshConnectionsRoutes })(
+        sshConnectionsContract,
+      ).create({
+        headers: vncSessionHeaders,
+        body: {
+          id: randomUUID(),
+          displayName: "Mac SSH",
+          host: "mac.example.com",
+          credential: inlineSshKey("ec2-user", "private-key"),
+        },
+      }),
+      [201],
+    );
+    const appleBody = {
+      id: randomUUID(),
+      displayName: "Mac Screen Sharing",
+      host: "127.0.0.1",
+      credential: {
+        create: {
+          name: "Mac login",
+          authentication: {
+            method: "apple_dh_username_password" as const,
+            username: "operator",
+            password: "secret",
+          },
+        },
+      },
+      security: { type: "apple_dh" as const },
+      transport: { type: "ssh" as const, connectionId: ssh.body.id },
+    };
+    for (const [invalid, expectedCode] of [
+      [
+        { ...appleBody, transport: { type: "direct" as const } },
+        "VNC_INVALID_HOST",
+      ],
+      [{ ...appleBody, host: "mac.example.com" }, "VNC_INVALID_APPLE_DH_ROUTE"],
+    ] as const) {
+      const result = await accept(
+        api.connections().create({ headers: vncSessionHeaders, body: invalid }),
+        [400],
+      );
+      expect(result.body.error.code).toBe(expectedCode);
+    }
+    const apple = await accept(
+      api.connections().create({ headers: vncSessionHeaders, body: appleBody }),
+      [201],
+    );
+    expect(apple.body.security).toStrictEqual({ type: "apple_dh" });
+    const target = { ...f, connectionId: apple.body.id };
+    const profile = [
+      {
+        authMethod: "apple_dh_username_password" as const,
+        securityType: "apple_dh" as const,
+        transportType: "ssh" as const,
+      },
+    ];
+    await api.grantSsh(f, false);
+    const kms = useSecretKmsProbe();
+    await expect(api.resolve(target)).resolves.toStrictEqual({
+      outcome: "unsupported_profile",
+    });
+    expect(kms.decryptCalls).toBe(0);
+    await expect(
+      api.resolve(target, { supportedProfiles: profile }),
+    ).resolves.toStrictEqual({ outcome: "unavailable" });
+    expect(kms.decryptCalls).toBe(0);
+    await api.grantSsh(f, true);
+    await expect(
+      api.resolve(target, { supportedProfiles: profile }),
+    ).resolves.toStrictEqual({
+      outcome: "resolved_apple_dh",
+      host: "127.0.0.1",
+      port: 5900,
+      generation: 1,
+      transport: { type: "ssh", connectionId: ssh.body.id, generation: 1 },
+      authentication: {
+        method: "apple_dh_username_password",
+        username: "operator",
+        password: "secret",
+      },
+      security: { type: "apple_dh" },
+    });
+    expect(kms.decryptCalls).toBe(1);
+    const expectedTransport = {
+      type: "ssh" as const,
+      connectionId: ssh.body.id,
+      generation: 1,
+    };
+    expect((await check(target, 1, { expectedTransport })).body).toStrictEqual({
+      outcome: "valid",
+    });
+    const rotated = await accept(
+      api.credentials().update({
+        headers: vncSessionHeaders,
+        params: { credentialId: apple.body.credentialId },
+        body: {
+          expectedRevision: 1,
+          authentication: {
+            method: "apple_dh_username_password",
+            username: "operator",
+            password: "new-secret",
+          },
+        },
+      }),
+      [200],
+    );
+    expect(rotated.body).toMatchObject({
+      authMethod: "apple_dh_username_password",
+      username: "operator",
+      revision: 2,
+    });
+    expect(JSON.stringify(rotated.body)).not.toContain("new-secret");
+    expect((await check(target, 1, { expectedTransport })).body).toStrictEqual({
+      outcome: "configuration_changed",
+    });
+    await expect(
+      api.resolve(target, { supportedProfiles: profile }),
+    ).resolves.toMatchObject({
+      outcome: "resolved_apple_dh",
+      generation: 2,
+      authentication: { password: "new-secret" },
+    });
+    await api.grantSsh(f, false);
+    expect((await check(target, 2, { expectedTransport })).body).toStrictEqual({
+      outcome: "unavailable",
+    });
   });
 
   it("rejects X509Plain for an old Runner before KMS and resolves it for a capable Runner", async () => {

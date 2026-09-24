@@ -1,8 +1,12 @@
 import { chatThreadActivitySummaryRoutes } from "./chat-threads-activity-summary";
 import { CHAT_EVENT_SCHEMA_VERSION_HEADER } from "@okouai/api-contracts/contracts/chat-event-schema-version";
+import { CHAT_THREAD_SNAPSHOT_R2_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import { command, computed } from "ccstate";
+import { promisify } from "node:util";
+import { gunzip } from "node:zlib";
 import {
   chatSearchContract,
+  chatThreadSnapshotArchiveSchema,
   chatThreadByIdContract,
   chatThreadArtifactsContract,
   chatThreadEventsContract,
@@ -15,7 +19,10 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { request$, setResHeader$ } from "../context/hono";
 import { db$ } from "../external/db";
+import { downloadS3Buffer, generatePresignedGetUrl } from "../external/s3";
 import { notFound } from "../../lib/error";
+import { env } from "../../lib/env";
+import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 import {
   applyGoogleDriveArtifactSyncStatuses,
   googleDriveArtifactStatusLookup,
@@ -37,6 +44,7 @@ import {
   getChatThreadEventsSince,
   getChatThreadSnapshot,
 } from "../services/chat-thread-event.service";
+import { isOwnedChatThreadSnapshotObjectKey } from "../services/chat-thread-snapshot-object";
 import type { RouteEntry } from "../route-entry";
 import { chatThreadsArtifactsSyncRoutes } from "./chat-threads-artifacts-sync";
 import { chatThreadComputerUseHostRoutes } from "./chat-threads-computer-use-host";
@@ -56,8 +64,10 @@ import { chatThreadPinRoutes } from "./chat-threads-pin";
 import { chatThreadPinOrderRoutes } from "./chat-threads-pin-order";
 import { chatThreadRenameRoutes } from "./chat-threads-rename";
 import { chatThreadUnpinRoutes } from "./chat-threads-unpin";
+import { chatThreadArchiveRoutes } from "./chat-threads-archive";
 
 const chatThreadIdSchema = z.string().uuid();
+const gunzipAsync = promisify(gunzip);
 const catchUpChatEventsBody$ = bodyResultOf(chatThreadEventsContract.catchUp);
 
 function chatThreadNotFound() {
@@ -93,6 +103,59 @@ const getChatThreadSnapshotInner$ = computed(async (get) => {
     userId: auth.userId,
     orgId: auth.orgId,
   });
+
+  if ("objectKey" in snapshot) {
+    if (
+      !isOwnedChatThreadSnapshotObjectKey(
+        snapshot.objectKey,
+        auth.userId,
+        auth.orgId,
+        snapshot.latestSeqId,
+      )
+    ) {
+      throw new Error("Invalid chat thread snapshot object key");
+    }
+    const supportsR2Url =
+      get(request$).header(CHAT_THREAD_SNAPSHOT_R2_HEADER) === "1";
+    if (!supportsR2Url) {
+      // Old App/CLI -> new API: loaded clients without this capability still
+      // require inline data. Remove after distinct replacement versions are
+      // deployed and client floors exclude the old builds (follow-up #36375).
+      // Read R2 without detoasting the retired JSONB column meanwhile.
+      const body = await get(
+        downloadS3Buffer(
+          env("R2_USER_STORAGES_BUCKET_NAME"),
+          snapshot.objectKey,
+        ),
+      );
+      const archive = chatThreadSnapshotArchiveSchema.parse(
+        JSON.parse((await gunzipAsync(body)).toString("utf8")) as unknown,
+      );
+      return {
+        status: 200 as const,
+        body: {
+          chatThreads: archive.chatThreads,
+          latestEventId: snapshot.latestEventId,
+          latestSeqId: snapshot.latestSeqId,
+        },
+      };
+    }
+    const url = await get(
+      generatePresignedGetUrl(
+        env("R2_USER_STORAGES_BUCKET_NAME"),
+        snapshot.objectKey,
+      ),
+    );
+    return {
+      status: 200 as const,
+      body: {
+        url,
+        expiresInSeconds: PRESIGNED_URL_TTL_SECONDS,
+        latestEventId: snapshot.latestEventId,
+        latestSeqId: snapshot.latestSeqId,
+      },
+    };
+  }
 
   return {
     status: 200 as const,
@@ -442,6 +505,7 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
     ),
   },
   ...chatThreadActivitySummaryRoutes,
+  ...chatThreadArchiveRoutes,
   ...chatThreadsArtifactsSyncRoutes,
   ...chatThreadComputerUseHostRoutes,
   ...chatThreadConnectorSelectionRoutes,

@@ -9,7 +9,7 @@ import type {
   ModelProviderResponse,
   OrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
-import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
+import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
 import {
   agentsByIdContract,
   agentInstructionsContract,
@@ -70,16 +70,6 @@ export function tabByText(text: string): HTMLElement {
     throw new Error(`${text} tab not found`);
   }
   return tab;
-}
-
-export function linkByText(text: string): HTMLElement {
-  const link = queryAllByRoleFast("link").find((candidate) => {
-    return candidate.textContent?.replace(/\s+/g, " ").trim() === text;
-  });
-  if (!link) {
-    throw new Error(`${text} link not found`);
-  }
-  return link;
 }
 
 export function buttonContainingText(
@@ -345,41 +335,6 @@ export function mockThread(options?: {
   });
 }
 
-export function mockComposerThreadSnapshot(
-  threads: readonly {
-    readonly id: string;
-    readonly agentId: string;
-    readonly title: string | null;
-    readonly selectedModel?: string | null;
-    readonly selectedImageModel?: string | null;
-  }[],
-): void {
-  context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      chatThreads: threads.map((thread, index) => {
-        const timestamp = new Date(
-          Date.parse("2026-03-10T00:00:00Z") + index * 1000,
-        ).toISOString();
-        return {
-          ...thread,
-          sortAt: timestamp,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-          pinnedAt: null,
-          renamedAt: null,
-          selectedModel: thread.selectedModel ?? null,
-          serviceTier: null,
-          computerUseHostId: null,
-          selectedVideoModel: null,
-          selectedImageModel: thread.selectedImageModel ?? null,
-        };
-      }),
-      latestEventId: null,
-      latestSeqId: null,
-    });
-  });
-}
-
 export function mockActiveTemplateThread(): void {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
@@ -535,31 +490,14 @@ export async function findComposerEditor(): Promise<HTMLElement> {
   });
 }
 
-export function workflowSummary({
-  name,
-  displayName,
-  description,
-  agentId = OTHER_AGENT_ID,
-}: {
-  readonly name: string;
-  readonly displayName: string | null;
-  readonly description: string | null;
-  readonly agentId?: string;
-}): WorkflowSummary {
+export function composerWorkflow(
+  name: string,
+  description: string | null,
+): ComposerWorkflow {
   return {
     id: crypto.randomUUID(),
-    agentId,
-    agentName: null,
-    agentDisplayName: agentId === AGENT_ID ? "Scout" : "Other Agent",
     name,
-    displayName,
+    displayName: null,
     description,
-    visibility: "public" as const,
-    ownerUserId: "user-1",
-    createdAt: "2026-06-01T00:00:00.000Z",
-    canManage: true,
-    canPublish: false,
-    official: null,
-    shadowedBy: null,
   };
 }

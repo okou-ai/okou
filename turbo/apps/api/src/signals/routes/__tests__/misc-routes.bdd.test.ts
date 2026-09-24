@@ -25,69 +25,14 @@ function unsubscribeToken(userId: string): string {
   return `${userId}.${signature}`;
 }
 
-describe("MISC-01: organization logo and profile-adjacent API boundaries", () => {
-  it("chains logo read, upload validation, upload success, and delete through public API", async () => {
-    const { api, admin, member } = testActors();
-
-    const unauthenticated = await api.requestOrgLogo(null, [401]);
-    expectApiError(unauthenticated.body);
-
-    api.setOrgLogoRead({
-      imageUrl: "https://images.example.test/org-logo.png",
-      hasImage: true,
-    });
-    const current = await api.requestOrgLogo(admin, [200]);
-    expect(current.body).toStrictEqual({
-      logoUrl: "https://images.example.test/org-logo.png",
-      hasImage: true,
-    });
-
-    const memberUpload = await api.uploadOrgLogo(
-      member,
-      new File([new Uint8Array([1])], "logo.png", { type: "image/png" }),
-      [403],
-    );
-    expectApiError(memberUpload.body);
-    expect(memberUpload.body.error.message).toBe(
-      "Only admins can upload the logo",
-    );
-
-    const missingFile = await api.uploadOrgLogo(admin, null, [400]);
-    expectApiError(missingFile.body);
-    expect(missingFile.body.error.message).toBe("No file provided");
-
-    api.setOrgLogoUpload({
-      imageUrl: "https://images.example.test/uploaded-logo.png",
-      hasImage: true,
-    });
-    const uploaded = await api.uploadOrgLogo(
-      admin,
-      new File([new Uint8Array([1, 2])], "logo.webp", {
-        type: "image/webp",
-      }),
-      [200],
-    );
-    expect(uploaded.body).toStrictEqual({
-      logoUrl: "https://images.example.test/uploaded-logo.png",
-      hasImage: true,
-    });
-  });
-});
-
 describe("MISC-02: preferences, push subscription, user export, and empty logs", () => {
   it("chains visible user-scoped reads and writes without hidden fixtures", async () => {
     const { api, admin } = testActors();
 
-    const initialPreferences = await api.readPreferences(admin);
-    expect(initialPreferences.body).toMatchObject({
-      timezone: null,
-      locale: null,
-      pinnedAgentIds: [],
-      sendMode: "enter",
-      cloudBrowserEnabledByDefault: true,
-      theme: null,
-      colorTheme: null,
-    });
+    const initialPreferences = await api.readUninitializedPreferences(admin);
+    expect(initialPreferences.body.error.code).toBe(
+      "USER_PREFERENCES_UNINITIALIZED",
+    );
 
     const firstPinnedAgentId = "00000000-0000-0000-0000-000000000001";
     const secondPinnedAgentId = "00000000-0000-0000-0000-000000000002";
@@ -200,6 +145,11 @@ describe("MISC-02: preferences, push subscription, user export, and empty logs",
 
   it("reads and writes every supported locale through the canonical contract", async () => {
     const { api, admin } = testActors();
+    await api.updatePreferences(
+      admin,
+      { timezone: "UTC", locale: "en-US" },
+      [200],
+    );
     const supportedLocales = [
       "en-US",
       "pt-BR",

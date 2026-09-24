@@ -38,6 +38,7 @@ import type {
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   builtinConnectors$,
+  connectorCatalogItemForSlug,
   relatedConnectorCatalog,
   reloadBuiltinConnectors$,
 } from "../../external/connectors.ts";
@@ -72,6 +73,7 @@ import {
 } from "./connector-directory-route.ts";
 import type {
   PlatformBuiltinConnector,
+  PlatformConnectorCatalogConnectItem,
   PlatformConnectorAccountMutationIntent,
   PlatformConnectorCatalogStatusItem,
 } from "../../connector-domain.ts";
@@ -212,7 +214,7 @@ function isNoAuthGrantKind(grantKind: ConnectorStatusGrantKind): boolean {
 }
 
 function getConnectorStatusAuthMethod(
-  connector: PlatformConnectorCatalogStatusItem,
+  connector: PlatformConnectorCatalogConnectItem,
   authMethod: ConnectorAuthMethodId,
 ): PublicConnectorCatalogAuthMethodDetail | null {
   return (
@@ -223,7 +225,7 @@ function getConnectorStatusAuthMethod(
 }
 
 function getConnectorStatusAuthMethodsByGrantKind(
-  connector: PlatformConnectorCatalogStatusItem,
+  connector: PlatformConnectorCatalogConnectItem,
   grantKind: ConnectorStatusGrantKind,
 ): PublicConnectorCatalogAuthMethodDetail[] {
   return connector.authMethods.filter((method) => {
@@ -232,14 +234,14 @@ function getConnectorStatusAuthMethodsByGrantKind(
 }
 
 export function getOnlyManualBuiltinConnectorStatusAuthMethod(
-  connector: PlatformConnectorCatalogStatusItem,
+  connector: PlatformConnectorCatalogConnectItem,
 ): PublicConnectorCatalogAuthMethodDetail | null {
   const methods = getConnectorStatusAuthMethodsByGrantKind(connector, "manual");
   return methods.length === 1 ? (methods[0] ?? null) : null;
 }
 
 export function hasBuiltinConnectorStatusProviderDrivenConnectMethod(
-  connector: PlatformConnectorCatalogStatusItem,
+  connector: PlatformConnectorCatalogConnectItem,
 ): boolean {
   return connector.authMethods.some((method) => {
     return (
@@ -253,7 +255,7 @@ export function hasBuiltinConnectorStatusProviderDrivenConnectMethod(
   });
 }
 export function getBuiltinConnectorStatusConnectLaunchMode(
-  connector: PlatformConnectorCatalogStatusItem,
+  connector: PlatformConnectorCatalogConnectItem,
 ): ConnectorConnectLaunchMode {
   return (
     getBuiltinConnectorStatusDirectConnectMethod(connector)?.kind ?? "modal"
@@ -261,7 +263,7 @@ export function getBuiltinConnectorStatusConnectLaunchMode(
 }
 
 function getAvailableStatusAuthCodeAuthMethod(
-  connector: PlatformConnectorCatalogStatusItem,
+  connector: PlatformConnectorCatalogConnectItem,
   authMethod: string,
 ): ConnectorAuthMethodId | null {
   const parsed = connectorAuthMethodIdSchema.safeParse(authMethod);
@@ -276,7 +278,7 @@ function getAvailableStatusAuthCodeAuthMethod(
 }
 
 function getOnlyAvailableStatusAuthCodeAuthMethod(
-  connector: PlatformConnectorCatalogStatusItem,
+  connector: PlatformConnectorCatalogConnectItem,
 ): ConnectorAuthMethodId | null {
   const authMethod = connector.singleAuthCodeAuthMethodId;
   const [method] = connector.authMethods;
@@ -290,7 +292,7 @@ function getOnlyAvailableStatusAuthCodeAuthMethod(
   return getAvailableStatusAuthCodeAuthMethod(connector, authMethod);
 }
 function getOnlyAvailableStatusBrowserAuthMethod(
-  connector: PlatformConnectorCatalogStatusItem,
+  connector: PlatformConnectorCatalogConnectItem,
 ): ConnectorAuthMethodId | null {
   const [method] = connector.authMethods;
   if (connector.authMethods.length !== 1 || !method) {
@@ -303,7 +305,7 @@ function getOnlyAvailableStatusBrowserAuthMethod(
 }
 
 export function getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail(
-  connector: PlatformConnectorCatalogStatusItem,
+  connector: PlatformConnectorCatalogConnectItem,
 ): PublicConnectorCatalogAuthMethodDetail | null {
   const authMethod = getOnlyAvailableStatusBrowserAuthMethod(connector);
   return authMethod
@@ -312,7 +314,7 @@ export function getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail(
 }
 
 function getAvailableStatusNoAuthMethod(
-  connector: PlatformConnectorCatalogStatusItem,
+  connector: PlatformConnectorCatalogConnectItem,
   authMethod: string,
 ): ConnectorAuthMethodId | null {
   const parsed = connectorAuthMethodIdSchema.safeParse(authMethod);
@@ -327,7 +329,7 @@ function getAvailableStatusNoAuthMethod(
 }
 
 export function getOnlyAvailableBuiltinConnectorStatusNoAuthMethod(
-  connector: PlatformConnectorCatalogStatusItem,
+  connector: PlatformConnectorCatalogConnectItem,
 ): ConnectorAuthMethodId | null {
   const [method] = connector.authMethods;
   if (connector.authMethods.length !== 1 || !method) {
@@ -337,7 +339,7 @@ export function getOnlyAvailableBuiltinConnectorStatusNoAuthMethod(
 }
 
 export function getBuiltinConnectorStatusDirectConnectMethod(
-  connector: PlatformConnectorCatalogStatusItem,
+  connector: PlatformConnectorCatalogConnectItem,
 ): ConnectorStatusDirectConnectMethod | null {
   const browserAuthMethod =
     getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail(connector);
@@ -350,7 +352,7 @@ export function getBuiltinConnectorStatusDirectConnectMethod(
 }
 
 function connectorTokenExpiresAtMs(
-  connector: PlatformConnectorCatalogStatusItem,
+  connector: PlatformConnectorCatalogConnectItem,
 ): number | null {
   if (!connector.tokenExpiresAt) {
     return null;
@@ -360,7 +362,7 @@ function connectorTokenExpiresAtMs(
 }
 
 export function builtinConnectorCurrentConnectionStatus(
-  connector: PlatformConnectorCatalogStatusItem,
+  connector: PlatformConnectorCatalogConnectItem,
   nowMs = now(),
 ): PublicConnectorCatalogConnectionStatus {
   if (connector.connectionStatus === "not-connected") {
@@ -376,7 +378,7 @@ export function builtinConnectorCurrentConnectionStatus(
 }
 
 export function builtinConnectorExpiryCountdownText(
-  connector: PlatformConnectorCatalogStatusItem,
+  connector: PlatformConnectorCatalogConnectItem,
   nowMs = now(),
 ): string | null {
   if (
@@ -749,6 +751,9 @@ const connectorOAuthDeviceAuthStartOptionValues$ = state<
 export const selectedBuiltinConnectorSlug$ = computed((get) => {
   return get(internalSelectedConnectorSlug$);
 });
+export const selectedBuiltinConnectorCatalogItem$ = connectorCatalogItemForSlug(
+  selectedBuiltinConnectorSlug$,
+);
 export const setSelectedBuiltinConnectorSlug$ = command(
   ({ get, set }, connectorSlug: ConnectorSlug | null) => {
     if (connectorSlug) {
@@ -880,6 +885,14 @@ const internalScopeReviewSelection$ =
 export const builtinConnectorScopeReviewSelection$ = computed((get) => {
   return get(internalScopeReviewSelection$);
 });
+
+/** The catalog entry the scope review dialog names. */
+export const builtinConnectorScopeReviewCatalogItem$ =
+  connectorCatalogItemForSlug(
+    computed((get) => {
+      return get(internalScopeReviewSelection$)?.connectorSlug ?? null;
+    }),
+  );
 
 export const builtinConnectorScopeDiff$ = computed(async (get) => {
   const selection = get(internalScopeReviewSelection$);

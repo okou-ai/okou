@@ -900,9 +900,12 @@ jobs:
       - uses: ./.github/actions/toolchain-init
       - name: Test App
         working-directory: turbo
-        run: pnpm vitest run --project=@okouai/app --shard=${{ matrix.shard }}/8 --coverage.enabled --coverage.reporter=json
+        # v8 coverage adds about 20% to every shard. Pull request iterations
+        # only need pass/fail; the merge queue still reports coverage for every
+        # change that lands.
+        run: pnpm vitest run --project=@okouai/app --shard=${{ matrix.shard }}/8 ${{ github.event_name == 'merge_group' && '--coverage.enabled --coverage.reporter=json' || '' }}
       - name: Upload coverage to Codecov
-        if: success() || failure()
+        if: github.event_name == 'merge_group' && (success() || failure())
         continue-on-error: true
         timeout-minutes: 1
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
@@ -1483,8 +1486,6 @@ jobs:
           VITE_CLERK_PUBLISHABLE_KEY_PREVIEW: ${{ vars.CLERK_PUBLISHABLE_KEY_PREVIEW }}
           VITE_CLERK_PUBLISHABLE_KEY_PROD: ${{ vars.CLERK_PUBLISHABLE_KEY_PROD }}
           OKOU_APP_GIT_COMMIT_SHA: ${{ steps.artifact.outputs.sha }}
-          VITE_PLAUSIBLE_SCRIPT_URL_PREVIEW: ${{ vars.PLAUSIBLE_SCRIPT_URL }}
-          VITE_PLAUSIBLE_SCRIPT_URL_PRODUCTION: ${{ vars.PLAUSIBLE_SCRIPT_URL_PROD }}
           # Merge-group and main builds create the release artifact. PR preview builds receive no token.
           # Public by design: provision only an ingest-only token scoped to vm0-client-telemetry-prod.
           VITE_AXIOM_CLIENT_TELEMETRY_TOKEN: ${{ github.event_name != 'pull_request' && vars.AXIOM_CLIENT_TELEMETRY_TOKEN || '' }}
@@ -1932,7 +1933,8 @@ jobs:
   cli-e2e-02-playwright:
     name: cli-e2e-02-playwright
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    # Leave room to clean up test accounts and upload failure screenshots/traces.
+    timeout-minutes: 10
     concurrency:
       group: cli-e2e-02-playwright-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true

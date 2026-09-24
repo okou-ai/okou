@@ -5,6 +5,7 @@ import {
   type TestSshConnectionStateActionBody,
 } from "@okouai/api-contracts/contracts/test-ssh-connection-state";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { agentSshAccess } from "@okouai/db/schema/agent-ssh-access";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/schema/agent-run";
@@ -236,6 +237,7 @@ async function createRuntime(
       ok: true as const,
       agentId,
       runId,
+      ...(body.chat && threadId ? { threadId } : {}),
       sandboxToken: generateSandboxToken(body.userId, runId, body.orgId),
     },
   };
@@ -313,6 +315,108 @@ async function matchCredentials(
   };
 }
 
+async function setNeedsRebind(
+  db: Db,
+  body: TestSshConnectionStateAction<"set-needs-rebind">,
+) {
+  const [updated] = await db
+    .update(sshConnections)
+    .set({
+      cloudflareAccessId: null,
+      needsRebind: true,
+      generation: sql`${sshConnections.generation} + 1`,
+      updatedAt: nowDate(),
+    })
+    .where(
+      and(
+        eq(sshConnections.id, body.connectionId),
+        eq(sshConnections.orgId, body.orgId),
+        eq(sshConnections.userId, body.userId),
+      ),
+    )
+    .returning({ generation: sshConnections.generation });
+  return updated
+    ? {
+        status: 200 as const,
+        body: { ok: true as const, generation: updated.generation },
+      }
+    : { status: 400 as const, body: { error: "Connection not found" } };
+}
+
+async function bindSharedAccess(
+  db: Db,
+  body: TestSshConnectionStateAction<"bind-shared-access">,
+) {
+  const result = await db.transaction(async (tx) => {
+    const [source] = await tx
+      .select({
+        encryptedClientId: cloudflareAccessConfigs.encryptedClientId,
+        encryptedClientSecret: cloudflareAccessConfigs.encryptedClientSecret,
+      })
+      .from(cloudflareAccessConfigs)
+      .where(
+        and(
+          eq(cloudflareAccessConfigs.id, body.sourceConfigId),
+          eq(cloudflareAccessConfigs.orgId, body.orgId),
+        ),
+      );
+    if (!source) {
+      return null;
+    }
+    const [connection] = await tx
+      .select({ id: sshConnections.id })
+      .from(sshConnections)
+      .where(
+        and(
+          eq(sshConnections.id, body.connectionId),
+          eq(sshConnections.orgId, body.orgId),
+          eq(sshConnections.userId, body.userId),
+        ),
+      )
+      .for("update");
+    if (!connection) {
+      return null;
+    }
+    const configId = randomUUID();
+    await tx.insert(cloudflareAccessConfigs).values({
+      id: configId,
+      orgId: body.orgId,
+      userId: null,
+      scope: "organization",
+      name: "Shared test token",
+      encryptedClientId: source.encryptedClientId,
+      encryptedClientSecret: source.encryptedClientSecret,
+    });
+    const [updated] = await tx
+      .update(sshConnections)
+      .set({
+        cloudflareAccessId: configId,
+        needsRebind: false,
+        port: 443,
+        generation: sql`${sshConnections.generation} + 1`,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(sshConnections.id, body.connectionId),
+          eq(sshConnections.orgId, body.orgId),
+          eq(sshConnections.userId, body.userId),
+        ),
+      )
+      .returning({ generation: sshConnections.generation });
+    if (!updated) {
+      throw new Error("Locked SSH connection disappeared");
+    }
+    return { configId, generation: updated.generation };
+  });
+  return result
+    ? { status: 200 as const, body: { ok: true as const, ...result } }
+    : {
+        status: 400 as const,
+        body: { error: "Connection or source not found" },
+      };
+}
+
 const mutateSshConnectionState$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     if (!isTestEndpointAllowed(get(request$))) {
@@ -345,6 +449,12 @@ const mutateSshConnectionState$ = command(
       }
       case "match-credentials": {
         return await matchCredentials(db, bodyResult.data);
+      }
+      case "set-needs-rebind": {
+        return await setNeedsRebind(db, bodyResult.data);
+      }
+      case "bind-shared-access": {
+        return await bindSharedAccess(db, bodyResult.data);
       }
     }
   },

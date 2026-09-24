@@ -54,9 +54,9 @@ overrides:
 patchedDependencies:
   # Remove when Base UI resolves empty trigger refs before its portal focus guard.
   "@base-ui/react@1.7.0": patches/@base-ui__react@1.7.0.patch
-  "@earendil-works/pi-agent-core@0.86.1": patches/@earendil-works__pi-agent-core@0.86.1.patch
-  "@earendil-works/pi-ai@0.86.1": patches/@earendil-works__pi-ai@0.86.1.patch
-  "@earendil-works/pi-coding-agent@0.86.1": patches/@earendil-works__pi-coding-agent@0.86.1.patch
+  "@earendil-works/pi-agent-core@0.87.1": patches/@earendil-works__pi-agent-core@0.87.1.patch
+  "@earendil-works/pi-ai@0.87.1": patches/@earendil-works__pi-ai@0.87.1.patch
+  "@earendil-works/pi-coding-agent@0.87.1": patches/@earendil-works__pi-coding-agent@0.87.1.patch
   "@langfuse/pi-observability-plugin@0.1.2": patches/@langfuse__pi-observability-plugin@0.1.2.patch
   # Remove when upstream jest-dom declarations support Vitest 5's Matchers.
   "@testing-library/jest-dom@6.9.1": patches/@testing-library__jest-dom@6.9.1.patch

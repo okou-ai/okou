@@ -337,3 +337,9 @@ OFFICIAL_RUNNER_SECRET=000000000000000000000000000000000000000000000000000000000
 # `pnpm dev`. A fixed local value is fine; production uses a Vercel-managed
 # secret and never touches this file.
 CRON_SECRET=local-dev-cron-secret
+
+# Native Morning Brief per-owner self-dispatch; leave off until the staff canary
+# is accepted and a distinct 32+ character secret is provisioned on both sides.
+MORNING_BRIEF_HTTP_FANOUT=false
+MORNING_BRIEF_WORKER_CONCURRENCY=4
+# MORNING_BRIEF_WORKER_SECRET=<distinct random secret; never reuse CRON_SECRET>
