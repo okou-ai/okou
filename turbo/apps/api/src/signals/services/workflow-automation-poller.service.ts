@@ -686,40 +686,46 @@ async function dueWorkflowAutomationRows(
   return rows;
 }
 
-/**
- * Membership and pause gates, unchanged. A departed owner disables the
- * automation and clears its schedule exactly as before.
- */
+/** A departed owner is disabled before expiry can advance its obligation. */
+async function dueWorkflowAutomationOwnerIsMember(
+  db: Db,
+  row: DueWorkflowAutomationRow,
+  currentTime: Date,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const ownerIsMember = await hasOrgMembership(db, {
+    orgId: row.automation.orgId,
+    userId: row.automation.ownerUserId,
+  });
+  signal.throwIfAborted();
+  if (ownerIsMember) {
+    return true;
+  }
+  log.warn("Disabling workflow automation: owner is no longer an org member", {
+    automationId: row.automation.id,
+    workflowId: row.automation.workflowId,
+    orgId: row.automation.orgId,
+    userId: row.automation.ownerUserId,
+  });
+  await db
+    .update(workflowAutomations)
+    .set({ enabled: false, nextRunAt: null, updatedAt: currentTime })
+    .where(eq(workflowAutomations.id, row.automation.id));
+  signal.throwIfAborted();
+  return false;
+}
+
 async function dueWorkflowAutomationIsFireable(
   db: Db,
   row: DueWorkflowAutomationRow,
   currentTime: Date,
   signal: AbortSignal,
 ): Promise<boolean> {
-  const context = {
-    automationId: row.automation.id,
-    workflowId: row.automation.workflowId,
-    orgId: row.automation.orgId,
-    userId: row.automation.ownerUserId,
-  };
-  const ownerIsMember = await hasOrgMembership(db, {
-    orgId: row.automation.orgId,
-    userId: row.automation.ownerUserId,
-  });
-  signal.throwIfAborted();
-  if (!ownerIsMember) {
-    log.warn(
-      "Disabling workflow automation: owner is no longer an org member",
-      context,
-    );
-    await db
-      .update(workflowAutomations)
-      .set({ enabled: false, nextRunAt: null, updatedAt: currentTime })
-      .where(eq(workflowAutomations.id, row.automation.id));
-    signal.throwIfAborted();
+  if (
+    !(await dueWorkflowAutomationOwnerIsMember(db, row, currentTime, signal))
+  ) {
     return false;
   }
-
   const canFire = await workflowAutomationCanFire(
     db,
     { automation: row.automation, agentId: row.agentId },
@@ -728,7 +734,10 @@ async function dueWorkflowAutomationIsFireable(
   signal.throwIfAborted();
   if (!canFire) {
     log.debug("Workflow automation skipped: automation is paused", {
-      ...context,
+      automationId: row.automation.id,
+      workflowId: row.automation.workflowId,
+      orgId: row.automation.orgId,
+      userId: row.automation.ownerUserId,
       agentId: row.agentId,
     });
     return false;
@@ -923,6 +932,21 @@ async function executeDueWorkflowAutomations(
   };
 
   for (const row of rows) {
+    if (
+      expiryEnabled &&
+      row.automation.nextRunAt &&
+      scheduleExpired(row.automation.nextRunAt, nowDate()) &&
+      !(await dueWorkflowAutomationOwnerIsMember(
+        args.db,
+        row,
+        currentTime,
+        signal,
+      ))
+    ) {
+      counters.skipped++;
+      continue;
+    }
+    // Retire an expired slot before the potentially expensive pause check.
     if (await skipIfExpired(row)) {
       continue;
     }
@@ -934,6 +958,9 @@ async function executeDueWorkflowAutomations(
         signal,
       ))
     ) {
+      if (await skipIfExpired(row)) {
+        continue;
+      }
       if (expiryEnabled && row.automation.nextRunAt) {
         await deferWorkflowSchedule(args.db, {
           automationId: row.automation.id,
