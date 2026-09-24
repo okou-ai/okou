@@ -406,8 +406,8 @@ test("Selecting a filter skips the chat open in the right pane", async () => {
   prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
-    createThread(ARCHIVED_THREAD_ID, "✅ Archived context"),
-    createThread(INCIDENT_THREAD_ID, "✅ Waiting for review"),
+    createThread(ARCHIVED_THREAD_ID, "Archived context", { archived: true }),
+    createThread(INCIDENT_THREAD_ID, "Waiting for review", { archived: true }),
   ]);
 
   await setupSidebarPage({
