@@ -1,4 +1,7 @@
 import { command } from "ccstate";
+import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
+import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
+import { and, eq } from "drizzle-orm";
 import {
   discordInteractionSchema,
   type DiscordCommandInteraction,
@@ -7,6 +10,7 @@ import {
 import {
   getBuiltInVisibleModels,
   isSupportedRunModel,
+  type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 
 import { env } from "../../lib/env";
@@ -36,12 +40,16 @@ import {
   setDiscordAgentPreference$,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
-import { getDiscordAppConfig } from "./discord-config";
+import {
+  discordIntegrationEnabledForOwnerInDb,
+  getDiscordAppConfig,
+} from "./discord-config";
 import type { DiscordCommandName } from "../../lib/discord-command-definition";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import { agentList } from "./agent-data.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
-import { updateUserModelPreference$ } from "./user-data.service";
+import { updateUserModelPreferenceInDb } from "./user-data.service";
+import { writeDb$ } from "../external/db";
 import {
   safeJsonParse,
   safeSync,
@@ -267,6 +275,58 @@ const discordAgentPicker$ = command(
   },
 );
 
+const saveDiscordModelPreference$ = command(
+  async (
+    { set },
+    args: {
+      readonly binding: DiscordVerifiedBinding;
+      readonly model: SupportedRunModel;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const saved = await set(writeDb$).transaction(async (tx) => {
+      await assertErasureSubjectWritable(tx, [
+        { subjectKind: "user", subjectId: args.binding.userId },
+        { subjectKind: "organization", subjectId: args.binding.orgId },
+      ]);
+      const [connection] = await tx
+        .select({ id: discordOrgConnections.id })
+        .from(discordOrgConnections)
+        .where(
+          and(
+            eq(discordOrgConnections.id, args.binding.connectionId),
+            eq(discordOrgConnections.discordUserId, args.binding.discordUserId),
+            eq(discordOrgConnections.userId, args.binding.userId),
+            eq(discordOrgConnections.guildId, args.binding.guildId),
+          ),
+        )
+        .for("share");
+      if (
+        !connection ||
+        !(await discordIntegrationEnabledForOwnerInDb(
+          tx,
+          args.binding.orgId,
+          args.binding.userId,
+        ))
+      ) {
+        return false;
+      }
+      await updateUserModelPreferenceInDb(
+        tx,
+        {
+          orgId: args.binding.orgId,
+          userId: args.binding.userId,
+          preference: { selectedModel: args.model, serviceTier: null },
+        },
+        signal,
+      );
+      return true;
+    });
+    signal.throwIfAborted();
+    return saved;
+  },
+);
+
 const discordModelPicker$ = command(
   async (
     { set },
@@ -320,17 +380,15 @@ const discordModelPicker$ = command(
           "You no longer have access to that model. Run `/okou model` again.",
         );
       }
-      await set(
-        updateUserModelPreference$,
-        {
-          orgId: args.binding.orgId,
-          userId: args.binding.userId,
-          preference: { selectedModel: option.value, serviceTier: null },
-        },
+      const saved = await set(
+        saveDiscordModelPreference$,
+        { binding: args.binding, model: option.value },
         signal,
       );
       return discordAccountMessage(
-        `Model selected for new conversations: ${option.label}. Existing server threads keep their model.`,
+        saved
+          ? `Model selected for new conversations: ${option.label}. Existing server threads keep their model.`
+          : STALE_CONTROL,
       );
     }
     return discordAccountPicker({
