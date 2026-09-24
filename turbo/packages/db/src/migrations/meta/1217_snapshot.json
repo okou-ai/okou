@@ -1,6 +1,6 @@
 {
-  "id": "a101e24e-1e3e-43c5-8deb-4f8a11851955",
-  "prevId": "22a44505-01ed-4ffc-bec5-a8a81bcac5ff",
+  "id": "22a44505-01ed-4ffc-bec5-a8a81bcac5ff",
+  "prevId": "ae8a050b-3d2f-4aed-9992-71d4d1e1086c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -7764,8 +7764,8 @@
           "primaryKey": false,
           "notNull": false,
           "generated": {
-            "type": "stored",
-            "as": "to_tsvector('simple', text_bigram)"
+            "as": "to_tsvector('simple', text_bigram)",
+            "type": "stored"
           }
         }
       },
@@ -7793,9 +7793,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "chat_event_search_messages_user_org_agent_id_created_idx": {
           "name": "chat_event_search_messages_user_org_agent_id_created_idx",
@@ -7826,9 +7826,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "chat_event_search_messages_tsv_idx": {
           "name": "chat_event_search_messages_tsv_idx",
@@ -7841,9 +7841,30 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "gin",
-          "concurrently": false
+          "with": {}
+        },
+        "chat_event_search_messages_user_tsv_gin_idx": {
+          "name": "chat_event_search_messages_user_tsv_gin_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "tsv",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
         }
       },
       "foreignKeys": {},

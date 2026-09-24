@@ -4264,7 +4264,6 @@
       "documentTitles": {
         "experience": "Pengalaman AI Anda",
         "industry": "Pilih bidang Anda",
-        "profile": "Profil Anda",
         "ready": "Okou sudah siap",
         "skills": "Impor skill Anda",
         "slack": "Tambahkan Okou ke Slack",
@@ -4327,17 +4326,6 @@
       "industry": {
         "copy": "Okou adalah asisten kerja untuk Anda dan tim Anda. Okou mengubah informasi yang tersebar menjadi pekerjaan yang selesai, di cloud. Pilih bidang Anda untuk tugas pertama yang pas.",
         "title": "Pekerjaan Anda seperti apa?"
-      },
-      "profile": {
-        "communicationStyle": "Cara Anda berkomunikasi",
-        "copy": "Gambaran awal pekerjaan Anda berdasarkan akun yang terhubung.",
-        "failed": "Kami belum bisa membuat profil Anda. Coba lagi atau lanjutkan.",
-        "heading": "Profil Anda",
-        "loading": "Membuat profil dari pekerjaan yang terhubung…",
-        "priorities": "Kemungkinan prioritas",
-        "professionalIdentity": "Pekerjaan Anda",
-        "retry": "Coba lagi",
-        "title": "Inilah yang kami pelajari tentang Anda"
       },
       "skills": {
         "copied": "Tersalin",

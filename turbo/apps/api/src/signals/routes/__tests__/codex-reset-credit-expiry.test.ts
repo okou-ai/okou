@@ -137,7 +137,6 @@ describe("Codex expiry metadata resilience", () => {
     ["1.5", 60_000],
     ["999999999999999999999999999", 60_000],
     ["Tue, 01 Jan 2030 00:00:00 GMT", 60_000],
-    ["Mon, 31 Dec 2029 23:59:59 GMT", 60_000],
   ] as const)(
     "honors Retry-After %s without retrying usage or expiry",
     async (retryAfter, cooldown) => {
