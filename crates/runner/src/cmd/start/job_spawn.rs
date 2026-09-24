@@ -16,9 +16,6 @@ use tokio::task::JoinSet;
 use tracing::{error, warn};
 
 use super::factory_lifecycle::SharedFactory;
-use super::job_lifecycle::{
-    ActiveBudgetLease, CompletionPayload, FinalizationReady, RunCleanupDisposition, RunCleanupState,
-};
 use super::job_terminal_log::log_terminal_job_outcome;
 use super::sandbox_finalization::{
     FinalizeContext, finalize_sandbox_for_completion_with_telemetry,
@@ -43,6 +40,9 @@ use runner_provider::{ClaimedJob, CompletionReportTiming, JobProvider};
 use runner_provider::{RunCancellationHandle, RunCancellationRegistration, RunCancellationSignals};
 use runner_supervisor::blank_pool::BlankPoolDiagnostics;
 use runner_supervisor::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool};
+use runner_supervisor::job_lifecycle::{
+    ActiveBudgetLease, CompletionPayload, FinalizationReady, RunCleanupDisposition, RunCleanupState,
+};
 use runner_supervisor::orphan_reap::OrphanedActiveRuns;
 use runner_supervisor::ownership::{OwnershipTransitions, RunSandbox};
 use runner_types::ids::RunId;
@@ -594,7 +594,7 @@ impl DeferredUploadPhase {
 /// idle-pool transfer, or pool rejection falls back to destruction.
 ///
 /// The ownership state returned by finalization carries
-/// [`BudgetOwnership`](super::job_lifecycle::BudgetOwnership). Non-accepted paths
+/// [`BudgetOwnership`](runner_supervisor::job_lifecycle::BudgetOwnership). Non-accepted paths
 /// keep the active lease until provider completion and active-status settlement
 /// have both finished, then release it. An accepted idle entry owns and retains
 /// the lease until reuse or destruction.
@@ -924,7 +924,6 @@ mod tests {
 
     use sandbox::SandboxId;
 
-    use super::super::job_lifecycle::RunCleanupState;
     use crate::http::{HttpClient, HttpClientConfig};
     use crate::idle_pool::{
         IdlePool, IdlePoolConfig, IdleUnparkResult, ParkResult,
@@ -937,6 +936,7 @@ mod tests {
     use runner_lifecycle::active_runs::ActiveRuns;
     use runner_provider::RunCancellationRegistry;
     use runner_supervisor::idle_lifecycle::SharedIdlePool;
+    use runner_supervisor::job_lifecycle::RunCleanupState;
     use runner_supervisor::orphan_reap::OrphanedActiveRuns;
     use runner_types::ids::RunId;
 
