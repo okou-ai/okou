@@ -37,7 +37,7 @@ const BASE_PERMISSIONS = String(VIEW | SEND | READ | THREAD_SEND | (1n << 15n));
 
 function snowflake() {
   return (
-    100000000000000000n + BigInt(`0x${randomBytes(7).toString("hex")}`)
+    100_000_000_000_000_000n + BigInt(`0x${randomBytes(7).toString("hex")}`)
   ).toString();
 }
 
@@ -162,8 +162,9 @@ async function fixture(
     }),
     http.get(`${API}/guilds/${guildId}/members/:id`, ({ params }) => {
       const isUser = params.id === discordUserId;
-      if ((isUser && !state.userMember) || (!isUser && !state.botMember))
-        return HttpResponse.json({ code: 10007 }, { status: 404 });
+      if ((isUser && !state.userMember) || (!isUser && !state.botMember)) {
+        return HttpResponse.json({ code: 10_007 }, { status: 404 });
+      }
       return HttpResponse.json({
         user: isUser ? author : botAuthor,
         roles: isUser ? [userRoleId, extraRoleId] : [botRoleId],
@@ -181,7 +182,7 @@ async function fixture(
       const channel = channels.get(String(params.channelId));
       return channel
         ? HttpResponse.json(channel)
-        : HttpResponse.json({ code: 10003 }, { status: 404 });
+        : HttpResponse.json({ code: 10_003 }, { status: 404 });
     }),
     http.get(
       `${API}/channels/:channelId/thread-members/:userId`,
@@ -193,7 +194,7 @@ async function fixture(
               join_timestamp: "2026-09-24T00:00:00Z",
               flags: 0,
             })
-          : HttpResponse.json({ code: 10007 }, { status: 404 });
+          : HttpResponse.json({ code: 10_007 }, { status: 404 });
       },
     ),
     http.get(`${API}/channels/:channelId/messages/:messageId`, ({ params }) => {
@@ -202,7 +203,7 @@ async function fixture(
       });
       return found
         ? HttpResponse.json(found)
-        : HttpResponse.json({ code: 10008 }, { status: 404 });
+        : HttpResponse.json({ code: 10_008 }, { status: 404 });
     }),
     http.get(`${API}/channels/:channelId/messages`, ({ request, params }) => {
       const query = new URL(request.url).searchParams;
@@ -324,7 +325,7 @@ describe("Discord native authorization and reads", () => {
       first.body.messages.map((entry) => {
         return entry.id;
       }),
-    ).toEqual(["18446744073709551614", "18446744073709551613"]);
+    ).toStrictEqual(["18446744073709551614", "18446744073709551613"]);
     expect(first.body.messages[0]?.url).toBe(
       `https://discord.com/channels/${f.guildId}/${f.channelId}/18446744073709551614`,
     );
@@ -343,7 +344,7 @@ describe("Discord native authorization and reads", () => {
       second.body.messages.map((entry) => {
         return entry.id;
       }),
-    ).toEqual(["18446744073709551612"]);
+    ).toStrictEqual(["18446744073709551612"]);
     expect(second.body.nextBefore).toBeNull();
   });
 
@@ -372,7 +373,7 @@ describe("Discord native authorization and reads", () => {
     "denies %s without exposing message contents",
     async (scenario) => {
       const f = await fixture();
-      if (scenario === "different-guild")
+      if (scenario === "different-guild") {
         f.channels.set(f.channelId, {
           id: f.channelId,
           type: 0,
@@ -380,20 +381,27 @@ describe("Discord native authorization and reads", () => {
           name: "private",
           permission_overwrites: [],
         });
-      if (scenario === "other-user-dm")
+      }
+      if (scenario === "other-user-dm") {
         f.channels.set(f.channelId, {
           id: f.channelId,
           type: 1,
           recipients: [{ id: snowflake(), username: "someone else" }],
         });
-      if (scenario === "group-dm")
+      }
+      if (scenario === "group-dm") {
         f.channels.set(f.channelId, {
           id: f.channelId,
           type: 3,
           recipients: [{ id: f.discordUserId, username: "sender" }],
         });
-      if (scenario === "missing-user") f.state.userMember = false;
-      if (scenario === "missing-bot") f.state.botMember = false;
+      }
+      if (scenario === "missing-user") {
+        f.state.userMember = false;
+      }
+      if (scenario === "missing-bot") {
+        f.state.botMember = false;
+      }
       const response = await accept(history(f), [404]);
       expect(response.body.error.code).toBe("NOT_FOUND");
       expect(response.body).not.toHaveProperty("messages");
@@ -411,13 +419,14 @@ describe("Discord native authorization and reads", () => {
       [404],
     );
     const other = await fixture();
-    await accept(
+    const denied = await accept(
       f.read.history({
         headers: other.headers,
         query: { channelId: f.channelId, guildId: f.guildId, limit: 50 },
       }),
       [404],
     );
+    expect(denied.body.error.code).toBe("NOT_FOUND");
   });
 
   it("applies everyone, aggregated role, and member overwrite precedence", async () => {
@@ -466,7 +475,7 @@ describe("Discord native authorization and reads", () => {
       listed.body.channels.map((channel) => {
         return channel.id;
       }),
-    ).toEqual([f.channelId]);
+    ).toStrictEqual([f.channelId]);
     f.channels.get(f.channelId)!.permission_overwrites = [
       { id: f.discordUserId, type: 1, deny: String(READ), allow: "0" },
     ];
@@ -479,8 +488,12 @@ describe("Discord native authorization and reads", () => {
       const f = await fixture();
       addThread(f, { private: true });
       f.threadMembers.delete(party === "user" ? f.discordUserId : f.botUserId);
-      await accept(history(f, f.threadId), [404]);
-      await accept(send(f, f.threadId), [404]);
+      expect(
+        (await accept(history(f, f.threadId), [404])).body.error.code,
+      ).toBe("NOT_FOUND");
+      expect((await accept(send(f, f.threadId), [404])).body.error.code).toBe(
+        "NOT_FOUND",
+      );
     },
   );
 
@@ -493,7 +506,9 @@ describe("Discord native authorization and reads", () => {
     f.channels.get(f.channelId)!.permission_overwrites = [
       { id: f.discordUserId, type: 1, deny: String(VIEW), allow: "0" },
     ];
-    await accept(history(f, f.threadId), [404]);
+    expect((await accept(history(f, f.threadId), [404])).body.error.code).toBe(
+      "NOT_FOUND",
+    );
   });
 
   it("reads native thread replies and refuses to treat an ordinary reply as a thread", async () => {
@@ -552,7 +567,7 @@ describe("Discord native authorization and reads", () => {
       [200],
     );
     await accept(history(f), [404]);
-    await accept(send(f), [404]);
+    expect((await accept(send(f), [404])).body.error.code).toBe("NOT_FOUND");
   });
 });
 
@@ -578,7 +593,7 @@ describe("Discord native sends and transport failures", () => {
       chunks.every((chunk) => {
         return chunk.length <= 2000;
       }),
-    ).toBe(true);
+    ).toBeTruthy();
     expect(chunks.join("").replaceAll(/```ts\n|```\n?/g, "")).toBe(
       source.replaceAll(/```ts\n|```\n?/g, ""),
     );
@@ -589,12 +604,12 @@ describe("Discord native sends and transport failures", () => {
           body.allowed_mentions.replied_user === false
         );
       }),
-    ).toBe(true);
+    ).toBeTruthy();
     expect(
       result.body.messages.every((entry) => {
         return entry.url.endsWith(`/${entry.id}`);
       }),
-    ).toBe(true);
+    ).toBeTruthy();
   });
 
   it.each(["archived", "locked"] as const)(
@@ -613,10 +628,13 @@ describe("Discord native sends and transport failures", () => {
     "denies writes for a timed-out %s while retaining readable history",
     async (party) => {
       const f = await fixture();
-      if (party === "user") f.state.userTimedOut = true;
-      else f.state.botTimedOut = true;
+      if (party === "user") {
+        f.state.userTimedOut = true;
+      } else {
+        f.state.botTimedOut = true;
+      }
       await accept(history(f), [200]);
-      await accept(send(f), [404]);
+      expect((await accept(send(f), [404])).body.error.code).toBe("NOT_FOUND");
     },
   );
 
@@ -630,7 +648,9 @@ describe("Discord native sends and transport failures", () => {
     f.channels.get(f.channelId)!.permission_overwrites = [
       { id: f.discordUserId, type: 1, deny: String(THREAD_SEND), allow: "0" },
     ];
-    await accept(send(f, f.threadId), [404]);
+    expect((await accept(send(f, f.threadId), [404])).body.error.code).toBe(
+      "NOT_FOUND",
+    );
   });
 
   it("retries only an explicit short 429 and returns a complete message receipt", async () => {
@@ -682,7 +702,7 @@ describe("Discord native sends and transport failures", () => {
       result.body.error.deliveredMessages?.map((entry) => {
         return entry.id;
       }),
-    ).toEqual([first.id]);
+    ).toStrictEqual([first.id]);
   });
 
   it("surfaces a provider server failure without resending an uncertain write", async () => {
@@ -702,6 +722,6 @@ describe("Discord native sends and transport failures", () => {
       read.body.messages.filter((entry) => {
         return entry.author.bot;
       }),
-    ).toEqual([]);
+    ).toStrictEqual([]);
   });
 });

@@ -259,6 +259,20 @@ export async function resolveDiscordProviderAccess(
   if (!permissions) {
     return unavailable();
   }
+  return await requirePrivateThreadMembership(
+    args,
+    channel,
+    permissions,
+    signal,
+  );
+}
+
+async function requirePrivateThreadMembership(
+  args: DiscordProviderAccessArgs,
+  channel: DiscordChannel,
+  permissions: { user: bigint; bot: bigint },
+  signal: AbortSignal,
+): Promise<{ kind: "allowed"; channel: DiscordChannel } | AccessFailure> {
   if (channel.type === 12) {
     for (const [userId, memberPermissions] of [
       [args.discordUserId, permissions.user],
