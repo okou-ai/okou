@@ -10,7 +10,7 @@ workflow_file=".github/workflows/turbo.yml"
 pin_changed=false
 workflow_changed=false
 test_changed=false
-changed_paths="$(git diff --name-only "$base_ref" HEAD)"
+changed_paths="$(git diff --name-only --no-renames "$base_ref" HEAD)"
 
 while IFS= read -r path; do
     case "$path" in

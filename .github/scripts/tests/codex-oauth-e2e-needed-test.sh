@@ -79,6 +79,18 @@ commit_change
 assert_needed false
 
 new_fixture
+mkdir -p "$fixture/e2e/tests/03-runner-oauth"
+printf '%s\n' '# moved OAuth test' > \
+    "$fixture/e2e/tests/03-runner-oauth/codex-oauth.bats"
+commit_change
+mkdir -p "$fixture/e2e/tests/03-runner"
+git -C "$fixture" mv \
+    e2e/tests/03-runner-oauth/codex-oauth.bats \
+    e2e/tests/03-runner/codex-oauth.bats
+commit_change
+assert_needed true
+
+new_fixture
 printf '%s\n' 'CODEX_CLI_VERSION=0.157.0' > \
     "$fixture/crates/runner/scripts/build-template.sh"
 commit_change
