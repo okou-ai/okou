@@ -105,7 +105,6 @@ use tokio::sync::OwnedMutexGuard;
 use tokio::task::JoinSet;
 use tracing::{info, warn};
 
-use super::active_runs::{ActiveRunGuard, ActiveRunReuseProof};
 use super::factory_lifecycle::SharedFactory;
 use super::finalizing_claim::{FinalizingClaimRequest, spawn_finalizing_claim};
 use super::idle_lifecycle::{
@@ -138,6 +137,7 @@ use crate::status::{StatusPersistenceError, StatusTracker};
 use crate::telemetry::JobTelemetry;
 use runner_host::paths::short_digest;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
+use runner_lifecycle::active_runs::{ActiveRunGuard, ActiveRunReuseProof};
 use runner_provider::{
     ClaimedJob, JobCandidate, JobProvider, RunnerPreferenceRemovalReason, RunnerPreferenceTier,
 };

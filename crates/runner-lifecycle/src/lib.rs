@@ -1,4 +1,4 @@
-//! Idle sandbox, memory prefetch, and workspace image lifecycle owned below the Runner process.
+//! Active-run handoff, idle sandbox, memory prefetch, and workspace image lifecycle owned below the Runner process.
 
 // The opt-in test-support build compiles fixture-only branches without the
 // crate's own tests. Default production builds keep the workspace lint policy.
@@ -7,6 +7,7 @@
     allow(dead_code, clippy::unwrap_used, clippy::expect_used, clippy::panic)
 )]
 
+pub mod active_runs;
 mod error;
 pub mod guest_timezone;
 pub mod idle_pool;
