@@ -1,3 +1,4 @@
+import { chatThreads as legacyChatThreads } from "@okouai/db/schema/chat-thread";
 import {
   piModelConfigV4Schema,
   PI_NATIVE_CREDENTIAL_PLACEHOLDER,
@@ -25,7 +26,7 @@ import {
   browserSessionTabSnapshots,
   browserSessions,
 } from "@okouai/db/schema/browser-session";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { checkpoints } from "@okouai/db/schema/checkpoint";
@@ -1852,12 +1853,12 @@ async function chatEventFixtureActionResponse(
 ) {
   if (body.action === "advance-chat-event-sequence-as-previous-api") {
     const [updated] = await db
-      .update(chatThreads)
+      .update(legacyChatThreads)
       .set({
-        lastChatEventSeqId: sql`${chatThreads.lastChatEventSeqId} + ${body.count}`,
+        lastChatEventSeqId: sql`${legacyChatThreads.lastChatEventSeqId} + ${body.count}`,
       })
-      .where(eq(chatThreads.id, body.thread_id))
-      .returning({ id: chatThreads.id });
+      .where(eq(legacyChatThreads.id, body.thread_id))
+      .returning({ id: legacyChatThreads.id });
     signal.throwIfAborted();
     if (!updated) {
       throw new Error(

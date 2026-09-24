@@ -7,7 +7,7 @@
  * endpoint cases use controlled direct database access.
  */
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 

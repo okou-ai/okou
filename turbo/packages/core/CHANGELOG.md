@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.708.4](https://github.com/okou-ai/okou/compare/core-v8.708.3...core-v8.708.4) (2026-09-24)
+
+
+### Bug Fixes
+
+* retire claude sonnet 4.6, claude opus 4.8, and deepseek v4 pro ([#36698](https://github.com/okou-ai/okou/issues/36698)) ([66a5341](https://github.com/okou-ai/okou/commit/66a534132b49aee893bcbae2cb94b150f19396c8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.505.1
+
 ## [8.708.3](https://github.com/okou-ai/okou/compare/core-v8.708.2...core-v8.708.3) (2026-09-24)
 
 

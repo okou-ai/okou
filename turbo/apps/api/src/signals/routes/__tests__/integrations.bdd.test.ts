@@ -2567,7 +2567,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
   });
 
   it.each([false, true])(
-    "deduplicates canonical Slack retries (private=%s)",
+    "deduplicates canonical Slack retries and preserves same-name mention identities (private=%s)",
     async (privateFiles) => {
       const actor = bdd.user();
       runs.acceptStorageDownloads();
@@ -2578,6 +2578,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
       const slackUserId = uniqueSlackUserId();
       const mentionedSlackUserId = uniqueSlackUserId();
+      const secondMentionedSlackUserId = uniqueSlackUserId();
       const { teamId, botUserId } = await integrations.installSlackWorkspace(
         actor,
         {
@@ -2597,6 +2598,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
       const eventId = `EvBDD${randomUUID().replace(/-/g, "")}`;
       const fileUrl = "https://files.slack.com/F_CANONICAL_INPUT";
       const fileBody = "canonical Slack attachment";
+      const originalMessageText = `<@${botUserId}> admit this event once with <@${mentionedSlackUserId}> and <@${secondMentionedSlackUserId}>`;
+      const visibleMessageText =
+        "@Slack User admit this event once with @Slack User and @Slack User";
       context.mocks.slack.fetchFile.mockResolvedValue(
         new Response(fileBody, {
           headers: { "Content-Type": "text/plain" },
@@ -2605,7 +2609,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       const event = {
         type: "app_mention",
         user: slackUserId,
-        text: `<@${botUserId}> admit this event once with <@${mentionedSlackUserId}>`,
+        text: originalMessageText,
         ts: threadTs,
         channel: channelId,
         channel_type: "channel",
@@ -2732,7 +2736,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       });
       const canonicalInputMessage = slackInputMessageByText(
         visibleMessages,
-        "@Slack User admit this event once with @Slack User",
+        visibleMessageText,
       );
       if (!canonicalInputMessage) {
         throw new Error("Expected the canonical Slack input message");
@@ -2745,7 +2749,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       ).resolves.toMatchObject({
         slackBotUserId: botUserId,
         slackPublicBrand: "okou",
-        slackMessageText: `<@${botUserId}> admit this event once with <@${mentionedSlackUserId}>`,
+        slackMessageText: originalMessageText,
         slackMessageAssets: [
           {
             assetId: canonicalInputAssetId,
@@ -2757,6 +2761,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
         ],
         slackMentionDisplayNames: {
           [mentionedSlackUserId]: "Slack User",
+          [secondMentionedSlackUserId]: "Slack User",
         },
       });
       expect(visibleMessages).toStrictEqual(
@@ -2775,7 +2780,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
                 },
                 {
                   type: "text",
-                  text: "@Slack User admit this event once with @Slack User",
+                  text: visibleMessageText,
                 },
                 {
                   type: "source",
@@ -2805,7 +2810,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       );
       const canonicalInputRun = await runs.readRun(actor, run1Id);
       expect(canonicalInputRun.prompt).toBe(
-        `@Slack User (${botUserId}) admit this event once with @Slack User (${mentionedSlackUserId})\n\n[Web file] source-notes.txt (text/plain)\n   [ID] ${canonicalInputAssetId}`,
+        `@Slack User (${botUserId}) admit this event once with @Slack User (${mentionedSlackUserId}) and @Slack User (${secondMentionedSlackUserId})\n\n[Web file] source-notes.txt (text/plain)\n   [ID] ${canonicalInputAssetId}`,
       );
       // The Slack delivery rules follow the integration block as their own
       // section rather than sitting in `# Agent Tools`.

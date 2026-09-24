@@ -9,7 +9,7 @@ import {
 } from "@okouai/api-contracts/contracts/connector-identity";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { connectors } from "@okouai/db/schema/connector";
 import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 

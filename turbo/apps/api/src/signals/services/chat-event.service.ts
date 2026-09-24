@@ -15,26 +15,35 @@ import type { ChatEventPayload } from "@okouai/db/jsonb-contracts/chat-event";
 import { chatAgentRunContext } from "@okouai/db/schema/chat-agent-run-context";
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
-import {
-  chatEventTerminalPredicate,
-  chatEvents,
-} from "@okouai/db/schema/chat-event";
+import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
 import { chatGithubContext } from "@okouai/db/schema/chat-github-context";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
-import { eq, sql, type SQL } from "drizzle-orm";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { and, eq } from "drizzle-orm";
+import { agents } from "@okouai/db/schema/agent";
 import { nowDate } from "../../lib/time";
 import type {
   WorkflowAutomationEventPayload,
   WorkflowAutomationEventType,
 } from "./workflow-automation-context.service";
-import type { Tx } from "../../lib/db-types";
+import type { ApiDb, Tx } from "../../lib/db-types";
+import { logger } from "../../lib/log";
+import {
+  appendCanonicalChatEvents,
+  type PreparedChatEventRow,
+} from "./chat-event-append.service";
+import {
+  isSplitChatEventWriteEnabled,
+  type ChatEventWriteOptions,
+} from "./chat-event-write-mode.service";
+
+const log = logger("chat-event-context");
 
 type CanonicalChatEventInsert = typeof chatEvents.$inferInsert;
-type ChatEventWriteTransaction = Tx;
+type ChatEventWriteTransaction = ApiDb | Tx;
 
 type ChatEventIdentity = {
   readonly id?: string;
@@ -367,11 +376,6 @@ interface ChatEventCommandResult {
   readonly seqId: number;
 }
 
-export interface ChatEventSequenceReservation {
-  readonly chatThreadId: string;
-  readonly seqId: number;
-}
-
 interface ChatEventBatchCommandResult {
   readonly id: string;
   readonly createdAt: Date;
@@ -388,7 +392,7 @@ type PersistedChatEvent = Omit<
   ChatEventContextPointer;
 
 type ChatEventContextPointer = {
-  readonly contextType?: CanonicalChatEventInsert["contextType"] | SQL;
+  readonly contextType?: string | null;
   readonly contextId?: CanonicalChatEventInsert["contextId"];
 };
 
@@ -700,8 +704,7 @@ function replacementContext(
   if (target.contextType !== null || values.eventType === "usage.recorded") {
     return {
       pointer: {
-        contextType:
-          target.contextType === null ? null : sql`${target.contextType}`,
+        contextType: target.contextType,
         contextId: target.contextId,
       },
       displayContext: undefined,
@@ -719,25 +722,28 @@ async function insertAgentphoneDisplayContext(
   context: Extract<NewDisplayContext, { readonly type: "agentphone" }>,
   createdAt: Date,
 ): Promise<void> {
-  await tx.insert(chatAgentphoneContext).values({
-    id: context.id,
-    chatThreadId: context.chatThreadId,
-    messageText: context.messageText,
-    threadContext: context.threadContext,
-    messageId: context.messageId,
-    rootMessageId: context.rootMessageId,
-    conversationId: context.conversationId,
-    groupId: context.groupId,
-    channel: context.channel,
-    isGroup: context.isGroup,
-    phoneHandle: context.phoneHandle,
-    fromNumber: context.fromNumber,
-    toNumber: context.toNumber,
-    userLinkId: context.userLinkId,
-    agentphoneAgentId: context.agentphoneAgentId,
-    publicBrand: context.publicBrand,
-    createdAt,
-  });
+  await tx
+    .insert(chatAgentphoneContext)
+    .values({
+      id: context.id,
+      chatThreadId: context.chatThreadId,
+      messageText: context.messageText,
+      threadContext: context.threadContext,
+      messageId: context.messageId,
+      rootMessageId: context.rootMessageId,
+      conversationId: context.conversationId,
+      groupId: context.groupId,
+      channel: context.channel,
+      isGroup: context.isGroup,
+      phoneHandle: context.phoneHandle,
+      fromNumber: context.fromNumber,
+      toNumber: context.toNumber,
+      userLinkId: context.userLinkId,
+      agentphoneAgentId: context.agentphoneAgentId,
+      publicBrand: context.publicBrand,
+      createdAt,
+    })
+    .onConflictDoNothing();
 }
 
 async function insertTelegramDisplayContext(
@@ -745,26 +751,29 @@ async function insertTelegramDisplayContext(
   context: Extract<NewDisplayContext, { readonly type: "telegram" }>,
   createdAt: Date,
 ): Promise<void> {
-  await tx.insert(chatTelegramContext).values({
-    id: context.id,
-    chatThreadId: context.chatThreadId,
-    chatId: context.chatId,
-    messageId: context.messageId,
-    messageThreadId: context.messageThreadId,
-    messageText: context.messageText,
-    threadContext: context.threadContext,
-    rootMessageId: context.rootMessageId,
-    thinkingMessageId: context.thinkingMessageId,
-    publicBrand: context.publicBrand,
-    userLinkId: context.userLinkId,
-    userLinkKind: context.userLinkKind,
-    chatType: context.chatType,
-    senderUserId: context.senderUserId,
-    senderDisplayName: context.senderDisplayName,
-    senderUsername: context.senderUsername,
-    senderLanguage: context.senderLanguage,
-    createdAt,
-  });
+  await tx
+    .insert(chatTelegramContext)
+    .values({
+      id: context.id,
+      chatThreadId: context.chatThreadId,
+      chatId: context.chatId,
+      messageId: context.messageId,
+      messageThreadId: context.messageThreadId,
+      messageText: context.messageText,
+      threadContext: context.threadContext,
+      rootMessageId: context.rootMessageId,
+      thinkingMessageId: context.thinkingMessageId,
+      publicBrand: context.publicBrand,
+      userLinkId: context.userLinkId,
+      userLinkKind: context.userLinkKind,
+      chatType: context.chatType,
+      senderUserId: context.senderUserId,
+      senderDisplayName: context.senderDisplayName,
+      senderUsername: context.senderUsername,
+      senderLanguage: context.senderLanguage,
+      createdAt,
+    })
+    .onConflictDoNothing();
 }
 
 async function insertAgentRunDisplayContext(
@@ -772,15 +781,55 @@ async function insertAgentRunDisplayContext(
   context: Extract<NewDisplayContext, { readonly type: "agent_run" }>,
   createdAt: Date,
 ): Promise<void> {
+  const [source] = await tx
+    .select({
+      sourceUserId: chatThreads.userId,
+      sourceOrgId: agents.orgId,
+    })
+    .from(chatThreads)
+    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+    .where(
+      and(
+        eq(chatThreads.id, context.sourceChatThreadId),
+        eq(agents.id, context.sourceAgentId),
+      ),
+    );
+  if (!source) {
+    return;
+  }
   await tx
     .insert(chatAgentRunContext)
     .values({
       id: context.id,
       sourceChatThreadId: context.sourceChatThreadId,
       sourceAgentId: context.sourceAgentId,
+      ...source,
       createdAt,
     })
     .onConflictDoNothing({ target: chatAgentRunContext.id });
+}
+
+async function insertAutomationDisplayContext(
+  tx: ChatEventWriteTransaction,
+  context: Extract<NewDisplayContext, { readonly type: "automation" }>,
+  createdAt: Date,
+): Promise<void> {
+  await tx
+    .insert(chatAutomationContext)
+    .values({
+      id: context.id,
+      chatThreadId: context.chatThreadId,
+      automationId: context.automationId,
+      workflowName: context.workflowName,
+      eventType: context.workflowAutomationEventType,
+      eventPayload: context.workflowAutomationEventPayload,
+      connectorSourceId: context.connectorSourceId,
+      publicBrand: context.publicBrand,
+      triggerBrief: context.triggerBrief,
+      createdAt,
+    })
+    .onConflictDoNothing();
+  return;
 }
 
 async function insertDisplayContext(
@@ -793,73 +842,82 @@ async function insertDisplayContext(
     return;
   }
   if (context.type === "slack") {
-    await tx.insert(chatSlackContext).values({
-      id: context.id,
-      chatThreadId: context.chatThreadId,
-      channelId: context.channelId,
-      messageTs: context.messageTs,
-      botUserId: context.botUserId,
-      publicBrand: context.publicBrand,
-      conversationContext: context.conversationContext,
-      messageText: context.messageText,
-      messageFiles: context.messageFiles,
-      messageAssets: context.messageAssets,
-      mentionDisplayNames: context.mentionDisplayNames,
-      senderDisplayName: context.senderDisplayName,
-      senderUserId: context.senderUserId,
-      channelType: context.channelType,
-      threadTs: context.threadTs,
-      routeThreadTs: context.routeThreadTs,
-      createdAt,
-    });
+    await tx
+      .insert(chatSlackContext)
+      .values({
+        id: context.id,
+        chatThreadId: context.chatThreadId,
+        channelId: context.channelId,
+        messageTs: context.messageTs,
+        botUserId: context.botUserId,
+        publicBrand: context.publicBrand,
+        conversationContext: context.conversationContext,
+        messageText: context.messageText,
+        messageFiles: context.messageFiles,
+        messageAssets: context.messageAssets,
+        mentionDisplayNames: context.mentionDisplayNames,
+        senderDisplayName: context.senderDisplayName,
+        senderUserId: context.senderUserId,
+        channelType: context.channelType,
+        threadTs: context.threadTs,
+        routeThreadTs: context.routeThreadTs,
+        createdAt,
+      })
+      .onConflictDoNothing();
     return;
   }
   if (context.type === "feishu") {
-    await tx.insert(chatFeishuContext).values({
-      id: context.id,
-      chatThreadId: context.chatThreadId,
-      conversationHistory: context.conversationHistory,
-      messageText: context.messageText,
-      messageFiles: context.messageFiles,
-      chatType: context.chatType,
-      chatId: context.chatId,
-      messageId: context.messageId,
-      threadId: context.threadId,
-      replyInThread: context.replyInThread,
-      reactionId: context.reactionId,
-      senderOpenId: context.senderOpenId,
-      connectionId: context.connectionId,
-      installationId: context.installationId,
-      publicBrand: context.publicBrand,
-      createdAt,
-    });
+    await tx
+      .insert(chatFeishuContext)
+      .values({
+        id: context.id,
+        chatThreadId: context.chatThreadId,
+        conversationHistory: context.conversationHistory,
+        messageText: context.messageText,
+        messageFiles: context.messageFiles,
+        chatType: context.chatType,
+        chatId: context.chatId,
+        messageId: context.messageId,
+        threadId: context.threadId,
+        replyInThread: context.replyInThread,
+        reactionId: context.reactionId,
+        senderOpenId: context.senderOpenId,
+        connectionId: context.connectionId,
+        installationId: context.installationId,
+        publicBrand: context.publicBrand,
+        createdAt,
+      })
+      .onConflictDoNothing();
     return;
   }
   if (context.type === "teams") {
-    await tx.insert(chatTeamsContext).values({
-      id: context.id,
-      chatThreadId: context.chatThreadId,
-      tenantId: context.tenantId,
-      teamId: context.teamId,
-      channelId: context.channelId,
-      conversationId: context.conversationId,
-      conversationType: context.conversationType,
-      activityId: context.activityId,
-      threadContext: context.threadContext,
-      messageText: context.messageText,
-      messageFiles: context.messageFiles,
-      tenantName: context.tenantName,
-      teamName: context.teamName,
-      threadId: context.threadId,
-      serviceUrl: context.serviceUrl,
-      teamsAppId: context.teamsAppId,
-      publicBrand: context.publicBrand,
-      senderUserId: context.senderUserId,
-      senderDisplayName: context.senderDisplayName,
-      senderPrincipalName: context.senderPrincipalName,
-      connectionId: context.connectionId,
-      createdAt,
-    });
+    await tx
+      .insert(chatTeamsContext)
+      .values({
+        id: context.id,
+        chatThreadId: context.chatThreadId,
+        tenantId: context.tenantId,
+        teamId: context.teamId,
+        channelId: context.channelId,
+        conversationId: context.conversationId,
+        conversationType: context.conversationType,
+        activityId: context.activityId,
+        threadContext: context.threadContext,
+        messageText: context.messageText,
+        messageFiles: context.messageFiles,
+        tenantName: context.tenantName,
+        teamName: context.teamName,
+        threadId: context.threadId,
+        serviceUrl: context.serviceUrl,
+        teamsAppId: context.teamsAppId,
+        publicBrand: context.publicBrand,
+        senderUserId: context.senderUserId,
+        senderDisplayName: context.senderDisplayName,
+        senderPrincipalName: context.senderPrincipalName,
+        connectionId: context.connectionId,
+        createdAt,
+      })
+      .onConflictDoNothing();
     return;
   }
   if (context.type === "telegram") {
@@ -867,39 +925,30 @@ async function insertDisplayContext(
     return;
   }
   if (context.type === "github") {
-    await tx.insert(chatGithubContext).values({
-      id: context.id,
-      chatThreadId: context.chatThreadId,
-      repo: context.repo,
-      subjectNumber: context.subjectNumber,
-      subjectKind: context.subjectKind,
-      triggerCommentId: context.triggerCommentId,
-      issueContext: context.issueContext,
-      messageText: context.messageText,
-      triggerReactionId: context.triggerReactionId,
-      triggerCommentBody: context.triggerCommentBody,
-      publicBrand: context.publicBrand,
-      createdAt,
-    });
+    await tx
+      .insert(chatGithubContext)
+      .values({
+        id: context.id,
+        chatThreadId: context.chatThreadId,
+        repo: context.repo,
+        subjectNumber: context.subjectNumber,
+        subjectKind: context.subjectKind,
+        triggerCommentId: context.triggerCommentId,
+        issueContext: context.issueContext,
+        messageText: context.messageText,
+        triggerReactionId: context.triggerReactionId,
+        triggerCommentBody: context.triggerCommentBody,
+        publicBrand: context.publicBrand,
+        createdAt,
+      })
+      .onConflictDoNothing();
     return;
   }
   if (context.type === "agentphone") {
     return insertAgentphoneDisplayContext(tx, context, createdAt);
   }
   if (context.type === "automation") {
-    await tx.insert(chatAutomationContext).values({
-      id: context.id,
-      chatThreadId: context.chatThreadId,
-      automationId: context.automationId,
-      workflowName: context.workflowName,
-      eventType: context.workflowAutomationEventType,
-      eventPayload: context.workflowAutomationEventPayload,
-      connectorSourceId: context.connectorSourceId,
-      publicBrand: context.publicBrand,
-      triggerBrief: context.triggerBrief,
-      createdAt,
-    });
-    return;
+    await insertAutomationDisplayContext(tx, context, createdAt);
   }
 }
 
@@ -980,184 +1029,159 @@ function canonicalChatEventValues(
   };
 }
 
-async function reserveChatEventSeqIds(
-  tx: ChatEventWriteTransaction,
-  chatThreadId: string,
-  count: number,
-): Promise<number> {
-  if (!Number.isInteger(count) || count <= 0) {
-    throw new Error("chat event seq_id reservation count must be positive");
-  }
-
-  const [thread] = await tx
-    .update(chatThreads)
-    .set({
-      lastChatEventSeqId: sql`${chatThreads.lastChatEventSeqId} + ${count}`,
-    })
-    .where(eq(chatThreads.id, chatThreadId))
-    .returning({ lastSeqId: chatThreads.lastChatEventSeqId });
-  if (!thread) {
-    throw new Error(`Chat thread ${chatThreadId} not found`);
-  }
-  return thread.lastSeqId - count + 1;
+interface PreparedChatEvent {
+  readonly row: PreparedChatEventRow;
+  readonly displayContext: NewDisplayContext | undefined;
 }
 
-async function addSeqIdsToEvents(
-  tx: ChatEventWriteTransaction,
-  values: readonly PersistedChatEvent[],
-): Promise<readonly (PersistedChatEvent & { readonly seqId: number })[]> {
-  const counts = new Map<string, number>();
-  for (const value of values) {
-    counts.set(value.chatThreadId, (counts.get(value.chatThreadId) ?? 0) + 1);
-  }
-
-  const nextSeqIdByThread = new Map<string, number>();
-  for (const [chatThreadId, count] of [...counts].sort(([left], [right]) => {
-    return left.localeCompare(right);
-  })) {
-    nextSeqIdByThread.set(
-      chatThreadId,
-      await reserveChatEventSeqIds(tx, chatThreadId, count),
-    );
-  }
-
-  return values.map((value) => {
-    const seqId = nextSeqIdByThread.get(value.chatThreadId);
-    if (seqId === undefined) {
-      throw new Error(`Chat thread ${value.chatThreadId} was not reserved`);
-    }
-    nextSeqIdByThread.set(value.chatThreadId, seqId + 1);
-    return { ...value, seqId };
-  });
-}
-
-async function insertSequencedChatEvent(
-  tx: ChatEventWriteTransaction,
-  values: AppendChatEvent,
-  reservation: ChatEventSequenceReservation,
-  conflict: InsertChatEventConflict = "none",
-): Promise<ChatEventCommandResult | null> {
-  if (reservation.chatThreadId !== values.chatThreadId) {
-    throw new Error("Chat event sequence belongs to another thread");
-  }
-  if (!Number.isInteger(reservation.seqId) || reservation.seqId <= 0) {
-    throw new Error("Chat event sequence must be a positive integer");
-  }
-  const eventId = values.id ?? randomUUID();
-  const displayContext = newDisplayContext(eventId, values);
-  const valueWithSeqId = {
-    ...canonicalChatEventValues(values, {
-      id: eventId,
-      ...displayContextPointer(displayContext),
-    }),
-    seqId: reservation.seqId,
+/** Pure preparation: IDs, timestamps, payload and context do not require a lock. */
+function prepareChatEvent(values: AppendChatEvent): PreparedChatEvent {
+  const id = values.id ?? randomUUID();
+  const createdAt = values.createdAt ?? nowDate();
+  const displayContext = newDisplayContext(id, values);
+  return {
+    row: {
+      ...canonicalChatEventValues(values, {
+        id,
+        ...displayContextPointer(displayContext),
+      }),
+      id,
+      createdAt,
+    },
+    displayContext,
   };
+}
 
-  const query = tx.insert(chatEvents).values(valueWithSeqId);
-  const rows =
-    conflict === "any"
-      ? await query.onConflictDoNothing().returning({
-          id: chatEvents.id,
-          createdAt: chatEvents.createdAt,
-          seqId: chatEvents.seqId,
-        })
-      : conflict === "id"
-        ? await query.onConflictDoNothing({ target: chatEvents.id }).returning({
-            id: chatEvents.id,
-            createdAt: chatEvents.createdAt,
-            seqId: chatEvents.seqId,
-          })
-        : conflict === "run-lifecycle"
-          ? await query
-              .onConflictDoNothing({
-                target: chatEvents.runId,
-                where: chatEventTerminalPredicate(chatEvents.eventType),
-              })
-              .returning({
-                id: chatEvents.id,
-                createdAt: chatEvents.createdAt,
-                seqId: chatEvents.seqId,
-              })
-          : await query.returning({
-              id: chatEvents.id,
-              createdAt: chatEvents.createdAt,
-              seqId: chatEvents.seqId,
-            });
-
-  const inserted = rows[0];
-  if (inserted && displayContext) {
-    await insertDisplayContext(tx, displayContext, inserted.createdAt);
+/**
+ * Context is required event data. Split mode writes it before the append so a
+ * failure rejects the input; legacy mode writes it after the append inside the
+ * caller's transaction.
+ */
+async function persistPreparedChatEventContext(
+  db: ChatEventWriteTransaction,
+  prepared: PreparedChatEvent,
+): Promise<void> {
+  const context = prepared.displayContext;
+  if (!context) {
+    return;
   }
-  return inserted ?? null;
+  await insertDisplayContext(db, context, prepared.row.createdAt);
 }
 
-/** Insert an immutable chat event using the caller-owned transaction. */
-export async function insertChatEvent(
-  tx: ChatEventWriteTransaction,
-  values: AppendChatEvent,
+/** Slow-path telemetry separates allocation/lock wait from event insertion. */
+function recordChatEventAppendTiming(timing: {
+  readonly mode: "legacy" | "split";
+  readonly attemptedEvents?: number;
+  readonly insertedEvents: number;
+  readonly statementDurationMs: number;
+  readonly allocationDurationMs?: number;
+  readonly insertDurationMs?: number;
+}): void {
+  log.debug("Chat event append statement finished", timing);
+  if (timing.statementDurationMs >= 250) {
+    log.warn("Chat event append exceeded 250 ms", timing);
+  }
+}
+
+/** The caller independently prepares/persists context before this atomic append. */
+async function appendPreparedChatEvent(
+  db: ChatEventWriteTransaction,
+  prepared: PreparedChatEvent,
   conflict: InsertChatEventConflict = "none",
+  options?: ChatEventWriteOptions,
 ): Promise<ChatEventCommandResult | null> {
-  const seqId = await reserveChatEventSeqIds(tx, values.chatThreadId, 1);
-  return await insertSequencedChatEvent(
-    tx,
-    values,
-    { chatThreadId: values.chatThreadId, seqId },
+  const splitWrites =
+    options?.splitWrites ?? (await isSplitChatEventWriteEnabled(db));
+  const startedAt = performance.now();
+  const rows = await appendCanonicalChatEvents(
+    db,
+    [prepared.row],
     conflict,
+    splitWrites,
   );
+  recordChatEventAppendTiming({
+    mode: splitWrites ? "split" : "legacy",
+    insertedEvents: rows.length,
+    statementDurationMs: performance.now() - startedAt,
+    allocationDurationMs: rows[0]?.allocationDurationMs,
+    insertDurationMs: rows[0]?.insertDurationMs,
+  });
+  const inserted = rows[0];
+  return inserted
+    ? { id: inserted.id, createdAt: inserted.createdAt, seqId: inserted.seqId }
+    : null;
 }
 
-/**
- * Insert with a sequence reserved for this thread by the caller in the same
- * transaction. The reservation is consumed even when conflict handling drops
- * the insert, preserving the stream's intentional sequence gap.
- */
-export async function insertChatEventWithReservedSequence(
-  tx: ChatEventWriteTransaction,
+/** Legacy callers keep their control transaction; ordinary split writes pass DB. */
+export async function insertChatEvent(
+  db: ChatEventWriteTransaction,
   values: AppendChatEvent,
-  reservation: ChatEventSequenceReservation,
   conflict: InsertChatEventConflict = "none",
+  options?: ChatEventWriteOptions,
 ): Promise<ChatEventCommandResult | null> {
-  return await insertSequencedChatEvent(tx, values, reservation, conflict);
+  const prepared = prepareChatEvent(values);
+  const splitWrites =
+    options?.splitWrites ?? (await isSplitChatEventWriteEnabled(db));
+  if (splitWrites) {
+    await persistPreparedChatEventContext(db, prepared);
+  }
+  const inserted = await appendPreparedChatEvent(db, prepared, conflict, {
+    splitWrites,
+  });
+  if (inserted && !splitWrites) {
+    await persistPreparedChatEventContext(db, prepared);
+  }
+  return inserted;
 }
 
-/**
- * Batch append. The untargeted conflict clause covers every unique index on
- * chat_events, including chat_events_run_event_seq_unique, so a retry that
- * derives a different row id still cannot duplicate a run event.
- */
+/** Reserve N and insert atomically, preserving every existing idempotency index. */
 export async function insertChatEvents(
-  tx: ChatEventWriteTransaction,
+  db: ChatEventWriteTransaction,
   values: readonly AppendChatEvent[],
+  options?: ChatEventWriteOptions,
 ): Promise<readonly ChatEventBatchCommandResult[]> {
   if (values.length === 0) {
     return [];
   }
-
-  const valuesWithSeqIds = await addSeqIdsToEvents(
-    tx,
-    values.map((value) => {
-      return canonicalChatEventValues(value);
+  const prepared = values.map(prepareChatEvent);
+  const splitWrites =
+    options?.splitWrites ?? (await isSplitChatEventWriteEnabled(db));
+  if (splitWrites) {
+    for (const event of prepared) {
+      await persistPreparedChatEventContext(db, event);
+    }
+  }
+  const startedAt = performance.now();
+  const rows = await appendCanonicalChatEvents(
+    db,
+    prepared.map((event) => {
+      return event.row;
     }),
+    "any",
+    splitWrites,
   );
-  const rows = await tx
-    .insert(chatEvents)
-    .values([...valuesWithSeqIds])
-    .onConflictDoNothing()
-    .returning({
-      id: chatEvents.id,
-      chatThreadId: chatEvents.chatThreadId,
-      createdAt: chatEvents.createdAt,
-      seqId: chatEvents.seqId,
-      sequenceNumber: chatEvents.runEventSequenceNumber,
-    });
-
-  return rows.map((row) => {
-    return {
-      id: row.id,
-      createdAt: row.createdAt,
-      seqId: row.seqId,
-      sequenceNumber: row.sequenceNumber,
-    };
+  recordChatEventAppendTiming({
+    mode: splitWrites ? "split" : "legacy",
+    attemptedEvents: values.length,
+    insertedEvents: rows.length,
+    statementDurationMs: performance.now() - startedAt,
+    allocationDurationMs: rows[0]?.allocationDurationMs,
+    insertDurationMs: rows[0]?.insertDurationMs,
+  });
+  if (!splitWrites) {
+    const insertedIds = new Set(
+      rows.map((row) => {
+        return row.id;
+      }),
+    );
+    for (const event of prepared) {
+      if (insertedIds.has(event.row.id)) {
+        await persistPreparedChatEventContext(db, event);
+      }
+    }
+  }
+  return rows.map(({ id, createdAt, seqId, sequenceNumber }) => {
+    return { id, createdAt, seqId, sequenceNumber };
   });
 }
 
@@ -1215,21 +1239,8 @@ export async function replaceLoadedChatEvent(
     replacementId,
     replacement,
   );
-  // The replacement depends on the returned sequence, so PostgreSQL executes
-  // the reservation before the insert in one statement and transaction.
-  const reservedSequence = tx.$with("reserved_replacement_chat_event_seq").as(
-    tx
-      .update(chatThreads)
-      .set({
-        lastChatEventSeqId: sql`${chatThreads.lastChatEventSeqId} + 1`,
-      })
-      .where(eq(chatThreads.id, replacement.chatThreadId))
-      .returning({ seqId: chatThreads.lastChatEventSeqId }),
-  );
-  const rows = await tx
-    .with(reservedSequence)
-    .insert(chatEvents)
-    .values({
+  const prepared: PreparedChatEvent = {
+    row: {
       ...canonicalChatEventValues(
         { ...replacement, createdAt },
         {
@@ -1237,22 +1248,21 @@ export async function replaceLoadedChatEvent(
           ...contextPointer,
         },
       ),
-      seqId: sql`(SELECT ${reservedSequence.seqId} FROM ${reservedSequence})`,
+      id: replacementId,
+      createdAt,
       revokesEventId: target.id,
-    })
-    .onConflictDoNothing()
-    .returning({
-      id: chatEvents.id,
-      createdAt: chatEvents.createdAt,
-      seqId: chatEvents.seqId,
-    });
-  const inserted = rows[0];
-  if (!inserted) {
-    return null;
+    },
+    displayContext,
+  };
+  const splitWrites = await isSplitChatEventWriteEnabled(tx);
+  if (splitWrites) {
+    await persistPreparedChatEventContext(tx, prepared);
   }
-
-  if (displayContext) {
-    await insertDisplayContext(tx, displayContext, inserted.createdAt);
+  const inserted = await appendPreparedChatEvent(tx, prepared, "any", {
+    splitWrites,
+  });
+  if (inserted && !splitWrites) {
+    await persistPreparedChatEventContext(tx, prepared);
   }
   return inserted;
 }

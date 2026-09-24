@@ -3,7 +3,7 @@ import {
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { connectors } from "@okouai/db/schema/connector";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";

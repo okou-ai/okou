@@ -10,7 +10,7 @@ import {
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { storages } from "@okouai/db/schema/storage";
 import { asc, eq, inArray } from "drizzle-orm";
 
@@ -30,6 +30,10 @@ type RunOutputPhase =
   | "session_lock"
   | "ownership_recheck"
   | "projection_write"
+  | "chat_event_append"
+  | "run_materialization"
+  | "memory_citations"
+  | "first_assistant_metric"
   | "transaction_finalize";
 
 interface RunOutputFailureFields {
@@ -170,7 +174,7 @@ async function setContentDeadlines(
   });
 }
 
-async function readOwnership(tx: Tx, runId: string) {
+async function readOwnership(tx: Pick<Db, "select">, runId: string) {
   const [run] = await tx
     .select({
       userId: agentRuns.userId,
@@ -298,7 +302,13 @@ export async function prepareRunOutputOwnership(
   db: Db,
   runId: string,
   diagnostics?: RunOutputDiagnostics,
-): Promise<RunContentOwnership | undefined> {
+): Promise<
+  | {
+      readonly ownership: RunContentOwnership;
+      readonly modelProvider: string | null;
+    }
+  | undefined
+> {
   return await observeOutputFailure(
     db.transaction(
       async (tx) => {
@@ -306,7 +316,10 @@ export async function prepareRunOutputOwnership(
           (async () => {
             await setContentDeadlines(tx);
             const [run] = await tx
-              .select({ status: agentRuns.status })
+              .select({
+                status: agentRuns.status,
+                modelProvider: agentRuns.modelProvider,
+              })
               .from(agentRuns)
               .where(eq(agentRuns.id, runId));
             if (!run) {
@@ -315,7 +328,10 @@ export async function prepareRunOutputOwnership(
             if (run.status === "timeout") {
               return undefined;
             }
-            return await readOwnership(tx, runId);
+            return {
+              ownership: await readOwnership(tx, runId),
+              modelProvider: run.modelProvider,
+            };
           })(),
           diagnostics,
         );
@@ -428,6 +444,121 @@ async function lockOwnership(
   };
 }
 
+interface PreparedRunContentIdentity {
+  readonly runId: string;
+  readonly diagnostics?: RunOutputDiagnostics;
+  readonly runOwner?: Owner;
+  readonly destination?: Owner & { readonly threadId: string };
+  readonly ownership: RunContentOwnership;
+}
+
+function assertPreparedOwnership(
+  snapshot: RunContentOwnership,
+  args: PreparedRunContentIdentity,
+): void {
+  if (
+    JSON.stringify(snapshot) !== JSON.stringify(args.ownership) ||
+    (args.runOwner && !sameOwner(snapshot, args.runOwner)) ||
+    (args.destination &&
+      (snapshot.thread?.chatThreadId !== args.destination.threadId ||
+        snapshot.thread.userId !== args.destination.userId ||
+        snapshot.orgId !== args.destination.orgId)) ||
+    (snapshot.memory &&
+      (!sameOwner(snapshot, snapshot.memory.mount) ||
+        !sameOwner(snapshot, snapshot.memory.storage)))
+  ) {
+    throw new RunContentOwnershipChangedError();
+  }
+}
+
+/** Identity validation for the activated split writer. It deliberately holds
+ * no erasure, thread, run or resource locks across event insertion. A deletion
+ * racing an admitted write is collected by the periodic erasure sweep.
+ * Queue control and activity ownership continue to use their own transactions.
+ */
+export async function validateRunContentIdentity(
+  db: Db,
+  args: PreparedRunContentIdentity,
+  signal: AbortSignal,
+): Promise<{
+  readonly ownership: RunContentOwnership;
+  readonly status: RunStatus;
+  readonly modelProvider: string | null;
+}> {
+  const ownership = await readOwnership(db, args.runId);
+  signal.throwIfAborted();
+  assertPreparedOwnership(ownership, args);
+  const [run] = await db
+    .select({
+      status: agentRuns.status,
+      modelProvider: agentRuns.modelProvider,
+    })
+    .from(agentRuns)
+    .where(eq(agentRuns.id, args.runId));
+  signal.throwIfAborted();
+  if (!run) {
+    throw new AgentEventRunNotFoundError(args.runId);
+  }
+  return {
+    ownership,
+    status: runStatusSchema.parse(run.status),
+    modelProvider: run.modelProvider,
+  };
+}
+
+/** The run row owns timeout/output arbitration. No thread or erasure lock is
+ * acquired here, and the callback may only append the prepared chat events.
+ * Materialization, citations, metrics, touch and delivery commit separately.
+ */
+export async function withRunOutputWrite<T>(
+  db: Db,
+  args: PreparedRunContentIdentity,
+  append: (
+    tx: Tx,
+    current: {
+      readonly ownership: RunContentOwnership;
+      readonly status: RunStatus;
+      readonly modelProvider: string | null;
+    },
+  ) => Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  return await observeOutputFailure(
+    db.transaction(async (tx) => {
+      args.diagnostics?.enter("transaction_setup");
+      await setContentDeadlines(tx);
+      args.diagnostics?.enter("run_lock");
+      const [run] = await tx
+        .select({
+          status: agentRuns.status,
+          modelProvider: agentRuns.modelProvider,
+        })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, args.runId))
+        .for("no key update");
+      if (!run) {
+        throw new AgentEventRunNotFoundError(args.runId);
+      }
+      args.diagnostics?.enter("ownership_recheck");
+      const ownership = await readOwnership(tx, args.runId);
+      signal.throwIfAborted();
+      assertPreparedOwnership(ownership, args);
+      const value = await observeOutputFailure(
+        append(tx, {
+          ownership,
+          status: runStatusSchema.parse(run.status),
+          modelProvider: run.modelProvider,
+        }),
+        args.diagnostics,
+      );
+      signal.throwIfAborted();
+      args.diagnostics?.enter("transaction_finalize");
+      return value;
+    }),
+    args.diagnostics,
+  );
+}
+
 /** Owns the actual transaction: subjects -> resources -> thread -> run ->
  * session, with the run row serializing same-run writes and every barrier
  * retained through COMMIT.
@@ -476,20 +607,7 @@ export async function withRunContentWrite<T>(
                 }
                 const run = await lockOwnership(tx, snapshot, diagnostics);
                 signal.throwIfAborted();
-                if (
-                  JSON.stringify(snapshot) !== JSON.stringify(args.ownership) ||
-                  (args.runOwner && !sameOwner(snapshot, args.runOwner)) ||
-                  (args.destination &&
-                    (snapshot.thread?.chatThreadId !==
-                      args.destination.threadId ||
-                      snapshot.thread.userId !== args.destination.userId ||
-                      snapshot.orgId !== args.destination.orgId)) ||
-                  (snapshot.memory &&
-                    (!sameOwner(snapshot, snapshot.memory.mount) ||
-                      !sameOwner(snapshot, snapshot.memory.storage)))
-                ) {
-                  throw new RunContentOwnershipChangedError();
-                }
+                assertPreparedOwnership(snapshot, args);
                 diagnostics?.enter("projection_write");
                 const value = await write(
                   tx,

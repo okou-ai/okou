@@ -8,7 +8,7 @@ import { visiblePiMemoryCitationText } from "@okouai/api-contracts/contracts/pi-
 import { isRetiredGoalArchiveText } from "@okouai/api-contracts/contracts/retired-goal-archive";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEventSearchMessages } from "@okouai/db/schema/chat-event-search";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, desc, eq, gte, sql } from "drizzle-orm";
 
 import {

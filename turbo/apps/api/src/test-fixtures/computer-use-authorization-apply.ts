@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { accountErasureJobs } from "@okouai/db/schema/account-erasure";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { computerUseAuthorizationRequests } from "@okouai/db/schema/computer-use-host";
 import { count, eq, sql } from "drizzle-orm";
 import { onTestFinished } from "vitest";

@@ -5,7 +5,7 @@ import { testComputerUseStateContract } from "@okouai/api-contracts/contracts/te
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 
 import { bodyResultOf, queryOf } from "../context/request";

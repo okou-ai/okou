@@ -4,6 +4,7 @@ import { and, eq, isNotNull, isNull } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
 import { waitUntil } from "../context/wait-until";
+import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import type { Db } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
@@ -13,6 +14,7 @@ import { writeRunMetadataInTransaction } from "./agent-run-metadata-write.servic
 
 import {
   withRunContentWrite,
+  validateRunContentIdentity,
   type RunContentOwnership,
 } from "./run-content-erasure-admission.service";
 
@@ -37,6 +39,7 @@ async function recordFirstAssistantEventAcknowledgement(args: {
   readonly ownership: RunContentOwnership;
   readonly runId: string;
   readonly acknowledgedAt: number;
+  readonly splitWrites: boolean;
 }): Promise<void> {
   const firstAssistantClaimWhere = and(
     eq(agentRuns.id, args.runId),
@@ -46,19 +49,38 @@ async function recordFirstAssistantEventAcknowledgement(args: {
   if (!firstAssistantClaimWhere) {
     throw new Error("First assistant acknowledgement predicate is empty");
   }
-  const admitted = await withRunContentWrite(
-    args.db,
-    { runId: args.runId, ownership: args.ownership },
-    async (tx) => {
-      return await writeRunMetadataInTransaction(tx, {
-        patch: {
-          firstAssistantEventAcknowledgedAt: new Date(args.acknowledgedAt),
+  const splitWrites = args.splitWrites;
+  const identity = { runId: args.runId, ownership: args.ownership };
+  const admitted = splitWrites
+    ? {
+        outcome: "written" as const,
+        ownership: (
+          await validateRunContentIdentity(
+            args.db,
+            identity,
+            AbortSignal.timeout(20_000),
+          )
+        ).ownership,
+        value: await writeRunMetadataInTransaction(args.db, {
+          patch: {
+            firstAssistantEventAcknowledgedAt: new Date(args.acknowledgedAt),
+          },
+          where: firstAssistantClaimWhere,
+        }),
+      }
+    : await withRunContentWrite(
+        args.db,
+        identity,
+        async (tx) => {
+          return await writeRunMetadataInTransaction(tx, {
+            patch: {
+              firstAssistantEventAcknowledgedAt: new Date(args.acknowledgedAt),
+            },
+            where: firstAssistantClaimWhere,
+          });
         },
-        where: firstAssistantClaimWhere,
-      });
-    },
-    AbortSignal.timeout(20_000),
-  );
+        AbortSignal.timeout(20_000),
+      );
   if (admitted.outcome === "closed") {
     return;
   }
@@ -115,22 +137,27 @@ async function publishFirstAssistantEventCreated(args: {
 }): Promise<void> {
   await publishChatThreadMessageCreatedSafely(args);
   const acknowledgedAt = now();
-  waitUntil(
-    tapError(
-      recordFirstAssistantEventAcknowledgement({
-        db: args.db,
-        ownership: args.ownership,
+  const splitWrites = await isSplitChatEventWriteEnabled(args.db);
+  const recording = tapError(
+    recordFirstAssistantEventAcknowledgement({
+      db: args.db,
+      ownership: args.ownership,
+      runId: args.runId,
+      acknowledgedAt,
+      splitWrites,
+    }),
+    (error) => {
+      L.warn("Failed to record first assistant message acknowledgement", {
         runId: args.runId,
-        acknowledgedAt,
-      }),
-      (error) => {
-        L.warn("Failed to record first assistant message acknowledgement", {
-          runId: args.runId,
-          error,
-        });
-      },
-    ),
+        error,
+      });
+    },
   );
+  if (splitWrites) {
+    await recording;
+  } else {
+    waitUntil(recording);
+  }
 }
 
 export async function publishFirstAssistantEventCreatedSafely(args: {

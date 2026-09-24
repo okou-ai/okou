@@ -161,7 +161,7 @@ function applyEvent(
   if (fields === null) {
     threads.set(event.chatThreadId, {
       ...thread,
-      sortAt: event.createdAt,
+      sortAt: event.createdAt > thread.sortAt ? event.createdAt : thread.sortAt,
     });
     return;
   }

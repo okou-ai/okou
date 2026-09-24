@@ -51,7 +51,7 @@ import {
   computerUseCommands,
   computerUseHosts,
 } from "@okouai/db/schema/computer-use-host";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";

@@ -1,4 +1,4 @@
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { agents } from "@okouai/db/schema/agent";
 import { telegramChatThreadRoutes } from "@okouai/db/schema/telegram-chat-thread-route";
