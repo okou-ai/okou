@@ -9,7 +9,7 @@ import type {
   ModelProviderResponse,
   OrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
-import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
+import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
 import {
   agentsByIdContract,
   agentInstructionsContract,
@@ -490,31 +490,14 @@ export async function findComposerEditor(): Promise<HTMLElement> {
   });
 }
 
-export function workflowSummary({
-  name,
-  displayName,
-  description,
-  agentId = OTHER_AGENT_ID,
-}: {
-  readonly name: string;
-  readonly displayName: string | null;
-  readonly description: string | null;
-  readonly agentId?: string;
-}): WorkflowSummary {
+export function composerWorkflow(
+  name: string,
+  description: string | null,
+): ComposerWorkflow {
   return {
     id: crypto.randomUUID(),
-    agentId,
-    agentName: null,
-    agentDisplayName: agentId === AGENT_ID ? "Scout" : "Other Agent",
     name,
-    displayName,
+    displayName: null,
     description,
-    visibility: "public" as const,
-    ownerUserId: "user-1",
-    createdAt: "2026-06-01T00:00:00.000Z",
-    canManage: true,
-    canPublish: false,
-    official: null,
-    shadowedBy: null,
   };
 }
