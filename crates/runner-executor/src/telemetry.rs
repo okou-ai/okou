@@ -1232,6 +1232,30 @@ mod tests {
         );
     }
 
+    #[test]
+    fn storage_batch_telemetry_subtracts_guest_server_duration() {
+        let mut telemetry = JobTelemetry::new(
+            http_client(),
+            RunId::from(uuid::Uuid::nil()),
+            "tok".to_string(),
+            None,
+        );
+        telemetry.record_storage_apply_batch(
+            Duration::from_millis(42),
+            true,
+            Some(31),
+            "dedicated_middle",
+            "32_to_64_kib",
+        );
+
+        let batches = telemetry.pending_storage_batch_payloads();
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0]["duration_ms"], 42);
+        assert_eq!(batches[0]["storage_batch_guest_duration_ms"], 31);
+        assert_eq!(batches[0]["storage_batch_outer_residual_ms"], 11);
+        assert_eq!(batches[0]["storage_batch_timing"], "paired");
+    }
+
     #[tokio::test]
     async fn record_with_outcome_is_sent_in_flush_payload() {
         use httpmock::prelude::*;
