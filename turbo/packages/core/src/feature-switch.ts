@@ -491,7 +491,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.ChatThreadArchiving]: {
     maintainer: "ethan@okou.ai",
     description:
-      "Treat the check-mark chat icon as archived and hide archived chats from the sidebar unless they are unread or explicitly shown.",
+      "Let users archive chats and hide archived chats from the sidebar unless they are unread or explicitly shown.",
     enabled: false,
   },
   [FeatureSwitchKey.ComposerSlashTemplatePanel]: {

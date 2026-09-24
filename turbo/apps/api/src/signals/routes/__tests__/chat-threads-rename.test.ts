@@ -129,6 +129,7 @@ describe("POST /api/chat-threads/:id/rename", () => {
       agentId: fixture.agentId,
       title: "CLI renamed title",
       pinnedAt: null,
+      archived: false,
       selectedModel: DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
       modelSettings: {},
       serviceTier: null,

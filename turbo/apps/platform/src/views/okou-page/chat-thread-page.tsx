@@ -272,9 +272,7 @@ import type {
 } from "../../signals/chat-page/chat-panel-signals.ts";
 import {
   applyChatThreadEmoji,
-  isChatThreadArchived,
   removeChatThreadEmoji,
-  unarchiveChatThreadTitle,
   CHAT_THREAD_EMOJI_OPTIONS,
 } from "../../signals/chat-page/chat-thread-title.ts";
 import {
@@ -827,8 +825,6 @@ function useChatThreadEmojiMenuActions({
   const closeChatThreadEmojiMenu = useSet(closeChatThreadEmojiMenu$);
   const renameChatThread = useSet(renameChatThread$);
   const pageSignal = useGet(pageSignal$);
-  const archiveEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const open = emojiMenuThreadId === threadId;
 
   function closeMenu() {
@@ -860,11 +856,7 @@ function useChatThreadEmojiMenuActions({
     if (!activeThreadId) {
       return;
     }
-    const currentTitle = emojiMenuTitle ?? title;
-    const nextTitle =
-      archiveEnabled && isChatThreadArchived(currentTitle)
-        ? unarchiveChatThreadTitle(currentTitle)
-        : removeChatThreadEmoji(currentTitle);
+    const nextTitle = removeChatThreadEmoji(emojiMenuTitle ?? title);
     if (!nextTitle) {
       closeMenu();
       return;
@@ -993,16 +985,10 @@ function ChatThreadEmojiMenuButton({
 
 function useFrequentlyUsedEmoji(): ChatThreadEmojiItem[] {
   const { t } = useTranslation();
-  const archiveEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const labels = [
-    archiveEnabled
-      ? t(($) => {
-          return $.chat.thread.emoji.archive;
-        })
-      : t(($) => {
-          return $.chat.thread.emoji.done;
-        }),
+    t(($) => {
+      return $.chat.thread.emoji.done;
+    }),
     t(($) => {
       return $.chat.thread.emoji.urgent;
     }),

@@ -159,6 +159,11 @@ export const chatThreads = pgTable(
     /** Fractional order within the pinned group; ties are resolved by thread ID. */
     pinOrder: text("pin_order"),
     /**
+     * Whether the user archived this thread. Archived threads are hidden from
+     * the default sidebar list; archiving never changes the title.
+     */
+    archived: boolean("archived").default(false).notNull(),
+    /**
      * Timestamp at which the user manually renamed this thread.
      * NULL means the thread has never been renamed.
      * When set, automated title generation is suppressed.

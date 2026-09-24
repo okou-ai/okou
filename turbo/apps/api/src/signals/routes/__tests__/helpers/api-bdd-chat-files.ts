@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   chatEventsContract,
   chatSearchContract,
+  chatThreadArchiveContract,
   chatThreadArtifactsContract,
   chatThreadByIdContract,
   chatThreadComputerUseHostContract,
@@ -96,6 +97,7 @@ import { chatThreadPinOrderRoutes } from "../../chat-threads-pin-order";
 import { chatThreadRenameRoutes } from "../../chat-threads-rename";
 import { chatThreadRoutes } from "../../chat-threads";
 import { chatThreadUnpinRoutes } from "../../chat-threads-unpin";
+import { chatThreadArchiveRoutes } from "../../chat-threads-archive";
 import { chatThreadsArtifactsSyncRoutes } from "../../chat-threads-artifacts-sync";
 import { hostRoutes } from "../../host";
 import { modelPoliciesRoutes } from "../../model-policies";
@@ -242,6 +244,7 @@ const chatFilesRoutes = [
   ...chatThreadPinRoutes,
   ...chatThreadPinOrderRoutes,
   ...chatThreadUnpinRoutes,
+  ...chatThreadArchiveRoutes,
   ...chatThreadRenameRoutes,
   ...chatThreadImageModelRoutes,
   ...chatThreadVideoModelRoutes,
@@ -440,6 +443,10 @@ export function createChatFilesBddApi(context: TestContext) {
 
   function threadUnpinClient() {
     return chatFilesApp(context)(chatThreadUnpinContract);
+  }
+
+  function threadArchiveClient() {
+    return chatFilesApp(context)(chatThreadArchiveContract);
   }
 
   function threadPinOrderClient() {
@@ -1056,6 +1063,25 @@ export function createChatFilesBddApi(context: TestContext) {
           params: { id: threadId },
           query: unpinQuery(query),
         }),
+        statuses,
+      );
+    },
+
+    async requestSetThreadArchived(
+      actor: ApiTestUser | null,
+      threadId: string,
+      archived: boolean,
+      statuses: readonly (204 | 401 | 404)[],
+      query: EventIdQuery = {},
+    ) {
+      const client = threadArchiveClient();
+      const request = {
+        headers: authenticate(context, actor),
+        params: { id: threadId },
+        query: unpinQuery(query),
+      };
+      return await accept(
+        archived ? client.archive(request) : client.unarchive(request),
         statuses,
       );
     },

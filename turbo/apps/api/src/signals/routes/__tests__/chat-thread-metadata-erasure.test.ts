@@ -402,6 +402,7 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
       modelSettings: { [selectedModel]: { effort: "high" } },
       serviceTier: "priority",
       pinnedAt: expect.any(String),
+      archived: false,
       computerUseHostId: host.hostId,
       cloudBrowserEnabled: false,
       selectedVideoModel: "MiniMax-H3",

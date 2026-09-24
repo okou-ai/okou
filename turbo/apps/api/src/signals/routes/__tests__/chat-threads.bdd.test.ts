@@ -591,6 +591,16 @@ const malformedChatThreadIdRequests = [
     paramName: "id",
   },
   {
+    method: "POST",
+    path: "/api/chat-threads/:id/archive",
+    paramName: "id",
+  },
+  {
+    method: "POST",
+    path: "/api/chat-threads/:id/unarchive",
+    paramName: "id",
+  },
+  {
     method: "GET",
     path: "/api/chat-threads/:id/artifacts",
     paramName: "threadId",
@@ -2069,6 +2079,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       liveThread.id,
       "fal-ai/flux-pro/v1.1",
     );
+    await chat.requestSetThreadArchived(actor, liveThread.id, true, [204]);
 
     const incrementalSnapshotAt = initialSnapshotAt + 1000;
     mockNow(incrementalSnapshotAt);
@@ -2103,6 +2114,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         // from it survives every read until compaction runs and drops it.
         selectedVideoModel: "fal-ai/veo3.1/fast",
         selectedImageModel: "fal-ai/flux-pro/v1.1",
+        archived: true,
       }),
     ]);
 

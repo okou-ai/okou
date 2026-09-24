@@ -9,6 +9,7 @@ export type ReplayChatThreadEvent = Omit<ChatThreadEvent, "seqId">;
 
 export interface EventDrivenChatThread extends ChatThreadSnapshotProjection {
   readonly sortAt: string;
+  readonly archived: boolean;
   readonly cloudBrowserEnabled: boolean;
   readonly selectedVideoModel: string | null;
   readonly selectedImageModel: string | null;
@@ -62,6 +63,12 @@ function updatedThreadFields(
   if (event.kind === "unpinned") {
     return { pinnedAt: null, pinOrder: null };
   }
+  if (event.kind === "archived") {
+    return { archived: true };
+  }
+  if (event.kind === "unarchived") {
+    return { archived: false };
+  }
   if (event.kind === "model_selection_updated") {
     return {
       selectedModel: event.selectedModel,
@@ -107,6 +114,7 @@ function applyEvent(
       createdAt: event.createdAt,
       updatedAt: event.createdAt,
       pinnedAt: null,
+      archived: false,
       renamedAt: null,
       selectedModel: event.selectedModel,
       modelSettings: event.modelSettings ?? {},
@@ -177,6 +185,7 @@ export function replayChatThreadEvents(
   for (const thread of snapshot) {
     threads.set(thread.id, {
       ...thread,
+      archived: thread.archived ?? false,
       selectedModel: thread.selectedModel ?? null,
       modelSettings: thread.modelSettings ?? {},
       serviceTier: thread.serviceTier ?? null,

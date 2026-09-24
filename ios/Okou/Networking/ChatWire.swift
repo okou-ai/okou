@@ -40,6 +40,7 @@ struct ThreadEvent: Decodable, Sendable {
     case videoModelUpdated = "video_model_updated"
     case imageModelUpdated = "image_model_updated"
     case sortTouched = "sort_touched"
+    case archived, unarchived
   }
   let id: String
   let seqId: Int
