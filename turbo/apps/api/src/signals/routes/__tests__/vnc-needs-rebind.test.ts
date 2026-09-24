@@ -5,7 +5,7 @@ import { runnerVncContract } from "@okouai/api-contracts/contracts/runner-vnc";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { vncHostsContract } from "@okouai/api-contracts/contracts/vnc-access";
 import { createStore } from "ccstate";
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -49,7 +49,7 @@ describe("VNC depends on current SSH binding", () => {
 
   beforeEach(initializeVncRuntimeTest);
 
-  test.each(["convert", "delete"] as const)(
+  it.each(["convert", "delete"] as const)(
     "%s blocks VNC over a retained SSH host and allows explicit SSH recovery",
     async (transition) => {
       const api = createVncRuntimeApi(context);
