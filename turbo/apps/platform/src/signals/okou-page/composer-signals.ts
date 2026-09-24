@@ -22,7 +22,10 @@ import type { VideoModel } from "@okouai/core/video-model-catalog";
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { onRef } from "../utils.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { threadRemoteAccess$ } from "../remote-access.ts";
+import {
+  createPendingRemoteAccessSignals,
+  threadRemoteAccess$,
+} from "../remote-access.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import type { DraftSignals, ChatAttachment } from "./chat-draft.ts";
 import { createComposerFeedbackModel } from "./chat-feedback.ts";
@@ -289,6 +292,9 @@ export interface ComposerSignals {
   readonly agentId: string;
   readonly threadId?: string;
   readonly remoteAccess$: ReturnType<typeof threadRemoteAccess$>;
+  readonly pendingRemoteAccess: ReturnType<
+    typeof createPendingRemoteAccessSignals
+  >;
   readonly editor: ComposerEditorSignals;
   readonly voice: ComposerVoiceInputSignals;
   readonly feedback: WorkflowComposerSignals["feedback"];
@@ -320,6 +326,9 @@ interface CreateComposerSignalsOptions {
   };
   readonly chatEvents$: Computed<ChatEvent[]>;
   readonly threadId?: string;
+  readonly pendingRemoteAccess?: ReturnType<
+    typeof createPendingRemoteAccessSignals
+  >;
   readonly voiceDraftTarget: string;
   readonly connector?: ComposerConnectorSignals;
   readonly singleLineOnMobile: boolean;
@@ -685,6 +694,8 @@ export function createComposerSignals(
     agentId: options.agentId,
     threadId: options.threadId,
     remoteAccess$: threadRemoteAccess$(options.threadId ?? ""),
+    pendingRemoteAccess:
+      options.pendingRemoteAccess ?? createPendingRemoteAccessSignals(),
     paidToolHints$: createPaidToolHints(create, draft, workflowComposer, ui),
     create,
     taskChips,

@@ -7,6 +7,9 @@ import {
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { createStore } from "ccstate";
@@ -28,11 +31,15 @@ import { seedOrgMembership$ } from "./helpers/org-membership";
 import { seedRun$ } from "./helpers/usage-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { inlineSshKey } from "./helpers/ssh-credential";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { chatThreadRenameRoutes } from "../chat-threads-rename";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { userModelPreferenceRoutes } from "../user-model-preference";
+import { chatRemoteAccessRoutes } from "../chat-remote-access";
+import { sshConnectionsRoutes } from "../ssh-connections";
 
 const context = testContext({ connectorCatalog: true });
 const store = createStore();
@@ -133,6 +140,18 @@ function threadsClient() {
   return setupApp({ context, routes: chatThreadRoutes })(chatThreadsContract);
 }
 
+function remoteAccessClient() {
+  return setupApp({ context, routes: chatRemoteAccessRoutes })(
+    chatRemoteAccessContract,
+  );
+}
+
+function sshClient() {
+  return setupApp({ context, routes: sshConnectionsRoutes })(
+    sshConnectionsContract,
+  );
+}
+
 function metadataClient() {
   return setupApp({ context, routes: chatThreadGetRoutes })(
     chatThreadMetadataContract,
@@ -211,6 +230,89 @@ async function readCreatedThreadEvent(threadId: string, token: string) {
 }
 
 describe("POST /api/chat-threads", () => {
+  it("creates initial host overrides before the chat can start a Run and preserves them on replay", async () => {
+    useSecretKmsProbe();
+    const fixture = await seedAgent();
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.ThreadRemoteAccess]: true,
+    });
+    createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
+    const headers = { authorization: "Bearer clerk-session" };
+    const hostId = randomUUID();
+    await accept(
+      sshClient().create({
+        headers,
+        body: {
+          id: hostId,
+          displayName: "Selected host",
+          host: "selected.example.com",
+          credential: inlineSshKey("deploy", "private-key", null),
+        },
+      }),
+      [201],
+    );
+    const threadId = randomUUID();
+    const body = {
+      agentId: fixture.agentId,
+      clientThreadId: threadId,
+      model: WORKSPACE_DEFAULT_MODEL,
+      initialRemoteAccessOverrides: [
+        { protocol: "ssh" as const, connectionId: hostId, enabled: true },
+      ],
+    };
+    await accept(threadsClient().create({ headers, body }), [201]);
+    const selected = await accept(
+      remoteAccessClient().listThreadAccess({ headers, params: { threadId } }),
+      [200],
+    );
+    expect(selected.body.ssh[0]).toMatchObject({
+      connectionId: hostId,
+      enabled: true,
+      overrideEnabled: true,
+      source: "override",
+    });
+    await accept(
+      threadsClient().create({
+        headers,
+        body: {
+          ...body,
+          initialRemoteAccessOverrides: [
+            { protocol: "ssh", connectionId: hostId, enabled: false },
+          ],
+        },
+      }),
+      [201],
+    );
+    const replayed = await accept(
+      remoteAccessClient().listThreadAccess({ headers, params: { threadId } }),
+      [200],
+    );
+    expect(replayed.body.ssh[0]?.overrideEnabled).toBe(true);
+
+    const invalidId = randomUUID();
+    const invalidThreadId = randomUUID();
+    await accept(
+      threadsClient().create({
+        headers,
+        body: {
+          ...body,
+          clientThreadId: invalidThreadId,
+          initialRemoteAccessOverrides: [
+            { protocol: "ssh", connectionId: invalidId, enabled: true },
+          ],
+        },
+      }),
+      [400],
+    );
+    await accept(
+      remoteAccessClient().listThreadAccess({
+        headers,
+        params: { threadId: invalidThreadId },
+      }),
+      [404],
+    );
+  });
+
   it("resolves only sparse connector selections during account deletion", async () => {
     const fixture = await seedAgent();
     await updateFeatureSwitchesForUser(context, fixture, {});

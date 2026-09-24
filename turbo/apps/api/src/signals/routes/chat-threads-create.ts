@@ -11,8 +11,11 @@ import {
 } from "@okouai/api-contracts/contracts/image-models";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
+import { clerk$ } from "../external/clerk";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { type Db, writeDb$ } from "../external/db";
@@ -31,6 +34,8 @@ import {
 } from "../services/model-selection.service";
 import { chatThreadModelPinColumns } from "../services/chat-thread-model.service";
 import { chatThreadServiceTierFromCodex } from "../services/chat-thread-event.service";
+import { userFeatureSwitchContext } from "../services/feature-switches.service";
+import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
 import { loadNewChatThreadModelSettings } from "../services/chat-thread-model-settings.service";
 import { resolveChatReasoningEffort } from "../services/chat-reasoning-effort.service";
 import type { RouteEntry } from "../route-entry";
@@ -141,6 +146,29 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
 
+  const initialRemoteAccessOverrides =
+    body.data.initialRemoteAccessOverrides ?? [];
+  if (initialRemoteAccessOverrides.length > 0) {
+    const featureContext = await get(
+      userFeatureSwitchContext(auth.orgId, auth.userId),
+    );
+    signal.throwIfAborted();
+    if (
+      !isFeatureEnabled(FeatureSwitchKey.ThreadRemoteAccess, featureContext)
+    ) {
+      return badRequestMessage("Remote access is not available");
+    }
+    if (
+      initialRemoteAccessOverrides.some((item) => {
+        return item.protocol === "vnc";
+      }) &&
+      (!isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext) ||
+        !(await hasCurrentVncMembership(get(clerk$), auth, signal)))
+    ) {
+      return badRequestMessage("VNC access is not available");
+    }
+  }
+
   const exists = await get(
     agentExistsInOrg({
       orgId: auth.orgId,
@@ -234,11 +262,15 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       selectedVideoModel,
       selectedImageModel,
       connectorSelections,
+      initialRemoteAccessOverrides,
     },
     signal,
   );
   signal.throwIfAborted();
   if (thread.kind === "invalid_connector_selection") {
+    return badRequestMessage(thread.message);
+  }
+  if (thread.kind === "invalid_remote_access_selection") {
     return badRequestMessage(thread.message);
   }
   // The id already belongs to another member, org, or agent. Answer exactly
