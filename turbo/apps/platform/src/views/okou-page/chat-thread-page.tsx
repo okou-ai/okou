@@ -8629,11 +8629,15 @@ function RunLangfuseAction({
   return signals ? <RunLangfuseLink signals={signals} /> : null;
 }
 
-function MessageShareAction({ onShare }: { onShare: () => Promise<boolean> }) {
+function MessageShareAction({
+  onShare,
+}: {
+  onShare: (revert: () => void) => void;
+}) {
   const { t } = useTranslation();
   return (
     <ShareLinkButton
-      shareAction={onShare}
+      onShare={onShare}
       render={({ onClick, ref }, { copied }) => {
         const copiedLabel = t(($) => {
           return $.chat.sharing.shareLinkCopied;
@@ -8705,7 +8709,7 @@ function PagedGroupPrimaryActions({
   hasContent: boolean;
   usage: ChatEventUsagePayload | undefined;
   onCopy: () => Promise<boolean>;
-  onShare: (() => Promise<boolean>) | undefined;
+  onShare: ((revert: () => void) => void) | undefined;
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
 }) {
   const { t } = useTranslation();
@@ -8825,8 +8829,13 @@ function PagedGroupActions({
     });
   const handleShare =
     shareEventIds.length > 0
-      ? () => {
-          return shareMessage(shareEventIds, pageSignal);
+      ? (revert: () => void) => {
+          const share = async () => {
+            if (!(await shareMessage(shareEventIds, pageSignal))) {
+              revert();
+            }
+          };
+          detach(share(), Reason.DomCallback, "share chat message");
         }
       : undefined;
 

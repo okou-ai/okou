@@ -11,9 +11,10 @@ export type ShareLinkButtonProps = Omit<
 > & {
   /**
    * Starts sharing. It must copy the link synchronously inside the click; the
-   * button confirms immediately and reverts if the returned promise is false.
+   * button confirms immediately. Call `revert` if sharing later fails. The
+   * caller owns any async work, so this component never holds a promise.
    */
-  shareAction: () => Promise<boolean>;
+  onShare: (revert: () => void) => void;
   resetDelay?: number;
   label?: string;
   copiedLabel?: string;
@@ -25,7 +26,7 @@ const ShareLinkButton = React.forwardRef<
 >(
   (
     {
-      shareAction,
+      onShare,
       resetDelay = 2000,
       label = "Share",
       copiedLabel = "Share link copied",
@@ -68,11 +69,7 @@ const ShareLinkButton = React.forwardRef<
           setCopiedRequest(null);
         }
       };
-      shareAction().then((success) => {
-        if (!success) {
-          revert();
-        }
-      }, revert);
+      onShare(revert);
     };
 
     return useRender({

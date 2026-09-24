@@ -202,9 +202,7 @@ function createShareMessageCommand(
           }),
         );
       }
-      // An API that predates client-generated IDs ignores `id`; the copied
-      // link would then point nowhere.
-      if (result.status !== 201 || result.body.id !== id) {
+      if (result.status !== 201) {
         toast.error(
           i18n.t(($) => {
             return $.chat.sharing.messageShareFailed;

@@ -1,36 +1,17 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 
 import { ShareLinkButton } from "../share-link-button";
 
-function deferredShare() {
-  let resolveShare: (shared: boolean) => void;
-  const promise = new Promise<boolean>((resolve) => {
-    resolveShare = resolve;
-  });
-  return {
-    promise,
-    resolve: (shared: boolean) => {
-      resolveShare(shared);
-    },
-  };
-}
-
-afterEach(() => {
-  vi.useRealTimers();
-  vi.restoreAllMocks();
-});
-
 describe("ShareLinkButton", () => {
   it("confirms the copied link in the click before sharing settles", () => {
-    const share = deferredShare();
-    render(
-      <ShareLinkButton
-        shareAction={() => {
-          return share.promise;
-        }}
-      />,
-    );
+    render(<ShareLinkButton onShare={() => {}} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Share" }));
 
@@ -39,53 +20,12 @@ describe("ShareLinkButton", () => {
     ).toHaveTextContent("Share link copied");
   });
 
-  it("reverts when sharing fails", async () => {
-    const share = deferredShare();
+  it("reverts when sharing fails", () => {
+    let revert: (() => void) | undefined;
     render(
       <ShareLinkButton
-        shareAction={() => {
-          return share.promise;
-        }}
-      />,
-    );
-    const button = screen.getByRole("button", { name: "Share" });
-
-    fireEvent.click(button);
-    await act(async () => {
-      share.resolve(false);
-      await share.promise;
-    });
-
-    expect(button).toHaveAccessibleName("Share");
-  });
-
-  it("only lets the latest attempt revert the confirmation", async () => {
-    const first = deferredShare();
-    const second = deferredShare();
-    const shareAction = vi
-      .fn<() => Promise<boolean>>()
-      .mockReturnValueOnce(first.promise)
-      .mockReturnValueOnce(second.promise);
-    render(<ShareLinkButton shareAction={shareAction} />);
-    const button = screen.getByRole("button", { name: "Share" });
-
-    fireEvent.click(button);
-    fireEvent.click(button);
-    await act(async () => {
-      first.resolve(false);
-      await first.promise;
-    });
-
-    expect(button).toHaveAccessibleName("Share link copied");
-  });
-
-  it("resets after the delay", () => {
-    vi.useFakeTimers();
-    render(
-      <ShareLinkButton
-        resetDelay={1000}
-        shareAction={() => {
-          return Promise.resolve(true);
+        onShare={(revertShare) => {
+          revert = revertShare;
         }}
       />,
     );
@@ -94,18 +34,48 @@ describe("ShareLinkButton", () => {
     fireEvent.click(button);
     expect(button).toHaveAccessibleName("Share link copied");
     act(() => {
-      vi.advanceTimersByTime(1000);
+      revert?.();
     });
 
     expect(button).toHaveAccessibleName("Share");
   });
 
+  it("only lets the latest attempt revert the confirmation", () => {
+    const reverts: (() => void)[] = [];
+    render(
+      <ShareLinkButton
+        onShare={(revertShare) => {
+          reverts.push(revertShare);
+        }}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "Share" });
+
+    fireEvent.click(button);
+    fireEvent.click(button);
+    act(() => {
+      reverts[0]?.();
+    });
+
+    expect(button).toHaveAccessibleName("Share link copied");
+  });
+
+  it("resets after the delay", async () => {
+    render(<ShareLinkButton resetDelay={1} onShare={() => {}} />);
+    const button = screen.getByRole("button", { name: "Share" });
+
+    fireEvent.click(button);
+    expect(button).toHaveAccessibleName("Share link copied");
+
+    await waitFor(() => {
+      expect(button).toHaveAccessibleName("Share");
+    });
+  });
+
   it("exposes the copied state to a custom render", () => {
     render(
       <ShareLinkButton
-        shareAction={() => {
-          return Promise.resolve(true);
-        }}
+        onShare={() => {}}
         render={({ onClick, ref }, { copied }) => {
           return (
             <button ref={ref} onClick={onClick}>

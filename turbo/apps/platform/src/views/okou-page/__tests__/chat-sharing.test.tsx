@@ -815,7 +815,7 @@ test("An oversized message group cannot be added to a shared snapshot", async ()
   expect(screen.getByText("A normal message remains available")).toBeVisible();
 });
 
-async function setupSingleMessageShare(respondWithId?: string) {
+async function setupSingleMessageShare(conflict = false) {
   const clipboard = context.mocks.browser.clipboardWriteText();
   const response = context.mocks.deferred<void>();
   const createRequests: { eventIds: string[]; id: string | undefined }[] = [];
@@ -823,7 +823,15 @@ async function setupSingleMessageShare(respondWithId?: string) {
   context.mocks.api(sharedThreadsContract.create, async ({ body, respond }) => {
     createRequests.push({ eventIds: [...body.eventIds], id: body.id });
     await response.promise;
-    return respond(201, { id: respondWithId ?? body.id ?? SHARED_THREAD_ID });
+    if (conflict) {
+      return respond(409, {
+        error: {
+          message: "A shared conversation with this ID already exists",
+          code: "CONFLICT",
+        },
+      });
+    }
+    return respond(201, { id: body.id ?? SHARED_THREAD_ID });
   });
   await setupPage({
     context,
@@ -856,16 +864,10 @@ test("Share one answer with its prompt by copying the link before creating the s
     `https://app.okou.ai/share/threads/${request?.id}`,
   ]);
   response.resolve();
-  await act(async () => {
-    await response.promise;
-  });
-  expect(
-    screen.queryByText("The shared link could not be created. Try again."),
-  ).toBeNull();
 });
 
-test("Report a dead copied link when the API ignores the client share ID", async () => {
-  const { response, share } = await setupSingleMessageShare(SHARED_THREAD_ID);
+test("Revert the button and report a dead copied link when creation fails", async () => {
+  const { response, share } = await setupSingleMessageShare(true);
   click(share);
   expect(buttonsNamed("Share link copied")).toHaveLength(1);
   response.resolve();
