@@ -2811,7 +2811,7 @@ describe("actual compute transactions versus the B1 projector", () => {
             if (!result.ok) {
               throw result.error;
             }
-            if (result.value.status !== 200) {
+            if (!result.value || result.value.status !== 200) {
               throw new Error("Expected an activity summary response");
             }
             expect(result.value.body).toMatchObject({
