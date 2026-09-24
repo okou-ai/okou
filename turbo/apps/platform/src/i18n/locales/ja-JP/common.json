@@ -1491,7 +1491,6 @@
         },
         "shareDialog": {
           "description": "公開投稿を送信して審査を受けます。報酬の獲得は1人1回です。",
-          "draft": "毎週月曜の競合レポートを{{assistantName}}に任せています。情報源を読んで、表にまとめて返してくれます。",
           "helper": "投稿は公開で、{{assistantName}} に触れている必要があります。",
           "inputLabel": "投稿のリンク",
           "openX": "X を開く",
@@ -1506,7 +1505,8 @@
           "stepPaste": "リンクを貼る",
           "stepWrite": "投稿を書く",
           "submit": "送信",
-          "title": "{{assistantName}} を X でシェア"
+          "title": "{{assistantName}} を X でシェア",
+          "writingPrompt": "{{assistantName}}で実際に試したことを、自分の言葉で書いてください。"
         },
         "slack": {
           "action": "追加",
@@ -2076,6 +2076,20 @@
       "queuedMessageDescription": "列に並んで待機し、現在の実行が終了したら送信します。",
       "removeQueuedMessage": "キューに入れられたメッセージを削除する",
       "skipAutomationEvent": "オートメーションイベントをスキップする"
+    },
+    "remoteAccess": {
+      "defaultEnabled": "チャットで既定で有効",
+      "enabledCount_other": "{{count}} 件有効",
+      "loadFailed": "リモートアクセスを読み込めませんでした。",
+      "loading": "リモートアクセスを読み込み中…",
+      "off": "オフ",
+      "on": "オン",
+      "requiresSsh": "SSH ホスト {{name}} へのアクセスも必要です。",
+      "retry": "再試行",
+      "startChat": "ホストのアクセスを変更するにはチャットを開始してください。",
+      "title": "リモートアクセス",
+      "unavailableSsh": "利用できない SSH ホスト",
+      "useDefault": "既定を使用"
     },
     "replaceDraft": {
       "description": "続行すると、現在のコンポーザーの下書きが消去され、ワークフローのプロンプトが開始されます。",
@@ -6384,7 +6398,7 @@
       }
     },
     "paidTools": {
-      "description": "Okou がタスクで使用できる有料ツールを選択します。使用するたびにクレジットを消費します。",
+      "description": "これらのツールは組み込みクレジットを消費し、Okou はタスクの実行中に必要に応じて自動で使用します。オフにしたツールは使用されません。",
       "disabledForCreation": "{{tool}}はあなたの設定でオフです",
       "loadError": "ツールの設定を読み込めませんでした。",
       "loading": "ツールの設定を読み込み中…",
@@ -6394,7 +6408,7 @@
       "saving": "保存中…",
       "scope": "この設定は {{workspace}} のあなたにのみ適用されます。",
       "timing": "変更は今後の実行に適用されます。実行中または準備済みのタスクには以前の設定が適用される場合があります。",
-      "title": "有料ツール",
+      "title": "組み込みツール",
       "tools": {
         "avatar-video-generation": {
           "description": "話すアバターの動画を生成します。",

@@ -2042,7 +2042,7 @@ def _selected_owner_name(
     owners = _winning_owner_names(collection)
     if len(owners) == 0:
         return None
-    if len(owners) == 1 and intent.status == "absent":
+    if len(owners) == 1:
         return owners[0]
     if intent.status == "present" and intent.value is not None:
         selected_name = _owner_name_for_intent(collection, intent.value)

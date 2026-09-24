@@ -1491,7 +1491,6 @@
         },
         "shareDialog": {
           "description": "提交一條公開貼文供稽核。每人只能成功領取一次獎勵。",
-          "draft": "我每週一的競品報告都交給 {{assistantName}} 做——它會讀完資料，直接把表格給我。",
           "helper": "貼文必須是公開的，並且提到 {{assistantName}}。",
           "inputLabel": "貼文連結",
           "openX": "開啟 X",
@@ -1506,7 +1505,8 @@
           "stepPaste": "把連結貼回來",
           "stepWrite": "寫這則貼文",
           "submit": "提交",
-          "title": "在 X 上分享 {{assistantName}}"
+          "title": "在 X 上分享 {{assistantName}}",
+          "writingPrompt": "用自己的話寫下你實際用 {{assistantName}} 嘗試過的事。"
         },
         "slack": {
           "action": "新增",
@@ -2076,6 +2076,20 @@
       "queuedMessageDescription": "排隊等待，當前執行結束後傳送。",
       "removeQueuedMessage": "移除排隊訊息",
       "skipAutomationEvent": "跳過自動化事件"
+    },
+    "remoteAccess": {
+      "defaultEnabled": "聊天預設啟用",
+      "enabledCount_other": "已啟用 {{count}} 個",
+      "loadFailed": "無法載入遠端存取權限。",
+      "loading": "正在載入遠端存取…",
+      "off": "關閉",
+      "on": "開啟",
+      "requiresSsh": "還需要存取 SSH 主機 {{name}}。",
+      "retry": "重試",
+      "startChat": "開始聊天後可修改主機權限。",
+      "title": "遠端存取",
+      "unavailableSsh": "無法使用的 SSH 主機",
+      "useDefault": "使用預設設定"
     },
     "replaceDraft": {
       "description": "繼續將清空你當前的輸入框草稿，並開始一個工作流提示詞。",
@@ -6384,17 +6398,17 @@
       }
     },
     "paidTools": {
-      "description": "選擇你可以使用哪些付費內建工具。",
-      "disabledForCreation": "{{tool}}已在你的付費工具設定中關閉。",
+      "description": "這些工具會消耗內建積分，Okou 在執行任務時會依需要自動使用。關閉後，Okou 在執行過程中就不會再使用該工具。",
+      "disabledForCreation": "{{tool}}已在你的內建工具設定中關閉。",
       "loadError": "無法載入你的工具設定。",
       "loading": "正在載入你的工具設定…",
-      "openSettings": "開啟付費工具設定",
+      "openSettings": "開啟內建工具設定",
       "retry": "重試",
       "saveError": "修改沒有儲存成功。",
       "saving": "正在儲存…",
       "scope": "這些設定只對你在{{workspace}}中的使用生效。",
       "timing": "修改對之後的執行生效。正在執行和已準備好的任務可能仍沿用原來的設定。",
-      "title": "付費工具",
+      "title": "內建工具",
       "tools": {
         "avatar-video-generation": {
           "description": "生成數字人口播影片。",

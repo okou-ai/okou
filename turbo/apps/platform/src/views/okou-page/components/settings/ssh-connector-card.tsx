@@ -15,6 +15,8 @@ import { ROUTES } from "../../../../signals/route-paths.ts";
 import { Link } from "../../../router/link.tsx";
 import { ConnectorEntryCard } from "./connector-entry-card.tsx";
 import { SshConnectionSummary } from "../../ssh-connection-status.tsx";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
 
 export function SshConnectorCard({
   configuredCount,
@@ -22,6 +24,8 @@ export function SshConnectorCard({
   readonly configuredCount: number;
 }) {
   const { t } = useTranslation();
+  const threadRemoteAccess =
+    useGet(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess] === true;
   const rows = useLoadable(sshAgentAccessRows$);
   const open = useSet(openSshAccessManagement$);
   const signal = useGet(pageSignal$);
@@ -63,7 +67,7 @@ export function SshConnectorCard({
       }
       status={<SshConnectionSummary configuredCount={configuredCount} />}
       trailingAction={
-        configuredCount > 0 ? (
+        configuredCount > 0 && !threadRemoteAccess ? (
           <div className="relative z-20 min-w-0 max-w-full">
             <ConnectorAgentAccessButton
               agents={

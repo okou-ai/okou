@@ -5,6 +5,8 @@ import { Pool } from "pg";
 import { projectErasureDecision } from "@okouai/db/operations/account-erasure";
 
 import { triggerSourceSchema } from "@okouai/api-contracts/contracts/logs";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   runnerSshContract,
   type RunnerSshResolveRequest,
@@ -24,11 +26,13 @@ import { env, mockEnv } from "../../../lib/env";
 import { now, nowDate } from "../../../lib/time";
 import { createDeferredPromise, onRejection } from "../../utils";
 import { runnerSshRoutes } from "../runner-ssh";
+import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { testSshConnectionStateRoutes } from "../test-ssh-connection-state";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createRouteMocks } from "./helpers/route-test";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -104,6 +108,7 @@ async function createRuntime(
   return {
     runId: r.body.runId,
     agentId: r.body.agentId,
+    threadId: r.body.threadId,
     sandboxToken: r.body.sandboxToken,
     runnerIdentity,
   };
@@ -388,6 +393,87 @@ async function list(f: Fixture) {
 beforeEach(() => {
   mockEnv("OFFICIAL_RUNNER_SECRET", runnerSecret);
   useSecretKmsProbe();
+});
+
+describe("chat thread SSH authority", () => {
+  it("uses current per-host defaults and overrides, ignores Agent grants, and denies Runs without a chat", async () => {
+    const f = await fixture({
+      chat: true,
+      access: true,
+      runnerGroup: `thread-ssh-${randomUUID()}`,
+    });
+    if (!f.threadId) {
+      throw new Error("Missing fixture chat thread");
+    }
+    const threadId = f.threadId;
+    await updateFeatureSwitchesForUser(context, f, {
+      [FeatureSwitchKey.ThreadRemoteAccess]: true,
+    });
+    authenticate(f);
+    const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
+      chatRemoteAccessContract,
+    );
+    const host = { protocol: "ssh" as const, connectionId: f.connectionId };
+    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
+    await accept(
+      remote.updateHostDefault({
+        headers: sessionHeaders,
+        params: host,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    await expect(resolve(f)).resolves.toMatchObject({ outcome: "resolved" });
+    await access(f, false);
+    await expect(resolve(f)).resolves.toMatchObject({ outcome: "resolved" });
+    const withoutChat = await createRuntime(f, { chat: false, access: true });
+    await expect(resolve({ ...f, ...withoutChat })).resolves.toStrictEqual({
+      outcome: "unavailable",
+    });
+    const params = { threadId, ...host };
+    context.mocks.ably.publish.mockClear();
+    await accept(
+      remote.setThreadOverride({
+        headers: sessionHeaders,
+        params,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    expect(context.mocks.ably.publish.mock.calls).toStrictEqual(
+      expect.arrayContaining([
+        ["ssh:changed", { orgId: f.orgId }],
+        [
+          "ssh-authority-invalidated",
+          { runId: f.runId, connectionId: f.connectionId },
+        ],
+      ]),
+    );
+    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
+    await expect(pin(f)).resolves.toStrictEqual({ outcome: "unavailable" });
+    await accept(
+      remote.setThreadOverride({
+        headers: sessionHeaders,
+        params,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    await accept(
+      remote.updateHostDefault({
+        headers: sessionHeaders,
+        params: host,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    await expect(resolve(f)).resolves.toMatchObject({ outcome: "resolved" });
+    await accept(
+      remote.clearThreadOverride({ headers: sessionHeaders, params }),
+      [200],
+    );
+    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
+  });
 });
 
 describe("shared credential runtime authority", () => {

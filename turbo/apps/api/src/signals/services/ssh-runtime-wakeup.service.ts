@@ -15,6 +15,7 @@ type SshInvalidationScope = {
   readonly orgId: string;
   readonly userId: string;
   readonly agentId?: string;
+  readonly chatThreadId?: string;
 } & (
   | { readonly connectionId: string | null; readonly connectionIds?: never }
   | { readonly connectionIds: readonly string[]; readonly connectionId?: never }
@@ -40,6 +41,9 @@ export async function publishSshRunnerInvalidation(
           eq(agentRuns.userId, scope.userId),
           eq(agentRuns.status, "running"),
           isNotNull(agentRuns.runnerGroup),
+          scope.chatThreadId === undefined
+            ? undefined
+            : eq(agentRuns.chatThreadId, scope.chatThreadId),
           scope.agentId === undefined
             ? undefined
             : eq(agentSessions.agentId, scope.agentId),

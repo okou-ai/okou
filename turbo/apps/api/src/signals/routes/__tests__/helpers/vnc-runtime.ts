@@ -175,6 +175,7 @@ export function createVncRuntimeApi(context: TestContext) {
     }
     return {
       runId: result.body.runId,
+      threadId: result.body.threadId,
       agentId: result.body.agentId,
       sandboxToken: result.body.sandboxToken,
       runnerIdentity,

@@ -10,12 +10,14 @@ import {
   type SshCredentialResponse,
 } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/cloudflare-access-errors";
 import {
   agentSshAccessContract,
   sshChangedPayloadSchema,
 } from "@okouai/api-contracts/contracts/ssh-access";
 import { setAblyPayloadLoop$ } from "./realtime.ts";
+import { invalidateRemoteAccess$ } from "./remote-access-refresh.ts";
 import {
   sshConnectionsContract,
   type SshConnectionResponse,
@@ -26,6 +28,7 @@ import {
 import { clerk$, currentOrgInfo$, user$ } from "./auth.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { apiClient$ } from "./api-client.ts";
+import { featureSwitch$ } from "./external/feature-switch.ts";
 import {
   cloudflareAccessConfigs$,
   invalidateCloudflareAccess$,
@@ -435,6 +438,7 @@ export const invalidateSsh$ = command(({ set }) => {
   set(reload$, (value) => {
     return value + 1;
   });
+  set(invalidateRemoteAccess$);
 });
 
 // Defaults belong to an untouched dialog, not to the reactive list. A failed
@@ -926,6 +930,9 @@ export const saveSsh$ = command(
 );
 
 export const currentAgentSshAccess$ = computed(async (get) => {
+  if (get(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess]) {
+    return null;
+  }
   get(reload$);
   const identity = await get(sshIdentity$);
   if (!identity) {
@@ -953,6 +960,9 @@ export const currentAgentSshAccess$ = computed(async (get) => {
 
 export function sshAccessForAgent(agentId: string) {
   return computed(async (get) => {
+    if (get(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess]) {
+      return null;
+    }
     const [identity, summary] = await Promise.all([
       get(sshIdentity$),
       get(sshSummary$),
@@ -1011,6 +1021,9 @@ export const updateAgentSshAccess$ = command(
 );
 
 export const sshAgentAccessRows$ = computed(async (get) => {
+  if (get(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess]) {
+    return [];
+  }
   const summary = await get(sshSummary$);
   if (!summary) {
     return null;

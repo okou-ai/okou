@@ -1,10 +1,12 @@
 import { computed } from "ccstate";
 import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../../lib/accept.ts";
 import { i18n } from "../../../i18n/index.ts";
 import { agents$ } from "../../agent.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { sshAgentAccessRows$, sshSummary$ } from "../../ssh.ts";
+import { featureSwitch$ } from "../../external/feature-switch.ts";
 import {
   connectorsCategoryFilter$,
   connectorsConnectionFilter$,
@@ -19,6 +21,12 @@ export const filteredSshSummary$ = computed(async (get) => {
     return null;
   }
   const filter = get(connectorsConnectionFilter$);
+  if (
+    get(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess] &&
+    (filter.kind === "agent" || filter.kind === "unshared")
+  ) {
+    return null;
+  }
   const search = get(connectorsSearch$).trim().toLowerCase();
   const summary = await get(sshSummary$);
   if (!summary) {

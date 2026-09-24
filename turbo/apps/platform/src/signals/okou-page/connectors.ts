@@ -33,6 +33,8 @@ import {
 } from "./composer-connector-accounts.ts";
 import { resetBuiltinManualGrantForm$ } from "./settings/connectors.ts";
 import { sshAccessForAgent } from "../ssh.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import { vncAccessForAgent } from "../vnc-access.ts";
 
 export interface ComposerConnectorAuthorizationState {
@@ -61,6 +63,7 @@ export interface ComposerConnectorUiState {
   readonly popoverSearch: string;
   readonly popoverOpen: boolean;
   readonly popoverHasOpened: boolean;
+  readonly remoteMenuOpen: boolean;
   readonly popoverSortOrder: readonly string[] | null;
   readonly permissionConnectorSlug: ConnectorSlug | null;
   readonly directoryTab: ConnectorDirectoryTab;
@@ -146,6 +149,7 @@ function initialComposerConnectorUiState(): ComposerConnectorUiState {
     popoverSearch: "",
     popoverOpen: false,
     popoverHasOpened: false,
+    remoteMenuOpen: false,
     popoverSortOrder: null,
     permissionConnectorSlug: null,
     directoryTab: "discover",
@@ -324,12 +328,14 @@ export function createComposerConnectorSignals(
   const sshAccessForAgent$ = sshAccessForAgent(agentId);
   const vncAccessForAgent$ = vncAccessForAgent(agentId);
   const sshAccess$ = computed(async (get) => {
-    return get(ui.connectorUiState$).popoverHasOpened
+    return get(ui.connectorUiState$).popoverHasOpened &&
+      !get(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess]
       ? await get(sshAccessForAgent$)
       : null;
   });
   const vncAccess$ = computed(async (get) => {
-    return get(ui.connectorUiState$).popoverHasOpened
+    return get(ui.connectorUiState$).popoverHasOpened &&
+      !get(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess]
       ? await get(vncAccessForAgent$)
       : null;
   });

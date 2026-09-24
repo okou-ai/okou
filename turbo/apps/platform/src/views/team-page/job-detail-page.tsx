@@ -18,6 +18,8 @@ import { AgentSshAccess } from "../okou-page/agent-ssh-access.tsx";
 import { SshLoadError } from "../okou-page/ssh-load-error.tsx";
 import type { ReactNode } from "react";
 import { currentAgentSshAccess$, sshIdentity$ } from "../../signals/ssh.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
   FileText,
@@ -725,6 +727,8 @@ function remoteAccessForAgent(
 }
 
 function useJobRemoteAccess(agentId: string) {
+  const threadRemoteAccess =
+    useGet(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess] === true;
   const sshAccessLoadable = useLastLoadable(currentAgentSshAccess$);
   const sshIdentity = useLoadable(sshIdentity$);
   const sshAccess = remoteAccessForAgent(
@@ -741,6 +745,16 @@ function useJobRemoteAccess(agentId: string) {
   );
   const sshFailed = sshAccessLoadable.state === "hasError";
   const vncFailed = vncAccessLoadable.state === "hasError";
+  if (threadRemoteAccess) {
+    return {
+      sshAccess: null,
+      vncAccess: null,
+      hasRemoteAccess: false,
+      hasRemoteLoading: false,
+      hasRemoteError: false,
+      remoteErrors: null,
+    };
+  }
   return {
     sshAccess,
     vncAccess,

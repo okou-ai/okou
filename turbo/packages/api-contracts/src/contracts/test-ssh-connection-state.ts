@@ -100,6 +100,7 @@ export const testSshConnectionStateActionResponseSchema = z
     privateKeyMatches: z.boolean().optional(),
     passphraseMatches: z.boolean().optional(),
     runId: z.uuid().optional(),
+    threadId: z.uuid().optional(),
     agentId: z.uuid().optional(),
     sandboxToken: z.string().optional(),
     held: z.boolean().optional(),

@@ -1516,7 +1516,6 @@
         },
         "shareDialog": {
           "description": "Envoyez une publication publique pour vérification. Une récompense validée par personne.",
-          "draft": "Je fais mon rapport concurrents du lundi avec {{assistantName}} : il lit les sources et me rend le tableau.",
           "helper": "La publication doit être publique et mentionner {{assistantName}}.",
           "inputLabel": "Lien de la publication",
           "openX": "Ouvrir X",
@@ -1531,7 +1530,8 @@
           "stepPaste": "Collez le lien",
           "stepWrite": "Rédigez la publication",
           "submit": "Envoyer",
-          "title": "Partager {{assistantName}} sur X"
+          "title": "Partager {{assistantName}} sur X",
+          "writingPrompt": "Racontez avec vos propres mots quelque chose que vous avez réellement essayé avec {{assistantName}}."
         },
         "slack": {
           "action": "Ajouter",
@@ -2124,6 +2124,22 @@
       "queuedMessageDescription": "Attend en ligne et envoie une fois l'exécution actuelle terminée.",
       "removeQueuedMessage": "Supprimer le message en attente",
       "skipAutomationEvent": "Ignorer l'événement d'automatisation"
+    },
+    "remoteAccess": {
+      "defaultEnabled": "Activé par défaut pour les chats",
+      "enabledCount_one": "{{count}} activé",
+      "enabledCount_many": "{{count}} activés",
+      "enabledCount_other": "{{count}} activés",
+      "loadFailed": "Impossible de charger l'accès à distance.",
+      "loading": "Chargement de l'accès à distance…",
+      "off": "Désactivé",
+      "on": "Activé",
+      "requiresSsh": "Nécessite aussi l'accès à l'hôte SSH {{name}}.",
+      "retry": "Réessayer",
+      "startChat": "Démarrez un chat pour modifier l'accès aux hôtes.",
+      "title": "Accès à distance",
+      "unavailableSsh": "hôte SSH indisponible",
+      "useDefault": "Utiliser la valeur par défaut"
     },
     "replaceDraft": {
       "description": "Continuer effacera votre brouillon actuel dans la zone de saisie et démarrera un prompt de workflow.",
@@ -6461,7 +6477,7 @@
       }
     },
     "paidTools": {
-      "description": "Choisissez les outils payants qu’Okou peut utiliser dans vos tâches. Chaque utilisation consomme des crédits.",
+      "description": "Ces outils consomment des crédits intégrés, et Okou les utilise automatiquement pendant qu'il travaille sur vos tâches. Désactivez un outil pour qu'Okou ne l'utilise pas.",
       "disabledForCreation": "{{tool}} est désactivé pour vous",
       "loadError": "Impossible de charger vos paramètres.",
       "loading": "Chargement de vos paramètres…",
@@ -6471,7 +6487,7 @@
       "saving": "Enregistrement…",
       "scope": "Ces paramètres ne concernent que vous dans {{workspace}}.",
       "timing": "Les modifications s’appliquent aux prochaines exécutions. Les tâches en cours ou déjà préparées peuvent conserver leurs anciens paramètres.",
-      "title": "Outils payants",
+      "title": "Outils intégrés",
       "tools": {
         "avatar-video-generation": {
           "description": "Créez des vidéos avec des avatars parlants.",

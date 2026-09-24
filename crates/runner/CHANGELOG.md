@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.213.10](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.9...runner-rs-v0.213.10) (2026-09-24)
+
+
+### Refactoring
+
+* **runner:** move workspace cache snapshot into lifecycle ([#36558](https://github.com/okou-ai/okou/issues/36558)) ([327da7a](https://github.com/okou-ai/okou/commit/327da7ace47d1671ae0abf5b68238486953e6d6e))
+
 ## [0.213.9](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.8...runner-rs-v0.213.9) (2026-09-24)
 
 

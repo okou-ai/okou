@@ -540,6 +540,25 @@ test("SSH access remains manageable in Remote control", async () => {
   });
 });
 
+test("Thread remote access hides legacy Agent grants in Remote control", async () => {
+  mockCatalog();
+  context.mocks.data.agents([listAgent(agentId, "Research")]);
+  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
+    return respond(200, { configuredCount: 1 });
+  });
+  await setupPage({
+    context,
+    path: "/connectors?scope=remote-control",
+    featureSwitches: {
+      [FeatureSwitchKey.ConnectorDirectory]: true,
+      [FeatureSwitchKey.ThreadRemoteAccess]: true,
+    },
+  });
+  await screen.findByRole("heading", { name: "SSH" });
+  expect(queryConnectorAction("button", "Manage SSH access")).toBeNull();
+  expect(screen.queryByText("Add access")).toBeNull();
+});
+
 test.each([true])(
   "Agent filter uses its standalone SSH grant (%s), including no hosts",
   async (enabled) => {

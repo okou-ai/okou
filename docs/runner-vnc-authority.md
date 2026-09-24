@@ -7,6 +7,8 @@ the Agent's separate SSH grant and shared Run-owned SSH authority. The Agent
 chooses native shared or exclusive mode for each session; the VNC server enforces
 its connection policy.
 
+With `ThreadRemoteAccess` enabled for the Run owner, live VNC inventory, private resolve, and check require the Run's chat thread and that thread's effective permission for the exact VNC host. SSH-backed hosts also require effective permission for the referenced SSH host. A Run without a chat thread is denied. The Agent-grant rules below apply while the switch is off.
+
 ## Explicit grants and inventory
 
 Session-authenticated owners use GET/PUT `/api/agents/:agentId/vnc-access` with

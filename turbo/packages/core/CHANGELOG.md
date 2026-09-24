@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.708.0](https://github.com/okou-ai/okou/compare/core-v8.707.1...core-v8.708.0) (2026-09-24)
+
+
+### Features
+
+* store chat thread archive state instead of title emoji ([#36480](https://github.com/okou-ai/okou/issues/36480)) ([f5a0de6](https://github.com/okou-ai/okou/commit/f5a0de65c0621ca58c35edd65fc257417becdaa3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.503.0
+
 ## [8.707.1](https://github.com/okou-ai/okou/compare/core-v8.707.0...core-v8.707.1) (2026-09-24)
 
 

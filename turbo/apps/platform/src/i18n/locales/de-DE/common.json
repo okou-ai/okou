@@ -1492,7 +1492,6 @@
         },
         "shareDialog": {
           "description": "Öffentlichen Beitrag zur Prüfung einreichen. Eine erfolgreiche Prämie pro Person.",
-          "draft": "Meinen Montags-Wettbewerbsreport mache ich mit {{assistantName}} — es liest die Quellen und liefert die Tabelle zurück.",
           "helper": "Der Post muss öffentlich sein und {{assistantName}} erwähnen.",
           "inputLabel": "Post-Link",
           "openX": "X öffnen",
@@ -1507,7 +1506,8 @@
           "stepPaste": "Link einfügen",
           "stepWrite": "Beitrag schreiben",
           "submit": "Einreichen",
-          "title": "{{assistantName}} auf X teilen"
+          "title": "{{assistantName}} auf X teilen",
+          "writingPrompt": "Schreibe in deinen eigenen Worten über etwas, das du mit {{assistantName}} tatsächlich ausprobiert hast."
         },
         "slack": {
           "action": "Hinzufügen",
@@ -2083,6 +2083,21 @@
       "queuedMessageDescription": "Wartet in der Warteschlange und wird gesendet, sobald die aktuelle Ausführung beendet ist.",
       "removeQueuedMessage": "Nachricht aus der Warteschlange entfernen",
       "skipAutomationEvent": "Automatisierungsereignis überspringen"
+    },
+    "remoteAccess": {
+      "defaultEnabled": "Für Chats standardmäßig aktiviert",
+      "enabledCount_one": "{{count}} aktiviert",
+      "enabledCount_other": "{{count}} aktiviert",
+      "loadFailed": "Fernzugriff konnte nicht geladen werden.",
+      "loading": "Fernzugriff wird geladen…",
+      "off": "Aus",
+      "on": "Ein",
+      "requiresSsh": "Benötigt auch Zugriff auf den SSH-Host {{name}}.",
+      "retry": "Erneut versuchen",
+      "startChat": "Starten Sie einen Chat, um den Hostzugriff zu ändern.",
+      "title": "Fernzugriff",
+      "unavailableSsh": "nicht verfügbarer SSH-Host",
+      "useDefault": "Standard verwenden"
     },
     "replaceDraft": {
       "description": "Wenn Sie fortfahren, wird Ihr aktueller Composer-Entwurf gelöscht und eine Workflow-Eingabeaufforderung gestartet.",
@@ -6399,7 +6414,7 @@
       }
     },
     "paidTools": {
-      "description": "Wähle die kostenpflichtigen Tools, die Okou für deine Aufgaben nutzen darf. Jede Nutzung kostet Credits.",
+      "description": "Diese Tools verbrauchen integrierte Credits, und Okou nutzt sie automatisch bei der Bearbeitung deiner Aufgaben. Wenn du ein Tool deaktivierst, verwendet Okou es nicht.",
       "disabledForCreation": "{{tool}} ist für dich deaktiviert",
       "loadError": "Deine Tool-Einstellungen konnten nicht geladen werden.",
       "loading": "Deine Tool-Einstellungen werden geladen…",
@@ -6409,7 +6424,7 @@
       "saving": "Wird gespeichert…",
       "scope": "Diese Einstellungen gelten nur für dich in {{workspace}}.",
       "timing": "Änderungen gelten für zukünftige Ausführungen. Laufende oder bereits vorbereitete Aufgaben können die bisherigen Einstellungen behalten.",
-      "title": "Kostenpflichtige Tools",
+      "title": "Integrierte Tools",
       "tools": {
         "avatar-video-generation": {
           "description": "Videos mit sprechenden Avataren erstellen.",

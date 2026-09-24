@@ -1492,7 +1492,6 @@
         },
         "shareDialog": {
           "description": "Submit a public post for review. One successful reward per person.",
-          "draft": "Been running my Monday competitor report with {{assistantName}} — it reads the sources and hands back the table.",
           "helper": "The post has to be public and mention {{assistantName}}.",
           "inputLabel": "Post link",
           "openX": "Open X",
@@ -1507,7 +1506,8 @@
           "stepPaste": "Paste the link",
           "stepWrite": "Write the post",
           "submit": "Submit",
-          "title": "Share {{assistantName}} on X"
+          "title": "Share {{assistantName}} on X",
+          "writingPrompt": "Write about something you actually tried with {{assistantName}}, in your own words."
         },
         "slack": {
           "action": "Add",
@@ -2083,6 +2083,21 @@
       "queuedMessageDescription": "Waits in line and sends once the current run finishes.",
       "removeQueuedMessage": "Remove queued message",
       "skipAutomationEvent": "Skip automation event"
+    },
+    "remoteAccess": {
+      "defaultEnabled": "Enabled by default for chats",
+      "enabledCount_one": "{{count}} enabled",
+      "enabledCount_other": "{{count}} enabled",
+      "loadFailed": "Couldn't load remote access.",
+      "loading": "Loading remote access…",
+      "off": "Off",
+      "on": "On",
+      "requiresSsh": "Requires SSH access to {{name}}.",
+      "retry": "Retry",
+      "startChat": "Start a chat to change host access.",
+      "title": "Remote access",
+      "unavailableSsh": "unavailable SSH host",
+      "useDefault": "Use default"
     },
     "replaceDraft": {
       "description": "Continuing will clear your current composer draft and start a workflow prompt.",
@@ -6391,7 +6406,7 @@
       }
     },
     "paidTools": {
-      "description": "Choose the paid tools Okou can use in your tasks. Each use costs credits.",
+      "description": "These tools use built-in credits, and Okou uses them automatically as it works on your tasks. Turn a tool off and Okou won't use it.",
       "disabledForCreation": "{{tool}} is off for you",
       "loadError": "Your tool settings could not be loaded.",
       "loading": "Loading your tool settings…",
@@ -6401,7 +6416,7 @@
       "saving": "Saving…",
       "scope": "These settings apply only to you in {{workspace}}.",
       "timing": "Changes apply to future runs. Tasks already running or prepared may keep their previous settings.",
-      "title": "Paid tools",
+      "title": "Built-in tools",
       "tools": {
         "avatar-video-generation": {
           "description": "Create talking-avatar videos.",

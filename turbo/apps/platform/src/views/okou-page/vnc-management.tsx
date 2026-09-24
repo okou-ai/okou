@@ -18,6 +18,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { VncCredentialImpact } from "./vnc-fields.tsx";
 import { VncLoadError } from "./vnc-load-error.tsx";
+import { RemoteHostDefaultToggle } from "./remote-access-controls.tsx";
 
 function VncProfileLabel({ profile }: { readonly profile: VncProfile }) {
   const { t } = useTranslation();
@@ -155,6 +156,7 @@ function VncHostCard({
           </>
         )}
       </p>
+      <RemoteHostDefaultToggle protocol="vnc" connectionId={connection.id} />
       <div className="flex flex-wrap gap-2">
         <Button
           variant="outline"

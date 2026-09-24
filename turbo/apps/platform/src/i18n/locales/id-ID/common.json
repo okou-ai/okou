@@ -1491,7 +1491,6 @@
         },
         "shareDialog": {
           "description": "Kirim postingan publik untuk ditinjau. Satu hadiah yang disetujui per orang.",
-          "draft": "Laporan kompetitor tiap Senin saya kerjakan dengan {{assistantName}} — dia membaca sumbernya dan mengembalikan tabelnya.",
           "helper": "Postingan harus publik dan menyebut {{assistantName}}.",
           "inputLabel": "Tautan postingan",
           "openX": "Buka X",
@@ -1506,7 +1505,8 @@
           "stepPaste": "Tempel tautannya",
           "stepWrite": "Tulis postingannya",
           "submit": "Kirim",
-          "title": "Bagikan {{assistantName}} di X"
+          "title": "Bagikan {{assistantName}} di X",
+          "writingPrompt": "Tulis dengan kata-katamu sendiri tentang sesuatu yang benar-benar kamu coba dengan {{assistantName}}."
         },
         "slack": {
           "action": "Tambahkan",
@@ -2076,6 +2076,20 @@
       "queuedMessageDescription": "Menunggu giliran dan dikirim setelah eksekusi saat ini selesai.",
       "removeQueuedMessage": "Hapus pesan dalam antrean",
       "skipAutomationEvent": "Lewati peristiwa otomatisasi"
+    },
+    "remoteAccess": {
+      "defaultEnabled": "Aktif secara default untuk chat",
+      "enabledCount_other": "{{count}} aktif",
+      "loadFailed": "Gagal memuat akses jarak jauh.",
+      "loading": "Memuat akses jarak jauh…",
+      "off": "Nonaktif",
+      "on": "Aktif",
+      "requiresSsh": "Juga memerlukan akses ke host SSH {{name}}.",
+      "retry": "Coba lagi",
+      "startChat": "Mulai chat untuk mengubah akses host.",
+      "title": "Akses jarak jauh",
+      "unavailableSsh": "host SSH tidak tersedia",
+      "useDefault": "Gunakan default"
     },
     "replaceDraft": {
       "description": "Melanjutkan akan menghapus draf composer saat ini dan memulai prompt alur kerja.",
@@ -6384,7 +6398,7 @@
       }
     },
     "paidTools": {
-      "description": "Pilih alat berbayar yang dapat digunakan Okou dalam tugas Anda. Setiap penggunaan memakai kredit.",
+      "description": "Alat-alat ini menggunakan kredit bawaan, dan Okou menggunakannya secara otomatis saat mengerjakan tugas Anda. Matikan alat agar Okou tidak menggunakannya.",
       "disabledForCreation": "{{tool}} nonaktif untuk Anda",
       "loadError": "Pengaturan alat tidak dapat dimuat.",
       "loading": "Memuat pengaturan alat…",
@@ -6394,7 +6408,7 @@
       "saving": "Menyimpan…",
       "scope": "Pengaturan ini hanya berlaku untuk Anda di {{workspace}}.",
       "timing": "Perubahan berlaku untuk proses berikutnya. Tugas yang sedang berjalan atau sudah disiapkan dapat tetap memakai pengaturan sebelumnya.",
-      "title": "Alat berbayar",
+      "title": "Alat bawaan",
       "tools": {
         "avatar-video-generation": {
           "description": "Buat video avatar berbicara.",

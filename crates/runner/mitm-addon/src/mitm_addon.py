@@ -1297,10 +1297,6 @@ def _block_request_classification(
         http_local_responses.block_gmail_send(flow)
         return
     if classification.kind == "firewall_ambiguous":
-        if connector_diagnostics.maybe_make_connector_owner_local_response(
-            flow, classification, commit=True
-        ):
-            return
         _set_firewall_ambiguous_response(flow, classification.firewall_ambiguous)
         return
     if classification.kind == "firewall_block":

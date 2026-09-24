@@ -11,6 +11,29 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.955.0](https://github.com/okou-ai/okou/compare/app-v0.954.0...app-v0.955.0) (2026-09-24)
+
+
+### Features
+
+* **browser:** support native number input ([#36549](https://github.com/okou-ai/okou/issues/36549)) ([d0006e3](https://github.com/okou-ai/okou/commit/d0006e3974bfc524e77388536422b5fe4fe70b7f))
+* enforce live chat ssh/vnc host access ([#36440](https://github.com/okou-ai/okou/issues/36440)) ([69b29a9](https://github.com/okou-ai/okou/commit/69b29a9ac264f582613a966fd8c1844a13f1b5ec))
+* store chat thread archive state instead of title emoji ([#36480](https://github.com/okou-ai/okou/issues/36480)) ([f5a0de6](https://github.com/okou-ai/okou/commit/f5a0de65c0621ca58c35edd65fc257417becdaa3))
+
+
+### Bug Fixes
+
+* **platform:** clarify built-in tools settings copy ([#36566](https://github.com/okou-ai/okou/issues/36566)) ([4d5eae0](https://github.com/okou-ai/okou/commit/4d5eae0d693c7ec6e207cbcbaa3e3614c038a17d))
+* **platform:** let users write their own X share posts ([#36570](https://github.com/okou-ai/okou/issues/36570)) ([1ca02c4](https://github.com/okou-ai/okou/commit/1ca02c49eb4803d396d7111716619729188df3bc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.503.0
+    * @okouai/core bumped to 8.708.0
+
 ## [0.954.0](https://github.com/okou-ai/okou/compare/app-v0.953.0...app-v0.954.0) (2026-09-24)
 
 
