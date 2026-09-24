@@ -85,7 +85,6 @@ import { holdMorningBriefProjectionWrite } from "../../../test-fixtures/morning-
 import { holdMorningBriefReconfigurationAfterPersist } from "../../../test-fixtures/morning-brief-reconciliation";
 import {
   holdMorningBriefFirstMaterialization,
-  holdSelectedMorningBriefAutomationRow,
   readLegacyAutomation,
   readNativeOccurrences,
   readNativeSchedule,
@@ -103,13 +102,10 @@ import {
 } from "../../../test-fixtures/pi-stable-context-source-writers";
 import {
   holdWorkflowAutomationCommittedRunFixture,
-  holdNewerMorningBriefClaimFixture,
   installMorningBriefSettlementFailureFixture,
   observeMorningBriefSettlementAttemptsFixture,
   readMorningBriefScheduleClaimsFixture,
   removeMorningBriefScheduleClaimForCompatibilityFixture,
-  readWorkflowAutomationLastRunFixture,
-  recordWorkflowAutomationLastRunFixture,
   withWorkflowAutomationRunPersistenceFailureFixture,
 } from "../../../test-fixtures/morning-brief-schedule-claim";
 import { holdAgentRunPiExecutionSnapshotFixture } from "../../../test-fixtures/thread-bound-run-admission";
