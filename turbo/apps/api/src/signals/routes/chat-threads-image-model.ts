@@ -2,7 +2,7 @@ import { command } from "ccstate";
 import { and, eq, isNotNull } from "drizzle-orm";
 import type { z } from "zod";
 import { chatThreadImageModelContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";

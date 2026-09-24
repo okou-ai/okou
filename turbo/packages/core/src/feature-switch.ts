@@ -292,9 +292,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "lancy@okou.ai",
     displayName: "Native Morning Brief",
     description:
-      "Select the platform-funded native Morning Brief pipeline instead of the Official Workflow Run. Separate from the user's Morning Brief preference.",
+      "Retiring the native Morning Brief pipeline in favor of the Official Workflow Run. Separate from the user's Morning Brief preference.",
     enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.TestOauthConnector]: {
     maintainer: "liangyou@okou.ai",
@@ -472,6 +471,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "liangyou@okou.ai",
     description: "Enable chat-scoped SSH and VNC host defaults and overrides",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ConnectorDirectory]: {
     maintainer: "tongx@okou.ai",

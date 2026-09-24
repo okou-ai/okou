@@ -109,7 +109,10 @@ import {
   mockNotionConnectorOAuth,
 } from "./helpers/api-bdd-workflows";
 import { createEmailOutboxStateApi } from "./helpers/email-outbox-state";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  setHistoricalNativeMorningBriefForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
 import {
   assertOfficialWorkflowAutomationFinalAdmissionRejectedFixture,
   installOfficialWorkflowRunGateFixture,
@@ -1753,10 +1756,10 @@ async function setNativeMorningBriefEnabled(
   if (!actor.orgId) {
     throw new Error("Expected organization-scoped actor");
   }
-  await updateFeatureSwitchesForUser(
+  await setHistoricalNativeMorningBriefForUser(
     context,
     { orgId: actor.orgId, userId: actor.userId },
-    { [FeatureSwitchKey.NativeMorningBrief]: enabled },
+    enabled,
   );
 }
 

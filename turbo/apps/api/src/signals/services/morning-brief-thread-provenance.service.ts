@@ -1,8 +1,6 @@
 import { MORNING_BRIEF_OFFICIAL_DEFINITION_NAME } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import {
-  chatThreads,
-  type ChatThreadProvenance,
-} from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import type { ChatThreadProvenance } from "@okouai/db/schema/chat-thread";
 import { workflows } from "@okouai/db/schema/workflow";
 import { and, eq, inArray } from "drizzle-orm";
 

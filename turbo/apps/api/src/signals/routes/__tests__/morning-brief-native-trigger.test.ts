@@ -32,7 +32,10 @@ import { createScopedInlineMorningBriefCronRoutesForTest } from "../cron-execute
 import { morningBriefDebugTriggerRoutes } from "../morning-brief-debug-trigger";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { userPreferencesRoutes } from "../user-preferences";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  seedRetainedNativeMorningBriefForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
 import {
   seedSlackOrgConnection$,
   seedSlackOrgInstallation$,
@@ -170,7 +173,7 @@ async function fixture(): Promise<Fixture> {
     context.signal,
   );
   const brief = await seedInstalledMorningBrief({ orgId, userId });
-  await updateFeatureSwitchesForUser(
+  await seedRetainedNativeMorningBriefForUser(
     context,
     { orgId, userId },
     { [FeatureSwitchKey.NativeMorningBrief]: true },
@@ -497,6 +500,25 @@ describe("on-demand native Morning Brief trigger", () => {
     // A tick after the refusal still admits nothing.
     await accept(tick(f), [200]);
     expect(generation).toHaveLength(0);
+    await expect(readNativeOccurrences(f)).resolves.toHaveLength(0);
+  });
+
+  it("refuses a native debug trigger after the implementation switch is turned off", async () => {
+    const f = await nativeOwner();
+    const before = await readNativeSchedule(f);
+    await updateFeatureSwitchesForUser(
+      context,
+      { orgId: f.orgId, userId: f.userId },
+      { [FeatureSwitchKey.NativeMorningBrief]: false },
+    );
+
+    const refused = await accept(triggerAs(f), [409]);
+    expect(refused.body.error.code).toBe("MORNING_BRIEF_DISABLED");
+    await expect(readNativeSchedule(f)).resolves.toMatchObject({
+      phase: "native",
+      nextRunAt: before?.nextRunAt,
+      ownerEpoch: before?.ownerEpoch,
+    });
     await expect(readNativeOccurrences(f)).resolves.toHaveLength(0);
   });
 

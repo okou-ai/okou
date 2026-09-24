@@ -11,7 +11,7 @@ import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contrac
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { computed, type Computed } from "ccstate";
 import { and, asc, eq, gt, lte, sql } from "drizzle-orm";
 

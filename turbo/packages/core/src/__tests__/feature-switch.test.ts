@@ -66,6 +66,32 @@ describe("isFeatureEnabled", () => {
     });
   });
 
+  it("enables thread remote access for staff while respecting overrides", () => {
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    const external = { orgId: "org_nonexistent" };
+    expect(isFeatureEnabled(FeatureSwitchKey.ThreadRemoteAccess, {})).toBe(
+      false,
+    );
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.ThreadRemoteAccess, external),
+    ).toBe(false);
+    expect(isFeatureEnabled(FeatureSwitchKey.ThreadRemoteAccess, staff)).toBe(
+      true,
+    );
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.ThreadRemoteAccess, {
+        ...staff,
+        overrides: { [FeatureSwitchKey.ThreadRemoteAccess]: false },
+      }),
+    ).toBe(false);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.ThreadRemoteAccess, {
+        ...external,
+        overrides: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+      }),
+    ).toBe(true);
+  });
+
   it("keeps the multi-account subscription UI on the staff organization", () => {
     expect(
       isFeatureEnabled(FeatureSwitchKey.PersonalModelProviderAccounts, {
@@ -428,7 +454,7 @@ describe("isFeatureEnabled", () => {
     });
   });
 
-  it("should select native Morning Brief for staff while preserving the persisted key and overrides", () => {
+  it("keeps the persisted native key for rollback but removes staff admission", () => {
     expect(FeatureSwitchKey.NativeMorningBrief).toBe("simpleMorningBrief");
     for (const context of [{}, { orgId: "org_nonexistent" }]) {
       expect(
@@ -442,7 +468,7 @@ describe("isFeatureEnabled", () => {
     }
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
     expect(isFeatureEnabled(FeatureSwitchKey.NativeMorningBrief, staff)).toBe(
-      true,
+      false,
     );
     expect(isFeatureEnabled(FeatureSwitchKey.MorningBrief, staff)).toBe(true);
     expect(
@@ -451,6 +477,8 @@ describe("isFeatureEnabled", () => {
         overrides: { [FeatureSwitchKey.NativeMorningBrief]: false },
       }),
     ).toBe(false);
+    // Existing binaries still understand this persisted key during rollout.
+    // The migration clears saved true values and the API refuses new ones.
     expect(
       isFeatureEnabled(FeatureSwitchKey.NativeMorningBrief, {
         orgId: "org_nonexistent",
@@ -461,7 +489,7 @@ describe("isFeatureEnabled", () => {
       getFeatureSwitchMetadata()[FeatureSwitchKey.NativeMorningBrief],
     ).toMatchObject({
       displayName: "Native Morning Brief",
-      rolloutStage: "beta",
+      rolloutStage: "alpha",
     });
   });
 
@@ -520,6 +548,7 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.GradientColorThemes]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.MorningBrief]).toBe(true);
+    expect(staffOrgStates[FeatureSwitchKey.NativeMorningBrief]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(true);

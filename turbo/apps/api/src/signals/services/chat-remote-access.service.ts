@@ -7,7 +7,7 @@ import type {
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreadSshAccessOverrides } from "@okouai/db/schema/chat-thread-ssh-access-override";
 import { chatThreadVncAccessOverrides } from "@okouai/db/schema/chat-thread-vnc-access-override";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { and, asc, eq, inArray } from "drizzle-orm";

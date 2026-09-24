@@ -37,7 +37,7 @@ import {
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { mockGoogleCalendarConnectorOAuth } from "./helpers/api-bdd-workflows";
 import { mockClerkUsers } from "./helpers/clerk-users";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { seedRetainedNativeMorningBriefForUser } from "./helpers/feature-switches";
 import {
   seedSlackOrgConnection$,
   seedSlackOrgInstallation$,
@@ -244,7 +244,7 @@ async function fixture(options: SourceOptions = {}): Promise<Fixture> {
       action: "allow",
     });
   }
-  await updateFeatureSwitchesForUser(
+  await seedRetainedNativeMorningBriefForUser(
     context,
     { orgId, userId },
     { [FeatureSwitchKey.NativeMorningBrief]: true },

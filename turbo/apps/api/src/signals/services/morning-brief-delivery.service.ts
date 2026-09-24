@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import { agents } from "@okouai/db/schema/agent";
 import { emailSuppressions } from "@okouai/db/schema/email-suppression";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { morningBriefCollectionOccurrences } from "@okouai/db/schema/morning-brief-collection-occurrence";
 import {
   morningBriefDeliveries,
@@ -25,7 +25,12 @@ import { writeDb$, type Db } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import { safeSync, settle } from "../utils";
 import { insertChatEvent } from "./chat-event.service";
-import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
+import {
+  touchChatThreadLastMessageAt,
+  touchChatThreadLastMessageAtIndependently,
+} from "./chat-event-shared.service";
+import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
+import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import {
   buildFromAddress,
   buildOneClickUnsubscribeUrl,
@@ -74,10 +79,11 @@ const log = logger("MorningBriefDelivery");
  * and the body it delivers is exactly the Markdown that was accepted then.
  *
  * The transaction is the contract: the sticky thread exclusion, the canonical
- * run-less assistant message, the thread's ordering touch, the delivery
- * identity and the email intent all commit together or not at all. The realtime
- * notification is the only thing that happens afterwards, and it is
- * best-effort: a failed publish must never replay a committed delivery.
+ * run-less assistant message, the delivery identity and the email intent all
+ * commit together or not at all. The subscription and result deadline remain
+ * admission requirements. After split writes activate, thread activity and
+ * realtime notification follow independently; a failed auxiliary write must
+ * never replay a committed delivery.
  */
 
 export type MorningBriefDeliveryRejection =
@@ -539,7 +545,7 @@ async function resolveDestinationThread(
       .from(chatThreads)
       .where(eq(chatThreads.id, boundThreadId))
       .limit(1)
-      .for("update");
+      .for("no key update");
   }
   return await ensureWorkflowUserAutomationThread(tx, {
     orgId: args.orgId,
@@ -890,7 +896,7 @@ async function resolveNativeDestinationThread(
       ),
     )
     .limit(1)
-    .for("update");
+    .for("no key update");
   if (thread === undefined) {
     throw new DeliveryRejected("destination-unavailable");
   }
@@ -944,6 +950,7 @@ async function deliverInTransaction(
     readonly purpose: MorningBriefDeliveryPurpose;
     readonly anchor: ResultAnchor;
     readonly current: MorningBriefCollectionAdmission;
+    readonly splitWrites: boolean;
   },
   signal: AbortSignal,
 ): Promise<CommittedDelivery> {
@@ -1015,22 +1022,33 @@ async function deliverInTransaction(
     userId: request.userId,
   });
 
-  const appended = await insertChatEvent(tx, {
-    chatThreadId,
-    eventType: "output.message",
-    content: result.markdown,
-    createdAt: acceptedAt,
-  });
+  const appended = await insertChatEvent(
+    tx,
+    {
+      chatThreadId,
+      eventType: "output.message",
+      content: result.markdown,
+      createdAt: acceptedAt,
+    },
+    "none",
+    { splitWrites: args.splitWrites },
+  );
   if (!appended) {
     throw new Error("Morning Brief delivery event was not appended");
   }
 
-  // This UPSERTs the owner's sidebar sequence row, which is shared across all
-  // of their threads, so another thread's mutation can hold it. It is the last
-  // wait in the transaction, and the acceptance deadline is therefore checked
-  // once more after it rather than assumed still valid from before.
-  await touchChatThreadLastMessageAt(tx, chatThreadId, acceptedAt, appended.id);
+  // The receipt/subscription boundary remains atomic. After activation its
+  // sequence lock no longer waits for the independently committed sidebar.
+  if (!args.splitWrites) {
+    await touchChatThreadLastMessageAt(
+      tx,
+      chatThreadId,
+      acceptedAt,
+      appended.id,
+    );
+  }
   throwIfCancelled(signal);
+  // Recheck after the content allocation wait in both modes.
   await loadDeliverableResult(tx, {
     ...owner,
     resultAttemptId: request.resultAttemptId,
@@ -1133,11 +1151,19 @@ export const deliverMorningBriefResult$ = command(
     // A rejection after the destination was prepared unwinds the whole
     // transaction, so nothing partial is committed for a delivery that did not
     // happen.
+    const splitWrites = await isSplitChatEventWriteEnabled(db);
+    signal.throwIfAborted();
     const settled = await settle(
       db.transaction(async (tx) => {
         return await deliverInTransaction(
           tx,
-          { request, purpose, anchor, current: authority.admission },
+          {
+            request,
+            purpose,
+            anchor,
+            current: authority.admission,
+            splitWrites,
+          },
           signal,
         );
       }),
@@ -1157,6 +1183,21 @@ export const deliverMorningBriefResult$ = command(
     signal.throwIfAborted();
 
     if (committed.kind === "delivered") {
+      if (splitWrites) {
+        await attemptChatEventSideEffect(
+          "thread_touch",
+          committed.chatThreadId,
+          () => {
+            return touchChatThreadLastMessageAtIndependently(
+              db,
+              committed.chatThreadId,
+              committed.deliveredAt,
+              committed.chatEventId,
+              owner,
+            );
+          },
+        );
+      }
       // Best effort, and deliberately outside the transaction: a failed
       // publish leaves a committed delivery that the next canonical read
       // returns, and must never replay the write.

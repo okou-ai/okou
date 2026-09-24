@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.359.4](https://github.com/okou-ai/okou/compare/cli-v9.359.3...cli-v9.359.4) (2026-09-24)
+
+
+### Bug Fixes
+
+* retire claude sonnet 4.6, claude opus 4.8, and deepseek v4 pro ([#36698](https://github.com/okou-ai/okou/issues/36698)) ([66a5341](https://github.com/okou-ai/okou/commit/66a534132b49aee893bcbae2cb94b150f19396c8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.505.1
+    * @okouai/core bumped to 8.708.4
+    * @okouai/pi-agent-runtime bumped to 1.40.10
+
 ## [9.359.3](https://github.com/okou-ai/okou/compare/cli-v9.359.2...cli-v9.359.3) (2026-09-24)
 
 

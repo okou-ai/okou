@@ -6,7 +6,7 @@ import type {
 } from "@okouai/api-contracts/contracts/usage-record";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import {
   and,

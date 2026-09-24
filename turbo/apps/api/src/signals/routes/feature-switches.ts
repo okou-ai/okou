@@ -4,6 +4,7 @@ import {
   type FeatureSwitchesResponse,
 } from "@okouai/api-contracts/contracts/feature-switches";
 import { getAllFeatureStates } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -67,6 +68,21 @@ const updateFeatureSwitchesInner$ = command(
     signal.throwIfAborted();
     if (!bodyResult.ok) {
       return bodyResult.response;
+    }
+    // The retired implementation must not be reselected through a stored
+    // per-user override while the native-to-Official rollback is draining.
+    if (
+      bodyResult.data.switches[FeatureSwitchKey.NativeMorningBrief] === true
+    ) {
+      return {
+        status: 400 as const,
+        body: {
+          error: {
+            code: "BAD_REQUEST",
+            message: "Native Morning Brief is retiring and cannot be enabled",
+          },
+        },
+      };
     }
 
     const switches = await set(

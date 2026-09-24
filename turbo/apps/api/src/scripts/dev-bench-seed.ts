@@ -1,4 +1,5 @@
 #!/usr/bin/env tsx
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 
 import { createHash, randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
@@ -16,7 +17,7 @@ import {
   chatEvents,
   type ChatEventUsagePayload,
 } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
 import { closeDbPool, db } from "../lib/db";
 import { optionalEnv } from "../lib/env";
@@ -940,9 +941,17 @@ async function insertProfileRows(
   const lastEvent = eventRows.at(-1);
   if (lastEvent) {
     await database
-      .update(chatThreads)
-      .set({ lastChatEventSeqId: lastEvent.seqId })
-      .where(eq(chatThreads.id, lastEvent.chatThreadId));
+      .insert(chatEventSequences)
+      .values({
+        chatThreadId: lastEvent.chatThreadId,
+        lastSeqId: lastEvent.seqId,
+      })
+      .onConflictDoUpdate({
+        target: chatEventSequences.chatThreadId,
+        set: {
+          lastSeqId: sql`GREATEST(${chatEventSequences.lastSeqId}, ${lastEvent.seqId})`,
+        },
+      });
   }
 }
 
