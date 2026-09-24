@@ -1183,4 +1183,52 @@ describe("okou browser user-action commands", () => {
       "private-token",
     );
   });
+
+  it("stops when managed Browser access is not configured", async () => {
+    installCdp();
+    server.use(
+      http.post("http://localhost:3000/api/browser/user-actions", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "BROWSER_USE_NOT_CONFIGURED",
+              message: "Managed browser provider is not configured",
+            },
+          },
+          { status: 503 },
+        );
+      }),
+    );
+
+    await expect(
+      browserCommand.parseAsync([
+        "node",
+        "okou",
+        "input-request",
+        "--field",
+        JSON.stringify({
+          key: "username",
+          label: "Email",
+          fieldKind: "username",
+          required: true,
+          target: "@e1",
+        }),
+        "--callback-prompt",
+        "Continue",
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(consoleError.mock.calls[0]?.[0]))).toStrictEqual({
+      error: {
+        code: "BROWSER_USE_NOT_CONFIGURED",
+        message: "Managed Browser access is not configured",
+        nextAction:
+          "Stop this request and ask the Okou team to configure managed Browser access.",
+        retryable: false,
+      },
+    });
+    expect(consoleLog).not.toHaveBeenCalled();
+  });
 });

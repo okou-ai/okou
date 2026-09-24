@@ -263,6 +263,13 @@ function apiInputRequestError(
       "Stop this request and ask the Okou team to check the Browser provider.",
     );
   }
+  if (code === "BROWSER_USE_NOT_CONFIGURED") {
+    return new BrowserInputRequestError(
+      code,
+      "Managed Browser access is not configured",
+      "Stop this request and ask the Okou team to configure managed Browser access.",
+    );
+  }
   if (
     code === "BROWSER_USE_ERROR" ||
     code === "BROWSER_USER_ACTION_PROVIDER_ERROR"
