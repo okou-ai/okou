@@ -24,6 +24,7 @@ mod profile;
 #[cfg(test)]
 mod provider_test_support;
 use runner_lifecycle::resource_budget;
+#[cfg(test)]
 use runner_lifecycle::restored_session_identity;
 mod retry;
 mod run_resolution;
@@ -37,6 +38,7 @@ use runner_executor::test_fixtures;
 mod test_fixtures_http_body;
 use runner_lifecycle::workspace_image_cache;
 use runner_lifecycle::workspace_mount;
+#[cfg(test)]
 use runner_lifecycle::workspace_promotion;
 
 use runner_network::{
@@ -45,8 +47,6 @@ use runner_network::{
 use runner_remote::{guest_rpc, run_usage, ssh, vnc};
 use runner_storage::{r2_cache, storage_cache, storage_fingerprints};
 
-#[cfg(test)]
-use runner_storage::storage_plan;
 #[cfg(test)]
 use sandbox::helper_exec;
 
