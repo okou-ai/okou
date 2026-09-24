@@ -350,6 +350,7 @@
       "agentphone": "エージェントフォン",
       "automationEvent": "オートメーションイベント",
       "automationSchedule": "オートメーションスケジュール",
+      "discord": "Discord",
       "email": "メール",
       "feishu": "Feishu",
       "github": "GitHub",
@@ -2018,6 +2019,7 @@
     "newChat": "新しいチャット",
     "origins": {
       "agentphone": "iMessage",
+      "discord": "Discord",
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",

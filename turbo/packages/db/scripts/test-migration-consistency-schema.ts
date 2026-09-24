@@ -41,6 +41,7 @@ import { validateOfficialAutomationResultEmailSchema } from "./test-official-aut
 import { validatePermanentBuiltInModelCooldownState } from "./test-built-in-model-cooldown-permanent";
 import { validatePermanentBuiltInModelKeyState } from "./test-built-in-model-keys-permanent";
 import { validatePermanentSlackPublicBrandState } from "./test-slack-public-brand-permanent";
+import { validatePermanentDiscordChat } from "./test-discord-chat-permanent";
 import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitlement-permanent";
 import { validateGpt55Retirement } from "./test-gpt-55-retirement";
 import { validateXResourceUsageSchema } from "./test-x-resource-usage";
@@ -228,6 +229,69 @@ async function validateExpandedBrowserSchema(dbUrl: string): Promise<void> {
       "   ✅ browser lifecycle and goal event constraints are canonical\n",
     );
   } finally {
+    await client.end();
+  }
+}
+
+async function validateCanonicalBillingSources(dbUrl: string): Promise<void> {
+  const client = new Client({ connectionString: dbUrl });
+  await client.connect();
+  await client.query("BEGIN");
+
+  try {
+    const sourceConstraint = await client.query<{ validated: boolean }>(`
+      SELECT convalidated AS validated FROM pg_constraint
+      WHERE conrelid = 'public.billing_run_attribution'::regclass
+        AND conname = 'billing_run_attribution_source_check'
+    `);
+    assert.deepEqual(sourceConstraint.rows, [{ validated: true }]);
+    const sources = await client.query<{
+      triggerSource: string | null;
+      source: string;
+    }>(`
+      SELECT trigger_source AS "triggerSource",
+        billing_usage_source(trigger_source) AS source
+      FROM unnest(ARRAY[
+        'web', 'automation-schedule', 'automation-event', 'goal',
+        'slack', 'discord', 'teams', 'telegram', 'email', 'agentphone',
+        'github', 'agent', 'unsupported', NULL
+      ]::text[]) WITH ORDINALITY AS inputs(trigger_source, position)
+      ORDER BY position
+    `);
+    assert.deepEqual(sources.rows, [
+      { triggerSource: "web", source: "chat" },
+      { triggerSource: "automation-schedule", source: "automation" },
+      { triggerSource: "automation-event", source: "automation" },
+      { triggerSource: "goal", source: "automation" },
+      { triggerSource: "slack", source: "slack" },
+      { triggerSource: "discord", source: "discord" },
+      { triggerSource: "teams", source: "teams" },
+      { triggerSource: "telegram", source: "telegram" },
+      { triggerSource: "email", source: "email" },
+      { triggerSource: "agentphone", source: "agentphone" },
+      { triggerSource: "github", source: "github" },
+      { triggerSource: "agent", source: "agent" },
+      { triggerSource: "unsupported", source: "other" },
+      { triggerSource: null, source: "other" },
+    ]);
+
+    await client.query(`
+      SELECT ensure_billing_run_attribution(
+        '3ae9c61f-3d08-4a8b-9810-3c627ed746de',
+        'discord-source-validation-org', 'discord-source-validation-user',
+        '2026-09-24 00:00:00'::timestamp, billing_usage_source('discord')
+      )
+    `);
+    const attribution = await client.query<{ source: string }>(`
+      SELECT source FROM billing_run_attribution
+      WHERE run_id = '3ae9c61f-3d08-4a8b-9810-3c627ed746de'
+    `);
+    assert.deepEqual(attribution.rows, [{ source: "discord" }]);
+    console.log(
+      "   ✅ Discord billing capture preserves existing source mappings\n",
+    );
+  } finally {
+    await client.query("ROLLBACK");
     await client.end();
   }
 }
@@ -515,6 +579,12 @@ async function validateChatEventContextPointerConstraints(
   const threadId = "00000000-0000-4000-8000-000000074502";
 
   try {
+    const contextConstraint = await client.query<{ validated: boolean }>(`
+      SELECT convalidated AS validated FROM pg_constraint
+      WHERE conrelid = 'public.chat_events'::regclass
+        AND conname = 'chat_events_context_type_check'
+    `);
+    assert.deepEqual(contextConstraint.rows, [{ validated: true }]);
     await client.query(
       `
         INSERT INTO "agents" ("id", "org_id", "owner", "name")
@@ -593,6 +663,15 @@ async function validateChatEventContextPointerConstraints(
             NULL,
             '{"userMessage":{"version":1,"parts":[{"type":"text","text":"rejected input"}]}}'::jsonb,
             4
+          ),
+          (
+            '00000000-0000-4000-8000-000000074517',
+            $1,
+            'input.prompt',
+            'discord',
+            '00000000-0000-4000-8000-000000074506',
+            '{"userMessage":{"version":1,"parts":[{"type":"text","text":"Discord input"},{"type":"source","kind":"discord"}]}}'::jsonb,
+            6
           )
         RETURNING
           "context_type" AS "contextType",
@@ -608,6 +687,10 @@ async function validateChatEventContextPointerConstraints(
       },
       { contextId: null, contextType: "web" },
       { contextId: null, contextType: null },
+      {
+        contextId: "00000000-0000-4000-8000-000000074506",
+        contextType: "discord",
+      },
     ]);
 
     await expectDatabaseError(client, {
@@ -647,7 +730,7 @@ async function validateChatEventContextPointerConstraints(
           '00000000-0000-4000-8000-000000074514',
           $1,
           'output.message',
-          'discord',
+          'unsupported',
           '00000000-0000-4000-8000-000000074505',
           3
         )
@@ -1322,7 +1405,7 @@ const EXPECTED_PERMANENT_TRIGGERS = [
 
 const EXPECTED_PERMANENT_FUNCTIONS = [
   {
-    bodyHash: "8838fc6fbf2d02e7ca8294efda788e90",
+    bodyHash: "31c9604bf9c9306578d884bc8aa9e5ce",
     functionName: "billing_usage_source",
     identityArguments: "trigger_source text",
     kind: "f",
@@ -3108,12 +3191,14 @@ async function main(): Promise<void> {
 
     await validateCanonicalIntegrationIdentitySchema(dbUrl1);
     await validatePermanentTriggerAndFunctionInventory(dbUrl1);
+    await validateCanonicalBillingSources(dbUrl1);
     await validatePiMemoryStage1Cost(dbUrl1);
     await validatePermanentUsagePackPendingSnapshotState(dbUrl1);
     await validatePermanentAgentRunMetadataState(dbUrl1);
     await validatePermanentBuiltInModelCooldownState(dbUrl1);
     await validatePermanentBuiltInModelKeyState(dbUrl1);
     await validatePermanentSlackPublicBrandState(dbUrl1);
+    await validatePermanentDiscordChat(dbUrl1);
     await validatePermanentOrgPlanEntitlementState(dbUrl1);
     await validateGpt55Retirement(dbUrl1);
     await validateXResourceUsageSchema(dbUrl1);
@@ -3142,6 +3227,7 @@ async function main(): Promise<void> {
     await validatePermanentBuiltInModelCooldownState(dbUrl2);
     await validatePermanentBuiltInModelKeyState(dbUrl2);
     await validatePermanentSlackPublicBrandState(dbUrl2);
+    await validatePermanentDiscordChat(dbUrl2);
     await validatePermanentOrgPlanEntitlementState(dbUrl2);
     await validateXResourceUsageSchema(dbUrl2);
     await validateAgentRunLaunchSnapshotSchema(dbUrl2);

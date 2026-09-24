@@ -46,6 +46,7 @@ const logStatusSchema = z.enum([
 export const triggerSourceSchema = z.enum([
   "web",
   "slack",
+  "discord",
   "teams",
   "feishu",
   "lark",
@@ -75,6 +76,7 @@ export type TriggerSource = z.infer<typeof triggerSourceSchema>;
 export const PI_MEMORY_TRIGGER_SOURCE_CLASSES = {
   web: "interactive",
   slack: "interactive",
+  discord: "interactive",
   teams: "interactive",
   feishu: "interactive",
   lark: "interactive",

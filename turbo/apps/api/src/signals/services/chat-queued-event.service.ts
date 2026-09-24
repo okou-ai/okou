@@ -76,6 +76,7 @@ export type QueuedUserMessageTriggerSource =
   | "web"
   | "agent"
   | "slack"
+  | "discord"
   | "feishu"
   | "lark"
   | "teams"
@@ -103,6 +104,7 @@ export function queuedUserMessageTriggerSource(
   switch (contextType) {
     case "web":
     case "slack":
+    case "discord":
     case "teams":
     case "telegram":
     case "agentphone":

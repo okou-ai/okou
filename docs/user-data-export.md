@@ -163,6 +163,12 @@ historical memory versions, and memory processing jobs/candidates/provenance.
 Canonical chat payload references remain in the event records, without fetching
 those referenced files.
 
+Discord conversations use these same canonical event records and preserve their
+Discord source metadata. Private Discord context snapshots, inbound Gateway
+payloads, and outbound delivery attempts are operational records and are not
+separate export content. The canonical row's context pointer does not include
+the private snapshot or provider credentials.
+
 The source cursor and ZIP inventory live in PostgreSQL, and payloads stay in R2.
 The worker never holds the entire account or final ZIP in memory. Agent
 instructions prefer the validated exact-version Pi text index. A legacy

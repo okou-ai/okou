@@ -164,6 +164,7 @@ import {
   PreviewableAudioAttachmentChip,
   PreviewableFileAttachmentChip,
 } from "./attachment-chips.tsx";
+import { DiscordMark } from "./components/discord-mark.tsx";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 import { classifyChatAttachment } from "../../signals/chat-page/parse-body-blocks.ts";
 import type {
@@ -6966,6 +6967,11 @@ function sourceMessageLabel(
   >["part"]["kind"],
 ): string {
   switch (kind) {
+    case "discord": {
+      return t(($) => {
+        return $.chat.origins.discord;
+      });
+    }
     case "slack": {
       return t(($) => {
         return $.chat.origins.slack;
@@ -7066,6 +7072,8 @@ function SourceMessageAnnotation({
     <>
       {sourceKind === "slack" ? (
         <BrandSlack size={15} className="shrink-0" />
+      ) : sourceKind === "discord" ? (
+        <DiscordMark size={15} />
       ) : (
         <img
           src={annotationIconImgs[sourceKind]}

@@ -925,6 +925,41 @@
       "when": 1790231546789,
       "tag": "1209_account_erasure_blob_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 1210,
+      "version": "7",
+      "when": 1790238077209,
+      "tag": "1210_cloudflare_access_conversion",
+      "breakpoints": true
+    },
+    {
+      "idx": 1211,
+      "version": "7",
+      "when": 1790243976067,
+      "tag": "1211_discord_integration_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1212,
+      "version": "7",
+      "when": 1790246151188,
+      "tag": "1212_discord_chat_event_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 1213,
+      "version": "7",
+      "when": 1790246156130,
+      "tag": "1213_discord_canonical_chat",
+      "breakpoints": true
+    },
+    {
+      "idx": 1214,
+      "version": "7",
+      "when": 1790246160388,
+      "tag": "1214_validate_discord_chat_sources",
+      "breakpoints": true
     }
   ]
 }

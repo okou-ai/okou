@@ -209,6 +209,7 @@ import { slackCommandsRoutes } from "./routes/slack-commands";
 import { slackConnectRoutes } from "./routes/slack-connect";
 import { slackStatePreviewRoutes } from "./routes/slack-state-preview";
 import { slackEventsRoutes } from "./routes/slack-events";
+import { discordGatewayRoutes } from "./routes/discord-gateway";
 import { slackInteractiveRoutes } from "./routes/slack-interactive";
 import { slackOauthRoutes } from "./routes/slack-oauth";
 import { feishuBrowserConnectRoutes } from "./routes/feishu-browser-connect";
@@ -443,6 +444,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...slackOauthRoutes,
   ...slackCommandsRoutes,
   ...slackEventsRoutes,
+  ...discordGatewayRoutes,
   ...slackInteractiveRoutes,
   ...feishuBrowserConnectRoutes,
   ...feishuConnectRoutes,

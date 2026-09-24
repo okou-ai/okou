@@ -19,6 +19,7 @@ import {
   chatEventTerminalPredicate,
   chatEvents,
 } from "@okouai/db/schema/chat-event";
+import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
 import { chatGithubContext } from "@okouai/db/schema/chat-github-context";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
@@ -44,8 +45,26 @@ type ChatEventIdentity = {
   readonly createdAt?: Date;
 };
 
+/** Complete provider-owned snapshot; event identity and time belong to Chat. */
+export type DiscordChatEventContext = Readonly<
+  Omit<
+    typeof chatDiscordContext.$inferSelect,
+    "id" | "chatThreadId" | "createdAt"
+  >
+>;
+
 type ChatEventDisplayContext =
   | {
+      readonly discordContext: DiscordChatEventContext;
+      readonly slackContext?: never;
+      readonly feishuContext?: never;
+      readonly teamsContext?: never;
+      readonly telegramContext?: never;
+      readonly githubContext?: never;
+      readonly agentphoneContext?: never;
+    }
+  | {
+      readonly discordContext?: never;
       readonly slackContext: {
         readonly channelId: string;
         readonly messageTs: string;
@@ -69,6 +88,7 @@ type ChatEventDisplayContext =
       readonly agentphoneContext?: never;
     }
   | {
+      readonly discordContext?: never;
       readonly slackContext?: never;
       readonly feishuContext: {
         readonly conversationHistory: string;
@@ -91,6 +111,7 @@ type ChatEventDisplayContext =
       readonly agentphoneContext?: never;
     }
   | {
+      readonly discordContext?: never;
       readonly slackContext?: never;
       readonly feishuContext?: never;
       readonly teamsContext: {
@@ -119,6 +140,7 @@ type ChatEventDisplayContext =
       readonly agentphoneContext?: never;
     }
   | {
+      readonly discordContext?: never;
       readonly slackContext?: never;
       readonly feishuContext?: never;
       readonly teamsContext?: never;
@@ -143,6 +165,7 @@ type ChatEventDisplayContext =
       readonly agentphoneContext?: never;
     }
   | {
+      readonly discordContext?: never;
       readonly slackContext?: never;
       readonly feishuContext?: never;
       readonly teamsContext?: never;
@@ -161,6 +184,7 @@ type ChatEventDisplayContext =
       readonly agentphoneContext?: never;
     }
   | {
+      readonly discordContext?: never;
       readonly slackContext?: never;
       readonly feishuContext?: never;
       readonly teamsContext?: never;
@@ -184,6 +208,7 @@ type ChatEventDisplayContext =
       };
     }
   | {
+      readonly discordContext?: never;
       readonly slackContext?: never;
       readonly feishuContext?: never;
       readonly teamsContext?: never;
@@ -406,6 +431,12 @@ export interface LoadedChatEventReplacementTarget extends StoredChatEventContext
 
 type NewDisplayContext =
   | {
+      readonly type: "discord";
+      readonly id: string;
+      readonly chatThreadId: string;
+      readonly snapshot: DiscordChatEventContext;
+    }
+  | {
       readonly type: "agent_run";
       readonly id: string;
       readonly sourceChatThreadId: string;
@@ -582,6 +613,17 @@ function newDisplayContext(
       id: agentRunContext.sourceRunId,
       sourceChatThreadId: agentRunContext.sourceChatThreadId,
       sourceAgentId: agentRunContext.sourceAgentId,
+    };
+  }
+
+  const discordContext =
+    "discordContext" in values ? values.discordContext : undefined;
+  if (discordContext !== undefined) {
+    return {
+      type: "discord",
+      id: eventId,
+      chatThreadId: values.chatThreadId,
+      snapshot: { ...discordContext, publicBrand: PUBLIC_BRAND },
     };
   }
 
@@ -790,6 +832,15 @@ async function insertDisplayContext(
 ): Promise<void> {
   if (context.type === "agent_run") {
     await insertAgentRunDisplayContext(tx, context, createdAt);
+    return;
+  }
+  if (context.type === "discord") {
+    await tx.insert(chatDiscordContext).values({
+      ...context.snapshot,
+      id: context.id,
+      chatThreadId: context.chatThreadId,
+      createdAt,
+    });
     return;
   }
   if (context.type === "slack") {

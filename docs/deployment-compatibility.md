@@ -1,5 +1,43 @@
 # Deployment Compatibility
 
+## Discord canonical Chat sources (2026-09-24)
+
+The default-off Discord integration adds `discord` to the canonical Chat context,
+public source annotation, Run trigger, input-asset provenance, and billing source
+contracts. The schema migration expands existing CHECK constraints and updates
+`billing_usage_source` without rewriting historical events or billing identities.
+Every existing source remains legal for an older API after migration. New
+Discord writers require the provider tables and these expanded constraints, so
+the normal migration-before-promotion order applies.
+
+The delivery outbox binds an event to its canonical thread with a composite
+foreign key. Build its supporting `chat_events` unique index concurrently in a
+separate nontransactional migration. Attach a `UNIQUE` constraint with
+`USING INDEX` to reuse that index, then add the outbox foreign key. Expand the
+existing context and billing checks with `NOT VALID`, then validate them in
+a later transaction so scans do not hold the expansion's exclusive table locks.
+
+Discord's private context snapshot is stored separately from the immutable
+user-message document. Public event and snapshot projections carry only
+`{type:"source",kind:"discord",href?}`; binding IDs, authorization material and
+captured channel history are not public source fields. Existing messages keep
+their existing source and attachment shapes. Opaque application/message receipts
+commit with admission and survive connection or Chat deletion, preventing a lost
+ACK from launching the same task after reconnect. Separately namespaced guild
+removal receipts prevent replay from deleting a newer installation. These
+receipts retain no raw event, account identity, channel history or credential.
+
+Older strict public ChatEvent readers in the API and App do not recognize the
+new source literal. The CLI raw-history sync already preserves opaque
+`userMessage` payloads and string context types without projecting them.
+`_discordIntegration` and the Gateway remain disabled by default; no production
+Discord records or activation are authorized by this implementation. Fixture
+validation uses matching current readers. Enabling the integration later requires
+compatible public ChatEvent readers and a reviewed activation/rollback plan; a
+rollback to an API that cannot parse Discord source annotations is not supported
+once such events exist. The new feature has no existing production users and
+adds no compatibility fallback or historical backfill.
+
 ## Voice input model selection retirement (2026-09-24)
 
 Voice input always uses Gemini 3.1 Flash-Lite on Vertex AI. The Debug

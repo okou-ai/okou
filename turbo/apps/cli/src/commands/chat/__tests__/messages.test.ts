@@ -74,6 +74,28 @@ function failedEventRow(seqId: number): ChatEventRow {
   };
 }
 
+function discordEventRow(seqId: number): ChatEventRow {
+  return {
+    ...rawEventRow(seqId),
+    eventType: "input.prompt",
+    contextType: "discord",
+    contextId: "00000000-0000-4000-8000-000000000098",
+    payload: {
+      userMessage: {
+        version: 1,
+        parts: [
+          { type: "text", text: "Review this Discord message" },
+          {
+            type: "source",
+            kind: "discord",
+            href: "https://discord.com/channels/111111111111111111/222222222222222222/333333333333333333",
+          },
+        ],
+      },
+    },
+  };
+}
+
 function snapshotNdjson(rows: readonly ChatEventRow[]) {
   return `${rows
     .map((row) => {
@@ -123,7 +145,7 @@ describe("okou chat messages command", () => {
   it("synchronizes a snapshot and hot event files", async () => {
     const outputDirectory = await createOutputDirectory();
     const snapshotLastRow = failedEventRow(2);
-    const snapshotRows = [rawEventRow(1), snapshotLastRow];
+    const snapshotRows = [discordEventRow(1), snapshotLastRow];
     const hotRow = failedEventRow(3);
     server.use(
       http.get(SNAPSHOT_URL, ({ request }) => {
