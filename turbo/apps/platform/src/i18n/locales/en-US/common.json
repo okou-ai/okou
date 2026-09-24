@@ -6604,7 +6604,6 @@
       "emailSubscription": {
         "description": "Receive briefs, reminders, and other workspace updates by email.",
         "descriptionWithEmail": "Receive briefs, reminders, and other workspace updates at {{email}}.",
-        "retryMessage": "Could not save or load your email subscription. Try again.",
         "sectionTitle": "Email subscriptions",
         "title": "Email updates",
         "unavailable": "Email unavailable",

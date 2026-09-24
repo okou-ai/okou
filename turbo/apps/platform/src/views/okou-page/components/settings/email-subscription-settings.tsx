@@ -1,14 +1,12 @@
 import type { EmailSubscriptionResponse } from "@okouai/api-contracts/contracts/email-subscription";
-import { Button } from "@okouai/ui/components/ui/button";
 import { Switch } from "@okouai/ui/components/ui/switch";
-import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastResolved, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { AlertCircle, Mail, RotateCcw } from "lucide-react";
+import { AlertCircle, Mail } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import {
   emailSubscription$,
-  retryEmailSubscription$,
   updateEmailSubscription$,
 } from "../../../../signals/okou-page/settings/email-subscription.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
@@ -17,25 +15,11 @@ import { PreferenceCardRow } from "./preference-card-row.tsx";
 
 function EmailSubscriptionStatus({
   preference,
-  failed,
 }: {
   readonly preference: EmailSubscriptionResponse | undefined;
-  readonly failed: boolean;
 }) {
   const { t } = useTranslation();
-  const unavailable =
-    preference !== undefined && preference.deliveryStatus !== "available";
-  let status: string | null = null;
-  if (failed) {
-    status = t(($) => {
-      return $.settings.preferences.emailSubscription.retryMessage;
-    });
-  } else if (unavailable) {
-    status = t(($) => {
-      return $.settings.preferences.emailSubscription.unavailable;
-    });
-  }
-  if (status === null) {
+  if (preference === undefined || preference.deliveryStatus === "available") {
     return null;
   }
   return (
@@ -44,19 +28,19 @@ function EmailSubscriptionStatus({
       aria-live="polite"
     >
       <div className="flex items-center gap-1.5">
-        {(failed || unavailable) && (
-          <AlertCircle className="size-3.5 shrink-0" />
-        )}
-        <span>{status}</span>
-      </div>
-      {unavailable && !failed && (
+        <AlertCircle className="size-3.5 shrink-0" />
         <span>
           {t(($) => {
-            return $.settings.preferences.emailSubscription
-              .unavailableDescription;
+            return $.settings.preferences.emailSubscription.unavailable;
           })}
         </span>
-      )}
+      </div>
+      <span>
+        {t(($) => {
+          return $.settings.preferences.emailSubscription
+            .unavailableDescription;
+        })}
+      </span>
     </div>
   );
 }
@@ -66,21 +50,12 @@ export function EmailSubscriptionSettings() {
   const loadable = useLoadable(emailSubscription$);
   const preference = useLastResolved(emailSubscription$);
   const [mutation, update] = useLoadableSet(updateEmailSubscription$);
-  const reload = useSet(retryEmailSubscription$);
   const pageSignal = useGet(pageSignal$);
   const loading = loadable.state === "loading";
   const saving = mutation.state === "loading";
   const loadFailed = loadable.state === "hasError";
-  const saveFailed = mutation.state === "hasError";
   const handleToggle = (subscribed: boolean) => {
     detach(update(subscribed, pageSignal), Reason.DomCallback);
-  };
-  const handleRetry = () => {
-    if (saveFailed && preference && !loadFailed) {
-      handleToggle(!preference.subscribed);
-    } else {
-      reload();
-    }
   };
 
   const description = preference?.email
@@ -103,28 +78,9 @@ export function EmailSubscriptionSettings() {
         return $.settings.preferences.emailSubscription.title;
       })}
       description={description}
-      status={
-        <EmailSubscriptionStatus
-          preference={preference}
-          failed={loadFailed || saveFailed}
-        />
-      }
+      status={<EmailSubscriptionStatus preference={preference} />}
     >
       <div className="flex shrink-0 items-center gap-2">
-        {(loadFailed || saveFailed) && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={handleRetry}
-            disabled={loading || saving}
-          >
-            <RotateCcw />
-            {t(($) => {
-              return $.settings.preferences.morningBrief.retry;
-            })}
-          </Button>
-        )}
         {preference ? (
           <Switch
             aria-label={t(($) => {

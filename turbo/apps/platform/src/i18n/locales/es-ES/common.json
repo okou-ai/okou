@@ -6677,7 +6677,6 @@
       "emailSubscription": {
         "description": "Recibe resúmenes, recordatorios y otras actualizaciones del espacio de trabajo por correo.",
         "descriptionWithEmail": "Recibe resúmenes, recordatorios y otras actualizaciones del espacio de trabajo en {{email}}.",
-        "retryMessage": "No se pudo guardar o cargar tu suscripción por correo. Inténtalo de nuevo.",
         "sectionTitle": "Suscripciones por correo",
         "title": "Actualizaciones por correo",
         "unavailable": "Correo no disponible",

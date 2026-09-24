@@ -6595,7 +6595,6 @@
       "emailSubscription": {
         "description": "Terima ringkasan, pengingat, dan pembaruan ruang kerja lainnya melalui email.",
         "descriptionWithEmail": "Terima ringkasan, pengingat, dan pembaruan ruang kerja lainnya di {{email}}.",
-        "retryMessage": "Tidak dapat menyimpan atau memuat langganan email. Coba lagi.",
         "sectionTitle": "Langganan email",
         "title": "Pembaruan email",
         "unavailable": "Email tidak tersedia",

@@ -6677,7 +6677,6 @@
       "emailSubscription": {
         "description": "Receba resumos, lembretes e outras atualizações do espaço de trabalho por e-mail.",
         "descriptionWithEmail": "Receba resumos, lembretes e outras atualizações do espaço de trabalho em {{email}}.",
-        "retryMessage": "Não foi possível salvar ou carregar sua assinatura de e-mail. Tente novamente.",
         "sectionTitle": "Assinaturas de e-mail",
         "title": "Atualizações por e-mail",
         "unavailable": "E-mail indisponível",

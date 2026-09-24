@@ -6595,7 +6595,6 @@
       "emailSubscription": {
         "description": "ブリーフ、リマインダー、その他のワークスペース更新をメールで受け取ります。",
         "descriptionWithEmail": "{{email}} でブリーフ、リマインダー、その他のワークスペース更新を受け取ります。",
-        "retryMessage": "メール配信設定を保存または読み込めませんでした。もう一度お試しください。",
         "sectionTitle": "メール配信設定",
         "title": "メール通知",
         "unavailable": "メールを利用できません",
