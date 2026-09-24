@@ -6677,9 +6677,7 @@
       "emailSubscription": {
         "description": "Ricevi riepiloghi, promemoria e altri aggiornamenti dello spazio di lavoro via email.",
         "descriptionWithEmail": "Ricevi riepiloghi, promemoria e altri aggiornamenti dello spazio di lavoro all’indirizzo {{email}}.",
-        "loading": "Verifica dell’iscrizione email…",
         "retryMessage": "Impossibile salvare o caricare l’iscrizione email. Riprova.",
-        "saving": "Salvataggio…",
         "sectionTitle": "Iscrizioni email",
         "title": "Aggiornamenti email",
         "unavailable": "Email non disponibile",

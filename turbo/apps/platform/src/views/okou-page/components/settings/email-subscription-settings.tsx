@@ -3,7 +3,7 @@ import { Button } from "@okouai/ui/components/ui/button";
 import { Switch } from "@okouai/ui/components/ui/switch";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { AlertCircle, Loader2, Mail, RotateCcw } from "lucide-react";
+import { AlertCircle, Mail, RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -17,27 +17,16 @@ import { PreferenceCardRow } from "./preference-card-row.tsx";
 
 function EmailSubscriptionStatus({
   preference,
-  pending,
   failed,
 }: {
   readonly preference: EmailSubscriptionResponse | undefined;
-  readonly pending: "loading" | "saving" | null;
   readonly failed: boolean;
 }) {
   const { t } = useTranslation();
   const unavailable =
     preference !== undefined && preference.deliveryStatus !== "available";
   let status: string | null = null;
-  if (pending) {
-    status =
-      pending === "loading"
-        ? t(($) => {
-            return $.settings.preferences.emailSubscription.loading;
-          })
-        : t(($) => {
-            return $.settings.preferences.emailSubscription.saving;
-          });
-  } else if (failed) {
+  if (failed) {
     status = t(($) => {
       return $.settings.preferences.emailSubscription.retryMessage;
     });
@@ -55,13 +44,12 @@ function EmailSubscriptionStatus({
       aria-live="polite"
     >
       <div className="flex items-center gap-1.5">
-        {pending && <Loader2 className="size-3.5 animate-spin" />}
         {(failed || unavailable) && (
           <AlertCircle className="size-3.5 shrink-0" />
         )}
         <span>{status}</span>
       </div>
-      {unavailable && !pending && !failed && (
+      {unavailable && !failed && (
         <span>
           {t(($) => {
             return $.settings.preferences.emailSubscription
@@ -118,7 +106,6 @@ export function EmailSubscriptionSettings() {
       status={
         <EmailSubscriptionStatus
           preference={preference}
-          pending={loading ? "loading" : saving ? "saving" : null}
           failed={loadFailed || saveFailed}
         />
       }

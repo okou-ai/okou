@@ -6595,9 +6595,7 @@
       "emailSubscription": {
         "description": "通过邮件接收简报、提醒和其他工作区更新。",
         "descriptionWithEmail": "接收发送至 {{email}} 的简报、提醒和其他工作区更新。",
-        "loading": "正在检查邮件订阅…",
         "retryMessage": "无法保存或加载你的邮件订阅，请重试。",
-        "saving": "保存中…",
         "sectionTitle": "邮件订阅",
         "title": "邮件更新",
         "unavailable": "邮件不可用",
