@@ -1060,8 +1060,16 @@ export function createRunsApi(
       );
     },
 
+    /**
+     * Configures an org Anthropic key as the default model route. Fixtures
+     * that drive the native Runner claim protocol pass `claude-fable-5-1`,
+     * which model policy keeps off Pi; Sonnet 5 runs through Pi.
+     */
     async ensureOrgModelProvider(
       actor: ApiTestUser,
+      options: {
+        readonly model?: OrgModelPolicyRequest["policies"][number]["model"];
+      } = {},
     ): Promise<{ readonly providerId: string }> {
       const providerResponse = await accept(
         runApp(context)(modelProvidersMainContract).upsert({
@@ -1077,7 +1085,7 @@ export function createRunsApi(
       const providerId = providerResponse.body.provider.id;
       const policies: OrgModelPolicyRequest["policies"] = [
         {
-          model: "claude-sonnet-5",
+          model: options.model ?? "claude-sonnet-5",
           isDefault: true,
           defaultProviderType: "anthropic-api-key",
           credentialScope: "org",

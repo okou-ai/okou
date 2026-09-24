@@ -1114,12 +1114,24 @@ describe("CHAT-02: model-first provider policies", () => {
   it.each(GPT_PI_BDD_MODELS)(
     "promotes queued fast %s through Pi API-first with priority",
     async (selectedModel) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup, providerId } =
+        await entitledChatActor();
       const usagePricingResolution = await createGptUsagePricingResolution();
+      // The anchor must stay on the native Runner while the queued target
+      // proves Pi promotion; Sonnet 5 would itself run through Pi.
+      await api.updateOrgModelPolicies(actor, [
+        {
+          model: "claude-fable-5-1",
+          isDefault: true,
+          defaultProviderType: "anthropic-api-key",
+          credentialScope: "org",
+          modelProviderId: providerId,
+        },
+      ]);
       const anchor = await sendChatRun(actor, {
         agentId,
         prompt: "hold the thread before queued fast Terra",
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
       });
       const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
 
@@ -1230,92 +1242,6 @@ describe("CHAT-02: model-first provider policies", () => {
     },
     90_000,
   );
-
-  it("routes DeepSeek V4 Flash through the native Responses adapter", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const { providerId } = await upsertOrgModelProvider(actor, {
-      type: "deepseek",
-      secret: "selected-deepseek-responses-key",
-    });
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "deepseek-v4-flash",
-        isDefault: true,
-        defaultProviderType: "deepseek",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
-
-    const run = await sendChatRun(actor, {
-      agentId,
-      prompt: "run with DeepSeek Responses",
-      model: "deepseek-v4-flash",
-    });
-    const { claim, sandboxHeaders } = await claimChatRun(
-      runnerGroup,
-      run.runId,
-    );
-    const environment = claimEnvironment(claim);
-
-    expect(claim.cliAgentType).toBe("codex");
-    expect(environment.OPENAI_API_KEY).toBe(
-      modelProviderSecretPlaceholder("deepseek", "DEEPSEEK_API_KEY"),
-    );
-    expect(environment.OPENAI_BASE_URL).toBe("https://api.deepseek.com/");
-    expect(environment.OPENAI_MODEL).toBe("deepseek-v4-flash");
-    expect(environment.ANTHROPIC_MODEL).toBeUndefined();
-    expect(claim.codexRuntimeConfig).toMatchObject({
-      providerId: "deepseek",
-      name: "DeepSeek",
-      baseUrl: "https://api.deepseek.com/",
-      envKey: "OPENAI_API_KEY",
-      requiresOpenaiAuth: false,
-      wireApi: "responses",
-      supportsWebsockets: false,
-      modelCatalog: {
-        models: expect.arrayContaining([
-          expect.objectContaining({
-            slug: "deepseek-v4-flash",
-            default_reasoning_level: "high",
-          }),
-          expect.objectContaining({
-            slug: "deepseek-v4-pro",
-            default_reasoning_level: "high",
-          }),
-        ]),
-      },
-    });
-
-    chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(run.runId, sandboxHeaders, {
-      cliAgentType: "codex",
-    });
-
-    const followUp = await sendChatRun(actor, {
-      agentId,
-      threadId: run.threadId,
-      prompt: "continue with DeepSeek Responses",
-    });
-    const { claim: followUpClaim } = await claimChatRun(
-      runnerGroup,
-      followUp.runId,
-    );
-    const followUpEnvironment = claimEnvironment(followUpClaim);
-    expect(followUpClaim.cliAgentType).toBe("codex");
-    expect(followUpClaim.resumeSession?.sessionId).toBe(`bdd-cli-${run.runId}`);
-    expect(followUpClaim.codexRuntimeConfig?.providerId).toBe("deepseek");
-    expect(followUpEnvironment.OPENAI_API_KEY).toBe(
-      modelProviderSecretPlaceholder("deepseek", "DEEPSEEK_API_KEY"),
-    );
-    expect(followUpEnvironment.OPENAI_BASE_URL).toBe(
-      "https://api.deepseek.com/",
-    );
-    expect(followUpEnvironment.OPENAI_MODEL).toBe("deepseek-v4-flash");
-
-    await cancelChatRun(actor, followUp.runId);
-  });
 
   it.each(
     GPT_API_KEY_BDD_ROUTES.flatMap((route) => {

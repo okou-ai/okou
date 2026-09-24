@@ -87,6 +87,25 @@ const {
   mockPiResourceArchiveDownloads,
 } = createChatEventsFixture(context);
 
+// Completion-webhook carriers are claimed through the native Runner protocol
+// before their launch snapshot is replaced. The fixture's default Sonnet
+// policy is Pi-eligible, so select the Fable native route for those carriers.
+async function entitledNativeCarrierActor(): Promise<
+  Awaited<ReturnType<typeof entitledChatActor>>
+> {
+  const fixture = await entitledChatActor();
+  await api.updateOrgModelPolicies(fixture.actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: fixture.providerId,
+    },
+  ]);
+  return fixture;
+}
+
 function frameworkMatchingCompletionOptions(
   threadId: string,
   cliAgentType: "claude-code" | "codex" | "pi",
@@ -1283,7 +1302,8 @@ describe("CHAT-02: model-first provider policies", () => {
     ] as const;
 
     for (const [name, snapshot] of rejectedSnapshots) {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } =
+        await entitledNativeCarrierActor();
       const orgId = requireOrgId(actor);
       const run = await sendChatRun(actor, {
         agentId,
@@ -1317,7 +1337,8 @@ describe("CHAT-02: model-first provider policies", () => {
     }
 
     for (const [name, snapshot] of admittedSnapshots) {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } =
+        await entitledNativeCarrierActor();
       const orgId = requireOrgId(actor);
       const run = await sendChatRun(actor, {
         agentId,
@@ -1402,12 +1423,13 @@ describe("CHAT-02: model-first provider policies", () => {
       ["synthetic run", { triggerSource: "test" as const }, false],
     ] as const;
     for (const [name, inputs, fails] of cases) {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } =
+        await entitledNativeCarrierActor();
       const orgId = requireOrgId(actor);
       const run = await sendChatRun(actor, {
         agentId,
         prompt: `preserve ${name} completion exclusion`,
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
       });
       const claimed = await claimChatRun(runnerGroup, run.runId);
       await setRunLaunchSnapshotFixture(run.runId, {
@@ -1437,7 +1459,7 @@ describe("CHAT-02: model-first provider policies", () => {
   }, 90_000);
 
   it("leaves completion scheduling-free while canonical admission honors PiMemory", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeCarrierActor();
     const orgId = requireOrgId(actor);
     const scope = { orgId, userId: actor.userId };
     async function completePiRun(threadId: string | undefined, note: string) {
@@ -1545,13 +1567,13 @@ describe("CHAT-02: model-first provider policies", () => {
   }, 90_000);
 
   it("keeps an agent-authenticated same-owner Pi history out of memory", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeCarrierActor();
     const orgId = requireOrgId(actor);
     await bdd.updateAgentMetadata(actor, agentId, { visibility: "public" });
     const source = await sendChatRun(actor, {
       agentId,
       prompt: "delegate a non-interactive Pi turn",
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
     });
     const sourceClaim = await claimChatRun(runnerGroup, source.runId);
     const sourceToken = okouTokenFromClaim(sourceClaim.claim);

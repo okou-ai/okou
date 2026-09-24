@@ -1254,10 +1254,23 @@ describe("CHAT-02: model-first provider policies", () => {
   it.each(GPT_PI_BDD_MODELS)(
     "promotes queued custom %s Fast with the admitted tier and switch snapshot",
     async (selectedModel) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup, providerId } =
+        await entitledChatActor();
+      // The anchor must stay on the native Runner while the queued target
+      // proves Pi promotion; Sonnet 5 would itself run through Pi.
+      await api.updateOrgModelPolicies(actor, [
+        {
+          model: "claude-fable-5-1",
+          isDefault: true,
+          defaultProviderType: "anthropic-api-key",
+          credentialScope: "org",
+          modelProviderId: providerId,
+        },
+      ]);
       const anchor = await sendChatRun(actor, {
         agentId,
         prompt: "hold the target thread",
+        model: "claude-fable-5-1",
       });
       const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
       const gateway = await configureCustomPiModel(actor, selectedModel);

@@ -45,7 +45,7 @@ const {
   entitledChatActor,
   configureOrganizationGptModel,
   configureSubscriptionPiModel,
-  configureBuiltInPiModel,
+  seedBuiltInModelKey,
   sendChatRun,
   expectThreadCreatedModelEvent,
   expectNoThreadModelUpdateEvent,
@@ -161,23 +161,32 @@ describe("CHAT-02: run-level model overrides", () => {
   }, 60_000);
 
   it("uses send model overrides without mutating the thread model while preserving same-family sessions", async () => {
-    const { actor, agentId, runnerGroup, providerId } =
-      await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
+    // Claude subscription credentials stay on the native Claude Code harness
+    // for every Claude model, so a same-family override keeps the CLI session.
+    await misc.upsertPersonalModelProvider(
+      actor,
+      {
+        type: "claude-code-oauth-token",
+        secret: "send-override-claude-oauth-token",
+      },
+      [200, 201],
+    );
     await chatCallbacks.updateOrgModelPolicies(actor, [
       {
         model: "claude-opus-4-8",
         isDefault: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
+        defaultProviderType: "claude-code-oauth-token",
+        credentialScope: "member",
+        modelProviderId: null,
       },
       {
         model: "claude-sonnet-5",
         isDefault: false,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
+        defaultProviderType: "claude-code-oauth-token",
+        credentialScope: "member",
+        modelProviderId: null,
       },
     ]);
 
@@ -278,12 +287,12 @@ describe("CHAT-02: run-level model overrides", () => {
       model: "claude-sonnet-5",
     });
 
-    const { accountSourceId } = await configureSubscriptionPiModel(
-      actor,
-      { accountId: "personal-default-fallback-account" },
-      "gpt-5.6-terra",
-    );
-    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    const { accountSourceId } = await configureSubscriptionPiModel(actor, {
+      accountId: "personal-default-fallback-account",
+    });
+    // Astra keeps the fallback run on the native Codex harness, so the receipt
+    // observes only send admission rather than a concurrent Pi API-first turn.
+    await seedBuiltInModelKey("gpt-6-astra");
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-sonnet-5",
@@ -293,7 +302,7 @@ describe("CHAT-02: run-level model overrides", () => {
         modelProviderId: providerId,
       },
       {
-        model: "gpt-5.6-terra",
+        model: "gpt-6-astra",
         isDefault: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
@@ -319,13 +328,13 @@ describe("CHAT-02: run-level model overrides", () => {
       modelProvider: "codex-oauth-token",
       modelProviderCredentialScope: "member",
       modelProviderId: accountSourceId,
-      selectedModel: "gpt-5.6-terra",
+      selectedModel: "gpt-6-astra",
       creditAdmitted: false,
       builtInModelKeyId: null,
     });
     await expect(
       chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({ selectedModel: "gpt-5.6-terra" });
+    ).resolves.toMatchObject({ selectedModel: "gpt-6-astra" });
     await cancelChatRun(actor, followUp.runId);
   }, 90_000);
 

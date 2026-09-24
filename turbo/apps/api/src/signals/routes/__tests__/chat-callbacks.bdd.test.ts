@@ -134,7 +134,9 @@ async function entitledChatActor(): Promise<EntitledChatActor> {
   chatCallbacks.disableVapid();
   const runnerGroup = api.configureRunnerGroup();
   await api.grantProEntitlement(actor);
-  const { providerId } = await api.ensureOrgModelProvider(actor);
+  const { providerId } = await api.ensureOrgModelProvider(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await bdd.createAgent(actor, {
     displayName: "BDD chat callback agent",
     description: "Exercises chat callback terminal processing.",
@@ -171,7 +173,7 @@ async function configureClaudeCodeSubscriptionProvider(
   );
   await api.updateOrgModelPolicies(fixture.actor, [
     {
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
       isDefault: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
@@ -209,7 +211,7 @@ async function startChatRun(
   const messageId = body.clientEventId ?? randomUUID();
   const selectedModel: SupportedRunModel | undefined =
     body.selectedModel ??
-    (body.threadId === undefined ? "claude-sonnet-5" : undefined);
+    (body.threadId === undefined ? "claude-fable-5-1" : undefined);
   const requestBody = {
     agentId: body.agentId,
     prompt: body.prompt,
@@ -753,7 +755,7 @@ describe("CHAT-02: completed chat callback", () => {
     const first = await startChatRun(actor, {
       agentId,
       prompt,
-      selectedModel: "claude-sonnet-5",
+      selectedModel: "claude-fable-5-1",
     });
 
     // Pinned by slug because the assertions below quote this runbook by name.
@@ -3940,7 +3942,7 @@ describe("CHAT-02: drain-time admission failure", () => {
     });
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         isDefault: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
@@ -3950,12 +3952,12 @@ describe("CHAT-02: drain-time admission failure", () => {
     await chat.updateThreadModelSelection(
       actor,
       anchor.threadId,
-      "claude-sonnet-5",
+      "claude-fable-5-1",
     );
     chatCallbacks.mockChatOutputEvents([]);
 
     await withBuiltInModelRuntimeRouteUnavailableForTest(
-      "claude-sonnet-5",
+      "claude-fable-5-1",
       async () => {
         await completeChatRunOk(anchor.runId, anchorHeaders);
         await flushWaitUntilForTest();
@@ -4053,17 +4055,17 @@ describe("CHAT-02: failed chat callbacks", () => {
     async (scenario) => {
       const { actor, agentId, runnerGroup, providerId } =
         await entitledChatActor();
-      await seedBuiltInModelKey(context, "gpt-5.6-sol");
+      await seedBuiltInModelKey(context, "gpt-6-astra");
       await api.updateOrgModelPolicies(actor, [
         {
-          model: "claude-sonnet-5",
+          model: "claude-fable-5-1",
           isDefault: true,
           defaultProviderType: "anthropic-api-key",
           credentialScope: "org",
           modelProviderId: providerId,
         },
         {
-          model: "gpt-5.6-sol",
+          model: "gpt-6-astra",
           isDefault: false,
           defaultProviderType: "built-in",
           credentialScope: "org",
@@ -4073,7 +4075,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       const run = await startChatRun(actor, {
         agentId,
         prompt: scenario.name,
-        selectedModel: scenario.builtIn ? "gpt-5.6-sol" : "claude-sonnet-5",
+        selectedModel: scenario.builtIn ? "gpt-6-astra" : "claude-fable-5-1",
       });
       const callbackUrl = "https://callback.example/balance-outcome";
       const deliveries: unknown[] = [];
@@ -4096,14 +4098,14 @@ describe("CHAT-02: failed chat callbacks", () => {
       // Changing the current default cannot change the owner of this failed run.
       await api.updateOrgModelPolicies(actor, [
         {
-          model: "claude-sonnet-5",
+          model: "claude-fable-5-1",
           isDefault: scenario.builtIn,
           defaultProviderType: "anthropic-api-key",
           credentialScope: "org",
           modelProviderId: providerId,
         },
         {
-          model: "gpt-5.6-sol",
+          model: "gpt-6-astra",
           isDefault: !scenario.builtIn,
           defaultProviderType: "built-in",
           credentialScope: "org",
@@ -4170,10 +4172,10 @@ describe("CHAT-02: failed chat callbacks", () => {
     async (builtIn, multipleBlocks) => {
       const { actor, agentId, runnerGroup, providerId } =
         await entitledChatActor();
-      await seedBuiltInModelKey(context, "claude-sonnet-5");
+      await seedBuiltInModelKey(context, "claude-fable-5-1");
       await api.updateOrgModelPolicies(actor, [
         {
-          model: "claude-sonnet-5",
+          model: "claude-fable-5-1",
           isDefault: true,
           defaultProviderType: builtIn ? "built-in" : "anthropic-api-key",
           credentialScope: "org",
@@ -4479,7 +4481,7 @@ describe("CHAT-02: failed chat callbacks", () => {
 
   it("retains built-in billing reports and route cooldown after a public unavailable failure", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const selectedModel = "gpt-5.6-sol";
+    const selectedModel = "gpt-6-astra";
     await seedBuiltInModelCandidateKeys(context, selectedModel);
     const cleanupRoute = await resolveBuiltInModelRouteFixture(
       context,
@@ -4546,17 +4548,17 @@ describe("CHAT-02: failed chat callbacks", () => {
   it("formats failed-run errors and notifies, without auto-sending", async () => {
     const { actor, agentId, runnerGroup, providerId } =
       await entitledChatActor();
-    await seedBuiltInModelKey(context, "gpt-5.6-sol");
+    await seedBuiltInModelKey(context, "gpt-6-astra");
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         isDefault: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
       },
       {
-        model: "gpt-5.6-sol",
+        model: "gpt-6-astra",
         isDefault: false,
         defaultProviderType: "built-in",
         credentialScope: "org",
@@ -4612,15 +4614,15 @@ describe("CHAT-02: failed chat callbacks", () => {
         expectedError:
           "Selected model is at capacity. Please try a different model.",
         failureReason: "provider_overloaded",
-        selectedModel: "gpt-5.6-sol",
+        selectedModel: "gpt-6-astra",
       },
       {
         prompt: "round eight",
         error:
-          "Claude Sonnet 5 is overloaded. Please wait a few minutes and try again, or switch to another model.",
+          "Claude Fable 5.1 is overloaded. Please wait a few minutes and try again, or switch to another model.",
         expectedError: CHAT_RUN_USAGE_LIMIT_MESSAGE,
         failureReason: "usage_limit",
-        selectedModel: "claude-sonnet-5",
+        selectedModel: "claude-fable-5-1",
       },
       {
         prompt: "round nine",
@@ -4632,9 +4634,9 @@ describe("CHAT-02: failed chat callbacks", () => {
         prompt: "round ten",
         error: "Contradictory runner failure",
         expectedError:
-          "Claude Sonnet 5 is overloaded. Please wait a few minutes and try again, or switch to another model.",
+          "Claude Fable 5.1 is overloaded. Please wait a few minutes and try again, or switch to another model.",
         failureReason: "provider_overloaded",
-        selectedModel: "claude-sonnet-5",
+        selectedModel: "claude-fable-5-1",
       },
       {
         prompt: "round eleven",
@@ -4654,7 +4656,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         error: codexAccessProgramError,
         expectedError: CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE,
         failureReason: "codex_access_program_unavailable",
-        selectedModel: "gpt-5.6-sol",
+        selectedModel: "gpt-6-astra",
       },
     ];
 
@@ -4868,7 +4870,7 @@ describe("CHAT-02: failed chat callbacks", () => {
     const run = await startChatRun(actor, {
       agentId,
       prompt: "trigger claude overload",
-      selectedModel: "claude-sonnet-5",
+      selectedModel: "claude-fable-5-1",
     });
     const sandboxHeaders = await claimChatRun(runnerGroup, run.runId);
     await failChatRun(run.runId, sandboxHeaders, rawOverloadError);
@@ -4879,14 +4881,14 @@ describe("CHAT-02: failed chat callbacks", () => {
       (messages) => {
         return lifecycleMarkers(messages, run.runId, "failed").some(
           (message) => {
-            return message.error?.includes("Claude Sonnet 5") ?? false;
+            return message.error?.includes("Claude Fable 5.1") ?? false;
           },
         );
       },
     );
     const marker = lifecycleMarkers(page.events, run.runId, "failed")[0];
     expect(marker?.error).toBe(
-      "Claude Sonnet 5 is overloaded. Please wait a few minutes and try again, or switch to another model.",
+      "Claude Fable 5.1 is overloaded. Please wait a few minutes and try again, or switch to another model.",
     );
     expect(marker?.content).toBe(marker?.error);
     expect(marker?.error).not.toContain("status.claude.com");
@@ -5032,7 +5034,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       failAndReadError({
         prompt: "revoked OAuth text with an Anthropic API key",
         errorMessage: revokedOAuthError,
-        selectedModel: "claude-sonnet-5",
+        selectedModel: "claude-fable-5-1",
       }),
     ).resolves.toBe("Oops, something went wrong. Please try again later.");
     await expect(
@@ -5060,7 +5062,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       failAndReadError({
         prompt: "invalid OAuth text with an Anthropic API key",
         errorMessage: invalidOAuthError,
-        selectedModel: "claude-sonnet-5",
+        selectedModel: "claude-fable-5-1",
       }),
     ).resolves.toBe("Oops, something went wrong. Please try again later.");
     for (const errorMessage of [
@@ -5201,7 +5203,7 @@ describe("CHAT-02: auto-send after failures", () => {
     const anchor = await startChatRun(actor, {
       agentId,
       prompt: "successful structured context anchor",
-      selectedModel: "claude-sonnet-5",
+      selectedModel: "claude-fable-5-1",
     });
     const anchorHeaders = await claimChatRun(runnerGroup, anchor.runId);
     chatCallbacks.mockChatOutputEvents([]);
@@ -5676,7 +5678,7 @@ describe("CHAT-02: auto-send after failures", () => {
     const first = await startChatRun(actor, {
       agentId,
       prompt: "start the session",
-      selectedModel: "claude-sonnet-5",
+      selectedModel: "claude-fable-5-1",
     });
     const firstHeaders = await claimChatRun(runnerGroup, first.runId);
     chatCallbacks.mockChatOutputEvents([]);
@@ -5878,7 +5880,7 @@ describe("CHAT-02: auto-send after failures", () => {
     const anchor = await startChatRun(actor, {
       agentId,
       prompt: "successful frontier anchor",
-      selectedModel: "claude-sonnet-5",
+      selectedModel: "claude-fable-5-1",
     });
     const anchorHeaders = await claimChatRun(runnerGroup, anchor.runId);
     chatCallbacks.mockChatOutputEvents([]);
@@ -6044,25 +6046,12 @@ describe("CHAT-02: auto-send after failures", () => {
 
 describe("CHAT-02: auto-send across a model switch", () => {
   it("recovers a queued message through the current same-family workspace default", async () => {
-    const { actor, agentId, runnerGroup, providerId } =
-      await entitledChatActor();
+    const fixture = await entitledChatActor();
+    const { actor, agentId, runnerGroup, providerId } = fixture;
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await chatCallbacks.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-sonnet-5",
-        isDefault: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-      {
-        model: "claude-opus-4-8",
-        isDefault: false,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+    // Opus stays on the native Claude Code Runner only through the
+    // subscription credential; on an API key it would run through Pi.
+    await configureClaudeCodeSubscriptionProvider(fixture);
 
     const titlePrompts: string[] = [];
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
@@ -6102,7 +6091,7 @@ describe("CHAT-02: auto-send across a model switch", () => {
     });
     await chatCallbacks.updateOrgModelPolicies(actor, [
       {
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         isDefault: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
@@ -6145,11 +6134,13 @@ describe("CHAT-02: auto-send across a model switch", () => {
     expect(appended).not.toContain("# Web Chat Run Context");
     expect(appended).not.toContain("# Incomplete Rounds Context");
     expect(autoContext.body.sessionId).toBe(`bdd-cli-${second.runId}`);
+    // The member's Claude Code subscription carries every org Claude policy,
+    // including the recovered Fable workspace default.
     expect(Object.keys(autoContext.body.environment)).toContain(
-      "ANTHROPIC_API_KEY",
+      "CLAUDE_CODE_OAUTH_TOKEN",
     );
     expect(autoContext.body.environment.ANTHROPIC_MODEL).toBe(
-      "claude-sonnet-5",
+      "claude-fable-5-1",
     );
 
     const thread = await chat.readThread(actor, first.threadId);
@@ -6167,7 +6158,7 @@ describe("CHAT-02: auto-send across a model switch", () => {
         return (
           event.kind === "model_selection_updated" &&
           event.chatThreadId === first.threadId &&
-          event.selectedModel === "claude-sonnet-5"
+          event.selectedModel === "claude-fable-5-1"
         );
       }),
     ).toHaveLength(1);
@@ -6185,25 +6176,12 @@ describe("CHAT-02: auto-send across a model switch", () => {
   }, 90_000);
 
   it("resumes the CLI session by default when the queued model stays within the same family", async () => {
-    const { actor, agentId, runnerGroup, providerId } =
-      await entitledChatActor();
+    const fixture = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = fixture;
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await chatCallbacks.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-opus-4-8",
-        isDefault: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-      {
-        model: "claude-sonnet-5",
-        isDefault: false,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+    // Opus stays on the native Claude Code Runner only through the
+    // subscription credential; on an API key it would run through Pi.
+    await configureClaudeCodeSubscriptionProvider(fixture);
 
     const first = await startChatRun(actor, {
       agentId,
@@ -6223,12 +6201,12 @@ describe("CHAT-02: auto-send across a model switch", () => {
     await chat.updateThreadModelSelection(
       actor,
       first.threadId,
-      "claude-sonnet-5",
+      "claude-fable-5-1",
     );
     await queueChatEvent(actor, {
       agentId,
       threadId: first.threadId,
-      prompt: "queue a sonnet follow-up",
+      prompt: "queue a Fable follow-up",
     });
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(second.runId, secondHeaders);
@@ -6239,7 +6217,7 @@ describe("CHAT-02: auto-send across a model switch", () => {
       (items) => {
         return userMessages(items).some((message) => {
           return (
-            chatEventDisplayText(message) === "queue a sonnet follow-up" &&
+            chatEventDisplayText(message) === "queue a Fable follow-up" &&
             message.runId !== undefined
           );
         });
@@ -6247,7 +6225,7 @@ describe("CHAT-02: auto-send across a model switch", () => {
     );
     const claimed = userMessages(messages.events).find((message) => {
       return (
-        chatEventDisplayText(message) === "queue a sonnet follow-up" &&
+        chatEventDisplayText(message) === "queue a Fable follow-up" &&
         message.runId !== undefined
       );
     });
@@ -6261,7 +6239,7 @@ describe("CHAT-02: auto-send across a model switch", () => {
       "# Web Chat Run Context",
     );
     expect(autoContext.body.environment.ANTHROPIC_MODEL).toBe(
-      "claude-sonnet-5",
+      "claude-fable-5-1",
     );
 
     await api.requestCancelRun(actor, claimed.runId, [200]);

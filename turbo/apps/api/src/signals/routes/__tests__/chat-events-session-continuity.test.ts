@@ -69,6 +69,25 @@ const {
   publishPendingPiInstructions,
 } = createChatEventsFixture(context);
 
+// Session continuity is observed through the native Runner claim protocol.
+// The fixture's default Sonnet policy is Pi-eligible, so select the Fable
+// native route instead.
+async function entitledNativeChatActor(): Promise<
+  Awaited<ReturnType<typeof entitledChatActor>>
+> {
+  const fixture = await entitledChatActor();
+  await api.updateOrgModelPolicies(fixture.actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: fixture.providerId,
+    },
+  ]);
+  return fixture;
+}
+
 function observePendingSend<T>(send: Promise<T>) {
   const result = settleIncludingAbort(send);
   const phases: Promise<unknown>[] = [];
@@ -162,16 +181,18 @@ describe("CHAT-02: run-level model overrides", () => {
     }
     const accountBId = completedB.body.provider.id;
 
+    // Astra keeps Codex subscription runs on the native Codex harness; other
+    // GPT models on this route run through Pi.
     await chatCallbacks.updateOrgModelPolicies(actor, [
       {
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         isDefault: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
       },
       {
-        model: "gpt-5.6-luna",
+        model: "gpt-6-astra",
         isDefault: false,
         defaultProviderType: "codex-oauth-token",
         credentialScope: "member",
@@ -182,7 +203,7 @@ describe("CHAT-02: run-level model overrides", () => {
     const first = await sendChatRun(actor, {
       agentId,
       prompt: "start with account A",
-      model: "gpt-5.6-luna",
+      model: "gpt-6-astra",
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
     expect(
@@ -289,23 +310,32 @@ describe("CHAT-02: run-level model overrides", () => {
   }, 90_000);
 
   it("resumes the CLI session across same-family model switches", async () => {
-    const { actor, agentId, runnerGroup, providerId } =
-      await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
+    // Claude subscription credentials stay on the native Claude Code harness
+    // for every Claude model, so a same-family switch keeps the CLI session.
+    await misc.upsertPersonalModelProvider(
+      actor,
+      {
+        type: "claude-code-oauth-token",
+        secret: "same-family-claude-oauth-token",
+      },
+      [200, 201],
+    );
     await chatCallbacks.updateOrgModelPolicies(actor, [
       {
         model: "claude-opus-4-8",
         isDefault: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
+        defaultProviderType: "claude-code-oauth-token",
+        credentialScope: "member",
+        modelProviderId: null,
       },
       {
         model: "claude-sonnet-5",
         isDefault: false,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
+        defaultProviderType: "claude-code-oauth-token",
+        credentialScope: "member",
+        modelProviderId: null,
       },
     ]);
 
@@ -339,7 +369,7 @@ describe("CHAT-02: run-level model overrides", () => {
     // Two blockers keep the next send queued, independent of the plan's own
     // concurrency limit.
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const first = await sendChatRun(actor, {
       agentId,
@@ -377,34 +407,24 @@ describe("CHAT-02: run-level model overrides", () => {
     await cancelChatRun(actor, blockerTwo.runId);
   }, 90_000);
 
+  // Built-in native Runner routes are the Fable (Claude Code) and Astra
+  // (Codex) frontier lines; every other built-in model runs through Pi.
   it.each([
     {
-      from: "gpt-5.6-sol",
+      from: "claude-fable-5-1",
+      fromRuntime: "claude-code",
       to: "gpt-6-astra",
-      runtime: "codex",
-      reuse: true,
-    },
-    {
-      from: "claude-opus-4-8",
-      to: "claude-sonnet-5",
-      runtime: "claude-code",
-      reuse: true,
-    },
-    {
-      from: "deepseek-v4-flash",
-      to: "deepseek-v4-pro",
-      runtime: "codex",
-      reuse: true,
+      toRuntime: "codex",
     },
     {
       from: "gpt-6-astra",
-      to: "deepseek-v4-flash",
-      runtime: "codex",
-      reuse: false,
+      fromRuntime: "codex",
+      to: "claude-fable-5-1",
+      toRuntime: "claude-code",
     },
   ] as const)(
-    "applies family compatibility when switching built-in $from to $to on $runtime",
-    async ({ from, to, runtime, reuse }) => {
+    "applies family compatibility when switching built-in $from on $fromRuntime to $to on $toRuntime",
+    async ({ from, fromRuntime, to, toRuntime }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
 
       await seedBuiltInModelKey(from);
@@ -431,10 +451,10 @@ describe("CHAT-02: run-level model overrides", () => {
         model: from,
       });
       const firstClaim = await claimChatRun(runnerGroup, first.runId);
-      expect(firstClaim.claim.cliAgentType).toBe(runtime);
+      expect(firstClaim.claim.cliAgentType).toBe(fromRuntime);
       chatCallbacks.mockChatOutputEvents([]);
       await completeChatRunOk(first.runId, firstClaim.sandboxHeaders, {
-        cliAgentType: runtime,
+        cliAgentType: fromRuntime,
       });
       await flushWaitUntilForTest();
       const firstRun = await api.readRun(actor, first.runId);
@@ -450,19 +470,17 @@ describe("CHAT-02: run-level model overrides", () => {
         model: to,
       });
       const secondClaim = await claimChatRun(runnerGroup, second.runId);
-      expect(secondClaim.claim.cliAgentType).toBe(runtime);
+      expect(secondClaim.claim.cliAgentType).toBe(toRuntime);
       const environment = claimEnvironment(secondClaim.claim);
       expect(
-        runtime === "codex"
+        toRuntime === "codex"
           ? environment.OPENAI_MODEL
           : environment.ANTHROPIC_MODEL,
       ).toBe(to);
-      expect(secondClaim.claim.resumeSession?.sessionId ?? null).toBe(
-        reuse ? `bdd-cli-${first.runId}` : null,
-      );
+      expect(secondClaim.claim.resumeSession).toBeNull();
       chatCallbacks.mockChatOutputEvents([]);
       await completeChatRunOk(second.runId, secondClaim.sandboxHeaders, {
-        cliAgentType: runtime,
+        cliAgentType: toRuntime,
       });
       await flushWaitUntilForTest();
       const secondRun = await api.readRun(actor, second.runId);
@@ -470,16 +488,16 @@ describe("CHAT-02: run-level model overrides", () => {
         status: "completed",
         result: { agentSessionId: expect.any(String) },
       });
-      expect(
-        secondRun.result?.agentSessionId === firstRun.result?.agentSessionId,
-      ).toBe(reuse);
+      expect(secondRun.result?.agentSessionId).not.toBe(
+        firstRun.result?.agentSessionId,
+      );
     },
     90_000,
   );
 
   it("refuses a canonical session owned by another user and organization", async () => {
-    const primary = await entitledChatActor();
-    const foreign = await entitledChatActor();
+    const primary = await entitledNativeChatActor();
+    const foreign = await entitledNativeChatActor();
     const runnerGroup = api.configureRunnerGroup();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
@@ -558,7 +576,7 @@ describe("CHAT-02: run-level model overrides", () => {
   ] as const)(
     "rejects a $owner ownership change at the session lock (conversation changed: $clearConversation)",
     async ({ owner, clearConversation }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
       chatCallbacks.failIfChatCallbackRouteIsFetched();
       const first = await sendChatRun(actor, {
         agentId,
@@ -623,7 +641,7 @@ describe("CHAT-02: run-level model overrides", () => {
   it.each(["sandbox", "pi"] as const)(
     "does not repeat preparation after a competing run changes the binding for %s",
     async (framework) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
       if (!actor.orgId) {
         throw new Error("Expected an org-scoped actor for binding admission");
       }
@@ -875,7 +893,7 @@ describe("CHAT-02: run-level model overrides", () => {
   it.each(["sandbox", "pi"] as const)(
     "retries preparation when the canonical binding changes for %s",
     async (framework) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
       if (!actor.orgId) {
         throw new Error("Expected an org-scoped actor for binding validation");
       }
@@ -1105,16 +1123,17 @@ describe("CHAT-02: run-level model overrides", () => {
         secret: "prior-round-trim-openai-key",
       },
     );
+    // Fable and Astra keep both families on their native Runner harnesses.
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         isDefault: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
       },
       {
-        model: "gpt-5.6-terra",
+        model: "gpt-6-astra",
         isDefault: false,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
@@ -1126,7 +1145,7 @@ describe("CHAT-02: run-level model overrides", () => {
     const first = await sendChatRun(actor, {
       agentId,
       prompt: firstPrompt,
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
     chatCallbacks.mockChatOutputEvents([
@@ -1147,11 +1166,7 @@ describe("CHAT-02: run-level model overrides", () => {
     // Switching model family rotates the CLI session, so the prior round is
     // replayed. An agentic run emits one chat message per step; only its final
     // answer carries information the next run needs.
-    await chat.updateThreadModelSelection(
-      actor,
-      first.threadId,
-      "gpt-5.6-terra",
-    );
+    await chat.updateThreadModelSelection(actor, first.threadId, "gpt-6-astra");
     const second = await sendChatRun(actor, {
       agentId,
       threadId: first.threadId,
@@ -1177,7 +1192,7 @@ describe("CHAT-02: run-level model overrides", () => {
   }, 90_000);
 
   it("rotates a canonical thread after an oversized history is discarded", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const firstPrompt = "finish work before native history becomes oversized";
@@ -1228,7 +1243,7 @@ describe("CHAT-02: run-level model overrides", () => {
   }, 90_000);
 
   it("retries preparation when the canonical conversation snapshot changes", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const first = await sendChatRun(actor, {
@@ -1288,7 +1303,7 @@ describe("CHAT-02: run-level model overrides", () => {
   }, 90_000);
 
   it("fails after every canonical session preparation snapshot changes", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const first = await sendChatRun(actor, {
@@ -1360,13 +1375,13 @@ describe("CHAT-02: run-level model overrides", () => {
   }, 90_000);
 
   it("re-resolves a sticky model through the current provider policy", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const first = await sendChatRun(actor, {
       agentId,
-      prompt: "pin sonnet model-first",
-      model: "claude-sonnet-5",
+      prompt: "pin fable model-first",
+      model: "claude-fable-5-1",
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
     chatCallbacks.mockChatOutputEvents([]);
@@ -1384,7 +1399,7 @@ describe("CHAT-02: run-level model overrides", () => {
     await expectThreadCreatedModelEvent(
       actor,
       first.threadId,
-      "claude-sonnet-5",
+      "claude-fable-5-1",
     );
 
     await misc.upsertPersonalModelProvider(
@@ -1397,7 +1412,7 @@ describe("CHAT-02: run-level model overrides", () => {
     );
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         isDefault: true,
         defaultProviderType: "claude-code-oauth-token",
         credentialScope: "member",
@@ -1418,7 +1433,7 @@ describe("CHAT-02: run-level model overrides", () => {
         "CLAUDE_CODE_OAUTH_TOKEN",
       ),
     );
-    expect(environment.ANTHROPIC_MODEL).toBe("claude-sonnet-5");
+    expect(environment.ANTHROPIC_MODEL).toBe("claude-fable-5-1");
     expect(secondClaim.claim.resumeSession?.sessionId).toBe(
       `bdd-cli-${first.runId}`,
     );
@@ -1428,12 +1443,12 @@ describe("CHAT-02: run-level model overrides", () => {
     await expectThreadCreatedModelEvent(
       actor,
       first.threadId,
-      "claude-sonnet-5",
+      "claude-fable-5-1",
     );
     await expectNoThreadModelUpdateEvent(
       actor,
       first.threadId,
-      "claude-sonnet-5",
+      "claude-fable-5-1",
     );
     await completeChatRunOk(second.runId, secondClaim.sandboxHeaders);
 
@@ -1454,7 +1469,7 @@ describe("CHAT-02: run-level model overrides", () => {
     );
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         isDefault: true,
         defaultProviderType: "openrouter-api-key",
         credentialScope: "org",
@@ -1493,7 +1508,7 @@ describe("CHAT-02: run-level model overrides", () => {
     await expectNoThreadModelUpdateEvent(
       actor,
       first.threadId,
-      "claude-sonnet-5",
+      "claude-fable-5-1",
     );
 
     const fourth = await sendChatRun(actor, {
