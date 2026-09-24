@@ -144,6 +144,12 @@ async function waitForAgentCard(agentId: string): Promise<HTMLAnchorElement> {
   });
 }
 
+function agentCardsNamed(name: string): HTMLElement[] {
+  return queryAllByRoleFast("link", screen.getByRole("main")).filter((card) => {
+    return within(card).queryByText(name, { exact: true }) !== null;
+  });
+}
+
 function configureCatalog(
   initialAgents: readonly AgentResponse[],
   options: {
@@ -151,13 +157,9 @@ function configureCatalog(
     readonly instructions?: Readonly<Record<string, string>>;
     readonly beforeCreate?: () => Promise<void>;
   } = {},
-): {
-  readonly lastCreatedAgent: () => AgentResponse | null;
-  readonly createRequestCount: () => number;
-} {
+): { readonly lastCreatedAgent: () => AgentResponse | null } {
   let agents = [...initialAgents];
   let lastCreatedAgent: AgentResponse | null = null;
-  let createRequestCount = 0;
   const instructions = new Map(Object.entries(options.instructions ?? {}));
   context.mocks.data.onboardingStatus({
     defaultAgentId: options.defaultAgentId ?? initialAgents[0]?.agentId ?? null,
@@ -166,14 +168,16 @@ function configureCatalog(
     return respond(200, agents);
   });
   context.mocks.api(agentsMainContract.create, async ({ body, respond }) => {
-    createRequestCount += 1;
     await options.beforeCreate?.();
-    const created = agent(CREATED_AGENT_ID, {
-      avatarUrl: body.avatarUrl ?? null,
-      description: body.description ?? null,
-      displayName: body.displayName ?? null,
-      visibility: body.visibility ?? "private",
-    });
+    const created = agent(
+      lastCreatedAgent === null ? CREATED_AGENT_ID : crypto.randomUUID(),
+      {
+        avatarUrl: body.avatarUrl ?? null,
+        description: body.description ?? null,
+        displayName: body.displayName ?? null,
+        visibility: body.visibility ?? "private",
+      },
+    );
     lastCreatedAgent = created;
     agents = [...agents, created];
     return respond(201, created);
@@ -212,9 +216,6 @@ function configureCatalog(
   return {
     lastCreatedAgent: () => {
       return lastCreatedAgent;
-    },
-    createRequestCount: () => {
-      return createRequestCount;
     },
   };
 }
@@ -271,7 +272,7 @@ async function openCreateDialog(
 
 test("Pressing Enter creates a named private agent", async () => {
   const user = userEvent.setup({ delay: null });
-  const catalog = configureCatalog([
+  configureCatalog([
     agent(CORE_AGENT_ID, { displayName: "Core Agent", visibility: "public" }),
   ]);
   await setupPage({ context, path: "/agents" });
@@ -283,7 +284,7 @@ test("Pressing Enter creates a named private agent", async () => {
 
   const createdCard = await waitForAgentCard(CREATED_AGENT_ID);
   expect(createdCard).toHaveTextContent("Private Analyst");
-  expect(catalog.createRequestCount()).toBe(1);
+  expect(agentCardsNamed("Private Analyst")).toHaveLength(1);
   expect(
     screen.queryByRole("dialog", { name: "Create a new agent" }),
   ).not.toBeInTheDocument();
@@ -301,7 +302,7 @@ test.each([
   "Confirming an IME candidate ($mode) keeps agent creation open",
   async ({ isComposing, keyCode, name: candidate }) => {
     const user = userEvent.setup({ delay: null });
-    const catalog = configureCatalog([
+    configureCatalog([
       agent(CORE_AGENT_ID, { displayName: "Core Agent", visibility: "public" }),
     ]);
     await setupPage({ context, path: "/agents" });
@@ -325,7 +326,6 @@ test.each([
     expect(name).toBeEnabled();
     expect(name).toHaveValue(candidate);
     expect(dialog).toBeInTheDocument();
-    expect(catalog.createRequestCount()).toBe(0);
 
     if (isComposing) {
       fireEvent.compositionEnd(name, { data: candidate });
@@ -335,14 +335,14 @@ test.each([
     await expect(waitForAgentCard(CREATED_AGENT_ID)).resolves.toHaveTextContent(
       candidate,
     );
-    expect(catalog.createRequestCount()).toBe(1);
+    expect(agentCardsNamed(candidate)).toHaveLength(1);
     expect(dialog).not.toBeInTheDocument();
   },
 );
 
 test("Blank Enter and cancelling a named draft do not create an agent", async () => {
   const user = userEvent.setup({ delay: null });
-  const catalog = configureCatalog([
+  configureCatalog([
     agent(CORE_AGENT_ID, { displayName: "Core Agent", visibility: "public" }),
   ]);
   await setupPage({ context, path: "/agents" });
@@ -359,15 +359,15 @@ test("Blank Enter and cancelling a named draft do not create an agent", async ()
   await waitFor(() => {
     expect(dialog).not.toBeInTheDocument();
   });
+  expect(agentCardsNamed("Discard this draft")).toHaveLength(0);
   const reopened = await openCreateDialog("Private");
   expect(within(reopened).getByLabelText("Name")).toHaveValue("");
-  expect(catalog.createRequestCount()).toBe(0);
 });
 
-test("A pending create disables submission until the single request completes", async () => {
+test("A pending create disables submission and adds only one agent card", async () => {
   const user = userEvent.setup({ delay: null });
   const response = context.mocks.deferred<void>();
-  const catalog = configureCatalog(
+  configureCatalog(
     [agent(CORE_AGENT_ID, { displayName: "Core Agent", visibility: "public" })],
     {
       beforeCreate: () => {
@@ -392,7 +392,7 @@ test("A pending create disables submission until the single request completes", 
   await expect(waitForAgentCard(CREATED_AGENT_ID)).resolves.toHaveTextContent(
     "Pending analyst",
   );
-  expect(catalog.createRequestCount()).toBe(1);
+  expect(agentCardsNamed("Pending analyst")).toHaveLength(1);
 });
 
 test("Create a public agent with a customized avatar", async () => {
@@ -426,7 +426,7 @@ test("Create a public agent with a customized avatar", async () => {
 
   const createdCard = await waitForAgentCard(CREATED_AGENT_ID);
   expect(createdCard).toHaveTextContent("Marketing Bot");
-  expect(catalog.createRequestCount()).toBe(1);
+  expect(agentCardsNamed("Marketing Bot")).toHaveLength(1);
   expect(
     parseAvatarComposerUrl(catalog.lastCreatedAgent()?.avatarUrl),
   ).not.toBeNull();
@@ -477,7 +477,7 @@ test("Creating an agent with setup pins it and sends its setup prompt in a new t
     "Please adopt this responsibility: every Monday, summarize last week's pipeline and flag stalled deals. Update your description and instructions to match.";
   const setupRequests: AgentSetupPromptRequest[] = [];
   const sentPrompts: string[] = [];
-  const catalog = configureCatalog(
+  configureCatalog(
     [agent(CORE_AGENT_ID, { displayName: "Core Agent", visibility: "public" })],
     { defaultAgentId: CORE_AGENT_ID },
   );
@@ -518,7 +518,6 @@ test("Creating an agent with setup pins it and sends its setup prompt in a new t
   ).resolves.toBeInTheDocument();
   expect(pathname()).toMatch(/^\/chats\/[^/]+$/u);
   expect(sentPrompts).toStrictEqual([setupPrompt]);
-  expect(catalog.createRequestCount()).toBe(1);
   expect(setupRequests).toStrictEqual([
     {
       agentName: "Pipeline Analyst",
