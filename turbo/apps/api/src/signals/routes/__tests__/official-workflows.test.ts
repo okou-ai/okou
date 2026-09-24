@@ -77,10 +77,7 @@ import { serializeOfficialWorkflowCatalogTests } from "../../../test-fixtures/of
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
 import { testUserExportWorkRoutes } from "../test-user-export-work";
-import {
-  installApiTestConnectorCatalog,
-  mockApiTestConnectorProviderConfiguration,
-} from "../../../test-fixtures/connector-catalog";
+import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { withBuiltInModelRuntimeRouteUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import { holdChatEventQueueAdmissionLockFixture } from "../../../test-fixtures/chat-events";
 import { holdUnjournaledCallbackAfterLineageReadFixture } from "../../../test-fixtures/morning-brief-callback";
@@ -185,7 +182,7 @@ import {
   settleIncludingAbort,
 } from "../../utils";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
 const workflowBdd = createWorkflowsBddApi(context);
@@ -1570,12 +1567,16 @@ function installCatalogStorageFixture() {
 
 // The queued-success test covers the inverse encoding/origin pairs; here
 // exercise both persisted brands without repeating the full cross-product.
-const officialQueueEncodings = [
+type OfficialQueueEncoding = {
+  readonly encoding: "legacy" | "canonical";
+  readonly origin: "web" | "agent_run";
+  readonly storedBrand: "vm0" | "okou";
+};
+
+const officialQueueEncodings: readonly OfficialQueueEncoding[] = [
   { encoding: "legacy", origin: "web", storedBrand: "vm0" },
   { encoding: "canonical", origin: "agent_run", storedBrand: "okou" },
-] as const;
-
-type OfficialQueueEncoding = (typeof officialQueueEncodings)[number];
+];
 
 // Pin the persisted protocol independently of the production encoder.
 const officialQueueContextIds = {
@@ -2221,9 +2222,8 @@ async function installStaleAdmissionScenario() {
 
 beforeEach(async () => {
   mockEnv("CRON_SECRET", CRON_SECRET);
-  mockApiTestConnectorProviderConfiguration();
-  // The bucket is part of the connector catalog source identity. Seed only
-  // after choosing this test's bucket, not under the previous test's source.
+  // testContext seeds the default source; this hook also seeds the source
+  // derived from the unique bucket used by this test.
   mockEnv(
     "R2_USER_STORAGES_BUCKET_NAME",
     `official-workflow-installation-test-${randomUUID()}`,
@@ -2561,9 +2561,10 @@ describe("Morning Brief preference", () => {
 
     await setMorningBriefEnabled(actor, true);
 
-    const read = await accept(morningBriefPreferenceClient().get({ headers }), [
-      200,
-    ]);
+    const read = await accept(
+      morningBriefPreferenceClient().get({ headers }),
+      [200],
+    );
     expect(read.body).toMatchObject({
       enabled: true,
       status: "enabled",
@@ -2639,9 +2640,10 @@ describe("Morning Brief preference", () => {
       alternate.agentId,
     );
 
-    const read = await accept(morningBriefPreferenceClient().get({ headers }), [
-      200,
-    ]);
+    const read = await accept(
+      morningBriefPreferenceClient().get({ headers }),
+      [200],
+    );
     expect(read.body).toMatchObject({
       enabled: true,
       status: "enabled",
@@ -2796,9 +2798,10 @@ describe("Morning Brief preference", () => {
     // The enrollment still records the uninstalled brief. Ownership falls back
     // to the adoption rule instead of reporting that no brief exists, and the
     // adopted brief has never delivered, so it owns no thread yet.
-    const read = await accept(morningBriefPreferenceClient().get({ headers }), [
-      200,
-    ]);
+    const read = await accept(
+      morningBriefPreferenceClient().get({ headers }),
+      [200],
+    );
     expect(read.body).toMatchObject({
       enabled: true,
       status: "enabled",
@@ -5848,9 +5851,10 @@ describe("Official Workflow installations", () => {
     expect(
       retiredInstallation.body.workflow.official?.definitionLifecycle,
     ).toBe("retired");
-    const retiredDiscovery = await accept(officialClient().list({ headers }), [
-      200,
-    ]);
+    const retiredDiscovery = await accept(
+      officialClient().list({ headers }),
+      [200],
+    );
     expect(
       retiredDiscovery.body.some((entry) => {
         return entry.name === definitionName;
