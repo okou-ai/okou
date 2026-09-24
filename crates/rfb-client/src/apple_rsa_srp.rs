@@ -240,9 +240,9 @@ async fn exchange_proofs<S: AsyncRead + AsyncWrite + Unpin>(
     if final_len != FINAL_LEN as u32 {
         return Err(invalid());
     }
-    let mut final_token = [0u8; FINAL_LEN];
-    stream.read_exact(&mut final_token).await?;
-    if !valid_final_token(&final_token, &expected_m2) {
+    let mut final_token = Zeroizing::new([0u8; FINAL_LEN]);
+    stream.read_exact(&mut *final_token).await?;
+    if !valid_final_token(&*final_token, &expected_m2) {
         return Err(Error::AuthenticationFailed);
     }
     read_security_result(stream).await
