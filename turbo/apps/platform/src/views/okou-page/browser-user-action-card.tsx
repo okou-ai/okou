@@ -24,7 +24,6 @@ import type {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatCard } from "./components/chat-card.tsx";
-import { ChatCardDetails } from "./components/chat-card-details.tsx";
 
 export type BrowserUserActionCardVariant = "inline" | "standalone";
 
