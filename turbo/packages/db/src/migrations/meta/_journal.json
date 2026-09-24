@@ -950,8 +950,15 @@
     {
       "idx": 1213,
       "version": "7",
-      "when": 1790254296848,
-      "tag": "1213_retire_native_morning_brief_admission",
+      "when": 1790254313135,
+      "tag": "1213_retire_sonnet_4_6_opus_4_8_deepseek_v4_pro",
+      "breakpoints": true
+    },
+    {
+      "idx": 1214,
+      "version": "7",
+      "when": 1790256174561,
+      "tag": "1214_retire_native_morning_brief_admission",
       "breakpoints": true
     }
   ]

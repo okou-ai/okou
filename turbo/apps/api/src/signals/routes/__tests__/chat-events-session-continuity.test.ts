@@ -324,7 +324,7 @@ describe("CHAT-02: run-level model overrides", () => {
     );
     await chatCallbacks.updateOrgModelPolicies(actor, [
       {
-        model: "claude-opus-4-8",
+        model: "claude-opus-5",
         isDefault: true,
         defaultProviderType: "claude-code-oauth-token",
         credentialScope: "member",
@@ -342,7 +342,7 @@ describe("CHAT-02: run-level model overrides", () => {
     const first = await sendChatRun(actor, {
       agentId,
       prompt: "start on opus before switching within Claude",
-      model: "claude-opus-4-8",
+      model: "claude-opus-5",
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
     chatCallbacks.mockChatOutputEvents([]);

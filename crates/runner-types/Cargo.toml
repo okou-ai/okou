@@ -1,6 +1,6 @@
 [package]
 name = "runner-types"
-version = "0.1.6"
+version = "0.1.7"
 edition.workspace = true
 description = "Shared Runner identifiers, API payloads, and validation types"
 

@@ -1245,7 +1245,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
     expect(queued.body.runId).toBeNull();
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "claude-opus-4-8",
+        model: "claude-opus-5",
         isDefault: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
@@ -1266,7 +1266,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
     await expectNoThreadModelUpdateEvent(
       actor,
       first.threadId,
-      "claude-opus-4-8",
+      "claude-opus-5",
     );
 
     // Another user's send cannot claim the queued message's client id.

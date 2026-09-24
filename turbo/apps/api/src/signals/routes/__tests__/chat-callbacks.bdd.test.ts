@@ -180,7 +180,7 @@ async function configureClaudeCodeSubscriptionProvider(
       modelProviderId: fixture.providerId,
     },
     {
-      model: "claude-opus-4-8",
+      model: "claude-opus-5",
       isDefault: false,
       defaultProviderType: "claude-code-oauth-token",
       credentialScope: "member",
@@ -4986,7 +4986,7 @@ describe("CHAT-02: failed chat callbacks", () => {
           agentId: fixture.agentId,
           threadId: run.threadId,
           prompt: "retry after replacing the Claude OAuth token",
-          selectedModel: "claude-opus-4-8",
+          selectedModel: "claude-opus-5",
         });
         const retryHeaders = await claimChatRun(
           fixture.runnerGroup,
@@ -5003,7 +5003,7 @@ describe("CHAT-02: failed chat callbacks", () => {
     await expect(
       failAndReadError({
         prompt: "subscription credential failed",
-        selectedModel: "claude-opus-4-8",
+        selectedModel: "claude-opus-5",
         configureProvider: configureClaudeCodeSubscriptionProvider,
       }),
     ).resolves.toBe(
@@ -5014,7 +5014,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         prompt: "structured subscription credential failed",
         errorMessage: "Provider authentication copy changed",
         failureReason: "invalid_credentials",
-        selectedModel: "claude-opus-4-8",
+        selectedModel: "claude-opus-5",
         configureProvider: configureClaudeCodeSubscriptionProvider,
       }),
     ).resolves.toBe(
@@ -5024,7 +5024,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       failAndReadError({
         prompt: "revoked subscription credential failed",
         errorMessage: revokedOAuthError,
-        selectedModel: "claude-opus-4-8",
+        selectedModel: "claude-opus-5",
         configureProvider: configureClaudeCodeSubscriptionProvider,
       }),
     ).resolves.toBe(
@@ -5041,7 +5041,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       failAndReadError({
         prompt: "invalid subscription credential failed",
         errorMessage: invalidOAuthError,
-        selectedModel: "claude-opus-4-8",
+        selectedModel: "claude-opus-5",
         configureProvider: configureClaudeCodeSubscriptionProvider,
       }),
     ).resolves.toBe(
@@ -5052,7 +5052,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         prompt: "structured invalid subscription credential failed",
         errorMessage: invalidOAuthError,
         failureReason: "reconnect_required",
-        selectedModel: "claude-opus-4-8",
+        selectedModel: "claude-opus-5",
         configureProvider: configureClaudeCodeSubscriptionProvider,
       }),
     ).resolves.toBe(
@@ -5074,7 +5074,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         failAndReadError({
           prompt: "unclassified OAuth failure",
           errorMessage,
-          selectedModel: "claude-opus-4-8",
+          selectedModel: "claude-opus-5",
           configureProvider: configureClaudeCodeSubscriptionProvider,
         }),
       ).resolves.toBe("Oops, something went wrong. Please try again later.");
@@ -6068,7 +6068,7 @@ describe("CHAT-02: auto-send across a model switch", () => {
     const first = await startChatRun(actor, {
       agentId,
       prompt: firstPrompt,
-      selectedModel: "claude-opus-4-8",
+      selectedModel: "claude-opus-5",
     });
     const firstHeaders = await claimChatRun(runnerGroup, first.runId);
     chatCallbacks.mockChatOutputEvents([
@@ -6186,7 +6186,7 @@ describe("CHAT-02: auto-send across a model switch", () => {
     const first = await startChatRun(actor, {
       agentId,
       prompt: "start on opus before queueing a Claude family switch",
-      selectedModel: "claude-opus-4-8",
+      selectedModel: "claude-opus-5",
     });
     const firstHeaders = await claimChatRun(runnerGroup, first.runId);
     chatCallbacks.mockChatOutputEvents([]);

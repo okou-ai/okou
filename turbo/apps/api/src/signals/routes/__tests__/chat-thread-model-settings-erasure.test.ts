@@ -33,7 +33,7 @@ const chat = createChatFilesBddApi(context);
 const api = createRunsApi(context);
 const BLOCKED = { interval: 10, timeout: 10_000 } as const;
 
-const POLICY_MODELS = ["claude-sonnet-5", "claude-opus-4-8"] as const;
+const POLICY_MODELS = ["claude-sonnet-5", "claude-opus-5"] as const;
 
 interface SettingsFixture {
   readonly actor: ApiTestUser;
@@ -249,7 +249,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
     await chat.requestUpdateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-opus-4-8",
+      "claude-opus-5",
       [404],
       { reasoningEffort: "extra" },
     );
@@ -263,7 +263,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
     await chat.updateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-opus-4-8",
+      "claude-opus-5",
       { reasoningEffort: "extra" },
     );
     const after = await settingsEvents(fixture);
@@ -272,10 +272,10 @@ describe("account erasure fences chat-thread model settings writes", () => {
       { seqId: lastSeqId + 2, kind: "service_tier_updated" },
     ]);
     await expect(readSettings(fixture)).resolves.toStrictEqual({
-      selectedModel: "claude-opus-4-8",
+      selectedModel: "claude-opus-5",
       modelSettings: {
         "claude-sonnet-5": { effort: "high" },
-        "claude-opus-4-8": { effort: "extra" },
+        "claude-opus-5": { effort: "extra" },
       },
       serviceTier: null,
     });
@@ -294,7 +294,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
     await chat.requestUpdateThreadModelSelection(
       shared.actor,
       shared.threadId,
-      "claude-opus-4-8",
+      "claude-opus-5",
       [404],
     );
     await expect(readClosedSettings(shared)).resolves.toStrictEqual(
@@ -312,7 +312,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
     await chat.requestUpdateThreadModelSelection(
       organization.actor,
       organization.threadId,
-      "claude-opus-4-8",
+      "claude-opus-5",
       [404],
     );
     await expect(readClosedSettings(organization)).resolves.toStrictEqual(
@@ -329,7 +329,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
     await chat.requestUpdateThreadModelSelection(
       closed.actor,
       closed.threadId,
-      "claude-opus-4-8",
+      "claude-opus-5",
       [404],
     );
     await expect(readClosedSettings(closed)).resolves.toMatchObject({
@@ -339,10 +339,10 @@ describe("account erasure fences chat-thread model settings writes", () => {
     await chat.updateThreadModelSelection(
       unrelated.actor,
       unrelated.threadId,
-      "claude-opus-4-8",
+      "claude-opus-5",
     );
     await expect(readSettings(unrelated)).resolves.toMatchObject({
-      selectedModel: "claude-opus-4-8",
+      selectedModel: "claude-opus-5",
     });
   });
 
@@ -358,7 +358,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
           const updating = chat.updateThreadModelSelection(
             fixture.actor,
             fixture.threadId,
-            "claude-opus-4-8",
+            "claude-opus-5",
           );
           const settings = await barrier.entered;
           expect(settings.lockTimeout).toBe("1s");
@@ -392,7 +392,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
       { seqId: lastSeqId + 2, kind: "service_tier_updated" },
     ]);
     await expect(readClosedSettings(fixture)).resolves.toMatchObject({
-      selectedModel: "claude-opus-4-8",
+      selectedModel: "claude-opus-5",
     });
 
     // The closure landed behind the admitted write, so the next settings write
@@ -404,7 +404,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
       [404],
     );
     await expect(readClosedSettings(fixture)).resolves.toMatchObject({
-      selectedModel: "claude-opus-4-8",
+      selectedModel: "claude-opus-5",
     });
     await expect(settingsEvents(fixture)).resolves.toStrictEqual(admitted);
   });
@@ -423,7 +423,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
           const updating = chat.requestUpdateThreadModelSelection(
             fixture.actor,
             fixture.threadId,
-            "claude-opus-4-8",
+            "claude-opus-5",
             [404],
           );
           await barrier.entered;
@@ -473,7 +473,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
       chat.requestUpdateThreadModelSelection(
         fixture.actor,
         fixture.threadId,
-        "claude-opus-4-8",
+        "claude-opus-5",
         [204, 404],
         {
           reasoningEffort: "extra",
@@ -495,7 +495,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
     await chat.updateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-opus-4-8",
+      "claude-opus-5",
       { reasoningEffort: "extra" },
     );
     const after = await settingsEvents(fixture);
@@ -519,7 +519,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
       chat.requestUpdateThreadModelSelection(
         fixture.actor,
         fixture.threadId,
-        "claude-opus-4-8",
+        "claude-opus-5",
         [204, 404],
       ),
     ).rejects.toThrow(/Unknown response status 500/);
@@ -530,10 +530,10 @@ describe("account erasure fences chat-thread model settings writes", () => {
     await chat.updateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-opus-4-8",
+      "claude-opus-5",
     );
     await expect(readSettings(fixture)).resolves.toMatchObject({
-      selectedModel: "claude-opus-4-8",
+      selectedModel: "claude-opus-5",
     });
   });
 
@@ -545,13 +545,13 @@ describe("account erasure fences chat-thread model settings writes", () => {
     await chat.requestUpdateThreadModelSelection(
       stranger.actor,
       fixture.threadId,
-      "claude-opus-4-8",
+      "claude-opus-5",
       [404],
     );
     await chat.requestUpdateThreadModelSelection(
       fixture.actor,
       randomUUID(),
-      "claude-opus-4-8",
+      "claude-opus-5",
       [404],
     );
 
@@ -562,7 +562,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
     await chat.requestUpdateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-opus-4-8",
+      "claude-opus-5",
       [404],
     );
     await setChatThreadAgentFixture({
@@ -583,7 +583,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
     const owned = await chat.requestUpdateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-sonnet-4-6",
+      "claude-opus-5-5",
       [400],
     );
     expect(owned.body).toMatchObject({
@@ -599,7 +599,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
     await chat.requestUpdateThreadModelSelection(
       stranger.actor,
       fixture.threadId,
-      "claude-sonnet-4-6",
+      "claude-opus-5-5",
       [404],
     );
     await expect(settingsEvents(fixture)).resolves.toStrictEqual([]);
@@ -622,7 +622,7 @@ describe("account erasure fences the model-policy bootstrap this route performs"
     await chat.requestUpdateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-opus-4-8",
+      "claude-opus-5",
       [404],
     );
     // The resolver runs inside the admitted transaction, so a denied request
@@ -638,7 +638,7 @@ describe("account erasure fences the model-policy bootstrap this route performs"
     const admitted = await chat.requestUpdateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-opus-4-8",
+      "claude-opus-5",
       [400],
     );
     expect(admitted.body).toMatchObject({
@@ -667,7 +667,7 @@ describe("account erasure fences the model-policy bootstrap this route performs"
     await chat.requestUpdateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-opus-4-8",
+      "claude-opus-5",
       [404],
     );
     await expect(policyDefaults(fixture)).resolves.toStrictEqual([]);
@@ -677,11 +677,11 @@ describe("account erasure fences the model-policy bootstrap this route performs"
     await chat.updateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-opus-4-8",
+      "claude-opus-5",
     );
     await expect(policyDefaults(fixture)).resolves.toHaveLength(1);
     await expect(readSettings(fixture)).resolves.toMatchObject({
-      selectedModel: "claude-opus-4-8",
+      selectedModel: "claude-opus-5",
     });
   });
 
@@ -706,7 +706,7 @@ describe("account erasure fences the model-policy bootstrap this route performs"
       chat.requestUpdateThreadModelSelection(
         fixture.actor,
         fixture.threadId,
-        "claude-opus-4-8",
+        "claude-opus-5",
         [204, 404],
         { serviceTierEventId },
       ),
@@ -723,7 +723,7 @@ describe("account erasure fences the model-policy bootstrap this route performs"
     await chat.updateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-opus-4-8",
+      "claude-opus-5",
     );
     await expect(policyDefaults(fixture)).resolves.toHaveLength(1);
   });
@@ -748,7 +748,7 @@ describe("the fenced model-selection route keeps its own write semantics", () =>
       chat.updateThreadModelSelection(
         fixture.actor,
         fixture.threadId,
-        "claude-opus-4-8",
+        "claude-opus-5",
         { reasoningEffort: "extra" },
       ),
     ]);
@@ -756,7 +756,7 @@ describe("the fenced model-selection route keeps its own write semantics", () =>
     await expect(readSettings(fixture)).resolves.toMatchObject({
       modelSettings: {
         "claude-sonnet-5": { effort: "high" },
-        "claude-opus-4-8": { effort: "extra" },
+        "claude-opus-5": { effort: "extra" },
       },
     });
     const events = await settingsEvents(fixture);
@@ -779,7 +779,7 @@ describe("the fenced model-selection route keeps its own write semantics", () =>
       chat.updateThreadModelSelection(
         fixture.actor,
         fixture.threadId,
-        "claude-opus-4-8",
+        "claude-opus-5",
       ),
       chat.renameThread(fixture.actor, fixture.threadId, "Concurrent title"),
     ]);
@@ -787,7 +787,7 @@ describe("the fenced model-selection route keeps its own write semantics", () =>
     await expect(
       chat.readThreadMetadata(fixture.actor, fixture.threadId),
     ).resolves.toMatchObject({
-      selectedModel: "claude-opus-4-8",
+      selectedModel: "claude-opus-5",
       title: "Concurrent title",
     });
   });
