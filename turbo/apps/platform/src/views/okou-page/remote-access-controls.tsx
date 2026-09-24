@@ -151,6 +151,49 @@ function pendingHostAccess(
   };
 }
 
+function countPendingEnabledHosts(
+  defaults: {
+    readonly ssh: readonly RemoteHostDefault[];
+    readonly vnc: readonly RemoteHostDefault[];
+  },
+  overrides: readonly InitialRemoteAccessOverride[],
+): number {
+  const choices = new Map(
+    overrides.map((item) => {
+      return [`${item.protocol}:${item.connectionId}`, item.enabled] as const;
+    }),
+  );
+  let count = 0;
+  for (const [protocol, hosts] of [
+    ["ssh", defaults.ssh],
+    ["vnc", defaults.vnc],
+  ] as const) {
+    for (const host of hosts) {
+      if (
+        choices.get(`${protocol}:${host.connectionId}`) ??
+        host.defaultEnabled
+      ) {
+        count += 1;
+      }
+    }
+  }
+  return count;
+}
+
+function visibleHostChoices(
+  protocol: RemoteAccessProtocol,
+  threadId: string | undefined,
+  accessHosts: readonly ThreadRemoteHostAccess[] | undefined,
+  defaultHosts: readonly RemoteHostDefault[] | undefined,
+  pendingOverrides: readonly InitialRemoteAccessOverride[],
+): readonly ThreadRemoteHostAccess[] {
+  return threadId
+    ? (accessHosts ?? [])
+    : (defaultHosts ?? []).map((host) => {
+        return pendingHostAccess(protocol, host, pendingOverrides);
+      });
+}
+
 function HostChoiceSelect({
   protocol,
   host,
@@ -243,6 +286,73 @@ function PendingHostChoice({
   );
 }
 
+function RemoteHostChoiceRow({
+  threadId,
+  protocol,
+  host,
+  pendingRemoteAccess,
+}: {
+  threadId?: string;
+  protocol: RemoteAccessProtocol;
+  host: ThreadRemoteHostAccess;
+  pendingRemoteAccess: ComposerSignals["pendingRemoteAccess"];
+}) {
+  return threadId ? (
+    <HostChoice threadId={threadId} protocol={protocol} host={host} />
+  ) : (
+    <PendingHostChoice
+      protocol={protocol}
+      host={host}
+      pendingRemoteAccess={pendingRemoteAccess}
+    />
+  );
+}
+
+function VncHostChoiceRow({
+  threadId,
+  host,
+  pendingRemoteAccess,
+  sshConnectionId,
+  sshHosts,
+}: {
+  threadId?: string;
+  host: ThreadRemoteHostAccess;
+  pendingRemoteAccess: ComposerSignals["pendingRemoteAccess"];
+  sshConnectionId: string | null;
+  sshHosts: readonly ThreadRemoteHostAccess[];
+}) {
+  const { t } = useTranslation();
+  const sshName = sshHosts.find((item) => {
+    return item.connectionId === sshConnectionId;
+  })?.displayName;
+  return (
+    <div>
+      <RemoteHostChoiceRow
+        threadId={threadId}
+        protocol="vnc"
+        host={host}
+        pendingRemoteAccess={pendingRemoteAccess}
+      />
+      {sshConnectionId && (
+        <p className="px-9 pb-1 text-xs text-muted-foreground">
+          {t(
+            ($) => {
+              return $.chat.remoteAccess.requiresSsh;
+            },
+            {
+              name:
+                sshName ??
+                t(($) => {
+                  return $.chat.remoteAccess.unavailableSsh;
+                }),
+            },
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function ThreadRemoteAccessSection({
   threadId,
   remoteAccess$,
@@ -260,49 +370,28 @@ export function ThreadRemoteAccessSection({
   const defaults = useLoadable(remoteHostDefaults$);
   const access = useLoadable(remoteAccess$);
   const pendingOverrides = useGet(pendingRemoteAccess.overrides$);
+  const defaultData = defaults.state === "hasData" ? defaults.data : null;
+  const accessData = access.state === "hasData" ? access.data : null;
   if (
     defaults.state === "loading" ||
     (defaults.state === "hasData" && !defaults.data)
   ) {
     return null;
   }
-  const configuredCount =
-    defaults.state === "hasData" && defaults.data
-      ? defaults.data.ssh.length + defaults.data.vnc.length
-      : null;
+  const configuredCount = defaultData
+    ? defaultData.ssh.length + defaultData.vnc.length
+    : null;
   if (configuredCount === 0) {
     return null;
   }
   const enabledCount = threadId
-    ? access.state === "hasData" && access.data
-      ? [...access.data.ssh, ...access.data.vnc].filter((host) => {
+    ? accessData
+      ? [...accessData.ssh, ...accessData.vnc].filter((host) => {
           return host.enabled;
         }).length
       : null
-    : defaults.state === "hasData" && defaults.data
-      ? [
-          ...defaults.data.ssh.map((host) => {
-            return {
-              protocol: "ssh" as const,
-              host,
-            };
-          }),
-          ...defaults.data.vnc.map((host) => {
-            return {
-              protocol: "vnc" as const,
-              host,
-            };
-          }),
-        ].filter(({ protocol, host }) => {
-          return (
-            pendingOverrides.find((item) => {
-              return (
-                item.protocol === protocol &&
-                item.connectionId === host.connectionId
-              );
-            })?.enabled ?? host.defaultEnabled
-          );
-        }).length
+    : defaultData
+      ? countPendingEnabledHosts(defaultData, pendingOverrides)
       : null;
   const title = t(($) => {
     return $.chat.remoteAccess.title;
@@ -391,28 +480,26 @@ function ThreadRemoteHostChoices({
   const access = useLoadable(remoteAccess$);
   const pendingOverrides = useGet(pendingRemoteAccess.overrides$);
   const vncHosts = useLoadable(vncConnections$);
+  const defaultData = defaults.state === "hasData" ? defaults.data : null;
+  const accessData = access.state === "hasData" ? access.data : null;
   const accessFailed =
     Boolean(threadId) &&
     (access.state === "hasError" ||
       (access.state === "hasData" && !access.data));
-  const sshHosts: ThreadRemoteHostAccess[] = threadId
-    ? access.state === "hasData"
-      ? (access.data?.ssh ?? [])
-      : []
-    : defaults.state === "hasData"
-      ? (defaults.data?.ssh ?? []).map((host) => {
-          return pendingHostAccess("ssh", host, pendingOverrides);
-        })
-      : [];
-  const vncHostChoices: ThreadRemoteHostAccess[] = threadId
-    ? access.state === "hasData"
-      ? (access.data?.vnc ?? [])
-      : []
-    : defaults.state === "hasData"
-      ? (defaults.data?.vnc ?? []).map((host) => {
-          return pendingHostAccess("vnc", host, pendingOverrides);
-        })
-      : [];
+  const sshHosts = visibleHostChoices(
+    "ssh",
+    threadId,
+    accessData?.ssh,
+    defaultData?.ssh,
+    pendingOverrides,
+  );
+  const vncHostChoices = visibleHostChoices(
+    "vnc",
+    threadId,
+    accessData?.vnc,
+    defaultData?.vnc,
+    pendingOverrides,
+  );
   return (
     <div className="min-h-0 overflow-y-auto p-1">
       {(defaults.state === "hasError" || accessFailed) && (
@@ -448,16 +535,10 @@ function ThreadRemoteHostChoices({
             </p>
           )}
           {sshHosts.map((host) => {
-            return threadId ? (
-              <HostChoice
+            return (
+              <RemoteHostChoiceRow
                 key={host.connectionId}
                 threadId={threadId}
-                protocol="ssh"
-                host={host}
-              />
-            ) : (
-              <PendingHostChoice
-                key={host.connectionId}
                 protocol="ssh"
                 host={host}
                 pendingRemoteAccess={pendingRemoteAccess}
@@ -481,37 +562,15 @@ function ThreadRemoteHostChoices({
             const sshConnectionId = configured
               ? vncSshConnectionId(configured)
               : null;
-            const sshName = sshHosts.find((item) => {
-              return item.connectionId === sshConnectionId;
-            })?.displayName;
             return (
-              <div key={host.connectionId}>
-                {threadId ? (
-                  <HostChoice threadId={threadId} protocol="vnc" host={host} />
-                ) : (
-                  <PendingHostChoice
-                    protocol="vnc"
-                    host={host}
-                    pendingRemoteAccess={pendingRemoteAccess}
-                  />
-                )}
-                {sshConnectionId && (
-                  <p className="px-9 pb-1 text-xs text-muted-foreground">
-                    {t(
-                      ($) => {
-                        return $.chat.remoteAccess.requiresSsh;
-                      },
-                      {
-                        name:
-                          sshName ??
-                          t(($) => {
-                            return $.chat.remoteAccess.unavailableSsh;
-                          }),
-                      },
-                    )}
-                  </p>
-                )}
-              </div>
+              <VncHostChoiceRow
+                key={host.connectionId}
+                threadId={threadId}
+                host={host}
+                pendingRemoteAccess={pendingRemoteAccess}
+                sshConnectionId={sshConnectionId}
+                sshHosts={sshHosts}
+              />
             );
           })}
         </>

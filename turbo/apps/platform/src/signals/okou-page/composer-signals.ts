@@ -610,6 +610,14 @@ function createPaidToolHints(
   });
 }
 
+function composerRemoteAccessSignals(options: CreateComposerSignalsOptions) {
+  return {
+    remoteAccess$: threadRemoteAccess$(options.threadId ?? ""),
+    pendingRemoteAccess:
+      options.pendingRemoteAccess ?? createPendingRemoteAccessSignals(),
+  };
+}
+
 export function createComposerSignals(
   options: CreateComposerSignalsOptions,
 ): ComposerSignals {
@@ -693,9 +701,7 @@ export function createComposerSignals(
   return {
     agentId: options.agentId,
     threadId: options.threadId,
-    remoteAccess$: threadRemoteAccess$(options.threadId ?? ""),
-    pendingRemoteAccess:
-      options.pendingRemoteAccess ?? createPendingRemoteAccessSignals(),
+    ...composerRemoteAccessSignals(options),
     paidToolHints$: createPaidToolHints(create, draft, workflowComposer, ui),
     create,
     taskChips,
