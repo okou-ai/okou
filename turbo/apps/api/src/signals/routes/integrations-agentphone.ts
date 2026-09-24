@@ -528,7 +528,7 @@ function connectConflict(reason: LinkConflictReason) {
 }
 
 const AGENTPHONE_CONTACT_CARD_URL =
-  "https://static.vm0.io/agentphone-contact/416d56a159b6eda06e890bc6a7e549f54593c58478e0fdf37a90ca7870d0f7e8/okou.vcf";
+  "https://static.vm0.io/agentphone-contact/a0a9471cbcf783bd04620f1be71dd8efaf0f49c6a23eb77e3cb4584e731fd685/okou.vcf";
 
 interface AgentPhoneConnectedMessage {
   readonly body: string;
