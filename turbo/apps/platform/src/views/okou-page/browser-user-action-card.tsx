@@ -471,6 +471,129 @@ function BrowserInputControl({
   );
 }
 
+function requiredSelectsSatisfied(
+  action: PendingBrowserInputAction,
+  choiceDraft: ReadonlyMap<string, readonly number[]>,
+): boolean {
+  return action.fields.every((field) => {
+    if (
+      field.fieldKind !== "select" ||
+      (!field.required && !field.control.siteRequired)
+    ) {
+      return true;
+    }
+    const options = field.control.options;
+    if (!options) {
+      return false;
+    }
+    const selected =
+      choiceDraft.get(field.key) ??
+      options.filter((option) => option.selected).map((option) => option.index);
+    return selected.some((index) => {
+      const option = options[index];
+      return option && !option.disabled && !option.empty;
+    });
+  });
+}
+
+function BrowserSelectControl({
+  field,
+  choiceDraft,
+  busy,
+  inputId,
+  describedBy,
+  onUpdate,
+  onRemove,
+}: {
+  readonly field: PendingBrowserInputField;
+  readonly choiceDraft: ReadonlyMap<string, readonly number[]>;
+  readonly busy: boolean;
+  readonly inputId: string;
+  readonly describedBy: string;
+  readonly onUpdate: (key: string, indices: readonly number[]) => void;
+  readonly onRemove: (key: string) => void;
+}) {
+  const { t } = useTranslation();
+  const options = field.control.options;
+  const ready =
+    options !== undefined && field.control.optionSetFingerprint !== undefined;
+  const selected =
+    choiceDraft.get(field.key) ??
+    options
+      ?.filter((option) => option.selected)
+      .map((option) => option.index) ??
+    [];
+  const multiple = field.control.inputType === "select-multiple";
+  const required = field.required || field.control.siteRequired;
+  return (
+    <div className="flex flex-col items-start gap-1.5">
+      <select
+        id={inputId}
+        name={field.key}
+        aria-describedby={describedBy}
+        className={cn(
+          "w-full rounded-lg border border-[hsl(var(--gray-400))] bg-input px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary focus:ring-[3px] focus:ring-primary/10 disabled:cursor-not-allowed disabled:opacity-50",
+          multiple ? "min-h-24" : "h-9",
+        )}
+        multiple={multiple}
+        size={multiple ? Math.min(options?.length ?? 2, 5) : undefined}
+        required={required}
+        disabled={busy || !ready}
+        value={
+          multiple ? selected.map(String) : (selected[0]?.toString() ?? "")
+        }
+        onChange={(event) => {
+          onUpdate(
+            field.key,
+            [...event.currentTarget.selectedOptions].map((option) =>
+              Number(option.value),
+            ),
+          );
+        }}
+      >
+        {!multiple && (
+          <option value="" disabled>
+            —
+          </option>
+        )}
+        {options?.map((option) => (
+          <option
+            key={option.index}
+            value={String(option.index)}
+            disabled={option.disabled}
+          >
+            {option.label || "—"}
+          </option>
+        ))}
+      </select>
+      {!required && ready && (
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="link"
+            size="xs"
+            disabled={busy}
+            onClick={() => onUpdate(field.key, [])}
+          >
+            {t(($) => $.chat.browserInput.clearValue)}
+          </Button>
+          {choiceDraft.has(field.key) && (
+            <Button
+              type="button"
+              variant="link"
+              size="xs"
+              disabled={busy}
+              onClick={() => onRemove(field.key)}
+            >
+              {t(($) => $.chat.browserInput.keepValue)}
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OptionalNumberClearAction({
   field,
   draft,
@@ -517,10 +640,18 @@ function BrowserInputField({
   field,
   index,
   draft,
+  choiceDraft,
   busy,
   onUpdate,
   onRemove,
-}: BrowserInputEditProps & { readonly index: number }) {
+  onUpdateChoice,
+  onRemoveChoice,
+}: BrowserInputEditProps & {
+  readonly index: number;
+  readonly choiceDraft: ReadonlyMap<string, readonly number[]>;
+  readonly onUpdateChoice: (key: string, indices: readonly number[]) => void;
+  readonly onRemoveChoice: (key: string) => void;
+}) {
   const { t } = useTranslation();
   const inputId = `browser-input-field-${index}`;
   const requirementId = `${inputId}-requirement`;
@@ -554,17 +685,31 @@ function BrowserInputField({
           {field.description}
         </span>
       )}
-      <BrowserInputControl
-        field={field}
-        inputId={inputId}
-        describedBy={
-          descriptionId ? `${requirementId} ${descriptionId}` : requirementId
-        }
-        draft={draft}
-        busy={busy}
-        onUpdate={onUpdate}
-        onRemove={onRemove}
-      />
+      {field.fieldKind === "select" ? (
+        <BrowserSelectControl
+          field={field}
+          inputId={inputId}
+          describedBy={
+            descriptionId ? `${requirementId} ${descriptionId}` : requirementId
+          }
+          choiceDraft={choiceDraft}
+          busy={busy}
+          onUpdate={onUpdateChoice}
+          onRemove={onRemoveChoice}
+        />
+      ) : (
+        <BrowserInputControl
+          field={field}
+          inputId={inputId}
+          describedBy={
+            descriptionId ? `${requirementId} ${descriptionId}` : requirementId
+          }
+          draft={draft}
+          busy={busy}
+          onUpdate={onUpdate}
+          onRemove={onRemove}
+        />
+      )}
       <OptionalNumberClearAction
         field={field}
         draft={draft}
@@ -579,11 +724,17 @@ function BrowserInputField({
 function BrowserInputFields({
   action,
   draft,
+  choiceDraft,
   busy,
   onUpdate,
   onRemove,
+  onUpdateChoice,
+  onRemoveChoice,
 }: Omit<BrowserInputEditProps, "field"> & {
   readonly action: PendingBrowserInputAction;
+  readonly choiceDraft: ReadonlyMap<string, readonly number[]>;
+  readonly onUpdateChoice: (key: string, indices: readonly number[]) => void;
+  readonly onRemoveChoice: (key: string) => void;
 }) {
   return (
     <div className="flex flex-col gap-4">
@@ -594,9 +745,12 @@ function BrowserInputFields({
             field={field}
             index={index}
             draft={draft}
+            choiceDraft={choiceDraft}
             busy={busy}
             onUpdate={onUpdate}
             onRemove={onRemove}
+            onUpdateChoice={onUpdateChoice}
+            onRemoveChoice={onRemoveChoice}
           />
         );
       })}
@@ -660,10 +814,14 @@ function PendingForm({
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const draft = useGet(signals.draft$);
+  const choiceDraft = useGet(signals.choiceDraft$);
   const sharedBusy = useGet(signals.busy$);
   const entryState = useGet(signals.entryState$);
+  const entryAction = useGet(signals.entryAction$);
   const updateDraft = useSet(signals.updateDraft$);
   const removeDraft = useSet(signals.removeDraft$);
+  const updateChoiceDraft = useSet(signals.updateChoiceDraft$);
+  const removeChoiceDraft = useSet(signals.removeChoiceDraft$);
   const beginEntry = useSet(signals.beginEntry$);
   const formRef = useSet(signals.formRef$);
   const [submitLoadable, submit] = useLoadableSet(signals.submit$);
@@ -674,9 +832,12 @@ function PendingForm({
   const failed =
     submitLoadable.state === "hasError" || cancelLoadable.state === "hasError";
   const cancelFailed = cancelLoadable.state === "hasError";
+  const activeAction =
+    entryState === "ready" && entryAction ? entryAction : request.action;
+  const selectValuesValid = requiredSelectsSatisfied(activeAction, choiceDraft);
   const submitForm = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!event.currentTarget.reportValidity()) {
+    if (!selectValuesValid || !event.currentTarget.reportValidity()) {
       return;
     }
     detach(submit(pageSignal), Reason.DomCallback);
@@ -696,11 +857,14 @@ function PendingForm({
         showTitle={showTitle}
       />
       <BrowserInputFields
-        action={request.action}
+        action={activeAction}
         draft={draft}
+        choiceDraft={choiceDraft}
         busy={busy}
         onUpdate={updateDraft}
         onRemove={removeDraft}
+        onUpdateChoice={updateChoiceDraft}
+        onRemoveChoice={removeChoiceDraft}
       />
 
       {(entryState === "idle" || entryState === "checking") && (
@@ -752,7 +916,15 @@ function PendingForm({
       <PendingFormActions
         submitting={submitting}
         cancelling={cancelling}
-        canSubmit={entryState !== "unavailable" && entryState !== "invalid"}
+        canSubmit={
+          entryState !== "unavailable" &&
+          entryState !== "invalid" &&
+          selectValuesValid &&
+          (!request.action.fields.some(
+            (field) => field.fieldKind === "select",
+          ) ||
+            entryState === "ready")
+        }
         onCancel={() => {
           detach(cancel(pageSignal), Reason.DomCallback);
         }}

@@ -97,6 +97,16 @@ function browserControlInspections() {
   });
 }
 
+function browserSelectWrites() {
+  return context.mocks.browserUseCdp.command.mock.calls.filter(([command]) => {
+    return (
+      command.method === "Runtime.callFunctionOn" &&
+      typeof command.params.functionDeclaration === "string" &&
+      command.params.functionDeclaration.includes("firstSpec")
+    );
+  });
+}
+
 function browserInputVerifications() {
   return context.mocks.browserUseCdp.command.mock.calls.filter(([command]) => {
     return (
@@ -395,6 +405,80 @@ function mockNativeNumberTarget(args: {
   });
 }
 
+function mockNativeSelectTarget(args: {
+  readonly mode: () => "select-one" | "select-multiple";
+  readonly options: () => readonly {
+    readonly index: number;
+    readonly label: string;
+    readonly value: string;
+    readonly disabled: boolean;
+    readonly selected: boolean;
+    readonly empty: boolean;
+  }[];
+  readonly writeMatches: () => boolean;
+}): void {
+  context.mocks.browserUseCdp.command.mockImplementation((command) => {
+    switch (command.method) {
+      case "Target.getTargets": {
+        return {
+          targetInfos: [
+            {
+              targetId: "native-input-target",
+              type: "page",
+              url: "https://example.com/order",
+            },
+          ],
+        };
+      }
+      case "Target.attachToTarget": {
+        return { sessionId: "native-select-session" };
+      }
+      case "Browser.getWindowForTarget": {
+        return { windowId: 7 };
+      }
+      case "Page.getFrameTree": {
+        return {
+          frameTree: {
+            frame: {
+              id: "main-frame",
+              loaderId: "native-select-loader",
+              url: "https://example.com/order",
+            },
+          },
+        };
+      }
+      case "DOM.resolveNode": {
+        return { object: { objectId: "native-select-object" } };
+      }
+      case "Runtime.callFunctionOn": {
+        const declaration = String(command.params.functionDeclaration);
+        if (declaration.includes("firstSpec")) {
+          return { result: { value: args.writeMatches() } };
+        }
+        return {
+          result: {
+            value: [
+              {
+                tagName: "SELECT",
+                inputType: args.mode(),
+                connected: true,
+                mainDocument: true,
+                writable: true,
+                siteRequired: false,
+                multiple: args.mode() === "select-multiple",
+                options: args.options(),
+              },
+            ],
+          },
+        };
+      }
+      default: {
+        return {};
+      }
+    }
+  });
+}
+
 function browserUserActionTokenHash(requestToken: string): string {
   return createHash("sha256").update(requestToken).digest("hex");
 }
@@ -482,6 +566,245 @@ describe("Browser user-action route", () => {
       status: 503,
       body: { error: { code: "BROWSER_USE_TIMEOUT" } },
     });
+  });
+
+  it("selects by option index, rejects disabled and drifted options, and supports explicit clear", async () => {
+    const { routeMocks, runs, chat, actor, agent } =
+      await setupBrowserScenario();
+    const current = await createClaimedChatRun(
+      chat,
+      runs,
+      actor,
+      agent.agentId,
+      "Choose a region on the current browser page",
+    );
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BrowserNativeInput]: true,
+    });
+    const providerId = randomUUID();
+    acceptBrowserUseCdpSessions([providerId]);
+    let mode: "select-one" | "select-multiple" = "select-one";
+    let options = [
+      {
+        index: 0,
+        label: "Choose",
+        value: "",
+        disabled: false,
+        selected: false,
+        empty: true,
+      },
+      {
+        index: 1,
+        label: "Unavailable",
+        value: "same",
+        disabled: true,
+        selected: false,
+        empty: false,
+      },
+      {
+        index: 2,
+        label: "First",
+        value: "same",
+        disabled: false,
+        selected: true,
+        empty: false,
+      },
+      {
+        index: 3,
+        label: "Second",
+        value: "same",
+        disabled: false,
+        selected: false,
+        empty: false,
+      },
+    ];
+    let writeMatches = true;
+    mockNativeSelectTarget({
+      mode: () => mode,
+      options: () => options,
+      writeMatches: () => writeMatches,
+    });
+    server.use(
+      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+        const body = z
+          .strictObject({ name: z.string() })
+          .parse(await request.json());
+        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+          status: 201,
+        });
+      }),
+      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+        return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+      }),
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        return HttpResponse.json(providerBrowser(String(params.id)));
+      }),
+    );
+    await accept(
+      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      [200],
+    );
+    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    const createSelect = async (required = false) =>
+      await accept(
+        userActionClient().create({
+          headers: current.claim.browserHeaders,
+          body: {
+            kind: "input",
+            callbackPrompt: "Continue after region selection",
+            pageTargetId: "native-input-target",
+            fields: [
+              {
+                key: "region",
+                label: "Region",
+                fieldKind: "select",
+                required,
+                backendNodeId: 45,
+              },
+            ],
+          },
+        }),
+        [201],
+      );
+    const preflight = async (token: string) =>
+      await accept(
+        userActionClient().preflight({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken: token },
+          body: {},
+        }),
+        [200],
+      );
+    const apply = async (
+      token: string,
+      indexes: readonly number[],
+      fingerprint: string,
+    ) =>
+      await userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+        body: {
+          values: [
+            {
+              key: "region",
+              optionIndexes: [...indexes],
+              optionSetFingerprint: fingerprint,
+            },
+          ],
+        },
+      });
+    const first = await createSelect();
+    expect(first.body.action.fields[0]).toMatchObject({
+      fieldKind: "select",
+      control: { tagName: "SELECT", inputType: "select-one" },
+    });
+    const token = first.body.action.requestToken;
+    const checked = await preflight(token);
+    expect(checked.body.fields[0]?.control.options).toMatchObject(options);
+    const fingerprint = checked.body.fields[0]?.control.optionSetFingerprint;
+    expect(fingerprint).toMatch(/^[a-f0-9]{64}$/);
+    if (!fingerprint) {
+      throw new Error("Missing option fingerprint");
+    }
+    expect(JSON.stringify(checked.body)).not.toContain("backendNodeId");
+    expect(JSON.stringify(checked.body)).not.toContain('"same"');
+    const disabled = await apply(token, [1], fingerprint);
+    expect(disabled).toMatchObject({
+      status: 409,
+      body: { error: { code: "BROWSER_USER_ACTION_INVALID_VALUE" } },
+    });
+    expect(browserSelectWrites()).toHaveLength(0);
+    options = options.map((option) =>
+      option.index === 3 ? { ...option, label: "Changed" } : option,
+    );
+    const drifted = await accept(apply(token, [3], fingerprint), [200]);
+    expect(drifted.body.state).toBe("stale");
+    expect(browserSelectWrites()).toHaveLength(0);
+
+    const duplicate = await createSelect();
+    const duplicateToken = duplicate.body.action.requestToken;
+    const duplicateFingerprint = (await preflight(duplicateToken)).body
+      .fields[0]?.control.optionSetFingerprint;
+    if (!duplicateFingerprint) {
+      throw new Error("Missing option fingerprint");
+    }
+    const chosen = await accept(
+      apply(duplicateToken, [3], duplicateFingerprint),
+      [200],
+    );
+    expect(chosen.body.state).toBe("succeeded");
+    expect(JSON.stringify(chosen.body)).not.toContain('"same"');
+    const write = browserSelectWrites().at(-1)?.[0];
+    expect(write?.params.arguments).toMatchObject([
+      {
+        kind: "select",
+        mode: "select-one",
+        indices: [3],
+      },
+    ]);
+    expect(JSON.stringify(write?.params.arguments)).not.toContain(
+      "native-select-object",
+    );
+
+    mode = "select-multiple";
+    const multi = await createSelect();
+    const multiToken = multi.body.action.requestToken;
+    const multiFingerprint = (await preflight(multiToken)).body.fields[0]
+      ?.control.optionSetFingerprint;
+    if (!multiFingerprint) {
+      throw new Error("Missing option fingerprint");
+    }
+    const chosenMulti = await accept(
+      apply(multiToken, [2, 3], multiFingerprint),
+      [200],
+    );
+    expect(chosenMulti.body.state).toBe("succeeded");
+    expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
+      {
+        mode: "select-multiple",
+        indices: [2, 3],
+      },
+    ]);
+    const clear = await createSelect();
+    const clearToken = clear.body.action.requestToken;
+    const clearFingerprint = (await preflight(clearToken)).body.fields[0]
+      ?.control.optionSetFingerprint;
+    if (!clearFingerprint) {
+      throw new Error("Missing option fingerprint");
+    }
+    expect(
+      (await accept(apply(clearToken, [], clearFingerprint), [200])).body.state,
+    ).toBe("succeeded");
+    expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
+      { indices: [] },
+    ]);
+
+    const required = await createSelect(true);
+    const requiredToken = required.body.action.requestToken;
+    const requiredFingerprint = (await preflight(requiredToken)).body.fields[0]
+      ?.control.optionSetFingerprint;
+    if (!requiredFingerprint) {
+      throw new Error("Missing option fingerprint");
+    }
+    const requiredEmpty = await apply(requiredToken, [], requiredFingerprint);
+    expect(requiredEmpty).toMatchObject({
+      status: 400,
+      body: { error: { code: "BROWSER_USER_ACTION_REQUIRED_VALUE_MISSING" } },
+    });
+    const requiredPlaceholder = await apply(
+      requiredToken,
+      [0],
+      requiredFingerprint,
+    );
+    expect(requiredPlaceholder).toMatchObject({
+      status: 409,
+      body: { error: { code: "BROWSER_USER_ACTION_INVALID_VALUE" } },
+    });
+    writeMatches = false;
+    expect(
+      (await accept(apply(requiredToken, [3], requiredFingerprint), [200])).body
+        .state,
+    ).toBe("uncertain");
   });
 
   it("supports live number constraints, optional clear, and exact readback", async () => {

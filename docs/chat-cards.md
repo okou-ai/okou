@@ -710,10 +710,19 @@ the original URL directly presents an authenticated full-page form. Both entry
 points show the persisted fields immediately after the authenticated request
 read, then run the token-only Browser preflight in the background. Reopening
 the dialog runs preflight again. Users can fill and submit while the check is
-pending. Preflight returns the observed textarea or input subtype and current
-site constraints, including multiple email addresses and number `min`, `max`,
-and `step` attributes. The form switches to those observed controls without
-clearing the draft. A confirmed page or control change makes the request
+pending for text/number controls. Preflight returns the observed textarea,
+input, or native select subtype and current site constraints, including
+multiple email addresses, number `min`, `max`, and `step` attributes, and a
+bounded snapshot of select option labels, disabled states, and selected states.
+The form switches to those observed controls without clearing the draft.
+Select submission waits for preflight, identifies options by their position
+rather than their possibly duplicated value, and carries a snapshot fingerprint.
+An untouched select stays unchanged; an optional select can be explicitly
+cleared. Required selects reject empty placeholder choices. The API checks the
+current options again before writing; option drift makes the action stale, and
+post-write mismatch yields an uncertain state instead of claiming success.
+Option values and submitted selections do not appear in the action URL or
+chat callback. A confirmed page or control change makes the request
 stale; a temporary provider failure blocks submission, preserves the draft,
 and offers Retry. The form does not poll while open. Preflight releases the
 thread write lock during remote Browser I/O, so it does not delay a submission.

@@ -25,7 +25,7 @@ export interface BrowserUserActionInputField {
   readonly required: boolean;
   readonly backendNodeId: number;
   readonly fingerprint: {
-    readonly tagName: "INPUT" | "TEXTAREA";
+    readonly tagName: "INPUT" | "TEXTAREA" | "SELECT";
     readonly inputType: string;
   };
 }
@@ -52,6 +52,12 @@ export function browserUserActionFieldSupportsTarget(
   if (fingerprint.tagName === "TEXTAREA") {
     return fieldKind === "text" && fingerprint.inputType === "textarea";
   }
+  if (fingerprint.tagName === "SELECT") {
+    return (
+      fieldKind === "select" &&
+      ["select-one", "select-multiple"].includes(fingerprint.inputType)
+    );
+  }
   switch (fieldKind) {
     case "text":
       return ["text", "email", "tel", "url", "search"].includes(
@@ -65,6 +71,8 @@ export function browserUserActionFieldSupportsTarget(
       return ["text", "tel", "number"].includes(fingerprint.inputType);
     case "number":
       return fingerprint.inputType === "number";
+    case "select":
+      return false;
   }
 }
 
@@ -157,22 +165,33 @@ function decodeField(value: unknown): BrowserUserActionInputField | null {
         0,
         BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH,
       )) ||
-    !["text", "username", "password", "one_time_code", "number"].includes(
-      String(field.fieldKind),
-    ) ||
+    ![
+      "text",
+      "username",
+      "password",
+      "one_time_code",
+      "number",
+      "select",
+    ].includes(String(field.fieldKind)) ||
     typeof field.required !== "boolean" ||
     !Number.isSafeInteger(field.backendNodeId) ||
     Number(field.backendNodeId) <= 0 ||
     !fingerprint ||
     !hasOnlyKeys(fingerprint, ["tagName", "inputType"]) ||
-    (fingerprint.tagName !== "INPUT" && fingerprint.tagName !== "TEXTAREA") ||
+    (fingerprint.tagName !== "INPUT" &&
+      fingerprint.tagName !== "TEXTAREA" &&
+      fingerprint.tagName !== "SELECT") ||
     !boundedString(fingerprint.inputType, 0, 64)
   ) {
     return null;
   }
   const fieldKind = field.fieldKind as BrowserUserActionFieldKind;
-  const tagName: "INPUT" | "TEXTAREA" =
-    fingerprint.tagName === "INPUT" ? "INPUT" : "TEXTAREA";
+  const tagName: "INPUT" | "TEXTAREA" | "SELECT" =
+    fingerprint.tagName === "INPUT"
+      ? "INPUT"
+      : fingerprint.tagName === "SELECT"
+        ? "SELECT"
+        : "TEXTAREA";
   const safeFingerprint: BrowserUserActionInputField["fingerprint"] = {
     tagName,
     inputType: fingerprint.inputType,

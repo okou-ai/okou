@@ -2,6 +2,7 @@ import {
   BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH,
   BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
   browserUserActionsContract,
+  type BrowserUserActionApplyRequest,
   type BrowserUserActionResponse,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -59,6 +60,7 @@ export type BrowserUserActionRequestState =
 export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly request$: Computed<Promise<BrowserUserActionRequestState>>;
   readonly draft$: Computed<ReadonlyMap<string, string>>;
+  readonly choiceDraft$: Computed<ReadonlyMap<string, readonly number[]>>;
   readonly callbackDelivered$: Computed<boolean>;
   readonly callbackFailed$: Computed<boolean>;
   readonly busy$: Computed<boolean>;
@@ -72,6 +74,8 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly retryStandaloneRequest$: Command<Promise<void>, [AbortSignal]>;
   readonly refresh$: Command<void, []>;
   readonly updateDraft$: Command<void, [string, string]>;
+  readonly updateChoiceDraft$: Command<void, [string, readonly number[]]>;
+  readonly removeChoiceDraft$: Command<void, [string]>;
   readonly removeDraft$: Command<void, [string]>;
   readonly clearDraft$: Command<void, []>;
   readonly clearDraftRef$: Command<
@@ -352,13 +356,34 @@ function createRequestSignals(descriptor: BrowserUserActionDescriptor) {
 function createDraftSignals(): Pick<
   BrowserUserActionSignals,
   | "draft$"
+  | "choiceDraft$"
   | "updateDraft$"
+  | "updateChoiceDraft$"
+  | "removeChoiceDraft$"
   | "removeDraft$"
   | "clearDraft$"
   | "clearDraftRef$"
   | "formRef$"
 > {
   const internalDraft$ = state<ReadonlyMap<string, string>>(new Map());
+  const internalChoiceDraft$ = state<ReadonlyMap<string, readonly number[]>>(
+    new Map(),
+  );
+  const choiceDraft$ = computed((get) => get(internalChoiceDraft$));
+  const updateChoiceDraft$ = command(
+    ({ set }, key: string, indices: readonly number[]): void => {
+      set(internalChoiceDraft$, (current) =>
+        new Map(current).set(key, [...indices]),
+      );
+    },
+  );
+  const removeChoiceDraft$ = command(({ set }, key: string): void => {
+    set(internalChoiceDraft$, (current) => {
+      const next = new Map(current);
+      next.delete(key);
+      return next;
+    });
+  });
   const ownerCount$ = state(0);
   const draft$ = computed((get) => {
     return get(internalDraft$);
@@ -373,6 +398,7 @@ function createDraftSignals(): Pick<
   });
   const clearDraft$ = command(({ set }): void => {
     set(internalDraft$, new Map());
+    set(internalChoiceDraft$, new Map());
   });
   const removeDraft$ = command(({ set }, key: string): void => {
     set(internalDraft$, (current) => {
@@ -429,7 +455,10 @@ function createDraftSignals(): Pick<
   );
   return {
     draft$,
+    choiceDraft$,
     updateDraft$,
+    updateChoiceDraft$,
+    removeChoiceDraft$,
     removeDraft$,
     clearDraft$,
     clearDraftRef$: onRef(clearDraftOnMount$),
@@ -455,6 +484,7 @@ interface BrowserUserActionMutationContext {
   readonly request$: BrowserUserActionSignals["request$"];
   readonly refresh$: BrowserUserActionSignals["refresh$"];
   readonly draft$: BrowserUserActionSignals["draft$"];
+  readonly choiceDraft$: BrowserUserActionSignals["choiceDraft$"];
   readonly entryAction$: BrowserUserActionSignals["entryAction$"];
   readonly entryState$: BrowserUserActionSignals["entryState$"];
   readonly invalidateEntry$: BrowserUserActionSignals["invalidateEntry$"];
@@ -469,9 +499,41 @@ interface BrowserUserActionMutationContext {
 function browserInputSubmissionValues(
   action: BrowserInputAction,
   draft: ReadonlyMap<string, string>,
-): { key: string; value: string }[] | null {
-  const values: { key: string; value: string }[] = [];
+  choiceDraft: ReadonlyMap<string, readonly number[]>,
+): BrowserUserActionApplyRequest["values"] | null {
+  const values: BrowserUserActionApplyRequest["values"][number][] = [];
   for (const field of action.fields) {
+    if (field.fieldKind === "select") {
+      const options = field.control.options;
+      const optionSetFingerprint = field.control.optionSetFingerprint;
+      if (!options || !optionSetFingerprint) {
+        return null;
+      }
+      const selection = choiceDraft.get(field.key);
+      if (selection === undefined) {
+        if (
+          (field.required || field.control.siteRequired) &&
+          !options.some(
+            (option) => option.selected && !option.disabled && !option.empty,
+          )
+        ) {
+          return null;
+        }
+      } else {
+        if (
+          (field.required || field.control.siteRequired) &&
+          selection.every((index) => options[index]?.empty)
+        ) {
+          return null;
+        }
+        values.push({
+          key: field.key,
+          optionIndexes: [...selection],
+          optionSetFingerprint,
+        });
+      }
+      continue;
+    }
     const value = draft.get(field.key) ?? "";
     if (value === "") {
       if (field.required || field.control.siteRequired) {
@@ -512,6 +574,7 @@ function createSubmitSignal({
   request$,
   refresh$,
   draft$,
+  choiceDraft$,
   entryAction$,
   entryState$,
   invalidateEntry$,
@@ -547,7 +610,11 @@ function createSubmitSignal({
     if (!action || action.state !== "pending") {
       return;
     }
-    const values = browserInputSubmissionValues(action, get(draft$));
+    const values = browserInputSubmissionValues(
+      action,
+      get(draft$),
+      get(choiceDraft$),
+    );
     if (!values) {
       return;
     }
@@ -713,6 +780,7 @@ function createMutationSignals({
   request$,
   refresh$,
   draft$,
+  choiceDraft$,
   clearDraft$,
   entryAction$,
   entryState$,
@@ -723,6 +791,7 @@ function createMutationSignals({
   | "request$"
   | "refresh$"
   | "draft$"
+  | "choiceDraft$"
   | "clearDraft$"
   | "entryAction$"
   | "entryState$"
@@ -766,6 +835,7 @@ function createMutationSignals({
     request$,
     refresh$,
     draft$,
+    choiceDraft$,
     entryAction$,
     entryState$,
     invalidateEntry$,
@@ -849,6 +919,7 @@ export function createBrowserUserActionSignals(
     request$: requestSignals.request$,
     refresh$: requestSignals.refresh$,
     draft$: draftSignals.draft$,
+    choiceDraft$: draftSignals.choiceDraft$,
     clearDraft$: draftSignals.clearDraft$,
     entryAction$: entrySignals.entryAction$,
     entryState$: entrySignals.entryState$,
