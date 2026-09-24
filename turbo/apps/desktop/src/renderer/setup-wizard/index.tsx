@@ -7,7 +7,7 @@ import {
   LogOut,
   ShieldCheck,
 } from "lucide-react";
-import { useSet } from "ccstate-react";
+import { useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { DesktopAuthState } from "../../desktop-bridge";
 import {
@@ -21,6 +21,7 @@ import {
 } from "../../computer-use-types";
 import {
   hasDesktopAuthBridge,
+  desktopLoginMethodData$,
   openAccessibilitySettings$,
   openAutomationSettings$,
   openDesktopOrgSelection$,
@@ -31,6 +32,7 @@ import {
   requestAccessibilityPermission$,
   requestScreenRecordingPermission$,
   signOutDesktop$,
+  setDesktopLoginMethod$,
 } from "../computer-use-state";
 import { DesktopBrandMark, IconButton } from "../components";
 import { currentDesktopIdentity } from "../desktop-identity";
@@ -77,11 +79,27 @@ export function AuthStepCard({
     openDesktopOrgSelection$,
   );
   const [signOutLoadable, signOut] = useLoadableSet(signOutDesktop$);
+  const methodLoadable = useLastLoadable(desktopLoginMethodData$);
+  const [switchLoadable, switchMethod] = useLoadableSet(setDesktopLoginMethod$);
   const signedInAuth = authState?.status === "signed_in" ? authState : null;
   const activeOrganization = signedInAuth?.organization ?? null;
   const signingIn =
     authState?.status === "signing_in" || signInLoadable.state === "loading";
   const authBridgeAvailable = hasDesktopAuthBridge();
+  const authError =
+    signInLoadable.state === "hasError"
+      ? signInLoadable.error
+      : orgSelectionLoadable.state === "hasError"
+        ? orgSelectionLoadable.error
+        : signOutLoadable.state === "hasError"
+          ? signOutLoadable.error
+          : null;
+  const authErrorMessage =
+    authError === null
+      ? null
+      : authError instanceof Error
+        ? authError.message
+        : String(authError);
 
   if (signedInAuth && activeOrganization) {
     return (
@@ -117,6 +135,11 @@ export function AuthStepCard({
             Sign out
           </IconButton>
         </div>
+        {authErrorMessage && (
+          <p className="inline-alert inline-alert-error" role="alert">
+            {authErrorMessage}
+          </p>
+        )}
       </section>
     );
   }
@@ -168,18 +191,44 @@ export function AuthStepCard({
               </IconButton>
             </>
           ) : (
-            <IconButton
-              tone="primary"
-              icon={<ExternalLink size={15} />}
-              onClick={() => {
-                void signIn();
-              }}
-              disabled={authLoading || signingIn || !authBridgeAvailable}
-            >
-              {signingIn ? "Signing in..." : "Sign in"}
-            </IconButton>
+            <>
+              <IconButton
+                tone="primary"
+                icon={<ExternalLink size={15} />}
+                onClick={() => {
+                  void signIn();
+                }}
+                disabled={authLoading || signingIn || !authBridgeAvailable}
+              >
+                {signingIn ? "Signing in..." : "Sign in"}
+              </IconButton>
+              {methodLoadable.state === "hasData" &&
+                methodLoadable.data.method === "native" && (
+                  <IconButton
+                    icon={<LogOut size={15} />}
+                    onClick={() => {
+                      void switchMethod("browser");
+                    }}
+                    disabled={switchLoadable.state === "loading"}
+                  >
+                    Use browser sign-in
+                  </IconButton>
+                )}
+            </>
           )}
         </div>
+        {authErrorMessage && (
+          <p className="inline-alert inline-alert-error" role="alert">
+            {authErrorMessage}
+          </p>
+        )}
+        {switchLoadable.state === "hasError" && (
+          <p className="inline-alert inline-alert-error" role="alert">
+            {switchLoadable.error instanceof Error
+              ? switchLoadable.error.message
+              : String(switchLoadable.error)}
+          </p>
+        )}
       </div>
     </section>
   );

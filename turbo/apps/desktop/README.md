@@ -87,6 +87,35 @@ The desktop app does not start platform/web/api/proxy services itself. Start the
 target platform surface separately, then pass its URL through
 `OKOU_DESKTOP_PLATFORM_URL`.
 
+### Local ClerkKit sign-in trial
+
+Enable Clerk's Native API and register `ai.okou.desktop.dev` as a native
+application in the matching Clerk instance. Start the local platform and API
+first, then run from `turbo/`:
+
+```bash
+OKOU_DESKTOP_PLATFORM_URL=http://localhost:3002 \
+OKOU_DESKTOP_CLERK_PUBLISHABLE_KEY=pk_test_your_publishable_key \
+pnpm -F @okouai/desktop dev:packaged
+```
+
+The publishable key must belong to the Clerk instance used by the local API.
+Sign in with the current browser method, enable Developer Tools, then turn on
+**Native Clerk sign-in** in the **Login method** panel above Filesystem plugin.
+Desktop signs out, stops Computer Use, and restarts. Sign in again after the
+restart. The packaged `Okou Dev.app` uses the system browser for native
+sign-in, keeps its Clerk session in Keychain, and sends its own session tokens
+to the existing API auth routes. Web and Desktop may have different session IDs.
+Choose a workspace in Desktop if Clerk did not select one.
+
+The choice is stored in Desktop preferences. Quit and relaunch the packaged app
+with the same publishable key to check restoration. If native sign-in fails,
+use **Use browser sign-in** on the sign-in screen to switch back. CI packages a
+public Clerk publishable key in the production and preview app runtime config,
+so those apps do not need a shell environment variable. For automation,
+`OKOU_DESKTOP_NATIVE_CLERK=true` remains a default only when no choice has been
+saved yet.
+
 ## Internal macOS artifacts
 
 The `Desktop` GitHub Actions workflow builds macOS artifacts for internal

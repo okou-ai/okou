@@ -11,6 +11,7 @@ if (process.platform !== "darwin") {
 
 const appRoot = path.resolve(__dirname, "..");
 const packageRoot = path.join(appRoot, "native", "computer-use-helper");
+const clerkPackageRoot = path.join(appRoot, "native", "clerk-auth-helper");
 const distDir = path.join(appRoot, "native", "dist", "native");
 const symbolsDir = path.join(appRoot, "native", "dist", "symbols");
 
@@ -19,6 +20,13 @@ const helperNames = ["computer-use-helper"];
 execFileSync(
   "swift",
   ["build", "--package-path", packageRoot, "-c", "release"],
+  {
+    stdio: "inherit",
+  },
+);
+execFileSync(
+  "swift",
+  ["build", "--package-path", clerkPackageRoot, "-c", "release"],
   {
     stdio: "inherit",
   },
@@ -43,3 +51,20 @@ for (const helperName of helperNames) {
     stdio: "inherit",
   });
 }
+
+const clerkBuildOutput = path.join(
+  clerkPackageRoot,
+  ".build",
+  "release",
+  "clerk-auth-helper",
+);
+const clerkDistOutput = path.join(distDir, "clerk-auth-helper");
+fs.copyFileSync(clerkBuildOutput, clerkDistOutput);
+fs.chmodSync(clerkDistOutput, 0o755);
+execFileSync(
+  "dsymutil",
+  [clerkBuildOutput, "-o", path.join(symbolsDir, "clerk-auth-helper.dSYM")],
+  {
+    stdio: "inherit",
+  },
+);
