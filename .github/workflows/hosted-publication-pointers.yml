@@ -32,6 +32,9 @@ permissions:
   contents: read
   actions: read
 
+env:
+  npm_config_audit: "false"
+
 concurrency:
   group: hosted-publication-pointers-production
   cancel-in-progress: false
