@@ -621,12 +621,13 @@ export function GetStartedCheckinDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent smMaxWidth={680}>
-        {/* The milestone joins the same two panels as every other quest
-            screen. It keeps the one thing a reward screen needs that a step
-            screen does not -- the amount at display size -- but it stops
-            being the one dialog in the flow with its own shape. */}
+        {/* The confirmation joins the same two panels as every other quest
+            screen. The amount takes display size so the reward is clear. */}
         <div className="-m-6 flex items-stretch">
-          <QuestFigure art="checkinWeek" />
+          {/* On a narrow viewport the copy needs the full width. */}
+          <div className="hidden sm:contents">
+            <QuestFigure art="checkinWeek" />
+          </div>
           <div className="flex min-w-0 flex-1 flex-col gap-3 p-6">
             <DialogHeader>
               <DialogTitle className="pr-7">
@@ -634,11 +635,9 @@ export function GetStartedCheckinDialog({
                   return $.chat.agentPage.getStarted.intro.checkin.title;
                 })}
               </DialogTitle>
-              {/* The streak, not the amount, is what brings someone back
-                  tomorrow, and the screen never said it. It reads as the
-                  subtitle but it is not the dialog's description: a milestone
-                  at streak 0 is reachable, and the slot that names the screen
-                  has to be the line that is always there. */}
+              {/* The streak names the habit that brings someone back tomorrow.
+                  The title remains the dialog's accessible name even if the
+                  refreshed status reports a zero streak. */}
               {streak > 0 && (
                 <p className="text-sm text-muted-foreground">
                   {t(

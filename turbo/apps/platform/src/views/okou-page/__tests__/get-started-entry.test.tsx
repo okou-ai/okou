@@ -547,14 +547,22 @@ test("Daily rewards are claimed by selecting check in", async () => {
   expect(normalizedText(checkinRow)).toContain("Check in daily+100Check in");
 
   click(checkinRow);
+  const dialog = await screen.findByRole("dialog", {
+    name: "Checked in for today",
+  });
+  expect(within(dialog).getByText("1-day streak")).toBeInTheDocument();
+  expect(within(dialog).getByText("+100 credits")).toBeInTheDocument();
+  click(buttonNamed("Back to work", dialog));
+
+  const updatedPanel = await openQuestPanel();
   await expect(
-    within(panel).findByText("400 earned"),
+    within(updatedPanel).findByText("400 earned"),
   ).resolves.toBeInTheDocument();
   expect(screen.getByTestId("get-started-quest-checkin")).not.toHaveAttribute(
     "role",
     "menuitem",
   );
-  expect(within(panel).queryByText("Check in")).not.toBeInTheDocument();
+  expect(within(updatedPanel).queryByText("Check in")).not.toBeInTheDocument();
 });
 
 test("The connector step says what it costs the user before it hands them off", async () => {
@@ -746,11 +754,10 @@ test("Picking a workflow hands its sentence to the composer", async () => {
   });
 });
 
-test("An ordinary day's check-in reports the streak without taking the screen", async () => {
+test("An ordinary day's check-in confirms the reward and streak in a dialog", async () => {
   const data = configureQuestPage(context, "member", { claimedToday: false });
-  // Mid-streak: the next check-in is day four, which is neither the first nor
-  // a full week, so it is the case that should stay out of the way.
-  data.checkinStreak = 3;
+  // Day nine is neither the first nor a weekly milestone.
+  data.checkinStreak = 8;
   await setupPage({
     context,
     path: questChatPath(),
@@ -763,9 +770,37 @@ test("An ordinary day's check-in reports the streak without taking the screen", 
   await openQuestPanel();
   click(screen.getByTestId("get-started-quest-checkin"));
 
-  // The streak is the part worth saying, and it is said without a modal.
-  await expect(screen.findByText("4-day streak")).resolves.toBeInTheDocument();
-  expect(screen.queryByRole("dialog")).toBeNull();
+  const dialog = await screen.findByRole("dialog", {
+    name: "Checked in for today",
+  });
+  expect(within(dialog).getByText("9-day streak")).toBeInTheDocument();
+  expect(within(dialog).getByText("+100 credits")).toBeInTheDocument();
+});
+
+test("A failed check-in does not show a success dialog", async () => {
+  configureQuestPage(context, "member", { claimedToday: false });
+  context.mocks.api(getStartedContract.checkin, ({ respond }) => {
+    return respond(403, {
+      error: { code: "FORBIDDEN", message: "Check-in unavailable" },
+    });
+  });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-checkin"));
+  await expect(
+    screen.findByText("Check-in unavailable"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByRole("dialog", { name: "Checked in for today" }),
+  ).toBeNull();
+
+  const panel = await openQuestPanel();
+  expect(within(panel).getByText("Check in")).toBeInTheDocument();
 });
 
 test("Checking in confirms the reward instead of closing silently", async () => {
