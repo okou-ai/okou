@@ -55,6 +55,13 @@ export async function deleteDiscordUserData(
   userId: string,
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    // A surviving organization's installation is not the installer's account
+    // data. Keep it usable by the remaining members and remove the association.
+    await tx
+      .update(discordOrgInstallations)
+      .set({ installedByUserId: null })
+      .where(eq(discordOrgInstallations.installedByUserId, userId));
+    // Match guild uninstall: lock installations before their connections.
     // Connections are the enforced parent for routes, ingress, DM selection,
     // and chat context, including accepted ingress not yet attached to a route.
     await tx
@@ -63,11 +70,5 @@ export async function deleteDiscordUserData(
     await tx
       .delete(discordUserAgentPreferences)
       .where(eq(discordUserAgentPreferences.userId, userId));
-    // A surviving organization's installation is not the installer's account
-    // data. Keep it usable by the remaining members and remove the association.
-    await tx
-      .update(discordOrgInstallations)
-      .set({ installedByUserId: null })
-      .where(eq(discordOrgInstallations.installedByUserId, userId));
   });
 }

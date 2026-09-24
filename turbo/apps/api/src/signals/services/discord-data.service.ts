@@ -14,8 +14,9 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import type { ApiOrgRole } from "../../types/auth";
 import { nowDate } from "../../lib/time";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
-import { db$, writeDb$ } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
+import { publishDiscordChanged } from "./discord-realtime.service";
 import {
   discordIntegrationEnabledForOwner,
   discordIntegrationEnabledForOwnerInDb,
@@ -221,6 +222,85 @@ function savedDiscordDmBinding(discordUserId: string) {
   });
 }
 
+async function selectDiscordDmBinding(
+  db: Db,
+  binding: DiscordVerifiedBinding,
+  discordUserId: string,
+  userIds: readonly string[],
+  signal: AbortSignal,
+): Promise<boolean> {
+  const result = await db.transaction(async (tx) => {
+    await assertErasureSubjectWritable(tx, [
+      { subjectKind: "user", subjectId: binding.userId },
+      { subjectKind: "organization", subjectId: binding.orgId },
+    ]);
+    signal.throwIfAborted();
+    // Match guild uninstall's installation -> connection lock order.
+    const [installation] = await tx
+      .select({ guildId: discordOrgInstallations.guildId })
+      .from(discordOrgInstallations)
+      .where(eq(discordOrgInstallations.guildId, binding.guildId))
+      .for("share");
+    signal.throwIfAborted();
+    if (!installation) {
+      return false;
+    }
+    const [current] = await tx
+      .select(bindingColumns)
+      .from(discordOrgConnections)
+      .innerJoin(
+        discordOrgInstallations,
+        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+      )
+      .where(
+        and(
+          eq(discordOrgConnections.id, binding.connectionId),
+          eq(discordOrgConnections.discordUserId, discordUserId),
+          eq(discordOrgConnections.userId, binding.userId),
+          eq(discordOrgInstallations.orgId, binding.orgId),
+        ),
+      )
+      .for("share");
+    signal.throwIfAborted();
+    if (!current) {
+      return false;
+    }
+    const enabled = await discordIntegrationEnabledForOwnerInDb(
+      tx,
+      binding.orgId,
+      binding.userId,
+    );
+    signal.throwIfAborted();
+    if (!enabled) {
+      return false;
+    }
+    await tx
+      .insert(discordUserDmPreferences)
+      .values({
+        discordUserId: discordUserId,
+        connectionId: binding.connectionId,
+        userId: binding.userId,
+        createdAt: nowDate(),
+        updatedAt: nowDate(),
+      })
+      .onConflictDoUpdate({
+        target: discordUserDmPreferences.discordUserId,
+        set: {
+          connectionId: binding.connectionId,
+          userId: binding.userId,
+          updatedAt: nowDate(),
+        },
+      });
+    signal.throwIfAborted();
+    return true;
+  });
+  if (result) {
+    await publishDiscordChanged(userIds);
+  }
+  signal.throwIfAborted();
+  return result;
+}
+
 export const selectDiscordDmBinding$ = command(
   async (
     { get, set },
@@ -242,60 +322,58 @@ export const selectDiscordDmBinding$ = command(
     if (!binding) {
       return false;
     }
-    const result = await set(writeDb$).transaction(async (tx) => {
-      await assertErasureSubjectWritable(tx, [
-        { subjectKind: "user", subjectId: binding.userId },
-        { subjectKind: "organization", subjectId: binding.orgId },
-      ]);
-      const [current] = await tx
-        .select(bindingColumns)
-        .from(discordOrgConnections)
-        .innerJoin(
-          discordOrgInstallations,
-          eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
-        )
-        .where(
-          and(
-            eq(discordOrgConnections.id, binding.connectionId),
-            eq(discordOrgConnections.discordUserId, args.discordUserId),
-            eq(discordOrgConnections.userId, binding.userId),
-            eq(discordOrgInstallations.orgId, binding.orgId),
-          ),
-        )
-        .for("share");
-      if (
-        !current ||
-        !(await discordIntegrationEnabledForOwnerInDb(
-          tx,
-          binding.orgId,
-          binding.userId,
-        ))
-      ) {
-        return false;
-      }
-      await tx
-        .insert(discordUserDmPreferences)
-        .values({
-          discordUserId: args.discordUserId,
-          connectionId: binding.connectionId,
-          userId: binding.userId,
-          createdAt: nowDate(),
-          updatedAt: nowDate(),
-        })
-        .onConflictDoUpdate({
-          target: discordUserDmPreferences.discordUserId,
-          set: {
-            connectionId: binding.connectionId,
-            userId: binding.userId,
-            updatedAt: nowDate(),
-          },
-        });
-      return true;
-    });
-    signal.throwIfAborted();
-    return result;
+    return await selectDiscordDmBinding(
+      set(writeDb$),
+      binding,
+      args.discordUserId,
+      bindings.map((candidate) => {
+        return candidate.userId;
+      }),
+      signal,
+    );
   },
 );
+
+async function deleteDiscordBinding(
+  db: Db,
+  args: {
+    readonly connectionId: string;
+    readonly discordUserId: string;
+    readonly orgId?: string;
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  const rows = await db.transaction(async (tx) => {
+    signal.throwIfAborted();
+    const removed = await tx
+      .delete(discordOrgConnections)
+      .where(
+        and(
+          eq(discordOrgConnections.id, args.connectionId),
+          eq(discordOrgConnections.discordUserId, args.discordUserId),
+          args.orgId
+            ? eq(
+                discordOrgConnections.guildId,
+                tx
+                  .select({ guildId: discordOrgInstallations.guildId })
+                  .from(discordOrgInstallations)
+                  .where(eq(discordOrgInstallations.orgId, args.orgId)),
+              )
+            : undefined,
+        ),
+      )
+      .returning({ userId: discordOrgConnections.userId });
+    signal.throwIfAborted();
+    return removed;
+  });
+  await publishDiscordChanged(
+    rows.map((row) => {
+      return row.userId;
+    }),
+  );
+  signal.throwIfAborted();
+  return rows.length > 0;
+}
 
 export const disconnectDiscordBinding$ = command(
   async (
@@ -307,27 +385,7 @@ export const disconnectDiscordBinding$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
-    const rows = await db
-      .delete(discordOrgConnections)
-      .where(
-        and(
-          eq(discordOrgConnections.id, args.connectionId),
-          eq(discordOrgConnections.discordUserId, args.discordUserId),
-          args.orgId
-            ? eq(
-                discordOrgConnections.guildId,
-                db
-                  .select({ guildId: discordOrgInstallations.guildId })
-                  .from(discordOrgInstallations)
-                  .where(eq(discordOrgInstallations.orgId, args.orgId)),
-              )
-            : undefined,
-        ),
-      )
-      .returning({ id: discordOrgConnections.id });
-    signal.throwIfAborted();
-    return rows.length > 0;
+    return await deleteDiscordBinding(set(writeDb$), args, signal);
   },
 );
 
@@ -372,6 +430,86 @@ export function discordEffectiveAgent(args: {
   });
 }
 
+async function updateDiscordAgentPreference(
+  db: Db,
+  binding: DiscordVerifiedBinding,
+  agentId: string | null,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const result = await db.transaction(async (tx) => {
+    await assertErasureSubjectWritable(tx, [
+      { subjectKind: "user", subjectId: binding.userId },
+      { subjectKind: "organization", subjectId: binding.orgId },
+    ]);
+    signal.throwIfAborted();
+    const [connection] = await tx
+      .select()
+      .from(discordOrgConnections)
+      .where(eq(discordOrgConnections.id, binding.connectionId))
+      .for("share");
+    signal.throwIfAborted();
+    if (!connection) {
+      return false;
+    }
+    const enabled = await discordIntegrationEnabledForOwnerInDb(
+      tx,
+      binding.orgId,
+      binding.userId,
+    );
+    signal.throwIfAborted();
+    if (!enabled) {
+      return false;
+    }
+    if (agentId) {
+      const [agent] = await tx
+        .select({ id: agents.id })
+        .from(agents)
+        .where(
+          and(
+            eq(agents.id, agentId),
+            eq(agents.orgId, binding.orgId),
+            or(
+              eq(agents.visibility, "public"),
+              eq(agents.owner, binding.userId),
+            ),
+          ),
+        );
+      signal.throwIfAborted();
+      if (!agent) {
+        return false;
+      }
+    }
+    await tx
+      .insert(discordUserAgentPreferences)
+      .values({
+        userId: binding.userId,
+        orgId: binding.orgId,
+        connectionId: binding.connectionId,
+        selectedAgentId: agentId,
+        createdAt: nowDate(),
+        updatedAt: nowDate(),
+      })
+      .onConflictDoUpdate({
+        target: [
+          discordUserAgentPreferences.userId,
+          discordUserAgentPreferences.orgId,
+        ],
+        set: {
+          connectionId: binding.connectionId,
+          selectedAgentId: agentId,
+          updatedAt: nowDate(),
+        },
+      });
+    signal.throwIfAborted();
+    return true;
+  });
+  if (result) {
+    await publishDiscordChanged([binding.userId]);
+  }
+  signal.throwIfAborted();
+  return result;
+}
+
 export const setDiscordAgentPreference$ = command(
   async (
     { get, set },
@@ -390,69 +528,12 @@ export const setDiscordAgentPreference$ = command(
     if (!binding) {
       return false;
     }
-    const result = await set(writeDb$).transaction(async (tx) => {
-      await assertErasureSubjectWritable(tx, [
-        { subjectKind: "user", subjectId: binding.userId },
-        { subjectKind: "organization", subjectId: binding.orgId },
-      ]);
-      const [connection] = await tx
-        .select()
-        .from(discordOrgConnections)
-        .where(eq(discordOrgConnections.id, binding.connectionId))
-        .for("share");
-      if (
-        !connection ||
-        !(await discordIntegrationEnabledForOwnerInDb(
-          tx,
-          binding.orgId,
-          binding.userId,
-        ))
-      ) {
-        return false;
-      }
-      if (args.agentId) {
-        const [agent] = await tx
-          .select({ id: agents.id })
-          .from(agents)
-          .where(
-            and(
-              eq(agents.id, args.agentId),
-              eq(agents.orgId, binding.orgId),
-              or(
-                eq(agents.visibility, "public"),
-                eq(agents.owner, binding.userId),
-              ),
-            ),
-          );
-        if (!agent) {
-          return false;
-        }
-      }
-      await tx
-        .insert(discordUserAgentPreferences)
-        .values({
-          userId: binding.userId,
-          orgId: binding.orgId,
-          connectionId: binding.connectionId,
-          selectedAgentId: args.agentId,
-          createdAt: nowDate(),
-          updatedAt: nowDate(),
-        })
-        .onConflictDoUpdate({
-          target: [
-            discordUserAgentPreferences.userId,
-            discordUserAgentPreferences.orgId,
-          ],
-          set: {
-            connectionId: binding.connectionId,
-            selectedAgentId: args.agentId,
-            updatedAt: nowDate(),
-          },
-        });
-      return true;
-    });
-    signal.throwIfAborted();
-    return result;
+    return await updateDiscordAgentPreference(
+      set(writeDb$),
+      binding,
+      args.agentId,
+      signal,
+    );
   },
 );
 

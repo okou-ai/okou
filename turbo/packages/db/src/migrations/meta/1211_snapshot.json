@@ -1,6 +1,6 @@
 {
-  "id": "d199e7a5-3ba4-4380-a7f0-2f2f78d316f3",
-  "prevId": "e6a05faa-36ad-4e0b-a816-5b85123c14f4",
+  "id": "7f369c2b-556f-4fb6-91d8-8700a323354f",
+  "prevId": "26f5c3e5-8e28-4cb7-8505-5ed290894148",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -13883,7 +13883,29 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "idx_discord_org_installations_installer_guild": {
+          "name": "idx_discord_org_installations_installer_guild",
+          "columns": [
+            {
+              "expression": "installed_by_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "guild_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {

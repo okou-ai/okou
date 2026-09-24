@@ -287,6 +287,18 @@ describe("shared SDK ingestion", () => {
       session_history_wire_bytes: 288 * 1024 * 1024,
       session_history_write_requests: 18,
     } as const;
+    const storageBatch = {
+      ts,
+      action_type: "runner_storage_manifest_batch_apply",
+      duration_ms: 42,
+      success: true,
+      outcome: "dedicated_middle",
+      reason: "32_to_64_kib",
+      storage_batch_guest_duration_ms: 31,
+      storage_batch_outer_residual_ms: 11,
+      storage_batch_timing: "paired",
+      manifest_json: "must-not-reach-axiom",
+    } as const;
     const response = await accept(
       setupApp({ context, routes: webhooksAgentHealthUsageTelemetryRoutes })(
         webhookTelemetryContract,
@@ -305,6 +317,7 @@ describe("shared SDK ingestion", () => {
             nativeZstdTransfer,
             failedTransfer,
             largeInlineTransfer,
+            storageBatch,
           ],
         },
       }),
@@ -349,6 +362,23 @@ describe("shared SDK ingestion", () => {
         [{ ...expected, ...fields, _time: transferTime, op_type: opType }],
       );
     }
+    expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
+      "vm0-sandbox-op-log-dev",
+      [
+        {
+          ...expected,
+          op_type: storageBatch.action_type,
+          duration_ms: storageBatch.duration_ms,
+          outcome: storageBatch.outcome,
+          reason: storageBatch.reason,
+          storage_batch_guest_duration_ms:
+            storageBatch.storage_batch_guest_duration_ms,
+          storage_batch_outer_residual_ms:
+            storageBatch.storage_batch_outer_residual_ms,
+          storage_batch_timing: storageBatch.storage_batch_timing,
+        },
+      ],
+    );
   });
 
   it("attributes dataset failures and flushes every selected client", async () => {

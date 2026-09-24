@@ -48,6 +48,7 @@ export interface AgentPhoneProviderSend {
   readonly replyToMessageId: string | undefined;
   readonly body: string | undefined;
   readonly mediaUrl: string | undefined;
+  readonly mediaUrls: readonly string[];
 }
 
 export interface AgentPhoneSendCapture {
@@ -254,6 +255,11 @@ export function createAgentPhoneBddApi(context: TestContext) {
               replyToMessageId: stringField(record, "reply_to_message_id"),
               body: stringField(record, "body"),
               mediaUrl: stringField(record, "media_url"),
+              mediaUrls: Array.isArray(record.media_urls)
+                ? record.media_urls.filter((url): url is string => {
+                    return typeof url === "string";
+                  })
+                : [],
             };
             if (!send.toNumber) {
               return HttpResponse.json(
@@ -268,7 +274,7 @@ export function createAgentPhoneBddApi(context: TestContext) {
               channel: "sms",
               from_number: AGENTPHONE_BDD_PHONE_NUMBER,
               to_number: send.toNumber ?? null,
-              media_urls: send.mediaUrl ? [send.mediaUrl] : [],
+              media_urls: send.mediaUrl ? [send.mediaUrl] : send.mediaUrls,
             });
           },
         ),

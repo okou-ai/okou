@@ -8,7 +8,9 @@ import { expect, test, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { withDiscordUserCleanupBarrierFixture } from "../../../test-fixtures/discord-lifecycle";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
 import { integrationsDiscordRoutes } from "../integrations-discord";
 import { testUserExportWorkRoutes } from "../test-user-export-work";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -263,4 +265,129 @@ test("removes a departed member's binding only in the affected organization", as
   expect(elsewhereStatus.body.dmBindings).toStrictEqual([
     expect.objectContaining({ connectionId: otherBinding.connectionId }),
   ]);
+});
+
+test("finishes user deletion racing a guild uninstall and preserves another guild's members", async () => {
+  configureDiscordApp();
+  mocks.s3.listObjects([]);
+  const departing = actor();
+  const admin = actor({ orgId: departing.orgId });
+  const elsewhere = actor({ userId: departing.userId, email: departing.email });
+  const survivor = actor({ orgId: elsewhere.orgId });
+  mockDiscordMemberships(context, [departing, admin, elsewhere, survivor]);
+  for (const user of [departing, admin, elsewhere, survivor]) {
+    await enable(user);
+  }
+  const binding = await seedDiscordFixture(context, departing);
+  onTestFinished(async () => {
+    await deleteDiscordFixture(context, { ...binding, ...admin });
+  });
+  await seedDiscordFixture(context, {
+    ...admin,
+    guildId: binding.guildId,
+    botUserId: binding.botUserId,
+  });
+  const otherBinding = await seedDiscordFixture(context, {
+    ...elsewhere,
+    discordUserId: binding.discordUserId,
+  });
+  onTestFinished(async () => {
+    await deleteDiscordFixture(context, { ...otherBinding, ...survivor });
+  });
+  const survivingBinding = await seedDiscordFixture(context, {
+    ...survivor,
+    guildId: otherBinding.guildId,
+    botUserId: otherBinding.botUserId,
+  });
+  const webhooks = createWebhookCallbackApi(context);
+  webhooks.configureClerkWebhookSecret();
+  webhooks.verifyNextClerkWebhook({
+    type: "user.deleted",
+    data: { id: departing.userId, deleted: true },
+  });
+
+  await withDiscordUserCleanupBarrierFixture(
+    {
+      userId: departing.userId,
+      work: async (barrier) => {
+        const operations: ReturnType<typeof settleIncludingAbort>[] = [
+          settleIncludingAbort(async () => {
+            const acknowledged = await webhooks.requestClerkWebhook(
+              "{}",
+              {},
+              [200],
+            );
+            expect(acknowledged.status).toBe(200);
+            await flushWaitUntilForTest();
+          }),
+        ];
+        const contention = await settleIncludingAbort(async () => {
+          await barrier.entered;
+          operations.push(
+            settleIncludingAbort(async () => {
+              const uninstalled = await accept(
+                discordClient(admin).disconnect({
+                  headers: authHeaders(),
+                  query: { action: "uninstall" },
+                }),
+                [200],
+              );
+              expect(uninstalled.body).toStrictEqual({ ok: true });
+            }),
+          );
+          await expect
+            .poll(barrier.blockedWaiterCount, { timeout: 10_000 })
+            .toBeGreaterThan(0);
+        });
+        // Release before every join, including failed assertions or aborts.
+        // Every started operation has an observed outcome before the fixture
+        // restores its driver hook or tears down the database pool.
+        barrier.release();
+        const outcomes = [contention, ...(await Promise.all(operations))];
+        const errors = outcomes.flatMap((outcome) => {
+          return outcome.ok ? [] : [outcome.error];
+        });
+        if (errors.length > 0) {
+          throw new AggregateError(errors, "Discord cleanup race failed");
+        }
+      },
+    },
+    context.signal,
+  );
+
+  const uninstalled = await accept(
+    discordClient(admin).getStatus({ headers: authHeaders() }),
+    [200],
+  );
+  expect(uninstalled.body).toMatchObject({
+    isAvailable: true,
+    isInstalled: false,
+    isConnected: false,
+  });
+  // A webhook ACK alone would also pass if a deadlock rolled cleanup back and
+  // queued a retry. The user's second binding must already be gone while the
+  // surviving organization and its other member remain usable.
+  const removed = await accept(
+    discordClient(elsewhere).getStatus({ headers: authHeaders() }),
+    [200],
+  );
+  expect(removed.body).toMatchObject({
+    isAvailable: true,
+    isInstalled: true,
+    guildId: otherBinding.guildId,
+    isConnected: false,
+    discordUserId: null,
+    dmBindings: [],
+  });
+  const preserved = await accept(
+    discordClient(survivor).getStatus({ headers: authHeaders() }),
+    [200],
+  );
+  expect(preserved.body).toMatchObject({
+    isAvailable: true,
+    isInstalled: true,
+    isConnected: true,
+    guildId: otherBinding.guildId,
+    discordUserId: survivingBinding.discordUserId,
+  });
 });

@@ -46,6 +46,7 @@ async function seedDiscordHistory(
     readonly discordUserId: string;
     readonly history: DiscordHistoryFixture;
   },
+  signal: AbortSignal,
 ): Promise<void> {
   const createdAt = nowDate();
   // The ingress endpoints are implemented in the following slice. Until
@@ -63,6 +64,7 @@ async function seedDiscordHistory(
       createdAt,
     })
     .returning({ id: discordChatThreadRoutes.id });
+  signal.throwIfAborted();
   if (!route) {
     throw new Error("Discord preview route creation failed");
   }
@@ -87,6 +89,7 @@ async function seedDiscordHistory(
       updatedAt: createdAt,
     },
   ]);
+  signal.throwIfAborted();
   await tx.insert(chatDiscordContext).values({
     connectionId: args.connectionId,
     routeId: route.id,
@@ -102,6 +105,7 @@ async function seedDiscordHistory(
     destinationChannelId: args.history.channelId,
     createdAt,
   });
+  signal.throwIfAborted();
   await tx
     .insert(discordUserAgentPreferences)
     .values({
@@ -112,6 +116,7 @@ async function seedDiscordHistory(
       updatedAt: createdAt,
     })
     .onConflictDoNothing();
+  signal.throwIfAborted();
 }
 
 const seedDiscordState$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -128,6 +133,7 @@ const seedDiscordState$ = command(async ({ get, set }, signal: AbortSignal) => {
       { subjectKind: "user", subjectId: auth.userId },
       { subjectKind: "organization", subjectId: auth.orgId },
     ]);
+    signal.throwIfAborted();
     if (body.history) {
       const [thread] = await tx
         .select({ id: chatThreads.id })
@@ -140,6 +146,7 @@ const seedDiscordState$ = command(async ({ get, set }, signal: AbortSignal) => {
             eq(agents.orgId, auth.orgId),
           ),
         );
+      signal.throwIfAborted();
       if (!thread) {
         return {
           status: 404 as const,
@@ -161,11 +168,13 @@ const seedDiscordState$ = command(async ({ get, set }, signal: AbortSignal) => {
         updatedAt: createdAt,
       })
       .onConflictDoNothing();
+    signal.throwIfAborted();
     const [installation] = await tx
       .select()
       .from(discordOrgInstallations)
       .where(eq(discordOrgInstallations.guildId, body.guildId))
       .for("share");
+    signal.throwIfAborted();
     if (
       installation?.orgId !== auth.orgId ||
       installation.botUserId !== body.botUserId
@@ -181,6 +190,7 @@ const seedDiscordState$ = command(async ({ get, set }, signal: AbortSignal) => {
         createdAt,
       })
       .onConflictDoNothing();
+    signal.throwIfAborted();
     const [connection] = await tx
       .select({ id: discordOrgConnections.id })
       .from(discordOrgConnections)
@@ -191,19 +201,24 @@ const seedDiscordState$ = command(async ({ get, set }, signal: AbortSignal) => {
           eq(discordOrgConnections.userId, auth.userId),
         ),
       );
+    signal.throwIfAborted();
     if (!connection) {
       return conflict();
     }
     if (body.history) {
-      await seedDiscordHistory(tx, {
-        connectionId: connection.id,
-        userId: auth.userId,
-        orgId: auth.orgId,
-        guildId: body.guildId,
-        botUserId: body.botUserId,
-        discordUserId: body.discordUserId,
-        history: body.history,
-      });
+      await seedDiscordHistory(
+        tx,
+        {
+          connectionId: connection.id,
+          userId: auth.userId,
+          orgId: auth.orgId,
+          guildId: body.guildId,
+          botUserId: body.botUserId,
+          discordUserId: body.discordUserId,
+          history: body.history,
+        },
+        signal,
+      );
     }
     return { status: 200 as const, body: { connectionId: connection.id } };
   });
@@ -215,14 +230,18 @@ const deleteDiscordState$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const query = get(queryOf(testDiscordStateContract.delete));
-    await set(writeDb$)
-      .delete(discordOrgInstallations)
-      .where(
-        and(
-          eq(discordOrgInstallations.guildId, query.guildId),
-          eq(discordOrgInstallations.orgId, auth.orgId),
-        ),
-      );
+    await set(writeDb$).transaction(async (tx) => {
+      signal.throwIfAborted();
+      await tx
+        .delete(discordOrgInstallations)
+        .where(
+          and(
+            eq(discordOrgInstallations.guildId, query.guildId),
+            eq(discordOrgInstallations.orgId, auth.orgId),
+          ),
+        );
+      signal.throwIfAborted();
+    });
     signal.throwIfAborted();
     return { status: 200 as const, body: { ok: true as const } };
   },

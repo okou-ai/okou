@@ -43,6 +43,7 @@ CREATE TABLE "discord_chat_ingress" (
 	"updated_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "uq_discord_chat_ingress_event" UNIQUE("event_id"),
 	CONSTRAINT "uq_discord_chat_ingress_message" UNIQUE("message_id"),
+	CONSTRAINT "uq_discord_chat_ingress_connection" UNIQUE("id","connection_id"),
 	CONSTRAINT "chk_discord_chat_ingress_status" CHECK ("discord_chat_ingress"."status" IN ('pending', 'processing', 'retryable', 'processed', 'terminal')),
 	CONSTRAINT "chk_discord_chat_ingress_retry_count" CHECK ("discord_chat_ingress"."retry_count" >= 0),
 	CONSTRAINT "chk_discord_chat_ingress_processing_attempt_count" CHECK ("discord_chat_ingress"."processing_attempt_count" >= 0),
@@ -121,6 +122,7 @@ CREATE INDEX "idx_discord_chat_ingress_retry_sweep" ON "discord_chat_ingress" US
 CREATE INDEX "idx_discord_chat_thread_routes_chat" ON "discord_chat_thread_routes" USING btree ("chat_thread_id");--> statement-breakpoint
 CREATE INDEX "idx_discord_org_connections_user" ON "discord_org_connections" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "idx_discord_org_connections_sender" ON "discord_org_connections" USING btree ("discord_user_id");--> statement-breakpoint
+CREATE INDEX "idx_discord_org_installations_installer_guild" ON "discord_org_installations" USING btree ("installed_by_user_id","guild_id");--> statement-breakpoint
 CREATE INDEX "idx_discord_user_agent_preferences_connection" ON "discord_user_agent_preferences" USING btree ("connection_id");--> statement-breakpoint
 CREATE INDEX "idx_discord_user_dm_preferences_connection" ON "discord_user_dm_preferences" USING btree ("connection_id");--> statement-breakpoint
 CREATE INDEX "idx_discord_user_dm_preferences_user" ON "discord_user_dm_preferences" USING btree ("user_id");

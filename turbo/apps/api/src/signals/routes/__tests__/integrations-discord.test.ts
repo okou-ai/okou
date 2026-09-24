@@ -7,6 +7,9 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { withDiscordDmPreferenceInsertBarrierFixture } from "../../../test-fixtures/discord-preference";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
 import { discordStatePreviewRoutes } from "../discord-state-preview";
 import { integrationsDiscordRoutes } from "../integrations-discord";
 import {
@@ -21,6 +24,8 @@ import {
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { createBddApi } from "./helpers/api-bdd";
+import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { channelsPublishedTo } from "./helpers/realtime-publications";
 
 const context = testContext();
 const track = createFixtureTracker((fixture: DiscordFixture) => {
@@ -97,6 +102,49 @@ async function status(value: DiscordActor) {
   ).body;
 }
 
+async function expectDiscordChanges(userIds: readonly string[]): Promise<void> {
+  await flushWaitUntilForTest();
+  expect(
+    [...channelsPublishedTo(context.mocks, "discord:changed")].sort(),
+  ).toStrictEqual(
+    userIds
+      .map((userId) => {
+        return `user:${userId}`;
+      })
+      .sort(),
+  );
+  expect(
+    context.mocks.ably.publish.mock.calls
+      .filter((call) => {
+        return call[0] === "discord:changed";
+      })
+      .map((call) => {
+        return call[1];
+      }),
+  ).toStrictEqual(
+    userIds.map(() => {
+      return null;
+    }),
+  );
+}
+
+async function registerMemberCache(value: DiscordActor): Promise<void> {
+  const api = createAuthOrgAgentsBddApi(context);
+  const profile = api.user(value);
+  const { token } = await api.createCliToken(profile);
+  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValueOnce(
+    {
+      data: [
+        {
+          role: value.orgRole ?? "org:admin",
+          organization: { id: value.orgId },
+        },
+      ],
+    },
+  );
+  await api.requestReadMeWithBearer(token, profile, [200]);
+}
+
 describe("verified Discord integration settings", () => {
   it("requires authenticated organization membership", async () => {
     context.mocks.clerk.authenticateRequest.mockResolvedValue({
@@ -128,6 +176,7 @@ describe("verified Discord integration settings", () => {
       [401],
     );
     expect(withoutOrganization.status).toBe(401);
+    await expectDiscordChanges([]);
   });
 
   it("keeps configured bindings unavailable until their owner enables the feature", async () => {
@@ -149,6 +198,7 @@ describe("verified Discord integration settings", () => {
       client().disconnect({ headers: authenticate(owner), query: {} }),
       [404],
     );
+    await expectDiscordChanges([]);
   });
 
   it("reports existing bindings and unavailable context when app configuration is missing", async () => {
@@ -209,6 +259,7 @@ describe("verified Discord integration settings", () => {
       client().disconnect({ headers: authenticate(owner), query: {} }),
       [200],
     );
+    await expectDiscordChanges([owner.userId]);
 
     await expect(status(owner)).resolves.toMatchObject({
       isInstalled: true,
@@ -224,6 +275,7 @@ describe("verified Discord integration settings", () => {
       client().disconnect({ headers: authenticate(owner), query: {} }),
       [404],
     );
+    await expectDiscordChanges([owner.userId]);
   });
 
   it("requires the current admin role for uninstall and removes only that guild", async () => {
@@ -244,6 +296,7 @@ describe("verified Discord integration settings", () => {
       }),
       [403],
     );
+    await expectDiscordChanges([]);
     await expect(status(owner)).resolves.toMatchObject({ isInstalled: true });
 
     restore();
@@ -254,6 +307,7 @@ describe("verified Discord integration settings", () => {
       }),
       [200],
     );
+    await expectDiscordChanges([owner.userId]);
     await expect(status(owner)).resolves.toMatchObject({
       isAvailable: true,
       isInstalled: false,
@@ -264,6 +318,67 @@ describe("verified Discord integration settings", () => {
       isInstalled: true,
       guildId: second.guildId,
     });
+  });
+
+  it("notifies the uninstalling user, connected users, and cached admins once each", async () => {
+    const { actor } = createActors();
+    const owner = actor();
+    const installed = await fixture(owner);
+    const connected = actor({ orgId: owner.orgId });
+    await fixture(connected, { guildId: installed.guildId });
+    const unconnectedAdmin = actor({ orgId: owner.orgId });
+    const unconnectedMember = actor({
+      orgId: owner.orgId,
+      orgRole: "org:member",
+    });
+    const otherOwner = actor();
+    const otherInstalled = await fixture(otherOwner);
+    for (const cachedActor of [
+      owner,
+      unconnectedAdmin,
+      unconnectedMember,
+      otherOwner,
+    ]) {
+      await registerMemberCache(cachedActor);
+    }
+    await enable(unconnectedAdmin);
+    await expect(status(unconnectedAdmin)).resolves.toMatchObject({
+      isInstalled: true,
+      isConnected: false,
+    });
+    await expectDiscordChanges([]);
+
+    await accept(
+      client().disconnect({
+        headers: authenticate(owner),
+        query: { action: "uninstall" },
+      }),
+      [200],
+    );
+    const recipients = [
+      owner.userId,
+      connected.userId,
+      unconnectedAdmin.userId,
+    ];
+    await expectDiscordChanges(recipients);
+    await expect(status(connected)).resolves.toMatchObject({
+      isInstalled: false,
+      isConnected: false,
+    });
+    await expect(status(otherOwner)).resolves.toMatchObject({
+      isInstalled: true,
+      isConnected: true,
+      guildId: otherInstalled.guildId,
+    });
+
+    await accept(
+      client().disconnect({
+        headers: authenticate(owner),
+        query: { action: "uninstall" },
+      }),
+      [404],
+    );
+    await expectDiscordChanges(recipients);
   });
 
   it("hides revoked membership and refuses subsequent binding mutations", async () => {
@@ -288,6 +403,7 @@ describe("verified Discord integration settings", () => {
       client().disconnect({ headers: authenticate(owner), query: {} }),
       [404],
     );
+    await expectDiscordChanges([]);
     restore();
   });
 
@@ -322,6 +438,7 @@ describe("verified Discord integration settings", () => {
       }),
       [200],
     );
+    await expectDiscordChanges([firstOwner.userId]);
     await expect(status(firstOwner)).resolves.toMatchObject({
       dmSelectionConnectionId: second.connectionId,
     });
@@ -330,6 +447,7 @@ describe("verified Discord integration settings", () => {
       client().disconnect({ headers: authenticate(secondOwner), query: {} }),
       [200],
     );
+    await expectDiscordChanges([firstOwner.userId, firstOwner.userId]);
     const revoked = await status(firstOwner);
     expect(revoked.dmSelectionConnectionId).toBeNull();
     expect(
@@ -346,6 +464,7 @@ describe("verified Discord integration settings", () => {
       }),
       [404],
     );
+    await expectDiscordChanges([firstOwner.userId, firstOwner.userId]);
   });
 
   it("rejects DM selections for another Discord sender or another Okou user", async () => {
@@ -372,6 +491,7 @@ describe("verified Discord integration settings", () => {
         [404],
       );
     }
+    await expectDiscordChanges([]);
     expect((await status(owner)).dmBindings).toStrictEqual([
       {
         connectionId: current.connectionId,
@@ -379,6 +499,64 @@ describe("verified Discord integration settings", () => {
         guildName: current.guildName,
       },
     ]);
+
+    await accept(
+      client().setDmSelection({
+        headers: authenticate(owner),
+        body: { connectionId: current.connectionId },
+      }),
+      [200],
+    );
+    await expectDiscordChanges([owner.userId, differentUser.userId]);
+  });
+
+  it("rolls back a DM selection cancelled after its INSERT without publishing", async () => {
+    const { actor } = createActors();
+    const owner = actor();
+    const installed = await fixture(owner);
+    const cancelled = new AbortController();
+    const cancelledClient = setupApp({
+      context,
+      routes: integrationsDiscordRoutes,
+      signal: cancelled.signal,
+    })(integrationsDiscordContract);
+
+    await withDiscordDmPreferenceInsertBarrierFixture(
+      {
+        connectionId: installed.connectionId,
+        work: async (barrier) => {
+          const writing = settleIncludingAbort(
+            cancelledClient.setDmSelection({
+              headers: authenticate(owner),
+              body: { connectionId: installed.connectionId },
+            }),
+          );
+          const observed = await settleIncludingAbort(async () => {
+            expect((await barrier.entered).rowCount).toBe(1);
+          });
+          cancelled.abort(new DOMException("Operation ended", "AbortError"));
+          barrier.release();
+          // Always join the caller after releasing its transaction, including
+          // a failed entry assertion, before the SQL observer is removed.
+          const outcome = await writing;
+          if (!observed.ok) {
+            throw observed.error;
+          }
+          expect(outcome).toMatchObject({
+            ok: false,
+            error: expect.objectContaining({
+              message: expect.stringMatching(/Unknown response status 500/),
+            }),
+          });
+        },
+      },
+      context.signal,
+    );
+
+    await expect(status(owner)).resolves.toMatchObject({
+      dmSelectionConnectionId: null,
+    });
+    await expectDiscordChanges([]);
   });
 
   it("selects only accessible agents and restores the organization default on reset", async () => {
@@ -422,6 +600,7 @@ describe("verified Discord integration settings", () => {
         [404],
       );
     }
+    await expectDiscordChanges([]);
     await accept(
       client().setAgentPreference({
         headers: authenticate(owner),
@@ -429,6 +608,7 @@ describe("verified Discord integration settings", () => {
       }),
       [200],
     );
+    await expectDiscordChanges([owner.userId]);
     await expect(status(owner)).resolves.toMatchObject({
       defaultAgentId: ownAgent.agentId,
       defaultAgentName: "Personal Discord agent",
@@ -441,6 +621,7 @@ describe("verified Discord integration settings", () => {
       }),
       [200],
     );
+    await expectDiscordChanges([owner.userId, owner.userId]);
     await expect(status(owner)).resolves.toMatchObject({ defaultAgentId });
 
     await api.deleteAgent(ownerProfile, ownAgent.agentId);

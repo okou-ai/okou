@@ -5,6 +5,10 @@ import { ROUTES } from "../route-paths.ts";
 import { detachedNavigateTo$, pathname$, searchParams$ } from "../route.ts";
 import { tapError } from "../utils.ts";
 import { onboardingStatus$ } from "./onboarding.ts";
+import {
+  clearSourcesFirstDraft$,
+  restoreSourcesFirstDraft$,
+} from "../onboarding/onboarding-sources-first-state.ts";
 
 const ONBOARDING_GUARDED_PATHS = [
   ROUTES.activityDetail,
@@ -112,12 +116,23 @@ export const bootstrapOnboardingGuard$ = command(
     const status = await tapError(get(onboardingStatus$));
     signal.throwIfAborted();
     if (
-      !status?.needsOnboarding ||
+      !status ||
       clerk.session?.id !== session.id ||
       clerk.user?.id !== user.id ||
       clerk.organization?.id !== organization.id ||
       !isOnboardingGuardedPath(get(pathname$))
     ) {
+      return;
+    }
+
+    if (status.onboardingComplete) {
+      set(restoreSourcesFirstDraft$, {
+        orgId: organization.id,
+        userId: user.id,
+      });
+      set(clearSourcesFirstDraft$);
+    }
+    if (!status.needsOnboarding) {
       return;
     }
 

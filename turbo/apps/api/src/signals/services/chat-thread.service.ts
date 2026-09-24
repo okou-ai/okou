@@ -1154,12 +1154,10 @@ export const deleteChatThread$ = command(
 /**
  * The legacy draft `UPDATE` matched no owned thread.
  *
- * `chat_threads.user_id` is not a key column, so the retained `FOR KEY SHARE`
- * lock does not conflict with a concurrent non-key `UPDATE` that moves the
- * thread to another account, and under READ COMMITTED the legacy statement then
- * re-evaluates its predicate against the moved row and matches nothing. The
- * child row staged earlier in the same transaction must not survive that, so
- * this rolls the whole write back and the route keeps its existing 404.
+ * The canonical ownership key retains `user_id` under `FOR KEY SHARE` after
+ * admission. Keep the final owned-row predicate as a defense: if it ever
+ * matches nothing, the child row staged earlier must not survive independently.
+ * Roll back the whole write and preserve the route's existing 404.
  */
 class ChatThreadDraftNotWritten extends Error {
   constructor() {

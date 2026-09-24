@@ -1,1 +1,0 @@
-ALTER TABLE "discord_chat_ingress" ADD CONSTRAINT "uq_discord_chat_ingress_connection" UNIQUE("id","connection_id");

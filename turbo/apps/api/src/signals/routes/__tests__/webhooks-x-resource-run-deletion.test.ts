@@ -25,7 +25,7 @@ const fixture = createChatEventsFixture(context);
 const billing = createBillingMediaApi(context);
 
 describe("X resource account cleanup and ordinary Run deletion", () => {
-  it("drains a threadless Run deletion before retaining its user's ledger", async () => {
+  it("completes concurrent threadless Run and user deletion", async () => {
     configureNativeCliArtifact();
     const {
       actor: owner,
@@ -114,9 +114,9 @@ describe("X resource account cleanup and ordinary Run deletion", () => {
       code: "resource_missing",
     });
 
-    // Infrastructure-only gate: the real sweep must own its Run before it
-    // blocks deleting this API-created checkpoint conversation. Clerk must
-    // drain that deletion before holding ledger rows needed by its FK cascade.
+    // The sweep owns its Run while its conversation deletion is blocked.
+    // User deletion first captures erasure work, which may itself wait for
+    // the sweep before it can reach the later ledger cleanup phase.
     const gate = await holdRunConversationDeletionForTest(
       run.runId,
       context.signal,
@@ -149,7 +149,6 @@ describe("X resource account cleanup and ordinary Run deletion", () => {
       data: { id: actor.userId },
     });
     await fixture.webhooks.requestClerkWebhook("{}", {}, [200]);
-    await expect.poll(gate.cleanupWaiterCount, { interval: 5 }).toBe(1);
     gate.release();
     const [released] = await completion;
     if (released.status === "rejected") {
