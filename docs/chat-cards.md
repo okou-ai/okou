@@ -27,6 +27,21 @@ state creation inside React render. Artifact resources use the same registration
 boundary while preserving the Markdown link or image syntax that chooses their
 presentation.
 
+### Keep the URL usable outside Web Chat
+
+Only Web Chat upgrades recognized URLs into cards. In Slack and other surfaces,
+the recipient sees the original URL. A link-backed card is an enhanced way to
+use that URL, so its destination must also open directly in a browser and
+provide the relevant page, form, authorization step, or resource. Do not make
+completion depend on a mounted Web Chat card. For action URLs, the direct route
+must enforce authentication, validate the URL's claims, and check the current
+action state, just as the card does.
+
+The card may use a more convenient in-chat control, such as a dialog, without
+opening the URL when that control is selected. Keep the original URL route
+functional for people who receive or copy the link. Permission requests and
+Browser input actions both follow this rule.
+
 ## Fixed Height and Stable Layout
 
 Every card in the chat transcript keeps a stable outer height across
@@ -679,27 +694,32 @@ CLI output.
 
 ### Stateful actions: Browser input
 
-A Browser input action matches `/browser/actions/:requestToken` with exact
-`agentId`, `threadId`, and `callbackPrompt` query claims. The parser accepts it
-only in an authoritative assistant event and binds the claims to the current
-chat context. The API read then verifies the same ownership, current request
-state, safe site origin, and display-field metadata before the card becomes
-actionable. Malformed, mismatched, unsupported, expired, or feature-disabled
-requests render an inert state.
+A Browser input action URL matches `/browser/actions/:requestToken` with exact
+`agentId`, `threadId`, and `callbackPrompt` query claims. In Web Chat, the card
+parser accepts it only in an authoritative assistant event and binds the claims
+to the current chat context. Direct navigation to the URL uses the standalone
+route without requiring a rendered chat card. The API read verifies ownership,
+current request state, safe site origin, and display-field metadata before
+either entry becomes actionable. Malformed, mismatched, unsupported, expired,
+or feature-disabled requests render an inert state.
 
-The fixed-height transcript card links to the authenticated full-page form in
-a new tab. The full-page route automatically calls the token-only Browser
-preflight before mounting any editable field. Preflight returns the observed
+Only Web Chat turns this URL into a fixed-height transcript card. Other
+surfaces, including Slack, present the original URL. The card's **Enter
+information** button opens the form in a dialog without navigation. Opening
+the original URL directly presents an authenticated full-page form. Both entry
+points call the token-only Browser preflight before mounting any editable field,
+and reopening the dialog runs preflight again. Preflight returns the observed
 textarea or input subtype and current site constraints, including multiple
 email addresses and number `min`, `max`, and `step` attributes. The form uses
 that verified control rather than guessing from the Agent's semantic field
-kind. A confirmed page or control change makes the
-request stale; a temporary provider failure leaves a Retry action. The form
-does not poll while open, and submit revalidates the exact target and site
-constraints before writing. The draft and mutation lock are local to the form
-page, while the API serializes effects across tabs. Password fields clear when
-the form unmounts, terminal and non-retryable states clear the complete draft,
-and nothing is persisted across page reload.
+kind. A confirmed page or control change makes the request stale; a temporary
+provider failure leaves a Retry action. The form does not poll while open, and
+submit revalidates the exact target and site
+constraints before writing. The draft and mutation lock are local to each form
+entry, while the API serializes effects across tabs. Dismissing the dialog
+leaves the Browser request pending. Password fields clear when the form
+unmounts, terminal and non-retryable states clear the complete draft, and
+nothing is persisted across page reload.
 
 General number fields use the same form and Input styling as other controls,
 with a native number input and browser validity feedback. Their values remain
@@ -714,8 +734,11 @@ reads resolve callback delivery from the matching canonical Chat input event in
 the owning thread. A pending transcript input card or terminal card with an
 unconfirmed callback refreshes when its page regains focus or visibility, so
 completing a standalone action updates the original transcript card on return.
-The standalone form keeps its draft mounted when the user switches tabs; submit
-revalidates the Browser target. The Platform and API both enforce
+The inline dialog defers that return refresh until it closes, so switching
+tabs does not dismiss the form or lose its draft, while a request completed
+elsewhere still updates the transcript afterward. The standalone form also
+keeps its draft mounted when the user switches tabs; submit revalidates the
+Browser target. The Platform and API both enforce
 `BrowserNativeInput`.
 
 For direct Browser takeover, the agent shares the current `okou browser view`

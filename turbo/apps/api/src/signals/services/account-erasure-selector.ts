@@ -22,6 +22,45 @@ const selectorSchema = z.discriminatedUnion("kind", [
     key: z.string().min(1).max(2048),
     versionId: z.string().min(1).max(256).optional(),
   }),
+  z.strictObject({
+    version: z.literal(1),
+    kind: z.literal("object_batch"),
+    storageRef: z.uuid(),
+    keys: z.array(z.string().min(1).max(2048)).min(1).max(20),
+  }),
+  z.strictObject({
+    version: z.literal(1),
+    kind: z.literal("export_object"),
+    storageRef: z.uuid(),
+    subjectId: z.string().min(1).max(192),
+    jobId: z.uuid(),
+    resultKey: z.string().min(1).max(2048),
+    stagingPrefix: z.string().min(1).max(2048),
+    legacyKey: z.string().min(1).max(2048).optional(),
+  }),
+  z.strictObject({
+    version: z.literal(1),
+    kind: z.literal("artifact_share"),
+    storageRef: z.uuid(),
+    shareId: z.uuid(),
+    targetKind: z.enum(["file", "html"]),
+    targetId: z.uuid(),
+    publicBrand: z.enum(["vm0", "okou"]),
+    keys: z.array(z.string().min(1).max(2048)).min(1).max(4),
+    privateKey: z.string().min(1).max(2048).optional(),
+    snapshotPrefix: z.string().min(1).max(2048).optional(),
+  }),
+  z.strictObject({
+    version: z.literal(1),
+    kind: z.literal("artifact_share_history"),
+    shareId: z.uuid(),
+  }),
+  z.strictObject({
+    version: z.literal(1),
+    kind: z.literal("shared_blob"),
+    subjectId: z.string().min(1).max(192),
+    hash: z.string().regex(/^[a-f0-9]{64}$/u),
+  }),
   // A resource whose bytes are owned by a key prefix rather than by a listed
   // set of keys. A hosted deployment is the case: its manifest names the files
   // it uploaded, but the prefix owns everything under it, so capturing the
@@ -36,8 +75,94 @@ const selectorSchema = z.discriminatedUnion("kind", [
   }),
   z.strictObject({
     version: z.literal(1),
+    kind: z.literal("chat_snapshot"),
+    storageRef: z.uuid(),
+    subjectId: z.string().min(1).max(192),
+    orgId: z.string().min(1).max(192),
+    prefix: z.string().min(1).max(2048),
+  }),
+  z.strictObject({
+    version: z.literal(1),
+    kind: z.literal("computer_use"),
+    userId: z.string().min(1).max(192),
+    orgId: z.string().min(1).max(192),
+    resourceType: z.enum(["host", "command"]),
+    resourceId: z.uuid(),
+    hostId: z.uuid().nullable(),
+    credentialDigest: z.string().min(1).max(256).nullable(),
+    wasRunning: z.boolean(),
+    storageRef: z.uuid(),
+    prefix: z.string().min(1).max(2048).nullable(),
+  }),
+  z.strictObject({
+    version: z.literal(1),
+    kind: z.literal("ssh_remote"),
+    userId: z.string().min(1).max(192),
+    orgId: z.string().min(1).max(192),
+    resourceType: z.enum(["credential", "connection", "vnc_link", "run"]),
+    resourceId: z.uuid(),
+    credentialId: z.uuid().nullable(),
+    credentialRevision: z.number().int().positive().nullable(),
+    credentialDigest: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/u)
+      .nullable(),
+    connectionId: z.uuid().nullable(),
+    host: z.string().min(1).max(253).nullable(),
+    port: z.number().int().min(1).max(65_535).nullable(),
+    cloudflareAccessId: z.uuid().nullable(),
+    runnerGroup: z.string().min(1).max(256).nullable(),
+  }),
+  z.strictObject({
+    version: z.literal(1),
+    kind: z.literal("vnc_direct"),
+    userId: z.string().min(1).max(192),
+    orgId: z.string().min(1).max(192),
+    resourceType: z.enum(["credential", "connection", "grant", "run"]),
+    resourceId: z.uuid(),
+    credentialId: z.uuid().nullable(),
+    credentialRevision: z.number().int().positive().nullable(),
+    credentialDigest: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/u)
+      .nullable(),
+    connectionId: z.uuid().nullable(),
+    host: z.string().min(1).max(253).nullable(),
+    port: z.number().int().min(1).max(65_535).nullable(),
+    agentId: z.uuid().nullable(),
+    runnerGroup: z.string().min(1).max(255).nullable(),
+  }),
+  z.strictObject({
+    version: z.literal(1),
+    kind: z.literal("connector_remote"),
+    userId: z.string().min(1).max(192),
+    orgId: z.string().min(1).max(192),
+    resourceType: z.enum([
+      "connector",
+      "secret",
+      "gmail_watch",
+      "calendar_watch",
+      "forms_watch",
+      "meet_subscription",
+    ]),
+    resourceId: z.uuid(),
+    connectorId: z.uuid().nullable(),
+    locator: z.string().min(1).max(2048).nullable(),
+    credentialDigest: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/u)
+      .nullable(),
+    // The original stored-secret envelope is needed to revoke credentials
+    // after the local connector row is swept. Older captured selectors lack
+    // it and must remain unresolved, never be treated as revoked.
+    credentialCiphertext: z.string().min(1).max(3072).optional(),
+  }),
+  z.strictObject({
+    version: z.literal(1),
     kind: z.literal("provider"),
     accountRef: z.uuid(),
+    subjectId: z.string().min(1).max(192),
+    sourceId: z.uuid().optional(),
     resourceType: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
     resourceId: z.string().min(1).max(512),
   }),

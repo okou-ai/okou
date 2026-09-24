@@ -8,14 +8,15 @@ import {
   hostedDeployments,
   privateHostedDeployments,
 } from "@okouai/db/schema/hosted-site";
-import type {
-  EncryptedErasureSelector,
-  ErasureHandler,
-  ErasureInventoryPage,
-  ErasureLease,
-  ErasureProof,
-  ErasureSubject,
-  ErasureUnresolved,
+import {
+  renewErasureLease,
+  type EncryptedErasureSelector,
+  type ErasureHandler,
+  type ErasureInventoryPage,
+  type ErasureLease,
+  type ErasureProof,
+  type ErasureSubject,
+  type ErasureUnresolved,
 } from "@okouai/db/operations/account-erasure";
 
 import { env } from "../../lib/env";
@@ -23,7 +24,7 @@ import { nowDate } from "../../lib/time";
 import { safeJsonParse } from "../utils";
 import {
   deleteArtifactSnapshotObjects,
-  listHostedSitesObjectsUnderPrefix,
+  listHostedSitesObjectsPage,
 } from "../external/s3";
 import {
   decryptErasureSelector,
@@ -53,6 +54,8 @@ const DEPLOYMENT_SOURCES = [
 ] as const;
 
 const MAX_INVENTORY_PAGE = 100;
+const OBJECT_DELETE_PAGE_SIZE = 1000;
+const MAX_OBJECT_DELETE_PAGES_PER_LEASE = 10;
 
 // Immutable v1 namespace. Names are JSON tuples, never concatenation, so two
 // different reference inputs cannot collide on one string.
@@ -63,7 +66,7 @@ const HOSTED_SITE_NAMESPACE = "9a1c7f36-58d2-4ee0-9b47-0f6a2d5c8e14";
  * this changes whenever the sweep's observable behaviour changes.
  */
 export const HOSTED_SITE_ERASURE_COLLECTOR_VERSION =
-  "5c2e84b1-70df-4a93-8c16-3b9d0e57af22";
+  "c7ba982a-3865-4830-8367-f97d72ba820e";
 
 function reference(parts: readonly unknown[]): string {
   return uuidv5(JSON.stringify(parts), HOSTED_SITE_NAMESPACE);
@@ -86,14 +89,17 @@ function hostedSitesBucket(): string | undefined {
   return env("R2_HOSTED_SITES_BUCKET_NAME");
 }
 
-/** One durable name for the hosted-sites bucket.
- *
- * The selector vocabulary keys a storage by uuid rather than by bucket name so
- * a captured locator does not carry deployment configuration, and so renaming
- * a bucket does not silently repoint a captured selector at a different one.
+/** Bind the selector to the bucket, account and endpoint without exposing
+ * them in plaintext. A later storage configuration switch fails closed.
  */
-function storageReference(): string {
-  return reference(["hosted-sites-storage", 1]);
+function storageReference(bucket: string): string {
+  return reference([
+    "hosted-sites-storage",
+    3,
+    bucket,
+    env("R2_ACCOUNT_ID"),
+    env("S3_ENDPOINT") ?? null,
+  ]);
 }
 
 const cursorSchema = z
@@ -130,7 +136,10 @@ async function leaseSubject(
 }
 
 /** The prefix an erase item names, or nothing when the item is not one. */
-async function leasePrefix(lease: ErasureLease): Promise<string | undefined> {
+async function leasePrefix(
+  lease: ErasureLease,
+  bucket: string,
+): Promise<string | undefined> {
   if (!lease.item.selectorCiphertext || !lease.item.selectorDigest) {
     return undefined;
   }
@@ -139,7 +148,7 @@ async function leasePrefix(lease: ErasureLease): Promise<string | undefined> {
     digest: lease.item.selectorDigest,
   });
   return selector.kind === "object_prefix" &&
-    selector.storageRef === storageReference()
+    selector.storageRef === storageReference(bucket)
     ? selector.prefix
     : undefined;
 }
@@ -246,9 +255,11 @@ async function inventoryPage(
   if (!subject) {
     return unresolved("selector_missing");
   }
-  if (hostedSitesBucket() === undefined) {
+  const bucket = hostedSitesBucket();
+  if (bucket === undefined) {
     return unresolved("permission_missing");
   }
+  await renewErasureLease(db, lease);
   let resume: { readonly ordinal: number; readonly id: string } | undefined;
   if (cursor !== null) {
     const decoded = await decryptErasureSelector(cursor);
@@ -261,7 +272,7 @@ async function inventoryPage(
   }
   const rows = await readDeploymentPage(db, subject.subjectId, resume);
   const last = rows[rows.length - 1];
-  const storageRef = storageReference();
+  const storageRef = storageReference(bucket);
   const items = await Promise.all(
     rows.map(async (row) => {
       return {
@@ -312,37 +323,57 @@ async function inventoryPage(
  * must not outlive the catalog row that named them.
  */
 async function erasePrefix(
+  db: Db,
   lease: ErasureLease,
   signal: AbortSignal,
 ): Promise<{ readonly requestRef: string } | ErasureUnresolved> {
-  const prefix = await leasePrefix(lease);
-  if (prefix === undefined) {
-    return unresolved("selector_missing");
-  }
   const bucket = hostedSitesBucket();
   if (bucket === undefined) {
     return unresolved("permission_missing");
   }
-  const store = createStore();
-  const objects = await store.get(
-    listHostedSitesObjectsUnderPrefix(bucket, prefix),
-  );
-  if (objects.length === 0) {
-    return { requestRef: requestReference(lease, "empty") };
+  const prefix = await leasePrefix(lease, bucket);
+  if (prefix === undefined) {
+    return unresolved("selector_missing");
   }
-  // Batching belongs to `deleteArtifactSnapshotObjects`, which already caps a
-  // request at `S3_DELETE_OBJECTS_LIMIT` and stops at the first failed batch.
-  await store.get(
-    deleteArtifactSnapshotObjects(
-      bucket,
-      objects.map((object) => {
-        return object.key;
-      }),
-      true,
-      signal,
-    ),
-  );
-  return { requestRef: requestReference(lease, "erased") };
+  const store = createStore();
+  for (
+    let pageNumber = 0;
+    pageNumber < MAX_OBJECT_DELETE_PAGES_PER_LEASE;
+    pageNumber += 1
+  ) {
+    signal.throwIfAborted();
+    await renewErasureLease(db, lease);
+    const page = await store.get(
+      listHostedSitesObjectsPage(bucket, prefix, OBJECT_DELETE_PAGE_SIZE),
+    );
+    if (page.objects.length === 0) {
+      return {
+        requestRef:
+          lease.item.requestRef === requestReference(lease, "erased")
+            ? requestReference(lease, "erased")
+            : requestReference(lease, "empty"),
+      };
+    }
+    await store.get(
+      deleteArtifactSnapshotObjects(
+        bucket,
+        page.objects.map((object) => {
+          return object.key;
+        }),
+        true,
+        signal,
+      ),
+    );
+    if (!page.isTruncated) {
+      return { requestRef: requestReference(lease, "erased") };
+    }
+  }
+  return {
+    outcome: "pending",
+    errorCode: "boundary_unproven",
+    requestRef: requestReference(lease, "erased"),
+    retryAt: new Date(nowDate().getTime() + 60_000),
+  };
 }
 
 /** Absence, read back from the provider rather than inferred from the delete.
@@ -368,11 +399,11 @@ async function verifyPrefixAbsent(
   lease: ErasureLease,
   producerBoundary: string,
 ): Promise<ErasureProof | ErasureUnresolved> {
-  const prefix = await leasePrefix(lease);
   const bucket = hostedSitesBucket();
   if (bucket === undefined) {
     return unresolved("permission_missing");
   }
+  const prefix = await leasePrefix(lease, bucket);
   if (prefix === undefined) {
     // The collector's own item. Its selector must still be this sink's
     // subject, or the lease does not belong here.
@@ -382,9 +413,9 @@ async function verifyPrefixAbsent(
     }
   } else {
     const remaining = await createStore().get(
-      listHostedSitesObjectsUnderPrefix(bucket, prefix),
+      listHostedSitesObjectsPage(bucket, prefix, 1),
     );
-    if (remaining.length > 0) {
+    if (remaining.objects.length > 0 || remaining.isTruncated) {
       return unresolved("verification_failed", "retryable_failure");
     }
   }
@@ -408,7 +439,7 @@ async function verifyPrefixAbsent(
     authenticatedReaderRef: reference([
       "hosted-site-reader",
       HOSTED_SITE_ERASURE_COLLECTOR_VERSION,
-      storageReference(),
+      storageReference(bucket),
     ]),
     enumerationRef: reference([
       "hosted-site-item-enumeration",
@@ -445,7 +476,7 @@ export function createHostedSiteErasureCollector(db: Db): ErasureHandler {
       return await inventoryPage(db, lease, cursor);
     },
     erase: async (lease, signal) => {
-      return await erasePrefix(lease, signal);
+      return await erasePrefix(db, lease, signal);
     },
     verify: async (lease, producerBoundary) => {
       return await verifyPrefixAbsent(lease, producerBoundary);

@@ -1,6 +1,7 @@
 import { getStartedRoutes } from "./routes/get-started";
 import { cronMaterializePiResourceIndexesRoutes } from "./routes/cron-materialize-pi-resource-indexes";
 import { authMeRoutes } from "./routes/auth-me";
+import { accountErasureStatusRoutes } from "./routes/account-erasure-status";
 import { cliAuthRoutes } from "./routes/cli-auth";
 import type { RouteEntry } from "./route-entry";
 import { builtinConnectorsSlugCallbackRoutes } from "./routes/connectors-slug-callback";
@@ -245,6 +246,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...healthRoutes,
   ...buildInfoRoutes,
   ...authMeRoutes,
+  ...accountErasureStatusRoutes,
   ...cliAuthRoutes,
   ...desktopAuthRoutes,
   ...desktopUpdateRoutes,

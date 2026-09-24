@@ -321,7 +321,7 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const writeDb = set(writeDb$);
-  const visibility = body.data.visibility ?? "public";
+  const visibility = body.data.visibility ?? "private";
 
   const limitError =
     visibility === "public"

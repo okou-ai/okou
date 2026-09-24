@@ -1,5 +1,8 @@
-import { randomUUID } from "node:crypto";
-import { sql } from "drizzle-orm";
+import { randomBytes, randomUUID } from "node:crypto";
+import { eq, sql } from "drizzle-orm";
+import { emailOutbox } from "@okouai/db/schema/email-outbox";
+import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
+import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import {
   claimErasureWork,
   executeErasureWork,
@@ -211,10 +214,10 @@ describe("relational erasure plan", () => {
     expect(() => {
       return assertRelationalSweepComplete({
         ...emptyPlan(),
-        unattributableDescendants: ["email_outbox"],
+        unattributableDescendants: ["unattributed_account_data_fixture"],
       });
     }).toThrow(
-      "account_erasure_relational:descendant_unattributable:email_outbox",
+      "account_erasure_relational:descendant_unattributable:unattributed_account_data_fixture",
     );
     expect(() => {
       return assertRelationalSweepComplete(emptyPlan());
@@ -319,14 +322,9 @@ describe("relational erasure plan", () => {
     // declared reach cannot be swept, so it is reported rather than assumed
     // deleted. On the live schema there are none left.
     expect(plan.unreachableDescendants).toStrictEqual([]);
-    // Two remain unattributable: no column and no join names the account.
-    expect(plan.unattributableDescendants).toStrictEqual([
-      "email_outbox",
-      "feishu_chat_ingress",
-    ]);
-    for (const table of plan.unattributableDescendants) {
-      expect([...declared]).toContain(table);
-    }
+    // The two explicit deferred-retention tables are not account-erasure
+    // descendants; every other declared descendant still needs attribution.
+    expect(plan.unattributableDescendants).toStrictEqual([]);
   });
 
   it("reaches the descendants a foreign key cannot, through declared keys", async () => {
@@ -550,6 +548,336 @@ describe("dormant relational sweep", () => {
     return { job, sealed };
   }
 
+  it("retains deferred outbox and Feishu payloads through a real account sweep", async () => {
+    const mine = account("deferred");
+    const outboxId = randomUUID();
+    const installationId = randomUUID();
+    const ingressId = randomUUID();
+    onTestFinished(async () => {
+      await db.delete(emailOutbox).where(eq(emailOutbox.id, outboxId));
+      await db
+        .delete(feishuOrgInstallations)
+        .where(eq(feishuOrgInstallations.id, installationId));
+      await db.execute(sql`DELETE FROM users WHERE id = ${mine}`);
+    });
+    await db.execute(sql`INSERT INTO users (id) VALUES (${mine})`);
+    // Sent mail is retained by the existing queue lifecycle; account erasure
+    // must not reinterpret a recipient address as a durable ownership key.
+    await db.execute(sql`
+      INSERT INTO email_outbox
+        (id, from_address, to_addresses, subject, template, status)
+      VALUES (${outboxId}, 'test@example.test',
+              ${JSON.stringify([`${mine}@example.test`])}::jsonb,
+              'retained fixture', '{}'::jsonb, 'sent')
+    `);
+    await db.insert(feishuOrgInstallations).values({
+      id: installationId,
+      orgId: `org_${randomUUID()}`,
+      appId: `cli_${randomUUID()}`,
+      encryptedAppSecret: "fixture",
+      encryptedVerificationToken: "fixture",
+      encryptedEncryptKey: "fixture",
+    });
+    await db.insert(feishuChatIngress).values({
+      id: ingressId,
+      installationId,
+      eventId: `event_${randomUUID()}`,
+      payload: JSON.stringify({ userId: mine }),
+      publicBrand: "vm0",
+      status: "processed",
+    });
+
+    const plan = await planRelationalErasure(db);
+    for (const table of ["email_outbox", "feishu_chat_ingress"]) {
+      expect(
+        plan.order.some((root) => {
+          return root.table === table;
+        }),
+      ).toBeFalsy();
+      expect(
+        plan.descendants.some((path) => {
+          return path.child === table;
+        }),
+      ).toBeFalsy();
+    }
+    await drive(mine, plan);
+    expect(
+      (await db.execute(sql`SELECT id FROM users WHERE id = ${mine}`)).rows,
+    ).toStrictEqual([]);
+    await expect(
+      db
+        .select({ id: emailOutbox.id })
+        .from(emailOutbox)
+        .where(eq(emailOutbox.id, outboxId)),
+    ).resolves.toStrictEqual([{ id: outboxId }]);
+    await expect(
+      db
+        .select({ ownerUserId: feishuOrgInstallations.ownerUserId })
+        .from(feishuOrgInstallations)
+        .where(eq(feishuOrgInstallations.id, installationId)),
+    ).resolves.toStrictEqual([{ ownerUserId: null }]);
+    await expect(
+      db
+        .select({ id: feishuChatIngress.id })
+        .from(feishuChatIngress)
+        .where(eq(feishuChatIngress.id, ingressId)),
+    ).resolves.toStrictEqual([{ id: ingressId }]);
+  });
+
+  it("keeps its durable deletion task while sweeping other owner jobs", async () => {
+    const mine = account("control");
+    const theirs = account("control-survivor");
+    const controlId = randomUUID();
+    const exportId = randomUUID();
+    const survivorId = randomUUID();
+    onTestFinished(async () => {
+      await db.execute(sql`
+        DELETE FROM background_jobs
+        WHERE id IN (${controlId}, ${exportId}, ${survivorId})
+      `);
+    });
+    await db.execute(sql`
+      INSERT INTO background_jobs
+        (id, kind, handler_version, user_id, org_id, input)
+      VALUES
+        (${controlId}, 'clerk-user-deletion', 1, ${mine}, '', '{}'::jsonb),
+        (${exportId}, 'account-task-fixture', 1, ${mine}, '', '{}'::jsonb),
+        (${survivorId}, 'account-task-fixture', 1, ${theirs}, '', '{}'::jsonb)
+    `);
+
+    const plan = await planRelationalErasure(db);
+    const { job, sealed } = await drive(mine, {
+      ...plan,
+      unattributableDescendants: [],
+    });
+    const remaining = await db.execute(sql`
+      SELECT id FROM background_jobs
+      WHERE id IN (${controlId}, ${exportId}, ${survivorId})
+      ORDER BY id
+    `);
+    expect(remaining.rows).toStrictEqual(
+      [{ id: controlId }, { id: survivorId }].sort((a, b) => {
+        return a.id.localeCompare(b.id);
+      }),
+    );
+    await expect(
+      relationalErasureResidual(
+        db,
+        { subjectKind: "user", subjectId: mine },
+        plan,
+      ),
+    ).resolves.toStrictEqual([]);
+    // The inventory proof may run before its erase sibling. Retry it after
+    // the sweep so the gate sees the same sealed revision with no residual.
+    await db.execute(sql`
+      UPDATE account_erasure_work SET available_at = clock_timestamp()
+      WHERE job_id = ${job.id} AND kind = 'inventory'
+    `);
+    const [inventory] = await claimErasureWork(db, job.id, "verification");
+    expect(inventory).toBeDefined();
+    if (inventory) {
+      await executeErasureWork(
+        db,
+        inventory,
+        createRelationalErasureCollector(db, {
+          ...plan,
+          unattributableDescendants: [],
+        }),
+        context.signal,
+      );
+    }
+    expect((await finalizeErasureJob(db, job.id, sealed)).state).toBe(
+      "verified_erased",
+    );
+  });
+
+  it("holds the relational sweep while an export cleanup coordinator exists", async () => {
+    const mine = account("export-inflight");
+    const exportId = randomUUID();
+    onTestFinished(async () => {
+      await db.execute(sql`DELETE FROM background_jobs WHERE id = ${exportId}`);
+      await db.execute(sql`DELETE FROM users WHERE id = ${mine}`);
+    });
+    await db.execute(sql`INSERT INTO users (id) VALUES (${mine})`);
+    await db.execute(sql`
+      INSERT INTO background_jobs
+        (id, kind, handler_version, user_id, org_id, input)
+      VALUES (${exportId}, 'user-export', 1, ${mine}, '', '{}'::jsonb)
+    `);
+    const plan = await planRelationalErasure(db);
+    const { job, sealed } = await drive(mine, {
+      ...plan,
+      unattributableDescendants: [],
+    });
+    const remaining = await db.execute(sql`
+      SELECT
+        (SELECT count(*)::int FROM users WHERE id = ${mine}) AS users,
+        (SELECT count(*)::int FROM background_jobs WHERE id = ${exportId}) AS export_jobs
+    `);
+    expect(remaining.rows).toStrictEqual([{ users: 1, export_jobs: 1 }]);
+    const [pending] = (
+      await db.execute(sql`
+        SELECT state, error_code AS "errorCode", attempt_count AS "attemptCount"
+        FROM account_erasure_work
+        WHERE job_id = ${job.id} AND kind = 'erase'
+      `)
+    ).rows;
+    expect(pending).toMatchObject({
+      state: "pending",
+      errorCode: "boundary_unproven",
+      attemptCount: 0,
+    });
+    await expect(finalizeErasureJob(db, job.id, sealed)).rejects.toThrow(
+      "account_erasure:work_unresolved",
+    );
+  });
+
+  it("releases only deleted conversation and candidate blob retains", async () => {
+    const mine = account("blob-owner");
+    const theirs = account("blob-survivor");
+    const orgId = `org_sweep_${randomUUID().replaceAll("-", "")}`;
+    const historyHash = randomBytes(32).toString("hex");
+    const candidateHash = randomBytes(32).toString("hex");
+    const ownStorage = randomUUID();
+    const theirStorage = randomUUID();
+    const ownSession = randomUUID();
+    const theirSession = randomUUID();
+    const ownRun = randomUUID();
+    const theirRun = randomUUID();
+    onTestFinished(async () => {
+      await db.execute(sql`DELETE FROM pi_memory_stage1_candidates
+        WHERE memory_storage_id IN (${ownStorage}, ${theirStorage})`);
+      await db.execute(sql`DELETE FROM conversations
+        WHERE run_id IN (${ownRun}, ${theirRun})`);
+      await db.execute(sql`DELETE FROM agent_runs
+        WHERE id IN (${ownRun}, ${theirRun})`);
+      await db.execute(sql`DELETE FROM agent_sessions
+        WHERE id IN (${ownSession}, ${theirSession})`);
+      await db.execute(sql`DELETE FROM storages
+        WHERE id IN (${ownStorage}, ${theirStorage})`);
+      await db.execute(sql`DELETE FROM blobs
+        WHERE hash IN (${historyHash}, ${candidateHash})`);
+    });
+    await db.execute(sql`INSERT INTO blobs
+      (hash, raw_size, encoding, encoded_size, ref_count)
+      VALUES (${historyHash}, 1, 'raw', 1, 2),
+             (${candidateHash}, 1, 'raw', 1, 2)`);
+    await db.execute(sql`INSERT INTO storages
+      (id, user_id, org_id, name, s3_prefix)
+      VALUES (${ownStorage}, ${mine}, ${orgId}, 'memory', ${`storage/${ownStorage}`}),
+             (${theirStorage}, ${theirs}, ${orgId}, 'memory', ${`storage/${theirStorage}`})`);
+    await db.execute(sql`INSERT INTO pi_memory_stage1_candidates
+      (memory_storage_id, org_id, user_id, pi_session_id, source_run_id,
+       source_history_hash, source_completed_at, eligible_at)
+      VALUES (${ownStorage}, ${orgId}, ${mine}, 'mine', ${ownRun},
+              ${candidateHash}, now(), now()),
+             (${theirStorage}, ${orgId}, ${theirs}, 'theirs', ${theirRun},
+              ${candidateHash}, now(), now())`);
+    await db.execute(sql`INSERT INTO agent_sessions (id, user_id, org_id)
+      VALUES (${ownSession}, ${mine}, ${orgId}),
+             (${theirSession}, ${theirs}, ${orgId})`);
+    await db.execute(sql`INSERT INTO agent_runs
+      (id, user_id, org_id, session_id, status, prompt)
+      VALUES (${ownRun}, ${mine}, ${orgId}, ${ownSession}, 'completed', ''),
+             (${theirRun}, ${theirs}, ${orgId}, ${theirSession}, 'completed', '')`);
+    await db.execute(sql`INSERT INTO conversations
+      (run_id, cli_agent_type, cli_agent_session_id, cli_agent_session_history_hash)
+      VALUES (${ownRun}, 'pi', 'mine', ${historyHash}),
+             (${theirRun}, 'pi', 'theirs', ${historyHash})`);
+
+    const plan = await planRelationalErasure(db);
+    const candidateRoot = plan.order.find((root) => {
+      return root.table === "pi_memory_stage1_candidates";
+    });
+    expect(candidateRoot).toBeDefined();
+    // Force the dangerous but FK-valid order: storage cascades candidates
+    // before the generic loop could inspect them. Capture must not depend on
+    // the catalogue's incidental root order.
+    await drive(mine, {
+      ...plan,
+      order: [
+        ...plan.order.filter((root) => {
+          return root.table !== "pi_memory_stage1_candidates";
+        }),
+        ...(candidateRoot ? [candidateRoot] : []),
+      ],
+      unattributableDescendants: [],
+    });
+
+    const rows = await db.execute(sql`SELECT hash, ref_count
+      FROM blobs WHERE hash IN (${historyHash}, ${candidateHash})`);
+    expect(rows.rows).toHaveLength(2);
+    expect(rows.rows).toStrictEqual(
+      expect.arrayContaining([
+        { hash: historyHash, ref_count: 1 },
+        { hash: candidateHash, ref_count: 1 },
+      ]),
+    );
+    const survivor = await db.execute(sql`SELECT
+      (SELECT count(*)::int FROM conversations WHERE run_id = ${theirRun}) AS conversations,
+      (SELECT count(*)::int FROM pi_memory_stage1_candidates
+       WHERE memory_storage_id = ${theirStorage}) AS candidates`);
+    expect(survivor.rows).toStrictEqual([{ conversations: 1, candidates: 1 }]);
+  });
+
+  it("rolls back the sweep when a blob retain cannot be released", async () => {
+    const mine = account("missing-blob-retain");
+    const orgId = `org_sweep_${randomUUID().replaceAll("-", "")}`;
+    const storageId = randomUUID();
+    const hash = randomBytes(32).toString("hex");
+    onTestFinished(async () => {
+      await db.execute(sql`DELETE FROM pi_memory_stage1_candidates
+        WHERE memory_storage_id = ${storageId}`);
+      await db.execute(sql`DELETE FROM storages WHERE id = ${storageId}`);
+      await db.execute(sql`DELETE FROM blobs WHERE hash = ${hash}`);
+    });
+    await db.execute(sql`INSERT INTO blobs
+      (hash, raw_size, encoding, encoded_size, ref_count)
+      VALUES (${hash}, 1, 'raw', 1, 0)`);
+    await db.execute(sql`INSERT INTO storages
+      (id, user_id, org_id, name, s3_prefix)
+      VALUES (${storageId}, ${mine}, ${orgId}, 'memory', ${`storage/${storageId}`})`);
+    await db.execute(sql`INSERT INTO pi_memory_stage1_candidates
+      (memory_storage_id, org_id, user_id, pi_session_id, source_run_id,
+       source_history_hash, source_completed_at, eligible_at)
+      VALUES (${storageId}, ${orgId}, ${mine}, 'mine', ${randomUUID()},
+              ${hash}, now(), now())`);
+
+    const plan = await planRelationalErasure(db);
+    const runnable = {
+      ...plan,
+      unattributableDescendants: [],
+    };
+    const handler = createRelationalErasureCollector(db, runnable);
+    const { job } = await sealedJob(mine, RELATIONAL_ERASURE_COLLECTOR_VERSION);
+    const [collector] = await claimErasureWork(db, job.id, "inventory");
+    if (!collector) {
+      throw new Error("Missing relational inventory lease");
+    }
+    await executeErasureWork(db, collector, handler, context.signal);
+    const sealed = await seal(job.id, job);
+    const claimed = await claimErasureWork(db, job.id, "verification");
+    const eraser = claimed.find((lease) => {
+      return lease.item.itemKey !== lease.item.sinkId;
+    });
+    if (!eraser) {
+      throw new Error("Missing relational erase lease");
+    }
+    await expect(
+      executeErasureWork(db, eraser, handler, context.signal),
+    ).rejects.toThrow(
+      "Conversation history reference accounting failed: missing or insufficient blob references",
+    );
+    const retained = await db.execute(sql`SELECT
+      (SELECT count(*)::int FROM storages WHERE id = ${storageId}) AS storages,
+      (SELECT count(*)::int FROM pi_memory_stage1_candidates
+       WHERE memory_storage_id = ${storageId}) AS candidates`);
+    expect(retained.rows).toStrictEqual([{ storages: 1, candidates: 1 }]);
+    await expect(finalizeErasureJob(db, job.id, sealed)).rejects.toThrow(
+      "account_erasure:work_unresolved",
+    );
+  });
+
   it("deletes a thread the account created under a surviving member's Agent", async () => {
     const mine = account("mine");
     const theirs = account("theirs");
@@ -578,9 +906,6 @@ describe("dormant relational sweep", () => {
     const plan = await planRelationalErasure(db);
     await drive(mine, {
       ...plan,
-      // The state P1 produces once `email_outbox` and `feishu_chat_ingress`
-      // carry an account column. Narrowed here so the proof path runs before
-      // its gate opens; the gate itself is asserted in the next case.
       unattributableDescendants: [],
     });
 
@@ -773,14 +1098,17 @@ describe("dormant relational sweep", () => {
   it("refuses to verify while rows remain unattributable", async () => {
     const subjectId = account("gated");
     const plan = await planRelationalErasure(db);
-    // The real plan: `email_outbox` and `feishu_chat_ingress` hold account
-    // data no column or join attributes, so no completion claim may be made.
-    expect(plan.unattributableDescendants.length).toBeGreaterThan(0);
+    // Keep the unattributable-descendant gate for all non-deferred tables.
+    // This deliberate negative case pins the gate independently of test data.
+    const unresolved = {
+      ...plan,
+      unattributableDescendants: ["unattributed_account_data_fixture"],
+    };
     expect(() => {
-      return assertRelationalSweepComplete(plan);
+      return assertRelationalSweepComplete(unresolved);
     }).toThrow("account_erasure_relational:descendant_unattributable");
 
-    const { job, sealed } = await drive(subjectId, plan);
+    const { job, sealed } = await drive(subjectId, unresolved);
     await expect(finalizeErasureJob(db, job.id, sealed)).rejects.toThrow(
       "account_erasure:work_unresolved",
     );

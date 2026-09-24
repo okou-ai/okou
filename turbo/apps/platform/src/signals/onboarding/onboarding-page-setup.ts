@@ -22,6 +22,7 @@ import {
   OnboardingVideoRunPage,
 } from "../../views/onboarding/onboarding-template-run-pages.tsx";
 import { hideAppSkeleton$, showAppSkeleton$ } from "../app-skeleton.ts";
+import { authenticatedIdentity$ } from "../auth.ts";
 import { brandName$, type BrandName } from "../branding.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
@@ -114,9 +115,15 @@ function createOnboardingPageSetup(
   return command(async ({ get, set }, signal: AbortSignal) => {
     set(showAppSkeleton$);
     const searchParams = get(searchParams$);
+    const { userId } = await get(authenticatedIdentity$);
+    signal.throwIfAborted();
 
     if (config.step === "video-run") {
-      const checkoutDraft = set(readOnboardingCheckoutDraft$, searchParams);
+      const checkoutDraft = set(
+        readOnboardingCheckoutDraft$,
+        searchParams,
+        userId,
+      );
       const checkoutSessionId = searchParams.get(
         "onboarding_billing_session_id",
       );
@@ -154,7 +161,7 @@ function createOnboardingPageSetup(
     }
 
     set(sendEvent$, "onboarding-start");
-    set(hydrateOnboardingRoute$, config.step, searchParams);
+    set(hydrateOnboardingRoute$, config.step, searchParams, userId);
     const draft = get(onboardingDraft$);
     if (config.fallbackPath && !hasRequiredSelection(config.step, draft)) {
       set(detachedNavigateTo$, config.fallbackPath, {

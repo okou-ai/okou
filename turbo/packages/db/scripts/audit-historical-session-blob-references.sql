@@ -142,7 +142,13 @@ WITH parameters AS MATERIALIZED (
       WHERE attrelid = c.conrelid AND attname = 'source_history_hash')]
     AND c.confkey = ARRAY[(SELECT attnum FROM pg_attribute
       WHERE attrelid = c.confrelid AND attname = 'hash')]
-    AND c.convalidated AS expected
+    AND c.convalidated AS expected_candidate,
+    c.conrelid = to_regclass('public.blob_upload_intents')
+    AND c.conkey = ARRAY[(SELECT attnum FROM pg_attribute
+      WHERE attrelid = c.conrelid AND attname = 'hash')]
+    AND c.confkey = ARRAY[(SELECT attnum FROM pg_attribute
+      WHERE attrelid = c.confrelid AND attname = 'hash')]
+    AND c.convalidated AS expected_upload_intent
   FROM pg_constraint c
   WHERE c.contype = 'f' AND c.confrelid = 'public.blobs'::regclass
 ), catalog AS (
@@ -150,8 +156,10 @@ WITH parameters AS MATERIALIZED (
     (SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal
       AND tgrelid IN ('public.blobs'::regclass, 'public.conversations'::regclass,
         'public.pi_memory_stage1_candidates'::regclass)) AS owner_table_user_triggers,
-    (SELECT count(*) FROM blob_foreign_keys WHERE expected) AS expected_candidate_blob_foreign_keys,
-    (SELECT count(*) FROM blob_foreign_keys WHERE NOT expected) AS unexpected_blob_foreign_keys,
+    (SELECT count(*) FROM blob_foreign_keys WHERE expected_candidate) AS expected_candidate_blob_foreign_keys,
+    (SELECT count(*) FROM blob_foreign_keys WHERE expected_upload_intent) AS expected_upload_intent_blob_foreign_keys,
+    (SELECT count(*) FROM blob_foreign_keys
+      WHERE NOT expected_candidate AND NOT expected_upload_intent) AS unexpected_blob_foreign_keys,
     (SELECT count(*) FROM pg_class
       WHERE oid IN ('public.blobs'::regclass, 'public.conversations'::regclass,
         'public.pi_memory_stage1_candidates'::regclass, 'public.storages'::regclass,
@@ -189,6 +197,8 @@ SELECT jsonb_build_object(
     'persisted_owners', jsonb_build_array('conversations', 'pi_memory_stage1_candidates'),
     'catalog_matches_inventory', k.owner_table_user_triggers = 0
       AND k.expected_candidate_blob_foreign_keys = 1
+      AND k.expected_upload_intent_blob_foreign_keys = CASE
+        WHEN to_regclass('public.blob_upload_intents') IS NULL THEN 0 ELSE 1 END
       AND k.unexpected_blob_foreign_keys = 0 AND k.unexpected_relation_configuration = 0,
     'current_writer_and_rollout_revalidation_required', true,
     'out_of_repository_writers_verified', false,

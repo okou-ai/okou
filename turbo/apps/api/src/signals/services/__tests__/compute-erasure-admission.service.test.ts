@@ -1549,7 +1549,7 @@ describe("actual compute transactions versus the B1 projector", () => {
             settle(
               bdd.requestCreateAgent(
                 f.actor,
-                { displayName: "New public" },
+                { displayName: "New public", visibility: "public" },
                 [201, 409],
               ),
             ),

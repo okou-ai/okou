@@ -270,25 +270,45 @@ async function openCreateDialog(
   });
 }
 
-test("Pressing Enter creates a named private agent", async () => {
-  const user = userEvent.setup({ delay: null });
-  configureCatalog([
-    agent(CORE_AGENT_ID, { displayName: "Core Agent", visibility: "public" }),
-  ]);
-  await setupPage({ context, path: "/agents" });
-  const dialog = await openCreateDialog("Private");
-  const name = within(dialog).getByLabelText("Name");
+test.each([
+  { tab: "Private" as const, publicAgentCount: 1 },
+  { tab: "Public" as const, publicAgentCount: 1 },
+  { tab: "Public" as const, publicAgentCount: 7 },
+])(
+  "Pressing Enter defaults to a private agent from $tab with $publicAgentCount public agents",
+  async ({ tab, publicAgentCount }) => {
+    const user = userEvent.setup({ delay: null });
+    configureCatalog(
+      Array.from({ length: publicAgentCount }, (_, index) => {
+        return agent(index === 0 ? CORE_AGENT_ID : crypto.randomUUID(), {
+          displayName: `Public Agent ${index + 1}`,
+          visibility: "public",
+        });
+      }),
+    );
+    await setupPage({ context, path: "/agents" });
+    const dialog = await openCreateDialog(tab);
+    expect(
+      within(dialog).getByRole("combobox", { name: "Visibility" }),
+    ).toHaveTextContent("Private");
+    const name = within(dialog).getByLabelText("Name");
 
-  await fill(name, "  Private Analyst  ");
-  await user.keyboard("{Enter}");
+    await fill(name, "  Private Analyst  ");
+    await user.keyboard("{Enter}");
 
-  const createdCard = await waitForAgentCard(CREATED_AGENT_ID);
-  expect(createdCard).toHaveTextContent("Private Analyst");
-  expect(agentCardsNamed("Private Analyst")).toHaveLength(1);
-  expect(
-    screen.queryByRole("dialog", { name: "Create a new agent" }),
-  ).not.toBeInTheDocument();
-});
+    const createdCard = await waitForAgentCard(CREATED_AGENT_ID);
+    expect(createdCard).toHaveTextContent("Private Analyst");
+    expect(agentCardsNamed("Private Analyst")).toHaveLength(1);
+    expect(visibilityTab("Private")).toHaveAttribute("aria-checked", "true");
+    expect(
+      screen.queryByRole("dialog", { name: "Create a new agent" }),
+    ).not.toBeInTheDocument();
+
+    click(visibilityTab("Public"));
+    await waitForAgentCard(CORE_AGENT_ID);
+    expect(queryAgentCard(CREATED_AGENT_ID)).toBeUndefined();
+  },
+);
 
 test.each([
   { mode: "composing", isComposing: true, keyCode: 13, name: "中文助手" },
@@ -355,6 +375,10 @@ test("Blank Enter and cancelling a named draft do not create an agent", async ()
   expect(name).toHaveFocus();
 
   await fill(name, "Discard this draft");
+  await user.click(
+    within(dialog).getByRole("combobox", { name: "Visibility" }),
+  );
+  await user.click(await screen.findByRole("option", { name: /Public/u }));
   click(buttonByText("Cancel", dialog));
   await waitFor(() => {
     expect(dialog).not.toBeInTheDocument();
@@ -362,6 +386,9 @@ test("Blank Enter and cancelling a named draft do not create an agent", async ()
   expect(agentCardsNamed("Discard this draft")).toHaveLength(0);
   const reopened = await openCreateDialog("Private");
   expect(within(reopened).getByLabelText("Name")).toHaveValue("");
+  expect(
+    within(reopened).getByRole("combobox", { name: "Visibility" }),
+  ).toHaveTextContent("Private");
 });
 
 test("A pending create disables submission and adds only one agent card", async () => {
@@ -396,6 +423,7 @@ test("A pending create disables submission and adds only one agent card", async 
 });
 
 test("Create a public agent with a customized avatar", async () => {
+  const user = userEvent.setup({ delay: null });
   const catalog = configureCatalog([
     agent(CORE_AGENT_ID, { displayName: "Core Agent", visibility: "public" }),
   ]);
@@ -405,6 +433,10 @@ test("Create a public agent with a customized avatar", async () => {
   });
   const creationDialog = await openCreateDialog("Public");
   await fill(within(creationDialog).getByLabelText("Name"), "Marketing Bot");
+  await user.click(
+    within(creationDialog).getByRole("combobox", { name: "Visibility" }),
+  );
+  await user.click(await screen.findByRole("option", { name: /Public/u }));
 
   click(buttonByLabel("Customize avatar", creationDialog));
 

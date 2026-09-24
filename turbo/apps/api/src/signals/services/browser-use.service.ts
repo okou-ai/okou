@@ -1565,12 +1565,12 @@ function providerError(response: Response, body: unknown) {
   );
 }
 
-async function browserUseRequest(
+async function browserUseRequestWithStatus(
   path: string,
   init: RequestInit,
   signal: AbortSignal,
   acceptedStatuses: readonly number[] = [],
-): Promise<unknown> {
+): Promise<{ readonly status: number; readonly body: unknown }> {
   const apiKey = env("OKOU_BROWSER_USE_API_KEY");
   if (!apiKey) {
     throw new BrowserUseProviderError(
@@ -1630,7 +1630,43 @@ async function browserUseRequest(
   ) {
     throw providerError(result.value.response, result.value.body);
   }
-  return result.value.body;
+  return { status: result.value.response.status, body: result.value.body };
+}
+
+async function browserUseRequest(
+  path: string,
+  init: RequestInit,
+  signal: AbortSignal,
+  acceptedStatuses: readonly number[] = [],
+): Promise<unknown> {
+  const result = await browserUseRequestWithStatus(
+    path,
+    init,
+    signal,
+    acceptedStatuses,
+  );
+  return result.body;
+}
+
+/** A DELETE acknowledgement alone cannot prove that a profile is absent. */
+export async function browserUseProfileAbsent(
+  profileId: string,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const result = await browserUseRequestWithStatus(
+    `/profiles/${encodeURIComponent(profileId)}`,
+    { method: "GET" },
+    signal,
+    [404],
+  );
+  if (result.status === 404) {
+    return true;
+  }
+  const profile = browserUseProfileSchema.parse(result.body);
+  if (profile.id !== profileId) {
+    throw new Error("Managed browser provider returned a different profile");
+  }
+  return false;
 }
 
 export async function createBrowserUseProfile(
@@ -1687,6 +1723,28 @@ export async function createBrowserUseSession(
     signal,
   );
   return parseBrowserUseSession(body);
+}
+
+export async function browserUseSessionAbsent(
+  providerSessionId: string,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const result = await browserUseRequestWithStatus(
+    `/browsers/${encodeURIComponent(providerSessionId)}`,
+    { method: "GET" },
+    signal,
+    [404],
+  );
+  if (result.status === 404) {
+    return true;
+  }
+  const session = parseBrowserUseSession(result.body);
+  if (session.id !== providerSessionId) {
+    throw new Error("Managed browser provider returned a different session");
+  }
+  // A stopped session can still retain remote history or downloads. Only an
+  // authenticated not-found response proves its provider record is absent.
+  return false;
 }
 
 export async function getBrowserUseSession(

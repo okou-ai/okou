@@ -79,7 +79,7 @@ function publicArtifactPath(pathname: string): string | null {
   return artifactStart === -1 ? null : pathname.slice(artifactStart);
 }
 
-function publicArtifactKeyFromUrl(value: string): string | null {
+export function publicArtifactKeyFromUrl(value: string): string | null {
   const url = safeUrlParse(value);
   if (!url) {
     return null;

@@ -29,7 +29,13 @@ pub(crate) const ARTIFACT_TRAVERSAL_MAX_DEPTH: u64 = 256;
 #[cfg(target_os = "linux")]
 pub(crate) const ARTIFACT_TRAVERSAL_MAX_PATH_BYTES: u64 = 64 * 1024;
 
-/// Collect a best-effort manifest of successfully observed regular files.
+/// Collect a best-effort manifest of regular files readable at checkpoint time.
+///
+/// Artifact membership is intentionally based on what the walk can read and
+/// hash. An unreadable descendant is not part of the artifact for this
+/// checkpoint; omitting it lets other readable files be saved instead of
+/// failing the entire checkpoint. A new version may therefore omit paths that
+/// were present in the mounted parent version.
 ///
 /// On Linux, access to the configured artifact root is strict: the root must be
 /// opened and its directory listing must be initialized successfully. Below
@@ -94,6 +100,8 @@ fn walk_dir(
     out: &mut Vec<FileEntry>,
     path_bytes: &mut u64,
 ) -> Result<(), ArchiveError> {
+    // An unreadable descendant subtree contributes no artifact files. Keep
+    // walking the rest of the root rather than failing the checkpoint.
     let entries = match current.read_dir() {
         Ok(e) => e,
         Err(_) => return Ok(()),
@@ -119,6 +127,8 @@ fn walk_entries(
     out: &mut Vec<FileEntry>,
     path_bytes: &mut u64,
 ) -> Result<(), ArchiveError> {
+    // A failed directory entry cannot be included in this checkpoint's
+    // artifact, but it should not prevent other entries from being saved.
     for entry in entries.flatten() {
         let candidate_entries = observed_entries.saturating_add(1);
         enforce_traversal_limits(
@@ -153,6 +163,8 @@ fn walk_entries(
             continue;
         }
 
+        // A regular file joins the artifact only when it can be opened,
+        // inspected, and hashed. Access failures exclude that file by policy.
         let Ok(file) = current.open_child_file(&name) else {
             continue;
         };
