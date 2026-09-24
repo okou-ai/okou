@@ -4811,7 +4811,7 @@
         "unconfirmedNote": "Não conseguimos verificar sua conexão com o {{provider}}. Tente de novo ou conecte depois."
       },
       "team": {
-        "copy": "Convide um membro da equipe para usar os fluxos de trabalho compartilhados com você.",
+        "copy": "Convide um membro da equipe para compartilhar seus fluxos de trabalho, enquanto cada um conecta as próprias ferramentas.",
         "invite": "Enviar convite",
         "invited": "Convidado",
         "label": "E-mail do membro da equipe",
@@ -4825,12 +4825,10 @@
           "workspace": "Entra no seu workspace."
         },
         "sending": "Enviando…",
-        "title": "Torne o Okou útil para toda a equipe",
-        "trust": "Todos usam os mesmos fluxos de trabalho e conectam as próprias ferramentas."
+        "title": "Torne o Okou útil para toda a equipe"
       },
       "welcome": {
         "copy": "Revise uma tarefa sugerida para seu trabalho, ajuste-a ao seu objetivo e deixe o Okou começar.",
-        "offerTitle": "A primeira hora de consultoria é por nossa conta, mais até 100 créditos —",
         "promptLabel": "Seu prompt inicial",
         "start": "Começar com o Okou",
         "title": "Comece com uma tarefa que importa"

@@ -4811,7 +4811,7 @@
         "unconfirmedNote": "Non siamo riusciti a verificare il collegamento a {{provider}}. Puoi riprovare o collegarlo più tardi."
       },
       "team": {
-        "copy": "Invita un membro del team a usare con te i flussi di lavoro condivisi.",
+        "copy": "Invita un membro del team a condividere i tuoi flussi di lavoro, mentre ognuno collega i propri strumenti.",
         "invite": "Invia invito",
         "invited": "Invitato",
         "label": "Email del membro del team",
@@ -4825,12 +4825,10 @@
           "workspace": "Entra nel tuo workspace."
         },
         "sending": "Invio in corso…",
-        "title": "Rendi Okou utile a tutto il team",
-        "trust": "Tutti usano gli stessi flussi di lavoro e collegano i propri strumenti."
+        "title": "Rendi Okou utile a tutto il team"
       },
       "welcome": {
         "copy": "Rivedi un compito suggerito per il tuo lavoro, adattalo al tuo obiettivo e lascia iniziare Okou.",
-        "offerTitle": "La prima ora di consulenza la offriamo noi, più fino a 100 crediti —",
         "promptLabel": "Il tuo prompt iniziale",
         "start": "Inizia con Okou",
         "title": "Inizia con un compito che conta"
