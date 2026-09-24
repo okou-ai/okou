@@ -440,6 +440,12 @@ export function createTestMocks(getSignal: () => AbortSignal) {
       authWindow: (): MockWindow => {
         return createMockWindow();
       },
+      message: (
+        data: unknown,
+        options: { origin: string; source: Window | null },
+      ): void => {
+        window.dispatchEvent(new MessageEvent("message", { data, ...options }));
+      },
       matchMedia: (
         matches: boolean | ((query: string) => boolean),
       ): BrowserMatchMediaMock => {

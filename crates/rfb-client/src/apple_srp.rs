@@ -196,6 +196,20 @@ fn parse_challenge(bytes: &[u8]) -> Result<Challenge<'_>, Error> {
 
 async fn read_blob<S: AsyncRead + Unpin>(stream: &mut S) -> Result<Vec<u8>, Error> {
     let len = stream.read_u32().await?;
+    read_blob_body(stream, len).await
+}
+
+async fn read_final_token<S: AsyncRead + Unpin>(stream: &mut S) -> Result<Vec<u8>, Error> {
+    let len = stream.read_u32().await?;
+    // macOS sends SecurityResult=1 in place of the final proof when the
+    // client's SRP proof is wrong. No server proof has been authenticated.
+    if len == 1 {
+        return Err(Error::AuthenticationFailed);
+    }
+    read_blob_body(stream, len).await
+}
+
+async fn read_blob_body<S: AsyncRead + Unpin>(stream: &mut S, len: u32) -> Result<Vec<u8>, Error> {
     if !(4..=MAX_BLOB).contains(&len) {
         return Err(Error::InvalidAppleSrpParameters);
     }
@@ -428,7 +442,7 @@ async fn exchange_proofs<S: AsyncRead + AsyncWrite + Unpin>(
     drop(packet);
     drop(response);
 
-    let final_token = read_blob(stream).await?;
+    let final_token = read_final_token(stream).await?;
     if !valid_final_token(&final_token, &expected_m2) {
         return Err(Error::AuthenticationFailed);
     }

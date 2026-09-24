@@ -347,7 +347,7 @@
     },
     "sources": {
       "agent": "Agent",
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "automationEvent": "Automatisierungsereignis",
       "automationSchedule": "Automatisierungszeitplan",
       "email": "E-Mail",
@@ -3473,7 +3473,7 @@
         "invalidSignature": "Die Signatur auf diesem Link ist ungültig.",
         "invalidTimestamp": "Der Zeitstempel auf diesem Link ist ungültig.",
         "invalidTitle": "Der Verbindungslink ist ungültig",
-        "risk": "SMS- und MMS-Antworten werden möglicherweise nicht zuverlässig zugestellt. Für ein möglichst zuverlässiges Erlebnis verwenden Sie iMessage mit dieser AgentPhone-Nummer.",
+        "risk": "SMS- und MMS-Antworten werden möglicherweise nicht zuverlässig zugestellt. Für ein möglichst zuverlässiges Erlebnis verwenden Sie iMessage mit dieser Nummer.",
         "successDescription": "{{phone}} ist verbunden. Senden Sie eine Textnachricht, um mit {{assistantName}} zu chatten.",
         "successTitle": "Telefonnummer verbunden"
       },
@@ -4024,8 +4024,8 @@
         "uninstallTitle": "Telegram-Bot deinstallieren?"
       },
       "toasts": {
-        "agentphoneConnected": "AgentPhone verbunden",
-        "agentphoneDisconnected": "AgentPhone getrennt",
+        "agentphoneConnected": "Telefonnummer verbunden",
+        "agentphoneDisconnected": "Telefonnummer getrennt",
         "slackConnected": "Slack erfolgreich verbunden",
         "slackDisconnected": "Von Slack getrennt",
         "slackInstalled": "Slack erfolgreich installiert",
@@ -4753,7 +4753,7 @@
         "unconfirmedNote": "Deine {{provider}}-Verbindung konnte nicht geprüft werden. Versuch es erneut oder verbinde es später."
       },
       "team": {
-        "copy": "Lade ein Teammitglied ein, um gemeinsame Workflows zu nutzen.",
+        "copy": "Lade ein Teammitglied ein, deine Workflows zu teilen – jede Person verbindet dabei ihre eigenen Tools.",
         "invite": "Einladung senden",
         "invited": "Eingeladen",
         "label": "E-Mail des Teammitglieds",
@@ -4767,12 +4767,10 @@
           "workspace": "Tritt deinem Workspace bei."
         },
         "sending": "Wird gesendet…",
-        "title": "Mach Okou für dein ganzes Team nützlich",
-        "trust": "Alle nutzen dieselben Workflows und verbinden ihre eigenen Tools."
+        "title": "Mach Okou für dein ganzes Team nützlich"
       },
       "welcome": {
         "copy": "Prüfe den Vorschlag für deine Arbeit, passe ihn an dein Ziel an und lass Okou loslegen.",
-        "offerTitle": "Die erste Beratungsstunde geht auf uns, dazu bis zu 100 Credits —",
         "promptLabel": "Dein Startprompt",
         "start": "Mit Okou starten",
         "title": "Starte mit einer Aufgabe, die zählt"
@@ -7112,6 +7110,7 @@
       "add": "Zugangsdaten hinzufügen",
       "appleDhFieldHelp": "Je Feld 1–63 UTF-8-Bytes. NUL ist nicht zulässig.",
       "appleDhMethod": "Apple-DH-Benutzername und Passwort",
+      "appleSrpMethod": "Apple-Direct-SRP-Benutzername und Passwort",
       "authentication": "Authentifizierungsmethode",
       "createNew": "Neue Zugangsdaten erstellen",
       "delete": "Zugangsdaten löschen",
@@ -7181,6 +7180,8 @@
     "security": {
       "appleDh": "Mac-Bildschirmfreigabe (Apple DH)",
       "appleDhHelp": "Erfordert macOS-Bildschirmfreigabe über eine gespeicherte SSH-Verbindung. Das RFB-Ziel muss auf diesem Mac 127.0.0.1 oder ::1 sein. SSH schützt die gesamte VNC-Sitzung. Verwenden Sie einen Mac-SSH-Host, den Sie kontrollieren; sein Host-Schlüssel schließt eine Weiterleitung nicht aus.",
+      "appleSrp": "Mac-Bildschirmfreigabe (Apple Direct SRP)",
+      "appleSrpHelp": "Erfordert eine gespeicherte SSH-Verbindung zum Mac und 127.0.0.1 oder ::1 als RFB-Ziel. SRP prüft Konto und Serverbeweis; SSH schützt die gesamte VNC-Sitzung. Der SSH-Host-Schlüssel bestätigt den gewählten Endpunkt, schließt aber eine Weiterleitung nicht aus.",
       "caBundle": "CA-Zertifikate (PEM)",
       "caHelp": "Bis zu 8 CA-Zertifikate, insgesamt 64 KiB. Füge keinen privaten Schlüssel und kein Serverzertifikat ein.",
       "caHint": "Füge die öffentlichen CA-Zertifikate ein, die das Serverzertifikat ausgestellt haben",
@@ -7200,6 +7201,7 @@
     "summary_other": "{{count}} konfigurierte Hosts",
     "transport": {
       "appleDhDestinationHelp": "Geben Sie für Apple DH 127.0.0.1 oder ::1 ein. Dies ist die Loopback-Adresse des Mac, die über den ausgewählten SSH-Host erreicht wird.",
+      "appleSrpDestinationHelp": "Geben Sie für Apple Direct SRP 127.0.0.1 oder ::1 ein. Dies ist die Loopback-Adresse des Mac, die über den ausgewählten SSH-Host erreicht wird.",
       "destination": "RFB-Ziel",
       "destinationHelp": "Bei SSH-Routen werden dieser Host und Port vom ausgewählten SSH-Server aus erreicht, nicht direkt vom Runner.",
       "direct": "Direkt vom Runner",

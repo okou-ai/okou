@@ -347,7 +347,7 @@
     },
     "sources": {
       "agent": "에이전트",
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "automationEvent": "자동화 이벤트",
       "automationSchedule": "자동화 일정",
       "email": "이메일",
@@ -3457,7 +3457,7 @@
         "invalidSignature": "이 링크의 서명이 유효하지 않습니다.",
         "invalidTimestamp": "이 링크의 타임스탬프가 유효하지 않습니다.",
         "invalidTitle": "연결 링크가 유효하지 않습니다",
-        "risk": "SMS 및 MMS 회신이 안정적으로 전달되지 않을 수 있습니다. 가장 안정적인 경험을 위해 이 AgentPhone 번호로 iMessage를 사용하세요.",
+        "risk": "SMS 및 MMS 회신이 안정적으로 전달되지 않을 수 있습니다. 가장 안정적인 경험을 위해 이 번호로 iMessage를 사용하세요.",
         "successDescription": "{{phone}}가 연결되었습니다. 문자 메시지를 보내 {{assistantName}}와 대화를 시작하세요.",
         "successTitle": "전화번호가 연결되었습니다"
       },
@@ -4008,8 +4008,8 @@
         "uninstallTitle": "Telegram 봇을 제거하시겠습니까?"
       },
       "toasts": {
-        "agentphoneConnected": "AgentPhone 연결됨",
-        "agentphoneDisconnected": "AgentPhone 연결 해제됨",
+        "agentphoneConnected": "전화번호가 연결되었습니다",
+        "agentphoneDisconnected": "전화번호 연결이 해제되었습니다",
         "slackConnected": "Slack이 성공적으로 연결되었습니다",
         "slackDisconnected": "Slack 연결 해제됨",
         "slackInstalled": "Slack이 성공적으로 설치되었습니다",
@@ -4737,7 +4737,7 @@
         "unconfirmedNote": "{{provider}} 연결 상태를 확인하지 못했습니다. 다시 시도하거나 나중에 연결할 수 있습니다."
       },
       "team": {
-        "copy": "팀원을 초대해 공유 워크플로를 함께 사용하세요.",
+        "copy": "팀원을 초대해 워크플로를 공유하세요. 도구는 각자 자신의 것을 연결합니다.",
         "invite": "초대 보내기",
         "invited": "초대함",
         "label": "팀원 이메일",
@@ -4751,12 +4751,10 @@
           "workspace": "워크스페이스에 참여합니다."
         },
         "sending": "보내는 중…",
-        "title": "팀 전체가 Okou를 활용하세요",
-        "trust": "모두 같은 워크플로를 사용하고 각자 자신의 도구를 연결합니다."
+        "title": "팀 전체가 Okou를 활용하세요"
       },
       "welcome": {
         "copy": "업무에 맞춰 제안된 작업을 확인하고 목표에 맞게 조정한 뒤 Okou를 시작하세요.",
-        "offerTitle": "첫 1시간 컨설팅은 무료, 크레딧도 최대 100 —",
         "promptLabel": "시작 프롬프트",
         "start": "Okou로 시작하기",
         "title": "의미 있는 작업으로 시작하세요"
@@ -7092,6 +7090,7 @@
       "add": "자격 증명 추가",
       "appleDhFieldHelp": "각 항목은 UTF-8 기준 1~63바이트여야 합니다. NUL은 허용되지 않습니다.",
       "appleDhMethod": "Apple DH 사용자 이름과 비밀번호",
+      "appleSrpMethod": "Apple Direct SRP 사용자 이름과 비밀번호",
       "authentication": "인증 방식",
       "createNew": "새 자격 증명 만들기",
       "delete": "자격 증명 삭제",
@@ -7160,6 +7159,8 @@
     "security": {
       "appleDh": "Mac 화면 공유 (Apple DH)",
       "appleDhHelp": "저장된 SSH 연결을 통해 macOS 화면 공유를 사용해야 합니다. RFB 대상은 해당 Mac의 127.0.0.1 또는 ::1이어야 합니다. SSH가 전체 VNC 세션을 보호합니다. 직접 관리하는 Mac SSH 호스트를 사용하세요. 호스트 키만으로 이후 프록시 전달이 없음을 보장할 수는 없습니다.",
+      "appleSrp": "Mac 화면 공유 (Apple Direct SRP)",
+      "appleSrpHelp": "저장된 Mac SSH 연결과 RFB 대상 127.0.0.1 또는 ::1이 필요합니다. SRP는 계정과 서버 증명을 검증하고 SSH는 전체 VNC 세션을 보호합니다. SSH 호스트 키는 선택한 엔드포인트를 식별하지만 이후 프록시 전달이 없음을 보장하지는 않습니다.",
       "caBundle": "CA 인증서 (PEM)",
       "caHelp": "최대 8개의 CA 인증서, 총 64 KiB까지 가능합니다. 개인 키나 서버 인증서를 붙여넣지 마세요.",
       "caHint": "서버 인증서를 발급한 공개 CA 인증서를 붙여넣으세요",
@@ -7179,6 +7180,7 @@
     "summary_other": "설정된 호스트 {{count}}개",
     "transport": {
       "appleDhDestinationHelp": "Apple DH에서는 127.0.0.1 또는 ::1을 입력하세요. 선택한 SSH 호스트를 통해 접근하는 Mac 자체의 루프백 주소입니다.",
+      "appleSrpDestinationHelp": "Apple Direct SRP에서는 127.0.0.1 또는 ::1을 입력하세요. 선택한 SSH 호스트를 통해 접근하는 Mac 자체의 루프백 주소입니다.",
       "destination": "RFB 대상",
       "destinationHelp": "SSH 경로에서는 Runner가 직접 연결하지 않고 선택한 SSH 서버에서 이 호스트와 포트에 연결합니다.",
       "direct": "Runner에서 직접",

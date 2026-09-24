@@ -1053,6 +1053,19 @@ fn diagnostic_is_control_path_failure(diagnostic: Option<&FailureDiagnostic>) ->
         })
 }
 
+/// An app-server that cannot finish its local state backfill leaves the same
+/// Codex home unusable for another run in this sandbox. The guest-generated
+/// initialize error and Codex's backfill timeout must both be present so an
+/// unrelated nonzero CLI exit remains reusable.
+fn is_codex_state_backfill_timeout(failure: &ExecutionFailure) -> bool {
+    failure
+        .error
+        .starts_with("execution: codex app-server child exited while waiting for initialize:")
+        && failure
+            .error
+            .contains("timed out waiting for state db backfill")
+}
+
 fn sandbox_reuse_disposition_for_process_exit(
     exit: &sandbox::ProcessExit,
     cancellation: CancellationDisposition,
@@ -1084,6 +1097,11 @@ fn sandbox_reuse_disposition_for_process_exit(
         .is_some_and(|failure| diagnostic_is_control_path_failure(failure.diagnostic.as_ref()))
     {
         return SandboxReuseDisposition::Ineligible(SandboxReuseRejection::ControlPathFailure);
+    }
+    if failure.is_some_and(is_codex_state_backfill_timeout) {
+        return SandboxReuseDisposition::Ineligible(
+            SandboxReuseRejection::CodexStateBackfillTimeout,
+        );
     }
     if cancellation == CancellationDisposition::Cooperative {
         SandboxReuseDisposition::Eligible(SandboxReuseTerminal::CooperativeCancellation)
@@ -3925,6 +3943,44 @@ mod tests {
             ),
             SandboxReuseDisposition::Eligible(SandboxReuseTerminal::NonzeroExit)
         );
+    }
+
+    #[test]
+    fn codex_state_backfill_timeout_rejects_sandbox_reuse() {
+        let failure = ExecutionFailure::new(
+            1,
+            "execution: codex app-server child exited while waiting for initialize: exit status: 1; stderr tail: Error: failed to initialize sqlite state runtime under /home/user/.codex: timed out waiting for state db backfill at /home/user/.codex after 30s (status: running)",
+            None,
+        );
+
+        let disposition = sandbox_reuse_disposition_for_process_exit(
+            &nonzero_process_exit(),
+            CancellationDisposition::None,
+            Some(&failure),
+        );
+        assert_eq!(
+            disposition,
+            SandboxReuseDisposition::Ineligible(SandboxReuseRejection::CodexStateBackfillTimeout)
+        );
+        assert_eq!(disposition.as_str(), "codex_state_backfill_timeout");
+    }
+
+    #[test]
+    fn unrelated_initialize_and_backfill_errors_remain_reusable() {
+        for error in [
+            "execution: codex app-server child exited while waiting for initialize: exit status: 1; stderr tail: provider unavailable",
+            "execution: another child exited; stderr tail: timed out waiting for state db backfill",
+        ] {
+            let failure = ExecutionFailure::new(1, error, None);
+            assert_eq!(
+                sandbox_reuse_disposition_for_process_exit(
+                    &nonzero_process_exit(),
+                    CancellationDisposition::None,
+                    Some(&failure),
+                ),
+                SandboxReuseDisposition::Eligible(SandboxReuseTerminal::NonzeroExit)
+            );
+        }
     }
 
     #[test]

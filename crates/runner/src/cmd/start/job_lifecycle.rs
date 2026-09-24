@@ -11,7 +11,7 @@ use runner_provider::{CompletionAuth, JobProvider};
 use runner_types::ids::RunId;
 use runner_types::types::{CompleteRequest, SandboxReuseResult, WorkspaceReuseResult};
 
-use super::ownership::{OwnershipTransitions, RunSandbox};
+use runner_supervisor::ownership::{OwnershipTransitions, RunSandbox};
 
 /// Ownership facts known by the outer runner task for panic cleanup.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -292,7 +292,7 @@ mod tests {
     use runner_types::ids::RunId;
     use runner_types::types::{HeartbeatState, SandboxReuseResult};
 
-    use super::super::ownership::OwnershipTransitions;
+    use runner_supervisor::ownership::OwnershipTransitions;
 
     fn test_budget_lease() -> (Arc<ResourceBudget>, BudgetLease) {
         let budget = Arc::new(ResourceBudget::new(8, 32768, 1.0, 0));

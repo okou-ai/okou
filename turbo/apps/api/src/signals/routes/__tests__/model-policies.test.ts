@@ -43,6 +43,7 @@ import {
 } from "./helpers/api-bdd-auth-org";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { makeCodexAuthJson } from "./helpers/api-bdd-auth-device";
 import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -902,6 +903,42 @@ describe("GET/PUT /api/model-policies", () => {
     expect(secondPolicy?.isDefault).toBeTruthy();
     expect(response.body.workspaceDefaultModel).toBe(
       DEFAULT_ORG_MODEL_POLICY_MODELS[1],
+    );
+  });
+
+  it("does not keep a deleted organization's workspace policy", async () => {
+    const fixture = await seedFixture();
+    useSession(fixture);
+    const client = apiClient();
+    const listed = await accept(client.list({ headers: authHeaders() }), [200]);
+    const custom = toUpdate(listed.body).map((policy, index) => {
+      return { ...policy, isDefault: index === 1 };
+    });
+    const updated = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: { revision: await currentPolicyRevision(), policies: custom },
+      }),
+      [200],
+    );
+    expect(updated.body.workspaceDefaultModel).toBe(
+      DEFAULT_ORG_MODEL_POLICY_MODELS[1],
+    );
+
+    // An empty organization left by a deleted account uses the same cleanup.
+    context.mocks.s3.send.mockResolvedValue({});
+    const webhooks = createWebhookCallbackApi(context);
+    webhooks.configureClerkWebhookSecret();
+    webhooks.verifyNextClerkWebhook({
+      type: "organization.deleted",
+      data: { id: fixture.orgId },
+    });
+    await webhooks.requestClerkWebhook("{}", {}, [200]);
+    await flushWaitUntilForTest();
+
+    const after = await accept(client.list({ headers: authHeaders() }), [200]);
+    expect(after.body.workspaceDefaultModel).toBe(
+      DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
     );
   });
 

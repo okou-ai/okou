@@ -5,7 +5,7 @@ import { uploadFileCommand } from "./upload-file";
 
 export const phoneCommand = new Command()
   .name("phone")
-  .description("Send AgentPhone messages, upload files, and download media")
+  .description("Send phone messages, upload files, and download media")
   .addCommand(messageCommand)
   .addCommand(downloadFileCommand)
   .addCommand(uploadFileCommand)

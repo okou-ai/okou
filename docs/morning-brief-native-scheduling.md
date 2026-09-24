@@ -13,7 +13,7 @@ member's choice, schedule or execution ownership.
 **Retirement stage 1.** `FeatureSwitchKey.NativeMorningBrief` stays registered
 with the persisted/API value `simpleMorningBrief` for mixed-version and rollback
 compatibility, but has no staff allowlist or other default cohort. Migration
-`1211_retire_native_morning_brief_admission` changes existing `true` overrides
+`1212_retire_native_morning_brief_admission` changes existing `true` overrides
 to `false` without touching other preferences; new API writes of `true` are
 rejected. The native tick and worker remain solely to reconcile already admitted
 work and transfer scheduling authority back to the Official Workflow. No
