@@ -786,8 +786,9 @@ export function createBrowserUserActionSignals(
 ): BrowserUserActionSignals {
   const requestSignals = createRequestSignals(descriptor);
   const openDialogCount$ = state(0);
+  const pendingReturnRefresh$ = state(false);
   const dialogRef$ = onRef(
-    command(({ set }, _element: HTMLDivElement, signal: AbortSignal) => {
+    command(({ get, set }, _element: HTMLDivElement, signal: AbortSignal) => {
       set(openDialogCount$, (count) => {
         return count + 1;
       });
@@ -797,6 +798,10 @@ export function createBrowserUserActionSignals(
           set(openDialogCount$, (count) => {
             return Math.max(0, count - 1);
           });
+          if (get(openDialogCount$) === 0 && get(pendingReturnRefresh$)) {
+            set(pendingReturnRefresh$, false);
+            set(requestSignals.refresh$);
+          }
         },
         { once: true },
       );
@@ -805,9 +810,11 @@ export function createBrowserUserActionSignals(
   const resumeRef$ = onRef(
     command(({ get, set }, _element: HTMLDivElement, signal: AbortSignal) => {
       const refresh = () => {
-        if (get(openDialogCount$) === 0) {
-          set(requestSignals.refresh$);
+        if (get(openDialogCount$) > 0) {
+          set(pendingReturnRefresh$, true);
+          return;
         }
+        set(requestSignals.refresh$);
       };
       window.addEventListener("focus", refresh, { signal });
       document.addEventListener(

@@ -31,10 +31,11 @@ presentation.
 
 Only Web Chat upgrades recognized URLs into cards. In Slack and other surfaces,
 the recipient sees the original URL. A link-backed card is an enhanced way to
-use that URL, so its destination must also open directly in an authenticated
-browser and provide the relevant page, form, authorization step, or resource.
-Do not make completion depend on a mounted Web Chat card. The direct route must
-validate the URL's claims and current action state, just as the card does.
+use that URL, so its destination must also open directly in a browser and
+provide the relevant page, form, authorization step, or resource. Do not make
+completion depend on a mounted Web Chat card. For action URLs, the direct route
+must enforce authentication, validate the URL's claims, and check the current
+action state, just as the card does.
 
 The card may use a more convenient in-chat control, such as a dialog, without
 opening the URL when that control is selected. Keep the original URL route
@@ -733,10 +734,11 @@ reads resolve callback delivery from the matching canonical Chat input event in
 the owning thread. A pending transcript input card or terminal card with an
 unconfirmed callback refreshes when its page regains focus or visibility, so
 completing a standalone action updates the original transcript card on return.
-The inline dialog pauses that return refresh while it is open, so switching
-tabs does not dismiss the form or lose its draft. The standalone form also keeps
-its draft mounted when the user switches tabs; submit revalidates the Browser
-target. The Platform and API both enforce
+The inline dialog defers that return refresh until it closes, so switching
+tabs does not dismiss the form or lose its draft, while a request completed
+elsewhere still updates the transcript afterward. The standalone form also
+keeps its draft mounted when the user switches tabs; submit revalidates the
+Browser target. The Platform and API both enforce
 `BrowserNativeInput`.
 
 For direct Browser takeover, the agent shares the current `okou browser view`

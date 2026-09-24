@@ -628,8 +628,7 @@ test("A Browser input card opens a preflighted dialog and completes without navi
       screen.queryByRole("dialog", { name: "Enter information in browser" }),
     ).toBeNull();
   });
-  await expect(findButton("Enter information")).resolves.toBeVisible();
-  click(openButton);
+  click(await findButton("Enter information"));
   await expect(
     screen.findByRole("textbox", { name: "Notes" }),
   ).resolves.toBeVisible();
@@ -673,6 +672,51 @@ test("A pending transcript card becomes consumed when the standalone form comple
 
   state = "succeeded";
   window.dispatchEvent(new Event("focus"));
+
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  expect(buttonsByName("Enter information")).toHaveLength(0);
+});
+
+test("Closing the input dialog refreshes an action completed in another tab", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  installCapabilityChat({
+    events: completedConversation(`[Enter details](${browserInputUrl()})`),
+  });
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...browserInputAction(state),
+      callbackDelivered: state === "succeeded",
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, browserInputAction("pending"));
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await readyChat();
+
+  click(await findButton("Enter information"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
+  });
+  await expect(
+    within(dialog).findByLabelText("Account email"),
+  ).resolves.toBeVisible();
+
+  state = "succeeded";
+  window.dispatchEvent(new Event("focus"));
+  expect(dialog).toBeVisible();
+
+  const closeButton = buttonsByName("Close", dialog)[0];
+  if (!closeButton) {
+    throw new Error("Browser input dialog close button was not visible");
+  }
+  click(closeButton);
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   expect(buttonsByName("Enter information")).toHaveLength(0);
