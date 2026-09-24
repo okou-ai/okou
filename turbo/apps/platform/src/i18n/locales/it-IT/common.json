@@ -1435,6 +1435,7 @@
       "rename": "Rinomina",
       "saving": "Salvataggio...",
       "send": "Invia",
+      "shareMessage": "Condividi messaggio",
       "stop": "Interrompi",
       "view": "Visualizza"
     },
@@ -2210,6 +2211,7 @@
       "createFailed": "Impossibile creare la conversazione condivisa. Riprova.",
       "deselectGroup": "Deseleziona il gruppo di messaggi",
       "linkCopied": "Link copiato",
+      "messageShareFailed": "Impossibile creare il link condiviso. Riprova.",
       "publicDescription": "I messaggi selezionati e i relativi allegati saranno pubblici.",
       "selectedCount_one": "{{count}} selezionato",
       "selectedCount_many": "{{count}} selezionati",

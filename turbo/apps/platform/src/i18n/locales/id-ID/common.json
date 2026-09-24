@@ -1410,6 +1410,7 @@
       "rename": "Ubah nama",
       "saving": "Menyimpan...",
       "send": "Kirim",
+      "shareMessage": "Bagikan pesan",
       "stop": "Hentikan",
       "view": "Lihat"
     },
@@ -2158,6 +2159,7 @@
       "createFailed": "Percakapan yang dibagikan tidak dapat dibuat. Coba lagi.",
       "deselectGroup": "Batalkan pilihan grup pesan",
       "linkCopied": "Tautan disalin",
+      "messageShareFailed": "Tautan berbagi tidak dapat dibuat. Coba lagi.",
       "publicDescription": "Pesan yang dipilih dan lampirannya akan menjadi publik.",
       "selectedCount_other": "{{count}} dipilih",
       "selectGroup": "Pilih grup pesan",

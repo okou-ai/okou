@@ -42,6 +42,15 @@ export interface ChatThreadSharingSignals {
     [string, readonly ShareableChatEvent[]]
   >;
   readonly create$: Command<Promise<void>, [AbortSignal]>;
+  /**
+   * Share persisted assistant events with the user prompt that precedes them.
+   * The link is copied before the first await so the clipboard write stays
+   * inside the click gesture; the share is created afterwards.
+   */
+  readonly shareMessage$: Command<
+    Promise<void>,
+    [readonly string[], AbortSignal]
+  >;
 }
 
 // A visual message group is the only thing the reader can tick, so it is also
@@ -111,6 +120,103 @@ function filterSelectedGroups(
     }
   }
   return changed ? next : selected;
+}
+
+function isPersistedPrompt(event: ChatEventGroup["events"][number]): boolean {
+  return (
+    event.seqId !== undefined &&
+    (event.eventType === "input.prompt" ||
+      event.eventType === "input.automation")
+  );
+}
+
+/** The assistant events plus the prompt events of the preceding user group. */
+function messageShareEventIds(
+  groups: readonly ChatEventGroup[],
+  assistantEventIds: readonly string[],
+): readonly string[] {
+  const firstEventId = assistantEventIds[0];
+  const groupIndex = groups.findIndex((group) => {
+    return group.events.some((event) => {
+      return event.id === firstEventId;
+    });
+  });
+  let userGroup: ChatEventGroup | undefined;
+  for (let index = groupIndex - 1; index >= 0 && !userGroup; index -= 1) {
+    if (groups[index]?.role === "user") {
+      userGroup = groups[index];
+    }
+  }
+  const promptEventIds = (userGroup?.events ?? [])
+    .filter(isPersistedPrompt)
+    .map((event) => {
+      return event.id;
+    });
+  return [...promptEventIds, ...assistantEventIds];
+}
+
+function sharedThreadUrl(id: string): string {
+  return `${window.location.origin}/share/threads/${id}`;
+}
+
+function createShareMessageCommand(
+  threadId: string,
+  allChatGroups$: Computed<ChatEventGroup[]>,
+): ChatThreadSharingSignals["shareMessage$"] {
+  return command(
+    async (
+      { get },
+      assistantEventIds: readonly string[],
+      signal: AbortSignal,
+    ): Promise<void> => {
+      if (assistantEventIds.length === 0) {
+        return;
+      }
+      const eventIds = messageShareEventIds(
+        get(allChatGroups$),
+        assistantEventIds,
+      );
+      const id = crypto.randomUUID();
+      // Start the clipboard write synchronously in the user gesture. Waiting
+      // for the API first would lose the gesture in Safari.
+      const copied = writeToClipboard(sharedThreadUrl(id));
+      toast.success(
+        i18n.t(($) => {
+          return $.chat.sharing.linkCopied;
+        }),
+      );
+      const client = get(apiClient$)(sharedThreadsContract);
+      const [copySucceeded, result] = await Promise.all([
+        copied,
+        accept(
+          client.create({
+            params: { threadId },
+            body: { eventIds: [...eventIds], id },
+            fetchOptions: { signal },
+          }),
+          [201, 400, 403, 404, 409, 413],
+          signal,
+        ),
+      ]);
+      signal.throwIfAborted();
+      if (!copySucceeded) {
+        toast.error(
+          i18n.t(($) => {
+            return $.chat.sharing.copyFailed;
+          }),
+        );
+      }
+      // An API that predates client-generated IDs ignores `id`; the copied
+      // link would then point nowhere.
+      if (result.status !== 201 || result.body.id !== id) {
+        toast.error(
+          i18n.t(($) => {
+            return $.chat.sharing.messageShareFailed;
+          }),
+        );
+      }
+    },
+  );
 }
 
 function createShareCommand(
@@ -259,6 +365,8 @@ export function createChatThreadSharingSignals(
     internalPhase$,
   );
 
+  const shareMessage$ = createShareMessageCommand(threadId, allChatGroups$);
+
   return {
     phase$: computed((get) => {
       return get(internalPhase$);
@@ -282,5 +390,6 @@ export function createChatThreadSharingSignals(
     close$,
     toggle$,
     create$,
+    shareMessage$,
   };
 }

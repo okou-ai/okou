@@ -8127,6 +8127,7 @@ function PagedRunWorkAssistantContent({
         group={group}
         content={mainEvent.content ?? ""}
         thread={thread}
+        shareEvents={[mainEvent]}
         relatedArtifacts={runWorkSection?.remainingArtifactCards}
         embedded
       />
@@ -8247,6 +8248,7 @@ function PagedAssistantGroup({
           group={group}
           content={fullContent}
           thread={thread}
+          shareEvents={group.events}
         />
       ) : null}
     </div>
@@ -8632,6 +8634,7 @@ function PagedGroupPrimaryActions({
   hasContent,
   usage,
   onCopy,
+  onShare,
   relatedArtifacts,
 }: {
   firstRunId: string | undefined;
@@ -8639,10 +8642,13 @@ function PagedGroupPrimaryActions({
   hasContent: boolean;
   usage: ChatEventUsagePayload | undefined;
   onCopy: () => Promise<boolean>;
+  onShare: (() => void) | undefined;
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
 }) {
   const { t } = useTranslation();
-  const showDebugActions = useGet(featureSwitch$)[FeatureSwitchKey.OkouDebug];
+  const switches = useGet(featureSwitch$);
+  const showDebugActions = switches[FeatureSwitchKey.OkouDebug];
+  const showShare = switches[FeatureSwitchKey.ChatMessageShare] && onShare;
   const hasLeadingIconAction = Boolean(
     (showDebugActions && firstRunId) || hasContent,
   );
@@ -8700,6 +8706,35 @@ function PagedGroupPrimaryActions({
           }}
         />
       )}
+      {showShare && (
+        <TooltipProvider delay={300}>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="quiet"
+                  size="icon-xs"
+                  iconSize="sm"
+                  onClick={onShare}
+                  className="text-muted-foreground/60"
+                  aria-label={t(($) => {
+                    return $.chat.actions.shareMessage;
+                  })}
+                  data-testid="chat-message-share"
+                >
+                  <Share2 />
+                </Button>
+              }
+            />
+            <TooltipContent side="bottom">
+              {t(($) => {
+                return $.chat.actions.shareMessage;
+              })}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
       {relatedArtifacts ? (
         <RelatedArtifactsDialog cards={relatedArtifacts} />
       ) : null}
@@ -8712,17 +8747,21 @@ function PagedGroupActions({
   group,
   content,
   thread,
+  shareEvents,
   relatedArtifacts,
   embedded = false,
 }: {
   group: ChatEventGroup;
   content: string;
   thread: ChatPanelSignals;
+  /** The assistant events this action bar shares, with their user prompt. */
+  shareEvents: readonly EnrichedChatEvent[];
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
   embedded?: boolean;
 }) {
   const pageSignal = useGet(pageSignal$);
   const copyEvent = useSet(thread.copyEvent$);
+  const shareMessage = useSet(thread.sharing.shareMessage$);
   const sharingPhase = useGet(thread.sharing.phase$);
   if (sharingPhase !== "idle") {
     return null;
@@ -8737,6 +8776,28 @@ function PagedGroupActions({
   const handleCopy = () => {
     return copyEvent({ text: content, attachments: [] }, pageSignal);
   };
+  // Only persisted output messages can be shared; streaming text has no seqId.
+  const shareEventIds = shareEvents
+    .filter((event) => {
+      return (
+        event.eventType === "output.message" &&
+        event.seqId !== undefined &&
+        Boolean(event.content)
+      );
+    })
+    .map((event) => {
+      return event.id;
+    });
+  const handleShare =
+    shareEventIds.length > 0
+      ? () => {
+          detach(
+            shareMessage(shareEventIds, pageSignal),
+            Reason.DomCallback,
+            "share chat message",
+          );
+        }
+      : undefined;
 
   const actions = (
     <div className={CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_CLASS}>
@@ -8746,6 +8807,7 @@ function PagedGroupActions({
         hasContent={hasContent}
         usage={usage}
         onCopy={handleCopy}
+        onShare={handleShare}
         relatedArtifacts={relatedArtifacts}
       />
     </div>

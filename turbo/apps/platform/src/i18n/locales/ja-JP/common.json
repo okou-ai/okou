@@ -1410,6 +1410,7 @@
       "rename": "名前の変更",
       "saving": "保存中...",
       "send": "送信",
+      "shareMessage": "メッセージを共有",
       "stop": "停止",
       "view": "見る"
     },
@@ -2158,6 +2159,7 @@
       "createFailed": "共有された会話を作成できませんでした。もう一度お試しください。",
       "deselectGroup": "メッセージグループの選択を解除",
       "linkCopied": "リンクをコピーしました",
+      "messageShareFailed": "共有リンクを作成できませんでした。もう一度お試しください。",
       "publicDescription": "選択したメッセージと添付ファイルが公開されます。",
       "selectedCount_other": "{{count}}件選択中",
       "selectGroup": "メッセージグループを選択",
