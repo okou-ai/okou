@@ -233,6 +233,15 @@ describe("POST /api/chat-threads/:id/archive and /unarchive", () => {
       { orgId: otherOrgId, userId: fixture.actor.userId },
       context.signal,
     );
+    await updateFeatureSwitchesForUser(
+      context,
+      {
+        userId: fixture.actor.userId,
+        orgId: otherOrgId,
+        orgRole: fixture.actor.orgRole,
+      },
+      { [FeatureSwitchKey.ChatThreadArchiving]: true },
+    );
 
     const response = await accept(
       archiveClient().archive({
