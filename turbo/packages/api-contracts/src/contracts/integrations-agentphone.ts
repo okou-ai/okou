@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import { publicBrandSchema } from "./public-brand";
 
 const c = initContract();
 
@@ -30,13 +29,11 @@ const agentPhoneLinkStatusResponseSchema = z.discriminatedUnion("linked", [
     phoneHandle: z.string(),
     agentPhoneNumber: z.string().nullable(),
     configured: z.boolean(),
-    publicBrand: publicBrandSchema,
   }),
   z.object({
     linked: z.literal(false),
     agentPhoneNumber: z.string().nullable(),
     configured: z.boolean(),
-    publicBrand: publicBrandSchema,
   }),
 ]);
 

@@ -7475,7 +7475,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       linked: false,
       agentPhoneNumber: "+19039853128",
       configured: true,
-      publicBrand: "okou",
     });
 
     const invalidConnect = await integrations.requestConnectAgentPhone(
@@ -7677,7 +7676,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       phoneHandle,
       agentPhoneNumber: "+19039853128",
       configured: true,
-      publicBrand: "okou",
     });
 
     const missingAgentMessage = await integrations.requestSendPhoneMessage(
@@ -7754,7 +7752,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       linked: false,
       agentPhoneNumber: "+19039853128",
       configured: true,
-      publicBrand: "okou",
     });
 
     const missingUnlink = await integrations.requestUnlinkAgentPhone(

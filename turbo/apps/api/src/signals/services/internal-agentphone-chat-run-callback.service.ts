@@ -3,7 +3,6 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, isNotNull } from "drizzle-orm";
@@ -252,13 +251,11 @@ async function recordAgentPhoneChatDelivery(args: {
   readonly target: AgentPhoneDeliveryTarget;
   readonly sent: AgentPhoneSendResult;
   readonly body: string;
-  readonly publicBrand: PublicBrand;
 }): Promise<void> {
   await storeOutboundAgentPhoneMessage(args.db, {
     agentphoneMessageId: args.sent.id,
     conversationId: args.target.conversationId,
     agentphoneAgentId: args.target.agentphoneAgentId,
-    publicBrand: args.publicBrand,
     userLinkId: args.target.userLinkId,
     phoneHandle: args.target.phoneHandle,
     fromNumber: args.sent.fromNumber ?? args.target.toNumber,
@@ -310,7 +307,6 @@ async function deliverClaimedAgentPhoneChatCallback(
     target: payload,
     sent,
     body,
-    publicBrand: payload.publicBrand,
   });
   return "delivered";
 }
@@ -375,7 +371,6 @@ interface AgentPhoneChatAdmissionFailureArgs {
   readonly agentId: string;
   readonly target: AgentPhoneDeliveryTarget;
   readonly chatEventId: string;
-  readonly publicBrand: PublicBrand;
 }
 
 export async function deliverAgentPhoneChatAdmissionFailure(
@@ -428,7 +423,6 @@ export async function deliverAgentPhoneChatAdmissionFailure(
     agentphoneMessageId: sent.id,
     conversationId: args.target.conversationId,
     agentphoneAgentId: args.target.agentphoneAgentId,
-    publicBrand: args.publicBrand,
     userLinkId: args.target.userLinkId,
     phoneHandle: args.target.phoneHandle,
     fromNumber: sent.fromNumber ?? args.target.toNumber,

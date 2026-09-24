@@ -125,7 +125,6 @@ test("The AgentPhone tile offers the real link and reports the real status", asy
   // reaches this step without it being opened again.
   context.mocks.data.agentPhoneIntegration({
     linked: true,
-    publicBrand: "okou",
     phoneHandle: "+15555550123",
     agentPhoneNumber: "+19039853128",
     configured: true,

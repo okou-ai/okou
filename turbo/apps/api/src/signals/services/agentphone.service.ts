@@ -4,8 +4,10 @@ import type { Tx } from "../../lib/db-types";
 import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { command } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import {
+  PUBLIC_BRAND,
+  PUBLIC_BRAND_PRESENTATION,
+} from "@okouai/core/public-brand";
 import { v5 as uuidv5 } from "uuid";
 import {
   getCanonicalModelDisplayName,
@@ -324,7 +326,6 @@ export async function linkAgentPhoneUser(
     readonly channel: AgentPhoneChannel;
     readonly userId: string;
     readonly orgId: string;
-    readonly publicBrand: PublicBrand;
   },
 ): Promise<LinkAgentPhoneUserResult> {
   const phoneHandle = normalizeAgentPhoneHandle(
@@ -349,7 +350,6 @@ export async function linkAgentPhoneUser(
           existingPhoneLink,
           phoneHandle,
           params.channel,
-          params.publicBrand,
         ),
       };
     }
@@ -381,7 +381,6 @@ export async function linkAgentPhoneUser(
           existingUserOrgLink,
           phoneHandle,
           params.channel,
-          params.publicBrand,
         ),
       };
     }
@@ -399,7 +398,6 @@ export async function linkAgentPhoneUser(
       phoneHandle,
       userId: params.userId,
       orgId: params.orgId,
-      publicBrand: params.publicBrand,
     })
     .onConflictDoNothing()
     .returning();
@@ -523,7 +521,6 @@ export async function storeInboundAgentPhoneMessage(
   params: {
     readonly event: AgentPhoneMessageEvent;
     readonly userLinkId?: string | null;
-    readonly publicBrand: PublicBrand;
   },
 ): Promise<{ readonly inserted: boolean }> {
   const inserted = await db
@@ -533,7 +530,6 @@ export async function storeInboundAgentPhoneMessage(
       agentphoneMessageId: params.event.messageId,
       conversationId: params.event.conversationId,
       agentphoneAgentId: params.event.agentphoneAgentId,
-      publicBrand: params.publicBrand,
       agentphoneUserLinkId: params.userLinkId ?? null,
       phoneHandle: normalizeAgentPhoneHandle(
         params.event.fromNumber,
@@ -1541,7 +1537,6 @@ const persistAgentPhoneChatMessage$ = command(
       readonly threadContext: string;
       readonly apiStartTime: number;
       readonly modelRoute: ModelRoutePin | undefined;
-      readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
   ): Promise<PersistedAgentPhoneChatMessage> => {
@@ -1570,7 +1565,7 @@ const persistAgentPhoneChatMessage$ = command(
         userId: args.userLink.userId,
         orgId: args.userLink.orgId,
         chatThreadId: route.chatThreadId,
-        publicBrand: args.publicBrand,
+        publicBrand: PUBLIC_BRAND,
         files: agentPhoneInputFiles(args.event, args.userLink.id),
       },
       signal,
@@ -1617,7 +1612,6 @@ const persistAgentPhoneChatMessage$ = command(
             toNumber: args.event.toNumber,
             userLinkId: args.userLink.id,
             agentphoneAgentId: args.event.agentphoneAgentId,
-            publicBrand: args.publicBrand,
           },
           createdAt: currentTime,
         },
@@ -1718,7 +1712,6 @@ const runAgentForAgentPhone$ = command(
       readonly threadContext: string;
       readonly apiStartTime: number;
       readonly modelRoute: ModelRoutePin | undefined;
-      readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
   ): Promise<AgentPhoneMessageDispatchResult> => {
@@ -1784,7 +1777,6 @@ export const handleAgentPhoneMessage$ = command(
       readonly event: AgentPhoneMessageEvent;
       readonly userLink: AgentPhoneUserLink | null;
       readonly apiStartTime: number;
-      readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -1889,7 +1881,6 @@ export const handleAgentPhoneMessage$ = command(
         event: params.event,
         apiStartTime: params.apiStartTime,
         modelRoute,
-        publicBrand: params.publicBrand,
       },
       signal,
     );

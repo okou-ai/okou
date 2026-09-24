@@ -25,25 +25,35 @@ responses are unchanged; the planner chooses the new index. The existing
 `chat_event_search_messages_tsv_idx` stays until production plans confirm it
 is unused.
 
-## AgentPhone connect link brand signature (2026-09-24)
+## AgentPhone public brand retirement (2026-09-24)
 
-The API verifies only the provider-identity `sig` on an AgentPhone connect
-request. The App no longer reads `publicBrand` / `brandSig` from the link and
-no longer posts them.
+AgentPhone is Okou-only. Production rows in `agentphone_connection_codes`,
+`agentphone_user_links`, `agentphone_messages` and `chat_agentphone_context`
+were set to `public_brand = 'okou'` before this change (#36650).
 
-The rollout shims are removed (#36650): the API no longer emits `publicBrand`
-or `brandSig` on the connect link, and the connect request contract no longer
-declares the optional `publicBrand` / `publicBrandSignature` fields. The App
-release without the brand fields was serving before this change, and connect
-links expire after ten minutes, so no live link or bundle depends on them. A
-body that still carries the fields is not rejected, because undeclared keys are
-stripped.
+The API no longer reads or writes those four `public_brand` columns. Queued
+AgentPhone launches and file materialization use the fixed `okou` brand, and
+`GET /api/integrations/agentphone/link` no longer returns `publicBrand`. No App
+reads that response field, and the App does not validate responses.
 
-An App rollback below the release that stopped reading `brandSig` would show no
-Connect button for links from this API, so such a rollback also requires rolling
-back the API below this change. A new App served by an API older than the
-expand change posts no brand fields, which that API rejects; an API rollback
-below the expand change therefore also requires rolling back the App.
+Migration `1221_agentphone_public_brand_okou_default` sets the column default to
+`'okou'` on `agentphone_user_links` (previously `'vm0'`), `agentphone_messages`
+and `chat_agentphone_context` (previously no default), matching
+`agentphone_connection_codes`. An old API therefore reads `okou` from rows the
+new API inserts, including the non-null brand that its queued-launch path
+requires, so old API/new DB and rollback remain compatible. The columns and
+their ORM declarations stay in place; drop them in a separate migration after
+older API deployments drain.
+
+The connect link no longer carries `publicBrand` / `brandSig`, and the connect
+request contract no longer declares `publicBrand` / `publicBrandSignature`. The
+App release that stopped reading and posting them was serving before this
+change, and links expire after ten minutes. A body that still carries the fields
+is not rejected, because undeclared keys are stripped. An App rollback below
+that release also requires rolling back the API below this change, because the
+older connect page requires `brandSig`. An API rollback below the expand change
+(#36651) also requires rolling back the App, because the older API requires the
+brand fields.
 
 ## Voice input model selection retirement (2026-09-24)
 
