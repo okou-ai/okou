@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import {
   browserUserActionDisplayFieldSchema,
+  browserUserActionFieldKindSchema,
   type BrowserUserActionApplyRequest,
   type BrowserUserActionCreateRequest,
   type BrowserUserActionResponse,
@@ -570,6 +571,42 @@ interface PreparedBrowserUserAction {
   readonly validation: BrowserUseUserActionValidation;
 }
 
+function browserCreationValidationMessage(
+  error: BrowserUseUserActionValidationError,
+): string {
+  const field = error.fieldPosition ? `--field ${error.fieldPosition}: ` : "";
+  switch (error.code) {
+    case "page_target_not_found":
+      return "The selected Browser page no longer exists; inspect the active tab and recapture the controls";
+    case "unsupported_page":
+      return "The selected Browser page is not an HTTP or HTTPS page";
+    case "backend_node_not_found":
+      return `${field}the selected Browser control no longer exists; inspect the page and recapture it`;
+    case "unsupported_control":
+      return `${field}the selected Browser control is not a writable top-level input or textarea`;
+  }
+}
+
+function browserCreationControlType(
+  fingerprint: BrowserUseUserActionValidation["fields"][number]["fingerprint"],
+): string {
+  if (fingerprint.tagName === "TEXTAREA") {
+    return "textarea";
+  }
+  const knownTypes = [
+    "text",
+    "password",
+    "email",
+    "tel",
+    "url",
+    "search",
+    "number",
+  ];
+  return knownTypes.includes(fingerprint.inputType)
+    ? `input type '${fingerprint.inputType}'`
+    : "input control";
+}
+
 async function prepareBrowserUserAction(
   db: Db,
   args: CreateBrowserUserActionArgs,
@@ -644,26 +681,34 @@ async function prepareBrowserUserAction(
   if (!validationResult.ok) {
     return validationResult.error instanceof BrowserUseUserActionValidationError
       ? conflict(
-          "The Browser page target or requested controls are not available",
+          browserCreationValidationMessage(validationResult.error),
           `BROWSER_USER_ACTION_${validationResult.error.code.toUpperCase()}`,
         )
       : providerFailure(validationResult.error);
   }
+  const mismatchedPosition = args.input.fields.findIndex((field, index) => {
+    const target = validationResult.value.fields[index];
+    return (
+      !target ||
+      !browserUserActionFieldSupportsTarget(field.fieldKind, target.fingerprint)
+    );
+  });
   if (
     validationResult.value.fields.length !== args.input.fields.length ||
-    args.input.fields.some((field, index) => {
-      const target = validationResult.value.fields[index];
-      return (
-        !target ||
-        !browserUserActionFieldSupportsTarget(
-          field.fieldKind,
-          target.fingerprint,
-        )
-      );
-    })
+    mismatchedPosition !== -1
   ) {
+    const position = mismatchedPosition === -1 ? 0 : mismatchedPosition + 1;
+    const field = args.input.fields[mismatchedPosition];
+    const target = validationResult.value.fields[mismatchedPosition];
+    const compatibleKinds = target
+      ? browserUserActionFieldKindSchema.options.filter((kind) => {
+          return browserUserActionFieldSupportsTarget(kind, target.fingerprint);
+        })
+      : [];
     return conflict(
-      "The requested Browser field kind does not match its control",
+      position > 0 && field && target
+        ? `--field ${position}: fieldKind '${field.fieldKind}' does not match the observed ${browserCreationControlType(target.fingerprint)}; use ${compatibleKinds.join(" or ")}`
+        : "The requested Browser fields do not match the observed controls",
       "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL",
     );
   }

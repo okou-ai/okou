@@ -489,6 +489,65 @@ describe("okou browser user-action commands", () => {
     expect(spawnSyncMock).not.toHaveBeenCalled();
     expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(ACTION_URL);
     expect(consoleError.mock.calls.flat().join("\n")).not.toContain("#email");
+    expect(consoleError.mock.calls.flat().join("\n")).toContain(
+      "--field 1: fieldKind must be text, username, password, one_time_code, number",
+    );
+  });
+
+  it("identifies the malformed --field position without echoing its value", async () => {
+    await expect(
+      browserCommand.parseAsync([
+        "node",
+        "okou",
+        "input-request",
+        "--field",
+        JSON.stringify({
+          key: "username",
+          label: "Email",
+          fieldKind: "username",
+          required: true,
+          target: "@e1",
+        }),
+        "--field",
+        "{private-target",
+        "--callback-prompt",
+        "Continue",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    const output = consoleError.mock.calls.flat().join("\n");
+    expect(output).toContain("--field 2 must be valid JSON");
+    expect(output).not.toContain("private-target");
+    expect(spawnSyncMock).not.toHaveBeenCalled();
+  });
+
+  it("reports a missing callback prompt as JSON before Browser access", async () => {
+    await expect(
+      browserCommand.parseAsync([
+        "node",
+        "okou",
+        "input-request",
+        "--field",
+        JSON.stringify({
+          key: "username",
+          label: "Email",
+          fieldKind: "username",
+          required: true,
+          target: "@e1",
+        }),
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(consoleError.mock.calls[0]?.[0]))).toMatchObject({
+      error: {
+        code: "BROWSER_INPUT_INVALID_REQUEST",
+        message: "--callback-prompt must be 1-200 characters",
+        retryable: false,
+      },
+    });
+    expect(spawnSyncMock).not.toHaveBeenCalled();
   });
 
   it("rejects duplicate field keys before Browser access", async () => {
@@ -568,6 +627,14 @@ describe("okou browser user-action commands", () => {
           label: "Email",
           fieldKind: "username",
           required: true,
+          target: "@e1",
+        }),
+        "--field",
+        JSON.stringify({
+          key: "password",
+          label: "Password",
+          fieldKind: "password",
+          required: true,
           target: "#sensitive-field",
         }),
         "--callback-prompt",
@@ -577,11 +644,37 @@ describe("okou browser user-action commands", () => {
 
     expect(apiRequests).toBe(0);
     expect(consoleError.mock.calls.flat().join("\n")).toContain(
-      "missing or ambiguous",
+      "--field 2: the target matched 2 controls",
     );
     expect(consoleError.mock.calls.flat().join("\n")).not.toContain(
       "#sensitive-field",
     );
+  });
+
+  it("distinguishes a missing selector from an ambiguous one", async () => {
+    installCdp({ selectorCount: 0 });
+
+    await expect(
+      browserCommand.parseAsync([
+        "node",
+        "okou",
+        "input-request",
+        "--field",
+        JSON.stringify({
+          key: "username",
+          label: "Email",
+          fieldKind: "username",
+          required: true,
+          target: "#private-selector",
+        }),
+        "--callback-prompt",
+        "Continue",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    const output = consoleError.mock.calls.flat().join("\n");
+    expect(output).toContain("--field 1: the target matched no controls");
+    expect(output).not.toContain("#private-selector");
   });
 
   it("fails closed when two fields resolve to the same control", async () => {
@@ -619,7 +712,7 @@ describe("okou browser user-action commands", () => {
 
     expect(apiRequests).toBe(0);
     expect(consoleError.mock.calls.flat().join("\n")).toContain(
-      "different controls",
+      "--field 2 targets the same control as --field 1",
     );
     expect(consoleError.mock.calls.flat().join("\n")).not.toContain(
       "#same-control",
@@ -753,6 +846,55 @@ describe("okou browser user-action commands", () => {
     expect(consoleError.mock.calls.flat().join("\n")).not.toContain("#email");
   });
 
+  it("identifies an expired element ref without printing agent-browser stderr", async () => {
+    installCdp();
+    spawnSyncMock.mockImplementation(
+      (_command: string, args: readonly string[]) => {
+        if (args.at(-2) === "focus") {
+          return {
+            status: 1,
+            stdout: "",
+            stderr: "private-browser-page-data",
+          };
+        }
+        if (args.at(-2) === "get" && args.at(-1) === "cdp-url") {
+          return okAgentBrowser({ cdpUrl: CDP_URL });
+        }
+        if (args.at(-2) === "eval") {
+          return okAgentBrowser({
+            result: markerResult(String(args.at(-1))),
+          });
+        }
+        return okAgentBrowser();
+      },
+    );
+
+    await expect(
+      browserCommand.parseAsync([
+        "node",
+        "okou",
+        "input-request",
+        "--field",
+        JSON.stringify({
+          key: "username",
+          label: "Email",
+          fieldKind: "username",
+          required: true,
+          target: "@e1",
+        }),
+        "--callback-prompt",
+        "Continue",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    const output = consoleError.mock.calls.flat().join("\n");
+    expect(output).toContain(
+      "--field 1: the Browser element reference could not be focused",
+    );
+    expect(output).toContain("Take a new agent-browser snapshot");
+    expect(output).not.toContain("private-browser-page-data");
+  });
+
   it("does not extend the capture deadline for fallback cleanup", async () => {
     let nowCalls = 0;
     const dateNow = vi.spyOn(Date, "now").mockImplementation(() => {
@@ -859,6 +1001,146 @@ describe("okou browser user-action commands", () => {
     expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(ACTION_URL);
     expect(consoleError.mock.calls.flat().join("\n")).not.toContain(
       "secret-cdp-token",
+    );
+    expect(consoleError.mock.calls.flat().join("\n")).toContain("FORBIDDEN");
+    expect(consoleError.mock.calls.flat().join("\n")).toContain(
+      "Use direct Browser takeover",
+    );
+  });
+
+  it("shows the API's safe field mismatch and a corrective next action", async () => {
+    installCdp();
+    server.use(
+      http.post("http://localhost:3000/api/browser/user-actions", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL",
+              message:
+                "--field 1: fieldKind 'password' does not match the observed input type 'email'; use text or username",
+            },
+          },
+          { status: 409 },
+        );
+      }),
+    );
+
+    await expect(
+      browserCommand.parseAsync([
+        "node",
+        "okou",
+        "input-request",
+        "--field",
+        JSON.stringify({
+          key: "password",
+          label: "Password",
+          fieldKind: "password",
+          required: true,
+          target: "#private-selector",
+        }),
+        "--callback-prompt",
+        "Continue",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    const output = consoleError.mock.calls.flat().join("\n");
+    expect(output).toContain("BROWSER_USER_ACTION_UNSUPPORTED_CONTROL");
+    expect(output).toContain("--field 1: fieldKind 'password'");
+    expect(output).toContain(
+      "Choose a supported control and matching fieldKind",
+    );
+    expect(output).not.toContain("#private-selector");
+    expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(ACTION_URL);
+  });
+
+  it("tells the agent to reconnect when its run has no live Browser", async () => {
+    installCdp();
+    server.use(
+      http.post("http://localhost:3000/api/browser/user-actions", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "BROWSER_USER_ACTION_BROWSER_NOT_LIVE",
+              message: "The current chat run has no live managed Browser",
+            },
+          },
+          { status: 409 },
+        );
+      }),
+    );
+
+    await expect(
+      browserCommand.parseAsync([
+        "node",
+        "okou",
+        "input-request",
+        "--field",
+        JSON.stringify({
+          key: "username",
+          label: "Email",
+          fieldKind: "username",
+          required: true,
+          target: "@e1",
+        }),
+        "--callback-prompt",
+        "Continue",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    const output = consoleError.mock.calls.flat().join("\n");
+    expect(output).toContain("BROWSER_USER_ACTION_BROWSER_NOT_LIVE");
+    expect(output).toContain("Run `okou browser use`");
+    expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(ACTION_URL);
+  });
+
+  it("emits a single structured retryable error under --json", async () => {
+    installCdp();
+    server.use(
+      http.post("http://localhost:3000/api/browser/user-actions", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "BROWSER_USE_TIMEOUT",
+              message: "Provider token should not be printed: private-token",
+            },
+          },
+          { status: 503 },
+        );
+      }),
+    );
+
+    await expect(
+      browserCommand.parseAsync([
+        "node",
+        "okou",
+        "input-request",
+        "--field",
+        JSON.stringify({
+          key: "username",
+          label: "Email",
+          fieldKind: "username",
+          required: true,
+          target: "#private-selector",
+        }),
+        "--callback-prompt",
+        "Continue",
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(consoleError.mock.calls[0]?.[0]))).toStrictEqual({
+      error: {
+        code: "BROWSER_USE_TIMEOUT",
+        message: "The managed Browser inspection timed out",
+        nextAction:
+          "Check that the Browser is live, then retry this request once.",
+        retryable: true,
+      },
+    });
+    expect(consoleLog).not.toHaveBeenCalled();
+    expect(consoleError.mock.calls.flat().join("\n")).not.toContain(
+      "private-token",
     );
   });
 });

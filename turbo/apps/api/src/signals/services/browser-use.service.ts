@@ -198,11 +198,16 @@ export type BrowserUseUserActionValidationFailureCode =
 
 export class BrowserUseUserActionValidationError extends Error {
   readonly code: BrowserUseUserActionValidationFailureCode;
+  readonly fieldPosition?: number;
 
-  constructor(code: BrowserUseUserActionValidationFailureCode) {
+  constructor(
+    code: BrowserUseUserActionValidationFailureCode,
+    fieldPosition?: number,
+  ) {
     super(`Browser user-action validation failed: ${code}`);
     this.name = "BrowserUseUserActionValidationError";
     this.code = code;
+    this.fieldPosition = fieldPosition;
   }
 }
 
@@ -925,6 +930,7 @@ async function resolveBrowserUseValidationControl(
     readonly sessionId: string;
     readonly backendNodeId: number;
     readonly commandId: number;
+    readonly fieldPosition: number;
   },
   signal: AbortSignal,
 ): Promise<{
@@ -948,7 +954,10 @@ async function resolveBrowserUseValidationControl(
     ? browserUseCdpRemoteObjectSchema.safeParse(resolved.value)
     : null;
   if (!remote?.success) {
-    throw new BrowserUseUserActionValidationError("backend_node_not_found");
+    throw new BrowserUseUserActionValidationError(
+      "backend_node_not_found",
+      args.fieldPosition,
+    );
   }
   return {
     objectId: remote.data.object.objectId,
@@ -992,13 +1001,14 @@ async function validateBrowserUseUserActionOnSocket(
     readonly backendNodeId: number;
     readonly objectId: string;
   }[] = [];
-  for (const backendNodeId of target.backendNodeIds) {
+  for (const [index, backendNodeId] of target.backendNodeIds.entries()) {
     const captured = await resolveBrowserUseValidationControl(
       socket,
       {
         sessionId: opened.page.sessionId,
         backendNodeId,
         commandId,
+        fieldPosition: index + 1,
       },
       signal,
     );
@@ -1014,17 +1024,19 @@ async function validateBrowserUseUserActionOnSocket(
     commandId,
     signal,
   );
-  if (
-    inspections.some((inspection) => {
-      return (
-        !inspection.connected ||
-        !inspection.mainDocument ||
-        !inspection.writable ||
-        (inspection.tagName !== "INPUT" && inspection.tagName !== "TEXTAREA")
-      );
-    })
-  ) {
-    throw new BrowserUseUserActionValidationError("unsupported_control");
+  const unsupportedPosition = inspections.findIndex((inspection) => {
+    return (
+      !inspection.connected ||
+      !inspection.mainDocument ||
+      !inspection.writable ||
+      (inspection.tagName !== "INPUT" && inspection.tagName !== "TEXTAREA")
+    );
+  });
+  if (unsupportedPosition !== -1) {
+    throw new BrowserUseUserActionValidationError(
+      "unsupported_control",
+      unsupportedPosition + 1,
+    );
   }
   const fields = capturedControls.map((control, index) => {
     const inspection = inspections[index];
@@ -1032,7 +1044,10 @@ async function validateBrowserUseUserActionOnSocket(
       !inspection ||
       (inspection.tagName !== "INPUT" && inspection.tagName !== "TEXTAREA")
     ) {
-      throw new BrowserUseUserActionValidationError("unsupported_control");
+      throw new BrowserUseUserActionValidationError(
+        "unsupported_control",
+        index + 1,
+      );
     }
     return {
       backendNodeId: control.backendNodeId,

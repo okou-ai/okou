@@ -689,6 +689,7 @@ describe("Browser user-action route", () => {
     const controlMinLength = 3;
     let disconnectAfterNextWrite = false;
     let resolveNodeAvailable = true;
+    let missingBackendNodeId: number | null = null;
     let malformedNodeResponse = false;
     let verificationMatches = true;
     let failNextProviderRead = false;
@@ -733,7 +734,8 @@ describe("Browser user-action route", () => {
         if (malformedNodeResponse) {
           return {};
         }
-        return resolveNodeAvailable
+        return resolveNodeAvailable &&
+          command.params.backendNodeId !== missingBackendNodeId
           ? {
               object: {
                 objectId: browserUserActionObjectId(
@@ -898,7 +900,13 @@ describe("Browser user-action route", () => {
     });
     expect(unsupported).toMatchObject({
       status: 409,
-      body: { error: { code: "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL" } },
+      body: {
+        error: {
+          code: "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL",
+          message:
+            "--field 1: the selected Browser control is not a writable top-level input or textarea",
+        },
+      },
     });
     controlWritable = true;
     context.mocks.browserUseCdp.connect.mockClear();
@@ -924,7 +932,13 @@ describe("Browser user-action route", () => {
     });
     expect(mismatchedKind).toMatchObject({
       status: 409,
-      body: { error: { code: "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL" } },
+      body: {
+        error: {
+          code: "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL",
+          message:
+            "--field 1: fieldKind 'password' does not match the observed input type 'email'; use text or username",
+        },
+      },
     });
     context.mocks.browserUseCdp.connect.mockClear();
     context.mocks.browserUseCdp.command.mockClear();
@@ -950,12 +964,86 @@ describe("Browser user-action route", () => {
     });
     expect(missingBackendNode).toMatchObject({
       status: 409,
-      body: { error: { code: "BROWSER_USER_ACTION_BACKEND_NODE_NOT_FOUND" } },
+      body: {
+        error: {
+          code: "BROWSER_USER_ACTION_BACKEND_NODE_NOT_FOUND",
+          message:
+            "--field 1: the selected Browser control no longer exists; inspect the page and recapture it",
+        },
+      },
     });
+    expect(JSON.stringify(missingBackendNode.body)).not.toContain(
+      "https://example.com/login",
+    );
     resolveNodeAvailable = true;
     context.mocks.browserUseCdp.connect.mockClear();
     context.mocks.browserUseCdp.command.mockClear();
     providerReadCount = 0;
+
+    missingBackendNodeId = 42;
+    const secondFieldMissing = await userActionClient().create({
+      headers: current.claim.browserHeaders,
+      body: {
+        kind: "input",
+        callbackPrompt: "Continue after input",
+        pageTargetId: "native-input-target",
+        fields: [
+          {
+            key: "username",
+            label: "Email",
+            fieldKind: "username",
+            required: true,
+            backendNodeId: 43,
+          },
+          {
+            key: "password",
+            label: "Password",
+            fieldKind: "password",
+            required: true,
+            backendNodeId: 42,
+          },
+        ],
+      },
+    });
+    expect(secondFieldMissing).toMatchObject({
+      status: 409,
+      body: {
+        error: {
+          code: "BROWSER_USER_ACTION_BACKEND_NODE_NOT_FOUND",
+          message:
+            "--field 2: the selected Browser control no longer exists; inspect the page and recapture it",
+        },
+      },
+    });
+    missingBackendNodeId = null;
+
+    const missingPage = await userActionClient().create({
+      headers: current.claim.browserHeaders,
+      body: {
+        kind: "input",
+        callbackPrompt: "Continue after input",
+        pageTargetId: "missing-target",
+        fields: [
+          {
+            key: "password",
+            label: "Password",
+            fieldKind: "password",
+            required: true,
+            backendNodeId: 42,
+          },
+        ],
+      },
+    });
+    expect(missingPage).toMatchObject({
+      status: 409,
+      body: {
+        error: {
+          code: "BROWSER_USER_ACTION_PAGE_TARGET_NOT_FOUND",
+          message:
+            "The selected Browser page no longer exists; inspect the active tab and recapture the controls",
+        },
+      },
+    });
 
     const created = await accept(
       userActionClient().create({

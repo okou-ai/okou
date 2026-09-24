@@ -2,6 +2,11 @@ import { spawnSync } from "node:child_process";
 
 import { z } from "zod";
 
+import {
+  BrowserInputRequestError,
+  withBrowserInputFieldPosition,
+} from "./browser-input-request-error";
+
 const AGENT_BROWSER_TIMEOUT_MS = 15_000;
 const AGENT_BROWSER_MAX_OUTPUT_BYTES = 256 * 1024;
 const BROWSER_CAPTURE_TIMEOUT_MS = 30_000;
@@ -132,8 +137,30 @@ interface Marker {
 
 type MarkerKind = "page" | "field" | "verify";
 
-function browserCaptureError(message: string): Error {
-  return new Error(message);
+function browserCaptureError(
+  message: string,
+  code = "BROWSER_INPUT_CAPTURE_FAILED",
+  nextAction = "Inspect the current Browser page and retry the request.",
+  retryable = false,
+): BrowserInputRequestError {
+  return new BrowserInputRequestError(code, message, nextAction, retryable);
+}
+
+function browserConnectionError(message: string): BrowserInputRequestError {
+  return browserCaptureError(
+    message,
+    "BROWSER_INPUT_BROWSER_CONNECTION_FAILED",
+    "Run `okou browser use` to reconnect this Browser, then retry.",
+  );
+}
+
+function browserTimeoutError(message: string): BrowserInputRequestError {
+  return browserCaptureError(
+    message,
+    "BROWSER_INPUT_CAPTURE_TIMEOUT",
+    "Check the Browser connection, then retry the request.",
+    true,
+  );
 }
 
 function boundedTimeout(maximumMs: number, deadline?: number): number {
@@ -142,7 +169,7 @@ function boundedTimeout(maximumMs: number, deadline?: number): number {
   }
   const remainingMs = deadline - Date.now();
   if (remainingMs <= 0) {
-    throw browserCaptureError("Browser input capture timed out");
+    throw browserTimeoutError("Browser input capture timed out");
   }
   return Math.max(1, Math.min(maximumMs, remainingMs));
 }
@@ -154,13 +181,13 @@ function parseAgentBrowserOutput(
   try {
     parsed = JSON.parse(output);
   } catch {
-    throw browserCaptureError(
-      "agent-browser returned an unreadable response; run `okou browser use` and retry",
+    throw browserConnectionError(
+      "agent-browser returned an unreadable response",
     );
   }
   const response = agentBrowserResponseSchema.safeParse(parsed);
   if (!response.success || !response.data.success) {
-    throw browserCaptureError(
+    throw browserConnectionError(
       "agent-browser could not inspect the requested Browser target",
     );
   }
@@ -182,9 +209,23 @@ function runAgentBrowser(
       timeout: boundedTimeout(AGENT_BROWSER_TIMEOUT_MS, deadline),
     },
   );
+  if (
+    result.error &&
+    "code" in result.error &&
+    result.error.code === "ETIMEDOUT"
+  ) {
+    throw browserTimeoutError("agent-browser inspection timed out");
+  }
   if (result.error || result.status !== 0) {
-    throw browserCaptureError(
-      "agent-browser could not inspect the requested Browser target; run `okou browser use` and retry",
+    if (args[0] === "focus") {
+      throw browserCaptureError(
+        "the Browser element reference could not be focused",
+        "BROWSER_INPUT_TARGET_UNAVAILABLE",
+        "Take a new agent-browser snapshot and choose a current control reference.",
+      );
+    }
+    throw browserConnectionError(
+      "agent-browser could not inspect the requested Browser target",
     );
   }
   return parseAgentBrowserOutput(result.stdout);
@@ -208,21 +249,21 @@ function agentBrowserCdpUrl(sessionName: string, deadline: number): string {
     runAgentBrowser(sessionName, ["get", "cdp-url"], deadline),
   );
   if (!response.success) {
-    throw browserCaptureError(
-      "agent-browser did not expose a compatible CDP connection; run `okou browser use` and retry",
+    throw browserConnectionError(
+      "agent-browser did not expose a compatible CDP connection",
     );
   }
   let url: URL;
   try {
     url = new URL(response.data.data.cdpUrl);
   } catch {
-    throw browserCaptureError(
-      "agent-browser did not expose a compatible CDP connection; run `okou browser use` and retry",
+    throw browserConnectionError(
+      "agent-browser did not expose a compatible CDP connection",
     );
   }
   if (url.protocol !== "ws:" && url.protocol !== "wss:") {
-    throw browserCaptureError(
-      "agent-browser did not expose a compatible CDP connection; run `okou browser use` and retry",
+    throw browserConnectionError(
+      "agent-browser did not expose a compatible CDP connection",
     );
   }
   return url.toString();
@@ -307,14 +348,14 @@ class CdpClient {
     try {
       socket = new WebSocket(url);
     } catch {
-      throw browserCaptureError("Could not connect to the attached Browser");
+      throw browserConnectionError("Could not connect to the attached Browser");
     }
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         cleanup();
         closeWebSocket(socket);
         reject(
-          browserCaptureError("The Browser inspection connection timed out"),
+          browserTimeoutError("The Browser inspection connection timed out"),
         );
       }, connectTimeoutMs);
       const cleanup = () => {
@@ -331,7 +372,7 @@ class CdpClient {
         cleanup();
         closeWebSocket(socket);
         reject(
-          browserCaptureError("Could not connect to the attached Browser"),
+          browserConnectionError("Could not connect to the attached Browser"),
         );
       };
       socket.addEventListener("open", onOpen);
@@ -383,7 +424,7 @@ class CdpClient {
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
       pending.reject(
-        browserCaptureError("The Browser inspection connection closed"),
+        browserConnectionError("The Browser inspection connection closed"),
       );
     }
     this.pending.clear();
@@ -396,7 +437,9 @@ class CdpClient {
     timeoutMs = CDP_COMMAND_TIMEOUT_MS,
   ): Promise<unknown> {
     if (this.failed || this.socket.readyState !== WebSocket.OPEN) {
-      throw browserCaptureError("The Browser inspection connection is closed");
+      throw browserConnectionError(
+        "The Browser inspection connection is closed",
+      );
     }
     const id = this.nextId;
     this.nextId += 1;
@@ -404,7 +447,7 @@ class CdpClient {
       const timer = setTimeout(
         () => {
           this.pending.delete(id);
-          reject(browserCaptureError("The Browser target did not respond"));
+          reject(browserTimeoutError("The Browser target did not respond"));
         },
         boundedTimeout(timeoutMs, this.deadline),
       );
@@ -421,7 +464,7 @@ class CdpClient {
       } catch {
         clearTimeout(timer);
         this.pending.delete(id);
-        reject(browserCaptureError("Could not inspect the Browser target"));
+        reject(browserConnectionError("Could not inspect the Browser target"));
       }
     });
   }
@@ -520,9 +563,23 @@ async function attachPages(
       }
     }),
   );
-  return attached.flatMap((result) => {
+  const available = attached.flatMap((result) => {
     return result.status === "fulfilled" ? [result.value] : [];
   });
+  if (available.length === 0) {
+    const connectionFailure = attached.find((result) => {
+      return (
+        result.status === "rejected" &&
+        result.reason instanceof BrowserInputRequestError &&
+        (result.reason.code === "BROWSER_INPUT_CAPTURE_TIMEOUT" ||
+          result.reason.code === "BROWSER_INPUT_BROWSER_CONNECTION_FAILED")
+      );
+    });
+    if (connectionFailure?.status === "rejected") {
+      throw connectionFailure.reason;
+    }
+  }
+  return available;
 }
 
 async function pageHasMarker(
@@ -544,7 +601,14 @@ async function pageHasMarker(
       evaluation.exceptionDetails === undefined &&
       evaluation.result.value === true
     );
-  } catch {
+  } catch (error) {
+    if (
+      error instanceof BrowserInputRequestError &&
+      (error.code === "BROWSER_INPUT_CAPTURE_TIMEOUT" ||
+        error.code === "BROWSER_INPUT_BROWSER_CONNECTION_FAILED")
+    ) {
+      throw error;
+    }
     return false;
   }
 }
@@ -566,6 +630,8 @@ async function findMarkedPage(
   if (matches.length !== 1) {
     throw browserCaptureError(
       "The active Browser page changed or could not be identified; retry the request",
+      "BROWSER_INPUT_PAGE_CHANGED",
+      "Inspect the active Browser tab again and recapture its controls.",
     );
   }
   return matches[0]!;
@@ -582,9 +648,14 @@ async function evaluatedObjectId(
     evaluation = cdpEvaluationSchema.parse(
       await callPageFunction(client, page, functionDeclaration, args, false),
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof BrowserInputRequestError) {
+      throw error;
+    }
     throw browserCaptureError(
       "A requested Browser field target is invalid or unavailable",
+      "BROWSER_INPUT_TARGET_UNAVAILABLE",
+      "Inspect the page and choose one exact supported control.",
     );
   }
   if (
@@ -592,8 +663,22 @@ async function evaluatedObjectId(
     evaluation.result.subtype !== "node" ||
     !evaluation.result.objectId
   ) {
+    const matchCount = evaluation.result.value;
+    if (typeof matchCount === "number" && Number.isSafeInteger(matchCount)) {
+      throw browserCaptureError(
+        matchCount === 0
+          ? "the target matched no controls"
+          : `the target matched ${matchCount} controls`,
+        matchCount === 0
+          ? "BROWSER_INPUT_TARGET_MISSING"
+          : "BROWSER_INPUT_TARGET_AMBIGUOUS",
+        "Inspect the page and choose one exact supported control.",
+      );
+    }
     throw browserCaptureError(
-      "A requested Browser field target is missing or ambiguous",
+      "the target is missing or ambiguous",
+      "BROWSER_INPUT_TARGET_UNAVAILABLE",
+      "Inspect the page and choose one exact supported control.",
     );
   }
   return evaluation.result.objectId;
@@ -609,9 +694,14 @@ async function describeInputNode(
     described = cdpNodeSchema.parse(
       await client.send("DOM.describeNode", { objectId }, page.sessionId),
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof BrowserInputRequestError) {
+      throw error;
+    }
     throw browserCaptureError(
       "A requested Browser field target changed during capture",
+      "BROWSER_INPUT_TARGET_CHANGED",
+      "Inspect the current page and recapture this control.",
     );
   }
   if (
@@ -620,6 +710,8 @@ async function describeInputNode(
   ) {
     throw browserCaptureError(
       "Browser input requests support only top-level input and textarea controls",
+      "BROWSER_INPUT_UNSUPPORTED_CONTROL",
+      "Choose a top-level input or textarea, or hand the Browser to the user.",
     );
   }
   return described.node.backendNodeId;
@@ -764,12 +856,23 @@ export async function captureBrowserInputTargets(
     pages = await attachPages(client);
     const page = await findMarkedPage(client, pages, pageMarker);
     const backendNodeIds: number[] = [];
-    for (const target of targets) {
-      backendNodeIds.push(
-        isRef(target)
-          ? await captureRef(client, page, pages, sessionName, target, deadline)
-          : await captureSelector(client, page, target),
-      );
+    for (const [index, target] of targets.entries()) {
+      try {
+        backendNodeIds.push(
+          isRef(target)
+            ? await captureRef(
+                client,
+                page,
+                pages,
+                sessionName,
+                target,
+                deadline,
+              )
+            : await captureSelector(client, page, target),
+        );
+      } catch (error) {
+        throw withBrowserInputFieldPosition(error, index + 1);
+      }
     }
     const finalMarker = createAgentBrowserMarker(
       sessionName,
@@ -783,15 +886,24 @@ export async function captureBrowserInputTargets(
       ) {
         throw browserCaptureError(
           "The active Browser page changed during capture; retry the request",
+          "BROWSER_INPUT_PAGE_CHANGED",
+          "Inspect the active Browser tab again and recapture its controls.",
         );
       }
     } finally {
       await cleanupMarker(client, pages, finalMarker);
     }
-    if (new Set(backendNodeIds).size !== backendNodeIds.length) {
-      throw browserCaptureError(
-        "Browser input request fields must target different controls",
-      );
+    const firstPosition = new Map<number, number>();
+    for (const [index, backendNodeId] of backendNodeIds.entries()) {
+      const previous = firstPosition.get(backendNodeId);
+      if (previous !== undefined) {
+        throw browserCaptureError(
+          `--field ${index + 1} targets the same control as --field ${previous}`,
+          "BROWSER_INPUT_DUPLICATE_TARGET",
+          "Choose a different control for one of these fields.",
+        );
+      }
+      firstPosition.set(backendNodeId, index + 1);
     }
     return { pageTargetId: page.targetId, backendNodeIds };
   } finally {
