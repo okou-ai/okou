@@ -2851,7 +2851,7 @@ the prior production App verification makes that order safe for this writer.
 
 ### Personal-to-organization Access promotion and reviewed deletion (#36707)
 
-Migration `1215` extends the database scope-change guard to allow the narrow
+Migration `1216` extends the database scope-change guard to allow the narrow
 Personal/owner -> Organization/no owner transition within the same
 organization, without moving the row, decrypting its Service Token or
 replacing existing SSH bindings. Deploy this migration **before** enabling the
@@ -2880,7 +2880,7 @@ The already-shipped rebind-capable App and shared-aware Runner are prerequisites
 After a member binds a promoted row or a reviewed deletion writes
 `needs_rebind`, rollback to pre-foundation API/Runner or pre-rebind App is
 unsafe; roll forward with compatible readers. The API-before-App release order
-is safe once migration `1215` and those prerequisites are verified.
+is safe once migration `1216` and those prerequisites are verified.
 
 ## Feishu and Lark integration identity
 

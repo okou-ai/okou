@@ -355,7 +355,7 @@ try {
   await client.query(
     "UPDATE ssh_connections SET learned_host_key_algorithm='ssh-ed25519',learned_host_key_fingerprint='SHA256:pin' WHERE id='00000000-0000-4000-8000-000000000010'",
   );
-  await migrate("1215_cloudflare_access_personal_promotion");
+  await migrate("1216_cloudflare_access_personal_promotion");
   await rejects(
     "UPDATE cloudflare_access_configs SET user_id='foreign' WHERE id='00000000-0000-4000-8000-000000000004'",
     { code: "23514", constraint: "cloudflare_access_scope_change_guard" },
