@@ -5592,11 +5592,9 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     const completedReplyContent = completedReply
       ? messageContent(completedReply)
       : "";
-    expect(completedReplyContent).toContain("Audit");
+    expect(completedReplyContent).not.toContain("[Audit]");
     expect(completedReplyContent).toContain("Okou");
-    expect(completedReplyContent).toContain(
-      `https://app.okou.ai/activities/${run.id}`,
-    );
+    expect(completedReplyContent).not.toContain("/activities/");
     expect(completedReplyContent).toContain("Claude Sonnet");
     expect(completedReplyContent).toContain("Responded by Okou");
     expect(fixtureState.removedReactions).toHaveLength(1);

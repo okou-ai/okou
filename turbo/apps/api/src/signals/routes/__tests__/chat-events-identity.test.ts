@@ -199,7 +199,7 @@ describe("CHAT-02: default assistant identity", () => {
     await cancelChatRun(actor, customRun.runId);
   }, 90_000);
 
-  it("posts GitHub Audit links to the configured Okou app", async () => {
+  it("posts GitHub responses without audit links when debug is enabled", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     bdd.acceptAgentStorageWrites();
@@ -255,9 +255,9 @@ describe("CHAT-02: default assistant identity", () => {
     await completeChatRunOk(run.runId, claim.sandboxHeaders);
     await flushWaitUntilForTest();
 
-    expect(postedComments.at(-1)).toContain(
-      `📋 [Audit](https://app.okou.ai/activities/${run.runId})`,
-    );
+    expect(postedComments.at(-1)).toContain("GitHub callback brand response");
+    expect(postedComments.at(-1)).not.toContain("[Audit]");
+    expect(postedComments.at(-1)).not.toContain("/activities/");
     expect(postedComments).toHaveLength(1);
   }, 90_000);
 });

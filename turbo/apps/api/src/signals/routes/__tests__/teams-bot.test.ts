@@ -2692,7 +2692,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
   });
 
-  it("clears thinking and adds audit/footer text for Teams run admission failures", async () => {
+  it("clears thinking and preserves attribution without audit links for Teams run admission failures", async () => {
     const fixture = await trackTeamsFixture(
       Promise.resolve(teamsConnectFixture()),
     );
@@ -2800,12 +2800,12 @@ describe("POST /api/webhooks/teams/bot", () => {
       activityId: failedActivityId,
       body: {
         type: "message",
-        text: expect.stringContaining(`[Audit](${APP_ORIGIN}/activities)`),
+        text: expect.stringContaining("Sent via Teams support agent"),
         textFormat: "markdown",
       },
     });
     expect(outboundRequests[0]?.body).toMatchObject({
-      text: expect.stringContaining("Sent via Teams support agent"),
+      text: expect.not.stringMatching(/\[Audit\]|\/activities/),
     });
     expect(outboundRequests.reactions).toStrictEqual([
       {

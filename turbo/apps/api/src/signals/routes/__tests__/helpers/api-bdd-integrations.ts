@@ -1332,7 +1332,7 @@ export function createBddIntegrationApi(context: TestContext) {
       );
     },
 
-    async enableAuditLinkSwitch(actor: ApiTestUser): Promise<void> {
+    async enableOkouDebug(actor: ApiTestUser): Promise<void> {
       await accept(
         setupApp({ context, routes: featureSwitchesRoutes })(
           featureSwitchesContract,
