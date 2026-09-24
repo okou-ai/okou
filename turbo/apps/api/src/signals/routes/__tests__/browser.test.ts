@@ -2843,7 +2843,7 @@ describe("okou browser route", () => {
       "Okou Browser is currently off for this chat thread",
     );
     expect(claim.appendSystemPrompt ?? "").not.toContain(
-      "Okou Browser native input: use `okou browser input-request`",
+      "Browser form input: use `okou browser input-request`",
     );
     const browserToken = runs.okouTokenForRunWithCapabilities(
       actor,
@@ -2887,16 +2887,7 @@ describe("okou browser route", () => {
       "Okou Browser lifetime: `okou browser use` and `okou browser lease` each extend the session's idle lease by a fixed 10 minutes",
     );
     expect(appendSystemPrompt).toContain(
-      "use `okou browser input-request` only when the form content must be entered by the user personally",
-    );
-    expect(appendSystemPrompt).toContain(
-      "This is a user handoff, not a general form-fill command. Fill ordinary fields yourself through the attached `agent-browser` session when authorized.",
-    );
-    expect(appendSystemPrompt).toContain(
-      "For unsupported controls or interactive steps such as CAPTCHA or consent, share the exact `okou browser view` URL for direct takeover",
-    );
-    expect(appendSystemPrompt).toContain(
-      "after `okou browser input-request` succeeds, return its exact action URL and perform no further Browser operation in this turn",
+      "use `okou browser input-request` only when the user must personally enter the form content; fill ordinary forms with `agent-browser` instead",
     );
     expect(appendSystemPrompt).not.toContain(
       "Okou Browser is currently off for this chat thread",
