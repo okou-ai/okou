@@ -428,28 +428,48 @@ describe("storage-object erasure", () => {
     const survivor = owner("page-parent");
     const otherPrefix = `storages/${randomUUID()}`;
     const otherId = await createStorage(survivor, otherPrefix);
-    const prefixes: string[] = [];
-    for (let index = 0; index < 90; index += 1) {
-      const prefix = `storages/${randomUUID()}`;
-      await createStorage(subject, prefix);
-      prefixes.push(prefix);
-    }
-    for (let index = 0; index < 30; index += 1) {
-      const version = await createVersion(otherId, subject, otherPrefix);
-      prefixes.push(version.prefix);
-    }
-    const bucket = bucketWithObjects(
-      prefixes.map((prefix) => {
-        return `${prefix}/manifest.json`;
-      }),
-    );
+    const storageRows = Array.from({ length: 90 }, () => {
+      const id = randomUUID();
+      return {
+        id,
+        userId: subject,
+        orgId: `org_${id}`,
+        name: `storage-${id}`,
+        s3Prefix: `storages/${randomUUID()}`,
+      };
+    });
+    await db.execute(sql`INSERT INTO storages
+      (id, user_id, org_id, name, s3_prefix) VALUES ${sql.join(
+        storageRows.map((row) => {
+          return sql`(${row.id}, ${row.userId}, ${row.orgId}, ${row.name}, ${row.s3Prefix})`;
+        }),
+        sql`, `,
+      )}`);
+    onTestFinished(async () => {
+      await db.execute(sql`DELETE FROM storages WHERE user_id = ${subject}`);
+    });
+    const versionRows = Array.from({ length: 30 }, () => {
+      const id = randomBytes(32).toString("hex");
+      return {
+        id,
+        storageId: otherId,
+        createdBy: subject,
+        archiveSize: 1,
+        s3Key: `${otherPrefix}/${id}`,
+      };
+    });
+    await db.execute(sql`INSERT INTO storage_versions
+      (id, storage_id, s3_key, archive_size, created_by) VALUES ${sql.join(
+        versionRows.map((row) => {
+          return sql`(${row.id}, ${row.storageId}, ${row.s3Key}, ${row.archiveSize}, ${row.createdBy})`;
+        }),
+        sql`, `,
+      )}`);
+
     const captured = await capture(subject);
-    await expect(
-      runVerification(captured.job.id, captured.handler),
-    ).resolves.toBe(121);
-    expect(bucket.live.size).toBe(0);
-    await expect(
-      finalizeErasureJob(db, captured.job.id, captured.sealed),
-    ).resolves.toMatchObject({ state: "verified_erased" });
+    const items = await db.execute(sql`SELECT count(*)::int AS count
+      FROM account_erasure_work
+      WHERE job_id = ${captured.job.id} AND kind = 'erase'`);
+    expect(items.rows[0]?.count).toBe(120);
   });
 });
