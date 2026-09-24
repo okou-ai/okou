@@ -10,6 +10,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import {
   insertChatSearchProjectionCoverageFixture,
+  insertSearchableMessageBatchFixture,
   insertSearchablePromptFixture,
   removeChatSearchParentThreadsFixture,
   removeChatSearchSourceEventsFixture,
@@ -78,7 +79,7 @@ async function sendNoCreditMessage(
 }
 
 describe("GET /api/chat/search durable reader", () => {
-  it("returns up to 25 newest matches without pagination", async () => {
+  it("returns scoped matches without pagination", async () => {
     const owner = bdd.user();
     const source = await createSearchThread(
       owner,
@@ -90,7 +91,6 @@ describe("GET /api/chat/search durable reader", () => {
     const prompts = [
       `${sparseKeyword} older`,
       `${sparseKeyword} newer`,
-      // One extra match proves the 25-result cap without redundant API sends.
       ...Array.from({ length: 26 }, (_, index) => {
         return `${frequentKeyword} ${index}`;
       }),
@@ -123,7 +123,7 @@ describe("GET /api/chat/search durable reader", () => {
         return result.matchedMessage.content;
       }),
     ).toStrictEqual(
-      Array.from({ length: 25 }, (_, index) => {
+      Array.from({ length: 26 }, (_, index) => {
         return `${frequentKeyword} ${25 - index}`;
       }),
     );
@@ -146,6 +146,35 @@ describe("GET /api/chat/search durable reader", () => {
       `absent${randomUUID().replaceAll("-", "")}`,
     );
     expect(missing).toStrictEqual({ results: [] });
+  });
+
+  it("returns at most 100 newest messages from the candidate set", async () => {
+    const orgId = `org_${randomUUID()}`;
+    const owner = bdd.user({ orgId });
+    const source = await createSearchThread(owner, `bounded-${randomUUID()}`);
+    const keyword = `bounded${randomUUID().replaceAll("-", "")}`;
+    await insertSearchableMessageBatchFixture({
+      chatThreadId: source.threadId,
+      agentId: source.agentId,
+      userId: owner.userId,
+      orgId,
+      keyword,
+      count: 120,
+      startAt: new Date(now()),
+    });
+
+    const search = await chat.searchChat(owner, keyword);
+    expect(search.results).toHaveLength(100);
+    expect(
+      search.results.map((result) => {
+        return result.matchedMessage.content;
+      }),
+    ).toStrictEqual(
+      Array.from({ length: 100 }, (_, index) => {
+        return `${keyword} ${119 - index}`;
+      }),
+    );
+    expect(search).not.toHaveProperty("hasMore");
   });
 
   it("serves matched message identity after source events are deleted", async () => {
@@ -252,7 +281,7 @@ describe("GET /api/chat/search durable reader", () => {
     expect(otherOrgSearch.results).toStrictEqual([]);
   });
 
-  it("continues past orphan-only candidate batches to find visible matches", async () => {
+  it("does not refill results excluded by missing parent threads", async () => {
     const owner = bdd.user();
     const keyword = `orphanpage${randomUUID().replaceAll("-", "")}`;
     const baseTime = now();
@@ -260,46 +289,51 @@ describe("GET /api/chat/search durable reader", () => {
       owner,
       `visible-reader-${randomUUID().slice(0, 8)}`,
     );
-    const orphanThreadIds: string[] = [];
+    const orphan = await createSearchThread(
+      owner,
+      `orphan-reader-${randomUUID().slice(0, 8)}`,
+    );
     await withMockNowForTest(baseTime, async () => {
       await sendNoCreditMessage(owner, {
         agentId: visible.agentId,
         threadId: visible.threadId,
         prompt: keyword,
       });
-      for (let index = 1; index <= 6; index++) {
-        mockNow(baseTime + index * 1000);
-        const orphan = await createSearchThread(
-          owner,
-          `orphan-reader-${randomUUID().slice(0, 8)}`,
-        );
-        orphanThreadIds.push(orphan.threadId);
-        for (let messageIndex = 0; messageIndex < 5; messageIndex++) {
-          await sendNoCreditMessage(owner, {
-            agentId: orphan.agentId,
-            threadId: orphan.threadId,
-            prompt: keyword,
-          });
-        }
-      }
+      mockNow(baseTime + 1000);
+      await sendNoCreditMessage(owner, {
+        agentId: orphan.agentId,
+        threadId: orphan.threadId,
+        prompt: keyword,
+      });
     });
+    await projectChatSearchMessages([visible.threadId, orphan.threadId]);
+    if (!owner.orgId) {
+      throw new Error("Expected an org-scoped search actor");
+    }
+    await insertSearchableMessageBatchFixture({
+      chatThreadId: orphan.threadId,
+      agentId: orphan.agentId,
+      userId: owner.userId,
+      orgId: owner.orgId,
+      keyword,
+      count: 101,
+      startSeqId: 10_000,
+      startAt: new Date(baseTime + 2000),
+    });
+    const orphanThreadIds = [orphan.threadId];
 
-    await projectChatSearchMessages([visible.threadId, ...orphanThreadIds]);
-
-    // The projector now conflicts with the product deletion path, so these
-    // orphans are reconstructed the only way they still occur: a canonical
-    // parent removed without its derived rows, as rows written before that
-    // fence or by an older producer already are. The reader must skip them and
-    // the bounded repair must still remove them.
+    // Reconstruct stale derived rows from before the deletion fence. The
+    // reader drops them after its 100-row limit, without searching further.
     await removeChatSearchParentThreadsFixture(orphanThreadIds);
 
     const search = await chat.searchChat(owner, keyword);
-    expect(search.results).toHaveLength(1);
-    expect(search.results[0]?.chatThreadId).toBe(visible.threadId);
+    expect(search.results).toStrictEqual([]);
 
     const cleanup = await requestChatSearchProjection(orphanThreadIds);
     expect(cleanup.orphanedThreads).toBe(orphanThreadIds.length);
     const clean = await requestChatSearchProjection(orphanThreadIds);
     expect(clean.orphanedThreads).toBe(0);
+    const afterCleanup = await chat.searchChat(owner, keyword);
+    expect(afterCleanup.results[0]?.chatThreadId).toBe(visible.threadId);
   }, 60_000);
 });
