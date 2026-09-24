@@ -295,13 +295,45 @@ test("an admin sees owner counts before deleting other owners' hosts; stale or u
   ).toBe(3);
   expect(latest.impactSnapshot).not.toBe(preview.impactSnapshot);
   await accept(
+    configs().update({
+      headers,
+      query,
+      params: { configId: shared.id },
+      body: { expectedRevision: 1, name: "Renamed protected gateway" },
+    }),
+    [200],
+  );
+  await expect(
+    accept(
+      configs().delete({
+        headers,
+        query,
+        params: { configId: shared.id },
+        body: {
+          expectedRevision: latest.expectedRevision,
+          impactSnapshot: latest.impactSnapshot,
+        },
+      }),
+      [409],
+    ),
+  ).resolves.toMatchObject({
+    body: { error: { code: "CLOUDFLARE_ACCESS_REVISION_CONFLICT" } },
+  });
+  const reviewedAgain = (
+    await accept(
+      configs().deletionPreview({ headers, params: { configId: shared.id } }),
+      [200],
+    )
+  ).body;
+  expect(reviewedAgain.expectedRevision).toBe(2);
+  await accept(
     configs().delete({
       headers,
       query,
       params: { configId: shared.id },
       body: {
-        expectedRevision: latest.expectedRevision,
-        impactSnapshot: latest.impactSnapshot,
+        expectedRevision: reviewedAgain.expectedRevision,
+        impactSnapshot: reviewedAgain.impactSnapshot,
       },
     }),
     [204],
