@@ -8,6 +8,28 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.668.0](https://github.com/okou-ai/okou/compare/api-v1.667.0...api-v1.668.0) (2026-09-24)
+
+
+### Features
+
+* **app:** manage shared cloudflare access and recover ssh bindings ([#36449](https://github.com/okou-ai/okou/issues/36449)) ([f129327](https://github.com/okou-ai/okou/commit/f129327db18170f2bf9f43fae9bc9ec2245a9cf5))
+
+
+### Bug Fixes
+
+* **hosting:** migrate snapshot aliases to rolling site pointers ([#36537](https://github.com/okou-ai/okou/issues/36537)) ([af047ab](https://github.com/okou-ai/okou/commit/af047ab6c6581147c5dfd0c81f9380015bc9302b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.502.0
+    * @okouai/core bumped to 8.707.1
+    * @okouai/db bumped to 1.292.3
+    * @okouai/pi-agent-runtime bumped to 1.40.5
+
 ## [1.667.0](https://github.com/okou-ai/okou/compare/api-v1.666.0...api-v1.667.0) (2026-09-24)
 
 

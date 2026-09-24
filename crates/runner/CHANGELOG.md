@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.213.9](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.8...runner-rs-v0.213.9) (2026-09-24)
+
+
+### Refactoring
+
+* **runner:** extract idle orchestration supervisor ([#36548](https://github.com/okou-ai/okou/issues/36548)) ([52040cf](https://github.com/okou-ai/okou/commit/52040cf8ee4c98111707c2f2f742bbb295ec2951))
+* **runner:** move active-run handoff into lifecycle ([#36536](https://github.com/okou-ai/okou/issues/36536)) ([4e2a495](https://github.com/okou-ai/okou/commit/4e2a495027225aa1ff6ea29404113ef95b478b57))
+
 ## [0.213.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.7...runner-rs-v0.213.8) (2026-09-24)
 
 

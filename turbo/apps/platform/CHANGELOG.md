@@ -11,6 +11,29 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.954.0](https://github.com/okou-ai/okou/compare/app-v0.953.0...app-v0.954.0) (2026-09-24)
+
+
+### Features
+
+* **app:** manage shared cloudflare access and recover ssh bindings ([#36449](https://github.com/okou-ai/okou/issues/36449)) ([f129327](https://github.com/okou-ai/okou/commit/f129327db18170f2bf9f43fae9bc9ec2245a9cf5))
+* **platform:** add marquee and select-all for shared messages ([#36380](https://github.com/okou-ai/okou/issues/36380)) ([54028db](https://github.com/okou-ai/okou/commit/54028db439b1369e14fed87c6784b7fdd04db83d))
+* **platform:** balance source-first onboarding layout and clarify trust copy ([#36368](https://github.com/okou-ai/okou/issues/36368)) ([2ef9c34](https://github.com/okou-ai/okou/commit/2ef9c343e9617151c77a8e4e0bf7ef57142d0446))
+
+
+### Bug Fixes
+
+* **chat:** keep copy action at the right of user messages ([#36541](https://github.com/okou-ai/okou/issues/36541)) ([ad6f000](https://github.com/okou-ai/okou/commit/ad6f0007c52aeba32df91047e0eba0b9eed4b85e))
+* **platform:** recover chat errors from the current route without run details ([#36526](https://github.com/okou-ai/okou/issues/36526)) ([6f3cb7a](https://github.com/okou-ai/okou/commit/6f3cb7a1996ded156f9311f70018f5710a4f3bfb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.502.0
+    * @okouai/core bumped to 8.707.1
+
 ## [0.953.0](https://github.com/okou-ai/okou/compare/app-v0.952.0...app-v0.953.0) (2026-09-24)
 
 
