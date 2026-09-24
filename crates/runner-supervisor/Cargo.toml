@@ -2,15 +2,17 @@
 name = "runner-supervisor"
 version = "0.1.1"
 edition.workspace = true
-description = "Runner start-loop idle resource orchestration"
+description = "Runner start-loop idle and heartbeat orchestration"
 
 [dependencies]
 runner-executor.workspace = true
 runner-host.workspace = true
 runner-lifecycle.workspace = true
+runner-provider.workspace = true
 runner-types.workspace = true
 sandbox.workspace = true
 futures-util = { workspace = true, features = ["async-await", "std"] }
+thiserror = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
 tokio-util = { workspace = true, features = ["rt"] }
 tracing = { workspace = true, features = ["std"] }
@@ -19,8 +21,13 @@ tracing = { workspace = true, features = ["std"] }
 runner-lifecycle = { workspace = true, features = ["test-support"] }
 runner-storage.workspace = true
 sandbox-mock.workspace = true
+api-contracts.workspace = true
+async-trait.workspace = true
 tempfile = { workspace = true, features = ["getrandom"] }
 tokio = { workspace = true, features = ["test-util"] }
+tracing-subscriber = { workspace = true, features = ["fmt", "std"] }
+tracing-test-support.workspace = true
+uuid = { workspace = true, features = ["v4"] }
 
 [lints]
 workspace = true
