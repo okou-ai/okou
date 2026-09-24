@@ -6,12 +6,16 @@ import { randomUUID } from "node:crypto";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
+import { morningBriefCollectionOccurrences } from "@okouai/db/schema/morning-brief-collection-occurrence";
 import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery";
+import { morningBriefNativeSchedules } from "@okouai/db/schema/morning-brief-native-schedule";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { users } from "@okouai/db/schema/user";
 import { officialAutomationResultEmailClaims } from "@okouai/db/schema/official-automation-result-email-claim";
 import { command } from "ccstate";
 import { and, asc, eq, inArray } from "drizzle-orm";
 
+import type { Tx } from "../../lib/db-types";
 import { now } from "../../lib/time";
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
@@ -110,6 +114,58 @@ async function seedTestOutboxItem(
   };
 }
 
+/** Reconstruct one old in-flight owner only inside the test-only state route. */
+async function seedActiveHistoricalAuthority(
+  tx: Tx,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly membershipId: string;
+    readonly agentId: string;
+    readonly threadId: string;
+    readonly workflowId: string;
+    readonly automationId: string;
+    readonly at: Date;
+  },
+) {
+  await tx.insert(users).values({ id: args.userId });
+  await tx.insert(morningBriefNativeSchedules).values({
+    orgId: args.orgId,
+    userId: args.userId,
+    enabled: true,
+    cronExpression: "0 7 * * *",
+    timezone: "UTC",
+    nextRunAt: null,
+    scheduleOwner: null,
+    phase: "native",
+    target: "native",
+    ownerEpoch: 1,
+    membershipId: args.membershipId,
+    agentId: args.agentId,
+    chatThreadId: args.threadId,
+    materializedAt: args.at,
+  });
+  await tx.insert(morningBriefCollectionOccurrences).values({
+    orgId: args.orgId,
+    userId: args.userId,
+    scheduledFor: args.at,
+    collectionKind: "sources",
+    collectionVersion: 1,
+    windowStart: new Date(args.at.getTime() - 60 * 60 * 1000),
+    windowEnd: args.at,
+    timezone: "UTC",
+    membershipId: args.membershipId,
+    workflowId: args.workflowId,
+    automationId: args.automationId,
+    agentId: args.agentId,
+    status: "completed",
+    attempt: 1,
+    outcome: "complete",
+    claimedAt: args.at,
+    finishedAt: args.at,
+  });
+}
+
 async function seedLinkedNativeMail(
   db: Db,
   body: Extract<TestEmailOutboxStateActionBody, { action: "seed-native-mail" }>,
@@ -118,6 +174,8 @@ async function seedLinkedNativeMail(
   const owner = { orgId: body.org_id, userId: body.user_id };
   const agentId = randomUUID();
   const threadId = randomUUID();
+  const workflowId = randomUUID();
+  const automationId = randomUUID();
   const at = new Date(body.created_at);
   const item = await db.transaction(async (tx) => {
     await tx.insert(orgMembersMetadata).values({ ...owner, timezone: "UTC" });
@@ -134,6 +192,17 @@ async function seedLinkedNativeMail(
       agentId,
       title: "Historical Native mail fixture",
     });
+    if (body.active_authority === true) {
+      await seedActiveHistoricalAuthority(tx, {
+        ...owner,
+        membershipId: body.membership_id,
+        agentId,
+        threadId,
+        workflowId,
+        automationId,
+        at,
+      });
+    }
     const [queued] = await tx
       .insert(emailOutbox)
       .values({
@@ -150,14 +219,14 @@ async function seedLinkedNativeMail(
     await tx.insert(morningBriefDeliveries).values({
       ...owner,
       scheduledFor: at,
-      collectionKind: "slack",
+      collectionKind: "sources",
       collectionVersion: 1,
       executionPurpose: "production",
       resultAttemptId: randomUUID(),
       membershipId: body.membership_id,
       nativeOwnerEpoch: 1,
-      workflowId: randomUUID(),
-      automationId: randomUUID(),
+      workflowId,
+      automationId,
       agentId,
       chatThreadId: threadId,
       chatEventId: randomUUID(),
@@ -198,9 +267,26 @@ async function deleteLinkedNativeMail(
       .where(eq(morningBriefDeliveries.emailOutboxId, itemId));
     await tx.delete(emailOutbox).where(eq(emailOutbox.id, itemId));
     await tx
+      .delete(morningBriefCollectionOccurrences)
+      .where(
+        and(
+          eq(morningBriefCollectionOccurrences.orgId, delivery.orgId),
+          eq(morningBriefCollectionOccurrences.userId, delivery.userId),
+        ),
+      );
+    await tx
+      .delete(morningBriefNativeSchedules)
+      .where(
+        and(
+          eq(morningBriefNativeSchedules.orgId, delivery.orgId),
+          eq(morningBriefNativeSchedules.userId, delivery.userId),
+        ),
+      );
+    await tx
       .delete(chatThreads)
       .where(eq(chatThreads.id, delivery.chatThreadId));
     await tx.delete(agents).where(eq(agents.id, delivery.agentId));
+    await tx.delete(users).where(eq(users.id, delivery.userId));
     await tx
       .delete(orgMembersMetadata)
       .where(

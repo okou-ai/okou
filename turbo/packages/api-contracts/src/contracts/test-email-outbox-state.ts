@@ -54,6 +54,7 @@ export const testEmailOutboxStateActionBodySchema = z.discriminatedUnion(
       org_id: z.string().min(1),
       user_id: z.string().min(1),
       membership_id: z.string().min(1),
+      active_authority: z.boolean().optional(),
       to_address: z.string().min(1),
       created_at: z.iso.datetime(),
     }),

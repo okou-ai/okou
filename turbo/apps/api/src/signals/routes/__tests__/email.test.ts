@@ -173,6 +173,49 @@ describe("retired Native Morning Brief email", () => {
     cleaned = true;
     await expect(outbox.nativeReceiptExists(item.id)).resolves.toBeFalsy();
   });
+
+  it("sends a still-authorized historical intent once and retains its receipt", async () => {
+    const outbox = createEmailOutboxStateApi(context);
+    const orgId = `org_${randomUUID()}`;
+    const userId = `user_${randomUUID()}`;
+    const membershipId = `mem_${randomUUID()}`;
+    const item = await outbox.seedLinkedNativeMail({
+      orgId,
+      userId,
+      membershipId,
+      activeAuthority: true,
+      toAddress: `recipient-${randomUUID()}@example.test`,
+      createdAt: nowDate(),
+    });
+    onTestFinished(async () => {
+      await outbox.deleteLinkedNativeMail(item.id);
+    });
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          {
+            id: membershipId,
+            publicUserData: { userId },
+            organization: { id: orgId },
+          },
+        ],
+      },
+    );
+
+    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+    await expect(outbox.readItem(item.id)).resolves.toMatchObject({
+      status: "sent",
+      resend_id: "resend-test-id",
+      provider_idempotency_key: `okou-email-outbox/v1/${item.id}`,
+    });
+    await expect(outbox.nativeReceiptExists(item.id)).resolves.toBeTruthy();
+    await expect(outbox.drainItems([item.id])).resolves.toBe(0);
+    expect(resendMocks.send).toHaveBeenCalledTimes(1);
+    expect(resendMocks.send).toHaveBeenCalledWith(
+      expect.objectContaining({ subject: "Historical Native Morning Brief" }),
+      { idempotencyKey: `okou-email-outbox/v1/${item.id}` },
+    );
+  });
 });
 
 describe("low-credit email delivery", () => {

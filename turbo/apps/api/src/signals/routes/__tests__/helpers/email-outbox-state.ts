@@ -87,6 +87,7 @@ export function createEmailOutboxStateApi(context: TestContext) {
       readonly orgId: string;
       readonly userId: string;
       readonly membershipId: string;
+      readonly activeAuthority?: boolean;
       readonly toAddress: string;
       readonly createdAt: Date;
     }): Promise<TestEmailOutboxStateItem> {
@@ -95,6 +96,9 @@ export function createEmailOutboxStateApi(context: TestContext) {
         org_id: options.orgId,
         user_id: options.userId,
         membership_id: options.membershipId,
+        ...(options.activeAuthority === undefined
+          ? {}
+          : { active_authority: options.activeAuthority }),
         to_address: options.toAddress,
         created_at: options.createdAt.toISOString(),
       });
