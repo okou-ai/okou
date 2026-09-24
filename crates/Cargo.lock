@@ -1311,6 +1311,7 @@ dependencies = [
  "const-oid",
  "crypto-common 0.2.2",
  "ctutils",
+ "zeroize",
 ]
 
 [[package]]
@@ -3347,11 +3348,16 @@ dependencies = [
  "des",
  "flate2",
  "getrandom 0.3.4",
+ "hex",
+ "hmac",
  "md-5",
+ "pbkdf2",
  "png",
  "rcgen",
  "rustls",
  "serde_json",
+ "sha2",
+ "subtle",
  "tempfile",
  "thiserror",
  "tokio",
