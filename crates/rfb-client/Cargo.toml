@@ -30,7 +30,7 @@ pbkdf2 = { version = "0.13" }
 rcgen = { workspace = true, features = ["crypto", "ring"] }
 serde_json = { workspace = true, features = ["std"] }
 tempfile = { workspace = true }
-tokio = { workspace = true, features = ["macros", "net", "process", "rt", "sync"] }
+tokio = { workspace = true, features = ["macros", "net", "process", "rt", "sync", "test-util"] }
 
 [lints]
 workspace = true

@@ -8,7 +8,10 @@ use crypto_bigint::{
     BoxedUint, Odd,
     modular::{BoxedMontyForm, BoxedMontyParams},
 };
-use rfb_client::{AppleSrpCredentials, AuthenticationStage, Error, authenticate_apple_srp};
+use rfb_client::{
+    AppleSrpCredentials, AuthenticationStage, Error, Input, InputOutcome, Session, SharingMode,
+    authenticate_apple_srp,
+};
 use sha2::{Digest, Sha256, Sha512};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, DuplexStream, duplex},
@@ -34,6 +37,16 @@ async fn negotiate(server: &mut DuplexStream, offered: &[u8]) {
         .await
         .expect("type count");
     server.write_all(offered).await.expect("types");
+}
+
+async fn read_username_entry(server: &mut DuplexStream) {
+    negotiate(server, &[36]).await;
+    assert_eq!(server.read_u8().await.expect("selection"), 36);
+    assert_eq!(server.read_u8().await.expect("branch"), 36);
+    let entry_len = server.read_u32().await.expect("entry length") as usize;
+    assert!(entry_len <= 266);
+    let mut entry = vec![0; entry_len];
+    server.read_exact(&mut entry).await.expect("username entry");
 }
 
 fn group() -> Vec<u8> {
@@ -62,7 +75,16 @@ fn sha512(parts: &[&[u8]]) -> Vec<u8> {
 /// Independent synthetic server: derives its verifier with the maintained
 /// PBKDF2 crate, then uses the SRP server equation instead of reusing the
 /// client's SRP implementation.
-async fn srp_peer(server: &mut DuplexStream, corrupt_m2: bool, rejected_status: bool) {
+#[derive(Clone, Copy)]
+enum PeerScenario {
+    HandoffMarker,
+    FragmentedSession,
+    CorruptProof,
+    RejectedStatus,
+    WrongPassword,
+}
+
+async fn srp_peer(server: &mut DuplexStream, scenario: PeerScenario) {
     negotiate(server, &[30, 33, 36]).await;
     assert_eq!(server.read_u8().await.expect("selection"), 36);
     assert_eq!(server.read_u8().await.expect("branch"), 36);
@@ -117,7 +139,17 @@ async fn srp_peer(server: &mut DuplexStream, corrupt_m2: bool, rejected_status: 
         .write_u32(challenge.len() as u32)
         .await
         .expect("challenge outer");
-    server.write_all(&challenge).await.expect("challenge");
+    if matches!(scenario, PeerScenario::FragmentedSession) {
+        for fragment in challenge.chunks(17) {
+            server
+                .write_all(fragment)
+                .await
+                .expect("challenge fragment");
+            tokio::task::yield_now().await;
+        }
+    } else {
+        server.write_all(&challenge).await.expect("challenge");
+    }
 
     let response_len = server.read_u32().await.expect("response outer") as usize;
     let mut response = vec![0; response_len];
@@ -159,7 +191,7 @@ async fn srp_peer(server: &mut DuplexStream, corrupt_m2: bool, rejected_status: 
         return;
     }
     let mut m2 = sha512(&[a_bytes, m1, &session_key]);
-    if corrupt_m2 {
+    if matches!(scenario, PeerScenario::CorruptProof) {
         m2[0] ^= 1;
     }
     let mut final_token = Vec::with_capacity(92);
@@ -173,14 +205,14 @@ async fn srp_peer(server: &mut DuplexStream, corrupt_m2: bool, rejected_status: 
     assert_eq!(final_token.len(), 92);
     server.write_u32(92).await.expect("final outer");
     server.write_all(&final_token).await.expect("final token");
-    if !corrupt_m2 {
+    if !matches!(scenario, PeerScenario::CorruptProof) {
         server
-            .write_u32(u32::from(rejected_status))
+            .write_u32(u32::from(matches!(scenario, PeerScenario::RejectedStatus)))
             .await
             .expect("security result");
-        if rejected_status {
+        if matches!(scenario, PeerScenario::RejectedStatus) {
             server.write_u32(0).await.expect("empty failure reason");
-        } else {
+        } else if matches!(scenario, PeerScenario::HandoffMarker) {
             server.write_u8(0x42).await.expect("handoff marker");
         }
     }
@@ -189,7 +221,8 @@ async fn srp_peer(server: &mut DuplexStream, corrupt_m2: bool, rejected_status: 
 #[tokio::test]
 async fn exact_type_36_authenticates_and_hands_off_stream() {
     let (client, mut server) = duplex(4096);
-    let peer = tokio::spawn(async move { srp_peer(&mut server, false, false).await });
+    let peer =
+        tokio::spawn(async move { srp_peer(&mut server, PeerScenario::HandoffMarker).await });
     let authenticated = authenticate_apple_srp(client, credentials(), deadline())
         .await
         .expect("SRP success");
@@ -199,9 +232,85 @@ async fn exact_type_36_authenticates_and_hands_off_stream() {
 }
 
 #[tokio::test]
+async fn authenticated_stream_supports_capture_and_bounded_input() {
+    let (client, mut server) = duplex(4096);
+    let peer = tokio::spawn(async move {
+        srp_peer(&mut server, PeerScenario::FragmentedSession).await;
+        assert_eq!(server.read_u8().await.expect("ClientInit"), 1);
+        let mut init = Vec::new();
+        init.extend_from_slice(&1u16.to_be_bytes());
+        init.extend_from_slice(&1u16.to_be_bytes());
+        init.extend_from_slice(&[32, 24, 0, 1, 0, 255, 0, 255, 0, 255, 0, 8, 16, 0, 0, 0]);
+        init.extend_from_slice(&0u32.to_be_bytes());
+        server.write_all(&init).await.expect("ServerInit");
+
+        let mut pixel_format = [0; 20];
+        server
+            .read_exact(&mut pixel_format)
+            .await
+            .expect("pixel format");
+        assert_eq!(&pixel_format[..4], &[0; 4]);
+        let mut encodings = [0; 24];
+        server.read_exact(&mut encodings).await.expect("encodings");
+        assert_eq!(&encodings[..4], &[2, 0, 0, 5]);
+
+        let mut update_request = [0; 10];
+        server
+            .read_exact(&mut update_request)
+            .await
+            .expect("framebuffer request");
+        assert_eq!(update_request, [3, 0, 0, 0, 0, 0, 0, 1, 0, 1]);
+        server
+            .write_all(&[0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 255, 0, 0, 0])
+            .await
+            .expect("red framebuffer update");
+
+        let mut keys = [0; 16];
+        server
+            .read_exact(&mut keys)
+            .await
+            .expect("balanced key input");
+        assert_eq!(keys, [4, 1, 0, 0, 0, 0, 0, 65, 4, 0, 0, 0, 0, 0, 0, 65]);
+    });
+    let client = async {
+        let authenticated = authenticate_apple_srp(client, credentials(), deadline())
+            .await
+            .expect("SRP success");
+        let connection = authenticated
+            .initialize(SharingMode::Shared, deadline())
+            .await
+            .expect("framebuffer initialization");
+        let mut session = Session::new(connection);
+        let capture = session.capture(deadline()).await.expect("capture");
+        assert_eq!(
+            (capture.metadata().width, capture.metadata().height),
+            (1, 1)
+        );
+        let mut reader = png::Decoder::new(std::io::Cursor::new(capture.png()))
+            .read_info()
+            .expect("PNG header");
+        let mut pixels = vec![0; reader.output_buffer_size().expect("PNG capacity")];
+        let frame = reader.next_frame(&mut pixels).expect("PNG frame");
+        assert_eq!(&pixels[..frame.buffer_size()], &[255, 0, 0, 255]);
+        let mut outcome = InputOutcome::NotStarted;
+        session
+            .input(Input::Text("A"), &mut outcome, deadline())
+            .await
+            .expect("bounded key input");
+        assert_eq!(outcome, InputOutcome::Sent);
+        session.close();
+    };
+    let ((), ()) = tokio::time::timeout(Duration::from_secs(20), async {
+        tokio::join!(client, async { peer.await.expect("peer") })
+    })
+    .await
+    .expect("synthetic session deadline");
+}
+
+#[tokio::test]
 async fn corrupt_server_proof_never_yields_a_session() {
     let (client, mut server) = duplex(4096);
-    let peer = tokio::spawn(async move { srp_peer(&mut server, true, false).await });
+    let peer = tokio::spawn(async move { srp_peer(&mut server, PeerScenario::CorruptProof).await });
     let result = authenticate_apple_srp(client, credentials(), deadline()).await;
     assert!(matches!(result, Err(Error::AuthenticationFailed)));
     peer.await.expect("peer");
@@ -210,7 +319,8 @@ async fn corrupt_server_proof_never_yields_a_session() {
 #[tokio::test]
 async fn wrong_password_never_yields_a_session() {
     let (client, mut server) = duplex(4096);
-    let peer = tokio::spawn(async move { srp_peer(&mut server, false, false).await });
+    let peer =
+        tokio::spawn(async move { srp_peer(&mut server, PeerScenario::WrongPassword).await });
     let wrong = AppleSrpCredentials::new("test-user".into(), "wrong-password".into())
         .expect("fixed wrong credential");
     assert!(
@@ -224,7 +334,8 @@ async fn wrong_password_never_yields_a_session() {
 #[tokio::test]
 async fn rejected_security_result_never_yields_a_session() {
     let (client, mut server) = duplex(4096);
-    let peer = tokio::spawn(async move { srp_peer(&mut server, false, true).await });
+    let peer =
+        tokio::spawn(async move { srp_peer(&mut server, PeerScenario::RejectedStatus).await });
     let result = authenticate_apple_srp(client, credentials(), deadline()).await;
     assert!(matches!(result, Err(Error::AuthenticationFailed)));
     peer.await.expect("peer");
@@ -277,13 +388,7 @@ async fn unavailable_type_36_never_falls_back() {
 async fn malformed_challenge_is_rejected_before_password_work() {
     let (client, mut server) = duplex(512);
     let peer = tokio::spawn(async move {
-        negotiate(&mut server, &[36]).await;
-        assert_eq!(server.read_u8().await.expect("selection"), 36);
-        assert_eq!(server.read_u8().await.expect("branch"), 36);
-        let entry_len = server.read_u32().await.expect("entry length") as usize;
-        assert!(entry_len <= 266);
-        let mut entry = vec![0; entry_len];
-        server.read_exact(&mut entry).await.expect("entry");
+        read_username_entry(&mut server).await;
         server.write_u32(4).await.expect("blob length");
         server.write_u32(1).await.expect("incorrect inner length");
         let mut byte = [0];
@@ -292,6 +397,68 @@ async fn malformed_challenge_is_rejected_before_password_work() {
     let result = authenticate_apple_srp(client, credentials(), deadline()).await;
     assert!(matches!(result, Err(Error::InvalidAppleSrpParameters)));
     peer.await.expect("peer");
+}
+
+#[tokio::test]
+async fn oversized_challenge_is_rejected_without_reading_or_allocating_it() {
+    let (client, mut server) = duplex(512);
+    let peer = tokio::spawn(async move {
+        read_username_entry(&mut server).await;
+        server.write_u32(u32::MAX).await.expect("oversized length");
+        let mut byte = [0];
+        assert_eq!(server.read(&mut byte).await.expect("read close"), 0);
+    });
+    let result = authenticate_apple_srp(client, credentials(), deadline()).await;
+    assert!(matches!(result, Err(Error::InvalidAppleSrpParameters)));
+    peer.await.expect("peer");
+}
+
+#[tokio::test]
+async fn truncated_challenge_closes_the_owned_stream() {
+    let (client, mut server) = duplex(512);
+    let peer = tokio::spawn(async move {
+        read_username_entry(&mut server).await;
+        server.write_u32(10).await.expect("challenge length");
+        server
+            .write_all(&[0, 0, 0])
+            .await
+            .expect("partial challenge");
+        server.shutdown().await.expect("peer EOF");
+        let mut byte = [0];
+        assert_eq!(server.read(&mut byte).await.expect("read close"), 0);
+    });
+    let result = authenticate_apple_srp(client, credentials(), deadline()).await;
+    assert!(
+        matches!(result, Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::UnexpectedEof)
+    );
+    peer.await.expect("peer");
+}
+
+#[tokio::test]
+async fn cancellation_while_waiting_for_challenge_closes_the_owned_stream() {
+    let (client, mut server) = duplex(512);
+    let caller = tokio::spawn(authenticate_apple_srp(client, credentials(), deadline()));
+    read_username_entry(&mut server).await;
+    caller.abort();
+    assert!(matches!(caller.await, Err(error) if error.is_cancelled()));
+    let mut byte = [0];
+    assert_eq!(server.read(&mut byte).await.expect("read close"), 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn silent_challenge_peer_hits_the_shared_authentication_deadline() {
+    let (client, mut server) = duplex(512);
+    let caller = tokio::spawn(authenticate_apple_srp(client, credentials(), deadline()));
+    read_username_entry(&mut server).await;
+    tokio::time::advance(Duration::from_secs(21)).await;
+    assert!(matches!(
+        caller.await.expect("authentication task"),
+        Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::AppleSrpAuthentication
+        })
+    ));
+    let mut byte = [0];
+    assert_eq!(server.read(&mut byte).await.expect("read close"), 0);
 }
 
 #[tokio::test]

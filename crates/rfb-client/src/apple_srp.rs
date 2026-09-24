@@ -507,9 +507,21 @@ mod tests {
 
     #[tokio::test]
     #[allow(clippy::expect_used, reason = "fixed public protocol fixture")]
-    async fn zero_server_public_is_rejected_before_password_derivation() {
+    async fn invalid_server_public_values_are_rejected_before_password_derivation() {
         let mut bytes = challenge();
         bytes.get_mut(557..1069).expect("B fixture").fill(0);
+        let parsed = parse_challenge(&bytes).expect("valid lengths");
+        assert!(matches!(
+            expected_proof(&parsed, b"password", Instant::now()).await,
+            Err(Error::InvalidAppleSrpParameters)
+        ));
+
+        let mut bytes = challenge();
+        let modulus = bytes.get(7..519).expect("N fixture").to_vec();
+        bytes
+            .get_mut(557..1069)
+            .expect("B fixture")
+            .copy_from_slice(&modulus);
         let parsed = parse_challenge(&bytes).expect("valid lengths");
         assert!(matches!(
             expected_proof(&parsed, b"password", Instant::now()).await,
