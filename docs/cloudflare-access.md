@@ -2,8 +2,9 @@
 
 Cloudflare Access is a Connector setting for reusable Personal or Organization
 Service Tokens. Open **Connectors -> Private network** at
-`/connectors?scope=private-network`. The Cloudflare Access card in the catalog
-opens that scope in both the legacy tabs and the Connector Directory.
+`/connectors?scope=private-network`. The Cloudflare Access card in the legacy
+catalog opens that scope; the Connector Directory exposes it as the Private
+network tab.
 
 Cloudflare Access is not a directly usable Agent service. It has no Agent grant,
 account picker, connector authorization, chat trigger, or direct command. A
