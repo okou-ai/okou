@@ -36,6 +36,7 @@ import {
   linkAgentPhoneUser,
   normalizeAgentPhoneHandle,
   publishAgentPhoneUserChanged,
+  publishAgentPhoneUserLinked,
   resolveAgentPhoneUserLinkForEvent,
   sendAgentPhoneText,
   storeInboundAgentPhoneMessage,
@@ -623,13 +624,14 @@ const connectAgentPhone$ = command(
       );
     }
 
-    const writeDb = set(writeDb$);
-    const result = await linkAgentPhoneUser(writeDb, {
-      phoneHandle,
-      channel,
-      userId: auth.userId,
-      orgId: auth.orgId,
-      publicBrand: PUBLIC_BRAND,
+    const result = await set(writeDb$).transaction((tx) => {
+      return linkAgentPhoneUser(tx, {
+        phoneHandle,
+        channel,
+        userId: auth.userId,
+        orgId: auth.orgId,
+        publicBrand: PUBLIC_BRAND,
+      });
     });
     signal.throwIfAborted();
 
@@ -637,7 +639,7 @@ const connectAgentPhone$ = command(
       return connectConflict(result.reason);
     }
 
-    await publishAgentPhoneUserChanged(auth.userId);
+    await publishAgentPhoneUserLinked(auth.userId);
     signal.throwIfAborted();
 
     await tapError(
@@ -1059,7 +1061,7 @@ async function handleAgentPhoneConnectionCode(
   }
 
   if (result.kind === "linked") {
-    await publishAgentPhoneUserChanged(result.userId);
+    await publishAgentPhoneUserLinked(result.userId);
     signal.throwIfAborted();
   }
 

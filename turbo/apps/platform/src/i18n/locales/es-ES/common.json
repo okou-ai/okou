@@ -1461,6 +1461,11 @@
         },
         "earned": "{{amount}} conseguidos",
         "howRewardsWork": "Cómo funcionan las recompensas",
+        "imessage": {
+          "action": "Añadir",
+          "description": "Escribe a {{assistantName}} desde tu iPhone",
+          "name": "Añadir a iMessage"
+        },
         "inReview": "En revisión",
         "intro": {
           "checkin": {
@@ -3653,9 +3658,10 @@
       "agentphone": {
         "authorizedSender": "Remitente autorizado",
         "codeExpiry": "Caduca en 10 minutos",
+        "codeLabel": "Código",
         "connectAria": "Conectar teléfono",
-        "connectDescription": "Escanea el código o abre Mensajes y envía el código ya rellenado.",
-        "connectTitle": "Conectar teléfono",
+        "connectDescription": "Escanea con la cámara y envía el código ya rellenado.",
+        "connectTitle": "Escribe a {{assistantName}} desde tu iPhone",
         "copyAria": "Copiar {{phone}}",
         "copyCodeAria": "Copiar código de conexión {{code}}",
         "copyCodeError": "No se pudo copiar el código de conexión",
@@ -3666,13 +3672,12 @@
         "creatingCode": "Creando código de conexión…",
         "description": "Acceso por mensajes de texto a {{assistantName}}",
         "destination": "iMessage o SMS a",
-        "manualSend": "o envía",
-        "manualSendTo": "al",
         "openMessages": "Abrir Mensajes",
         "options": "Opciones de teléfono",
         "phoneLabel": "Teléfono",
         "qrTitle": "Escanea para abrir Mensajes con el código de conexión ya rellenado",
         "risk": "Usa iMessage cuando sea posible. Es posible que las respuestas por SMS y MMS no lleguen de forma fiable.",
+        "sendToLabel": "Enviar a",
         "tryAgain": "Intentar de nuevo"
       },
       "catalogDiagnostics": {
@@ -6677,9 +6682,6 @@
       "emailSubscription": {
         "description": "Recibe resúmenes, recordatorios y otras actualizaciones del espacio de trabajo por correo.",
         "descriptionWithEmail": "Recibe resúmenes, recordatorios y otras actualizaciones del espacio de trabajo en {{email}}.",
-        "loading": "Comprobando la suscripción por correo…",
-        "retryMessage": "No se pudo guardar o cargar tu suscripción por correo. Inténtalo de nuevo.",
-        "saving": "Guardando…",
         "sectionTitle": "Suscripciones por correo",
         "title": "Actualizaciones por correo",
         "unavailable": "Correo no disponible",

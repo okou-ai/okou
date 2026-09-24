@@ -1006,8 +1006,15 @@
     {
       "idx": 1221,
       "version": "7",
-      "when": 1790260530347,
-      "tag": "1221_discord_integration_foundation",
+      "when": 1790260335751,
+      "tag": "1221_get_started_imessage_quest",
+      "breakpoints": true
+    },
+    {
+      "idx": 1222,
+      "version": "7",
+      "when": 1790263477398,
+      "tag": "1222_discord_integration_foundation",
       "breakpoints": true
     }
   ]

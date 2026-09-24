@@ -20,8 +20,7 @@ CREATE TABLE "chat_discord_context" (
 	"thread_id" text,
 	"destination_channel_id" text NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL
-);
---> statement-breakpoint
+);--> statement-breakpoint
 CREATE TABLE "discord_chat_ingress" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"connection_id" uuid NOT NULL,
@@ -47,8 +46,7 @@ CREATE TABLE "discord_chat_ingress" (
 	CONSTRAINT "chk_discord_chat_ingress_retry_count" CHECK ("discord_chat_ingress"."retry_count" >= 0),
 	CONSTRAINT "chk_discord_chat_ingress_processing_attempt_count" CHECK ("discord_chat_ingress"."processing_attempt_count" >= 0),
 	CONSTRAINT "chk_discord_chat_ingress_claim" CHECK (("discord_chat_ingress"."status" = 'processing' AND "discord_chat_ingress"."claim_token" IS NOT NULL AND "discord_chat_ingress"."claimed_at" IS NOT NULL) OR ("discord_chat_ingress"."status" <> 'processing' AND "discord_chat_ingress"."claim_token" IS NULL AND "discord_chat_ingress"."claimed_at" IS NULL))
-);
---> statement-breakpoint
+);--> statement-breakpoint
 CREATE TABLE "discord_chat_thread_routes" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"connection_id" uuid NOT NULL,
@@ -61,8 +59,7 @@ CREATE TABLE "discord_chat_thread_routes" (
 	CONSTRAINT "uq_discord_chat_thread_routes_session" UNIQUE("connection_id","channel_id","session_key","user_id"),
 	CONSTRAINT "uq_discord_chat_thread_routes_connection" UNIQUE("id","connection_id"),
 	CONSTRAINT "uq_discord_chat_thread_routes_context" UNIQUE("id","connection_id","chat_thread_id")
-);
---> statement-breakpoint
+);--> statement-breakpoint
 CREATE TABLE "discord_org_connections" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"guild_id" varchar(255) NOT NULL,
@@ -73,8 +70,7 @@ CREATE TABLE "discord_org_connections" (
 	CONSTRAINT "uq_discord_org_connections_guild_user" UNIQUE("guild_id","user_id"),
 	CONSTRAINT "uq_discord_org_connections_owner" UNIQUE("id","user_id"),
 	CONSTRAINT "uq_discord_org_connections_sender_owner" UNIQUE("id","discord_user_id","user_id")
-);
---> statement-breakpoint
+);--> statement-breakpoint
 CREATE TABLE "discord_org_installations" (
 	"guild_id" varchar(255) PRIMARY KEY NOT NULL,
 	"guild_name" varchar(255),
@@ -84,8 +80,7 @@ CREATE TABLE "discord_org_installations" (
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "uq_discord_org_installations_org" UNIQUE("org_id")
-);
---> statement-breakpoint
+);--> statement-breakpoint
 CREATE TABLE "discord_user_agent_preferences" (
 	"user_id" text NOT NULL,
 	"org_id" text NOT NULL,
@@ -94,16 +89,14 @@ CREATE TABLE "discord_user_agent_preferences" (
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "discord_user_agent_preferences_user_id_org_id_pk" PRIMARY KEY("user_id","org_id")
-);
---> statement-breakpoint
+);--> statement-breakpoint
 CREATE TABLE "discord_user_dm_preferences" (
 	"discord_user_id" varchar(255) PRIMARY KEY NOT NULL,
 	"connection_id" uuid NOT NULL,
 	"user_id" text NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
-);
---> statement-breakpoint
+);--> statement-breakpoint
 ALTER TABLE "chat_discord_context" ADD CONSTRAINT "chat_discord_context_route_owner_fk" FOREIGN KEY ("route_id","connection_id","chat_thread_id") REFERENCES "public"."discord_chat_thread_routes"("id","connection_id","chat_thread_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "discord_chat_ingress" ADD CONSTRAINT "discord_chat_ingress_connection_id_discord_org_connections_id_fk" FOREIGN KEY ("connection_id") REFERENCES "public"."discord_org_connections"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "discord_chat_ingress" ADD CONSTRAINT "discord_chat_ingress_route_connection_fk" FOREIGN KEY ("route_id","connection_id") REFERENCES "public"."discord_chat_thread_routes"("id","connection_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

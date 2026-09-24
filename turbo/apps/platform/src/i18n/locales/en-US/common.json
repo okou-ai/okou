@@ -1437,6 +1437,11 @@
         },
         "earned": "{{amount}} earned",
         "howRewardsWork": "How rewards work",
+        "imessage": {
+          "action": "Add",
+          "description": "Text {{assistantName}} from your iPhone",
+          "name": "Add to iMessage"
+        },
         "inReview": "In review",
         "intro": {
           "checkin": {
@@ -3587,9 +3592,10 @@
       "agentphone": {
         "authorizedSender": "Authorized sender",
         "codeExpiry": "Expires in 10 minutes",
+        "codeLabel": "Code",
         "connectAria": "Connect phone",
-        "connectDescription": "Scan the code or open Messages, then send the prefilled code.",
-        "connectTitle": "Connect phone",
+        "connectDescription": "Scan with your camera, then send the prefilled code.",
+        "connectTitle": "Text {{assistantName}} from your iPhone",
         "copyAria": "Copy {{phone}}",
         "copyCodeAria": "Copy connection code {{code}}",
         "copyCodeError": "Failed to copy connection code",
@@ -3600,13 +3606,12 @@
         "creatingCode": "Creating connection code…",
         "description": "Text-message access to {{assistantName}}",
         "destination": "iMessage or SMS to",
-        "manualSend": "or send",
-        "manualSendTo": "to",
         "openMessages": "Open Messages",
         "options": "Phone options",
         "phoneLabel": "Phone",
         "qrTitle": "Scan to open Messages with the connection code ready",
         "risk": "Use iMessage when possible. SMS and MMS replies may not arrive reliably.",
+        "sendToLabel": "Send to",
         "tryAgain": "Try again"
       },
       "catalogDiagnostics": {
@@ -6604,9 +6609,6 @@
       "emailSubscription": {
         "description": "Receive briefs, reminders, and other workspace updates by email.",
         "descriptionWithEmail": "Receive briefs, reminders, and other workspace updates at {{email}}.",
-        "loading": "Checking email subscription…",
-        "retryMessage": "Could not save or load your email subscription. Try again.",
-        "saving": "Saving…",
         "sectionTitle": "Email subscriptions",
         "title": "Email updates",
         "unavailable": "Email unavailable",

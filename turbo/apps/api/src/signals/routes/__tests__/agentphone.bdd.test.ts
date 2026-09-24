@@ -10,6 +10,7 @@ import { HttpResponse, http } from "msw";
 import { describe, expect, it, beforeEach } from "vitest";
 
 import { DEFAULT_VIDEO_MODEL } from "@okouai/core/video-model-catalog";
+import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
@@ -46,6 +47,10 @@ import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  readGetStartedStatus,
+  setGetStartedEnabled,
+} from "./helpers/get-started";
 
 const context = testContext();
 interface LinkedAgentPhoneActor {
@@ -539,6 +544,79 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await expect(
       integrations.getAgentPhoneLinkStatus(actor),
     ).resolves.toMatchObject({ linked: true, phoneHandle: phone });
+  });
+
+  it("rewards the Get started iMessage quest once, for a new link only", async () => {
+    const bdd = createBddApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    // The quest is personal, so a member who is not an admin is offered it.
+    const actor = bdd.user({ orgRole: "org:member" });
+    const earlyAdopter = bdd.user();
+    integrations.configureAgentPhoneProvider();
+    integrations.configureAgentPhoneWebhook();
+    const sends = ap.captureAgentPhoneSends();
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+
+    async function linkWithCode(user: ApiTestUser): Promise<void> {
+      const issued = await integrations.requestCreateAgentPhoneLinkCode(
+        user,
+        [200],
+      );
+      const beforeLink = sends.messages.length;
+      await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: uniquePhoneHandle(),
+        body: issued.body.code,
+        isGroup: false,
+      });
+      expectConnectedWelcome(sends.messages.slice(beforeLink));
+    }
+    async function imessageQuest(user: ApiTestUser) {
+      const status = await readGetStartedStatus(context, user);
+      return status.quests.find((quest) => {
+        return quest.key === "imessage";
+      });
+    }
+
+    // A phone linked before the quest existed is not credited afterwards.
+    await linkWithCode(earlyAdopter);
+    await setGetStartedEnabled(context, earlyAdopter);
+    await expect(imessageQuest(earlyAdopter)).resolves.toMatchObject({
+      claimedCount: 0,
+      canEarnMore: true,
+    });
+
+    await setGetStartedEnabled(context, actor);
+    await expect(imessageQuest(actor)).resolves.toStrictEqual({
+      key: "imessage",
+      rewardAmount: 1000,
+      rewardTarget: "user",
+      claimedCount: 0,
+      limit: 1,
+      earnedCredits: 0,
+      canEarnMore: true,
+      pendingCount: 0,
+    });
+
+    await linkWithCode(actor);
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      GET_STARTED_REWARDS_CHANGED_EVENT,
+      null,
+    );
+    const earned = {
+      claimedCount: 1,
+      earnedCredits: 1000,
+      canEarnMore: false,
+      pendingCount: 0,
+    };
+    await expect(imessageQuest(actor)).resolves.toMatchObject(earned);
+
+    // Unlinking and linking another phone is a new link, not a new reward.
+    await integrations.requestUnlinkAgentPhone(actor, [204]);
+    await linkWithCode(actor);
+    await expect(imessageQuest(actor)).resolves.toMatchObject(earned);
   });
 
   it("rejects an expired connection code", async () => {

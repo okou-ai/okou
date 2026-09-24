@@ -3224,6 +3224,9 @@ describe("personal priority connection boundaries", () => {
         type === "claude-code-oauth-token" ? holdAnthropicInference() : null;
       const absent = await f.start();
       await inference?.entered;
+      await expect(runs.readRun(f.actor, absent)).resolves.toMatchObject({
+        status: "pending",
+      });
       await expect(readRunModelSourceFixture(absent)).resolves.toMatchObject({
         modelProvider:
           type === "codex-oauth-token" ? "openai-api-key" : "anthropic-api-key",

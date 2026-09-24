@@ -2,7 +2,7 @@
 name = "runner-supervisor"
 version = "0.1.5"
 edition.workspace = true
-description = "Runner start-loop idle, heartbeat, and orphan orchestration"
+description = "Runner start-loop idle, finalization, heartbeat, and orphan orchestration"
 
 [features]
 test-support = []
@@ -13,7 +13,9 @@ chrono = { workspace = true, features = ["now"] }
 runner-executor.workspace = true
 runner-host.workspace = true
 runner-lifecycle.workspace = true
+runner-network.workspace = true
 runner-provider.workspace = true
+runner-storage.workspace = true
 runner-types.workspace = true
 sandbox.workspace = true
 futures-util = { workspace = true, features = ["async-await", "std"] }
@@ -23,9 +25,13 @@ tokio-util = { workspace = true, features = ["rt"] }
 tracing = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
+guest-contracts.workspace = true
+hex.workspace = true
 runner-lifecycle = { workspace = true, features = ["test-support"] }
-runner-storage.workspace = true
+runner-network = { workspace = true, features = ["test-support"] }
+runner-storage = { workspace = true, features = ["test-support"] }
 sandbox-mock.workspace = true
+sha2 = { workspace = true, features = ["alloc", "oid"] }
 serde_json = { workspace = true, features = ["std"] }
 async-trait.workspace = true
 tempfile = { workspace = true, features = ["getrandom"] }
