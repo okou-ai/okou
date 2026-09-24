@@ -797,6 +797,10 @@ export default [
       // suspended at that boundary; deletion stays the real endpoint and the
       // route suite owns the constructible reuse cases.
       "src/signals/services/__tests__/workflow-user-automation-thread.service.test.ts",
+      // #36466's old/corrupt cache JSONB and active claim cannot be created by
+      // any product endpoint. The suite seeds only those states directly and
+      // observes recovery through the real GET and scoped cron routes.
+      "src/signals/services/__tests__/home-task-recommendations-cache.service.test.ts",
     ],
     rules: {
       "no-restricted-syntax": [
@@ -994,6 +998,9 @@ export default [
       // orders on the same two rows, which needs a suspended PostgreSQL
       // transaction; the reuse route suite owns the constructible cases.
       "src/signals/services/__tests__/workflow-user-automation-thread.service.test.ts",
+      // #36466's old/corrupt cache JSONB and active claim are not HTTP inputs;
+      // only those states are seeded directly, then the real routes are asserted.
+      "src/signals/services/__tests__/home-task-recommendations-cache.service.test.ts",
     ],
     rules: {
       "no-restricted-imports": [
