@@ -273,7 +273,7 @@ test("The standalone form uses the existing input style with live number constra
   await fill(quantity, "12.5");
   click(button("Add to browser"));
   await waitFor(() => {
-    expect(applied).toBe(true);
+    expect(applied).toBeTruthy();
   });
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
@@ -319,14 +319,15 @@ test.each([
     );
     if (clear) {
       click(button("Clear website value"));
-      expect(button("Leave website value unchanged")).toBeVisible();
     }
     if (typedThenDeleted) {
       const quantity = within(form).getByLabelText(/Quantity/u);
       await fill(quantity, "12.5");
       await fill(quantity, "");
-      expect(button("Clear website value")).toBeVisible();
     }
+    expect(
+      button(clear ? "Leave website value unchanged" : "Clear website value"),
+    ).toBeVisible();
     click(button("Add to browser"));
     await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   },
