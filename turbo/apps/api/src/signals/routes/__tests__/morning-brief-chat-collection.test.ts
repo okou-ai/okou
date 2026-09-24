@@ -90,12 +90,12 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
     createRouteMocks(context).clerk.session(member.userId, member.orgId);
   }
 
-  async function enableSimpleMorningBrief(member: {
+  async function enableNativeMorningBrief(member: {
     readonly orgId: string;
     readonly userId: string;
   }) {
     await updateFeatureSwitchesForUser(context, member, {
-      [FeatureSwitchKey.SimpleMorningBrief]: true,
+      [FeatureSwitchKey.NativeMorningBrief]: true,
     });
   }
 
@@ -164,7 +164,7 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
     } = {},
   ) {
     const member = await seedMember(options);
-    await enableSimpleMorningBrief(member);
+    await enableNativeMorningBrief(member);
     return member;
   }
 
@@ -344,7 +344,7 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
 
   it("refuses a member with no enabled Morning Brief", async () => {
     const member = await seedMember({ enabled: false });
-    await enableSimpleMorningBrief(member);
+    await enableNativeMorningBrief(member);
 
     await expect(refuseCollection(member)).resolves.toMatchObject({
       error: { code: "FORBIDDEN" },
@@ -474,7 +474,7 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
 
   it("releases nothing from the destination thread or any excluded thread", async () => {
     const member = await seedMember();
-    await enableSimpleMorningBrief(member);
+    await enableNativeMorningBrief(member);
     const destination = await seedUnreadThread(member, {
       prompt: "yesterday's brief request",
       reply: "Yesterday's Morning Brief.",

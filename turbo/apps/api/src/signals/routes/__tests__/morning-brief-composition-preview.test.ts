@@ -158,7 +158,7 @@ async function fixture(
   await updateFeatureSwitchesForUser(
     context,
     { orgId, userId },
-    { [FeatureSwitchKey.SimpleMorningBrief]: true },
+    { [FeatureSwitchKey.NativeMorningBrief]: true },
   );
   mockClerkMembership(orgId, userId);
   return { orgId, userId, headers: agentToken(userId, orgId) };

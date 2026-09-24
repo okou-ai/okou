@@ -17,7 +17,7 @@ carry the exact Markdown that was accepted.
 `POST /api/morning-brief/preview/delivery` is the only entrypoint today. It is
 registered in the ordinary API route table and gated by
 `isPreviewEndpointAllowed` **before authentication**, so production answers 404
-even when `simpleMorningBrief` is enabled for the caller.
+even when `FeatureSwitchKey.NativeMorningBrief` is enabled for the caller.
 
 ## Resolving the result reference
 

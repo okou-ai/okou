@@ -418,7 +418,7 @@ async function setupOwner(timezone = "Asia/Shanghai"): Promise<Fixture> {
   await updateFeatureSwitchesForUser(
     context,
     { orgId: actor.orgId, userId: actor.userId },
-    { [FeatureSwitchKey.SimpleMorningBrief]: true },
+    { [FeatureSwitchKey.NativeMorningBrief]: true },
   );
   return {
     actor: { ...actor, orgId: actor.orgId },
@@ -640,7 +640,7 @@ describe("Morning Brief calendar collection preview", () => {
     await updateFeatureSwitchesForUser(
       context,
       { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
-      { [FeatureSwitchKey.SimpleMorningBrief]: false },
+      { [FeatureSwitchKey.NativeMorningBrief]: false },
     );
     const switchedOff = await collect(fixture, [404]);
     expect(switchedOff.status).toBe(404);
@@ -656,7 +656,7 @@ describe("Morning Brief calendar collection preview", () => {
     await updateFeatureSwitchesForUser(
       context,
       { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
-      { [FeatureSwitchKey.SimpleMorningBrief]: false },
+      { [FeatureSwitchKey.NativeMorningBrief]: false },
     );
     const switchedOff = await collect(fixture, [403]);
     expect(switchedOff.status).toBe(403);
@@ -664,7 +664,7 @@ describe("Morning Brief calendar collection preview", () => {
     await updateFeatureSwitchesForUser(
       context,
       { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
-      { [FeatureSwitchKey.SimpleMorningBrief]: true },
+      { [FeatureSwitchKey.NativeMorningBrief]: true },
     );
     await setMorningBriefEnabledFixture(fixture.workflowId, false);
     const disabled = await collect(fixture, [403]);

@@ -449,11 +449,11 @@ describe("isFeatureEnabled", () => {
     });
   });
 
-  it("should select simple Morning Brief for staff while preserving preferences and overrides", () => {
-    expect(FeatureSwitchKey.SimpleMorningBrief).toBe("simpleMorningBrief");
+  it("should select native Morning Brief for staff while preserving the persisted key and overrides", () => {
+    expect(FeatureSwitchKey.NativeMorningBrief).toBe("simpleMorningBrief");
     for (const context of [{}, { orgId: "org_nonexistent" }]) {
       expect(
-        isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, context),
+        isFeatureEnabled(FeatureSwitchKey.NativeMorningBrief, context),
       ).toBe(false);
       // Selecting the replacement implementation never changes whether the
       // user has Morning Brief.
@@ -462,26 +462,28 @@ describe("isFeatureEnabled", () => {
       );
     }
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
-    expect(isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, staff)).toBe(
+    expect(isFeatureEnabled(FeatureSwitchKey.NativeMorningBrief, staff)).toBe(
       true,
     );
     expect(isFeatureEnabled(FeatureSwitchKey.MorningBrief, staff)).toBe(true);
     expect(
-      isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, {
+      isFeatureEnabled(FeatureSwitchKey.NativeMorningBrief, {
         ...staff,
-        overrides: { [FeatureSwitchKey.SimpleMorningBrief]: false },
+        overrides: { [FeatureSwitchKey.NativeMorningBrief]: false },
       }),
     ).toBe(false);
     expect(
-      isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, {
+      isFeatureEnabled(FeatureSwitchKey.NativeMorningBrief, {
         orgId: "org_nonexistent",
-        overrides: { [FeatureSwitchKey.SimpleMorningBrief]: true },
+        overrides: { [FeatureSwitchKey.NativeMorningBrief]: true },
       }),
     ).toBe(true);
     expect(
-      getFeatureSwitchMetadata()[FeatureSwitchKey.SimpleMorningBrief]
-        ?.rolloutStage,
-    ).toBe("beta");
+      getFeatureSwitchMetadata()[FeatureSwitchKey.NativeMorningBrief],
+    ).toMatchObject({
+      displayName: "Native Morning Brief",
+      rolloutStage: "beta",
+    });
   });
 
   it("should return true when orgId matches even if userId does not", () => {

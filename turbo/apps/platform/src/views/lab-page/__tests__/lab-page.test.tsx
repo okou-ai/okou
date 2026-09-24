@@ -91,6 +91,10 @@ test("Lab groups every feature by rollout stage with a switch", async () => {
   expect(
     within(beta).getByText(FeatureSwitchKey.CustomTemplates),
   ).toBeVisible();
+  expect(within(beta).getByText("Native Morning Brief")).toBeVisible();
+  expect(
+    screen.queryByText(FeatureSwitchKey.NativeMorningBrief),
+  ).not.toBeInTheDocument();
   expect(
     within(alpha).getByText(FeatureSwitchKey.AhrefsConnector),
   ).toBeVisible();

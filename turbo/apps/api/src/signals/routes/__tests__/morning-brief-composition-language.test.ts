@@ -245,7 +245,7 @@ async function briefMember(): Promise<Member> {
   await updateFeatureSwitchesForUser(
     context,
     { orgId: seeded.orgId, userId: seeded.userId },
-    { [FeatureSwitchKey.SimpleMorningBrief]: true },
+    { [FeatureSwitchKey.NativeMorningBrief]: true },
   );
   const member = {
     orgId: seeded.orgId,

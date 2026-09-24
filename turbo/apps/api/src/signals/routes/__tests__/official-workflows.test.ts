@@ -134,7 +134,7 @@ import {
 } from "../cron-official-workflow-catalog";
 import { officialWorkflowRoutes } from "../official-workflows";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
-import { createScopedMorningBriefCronRoutesForTest } from "../cron-execute-morning-briefs";
+import { createScopedInlineMorningBriefCronRoutesForTest } from "../cron-execute-morning-briefs";
 import { testOfficialWorkflowCatalogStateRoutes } from "../test-official-workflow-catalog-state";
 import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
@@ -1744,7 +1744,7 @@ async function setMorningBriefEnabled(
   );
 }
 
-async function setSimpleMorningBriefEnabled(
+async function setNativeMorningBriefEnabled(
   actor: ApiTestUser,
   enabled: boolean,
 ): Promise<void> {
@@ -1754,7 +1754,7 @@ async function setSimpleMorningBriefEnabled(
   await updateFeatureSwitchesForUser(
     context,
     { orgId: actor.orgId, userId: actor.userId },
-    { [FeatureSwitchKey.SimpleMorningBrief]: enabled },
+    { [FeatureSwitchKey.NativeMorningBrief]: enabled },
   );
 }
 
@@ -2820,7 +2820,7 @@ describe("Morning Brief native preference projection", () => {
 
     // Turning the switch on projects nothing by itself, so the live legacy
     // state still answers and the read stays a read.
-    await setSimpleMorningBriefEnabled(actor, true);
+    await setNativeMorningBriefEnabled(actor, true);
     const withoutProjection = await readBriefPreference(actor);
     expect(withoutProjection.body).toStrictEqual(legacyEnabled.body);
 
@@ -2857,10 +2857,10 @@ describe("Morning Brief native preference projection", () => {
 
     // Switching the implementation off and on again changes nothing the user
     // can see, and discards no choice they made while it was on.
-    await setSimpleMorningBriefEnabled(actor, false);
+    await setNativeMorningBriefEnabled(actor, false);
     const withSwitchOff = await readBriefPreference(actor);
     expect(withSwitchOff.body).toStrictEqual(projected.body);
-    await setSimpleMorningBriefEnabled(actor, true);
+    await setNativeMorningBriefEnabled(actor, true);
     const withSwitchOn = await readBriefPreference(actor);
     expect(withSwitchOn.body).toStrictEqual(projected.body);
 
@@ -2876,7 +2876,7 @@ describe("Morning Brief native preference projection", () => {
       nextRunAt: expect.any(String),
     });
     expect(afterTimezone.body.nextRunAt).not.toBe(projected.body.nextRunAt);
-    await setSimpleMorningBriefEnabled(actor, false);
+    await setNativeMorningBriefEnabled(actor, false);
     const legacyAfterTimezone = await readBriefPreference(actor);
     expect(legacyAfterTimezone.body).toStrictEqual(afterTimezone.body);
   });
@@ -2894,7 +2894,7 @@ describe("Morning Brief native preference projection", () => {
     const headers = authHeaders(actor);
     await setOfficialWorkflowsEnabled(actor, false);
     await setMorningBriefEnabled(actor, true);
-    await setSimpleMorningBriefEnabled(actor, true);
+    await setNativeMorningBriefEnabled(actor, true);
     await accept(
       morningBriefPreferenceClient().update({
         headers,
@@ -2905,7 +2905,7 @@ describe("Morning Brief native preference projection", () => {
 
     // Roll the implementation switch back off, exactly like an older API
     // binary or a rollback: the legacy writes still happen, the copy does not.
-    await setSimpleMorningBriefEnabled(actor, false);
+    await setNativeMorningBriefEnabled(actor, false);
     await accept(
       morningBriefPreferenceClient().update({
         headers,
@@ -2918,7 +2918,7 @@ describe("Morning Brief native preference projection", () => {
 
     // The retained copy still describes an enabled Asia/Shanghai brief with a
     // next run. None of it may reach the user.
-    await setSimpleMorningBriefEnabled(actor, true);
+    await setNativeMorningBriefEnabled(actor, true);
     const read = await readBriefPreference(actor);
     expect(read.body).toStrictEqual({
       status: "paused",
@@ -2948,7 +2948,7 @@ describe("Morning Brief native preference projection", () => {
     const headers = authHeaders(actor);
     await setOfficialWorkflowsEnabled(actor, false);
     await setMorningBriefEnabled(actor, true);
-    await setSimpleMorningBriefEnabled(actor, true);
+    await setNativeMorningBriefEnabled(actor, true);
     await accept(
       morningBriefPreferenceClient().update({
         headers,
@@ -2999,7 +2999,7 @@ describe("Morning Brief native preference projection", () => {
   it("keeps absent, unavailable and opt-out states on their legacy answers", async () => {
     const { actor } = await workflowBdd.setupWorkflowOrg();
     await setMorningBriefEnabled(actor, true);
-    await setSimpleMorningBriefEnabled(actor, true);
+    await setNativeMorningBriefEnabled(actor, true);
     const headers = authHeaders(actor);
 
     const unavailable = await readBriefPreference(actor);
@@ -3041,7 +3041,7 @@ describe("Morning Brief native preference projection", () => {
     for (const actor of [enabledMember.actor, pausedMember.actor]) {
       await setOfficialWorkflowsEnabled(actor, false);
       await setMorningBriefEnabled(actor, true);
-      await setSimpleMorningBriefEnabled(actor, true);
+      await setNativeMorningBriefEnabled(actor, true);
       await accept(
         morningBriefPreferenceClient().update({
           headers: authHeaders(actor),
@@ -3111,7 +3111,7 @@ describe("Morning Brief native preference projection", () => {
 
     // Copy the state now that the brief owns a destination thread. Asking for
     // the state it already has exercises the no-op completion path.
-    await setSimpleMorningBriefEnabled(actor, true);
+    await setNativeMorningBriefEnabled(actor, true);
     const bound = await accept(
       morningBriefPreferenceClient().update({
         headers,
@@ -3163,7 +3163,7 @@ describe("Morning Brief native preference projection", () => {
     }
     await setOfficialWorkflowsEnabled(actor, false);
     await setMorningBriefEnabled(actor, true);
-    await setSimpleMorningBriefEnabled(actor, true);
+    await setNativeMorningBriefEnabled(actor, true);
     const enabled = await accept(
       morningBriefPreferenceClient().update({
         headers: authHeaders(actor),
@@ -3427,7 +3427,7 @@ describe("Morning Brief legacy writer fences", () => {
     if (!automation) {
       throw new Error("Expected the selected Morning Brief automation");
     }
-    await setSimpleMorningBriefEnabled(actor, true);
+    await setNativeMorningBriefEnabled(actor, true);
     return {
       actor,
       owner: { orgId: actor.orgId, userId: actor.userId },
@@ -3627,7 +3627,7 @@ async function prepareProjectedBrief() {
   );
   await setOfficialWorkflowsEnabled(actor, false);
   await setMorningBriefEnabled(actor, true);
-  await setSimpleMorningBriefEnabled(actor, true);
+  await setNativeMorningBriefEnabled(actor, true);
   const enabled = await accept(
     morningBriefPreferenceClient().update({ headers, body: { enabled: true } }),
     [200],
@@ -3658,9 +3658,9 @@ async function expectChoiceSurvivesImplementationSwitch(
   actor: ApiTestUser,
   expected: Awaited<ReturnType<typeof readBriefPreference>>["body"],
 ): Promise<void> {
-  await setSimpleMorningBriefEnabled(actor, false);
+  await setNativeMorningBriefEnabled(actor, false);
   expect((await readBriefPreference(actor)).body).toStrictEqual(expected);
-  await setSimpleMorningBriefEnabled(actor, true);
+  await setNativeMorningBriefEnabled(actor, true);
   expect((await readBriefPreference(actor)).body).toStrictEqual(expected);
 }
 
@@ -3788,7 +3788,7 @@ async function tickNativeMorningBrief(actor: ApiTestUser) {
   return await accept(
     setupApp({
       context,
-      routes: createScopedMorningBriefCronRoutesForTest({
+      routes: createScopedInlineMorningBriefCronRoutesForTest({
         orgId: actor.orgId,
         userId: actor.userId,
       }),

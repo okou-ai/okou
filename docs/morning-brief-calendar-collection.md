@@ -310,7 +310,7 @@ call this same collector internally under occurrence ownership.
 
 ## Rollout, scale and compatibility
 
-`simpleMorningBrief` stays default-off, and the preview route is unavailable in
+`FeatureSwitchKey.NativeMorningBrief` stays default-off, and the preview route is unavailable in
 production regardless of it. Existing Settings and the legacy scheduler remain
 authoritative; nothing here changes a user's preference, schedule, timezone or
 thread.

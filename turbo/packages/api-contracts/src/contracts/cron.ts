@@ -611,7 +611,6 @@ export const internalMorningBriefWorkerContract = c.router({
       202: z.object({ accepted: z.literal(true) }),
       400: apiErrorSchema,
       401: apiErrorSchema,
-      503: apiErrorSchema,
     },
     summary:
       "Accept one authenticated native Morning Brief slot for independent execution",

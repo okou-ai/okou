@@ -32,7 +32,7 @@ authorized invocation. Schedule ownership stays with the legacy automation.
 API route table, so an operator can really invoke it on a development server or
 a protected preview deployment. `isPreviewEndpointAllowed` runs before
 authentication, so production answers `404` without doing any auth work, and it
-stays `404` even when `simpleMorningBrief` is enabled for the caller. On a
+stays `404` even when `FeatureSwitchKey.NativeMorningBrief` is enabled for the caller. On a
 preview deployment the request additionally needs the deployment's
 protection-bypass secret. That secret is environment protection, never owner
 authentication.
@@ -42,7 +42,7 @@ authenticated organization and user; the native `slack:read` capability is
 required; and the only input is a scheduled anchor. No owner, workspace,
 channel, credential or `CRON_SECRET` can be supplied.
 
-Admission resolves, in order: the `simpleMorningBrief` switch for this owner,
+Admission resolves, in order: the `FeatureSwitchKey.NativeMorningBrief` switch for this owner,
 the canonical installed-and-enabled Morning Brief, the member's timezone, the
 installation's Agent, a fresh exact-member Clerk membership, and the native
 Slack binding. Each failure is an explicit non-executing outcome returned before
@@ -219,7 +219,7 @@ before cleanup may still be observed by its own caller afterwards, and no
 wall-clock guarantee is claimed against arbitrary external revocation.
 
 **Deploy order.** The stamp is migration 1154, an additive nullable column. The
-cleanup writers are unconditional and are not behind `simpleMorningBrief`, so
+cleanup writers are unconditional and are not behind `FeatureSwitchKey.NativeMorningBrief`, so
 the migration must ship before the API artifact that writes them; an older
 artifact simply never reads or writes the column. See
 [deployment compatibility](deployment-compatibility.md#morning-brief-collection-revocation-stamp-34860).

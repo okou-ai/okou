@@ -22,7 +22,7 @@ import {
  * It is registered in the ordinary API route table, so an operator can actually
  * invoke it on a development server or a protected preview deployment. The
  * environment gate runs before authentication, so production answers 404
- * without doing any auth work, and it stays 404 even when `simpleMorningBrief`
+ * without doing any auth work, and it stays 404 even when `FeatureSwitchKey.NativeMorningBrief`
  * is on for the caller.
  *
  * Everything else about this route is ordinary. The owner comes from the
@@ -46,7 +46,7 @@ const collect$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
   if (
-    !isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, {
+    !isFeatureEnabled(FeatureSwitchKey.NativeMorningBrief, {
       orgId: auth.orgId,
       userId: auth.userId,
       overrides,

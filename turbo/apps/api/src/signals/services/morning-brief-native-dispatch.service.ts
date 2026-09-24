@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, hkdfSync, timingSafeEqual } from "node:crypto";
 
 import { env } from "../../lib/env";
 import { internalApiBaseUrl } from "../../lib/internal-api-url";
@@ -10,13 +10,23 @@ import type { NativeDispatchTask } from "./morning-brief-native-executor.service
 const log = logger("MorningBriefNativeDispatch");
 const WORKER_PATH = "/api/internal/morning-brief-worker";
 const AUTH_SKEW_MS = 60_000;
+const WORKER_KEY_CONTEXT = "okou:morning-brief-worker-dispatch:v1";
 
-export function nativeHttpFanoutEnabled(): boolean {
-  return env("MORNING_BRIEF_HTTP_FANOUT") === "true";
+function workerSigningKey(): Buffer {
+  // The full configured string is the HKDF input; permissive hex decoding of
+  // a malformed value could otherwise produce a predictable empty key.
+  return Buffer.from(
+    hkdfSync(
+      "sha256",
+      env("SECRETS_ENCRYPTION_KEY"),
+      "",
+      WORKER_KEY_CONTEXT,
+      32,
+    ),
+  );
 }
 
 function signature(
-  secret: string,
   task: {
     readonly orgId: string;
     readonly userId: string;
@@ -24,7 +34,7 @@ function signature(
   },
   timestamp: string,
 ): Buffer {
-  return createHmac("sha256", secret)
+  return createHmac("sha256", workerSigningKey())
     .update(`POST\n${WORKER_PATH}\n${timestamp}\n${JSON.stringify(task)}`)
     .digest();
 }
@@ -39,9 +49,7 @@ export function verifyNativeWorkerDispatch(
   timestamp: string | undefined,
   digest: string | undefined,
 ): boolean {
-  const secret = env("MORNING_BRIEF_WORKER_SECRET");
   if (
-    !secret ||
     !timestamp ||
     !digest ||
     !/^\d{13}$/.test(timestamp) ||
@@ -53,7 +61,7 @@ export function verifyNativeWorkerDispatch(
     return false;
   }
   const actual = Buffer.from(digest, "hex");
-  const expected = signature(secret, task, timestamp);
+  const expected = signature(task, timestamp);
   return timingSafeEqual(actual, expected);
 }
 
@@ -62,10 +70,6 @@ export async function dispatchNativeWorker(
   task: NativeDispatchTask,
   signal: AbortSignal,
 ): Promise<boolean> {
-  const secret = env("MORNING_BRIEF_WORKER_SECRET");
-  if (!secret) {
-    throw new Error("Morning Brief worker dispatch secret is not configured");
-  }
   const payload = {
     orgId: task.orgId,
     userId: task.userId,
@@ -78,11 +82,9 @@ export async function dispatchNativeWorker(
       headers: {
         "content-type": "application/json",
         "x-morning-brief-timestamp": timestamp,
-        "x-morning-brief-signature": signature(
-          secret,
-          payload,
-          timestamp,
-        ).toString("hex"),
+        "x-morning-brief-signature": signature(payload, timestamp).toString(
+          "hex",
+        ),
       },
       body: JSON.stringify(payload),
       signal: AbortSignal.any([signal, AbortSignal.timeout(2500)]),

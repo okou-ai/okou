@@ -22,7 +22,7 @@ import {
  * It is registered in the ordinary API route table, so an operator can actually
  * invoke it on a development server or a protected preview deployment. The
  * environment gate runs before authentication, so production answers 404
- * without doing any auth work, and it stays 404 even when `simpleMorningBrief`
+ * without doing any auth work, and it stays 404 even when `FeatureSwitchKey.NativeMorningBrief`
  * is on for the caller.
  *
  * Everything else about this route is ordinary: the owner comes from the

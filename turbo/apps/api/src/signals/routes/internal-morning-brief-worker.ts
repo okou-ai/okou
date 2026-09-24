@@ -8,10 +8,7 @@ import { waitUntil } from "../context/wait-until";
 import { writeDb$ } from "../external/db";
 import { settleIncludingAbort } from "../utils";
 import type { RouteEntry } from "../route-entry";
-import {
-  nativeHttpFanoutEnabled,
-  verifyNativeWorkerDispatch,
-} from "../services/morning-brief-native-dispatch.service";
+import { verifyNativeWorkerDispatch } from "../services/morning-brief-native-dispatch.service";
 import { executeNativeMorningBriefTick$ } from "../services/morning-brief-native-executor.service";
 import {
   executeNativeMorningBriefSlot$,
@@ -44,18 +41,6 @@ const execute$ = command(async ({ get, set }, signal: AbortSignal) => {
       },
     };
   }
-  if (!nativeHttpFanoutEnabled()) {
-    return {
-      status: 503 as const,
-      body: {
-        error: {
-          code: "SERVICE_UNAVAILABLE",
-          message: "Worker dispatch is disabled",
-        },
-      },
-    };
-  }
-
   const owner = { orgId: body.orgId, userId: body.userId };
   const db = set(writeDb$);
   const deps = productionNativeTickDependencies({

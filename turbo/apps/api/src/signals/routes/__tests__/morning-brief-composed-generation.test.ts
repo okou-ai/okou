@@ -245,7 +245,7 @@ async function seedOwnerWithoutConnectors(): Promise<Fixture> {
   await updateFeatureSwitchesForUser(
     context,
     { userId, orgId },
-    { [FeatureSwitchKey.SimpleMorningBrief]: true },
+    { [FeatureSwitchKey.NativeMorningBrief]: true },
   );
   mockOptionalEnv("OPENROUTER_API_KEY", "sk-test-platform-key");
   return {

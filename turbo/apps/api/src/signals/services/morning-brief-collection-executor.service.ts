@@ -319,7 +319,7 @@ async function resolveLocalMorningBriefInstallation(
     owner.userId,
   );
   if (
-    !isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, featureSwitchContext)
+    !isFeatureEnabled(FeatureSwitchKey.NativeMorningBrief, featureSwitchContext)
   ) {
     return { kind: "not-executed", reason: "feature-disabled" };
   }
