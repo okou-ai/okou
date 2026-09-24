@@ -12,6 +12,7 @@ export const DiscordPermission = {
   AttachFiles: 1n << 15n,
   ReadMessageHistory: 1n << 16n,
   ManageThreads: 1n << 34n,
+  CreatePublicThreads: 1n << 35n,
   SendMessagesInThreads: 1n << 38n,
 } as const;
 

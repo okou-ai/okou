@@ -107,7 +107,7 @@ export function discordSharedChannelPermissions(
   channel: DiscordChannel,
   mode: DiscordAccessMode,
   thread: boolean,
-  attachFiles = false,
+  requirements: { attachFiles?: boolean; createPublicThread?: boolean } = {},
 ): { user: bigint; bot: bigint } | null {
   if (channel.guild_id !== access.guild.id) {
     return null;
@@ -137,7 +137,10 @@ export function discordSharedChannelPermissions(
       ? DiscordPermission.SendMessagesInThreads
       : DiscordPermission.SendMessages;
   }
-  if (attachFiles) {
+  if (requirements.createPublicThread) {
+    required |= DiscordPermission.CreatePublicThreads;
+  }
+  if (requirements.attachFiles) {
     required |= DiscordPermission.AttachFiles;
   }
   return hasDiscordPermission(user, required) &&
@@ -154,6 +157,7 @@ interface DiscordProviderAccessArgs {
   channelId: string;
   mode: DiscordAccessMode;
   attachFiles?: boolean;
+  createPublicThread?: boolean;
 }
 
 async function resolvePermissionChannel(
@@ -202,6 +206,13 @@ async function resolvePermissionChannel(
   return { kind: "allowed", channel };
 }
 
+function canStartPublicThread(
+  args: DiscordProviderAccessArgs,
+  channel: DiscordChannel,
+) {
+  return args.mode === "write" && [0, 5].includes(channel.type);
+}
+
 export async function resolveDiscordProviderAccess(
   args: DiscordProviderAccessArgs,
   signal: AbortSignal,
@@ -212,6 +223,11 @@ export async function resolveDiscordProviderAccess(
   }
   const channel = result.data;
   if (channel.id !== args.channelId) {
+    return unavailable();
+  }
+  // Message-based public threads can only start in guild text/announcement
+  // channels. A DM, forum/media parent or existing thread cannot be promoted.
+  if (args.createPublicThread && !canStartPublicThread(args, channel)) {
     return unavailable();
   }
   if (channel.type === 1) {
@@ -254,7 +270,7 @@ export async function resolveDiscordProviderAccess(
     permissionChannel.channel,
     args.mode,
     thread,
-    args.attachFiles,
+    args,
   );
   if (!permissions) {
     return unavailable();

@@ -103,6 +103,7 @@ export const requireDiscordConversationAccess$ = command(
       channelId: string;
       mode: DiscordAccessMode;
       attachFiles?: boolean;
+      createPublicThread?: boolean;
     },
     signal: AbortSignal,
   ): Promise<DiscordConversationAccess> => {
@@ -117,6 +118,7 @@ export const requireDiscordConversationAccess$ = command(
         channelId: args.channelId,
         mode: args.mode,
         attachFiles: args.attachFiles,
+        createPublicThread: args.createPublicThread,
       },
       signal,
     );

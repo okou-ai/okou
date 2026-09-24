@@ -629,6 +629,20 @@ describe("Discord native sends and transport failures", () => {
     },
   );
 
+  it("keeps native history and existing-thread sends available without public-thread creation permission", async () => {
+    const f = await fixture();
+    addThread(f);
+    f.channels.get(f.channelId)!.permission_overwrites = [
+      { id: f.guildId, type: 0, deny: String(1n << 35n), allow: "0" },
+    ];
+    await accept(history(f), [200]);
+    await accept(history(f, f.threadId), [200]);
+    const parent = await accept(send(f), [200]);
+    const thread = await accept(send(f, f.threadId), [200]);
+    expect(parent.body.messages[0]?.channelId).toBe(f.channelId);
+    expect(thread.body.messages[0]?.channelId).toBe(f.threadId);
+  });
+
   it("requires SEND_MESSAGES_IN_THREADS rather than parent SEND_MESSAGES", async () => {
     const f = await fixture();
     addThread(f);
