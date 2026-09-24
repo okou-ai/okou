@@ -154,6 +154,17 @@ const SCHEMA = {
   TELEGRAM_OFFICIAL_BOT_USERNAME: z.string().optional(),
   TELEGRAM_OFFICIAL_WEBHOOK_SECRET: z.string().optional(),
   SLACK_OAUTH_CLIENT_ID: z.string().optional(),
+  DISCORD_BOT_TOKEN: z.string().min(1).optional(),
+  DISCORD_APPLICATION_ID: z
+    .string()
+    .regex(/^\d{17,20}$/)
+    .optional(),
+  DISCORD_PUBLIC_KEY: z
+    .string()
+    .regex(/^[a-fA-F0-9]{64}$/)
+    .optional(),
+  DISCORD_GATEWAY_SECRET: z.string().min(32).optional(),
+  DISCORD_MESSAGE_CONTENT_ENABLED: z.enum(["true", "false"]).default("false"),
   MICROSOFT_OAUTH_CLIENT_ID: z.string().min(1).optional(),
   MICROSOFT_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
   MICROSOFT_TEAMS_BOT_APP_ID: z.string().min(1).optional(),

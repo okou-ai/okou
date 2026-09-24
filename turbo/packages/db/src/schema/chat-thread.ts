@@ -5,6 +5,7 @@ import {
   text,
   timestamp,
   index,
+  unique,
   jsonb,
   bigint,
   boolean,
@@ -199,6 +200,7 @@ export const chatThreads = pgTable(
   },
   (table) => {
     return [
+      unique("uq_chat_threads_id_user").on(table.id, table.userId),
       check(
         "chat_threads_computer_access_check",
         sql`NOT (${table.cloudBrowserEnabled} AND ${table.computerUseHostId} IS NOT NULL)`,

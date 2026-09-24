@@ -1,0 +1,1 @@
+CREATE INDEX "idx_discord_org_installations_installer_guild" ON "discord_org_installations" USING btree ("installed_by_user_id","guild_id");

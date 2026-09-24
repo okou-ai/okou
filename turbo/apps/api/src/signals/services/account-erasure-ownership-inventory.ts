@@ -354,6 +354,7 @@ export const NON_OWNERSHIP_COLUMNS: Readonly<
   Record<string, Readonly<Record<string, NonOwnershipReason>>>
 > = {
   chat_agentphone_context: { user_link_id: "covered_by_parent" },
+  chat_discord_context: { sender_user_id: "provider_identity" },
   chat_slack_context: { sender_user_id: "provider_identity" },
   chat_teams_context: { sender_user_id: "provider_identity" },
   chat_telegram_context: {
@@ -504,6 +505,10 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
     parents: ["chat_threads"],
   },
   chat_events: { coverage: "user_descendant", parents: ["chat_threads"] },
+  chat_discord_context: {
+    coverage: "user_descendant",
+    parents: ["discord_chat_thread_routes"],
+  },
   chat_feishu_context: {
     coverage: "user_descendant",
     parents: ["chat_threads"],
@@ -605,6 +610,24 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   },
   desktop_auth_handoff_codes: { coverage: "user_root", ownership: ["user_id"] },
   device_codes: { coverage: "user_root", ownership: ["user_id"] },
+  discord_chat_ingress: {
+    coverage: "user_descendant",
+    parents: ["discord_org_connections"],
+  },
+  discord_chat_thread_routes: { coverage: "user_root", ownership: ["user_id"] },
+  discord_org_connections: { coverage: "user_root", ownership: ["user_id"] },
+  discord_org_installations: {
+    coverage: "organization_owned",
+    association: ["installed_by_user_id"],
+  },
+  discord_user_agent_preferences: {
+    coverage: "user_root",
+    ownership: ["user_id"],
+  },
+  discord_user_dm_preferences: {
+    coverage: "user_root",
+    ownership: ["user_id"],
+  },
   // Explicit product carve-out: queued and sent mail stays in the existing
   // outbox lifecycle, not in per-account erasure. Future retention is separate.
   email_outbox: { coverage: "deferred_retention" },

@@ -8,6 +8,7 @@ import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { usagePackAllocations } from "@okouai/db/schema/usage-pack-subscription";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
+import { deleteDiscordOrgData } from "./discord-owner-cleanup.service";
 import type { OrgResponse } from "@okouai/api-contracts/contracts/orgs";
 import {
   orgRoleSchema,
@@ -627,6 +628,8 @@ export const deleteOrg$ = command(
     }
 
     await client.organizations.deleteOrganization(args.orgId);
+    signal.throwIfAborted();
+    await deleteDiscordOrgData(writeDb, args.orgId);
     signal.throwIfAborted();
 
     return { message: "Organization deleted" };

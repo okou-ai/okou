@@ -1,5 +1,27 @@
 # Deployment Compatibility
 
+## Discord verified foundation (2026-09-24)
+
+The Discord foundation adds seven new relations, their ownership constraints,
+and an additional unique key on the already unique chat-thread ID plus owner.
+Old API code remains legal after migration and ignores these new relations.
+New cleanup/export readers require the migration before API promotion, following
+the existing production release order. There are no historical Discord rows to
+backfill. `_discordIntegration` remains disabled for every organization by
+default, and no Gateway or OAuth onboarding is activated by this change.
+
+Status/preferences are new API contracts. No existing client or Runner protocol
+changes. Gateway version 1 carries only Discord event data; the API owns Okou
+identity resolution. Gateway handler/relay implementations land in their own
+slices before activation.
+
+Account exports add a bounded Discord source phase only when owned Discord rows
+exist. Once an opted-in development/test account has a durable export checkpoint
+in that phase, an older API cannot resume it; finish or restart that export with
+the new API. This is a non-GA, default-off surface and introduces no compatibility
+reader or rollback fallback. Application credentials remain environment-owned
+and are never exported or revoked by guild removal.
+
 ## Voice input model selection retirement (2026-09-24)
 
 Voice input always uses Gemini 3.1 Flash-Lite on Vertex AI. The Debug

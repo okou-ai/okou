@@ -925,6 +925,27 @@
       "when": 1790231546789,
       "tag": "1209_account_erasure_blob_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 1210,
+      "version": "7",
+      "when": 1790241774106,
+      "tag": "1210_discord_integration_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1211,
+      "version": "7",
+      "when": 1790242328406,
+      "tag": "1211_discord_ingress_owner_reference",
+      "breakpoints": true
+    },
+    {
+      "idx": 1212,
+      "version": "7",
+      "when": 1790243394166,
+      "tag": "1212_discord_installation_installer_index",
+      "breakpoints": true
     }
   ]
 }

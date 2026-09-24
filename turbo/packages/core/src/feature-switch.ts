@@ -462,6 +462,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable Lark bot setup, account connections, and messaging.",
     enabled: false,
   },
+  [FeatureSwitchKey.DiscordIntegration]: {
+    maintainer: "linghan@okou.ai",
+    description: "Enable the verified Discord guild and bot DM integration.",
+    enabled: false,
+  },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "linghan@okou.ai",
     description:

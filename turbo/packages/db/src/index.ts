@@ -26,6 +26,7 @@ import * as agentRunQueueSchema from "./schema/agent-run-queue";
 import * as chatAgentRunContextSchema from "./schema/chat-agent-run-context";
 import * as chatAgentphoneContextSchema from "./schema/chat-agentphone-context";
 import * as chatAutomationContextSchema from "./schema/chat-automation-context";
+import * as chatDiscordContextSchema from "./schema/chat-discord-context";
 import * as chatFeishuContextSchema from "./schema/chat-feishu-context";
 import * as chatGithubContextSchema from "./schema/chat-github-context";
 import * as chatSlackContextSchema from "./schema/chat-slack-context";
@@ -73,6 +74,12 @@ import * as slackOrgConnectionSchema from "./schema/slack-org-connection";
 import * as slackChatThreadRouteSchema from "./schema/slack-chat-thread-route";
 import * as slackChatIngressSchema from "./schema/slack-chat-ingress";
 import * as slackUserAgentPreferenceSchema from "./schema/slack-user-agent-preference";
+import * as discordOrgInstallationSchema from "./schema/discord-org-installation";
+import * as discordOrgConnectionSchema from "./schema/discord-org-connection";
+import * as discordChatThreadRouteSchema from "./schema/discord-chat-thread-route";
+import * as discordChatIngressSchema from "./schema/discord-chat-ingress";
+import * as discordUserAgentPreferenceSchema from "./schema/discord-user-agent-preference";
+import * as discordUserDmPreferenceSchema from "./schema/discord-user-dm-preference";
 import * as teamsOrgInstallationSchema from "./schema/teams-org-installation";
 import * as teamsOrgConnectionSchema from "./schema/teams-org-connection";
 import * as teamsChatThreadRouteSchema from "./schema/teams-chat-thread-route";
@@ -189,6 +196,7 @@ export const schema = {
   ...chatAgentRunContextSchema,
   ...chatAgentphoneContextSchema,
   ...chatAutomationContextSchema,
+  ...chatDiscordContextSchema,
   ...chatFeishuContextSchema,
   ...chatGithubContextSchema,
   ...chatSlackContextSchema,
@@ -205,6 +213,12 @@ export const schema = {
   ...slackChatThreadRouteSchema,
   ...slackChatIngressSchema,
   ...slackUserAgentPreferenceSchema,
+  ...discordOrgInstallationSchema,
+  ...discordOrgConnectionSchema,
+  ...discordChatThreadRouteSchema,
+  ...discordChatIngressSchema,
+  ...discordUserAgentPreferenceSchema,
+  ...discordUserDmPreferenceSchema,
   ...teamsOrgInstallationSchema,
   ...teamsOrgConnectionSchema,
   ...teamsChatThreadRouteSchema,
