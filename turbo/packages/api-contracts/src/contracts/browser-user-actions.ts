@@ -11,6 +11,7 @@ export const BROWSER_USER_ACTION_MAX_LABEL_LENGTH = 128;
 export const BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH = 512;
 export const BROWSER_USER_ACTION_MAX_TARGET_ID_LENGTH = 512;
 export const BROWSER_USER_ACTION_MAX_VALUE_LENGTH = 4096;
+export const BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH = 128;
 export const BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH = 200;
 
 export const browserUserActionStateSchema = z.enum([
@@ -26,6 +27,7 @@ export const browserUserActionFieldKindSchema = z.enum([
   "username",
   "password",
   "one_time_code",
+  "number",
 ]);
 
 const boundedNonblank = (maximum: number) => {
@@ -151,6 +153,18 @@ export const browserUserActionDisplayFieldSchema = z
           .max(BROWSER_USER_ACTION_MAX_VALUE_LENGTH)
           .optional(),
         pattern: z.string().max(512).optional(),
+        min: z
+          .string()
+          .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
+          .optional(),
+        max: z
+          .string()
+          .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
+          .optional(),
+        step: z
+          .string()
+          .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
+          .optional(),
       })
       .strict(),
   })

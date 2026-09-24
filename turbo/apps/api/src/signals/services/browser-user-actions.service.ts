@@ -190,6 +190,9 @@ function publicRequest(
                 ...(observed.pattern === undefined
                   ? {}
                   : { pattern: observed.pattern }),
+                ...(observed.min === undefined ? {} : { min: observed.min }),
+                ...(observed.max === undefined ? {} : { max: observed.max }),
+                ...(observed.step === undefined ? {} : { step: observed.step }),
               }),
         }),
       };
@@ -1052,7 +1055,10 @@ function submittedValues(
     kind: "ok",
     value: new Map(
       input.values.flatMap((entry) => {
-        return entry.value.length === 0 ? [] : [[entry.key, entry.value]];
+        return entry.value.length === 0 &&
+          allowed.get(entry.key)?.fieldKind !== "number"
+          ? []
+          : [[entry.key, entry.value]];
       }),
     ),
   };

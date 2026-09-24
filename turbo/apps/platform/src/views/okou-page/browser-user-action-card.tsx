@@ -388,110 +388,209 @@ function DraftClearingState({
   );
 }
 
+type PendingBrowserInputField = PendingBrowserInputAction["fields"][number];
+
+interface BrowserInputEditProps {
+  readonly field: PendingBrowserInputField;
+  readonly draft: ReadonlyMap<string, string>;
+  readonly busy: boolean;
+  readonly onUpdate: (key: string, value: string) => void;
+  readonly onRemove: (key: string) => void;
+}
+
+function BrowserInputControl({
+  field,
+  draft,
+  busy,
+  onUpdate,
+  onRemove,
+  inputId,
+  describedBy,
+}: BrowserInputEditProps & {
+  readonly inputId: string;
+  readonly describedBy: string;
+}) {
+  const required = field.required || field.control.siteRequired;
+  const maxLength = Math.min(
+    field.control.maxLength ?? BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
+    BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
+  );
+  if (field.control.tagName === "TEXTAREA") {
+    return (
+      <Textarea
+        id={inputId}
+        name={field.key}
+        aria-describedby={describedBy}
+        required={required}
+        minLength={field.control.minLength}
+        maxLength={maxLength}
+        value={draft.get(field.key) ?? ""}
+        disabled={busy}
+        onChange={(event) => {
+          onUpdate(field.key, event.currentTarget.value);
+        }}
+      />
+    );
+  }
+  return (
+    <Input
+      id={inputId}
+      name={field.key}
+      type={
+        field.fieldKind === "one_time_code" ? "text" : field.control.inputType
+      }
+      multiple={field.control.multiple}
+      inputMode={field.fieldKind === "one_time_code" ? "numeric" : undefined}
+      autoComplete={fieldAutocomplete(field.fieldKind)}
+      aria-describedby={describedBy}
+      required={required}
+      minLength={field.control.minLength}
+      maxLength={maxLength}
+      pattern={field.control.pattern}
+      min={field.fieldKind === "number" ? field.control.min : undefined}
+      max={field.fieldKind === "number" ? field.control.max : undefined}
+      step={field.fieldKind === "number" ? field.control.step : undefined}
+      value={draft.get(field.key) ?? ""}
+      disabled={busy}
+      onChange={(event) => {
+        const value = event.currentTarget.value;
+        if (field.fieldKind === "number" && value === "") {
+          onRemove(field.key);
+        } else {
+          onUpdate(field.key, value);
+        }
+      }}
+    />
+  );
+}
+
+function OptionalNumberClearAction({
+  field,
+  draft,
+  busy,
+  onUpdate,
+  onRemove,
+}: BrowserInputEditProps) {
+  const { t } = useTranslation();
+  if (
+    field.fieldKind !== "number" ||
+    field.required ||
+    field.control.siteRequired
+  ) {
+    return null;
+  }
+  const clearing = draft.has(field.key) && draft.get(field.key) === "";
+  return (
+    <Button
+      type="button"
+      variant="link"
+      size="xs"
+      className="h-auto self-start p-0 text-xs"
+      disabled={busy}
+      onClick={() => {
+        if (clearing) {
+          onRemove(field.key);
+        } else {
+          onUpdate(field.key, "");
+        }
+      }}
+    >
+      {clearing
+        ? t(($) => {
+            return $.chat.browserInput.keepValue;
+          })
+        : t(($) => {
+            return $.chat.browserInput.clearValue;
+          })}
+    </Button>
+  );
+}
+
+function BrowserInputField({
+  field,
+  index,
+  draft,
+  busy,
+  onUpdate,
+  onRemove,
+}: BrowserInputEditProps & { readonly index: number }) {
+  const { t } = useTranslation();
+  const inputId = `browser-input-field-${index}`;
+  const requirementId = `${inputId}-requirement`;
+  const descriptionId = field.description
+    ? `${inputId}-description`
+    : undefined;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-baseline gap-1 text-sm text-foreground">
+        <label htmlFor={inputId} className="font-medium">
+          {field.label}
+        </label>
+        <span
+          id={requirementId}
+          className="text-xs font-normal text-muted-foreground"
+        >
+          {field.required || field.control.siteRequired
+            ? t(($) => {
+                return $.chat.browserInput.required;
+              })
+            : t(($) => {
+                return $.chat.browserInput.optional;
+              })}
+        </span>
+      </div>
+      {field.description && (
+        <span
+          id={descriptionId}
+          className="text-xs font-normal leading-4 text-muted-foreground"
+        >
+          {field.description}
+        </span>
+      )}
+      <BrowserInputControl
+        field={field}
+        inputId={inputId}
+        describedBy={
+          descriptionId ? `${requirementId} ${descriptionId}` : requirementId
+        }
+        draft={draft}
+        busy={busy}
+        onUpdate={onUpdate}
+        onRemove={onRemove}
+      />
+      <OptionalNumberClearAction
+        field={field}
+        draft={draft}
+        busy={busy}
+        onUpdate={onUpdate}
+        onRemove={onRemove}
+      />
+    </div>
+  );
+}
+
 function BrowserInputFields({
   action,
   draft,
   busy,
   onUpdate,
-}: {
+  onRemove,
+}: Omit<BrowserInputEditProps, "field"> & {
   readonly action: PendingBrowserInputAction;
-  readonly draft: ReadonlyMap<string, string>;
-  readonly busy: boolean;
-  readonly onUpdate: (key: string, value: string) => void;
 }) {
-  const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-4">
       {action.fields.map((field, index) => {
-        const inputId = `browser-input-field-${index}`;
-        const requirementId = `${inputId}-requirement`;
-        const descriptionId = field.description
-          ? `${inputId}-description`
-          : undefined;
         return (
-          <div key={field.key} className="flex flex-col gap-1.5">
-            <div className="flex items-baseline gap-1 text-sm text-foreground">
-              <label htmlFor={inputId} className="font-medium">
-                {field.label}
-              </label>
-              <span
-                id={requirementId}
-                className="text-xs font-normal text-muted-foreground"
-              >
-                {field.required || field.control.siteRequired
-                  ? t(($) => {
-                      return $.chat.browserInput.required;
-                    })
-                  : t(($) => {
-                      return $.chat.browserInput.optional;
-                    })}
-              </span>
-            </div>
-            {field.description && (
-              <span
-                id={descriptionId}
-                className="text-xs font-normal leading-4 text-muted-foreground"
-              >
-                {field.description}
-              </span>
-            )}
-            {field.control.tagName === "TEXTAREA" ? (
-              <Textarea
-                id={inputId}
-                name={field.key}
-                aria-describedby={
-                  descriptionId
-                    ? `${requirementId} ${descriptionId}`
-                    : requirementId
-                }
-                required={field.required || field.control.siteRequired}
-                minLength={field.control.minLength}
-                maxLength={Math.min(
-                  field.control.maxLength ??
-                    BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
-                  BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
-                )}
-                value={draft.get(field.key) ?? ""}
-                disabled={busy}
-                onChange={(event) => {
-                  onUpdate(field.key, event.currentTarget.value);
-                }}
-              />
-            ) : (
-              <Input
-                id={inputId}
-                name={field.key}
-                type={
-                  field.fieldKind === "one_time_code"
-                    ? "text"
-                    : field.control.inputType
-                }
-                multiple={field.control.multiple}
-                inputMode={
-                  field.fieldKind === "one_time_code" ? "numeric" : undefined
-                }
-                autoComplete={fieldAutocomplete(field.fieldKind)}
-                aria-describedby={
-                  descriptionId
-                    ? `${requirementId} ${descriptionId}`
-                    : requirementId
-                }
-                required={field.required || field.control.siteRequired}
-                minLength={field.control.minLength}
-                maxLength={Math.min(
-                  field.control.maxLength ??
-                    BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
-                  BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
-                )}
-                pattern={field.control.pattern}
-                value={draft.get(field.key) ?? ""}
-                disabled={busy}
-                onChange={(event) => {
-                  onUpdate(field.key, event.currentTarget.value);
-                }}
-              />
-            )}
-          </div>
+          <BrowserInputField
+            key={field.key}
+            field={field}
+            index={index}
+            draft={draft}
+            busy={busy}
+            onUpdate={onUpdate}
+            onRemove={onRemove}
+          />
         );
       })}
     </div>
@@ -554,6 +653,7 @@ function PendingForm({
   const draft = useGet(signals.draft$);
   const sharedBusy = useGet(signals.busy$);
   const updateDraft = useSet(signals.updateDraft$);
+  const removeDraft = useSet(signals.removeDraft$);
   const formRef = useSet(signals.formRef$);
   const [submitLoadable, submit] = useLoadableSet(signals.submit$);
   const [cancelLoadable, cancel] = useLoadableSet(signals.cancel$);
@@ -589,6 +689,7 @@ function PendingForm({
         draft={draft}
         busy={busy}
         onUpdate={updateDraft}
+        onRemove={removeDraft}
       />
 
       {failed && (

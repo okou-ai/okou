@@ -72,6 +72,7 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly retryStandaloneRequest$: Command<Promise<void>, [AbortSignal]>;
   readonly refresh$: Command<void, []>;
   readonly updateDraft$: Command<void, [string, string]>;
+  readonly removeDraft$: Command<void, [string]>;
   readonly clearDraft$: Command<void, []>;
   readonly clearDraftRef$: Command<
     (() => void) | undefined,
@@ -346,7 +347,12 @@ function createRequestSignals(descriptor: BrowserUserActionDescriptor) {
 
 function createDraftSignals(): Pick<
   BrowserUserActionSignals,
-  "draft$" | "updateDraft$" | "clearDraft$" | "clearDraftRef$" | "formRef$"
+  | "draft$"
+  | "updateDraft$"
+  | "removeDraft$"
+  | "clearDraft$"
+  | "clearDraftRef$"
+  | "formRef$"
 > {
   const internalDraft$ = state<ReadonlyMap<string, string>>(new Map());
   const ownerCount$ = state(0);
@@ -363,6 +369,13 @@ function createDraftSignals(): Pick<
   });
   const clearDraft$ = command(({ set }): void => {
     set(internalDraft$, new Map());
+  });
+  const removeDraft$ = command(({ set }, key: string): void => {
+    set(internalDraft$, (current) => {
+      const next = new Map(current);
+      next.delete(key);
+      return next;
+    });
   });
   const clearDraftKeys$ = command(({ set }, keys: readonly string[]): void => {
     if (keys.length === 0) {
@@ -413,6 +426,7 @@ function createDraftSignals(): Pick<
   return {
     draft$,
     updateDraft$,
+    removeDraft$,
     clearDraft$,
     clearDraftRef$: onRef(clearDraftOnMount$),
     formRef$: onRef(ownForm$),
@@ -458,7 +472,9 @@ function browserInputSubmissionValues(
       if (field.required || field.control.siteRequired) {
         return null;
       }
-      continue;
+      if (field.fieldKind !== "number" || !draft.has(field.key)) {
+        continue;
+      }
     }
     values.push({ key: field.key, value });
   }

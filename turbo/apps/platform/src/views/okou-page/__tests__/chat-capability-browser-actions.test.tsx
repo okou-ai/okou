@@ -509,7 +509,18 @@ test("A pending Browser input card opens the exact standalone form URL", async (
     events: completedConversation(`[Enter details](${browserInputUrl()})`),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, browserInputAction("pending"));
+    return respond(200, {
+      ...browserInputAction("pending"),
+      fields: [
+        {
+          key: "quantity",
+          label: "Quantity",
+          fieldKind: "number",
+          required: false,
+          control: { tagName: "INPUT", inputType: "number" },
+        },
+      ],
+    });
   });
 
   await setupPage({
