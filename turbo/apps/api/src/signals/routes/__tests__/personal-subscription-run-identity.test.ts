@@ -99,6 +99,30 @@ async function configureOrganizationApi(
   return provider;
 }
 
+function holdAnthropicInference() {
+  const entered = createDeferredPromise<void>(context.signal);
+  const released = createDeferredPromise<void>(context.signal);
+  const release = () => {
+    if (!released.settled()) {
+      released.resolve();
+    }
+  };
+  onTestFinished(async () => {
+    release();
+    await flushWaitUntilForTest();
+  });
+  server.use(
+    http.post("https://api.anthropic.com/v1/messages", async () => {
+      entered.resolve();
+      await released.promise;
+      return new HttpResponse(null, {
+        headers: { "content-type": "text/event-stream" },
+      });
+    }),
+  );
+  return { entered: entered.promise, release };
+}
+
 type Claim = Awaited<ReturnType<typeof runs.claimRunnerJob>>;
 
 async function connect(
@@ -3193,7 +3217,13 @@ describe("personal priority connection boundaries", () => {
       });
       await support.deletePersonalModelProvider(f.actor, type, [204]);
       // No new mirror is true absence even though A's parent is retained.
+      // Claude's organization API route starts inference immediately through
+      // Pi. Hold that external response until cancellation so this identity
+      // test does not race an unhandled provider request to terminal failure.
+      const inference =
+        type === "claude-code-oauth-token" ? holdAnthropicInference() : null;
       const absent = await f.start();
+      await inference?.entered;
       await expect(readRunModelSourceFixture(absent)).resolves.toMatchObject({
         modelProvider:
           type === "codex-oauth-token" ? "openai-api-key" : "anthropic-api-key",
@@ -3201,6 +3231,11 @@ describe("personal priority connection boundaries", () => {
         selectedModel: f.model,
       });
       await runs.requestCancelRun(f.actor, absent, [200]);
+      inference?.release();
+      await flushWaitUntilForTest();
+      await expect(runs.readRun(f.actor, absent)).resolves.toMatchObject({
+        status: "cancelled",
+      });
       const b = await writeHistoricalSubscription(
         f.actor,
         type,
@@ -3393,6 +3428,9 @@ describe("member-effective model policy contract", () => {
       displayName: "Other member",
       visibility: "private",
     });
+    // Keep the API-first provider pending while inspecting route attribution;
+    // explicit cancellation owns the run's terminal state in this case.
+    const inference = holdAnthropicInference();
     const sent = await createChatFilesBddApi(context).requestSendEvent(
       member,
       {
@@ -3405,6 +3443,7 @@ describe("member-effective model policy contract", () => {
     if (sent.status !== 201 || !sent.body.runId) {
       throw new Error("Expected a member run");
     }
+    await inference.entered;
     await expect(
       readRunModelSourceFixture(sent.body.runId),
     ).resolves.toMatchObject({
@@ -3413,6 +3452,11 @@ describe("member-effective model policy contract", () => {
       selectedModel: f.model,
     });
     await runs.requestCancelRun(member, sent.body.runId, [200]);
+    inference.release();
+    await flushWaitUntilForTest();
+    await expect(runs.readRun(member, sent.body.runId)).resolves.toMatchObject({
+      status: "cancelled",
+    });
   });
 
   it("keeps an unsupported subscription/model pair on the configured API", async () => {
