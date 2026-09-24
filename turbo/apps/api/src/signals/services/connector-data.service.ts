@@ -32,6 +32,8 @@ import {
   getAllFeatureStates,
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
+import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
+import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { connectors } from "@okouai/db/schema/connector";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
@@ -2388,6 +2390,33 @@ async function prepareConnectorTokenConnectionCleanup(
   return { pendingTokenRevoke, pendingGoogleCalendarWatchStop };
 }
 
+async function assertConnectorTokenWriteOpen(
+  tx: Tx,
+  userId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  // Token exchange and KMS preparation run outside SQL; deletion may commit
+  // while either is in flight. Admit before connector account locks so B1
+  // closure waits for this transaction or rejects it.
+  await assertErasureSubjectWritable(tx, [
+    { subjectKind: "user", subjectId: userId },
+  ]);
+  const [deletion] = await tx
+    .select({ id: backgroundJobs.id })
+    .from(backgroundJobs)
+    .where(
+      and(
+        eq(backgroundJobs.kind, "clerk-user-deletion"),
+        eq(backgroundJobs.userId, userId),
+      ),
+    )
+    .limit(1);
+  if (deletion) {
+    throw new Error("account_erasure:subject_closed");
+  }
+  signal.throwIfAborted();
+}
+
 async function commitConnectorTokenConnection(
   args: CommitBuiltinConnectorTokenConnectionArgs,
   signal: AbortSignal,
@@ -2402,6 +2431,7 @@ async function commitConnectorTokenConnection(
   | ConnectorConnectionMutationFailure
   | { readonly status: "identityMismatch" }
 > {
+  await assertConnectorTokenWriteOpen(args.db, args.userId, signal);
   const mutation = args.account;
   const resolution = await resolveConnectorConnectionMutation(args.db, {
     orgId: args.orgId,
