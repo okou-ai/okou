@@ -1,6 +1,7 @@
 import type { IpcMainInvokeEvent } from "electron";
 import { BrowserWindow, ipcMain } from "electron";
 import type { DesktopAuthState } from "./desktop-bridge";
+import type { DesktopLoginMethod } from "./desktop-login-method";
 import { DESKTOP_AUTH_CHANNELS } from "./desktop-auth-ipc-channels";
 import type { DesktopAuthWindow } from "./desktop-auth-window";
 import { isDesktopRendererUrl } from "./desktop-renderer-url";
@@ -12,7 +13,12 @@ interface DesktopAuthIpcOptions {
 
 interface DesktopAuthNativeApi {
   readonly getState: () => Promise<DesktopAuthState> | DesktopAuthState;
-  readonly openSignIn: () => void;
+  readonly getLoginMethod: () => {
+    readonly method: DesktopLoginMethod;
+    readonly nativeAvailable: boolean;
+  };
+  readonly setLoginMethod: (method: DesktopLoginMethod) => Promise<void>;
+  readonly openSignIn: () => Promise<void> | void;
   readonly openOrgSelection: () => Promise<void>;
   readonly signOut: () => Promise<void>;
 }
@@ -61,9 +67,23 @@ export function installDesktopAuthIpc(
     assertDesktopRenderer(event);
     return api.getState();
   });
-  ipcMain.handle(DESKTOP_AUTH_CHANNELS.openSignIn, (event) => {
+  ipcMain.handle(DESKTOP_AUTH_CHANNELS.getLoginMethod, (event) => {
     assertDesktopRenderer(event);
-    api.openSignIn();
+    return api.getLoginMethod();
+  });
+  ipcMain.handle(
+    DESKTOP_AUTH_CHANNELS.setLoginMethod,
+    async (event, method: unknown) => {
+      assertDesktopRenderer(event);
+      if (method !== "browser" && method !== "native") {
+        throw new Error("Desktop login method is invalid");
+      }
+      await api.setLoginMethod(method);
+    },
+  );
+  ipcMain.handle(DESKTOP_AUTH_CHANNELS.openSignIn, async (event) => {
+    assertDesktopRenderer(event);
+    await api.openSignIn();
   });
   ipcMain.handle(DESKTOP_AUTH_CHANNELS.openOrgSelection, async (event) => {
     assertDesktopRenderer(event);
