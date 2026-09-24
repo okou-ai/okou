@@ -602,11 +602,7 @@ async function pageHasMarker(
       evaluation.result.value === true
     );
   } catch (error) {
-    if (
-      error instanceof BrowserInputRequestError &&
-      (error.code === "BROWSER_INPUT_CAPTURE_TIMEOUT" ||
-        error.code === "BROWSER_INPUT_BROWSER_CONNECTION_FAILED")
-    ) {
+    if (error instanceof BrowserInputRequestError) {
       throw error;
     }
     return false;
@@ -618,23 +614,33 @@ async function findMarkedPage(
   pages: readonly AttachedPage[],
   marker: Marker,
 ): Promise<AttachedPage> {
-  const matches = (
-    await Promise.all(
-      pages.map(async (page) => {
-        return (await pageHasMarker(client, page, marker)) ? page : null;
-      }),
-    )
-  ).filter((page): page is AttachedPage => {
-    return page !== null;
+  const inspected = await Promise.allSettled(
+    pages.map(async (page) => {
+      return { page, matches: await pageHasMarker(client, page, marker) };
+    }),
+  );
+  const matches = inspected.flatMap((result) => {
+    return result.status === "fulfilled" && result.value.matches
+      ? [result.value.page]
+      : [];
   });
-  if (matches.length !== 1) {
-    throw browserCaptureError(
-      "The active Browser page changed or could not be identified; retry the request",
-      "BROWSER_INPUT_PAGE_CHANGED",
-      "Inspect the active Browser tab again and recapture its controls.",
-    );
+  if (matches.length === 1) {
+    // The unique marker identifies this page even if another tab was unresponsive.
+    return matches[0]!;
   }
-  return matches[0]!;
+  if (matches.length === 0) {
+    const failure = inspected.find((result) => {
+      return result.status === "rejected";
+    });
+    if (failure?.status === "rejected") {
+      throw failure.reason;
+    }
+  }
+  throw browserCaptureError(
+    "The active Browser page changed or could not be identified; retry the request",
+    "BROWSER_INPUT_PAGE_CHANGED",
+    "Inspect the active Browser tab again and recapture its controls.",
+  );
 }
 
 async function evaluatedObjectId(

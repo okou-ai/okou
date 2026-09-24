@@ -37,6 +37,7 @@ interface CdpOptions {
   readonly selectorCount?: number;
   readonly nodeName?: string;
   readonly oversizedResponseFor?: string;
+  readonly unavailableOtherTab?: boolean;
   readonly pageMarkerMatches?: boolean;
   readonly pageMarkerResponses?: readonly boolean[];
   readonly refObjectIds?: readonly string[];
@@ -98,11 +99,25 @@ function cdpCommandResult(
           type: "page",
           url: "https://example.com/login",
         },
+        ...(options.unavailableOtherTab
+          ? [
+              {
+                targetId: "other-page-target",
+                type: "page",
+                url: "https://example.com/other",
+              },
+            ]
+          : []),
       ],
     };
   }
   if (command.method === "Target.attachToTarget") {
-    return { sessionId: "page-session" };
+    return {
+      sessionId:
+        command.params.targetId === "other-page-target"
+          ? "other-page-session"
+          : "page-session",
+    };
   }
   if (command.method === "Runtime.evaluate") {
     return {
@@ -179,6 +194,17 @@ function installCdp(options: CdpOptions = {}): CdpCommand[] {
         commands.push(command);
         if (command.method === options.oversizedResponseFor) {
           client.send("x".repeat(65 * 1024));
+          return;
+        }
+        if (
+          options.unavailableOtherTab &&
+          command.method === "Runtime.callFunctionOn" &&
+          command.sessionId === "other-page-session" &&
+          String(command.params.functionDeclaration).includes(
+            "this[key]===value",
+          )
+        ) {
+          client.send(JSON.stringify({ id: command.id, error: {} }));
           return;
         }
         const result = cdpCommandResult(command, options, state);
@@ -779,6 +805,34 @@ describe("okou browser user-action commands", () => {
     expect(consoleError.mock.calls.flat().join("\n")).toContain(
       "could not be identified",
     );
+  });
+
+  it("uses the marked page when another tab cannot be inspected", async () => {
+    installCdp({ unavailableOtherTab: true });
+    let apiRequests = 0;
+    installCreateRoute(() => {
+      apiRequests += 1;
+    });
+
+    await browserCommand.parseAsync([
+      "node",
+      "okou",
+      "input-request",
+      "--field",
+      JSON.stringify({
+        key: "username",
+        label: "Email",
+        fieldKind: "username",
+        required: true,
+        target: "#email",
+      }),
+      "--callback-prompt",
+      "Continue",
+    ]);
+
+    expect(apiRequests).toBe(1);
+    expect(consoleLog.mock.calls.flat().join("\n")).toContain(ACTION_URL);
+    expect(consoleError).not.toHaveBeenCalled();
   });
 
   it("fails closed on an oversized CDP response", async () => {
