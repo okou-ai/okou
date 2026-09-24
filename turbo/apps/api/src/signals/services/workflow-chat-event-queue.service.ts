@@ -152,6 +152,7 @@ export interface WorkflowScheduleClaimPlan {
 
 interface WorkflowQueueAdmissionArgs {
   readonly automation: typeof workflowAutomations.$inferSelect;
+  readonly queueEventId?: string;
   readonly workflowName: string;
   readonly displayPrompt: string;
   readonly agentRunSource?: ChatAgentRunSourceAnnotation;
@@ -225,6 +226,7 @@ async function attemptWorkflowQueueAdmission(
     ? withAgentRunSourceAnnotation(automationUserMessage, args.agentRunSource)
     : automationUserMessage;
   const event = {
+    id: args.queueEventId,
     chatThreadId: args.chatThreadId,
     eventType: "input.automation",
     content: null,
@@ -269,10 +271,14 @@ async function attemptWorkflowQueueAdmission(
       orgId: automation.orgId,
       workflowIds: [automation.workflowId],
     });
+    const conflict = args.queueEventId === undefined ? "none" : "id";
     const inserted = splitWrites
-      ? await appendPreparedChatEvent(tx, prepared, "none", { splitWrites })
-      : await insertChatEvent(tx, event, "none", { splitWrites });
+      ? await appendPreparedChatEvent(tx, prepared, conflict, { splitWrites })
+      : await insertChatEvent(tx, event, conflict, { splitWrites });
     if (!inserted) {
+      if (args.queueEventId !== undefined) {
+        return { kind: "coalesced" };
+      }
       throw new Error("Workflow queue event insert returned no row");
     }
     await args.persistSourceTransition?.(tx);

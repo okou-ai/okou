@@ -69,7 +69,7 @@ function requiredSlackLaunchContext(row: SlackLaunchContextRow | undefined) {
     channelId: row.channelId,
     botUserId: row.botUserId,
     conversationContext: row.conversationContext ?? "",
-    messageText: row.messageText ?? "",
+    messageText: row.messageText,
     messageFiles: row.messageFiles ?? [],
     messageAssets: row.messageAssets ?? [],
     mentionDisplayNames: row.mentionDisplayNames ?? {},
@@ -159,11 +159,45 @@ const slackIngressRoutingSchema = z.object({
   event: z.object({
     channel: z.string(),
     user: z.string(),
+    text: z.string(),
     ts: z.string(),
     thread_ts: z.string().optional(),
     channel_type: z.string().optional(),
   }),
 });
+
+function preserveSlackMentionIdentities(
+  canonicalPrompt: string,
+  originalMessageText: string,
+): string {
+  const originalText = originalMessageText.trim();
+  if (!/<@\w+>/.test(originalText)) {
+    return canonicalPrompt;
+  }
+  // Match each identity at its original literal-text position. An unrelated
+  // occurrence of "(U123)" elsewhere cannot identify a display-name mention.
+  const identifiedMessagePattern = originalText
+    .split(/(<@\w+>)/g)
+    .map((part) => {
+      const mention = /^<@(\w+)>$/.exec(part);
+      if (mention) {
+        return `(?:${part}|@[^@\\r\\n]* \\(${mention[1]}\\))`;
+      }
+      return part.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+    })
+    .join("");
+  if (
+    new RegExp(`(?:^|\\n\\n)${identifiedMessagePattern}$`).test(canonicalPrompt)
+  ) {
+    return canonicalPrompt;
+  }
+  // Older canonical inputs stored display names without IDs. Keep their
+  // canonical text/files and recover exact mention positions from the scoped
+  // original message; same-named Slack users cannot be disambiguated by name.
+  // Remove after old writers/rollback targets and their retained queued inputs
+  // have drained, independently of split-write activation.
+  return `${canonicalPrompt}\n\n[Original Slack message with user IDs]\n${originalMessageText}`;
+}
 
 async function loadSlackRouteLaunchMaterial(
   db: Db,
@@ -235,7 +269,10 @@ async function loadSlackRouteLaunchMaterial(
   }
   warnMissingQueuedLaunchEnrichment("slack", args);
   return {
-    prompt: args.userMessageProjection.agentPrompt,
+    prompt: preserveSlackMentionIdentities(
+      args.userMessageProjection.agentPrompt,
+      event.text,
+    ),
     appendSystemPrompt: "",
     publicBrand: route.publicBrand,
     slackDelivery: {
@@ -261,8 +298,20 @@ export async function loadSlackQueuedLaunchMaterial(
     warnMissingQueuedLaunchEnrichment("slack", args);
   }
 
+  // A retained context can still authorize delivery without optional original
+  // text. Recover historical mention IDs from scoped ingress when available;
+  // its absence cannot invalidate this context's independently checked route.
+  const prompt =
+    context.messageText === null
+      ? ((await loadSlackRouteLaunchMaterial(db, args))?.prompt ??
+        args.userMessageProjection.agentPrompt)
+      : preserveSlackMentionIdentities(
+          args.userMessageProjection.agentPrompt,
+          context.messageText,
+        );
+
   return {
-    prompt: args.userMessageProjection.agentPrompt,
+    prompt,
     appendSystemPrompt: context.enrichmentMissing
       ? ""
       : buildSlackSystemPrompt({

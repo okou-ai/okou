@@ -47,6 +47,11 @@ async function createThread(lastSeqId = 0): Promise<string> {
 }
 try {
   const retained = await createThread(100);
+  // An unseeded expansion is not an inactive rollout. Promotion requires the
+  // bridge migration below; missing required control data must fail closed.
+  await assert.rejects(isSplitChatEventWriteEnabled(db), {
+    message: "Chat event write control singleton is missing",
+  });
   // The rollout starts before new API promotion: outgoing writers still run.
   for (const statement of bridge) {
     await pool.query(statement);

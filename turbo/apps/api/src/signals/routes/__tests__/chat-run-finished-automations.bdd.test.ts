@@ -7,15 +7,29 @@ import {
 } from "../../../test-fixtures/goal-queue";
 
 import { createHash, randomUUID } from "node:crypto";
+import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
+import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
+import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
+import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
+import { removeSnapshottedRunEvents } from "../../../test-fixtures/goal-schema-contraction";
+import { installFakeChatEventR2 } from "./helpers/fake-chat-event-r2";
 
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
+import {
+  installTerminalCallbackFailureFixture,
+  withSplitChatEventDatabase,
+} from "../../../test-fixtures/chat-terminal-retry";
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
@@ -46,6 +60,7 @@ const webhooks = createWebhookCallbackApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
 const misc = createMiscRoutesApi(context);
 const wf = createWorkflowsBddApi(context);
+const integrations = createBddIntegrationApi(context);
 const WATCHED_THREAD_TITLE = "Watched chat run";
 
 function automationsClient() {
@@ -366,7 +381,315 @@ async function expectAutomationSourceAnnotation(
   return chatEventDisplayText(automationInput);
 }
 
+async function archiveAutomationThreadForRetry(
+  threadId: string,
+): Promise<void> {
+  const previous = context.mocks.s3.send.getMockImplementation();
+  installFakeChatEventR2(context);
+  const snapshot = context.mocks.s3.send.getMockImplementation();
+  if (!previous || !snapshot) {
+    throw new Error("Expected object storage fixtures");
+  }
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    if (
+      (command instanceof GetObjectCommand ||
+        command instanceof PutObjectCommand) &&
+      command.input.Key?.startsWith("chat-events/")
+    ) {
+      return snapshot(command);
+    }
+    return previous(command);
+  });
+  await accept(
+    setupApp({ context, routes: testChatEventSearchProjectionRoutes })(
+      testChatEventSearchProjectionContract,
+    ).project({ body: { chat_thread_ids: [threadId] } }),
+    [200],
+  );
+  await accept(
+    setupApp({ context, routes: testChatEventSnapshotRoutes })(
+      testChatEventSnapshotContract,
+    ).snapshot({ body: { chat_thread_ids: [threadId], r2_object_keys: [] } }),
+    [200],
+  );
+  // Retention is infrastructure-only. The existing fixture refuses deletion
+  // unless this thread has a durable snapshot covering the removed events.
+  await removeSnapshottedRunEvents(threadId);
+}
+
 describe("chat-run-finished workflow automations", () => {
+  it.each(["completed", "failed", "cancelled"] as const)(
+    "retries a split %s callback through delivery and watched automation admission once",
+    { timeout: 120_000 },
+    async (status) => {
+      await withSplitChatEventDatabase(async () => {
+        const fixture = await setupChatAutomationFixture();
+        integrations.configureSlackAppMocks();
+        const slackUserId = `U_${randomUUID().replaceAll("-", "")}`;
+        const { teamId, botUserId } = await integrations.installSlackWorkspace(
+          fixture.actor,
+          { installerSlackUserId: slackUserId },
+        );
+        const channelId = `C_${randomUUID().replaceAll("-", "")}`;
+        const threadTs = "3000.000100";
+        await integrations.postSlackEvent(teamId, {
+          type: "app_mention",
+          user: slackUserId,
+          text: `<@${botUserId}> exercise ${status} retry`,
+          channel: channelId,
+          ts: threadTs,
+        });
+        await api.heartbeatRunner(fixture.runnerGroup);
+        let watchedRunId: string | undefined;
+        await expect
+          .poll(async () => {
+            watchedRunId = (await api.pollRunner(fixture.runnerGroup)).body.job
+              ?.runId;
+            return watchedRunId;
+          })
+          .toBeTruthy();
+        if (!watchedRunId) {
+          throw new Error("Expected the Slack run to be admitted");
+        }
+        const runId = watchedRunId;
+        const claim = await api.claimRunnerJob(runId);
+        const headers = { authorization: `Bearer ${claim.sandboxToken}` };
+        const threadId = claim.platformEnvironment.OKOU_CHAT_THREAD_ID;
+        if (!threadId) {
+          throw new Error(
+            "Expected the runner's canonical chat thread identity",
+          );
+        }
+        const automationId = await createChatRunFinishedAutomation(fixture, {
+          chatThreadId: threadId,
+          runStatuses: [status],
+        });
+        const watchedThread = await chat.readThreadMetadata(
+          fixture.actor,
+          threadId,
+        );
+        const nextInputId = randomUUID();
+        const queued = await chat.requestSendEvent(
+          fixture.actor,
+          {
+            agentId: watchedThread.agentId,
+            threadId,
+            prompt: "Continue after the retried callback",
+            clientEventId: nextInputId,
+          },
+          [201],
+        );
+        if (queued.status !== 201) {
+          throw new Error("Expected the follow-up input to be accepted");
+        }
+        expect(queued.body.runId).toBeNull();
+        if (status === "completed") {
+          await webhooks.requestAgentEvents(
+            {
+              runId,
+              events: [
+                {
+                  type: "assistant",
+                  sequenceNumber: 0,
+                  message: {
+                    id: `msg_${runId}`,
+                    content: [
+                      { type: "text", text: "The watched task is complete." },
+                    ],
+                  },
+                },
+              ],
+            },
+            headers,
+            [200],
+          );
+        }
+        const completion =
+          status === "completed"
+            ? {
+                runId,
+                exitCode: 0,
+                lastEventSequence: 0,
+                checkpoint: {
+                  cliAgentType: "claude-code" as const,
+                  cliAgentSessionId: `bdd-cli-${runId}`,
+                  cliAgentSessionHistoryHash: createHash("sha256")
+                    .update(`bdd chat session history ${runId}`)
+                    .digest("hex"),
+                },
+              }
+            : {
+                runId,
+                exitCode: 1,
+                error:
+                  status === "cancelled"
+                    ? "Run cancelled"
+                    : "Synthetic runner failure",
+              };
+        const removeRegistrationFault =
+          await installTerminalCallbackFailureFixture(
+            runId,
+            "delivery-registration",
+          );
+        const registrationAttempt = await settleIncludingAbort(
+          (async () => {
+            const failedCompletion = await webhooks.requestAgentComplete(
+              completion,
+              headers,
+              [200, 500],
+            );
+            expect(failedCompletion.status).toBe(500);
+            const afterFailure = await chat.listThreadEvents(
+              fixture.actor,
+              threadId,
+            );
+            expect(
+              afterFailure.events.filter((event) => {
+                return (
+                  event.eventType === `run.${status}` && event.runId === runId
+                );
+              }),
+            ).toHaveLength(1);
+            await expect(automationLastRunAt(automationId)).resolves.toBeNull();
+          })(),
+        );
+        const registrationCleanup = await settleIncludingAbort(
+          removeRegistrationFault(),
+        );
+        if (!registrationAttempt.ok) {
+          throw registrationAttempt.error;
+        }
+        if (!registrationCleanup.ok) {
+          throw registrationCleanup.error;
+        }
+
+        // The next attempt admits the automation but loses its final callback
+        // acknowledgement. Retrying that same source must not admit a second run.
+        const removeAcknowledgementFault =
+          await installTerminalCallbackFailureFixture(
+            runId,
+            "source-acknowledgement",
+          );
+        const acknowledgementAttempt = await settleIncludingAbort(
+          (async () => {
+            const failedAcknowledgement = await webhooks.requestAgentComplete(
+              completion,
+              headers,
+              [200, 500],
+            );
+            expect(failedAcknowledgement.status).toBe(500);
+            await expectAutomationFired(automationId);
+          })(),
+        );
+        const acknowledgementCleanup = await settleIncludingAbort(
+          removeAcknowledgementFault(),
+        );
+        if (!acknowledgementAttempt.ok) {
+          throw acknowledgementAttempt.error;
+        }
+        if (!acknowledgementCleanup.ok) {
+          throw acknowledgementCleanup.error;
+        }
+        const admittedAutomation = await accept(
+          automationsClient().get({
+            headers: authHeaders(),
+            params: { id: automationId },
+          }),
+          [200],
+        );
+        const automationThreadId = admittedAutomation.body.chatThreadId;
+        if (!automationThreadId) {
+          throw new Error("Expected the admitted automation thread");
+        }
+        const automationEvents = await chat.listThreadEvents(
+          fixture.actor,
+          automationThreadId,
+        );
+        const automationInputs = automationEvents.events.filter((event) => {
+          return (
+            event.eventType === "input.prompt" &&
+            event.userMessage.parts.some((part) => {
+              return (
+                part.type === "source" &&
+                part.kind === "agent" &&
+                part.runId === runId
+              );
+            })
+          );
+        });
+        expect(automationInputs).toHaveLength(1);
+        const [automationInput] = automationInputs;
+        const cursor = automationEvents.events.at(-1);
+        if (!automationInput?.runId || !cursor) {
+          throw new Error(
+            "Expected the triggered automation to own a run and cursor",
+          );
+        }
+        await archiveAutomationThreadForRetry(automationThreadId);
+        await webhooks.requestAgentComplete(completion, headers, [200]);
+        await webhooks.requestAgentComplete(completion, headers, [200]);
+        const afterRetry = await chat.listThreadEvents(
+          fixture.actor,
+          automationThreadId,
+          {
+            sinceSeqId: cursor.seqId,
+            sinceEventId: cursor.id,
+          },
+        );
+        expect(
+          afterRetry.events.filter((event) => {
+            return (
+              event.eventType === "input.prompt" ||
+              event.eventType === "input.automation"
+            );
+          }),
+        ).toHaveLength(0);
+        const triggered = await api.claimRunnerJob(automationInput.runId);
+        expect(triggered.prompt).toContain(status);
+        let nextRunId: string | undefined;
+        await expect
+          .poll(async () => {
+            const events = await chat.listThreadEvents(fixture.actor, threadId);
+            nextRunId =
+              events.events.find((event) => {
+                return (
+                  event.eventType === "input.prompt" &&
+                  event.revokesEventId === nextInputId
+                );
+              })?.runId ?? undefined;
+            return nextRunId;
+          })
+          .toBeTruthy();
+        expect(nextRunId).not.toBe(runId);
+        const finalEvents = await chat.listThreadEvents(
+          fixture.actor,
+          threadId,
+        );
+        expect(
+          finalEvents.events.filter((event) => {
+            return event.eventType === `run.${status}` && event.runId === runId;
+          }),
+        ).toHaveLength(1);
+        expect(
+          context.mocks.slack.chat.postMessage.mock.calls.filter(
+            ([message]) => {
+              const delivered = z
+                .object({
+                  channel: z.string(),
+                  thread_ts: z.string().optional(),
+                })
+                .parse(message);
+              return (
+                delivered.channel === channelId &&
+                delivered.thread_ts === threadTs
+              );
+            },
+          ),
+        ).toHaveLength(1);
+      });
+    },
+  );
+
   it("requires the watched chat thread to belong to the automation owner", async () => {
     const fixture = await setupChatAutomationFixture();
 

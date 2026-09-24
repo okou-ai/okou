@@ -1,4 +1,6 @@
 import { command } from "ccstate";
+import { z } from "zod";
+import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { v5 as uuidv5 } from "uuid";
 import {
   chatRunFinishedEventConfigSchema,
@@ -9,7 +11,10 @@ import {
   workflowAutomations,
   workflows,
 } from "@okouai/db/schema/workflow";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, not, sql } from "drizzle-orm";
+import type { Tx } from "../../lib/db-types";
+import { zodDriverValueDecoder } from "../../lib/db-structured-result";
+import { settle } from "../utils";
 
 import { writeDb$, type Db } from "../external/db";
 import { AUTONOMY_BUDGET_EXHAUSTED_MESSAGE } from "../../lib/error";
@@ -20,6 +25,7 @@ import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
+import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
 import { insertChatEvent } from "./chat-event.service";
@@ -34,6 +40,8 @@ import { agentRunSourceTitleSnapshot } from "./chat-user-message.service";
 const CHAT_RUN_FINISHED_EVENT_TYPE = "chat-run-finished";
 // Bounds the finished run's output copied into the triggered run's context.
 const OUTPUT_EXCERPT_CHAR_CAP = 4000;
+const CHAT_RUN_FINISHED_QUEUE_EVENT_NAMESPACE =
+  "ed97d605-f9df-4ce3-b2df-f7ccf318cb53";
 const AUTONOMY_BUDGET_ERROR_EVENT_NAMESPACE =
   "e020ef30-b3ec-4465-83e0-f040094ef14b";
 
@@ -163,6 +171,164 @@ function chatRunFinishedTriggerContext(args: {
   };
 }
 
+class ChatRunFinishedAutomationAlreadyAdmittedError extends Error {}
+
+async function loadAdmittedChatRunFinishedAutomations(
+  db: Db,
+  event: ChatRunFinishedEvent,
+): Promise<ReadonlySet<string>> {
+  if (event.sourceCallbackId === undefined) {
+    return new Set();
+  }
+  const [source] = await db
+    .select({
+      automationIds:
+        sql`coalesce(${agentRunCallbacks.payload}->'chatRunFinishedAutomationIds', '[]'::jsonb)`.mapWith(
+          zodDriverValueDecoder(z.array(z.uuid())),
+        ),
+    })
+    .from(agentRunCallbacks)
+    .where(
+      and(
+        eq(agentRunCallbacks.id, event.sourceCallbackId),
+        eq(agentRunCallbacks.runId, event.runId),
+        eq(agentRunCallbacks.internalKind, "chat"),
+      ),
+    )
+    .limit(1);
+  if (!source) {
+    throw new Error("Chat run finished event is missing its source callback");
+  }
+  return new Set(source.automationIds);
+}
+
+async function recordChatRunFinishedAutomationAdmission(
+  tx: Tx,
+  sourceCallbackId: string,
+  runId: string,
+  automationId: string,
+): Promise<void> {
+  const receipts = sql`coalesce(${agentRunCallbacks.payload}->'chatRunFinishedAutomationIds', '[]'::jsonb)`;
+  const [recorded] = await tx
+    .update(agentRunCallbacks)
+    .set({
+      payload: sql`jsonb_set(${agentRunCallbacks.payload}, '{chatRunFinishedAutomationIds}', ${receipts} || to_jsonb(${automationId}::text))`,
+    })
+    .where(
+      and(
+        eq(agentRunCallbacks.id, sourceCallbackId),
+        eq(agentRunCallbacks.runId, runId),
+        eq(agentRunCallbacks.internalKind, "chat"),
+        not(sql`${receipts} @> to_jsonb(ARRAY[${automationId}::text])`),
+      ),
+    )
+    .returning({ id: agentRunCallbacks.id });
+  if (!recorded) {
+    const [admitted] = await tx
+      .select({ id: agentRunCallbacks.id })
+      .from(agentRunCallbacks)
+      .where(
+        and(
+          eq(agentRunCallbacks.id, sourceCallbackId),
+          eq(agentRunCallbacks.runId, runId),
+          eq(agentRunCallbacks.internalKind, "chat"),
+          sql`${receipts} @> to_jsonb(ARRAY[${automationId}::text])`,
+        ),
+      )
+      .limit(1);
+    if (!admitted) {
+      throw new Error("Chat run finished admission lost its source callback");
+    }
+    // A competing callback already committed this automation's queue input.
+    // Roll back this admission, including its event, before returning success.
+    throw new ChatRunFinishedAutomationAlreadyAdmittedError();
+  }
+}
+
+const admitChatRunFinishedAutomation$ = command(
+  async (
+    { set },
+    args: {
+      readonly event: ChatRunFinishedEvent;
+      readonly automation: typeof workflowAutomations.$inferSelect;
+      readonly agentId: string;
+      readonly chatThreadId: string;
+      readonly workflowName: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { event, automation, agentId, chatThreadId, workflowName } = args;
+    const context = chatRunFinishedTriggerContext({
+      workflowName,
+      automationId: automation.id,
+      event,
+    });
+    const sourceCallbackId = event.sourceCallbackId;
+    const admission = await settle(
+      set(
+        runWorkflowAutomationNow$,
+        {
+          due: {
+            automation,
+            agentId,
+            chatThreadId,
+          },
+          automationContext: context,
+          queueEventId:
+            event.sourceCallbackId === undefined
+              ? undefined
+              : uuidv5(
+                  `${automation.id}:${event.runId}`,
+                  CHAT_RUN_FINISHED_QUEUE_EVENT_NAMESPACE,
+                ),
+          persistSourceTransition:
+            sourceCallbackId === undefined
+              ? undefined
+              : (tx) => {
+                  return recordChatRunFinishedAutomationAdmission(
+                    tx,
+                    sourceCallbackId,
+                    event.runId,
+                    automation.id,
+                  );
+                },
+          apiStartTime: now(),
+          agentRunSource: {
+            runId: event.runId,
+            threadId: event.chatThreadId,
+            agentId: event.sourceAgentId,
+            titleSnapshot: agentRunSourceTitleSnapshot(event.sourceThreadTitle),
+          },
+          triggerSource: "automation-event",
+          triggerBrief: `Chat run ${event.runStatus} in watched thread`,
+          dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+        },
+        signal,
+      ),
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!admission.ok) {
+      if (
+        !(
+          admission.error instanceof
+          ChatRunFinishedAutomationAlreadyAdmittedError
+        )
+      ) {
+        throw admission.error;
+      }
+      await set(
+        drainChatThreadQueueForThread$,
+        {
+          chatThreadId,
+          dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+        },
+        signal,
+      );
+    }
+  },
+);
+
 /**
  * Fires `chat-run-finished` automations watching the thread whose run just
  * reached a terminal state. Called from the terminal chat callback after the
@@ -213,6 +379,11 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
       );
     signal.throwIfAborted();
 
+    const admittedAutomationIds = await loadAdmittedChatRunFinishedAutomations(
+      db,
+      event,
+    );
+    signal.throwIfAborted();
     const currentTime = nowDate();
     const exhaustedThreadIds = new Set<string>();
     for (const row of automationRows) {
@@ -220,6 +391,23 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
         row.automation.eventConfig,
       );
       if (!config.success || !automationMatchesEvent(config.data, event)) {
+        continue;
+      }
+
+      if (admittedAutomationIds.has(row.automation.id)) {
+        // Queue admission is durable independently of its launch. A source retry
+        // also retries the target wakeup, including after hot-event retention.
+        if (row.chatThreadId !== null) {
+          await set(
+            drainChatThreadQueueForThread$,
+            {
+              chatThreadId: row.chatThreadId,
+              dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+            },
+            signal,
+          );
+          signal.throwIfAborted();
+        }
         continue;
       }
 
@@ -259,30 +447,14 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
         continue;
       }
 
-      const context = chatRunFinishedTriggerContext({
-        workflowName: row.workflowName,
-        automationId: row.automation.id,
-        event,
-      });
       await set(
-        runWorkflowAutomationNow$,
+        admitChatRunFinishedAutomation$,
         {
-          due: {
-            automation: row.automation,
-            agentId: row.agentId,
-            chatThreadId,
-          },
-          automationContext: context,
-          apiStartTime: now(),
-          agentRunSource: {
-            runId: event.runId,
-            threadId: event.chatThreadId,
-            agentId: event.sourceAgentId,
-            titleSnapshot: agentRunSourceTitleSnapshot(event.sourceThreadTitle),
-          },
-          triggerSource: "automation-event",
-          triggerBrief: `Chat run ${event.runStatus} in watched thread`,
-          dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+          event,
+          automation: row.automation,
+          agentId: row.agentId,
+          chatThreadId,
+          workflowName: row.workflowName,
         },
         signal,
       );

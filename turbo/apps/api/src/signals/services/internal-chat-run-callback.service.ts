@@ -845,7 +845,7 @@ type QueuedMessageAdmissionFailure =
 
 type CompletedChatCallbackResult =
   | {
-      readonly outcome: "written";
+      readonly outcome: "written" | "replayed";
       readonly lastResultText: string | null;
       readonly followupContext: readonly ChatCompletionContextMessage[];
       readonly slackDeliveryCallbackId?: string;
@@ -860,7 +860,7 @@ type CompletedChatCallbackResult =
 
 type FailedChatCallbackResult =
   | {
-      readonly outcome: "written";
+      readonly outcome: "written" | "replayed";
       readonly displayErrorMessage: string;
       readonly slackDeliveryCallbackId?: string;
       readonly feishuDeliveryCallbackId?: string;
@@ -873,13 +873,14 @@ type FailedChatCallbackResult =
   | { readonly outcome: "closed" };
 
 interface TerminalChatCallbackWork {
-  readonly outcome: "written" | "duplicate" | "closed";
+  readonly outcome: "written" | "replayed" | "duplicate" | "closed";
   readonly slackDeliveryCallbackId?: string;
   readonly feishuDeliveryCallbackId?: string;
   readonly teamsDeliveryCallbackId?: string;
   readonly telegramDeliveryCallbackId?: string;
   readonly agentphoneDeliveryCallbackId?: string;
   readonly githubDeliveryCallbackId?: string;
+  readonly retryableSideEffects?: (signal: AbortSignal) => Promise<void>;
   readonly deferredSideEffects?: (signal: AbortSignal) => Promise<void>;
 }
 
@@ -1183,16 +1184,11 @@ type ChatDeliveryKind =
   | "agentphone:chat"
   | "github:chat";
 
-async function insertChatDeliveryCallback(args: {
+async function requireSourceChatCallback(args: {
   readonly db: ChatCallbackTransaction;
   readonly runId: string;
   readonly sourceCallbackId?: string;
-  readonly internalKind: ChatDeliveryKind;
-  readonly chatEventId: string;
-  readonly payload: NonNullable<
-    (typeof agentRunCallbacks.$inferInsert)["payload"]
-  >;
-}): Promise<string> {
+}) {
   const [source] = await args.db
     .select({
       id: agentRunCallbacks.id,
@@ -1213,6 +1209,21 @@ async function insertChatDeliveryCallback(args: {
   if (!source) {
     throw new Error("Canonical delivery run is missing its chat callback");
   }
+
+  return source;
+}
+
+async function insertChatDeliveryCallback(args: {
+  readonly db: ChatCallbackTransaction;
+  readonly runId: string;
+  readonly sourceCallbackId?: string;
+  readonly internalKind: ChatDeliveryKind;
+  readonly chatEventId: string;
+  readonly payload: NonNullable<
+    (typeof agentRunCallbacks.$inferInsert)["payload"]
+  >;
+}): Promise<string> {
+  const source = await requireSourceChatCallback(args);
 
   // Pre-PR1 callbacks had random IDs. Reuse their delivery identity until the
   // callback retention window drains in PR2; never resend a delivered legacy row.
@@ -1592,16 +1603,15 @@ async function insertAssistantErrorEvent(
     return { outcome: "duplicate" };
   }
 
-  if (!inserted.markerInserted) {
-    return { ...inserted, outcome: "duplicate" };
+  if (inserted.markerInserted) {
+    if (splitWrites) {
+      await touchChatThreadLastMessageAtIndependently(args.db, args.threadId);
+    }
+    await publishAssistantErrorEventSignals(args);
   }
-  if (splitWrites) {
-    await touchChatThreadLastMessageAtIndependently(args.db, args.threadId);
-  }
-  await publishAssistantErrorEventSignals(args);
   return {
     displayErrorMessage,
-    outcome: "written",
+    outcome: inserted.markerInserted ? "written" : "replayed",
     slackDeliveryCallbackId: inserted.slackDeliveryCallbackId,
     feishuDeliveryCallbackId: inserted.feishuDeliveryCallbackId,
     teamsDeliveryCallbackId: inserted.teamsDeliveryCallbackId,
@@ -1931,7 +1941,9 @@ async function insertRunLifecycleMarker(
 ): Promise<
   | ({ readonly outcome: "duplicate" } & RunLifecycleDeliveryCallbacks)
   | { readonly outcome: "closed" }
-  | ({ readonly outcome: "written" } & RunLifecycleDeliveryCallbacks)
+  | ({
+      readonly outcome: "written" | "replayed";
+    } & RunLifecycleDeliveryCallbacks)
 > {
   const markerCreatedAt = nowDate();
   const goalId = await historicalRunGroupId(
@@ -1993,7 +2005,9 @@ async function insertRunLifecycleMarker(
     return { outcome: "duplicate" };
   }
   if (!inserted.markerInserted) {
-    return { ...inserted, outcome: "duplicate" };
+    // The marker is only one committed projection. Its source callback still
+    // owns completion work until registration and automation admission succeed.
+    return { ...inserted, outcome: "replayed" };
   }
   if (splitWrites) {
     await touchChatThreadLastMessageAtIndependently(
@@ -2238,7 +2252,7 @@ async function handleCompletedChatCallback(
     },
   );
   signal.throwIfAborted();
-  if (inserted.outcome !== "written") {
+  if (inserted.outcome === "duplicate" || inserted.outcome === "closed") {
     return inserted;
   }
 
@@ -2258,7 +2272,7 @@ async function handleCompletedChatCallback(
   return {
     lastResultText,
     followupContext,
-    outcome: "written",
+    outcome: inserted.outcome,
     slackDeliveryCallbackId: inserted.slackDeliveryCallbackId,
     feishuDeliveryCallbackId: inserted.feishuDeliveryCallbackId,
     teamsDeliveryCallbackId: inserted.teamsDeliveryCallbackId,
@@ -2277,7 +2291,7 @@ async function runCompletedChatCallbackSideEffects(
     readonly lastResultText: string | null;
     readonly followupContext: readonly ChatCompletionContextMessage[];
     readonly saveRunSummary: (resultText: string) => Promise<void>;
-    readonly dispatchChatRunFinishedAutomations: ChatCallbackDependencies["dispatchChatRunFinishedAutomations"];
+    readonly dispatchChatRunFinishedAutomations?: ChatCallbackDependencies["dispatchChatRunFinishedAutomations"];
   },
   signal: AbortSignal,
 ): Promise<void> {
@@ -2285,7 +2299,7 @@ async function runCompletedChatCallbackSideEffects(
   // auto-send so LLM/push latency does not delay the next run.
   const saveSummaryStep = args.saveRunSummary(args.lastResultText ?? "");
 
-  const chatRunFinishedStep = args.dispatchChatRunFinishedAutomations(
+  const chatRunFinishedStep = args.dispatchChatRunFinishedAutomations?.(
     {
       chatThreadId: args.chatThread.chatThreadId,
       runId: args.runId,
@@ -2422,11 +2436,11 @@ async function runFailedChatCallbackSideEffects(
     readonly chatThread: ChatThreadForRunRow;
     readonly displayErrorMessage: string;
     readonly runStatus: "failed" | "cancelled";
-    readonly dispatchChatRunFinishedAutomations: ChatCallbackDependencies["dispatchChatRunFinishedAutomations"];
+    readonly dispatchChatRunFinishedAutomations?: ChatCallbackDependencies["dispatchChatRunFinishedAutomations"];
   },
   signal: AbortSignal,
 ): Promise<void> {
-  const chatRunFinishedStep = args.dispatchChatRunFinishedAutomations(
+  const chatRunFinishedStep = args.dispatchChatRunFinishedAutomations?.(
     {
       chatThreadId: args.chatThread.chatThreadId,
       runId: args.runId,
@@ -4209,6 +4223,7 @@ async function loadTerminalChatCallback(
 async function prepareCompletedTerminalChatCallbackWork(
   args: {
     readonly db: Db;
+    readonly splitWrites: boolean;
     readonly ownership: RunContentOwnership;
     readonly runId: string;
     readonly run: ChatRunInfo;
@@ -4267,18 +4282,34 @@ async function prepareCompletedTerminalChatCallbackWork(
     },
   );
   const completed = prepared;
-  if (completed.outcome !== "written") {
+  if (completed.outcome !== "written" && completed.outcome !== "replayed") {
     return completed;
   }
 
   return {
-    outcome: "written",
+    outcome: completed.outcome,
     slackDeliveryCallbackId: completed.slackDeliveryCallbackId,
     feishuDeliveryCallbackId: completed.feishuDeliveryCallbackId,
     teamsDeliveryCallbackId: completed.teamsDeliveryCallbackId,
     telegramDeliveryCallbackId: completed.telegramDeliveryCallbackId,
     agentphoneDeliveryCallbackId: completed.agentphoneDeliveryCallbackId,
     githubDeliveryCallbackId: completed.githubDeliveryCallbackId,
+    retryableSideEffects: args.splitWrites
+      ? (retrySignal) => {
+          return args.dependencies.dispatchChatRunFinishedAutomations(
+            {
+              chatThreadId: args.chatThread.chatThreadId,
+              runId: args.runId,
+              sourceCallbackId: args.sourceCallbackId,
+              runStatus: "completed",
+              lastResultText: completed.lastResultText,
+              sourceAgentId: args.chatThread.agentId,
+              sourceThreadTitle: args.chatThread.title,
+            },
+            retrySignal,
+          );
+        }
+      : undefined,
     deferredSideEffects: (deferredSignal) => {
       return runCompletedChatCallbackSideEffects(
         {
@@ -4296,8 +4327,9 @@ async function prepareCompletedTerminalChatCallbackWork(
               deferredSignal,
             );
           },
-          dispatchChatRunFinishedAutomations:
-            args.dependencies.dispatchChatRunFinishedAutomations,
+          dispatchChatRunFinishedAutomations: args.splitWrites
+            ? undefined
+            : args.dependencies.dispatchChatRunFinishedAutomations,
         },
         deferredSignal,
       );
@@ -4308,6 +4340,7 @@ async function prepareCompletedTerminalChatCallbackWork(
 async function prepareFailedTerminalChatCallbackWork(
   args: {
     readonly db: Db;
+    readonly splitWrites: boolean;
     readonly ownership: RunContentOwnership;
     readonly runId: string;
     readonly run: ChatRunInfo;
@@ -4368,18 +4401,37 @@ async function prepareFailedTerminalChatCallbackWork(
       );
     },
   );
-  if (failed.outcome !== "written") {
+  if (failed.outcome !== "written" && failed.outcome !== "replayed") {
     return failed;
   }
 
   return {
-    outcome: "written",
+    outcome: failed.outcome,
     slackDeliveryCallbackId: failed.slackDeliveryCallbackId,
     feishuDeliveryCallbackId: failed.feishuDeliveryCallbackId,
     teamsDeliveryCallbackId: failed.teamsDeliveryCallbackId,
     telegramDeliveryCallbackId: failed.telegramDeliveryCallbackId,
     agentphoneDeliveryCallbackId: failed.agentphoneDeliveryCallbackId,
     githubDeliveryCallbackId: failed.githubDeliveryCallbackId,
+    retryableSideEffects: args.splitWrites
+      ? (retrySignal) => {
+          return args.dependencies.dispatchChatRunFinishedAutomations(
+            {
+              chatThreadId: args.chatThread.chatThreadId,
+              runId: args.runId,
+              sourceCallbackId: args.sourceCallbackId,
+              runStatus:
+                args.errorMessage.trim().toLowerCase() === "run cancelled"
+                  ? "cancelled"
+                  : "failed",
+              lastResultText: null,
+              sourceAgentId: args.chatThread.agentId,
+              sourceThreadTitle: args.chatThread.title,
+            },
+            retrySignal,
+          );
+        }
+      : undefined,
     deferredSideEffects: (deferredSignal) => {
       return runFailedChatCallbackSideEffects(
         {
@@ -4392,8 +4444,9 @@ async function prepareFailedTerminalChatCallbackWork(
             args.errorMessage.trim().toLowerCase() === "run cancelled"
               ? "cancelled"
               : "failed",
-          dispatchChatRunFinishedAutomations:
-            args.dependencies.dispatchChatRunFinishedAutomations,
+          dispatchChatRunFinishedAutomations: args.splitWrites
+            ? undefined
+            : args.dependencies.dispatchChatRunFinishedAutomations,
         },
         deferredSignal,
       );
@@ -4771,7 +4824,10 @@ async function drainAndClearTerminalChatThread(
       }
       return await maybeDrainThreadQueueForTerminalCallback(
         {
-          enabled: args.work.outcome !== "duplicate",
+          enabled:
+            args.work.outcome === "written" ||
+            args.work.outcome === "replayed" ||
+            args.work.outcome === "closed",
           chatThreadId: drainThreadId,
           dependencies: args.callback.dependencies,
           timing: args.timing,
@@ -4829,8 +4885,13 @@ async function finishTerminalChatCallbackAfterProjection(
     throw drainResult.error;
   }
 
+  // A committed marker must not acknowledge an unfinished automation. Throw
+  // back to the existing callback owner so its failed/pending row can retry.
+  await args.work.retryableSideEffects?.(signal);
+  signal.throwIfAborted();
+
   const deferredSideEffects = args.work.deferredSideEffects;
-  if (deferredSideEffects) {
+  if (deferredSideEffects && args.work.outcome === "written") {
     const backgroundSignal = new AbortController().signal;
     waitUntil(
       runTerminalChatCallbackSideEffects({
@@ -4844,10 +4905,32 @@ async function finishTerminalChatCallbackAfterProjection(
   }
 }
 
+async function terminalChatCallbackSourceId(
+  args: TerminalChatCallbackArgs,
+  splitWrites: boolean,
+): Promise<string | undefined> {
+  if (!splitWrites) {
+    return args.callback.callbackId;
+  }
+  // Queue launch failure callbacks carry the run identity before they have
+  // an envelope callback ID. Resolve their existing persisted owner exactly
+  // as delivery registration does; active work must never lose its receipt.
+  return (
+    await requireSourceChatCallback({
+      db: args.db,
+      runId: args.callback.runId,
+      sourceCallbackId: args.callback.callbackId,
+    })
+  ).id;
+}
+
 async function processTerminalChatCallback(
   args: TerminalChatCallbackArgs,
   signal: AbortSignal,
-  options?: { readonly deferPostProjection?: boolean },
+  options?: {
+    readonly deferPostProjection?: boolean;
+    readonly splitWrites?: boolean;
+  },
 ): Promise<void> {
   const { runId, status: callbackStatus } = args.callback;
   if (callbackStatus === "progress") {
@@ -4887,6 +4970,13 @@ async function processTerminalChatCallback(
         return null;
       }
       const { run, chatThread, ownership } = loaded;
+      const splitWrites =
+        options?.splitWrites ?? (await isSplitChatEventWriteEnabled(args.db));
+      const sourceCallbackId = await terminalChatCallbackSourceId(
+        args,
+        splitWrites,
+      );
+      signal.throwIfAborted();
       const preparation = {
         db: args.db,
         runId,
@@ -4896,8 +4986,9 @@ async function processTerminalChatCallback(
         dependencies: args.dependencies,
         timing,
         publicBrand: args.payload.publicBrand ?? "vm0",
+        splitWrites,
         ...terminalIntegrationDeliveries(args.payload),
-        sourceCallbackId: args.callback.callbackId,
+        sourceCallbackId,
       };
       const work = await (callbackStatus === "completed"
         ? prepareCompletedTerminalChatCallbackWork(preparation, signal)
@@ -5202,7 +5293,13 @@ async function handleChatInternalCallback(
     payload: payload.data,
     dependencies: args.dependencies,
   };
-  if (args.awaitTerminalProjection) {
+  const splitWrites = await isSplitChatEventWriteEnabled(args.db);
+  signal.throwIfAborted();
+  if (splitWrites) {
+    // Keep required terminal work within the persisted source callback's retry
+    // lifetime. Each event, delivery registration and automation commits alone.
+    await processTerminalChatCallback(processingInput, signal, { splitWrites });
+  } else if (args.awaitTerminalProjection) {
     // The completion endpoint may only ACK after canonical lifecycle projection
     // succeeds. Queue wakeups keep their established detached recovery owner.
     await processTerminalChatCallback(processingInput, signal, {

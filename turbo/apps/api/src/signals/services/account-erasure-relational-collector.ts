@@ -1332,6 +1332,9 @@ export function createRelationalErasureCollector(
   // source rows are already gone. Replay the original relational coverage;
   // thread cascade removes the new sequence rows, and recurring maintenance
   // removes late provenance through its copied ownership after completion.
+  // PR2 may remove this captured-version branch only after every preceding
+  // capture and its provider obligations have completed or been retired; a
+  // successful API rollout alone does not drain these durable jobs.
   const plan =
     collectorVersion === PRE_SPLIT_RELATIONAL_ERASURE_COLLECTOR_VERSION
       ? {

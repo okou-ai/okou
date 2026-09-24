@@ -47,6 +47,11 @@ interface TelegramChatThreadCreateArgs {
 }
 
 type TelegramChatThreadTransaction = Tx;
+const TELEGRAM_INITIAL_INPUT_ROUTE_PREFIX = "input:";
+
+export function isTelegramInitialInputRoute(rootMessageId: string): boolean {
+  return rootMessageId.startsWith(TELEGRAM_INITIAL_INPUT_ROUTE_PREFIX);
+}
 
 function ownerWhere(ownerLink: TelegramOwnerLink) {
   return ownerLink.kind === "custom"
@@ -251,21 +256,54 @@ async function reconcileExistingRoute(
   return existing;
 }
 
-export async function createTelegramChatThread(
+export async function resolveTelegramInputThread(
   db: Db,
-  args: TelegramChatThreadCreateArgs,
+  args: TelegramChatThreadCreateArgs & {
+    readonly ownerLink: TelegramOwnerLink;
+    readonly chatId: string;
+    readonly rootMessageId: string | undefined;
+    readonly messageId: string;
+    readonly messageThreadId: number | null;
+    readonly chatType: string;
+    readonly preserveThreadSettings: boolean;
+    readonly splitWrites: boolean;
+  },
 ): Promise<TelegramChatThreadBinding> {
-  return await db.transaction(async (tx) => {
-    const thread = await createCanonicalTelegramChatThread(tx, args);
-    await appendCanonicalTelegramChatThreadCreatedEvent(tx, args, thread, null);
-    return { chatThreadId: thread.id };
+  if (args.rootMessageId === undefined && !args.splitWrites) {
+    // Pre-PR1 callbacks only bind a bot reply after delivery and cannot advance
+    // an input anchor. Retain their route-free first-message shape until split
+    // mode is fixed after the old API/callback drain; remove in PR2.
+    return await db.transaction(async (tx) => {
+      const thread = await createCanonicalTelegramChatThread(tx, args);
+      await appendCanonicalTelegramChatThreadCreatedEvent(
+        tx,
+        args,
+        thread,
+        null,
+      );
+      return { chatThreadId: thread.id };
+    });
+  }
+  // A new group mention has no bot reply anchor yet. Keep its original
+  // destination before optional context can fail; the first delivery advances
+  // this input anchor to the bot reply, preserving the existing reply chain.
+  return await ensureTelegramChatThreadRoute(db, {
+    ...args,
+    rootMessageId:
+      args.rootMessageId ??
+      `${TELEGRAM_INITIAL_INPUT_ROUTE_PREFIX}${args.messageId}`,
   });
 }
 
-export async function ensureTelegramChatThreadRoute(
+async function ensureTelegramChatThreadRoute(
   db: Db,
   args: TelegramChatThreadRouteKey &
-    TelegramChatThreadCreateArgs & { readonly preserveThreadSettings: boolean },
+    TelegramChatThreadCreateArgs & {
+      readonly preserveThreadSettings: boolean;
+      readonly messageId: string;
+      readonly messageThreadId: number | null;
+      readonly chatType: string;
+    },
 ): Promise<TelegramChatThreadBinding> {
   return await db.transaction(async (tx) => {
     const existing = await loadRoute(tx, args);
@@ -283,6 +321,9 @@ export async function ensureTelegramChatThreadRoute(
         chatId: args.chatId,
         rootMessageId: args.rootMessageId,
         chatThreadId: thread.id,
+        messageThreadId: args.messageThreadId,
+        chatType: args.chatType,
+        deliveryMessageId: args.messageId,
         createdAt: args.currentTime,
       })
       .onConflictDoNothing()
@@ -310,6 +351,7 @@ export async function persistTelegramReplyChainRoute(args: {
   readonly ownerLink: TelegramOwnerLink;
   readonly chatId: string;
   readonly previousRootMessageId: string | null;
+  readonly inputMessageId: string;
   readonly isDirectMessage: boolean;
   readonly botReplyMessageId: string;
   readonly chatThreadId: string;
@@ -325,6 +367,27 @@ export async function persistTelegramReplyChainRoute(args: {
   }
 
   if (args.previousRootMessageId === null || args.isDirectMessage) {
+    if (!args.isDirectMessage) {
+      const [advanced] = await args.db
+        .update(telegramChatThreadRoutes)
+        .set({ rootMessageId: args.botReplyMessageId })
+        .where(
+          and(
+            routeWhere({
+              ownerLink: args.ownerLink,
+              chatId: args.chatId,
+              rootMessageId: `${TELEGRAM_INITIAL_INPUT_ROUTE_PREFIX}${args.inputMessageId}`,
+            }),
+            eq(telegramChatThreadRoutes.chatThreadId, args.chatThreadId),
+          ),
+        )
+        .returning({ id: telegramChatThreadRoutes.id });
+      if (advanced) {
+        return;
+      }
+    }
+    // Old API callbacks may predate initial input routes. Keep their binding
+    // until pre-PR1 callbacks have drained and the rollback floor excludes them.
     await bindTelegramReplyMessageRoute(args.db, {
       ownerLink: args.ownerLink,
       chatId: args.chatId,

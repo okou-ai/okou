@@ -22,6 +22,7 @@ import {
 } from "./queued-launch-enrichment.service";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 import { buildTelegramPrompt } from "./telegram-prompt";
+import { isTelegramInitialInputRoute } from "./telegram-chat-ingress.service";
 
 export interface TelegramQueuedLaunchMaterial {
   readonly prompt: string;
@@ -293,7 +294,9 @@ async function loadTelegramRouteLaunchMaterial(
       installationId,
       chatId: route.chatId,
       messageId: route.messageId,
-      rootMessageId: route.rootMessageId,
+      rootMessageId: isTelegramInitialInputRoute(route.rootMessageId)
+        ? null
+        : route.rootMessageId,
       ...(route.messageThreadId !== null
         ? { messageThreadId: route.messageThreadId }
         : {}),

@@ -44,6 +44,9 @@ function conflictClause(conflict: ChatEventAppendConflict): SQL {
  * One SQL statement owns allocation and insertion, including cross-thread batches.
  * Sorted reservations establish a common lock order. Intentional conflicts consume
  * positions; a SQL error rolls allocation back together with the insert.
+ * The legacy entry protects DB/API rolling deployment and preactivation
+ * rollback. PR2 removes it only after activation, legacy-operation drain and
+ * verification of the active-only rollback floor.
  */
 export async function appendCanonicalChatEvents(
   db: ApiDb | Tx,

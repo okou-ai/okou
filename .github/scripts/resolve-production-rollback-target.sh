@@ -175,6 +175,9 @@ fi
 # Expansion alone must not raise the floor: a preactivation rollback is valid.
 # Read the durable, irreversible activation marker before resolving artifacts.
 # A connection/schema error fails closed instead of pretending activation is off.
+# Main's workflow can run before the expansion release. Remove absent-table
+# handling in PR2 only after expansion is permanently inside the schema floor;
+# an existing table with a missing singleton is always an invariant failure.
 chat_event_control_present=$(PGDATABASE="$DATABASE_URL" PGOPTIONS='-c statement_timeout=5000 -c lock_timeout=1000' \
   psql -X -qAt --set ON_ERROR_STOP=1 --command "SELECT to_regclass('public.chat_event_write_control') IS NOT NULL")
 case "$chat_event_control_present" in

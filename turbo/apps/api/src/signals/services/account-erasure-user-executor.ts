@@ -215,6 +215,9 @@ async function ensureUserErasureJob(
     .from(accountErasureSinks)
     .where(eq(accountErasureSinks.jobId, projected.id));
   if (existing.length > 0) {
+    // Existing captures own their provider obligations across DB/API rollout.
+    // Remove the preceding-version allowance in PR2 only after those captures
+    // complete or retire, together with the relational collector branch.
     if (
       existing.length !== sinkSpecs.length ||
       !sinkSpecs.every((spec) => {

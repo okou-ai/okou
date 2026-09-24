@@ -27,7 +27,11 @@ export function warnMissingQueuedLaunchEnrichment(
   });
 }
 
-/** Optional history/name lookups cannot block an accepted input after activation. */
+/**
+ * Optional history/name lookups cannot block an accepted input after activation.
+ * PR2 removes the legacy failure branch after old operations and rollback APIs
+ * drain; omitting unavailable optional enrichment is the permanent contract.
+ */
 export async function loadOptionalChatEnrichment<T>(
   db: Db,
   channel: string,

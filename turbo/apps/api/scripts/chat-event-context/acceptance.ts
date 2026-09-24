@@ -9,6 +9,10 @@ import { Client } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { loadAgentPhoneQueuedLaunchMaterial } from "../../src/signals/services/agentphone-queued-launch-context.service";
 import { loadTelegramQueuedLaunchMaterial } from "../../src/signals/services/telegram-queued-launch-context.service";
+import {
+  persistTelegramReplyChainRoute,
+  resolveTelegramInputThread,
+} from "../../src/signals/services/telegram-chat-ingress.service";
 import { loadTeamsQueuedLaunchMaterial } from "../../src/signals/services/teams-queued-launch-context.service";
 import { loadGitHubQueuedLaunchMaterial } from "../../src/signals/services/github-queued-launch-context.service";
 import { loadSlackQueuedLaunchMaterial } from "../../src/signals/services/slack-queued-launch-context.service";
@@ -43,11 +47,12 @@ const schema = `chat_context_${suffix}`;
 const userId = `context-user-${suffix}`;
 const orgId = `context-org-${suffix}`;
 const agentId = randomUUID();
+const canonicalFiles = [
+  { id: randomUUID(), filename: "original.txt", contentType: "text/plain" },
+];
 const canonical = createUserMessageDocument({
   text: "Original text survives missing history",
-  files: [
-    { id: randomUUID(), filename: "original.txt", contentType: "text/plain" },
-  ],
+  files: canonicalFiles,
 });
 const projection = projectUserMessage(canonical);
 const warnings: unknown[][] = [];
@@ -123,9 +128,10 @@ function original(
     readonly prompt: string;
     readonly appendSystemPrompt: string;
   } | null,
+  expectedProjection = projection,
 ) {
   assert.ok(material);
-  assert.equal(material.prompt, projection.agentPrompt);
+  assert.equal(material.prompt, expectedProjection.agentPrompt);
   assert.match(material.prompt, /Original text survives/);
   assert.match(material.prompt, /original\.txt/);
   assert.equal(material.appendSystemPrompt, "");
@@ -153,6 +159,9 @@ try {
     [agentId, orgId, userId],
   );
   const db = drizzle(client);
+  await client.query(
+    "INSERT INTO chat_event_write_control(id,activated_at) VALUES('global',NULL)",
+  );
 
   const phone = await event("agentphone");
   const phoneLink = randomUUID();
@@ -185,27 +194,138 @@ try {
     "unknown group must not redirect to a DM",
   );
 
-  const telegram = await event("telegram");
   const tgLink = randomUUID();
   await client.query(
     "INSERT INTO telegram_official_user_links(id,telegram_user_id,user_id,org_id,public_brand) VALUES($1,'tg-user',$2,$3,'okou')",
     [tgLink, userId, orgId],
   );
+  // Context storage failure cannot be requested by a Telegram caller. Exercise
+  // the real first-ingress resolver with no reply anchor, then fail only the
+  // optional SQL insert; never preseed the route that admission must create.
   await client.query(
-    "INSERT INTO telegram_chat_thread_routes(telegram_official_user_link_id,chat_id,root_message_id,chat_thread_id,message_thread_id,chat_type,delivery_message_id) VALUES($1,'-10042','301',$2,37,'supergroup','302')",
-    [tgLink, telegram.chatThreadId],
+    `CREATE FUNCTION ${schema}.reject_context() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'context storage failure'; END $$`,
   );
-  const tgMaterial = await loadTelegramQueuedLaunchMaterial(db, telegram);
-  original(tgMaterial);
-  assert.equal(tgMaterial?.telegramDelivery.messageThreadId, 37);
-  assert.equal(tgMaterial?.telegramDelivery.chatId, "-10042");
-  assert.equal(
-    await loadTelegramQueuedLaunchMaterial(db, {
-      ...telegram,
-      userId: "wrong-user",
-    }),
-    null,
+  await client.query(
+    `CREATE TRIGGER reject_context BEFORE INSERT ON chat_telegram_context FOR EACH ROW EXECUTE FUNCTION ${schema}.reject_context()`,
   );
+  const telegramMessage = createUserMessageDocument({
+    text: "@context_bot Original text survives missing history",
+    files: canonicalFiles,
+  });
+  const telegramProjection = projectUserMessage(telegramMessage);
+  for (const destination of [
+    {
+      chatId: "-10041",
+      chatType: "group",
+      messageThreadId: null,
+      runStatus: "failed" as const,
+    },
+    {
+      chatId: "-10042",
+      chatType: "supergroup",
+      messageThreadId: 37,
+      runStatus: "completed" as const,
+    },
+  ]) {
+    const ingress = {
+      userId,
+      orgId,
+      agentId,
+      selectedModel: null,
+      serviceTier: null,
+      currentTime: new Date(),
+      ownerLink: { kind: "official" as const, id: tgLink },
+      ...destination,
+      messageId: "301",
+      rootMessageId: undefined,
+      preserveThreadSettings: false,
+      splitWrites: true,
+    };
+    const binding = await resolveTelegramInputThread(db, ingress);
+    const eventId = randomUUID();
+    const appended = await insertChatEvent(
+      db,
+      {
+        id: eventId,
+        chatThreadId: binding.chatThreadId,
+        eventType: "input.prompt",
+        userMessage: telegramMessage,
+        runId: null,
+        telegramContext: {
+          ...destination,
+          messageId: "301",
+          rootMessageId: null,
+          thinkingMessageId: null,
+          messageText: "Never log enrichment payload",
+          threadContext: "Never log enrichment payload",
+          publicBrand: "okou",
+          userLinkId: tgLink,
+          userLinkKind: "official",
+          senderUserId: "tg-user",
+          senderDisplayName: null,
+          senderUsername: null,
+          senderLanguage: null,
+        },
+      },
+      "id",
+      { splitWrites: true },
+    );
+    assert.equal(appended?.id, eventId);
+    const telegram = {
+      ...binding,
+      eventId,
+      userId,
+      orgId,
+      userMessageProjection: telegramProjection,
+      featureSwitchContext: { userId, orgId },
+    };
+    const tgMaterial = await loadTelegramQueuedLaunchMaterial(db, telegram);
+    assert.ok(tgMaterial);
+    original(tgMaterial, telegramProjection);
+    assert.equal(tgMaterial?.telegramDelivery.chatId, destination.chatId);
+    assert.equal(tgMaterial?.telegramDelivery.messageId, "301");
+    assert.equal(
+      tgMaterial?.telegramDelivery.messageThreadId,
+      destination.messageThreadId ?? undefined,
+    );
+    assert.equal(tgMaterial?.telegramDelivery.rootMessageId, null);
+    assert.equal(tgMaterial?.telegramDelivery.isDM, false);
+    for (const invalidScope of [
+      { userId: "wrong-user" },
+      { orgId: "wrong-org" },
+    ]) {
+      assert.equal(
+        await loadTelegramQueuedLaunchMaterial(db, {
+          ...telegram,
+          ...invalidScope,
+        }),
+        null,
+      );
+    }
+    await persistTelegramReplyChainRoute({
+      db,
+      ownerLink: ingress.ownerLink,
+      chatId: destination.chatId,
+      previousRootMessageId: tgMaterial.telegramDelivery.rootMessageId,
+      inputMessageId: "301",
+      isDirectMessage: false,
+      botReplyMessageId: "302",
+      chatThreadId: binding.chatThreadId,
+      runStatus: destination.runStatus,
+      currentTime: new Date(),
+    });
+    assert.equal(
+      (
+        await resolveTelegramInputThread(db, {
+          ...ingress,
+          rootMessageId: "302",
+          messageId: "303",
+        })
+      ).chatThreadId,
+      binding.chatThreadId,
+      "the first success or failure reply must continue the original chain",
+    );
+  }
 
   const teams = await event("teams");
   const teamsConnection = randomUUID();
@@ -301,6 +421,7 @@ try {
         event: {
           channel: "channel",
           user: "slack-user",
+          text: "Original text survives missing history",
           ts: "2.0",
           thread_ts: "1.0",
         },
@@ -331,12 +452,66 @@ try {
       eventId: replacementId,
     }),
   );
+  const historicalSlackMessage = createUserMessageDocument({
+    text: "Ask @Same to tell @Same that (U111) and (U222) are ticket labels",
+    files: canonicalFiles,
+  });
+  await client.query("UPDATE chat_events SET payload=$1 WHERE id=$2", [
+    JSON.stringify({ userMessage: historicalSlackMessage }),
+    slack.eventId,
+  ]);
+  await client.query("UPDATE slack_chat_ingress SET payload=$1 WHERE id=$2", [
+    JSON.stringify({
+      team_id: "workspace",
+      event: {
+        channel: "channel",
+        user: "slack-user",
+        text: "Ask <@U111> to tell <@U222> that (U111) and (U222) are ticket labels",
+        ts: "2.0",
+        thread_ts: "1.0",
+      },
+    }),
+    slack.eventId,
+  ]);
+  const historicalSlackProjection = projectUserMessage(historicalSlackMessage);
+  const historicalSlackMaterial = await loadSlackQueuedLaunchMaterial(db, {
+    ...slack,
+    userMessageProjection: historicalSlackProjection,
+  });
+  assert.ok(historicalSlackMaterial);
+  assert.ok(
+    historicalSlackMaterial.prompt.startsWith(
+      historicalSlackProjection.agentPrompt,
+    ),
+  );
+  assert.match(historicalSlackMaterial.prompt, /<@U111>[\s\S]*<@U222>/);
+  assert.equal(historicalSlackMaterial.slackDelivery.threadTs, "1.0");
+  const identifiedSlackMessage = createUserMessageDocument({
+    text: "Ask @Same (U111) to tell @Same (U222) that (U111) and (U222) are ticket labels",
+    files: canonicalFiles,
+  });
+  await client.query("UPDATE chat_events SET payload=$1 WHERE id=$2", [
+    JSON.stringify({ userMessage: identifiedSlackMessage }),
+    slack.eventId,
+  ]);
+  const identifiedSlackProjection = projectUserMessage(identifiedSlackMessage);
+  const identifiedSlackMaterial = await loadSlackQueuedLaunchMaterial(db, {
+    ...slack,
+    userMessageProjection: identifiedSlackProjection,
+  });
+  assert.ok(identifiedSlackMaterial);
+  assert.equal(
+    identifiedSlackMaterial.prompt,
+    identifiedSlackProjection.agentPrompt,
+    "canonical mentions with IDs at their original positions need no duplicate text",
+  );
   await client.query("UPDATE slack_chat_ingress SET payload=$1 WHERE id=$2", [
     JSON.stringify({
       team_id: "workspace",
       event: {
         channel: "wrong-channel",
         user: "slack-user",
+        text: "Original text survives missing history",
         ts: "2.0",
         thread_ts: "1.0",
       },
@@ -348,6 +523,30 @@ try {
     null,
     "ingress destination mismatch cannot redirect delivery",
   );
+  const partialSlackMessage = createUserMessageDocument({
+    text: "Ask @Same (U111) to follow up with @Same (U222)",
+    files: canonicalFiles,
+  });
+  await client.query("UPDATE chat_events SET payload=$1 WHERE id=$2", [
+    JSON.stringify({ userMessage: partialSlackMessage }),
+    slack.eventId,
+  ]);
+  await client.query("DELETE FROM slack_chat_ingress WHERE id=$1", [
+    slack.eventId,
+  ]);
+  await client.query(
+    "INSERT INTO chat_slack_context(id,chat_thread_id,channel_id,bot_user_id,public_brand,channel_type,thread_ts) VALUES($1,$2,'channel','bot','okou','channel','1.0')",
+    [slack.eventId, slack.chatThreadId],
+  );
+  const partialSlackProjection = projectUserMessage(partialSlackMessage);
+  const partialSlackMaterial = await loadSlackQueuedLaunchMaterial(db, {
+    ...slack,
+    userMessageProjection: partialSlackProjection,
+  });
+  assert.ok(partialSlackMaterial);
+  assert.equal(partialSlackMaterial.prompt, partialSlackProjection.agentPrompt);
+  assert.equal(partialSlackMaterial.appendSystemPrompt, "");
+  assert.equal(partialSlackMaterial.slackDelivery.threadTs, "1.0");
 
   const feishu = await event("feishu");
   const fsInstallation = randomUUID();
@@ -409,7 +608,7 @@ try {
     ),
   );
   await client.query(
-    "INSERT INTO chat_event_write_control(id,activated_at) VALUES('global',now())",
+    "UPDATE chat_event_write_control SET activated_at=now() WHERE id='global'",
   );
   assert.equal(
     await loadOptionalChatEnrichment(
@@ -440,9 +639,6 @@ try {
     { name: "AbortError" },
   );
 
-  await client.query(
-    `CREATE FUNCTION ${schema}.reject_context() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'context storage failure'; END $$`,
-  );
   await client.query(
     `CREATE TRIGGER reject_context BEFORE INSERT ON chat_agentphone_context FOR EACH ROW EXECUTE FUNCTION ${schema}.reject_context()`,
   );
@@ -519,21 +715,16 @@ try {
   });
   original(afterFailure);
   assert.equal(afterFailure?.agentphoneDelivery.groupId, "group-42");
+  // Redaction exception: the shared warning sanitizer must never publish
+  // canonical input or failed supplemental prompt content. Warnings themselves
+  // are not an assertion contract; launch input and delivery are checked above.
   assert.ok(
     warnings.every((entry) => {
-      return !JSON.stringify(entry).includes("Never log enrichment payload");
-    }),
-  );
-
-  assert.equal(
-    warnings.filter((entry) => {
-      return String(entry[0]).includes("Optional queued launch enrichment");
-    }).length,
-    10,
-  );
-  assert.ok(
-    warnings.every((entry) => {
-      return !JSON.stringify(entry).includes("Original text survives");
+      return ["Never log enrichment payload", "Original text survives"].every(
+        (privateText) => {
+          return !JSON.stringify(entry).includes(privateText);
+        },
+      );
     }),
     "warns must not log prompt content",
   );

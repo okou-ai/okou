@@ -4,6 +4,10 @@ This preparation release expands the schema and installs a legacy allocation
 bridge. It does **not** activate split writes. The only switch is the singleton
 `chat_event_write_control` row: `activated_at IS NULL` means legacy mode. No
 per-user override, cache, or environment default may activate it.
+The bridge migration seeds that row before API promotion. An absent singleton
+is an invariant failure, not legacy mode. The rollback workflow alone accepts an
+absent control **table**, because workflow code on main can run before the
+expansion has been released; a present table with no singleton still fails.
 
 ## Storage and consistency
 
@@ -49,7 +53,13 @@ After activation:
 - Terminal-marker replay can repair missing channel callback registration.
   Delivery identity is derived from the original callback, channel and delivery
   event; historical random-ID registrations are recognized. The existing
-  callback retry mechanism owns delivery recovery.
+  callback retry mechanism owns delivery recovery and retryable
+  `chat-run-finished` automation admission; an already committed marker does not
+  acknowledge unfinished completion work. An admission receipt on the existing
+  source callback commits with each watched automation's queue event. This
+  receipt survives hot-event archival, so a lost final callback acknowledgement
+  cannot enqueue the automation again. Replay still attempts the guarded source
+  and automation queue wakeups.
 - Ordinary identity checks remain. Event/context/output writes no longer hold
   the broad erasure fence. Confirmed deletion can race a late write; the existing
   background-job cron collects those rows as described below.
@@ -105,6 +115,11 @@ Activation is a global operational step, not part of opening or merging this PR.
    sufficient. The retained legacy send/draft protocol can hold a strong thread
    lock before allocation, whereas direct allocation reaches the sequence first.
    Do not introduce those mixed lock orders by flipping under active writers.
+   Also finish pending/retrying source chat callbacks that entered legacy mode,
+   including their deferred automation work. Legacy automation admissions do not
+   carry the new callback-owned receipt; activation must not reinterpret their
+   partially completed side effects as a fresh source obligation. Retained
+   channel delivery callbacks still use their existing retry/deduplication path.
 2. Repeat completeness/routing checks and verify a Release-1-compatible rollback
    target. Then perform this single authorized control write:
 
@@ -172,6 +187,38 @@ the legacy column from implicit INSERT/SELECT/RETURNING lists, and acceptance
 runs its direct writer against the contracted shape. Since migration precedes
 API promotion, Release 1 is a valid rollback target after contraction **only in
 its verified, fixed active mode**. Never reactivate the compatibility branch.
+
+### Compatibility inventory and follow-up
+
+The named follow-up is the separate post-rollout PR2; opening it is outside this
+implementation task. Its removal checklist must verify each gate below, rather
+than treating promotion as proof that retained work has drained.
+
+| Behavior                                                                                                                                                 | Surface and exposure window                                                                           | Removal condition and follow-up                                                                                                                                                                                                    |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Legacy allocator and Web/native/output branches, including `loadOptionalChatEnrichment`'s preactivation failure path and migration 1212's bridge         | Old API against expanded DB, rolling API fleet, captured legacy operations and preactivation rollback | PR2 after activation, all legacy operations/entry points drain, production acceptance and a compatible rollback floor.                                                                                                             |
+| `insertChatDeliveryCallback` recognizes historical random IDs                                                                                            | Persisted callback delivery/retry records written by old APIs                                         | PR2 only after historical pending retries and retained delivery records no longer require recognition and no supported API can write them. Do not equate deployment completion with record retirement.                             |
+| `ensureUserErasureJob` and `createRelationalErasureCollector` replay the preceding captured version                                                      | Durable erasure captures and their original provider obligations outlive API deployment               | PR2 must inventory preceding-version captures; remove together only once every capture is completed or retired without losing obligations. Retain and explicitly carry this follow-up if that gate remains open.                   |
+| Rollback resolver accepts an absent control table                                                                                                        | Main's workflow may run before the first expansion release                                            | PR2 after the completed expansion is permanently within the supported schema floor. A present table with no singleton always fails.                                                                                                |
+| `resolveTelegramInputThread` retains legacy first-group-message creation; `persistTelegramReplyChainRoute` recognizes callbacks without an initial route | Rolling APIs and retained null-root callbacks                                                         | PR2 after legacy operations, old callback payloads and incompatible rollback targets drain. Active mode creates a private `input:` route anchor before accepting context-independent input and advances it on the first bot reply. |
+| `preserveSlackMentionIdentities` recovers exact mentions in historical display-only input from scoped original text                                      | Retained queued input written by old APIs                                                             | PR2 only after old writers/rollback targets and all affected queued inputs drain; activation alone does not satisfy this gate. New canonical text already retains IDs.                                                             |
+
+The following are permanent accepted data states, not rollout shims to remove in
+PR2:
+
+- The six native `load*RouteLaunchMaterial` readers and nullable
+  `required*LaunchContext` projections recover only authorized routing when
+  optional enrichment is absent. Canonical text/files, ordinary scope checks,
+  and stable topic/group destinations remain required. Missing history or names
+  cannot grant identity or change a destination.
+- Teams resolves a nullable route `serviceUrl` from the same scoped installation;
+  Feishu resolves a nullable ingress `publicBrand` from the same scoped
+  installation. Legitimate writers and retained nullable rows keep these states
+  reachable. Removal would require changing those owning contracts and draining
+  their rows, independently of this sequence migration.
+- A missing sequence row means zero only for a new empty thread; the first
+  allocator creates it atomically. Existing nonzero legacy watermarks are
+  covered by the mandatory backfill. Retained event maxima are never a fallback.
 
 ## Verification and production measurements
 

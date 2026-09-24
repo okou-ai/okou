@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { createHash, createHmac, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomInt, randomUUID } from "node:crypto";
 
 import {
   OFFICIAL_TELEGRAM_BOT_ID,
@@ -25,7 +25,10 @@ import {
   readChatEventContextFixture,
   setTelegramThinkingMessageIdFixture,
 } from "../../../test-fixtures/chat-events";
+import { withSplitChatEventDatabase } from "../../../test-fixtures/chat-terminal-retry";
+import { installTelegramContextFailureFixture } from "../../../test-fixtures/telegram-context-failure";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
@@ -2355,6 +2358,190 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     expect.hasAssertions();
     await runCanonicalTelegramForumScenario("fresh-chain");
   });
+
+  it(
+    "delivers a first split Telegram topic input after optional context storage fails",
+    { timeout: 120_000 },
+    async () => {
+      await withSplitChatEventDatabase(async () => {
+        const runnerGroup = configureCanonicalTelegramRunner();
+        const fixture = await seedTelegramPostFixture({
+          linkTelegramUser: true,
+        });
+        await seedNativeFablePolicies(fixture);
+        const actor = actorForFixture(fixture);
+        const telegramMocks = telegramApiMocks();
+        const uploads = captureIntegrationInputUploads(context);
+        const bytes = Buffer.from("original Telegram topic attachment");
+        const chatId = -randomInt(100_000_000, 999_999_999);
+        const messageThreadId = randomInt(10_000, 99_999);
+        const botUsername = `bot_${fixture.telegramBotId}`;
+        const firstPrompt = `@${botUsername} inspect the original topic attachment`;
+        context.mocks.telegram.getFile.mockResolvedValue({
+          file_id: "split-telegram-file",
+          file_path: "incoming/split-file",
+          file_size: bytes.length,
+        });
+        server.use(
+          http.get(
+            `https://api.telegram.org/file/bot${TEST_BOT_TOKEN}/incoming/split-file`,
+            () => {
+              return new HttpResponse(bytes, {
+                headers: { "content-type": "text/plain" },
+              });
+            },
+          ),
+        );
+        const removeFault = await installTelegramContextFailureFixture(chatId);
+        const result = await settleIncludingAbort(
+          (async () => {
+            expect(
+              (
+                await postWebhook({
+                  telegramBotId: fixture.telegramBotId,
+                  secret: fixture.webhookSecret,
+                  body: {
+                    update_id: 901,
+                    message: {
+                      message_id: 9001,
+                      message_thread_id: messageThreadId,
+                      chat: { id: chatId, type: "supergroup" },
+                      from: {
+                        id: Number(fixture.telegramUserId),
+                        first_name: "Alice",
+                      },
+                      caption: firstPrompt,
+                      caption_entities: [mentionEntity(botUsername)],
+                      document: {
+                        file_id: "split-telegram-file",
+                        file_unique_id: "split-telegram-unique-file",
+                        file_name: "topic-note.txt",
+                        mime_type: "text/plain",
+                      },
+                    },
+                  },
+                })
+              ).status,
+            ).toBe(200);
+            await flushWaitUntilForTest();
+            const firstState = await telegramPostRunState(fixture);
+            if (!firstState.run) {
+              throw new Error(
+                "Expected the first Telegram topic run despite context failure",
+              );
+            }
+            const claim = await claimTelegramRun(
+              firstState.run.id,
+              runnerGroup,
+            );
+            expect(claim.prompt).toContain(firstPrompt);
+            expect(claim.prompt).toContain(
+              "[Web file] topic-note.txt (text/plain)",
+            );
+            const fileId = claim.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
+            if (!fileId) {
+              throw new Error(
+                "Expected the original canonical Telegram topic file",
+              );
+            }
+            await expectIntegrationInputPreview(context, {
+              actor,
+              fileId,
+              bytes,
+              contentType: "text/plain",
+              uploads,
+              okouToken: claim.platformEnvironment.OKOU_TOKEN,
+            });
+            const threadId = claim.platformEnvironment.OKOU_CHAT_THREAD_ID;
+            if (!threadId) {
+              throw new Error("Expected the original Telegram topic thread");
+            }
+            await chatApi.requestReadThread(
+              { ...actor, userId: `other-topic-user-${randomUUID()}` },
+              threadId,
+              [404],
+            );
+            const sessionId = await completeCanonicalChatRun({
+              runId: firstState.run.id,
+              sandboxToken: claim.sandboxToken,
+            });
+            expect(telegramMocks.sentMessages).toHaveLength(1);
+            expect(telegramMocks.sentMessages[0]).toMatchObject({
+              chat_id: String(chatId),
+              message_thread_id: messageThreadId,
+              reply_parameters: { message_id: 9001 },
+            });
+
+            const followUpPrompt =
+              "continue the same topic after context failure";
+            expect(
+              (
+                await postWebhook({
+                  telegramBotId: fixture.telegramBotId,
+                  secret: fixture.webhookSecret,
+                  body: {
+                    update_id: 902,
+                    message: {
+                      message_id: 9002,
+                      message_thread_id: messageThreadId,
+                      chat: { id: chatId, type: "supergroup" },
+                      from: {
+                        id: Number(fixture.telegramUserId),
+                        first_name: "Alice",
+                      },
+                      text: followUpPrompt,
+                      reply_to_message: {
+                        message_id: 700,
+                        chat: { id: chatId, type: "supergroup" },
+                        from: {
+                          id: Number(fixture.telegramBotId),
+                          is_bot: true,
+                        },
+                        text: "Task completed successfully.",
+                      },
+                    },
+                  },
+                })
+              ).status,
+            ).toBe(200);
+            await flushWaitUntilForTest();
+            const followUpState = await telegramPostRunState(fixture);
+            if (!followUpState.run) {
+              throw new Error(
+                "Expected the same Telegram topic reply-chain run",
+              );
+            }
+            const followUp = await claimTelegramRun(
+              followUpState.run.id,
+              runnerGroup,
+            );
+            expect(followUp.prompt).toContain(followUpPrompt);
+            expect(followUp.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(
+              threadId,
+            );
+            expect(followUp.resumeSession?.sessionId).toBe(sessionId);
+            await completeCanonicalChatRun({
+              runId: followUpState.run.id,
+              sandboxToken: followUp.sandboxToken,
+            });
+            expect(telegramMocks.sentMessages).toHaveLength(2);
+            expect(telegramMocks.sentMessages[1]).toMatchObject({
+              chat_id: String(chatId),
+              message_thread_id: messageThreadId,
+              reply_parameters: { message_id: 9002 },
+            });
+          })(),
+        );
+        const removed = await settleIncludingAbort(removeFault());
+        if (!result.ok) {
+          throw result.error;
+        }
+        if (!removed.ok) {
+          throw removed.error;
+        }
+      });
+    },
+  );
 
   it("keeps Telegram callbacks typed when OKOU_API_BACKEND_URL is set", async () => {
     mockEnv("OKOU_API_BACKEND_URL", "https://www.okou.ai");

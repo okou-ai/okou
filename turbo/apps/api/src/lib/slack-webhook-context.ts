@@ -233,18 +233,13 @@ function formatAttachmentImage(
 export function resolveUserMentions(
   text: string,
   userInfoMap?: Map<string, SlackUserInfo>,
-  includeSlackUserId = true,
 ): string {
   if (!userInfoMap || userInfoMap.size === 0) {
     return text;
   }
   return text.replace(/<@(\w+)>/g, (_match, userId: string) => {
     const info = userInfoMap.get(userId);
-    return info?.name
-      ? includeSlackUserId
-        ? `@${info.name} (${userId})`
-        : `@${info.name}`
-      : `<@${userId}>`;
+    return info?.name ? `@${info.name} (${userId})` : `<@${userId}>`;
   });
 }
 
@@ -538,7 +533,6 @@ export async function enrichMessageContent(opts: {
   readonly userInfoResolver?: SlackUserInfoResolver;
 }): Promise<{
   readonly prompt: string;
-  readonly displayContent: string;
   readonly userInfoExtras: {
     readonly slackDisplayName?: string;
     readonly slackUserId?: string;
@@ -546,19 +540,8 @@ export async function enrichMessageContent(opts: {
   readonly mentionDisplayNames: Readonly<Record<string, string>>;
 }> {
   let prompt = opts.messageContent;
-  let displayContent = opts.messageContent;
   if (opts.files && opts.files.length > 0) {
     prompt = `${prompt}\n\n${formatCurrentMessageFiles(opts.files)}`;
-    displayContent = [
-      displayContent,
-      ...opts.files.map((file) => {
-        const name = file.name || file.title || "Untitled";
-        const type = file.pretty_type || file.mimetype || "file";
-        return `[Slack file] ${name} (${type})`;
-      }),
-    ]
-      .filter(Boolean)
-      .join("\n\n");
   }
 
   const mentionedIds = extractMentionedUserIds([{ text: opts.messageContent }]);
@@ -567,12 +550,10 @@ export async function enrichMessageContent(opts: {
     opts.userInfoResolver,
   );
   prompt = resolveUserMentions(prompt, userInfoMap);
-  displayContent = resolveUserMentions(displayContent, userInfoMap, false);
 
   const currentUser = userInfoMap.get(opts.userId);
   return {
     prompt,
-    displayContent,
     userInfoExtras: currentUser
       ? {
           slackDisplayName: currentUser.name,

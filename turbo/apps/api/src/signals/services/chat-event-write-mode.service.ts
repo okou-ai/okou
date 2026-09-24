@@ -7,7 +7,7 @@ export interface ChatEventWriteOptions {
   readonly splitWrites: boolean;
 }
 
-/** Missing control data is legacy mode; activation is an irreversible DB decision. */
+/** The expansion migration seeds the singleton before API promotion. */
 export async function isSplitChatEventWriteEnabled(
   db: Pick<ApiDb, "select">,
 ): Promise<boolean> {
@@ -15,5 +15,8 @@ export async function isSplitChatEventWriteEnabled(
     .select({ activatedAt: chatEventWriteControl.activatedAt })
     .from(chatEventWriteControl)
     .where(eq(chatEventWriteControl.id, "global"));
-  return control?.activatedAt !== null && control?.activatedAt !== undefined;
+  if (!control) {
+    throw new Error("Chat event write control singleton is missing");
+  }
+  return control.activatedAt !== null;
 }
