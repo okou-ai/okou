@@ -600,14 +600,13 @@ function PendingFormGate({
   const pageSignal = useGet(pageSignal$);
   const entryState = useGet(signals.entryState$);
   const beginEntry = useSet(signals.beginEntry$);
-  const autoBeginEntryRef = useSet(signals.autoBeginEntryRef$);
   if (entryState === "ready") {
     return (
       <PendingForm signals={signals} request={request} showTitle={showTitle} />
     );
   }
   return (
-    <div ref={autoBeginEntryRef} className="flex flex-col gap-4" role="status">
+    <div className="flex flex-col gap-4" role="status">
       <PendingFormHeader
         siteOrigin={request.action.siteOrigin}
         showTitle={showTitle}
@@ -1117,6 +1116,7 @@ export function BrowserUserActionCard({
   const pageSignal = useGet(pageSignal$);
   const requestLoadable = useLoadable(signals.request$);
   const refresh = useSet(signals.refresh$);
+  const retryStandaloneRequest = useSet(signals.retryStandaloneRequest$);
   const resumeRef = useSet(signals.resumeRef$);
   const locallyDelivered = useGet(signals.callbackDelivered$);
   const callbackFailed = useGet(signals.callbackFailed$);
@@ -1131,12 +1131,21 @@ export function BrowserUserActionCard({
     locallyDelivered || action?.callbackDelivered === true;
   const needsReturnRefresh =
     action !== undefined &&
-    ((action.kind === "input" && action.state === "pending") ||
+    ((variant === "inline" &&
+      action.kind === "input" &&
+      action.state === "pending") ||
       ((action.state === "succeeded" || action.state === "cancelled") &&
         !callbackDelivered));
   const continuing = busy || continueLoadable.state === "loading";
   const onContinue = () => {
     detach(continueAction(pageSignal), Reason.DomCallback);
+  };
+  const onRefresh = () => {
+    if (variant === "standalone") {
+      detach(retryStandaloneRequest(pageSignal), Reason.DomCallback);
+    } else {
+      refresh();
+    }
   };
 
   return (
@@ -1150,7 +1159,7 @@ export function BrowserUserActionCard({
         callbackFailed={callbackFailed}
         continuing={continuing}
         onContinue={onContinue}
-        refresh={refresh}
+        refresh={onRefresh}
         requestLoadable={requestLoadable}
         signals={signals}
         variant={variant}

@@ -9,7 +9,7 @@ import {
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
@@ -198,6 +198,41 @@ test("The standalone route reuses the native browser input form", async () => {
   expect(document.title).toContain("Browser action");
 });
 
+test("Returning to a pending standalone form keeps its password draft", async () => {
+  const pending = {
+    ...action("pending"),
+    fields: [
+      {
+        key: "password",
+        label: "Password",
+        fieldKind: "password" as const,
+        required: true,
+      },
+    ],
+  };
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, pending);
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, pending);
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+
+  const password = await screen.findByLabelText("Password");
+  await fill(password, "temporary-secret");
+  act(() => {
+    window.dispatchEvent(new Event("focus"));
+  });
+  expect(screen.getByLabelText("Password")).toBe(password);
+  expect(password).toHaveValue("temporary-secret");
+});
+
 test("The standalone form records cancellation before notifying the agent", async () => {
   const ordering: string[] = [];
   let state: BrowserUserActionResponse["state"] = "pending";
@@ -306,6 +341,42 @@ test("A transient standalone preflight failure offers retry without showing fiel
   click(button("Retry"));
   await screen.findByRole("form", { name: "Enter information in browser" });
   expect(attempts).toBe(2);
+});
+
+test("Retry after a failed standalone request also runs preflight", async () => {
+  let reads = 0;
+  let checks = 0;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    reads += 1;
+    return reads === 1
+      ? respond(503, {
+          error: {
+            code: "BROWSER_UNAVAILABLE",
+            message: "Browser unavailable",
+          },
+        })
+      : respond(200, action("pending"));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    checks += 1;
+    return respond(200, action("pending"));
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+
+  await waitFor(() => {
+    expect(button("Retry")).toBeVisible();
+  });
+  expect(checks).toBe(0);
+  click(button("Retry"));
+  await screen.findByRole("form", { name: "Enter information in browser" });
+  expect(reads).toBe(2);
+  expect(checks).toBe(1);
 });
 
 test("A terminal standalone action retries only its stable callback", async () => {

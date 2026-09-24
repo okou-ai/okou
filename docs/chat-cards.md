@@ -688,9 +688,9 @@ actionable. Malformed, mismatched, unsupported, expired, or feature-disabled
 requests render an inert state.
 
 The fixed-height transcript card links to the authenticated full-page form in
-a new tab. The full-page route calls the token-only Browser preflight after an
-explicit entry action and before mounting any editable field. A confirmed page
-or control change makes the request stale; a temporary provider failure leaves
+a new tab. The full-page route automatically calls the token-only Browser
+preflight before mounting any editable field. A confirmed page or control
+change makes the request stale; a temporary provider failure leaves
 a Retry action. The form does not poll while open, and submit revalidates the
 exact target before writing. The draft and mutation lock are local to the form
 page, while the API serializes effects across tabs. Password fields clear when
@@ -701,10 +701,12 @@ Apply or cancel completes before the form sends its normal chat callback.
 Request-owned event IDs make callback-only Continue retries idempotent without
 repeating the Browser mutation or retaining submitted values. Terminal action
 reads resolve callback delivery from the matching canonical Chat input event in
-the owning thread. A pending input card or terminal card with an unconfirmed
-callback refreshes when its page regains focus or visibility, so completing a
-standalone action updates the original transcript card on return. The Platform and API both
-enforce `BrowserNativeInput`.
+the owning thread. A pending transcript input card or terminal card with an
+unconfirmed callback refreshes when its page regains focus or visibility, so
+completing a standalone action updates the original transcript card on return.
+The standalone form keeps its draft mounted when the user switches tabs; submit
+revalidates the Browser target. The Platform and API both enforce
+`BrowserNativeInput`.
 
 A verified `direct_interaction` response uses the same action URL, ownership
 checks, mutation lock, and callback-only recovery, but it never carries or
