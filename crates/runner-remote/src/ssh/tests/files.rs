@@ -197,6 +197,103 @@ async fn binary_empty_and_large_files_roundtrip_with_password_and_opaque_handles
 }
 
 #[tokio::test]
+async fn sftp_upload_and_download_progress_with_withheld_out_of_order_replies() {
+    let mut h = Harness::new(Reply::Sftp("reordered")).await;
+    let _resolve = h.resolve(h.credential(true)).await;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pipelined");
+    let bytes: Vec<u8> = (0..4 * 32768).map(|i| (i % 251) as u8).collect();
+
+    let outcome = tokio::time::timeout(Duration::from_secs(5), upload(&h, &path, &bytes, false))
+        .await
+        .expect("two writes must be sent before the first reply");
+    assert_eq!(outcome["type"], "completed", "{outcome}");
+    assert_eq!(outcome["sha256"], hex::encode(Sha256::digest(&bytes)));
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+
+    let (outcome, received) = tokio::time::timeout(Duration::from_secs(5), download(&h, &path))
+        .await
+        .expect("two reads must be sent before the first reply");
+    assert_eq!(outcome["type"], "completed", "{outcome}");
+    assert_eq!(outcome["sha256"], hex::encode(Sha256::digest(&bytes)));
+    assert_eq!(received, bytes);
+    h.shutdown().await;
+}
+
+#[tokio::test]
+async fn sftp_short_reads_fill_missing_tails_without_reordering_output() {
+    let h = Harness::new(Reply::Sftp("short-read")).await;
+    let _resolve = h.resolve(h.credential(true)).await;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("short-read");
+    let bytes: Vec<u8> = (0..2 * 32768 + 13).map(|i| (i % 251) as u8).collect();
+    std::fs::write(&path, &bytes).unwrap();
+
+    let (outcome, received) = download(&h, &path).await;
+    assert_eq!(outcome["type"], "completed", "{outcome}");
+    assert_eq!(outcome["sha256"], hex::encode(Sha256::digest(&bytes)));
+    assert_eq!(received, bytes);
+}
+
+#[tokio::test]
+async fn sftp_failed_pipelined_write_does_not_publish_or_claim_later_acks() {
+    let h = Harness::new(Reply::Sftp("write-denied")).await;
+    let _resolve = h.resolve(h.credential(true)).await;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("failed");
+    let outcome = upload(&h, &path, &vec![42; 4 * 32768], false).await;
+    assert_eq!(outcome["failure_reason"], "permission_denied", "{outcome}");
+    assert_eq!(outcome["bytes"], 32768);
+    assert_eq!(outcome["effects"], "not_started");
+    assert!(outcome["residue"].is_null());
+    assert!(!path.exists());
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+}
+
+#[tokio::test]
+async fn sftp_cancellation_with_pending_writes_preserves_private_residue() {
+    let mut h = Harness::new(Reply::Sftp("hold-write")).await;
+    let _resolve = h.resolve(h.credential(true)).await;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cancelled");
+    let guest = open(
+        &h,
+        "upload",
+        upload_params(&path, 2 * 32768, false),
+        900_000,
+    )
+    .await;
+    let (read, write) = tokio::io::split(guest);
+    let sender = tokio::spawn(async move {
+        let mut writer = Writer::input(write);
+        for _ in 0..2 {
+            if writer.send(&Frame::Data(vec![7; 32768])).await.is_err() {
+                return;
+            }
+        }
+        let _ = writer.send(&Frame::End).await;
+    });
+    wait_for(|| {
+        std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .any(|entry| {
+                std::fs::metadata(entry.path().join("data"))
+                    .is_ok_and(|metadata| metadata.len() >= 32768)
+            })
+    })
+    .await;
+    h.cancel.cancel();
+    let outcome = response(read).await.0;
+    assert_eq!(outcome["failure_reason"], "cancelled", "{outcome}");
+    assert_eq!(outcome["effects"], "not_started");
+    assert!(Path::new(outcome["residue"].as_str().unwrap()).is_dir());
+    assert!(!path.exists());
+    sender.await.unwrap();
+    h.shutdown().await;
+}
+
+#[tokio::test]
 #[ignore = "explicit interoperability lane requires the OpenSSH sftp-server executable"]
 async fn openssh_server_interoperability() {
     roundtrip("openssh").await;

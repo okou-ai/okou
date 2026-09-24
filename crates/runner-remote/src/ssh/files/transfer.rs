@@ -1,5 +1,7 @@
 //! Stage first; only a fully acknowledged transfer may publish a destination.
 
+use std::collections::BTreeMap;
+
 use runner_rpc_proto::stream::{Frame, MAX_STREAM_BYTES, Reader, Writer};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -7,9 +9,11 @@ use uuid::Uuid;
 
 use super::{
     protocol::{Direction, Effects, Failure, FileFailure, Outcome, PATH_BYTES, Request},
-    sftp::{CHUNK, Client, Error},
+    sftp::{CHUNK, Client, Error, FileReply},
 };
 use crate::ssh::FailureReason;
+
+const WINDOW: usize = 8;
 
 #[derive(Default)]
 pub(super) struct Staging {
@@ -27,8 +31,11 @@ impl Staging {
         client: &mut Client<S>,
         outcome: &mut Outcome,
     ) -> Result<(), Error> {
-        if !self.owned || !client.healthy() {
+        if !self.owned {
             return Ok(());
+        }
+        if !client.healthy() {
+            client.settle_file_requests().await?;
         }
         if let Some(handle) = self.handle.take() {
             client.close(&handle).await?;
@@ -139,22 +146,30 @@ where
     staging.file_exists = true;
     staging.handle = Some(handle.clone());
     let mut hash = Sha256::new();
+    let mut pending = Vec::with_capacity(WINDOW);
+    let mut queued_bytes = 0_u64;
     loop {
         match input.next().await.map_err(|_| FailureReason::Protocol)? {
             Some(Frame::Data(bytes)) => {
-                if Some(outcome.bytes + bytes.len() as u64) > request.size {
+                if Some(outcome.bytes + queued_bytes + bytes.len() as u64) > request.size {
                     return Err(FileFailure::SourceChanged.into());
                 }
                 for chunk in bytes.chunks(CHUNK) {
-                    client.write_file(&handle, outcome.bytes, chunk).await?;
-                    hash.update(chunk);
-                    outcome.bytes += chunk.len() as u64;
+                    let offset = outcome.bytes + queued_bytes;
+                    let id = client.send_write_file(&handle, offset, chunk).await?;
+                    pending.push((id, chunk.to_vec()));
+                    queued_bytes += chunk.len() as u64;
+                    if pending.len() == WINDOW {
+                        acknowledge_writes(client, outcome, &mut hash, &mut pending).await?;
+                        queued_bytes = 0;
+                    }
                 }
             }
             Some(Frame::End) => break,
             _ => return Err(FailureReason::Protocol.into()),
         }
     }
+    acknowledge_writes(client, outcome, &mut hash, &mut pending).await?;
     if Some(outcome.bytes) != request.size {
         return Err(FileFailure::SourceChanged.into());
     }
@@ -177,6 +192,32 @@ where
         staging.file_exists = false;
     }
     outcome.sha256 = Some(hex::encode(hash.finalize()));
+    Ok(())
+}
+
+async fn acknowledge_writes<S: AsyncRead + AsyncWrite + Unpin>(
+    client: &mut Client<S>,
+    outcome: &mut Outcome,
+    hash: &mut Sha256,
+    pending: &mut Vec<(u32, Vec<u8>)>,
+) -> Result<(), Failure> {
+    // Drain the whole batch so a normal status error still leaves a usable
+    // channel for private staging cleanup. Transport/protocol errors poison it.
+    let mut replies = BTreeMap::new();
+    for _ in 0..pending.len() {
+        let (id, reply) = client.receive_file().await?;
+        replies.insert(id, reply);
+    }
+    for (id, bytes) in pending.drain(..) {
+        match replies.remove(&id) {
+            Some(FileReply::Write(Ok(()))) => {
+                hash.update(&bytes);
+                outcome.bytes += bytes.len() as u64;
+            }
+            Some(FileReply::Write(Err(error))) => return Err(error.into()),
+            _ => return Err(FailureReason::Protocol.into()),
+        }
+    }
     Ok(())
 }
 
@@ -208,16 +249,46 @@ where
         return Err(FileFailure::FileTooLarge.into());
     }
     let mut hash = Sha256::new();
-    while let Some(bytes) = client.read_file(&handle, outcome.bytes).await? {
-        if outcome.bytes + bytes.len() as u64 > size {
-            return Err(FileFailure::SourceChanged.into());
+    let mut requested = 0_u64;
+    while requested < size {
+        let mut batch = Vec::with_capacity(WINDOW);
+        while batch.len() < WINDOW && requested < size {
+            let length = usize::try_from((size - requested).min(CHUNK as u64))
+                .map_err(|_| FailureReason::Protocol)?;
+            let id = client.send_read_file(&handle, requested, length).await?;
+            batch.push((id, requested, length));
+            requested += length as u64;
         }
-        output
-            .send(&Frame::Data(bytes.clone()))
-            .await
-            .map_err(|_| FailureReason::Transport)?;
-        hash.update(&bytes);
-        outcome.bytes += bytes.len() as u64;
+        let mut replies = BTreeMap::new();
+        for _ in 0..batch.len() {
+            let (id, reply) = client.receive_file().await?;
+            replies.insert(id, reply);
+        }
+        for (id, offset, length) in batch {
+            let mut next = match replies.remove(&id) {
+                Some(FileReply::Read(result)) => result?,
+                _ => return Err(FailureReason::Protocol.into()),
+            };
+            let mut filled = 0;
+            while filled < length {
+                let bytes = next.take().ok_or(FileFailure::SourceChanged)?;
+                let count = bytes.len();
+                hash.update(&bytes);
+                output
+                    .send(&Frame::Data(bytes))
+                    .await
+                    .map_err(|_| FailureReason::Transport)?;
+                outcome.bytes += count as u64;
+                filled += count;
+                if filled < length {
+                    // SFTP v3 permits a short data reply. Fill its missing tail
+                    // only after the batch has been received and reordered.
+                    next = client
+                        .read_file(&handle, offset + filled as u64, length - filled)
+                        .await?;
+                }
+            }
+        }
     }
     if outcome.bytes != size || client.fstat(&handle).await? != before {
         return Err(FileFailure::SourceChanged.into());
