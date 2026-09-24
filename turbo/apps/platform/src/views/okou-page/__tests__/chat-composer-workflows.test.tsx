@@ -11,6 +11,10 @@ import {
 } from "@okouai/core";
 import { expect, test } from "vitest";
 import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
+import type {
+  ComposerWorkflow,
+  WorkflowSummary,
+} from "@okouai/api-contracts/contracts/workflows";
 
 import {
   click,
@@ -30,41 +34,26 @@ import {
   mockThread,
   selectTemplate,
   THREAD_ID,
-  workflowSummary,
 } from "./chat-composer-test-helpers.ts";
 
-type WorkflowFixture = ReturnType<typeof workflowSummary>;
-
-function installWorkflows(read: () => readonly WorkflowFixture[]): {
-  readonly requests: { readonly agentId: string | undefined }[];
-} {
-  const requests: { readonly agentId: string | undefined }[] = [];
-  context.mocks.api(workflowsCollectionContract.list, ({ query, respond }) => {
-    requests.push({ agentId: query.agentId });
+function installWorkflows(read: () => readonly ComposerWorkflow[]): void {
+  context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
     return respond(200, [...read()]);
   });
-  return { requests };
 }
 
 function workflow(
   name: string,
   options: {
-    readonly agentId?: string;
     readonly displayName?: string | null;
     readonly description?: string | null;
-    readonly visibility?: WorkflowFixture["visibility"];
-    readonly shadowedBy?: WorkflowFixture["shadowedBy"];
   } = {},
-): WorkflowFixture {
+): ComposerWorkflow {
   return {
-    ...workflowSummary({
-      name,
-      agentId: options.agentId ?? AGENT_ID,
-      displayName: options.displayName ?? null,
-      description: options.description ?? `${name} description`,
-    }),
-    visibility: options.visibility ?? "public",
-    shadowedBy: options.shadowedBy ?? null,
+    id: crypto.randomUUID(),
+    name,
+    displayName: options.displayName ?? null,
+    description: options.description ?? `${name} description`,
   };
 }
 
@@ -247,9 +236,6 @@ test("Insert an attached workflow with slash suggestions", async () => {
         description: "Escalate support cases",
       }),
       workflow("research-digest", { description: "Digest research" }),
-      workflow("organization-only", {
-        agentId: "e0000000-0000-4000-a000-000000000099",
-      }),
     ];
   });
 
@@ -263,7 +249,6 @@ test("Insert an attached workflow with slash suggestions", async () => {
   await waitFor(() => {
     expect(slashButton("/sales-research")).toBeVisible();
     expect(slashButton("/support-escalation")).toBeVisible();
-    expect(screen.queryByText("/organization-only")).toBeNull();
   });
 
   await user.keyboard("ReSeArCh");
@@ -328,6 +313,77 @@ test("Find and insert a workflow with an abbreviated name", async () => {
   });
 });
 
+test("Suggest effective workflows from an API that predates the composer endpoint", async () => {
+  mockAgent();
+  mockThread();
+  const summary = (
+    name: string,
+    options: {
+      readonly agentId?: string;
+      readonly description: string;
+      readonly visibility?: WorkflowSummary["visibility"];
+      readonly shadowedBy?: WorkflowSummary["shadowedBy"];
+    },
+  ): WorkflowSummary => {
+    return {
+      id: crypto.randomUUID(),
+      agentId: options.agentId ?? AGENT_ID,
+      agentName: null,
+      agentDisplayName: "Scout",
+      name,
+      displayName: null,
+      description: options.description,
+      visibility: options.visibility ?? "public",
+      ownerUserId: "user-1",
+      createdAt: "2026-06-01T00:00:00.000Z",
+      canManage: true,
+      canPublish: false,
+      official: null,
+      shadowedBy: options.shadowedBy ?? null,
+    };
+  };
+  const privateWorkflow = summary("pr-auto", {
+    description: "Review, repair, and merge one pull request",
+    visibility: "private",
+  });
+  context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
+    return respond(400, {
+      error: { message: "Invalid uuid", code: "BAD_REQUEST" },
+    });
+  });
+  context.mocks.api(workflowsCollectionContract.list, ({ respond }) => {
+    return respond(200, [
+      summary("pr-auto", {
+        description: "Legacy goal-driven pull request automation",
+        shadowedBy: {
+          id: privateWorkflow.id,
+          name: privateWorkflow.name,
+          displayName: privateWorkflow.displayName,
+        },
+      }),
+      privateWorkflow,
+      summary("pr-review", {
+        agentId: "e0000000-0000-4000-a000-000000000099",
+        description: "Another agent's workflow",
+      }),
+    ]);
+  });
+
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+
+  const user = userEvent.setup();
+  const editor = await findComposerEditor();
+  await user.click(editor);
+  await user.keyboard("/pr");
+
+  await waitFor(() => {
+    expect(slashButton("/pr-auto")).toHaveTextContent(
+      "Review, repair, and merge one pull request",
+    );
+  });
+  expect(slashWorkflowNames()).toStrictEqual(["/pr-auto"]);
+});
+
 test("Rank exact workflow names before prefixes, substrings, and abbreviations", async () => {
   mockAgent();
   mockThread();
@@ -362,57 +418,6 @@ test("Rank exact workflow names before prefixes, substrings, and abbreviations",
     expect(editor).toHaveTextContent(/^\/pr-auto\s*$/);
     expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   });
-});
-
-test("Suggest only the effective workflow when a private workflow shadows a public workflow", async () => {
-  const privateWorkflow = workflow("pr-auto", {
-    displayName: "PR Auto",
-    description: "Review, repair, and merge one pull request",
-    visibility: "private",
-  });
-  const publicWorkflow = workflow("pr-auto", {
-    displayName: "PR Auto",
-    description: "Legacy goal-driven pull request automation",
-    shadowedBy: {
-      id: privateWorkflow.id,
-      name: privateWorkflow.name,
-      displayName: privateWorkflow.displayName,
-    },
-  });
-  mockAgent();
-  mockThread();
-  installWorkflows(() => {
-    return [
-      workflow("aardvark"),
-      publicWorkflow,
-      privateWorkflow,
-      workflow("pr-implement"),
-      workflow("topic"),
-    ];
-  });
-
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-
-  const user = userEvent.setup();
-  const editor = await findComposerEditor();
-  await user.click(editor);
-  await user.keyboard("/pr");
-
-  await waitFor(() => {
-    const matchingButtons = slashMenuButtons().filter((button) => {
-      return button.textContent
-        ?.replace(/\s+/gu, " ")
-        .trim()
-        .startsWith("/pr-auto");
-    });
-    expect(matchingButtons).toHaveLength(1);
-  });
-  expect(slashButton("/pr-auto")).toHaveTextContent(
-    "Review, repair, and merge one pull request",
-  );
-  expect(
-    screen.queryByText("Legacy goal-driven pull request automation"),
-  ).toBeNull();
 });
 
 test("Send a template while the current run is active", async () => {
@@ -538,11 +543,7 @@ test("Continue from empty slash suggestions to all workflows", async () => {
   mockAgent();
   mockThread();
   installWorkflows(() => {
-    return [
-      workflow("organization-catalog-workflow", {
-        agentId: "e0000000-0000-4000-a000-000000000099",
-      }),
-    ];
+    return [];
   });
 
   await setupPage({ context, path: `/chats/${THREAD_ID}` });
