@@ -85,7 +85,7 @@ test("Hide the activity-log action outside debug mode", async () => {
   expect(screen.queryByLabelText("View run logs")).not.toBeInTheDocument();
 });
 
-test("Open an active run's logs beside Copy before any assistant output", async () => {
+test("Keep Copy to the right of an active run's logs before any assistant output", async () => {
   const prompt = "Check the connection";
   installRunChat({
     activeRunIds: [FIRST_CAPABILITY_RUN_ID],
@@ -136,7 +136,7 @@ test("Open an active run's logs beside Copy before any assistant output", async 
   const copy = buttonIn(actions, "Copy message");
   const logs = linkIn(actions, "View run logs");
   expect(
-    copy.compareDocumentPosition(logs) & Node.DOCUMENT_POSITION_FOLLOWING,
+    logs.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(logs).toHaveAttribute(
     "href",

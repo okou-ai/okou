@@ -6739,6 +6739,7 @@ function UserMessageActions({
       data-chat-user-message-actions
       className={CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS}
     >
+      {showActivityLogs && runId && <RunLogsAction runId={runId} />}
       {showCopy ? (
         <CopyButton
           copyAction={onCopy}
@@ -6763,7 +6764,6 @@ function UserMessageActions({
           }}
         />
       ) : null}
-      {showActivityLogs && runId && <RunLogsAction runId={runId} />}
     </div>
   );
 }
