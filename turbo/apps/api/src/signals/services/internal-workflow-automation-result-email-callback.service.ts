@@ -276,7 +276,6 @@ export async function handleWorkflowAutomationResultEmailInternalCallback(
 
     await tx.insert(emailOutbox).values({
       id: claim.emailOutboxId,
-      ownerUserId: run.userId,
       fromAddress: buildFromAddress(),
       toAddresses: userEmail,
       subject: resultEmailSubject(workflowLabel),

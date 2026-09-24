@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
+import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
-import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import {
   claimErasureWork,
@@ -18,10 +18,8 @@ import { afterAll, describe, expect, it, onTestFinished } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
-import { nowDate } from "../../../lib/time";
 import { ACCOUNT_OWNERSHIP_INVENTORY } from "../account-erasure-ownership-inventory";
 import { encryptErasureSelector } from "../account-erasure-selector";
-import { admitFeishuChatEvent } from "../feishu-chat-ingress.service";
 import {
   RELATIONAL_ERASURE_COLLECTOR_VERSION,
   assertCatalogueInventoryCoverage,
@@ -77,73 +75,6 @@ describe("relational erasure plan", () => {
     const tables = await catalogueTables(db);
     expect(tables.length).toBeGreaterThan(200);
     expect(new Set(tables).size).toBe(tables.length);
-  });
-
-  it("freezes Feishu ingress ownership when the sender disconnects and rebinds", async () => {
-    const installationId = randomUUID();
-    const openId = `ou_${randomUUID()}`;
-    const firstUser = `user_${randomUUID()}`;
-    const secondUser = `user_${randomUUID()}`;
-    onTestFinished(async () => {
-      await db
-        .delete(feishuOrgInstallations)
-        .where(eq(feishuOrgInstallations.id, installationId));
-    });
-    await db.insert(feishuOrgInstallations).values({
-      id: installationId,
-      orgId: `org_${randomUUID()}`,
-      appId: `cli_${randomUUID()}`,
-      encryptedAppSecret: "fixture",
-      encryptedVerificationToken: "fixture",
-      encryptedEncryptKey: "fixture",
-    });
-    await db.insert(feishuOrgConnections).values({
-      installationId,
-      feishuOpenId: openId,
-      userId: firstUser,
-    });
-    const admit = async (eventId: string) => {
-      await admitFeishuChatEvent(db, {
-        installationId,
-        eventId,
-        payload: JSON.stringify({ eventId }),
-        senderOpenId: openId,
-        publicBrand: "vm0",
-        currentTime: nowDate(),
-      });
-    };
-    await admit("first");
-    await db
-      .delete(feishuOrgConnections)
-      .where(eq(feishuOrgConnections.installationId, installationId));
-    await db.insert(feishuOrgConnections).values({
-      installationId,
-      feishuOpenId: openId,
-      userId: secondUser,
-    });
-    await admit("second");
-    await db
-      .delete(feishuOrgConnections)
-      .where(eq(feishuOrgConnections.installationId, installationId));
-    await admit("unlinked");
-    const rows = await db
-      .select({
-        eventId: feishuChatIngress.eventId,
-        senderOpenId: feishuChatIngress.senderOpenId,
-        ownerUserId: feishuChatIngress.ownerUserId,
-      })
-      .from(feishuChatIngress)
-      .where(eq(feishuChatIngress.installationId, installationId));
-    expect(rows).toStrictEqual(
-      expect.arrayContaining([
-        { eventId: "first", senderOpenId: openId, ownerUserId: firstUser },
-        { eventId: "second", senderOpenId: openId, ownerUserId: secondUser },
-        { eventId: "unlinked", senderOpenId: openId, ownerUserId: null },
-      ]),
-    );
-    expect(
-      (await planRelationalErasure(db)).unattributableDescendants,
-    ).toContain("feishu_chat_ingress");
   });
 
   it("resolves a composite foreign key as ordered positional pairs", async () => {
@@ -283,10 +214,10 @@ describe("relational erasure plan", () => {
     expect(() => {
       return assertRelationalSweepComplete({
         ...emptyPlan(),
-        unattributableDescendants: ["email_outbox"],
+        unattributableDescendants: ["unattributed_account_data_fixture"],
       });
     }).toThrow(
-      "account_erasure_relational:descendant_unattributable:email_outbox",
+      "account_erasure_relational:descendant_unattributable:unattributed_account_data_fixture",
     );
     expect(() => {
       return assertRelationalSweepComplete(emptyPlan());
@@ -391,11 +322,9 @@ describe("relational erasure plan", () => {
     // declared reach cannot be swept, so it is reported rather than assumed
     // deleted. On the live schema there are none left.
     expect(plan.unreachableDescendants).toStrictEqual([]);
-    // New ingress rows freeze the owner at admission. Legacy rows without a
-    // sender key remain a dynamic residual until separately remediated.
-    for (const table of plan.unattributableDescendants) {
-      expect([...declared]).toContain(table);
-    }
+    // The two explicit deferred-retention tables are not account-erasure
+    // descendants; every other declared descendant still needs attribution.
+    expect(plan.unattributableDescendants).toStrictEqual([]);
   });
 
   it("reaches the descendants a foreign key cannot, through declared keys", async () => {
@@ -618,6 +547,82 @@ describe("dormant relational sweep", () => {
     }
     return { job, sealed };
   }
+
+  it("retains deferred outbox and Feishu payloads through a real account sweep", async () => {
+    const mine = account("deferred");
+    const outboxId = randomUUID();
+    const installationId = randomUUID();
+    const ingressId = randomUUID();
+    onTestFinished(async () => {
+      await db.delete(emailOutbox).where(eq(emailOutbox.id, outboxId));
+      await db
+        .delete(feishuOrgInstallations)
+        .where(eq(feishuOrgInstallations.id, installationId));
+      await db.execute(sql`DELETE FROM users WHERE id = ${mine}`);
+    });
+    await db.execute(sql`INSERT INTO users (id) VALUES (${mine})`);
+    // Sent mail is retained by the existing queue lifecycle; account erasure
+    // must not reinterpret a recipient address as a durable ownership key.
+    await db.execute(sql`
+      INSERT INTO email_outbox
+        (id, from_address, to_addresses, subject, template, status)
+      VALUES (${outboxId}, 'test@example.test',
+              ${JSON.stringify([`${mine}@example.test`])}::jsonb,
+              'retained fixture', '{}'::jsonb, 'sent')
+    `);
+    await db.insert(feishuOrgInstallations).values({
+      id: installationId,
+      orgId: `org_${randomUUID()}`,
+      appId: `cli_${randomUUID()}`,
+      encryptedAppSecret: "fixture",
+      encryptedVerificationToken: "fixture",
+      encryptedEncryptKey: "fixture",
+    });
+    await db.insert(feishuChatIngress).values({
+      id: ingressId,
+      installationId,
+      eventId: `event_${randomUUID()}`,
+      payload: JSON.stringify({ userId: mine }),
+      publicBrand: "vm0",
+      status: "processed",
+    });
+
+    const plan = await planRelationalErasure(db);
+    for (const table of ["email_outbox", "feishu_chat_ingress"]) {
+      expect(
+        plan.order.some((root) => {
+          return root.table === table;
+        }),
+      ).toBeFalsy();
+      expect(
+        plan.descendants.some((path) => {
+          return path.child === table;
+        }),
+      ).toBeFalsy();
+    }
+    await drive(mine, plan);
+    expect(
+      (await db.execute(sql`SELECT id FROM users WHERE id = ${mine}`)).rows,
+    ).toStrictEqual([]);
+    await expect(
+      db
+        .select({ id: emailOutbox.id })
+        .from(emailOutbox)
+        .where(eq(emailOutbox.id, outboxId)),
+    ).resolves.toStrictEqual([{ id: outboxId }]);
+    await expect(
+      db
+        .select({ ownerUserId: feishuOrgInstallations.ownerUserId })
+        .from(feishuOrgInstallations)
+        .where(eq(feishuOrgInstallations.id, installationId)),
+    ).resolves.toStrictEqual([{ ownerUserId: null }]);
+    await expect(
+      db
+        .select({ id: feishuChatIngress.id })
+        .from(feishuChatIngress)
+        .where(eq(feishuChatIngress.id, ingressId)),
+    ).resolves.toStrictEqual([{ id: ingressId }]);
+  });
 
   it("keeps its durable deletion task while sweeping other owner jobs", async () => {
     const mine = account("control");
@@ -1093,11 +1098,11 @@ describe("dormant relational sweep", () => {
   it("refuses to verify while rows remain unattributable", async () => {
     const subjectId = account("gated");
     const plan = await planRelationalErasure(db);
-    // A pre-migration row without its owner key remains an explicit residual.
+    // Keep the unattributable-descendant gate for all non-deferred tables.
     // This deliberate negative case pins the gate independently of test data.
     const unresolved = {
       ...plan,
-      unattributableDescendants: ["email_outbox"],
+      unattributableDescendants: ["unattributed_account_data_fixture"],
     };
     expect(() => {
       return assertRelationalSweepComplete(unresolved);

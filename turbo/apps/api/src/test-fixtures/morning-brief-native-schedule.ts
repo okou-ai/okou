@@ -707,7 +707,6 @@ export async function enqueueUnsentLegacyEmail(
   const [row] = await db()
     .insert(emailOutbox)
     .values({
-      ownerUserId: userId,
       fromAddress: "briefs@mail.okou.test",
       toAddresses: [recipient],
       subject: "Yesterday's Morning Brief",

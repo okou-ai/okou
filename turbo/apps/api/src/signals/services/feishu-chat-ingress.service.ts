@@ -209,8 +209,6 @@ export async function admitFeishuChatEvent(
           installationId: args.installationId,
           eventId: args.eventId,
           payload: args.payload,
-          senderOpenId: args.senderOpenId,
-          ownerUserId: binding?.userId ?? null,
           publicBrand: args.publicBrand,
           status: "pending",
           createdAt: args.currentTime,

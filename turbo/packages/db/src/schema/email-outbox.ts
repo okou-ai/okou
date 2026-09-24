@@ -63,9 +63,6 @@ export const emailOutbox = pgTable(
     // deleting a completed Run or Automation must not discard queued email.
     sourceRunId: uuid("source_run_id"),
     sourceWorkflowAutomationId: uuid("source_workflow_automation_id"),
-    // The recipient's account, captured at enqueue rather than inferred from
-    // an address after Clerk has deleted the user or a source row has expired.
-    ownerUserId: text("owner_user_id"),
 
     // Committed provider identity and payload. Both are null until the first
     // delivery attempt prepares them; rows enqueued by a producer never set
@@ -97,7 +94,6 @@ export const emailOutbox = pgTable(
       ),
       // TTL cleanup
       index("email_outbox_created_at_idx").on(table.createdAt),
-      index("email_outbox_owner_user_id_idx").on(table.ownerUserId),
       uniqueIndex("email_outbox_source_run_automation_unique").on(
         table.sourceRunId,
         table.sourceWorkflowAutomationId,

@@ -298,7 +298,6 @@ export const enqueueCreditLowBalanceAlert$ = command(
             },
           } satisfies EmailTemplate;
           return {
-            ownerUserId: recipient.userId,
             fromAddress: buildTeamFromAddress(),
             toAddresses: recipient.email,
             ccAddresses: null,

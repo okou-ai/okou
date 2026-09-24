@@ -95,16 +95,17 @@ const ACCOUNT_OWNERSHIP_COLUMNS = [
  *   not the agent or organization it hangs under, so a thread the deleted
  *   account created inside somebody else's Agent is still a root here.
  * - `user_descendant`: rows carry no account identity and are removed with the
- *   named roots, by foreign-key cascade or by a root's own deletion. Several
- *   roots can reach the same table — `email_outbox` rows arrive from a run, a
- *   workflow automation or a Morning Brief delivery — and a collector owes a
- *   sweep from every one of them, so the list is plural.
+ *   named roots, by foreign-key cascade or by a root's own deletion. A
+ *   collector owes a sweep from every declared parent, so the list is plural.
  * - `billing_preserved`: rows are platform billing records. Erasure keeps them
  *   and the minimum identifiers that reconcile them.
  * - `organization_owned`: rows belong to a surviving organization. Erasure
  *   removes only the deleted account's personal association columns.
  * - `not_account_scoped`: rows hold no account data — control planes, provider
  *   catalogues, shared content-addressed storage and runtime caches.
+ * - `deferred_retention`: account content explicitly excluded from this
+ *   deletion request by product decision. This does NOT prove the rows erased;
+ *   they remain for a separate, future retention/cleanup policy.
  */
 export type AccountOwnershipEntry =
   | { readonly coverage: "user_root"; readonly ownership: readonly string[] }
@@ -120,7 +121,8 @@ export type AccountOwnershipEntry =
       readonly coverage: "organization_owned";
       readonly association: readonly string[];
     }
-  | { readonly coverage: "not_account_scoped" };
+  | { readonly coverage: "not_account_scoped" }
+  | { readonly coverage: "deferred_retention" };
 
 /** Why a vocabulary column on a table is not that table's sweep key.
  *
@@ -603,16 +605,14 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   },
   desktop_auth_handoff_codes: { coverage: "user_root", ownership: ["user_id"] },
   device_codes: { coverage: "user_root", ownership: ["user_id"] },
-  email_outbox: {
-    coverage: "user_root",
-    ownership: ["owner_user_id"],
-  },
+  // Explicit product carve-out: queued and sent mail stays in the existing
+  // outbox lifecycle, not in per-account erasure. Future retention is separate.
+  email_outbox: { coverage: "deferred_retention" },
   email_suppressions: { coverage: "not_account_scoped" },
   export_jobs: { coverage: "user_root", ownership: ["user_id"] },
-  feishu_chat_ingress: {
-    coverage: "user_root",
-    ownership: ["owner_user_id"],
-  },
+  // Explicit product carve-out: inbound payload rows are not swept on account
+  // deletion. This is not a claim that processing deletes them.
+  feishu_chat_ingress: { coverage: "deferred_retention" },
   feishu_chat_thread_routes: { coverage: "user_root", ownership: ["user_id"] },
   feishu_org_connections: { coverage: "user_root", ownership: ["user_id"] },
   // A provider retry receipt keyed by the organization installation and the
@@ -1214,6 +1214,10 @@ function assertDescendantReachDeclared(
     }
   }
 }
+function isDeferredRetentionTable(name: string): boolean {
+  return name === "email_outbox" || name === "feishu_chat_ingress";
+}
+
 export function assertOwnershipInventoryCoverage(
   tables: readonly OwnershipTable[],
 ): void {
@@ -1229,6 +1233,12 @@ export function assertOwnershipInventoryCoverage(
       fail("uncovered_table", table.name);
     }
     present.add(table.name);
+    if (
+      (entry.coverage === "deferred_retention") !==
+      isDeferredRetentionTable(table.name)
+    ) {
+      fail("deferred_retention_scope_mismatch", table.name);
+    }
     assertColumnsDeclared(table, entry);
     if (entry.coverage === "user_root" && entry.ownership.length === 0) {
       fail("ownership_undeclared", table.name);
