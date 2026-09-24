@@ -3,7 +3,6 @@ import type {
   ConnectorCatalogItem,
   ConnectorCatalogStatus,
 } from "../../../lib/api/domains/connectors";
-import { getBillingStatus } from "../../../lib/api/domains/billing";
 import { getAgentUserBuiltinConnectors } from "../../../lib/api/domains/agents";
 import {
   listConnectorCatalog,
@@ -14,11 +13,6 @@ import {
   getGenerationPaidTool,
   getPaidToolUnavailableMessage,
 } from "../../../lib/command/paid-tools";
-import {
-  currentPlanAllowsVideo,
-  currentTokenCanReadBilling,
-} from "../../shared/billing-capabilities";
-import { planUpgradeUrl } from "../../shared/billing-links";
 import { getOkouAgentId } from "../../../lib/okou-env";
 import { connectorActionUrl } from "../../connector/action-url";
 import {
@@ -26,21 +20,6 @@ import {
   resolveRunConnectorAccountLookups,
   type RunConnectorAccountLookup,
 } from "../../connector/run-account-context";
-import {
-  DEFAULT_VIDEO_MODEL,
-  VIDEO_MODEL_CONFIGS,
-  VIDEO_MODELS,
-} from "@okouai/core/video-model-catalog";
-
-/**
- * Derived from the catalog so the summary cannot keep marking a model the
- * default after the catalog stops using it.
- */
-const BUILT_IN_VIDEO_MODEL_SUMMARY = VIDEO_MODELS.map((model) => {
-  const { alias } = VIDEO_MODEL_CONFIGS[model];
-  return model === DEFAULT_VIDEO_MODEL ? `${alias} (default)` : alias;
-}).join(", ");
-
 type ConnectorGenerationType =
   | "audio"
   | "code"
@@ -50,7 +29,6 @@ type ConnectorGenerationType =
   | "video";
 
 type BuiltInGenerationType =
-  | "avatar-video"
   | "dashboard-design"
   | "docs-design"
   | "image"
@@ -60,10 +38,12 @@ type BuiltInGenerationType =
   | "presentation"
   | "report"
   | "sprite"
-  | "video"
-  | "voice"
   | "website";
-export type GenerationType = ConnectorGenerationType | BuiltInGenerationType;
+export type GenerationType =
+  | ConnectorGenerationType
+  | BuiltInGenerationType
+  | "avatar-video"
+  | "voice";
 
 interface BuiltInGenerationProvider {
   label: string;
@@ -180,89 +160,16 @@ const BUILT_IN_GENERATION_PROVIDERS: Partial<
       reason: "available without connector setup",
     },
   ],
-  video: [
-    {
-      label: "Built-in",
-      model: "dreamina-seedance-2-5-260628",
-      command:
-        "okou generate video --provider built-in --model dreamina-seedance-2.5 -h",
-      reason: "availability depends on the current workspace plan",
-    },
-    {
-      label: "Built-in",
-      model: "dreamina-seedance-2-0-260128",
-      command:
-        "okou generate video --provider built-in --model dreamina-seedance-2.0 -h",
-      reason: "availability depends on the current workspace plan",
-    },
-    {
-      label: "Built-in",
-      model: "dreamina-seedance-2-0-fast-260128",
-      command:
-        "okou generate video --provider built-in --model dreamina-seedance-2.0-fast -h",
-      reason: "availability depends on the current workspace plan",
-    },
-    {
-      label: "Built-in",
-      model: "dreamina-seedance-2-0-mini-260615",
-      command:
-        "okou generate video --provider built-in --model dreamina-seedance-2.0-mini -h",
-      reason: "availability depends on the current workspace plan",
-    },
-    {
-      label: "Built-in",
-      model: "seedance-1-5-pro-251215",
-      command:
-        "okou generate video --provider built-in --model seedance-1.5-pro -h",
-      reason: "availability depends on the current workspace plan",
-    },
-    {
-      label: "Built-in MiniMax",
-      model: "MiniMax-H3",
-      command: "okou generate video --provider built-in --model minimax-h3 -h",
-      reason: "availability depends on the current workspace plan",
-    },
-    {
-      label: "Built-in fal.ai",
-      model: "fal-ai/veo3.1/fast",
-      command: "okou generate video --provider built-in --model veo3.1-fast -h",
-      reason: "availability depends on the current workspace plan",
-    },
-    {
-      label: "Built-in fal.ai",
-      model: "fal-ai/kling-video/v3/4k/text-to-video",
-      command: "okou generate video --provider built-in --model kling-v3-4k -h",
-      reason: "availability depends on the current workspace plan",
-    },
-  ],
-  voice: [
-    {
-      label: "Built-in",
-      model: "gpt-4o-mini-tts",
-      command: "okou generate voice --provider built-in -h",
-      reason: "available without connector setup",
-    },
-  ],
 };
 
 const BUILT_IN_GENERATION_COMMANDS: Partial<
   Record<GenerationType, BuiltInGenerationCommand>
 > = {
-  "avatar-video": {
-    label: "Built-in JoggAI talking-avatar video generation",
-    command: "okou generate avatar-video --provider built-in -h",
-    models: "joggai-talking-avatar",
-  },
   image: {
     label: "Built-in image generation",
     command: "okou generate image --provider built-in -h",
     models:
       "OpenAI: gpt-image-2.5-flare, gpt-image-2.5-sunburst; fal.ai: gpt-image-1 (default), gpt-image-2, flux-2-pro, ideogram-4, flux-pro-1.1, flux-pro-1.1-ultra, qwen-image-3, seedream4, nano-banana-2, nano-banana-2-lite; BytePlus: seedream5-pro, seedream5-lite",
-  },
-  video: {
-    label: "Built-in video generation",
-    command: "okou generate video --provider built-in -h",
-    models: BUILT_IN_VIDEO_MODEL_SUMMARY,
   },
   presentation: {
     label: "Built-in presentation generation",
@@ -303,11 +210,6 @@ const BUILT_IN_GENERATION_COMMANDS: Partial<
     label: "Built-in sprite asset generation",
     command: "okou generate sprite -h",
     models: "gpt-image-2 (recommended) via built-in image generation",
-  },
-  voice: {
-    label: "Built-in voice generation",
-    command: "okou generate voice --provider built-in -h",
-    models: "gpt-4o-mini-tts",
   },
 };
 
@@ -659,16 +561,9 @@ function renderActions(
 
 function renderBuiltInProvider(params: {
   generationType: GenerationType;
-  videoGenerationAllowed: boolean | undefined;
-  platformOrigin: string;
   unavailableMessage: string | undefined;
 }): void {
-  const {
-    generationType,
-    videoGenerationAllowed,
-    platformOrigin,
-    unavailableMessage,
-  } = params;
+  const { generationType, unavailableMessage } = params;
   const command = getBuiltInCommand(generationType);
   if (command) {
     console.log("");
@@ -677,26 +572,6 @@ function renderBuiltInProvider(params: {
     console.log(`  Models: ${command.models}`);
     if (unavailableMessage) {
       console.log(`  Availability: ${unavailableMessage}`);
-    } else if (
-      generationType === "video" ||
-      generationType === "avatar-video"
-    ) {
-      if (videoGenerationAllowed === false) {
-        console.log(
-          "  Availability: Requires a Pro, Team, or Custom workspace plan.",
-        );
-        console.log(
-          `  Upgrade: [Compare plans](${planUpgradeUrl(platformOrigin)})`,
-        );
-      } else if (videoGenerationAllowed === true) {
-        console.log(
-          "  Availability: Available on the current plan without connector setup.",
-        );
-      } else {
-        console.log(
-          "  Availability: Plan eligibility will be checked before generation.",
-        );
-      }
     }
     console.log(`  Use: ${command.command}`);
     return;
@@ -732,8 +607,6 @@ function renderText(params: {
   ready: GenerationCandidate[];
   other: GenerationCandidate[];
   showAll: boolean;
-  videoGenerationAllowed: boolean | undefined;
-  platformOrigin: string;
   runBound: boolean;
   unavailableMessage: string | undefined;
 }): void {
@@ -743,8 +616,6 @@ function renderText(params: {
     ready,
     other,
     showAll,
-    videoGenerationAllowed,
-    platformOrigin,
     runBound,
     unavailableMessage,
   } = params;
@@ -778,8 +649,6 @@ function renderText(params: {
 
   renderBuiltInProvider({
     generationType,
-    videoGenerationAllowed,
-    platformOrigin,
     unavailableMessage,
   });
   renderGenerationContext(generationType);
@@ -830,24 +699,15 @@ export async function runLister(
   const agentId = getOkouAgentId();
   const runBound = isRunBoundConnectorContext();
   const paidTool = getGenerationPaidTool(generationType);
-  const [
-    catalog,
-    enabledConnectorSlugs,
-    platformOrigin,
-    billing,
-    unavailableMessage,
-  ] = await Promise.all([
-    loadGenerationCatalog(connectorGenerationType, runBound),
-    agentId ? getAgentUserBuiltinConnectors(agentId) : Promise.resolve(null),
-    getPlatformOrigin(),
-    (generationType === "video" || generationType === "avatar-video") &&
-    currentTokenCanReadBilling()
-      ? getBillingStatus()
-      : Promise.resolve(null),
-    paidTool
-      ? getPaidToolUnavailableMessage(paidTool)
-      : Promise.resolve(undefined),
-  ]);
+  const [catalog, enabledConnectorSlugs, platformOrigin, unavailableMessage] =
+    await Promise.all([
+      loadGenerationCatalog(connectorGenerationType, runBound),
+      agentId ? getAgentUserBuiltinConnectors(agentId) : Promise.resolve(null),
+      getPlatformOrigin(),
+      paidTool
+        ? getPaidToolUnavailableMessage(paidTool)
+        : Promise.resolve(undefined),
+    ]);
   const authorizedConnectorSlugs = enabledConnectorSlugs
     ? new Set(enabledConnectorSlugs)
     : null;
@@ -900,10 +760,6 @@ export async function runLister(
     ready,
     other,
     showAll: options.all === true,
-    videoGenerationAllowed: billing
-      ? currentPlanAllowsVideo(billing)
-      : undefined,
-    platformOrigin,
     runBound,
     unavailableMessage,
   });

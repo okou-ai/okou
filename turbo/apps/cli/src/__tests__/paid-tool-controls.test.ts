@@ -150,58 +150,6 @@ describe("personal paid-tool controls through the CLI entry point", () => {
       tool: "image-generation",
       args: ["generate", "image", "--compiled-prompt", "A fox"],
     },
-    {
-      tool: "video-generation",
-      args: [
-        "generate",
-        "video",
-        "--prompt",
-        "A fox",
-        "--first-frame-image-url",
-        "https://example.com/frame.png",
-        "--visibility",
-        "public",
-      ],
-    },
-    {
-      tool: "voice-generation",
-      args: [
-        "generate",
-        "voice",
-        "--prompt",
-        "Hello",
-        "--visibility",
-        "public",
-      ],
-    },
-    {
-      tool: "avatar-video-generation",
-      args: [
-        "generate",
-        "avatar-video",
-        "--script",
-        "Hello",
-        "--avatar-id",
-        "81",
-        "--voice-id",
-        "voice",
-        "--visibility",
-        "public",
-      ],
-    },
-    {
-      tool: "avatar-video-generation",
-      args: [
-        "generate",
-        "avatar-video",
-        "--audio-url",
-        "https://example.com/audio.mp3",
-        "--avatar-id",
-        "81",
-        "--voice-id",
-        "voice",
-      ],
-    },
   ])("rejects disabled $tool before any request", async ({ tool, args }) => {
     vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, JSON.stringify([tool]));
 
@@ -251,17 +199,6 @@ describe("personal paid-tool controls through the CLI entry point", () => {
       ],
       expected: "image prompt-compilation packet",
     },
-    {
-      tool: "video-generation",
-      args: [
-        "video",
-        "--template",
-        "video-template:epic-grandeur",
-        "--prompt",
-        "A mountain",
-      ],
-      expected: "federated generation source-selection packet",
-    },
   ])(
     "keeps free $tool authoring available under disabled or invalid policy",
     async ({ tool, args, expected }) => {
@@ -294,44 +231,27 @@ describe("personal paid-tool controls through the CLI entry point", () => {
   it("rejects built-in media execution with malformed policy", async () => {
     vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, "invalid");
     await expect(
-      run(["generate", "voice", "--prompt", "Hello"]),
+      run(["generate", "image", "--raw-prompt", "A fox"]),
     ).rejects.toThrow("process.exit(1)");
     expect(errors).toContain("Paid tool configuration is invalid");
     expect(requests).toEqual([]);
   });
 
-  it("allows voice generation when only unrelated and future tools are disabled", async () => {
-    vi.stubEnv(
-      DISABLED_PAID_TOOLS_ENV_VAR,
-      '["image-generation", "video-generation", "avatar-video-generation", "future-tool"]',
-    );
-    let submissions = 0;
-    server.use(
-      http.post(
-        "http://localhost:3000/api/voice-io/speech",
-        async ({ request }) => {
-          expect(await request.json()).toMatchObject({ text: "Hello" });
-          submissions += 1;
-          return HttpResponse.json({
-            id: "voice-file-id",
-            filename: "voice.wav",
-            contentType: "audio/wav",
-            size: 19,
-            url: "https://example.com/voice.wav",
-            durationSeconds: 3,
-            creditsCharged: 1,
-            model: "gpt-4o-mini-tts",
-            voice: "cedar",
-          });
-        },
-      ),
-    );
-    await run(["generate", "voice", "--prompt", "Hello", "--json"]);
-    expect(submissions).toBe(1);
-    expect(output).toContain('"filename":"voice.wav"');
-    expect(errors).toBe("");
-    expect(requests).toEqual([]);
-  });
+  it.each(["video", "voice", "avatar-video"])(
+    "does not offer retired %s paid-tool controls",
+    async (type) => {
+      vi.stubEnv(
+        DISABLED_PAID_TOOLS_ENV_VAR,
+        '["video-generation", "voice-generation", "avatar-video-generation"]',
+      );
+      await expect(run(["generate", type, "--help"])).rejects.toMatchObject({
+        code: "commander.helpDisplayed",
+      });
+      expect(output).toContain("Connector name");
+      expect(output).not.toContain("Disabled paid tools in this run:");
+      expect(requests).toEqual([]);
+    },
+  );
 
   it.each([{ args: ["generate", "image"], tool: "image-generation" }])(
     "annotates relevant media help for $tool",

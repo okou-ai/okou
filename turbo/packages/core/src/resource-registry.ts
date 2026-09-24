@@ -45,7 +45,6 @@ type ResourceKind =
   | "color-system"
   | "image-style"
   | "audio-style"
-  | "video-template"
   | "bundle-template";
 
 interface ResourceSourceRef {
@@ -74,17 +73,6 @@ export interface RegistryEntry {
   readonly targets?: readonly GenerationTarget[];
 }
 
-export interface VideoTemplateRegistryEntry extends Omit<
-  RegistryEntry,
-  "kind" | "source"
-> {
-  readonly kind: "video-template";
-  readonly source: ResourceSourceRef & {
-    readonly repo: string;
-    readonly ref: string;
-  };
-}
-
 export interface ResourceCandidateSlice {
   readonly registryVersion: string;
   /** Pinned Git source for every candidate without `source.archive`. */
@@ -103,10 +91,6 @@ const RESOURCE_REGISTRY_REPO = "nexu-io/open-design";
 const RESOURCE_REGISTRY_COMMIT = "3fb620af423534643677c7c6fae76be088fa770a";
 const SKILLS_REPO = "okou-ai/okou-skills";
 const SKILLS_REF = "main";
-const VIDEO_TEMPLATE_REGISTRY_SOURCE = {
-  repo: SKILLS_REPO,
-  ref: SKILLS_REF,
-} as const;
 
 export const RESOURCE_REGISTRY_VERSION = "v1";
 
@@ -253,98 +237,6 @@ const PRESENTATION_RESOURCE_ARCHIVE_SHA256 = {
     "b76919f0c5a3fe0a72586938e79eea81d90b6ab09701f7bef3fe9f50b94d757b",
 } as const;
 
-function videoTemplateSource(
-  path: string,
-): VideoTemplateRegistryEntry["source"] {
-  return {
-    ...VIDEO_TEMPLATE_REGISTRY_SOURCE,
-    path,
-  };
-}
-
-const VIDEO_TEMPLATE_REGISTRY: readonly VideoTemplateRegistryEntry[] = [
-  {
-    id: "video-template:epic-grandeur",
-    kind: "video-template",
-    name: "Epic Grandeur",
-    description:
-      "Large-format epic cinematic video style with wide framing, aerial scale, golden backlight, and awe-struck tone.",
-    source: videoTemplateSource("video-template/epic-grandeur"),
-  },
-  {
-    id: "video-template:gourmet-documentary",
-    kind: "video-template",
-    name: "Gourmet Documentary",
-    description:
-      "Sensory culinary-documentary video style with macro food texture, steam, warm backlight, and artisan hands.",
-    source: videoTemplateSource("video-template/gourmet-documentary"),
-  },
-  {
-    id: "video-template:luxury-product",
-    kind: "video-template",
-    name: "Luxury Product Macro",
-    description:
-      "Dark luxury product macro video style with premium material detail, black studio, pinpoint highlights, and refined reveals.",
-    source: videoTemplateSource("video-template/luxury-product"),
-  },
-  {
-    id: "video-template:shortform-viral",
-    kind: "video-template",
-    name: "Shortform Viral",
-    description:
-      "Short-form viral video style with vertical framing, fast hook, handheld creator energy, bright color, and quick rhythm.",
-    source: videoTemplateSource("video-template/shortform-viral"),
-  },
-  {
-    id: "video-template:fashion-editorial",
-    kind: "video-template",
-    name: "Fashion Editorial",
-    description:
-      "High-fashion editorial video style with cold desaturated grade, strong silhouettes, luxury texture, and deliberate pose.",
-    source: videoTemplateSource("video-template/fashion-editorial"),
-  },
-  {
-    id: "video-template:sports-performance-ad",
-    kind: "video-template",
-    name: "Sports Performance Ad",
-    description:
-      "Sports performance advertising video style with athlete effort, gear close-ups, impact rhythm, and dramatic rim light.",
-    source: videoTemplateSource("video-template/sports-performance-ad"),
-  },
-  {
-    id: "video-template:japanese-wabi-sabi",
-    kind: "video-template",
-    name: "Japanese Wabi-Sabi",
-    description:
-      "Japanese wabi-sabi lifestyle video style with natural imperfection, warm soft light, negative space, and quiet mood.",
-    source: videoTemplateSource("video-template/japanese-wabi-sabi"),
-  },
-  {
-    id: "video-template:hand-drawn-fantasy-anime",
-    kind: "video-template",
-    name: "Hand Drawn Fantasy Anime",
-    description:
-      "Hand-drawn fantasy animation video style with painterly 2D backgrounds, expressive characters, and gentle wonder.",
-    source: videoTemplateSource("video-template/hand-drawn-fantasy-anime"),
-  },
-  {
-    id: "video-template:cyberpunk-anime",
-    kind: "video-template",
-    name: "Cyberpunk Anime",
-    description:
-      "2D cyberpunk anime video style with neon megacity atmosphere, rain-slick streets, cel shading, and melancholic mood.",
-    source: videoTemplateSource("video-template/cyberpunk-anime"),
-  },
-  {
-    id: "video-template:chinese-ink-art",
-    kind: "video-template",
-    name: "Chinese Ink Painting",
-    description:
-      "Chinese ink-wash video style with monochrome brush texture, white space, mist, and calm classical-poetry mood.",
-    source: videoTemplateSource("video-template/chinese-ink-art"),
-  },
-];
-
 // These targets mirror each skill's `od.mode` in the pinned Open Design commit.
 const OPEN_DESIGN_SKILL_TARGETS = {
   prototype: [
@@ -357,11 +249,9 @@ const OPEN_DESIGN_SKILL_TARGETS = {
   ],
   deck: ["presentation"],
   image: ["image", "poster"],
-  video: ["video"],
-  template: ["video"],
   "design-system": [],
 } as const satisfies Record<
-  "prototype" | "deck" | "image" | "video" | "template" | "design-system",
+  "prototype" | "deck" | "image" | "design-system",
   readonly GenerationTarget[]
 >;
 
@@ -383,24 +273,6 @@ const RESOURCE_REGISTRY: readonly RegistryEntry[] = [
       "Converts a product, brand, or feature request into a structured design brief.",
     source: { path: "skills/design-brief/SKILL.md" },
     targets: OPEN_DESIGN_SKILL_TARGETS["design-system"],
-  },
-  {
-    id: "skill:8-bit-orbit-video-template",
-    kind: "skill",
-    name: "8 Bit Orbit Video Template",
-    description:
-      "HyperFrames-based video template for retro pixel deck motion design — multi-scene HTML-to-video composition with advanced transitions and ready-to-render default style.",
-    source: { path: "skills/8-bit-orbit-video-template/SKILL.md" },
-    targets: OPEN_DESIGN_SKILL_TARGETS.template,
-  },
-  {
-    id: "skill:after-hours-editorial-template",
-    kind: "skill",
-    name: "After Hours Editorial Template",
-    description:
-      "Luxury dark-editorial HyperFrames template for three-page cinematic storyboards — haute couture title cards and magazine chapter spreads with moody serif-led storytelling.",
-    source: { path: "skills/after-hours-editorial-template/SKILL.md" },
-    targets: OPEN_DESIGN_SKILL_TARGETS.template,
   },
   {
     id: "skill:algorithmic-art",
@@ -546,15 +418,6 @@ const RESOURCE_REGISTRY: readonly RegistryEntry[] = [
     targets: OPEN_DESIGN_SKILL_TARGETS["design-system"],
   },
   {
-    id: "skill:digits-fintech-swiss-template",
-    kind: "skill",
-    name: "Digits Fintech Swiss Template",
-    description:
-      "Swiss-grid fintech deck template in black / warm paper / neon-lime — strict modular layout, bold numeric cards, restrained motion, keyboard/click navigation.",
-    source: { path: "skills/digits-fintech-swiss-template/SKILL.md" },
-    targets: OPEN_DESIGN_SKILL_TARGETS.template,
-  },
-  {
     id: "skill:doc-kami-parchment",
     kind: "skill",
     name: "DOC Kami Parchment",
@@ -562,15 +425,6 @@ const RESOURCE_REGISTRY: readonly RegistryEntry[] = [
       "Warm parchment canvas (#f5f4ed), monochrome ink-blue accent (#1B365D), one serif family, and editorial-grade typography.",
     source: { path: "skills/doc-kami-parchment/SKILL.md" },
     targets: OPEN_DESIGN_SKILL_TARGETS.prototype,
-  },
-  {
-    id: "skill:editorial-burgundy-principles-template",
-    kind: "skill",
-    name: "Editorial Burgundy Principles Template",
-    description:
-      "Editorial studio deck template in burgundy / blush / muted-gold — pill tags, large typographic statements, principle cards, guided keyboard/click navigation.",
-    source: { path: "skills/editorial-burgundy-principles-template/SKILL.md" },
-    targets: OPEN_DESIGN_SKILL_TARGETS.template,
   },
   {
     id: "skill:enhance-prompt",
@@ -589,15 +443,6 @@ const RESOURCE_REGISTRY: readonly RegistryEntry[] = [
       "A Frequently Asked Questions (FAQ) page with collapsible accordion sections, search functionality, and category filtering.",
     source: { path: "skills/faq-page/SKILL.md" },
     targets: OPEN_DESIGN_SKILL_TARGETS.prototype,
-  },
-  {
-    id: "skill:field-notes-editorial-template",
-    kind: "skill",
-    name: "Field Notes Editorial Template",
-    description:
-      "Editorial Field Notes report template — soft paper background, serif hero typography, rounded pastel insight cards, retention chart panel. Premium magazine-style.",
-    source: { path: "skills/field-notes-editorial-template/SKILL.md" },
-    targets: OPEN_DESIGN_SKILL_TARGETS.template,
   },
   {
     id: "skill:figma-create-design-system-rules",
@@ -643,69 +488,6 @@ const RESOURCE_REGISTRY: readonly RegistryEntry[] = [
       "Implement animated effects, transitions, and motion in Flutter apps. Useful for native iOS/Android motion design.",
     source: { path: "skills/flutter-animating-apps/SKILL.md" },
     targets: OPEN_DESIGN_SKILL_TARGETS.prototype,
-  },
-  {
-    id: "skill:frame-data-chart-nyt",
-    kind: "skill",
-    name: "Frame Data Chart Nyt",
-    description:
-      "NYT-newsroom typography, staggered reveal animation, and editorial-grade charts (line, bar, or range band).",
-    source: { path: "skills/frame-data-chart-nyt/SKILL.md" },
-    targets: OPEN_DESIGN_SKILL_TARGETS.video,
-  },
-  {
-    id: "skill:frame-flowchart-sticky",
-    kind: "skill",
-    name: "Frame Flowchart Sticky",
-    description:
-      "SVG curve connectors, sticky-note nodes, and cursor interaction with a whiteboard-brainstorm feel.",
-    source: { path: "skills/frame-flowchart-sticky/SKILL.md" },
-    targets: OPEN_DESIGN_SKILL_TARGETS.video,
-  },
-  {
-    id: "skill:frame-glitch-title",
-    kind: "skill",
-    name: "Frame Glitch Title",
-    description:
-      "Digital glitch, chromatic offset, and data-corruption title frame for video transitions or cyberpunk heroes.",
-    source: { path: "skills/frame-glitch-title/SKILL.md" },
-    targets: OPEN_DESIGN_SKILL_TARGETS.video,
-  },
-  {
-    id: "skill:frame-light-leak-cinema",
-    kind: "skill",
-    name: "Frame Light Leak Cinema",
-    description:
-      "Film light leaks, grain, 16:9 letterbox, and large serif type for cinematic openings or chapter cards.",
-    source: { path: "skills/frame-light-leak-cinema/SKILL.md" },
-    targets: OPEN_DESIGN_SKILL_TARGETS.video,
-  },
-  {
-    id: "skill:frame-liquid-bg-hero",
-    kind: "skill",
-    name: "Frame Liquid Bg Hero",
-    description:
-      "WebGL-style fluid displacement background with a quote overlay, suited to video intros, landing heroes, or posters.",
-    source: { path: "skills/frame-liquid-bg-hero/SKILL.md" },
-    targets: OPEN_DESIGN_SKILL_TARGETS.video,
-  },
-  {
-    id: "skill:frame-logo-outro",
-    kind: "skill",
-    name: "Frame Logo Outro",
-    description:
-      "Segmented logo assembly, glow bloom, and tagline reveal for video outros or brand closing frames.",
-    source: { path: "skills/frame-logo-outro/SKILL.md" },
-    targets: OPEN_DESIGN_SKILL_TARGETS.video,
-  },
-  {
-    id: "skill:frame-macos-notification",
-    kind: "skill",
-    name: "Frame Macos Notification",
-    description:
-      "Realistic macOS notification banner with app icon, title, and body, suited to video overlays or product teasers.",
-    source: { path: "skills/frame-macos-notification/SKILL.md" },
-    targets: OPEN_DESIGN_SKILL_TARGETS.video,
   },
   {
     id: "skill:frontend-design",
@@ -796,15 +578,6 @@ const RESOURCE_REGISTRY: readonly RegistryEntry[] = [
       "Create, repair, validate, preview, and package Codex-compatible animated pet spritesheets with an 8x9 atlas, QA contact sheets, preview videos, and pet.json packaging.",
     source: { path: "skills/hatch-pet/SKILL.md" },
     targets: OPEN_DESIGN_SKILL_TARGETS.image,
-  },
-  {
-    id: "skill:html-ppt-retro-quarterly-review",
-    kind: "skill",
-    name: "HTML PPT Retro Quarterly Review",
-    description:
-      "Retro Quarterly Review template — bold blue + orange editorial with slab headlines, cream paper sections, structured grids, fast premium motion pacing in video mode.",
-    source: { path: "skills/html-ppt-retro-quarterly-review/SKILL.md" },
-    targets: OPEN_DESIGN_SKILL_TARGETS.template,
   },
   {
     id: "skill:login-flow",
@@ -977,24 +750,6 @@ const RESOURCE_REGISTRY: readonly RegistryEntry[] = [
     targets: OPEN_DESIGN_SKILL_TARGETS["design-system"],
   },
   {
-    id: "skill:swiss-creative-mode-template",
-    kind: "skill",
-    name: "Swiss Creative Mode Template",
-    description:
-      "Swiss-inspired creative-mode presentation template — bold editorial typography, high-contrast geometric cards, interactive slide navigation, theme switching, hotspot overlays.",
-    source: { path: "skills/swiss-creative-mode-template/SKILL.md" },
-    targets: OPEN_DESIGN_SKILL_TARGETS.template,
-  },
-  {
-    id: "skill:swiss-user-research-video-template",
-    kind: "skill",
-    name: "Swiss User Research Video Template",
-    description:
-      "Swiss-style user-research narrative template in warm-paper editorial aesthetics — minimalist typography, donut breakdowns, keyboard/click navigation, single-file HTML.",
-    source: { path: "skills/swiss-user-research-video-template/SKILL.md" },
-    targets: OPEN_DESIGN_SKILL_TARGETS.template,
-  },
-  {
     id: "skill:taste-skill",
     kind: "skill",
     name: "Taste Skill",
@@ -1040,24 +795,6 @@ const RESOURCE_REGISTRY: readonly RegistryEntry[] = [
     targets: OPEN_DESIGN_SKILL_TARGETS["design-system"],
   },
   {
-    id: "skill:vfx-text-cursor",
-    kind: "skill",
-    name: "VFX Text Cursor",
-    description:
-      "Cursor light trail, chromatic rays, and directional flares for word-by-word quote reveals in video intros.",
-    source: { path: "skills/vfx-text-cursor/SKILL.md" },
-    targets: OPEN_DESIGN_SKILL_TARGETS.video,
-  },
-  {
-    id: "skill:video-hyperframes",
-    kind: "skill",
-    name: "Video Hyperframes",
-    description:
-      "Hyperframes / Remotion-compatible continuous frame animation with autoplay support.",
-    source: { path: "skills/video-hyperframes/SKILL.md" },
-    targets: OPEN_DESIGN_SKILL_TARGETS.video,
-  },
-  {
     id: "skill:web-design-guidelines",
     kind: "skill",
     name: "Web Design Guidelines",
@@ -1065,15 +802,6 @@ const RESOURCE_REGISTRY: readonly RegistryEntry[] = [
       "Web design guidelines and standards by the Vercel engineering team. Covers layout, typography, color, motion, and accessibility for product UI.",
     source: { path: "skills/web-design-guidelines/SKILL.md" },
     targets: OPEN_DESIGN_SKILL_TARGETS["design-system"],
-  },
-  {
-    id: "skill:weread-year-in-review-video-template",
-    kind: "skill",
-    name: "Weread Year In Review Video Template",
-    description:
-      "WeRead-inspired HyperFrames video template for vertical annual reading reports — warm paper texture, editorial Chinese typography, book-page metaphors, deterministic motion.",
-    source: { path: "skills/weread-year-in-review-video-template/SKILL.md" },
-    targets: OPEN_DESIGN_SKILL_TARGETS.template,
   },
   {
     id: "skill:wpds",
@@ -1147,15 +875,6 @@ const RESOURCE_REGISTRY: readonly RegistryEntry[] = [
       "Editorial-minimalist web prototype with warm monochrome canvas, serif display type, hairline borders, pastel chips, and ambient micro-motion.",
     source: { path: "design-templates/web-prototype-taste-editorial" },
     targets: ["website"],
-  },
-  {
-    id: "template:audio-jingle",
-    kind: "template",
-    name: "Audio Jingle",
-    description:
-      "Audio generation skill — jingles, beds, voiceover, and sound effects. Routes music requests to Suno V5 / Udio / Lyria, speech to MiniMax TTS / FishAudio / ElevenLabs V3, and SFX to ElevenLabs SFX or AudioCraft. Output is one MP3/WAV file…",
-    source: { path: "design-templates/audio-jingle" },
-    targets: ["video"],
   },
   {
     id: "template:blog-post",
@@ -1332,15 +1051,6 @@ const RESOURCE_REGISTRY: readonly RegistryEntry[] = [
   },
 
   {
-    id: "template:hyperframes",
-    kind: "template",
-    name: "Hyperframes",
-    description:
-      "HTML video composition skill — captions, voiceover, audio-reactive animation, scene transitions, and timing in HyperFrames HTML. For CLI commands see hyperframes-cli.",
-    source: { path: "design-templates/hyperframes" },
-    targets: ["video"],
-  },
-  {
     id: "template:ib-pitch-book",
     kind: "template",
     name: "Ib Pitch Book",
@@ -1439,15 +1149,6 @@ const RESOURCE_REGISTRY: readonly RegistryEntry[] = [
       "A multi-screen mobile onboarding flow rendered as three phone frames side by side — splash, value-prop, sign-in. Status bar, swipe dots, primary CTA.",
     source: { path: "design-templates/mobile-onboarding" },
     targets: ["mobile-app-design"],
-  },
-  {
-    id: "template:motion-frames",
-    kind: "template",
-    name: "Motion Frames",
-    description:
-      "A single-frame motion-design composition with looping CSS animations — rotating type ring, animated globe, ticking timer, parallax labels. Renders as a hero video poster you can hand straight to HyperFrames or any keyframe-based exporter.",
-    source: { path: "design-templates/motion-frames" },
-    targets: ["video"],
   },
   {
     id: "template:open-design-landing",
@@ -1560,15 +1261,6 @@ const RESOURCE_REGISTRY: readonly RegistryEntry[] = [
     targets: ["dashboard-design"],
   },
   {
-    id: "template:sprite-animation",
-    kind: "template",
-    name: "Sprite Animation",
-    description:
-      "A pixel / sprite-style animated explainer slide — full-bleed cream stage, bold display year, animated pixel-art mascot (e.g. Hanafuda card, mushroom, or 8-bit console), kinetic Japanese display type, ticking timeline ribbon. Reads like a…",
-    source: { path: "design-templates/sprite-animation" },
-    targets: ["video"],
-  },
-  {
     id: "template:team-okrs",
     kind: "template",
     name: "Team Okrs",
@@ -1601,15 +1293,6 @@ const RESOURCE_REGISTRY: readonly RegistryEntry[] = [
       "poster",
       "mobile-app-design",
     ],
-  },
-  {
-    id: "template:video-shortform",
-    kind: "template",
-    name: "Video Shortform",
-    description:
-      "Short-form video generation skill — 3-10 second clips for product reveals, motion teasers, ambient loops. Defaults to Seedance 2 but works the same with Kling 3 / 4, Veo 3 or Sora 2. Output is one MP4 saved to the project folder. When th…",
-    source: { path: "design-templates/video-shortform" },
-    targets: ["video"],
   },
   {
     id: "template:waitlist-page",
@@ -3987,39 +3670,6 @@ export function findTool(id: string): RegistryEntry | undefined {
 export function findImageStyle(id: string): RegistryEntry | undefined {
   return listImageStyles().find((entry) => {
     return entry.id === id;
-  });
-}
-
-const VIDEO_TEMPLATE_ID_ALIASES: Readonly<Record<string, string>> = {
-  "athletic-motivation": "video-template:sports-performance-ad",
-  "video-template:athletic-motivation": "video-template:sports-performance-ad",
-  "imax-epic-cinematic": "video-template:epic-grandeur",
-  "video-template:imax-epic-cinematic": "video-template:epic-grandeur",
-  "luxury-watch-product": "video-template:luxury-product",
-  "video-template:luxury-watch-product": "video-template:luxury-product",
-};
-
-export function canonicalizeVideoTemplateId(id: string): string {
-  const alias = VIDEO_TEMPLATE_ID_ALIASES[id];
-  if (alias) {
-    return alias;
-  }
-  if (id.startsWith("video-template:")) {
-    return id;
-  }
-  return `video-template:${id}`;
-}
-
-export function listVideoTemplates(): readonly VideoTemplateRegistryEntry[] {
-  return VIDEO_TEMPLATE_REGISTRY;
-}
-
-export function findVideoTemplate(
-  id: string,
-): VideoTemplateRegistryEntry | undefined {
-  const canonicalId = canonicalizeVideoTemplateId(id);
-  return listVideoTemplates().find((entry) => {
-    return entry.id === canonicalId;
   });
 }
 
