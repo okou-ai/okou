@@ -6740,30 +6740,28 @@ function UserMessageActions({
       className={CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS}
     >
       {showCopy ? (
-        <span className="[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 focus-within:opacity-100">
-          <CopyButton
-            copyAction={onCopy}
-            render={({ onClick, ref }, { copied }) => {
-              return (
-                <Button
-                  ref={ref}
-                  type="button"
-                  variant="quiet"
-                  size="icon-xs"
-                  iconSize="sm"
-                  showTooltip
-                  onClick={onClick}
-                  className="text-muted-foreground/60"
-                  aria-label={t(($) => {
-                    return $.chat.actions.copyMessage;
-                  })}
-                >
-                  {copied ? <Check /> : <Copy />}
-                </Button>
-              );
-            }}
-          />
-        </span>
+        <CopyButton
+          copyAction={onCopy}
+          render={({ onClick, ref }, { copied }) => {
+            return (
+              <Button
+                ref={ref}
+                type="button"
+                variant="quiet"
+                size="icon-xs"
+                iconSize="sm"
+                showTooltip
+                onClick={onClick}
+                className="text-muted-foreground/60"
+                aria-label={t(($) => {
+                  return $.chat.actions.copyMessage;
+                })}
+              >
+                {copied ? <Check /> : <Copy />}
+              </Button>
+            );
+          }}
+        />
       ) : null}
       {showActivityLogs && runId && <RunLogsAction runId={runId} />}
     </div>
