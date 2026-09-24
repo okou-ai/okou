@@ -1596,12 +1596,7 @@ function TelegramConnectAction({
 
   if (disabled) {
     return (
-      <Button
-        type="button"
-        size="sm"
-        disabled
-        className="h-9 justify-center"
-      >
+      <Button type="button" size="sm" disabled className="h-9 justify-center">
         {t(($) => {
           return $.connectors.actions.connect;
         })}
@@ -1615,10 +1610,7 @@ function TelegramConnectAction({
       options={{
         searchParams: new URLSearchParams({ bot: bot.id }),
       }}
-      className={cn(
-        buttonVariants({ size: "sm" }),
-        "h-9 justify-center",
-      )}
+      className={cn(buttonVariants({ size: "sm" }), "h-9 justify-center")}
     >
       {t(($) => {
         return $.connectors.actions.connect;
