@@ -239,7 +239,6 @@ export type MorningBriefCompositionOutcome =
   | {
       readonly kind: "authority-changed";
       readonly reason: MorningBriefAuthorityChange;
-      readonly sources: readonly MorningBriefSourceReport[];
     };
 
 /** Which fence withdrew a composed attempt's authority. */
@@ -399,9 +398,7 @@ export const composeMorningBrief$ = command(
       return { ...planned, sources: reduced.reports };
     }
     if (planned.kind !== "planned") {
-      // The source facts survive the refusal: a settled occurrence has to be
-      // able to show that five sources answered and still delivered nothing.
-      return { ...planned, sources: reduced.reports };
+      return planned;
     }
     return finishPlannedComposition(planned, reduced, base);
   },
