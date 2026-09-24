@@ -3354,7 +3354,9 @@ dependencies = [
  "md-5",
  "pbkdf2",
  "png",
+ "rand 0.10.3",
  "rcgen",
+ "rsa",
  "rustls",
  "serde_json",
  "sha2",
@@ -3459,7 +3461,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.213.13"
+version = "0.213.14"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3806,7 +3808,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "api-contracts",
  "async-trait",

@@ -1447,7 +1447,7 @@ const EXPECTED_PERMANENT_FUNCTIONS = [
     schemaName: "public",
   },
   {
-    bodyHash: "4d92a54f6249527907cf82d427614076",
+    bodyHash: "9a32858723d6facc53fb33925484a8f3",
     functionName: "reject_cloudflare_access_scope_change",
     identityArguments: "",
     kind: "f",
