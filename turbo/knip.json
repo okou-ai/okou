@@ -50,6 +50,10 @@
         "typescript-eslint"
       ]
     },
+    "apps/discord-gateway-worker": {
+      "entry": ["src/**/*.{test,spec}.ts"],
+      "project": ["src/**/*.ts", "*.config.{ts,mjs}"]
+    },
     "apps/host-worker": {
       "entry": ["src/index.ts"],
       "project": ["src/**/*.ts", "*.config.mjs"],

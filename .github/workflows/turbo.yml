@@ -992,9 +992,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/toolchain-init
+      - name: Build Discord Gateway relay for runtime tests
+        working-directory: turbo
+        run: pnpm --filter @okouai/discord-gateway-worker run build
       - name: Test Other Packages
         working-directory: turbo
-        run: pnpm vitest run --project=@okouai/core --project=@okouai/ui --project=@okouai/api-contracts --project=@okouai/db --coverage.enabled --coverage.reporter=json
+        run: pnpm vitest run --project=@okouai/core --project=@okouai/ui --project=@okouai/api-contracts --project=@okouai/db --project=@okouai/discord-gateway-worker --coverage.enabled --coverage.reporter=json
       - name: Test Connectors
         working-directory: turbo
         run: pnpm -F @okouai/connectors exec vitest run --reporter=default
