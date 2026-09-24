@@ -821,17 +821,29 @@ describe("CHAT-02: model-first provider policies", () => {
   it.each(["gpt-5.6-terra", "deepseek-v4.1-flash"] as const)(
     "hands a %s resource failure to Sandbox without replaying a later credential failure",
     async (selectedModel) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup, providerId } =
+        await entitledChatActor();
       await publishPendingPiInstructions(actor, agentId);
       if (!actor.orgId) {
         throw new Error("Expected entitled chat actor to have an org");
       }
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
       await api.heartbeatRunner(runnerGroup);
+      // Keep the anchor claimable while the separate queued target proves Pi
+      // API-first resource-failure handoff.
+      await api.updateOrgModelPolicies(actor, [
+        {
+          model: "claude-fable-5-1",
+          isDefault: true,
+          defaultProviderType: "anthropic-api-key",
+          credentialScope: "org",
+          modelProviderId: providerId,
+        },
+      ]);
       const anchor = await sendChatRun(actor, {
         agentId,
         prompt: "hold the thread while the future Pi launch is queued",
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
       });
       await flushWaitUntilForTest();
       const anchorState = await api.readRun(actor, anchor.runId);

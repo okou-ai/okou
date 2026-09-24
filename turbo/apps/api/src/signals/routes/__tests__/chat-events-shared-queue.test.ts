@@ -669,7 +669,7 @@ describe("CHAT-02: shared user message queue", () => {
         modelProviderId: providerId,
       },
       {
-        model: "gpt-5.6-terra",
+        model: "gpt-6-astra",
         isDefault: false,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
@@ -679,7 +679,7 @@ describe("CHAT-02: shared user message queue", () => {
     await chat.updateThreadModelSelection(
       actor,
       rotatedAnchor.threadId,
-      "gpt-5.6-terra",
+      "gpt-6-astra",
     );
 
     const rotatedEventId = randomUUID();
