@@ -297,6 +297,61 @@ try {
       },
     ],
   );
+  await client.query(`
+    INSERT INTO ssh_credentials (id,org_id,user_id,name,username,auth_method,encrypted_password)
+      VALUES ('00000000-0000-4000-8000-000000000012','org','foreign','Foreign login','deploy','password','ciphertext');
+    INSERT INTO ssh_connections (id,org_id,user_id,display_name,host,port,credential_id,cloudflare_access_id,generation)
+      VALUES ('00000000-0000-4000-8000-000000000013','org','foreign','Shared host','shared.example.com',443,'00000000-0000-4000-8000-000000000012','00000000-0000-4000-8000-000000000006',7);
+  `);
+  await migrate("1210_cloudflare_access_conversion");
+  await rejects(
+    "UPDATE cloudflare_access_configs SET scope='personal',user_id='user' WHERE id='00000000-0000-4000-8000-000000000006'",
+    { code: "23514", constraint: "cloudflare_access_scope_change_guard" },
+  );
+  await client.query(
+    "UPDATE ssh_connections SET cloudflare_access_id=NULL,needs_rebind=true,generation=generation+1 WHERE id='00000000-0000-4000-8000-000000000013'",
+  );
+  await client.query(
+    "UPDATE cloudflare_access_configs SET scope='personal',user_id='user' WHERE id='00000000-0000-4000-8000-000000000006'",
+  );
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT scope,user_id,encrypted_client_id,encrypted_client_secret FROM cloudflare_access_configs WHERE id='00000000-0000-4000-8000-000000000006'",
+      )
+    ).rows,
+    [
+      {
+        scope: "personal",
+        user_id: "user",
+        encrypted_client_id: "encrypted-id",
+        encrypted_client_secret: "encrypted-secret",
+      },
+    ],
+  );
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT cloudflare_access_id,needs_rebind,generation,credential_id FROM ssh_connections WHERE id='00000000-0000-4000-8000-000000000013'",
+      )
+    ).rows,
+    [
+      {
+        cloudflare_access_id: null,
+        needs_rebind: true,
+        generation: 8,
+        credential_id: "00000000-0000-4000-8000-000000000012",
+      },
+    ],
+  );
+  await rejects(
+    "UPDATE cloudflare_access_configs SET scope='organization',user_id=NULL WHERE id='00000000-0000-4000-8000-000000000006'",
+    { code: "23514", constraint: "cloudflare_access_scope_change_guard" },
+  );
+  await rejects(
+    "UPDATE cloudflare_access_configs SET user_id='foreign' WHERE id='00000000-0000-4000-8000-000000000006'",
+    { code: "23514", constraint: "cloudflare_access_scope_change_guard" },
+  );
   await client.query("ROLLBACK");
   console.log("Cloudflare Access migrations and scoped constraints passed");
 } finally {
