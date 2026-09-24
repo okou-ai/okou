@@ -57,6 +57,7 @@ import {
 } from "../../../test-fixtures/morning-brief-schedule-claim";
 import { holdAgentRunPiExecutionSnapshotFixture } from "../../../test-fixtures/thread-bound-run-admission";
 import { holdWorkflowAutomationRowFixture } from "../../../test-fixtures/workflow-queue";
+import { readWorkflowScheduleSkipsFixture } from "../../../test-fixtures/workflow-schedule-expiry";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -753,6 +754,31 @@ describe("Morning Brief legacy schedule claim journal", () => {
       return event.eventType === "input.automation";
     }).length;
   }
+
+  it("skips an expired unclaimed legacy brief without inventing a Run or leaving the native anchor behind", async () => {
+    mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
+    const brief = await installJournaledBrief();
+    const at = brief.anchor + 30 * 60_000 + 1;
+    await pollAt(brief.automationId, at);
+
+    await expect(
+      readMorningBriefScheduleClaimsFixture(brief.automationId),
+    ).resolves.toHaveLength(0);
+    await expect(
+      readWorkflowScheduleSkipsFixture(brief.automationId),
+    ).resolves.toMatchObject([{ scheduledAnchorAt: new Date(brief.anchor) }]);
+    const preference = await readBriefPreference(brief.actor);
+    expect(preference.body.nextRunAt).toStrictEqual(expect.any(String));
+    const next = Date.parse(preference.body.nextRunAt ?? "");
+    expect(next).toBeGreaterThan(at);
+    const [automation] = await readMorningBriefAutomations(
+      brief.actor,
+      brief.workflowId,
+    );
+    expect(automation?.nextRunAt).toBe(preference.body.nextRunAt);
+    expect(automation?.lastRunAt).toBeNull();
+    expect(automation?.chatThreadId).toBeNull();
+  });
 
   it("records the original due instant when the poll is late and keeps one occurrence across a retried tick", async () => {
     const brief = await installJournaledBrief();

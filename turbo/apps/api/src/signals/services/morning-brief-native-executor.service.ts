@@ -6,6 +6,10 @@ import { command } from "ccstate";
 
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
+import {
+  scheduleExpired,
+  scheduleExpiryEnabled,
+} from "./schedule-expiry-policy";
 import { writeDb$, type ReadonlyDb } from "../external/db";
 import type { MorningBriefMemberIdentity } from "./morning-brief-enrollment-data.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
@@ -27,6 +31,7 @@ import {
   materializeMorningBriefNativeSchedule,
   resumeMorningBriefNativeOccurrence,
   settleMorningBriefNativeOccurrence,
+  skipExpiredNativeMorningBriefSchedule,
   type MorningBriefNativeClaim,
   type MorningBriefNativeOccurrenceRow,
 } from "./morning-brief-native-schedule.service";
@@ -795,6 +800,7 @@ const loadNativeDispatchTasks$ = command(
       const key = `${task.orgId}\0${task.userId}\0${task.scheduledFor.toISOString()}`;
       tasks.set(key, task);
     };
+    let expired = 0;
     for (const schedule of due) {
       args.counters.examined += 1;
       const owner = { orgId: schedule.orgId, userId: schedule.userId };
@@ -815,9 +821,26 @@ const loadNativeDispatchTasks$ = command(
         signal.throwIfAborted();
         continue;
       }
-      if (schedule.nextRunAt !== null) {
-        add({ ...owner, scheduledFor: schedule.nextRunAt });
+      const anchor = schedule.nextRunAt;
+      if (anchor !== null) {
+        if (scheduleExpiryEnabled() && scheduleExpired(anchor, nowDate())) {
+          const outcome = await db.transaction(async (tx) => {
+            return await skipExpiredNativeMorningBriefSchedule(tx, owner, {
+              anchor,
+              at: nowDate(),
+            });
+          });
+          signal.throwIfAborted();
+          if (outcome === "skipped") expired++;
+          continue;
+        }
+        add({ ...owner, scheduledFor: anchor });
       }
+    }
+    if (expired > 0) {
+      log.warn("Expired unclaimed native Morning Brief schedule anchors", {
+        expired,
+      });
     }
     for (const occurrence of [...resume, ...delivery]) {
       add({

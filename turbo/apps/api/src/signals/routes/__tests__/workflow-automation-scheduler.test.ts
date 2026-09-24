@@ -8,6 +8,7 @@ import {
 } from "../test-get-started-rewards";
 import { createHash, randomUUID } from "node:crypto";
 
+import { cronExecuteWorkflowAutomationsContract } from "@okouai/api-contracts/contracts/cron";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import {
   workflowAutomationsContract,
@@ -25,6 +26,10 @@ import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { makeCodexAuthJson, makeCodexJwt } from "./helpers/api-bdd-auth-device";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
+import {
+  readWorkflowScheduleSkipsFixture,
+  seedExpiredSchedulesFixture,
+} from "../../../test-fixtures/workflow-schedule-expiry";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -47,6 +52,7 @@ import {
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 import { seedBuiltInModelKey } from "./helpers/runtime-state";
+import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { agentsRoutes } from "../agents";
 import { workflowAutomationsRoutes } from "../workflow-automations";
@@ -615,6 +621,125 @@ describe("okou workflow automation scheduler", () => {
     await expect(onlyWorkflowDisplayText(threadId)).resolves.toBe(
       "The one-time scheduled run started.",
     );
+  });
+
+  it("audits and disables an expired unclaimed one-time schedule without starting a Run", async () => {
+    mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
+    const scenario = await setup();
+    const created = await accept(
+      automationsClient().create({
+        headers: authHeaders(),
+        params: { workflowId: scenario.workflowId },
+        body: {
+          schedule: {
+            type: "once",
+            atTime: new Date(now() + 90_000).toISOString(),
+            timezone: "UTC",
+          },
+        },
+      }),
+      [201],
+    );
+    if (!created.body.nextRunAt) throw new Error("Missing one-time anchor");
+    mockNow(Date.parse(created.body.nextRunAt) + 30 * 60_000 + 1);
+    const response = await accept(
+      workflowAutomationExecutionClient().execute({
+        body: { automation_id: created.body.id },
+      }),
+      [200],
+    );
+    expect(response.body).toMatchObject({ executed: 0, skipped: 1 });
+    const after = await wf.readAutomation(created.body.id);
+    expect(after.enabled).toBe(false);
+    expect(after.nextRunAt).toBeNull();
+    expect(after.lastRunAt).toBeNull();
+    expect(after.chatThreadId).toBeNull();
+    await expect(
+      readWorkflowScheduleSkipsFixture(created.body.id),
+    ).resolves.toMatchObject([
+      { scheduledAnchorAt: new Date(created.body.nextRunAt) },
+    ]);
+  });
+
+  it("serves a fresh due schedule behind more than two hundred expired anchors", async () => {
+    mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
+    mockEnv("CRON_SECRET", "schedule-expiry-test-secret");
+    const scenario = await setup();
+    await seedExpiredSchedulesFixture({
+      orgId: scenario.orgId,
+      ownerUserId: scenario.userId,
+      workflowId: scenario.workflowId,
+      at: new Date(now() - 60 * 60_000),
+      count: 201,
+    });
+    const fresh = await createDueLoopAutomation(scenario, 900);
+    const tick = await accept(
+      setupApp({ context, routes: cronExecuteWorkflowAutomationsRoutes })(
+        cronExecuteWorkflowAutomationsContract,
+      ).execute({
+        headers: { authorization: "Bearer schedule-expiry-test-secret" },
+      }),
+      [200],
+    );
+    expect(tick.body.executed).toBeGreaterThanOrEqual(1);
+    expect(tick.body.skipped).toBeGreaterThan(0);
+    const after = await wf.readAutomation(fresh.automationId);
+    expect(after.chatThreadId).toStrictEqual(expect.any(String));
+    await disableAutomation(fresh.automationId);
+    await deleteWorkflowViaApi(scenario);
+  });
+
+  it("admits an unclaimed recurring schedule at exactly thirty minutes late", async () => {
+    mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
+    const scenario = await setup();
+    const automation = await createDueLoopAutomation(scenario, 900);
+    if (!automation.nextRunAt) throw new Error("Missing loop anchor");
+    mockNow(Date.parse(automation.nextRunAt) + 30 * 60_000);
+
+    const threadId = await executeDueWorkflowAutomations(
+      automation.automationId,
+    );
+    await expect(workflowRunMessages(threadId)).resolves.toHaveLength(1);
+    await disableAutomation(automation.automationId);
+  });
+
+  it("skips a recurring occurrence past thirty minutes without making a Run or disabling its schedule", async () => {
+    mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
+    const scenario = await setup();
+    const automation = await createDueLoopAutomation(scenario, 900);
+    if (!automation.nextRunAt) throw new Error("Missing loop anchor");
+    const at = Date.parse(automation.nextRunAt) + 30 * 60_000 + 1;
+    mockNow(at);
+
+    const first = await accept(
+      workflowAutomationExecutionClient().execute({
+        body: { automation_id: automation.automationId },
+      }),
+      [200],
+    );
+    expect(first.body).toMatchObject({ executed: 0, skipped: 1 });
+    const afterSkip = await wf.readAutomation(automation.automationId);
+    expect(afterSkip.enabled).toBe(true);
+    expect(afterSkip.lastRunAt).toBeNull();
+    expect(afterSkip.chatThreadId).toBeNull();
+    expect(afterSkip.nextRunAt).toBe(new Date(at + 900_000).toISOString());
+    await expect(
+      readWorkflowScheduleSkipsFixture(automation.automationId),
+    ).resolves.toMatchObject([
+      { scheduledAnchorAt: new Date(automation.nextRunAt) },
+    ]);
+
+    const repeated = await accept(
+      workflowAutomationExecutionClient().execute({
+        body: { automation_id: automation.automationId },
+      }),
+      [200],
+    );
+    expect(repeated.body).toMatchObject({ executed: 0, skipped: 0 });
+    await expect(
+      readWorkflowScheduleSkipsFixture(automation.automationId),
+    ).resolves.toHaveLength(1);
+    await disableAutomation(automation.automationId);
   });
 
   it("fires a due loop automation with a user-facing message", async () => {
