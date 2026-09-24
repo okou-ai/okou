@@ -21,6 +21,7 @@ use api_contracts::generated::{
         reserve::Response as ActiveInputReserveResponse,
     },
 };
+use bytes::Bytes;
 use reqwest::{Response, StatusCode};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
@@ -184,6 +185,7 @@ struct SuccessfulClaimResponse {
     context: ExecutionContext,
     request_to_response_headers_elapsed: Duration,
     response_body_read_elapsed: Duration,
+    response_first_body_chunk_wait_elapsed: Duration,
     response_decode_elapsed: Duration,
     response_attribution: ClaimResponseAttribution,
 }
@@ -862,6 +864,7 @@ impl JobProvider for ApiProvider {
                 context: ctx,
                 request_to_response_headers_elapsed,
                 response_body_read_elapsed,
+                response_first_body_chunk_wait_elapsed,
                 response_decode_elapsed,
                 response_attribution,
             })) => {
@@ -869,6 +872,7 @@ impl JobProvider for ApiProvider {
                     claim_request_elapsed,
                     request_to_response_headers_elapsed,
                     response_body_read_elapsed,
+                    response_first_body_chunk_wait_elapsed,
                     response_decode_elapsed,
                     response_attribution,
                 );
@@ -1566,16 +1570,40 @@ impl ApiClient {
             return Ok(None);
         }
 
-        let resp = check_api_status(resp, "claim").await?;
+        let mut resp = check_api_status(resp, "claim").await?;
         let content_encoding = resp
             .headers()
             .get(reqwest::header::CONTENT_ENCODING)
             .cloned();
         let response_body_read_started_at = Instant::now();
-        let body = resp
+        // The first non-empty chunk is application-visible, not a physical wire byte.
+        // Collect the rest on the same response; the common one-chunk case stays zero-copy.
+        let first_chunk = loop {
+            match resp
+                .chunk()
+                .await
+                .map_err(|error| ClaimApiError::ResponseRead(error.to_string()))?
+            {
+                Some(chunk) if !chunk.is_empty() => break chunk,
+                Some(_) => continue,
+                None => break Bytes::new(),
+            }
+        };
+        let response_first_body_chunk_wait_elapsed = response_body_read_started_at.elapsed();
+        let remaining = resp
             .bytes()
             .await
             .map_err(|error| ClaimApiError::ResponseRead(error.to_string()))?;
+        let body = if first_chunk.is_empty() {
+            remaining
+        } else if remaining.is_empty() {
+            first_chunk
+        } else {
+            let mut combined = Vec::with_capacity(first_chunk.len() + remaining.len());
+            combined.extend_from_slice(&first_chunk);
+            combined.extend_from_slice(&remaining);
+            Bytes::from(combined)
+        };
         let response_body_read_elapsed = response_body_read_started_at.elapsed();
         let response_decode_started_at = Instant::now();
         let context = decode_api_json_bytes(&body).map_err(ClaimApiError::ResponseDecode)?;
@@ -1587,6 +1615,7 @@ impl ApiClient {
             context,
             request_to_response_headers_elapsed,
             response_body_read_elapsed,
+            response_first_body_chunk_wait_elapsed,
             response_decode_elapsed,
             response_attribution,
         }))
@@ -2091,8 +2120,9 @@ mod tests {
     use super::*;
     use httpmock::{HttpMockRequest, HttpMockResponse, Method::POST, MockServer};
     use serde_json::Value;
-    use tokio::io::AsyncWriteExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
+    use tokio::sync::oneshot;
     use tracing::{Level, instrument::WithSubscriber};
     use tracing_subscriber::prelude::*;
     use tracing_test_support::{CapturedEvent, CapturedEvents};
@@ -4947,6 +4977,50 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn api_client_claim_truncated_body_remains_a_read_failure() {
+        let run_id = RunId::from(uuid::Uuid::nil());
+        let response =
+            b"HTTP/1.1 200 OK\r\nContent-Length: 128\r\nConnection: close\r\n\r\n{\"runId\":"
+                .to_vec();
+        let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(response)]).await;
+        let api = api_client_for_url(server.url());
+        let error = api
+            .claim_for_test(&JobCandidate::new(
+                run_id,
+                crate::profile::DEFAULT_PROFILE.to_string(),
+            ))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, ClaimApiError::ResponseRead(_)));
+        assert!(
+            server
+                .next_request("truncated claim response")
+                .await
+                .contains(&format!("/api/runners/jobs/{run_id}/claim"))
+        );
+        server.assert_finished().await;
+    }
+
+    #[tokio::test]
+    async fn api_client_claim_empty_body_remains_a_decode_failure() {
+        let run_id = RunId::from(uuid::Uuid::nil());
+        let mut server =
+            RawHttpTestServer::spawn(vec![RawHttpAction::Respond(http_response("200 OK", b""))])
+                .await;
+        let api = api_client_for_url(server.url());
+        let error = api
+            .claim_for_test(&JobCandidate::new(
+                run_id,
+                crate::profile::DEFAULT_PROFILE.to_string(),
+            ))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, ClaimApiError::ResponseDecode(_)));
+        server.next_request("empty claim response").await;
+        server.assert_finished().await;
+    }
+
+    #[tokio::test]
     async fn api_client_claim_decode_error_includes_json_path_without_body_values() {
         let server = MockServer::start_async().await;
         let run_id = RunId::from(uuid::Uuid::nil());
@@ -5580,6 +5654,15 @@ mod tests {
         let claim_timing = claimed
             .api_claim_timing()
             .expect("successful API claim should retain timing");
+        assert_eq!(
+            claim_timing
+                .response_first_body_chunk_wait_elapsed()
+                .as_millis()
+                + claim_timing
+                    .response_body_after_first_chunk_elapsed()
+                    .as_millis(),
+            claim_timing.response_body_read_elapsed().as_millis()
+        );
         assert!(
             claim_timing.request_elapsed()
                 >= claim_timing.request_to_response_headers_elapsed()
@@ -5677,10 +5760,117 @@ mod tests {
             .await
             .unwrap()
             .expect("large synthetic claim response should decode");
+        assert!(
+            claimed.response_first_body_chunk_wait_elapsed <= claimed.response_body_read_elapsed
+        );
         let attribution = claimed.response_attribution;
         assert_eq!(attribution.body_size_bucket(), "64_256_kib");
         assert_eq!(attribution.content_encoding(), "identity");
         claim_mock.assert_calls_async(1).await;
+    }
+
+    #[tokio::test]
+    async fn api_client_claim_attributes_first_and_remaining_body_chunks() {
+        let run_id: RunId = RUNNER_CLAIM_RESPONSE_FIXTURE_RUN_ID.parse().unwrap();
+        let mut context: Value = serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
+        context["prompt"] = Value::String("synthetic chunked prompt".repeat(5000));
+        let body = serde_json::to_vec(&context).unwrap();
+        let first_len = 128;
+        assert!((64 * 1024..256 * 1024).contains(&body.len()));
+        let headers = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let (headers_sent_tx, headers_sent_rx) = oneshot::channel();
+        let (release_first_tx, release_first_rx) = oneshot::channel();
+        let (first_sent_tx, first_sent_rx) = oneshot::channel();
+        let (release_tail_tx, release_tail_rx) = oneshot::channel();
+        let server_task = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut socket).await.unwrap();
+            assert!(request.contains(&format!("/api/runners/jobs/{run_id}/claim")));
+            socket.write_all(headers.as_bytes()).await.unwrap();
+            headers_sent_tx.send(()).unwrap();
+            release_first_rx.await.unwrap();
+            socket.write_all(&body[..first_len]).await.unwrap();
+            first_sent_tx.send(()).unwrap();
+            release_tail_rx.await.unwrap();
+            socket.write_all(&body[first_len..]).await.unwrap();
+        });
+        let api = api_client_for_url(url);
+        let claim_task = tokio::spawn(async move {
+            api.claim_for_test(&JobCandidate::new(
+                run_id,
+                crate::profile::DEFAULT_PROFILE.to_string(),
+            ))
+            .await
+        });
+        headers_sent_rx.await.unwrap();
+        assert!(
+            !claim_task.is_finished(),
+            "the claim must wait for body bytes"
+        );
+        release_first_tx.send(()).unwrap();
+        first_sent_rx.await.unwrap();
+        assert!(
+            !claim_task.is_finished(),
+            "the claim must wait for the rest of the body"
+        );
+        release_tail_tx.send(()).unwrap();
+        let claimed = claim_task.await.unwrap().unwrap().unwrap();
+        assert_eq!(
+            claimed.context.prompt,
+            "synthetic chunked prompt".repeat(5000)
+        );
+        assert_eq!(
+            claimed.response_attribution.body_size_bucket(),
+            "64_256_kib"
+        );
+        assert!(
+            claimed.response_first_body_chunk_wait_elapsed < claimed.response_body_read_elapsed
+        );
+        join_raw_http_task(server_task, "split claim response server").await;
+    }
+
+    #[tokio::test]
+    async fn api_client_claim_cancellation_drops_incomplete_body_read() {
+        let run_id: RunId = RUNNER_CLAIM_RESPONSE_FIXTURE_RUN_ID.parse().unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let (first_sent_tx, first_sent_rx) = oneshot::channel();
+        let server_task = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            read_http_request(&mut socket).await.unwrap();
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1024\r\nConnection: close\r\n\r\n{\"runId\":")
+                .await
+                .unwrap();
+            first_sent_tx.send(()).unwrap();
+            let mut byte = [0];
+            let read = tokio::time::timeout(Duration::from_secs(5), socket.read(&mut byte))
+                .await
+                .expect("cancelled claim should close the incomplete response");
+            match read {
+                Ok(0) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::ConnectionReset => {}
+                other => panic!("cancelled claim should disconnect, got {other:?}"),
+            }
+        });
+        let api = api_client_for_url(url);
+        let claim_task = tokio::spawn(async move {
+            api.claim_for_test(&JobCandidate::new(
+                run_id,
+                crate::profile::DEFAULT_PROFILE.to_string(),
+            ))
+            .await
+        });
+        first_sent_rx.await.unwrap();
+        assert!(!claim_task.is_finished());
+        claim_task.abort();
+        assert!(claim_task.await.unwrap_err().is_cancelled());
+        join_raw_http_task(server_task, "cancelled claim response server").await;
     }
 
     #[tokio::test]

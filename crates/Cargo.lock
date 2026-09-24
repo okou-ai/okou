@@ -3665,6 +3665,7 @@ dependencies = [
  "ably-subscriber",
  "api-contracts",
  "async-trait",
+ "bytes",
  "chrono",
  "futures-util",
  "guest-contracts",
