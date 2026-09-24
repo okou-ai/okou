@@ -1734,6 +1734,7 @@
       "cancelFailed": "요청을 취소하지 못했습니다. 다시 시도하세요.",
       "cancelled": "요청이 취소됨",
       "cancelling": "취소 중…",
+      "checkFailed": "브라우저를 확인할 수 없습니다. 입력한 내용은 유지됩니다. 제출하기 전에 다시 시도하세요.",
       "clearValue": "웹사이트의 값 지우기",
       "completed": "정보가 추가됨",
       "continue": "에이전트에게 알리기",
@@ -2086,7 +2087,6 @@
       "on": "켜기",
       "requiresSsh": "SSH 호스트 {{name}}에 대한 액세스도 필요합니다.",
       "retry": "다시 시도",
-      "startChat": "호스트 접근 권한을 변경하려면 채팅을 시작하세요.",
       "title": "원격 액세스",
       "unavailableSsh": "사용할 수 없는 SSH 호스트",
       "useDefault": "기본값 사용"

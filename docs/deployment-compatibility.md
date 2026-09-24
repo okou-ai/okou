@@ -15,6 +15,19 @@ update that carries nothing but this field is rejected as empty. The
 neither reads nor writes it while an older API may still do so. Drop it in a
 separate migration after older API deployments drain.
 
+## Guest storage batch timing attribution (2026-09-24)
+
+Runner storage batch operations now include optional Guest-server duration, a
+nonnegative Runner-minus-Guest residual when the pair is consistent, and a
+fixed timing state. The API explicitly validates and forwards these fields to
+the sandbox operation log. An older Runner omits them and remains accepted by
+the new API. An older API strips the new optional fields; storage application
+still works, but the extra timing is unavailable until the API is promoted.
+Deploy the API before the Runner to retain the new samples. Mixed-version
+production comparisons must report field coverage and Runner version mix;
+missing timing is never a zero duration. The Guest protocol and storage apply
+behavior are unchanged.
+
 ## Codex 0.156.1 OAuth workspace routing
 
 The API supplies the selected workspace ID as `CODEX_OAUTH_ACCOUNT_ID` for
@@ -3664,9 +3677,14 @@ heartbeat owns Browser access and lease renewal.
 The native input preflight endpoint uses the same team-only switch. It performs
 one bounded provider lookup and read-only CDP connection per explicit form
 entry, returning the verified control subtype and current applicable site
-constraints. A confirmed target mismatch marks a pending request stale;
-transient provider failures leave it pending for retry. The editable form uses
-that preflight response. Apply rechecks site constraints before any mutation.
+constraints. The editable form first uses the persisted request fields while
+preflight runs in the background, then adopts the observed controls without
+discarding the draft. A completed failed check blocks submission and offers
+retry. Preflight does not hold the thread write lock during provider or CDP
+I/O, so submission can proceed while the check is pending. A confirmed target
+mismatch marks a pending request stale; transient provider failures leave it
+pending for retry. Apply rechecks the exact target and site constraints before
+any mutation, even when preflight has not completed.
 Per `docs/fallback.md`, this pre-GA feature does not require compatibility with
 earlier Platform, API, or persisted-action shapes.
 The general number field kind expands the strict shared request and preflight

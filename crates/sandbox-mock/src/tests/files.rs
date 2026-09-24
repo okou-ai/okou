@@ -548,6 +548,165 @@ async fn sandbox_write_files_records_batch_and_consumes_one_result() {
 }
 
 #[tokio::test]
+async fn overrides_share_batch_write_result_without_failing_later_single_write() {
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    overrides.push_write_file_result(Err(SandboxError::Operation {
+        operation: SandboxOperation::WriteFile,
+        reason: SandboxOperationReason::Guest,
+        message: "shared batch write failed".into(),
+    }));
+    let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+    let batch_sandbox = factory.create(test_sandbox_config()).await.unwrap();
+    let single_sandbox = factory.create(test_sandbox_config()).await.unwrap();
+
+    let files = [
+        WriteFileEntry {
+            path: "/tmp/a.txt",
+            content: b"a",
+        },
+        WriteFileEntry {
+            path: "/tmp/b.txt",
+            content: b"b",
+        },
+    ];
+    let error = batch_sandbox.write_files(&files).await.unwrap_err();
+    assert_operation_error(
+        error,
+        SandboxOperation::WriteFile,
+        SandboxOperationReason::Guest,
+        "shared batch write failed",
+    );
+
+    single_sandbox
+        .write_file("/tmp/after-batch.txt", b"ok")
+        .await
+        .unwrap();
+    assert_eq!(overrides.write_files_calls().len(), 1);
+    let calls = overrides.write_file_calls();
+    assert_eq!(calls.len(), 3);
+    assert_eq!(calls[0].path, "/tmp/a.txt");
+    assert_eq!(calls[1].path, "/tmp/b.txt");
+    assert_eq!(calls[2].path, "/tmp/after-batch.txt");
+}
+
+#[tokio::test]
+async fn sandbox_local_batch_write_result_precedes_shared_result() {
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    overrides.push_write_file_result(Err(SandboxError::Operation {
+        operation: SandboxOperation::WriteFile,
+        reason: SandboxOperationReason::Guest,
+        message: "shared write failed".into(),
+    }));
+    let sandbox = MockSandbox::with_overrides("test-1", overrides);
+    sandbox.push_write_file_result(Err(SandboxError::Operation {
+        operation: SandboxOperation::WriteFile,
+        reason: SandboxOperationReason::Guest,
+        message: "local batch write failed".into(),
+    }));
+
+    let files = [WriteFileEntry {
+        path: "/tmp/batch.txt",
+        content: b"batch",
+    }];
+    let error = sandbox.write_files(&files).await.unwrap_err();
+    assert_operation_error(
+        error,
+        SandboxOperation::WriteFile,
+        SandboxOperationReason::Guest,
+        "local batch write failed",
+    );
+
+    let error = sandbox
+        .write_file("/tmp/single.txt", b"single")
+        .await
+        .unwrap_err();
+    assert_operation_error(
+        error,
+        SandboxOperation::WriteFile,
+        SandboxOperationReason::Guest,
+        "shared write failed",
+    );
+}
+
+#[tokio::test]
+async fn overrides_shared_write_gate_blocks_one_batch_operation() {
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    let gate = MockLifecycleGate::new();
+    overrides.set_write_file_lifecycle_gate(gate.clone());
+    let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+    let sandbox = factory.create(test_sandbox_config()).await.unwrap();
+
+    let task = tokio::spawn(async move {
+        let files = [
+            WriteFileEntry {
+                path: "/tmp/a.txt",
+                content: b"a",
+            },
+            WriteFileEntry {
+                path: "/tmp/b.txt",
+                content: b"b",
+            },
+        ];
+        sandbox.write_files(&files).await
+    });
+
+    assert_eq!(gate.wait_entered(1, test_timeout()).await.unwrap(), 1);
+    assert_eq!(overrides.write_files_calls().len(), 1);
+    assert_eq!(overrides.write_file_calls().len(), 2);
+    assert!(!task.is_finished(), "batch must wait for the shared gate");
+
+    gate.release_one();
+    tokio::time::timeout(test_timeout(), task)
+        .await
+        .expect("batch must finish after one shared gate release")
+        .unwrap()
+        .unwrap();
+    assert_eq!(gate.entered_count(), 1);
+}
+
+#[tokio::test]
+async fn overrides_empty_and_invalid_batches_leave_shared_controls_untouched() {
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    let gate = MockLifecycleGate::new();
+    overrides.set_write_file_lifecycle_gate(gate.clone());
+    overrides.push_write_file_result(Err(SandboxError::Operation {
+        operation: SandboxOperation::WriteFile,
+        reason: SandboxOperationReason::Guest,
+        message: "queued shared write failed".into(),
+    }));
+    let factory = MockSandboxFactory::with_overrides(overrides);
+    let sandbox = factory.create(test_sandbox_config()).await.unwrap();
+
+    sandbox.write_files(&[]).await.unwrap();
+    let invalid = [WriteFileEntry {
+        path: "",
+        content: b"invalid",
+    }];
+    let error = sandbox.write_files(&invalid).await.unwrap_err();
+    assert_operation_error(
+        error,
+        SandboxOperation::WriteFile,
+        SandboxOperationReason::Other,
+        "guest file path must not be empty",
+    );
+    assert_eq!(gate.entered_count(), 0);
+
+    gate.release_one();
+    let files = [WriteFileEntry {
+        path: "/tmp/valid.txt",
+        content: b"valid",
+    }];
+    let error = sandbox.write_files(&files).await.unwrap_err();
+    assert_operation_error(
+        error,
+        SandboxOperation::WriteFile,
+        SandboxOperationReason::Guest,
+        "queued shared write failed",
+    );
+    assert_eq!(gate.entered_count(), 1);
+}
+
+#[tokio::test]
 async fn sandbox_write_files_rejects_invalid_paths_and_treats_empty_batch_as_noop() {
     let overrides = Arc::new(MockSandboxOverrides::new());
     let sandbox = MockSandbox::with_overrides("test-1", Arc::clone(&overrides));

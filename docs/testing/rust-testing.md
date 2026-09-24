@@ -53,7 +53,7 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-executor -- --test-threads=1
 
-# Extracted Runner idle orchestration owner tests
+# Extracted Runner idle and heartbeat orchestration owner tests
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-supervisor -- --test-threads=1
 

@@ -234,6 +234,35 @@ async function createOwnedRun(
   return { runId: run.runId, agentId: agent.agentId };
 }
 
+async function createAwsRunWithPermissionGrants(): Promise<string> {
+  const actor = bdd.user();
+  await seedAdminMembership(actor);
+  mockAwsExternalCodeProvider();
+  const session = await connectorsApi.startExternalCode(actor, "aws", "cli");
+  await connectorsApi.completeExternalCode(actor, "aws", {
+    sessionId: session.sessionId,
+    sessionToken: session.sessionToken,
+    code: awsVerificationCode(session.authorizationUrl),
+  });
+  await trackConnectedFixture(Promise.resolve({ actor, connectorSlug: "aws" }));
+  const { runId, agentId } = await createOwnedRun(actor, {
+    builtinConnectorSlugs: ["aws"],
+  });
+  await runsApi.applyUserPermissionGrant(actor, {
+    agentId,
+    connectorSlug: "aws",
+    permission: "sts:get-caller-identity-alias",
+    action: "deny",
+  });
+  await runsApi.applyUserPermissionGrant(actor, {
+    agentId,
+    connectorSlug: "aws",
+    permission: "sts:get-caller-identity",
+    action: "allow",
+  });
+  return okouToken(actor, runId, ["connector:read", "agent-run:read"]);
+}
+
 beforeEach(() => {
   context.mocks.clerk.authenticateRequest.mockResolvedValue({
     isAuthenticated: false,
@@ -538,35 +567,8 @@ describe("POST /api/connectors/diagnostics/check", () => {
     ).toBeNull();
   });
 
-  it("reports AWS alias precedence and keeps incomplete checks on the unknown policy", async () => {
-    const actor = bdd.user();
-    await seedAdminMembership(actor);
-    mockAwsExternalCodeProvider();
-    const session = await connectorsApi.startExternalCode(actor, "aws", "cli");
-    await connectorsApi.completeExternalCode(actor, "aws", {
-      sessionId: session.sessionId,
-      sessionToken: session.sessionToken,
-      code: awsVerificationCode(session.authorizationUrl),
-    });
-    await trackConnectedFixture(
-      Promise.resolve({ actor, connectorSlug: "aws" }),
-    );
-    const { runId, agentId } = await createOwnedRun(actor, {
-      builtinConnectorSlugs: ["aws"],
-    });
-    await runsApi.applyUserPermissionGrant(actor, {
-      agentId,
-      connectorSlug: "aws",
-      permission: "sts:get-caller-identity-alias",
-      action: "deny",
-    });
-    await runsApi.applyUserPermissionGrant(actor, {
-      agentId,
-      connectorSlug: "aws",
-      permission: "sts:get-caller-identity",
-      action: "allow",
-    });
-    const token = okouToken(actor, runId, ["connector:read", "agent-run:read"]);
+  it("prefers the canonical AWS permission over a denied alias", async () => {
+    const token = await createAwsRunWithPermissionGrants();
     const response = await checkWithToken(token, {
       mode: "url",
       method: "POST",
@@ -587,7 +589,10 @@ describe("POST /api/connectors/diagnostics/check", () => {
         ],
       },
     });
+  });
 
+  it("keeps incomplete AWS checks on the unknown policy", async () => {
+    const token = await createAwsRunWithPermissionGrants();
     const incomplete = await checkWithToken(token, {
       mode: "url",
       method: "POST",

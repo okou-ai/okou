@@ -27,7 +27,7 @@ function agent(agentId: string, displayName: string | null): AgentResponse {
   };
 }
 
-test("An admin can set up a new Telegram bot", async () => {
+test("An admin can retry failed registration and connect a new Telegram bot", async () => {
   const authTab = context.mocks.browser.authWindow();
   Object.defineProperty(authTab, "location", {
     configurable: true,
@@ -71,6 +71,7 @@ test("An admin can set up a new Telegram bot", async () => {
       privacyDisabled: false,
     },
   });
+  let rejectRegistration = true;
   context.mocks.api(
     integrationsTelegramContract.register,
     ({ body, respond }) => {
@@ -78,6 +79,14 @@ test("An admin can set up a new Telegram bot", async () => {
         botToken: "123:token",
         defaultAgentId: PRIMARY_AGENT_ID,
       });
+      if (rejectRegistration) {
+        return respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Telegram registration is temporarily unavailable.",
+          },
+        });
+      }
       return respond(201, {
         id: "bot_registered",
         username: "registered_bot",
@@ -160,6 +169,26 @@ test("An admin can set up a new Telegram bot", async () => {
   activatePrimary("Add bot", dialog);
 
   expect(opened.calls).toStrictEqual([
+    { url: "about:blank", target: "_blank", features: null },
+  ]);
+  await expect(
+    screen.findByText("Telegram registration is temporarily unavailable."),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(getAction("button", "Add bot", dialog)).toBeEnabled();
+  });
+  expect(authTab.closed).toBeTruthy();
+  expect(
+    within(dialog).getByText("Ready to create the integration"),
+  ).toBeVisible();
+  expect(screen.queryByText("Connected to Telegram!")).not.toBeInTheDocument();
+
+  rejectRegistration = false;
+  authTab.closed = false;
+  activatePrimary("Add bot", dialog);
+
+  expect(opened.calls).toStrictEqual([
+    { url: "about:blank", target: "_blank", features: null },
     { url: "about:blank", target: "_blank", features: null },
   ]);
   await waitFor(() => {

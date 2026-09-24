@@ -16,6 +16,7 @@ import { onboardingSourceConnectors$ } from "../../signals/onboarding/onboarding
 import { justConnectedBuiltinSlugs$ } from "../../signals/okou-page/settings/connectors.ts";
 import { completeOnboarding$ } from "../../signals/onboarding/onboarding-actions.ts";
 import {
+  clearSourcesFirstDraft$,
   updateSourcesFirstDraft$,
   type SourcesFirstDraft,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
@@ -159,6 +160,7 @@ export function OnboardingReadyPage() {
   const { t } = useTranslation();
   const flow = useSourcesFirstFlow("ready");
   const updateDraft = useSet(updateSourcesFirstDraft$);
+  const clearDraft = useSet(clearSourcesFirstDraft$);
   const capturePromptEdited = useSet(captureSourceOnboardingPromptEdited$);
   const captureStartClicked = useSet(captureSourceOnboardingStartClicked$);
   const catalogLoadable = useLastLoadable(onboardingSourceConnectors$);
@@ -217,6 +219,8 @@ export function OnboardingReadyPage() {
         searchParams.get("redeemCode")?.trim() || null,
         pageSignal,
       );
+    } else {
+      clearDraft();
     }
     runPrompt(request);
   };

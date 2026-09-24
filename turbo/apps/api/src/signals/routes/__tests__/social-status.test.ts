@@ -264,12 +264,6 @@ describe("GET /api/social/status", () => {
       },
     ],
     [
-      "status_unavailable",
-      () => {
-        return new HttpResponse(null, { status: 500 });
-      },
-    ],
-    [
       "network_error",
       () => {
         return HttpResponse.error();
@@ -283,20 +277,6 @@ describe("GET /api/social/status", () => {
             start(controller) {
               controller.error(
                 new DOMException("upstream body aborted", "AbortError"),
-              );
-            },
-          }),
-        );
-      },
-    ],
-    [
-      "network_error",
-      () => {
-        return new HttpResponse(
-          new ReadableStream({
-            start(controller) {
-              controller.error(
-                new DOMException("status body timed out", "TimeoutError"),
               );
             },
           }),

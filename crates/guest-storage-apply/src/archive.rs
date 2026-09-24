@@ -214,6 +214,9 @@ pub(crate) fn ancestors_within_target(path: &Path, target: &Path) -> bool {
 }
 
 #[cfg(test)]
+mod property_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use flate2::Compression;

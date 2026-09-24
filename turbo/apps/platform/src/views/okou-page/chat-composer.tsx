@@ -6792,6 +6792,7 @@ function ComposerRemoteAccessMenu({
     <ThreadRemoteAccessSection
       threadId={signals.threadId}
       remoteAccess$={signals.remoteAccess$}
+      pendingRemoteAccess={signals.pendingRemoteAccess}
       open={remoteMenuOpen}
       onOpenChange={onRemoteMenuOpenChange}
     />

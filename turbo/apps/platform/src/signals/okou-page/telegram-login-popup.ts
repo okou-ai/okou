@@ -1,3 +1,4 @@
+import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { createDeferredPromise, setLoop, withCleanup } from "../utils.ts";
 import {
@@ -18,11 +19,11 @@ export function openTelegramLoginTab(): Window {
   // The existing callback needs opener to return the signed Telegram identity.
   const tab = window.open("about:blank", "_blank");
   if (!tab) {
-    throw new Error(
-      i18n.t(($) => {
-        return $.connectors.connectDialog.errors.authorizationWindow;
-      }),
-    );
+    const message = i18n.t(($) => {
+      return $.connectors.connectDialog.errors.authorizationWindow;
+    });
+    toast.error(message);
+    throw new Error(message);
   }
   return tab;
 }

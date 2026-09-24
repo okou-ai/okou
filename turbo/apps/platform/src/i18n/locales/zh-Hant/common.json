@@ -1734,6 +1734,7 @@
       "cancelFailed": "無法取消這個請求，請重試。",
       "cancelled": "請求已取消",
       "cancelling": "正在取消…",
+      "checkFailed": "無法檢查瀏覽器。填寫內容已保留，請重試後提交。",
       "clearValue": "清空網頁中的值",
       "completed": "資訊已新增",
       "continue": "通知 Agent",
@@ -2086,7 +2087,6 @@
       "on": "開啟",
       "requiresSsh": "還需要存取 SSH 主機 {{name}}。",
       "retry": "重試",
-      "startChat": "開始聊天後可修改主機權限。",
       "title": "遠端存取",
       "unavailableSsh": "無法使用的 SSH 主機",
       "useDefault": "使用預設設定"

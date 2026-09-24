@@ -119,7 +119,10 @@ export const createWelcomeChatThread$ = command(
       return thread;
     });
     signal.throwIfAborted();
-    if (result.kind === "invalid_connector_selection") {
+    if (
+      result.kind === "invalid_connector_selection" ||
+      result.kind === "invalid_remote_access_selection"
+    ) {
       return badRequestMessage(result.message);
     }
     // The id already belongs to another thread. Answer exactly like a thread

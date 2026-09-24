@@ -1737,6 +1737,7 @@
       "cancelFailed": "Couldn't cancel this request. Try again.",
       "cancelled": "Request cancelled",
       "cancelling": "Cancelling…",
+      "checkFailed": "Couldn't check the browser. Your entries are still here; retry before adding them.",
       "clearValue": "Clear website value",
       "completed": "Information added",
       "continue": "Notify agent",
@@ -2094,7 +2095,6 @@
       "on": "On",
       "requiresSsh": "Requires SSH access to {{name}}.",
       "retry": "Retry",
-      "startChat": "Start a chat to change host access.",
       "title": "Remote access",
       "unavailableSsh": "unavailable SSH host",
       "useDefault": "Use default"

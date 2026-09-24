@@ -1766,6 +1766,7 @@
       "cancelFailed": "Impossibile annullare la richiesta. Riprova.",
       "cancelled": "Richiesta annullata",
       "cancelling": "Annullamento…",
+      "checkFailed": "Impossibile verificare il browser. I dati inseriti sono conservati; riprova prima di inviarli.",
       "clearValue": "Cancella il valore sul sito",
       "completed": "Informazioni aggiunte",
       "continue": "Avvisa l’agente",
@@ -2136,7 +2137,6 @@
       "on": "Attivo",
       "requiresSsh": "Richiede anche l'accesso all'host SSH {{name}}.",
       "retry": "Riprova",
-      "startChat": "Avvia una chat per modificare l'accesso agli host.",
       "title": "Accesso remoto",
       "unavailableSsh": "host SSH non disponibile",
       "useDefault": "Usa impostazione predefinita"

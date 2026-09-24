@@ -4,10 +4,9 @@ import { toast } from "@okouai/ui/components/ui/sonner";
 import type { z } from "zod";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
-import { ApiError } from "../../lib/api-error.ts";
 import { apiClient$ } from "../api-client.ts";
 import { oauthBaseForNavigation$ } from "../fetch.ts";
-import { tapError, withCleanup } from "../utils.ts";
+import { withCleanup } from "../utils.ts";
 import {
   openTelegramLoginTab,
   requestTelegramAuth,
@@ -60,19 +59,19 @@ const connectTelegramInTab$ = command(
       return null;
     }
     if (status.installation?.domainConfigured === false) {
-      throw new Error(
-        i18n.t(($) => {
-          return $.connectors.providerSettings.errors.telegramDomain;
-        }),
-      );
+      const message = i18n.t(($) => {
+        return $.connectors.providerSettings.errors.telegramDomain;
+      });
+      toast.error(message);
+      throw new Error(message);
     }
     const loginBotId = status.installation?.loginBotId;
     if (!loginBotId) {
-      throw new Error(
-        i18n.t(($) => {
-          return $.connectors.providerConnect.telegram.errorFallback;
-        }),
-      );
+      const message = i18n.t(($) => {
+        return $.connectors.providerConnect.telegram.errorFallback;
+      });
+      toast.error(message);
+      throw new Error(message);
     }
     const auth = await requestTelegramAuth(
       tab,
@@ -97,20 +96,6 @@ const connectTelegramInTab$ = command(
   },
 );
 
-function reportTelegramConnectionError(error: unknown): void {
-  // accept() already presents API failures and owns sign-in/upgrade recovery.
-  if (error instanceof ApiError) {
-    return;
-  }
-  toast.error(
-    error instanceof Error
-      ? error.message
-      : i18n.t(($) => {
-          return $.connectors.providerConnect.telegram.errorFallback;
-        }),
-  );
-}
-
 export const authorizeTelegramBot$ = command(
   async ({ set }, botId: string, signal: AbortSignal) => {
     signal.throwIfAborted();
@@ -124,16 +109,7 @@ export const authorizeTelegramBot$ = command(
   },
 );
 
-export const startTelegramConnect$ = command(
-  async ({ set }, botId: string, signal: AbortSignal): Promise<void> => {
-    await tapError(
-      set(authorizeTelegramBot$, botId, signal),
-      reportTelegramConnectionError,
-    );
-  },
-);
-
-const registerAndConnectTelegramBotInner$ = command(
+export const registerAndConnectTelegramBot$ = command(
   async (
     { set },
     input: { botToken: string; defaultAgentId?: string },
@@ -150,19 +126,6 @@ const registerAndConnectTelegramBotInner$ = command(
       () => {
         tab.close();
       },
-    );
-  },
-);
-
-export const registerAndConnectTelegramBot$ = command(
-  async (
-    { set },
-    input: { botToken: string; defaultAgentId?: string },
-    signal: AbortSignal,
-  ): Promise<void> => {
-    await tapError(
-      set(registerAndConnectTelegramBotInner$, input, signal),
-      reportTelegramConnectionError,
     );
   },
 );

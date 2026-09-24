@@ -1766,6 +1766,7 @@
       "cancelFailed": "No se pudo cancelar la solicitud. Inténtalo de nuevo.",
       "cancelled": "Solicitud cancelada",
       "cancelling": "Cancelando…",
+      "checkFailed": "No se pudo comprobar el navegador. Tus datos siguen aquí; inténtalo de nuevo antes de enviarlos.",
       "clearValue": "Borrar el valor del sitio web",
       "completed": "Información añadida",
       "continue": "Avisar al agente",
@@ -2136,7 +2137,6 @@
       "on": "Activado",
       "requiresSsh": "También requiere acceso al host SSH {{name}}.",
       "retry": "Reintentar",
-      "startChat": "Inicia un chat para cambiar el acceso a los hosts.",
       "title": "Acceso remoto",
       "unavailableSsh": "host SSH no disponible",
       "useDefault": "Usar valor predeterminado"

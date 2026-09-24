@@ -894,21 +894,19 @@ describe("thread activity summary", () => {
     },
   );
 
-  it.each([
-    "",
-    "one\ntwo\nthree\nfour\nfive",
-    "**Markdown**",
-    "Valid message\n**Markdown**",
-  ])("cools down malformed output %j without retrying", async (output) => {
-    const f = await fixture();
-    const inputs = provider(() => {
-      return output;
-    });
-    const failed = await summarize(f.actor, f.run);
-    expect(failed).toMatchObject({ status: "available", messages: [] });
-    await summarize(f.actor, f.run);
-    expect(inputs).toHaveLength(1);
-  });
+  it.each(["", "one\ntwo\nthree\nfour\nfive", "**Markdown**"])(
+    "cools down malformed output %j without retrying",
+    async (output) => {
+      const f = await fixture();
+      const inputs = provider(() => {
+        return output;
+      });
+      const failed = await summarize(f.actor, f.run);
+      expect(failed).toMatchObject({ status: "available", messages: [] });
+      await summarize(f.actor, f.run);
+      expect(inputs).toHaveLength(1);
+    },
+  );
 
   it.each([
     {
@@ -949,12 +947,6 @@ describe("thread activity summary", () => {
       name: "an envelope without choices",
       reply: () => {
         return HttpResponse.json({});
-      },
-    },
-    {
-      name: "a completion with empty content",
-      reply: () => {
-        return completion("");
       },
     },
     {

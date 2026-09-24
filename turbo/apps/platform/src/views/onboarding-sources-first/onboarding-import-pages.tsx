@@ -25,7 +25,7 @@ import {
 } from "../../signals/onboarding/onboarding-skill-import.ts";
 import { slackOrgData$ } from "../../signals/okou-page/slack.ts";
 import { teamsOrgData$ } from "../../signals/okou-page/teams.ts";
-import { startTelegramConnect$ } from "../../signals/okou-page/telegram-authorization.ts";
+import { authorizeTelegramBot$ } from "../../signals/okou-page/telegram-authorization.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
@@ -844,7 +844,7 @@ function AgentPhoneChannelTile() {
 function TelegramTile({ onOpen }: { readonly onOpen: () => void }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const [connection, connect] = useLoadableSet(startTelegramConnect$);
+  const [connection, connect] = useLoadableSet(authorizeTelegramBot$);
 
   return (
     <Button

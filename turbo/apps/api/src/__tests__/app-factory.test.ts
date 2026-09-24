@@ -127,6 +127,28 @@ const errorTestContract = c.router({
   },
 });
 
+// Registered literal-first, as production registers `/api/chat-threads/events`
+// before `/api/chat-threads/:id`: a request to the literal path also matches
+// the parameterized sibling.
+const siblingTestContract = c.router({
+  literal: {
+    method: "GET",
+    path: "/__test/siblings/literal",
+    responses: {
+      200: z.object({ matched: z.literal("literal") }),
+      500: z.object({ error: z.string() }),
+    },
+  },
+  byId: {
+    method: "GET",
+    path: "/__test/siblings/:id",
+    pathParams: z.object({ id: z.string() }),
+    responses: {
+      200: z.object({ matched: z.literal("byId") }),
+    },
+  },
+});
+
 describe("createApp", () => {
   const context = testContext({ connectorCatalog: true });
 
@@ -447,6 +469,30 @@ describe("createApp", () => {
     expect(serialized).not.toContain("client-secret");
     expect(serialized).not.toContain("refresh-secret");
     expect(serialized).not.toContain("basic-secret");
+  });
+
+  it("logs the literal route that threw, not a later parameterized sibling", async () => {
+    const literal$ = computed((): never => {
+      throw new Error("literal failure");
+    });
+    const byId$ = computed(() => {
+      return { status: 200 as const, body: { matched: "byId" as const } };
+    });
+    const client = setupApp({
+      context,
+      routes: [
+        { route: siblingTestContract.literal, handler: literal$ },
+        { route: siblingTestContract.byId, handler: byId$ },
+      ],
+    })(siblingTestContract);
+
+    await accept(client.literal(), [500]);
+
+    const [, fields] = context.mocks.axiomLogging.error.mock.calls.at(-1) ?? [];
+    expect(fields).toMatchObject({
+      type: "unhandled_request_error",
+      route: "/__test/siblings/literal",
+    });
   });
 
   it("handles cyclic error causes while logging unhandled errors", async () => {
@@ -1429,6 +1475,60 @@ describe("createApp", () => {
         }
       },
     );
+
+    it("records the literal route that answered, not a later parameterized sibling", async () => {
+      const literal$ = computed(() => {
+        return { status: 200 as const, body: { matched: "literal" as const } };
+      });
+      const byId$ = computed(() => {
+        return { status: 200 as const, body: { matched: "byId" as const } };
+      });
+      const app = createApp({
+        signal: context.signal,
+        routes: [
+          { route: siblingTestContract.literal, handler: literal$ },
+          { route: siblingTestContract.byId, handler: byId$ },
+        ],
+      });
+
+      const literalResponse = await app.request("/__test/siblings/literal");
+      await expect(literalResponse.json()).resolves.toStrictEqual({
+        matched: "literal",
+      });
+      const byIdResponse = await app.request("/__test/siblings/thread-1");
+      await expect(byIdResponse.json()).resolves.toStrictEqual({
+        matched: "byId",
+      });
+      await flushWaitUntilForTest();
+
+      expect(
+        axiomRequestLogEvents(context).map((event) => {
+          return event.path_template;
+        }),
+      ).toStrictEqual(["/__test/siblings/literal", "/__test/siblings/:id"]);
+    });
+
+    it("records the route a middleware answered for before route matching", async () => {
+      const app = createApp({
+        signal: context.signal,
+        routes: TEST_APP_ROUTES,
+      });
+      const response = await app.request("/health", {
+        headers: {
+          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
+          [CLIENT_VERSION_HEADER]: "0.843.0",
+        },
+      });
+
+      expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
+      await flushWaitUntilForTest();
+
+      const [event] = axiomRequestLogEvents(context);
+      expect(event).toMatchObject({
+        status: CLIENT_FORCE_UPGRADE_STATUS,
+        path_template: "/health",
+      });
+    });
 
     it("omits client header fields when they are absent", async () => {
       const app = createApp({
