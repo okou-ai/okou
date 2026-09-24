@@ -178,7 +178,8 @@ function ZoomableArtifactImageFrame({
 }) {
   return (
     <div className="relative shrink-0" hidden={!ready}>
-      <ZoomableArtifactImageElement {...element} />
+      {/* A resolved or refreshed URL owns its own native decode lifecycle. */}
+      <ZoomableArtifactImageElement key={element.src} {...element} />
       {overlay}
     </div>
   );

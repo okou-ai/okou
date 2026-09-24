@@ -9,7 +9,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import {
   click,
@@ -153,6 +153,64 @@ test("Sidebar arrows navigate images and yield to text editing", async () => {
     "alt",
     "third.png",
   );
+});
+
+test("Sidebar navigation decodes a resolved private URL without replacing its focus owner", async () => {
+  const id = "f0000000-0000-4000-a000-000000000092";
+  const canonical = artifactReferencePath(id, "second.png");
+  const secondUrl = publicArtifactUrl("second.png");
+  const urlReady = context.mocks.deferred<void>();
+  const decodeReady = context.mocks.deferred<void>();
+  const decodedSources: string[] = [];
+  mockGallery((filename) => {
+    return filename === "second.png" ? canonical : publicArtifactUrl(filename);
+  });
+  context.mocks.api(artifactReferencesContract.resolve, async ({ respond }) => {
+    await urlReady.promise;
+    return respond(200, {
+      url: secondUrl,
+      filename: "second.png",
+      contentType: "image/png",
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      target: { kind: "file", id },
+    });
+  });
+  vi.spyOn(HTMLImageElement.prototype, "decode").mockImplementation(function (
+    this: HTMLImageElement,
+  ) {
+    Object.defineProperties(this, {
+      naturalWidth: { configurable: true, value: 1200 },
+      naturalHeight: { configurable: true, value: 700 },
+    });
+    if (this.dataset.testid === "artifact-sidebar-body-image") {
+      decodedSources.push(this.src);
+      if (this.src === secondUrl) {
+        return decodeReady.promise;
+      }
+    }
+    return Promise.resolve();
+  });
+  const user = userEvent.setup({ delay: null });
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  const sidebar = await openGallerySidebar(user);
+  const owner = within(sidebar).getByRole("group");
+
+  await user.keyboard("{ArrowRight}");
+  expect(owner).toHaveFocus();
+  urlReady.resolve();
+  await waitFor(() => {
+    expect(decodedSources).toContain(secondUrl);
+  });
+  const image = within(sidebar).getByTestId("artifact-sidebar-body-image");
+  expect(image).toHaveAttribute("src", secondUrl);
+  expect(image).not.toBeVisible();
+  expect(owner).toHaveFocus();
+  decodeReady.resolve();
+  await waitFor(() => {
+    expect(image).toBeVisible();
+  });
+  expect(within(sidebar).getByRole("group")).toBe(owner);
+  expect(owner).toHaveFocus();
 });
 
 test("Image shortcuts yield to modifiers and toolbar menus in both fullscreen modes", async () => {
