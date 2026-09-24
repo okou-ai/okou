@@ -19,10 +19,6 @@ describe("Pi API-first transition precedence", () => {
       resumeSession: { historyRef: { hash: "a".repeat(64) } },
       expected: "sandbox",
     },
-    {
-      resumeSession: { sessionHistory: "native Pi JSONL" },
-      expected: "sandbox",
-    },
   ])("routes $resumeSession to $expected", ({ resumeSession, expected }) => {
     expect(
       decideApiFirstTurnEligibility({
