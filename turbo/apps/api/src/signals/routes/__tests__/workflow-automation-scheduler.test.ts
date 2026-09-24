@@ -362,6 +362,13 @@ describe("okou workflow automation scheduler", () => {
     );
 
     expect(response.body).toBe("Not found");
+    const scoped = await accept(
+      workflowAutomationExecutionClient().executeForWorkflow({
+        body: { workflow_id: "00000000-0000-4000-8000-000000000001" },
+      }),
+      [404],
+    );
+    expect(scoped.body).toBe("Not found");
   });
 
   it("executes only the selected due automation", async () => {
@@ -686,6 +693,7 @@ describe("okou workflow automation scheduler", () => {
     await expect(workflowRunMessages(after.chatThreadId)).resolves.toHaveLength(
       1,
     );
+    await disableAutomation(fresh.automationId);
     await deleteWorkflowViaApi(scenario);
   });
 
