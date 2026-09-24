@@ -17,67 +17,75 @@ import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
 import { PreferenceCardRow } from "./preference-card-row.tsx";
 
-function MorningBriefStatus({
-  state,
-  loading,
-  loadFailed,
-  mutationFailed,
-}: {
+interface MorningBriefStatusProps {
   readonly state: MorningBriefPreferenceState | undefined;
   readonly loading: boolean;
   readonly loadFailed: boolean;
   readonly mutationFailed: boolean;
-}) {
-  const { t } = useTranslation();
-  const unavailable =
-    state?.kind === "ready" ? state.preference.unavailableReason : null;
-  const conflicted = state?.kind === "error";
+}
 
-  let status: string | null = null;
+type MorningBriefStatusKey =
+  | "loading"
+  | "retryMessage"
+  | "conflict"
+  | "missingTimezone"
+  | "missingDefaultAgent"
+  | "preparing"
+  | "preparationFailed";
+
+function morningBriefStatusKey({
+  state,
+  loading,
+  loadFailed,
+  mutationFailed,
+}: MorningBriefStatusProps): MorningBriefStatusKey | null {
   if (loading) {
-    status = t(($) => {
-      return $.settings.preferences.morningBrief.loading;
-    });
-  } else if (loadFailed || mutationFailed) {
-    status = t(($) => {
-      return $.settings.preferences.morningBrief.retryMessage;
-    });
-  } else if (state?.kind === "error") {
-    status = t(($) => {
-      return $.settings.preferences.morningBrief.conflict;
-    });
-  } else if (unavailable === "missing-timezone") {
-    status = t(($) => {
-      return $.settings.preferences.morningBrief.missingTimezone;
-    });
-  } else if (unavailable === "missing-default-agent") {
-    status = t(($) => {
-      return $.settings.preferences.morningBrief.missingDefaultAgent;
-    });
-  } else if (
-    state?.kind === "ready" &&
-    state.preference.status === "preparing"
-  ) {
-    status = t(($) => {
-      return $.settings.preferences.morningBrief.preparing;
-    });
-  } else if (state?.kind === "ready" && state.preference.status === "error") {
-    status = t(($) => {
-      return $.settings.preferences.morningBrief.preparationFailed;
-    });
+    return "loading";
   }
+  if (loadFailed || mutationFailed) {
+    return "retryMessage";
+  }
+  if (state?.kind !== "ready") {
+    return state?.kind === "error" ? "conflict" : null;
+  }
+  const { preference } = state;
+  if (preference.unavailableReason === "missing-timezone") {
+    return "missingTimezone";
+  }
+  if (preference.unavailableReason === "missing-default-agent") {
+    return "missingDefaultAgent";
+  }
+  if (preference.status === "preparing") {
+    return "preparing";
+  }
+  return preference.status === "error" ? "preparationFailed" : null;
+}
 
+function MorningBriefStatus(props: MorningBriefStatusProps) {
+  const { t } = useTranslation();
+  const key = morningBriefStatusKey(props);
+  const { state } = props;
   const showAlert =
-    loadFailed || mutationFailed || conflicted || unavailable !== null;
+    key !== null &&
+    (props.loadFailed ||
+      props.mutationFailed ||
+      state?.kind === "error" ||
+      (state?.kind === "ready" && state.preference.unavailableReason !== null));
   // The live region stays mounted so a status appearing later is announced.
   return (
     <div
       className="flex items-center gap-1.5 text-xs text-muted-foreground"
       aria-live="polite"
     >
-      {status && showAlert && <AlertCircle className="size-3.5 shrink-0" />}
-      {status && loading && <Loader2 className="size-3.5 animate-spin" />}
-      {status && <span>{status}</span>}
+      {showAlert && <AlertCircle className="size-3.5 shrink-0" />}
+      {key === "loading" && <Loader2 className="size-3.5 animate-spin" />}
+      {key !== null && (
+        <span>
+          {t(($) => {
+            return $.settings.preferences.morningBrief[key];
+          })}
+        </span>
+      )}
     </div>
   );
 }

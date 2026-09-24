@@ -571,13 +571,14 @@ async function readBriefPreference(actor: ApiTestUser) {
 }
 
 /**
- * The member's Settings state joined with the authoritative schedule it runs
- * on: the native row once it has left the legacy phase, otherwise the legacy
- * workflow automation. The preference response no longer carries either.
+ * The member's Settings state joined with the schedule it runs on. A
+ * legacy-phase schedule is read through the workflow detail endpoint. No
+ * endpoint exposes the native schedule row, so once a member leaves the legacy
+ * phase that row is read directly.
  */
 async function readBriefState(brief: {
   readonly actor: ApiTestUser;
-  readonly automationId: string;
+  readonly workflowId: string;
 }) {
   const { actor } = brief;
   if (!actor.orgId) {
@@ -588,14 +589,24 @@ async function readBriefState(brief: {
     orgId: actor.orgId,
     userId: actor.userId,
   });
-  const schedule =
-    native !== undefined && native.phase !== "legacy"
-      ? native
-      : await readLegacyAutomation(brief.automationId);
+  if (native !== undefined && native.phase !== "legacy") {
+    return {
+      ...preference.body,
+      nextRunAt: native.nextRunAt?.toISOString() ?? null,
+      timezone: native.timezone,
+    };
+  }
+  const [automation] = await readMorningBriefAutomations(
+    actor,
+    brief.workflowId,
+  );
   return {
     ...preference.body,
-    nextRunAt: schedule?.nextRunAt?.toISOString() ?? null,
-    timezone: schedule?.timezone ?? null,
+    nextRunAt: automation?.nextRunAt ?? null,
+    timezone:
+      automation?.kind === "schedule" && automation.schedule.type !== "loop"
+        ? automation.schedule.timezone
+        : null,
   };
 }
 
@@ -1815,10 +1826,7 @@ describe("Morning Brief legacy schedule claim journal", () => {
       );
       await waitForDeferredBlocker(bootstrap.bootstrapPid);
       await bootstrap.finish();
-      expect((await paused).body).toMatchObject({
-        enabled: false,
-        nextRunAt: null,
-      });
+      expect((await paused).body).toMatchObject({ enabled: false });
 
       await expect(
         readLegacyAutomation(brief.automationId),

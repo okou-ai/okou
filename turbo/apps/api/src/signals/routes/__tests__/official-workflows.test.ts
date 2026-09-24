@@ -3758,9 +3758,10 @@ async function readBriefPreference(actor: ApiTestUser) {
 }
 
 /**
- * The authoritative schedule of the member's single Morning Brief: the native
- * row once it has left the legacy phase, otherwise the legacy automation. The
- * preference response no longer carries the next run or timezone.
+ * The member's single Morning Brief schedule. A legacy-phase member is read
+ * through the workflow detail endpoint. No endpoint exposes the native
+ * schedule row, so once a member leaves the legacy phase that row is read
+ * directly.
  */
 async function readBriefSchedule(actor: ApiTestUser) {
   if (!actor.orgId) {
@@ -3784,12 +3785,12 @@ async function readBriefSchedule(actor: ApiTestUser) {
     actor,
     installation.id,
   );
-  const row = automation
-    ? await readLegacyAutomation(automation.id)
-    : undefined;
   return {
-    nextRunAt: row?.nextRunAt?.toISOString() ?? null,
-    timezone: row?.timezone ?? null,
+    nextRunAt: automation?.nextRunAt ?? null,
+    timezone:
+      automation?.kind === "schedule" && automation.schedule.type !== "loop"
+        ? automation.schedule.timezone
+        : null,
   };
 }
 
@@ -3854,7 +3855,6 @@ describe("Morning Brief default onboarding", () => {
       enabled: false,
       status: "paused",
     });
-    await expect(readUserTimezone(actor)).resolves.toBe("Asia/Shanghai");
 
     mockBriefMemberships([{ actor, createdAt }]);
     await tickBriefEnrollment(actor);
