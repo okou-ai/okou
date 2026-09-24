@@ -220,7 +220,7 @@ test("The standalone form accepts input and submission while its background chec
   await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
   click(button("Add to browser"));
   await waitFor(() => {
-    expect(applied).toBe(true);
+    expect(applied).toBeTruthy();
   });
   releaseCheck.resolve(undefined);
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
@@ -264,7 +264,7 @@ test("A failed background check blocks submission and retains the draft for retr
   ).resolves.toBeVisible();
   expect(button("Add to browser")).toBeDisabled();
   expect(email).toHaveValue("owner@example.test");
-  expect(applied).toBe(false);
+  expect(applied).toBeFalsy();
   click(button("Retry"));
   await waitFor(() => {
     expect(checks).toBe(2);

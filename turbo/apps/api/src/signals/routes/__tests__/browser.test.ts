@@ -209,7 +209,10 @@ function nativePasswordRequest(callbackPrompt: string) {
   };
 }
 
-async function createNativePasswordActionForPreflightTest(): Promise<string> {
+async function createNativePasswordActionForPreflightTest(): Promise<{
+  readonly token: string;
+  readonly providerId: string;
+}> {
   const { routeMocks, runs, chat, actor, agent } = await setupBrowserScenario();
   const current = await createClaimedChatRun(
     chat,
@@ -252,7 +255,7 @@ async function createNativePasswordActionForPreflightTest(): Promise<string> {
     }),
     [201],
   );
-  return created.body.action.requestToken;
+  return { token: created.body.action.requestToken, providerId };
 }
 
 interface NativeNumberConstraints {
@@ -384,7 +387,7 @@ aroundEach(async (runTest) => {
 
 describe("Browser user-action route", () => {
   it("lets apply finish while the preflight provider read is still pending", async () => {
-    const token = await createNativePasswordActionForPreflightTest();
+    const { token } = await createNativePasswordActionForPreflightTest();
     const readStarted = createDeferredPromise<void>(context.signal);
     const releaseRead = createDeferredPromise<void>(context.signal);
     let holdNextRead = true;
@@ -421,34 +424,47 @@ describe("Browser user-action route", () => {
   });
 
   it("returns a retryable provider timeout when the internal CDP deadline expires", async () => {
-    const token = await createNativePasswordActionForPreflightTest();
-    const originalCommand =
-      context.mocks.browserUseCdp.command.getMockImplementation();
-    if (!originalCommand) {
-      throw new Error("Expected a Browser CDP command mock");
-    }
-    const commandStarted = createDeferredPromise<void>(context.signal);
-    const releaseCommand = createDeferredPromise<void>(context.signal);
-    context.mocks.browserUseCdp.command.mockImplementation(async (command) => {
-      if (command.method === "Target.getTargets") {
-        commandStarted.resolve(undefined);
-        await releaseCommand.promise;
-      }
-      return await originalCommand(command);
+    const { token, providerId } =
+      await createNativePasswordActionForPreflightTest();
+    const deadline = new AbortController();
+    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
+      return milliseconds === 15_000 ? deadline.signal : undefined;
     });
+    const discoveryStarted = createDeferredPromise<void>(context.signal);
+    const discoveryAborted = createDeferredPromise<void>(context.signal);
+    server.use(
+      http.get(
+        `https://${providerId}.cdp.browser-use.com/json/version`,
+        async ({ request }) => {
+          request.signal.addEventListener(
+            "abort",
+            () => {
+              discoveryAborted.resolve(undefined);
+            },
+            { once: true },
+          );
+          discoveryStarted.resolve(undefined);
+          await discoveryAborted.promise;
+          return HttpResponse.json({
+            webSocketDebuggerUrl: browserUseCdpWebSocketUrl(providerId),
+          });
+        },
+      ),
+    );
     const preflight = userActionClient().preflight({
       headers: { authorization: "Bearer clerk-session" },
       params: { requestToken: token },
       body: {},
     });
-    await commandStarted.promise;
+    await discoveryStarted.promise;
+    deadline.abort(new DOMException("CDP deadline", "TimeoutError"));
     const checked = await preflight;
-    releaseCommand.resolve(undefined);
+    await discoveryAborted.promise;
     expect(checked).toMatchObject({
       status: 503,
       body: { error: { code: "BROWSER_USE_TIMEOUT" } },
     });
-  }, 35_000);
+  });
 
   it("supports live number constraints, optional clear, and exact readback", async () => {
     const { routeMocks, runs, chat, actor, agent } =
