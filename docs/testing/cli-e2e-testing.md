@@ -95,6 +95,38 @@ and validate this suite. Do not treat a local `./e2e/run.sh` invocation as
 validation for `03-runner`; running the script without file arguments also
 selects the CI-only runner tests.
 
+### Manually approved Codex OAuth upgrade smoke test
+
+`e2e/tests/03-runner-oauth/codex-oauth.bats` is deliberately outside the ordinary
+runner shard directory. On same-repository pull requests, the separate
+`cli-e2e-03-runner-codex-oauth` job runs only when the effective
+`CODEX_CLI_VERSION` pin changes or the dedicated OAuth test/detector/job code
+changes. It does not run for merge queue, push, reusable-workflow callers,
+forks, or unrelated PR edits. The job waits for the ordinary runner E2E matrix,
+uses the immutable PR-head preview, and has a repository-wide non-canceling
+concurrency group because all approved PRs share one test ChatGPT account.
+
+Configure `CODEX_OAUTH_E2E_AUTH_JSON` as a Secret on the existing GitHub
+`production` environment. Its value is the complete JSON content of the
+dedicated paid ChatGPT test account's Codex `auth.json`, including its tokens;
+do not substitute an API key or a refresh token alone. A triggering PR requests
+the environment's human approval before the Secret is available. Approvers
+must inspect PR-controlled workflow and test code because that environment
+also contains other production secrets. The job passes only this named OAuth
+Secret to the test and never uploads its value as an artifact.
+
+The test connects a personal `codex-oauth-token` provider through the public
+API, selects member-scoped `gpt-5.6-luna`, and requires both user-visible
+assistant output and a completed run attributed to that provider. Connection
+failure points to a missing, malformed, or stale test credential; a failure
+after connection needs investigation of both token freshness and candidate
+Codex behavior. The preview API may rotate the refresh token during a run,
+while this infrequent test does not write the rotated value back to GitHub.
+Before the next upgrade test, manually refresh/reseed the environment Secret
+from the dedicated account when needed. A missing or invalid Secret is a red
+check, not a skipped test; do not merge an eligible upgrade PR until its
+approved real OAuth run passes.
+
 ## Adding runner BATS tests
 
 Runner BATS files live in `e2e/tests/03-runner`. They share the accounts and

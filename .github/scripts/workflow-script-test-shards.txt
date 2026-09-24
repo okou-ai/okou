@@ -6,6 +6,7 @@
 1 check-workflow-shell-compatibility-test.sh
 1 cloudflare-ssh-preconnect-test.sh
 1 cloudflare-ssh-proxy-test.sh
+1 codex-oauth-e2e-needed-test.sh
 1 crates-runner-image-waiters-test.sh
 1 deploy-cli-workflow-test.sh
 1 discover-runner-pr-namespaces-test.sh
