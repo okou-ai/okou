@@ -77,7 +77,6 @@ import {
 import {
   buildComposerSlashWorkflows,
   findActiveSlashWorkflowRange,
-  hasWorkflowTokenCandidate,
   workflowTokenPattern,
   type ComposerSlashWorkflow,
   type SlashWorkflowRange,
@@ -110,7 +109,7 @@ type AgentMentionAvatarsSyncCommand = Command<Promise<void>, [AbortSignal]>;
 
 interface ComposerWorkflowNames {
   readonly sync$: WorkflowNamesSyncCommand;
-  /** Latches the workflow list once the draft has a `/` token. */
+  /** Latches the workflow list once the draft has any text. */
   readonly request$: Command<boolean, []>;
   /** Requests the list for the draft and syncs its names when newly latched. */
   readonly syncForInput$: Command<void, [AbortSignal]>;
@@ -231,7 +230,7 @@ export interface WorkflowComposerSignals {
     Promise<ComposerChatThreadSuggestionResult>
   >;
   readonly agentId$: Computed<Promise<string | null>>;
-  /** Null until the draft first contains a `/` token. */
+  /** Null until the draft first has text. */
   readonly workflows$: Computed<Promise<readonly ComposerWorkflow[]> | null>;
   readonly reloadWorkflows$: Command<Promise<void>, [AbortSignal]>;
   readonly selectedSuggestionIndex$: Computed<number>;
@@ -304,8 +303,9 @@ function createComposerAgentResources<T extends AgentIdValue>(
     return await get(agentIdSource$);
   });
   const allWorkflows$ = createComposerWorkflows(agentId$);
-  // The workflow list is only needed for `/` tokens, so an empty composer
-  // does not request it.
+  // The workflow list is only needed for `/` tokens. An untouched composer
+  // does not request it; the first keystroke does, so the list is usually
+  // ready by the time a `/` opens the menu.
   const workflowsRequested$ = state(false);
   const workflows$ = computed((get) => {
     return get(workflowsRequested$) ? get(allWorkflows$) : null;
@@ -314,7 +314,7 @@ function createComposerAgentResources<T extends AgentIdValue>(
   const request$ = command(({ get, set }): boolean => {
     if (
       get(workflowsRequested$) ||
-      !hasWorkflowTokenCandidate(workflowComposerDocToString(editor))
+      workflowComposerDocToString(editor).trim() === ""
     ) {
       return false;
     }

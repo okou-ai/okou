@@ -652,29 +652,31 @@ test("Distinguish workflow tokens from text inside URLs", async () => {
   });
 });
 
-test("Load workflows once the draft references a slash token", async () => {
+test("Load workflows once the user starts typing", async () => {
   mockAgent();
   mockThread();
-  const draftsAtRequest: (string | null)[] = [];
-  context.mocks.api(workflowsCollectionContract.list, ({ respond }) => {
-    draftsAtRequest.push(
-      document.querySelector(
-        '[data-slot="chat-composer-card"] [contenteditable="true"]',
-      )?.textContent ?? null,
-    );
-    return respond(200, [workflow("pr-review")]);
-  });
+  const requests: (string | undefined)[] = [];
+  context.mocks.api(
+    workflowsCollectionContract.composer,
+    ({ query, respond }) => {
+      requests.push(query.agentId);
+      return respond(200, [workflow("pr-review")]);
+    },
+  );
 
   await setupPage({ context, path: `/chats/${THREAD_ID}` });
 
   const user = userEvent.setup();
   const editor = await findComposerEditor();
   await user.click(editor);
-  await user.keyboard("Review /pr-review");
+  await user.keyboard("R");
+  await waitFor(() => {
+    expect(requests).toStrictEqual([AGENT_ID]);
+  });
 
+  await user.keyboard("eview /pr-review");
   await waitFor(() => {
     expect(workflowHighlights(editor)).toHaveLength(1);
   });
-  expect(draftsAtRequest).toHaveLength(1);
-  expect(draftsAtRequest[0]).toContain("Review /");
+  expect(requests).toHaveLength(1);
 });
