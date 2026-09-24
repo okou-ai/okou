@@ -1,4 +1,4 @@
-import { useGet, useLoadable } from "ccstate-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, ChevronRight, Monitor, Terminal } from "lucide-react";
@@ -15,6 +15,7 @@ import {
   setRemoteHostDefault$,
   setThreadRemoteAccess$,
 } from "../../signals/remote-access.ts";
+import { invalidateRemoteAccess$ } from "../../signals/remote-access-refresh.ts";
 import { onDomEventFn } from "../../signals/utils.ts";
 import { LoadingSwitch } from "../components/loading-switch.tsx";
 import { Button } from "@okouai/ui/components/ui/button";
@@ -166,10 +167,16 @@ export function ThreadRemoteAccessSection({
   const { t } = useTranslation();
   const defaults = useLoadable(remoteHostDefaults$);
   const access = useLoadable(remoteAccess$);
-  if (defaults.state !== "hasData" || !defaults.data) {
+  if (
+    defaults.state === "loading" ||
+    (defaults.state === "hasData" && !defaults.data)
+  ) {
     return null;
   }
-  const configuredCount = defaults.data.ssh.length + defaults.data.vnc.length;
+  const configuredCount =
+    defaults.state === "hasData" && defaults.data
+      ? defaults.data.ssh.length + defaults.data.vnc.length
+      : null;
   if (configuredCount === 0) {
     return null;
   }
@@ -179,9 +186,11 @@ export function ThreadRemoteAccessSection({
           return host.enabled;
         }).length
       : null
-    : [...defaults.data.ssh, ...defaults.data.vnc].filter((host) => {
-        return host.defaultEnabled;
-      }).length;
+    : defaults.state === "hasData" && defaults.data
+      ? [...defaults.data.ssh, ...defaults.data.vnc].filter((host) => {
+          return host.defaultEnabled;
+        }).length
+      : null;
   const title = t(($) => {
     return $.chat.remoteAccess.title;
   });
@@ -196,7 +205,9 @@ export function ThreadRemoteAccessSection({
             <span className="min-w-0 flex-1 truncate">{title}</span>
             <span className="shrink-0 text-xs text-muted-foreground">
               {enabledCount === null
-                ? access.state === "hasError" || access.state === "hasData"
+                ? defaults.state === "hasError" ||
+                  access.state === "hasError" ||
+                  access.state === "hasData"
                   ? t(($) => {
                       return $.chat.remoteAccess.loadFailed;
                     })
@@ -256,10 +267,29 @@ function ThreadRemoteHostChoices({
   remoteAccess$: ComposerSignals["remoteAccess$"];
 }) {
   const { t } = useTranslation();
+  const retry = useSet(invalidateRemoteAccess$);
+  const defaults = useLoadable(remoteHostDefaults$);
   const access = useLoadable(remoteAccess$);
   const vncHosts = useLoadable(vncConnections$);
   return (
     <div className="min-h-0 overflow-y-auto p-1">
+      {defaults.state === "hasError" && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-2 px-2 py-2 text-sm text-destructive"
+        >
+          <span>
+            {t(($) => {
+              return $.chat.remoteAccess.loadFailed;
+            })}
+          </span>
+          <Button type="button" variant="outline" size="sm" onClick={retry}>
+            {t(($) => {
+              return $.vnc.retry;
+            })}
+          </Button>
+        </div>
+      )}
       {!threadId ? (
         <p className="px-2 py-2 text-sm text-muted-foreground">
           {t(($) => {

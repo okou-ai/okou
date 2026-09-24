@@ -53,7 +53,9 @@ export const remoteHostDefaults$ = computed(async (get) => {
   if (!client.identity) {
     return null;
   }
-  const result = await accept(client.api.listHostDefaults(), [200]);
+  const result = await accept(client.api.listHostDefaults(), [200], undefined, {
+    showErrorToast: false,
+  });
   return result.body;
 });
 

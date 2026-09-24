@@ -165,6 +165,49 @@ test("Remote access is absent when no SSH or VNC hosts are configured", async ()
   expect(screen.queryByText("Remote access")).toBeNull();
 });
 
+test("Remote access remains visible and can retry when host discovery fails", async () => {
+  installComposerConnectorFixture();
+  let failed = true;
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return failed
+        ? respond(500, {
+            error: { code: "INTERNAL_ERROR", message: "private host error" },
+          })
+        : respond(200, {
+            ssh: [
+              {
+                connectionId: "b0000000-0000-4000-8000-000000000001",
+                displayName: "SSH host",
+                defaultEnabled: true,
+              },
+            ],
+            vnc: [],
+          });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+  });
+  click(await findFastControl("button", "Connectors"));
+  const remoteAccess = await screen.findByText("Remote access");
+  expect(remoteAccess.closest("button")).toHaveTextContent(
+    "Couldn't load remote access.",
+  );
+  click(remoteAccess);
+  const retry = await findFastControl("button", "Retry");
+  expect(retry.closest('[role="alert"]')).toHaveTextContent(
+    "Couldn't load remote access.",
+  );
+  expect(document.body.textContent).not.toContain("private host error");
+  failed = false;
+  click(retry);
+  await screen.findByText("1 enabled");
+});
+
 test("A new chat summarizes enabled host defaults before a thread exists", async () => {
   installComposerConnectorFixture();
   context.mocks.api(
