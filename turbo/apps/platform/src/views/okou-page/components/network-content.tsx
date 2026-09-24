@@ -2,6 +2,8 @@ import { Check, ChevronDown, Filter, Loader2 } from "lucide-react";
 import { useGet, useSet } from "ccstate-react";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuCheckboxItemIndicator,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
@@ -209,17 +211,18 @@ function selectedTypeValues(
   return typeFilter.mode === "all" ? typeOptions : [...typeFilter.types];
 }
 
-function toggleSelectedType(
+function setSelectedType(
   typeFilter: NetworkLogTypeFilter,
   typeOptions: string[],
   type: string,
+  checked: boolean,
 ): NetworkLogTypeFilter {
   const selectedTypes = selectedTypeValues(typeFilter, typeOptions);
-  const nextTypes = selectedTypes.includes(type)
-    ? selectedTypes.filter((selected) => {
+  const nextTypes = checked
+    ? sortTypes([...selectedTypes, type])
+    : selectedTypes.filter((selected) => {
         return selected !== type;
-      })
-    : sortTypes([...selectedTypes, type]);
+      });
   if (nextTypes.length === 0) {
     return { mode: "all" };
   }
@@ -291,14 +294,15 @@ function TypeFilter({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-40">
         <DropdownMenuItem
-          role="menuitemcheckbox"
-          aria-checked={typeFilter.mode === "all"}
           closeOnClick={false}
           onClick={() => {
             onChange({ mode: "all" });
           }}
         >
-          <span className="flex h-4 w-4 items-center justify-center">
+          <span
+            className="flex h-4 w-4 items-center justify-center"
+            aria-hidden
+          >
             {typeFilter.mode === "all" && <Check size={14} />}
           </span>
           {t(($) => {
@@ -308,20 +312,23 @@ function TypeFilter({
         {typeOptions.map((type) => {
           const selected = selectedSet.has(type);
           return (
-            <DropdownMenuItem
+            <DropdownMenuCheckboxItem
               key={type}
-              role="menuitemcheckbox"
-              aria-checked={selected}
+              checked={selected}
               closeOnClick={false}
-              onClick={() => {
-                onChange(toggleSelectedType(typeFilter, typeOptions, type));
+              onCheckedChange={(checked) => {
+                onChange(
+                  setSelectedType(typeFilter, typeOptions, type, checked),
+                );
               }}
             >
               <span className="flex h-4 w-4 items-center justify-center">
-                {selected && <Check size={14} />}
+                <DropdownMenuCheckboxItemIndicator>
+                  <Check size={14} />
+                </DropdownMenuCheckboxItemIndicator>
               </span>
               {type}
-            </DropdownMenuItem>
+            </DropdownMenuCheckboxItem>
           );
         })}
       </DropdownMenuContent>
