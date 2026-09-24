@@ -44,7 +44,7 @@ export const chatAgentphoneContext = pgTable(
     publicBrand: text("public_brand").$type<PublicBrand>(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (table) => [
-    index("chat_agentphone_context_thread_idx").on(table.chatThreadId),
-  ],
+  (table) => {
+    return [index("chat_agentphone_context_thread_idx").on(table.chatThreadId)];
+  },
 );

@@ -50,5 +50,7 @@ export const chatTeamsContext = pgTable(
     connectionId: uuid("connection_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (table) => [index("chat_teams_context_thread_idx").on(table.chatThreadId)],
+  (table) => {
+    return [index("chat_teams_context_thread_idx").on(table.chatThreadId)];
+  },
 );

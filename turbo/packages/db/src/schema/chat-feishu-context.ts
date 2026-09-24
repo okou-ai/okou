@@ -49,5 +49,7 @@ export const chatFeishuContext = pgTable(
     installationId: uuid("installation_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (table) => [index("chat_feishu_context_thread_idx").on(table.chatThreadId)],
+  (table) => {
+    return [index("chat_feishu_context_thread_idx").on(table.chatThreadId)];
+  },
 );

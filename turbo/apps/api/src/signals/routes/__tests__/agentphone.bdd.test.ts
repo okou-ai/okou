@@ -1270,14 +1270,17 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       mediaUrl,
     });
     const run = await claimDispatchedRun(runnerGroup);
-    expect(run.prompt).toContain(
-      "inspect imported photo\n\n[Web file] canonical-photo.png (image/png)",
-    );
-    expect(run.prompt).not.toContain(mediaUrl);
-    const fileId = run.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
-    if (!fileId) {
+    const [file] = await listIntegrationInputFileParts(context, actor);
+    if (!file) {
       throw new Error("Expected canonical phone file id");
     }
+    const fileId = file.fileId;
+    // Launch uses the public event's canonical file/text parts, even when
+    // supplemental AgentPhone message text is unavailable.
+    expect(run.prompt).toBe(
+      `[Web file] canonical-photo.png (image/png)\n   [ID] ${fileId}\n\ninspect imported photo`,
+    );
+    expect(run.prompt).not.toContain(mediaUrl);
     expect(fileId).not.toBe(messageId);
     await expectIntegrationInputPreview(context, {
       actor,
@@ -1296,7 +1299,9 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       mediaUrl,
     });
     const nextRun = await claimDispatchedRun(runnerGroup);
-    expect(nextRun.prompt).toContain(`[ID] ${fileId}`);
+    expect(nextRun.prompt).toBe(
+      `[Web file] canonical-photo.png (image/png)\n   [ID] ${fileId}\n\ninspect the same photo again`,
+    );
     expect(downloads).toBe(1);
     expect(uploads).toHaveLength(1);
     await expect(
@@ -1328,20 +1333,24 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       mediaUrl: "https://media.agentphone.test/photo%20one%2Bfinal%2zraw.png",
     });
     const run1 = await claimDispatchedRun(runnerGroup);
-    expect(run1.prompt).toBe(
-      [
-        "what is in this photo",
-        `[AgentPhone file] photo one+final%2zraw.png (image/png)\n   [ID] ${mediaMessageId}`,
-      ].join("\n\n"),
-    );
-    await expect(
-      listIntegrationInputFileParts(context, actor),
-    ).resolves.toStrictEqual([
+    const files = await listIntegrationInputFileParts(context, actor);
+    expect(files).toStrictEqual([
       expect.objectContaining({
         fileId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
         filenameSnapshot: "photo one+final%2zraw.png",
       }),
     ]);
+    const [file] = files;
+    if (!file) {
+      throw new Error("Expected canonical phone file part after failed import");
+    }
+    expect(run1.prompt).toBe(
+      [
+        `[Web file] photo one+final%2zraw.png (image/png)\n   [ID] ${file.fileId}`,
+        "what is in this photo",
+        `[AgentPhone file] photo one+final%2zraw.png (image/png)\n   [ID] ${mediaMessageId}`,
+      ].join("\n\n"),
+    );
     await completeSandboxRun(run1.sandboxToken, run1.runId, 0);
   });
 

@@ -63,5 +63,7 @@ export const chatSlackContext = pgTable(
     routeThreadTs: text("route_thread_ts"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (table) => [index("chat_slack_context_thread_idx").on(table.chatThreadId)],
+  (table) => {
+    return [index("chat_slack_context_thread_idx").on(table.chatThreadId)];
+  },
 );

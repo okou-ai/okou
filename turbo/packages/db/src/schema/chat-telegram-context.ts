@@ -46,5 +46,7 @@ export const chatTelegramContext = pgTable(
     senderLanguage: text("sender_language"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (table) => [index("chat_telegram_context_thread_idx").on(table.chatThreadId)],
+  (table) => {
+    return [index("chat_telegram_context_thread_idx").on(table.chatThreadId)];
+  },
 );
