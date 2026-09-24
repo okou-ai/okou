@@ -175,7 +175,7 @@ test("The standalone route reuses the native browser input form", async () => {
     queryAllByRoleFast("button").some((candidate) => {
       return candidate.textContent?.trim() === "Enter information";
     }),
-  ).toBe(false);
+  ).toBeFalsy();
   const form = await screen.findByRole("form", {
     name: "Enter information in browser",
   });
