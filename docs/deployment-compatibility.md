@@ -2,31 +2,21 @@
 
 ## Codex 0.156.1 OAuth workspace routing
 
-Codex 0.156.1 compares its local `auth.json` workspace ID with the selected
-entry returned by `/wham/accounts/check`. The API supplies that selected ID as
-`CODEX_OAUTH_ACCOUNT_ID` for Codex OAuth runs. The guest writes it into
-`auth.json` and both placeholder JWT claims. Access and refresh tokens remain
-placeholders; the firewall still injects real credentials into outbound requests.
+The API supplies the selected workspace ID as `CODEX_OAUTH_ACCOUNT_ID` for
+Codex OAuth runs. The guest writes that ID into `auth.json` and both placeholder
+JWT claims. Access and refresh tokens remain placeholders; the firewall still
+injects real credentials into outbound requests.
 
 The API retains the existing placeholder `CHATGPT_ACCOUNT_ID` for the firewall
-and Pi. PR #36402 first deploys the additive ID field while keeping Codex
-0.155.1 and a missing-field compatibility branch. Upgrade the Runner image to
-0.156.1 and remove that branch only after the new API is deployed and no
-claimable queued or replayable Codex OAuth context lacks the field. Record
-dated evidence for those gates in #36420 before merging this upgrade. The
-production rollback resolver in this change rejects API targets before the
-canonical #36402 writer commit (`422349af6b60adf89b7719a440b89ba76c10e25f`,
-first released as API 1.665.0); verify no older API is serving before Runner
-promotion. New Runners reject missing or empty selected IDs rather than
-choosing a placeholder.
-
-The run also carries its selected Codex workspace ID in firewall metadata.
-After resolving the current OAuth token and account ID from one credential
-snapshot, the API rejects egress if that account ID differs from the run's
-selection. A credential replacement with a different workspace requires a new
-run; a token refresh within the same workspace does not. The metadata field is
-additive for mixed API/Runner rollout, so the guard becomes effective for runs
-on the upgraded Runner that preserves and forwards it.
+and Pi. PR #36402 deployed the additive ID field while the Runner stayed on
+Codex 0.155.1. The Runner now upgrades to 0.156.1 after that API rollout and
+old claimable contexts have drained. An older Runner ignores the additive field.
+A newer Runner served by an older API, or claiming a context without the field,
+still writes the original placeholder account ID; that combination is not
+supported with Codex 0.156.1 and may fail workspace routing. An explicitly
+empty field remains rejected. API rollback before #36402 therefore also
+requires rolling back the Runner. Removing the missing-field compatibility
+branch is tracked by #36420.
 
 ## Chat thread snapshot R2 handoff (2026-09-23)
 

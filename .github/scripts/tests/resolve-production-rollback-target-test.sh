@@ -69,8 +69,6 @@ case "${1:-}" in
       [ "${MOCK_PI_LAUNCH_VERSIONS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "322efb6d72508e15b90dc788100a776da1485751" ]; then
       [ "${MOCK_PI_SESSION_DIGEST_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "422349af6b60adf89b7719a440b89ba76c10e25f" ]; then
-      [ "${MOCK_CODEX_OAUTH_WORKSPACE_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -177,7 +175,6 @@ run_resolver "$output_file" >"${tmp_dir}/success.log"
 grep -Fxq "git merge-base --is-ancestor f205ec54fc463f43b1106a3659e5d6a8c979cab8 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the hosted publication runtime floor"
 grep -Fxq "git merge-base --is-ancestor 8d8f3a3e14d23f7471e0773bd9acb988f59217af ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Pi launch-config version reader floor"
 grep -Fxq "git merge-base --is-ancestor 322efb6d72508e15b90dc788100a776da1485751 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Pi session-construction digest reader floor"
-grep -Fxq "git merge-base --is-ancestor 422349af6b60adf89b7719a440b89ba76c10e25f ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Codex OAuth workspace ID writer floor"
 grep -Fxq "git merge-base --is-ancestor 065f970bbb8c21c10ef709495d5824d0a6183e50 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the artifact/chat explicit-writer floor"
 grep -Fxq "git merge-base --is-ancestor eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread snapshot R2 reader floor"
 grep -Fxq "git merge-base --is-ancestor 8a5e1299b4d26bd114ccec017b84b7a83fb4a164 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible target must pass the accepted personal subscription floor"
@@ -223,14 +220,6 @@ grep -Fq '322efb6d72508e15b90dc788100a776da1485751' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/pi-session-digest-floor.output" ] || fail "pre-digest-reader API target must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "pre-digest-reader API target must fail before artifact or host access"
-fi
-
-: >"${tmp_dir}/boundaries.log"
-assert_failure "predates the Codex OAuth workspace ID writer" \
-  run_resolver "${tmp_dir}/codex-workspace-floor.output" MOCK_CODEX_OAUTH_WORKSPACE_FLOOR_VALID=0
-[ ! -s "${tmp_dir}/codex-workspace-floor.output" ] || fail "pre-Codex-writer API target must not publish outputs"
-if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
-  fail "pre-Codex-writer API target must fail before artifact or host access"
 fi
 
 : >"${tmp_dir}/boundaries.log"

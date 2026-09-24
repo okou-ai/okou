@@ -350,19 +350,6 @@ function connectorNotConfigured(): ResolveFirewallAuthResult {
   };
 }
 
-function codexOauthWorkspaceChanged(): ResolveFirewallAuthResult {
-  return {
-    status: 424,
-    body: {
-      error: {
-        message:
-          "Codex OAuth workspace changed during this run; start a new run",
-        code: "CODEX_OAUTH_WORKSPACE_CHANGED",
-      },
-    },
-  };
-}
-
 function forbiddenModelProviderOwner(): ResolveFirewallAuthResult {
   return {
     status: 403,
@@ -6229,19 +6216,6 @@ async function resolveNonCustomFirewallAuthMaterial(args: {
   });
   if (missingSecretsResponse) {
     return { ok: false, response: missingSecretsResponse };
-  }
-  for (const key of referenced.secrets) {
-    if (args.body.secretConnectorMap?.[key] !== "codex-oauth-token") {
-      continue;
-    }
-    const expectedAccountId =
-      args.body.secretConnectorMetadataMap?.[key]?.expectedCodexAccountId;
-    if (
-      expectedAccountId !== undefined &&
-      args.prepared.secrets.CHATGPT_ACCOUNT_ID !== expectedAccountId
-    ) {
-      return { ok: false, response: codexOauthWorkspaceChanged() };
-    }
   }
   const vars = await resolveMatchedBuiltinConnectorVariables(
     args.db,

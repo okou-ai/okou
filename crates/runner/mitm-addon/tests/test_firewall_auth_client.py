@@ -1190,14 +1190,6 @@ class TestFetchFirewallHeaders:
                 None,
             ),
             (
-                424,
-                "CODEX_OAUTH_WORKSPACE_CHANGED",
-                "Codex OAuth workspace changed during this run; start a new run",
-                None,
-                None,
-                None,
-            ),
-            (
                 502,
                 "TOKEN_REFRESH_FAILED",
                 "Access token expired and refresh failed for: codex-oauth-token.",
@@ -1217,7 +1209,6 @@ class TestFetchFirewallHeaders:
         ids=[
             "token-access-resolution",
             "forbidden",
-            "codex-workspace-changed",
             "token-refresh",
             "unknown-failure-reason",
         ],

@@ -823,9 +823,6 @@ export const secretConnectorMetadataSchema = z.object({
   // Older runner payloads omit this and retain the singleton lookup path.
   sourceId: z.uuid().optional(),
   metadataKey: z.string().optional(),
-  // The Codex guest selects this workspace at launch; firewall auth must not
-  // pair it with credentials replaced by a different workspace mid-run.
-  expectedCodexAccountId: z.string().optional(),
 });
 
 // Keyed by the same firewall auth secret env aliases as secretConnectorMap.

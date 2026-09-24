@@ -23,7 +23,6 @@ readonly CHAT_THREAD_SNAPSHOT_R2_READER_PATH=turbo/apps/api/src/signals/services
 readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6
 readonly PI_LAUNCH_CONFIG_VERSIONS_READER_COMMIT=8d8f3a3e14d23f7471e0773bd9acb988f59217af
 readonly PI_SESSION_CONSTRUCTION_READER_COMMIT=322efb6d72508e15b90dc788100a776da1485751
-readonly CODEX_OAUTH_WORKSPACE_ID_API_COMMIT=422349af6b60adf89b7719a440b89ba76c10e25f
 
 fail() {
   echo "::error::$*" >&2
@@ -170,12 +169,6 @@ fi
 # Runner tags remain independent because the guest ignores unknown fields.
 if ! git merge-base --is-ancestor "$PI_SESSION_CONSTRUCTION_READER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Pi session-construction digest reader: ${PI_SESSION_CONSTRUCTION_READER_COMMIT}."
-fi
-
-# Codex 0.156.1 requires CODEX_OAUTH_ACCOUNT_ID on every OAuth run. The
-# upgraded guest rejects a missing ID, so API rollback must retain its writer.
-if ! git merge-base --is-ancestor "$CODEX_OAUTH_WORKSPACE_ID_API_COMMIT" "$TARGET_COMMIT"; then
-  fail "Rollback target predates the Codex OAuth workspace ID writer: ${CODEX_OAUTH_WORKSPACE_ID_API_COMMIT} (first supported release: API 1.665.0)."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \
