@@ -28,6 +28,11 @@ export function getTriggerSourceLabel(
         return $.activity.sources.slack;
       });
     }
+    case "discord": {
+      return i18n.t(($) => {
+        return $.activity.sources.discord;
+      });
+    }
     case "teams": {
       return i18n.t(($) => {
         return $.activity.sources.teams;

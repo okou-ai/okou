@@ -1,0 +1,316 @@
+# Discord integration parity and acceptance
+
+Part of [#36636](https://github.com/okou-ai/okou/issues/36636). This guide records
+the required Slack parity, Discord adaptations, and acceptance evidence. The
+[shared agreement](https://github.com/okou-ai/okou/issues/36636#issuecomment-5811209334)
+and [owner inventory](https://github.com/okou-ai/okou/issues/36636#issuecomment-5811308260)
+define the implementation boundaries.
+
+The feature and Gateway remain disabled by default. OAuth authorization,
+consent, token exchange, production credentials, and production activation are
+outside this implementation. A merged slice or an interface announcement does
+not prove combined behavior. Real Discord acceptance requires an authorized
+test application, bot, and guild; none is claimed in this guide.
+
+## Slack baseline and parity matrix
+
+The Slack baseline was inspected on 2026-09-24 at main commit
+`f9087f092b79d12b87632b32d6091f3121abdf14`. Relevant implementation references:
+
+- [Settings and account state](../turbo/apps/platform/src/views/okou-page/works-page.tsx),
+  [reactive status](../turbo/apps/platform/src/signals/okou-page/slack.ts), and
+  [status/disconnect API](../turbo/apps/api/src/signals/routes/integrations-slack.ts).
+- [Verified account connection](../turbo/apps/api/src/signals/services/slack-connect.service.ts)
+  and [events, commands, and selection](../turbo/apps/api/src/signals/services/slack-webhooks.service.ts).
+- [Canonical route creation](../turbo/apps/api/src/signals/services/slack-chat-ingress.service.ts),
+  [DM session key](../turbo/apps/api/src/lib/integration-dm-session.ts),
+  [durable ingress processor](../turbo/apps/api/src/signals/services/canonical-slack-ingress-processor.service.ts),
+  and [context rendering](../turbo/apps/api/src/lib/slack-webhook-context.ts).
+- [Final delivery](../turbo/apps/api/src/signals/services/internal-slack-chat-run-callback.service.ts),
+  [native shared-access reads](../turbo/apps/api/src/signals/routes/integrations-slack-read.ts),
+  and [Slack CLI](../turbo/apps/cli/src/commands/slack).
+
+The Discord column is the acceptance contract, not a claim that the row is
+delivered. Owners must link implementation, current-HEAD review, CI, and any
+live acceptance in the evidence ledger below.
+
+| Flow                         | Current Slack behavior                                                                                                                                                        | Required Discord behavior                                                                                                                                                                                                                                       | Owners                                                                                                                                                                                                     |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Settings                     | `/works` distinguishes installation, current-user connection, and admin/member actions; status changes refresh through `slack:changed`.                                       | Gate the entry and status fetch; distinguish configuration, guild installation, user binding, and admin/member state; refresh on `discord:changed`. Show deferred onboarding without a nonfunctional OAuth Connect button.                                      | [A](https://github.com/okou-ai/okou/issues/36640), [F](https://github.com/okou-ai/okou/issues/36645)                                                                                                       |
+| Identity                     | A workspace is associated with one Okou org; individual Slack accounts connect to Okou users.                                                                                 | One guild maps to one org. A verified Discord sender binding and current Okou membership are required. Guild membership or a supplied ID is not identity proof.                                                                                                 | [A](https://github.com/okou-ai/okou/issues/36640)                                                                                                                                                          |
+| Start a task                 | `app_mention` and ordinary bot DMs enter the agent path; ordinary channel messages and unmentioned replies do not. Bot-authored and unsupported message updates are excluded. | Require an explicit mention in guild channels and threads; accept ordinary bot DMs directly. Ignore bot/self/webhook messages and edits.                                                                                                                        | [C](https://github.com/okou-ai/okou/issues/36642), [D](https://github.com/okou-ai/okou/issues/36643)                                                                                                       |
+| Guild thread continuity      | Existing physical-thread routes retain their agent/model; different users have different canonical ownership within the same external thread.                                 | Create/reuse a native Discord thread where supported. Route ownership is `(connectionId, channelId, sessionKey, userId)` and preserves the original agent/model. A reply reference alone does not create a thread.                                              | [A](https://github.com/okou-ai/okou/issues/36640), [B](https://github.com/okou-ai/okou/issues/36641), [C](https://github.com/okou-ai/okou/issues/36642)                                                    |
+| Continuous bot DM            | Main-DM routing uses `integrationDmSessionKey` with agent/model/service-tier boundaries.                                                                                      | Reuse that session key under connection/org/channel/user. Resolve a unique valid binding directly; multiple valid bindings require the sender's explicit saved org choice through settings or interactions. Never choose the first or most recently used guild. | [A](https://github.com/okou-ai/okou/issues/36640), [C](https://github.com/okou-ai/okou/issues/36642), [E](https://github.com/okou-ai/okou/issues/36644), [F](https://github.com/okou-ai/okou/issues/36645) |
+| Commands                     | `/okou help`, `connect`, `disconnect`, `switch`, and `model` provide connection guidance and permitted preferences.                                                           | Preserve those semantics through signed interactions and Discord-native private responses/components; `connect` explains deferred onboarding. An org selector resolves ambiguous DMs.                                                                           | [E](https://github.com/okou-ai/okou/issues/36644)                                                                                                                                                          |
+| Agent/model choice           | Org default and per-user agent preferences respect accessible agents; the model picker uses shared policy and availability.                                                   | Use the same preferences and policy. Revalidate picker submissions, sender identity, current binding, and accessible options; do not replace an existing guild thread's agent/model.                                                                            | [A](https://github.com/okou-ai/okou/issues/36640), [E](https://github.com/okou-ai/okou/issues/36644)                                                                                                       |
+| Canonical execution          | Ingress persists canonical Chat input/assets and drains the shared queue; Run routing, billing, history, and callbacks remain shared.                                         | Use the same Chat/Run pipeline, permissions, queues, billing, and web history. Durable acceptance and replay must not produce duplicate runs.                                                                                                                   | [C](https://github.com/okou-ai/okou/issues/36642), [D](https://github.com/okou-ai/okou/issues/36643)                                                                                                       |
+| Results and status           | Canonical callbacks deliver terminal content with agent/model presentation and suppress delivery after binding revocation.                                                    | Deliver final/error/cancelled/admission-failure outcomes, attribution, and processing status through the bot. Recheck live binding, membership, feature availability, and destination access at delivery time.                                                  | [B](https://github.com/okou-ai/okou/issues/36641), [C](https://github.com/okou-ai/okou/issues/36642)                                                                                                       |
+| Context                      | Bounded channel/thread context renders sender names, mentions, and files alongside the triggering message.                                                                    | Preserve bounded context and sender attribution. Enforce user-and-bot access and disclose limited context when ordinary message content is unavailable.                                                                                                         | [B](https://github.com/okou-ai/okou/issues/36641), [C](https://github.com/okou-ai/okou/issues/36642), [F](https://github.com/okou-ai/okou/issues/36645)                                                    |
+| Native messages              | CLI channel listing, history, replies, and sending use the shared user/bot access boundary for reads.                                                                         | Provide `okou discord channel list`, `message history`, `message replies`, and `message send`; enforce channel overwrites and private-thread membership. Read only the connected sender's bot DM, never another user's DM.                                      | [B](https://github.com/okou-ai/okou/issues/36641)                                                                                                                                                          |
+| Files and artifacts          | Inbound files become canonical inputs; upload/download and output delivery retain canonical ownership.                                                                        | Safely import expiring attachments, enforce file limits and MIME rules, preserve private artifact ownership, and deduplicate partial retries. Provide native upload/download with stable user-facing references.                                                | [C](https://github.com/okou-ai/okou/issues/36642), [G](https://github.com/okou-ai/okou/issues/36646)                                                                                                       |
+| Web source presentation      | Canonical Slack messages retain a source annotation and message permalink when available.                                                                                     | Render the canonical source-message permalink in history with an accessible Discord label/icon. Activity headers display the Discord trigger-source label/icon; the activity contract has no source-message permalink. Consume C's shared discriminators.       | [C](https://github.com/okou-ai/okou/issues/36642), [F](https://github.com/okou-ai/okou/issues/36645)                                                                                                       |
+| Disconnect, removal, erasure | Personal disconnect removes access; org-admin removal removes the installation and its connections.                                                                           | Keep personal disconnect and admin guild removal distinct. Revoke routes/preferences and delivery authority, preserve other guilds, and cover member removal, account export/erasure, and owned descendants.                                                    | [A](https://github.com/okou-ai/okou/issues/36640), [C](https://github.com/okou-ai/okou/issues/36642), [F](https://github.com/okou-ai/okou/issues/36645)                                                    |
+
+## Published settings and source contracts
+
+A's [exact settings contract](https://github.com/okou-ai/okou/issues/36640#issuecomment-5811445351)
+exports `integrationsDiscordContract`, `discordOrgStatusSchema`,
+`discordContextModeSchema`, `DiscordOrgStatus`, `DiscordContextMode`, and
+`IntegrationsDiscordContract` from
+`@okouai/api-contracts/contracts/integrations-discord`.
+
+| Method           | Request                                                                                | Success and authority                                                                                                                                                            |
+| ---------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getStatus`      | `GET /api/integrations/discord`                                                        | `200` with the current org/caller's status; `401`, `403`, and `404` are contract errors.                                                                                         |
+| `disconnect`     | `DELETE /api/integrations/discord`, optional `action=disconnect` or `action=uninstall` | `200 {ok:true}`. Omitted action disconnects the caller; uninstall is admin-only for this guild. `401`, `403`, and `404` remain visible failures.                                 |
+| `setDmSelection` | `PUT /api/integrations/discord/dm-selection`, strict body `{connectionId: UUID}`       | `200 {ok:true}`. The server resolves the caller and verified Discord sender; the payload supplies no user/guild identity proof. `401`, `403`, and `404` remain visible failures. |
+
+The required status fields are:
+
+- Boolean `isAvailable`, `isInstalled`, `isConnected`, and `isAdmin`.
+- Nullable string `guildId`, `guildName`, `discordUserId`, `defaultAgentId`, and
+  `defaultAgentName`.
+- `contextMode: "full" | "mentions_only" | "unavailable"` and
+  `onboarding: "oauth_deferred"`. Settings disclose the server-provided context
+  mode and deferred onboarding rather than infer availability from installation.
+- `dmSelectionConnectionId: UUID | null` and
+  `dmBindings: {connectionId: UUID, guildId: string, guildName: string | null}[]`.
+  Choices contain only the current Okou caller's valid bindings for the current
+  Discord sender. F exposes explicit DM choice in settings; an absent saved
+  choice must not select the first or most recent guild.
+
+C's [published source contract and targeted verification](https://github.com/okou-ai/okou/issues/36642#issuecomment-5811506561)
+own the `discord` discriminator. Canonical user-message source parts retain
+`{type: "source", kind: "discord", href?: string}` for history; the optional
+`href` is the original Discord message permalink. Activity headers consume the
+`TriggerSource` value `discord` for their label/icon. They have no source-message
+permalink field, so this guide does not require an invented activity link.
+
+Computer Use authorization follows the existing canonical `source: "chat"`
+path when the Run has a canonical `chatThreadId`; F does not add a separate
+Discord authorization source. See C's
+[authorization clarification](https://github.com/okou-ai/okou/issues/36645#issuecomment-5811508333).
+
+## Discord platform differences
+
+1. **Gateway transport.** Ordinary messages arrive through an outbound Gateway
+   WebSocket. HTTP interactions handle slash commands and components but do not
+   replace message ingestion. The Worker/Durable Object owns heartbeat, resume,
+   reconnect, Identify budgets, and a durable outbox; the finite-lived API
+   function owns authoritative identity, admission, and business logic.
+2. **Application-wide bot credential.** The bot token is shared by the Discord
+   application; guild rows contain bindings rather than copied bot tokens.
+   Removing one guild must not revoke the credential for other guilds. A bot DM
+   contains no authoritative guild choice, so ambiguous org routing needs an
+   explicit sender-owned selection.
+3. **Replies and threads.** A reply references a message; a thread is a separate
+   Discord conversation with permissions and archive/lock state. Task routing
+   must use the actual channel/thread identity. Bot DMs have no Slack-style
+   subthreads; standard bots cannot join Group DMs. Those are platform limits,
+   not a reason to share DM ownership across users or orgs.
+4. **Message content.** Ordinary guild context depends on the applicable
+   `MESSAGE_CONTENT` intent configuration and approval. Limited-context mode
+   must say what is unavailable and must not claim full Slack parity. Content
+   availability never grants identity or channel access.
+5. **Access evaluation.** Guild roles alone are insufficient: effective channel
+   overwrites and private-thread membership apply to both sender and bot. Access
+   can change while a task runs; a successful admission is not continuing
+   permission to read or deliver.
+6. **Interaction lifetime.** Discord requires an initial interaction response
+   within three seconds, and interaction tokens expire after fifteen minutes.
+   Acknowledge commands promptly and use durable bot-authenticated result
+   delivery for long tasks.
+7. **Presentation and provider limits.** Discord-native private replies,
+   buttons/selects/modals, typing/status, and Markdown replace Slack App Home
+   and Block Kit. Message/file limits, mention suppression, expiring attachment
+   URLs, and rate limits require deliberate splitting, import, and retry. A
+   truncated result or a silently missing attachment is not parity.
+
+OAuth deferral and disabled rollout are project scope limits, not unavoidable
+Discord differences. The Gateway owner's initial single-shard scope is likewise
+an implementation limit: its
+[published contract](https://github.com/okou-ai/okou/issues/36643#issuecomment-5811353867)
+rejects applications requiring multiple shards until an application-wide
+Identify coordinator exists.
+
+Provider references: [Gateway](https://docs.discord.com/developers/events/gateway),
+[interactions](https://docs.discord.com/developers/interactions/receiving-and-responding),
+[threads](https://docs.discord.com/developers/topics/threads), and
+[permissions](https://docs.discord.com/developers/topics/permissions).
+
+## Configuration and rollout boundary
+
+These names come from the shared agreement and A's
+[published configuration contract](https://github.com/okou-ai/okou/issues/36640#issuecomment-5811445351).
+The owning implementation and its validated setup instructions are authoritative;
+do not substitute guessed CLI flags, raw database inserts, or a public
+arbitrary-ID binding endpoint.
+
+| Configuration                                                          | Owner and purpose                                                | Required boundary                                                                                                                                                          |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FeatureSwitchKey.DiscordIntegration` / `_discordIntegration`          | A: common API/capability/UI gate.                                | Default false; no production allowlist activation. Frontend visibility does not replace the server gate.                                                                   |
+| `DISCORD_APPLICATION_ID`                                               | A: expected application identity; D/E use the same application.  | Validate incoming application identity; do not accept transport-supplied Okou org/user IDs.                                                                                |
+| `DISCORD_BOT_TOKEN`                                                    | A: application-level REST credential; D: Gateway authentication. | Keep in supported secret configuration, never per-guild data or browser responses.                                                                                         |
+| `DISCORD_PUBLIC_KEY`                                                   | A/E: Ed25519 interaction verification.                           | Verify timestamp and exact raw request body before processing interactions.                                                                                                |
+| `DISCORD_GATEWAY_SECRET`                                               | A/C/D: Worker-to-API HMAC.                                       | Verify timestamp, signature, replay window, and application ID at the API.                                                                                                 |
+| `DISCORD_MESSAGE_CONTENT_ENABLED`                                      | A: app-level ordinary-message context availability.              | Defaults to `false`. Report `full`, `mentions_only`, or `unavailable` through status; this setting never authorizes bindings or conversation access.                       |
+| `DISCORD_GATEWAY_ENABLED`                                              | D: live Gateway startup switch.                                  | Default disabled, including deployment wiring; code merge is not permission to start a bot.                                                                                |
+| Gateway API URL and management configuration                           | D: relay deployment and control.                                 | Use the published Worker configuration/secret path for the selected test environment. D's announced `DISCORD_GATEWAY_CONTROL_SECRET` is separate from the API HMAC secret. |
+| Verified guild/user fixtures                                           | A: protected development/test bindings.                          | Only an authorized non-production fixture path may establish test bindings; the sender cannot self-assert another user's identity.                                         |
+| Message-content intents, channel permissions, and command registration | B/D/E: provider configuration.                                   | Record actual test-app permissions and intent availability. Use E's registration tooling only in an authorized test application; do not register production commands.      |
+
+`getDiscordAppConfig()` is available only when the application ID, bot token,
+public key, and Gateway secret are all configured. A validates the application
+ID as 17–20 decimal digits, the Ed25519 public key as 32-byte hex, and the
+Gateway secret as at least 32 characters. The shared feature gate reads actual
+DB overrides independently of configuration and verified identity checks.
+
+The agreed Gateway endpoint is `POST /api/internal/discord/gateway`, with a
+version-1 envelope containing `applicationId`, `eventType` (`MESSAGE_CREATE` or
+`GUILD_DELETE`), stable `eventId`, and raw Discord event `payload`. Its
+`x-discord-gateway-timestamp` is Unix seconds;
+`x-discord-gateway-signature` is hex HMAC-SHA256 over
+`${timestamp}.${rawBody}` as UTF-8, without reserializing the body. The contract
+allows at most 300 seconds of past or future timestamp skew. Retry signatures
+may change, but event identity must remain stable. Success means durable
+acceptance or an explicitly classified intentional ignore. An unavailable guild (`GUILD_DELETE` with
+`unavailable: true`) is not an uninstall.
+
+Before a separately authorized test rollout, use compatible A-G revisions,
+apply A's schema through the repository's normal migration path, and deploy the
+API/contracts before directing the Gateway at them. Check independently
+deployed App, API, CLI, and Worker versions. Do not start a mixed-version test
+whose API cannot parse Discord sources or whose provider imports remain
+unresolved. Turning off a feature does not remove already persisted source
+values; any rollback after a test must retain the readers needed for its data.
+
+## Fixture acceptance
+
+Fixture tests exercise the actual service/UI boundaries with controlled
+provider responses. They do not demonstrate that a live Discord bot is
+configured, installed, or reachable.
+
+1. Record the full checkout SHA, compatible provider PRs, and test environment.
+   Use A's guarded fixture setup once its concrete entrypoint is published in
+   [#36640](https://github.com/okou-ai/okou/issues/36640). Verify that production
+   use and arbitrary-ID binding are rejected. Until that helper exists, record
+   setup as pending rather than document an invented command.
+2. Create two test orgs/guilds, an admin and member, a second connected sender in
+   one shared thread, an unbound sender, and one sender with valid bindings to
+   both orgs. Include revoked membership, inaccessible agents/models, and stale
+   selections. Keep fixtures isolated from production identities.
+3. With the feature off, verify the settings entry and status subscription are
+   absent and server/native operations are denied. With only the fixture cohort
+   enabled, exercise unconfigured, uninstalled, installed/unconnected, and
+   connected settings for admin/member roles. Exercise each exact `contextMode`
+   (`full`, `mentions_only`, and `unavailable`) with `onboarding: "oauth_deferred"`.
+   Confirm deferred onboarding guidance and limited-context disclosure. No action
+   should imply that OAuth or ID-based self-binding is available.
+4. Exercise personal disconnect, admin removal, failed actions, and a
+   `discord:changed` event while `/works` is mounted. Verify state refresh,
+   visible errors, lifetime cleanup, and continued isolation of the other org.
+   The settings DM-choice control must contain only the authenticated sender's
+   valid bindings, submit only `{connectionId}`, and reflect the saved choice
+   after refresh. Verify that no first/recent choice is applied automatically
+   when multiple valid bindings have no saved selection.
+5. Submit signed Gateway/interaction fixtures for mention, unmentioned reply,
+   bot DM, bot/self/webhook message, and edit. Reject wrong signatures,
+   application IDs, expired timestamps, mismatched component senders, and
+   cross-org selections before admission. Verify PING and timely interaction
+   acknowledgement without waiting for provider work.
+6. Assert one canonical admission/run under duplicate event delivery, lost API
+   response, Worker restart/RESUME, reconnect, queued input, stale-ingress
+   recovery, and partial delivery failure. Confirm two users in one native
+   thread receive separate canonical ownership. Agent/model changes preserve
+   existing guild routes and create the expected main-DM session boundary.
+7. Exercise both user and bot denial, channel overwrites, private-thread
+   membership, archive/lock changes, and revocation between admission and final
+   delivery. Cover final, error, cancellation, and admission-failure paths. No
+   terminal callback or retry may escape revoked authority.
+8. Exercise bounded context with and without message content, native
+   read/send/replies pagination, rate limits, long-result splitting, mention
+   suppression, incoming files, expiring attachment refresh, byte/MIME rejection,
+   output artifacts, and partial-upload retry. Keep canonical ownership and
+   stable delivery references intact.
+9. Render canonical history from C's real Discord source part. Verify the
+   label/icon and keyboard-accessible source-message link; missing permalinks
+   must not create broken or fabricated destinations. Verify the Discord
+   trigger-source label/icon in activity headers without inventing a permalink
+   field there. Check that Slack and other source presentations remain intact.
+10. Run scoped formatting, lint, types, and meaningful focused behavior tests;
+    rely on PR CI for broad coverage. Record exact commands/results and limits.
+    This task does not authorize a local dev server or full local Vitest,
+    `pnpm test`, or full turbo test runs.
+
+## Authorized real-guild acceptance
+
+The owner inventory records test-guild selection and secure configuration as
+pending. The following steps are acceptance criteria, not executed evidence or
+permission to activate production.
+
+1. Record the authorized test app/guild, non-production deployment revisions,
+   the protected fixture procedure, registered command version, intents, and
+   bot permissions. Keep tokens and private identity details out of the public
+   evidence. Use the provider owners' published setup commands; do not guess
+   their inputs or provision production secrets.
+2. Start only the authorized test Gateway. Verify heartbeat/ACK health and
+   durable outbox acceptance. Confirm ordinary guild messages do not start
+   tasks, an explicit mention does, and a mentioned thread continuation uses
+   the same native thread and canonical owner.
+3. Invoke the same thread as the second connected user and verify separate
+   canonical histories/credentials. Exercise bot DMs with one valid binding,
+   then multiple bindings: require explicit org choice and preserve it. A
+   recent message in another guild must not change the DM choice.
+4. Use help/connect/disconnect/switch/model and the org picker. Verify private
+   guidance, accessible-option filtering, stale component rejection, sticky
+   guild routes, and the expected DM session boundaries. Connect must state the
+   OAuth limitation honestly.
+5. Send a file and a task producing a long result and an output artifact. Verify
+   input/output ownership, complete content, native upload/download, usable
+   references, and Discord source-message links in web history. Verify the
+   Discord trigger-source label/icon in activity headers. Repeat context checks
+   under the actual message-content configuration; record any restricted mode
+   visibly.
+6. Test a task longer than the interaction-token lifetime, queued input, forced
+   relay reconnect/replay, duplicate delivery, and a recoverable provider error.
+   Correlate the external event, durable ingress, canonical Chat/Run, and result
+   message to demonstrate no duplicate execution or avoidable duplicate reply.
+7. During an active task, revoke the binding or membership, remove bot/user
+   channel access, and archive/lock a thread in separate cases. Verify safe
+   terminal handling. Remove one guild and confirm another configured guild
+   still functions; distinguish temporary guild unavailability from removal.
+8. Stop the test Gateway, remove temporary fixtures and test-only overrides using
+   their owning cleanup paths, and record cleanup. Leave production flags,
+   credentials, command registration, and activation unchanged.
+
+Screenshots/browser checks need an authorized browser environment. Mock renders,
+passing CI, and provider interface announcements cannot replace live evidence.
+
+## Operations and evidence ledger
+
+When investigating an incident, correlate application/environment/shard, stable
+Discord event ID, ingress/route, canonical thread/run, and delivery identity.
+Distinguish relay acceptance from API durable acceptance, run completion, and
+provider delivery. Check access revocation, disabled gates, and missing
+configuration before replaying anything. Preserve the outbox through reconnect
+and nonresumable sessions; retry delivery without starting a new task. Never
+log bot tokens, interaction tokens, HMAC secrets, or raw private content as
+diagnostic evidence.
+
+For each completed acceptance item, record date, full SHA, environment, exact
+test/check or sanitized live scenario, result, evidence URL, and remaining
+limits. A provider announcement establishes an interface expectation only.
+Reconcile these rows against the child issues when integration acceptance is
+performed; the dated snapshot below is not a live project-status feed.
+
+| Area                                        | Evidence as of 2026-09-24                                                                                                                                                                                                                                                                                                                  | Remaining acceptance                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Slack baseline                              | Source inspection at `f9087f092b79d12b87632b32d6091f3121abdf14`; references above.                                                                                                                                                                                                                                                         | Source inspection only; no Slack live regression is claimed.                                                                                                                                                                                                                                                                                           |
+| A: identity, schema, gate, status, fixtures | [Binding interface announcement](https://github.com/okou-ai/okou/issues/36640#issuecomment-5811390193) and [exact settings/configuration contract](https://github.com/okou-ai/okou/issues/36640#issuecomment-5811445351).                                                                                                                  | Concrete fixture/setup exports, merged implementation, review/CI, and lifecycle/erasure acceptance must be linked.                                                                                                                                                                                                                                     |
+| B: REST, shared access, native messages     | [Access/native-tool inventory](https://github.com/okou-ai/okou/issues/36641#issuecomment-5811367003) and [REST interface announcement](https://github.com/okou-ai/okou/issues/36641#issuecomment-5811392878).                                                                                                                              | Merged implementation, review/CI, and permission/context/native-tool evidence must be linked.                                                                                                                                                                                                                                                          |
+| C: canonical ingress and delivery           | [Ingress interface announcement](https://github.com/okou-ai/okou/issues/36642#issuecomment-5811363886). [C reports](https://github.com/okou-ai/okou/issues/36642#issuecomment-5811506561) 2 targeted `api-contracts` files / 42 tests passing (`chat-event-rows.test.ts`, `chat-threads.test.ts`), contract TypeScript, and scoped ESLint. | These checks cover Discord serialization with/without a permalink and private launch-field rejection. API/DB validation still awaits provider/schema integration; merged implementation, current-HEAD review/CI, durable admission/recovery/delivery, and live acceptance remain unverified here. No broad local tests or live validation are claimed. |
+| D: Gateway relay                            | [Interface announcement](https://github.com/okou-ai/okou/issues/36643#issuecomment-5811353867).                                                                                                                                                                                                                                            | Deployment/config tooling, review/CI, replay/reconnect evidence, and authorized live relay acceptance remain unproven by the announcement.                                                                                                                                                                                                             |
+| E: commands/components                      | [Interface announcement](https://github.com/okou-ai/okou/issues/36644#issuecomment-5811361186).                                                                                                                                                                                                                                            | Registration/setup instructions, review/CI, signed interaction and preference evidence must be linked; no registration execution is claimed.                                                                                                                                                                                                           |
+| F: settings/source presentation/guide       | [Owner issue #36645](https://github.com/okou-ai/okou/issues/36645).                                                                                                                                                                                                                                                                        | Current-HEAD independent review, focused UI checks, required CI, and authorized browser evidence must be linked; this guide itself is not a test result.                                                                                                                                                                                               |
+| G: files/artifact delivery                  | [Interface announcement](https://github.com/okou-ai/okou/issues/36646#issuecomment-5811357025).                                                                                                                                                                                                                                            | Actual file contracts/limits, review/CI, import/access/partial-retry evidence, and live file acceptance must be linked.                                                                                                                                                                                                                                |
+| Combined main and real guild                | [PMO acceptance state](https://github.com/okou-ai/okou/issues/36636#issuecomment-5811308260).                                                                                                                                                                                                                                              | Not established by any individual slice. PMO retains the parent issue until combined and authorized real-guild acceptance are evidenced.                                                                                                                                                                                                               |

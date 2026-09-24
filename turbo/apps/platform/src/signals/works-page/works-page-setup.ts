@@ -5,6 +5,7 @@ import { WorksPage } from "../../views/okou-page/works-page.tsx";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
 import { initSlackOrg$, watchSlackConnection$ } from "../okou-page/slack.ts";
+import { watchDiscordConnection$ } from "../okou-page/discord.ts";
 import { watchTeamsConnection$ } from "../okou-page/teams.ts";
 import { watchGithubIntegration$ } from "../okou-page/github.ts";
 import {
@@ -49,6 +50,7 @@ export const setupWorksPage$ = command(async ({ set }, signal: AbortSignal) => {
   );
   set(initWorksRedirect$);
   set(initSlackOrg$);
+  set(watchDiscordConnection$, signal);
 
   await Promise.all([
     set(watchSlackConnection$, signal),
