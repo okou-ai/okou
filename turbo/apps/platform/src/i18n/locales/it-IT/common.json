@@ -640,23 +640,8 @@
       "all": "Tutto",
       "avatar": "Avatar",
       "avatarWithId": "Avatar {{id}}",
-      "backToAvatars": "Torna agli avatar",
       "categories": "Categorie di modelli",
       "category": "Categoria modello",
-      "chooseVoice": "Scegli una voce per {{title}}",
-      "filters": {
-        "age": "Età",
-        "all": "Tutti",
-        "aspectRatio": "Proporzioni",
-        "clear": "Cancella",
-        "ethnicity": "Etnia",
-        "gender": "Genere",
-        "language": "Lingua",
-        "scene": "Scena",
-        "style": "Stile",
-        "title": "Filtri",
-        "useCase": "Caso d’uso"
-      },
       "fullPreview": "{{title}} anteprima completa del sito web",
       "htmlPreview": "{{title}} HTML anteprima",
       "illustration": "Illustrazione",
@@ -668,25 +653,18 @@
       "importedSlides_other": "{{count}} diapositive",
       "importFile": "Importa modello",
       "multiAccent": "Multiaccento",
-      "needPro": "Richiede Pro",
       "nextSlide": "Anteprima della diapositiva successiva",
       "noMatches": "Nessuna corrispondenza",
       "placeholder": "{{title}} segnaposto anteprima sito web",
-      "playVideo": "Riproduci l'anteprima del modello video {{title}}",
-      "previewAvatarVideo": "Anteprima del video avatar {{title}}",
       "previewCurrentSlide": "Anteprima {{title}} nella diapositiva corrente",
       "previewSlide": "Diapositiva di anteprima {{slideNumber}}",
-      "previewVoice": "Ascolta la voce {{title}}",
       "previewWebsite": "Anteprima del modello di sito web {{title}}",
       "previousSlide": "Anteprima della diapositiva precedente",
-      "recommended": "Consigliato",
       "renameImportedTemplate": "Rinomina modello",
       "searchConnector": "Cerca modelli",
       "searchConnectors": "Cerca modelli",
       "selectStyle": "Seleziona lo stile {{style}}",
       "selectTemplate": "Seleziona il modello {{title}}",
-      "selectVideo": "Seleziona il modello video {{title}}",
-      "selectVoice": "Seleziona la voce {{title}}",
       "selectWebsite": "Seleziona il modello di sito web {{title}}",
       "selectWorkflow": "Seleziona il modello di flusso di lavoro {{title}}",
       "showVariant": "Mostra variante {{variantNumber}}",
@@ -719,7 +697,6 @@
       "tryDifferentSearch": "Prova una ricerca diversa.",
       "use": "Utilizzare",
       "useThisTemplate": "Usa questo modello",
-      "viewVideoPlans": "Visualizza i piani per il modello video {{title}}",
       "visibility": {
         "change": "Modifica",
         "changeLabel": "Modifica la visibilità del modello",
@@ -1210,7 +1187,6 @@
         "moreConnectorsChannels": "Più connettori personalizzati e integrazioni di canale",
         "supportEmail": "Assistenza via e-mail",
         "supportPriority": "Assistenza prioritaria",
-        "videoGeneration": "Generazione di video e avatar",
         "voiceInput": "Input vocale: {{requests}} richieste e {{minutes}} minuti al giorno",
         "webhookAutomations": "Avvia un run da qualsiasi sistema con un webhook"
       },
@@ -1824,7 +1800,6 @@
         "addTemplate": "Aggiungi modello",
         "imagePlaceholder": "Descrivi l’immagine che vuoi creare…",
         "presentationPlaceholder": "Di cosa tratta la tua presentazione?",
-        "settingsAdjusted": "Alcune impostazioni video sono state adattate a questo modello",
         "slideCount": "Numero di diapositive",
         "slideCountAuto": "Automatico",
         "slideCountRange": "{{range}} diapositive"
@@ -2913,16 +2888,7 @@
       "removeVideo": "Rimuovi modello video {{title}}",
       "removeWebsite": "Rimuovi modello di sito web {{title}}",
       "removeWorkflow": "Rimuovi modello di flusso di lavoro {{title}}",
-      "retry": "Riprova",
-      "videoOptions": "Opzioni video",
-      "videoOptionsAudio": "Genera audio",
-      "videoOptionsAudioOff": "Audio disattivato",
-      "videoOptionsAudioOn": "Audio attivo",
-      "videoOptionsDuration": "Durata",
-      "videoOptionsLabel": "Opzioni video {{spec}}",
-      "videoOptionsModel": "Modello",
-      "videoOptionsRatio": "Proporzioni",
-      "videoOptionsResolution": "Risoluzione"
+      "retry": "Riprova"
     },
     "thread": {
       "ariaLabel": "Discussione della chat",
@@ -4252,12 +4218,10 @@
     "documentTitles": {
       "chooseImage": "Scegli uno stile di immagine",
       "choosePresentation": "Scegli un modello di presentazione",
-      "chooseVideo": "Scegli uno stile video",
       "chooseWorkflow": "Scegli un flusso di lavoro",
       "make": "Benvenuto a {{brandName}}",
       "runImage": "Crea la tua prima immagine",
       "runPresentation": "Crea la tua prima presentazione",
-      "runVideo": "Crea il tuo primo video",
       "runWorkflow": "Esegui il tuo primo flusso di lavoro"
     },
     "make": {
@@ -4299,9 +4263,7 @@
       "title": "Cosa vuoi fare prima?"
     },
     "runAction": {
-      "checkingPlan": "Controllo del piano",
-      "runNow": "Corri adesso",
-      "upgradePro": "Aggiorna Pro per funzionare"
+      "runNow": "Corri adesso"
     },
     "sourcesFirst": {
       "common": {
@@ -4825,11 +4787,6 @@
         "slideAlt": "{{title}} diapositiva {{slide}}",
         "title": "Scegli un modello di presentazione da cui iniziare",
         "viewTemplate": "Visualizza la presentazione {{title}}"
-      },
-      "video": {
-        "description": "Usalo come riferimento per il video che desideri creare.",
-        "selectTemplate": "Seleziona il modello video {{title}}",
-        "title": "Scegli un modello video da cui iniziare"
       }
     },
     "templateRun": {
@@ -4844,12 +4801,6 @@
         "notePlaceholder": "Aggiungi il contenuto e le istruzioni della tua presentazione",
         "previewLabel": "Anteprima del modello di presentazione",
         "title": "Realizza la tua presentazione"
-      },
-      "video": {
-        "noteLabel": "Richiesta video personalizzata",
-        "notePlaceholder": "Aggiungi la tua richiesta personalizzata per remixare con il tuo video",
-        "previewLabel": "Anteprima del modello video",
-        "title": "Personalizza il tuo video"
       }
     },
     "templates": {

@@ -2,7 +2,6 @@ import { command, type Command } from "ccstate";
 import { createElement, type ComponentType } from "react";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
-import { VIDEO_TEMPLATE_ITEMS } from "@okouai/core/video-template-items";
 import {
   CUSTOM_WORKFLOW_ID,
   hasOnboardingWorkflow,
@@ -14,12 +13,10 @@ import { OnboardingWorkflowRunPage } from "../../views/onboarding/onboarding-wor
 import {
   OnboardingImageTemplatePage,
   OnboardingPresentationTemplatePage,
-  OnboardingVideoTemplatePage,
 } from "../../views/onboarding/onboarding-template-picker-pages.tsx";
 import {
   OnboardingImageRunPage,
   OnboardingPresentationRunPage,
-  OnboardingVideoRunPage,
 } from "../../views/onboarding/onboarding-template-run-pages.tsx";
 import { hideAppSkeleton$, showAppSkeleton$ } from "../app-skeleton.ts";
 import { brandName$, type BrandName } from "../branding.ts";
@@ -34,15 +31,13 @@ import {
 import {
   hydrateOnboardingRoute$,
   onboardingDraft$,
-  ONBOARDING_CHECKOUT_STATE_PARAM,
+  resetOnboardingDraft$,
   readOnboardingCheckoutDraft$,
+  ONBOARDING_CHECKOUT_STATE_PARAM,
   type OnboardingDraft,
   type OnboardingRouteStep,
 } from "./onboarding-state.ts";
-import {
-  capturePaidOnboardingAppHandoff$,
-  capturePaidOnboardingStepViewed$,
-} from "../bootstrap/paid-funnel-telemetry.ts";
+import { capturePaidOnboardingStepViewed$ } from "../bootstrap/paid-funnel-telemetry.ts";
 import { onboardingStatus$ } from "../okou-page/onboarding.ts";
 import { sendEvent$ } from "../marketing/events.ts";
 
@@ -100,11 +95,6 @@ function hasRequiredSelection(
       return item.slug === draft.imageTemplateSlug;
     });
   }
-  if (step === "video-run") {
-    return VIDEO_TEMPLATE_ITEMS.some((item) => {
-      return item.slug === draft.videoTemplateSlug;
-    });
-  }
   return true;
 }
 
@@ -114,31 +104,6 @@ function createOnboardingPageSetup(
   return command(async ({ get, set }, signal: AbortSignal) => {
     set(showAppSkeleton$);
     const searchParams = get(searchParams$);
-
-    if (config.step === "video-run") {
-      const checkoutDraft = set(readOnboardingCheckoutDraft$, searchParams);
-      const checkoutSessionId = searchParams.get(
-        "onboarding_billing_session_id",
-      );
-      const checkoutPrompt =
-        searchParams.get("prompt") ?? checkoutDraft?.prompt ?? null;
-      if (checkoutSessionId && checkoutPrompt?.trim()) {
-        await set(completeOnboardingCheckoutReturn$, checkoutSessionId, signal);
-        await set(
-          completeOnboarding$,
-          searchParams.get("redeemCode")?.trim() || null,
-          signal,
-        );
-        const handoffParams = promptHandoffParams(searchParams);
-        handoffParams.set("prompt", checkoutPrompt);
-        set(capturePaidOnboardingAppHandoff$, checkoutPrompt);
-        set(detachedNavigateTo$, ROUTES.prompt, {
-          searchParams: handoffParams,
-          replace: true,
-        });
-        return;
-      }
-    }
 
     const status = await get(onboardingStatus$);
     signal.throwIfAborted();
@@ -249,23 +214,37 @@ export const setupOnboardingImageRunPage$ = createOnboardingPageSetup({
   fallbackPath: ROUTES.onboardingImageTemplate,
 });
 
-export const setupOnboardingVideoTemplatePage$ = createOnboardingPageSetup({
-  step: "video-template",
-  title: () => {
-    return i18n.t(($) => {
-      return $.onboarding.documentTitles.chooseVideo;
+/**
+ * Bridge pre-retirement App checkout returns. Remove with #36506 after the
+ * replacement App is live, its version floor excludes old checkout creators,
+ * the old App is outside the rollback window, and all issued video-onboarding
+ * sessions are terminal with payment and onboarding fulfillment reconciled.
+ */
+export const setupRetiredOnboardingVideoPage$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(showAppSkeleton$);
+    const params = get(searchParams$);
+    const checkoutDraft = set(readOnboardingCheckoutDraft$, params);
+    const prompt =
+      checkoutDraft?.note.trim() ||
+      params.get("prompt")?.trim() ||
+      checkoutDraft?.prompt.trim();
+    const checkoutSessionId = params.get("onboarding_billing_session_id");
+    if (checkoutSessionId) {
+      await set(completeOnboardingCheckoutReturn$, checkoutSessionId, signal);
+      await set(
+        completeOnboarding$,
+        params.get("redeemCode")?.trim() || null,
+        signal,
+      );
+    }
+    signal.throwIfAborted();
+    set(resetOnboardingDraft$);
+    // The home route owns the onboarding guard. Do not auto-submit the old
+    // template prompt after a completed payment or a stale marketing link.
+    set(detachedNavigateTo$, ROUTES.home, {
+      searchParams: new URLSearchParams(prompt ? { prompt } : {}),
+      replace: true,
     });
   },
-  Page: OnboardingVideoTemplatePage,
-});
-
-export const setupOnboardingVideoRunPage$ = createOnboardingPageSetup({
-  step: "video-run",
-  title: () => {
-    return i18n.t(($) => {
-      return $.onboarding.documentTitles.runVideo;
-    });
-  },
-  Page: OnboardingVideoRunPage,
-  fallbackPath: ROUTES.onboardingVideoTemplate,
-});
+);

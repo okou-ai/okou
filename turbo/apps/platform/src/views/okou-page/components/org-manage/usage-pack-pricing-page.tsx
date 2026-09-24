@@ -952,9 +952,6 @@ function planHighlights(tier: UsagePackPlanTier): readonly string[] {
       return $.billing.plans.highlights.automations;
     }),
     i18n.t(($) => {
-      return $.billing.plans.highlights.videoGeneration;
-    }),
-    i18n.t(($) => {
       return $.billing.plans.highlights.builtInResearchData;
     }),
     i18n.t(($) => {

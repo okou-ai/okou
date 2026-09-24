@@ -68,8 +68,7 @@ import {
   setupOnboardingImageTemplatePage$,
   setupOnboardingPresentationRunPage$,
   setupOnboardingPresentationTemplatePage$,
-  setupOnboardingVideoRunPage$,
-  setupOnboardingVideoTemplatePage$,
+  setupRetiredOnboardingVideoPage$,
   setupOnboardingWorkflowPickerPage$,
   setupOnboardingWorkflowRunPage$,
 } from "./onboarding/onboarding-page-setup.ts";
@@ -510,11 +509,11 @@ const ROUTE_CONFIG = [
   },
   {
     path: ROUTES.onboardingVideoTemplate,
-    setup: setupAuthPageWrapper(setupOnboardingVideoTemplatePage$),
+    setup: setupAuthPageWrapper(setupRetiredOnboardingVideoPage$),
   },
   {
     path: ROUTES.onboardingVideoRun,
-    setup: setupAuthPageWrapper(setupOnboardingVideoRunPage$),
+    setup: setupAuthPageWrapper(setupRetiredOnboardingVideoPage$),
   },
   {
     path: ROUTES.signInToken,

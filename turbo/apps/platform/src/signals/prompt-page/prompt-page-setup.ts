@@ -3,7 +3,6 @@ import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-provi
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
-import { findVideoTemplateItem } from "@okouai/core/video-template-items";
 import { findWebsiteTemplateItem } from "@okouai/core/website-template-items";
 import { i18n } from "../../i18n/index.ts";
 import { sendNewThread$ } from "../chat-page/optimistic-chat-thread-page.ts";
@@ -48,22 +47,6 @@ function websiteGenerationTemplateFromId(
       selection: {
         websiteTemplateId: websiteTemplate.id,
       },
-    },
-  };
-}
-
-function videoGenerationTemplateFromId(
-  id: string,
-): ResolvedGenerationTemplate | undefined {
-  const videoTemplate = findVideoTemplateItem(id);
-  if (!videoTemplate) {
-    return undefined;
-  }
-  return {
-    titleSnapshot: videoTemplate.title,
-    template: {
-      type: "video",
-      selection: { stylePresetId: videoTemplate.id },
     },
   };
 }
@@ -127,7 +110,6 @@ function illustrationGenerationTemplateFromId(
 
 const generationTemplateParsers = [
   websiteGenerationTemplateFromId,
-  videoGenerationTemplateFromId,
   presentationGenerationTemplateFromId,
   illustrationGenerationTemplateFromId,
 ] as const;
@@ -168,11 +150,16 @@ export const setupPromptPage$ = command(
     const params = get(searchParams$);
     const prompt = params.get("prompt")?.trim();
     const requestedModel = params.get("model")?.trim();
-    const template = params.get("template");
+    const template = params.get("template")?.trim() ?? null;
     const resolvedGenerationTemplate =
       generationTemplateFromSearchParam(template);
-    if (!prompt) {
-      set(detachedNavigateTo$, "/", { replace: true });
+    const unresolvedTemplate =
+      Boolean(template) && resolvedGenerationTemplate === undefined;
+    if (!prompt || unresolvedTemplate) {
+      set(detachedNavigateTo$, "/", {
+        replace: true,
+        searchParams: new URLSearchParams(prompt ? { prompt } : {}),
+      });
       return;
     }
 

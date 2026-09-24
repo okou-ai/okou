@@ -9,9 +9,9 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { expect, test } from "vitest";
 import {
+  draftToEditorDoc,
   editorDocToMessageDocument,
   messageDocumentToDisplayText,
-  messageDocumentToEditorDoc,
   messageDocumentToPrompt,
   type MessageDocumentAttachment,
 } from "../user-message-document-codec.ts";
@@ -87,7 +87,7 @@ const CHAT_THREAD_ID = "b0000000-0000-4000-a000-000000000931";
 const AGENT_ID = "c0000000-0000-4000-a000-000000000931";
 
 function restoredEditorDocument(value: unknown): ProseMirrorNode {
-  const restored = messageDocumentToEditorDoc(value);
+  const restored = draftToEditorDoc(value);
   if (!restored) {
     throw new Error("User message could not be restored for editing");
   }
@@ -123,15 +123,11 @@ function expectTextOrder(text: string, segments: readonly string[]): void {
   }
 }
 
-test("Every generation template type restores for editing", () => {
+test("Supported generation templates restore for editing", () => {
   const templates = [
     templatePart("Paper cut", {
       type: "illustration",
       selection: { illustrationStyleId: "paper-cut" },
-    }),
-    templatePart("Epic grandeur", {
-      type: "video",
-      selection: { stylePresetId: "epic-grandeur" },
     }),
     templatePart("Daily review", {
       type: "workflow",
@@ -480,7 +476,7 @@ test("A malformed rich message is rejected safely", () => {
   ];
 
   for (const malformed of malformedDocuments) {
-    expect(messageDocumentToEditorDoc(malformed)).toBeNull();
+    expect(draftToEditorDoc(malformed)).toBeNull();
     expect(messageDocumentToPrompt(malformed)).toBeNull();
   }
 

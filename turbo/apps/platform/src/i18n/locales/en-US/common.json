@@ -622,23 +622,8 @@
       "all": "All",
       "avatar": "Avatar",
       "avatarWithId": "Avatar {{id}}",
-      "backToAvatars": "Back to avatars",
       "categories": "Template categories",
       "category": "Template category",
-      "chooseVoice": "Choose a voice for {{title}}",
-      "filters": {
-        "age": "Age",
-        "all": "All",
-        "aspectRatio": "Aspect ratio",
-        "clear": "Clear",
-        "ethnicity": "Ethnicity",
-        "gender": "Gender",
-        "language": "Language",
-        "scene": "Scene",
-        "style": "Style",
-        "title": "Filters",
-        "useCase": "Use case"
-      },
       "fullPreview": "{{title}} website full preview",
       "htmlPreview": "{{title}} HTML preview",
       "illustration": "Illustration",
@@ -649,25 +634,18 @@
       "importedSlides_other": "{{count}} slides",
       "importFile": "Import template",
       "multiAccent": "Multi-accent",
-      "needPro": "Need Pro",
       "nextSlide": "Preview next slide",
       "noMatches": "No matches",
       "placeholder": "{{title}} website preview placeholder",
-      "playVideo": "Play video template preview {{title}}",
-      "previewAvatarVideo": "Preview avatar video {{title}}",
       "previewCurrentSlide": "Preview {{title}} at current slide",
       "previewSlide": "Preview slide {{slideNumber}}",
-      "previewVoice": "Preview voice {{title}}",
       "previewWebsite": "Preview website template {{title}}",
       "previousSlide": "Preview previous slide",
-      "recommended": "Recommended",
       "renameImportedTemplate": "Rename template",
       "searchConnector": "Search templates",
       "searchConnectors": "Search templates",
       "selectStyle": "Select style {{style}}",
       "selectTemplate": "Select template {{title}}",
-      "selectVideo": "Select video template {{title}}",
-      "selectVoice": "Select voice {{title}}",
       "selectWebsite": "Select website template {{title}}",
       "selectWorkflow": "Select workflow template {{title}}",
       "showVariant": "Show variant {{variantNumber}}",
@@ -700,7 +678,6 @@
       "tryDifferentSearch": "Try a different search.",
       "use": "Use",
       "useThisTemplate": "Use this template",
-      "viewVideoPlans": "View plans for video template {{title}}",
       "visibility": {
         "change": "Change",
         "changeLabel": "Change template visibility",
@@ -1187,7 +1164,6 @@
         "moreConnectorsChannels": "More custom connectors & channel integration",
         "supportEmail": "Email support",
         "supportPriority": "Priority support",
-        "videoGeneration": "Video and avatar generation",
         "voiceInput": "Voice input, {{requests}} requests and {{minutes}} minutes a day",
         "webhookAutomations": "Start a run from any system with one webhook"
       },
@@ -1795,7 +1771,6 @@
         "addTemplate": "Add template",
         "imagePlaceholder": "Describe the image you want to create…",
         "presentationPlaceholder": "What is your presentation about?",
-        "settingsAdjusted": "Some video settings were adjusted for this model",
         "slideCount": "Slide count",
         "slideCountAuto": "Auto",
         "slideCountRange": "{{range}} slides"
@@ -2867,16 +2842,7 @@
       "removeVideo": "Remove video template {{title}}",
       "removeWebsite": "Remove website template {{title}}",
       "removeWorkflow": "Remove workflow template {{title}}",
-      "retry": "Retry",
-      "videoOptions": "Video options",
-      "videoOptionsAudio": "Generate audio",
-      "videoOptionsAudioOff": "Audio off",
-      "videoOptionsAudioOn": "Audio on",
-      "videoOptionsDuration": "Duration",
-      "videoOptionsLabel": "Video options {{spec}}",
-      "videoOptionsModel": "Model",
-      "videoOptionsRatio": "Ratio",
-      "videoOptionsResolution": "Resolution"
+      "retry": "Retry"
     },
     "thread": {
       "ariaLabel": "Chat thread",
@@ -4188,12 +4154,10 @@
     "documentTitles": {
       "chooseImage": "Choose an image style",
       "choosePresentation": "Choose a presentation template",
-      "chooseVideo": "Choose a video style",
       "chooseWorkflow": "Choose a workflow",
       "make": "Welcome to {{brandName}}",
       "runImage": "Create your first image",
       "runPresentation": "Create your first presentation",
-      "runVideo": "Create your first video",
       "runWorkflow": "Run your first workflow"
     },
     "make": {
@@ -4235,9 +4199,7 @@
       "title": "What do you want to make first"
     },
     "runAction": {
-      "checkingPlan": "Checking plan",
-      "runNow": "Run now",
-      "upgradePro": "Upgrade Pro to run"
+      "runNow": "Run now"
     },
     "sourcesFirst": {
       "common": {
@@ -4761,11 +4723,6 @@
         "slideAlt": "{{title}} slide {{slide}}",
         "title": "Pick a presentation template to start from",
         "viewTemplate": "View {{title}} presentation"
-      },
-      "video": {
-        "description": "Use it as a reference for the video you want to create.",
-        "selectTemplate": "Select {{title}} video template",
-        "title": "Pick a video template to start from"
       }
     },
     "templateRun": {
@@ -4780,12 +4737,6 @@
         "notePlaceholder": "Add your presentation's content and instruction",
         "previewLabel": "Presentation template preview",
         "title": "Fulfil your presentation"
-      },
-      "video": {
-        "noteLabel": "Custom video prompt",
-        "notePlaceholder": "Add your custom prompt to remix with your own video",
-        "previewLabel": "Video template preview",
-        "title": "Customize your video"
       }
     },
     "templates": {

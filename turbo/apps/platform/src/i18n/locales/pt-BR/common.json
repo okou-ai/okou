@@ -640,23 +640,8 @@
       "all": "Todos",
       "avatar": "Avatar",
       "avatarWithId": "Avatar {{id}}",
-      "backToAvatars": "Voltar aos avatares",
       "categories": "Categorias de modelo",
       "category": "Categoria de modelo",
-      "chooseVoice": "Escolha uma voz para {{title}}",
-      "filters": {
-        "age": "Idade",
-        "all": "Todos",
-        "aspectRatio": "Proporção",
-        "clear": "Limpar",
-        "ethnicity": "Etnia",
-        "gender": "Gênero",
-        "language": "Idioma",
-        "scene": "Cena",
-        "style": "Estilo",
-        "title": "Filtros",
-        "useCase": "Caso de uso"
-      },
       "fullPreview": "Visualização completa do site {{title}}",
       "htmlPreview": "Visualização HTML de {{title}}",
       "illustration": "Ilustração",
@@ -668,25 +653,18 @@
       "importedSlides_other": "{{count}} slides",
       "importFile": "Importar modelo",
       "multiAccent": "Várias cores de destaque",
-      "needPro": "Requer Pro",
       "nextSlide": "Visualizar próximo slide",
       "noMatches": "Nenhum resultado",
       "placeholder": "Espaço reservado para visualização do site {{title}}",
-      "playVideo": "Reproduzir a visualização do modelo de vídeo {{title}}",
-      "previewAvatarVideo": "Visualizar vídeo do avatar {{title}}",
       "previewCurrentSlide": "Visualizar {{title}} no slide atual",
       "previewSlide": "Visualizar slide {{slideNumber}}",
-      "previewVoice": "Ouvir a voz {{title}}",
       "previewWebsite": "Visualizar o modelo de site {{title}}",
       "previousSlide": "Visualizar slide anterior",
-      "recommended": "Recomendado",
       "renameImportedTemplate": "Renomear modelo",
       "searchConnector": "Buscar modelos",
       "searchConnectors": "Buscar modelos",
       "selectStyle": "Selecionar estilo {{style}}",
       "selectTemplate": "Selecionar modelo {{title}}",
-      "selectVideo": "Selecionar modelo de vídeo {{title}}",
-      "selectVoice": "Selecionar a voz {{title}}",
       "selectWebsite": "Selecionar modelo de site {{title}}",
       "selectWorkflow": "Selecionar modelo de fluxo de trabalho {{title}}",
       "showVariant": "Mostrar variação {{variantNumber}}",
@@ -719,7 +697,6 @@
       "tryDifferentSearch": "Tente outra busca.",
       "use": "Usar",
       "useThisTemplate": "Usar este modelo",
-      "viewVideoPlans": "Ver planos para o modelo de vídeo {{title}}",
       "visibility": {
         "change": "Alterar",
         "changeLabel": "Alterar a visibilidade do modelo",
@@ -1210,7 +1187,6 @@
         "moreConnectorsChannels": "Mais conectores personalizados e integrações de canal",
         "supportEmail": "Suporte por e-mail",
         "supportPriority": "Suporte prioritário",
-        "videoGeneration": "Geração de vídeo e avatares",
         "voiceInput": "Entrada de voz: {{requests}} solicitações e {{minutes}} minutos por dia",
         "webhookAutomations": "Inicie uma execução de qualquer sistema com um webhook"
       },
@@ -1824,7 +1800,6 @@
         "addTemplate": "Adicionar modelo",
         "imagePlaceholder": "Descreva a imagem que você quer criar…",
         "presentationPlaceholder": "Qual é o tema da sua apresentação?",
-        "settingsAdjusted": "Algumas configurações de vídeo foram ajustadas para este modelo",
         "slideCount": "Número de slides",
         "slideCountAuto": "Automático",
         "slideCountRange": "{{range}} slides"
@@ -2913,16 +2888,7 @@
       "removeVideo": "Remover template de vídeo {{title}}",
       "removeWebsite": "Remover template de site {{title}}",
       "removeWorkflow": "Remover template de fluxo de trabalho {{title}}",
-      "retry": "Tentar novamente",
-      "videoOptions": "Opções de vídeo",
-      "videoOptionsAudio": "Gerar áudio",
-      "videoOptionsAudioOff": "Áudio desativado",
-      "videoOptionsAudioOn": "Áudio ativado",
-      "videoOptionsDuration": "Duração",
-      "videoOptionsLabel": "Opções de vídeo {{spec}}",
-      "videoOptionsModel": "Modelo",
-      "videoOptionsRatio": "Proporção",
-      "videoOptionsResolution": "Resolução"
+      "retry": "Tentar novamente"
     },
     "thread": {
       "ariaLabel": "Conversa",
@@ -4252,12 +4218,10 @@
     "documentTitles": {
       "chooseImage": "Escolha um estilo de imagem",
       "choosePresentation": "Escolha um modelo de apresentação",
-      "chooseVideo": "Escolha um estilo de vídeo",
       "chooseWorkflow": "Escolha um fluxo de trabalho",
       "make": "Bem-vindo ao {{brandName}}",
       "runImage": "Crie sua primeira imagem",
       "runPresentation": "Crie sua primeira apresentação",
-      "runVideo": "Crie seu primeiro vídeo",
       "runWorkflow": "Execute seu primeiro fluxo de trabalho"
     },
     "make": {
@@ -4299,9 +4263,7 @@
       "title": "O que você quer fazer primeiro"
     },
     "runAction": {
-      "checkingPlan": "Verificando plano",
-      "runNow": "Executar agora",
-      "upgradePro": "Atualizar para Pro para executar"
+      "runNow": "Executar agora"
     },
     "sourcesFirst": {
       "common": {
@@ -4825,11 +4787,6 @@
         "slideAlt": "Slide {{title}} {{slide}}",
         "title": "Escolha um modelo de apresentação para começar",
         "viewTemplate": "Ver apresentação {{title}}"
-      },
-      "video": {
-        "description": "Use-o como referência para o vídeo que você deseja criar.",
-        "selectTemplate": "Selecionar modelo de vídeo {{title}}",
-        "title": "Escolha um modelo de vídeo para começar"
       }
     },
     "templateRun": {
@@ -4844,12 +4801,6 @@
         "notePlaceholder": "Adicione o conteúdo e as instruções da sua apresentação",
         "previewLabel": "Prévia do modelo de apresentação",
         "title": "Complete sua apresentação"
-      },
-      "video": {
-        "noteLabel": "Prompt de vídeo personalizado",
-        "notePlaceholder": "Adicione seu prompt personalizado para remixar com seu próprio vídeo",
-        "previewLabel": "Prévia do modelo de vídeo",
-        "title": "Personalize seu vídeo"
       }
     },
     "templates": {

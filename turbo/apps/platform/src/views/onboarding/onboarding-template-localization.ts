@@ -6,16 +6,11 @@ import {
   type PresentationTemplateItem,
   PRESENTATION_TEMPLATE_PICKER_ITEMS,
 } from "@okouai/core/presentation-template-items";
-import {
-  type VideoTemplateItem,
-  VIDEO_TEMPLATE_ITEMS,
-} from "@okouai/core/video-template-items";
 import type { TFunction } from "i18next";
 import enUSCommon from "../../i18n/locales/en-US/common.json";
 
 const PRESENTATION_TITLES = enUSCommon.onboarding.templates.presentation;
 const ILLUSTRATION_TITLES = enUSCommon.onboarding.templates.illustration;
-const VIDEO_TITLES = enUSCommon.onboarding.templates.video;
 
 function hasOwnKey<ObjectType extends object>(
   object: ObjectType,
@@ -53,23 +48,6 @@ export function localizedIllustrationTemplates(
       ...template,
       title: t(($) => {
         return $.onboarding.templates.illustration[slug];
-      }),
-    };
-  });
-}
-
-export function localizedVideoTemplates(
-  t: TFunction<"common">,
-): readonly VideoTemplateItem[] {
-  return VIDEO_TEMPLATE_ITEMS.map((template) => {
-    const slug = template.slug;
-    if (!hasOwnKey(VIDEO_TITLES, slug)) {
-      throw new Error(`Missing video template localization: ${slug}`);
-    }
-    return {
-      ...template,
-      title: t(($) => {
-        return $.onboarding.templates.video[slug];
       }),
     };
   });

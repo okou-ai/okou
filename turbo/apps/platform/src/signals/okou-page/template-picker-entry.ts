@@ -1,8 +1,4 @@
-export type TemplatePickerEntryCategory =
-  | "slides"
-  | "illustration"
-  | "video"
-  | "website";
+export type TemplatePickerEntryCategory = "slides" | "illustration" | "website";
 
 export function parseTemplatePickerEntryCategory(
   value: string | null,
@@ -10,7 +6,6 @@ export function parseTemplatePickerEntryCategory(
   switch (value) {
     case "slides":
     case "illustration":
-    case "video":
     case "website": {
       return value;
     }
