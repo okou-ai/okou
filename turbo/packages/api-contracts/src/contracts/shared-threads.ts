@@ -50,6 +50,11 @@ interface CreateSharedThreadPathParams {
 
 interface CreateSharedThreadBody {
   readonly eventIds: readonly string[];
+  /**
+   * Optional client-generated share ID. It lets the client copy the public
+   * link synchronously inside the user gesture and create the share after.
+   */
+  readonly id?: string;
 }
 
 interface CreateSharedThreadResponse {
@@ -93,6 +98,7 @@ type CreateSharedThreadRouteResponse =
   | ApiErrorRouteResponse<401>
   | ApiErrorRouteResponse<403>
   | ApiErrorRouteResponse<404>
+  | ApiErrorRouteResponse<409>
   | ApiErrorRouteResponse<413>;
 
 type ReadSharedThreadRouteResponse =
@@ -178,6 +184,7 @@ const createSharedThreadBodySchema: ZodSchema<
   CreateSharedThreadBody
 > = z.object({
   eventIds: z.array(z.string().uuid()).min(1),
+  id: z.string().uuid().optional(),
 });
 
 const createSharedThreadResponseSchema: ZodLikeSchema<CreateSharedThreadResponse> =
@@ -233,6 +240,7 @@ const sharedThreadsRuntimeSpec = {
       401: sharedThreadApiErrorSchema,
       403: sharedThreadApiErrorSchema,
       404: sharedThreadApiErrorSchema,
+      409: sharedThreadApiErrorSchema,
       413: sharedThreadApiErrorSchema,
     },
     summary: "Create an immutable public snapshot from selected chat events",

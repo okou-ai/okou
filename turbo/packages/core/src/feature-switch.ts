@@ -440,17 +440,19 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.AgentResponsibilitySetup]: {
+    maintainer: "linghan@okou.ai",
+    description:
+      "Require a responsibility when creating an Agent, then pin it and open a setup thread asking it to adopt that responsibility.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.PersonalModelProviderAccounts]: {
     maintainer: "ethan@okou.ai",
     description:
       "Allow personal Codex and Claude Code subscriptions to store and manually switch between multiple accounts.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.AgentPhoneEntry]: {
-    maintainer: "linghan@okou.ai",
-    description: "Show the AgentPhone entry point on the Works page.",
-    enabled: false,
   },
   [FeatureSwitchKey.LarkIntegration]: {
     maintainer: "linghan@okou.ai",
@@ -488,10 +490,17 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ChatMessageShare]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Share one assistant message and its user prompt from the message actions, copying the public link immediately.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ChatThreadArchiving]: {
     maintainer: "ethan@okou.ai",
     description:
-      "Treat the check-mark chat icon as archived and hide archived chats from the sidebar unless they are unread or explicitly shown.",
+      "Let users archive chats and hide archived chats from the sidebar unless they are unread or explicitly shown.",
     enabled: false,
   },
   [FeatureSwitchKey.ComposerSlashTemplatePanel]: {

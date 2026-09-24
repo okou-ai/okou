@@ -11,9 +11,10 @@ import {
 
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
+import { messageDocumentToDisplayText } from "../okou-page/user-message-document-codec.ts";
 import { apiClient$ } from "../api-client.ts";
 import { writeToClipboard } from "../okou-page/clipboard.ts";
-import type { ChatEventGroup } from "./chat-event.ts";
+import type { ChatEventGroup, EnrichedChatEvent } from "./chat-event.ts";
 import type { ChatThreadScrollSignals } from "./chat-thread-scroll.ts";
 import { buildRunWorkFolding } from "./run-work-folding.ts";
 
@@ -29,6 +30,7 @@ export type ToggleSharedThreadSelectionResult =
   | "selected"
   | "deselected"
   | "too-large";
+export type SetSharedThreadSelectionResult = "selected" | "too-large";
 
 export interface ChatThreadSharingSignals {
   readonly phase$: Computed<SharedThreadSelectionPhase>;
@@ -41,7 +43,23 @@ export interface ChatThreadSharingSignals {
     ToggleSharedThreadSelectionResult,
     [string, readonly ShareableChatEvent[]]
   >;
+  readonly selectAll$: Command<SetSharedThreadSelectionResult, []>;
+  readonly clear$: Command<void, []>;
+  readonly selectRange$: Command<
+    SetSharedThreadSelectionResult,
+    [string, string]
+  >;
   readonly create$: Command<Promise<void>, [AbortSignal]>;
+  /**
+   * Share persisted assistant events with the user prompt that precedes them.
+   * The link is copied before the first await so the clipboard write stays
+   * inside the click gesture; the share is created afterwards. Resolves false
+   * when the copied link is unusable, after reporting why.
+   */
+  readonly shareMessage$: Command<
+    Promise<boolean>,
+    [readonly string[], AbortSignal]
+  >;
 }
 
 // A visual message group is the only thing the reader can tick, so it is also
@@ -60,6 +78,40 @@ function groupBytes(events: readonly ShareableChatEvent[]): number {
   }, 0);
 }
 
+export function shareableEventFromChatEvent(
+  event: EnrichedChatEvent,
+): ShareableChatEvent | null {
+  if (event.seqId === undefined) {
+    return null;
+  }
+  if (event.eventType === "output.message") {
+    return event.content && event.content.length > 0
+      ? { id: event.id, text: event.content }
+      : null;
+  }
+  if (
+    event.eventType !== "input.prompt" &&
+    event.eventType !== "input.automation"
+  ) {
+    return null;
+  }
+  const displayText = messageDocumentToDisplayText(event.userMessage)?.trim();
+  if (displayText) {
+    return { id: event.id, text: displayText };
+  }
+  const automation = event.userMessage?.parts.find((part) => {
+    return part.type === "automation";
+  });
+  if (automation?.type !== "automation") {
+    return null;
+  }
+  const automationText =
+    automation.automationBrief?.trim() || automation.workflowName.trim();
+  return automationText.length > 0
+    ? { id: event.id, text: automationText }
+    : null;
+}
+
 export function chatGroupForSharing(group: ChatEventGroup): ChatEventGroup {
   return group.role === "assistant"
     ? {
@@ -73,22 +125,42 @@ export function chatGroupForSharing(group: ChatEventGroup): ChatEventGroup {
     : group;
 }
 
-function shareableEventIds(
-  groups: readonly ChatEventGroup[],
-): ReadonlySet<string> {
+interface ShareableGroup {
+  readonly key: string;
+  readonly events: readonly ShareableChatEvent[];
+}
+
+function shareableGroups(groups: readonly ChatEventGroup[]): ShareableGroup[] {
   const activeGroups = groups.flatMap((group) => {
     const events = group.events.filter((event) => {
       return !event.isQueued;
     });
     return events.length === 0 ? [] : [{ ...group, events }];
   });
-  return new Set(
-    buildRunWorkFolding(activeGroups).visibleGroups.flatMap((group) => {
-      return chatGroupForSharing(group).events.map((event) => {
-        return event.id;
-      });
-    }),
-  );
+  return buildRunWorkFolding(activeGroups).visibleGroups.flatMap((group) => {
+    const events = chatGroupForSharing(group).events.flatMap((event) => {
+      const shareable = shareableEventFromChatEvent(event);
+      return shareable ? [shareable] : [];
+    });
+    const first = events[0];
+    return first ? [{ key: first.id, events }] : [];
+  });
+}
+
+function selectedGroupsFor(
+  groups: readonly ShareableGroup[],
+): ReadonlyMap<string, SelectedGroup> | null {
+  const selected = new Map<string, SelectedGroup>();
+  let totalBytes = 0;
+  for (const group of groups) {
+    const bytes = groupBytes(group.events);
+    totalBytes += bytes;
+    if (totalBytes > SHARED_THREAD_SELECTION_TEXT_LIMIT_BYTES) {
+      return null;
+    }
+    selected.set(group.key, { events: group.events, bytes });
+  }
+  return selected;
 }
 
 function filterSelectedGroups(
@@ -111,6 +183,162 @@ function filterSelectedGroups(
     }
   }
   return changed ? next : selected;
+}
+
+function createSelectRangeCommand(
+  shareableGroups$: Computed<ShareableGroup[]>,
+  internalSelectedGroups$: State<ReadonlyMap<string, SelectedGroup>>,
+): ChatThreadSharingSignals["selectRange$"] {
+  return command(
+    (
+      { get, set },
+      startEventId: string,
+      endEventId: string,
+    ): SetSharedThreadSelectionResult => {
+      const groups = get(shareableGroups$);
+      const start = groups.findIndex((group) => {
+        return group.events.some((event) => {
+          return event.id === startEventId;
+        });
+      });
+      const end = groups.findIndex((group) => {
+        return group.events.some((event) => {
+          return event.id === endEventId;
+        });
+      });
+      if (start === -1 || end === -1) {
+        return "selected";
+      }
+      const next = selectedGroupsFor(
+        groups.slice(Math.min(start, end), Math.max(start, end) + 1),
+      );
+      if (next === null) {
+        return "too-large";
+      }
+      set(internalSelectedGroups$, next);
+      return "selected";
+    },
+  );
+}
+
+function createSelectAllCommand(
+  shareableGroups$: Computed<ShareableGroup[]>,
+  internalSelectedGroups$: State<ReadonlyMap<string, SelectedGroup>>,
+): ChatThreadSharingSignals["selectAll$"] {
+  return command(({ get, set }): SetSharedThreadSelectionResult => {
+    const next = selectedGroupsFor(get(shareableGroups$));
+    if (next === null) {
+      return "too-large";
+    }
+    set(internalSelectedGroups$, next);
+    return "selected";
+  });
+}
+
+function createSharingEventIds(
+  shareableGroups$: Computed<ShareableGroup[]>,
+): Computed<Set<string>> {
+  return computed((get) => {
+    return new Set(
+      get(shareableGroups$).flatMap((group) => {
+        return group.events.map((event) => {
+          return event.id;
+        });
+      }),
+    );
+  });
+}
+
+function isPersistedPrompt(event: ChatEventGroup["events"][number]): boolean {
+  return (
+    event.seqId !== undefined &&
+    (event.eventType === "input.prompt" ||
+      event.eventType === "input.automation")
+  );
+}
+
+/** The assistant events plus the prompt events of the preceding user group. */
+function messageShareEventIds(
+  groups: readonly ChatEventGroup[],
+  assistantEventIds: readonly string[],
+): readonly string[] {
+  const firstEventId = assistantEventIds[0];
+  const groupIndex = groups.findIndex((group) => {
+    return group.events.some((event) => {
+      return event.id === firstEventId;
+    });
+  });
+  let userGroup: ChatEventGroup | undefined;
+  for (let index = groupIndex - 1; index >= 0 && !userGroup; index -= 1) {
+    if (groups[index]?.role === "user") {
+      userGroup = groups[index];
+    }
+  }
+  const promptEventIds = (userGroup?.events ?? [])
+    .filter(isPersistedPrompt)
+    .map((event) => {
+      return event.id;
+    });
+  return [...promptEventIds, ...assistantEventIds];
+}
+
+function sharedThreadUrl(id: string): string {
+  return `${window.location.origin}/share/threads/${id}`;
+}
+
+function createShareMessageCommand(
+  threadId: string,
+  allChatGroups$: Computed<ChatEventGroup[]>,
+): ChatThreadSharingSignals["shareMessage$"] {
+  return command(
+    async (
+      { get },
+      assistantEventIds: readonly string[],
+      signal: AbortSignal,
+    ): Promise<boolean> => {
+      if (assistantEventIds.length === 0) {
+        return false;
+      }
+      const eventIds = messageShareEventIds(
+        get(allChatGroups$),
+        assistantEventIds,
+      );
+      const id = crypto.randomUUID();
+      // Start the clipboard write synchronously in the user gesture. Waiting
+      // for the API first would lose the gesture in Safari.
+      const copied = writeToClipboard(sharedThreadUrl(id));
+      const client = get(apiClient$)(sharedThreadsContract);
+      const [copySucceeded, result] = await Promise.all([
+        copied,
+        accept(
+          client.create({
+            params: { threadId },
+            body: { eventIds: [...eventIds], id },
+            fetchOptions: { signal },
+          }),
+          [201, 400, 403, 404, 409, 413],
+          signal,
+        ),
+      ]);
+      signal.throwIfAborted();
+      if (!copySucceeded) {
+        toast.error(
+          i18n.t(($) => {
+            return $.chat.sharing.copyFailed;
+          }),
+        );
+      }
+      if (result.status !== 201) {
+        toast.error(
+          i18n.t(($) => {
+            return $.chat.sharing.messageShareFailed;
+          }),
+        );
+        return false;
+      }
+      return copySucceeded;
+    },
+  );
 }
 
 function createShareCommand(
@@ -177,11 +405,12 @@ export function createChatThreadSharingSignals(
     new Map(),
   );
   const internalCreatedSharedThreadId$ = state<string | null>(null);
-  const sharingEventIds$ = computed((get) => {
+  const shareableGroups$ = computed((get) => {
     // Use the complete transcript: scrolling a selected row out of the render
     // window must not remove it from the share.
-    return shareableEventIds(get(allChatGroups$));
+    return shareableGroups(get(allChatGroups$));
   });
+  const sharingEventIds$ = createSharingEventIds(shareableGroups$);
   const selectedGroups$ = computed((get) => {
     const selected = get(internalSelectedGroups$);
     if (selected.size === 0) {
@@ -252,12 +481,28 @@ export function createChatThreadSharingSignals(
     },
   );
 
+  const selectAll$ = createSelectAllCommand(
+    shareableGroups$,
+    internalSelectedGroups$,
+  );
+
+  const clear$ = command(({ set }) => {
+    set(internalSelectedGroups$, new Map());
+  });
+
+  const selectRange$ = createSelectRangeCommand(
+    shareableGroups$,
+    internalSelectedGroups$,
+  );
+
   const create$ = createShareCommand(
     threadId,
     selectedGroups$,
     internalCreatedSharedThreadId$,
     internalPhase$,
   );
+
+  const shareMessage$ = createShareMessageCommand(threadId, allChatGroups$);
 
   return {
     phase$: computed((get) => {
@@ -281,6 +526,10 @@ export function createChatThreadSharingSignals(
     start$,
     close$,
     toggle$,
+    selectAll$,
+    clear$,
+    selectRange$,
     create$,
+    shareMessage$,
   };
 }

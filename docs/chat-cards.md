@@ -677,7 +677,7 @@ provider's CDP URL is reserved for the Okou CLI to connect `agent-browser` and
 is never returned by the card read, lease, or resume endpoints, nor printed in
 CLI output.
 
-### Stateful actions: Browser input and direct interaction
+### Stateful actions: Browser input
 
 A Browser input action matches `/browser/actions/:requestToken` with exact
 `agentId`, `threadId`, and `callbackPrompt` query claims. The parser accepts it
@@ -687,44 +687,44 @@ state, safe site origin, and display-field metadata before the card becomes
 actionable. Malformed, mismatched, unsupported, expired, or feature-disabled
 requests render an inert state.
 
-The fixed-height transcript card opens its native controls in
-`ChatCardDetails`; the authenticated full-page route exposes the same form
-after an explicit entry action. Both entries call the token-only Browser
-preflight before mounting any editable field. A confirmed page or control
-change makes the request stale; a temporary provider failure leaves a Retry
-action. The form does not poll while open, and submit revalidates the exact
-target before writing. Repeated occurrences of an equivalent action share one
-thread-scoped signals object, including the in-memory draft and mutation lock.
-Closing the dialog preserves text, username, and one-time-code fields for that
-page lifetime but clears password fields. Terminal and non-retryable states
-clear the complete draft, and nothing is persisted across page reload.
+The fixed-height transcript card links to the authenticated full-page form in
+a new tab. The full-page route automatically calls the token-only Browser
+preflight before mounting any editable field. Preflight returns the observed
+textarea or input subtype and current site constraints, including multiple
+email addresses and number `min`, `max`, and `step` attributes. The form uses
+that verified control rather than guessing from the Agent's semantic field
+kind. A confirmed page or control change makes the
+request stale; a temporary provider failure leaves a Retry action. The form
+does not poll while open, and submit revalidates the exact target and site
+constraints before writing. The draft and mutation lock are local to the form
+page, while the API serializes effects across tabs. Password fields clear when
+the form unmounts, terminal and non-retryable states clear the complete draft,
+and nothing is persisted across page reload.
 
-Apply or cancel completes before the card sends its normal chat callback.
+General number fields use the same form and Input styling as other controls,
+with a native number input and browser validity feedback. Their values remain
+strings throughout the handoff; optional number fields distinguish untouched
+from an explicit clear. One-time codes remain text inputs so leading zeroes
+survive. The inline transcript card remains a link to the standalone form.
+
+Apply or cancel completes before the form sends its normal chat callback.
 Request-owned event IDs make callback-only Continue retries idempotent without
 repeating the Browser mutation or retaining submitted values. Terminal action
 reads resolve callback delivery from the matching canonical Chat input event in
-the owning thread. A mounted terminal card with an unconfirmed callback refreshes
-when its page regains focus or visibility, so completing a standalone action
-updates the original transcript card on return. The Platform and API both
-enforce `BrowserNativeInput`.
+the owning thread. A pending transcript input card or terminal card with an
+unconfirmed callback refreshes when its page regains focus or visibility, so
+completing a standalone action updates the original transcript card on return.
+The standalone form keeps its draft mounted when the user switches tabs; submit
+revalidates the Browser target. The Platform and API both enforce
+`BrowserNativeInput`.
 
-A verified `direct_interaction` response uses the same action URL, ownership
-checks, mutation lock, and callback-only recovery, but it never carries or
-collects input values. The compact transcript card shows the API-provided
-reason and opens its Browser handoff in `ChatCardDetails`, preserving the
-card's fixed geometry while the existing thread-owned `BrowserSessionCard`
-loads. That Browser card keeps its normal sidebar behavior. The authenticated
-standalone action route shows the same handoff directly and opens the existing
-`/browsers/:threadId` full-page viewer in a new tab so Done and Cancel remain
-available on the action page.
-
-Done calls the direct-action completion endpoint before sending the URL's
-bounded callback prompt and stable success event IDs. Cancel records the
-terminal state before sending the fixed direct-interaction cancellation prompt
-with stable cancellation IDs. A failed callback exposes Continue without
-repeating either Browser mutation. Neither path adds a Browser-opening action
-endpoint, captures page or DOM state, or changes the existing Browser viewer
-and lease ownership.
+For direct Browser takeover, the agent shares the current `okou browser view`
+link and explains the step in its response. The user opens the existing thread
+Browser card or viewer, then replies in chat when finished or blocked. The
+ordinary user message starts the next agent round; no Browser user-action
+request or Done/Cancel callback is created. Browser reconciliation removes
+retired direct-action rows in bounded batches even while their Browser remains
+live, so old action URLs become unavailable without blocking Browser cleanup.
 
 ## Adding a Card Type
 

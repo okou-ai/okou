@@ -60,6 +60,7 @@ export interface ThreadMeta {
   readonly agentId: string;
   readonly title: string | null;
   readonly pinnedAt: string | null;
+  readonly archived: boolean;
   readonly selectedModel: string | null;
   readonly modelSettings: ModelSettings;
   readonly serviceTier: "priority" | null;
@@ -336,6 +337,7 @@ const canonicalThreadMetaMap$ = computed((get) => {
       agentId: thread.agentId,
       title: thread.title,
       pinnedAt: thread.pinnedAt,
+      archived: thread.archived,
       selectedModel: thread.selectedModel,
       modelSettings: thread.modelSettings,
       serviceTier: thread.serviceTier,
@@ -371,6 +373,8 @@ function threadMetaFromMetadata(metadata: ChatThreadMetadata): ThreadMeta {
     agentId: metadata.agentId,
     title: metadata.title,
     pinnedAt: metadata.pinnedAt,
+    // An API from before archiving omits the flag (#36551).
+    archived: metadata.archived ?? false,
     selectedModel: metadata.selectedModel,
     modelSettings: metadata.modelSettings,
     serviceTier: metadata.serviceTier,

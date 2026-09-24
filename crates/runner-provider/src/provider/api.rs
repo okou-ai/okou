@@ -1148,11 +1148,14 @@ fn eligible_poll_transport_error(error: &ProviderError) -> Option<&ApiTransportE
     let ProviderError::ApiTransport(api_error) = error else {
         return None;
     };
-    matches!(
+    let retryable = matches!(
         api_error.failure_kind,
         ApiFailureKind::Timeout | ApiFailureKind::Connect
-    )
-    .then_some(api_error)
+    ) || matches!(
+        (api_error.failure_kind, api_error.failure_cause),
+        (ApiFailureKind::Request, ApiTransportCause::ConnectionReset)
+    );
+    retryable.then_some(api_error)
 }
 
 fn log_retryable_poll_failure(
@@ -1165,7 +1168,7 @@ fn log_retryable_poll_failure(
     let failure_elapsed_ms = duration_ms(observation.failure_elapsed);
 
     if observation.emit_degradation {
-        warn!(
+        error!(
             endpoint = request.endpoint_label,
             method = %request.method,
             host = %request.host,
@@ -2601,7 +2604,10 @@ mod tests {
         }
     }
 
-    fn poll_transport_error(failure_kind: ApiFailureKind) -> ProviderError {
+    fn poll_transport_error_with_cause(
+        failure_kind: ApiFailureKind,
+        failure_cause: ApiTransportCause,
+    ) -> ProviderError {
         ProviderError::ApiTransport(Box::new(ApiTransportError {
             request: crate::error::ApiRequestContext {
                 endpoint_label: "poll",
@@ -2613,9 +2619,13 @@ mod tests {
                 client_version: env!("CARGO_PKG_VERSION").to_string(),
             },
             failure_kind,
-            failure_cause: synthetic_transport_cause(failure_kind),
+            failure_cause,
             summary: format!("synthetic {} failure", failure_kind.as_str()),
         }))
+    }
+
+    fn poll_transport_error(failure_kind: ApiFailureKind) -> ProviderError {
+        poll_transport_error_with_cause(failure_kind, synthetic_transport_cause(failure_kind))
     }
 
     fn heartbeat_transport_error_with_cause(
@@ -2670,6 +2680,13 @@ mod tests {
             }
         }
 
+        fn degraded_level(self) -> Level {
+            match self {
+                Self::Poll => Level::ERROR,
+                Self::Heartbeat => Level::WARN,
+            }
+        }
+
         fn recovery_message(self) -> &'static str {
             match self {
                 Self::Poll => "poll fallback recovered",
@@ -2679,7 +2696,10 @@ mod tests {
 
         fn transport_error(self) -> ProviderError {
             match self {
-                Self::Poll => poll_transport_error(ApiFailureKind::Timeout),
+                Self::Poll => poll_transport_error_with_cause(
+                    ApiFailureKind::Request,
+                    ApiTransportCause::ConnectionReset,
+                ),
                 Self::Heartbeat => heartbeat_transport_error(ApiFailureKind::Timeout),
             }
         }
@@ -2935,7 +2955,7 @@ mod tests {
             assert_eq!(path_events.len(), 4, "path={path:?}; events={events:#?}");
             assert_eq!(path_events[0].level, Level::INFO, "path={path:?}");
             assert_eq!(path_events[1].level, Level::INFO, "path={path:?}");
-            assert_eq!(path_events[2].level, Level::WARN, "path={path:?}");
+            assert_eq!(path_events[2].level, path.degraded_level(), "path={path:?}");
             assert_eq!(path_events[3].level, Level::INFO, "path={path:?}");
             for (event, expected_count) in path_events.iter().zip(1_u64..=4) {
                 assert_eq!(
@@ -2965,7 +2985,7 @@ mod tests {
             assert_eq!(
                 path_events
                     .iter()
-                    .filter(|event| event.level == Level::WARN)
+                    .filter(|event| event.level == path.degraded_level())
                     .count(),
                 1,
                 "path={path:?}"
@@ -3015,7 +3035,7 @@ mod tests {
                 later_events
                     .iter()
                     .filter(|event| {
-                        event.level == Level::WARN
+                        event.level == path.degraded_level()
                             && event
                                 .fields
                                 .get("message")
@@ -3237,10 +3257,17 @@ mod tests {
             (PollReason::Fast, "fast"),
         ];
 
-        for failure_kind in [ApiFailureKind::Timeout, ApiFailureKind::Connect] {
+        for (failure_kind, failure_cause) in [
+            (ApiFailureKind::Timeout, ApiTransportCause::Timeout),
+            (
+                ApiFailureKind::Connect,
+                ApiTransportCause::ConnectionRefused,
+            ),
+            (ApiFailureKind::Request, ApiTransportCause::ConnectionReset),
+        ] {
             for (reason, expected_reason) in reasons {
                 let provider = idle_api_provider_for_test();
-                let error = poll_transport_error(failure_kind);
+                let error = poll_transport_error_with_cause(failure_kind, failure_cause);
                 let (_, events) = capture_api_provider_events(provider.record_poll_failure_at(
                     reason,
                     &error,
@@ -3263,10 +3290,7 @@ mod tests {
                     env!("CARGO_PKG_VERSION")
                 );
                 assert_eq!(event_field(event, "failure_kind"), failure_kind.as_str());
-                assert_eq!(
-                    event_field(event, "failure_cause"),
-                    synthetic_transport_cause(failure_kind).as_str()
-                );
+                assert_eq!(event_field(event, "failure_cause"), failure_cause.as_str());
                 assert_eq!(event_field(event, "poll_reason"), expected_reason);
                 assert_eq!(event_field(event, "consecutive_failures"), "1");
                 assert_eq!(event_field(event, "failure_elapsed_ms"), "0");
@@ -3298,6 +3322,10 @@ mod tests {
             .await;
         let unsupported_errors = [
             poll_transport_error(ApiFailureKind::Request),
+            poll_transport_error_with_cause(
+                ApiFailureKind::Body,
+                ApiTransportCause::ConnectionReset,
+            ),
             poll_transport_error(ApiFailureKind::Body),
             poll_transport_error(ApiFailureKind::Unknown),
             ProviderError::ApiStatus(Box::new(ApiStatusError {
@@ -3373,7 +3401,7 @@ mod tests {
         ))
         .await;
         let transition = captured_event(&transition_events, "poll fallback degraded");
-        assert_eq!(transition.level, Level::WARN);
+        assert_eq!(transition.level, Level::ERROR);
         assert_eq!(event_field(transition, "consecutive_failures"), "2");
     }
 
@@ -3907,7 +3935,10 @@ mod tests {
         provider
             .record_poll_failure_at(
                 PollReason::Immediate,
-                &poll_transport_error(ApiFailureKind::Timeout),
+                &poll_transport_error_with_cause(
+                    ApiFailureKind::Request,
+                    ApiTransportCause::ConnectionReset,
+                ),
                 started_at,
             )
             .await;

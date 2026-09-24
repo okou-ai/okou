@@ -21,8 +21,8 @@ import { openSshAccessManagement$ } from "../../signals/ssh.ts";
 import { openVncAccessManagement$ } from "../../signals/vnc-access.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { SshCredentials, SshDialog, SshHosts } from "./ssh-connector-page.tsx";
-import { VncCredentials, VncHosts } from "./vnc-connector-page.tsx";
+import { SshCredentials, SshDialog, SshHosts } from "./ssh-management.tsx";
+import { VncCredentials, VncHosts } from "./vnc-management.tsx";
 import { VncDialog } from "./vnc-dialog.tsx";
 import {
   CloudflareAccessConfigs,

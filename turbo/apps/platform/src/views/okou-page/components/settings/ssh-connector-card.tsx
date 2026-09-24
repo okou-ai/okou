@@ -38,12 +38,13 @@ export function SshConnectorCard({
       interactive
       action={
         <Link
-          pathname={ROUTES.connectorSsh}
-          options={
-            configuredCount === 0
-              ? { searchParams: new URLSearchParams({ add: "1" }) }
-              : undefined
-          }
+          pathname={ROUTES.connectors}
+          options={{
+            searchParams: new URLSearchParams({
+              scope: "remote-control",
+              type: "ssh",
+            }),
+          }}
           aria-label={t(($) => {
             return $.ssh.manage;
           })}

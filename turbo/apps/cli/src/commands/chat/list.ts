@@ -16,6 +16,7 @@ const MAX_LIMIT = 100;
 interface ListOptions {
   readonly agent?: string;
   readonly allAgents?: boolean;
+  readonly archived?: boolean;
   readonly json?: boolean;
   readonly limit?: string;
   readonly unread?: boolean;
@@ -69,6 +70,7 @@ export const listCommand = new Command()
   .option("--agent <id>", "Filter by agent ID (defaults to OKOU_AGENT_ID)")
   .option("--all-agents", "List threads across all agents in the current org")
   .option("--unread", "List the latest 50 unread threads from the past 7 days")
+  .option("--archived", "List only archived threads")
   .option(
     "--limit <n>",
     `Maximum number of threads to print (default: ${DEFAULT_LIMIT}, max: ${MAX_LIMIT})`,
@@ -82,6 +84,7 @@ Examples:
   List another agent:       okou chat list --agent <agent-id>
   List unread chats:        okou chat list --unread
   Unread across all agents: okou chat list --unread --all-agents
+  List archived chats:      okou chat list --archived
   Limit the output:         okou chat list --limit 10
   Print JSON:               okou chat list --json
 
@@ -109,12 +112,12 @@ Notes:
           ? DEFAULT_LIMIT
           : parseBoundedLogCount(options.limit, "--limit", 1, MAX_LIMIT);
       const allThreads = await syncCachedChatThreads();
-      const agentThreads =
-        agentId === undefined
-          ? allThreads
-          : allThreads.filter((thread) => {
-              return thread.agentId === agentId;
-            });
+      const agentThreads = allThreads.filter((thread) => {
+        return (
+          (agentId === undefined || thread.agentId === agentId) &&
+          (!options.archived || thread.archived)
+        );
+      });
       let matchingThreads: readonly (
         | EventDrivenChatThread
         | UnreadChatThread
@@ -151,7 +154,9 @@ Notes:
           chalk.dim(
             options.unread
               ? "No unread chat threads found"
-              : "No chat threads found",
+              : options.archived
+                ? "No archived chat threads found"
+                : "No chat threads found",
           ),
         );
         return;
@@ -163,6 +168,7 @@ Notes:
         ...(options.unread ? ["UNREAD AT".padEnd(20)] : []),
         "SORTED".padEnd(20),
         "PINNED".padEnd(6),
+        "ARCHIVED".padEnd(8),
         "TITLE",
       ].join("  ");
       console.log(chalk.dim(header));
@@ -176,6 +182,7 @@ Notes:
               : []),
             formatIsoTimestamp(thread.sortAt).padEnd(20),
             (thread.pinnedAt === null ? "-" : "yes").padEnd(6),
+            (thread.archived ? "yes" : "-").padEnd(8),
             titleForDisplay(thread.title),
           ].join("  "),
         );

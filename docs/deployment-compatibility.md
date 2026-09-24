@@ -1,6 +1,6 @@
 # Deployment Compatibility
 
-## Codex OAuth workspace ID preparation
+## Codex 0.156.1 OAuth workspace routing
 
 The API supplies the selected workspace ID as `CODEX_OAUTH_ACCOUNT_ID` for
 Codex OAuth runs. The guest writes that ID into `auth.json` and both placeholder
@@ -8,13 +8,39 @@ JWT claims. Access and refresh tokens remain placeholders; the firewall still
 injects real credentials into outbound requests.
 
 The API retains the existing placeholder `CHATGPT_ACCOUNT_ID` for the firewall
-and Pi. This preparatory change keeps the Runner on Codex 0.155.1. An older
-Runner ignores the additive field; a newer Runner served by an older API, or
-claiming a context queued before API promotion, retains the original
-placeholder account ID when the new field is absent. An explicitly empty field
-is rejected as a broken API contract. Deploy this compatible change first;
-upgrade Codex to 0.156.1 only after the API rollout and old claimable contexts
-have drained. The follow-up upgrade and fallback removal are tracked by #36420.
+and Pi. PR #36402 deployed the additive ID field while the Runner stayed on
+Codex 0.155.1. The Runner now upgrades to 0.156.1 after that API rollout and
+old claimable contexts have drained. An older Runner ignores the additive field.
+A newer Runner served by an older API, or claiming a context without the field,
+still writes the original placeholder account ID; that combination is not
+supported with Codex 0.156.1 and may fail workspace routing. An explicitly
+empty field remains rejected. API rollback before #36402 therefore also
+requires rolling back the Runner. Removing the missing-field compatibility
+branch is tracked by #36420.
+
+## Chat thread archived flag (2026-09-24)
+
+Migration `1208_chat_thread_archived` adds `chat_threads.archived` (default
+`false`) and the `archived` / `unarchived` thread event kinds. It does not
+backfill: chats whose title starts with ✅ stay unarchived, and archiving no
+longer rewrites titles. Snapshot, metadata and replay readers treat an absent
+`archived` field as `false`, so snapshots compacted before this migration and
+responses from an older API remain valid. Those tolerant reads are rollout
+fallbacks tracked for removal by #36551.
+
+Old API code after the migration stays legal: the column has a default and the
+enum values are additive. New API code must not be promoted before the
+migration, because thread metadata, snapshot compaction and user export read
+`archived` unconditionally; the normal migration-before-promotion release order
+covers this.
+
+Only the new archive routes append the new event kinds, and those routes, the
+CLI commands that call them and the Web archive controls are all behind the
+`ChatThreadArchiving` switch. Web bundles, CLI builds
+and iOS builds from before this change parse thread event kinds strictly and
+fail to read a stream that contains an archive event until they update. A
+rollback of the API below this change leaves already appended archive events in
+the stream for those older readers; roll forward instead.
 
 ## Chat thread snapshot R2 handoff (2026-09-23)
 
@@ -619,6 +645,37 @@ rather than copying its bytes into a snapshot. This matches the behavior the
 `privateArtifacts` switch already produced when it was off, so an older API or
 App serving beside this one stays consistent. Existing private hosted
 deployments keep their rows and readers.
+
+Historical named HTML snapshot aliases can be converted to the same rolling
+public-site model. A new public upload may replace its own site's `publication`
+alias after validating the database owner, site, brand, source deployment,
+policy and retained token alias. It publishes the active pointer before changing
+the named registry record to `legacy-site`; conditional writes and site/share
+row locks preserve unrelated aliases and make interrupted completions retryable.
+An older completion also retains a newer R2 pointer if a previous database
+transaction failed after publishing it. The named URL and its download both
+follow the active deployment; `dpl-<deployment-id>` URLs remain immutable.
+
+The HTML delivery registry now bypasses the Worker's former 24-hour cache,
+including entries warmed by an older Worker. Deploy that Worker and the API
+writer change, and drain older serving API instances, before running the
+[bounded historical pointer migration](../turbo/packages/db/scripts/migrations/018-hosted-publication-pointers/README.md).
+The migration bootstraps the currently public snapshot without changing its
+bytes or presentation kind, verifies one canary before the remaining sites,
+and has no schema migration. Production execution uses an explicit reviewed
+site list and a private saved plan; public Actions artifacts contain only
+aggregate results. Deployment of this code does not run the migration.
+
+Old HTML share writes to Public or Organization return an actionable `400`;
+owner revocation remains supported. Snapshot policies lose only their named
+`publicSlug` during conversion, so the retained token still reads that snapshot
+and can be revoked independently of the public site. A fresh owner upload may
+replace its own revoked snapshot alias without reviving the token, but the
+historical bootstrap refuses revoked snapshots. File sharing is unchanged.
+Do not restore the older HTML snapshot writer after conversion: it can claim
+the named alias again or reject a redeploy. Roll forward with these ownership,
+token-reader and registry-cache fixes retained; never revert a migrated alias
+after its site has accepted a newer publication.
 
 Delivery caches accordingly. HTML documents are served `no-store` on public
 aliases, private previews and shared snapshots, because a redeploy replaces them
@@ -3556,7 +3613,7 @@ data operation.
 The row is deliberately not an audit record. Its token hash is the primary
 key; searchable ownership, agent/thread authorization, provider-session
 identity, state, the strict versioned payload, and the two operational
-transition timestamps are the only persisted fields. Variant-specific callback
+transition timestamps are the only persisted fields. Input callback identities
 and exact-target data live only in that payload. Do not add a copied Browser
 expiry, originating run, diagnostic reason, or created/updated timestamps.
 
@@ -3589,12 +3646,20 @@ capture no page or DOM metadata and have no open endpoint. The existing
 thread-scoped Browser card opens the current Browser and its normal viewer
 heartbeat owns Browser access and lease renewal.
 
-The native input preflight endpoint is additive under the same switch. Deploy
-the API before a Platform build that requires preflight to open the editable
-form. An older Platform on the newer API still relies on the unchanged submit
-validation. Preflight performs one bounded provider lookup and read-only CDP
-connection per explicit form entry. A confirmed target mismatch marks a pending
-request stale; transient provider failures leave it pending for retry.
+The native input preflight endpoint uses the same team-only switch. It performs
+one bounded provider lookup and read-only CDP connection per explicit form
+entry, returning the verified control subtype and current applicable site
+constraints. A confirmed target mismatch marks a pending request stale;
+transient provider failures leave it pending for retry. The editable form uses
+that preflight response. Apply rechecks site constraints before any mutation.
+Per `docs/fallback.md`, this pre-GA feature does not require compatibility with
+earlier Platform, API, or persisted-action shapes.
+The general number field kind expands the strict shared request and preflight
+response contract while `BrowserNativeInput` remains team-only. The API derives
+number `min`, `max`, and `step` from the live control, transports submitted
+values as strings, and accepts an explicit empty value only for an optional
+number field. Existing persisted version-1 actions remain readable; no schema
+migration or old-client compatibility branch is required for this pre-GA change.
 
 The Browser action GET response can also report `callbackDelivered` for a
 terminal success or cancellation. It derives this fact from the matching

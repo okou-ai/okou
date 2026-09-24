@@ -35,6 +35,7 @@ import {
   pgIntegerDecoder,
 } from "../../lib/db-structured-result";
 import { executeRawRows } from "../../lib/db-raw-rows";
+import type { HostedSitePointer } from "../../lib/hosted-site-pointer";
 import { type Db, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import type { Tx } from "../../lib/db-types";
@@ -44,7 +45,11 @@ import {
   putHostedSitesS3Object,
 } from "../external/s3";
 import { nowDate } from "../../lib/time";
-import { registerLegacyHostedSite$ } from "./artifact-delivery.service";
+import {
+  ArtifactDeliveryAliasConflict,
+  registerLegacyHostedSite$,
+} from "./artifact-delivery.service";
+import { publishHostedSitePointer$ } from "./hosted-site-publication-migration.service";
 import {
   scheduleArtifactPreviewRender$,
   type RenderArtifactPreviewArgs,
@@ -165,20 +170,6 @@ type GetHostedSiteDeploymentsResult =
     }
   | { readonly status: "not_found"; readonly message: string };
 
-interface ActiveSitePointer {
-  readonly version: 1;
-  readonly publicBrand: PublicBrand;
-  readonly publicSlug: string;
-  readonly siteId: string;
-  readonly deploymentId: string;
-  readonly deploymentVersion?: number;
-  readonly artifactUrl?: string;
-  readonly prefix: string;
-  readonly manifestKey: string;
-  readonly spaFallback: boolean;
-  readonly updatedAt: string;
-}
-
 type HostedSiteRow = typeof hostedSites.$inferSelect;
 type HostedDeploymentRow = typeof hostedDeployments.$inferSelect;
 type HostedSiteFile = HostedSitePrepareRequest["files"][number];
@@ -276,13 +267,6 @@ function deploymentUrl(publicBrand: PublicBrand, deploymentId: string): string {
 
 function pointerNamespace(publicBrand: PublicBrand): string {
   return publicBrand === "okou" ? "sites/brands/okou" : "sites";
-}
-
-function activePointerKey(
-  publicBrand: PublicBrand,
-  publicSlug: string,
-): string {
-  return `${pointerNamespace(publicBrand)}/${publicSlug}/active.json`;
 }
 
 function immutableDeploymentPointerKey(
@@ -448,6 +432,9 @@ async function resolveHostedDeploymentForCompletion(
       and(
         eq(hostedDeployments.id, args.deploymentId),
         eq(hostedDeployments.orgId, args.orgId),
+        eq(hostedDeployments.userId, args.userId),
+        eq(hostedSites.userId, args.userId),
+        isNull(hostedSites.deletedAt),
       ),
     )
     .limit(1);
@@ -1060,7 +1047,7 @@ function activeSitePointerForDeployment(
   deployment: HostedDeploymentRow,
   manifestKey: string,
   readyAt: Date,
-): ActiveSitePointer {
+): HostedSitePointer {
   const deploymentVersion = legacyHostedDeploymentVersion(deployment.manifest);
   return {
     version: 1,
@@ -1109,12 +1096,12 @@ async function loadActiveHostedDeploymentVersion(
 
 const bindHostedSiteDeployment$ = command(
   (
-    { get, set },
+    { set },
     args: {
       readonly bucket: string;
       readonly deployment: HostedDeploymentRow;
       readonly orgId: string;
-      readonly pointer: ActiveSitePointer;
+      readonly pointer: HostedSitePointer;
       readonly readyAt: Date;
     },
     signal: AbortSignal,
@@ -1135,6 +1122,16 @@ const bindHostedSiteDeployment$ = command(
       if (!site) {
         throw new Error("Hosted site not found for deployment");
       }
+      if (
+        site.deletedAt !== null ||
+        site.userId !== args.deployment.userId ||
+        site.publicBrand !== args.deployment.publicBrand ||
+        site.publicSlug !== args.deployment.manifest.publicSlug
+      ) {
+        throw new ArtifactDeliveryAliasConflict(
+          "Hosted deployment no longer matches its owned site",
+        );
+      }
 
       const activeDeploymentVersion = await loadActiveHostedDeploymentVersion(
         tx,
@@ -1152,32 +1149,14 @@ const bindHostedSiteDeployment$ = command(
           ? activeDeploymentVersion === null
           : activeDeploymentVersion === null ||
             deploymentVersion >= activeDeploymentVersion);
-      if (shouldBind) {
-        await set(
-          registerLegacyHostedSite$,
-          {
-            alias: args.deployment.manifest.publicSlug,
-            publicBrand: args.deployment.publicBrand,
-            pointerKey: activePointerKey(
-              args.deployment.publicBrand,
-              args.deployment.manifest.publicSlug,
-            ),
-          },
-          signal,
-        );
-        await get(
-          putHostedSitesS3Object(
-            args.bucket,
-            activePointerKey(
-              args.deployment.publicBrand,
-              args.deployment.manifest.publicSlug,
-            ),
-            JSON.stringify(args.pointer, null, 2),
-            "application/json",
-          ),
-        );
-        signal.throwIfAborted();
-      }
+      const published = shouldBind
+        ? await set(
+            publishHostedSitePointer$,
+            { tx, site, bucket: args.bucket, pointer: args.pointer },
+            signal,
+          )
+        : null;
+      signal.throwIfAborted();
 
       const deploymentTable = args.deployment.manifest.access
         ? privateHostedDeployments
@@ -1191,21 +1170,32 @@ const bindHostedSiteDeployment$ = command(
           error: null,
         })
         .where(eq(deploymentTable.id, args.deployment.id));
-      if (shouldBind) {
+      if (published) {
+        // A prior attempt may have published a newer pointer before its DB
+        // transaction failed. Recover that public version without regressing it.
+        if (published.deploymentId !== args.deployment.id) {
+          await tx
+            .update(hostedDeployments)
+            .set({
+              status: "ready",
+              readyAt: args.readyAt,
+              updatedAt: args.readyAt,
+              error: null,
+            })
+            .where(eq(hostedDeployments.id, published.deploymentId));
+        }
         await tx
           .update(hostedSites)
           .set({
-            activeDeploymentId: args.deployment.id,
+            activeDeploymentId: published.deploymentId,
             updatedAt: args.readyAt,
           })
           .where(eq(hostedSites.id, args.deployment.siteId));
       }
       return {
-        activeDeploymentId: shouldBind
-          ? args.deployment.id
-          : site.activeDeploymentId,
-        activeDeploymentVersion: shouldBind
-          ? deploymentVersion
+        activeDeploymentId: published?.deploymentId ?? site.activeDeploymentId,
+        activeDeploymentVersion: published
+          ? (published.deploymentVersion ?? null)
           : activeDeploymentVersion,
       };
     });
@@ -1242,9 +1232,54 @@ const publishHostedSiteManifest$ = command(
   },
 );
 
-export const completeHostedSiteDeployment$ = command(
+const publishHostedSiteDeploymentPointers$ = command(
   async (
     { get, set },
+    args: {
+      readonly bucket: string;
+      readonly deployment: HostedDeploymentRow;
+      readonly orgId: string;
+      readonly pointer: HostedSitePointer;
+      readonly readyAt: Date;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { deployment, pointer } = args;
+    if (
+      legacyHostedDeploymentVersion(deployment.manifest) !== null &&
+      !deployment.manifest.access
+    ) {
+      const pointerKey = immutableDeploymentPointerKey(
+        deployment.publicBrand,
+        deployment.id,
+      );
+      await get(
+        putHostedSitesS3Object(
+          args.bucket,
+          pointerKey,
+          JSON.stringify(pointer),
+          "application/json",
+          signal,
+        ),
+      );
+      signal.throwIfAborted();
+      await set(
+        registerLegacyHostedSite$,
+        {
+          alias: `dpl-${deployment.id}`,
+          publicBrand: deployment.publicBrand,
+          pointerKey,
+        },
+        signal,
+      );
+    }
+    return await set(bindHostedSiteDeployment$, args, signal);
+  },
+);
+
+export const completeHostedSiteDeployment$ = command(
+  async (
+    { set },
     args: CompleteDeploymentArgs,
     signal: AbortSignal,
   ): Promise<CompleteDeploymentResult> => {
@@ -1305,41 +1340,44 @@ export const completeHostedSiteDeployment$ = command(
     const deploymentVersion = legacyHostedDeploymentVersion(
       deployment.manifest,
     );
-    if (deploymentVersion !== null && !deployment.manifest.access) {
-      await set(
-        registerLegacyHostedSite$,
+    const promoted = await settle(
+      set(
+        publishHostedSiteDeploymentPointers$,
         {
-          alias: `dpl-${deployment.id}`,
-          publicBrand: deployment.publicBrand,
-          pointerKey: immutableDeploymentPointerKey(
-            deployment.publicBrand,
-            deployment.id,
-          ),
+          bucket: hostedR2.config.bucket,
+          deployment,
+          orgId: args.orgId,
+          pointer,
+          readyAt,
         },
         signal,
-      );
-      await get(
-        putHostedSitesS3Object(
-          hostedR2.config.bucket,
-          immutableDeploymentPointerKey(deployment.publicBrand, deployment.id),
-          JSON.stringify(pointer, null, 2),
-          "application/json",
-        ),
-      );
-      signal.throwIfAborted();
-    }
-
-    const promotion = await set(
-      bindHostedSiteDeployment$,
-      {
-        bucket: hostedR2.config.bucket,
-        deployment,
-        orgId: args.orgId,
-        pointer,
-        readyAt,
-      },
+      ),
       signal,
     );
+    if (!promoted.ok) {
+      if (!(promoted.error instanceof ArtifactDeliveryAliasConflict)) {
+        throw promoted.error;
+      }
+      const deploymentTable = deployment.manifest.access
+        ? privateHostedDeployments
+        : hostedDeployments;
+      await writeDb
+        .update(deploymentTable)
+        .set({
+          status: "failed",
+          error: promoted.error.message,
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(deploymentTable.id, deployment.id),
+            eq(deploymentTable.status, "uploading"),
+          ),
+        );
+      signal.throwIfAborted();
+      return { status: "conflict", message: promoted.error.message };
+    }
+    const promotion = promoted.value;
     signal.throwIfAborted();
 
     const artifactRow = await set(
@@ -1652,6 +1690,14 @@ function hostedDownloadBrand(args: GetHostedSiteFilesArgs): PublicBrand | null {
   return null;
 }
 
+function isPublicHostedSiteUrl(
+  args: GetHostedSiteFilesArgs,
+  deploymentId: string | undefined,
+  registeredSite: boolean,
+): boolean {
+  return registeredSite || (!deploymentId && args.hostname !== undefined);
+}
+
 export const getHostedSiteFiles$ = command(
   async (
     { set },
@@ -1697,8 +1743,12 @@ export const getHostedSiteFiles$ = command(
     }
     // A public site URL identifies its published bytes, including older sites
     // that predate the delivery registry. It cannot select a newer private draft.
-    const legacyUrl = !deploymentId && args.hostname !== undefined;
-    if (!owned && !legacyUrl) {
+    const publicSiteUrl = isPublicHostedSiteUrl(
+      args,
+      deploymentId,
+      publication?.kind === "legacy",
+    );
+    if (!owned && !publicSiteUrl) {
       const shared = await set(
         sharedHostedSiteFiles$,
         args,

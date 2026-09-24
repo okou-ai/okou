@@ -88,7 +88,6 @@ type ActionConnectorCardProps = {
 export interface PermissionConnectorCardItem {
   readonly icon: PublicConnectorCatalogIcon;
   readonly label: string;
-  readonly description: string;
   readonly externalUsername: string | null;
 }
 
@@ -760,15 +759,6 @@ function ActionConnectorCard({
   );
 }
 
-function permissionDescription(description: string): string {
-  return description
-    .replace(/^Connect your \w+ account to /iu, "")
-    .replace(/^access /iu, "")
-    .replace(/^./u, (character) => {
-      return character.toUpperCase();
-    });
-}
-
 function PermissionConnectorCard({
   connector,
   enabled,
@@ -791,11 +781,6 @@ function PermissionConnectorCard({
             @{connector.externalUsername}
           </span>
         ) : undefined
-      }
-      description={
-        connector.description
-          ? permissionDescription(connector.description)
-          : undefined
       }
       enabled={enabled}
       loading={loading}

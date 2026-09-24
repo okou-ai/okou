@@ -13,6 +13,7 @@ import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
+import { buildArtifactKeyV2 } from "../../../lib/file-url";
 import { now } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
@@ -296,31 +297,27 @@ describe("POST /api/uploads/complete", () => {
 
   it("keeps legacy v2 objects without brand metadata on the VM0 CDN", async () => {
     const fixture = await createRunUploadFixture();
-    const prepared = await chat.prepareUpload(fixture.actor, {
-      filename: "财务 报告.pdf",
-      contentType: "application/pdf",
-      size: 17,
-    });
-    const key = `artifacts${new URL(prepared.url).pathname}`;
+    const fileId = randomUUID();
+    const key = buildArtifactKeyV2(fileId, "财务 报告.pdf");
     fixture.objectStore.addObject({
       bucket: "test-user-artifacts",
       key,
       size: 17,
       contentType: "application/pdf",
       metadata: {
-        "artifact-id": prepared.id,
+        "artifact-id": fileId,
         filename: encodeURIComponent("财务 报告.pdf"),
         "user-id": encodeURIComponent(fixture.actor.userId),
       },
     });
     const response = await chat.completeUploadWithBearer(
       fixture.bearer,
-      { id: prepared.id },
+      { id: fileId },
       [200],
     );
 
     expect(response.body).toMatchObject({
-      id: prepared.id,
+      id: fileId,
       filename: "财务 报告.pdf",
       contentType: "application/pdf",
       size: 17,

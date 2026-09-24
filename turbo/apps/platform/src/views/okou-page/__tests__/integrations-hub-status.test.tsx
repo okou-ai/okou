@@ -61,7 +61,7 @@ test("Integrations show current status and refresh after GitHub connects", async
   });
   const browserOpen = context.mocks.browser.open(providerWindow);
 
-  await setupIntegrationsPage(context, { agentPhone: true });
+  await setupIntegrationsPage(context);
 
   await expect(screen.findByText("Slack")).resolves.toBeInTheDocument();
   expect(screen.getByText("Connected (Okou HQ)")).toBeInTheDocument();
@@ -144,13 +144,6 @@ test("Open Telegram settings from Integrations", async () => {
   ).resolves.toBeInTheDocument();
 });
 
-test("Integrations hide AgentPhone when its feature switch is disabled", async () => {
-  await setupIntegrationsPage(context);
-
-  await expect(screen.findByText("Telegram")).resolves.toBeInTheDocument();
-  expect(screen.queryByText("Phone")).not.toBeInTheDocument();
-});
-
 test("A user connects AgentPhone with a prefilled one-time code", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();
   const code = "74290618";
@@ -171,7 +164,7 @@ test("A user connects AgentPhone with a prefilled one-time code", async () => {
     },
   );
 
-  await setupIntegrationsPage(context, { agentPhone: true });
+  await setupIntegrationsPage(context);
 
   const phoneCard = await waitFor(() => {
     return getIntegrationCard("Phone");

@@ -13,6 +13,8 @@ import { Buffer } from "node:buffer";
 import { performance } from "node:perf_hooks";
 import { isDeepStrictEqual } from "node:util";
 
+import { delay } from "signal-timers";
+
 import {
   getSecretNameForType,
   getModelProviderEnvBindings,
@@ -920,6 +922,52 @@ function classifyRefreshFailure(
     errorCode: refreshErrorCodeFromError(error, refreshTimedOut),
     failureReason: refreshFailureReasonFromError(error, refreshTimedOut),
   };
+}
+
+function refreshFailureDiagnostic(
+  error: unknown,
+  signal: AbortSignal,
+): {
+  readonly errorKind:
+    | "timeout"
+    | "oauth_http"
+    | "provider_http"
+    | "provider_response"
+    | "network"
+    | "other";
+  readonly providerStatus: number | null;
+} {
+  if (isRefreshTimeoutError(error, signal)) {
+    return { errorKind: "timeout", providerStatus: null };
+  }
+  if (isOAuthProviderHttpError(error)) {
+    return { errorKind: "oauth_http", providerStatus: error.status };
+  }
+  if (isProviderHttpError(error)) {
+    return { errorKind: "provider_http", providerStatus: error.status };
+  }
+  if (isProviderResponseError(error)) {
+    return { errorKind: "provider_response", providerStatus: null };
+  }
+  if (isFetchNetworkError(error)) {
+    return { errorKind: "network", providerStatus: null };
+  }
+  return { errorKind: "other", providerStatus: null };
+}
+
+function isRetryableGmailRefreshResponse(error: unknown): boolean {
+  if (
+    !isOAuthProviderHttpError(error) ||
+    error.oauthError === "invalid_grant" ||
+    error.status === 429
+  ) {
+    return false;
+  }
+  return (
+    (error.status >= 500 && error.status < 600) ||
+    error.oauthError === "server_error" ||
+    error.oauthError === "temporarily_unavailable"
+  );
 }
 
 function connectorReconnectReasonFromRefreshFailure(
@@ -2700,6 +2748,10 @@ async function markAndReturnRefreshFailure(
   context: RefreshTokenContext,
   error: unknown,
   signal: AbortSignal,
+  retry: {
+    readonly attempted: boolean;
+    readonly firstProviderStatus: number | null;
+  },
 ): Promise<RefreshAccessTokenResult> {
   const connectorAccess = args.connectorAccessBySlug.get(args.accessSourceKey);
   if (
@@ -2727,6 +2779,9 @@ async function markAndReturnRefreshFailure(
       userId: args.userId,
       errorCode,
       failureReason,
+      ...refreshFailureDiagnostic(error, signal),
+      retryAttempted: retry.attempted,
+      firstProviderStatus: retry.firstProviderStatus,
     });
   }
   await markRefreshFailure(
@@ -3052,24 +3107,44 @@ async function refreshPreparedLockedAccessToken(args: {
   const { refreshArgs, prepared, lockedState } = args;
 
   const refreshSignal = firewallAuthRefreshTimeoutSignal();
-  const refreshResult = await settle(
-    refreshPreparedAccessToken(
-      {
-        prepared,
-        inputs: refreshInputsFromLockedState({
-          accessSourceKey: refreshArgs.accessSourceKey,
-          state: lockedState,
-        }),
-      },
-      refreshSignal,
-    ),
+  const inputs = refreshInputsFromLockedState({
+    accessSourceKey: refreshArgs.accessSourceKey,
+    state: lockedState,
+  });
+  let retryAttempted = false;
+  let firstProviderStatus: number | null = null;
+  let refreshResult = await settle(
+    refreshPreparedAccessToken({ prepared, inputs }, refreshSignal),
   );
+  if (
+    !refreshResult.ok &&
+    refreshArgs.sourceType === "connector" &&
+    refreshArgs.accessSourceKey === "gmail" &&
+    !refreshSignal.aborted &&
+    isRetryableGmailRefreshResponse(refreshResult.error)
+  ) {
+    firstProviderStatus = isOAuthProviderHttpError(refreshResult.error)
+      ? refreshResult.error.status
+      : null;
+    const retryDelay = await settleIncludingAbort(
+      delay(250, { signal: refreshSignal }),
+    );
+    if (!retryDelay.ok) {
+      refreshResult = retryDelay;
+    } else {
+      retryAttempted = true;
+      refreshResult = await settle(
+        refreshPreparedAccessToken({ prepared, inputs }, refreshSignal),
+      );
+    }
+  }
   if (!refreshResult.ok) {
     return markAndReturnRefreshFailure(
       refreshArgs,
       prepared.context,
       refreshResult.error,
       refreshSignal,
+      { attempted: retryAttempted, firstProviderStatus },
     );
   }
 
@@ -3079,12 +3154,15 @@ async function refreshPreparedLockedAccessToken(args: {
     result: refreshResult.value,
   });
   if (!outputValidation.ok) {
-    L.warn(outputValidation.message, {
+    L.warn(`${refreshArgs.accessSourceKey} token refresh output invalid`, {
       accessSourceKey: refreshArgs.accessSourceKey,
       orgId: refreshArgs.orgId,
       userId: refreshArgs.userId,
       errorCode: null,
       failureReason: "upstream_provider",
+      errorKind: "provider_response",
+      providerStatus: null,
+      retryAttempted,
     });
     await markRefreshFailure(
       refreshArgs,
@@ -3103,6 +3181,15 @@ async function refreshPreparedLockedAccessToken(args: {
     outputValidation.outputs,
     refreshResult.value,
   );
+  if (retryAttempted) {
+    L.info("gmail token refresh recovered", {
+      accessSourceKey: "gmail",
+      orgId: refreshArgs.orgId,
+      userId: refreshArgs.userId,
+      firstProviderStatus,
+      retryAttempted: true,
+    });
+  }
   const refreshedSecrets = runtimeSecretsFromRefreshResult({
     accessSourceKey: refreshArgs.accessSourceKey,
     context: prepared.context,

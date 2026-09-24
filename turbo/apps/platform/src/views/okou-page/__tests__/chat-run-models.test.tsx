@@ -4,18 +4,15 @@ import {
 } from "@okouai/api-contracts/contracts/billing";
 import {
   getCanonicalModelDisplayName,
+  type ModelProviderResponse,
   type OrgModelPolicy,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE } from "@okouai/api-contracts/contracts/errors";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { runsByIdContract } from "@okouai/api-contracts/contracts/run-routes";
+import { chatThreadModelSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import type { KnownRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
-import type { GetRunResponse } from "@okouai/api-contracts/contracts/runs";
-import {
-  personalModelProviderAccountsByIdContract,
-  personalModelProvidersByTypeContract,
-} from "@okouai/api-contracts/contracts/personal-model-providers";
+import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -47,17 +44,36 @@ const RUN_C = "a0000000-0000-4000-a000-000000000303";
 const RUN_D = "a0000000-0000-4000-a000-000000000304";
 const PROVIDER_ID = "e0000000-0000-4000-a000-000000000301";
 
-function installRecoverySource(source: NonNullable<GetRunResponse["source"]>) {
-  context.mocks.api(runsByIdContract.getById, ({ params, respond }) => {
-    return respond(200, {
-      runId: params.id,
-      status: "failed",
-      prompt: "Continue the analysis",
-      appendSystemPrompt: null,
-      createdAt: "2026-08-01T10:00:02.000Z",
-      source,
-    });
+function configureCodexSubscriptionPolicies(
+  models: readonly SupportedRunModel[],
+): void {
+  configureModelPolicies(models, {
+    credentialScope: "member",
+    defaultModel: models[0],
+    defaultProviderType: "codex-oauth-token",
+    modelProviderId: PROVIDER_ID,
   });
+}
+
+function codexSubscriptionAccount(
+  overrides: Partial<ModelProviderResponse> = {},
+): ModelProviderResponse {
+  return {
+    id: PROVIDER_ID,
+    type: "codex-oauth-token",
+    framework: "codex",
+    secretName: "CHATGPT_ACCESS_TOKEN",
+    authMethod: "oauth",
+    secretNames: ["CHATGPT_ACCESS_TOKEN"],
+    isDefault: true,
+    selectedModel: null,
+    subscriptionResetCredits: 1,
+    needsReconnect: false,
+    lastRefreshErrorCode: null,
+    createdAt: "2026-08-01T09:00:00.000Z",
+    updatedAt: "2026-08-01T09:00:00.000Z",
+    ...overrides,
+  };
 }
 
 function recoveryCard(): Promise<HTMLElement> {
@@ -233,10 +249,11 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
   },
   unsupported_model: {
     title: "Selected model isn't available",
+    action: "Try again",
     picker: true,
   },
   usage_limit: {
-    title: "Codex limit reached",
+    title: "Model provider limit reached",
     action: "Try again",
     picker: true,
   },
@@ -269,13 +286,6 @@ test.each(STRUCTURED_FAILURE_CASES)(
         "gpt-5.6-sol",
         failureReason,
       ),
-    });
-    installRecoverySource({
-      providerType: "built-in",
-      runtimeProviderType: "openai-api-key",
-      model: "gpt-5.6-sol",
-      credentialScope: "org",
-      account: { status: "unknown" },
     });
 
     await setupPage({ context, path: RUN_PATH });
@@ -593,13 +603,6 @@ test("A structured capacity failure offers recovery despite generic provider tex
       "provider_overloaded",
     ),
   });
-  installRecoverySource({
-    providerType: "built-in",
-    runtimeProviderType: "openai-api-key",
-    model: "gpt-5.6-sol",
-    credentialScope: "org",
-    account: { status: "unknown" },
-  });
 
   await setupPage({
     context,
@@ -644,24 +647,10 @@ test.each([
 test("Recover from a personal model account limit", async () => {
   const user = userEvent.setup({ delay: null });
   mockNow(new Date("2026-08-01T10:00:00.000Z"), context.signal);
-  configureModelPolicies(["gpt-5.6-sol", "gpt-5.6-luna"], {
-    credentialScope: "member",
-    defaultModel: "gpt-5.6-sol",
-    defaultProviderType: "codex-oauth-token",
-    modelProviderId: PROVIDER_ID,
-  });
+  configureCodexSubscriptionPolicies(["gpt-5.6-sol", "gpt-5.6-luna"]);
   context.mocks.data.personalModelProviders([
-    {
-      id: PROVIDER_ID,
-      type: "codex-oauth-token",
-      framework: "codex",
-      secretName: "CHATGPT_ACCESS_TOKEN",
-      authMethod: "oauth",
-      secretNames: ["CHATGPT_ACCESS_TOKEN"],
-      isDefault: true,
+    codexSubscriptionAccount({
       selectedModel: "gpt-5.6-sol",
-      createdAt: "2026-08-01T09:00:00.000Z",
-      updatedAt: "2026-08-01T09:00:00.000Z",
       subscriptionUsage: {
         fiveHour: {
           usedPercent: 100,
@@ -677,9 +666,7 @@ test("Recover from a personal model account limit", async () => {
         },
       },
       subscriptionResetCredits: 2,
-      needsReconnect: false,
-      lastRefreshErrorCode: null,
-    },
+    }),
   ]);
   installRunChat({
     selectedModel: "gpt-5.6-sol",
@@ -687,13 +674,6 @@ test("Recover from a personal model account limit", async () => {
       "You've hit your usage limit. Try again at tomorrow noon.",
       "gpt-5.6-sol",
     ),
-  });
-  installRecoverySource({
-    providerType: "codex-oauth-token",
-    runtimeProviderType: null,
-    model: "gpt-5.6-sol",
-    credentialScope: "member",
-    account: { status: "connected", id: PROVIDER_ID },
   });
 
   await setupPage({
@@ -726,6 +706,52 @@ test("Recover from a personal model account limit", async () => {
 
   await expect(screen.findByText("continue")).resolves.toBeVisible();
   await expect(findButton("Stop")).resolves.toBeVisible();
+});
+
+// Opening the thread reads the subscription before the limit exists. The card
+// reports the usage the account has once the limit arrives, not that read.
+test("Show the reset time for a limit reached while the thread is open", async () => {
+  mockNow(new Date("2026-08-01T10:00:00.000Z"), context.signal);
+  const runCreated = context.mocks.deferred<void>();
+  configureCodexSubscriptionPolicies(["gpt-5.6-sol"]);
+  context.mocks.data.personalModelProviders([
+    codexSubscriptionAccount({ accountEmail: "current@example.com" }),
+  ]);
+  const lifecycle = installRunChat({
+    selectedModel: "gpt-5.6-sol",
+    onRunCreate: () => {
+      runCreated.resolve();
+    },
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+  await readyChat();
+  await sendText("Keep analysing");
+  await runCreated.promise;
+
+  context.mocks.data.personalModelProviders([
+    codexSubscriptionAccount({
+      accountEmail: "current@example.com",
+      subscriptionUsage: {
+        fiveHour: {
+          usedPercent: 100,
+          remainingPercent: 0,
+          resetAt: "2026-08-01T12:00:00.000Z",
+          windowSeconds: 18_000,
+        },
+        weekly: null,
+      },
+    }),
+  ]);
+  lifecycle.failRun("You've hit your usage limit.");
+
+  const recovery = await recoveryCard();
+  await expect(
+    within(recovery).findByText(/^resets /iu),
+  ).resolves.toBeInTheDocument();
+  expect(recovery).toHaveTextContent(
+    "Personal subscription current@example.com",
+  );
 });
 
 test("Recover when a model is at capacity", async () => {
@@ -769,109 +795,54 @@ test("Recover when a model is at capacity", async () => {
   await expect(findButton("Stop")).resolves.toBeVisible();
 });
 
-test.each([true])(
-  "Reset captured A with current API policy and accounts UI=%s",
-  async (accountsEnabled) => {
-    const resets: {
-      readonly id: string;
-      readonly runId: string | undefined;
-    }[] = [];
-    const reads: { readonly id: string; readonly runId: string | undefined }[] =
-      [];
-    const wrongResets: string[] = [];
-    const sent: unknown[] = [];
-    installRunChat({
-      selectedModel: "gpt-5.6-sol",
-      chatEvents: failedRunEvents(
-        "You've hit your usage limit.",
-        "gpt-5.6-sol",
-        "usage_limit",
-      ),
-      onRunCreate: (body) => {
-        sent.push(body);
-      },
-    });
-    configureModelPolicies(["gpt-5.6-sol"]);
-    installRecoverySource({
-      providerType: "codex-oauth-token",
-      runtimeProviderType: null,
-      model: "gpt-5.6-sol",
-      credentialScope: "member",
-      account: { status: "connected", id: PROVIDER_ID },
-    });
-    context.mocks.api(
-      personalModelProviderAccountsByIdContract.getById,
-      ({ params, query, respond }) => {
-        reads.push({ id: params.id, runId: query.runId });
-        return respond(200, {
-          id: PROVIDER_ID,
-          modelProviderId: "e0000000-0000-4000-a000-000000000302",
-          isActive: false,
-          type: "codex-oauth-token",
-          framework: "codex",
-          secretName: "CHATGPT_ACCESS_TOKEN",
-          authMethod: "oauth",
-          secretNames: ["CHATGPT_ACCESS_TOKEN"],
-          isDefault: false,
-          selectedModel: null,
-          accountEmail: "original-a@example.com",
-          subscriptionResetCredits: 1,
-          needsReconnect: false,
-          lastRefreshErrorCode: null,
-          createdAt: "2026-08-01T09:00:00.000Z",
-          updatedAt: "2026-08-01T09:00:00.000Z",
-        });
-      },
-    );
-    context.mocks.api(
-      personalModelProviderAccountsByIdContract.resetFailedRunSubscriptionUsage,
-      ({ params, respond }) => {
-        resets.push({ id: params.id, runId: params.runId });
-        return respond(200, { outcome: "reset" });
-      },
-    );
-    context.mocks.api(
-      personalModelProvidersByTypeContract.resetSubscriptionUsage,
-      ({ params, respond }) => {
-        wrongResets.push(params.type);
-        return respond(200, { outcome: "reset" });
-      },
-    );
-    await setupPage({
-      context,
-      path: RUN_PATH,
-      featureSwitches: {
-        [FeatureSwitchKey.OkouDebug]: false,
-        [FeatureSwitchKey.PersonalModelProviderAccounts]: accountsEnabled,
-      },
-    });
-    await readyChat();
-    await recoveryCard();
-    await expect(
-      screen.findByText("Personal subscription original-a@example.com"),
-    ).resolves.toBeInTheDocument();
-    expect(
-      screen.queryByLabelText("View Langfuse trace"),
-    ).not.toBeInTheDocument();
-    expect(sent).toStrictEqual([]);
-    expect(resets).toStrictEqual([]);
-    click(await findButton("Reset · 1 left"));
-    await expect(screen.findByText("continue")).resolves.toBeInTheDocument();
-    expect(resets).toStrictEqual([{ id: PROVIDER_ID, runId: RUN_A }]);
-    expect(wrongResets).toStrictEqual([]);
-    expect(
-      reads.every((request) => {
-        return request.id === PROVIDER_ID && request.runId === RUN_A;
-      }),
-    ).toBeTruthy();
-    await waitFor(() => {
-      expect(sent).toHaveLength(1);
-    });
-  },
-);
+test("Reset the current route's active subscription account", async () => {
+  const resets: string[] = [];
+  const sent: unknown[] = [];
+  installRunChat({
+    selectedModel: "gpt-5.6-sol",
+    chatEvents: failedRunEvents(
+      "You've hit your usage limit.",
+      "gpt-5.6-sol",
+      "usage_limit",
+    ),
+    onRunCreate: (body) => {
+      sent.push(body);
+    },
+  });
+  configureCodexSubscriptionPolicies(["gpt-5.6-sol"]);
+  context.mocks.data.personalModelProviders([
+    codexSubscriptionAccount({
+      isActive: true,
+      accountEmail: "current@example.com",
+    }),
+  ]);
+  context.mocks.api(
+    personalModelProviderAccountsByIdContract.resetSubscriptionUsage,
+    ({ params, respond }) => {
+      resets.push(params.id);
+      return respond(200, { outcome: "reset" });
+    },
+  );
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: false },
+  });
+  await readyChat();
+  await recoveryCard();
+  await expect(
+    screen.findByText("Personal subscription current@example.com"),
+  ).resolves.toBeInTheDocument();
+  expect(sent).toStrictEqual([]);
+  click(await findButton("Reset · 1 left"));
+  await expect(screen.findByText("continue")).resolves.toBeInTheDocument();
+  expect(resets).toStrictEqual([PROVIDER_ID]);
+  await waitFor(() => {
+    expect(sent).toHaveLength(1);
+  });
+});
 
-test("Keep historical subscription failure with an unavailable account neutral", async () => {
-  const accountReads: string[] = [];
+test("Show a disconnected subscription on the current route", async () => {
   installRunChat({
     selectedModel: "gpt-5.6-sol",
     chatEvents: failedRunEvents(
@@ -880,23 +851,10 @@ test("Keep historical subscription failure with an unavailable account neutral",
       "usage_limit",
     ),
   });
-  configureModelPolicies(["gpt-5.6-sol"]);
-  installRecoverySource({
-    providerType: "codex-oauth-token",
-    runtimeProviderType: null,
-    model: "gpt-5.6-sol",
-    credentialScope: "member",
-    account: { status: "unavailable" },
-  });
-  context.mocks.api(
-    personalModelProviderAccountsByIdContract.getById,
-    ({ params, respond }) => {
-      accountReads.push(params.id);
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "Resource not found" },
-      });
-    },
-  );
+  configureCodexSubscriptionPolicies(["gpt-5.6-sol"]);
+  context.mocks.data.personalModelProviders([
+    codexSubscriptionAccount({ needsReconnect: true }),
+  ]);
   await setupPage({
     context,
     path: RUN_PATH,
@@ -908,13 +866,35 @@ test("Keep historical subscription failure with an unavailable account neutral",
     screen.findByText("Personal subscription disconnected"),
   ).resolves.toBeInTheDocument();
   expect(queryButton("Reset · 1 left")).toBeNull();
-  expect(accountReads).toStrictEqual([]);
   await expect(findButton("Try again")).resolves.toBeEnabled();
 });
 
-test("An old API cannot downgrade a verified recovery to a settings reset", async () => {
+test("Leave a usage limit neutral once the thread leaves the subscription", async () => {
+  installRunChat({
+    selectedModel: "gpt-5.6-sol",
+    chatEvents: failedRunEvents(
+      "You've hit your usage limit.",
+      "gpt-5.6-sol",
+      "usage_limit",
+    ),
+  });
+  configureModelPolicies(["gpt-5.6-sol"]);
+  context.mocks.data.personalModelProviders([codexSubscriptionAccount()]);
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: false },
+  });
+  await readyChat();
+  const recovery = await recoveryCard();
+  expect(recovery).toHaveTextContent("Codex limit reached");
+  expect(recovery).not.toHaveTextContent(/Personal subscription/iu);
+  expect(queryButton("Reset · 1 left")).toBeNull();
+  await expect(findButton("Try again")).resolves.toBeEnabled();
+});
+
+test("A failed subscription reset keeps the thread idle", async () => {
   const sent: unknown[] = [];
-  const settingsResets: string[] = [];
   installRunChat({
     selectedModel: "gpt-5.6-sol",
     chatEvents: failedRunEvents("You've hit your usage limit.", "gpt-5.6-sol"),
@@ -922,54 +902,17 @@ test("An old API cannot downgrade a verified recovery to a settings reset", asyn
       sent.push(body);
     },
   });
-  configureModelPolicies(["gpt-5.6-sol"]);
-  context.mocks.data.personalModelProviders([
-    {
-      id: PROVIDER_ID,
-      type: "codex-oauth-token",
-      framework: "codex",
-      secretName: "CHATGPT_ACCESS_TOKEN",
-      authMethod: "oauth",
-      secretNames: ["CHATGPT_ACCESS_TOKEN"],
-      isDefault: false,
-      selectedModel: null,
-      subscriptionResetCredits: 1,
-      needsReconnect: false,
-      lastRefreshErrorCode: null,
-      createdAt: "2026-08-01T09:00:00.000Z",
-      updatedAt: "2026-08-01T09:00:00.000Z",
-    },
-  ]);
-  installRecoverySource({
-    providerType: "codex-oauth-token",
-    runtimeProviderType: null,
-    model: "gpt-5.6-sol",
-    credentialScope: "member",
-    account: { status: "connected", id: PROVIDER_ID },
-  });
+  configureCodexSubscriptionPolicies(["gpt-5.6-sol"]);
+  context.mocks.data.personalModelProviders([codexSubscriptionAccount()]);
   context.mocks.api(
-    personalModelProviderAccountsByIdContract.resetFailedRunSubscriptionUsage,
+    personalModelProviderAccountsByIdContract.resetSubscriptionUsage,
     ({ respond }) => {
       return respond(404, {
         error: {
           code: "NOT_FOUND",
-          message: "This recovery endpoint is unavailable.",
+          message: "This subscription account is unavailable.",
         },
       });
-    },
-  );
-  context.mocks.api(
-    personalModelProviderAccountsByIdContract.resetSubscriptionUsage,
-    ({ params, respond }) => {
-      settingsResets.push(params.id);
-      return respond(200, { outcome: "reset" });
-    },
-  );
-  context.mocks.api(
-    personalModelProvidersByTypeContract.resetSubscriptionUsage,
-    ({ params, respond }) => {
-      settingsResets.push(params.type);
-      return respond(200, { outcome: "reset" });
     },
   );
   await setupPage({
@@ -981,9 +924,8 @@ test("An old API cannot downgrade a verified recovery to a settings reset", asyn
   await recoveryCard();
   click(await findButton("Reset · 1 left"));
   await expect(
-    screen.findByText("This recovery endpoint is unavailable."),
+    screen.findByText("This subscription account is unavailable."),
   ).resolves.toBeInTheDocument();
-  expect(settingsResets).toStrictEqual([]);
   expect(sent).toStrictEqual([]);
   expect(screen.getByRole("textbox", { name: "Message" })).toBeEnabled();
 });
@@ -1127,13 +1069,13 @@ const UNSUPPORTED_MODEL_ERROR = JSON.stringify({
   },
 });
 
-// The rejection is permanent for the model that produced it, so the card holds
-// the retry action back until the thread points at a different supported model.
-// Both halves of that transition are the contract: the picker alone while the
-// rejected model is still selected, and a working continue once it is not.
+// The card does not track which model failed. It offers the picker and a
+// retry on whatever the thread selects, and holds the retry back while a model
+// switch is still being written, because the retry runs on the persisted model.
 test("Continue on a replacement model after the connected account rejects one", async () => {
   const user = userEvent.setup({ delay: null });
   const sentModels: (string | undefined)[] = [];
+  const selectionWritten = context.mocks.deferred<void>();
   configureModelPolicies(["gpt-5.6-sol", "gpt-5.6-luna"]);
   installRunChat({
     selectedModel: "gpt-5.6-sol",
@@ -1147,6 +1089,13 @@ test("Continue on a replacement model after the connected account rejects one", 
       );
     },
   });
+  context.mocks.api(
+    chatThreadModelSelectionContract.update,
+    async ({ respond }) => {
+      await selectionWritten.promise;
+      return respond(204);
+    },
+  );
 
   await setupPage({ context, path: RUN_PATH });
 
@@ -1156,18 +1105,19 @@ test("Continue on a replacement model after the connected account rejects one", 
   ).resolves.toBeVisible();
   expect(queryButton("Reset · 1 left")).toBeNull();
   const recovery = await recoveryCard();
-  expect(queryButton("Try again", recovery)).toBeNull();
+  await expect(findEnabledButton("Try again", recovery)).resolves.toBeVisible();
 
   const picker = within(recovery).getByRole("combobox");
   await user.click(picker);
-  expect(
-    screen.queryByRole("option", { name: /^GPT 5\.6 Sol/iu }),
-  ).not.toBeInTheDocument();
   await user.click(await screen.findByRole("option", { name: "GPT 5.6 Luna" }));
 
   expect(picker).toHaveTextContent("GPT 5.6 Luna");
+  await waitFor(() => {
+    expect(queryButton("Try again", recovery)).toBeDisabled();
+  });
   expect(sentModels).toHaveLength(0);
 
+  selectionWritten.resolve();
   click(await findEnabledButton("Try again", recovery));
 
   await expect(screen.findByText("continue")).resolves.toBeInTheDocument();

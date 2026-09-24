@@ -8299,15 +8299,14 @@ function buildAtomicLaunchCteContext(
   const insertedDiagnosticRegistration = args.tx
     .$with("inserted_launch_connector_diagnostic_registration")
     .as(
-      args.tx
-        .insert(agentRunConnectorDiagnosticRegistrations)
-        .values({
-          runId: returnedCteId(insertedRun),
-          payload: args.commit.persistence.diagnosticRegistrationPayload,
-          createdAt,
-        })
-        .returning({ id: agentRunConnectorDiagnosticRegistrations.runId }),
+      args.tx.insert(agentRunConnectorDiagnosticRegistrations).values({
+        runId: returnedCteId(insertedRun),
+        payload: args.commit.persistence.diagnosticRegistrationPayload,
+        createdAt,
+      }),
     );
+  // The insert executes with the statement and depends on insertedRun's ID.
+  // Its returned row need not participate in the final result join.
   ctes.push(insertedDiagnosticRegistration);
 
   appendLaunchCallbackCte({
@@ -8329,7 +8328,6 @@ function buildAtomicLaunchCteContext(
     createdAt,
     ctes,
     insertedRun,
-    insertedDiagnosticRegistration,
     updatedThread,
   };
 }
@@ -8398,11 +8396,7 @@ async function persistPendingAtomicLaunch(
       ),
     })
     .from(context.insertedRun)
-    .innerJoin(insertedQueue, eq(insertedQueue.runId, context.insertedRun.id))
-    .innerJoin(
-      context.insertedDiagnosticRegistration,
-      eq(context.insertedDiagnosticRegistration.id, context.insertedRun.id),
-    );
+    .innerJoin(insertedQueue, eq(insertedQueue.runId, context.insertedRun.id));
   if (!row || (context.updatedThread && !row.boundThreadId)) {
     throw new Error("Atomic pending launch persistence returned no row");
   }
@@ -8464,10 +8458,6 @@ async function persistQueuedAtomicLaunch(
     })
     .from(context.insertedRun)
     .innerJoin(insertedQueue, eq(insertedQueue.runId, context.insertedRun.id))
-    .innerJoin(
-      context.insertedDiagnosticRegistration,
-      eq(context.insertedDiagnosticRegistration.id, context.insertedRun.id),
-    )
     .crossJoin(visibleQueueDepth);
   if (!row || (context.updatedThread && !row.boundThreadId)) {
     throw new Error("Atomic queued launch persistence returned no row");

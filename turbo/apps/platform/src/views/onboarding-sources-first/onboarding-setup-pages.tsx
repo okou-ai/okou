@@ -288,6 +288,11 @@ export function OnboardingTeamPage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.team.copy;
       })}
+      trustPoints={[
+        t(($) => {
+          return $.onboarding.sourcesFirst.team.trust;
+        }),
+      ]}
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
       })}
@@ -533,6 +538,11 @@ export function OnboardingExperiencePage() {
         description={t(($) => {
           return $.onboarding.sourcesFirst.experience.copy;
         })}
+        trustPoints={[
+          t(($) => {
+            return $.onboarding.sourcesFirst.experience.trust;
+          }),
+        ]}
         primaryLabel={t(($) => {
           return $.onboarding.sourcesFirst.common.continue;
         })}
@@ -562,6 +572,17 @@ export function OnboardingExperiencePage() {
             className="grid gap-4 sm:grid-cols-3"
           >
             <OnboardingPosterCard
+              value="no"
+              selected={experienced === false}
+              mark={<OnboardingIllustration name="new" alt="" size="choice" />}
+              title={t(($) => {
+                return $.onboarding.sourcesFirst.experience.no;
+              })}
+              description={t(($) => {
+                return $.onboarding.sourcesFirst.experience.noCopy;
+              })}
+            />
+            <OnboardingPosterCard
               value="codex"
               selected={experienced === true && provider === "codex"}
               mark={
@@ -588,17 +609,6 @@ export function OnboardingExperiencePage() {
               })}
               description={t(($) => {
                 return $.onboarding.sourcesFirst.subscription.rowCopy;
-              })}
-            />
-            <OnboardingPosterCard
-              value="no"
-              selected={experienced === false}
-              mark={<OnboardingIllustration name="new" alt="" size="choice" />}
-              title={t(($) => {
-                return $.onboarding.sourcesFirst.experience.no;
-              })}
-              description={t(($) => {
-                return $.onboarding.sourcesFirst.experience.noCopy;
               })}
             />
           </RadioGroup>

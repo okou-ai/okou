@@ -14,6 +14,7 @@ import {
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import {
   AGENT_ID,
+  composerWorkflow,
   context,
   expectInlineTemplateInComposer,
   findComposerEditor,
@@ -21,7 +22,6 @@ import {
   mockBillingCapabilities,
   mockOrgModelRoutes,
   tabByText,
-  workflowSummary,
 } from "./chat-composer-test-helpers.ts";
 
 const WORKFLOW_NAME = "axiom-red";
@@ -43,30 +43,11 @@ function setupModels(): void {
     selectedVideoModel: "dreamina-seedance-2-0-260128",
     updatedAt: "2026-09-07T00:00:00.000Z",
   });
-  context.mocks.api(workflowsCollectionContract.list, ({ respond }) => {
+  context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
     return respond(200, [
-      {
-        ...workflowSummary({
-          name: WORKFLOW_NAME,
-          agentId: AGENT_ID,
-          displayName: null,
-          description: "Query Axiom for RED metrics",
-        }),
-        visibility: "public",
-        shadowedBy: null,
-      },
-      workflowSummary({
-        name: SECOND_WORKFLOW_NAME,
-        agentId: AGENT_ID,
-        displayName: null,
-        description: "Check Axiom service status",
-      }),
-      workflowSummary({
-        name: THIRD_WORKFLOW_NAME,
-        agentId: AGENT_ID,
-        displayName: null,
-        description: "Inspect Axiom traces",
-      }),
+      composerWorkflow(WORKFLOW_NAME, "Query Axiom for RED metrics"),
+      composerWorkflow(SECOND_WORKFLOW_NAME, "Check Axiom service status"),
+      composerWorkflow(THIRD_WORKFLOW_NAME, "Inspect Axiom traces"),
     ]);
   });
 }

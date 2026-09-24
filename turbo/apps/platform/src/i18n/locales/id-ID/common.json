@@ -1410,6 +1410,7 @@
       "rename": "Ubah nama",
       "saving": "Menyimpan...",
       "send": "Kirim",
+      "shareMessage": "Bagikan pesan",
       "stop": "Hentikan",
       "view": "Lihat"
     },
@@ -1733,12 +1734,14 @@
       "cancelFailed": "Permintaan tidak dapat dibatalkan. Coba lagi.",
       "cancelled": "Permintaan dibatalkan",
       "cancelling": "Membatalkan…",
+      "clearValue": "Hapus nilai di situs",
       "completed": "Informasi ditambahkan",
       "continue": "Beri tahu agen",
       "continuing": "Memberi tahu agen…",
       "delivered": "Agen diberi tahu",
       "expired": "Permintaan kedaluwarsa",
       "expiredDescription": "Browser ditutup atau permintaan ini sudah tidak aktif.",
+      "keepValue": "Biarkan nilai di situs tetap sama",
       "loadFailed": "Permintaan ini tidak dapat dimuat",
       "loadFailedDescription": "Coba lagi sebentar lagi.",
       "loadingDescription": "Memeriksa permintaan ini…",
@@ -1755,29 +1758,6 @@
       "unavailable": "Permintaan tidak tersedia",
       "uncertain": "Periksa browser",
       "uncertainDescription": "Browser mungkin telah menerima informasi. Minta agen memeriksanya sebelum mencoba lagi."
-    },
-    "browserInteraction": {
-      "applying": "Menyelesaikan interaksi browser",
-      "applyingDescription": "Browser sedang menyelesaikan permintaan ini.",
-      "callbackFailed": "Agen belum diberi tahu.",
-      "cancel": "Batal",
-      "cancelFailed": "Permintaan ini tidak dapat dibatalkan. Coba lagi.",
-      "cancelled": "Permintaan dibatalkan",
-      "cancelling": "Membatalkan…",
-      "completed": "Interaksi browser selesai",
-      "completeFailed": "Permintaan ini tidak dapat diselesaikan. Coba lagi.",
-      "completing": "Menyelesaikan…",
-      "continue": "Beri tahu agen",
-      "continuing": "Memberi tahu agen…",
-      "delivered": "Agen diberi tahu",
-      "description": "Buka browser, selesaikan langkah ini, lalu pilih Selesai.",
-      "done": "Selesai",
-      "finish": "Selesaikan langkah",
-      "stale": "Browser tidak lagi tersedia",
-      "staleDescription": "Minta agen membuat permintaan baru.",
-      "title": "Ambil alih browser",
-      "uncertain": "Periksa browser",
-      "uncertainDescription": "Interaksi mungkin telah selesai. Minta agen memeriksanya sebelum mencoba lagi."
     },
     "cards": {
       "viewDetails": "Lihat detail"
@@ -1929,11 +1909,10 @@
         "newChat": "Chat baru",
         "newChatDescription": "Mulai chat baru dan sertakan informasi penting yang ingin Anda bawa.",
         "openClaude": "Buka Claude",
-        "originalAccount": "Langganan pribadi {{account}}",
-        "originalAccountUnavailable": "Langganan pribadi terputus",
-        "originalAccountUnknown": "Langganan pribadi belum terverifikasi",
         "outputLimitDescription": "Jawaban berhenti sebelum selesai. Pilih Lanjutkan untuk meneruskannya.",
         "outputLimitTitle": "Jawaban mencapai batas panjang",
+        "personalAccount": "Langganan pribadi {{account}}",
+        "personalAccountDisconnected": "Langganan pribadi terputus",
         "providerBalanceDescription": "Periksa saldo kredit akun penyedia Anda, lalu coba lagi.",
         "providerBalanceTitle": "Saldo akun penyedia model tidak cukup",
         "providerConnectionDescription": "Buka Penyedia Model untuk menghubungkan ulang atau memperbarui akun, lalu coba lagi.",
@@ -2158,10 +2137,13 @@
       "createFailed": "Percakapan yang dibagikan tidak dapat dibuat. Coba lagi.",
       "deselectGroup": "Batalkan pilihan grup pesan",
       "linkCopied": "Tautan disalin",
+      "messageShareFailed": "Tautan berbagi tidak dapat dibuat. Coba lagi.",
       "publicDescription": "Pesan yang dipilih dan lampirannya akan menjadi publik.",
+      "selectAll": "Pilih semua",
       "selectedCount_other": "{{count}} dipilih",
       "selectGroup": "Pilih grup pesan",
       "shareLink": "Tautan percakapan yang dibagikan",
+      "shareLinkCopied": "Tautan berbagi disalin",
       "start": "Bagikan pesan",
       "tooLarge": "Pilih lebih sedikit pesan untuk dibagikan"
     },
@@ -2871,7 +2853,6 @@
       "ariaLabel": "Thread chat",
       "changeIcon": "Ubah ikon",
       "emoji": {
-        "archive": "Arsipkan",
         "done": "Selesai",
         "idea": "Ide",
         "no": "Tidak",
@@ -2948,12 +2929,12 @@
     "configuration": "Cloudflare Access",
     "createNew": "Buat Cloudflare Access baru",
     "delete": "Hapus Cloudflare Access",
-    "deleteHelp": "Hapus Cloudflare Access yang tidak digunakan ini? Service Token yang tersimpan tidak dapat dipulihkan.",
+    "deleteHelp": "Hapus Cloudflare Access ini? Service Token yang tersimpan tidak dapat dipulihkan. Penghapusan diblokir selama masih digunakan oleh host.",
     "description": "Akses aplikasi terlindungi dengan Token Layanan Cloudflare Access.",
     "edit": "Edit Cloudflare Access",
-    "empty": "Belum ada Cloudflare Access. Tambahkan Token Layanan untuk mengakses aplikasi terlindungi.",
     "failed": "Tidak dapat menyimpan perubahan Cloudflare Access. Coba lagi.",
-    "inUse": "Cloudflare Access ini digunakan oleh host. Tinjau host terkait dan ubah konfigurasinya atau hapus terlebih dahulu.",
+    "forbidden": "Hanya admin organisasi yang dapat mengubah Cloudflare Access bersama.",
+    "inUse": "Sebuah host SSH menggunakan Cloudflare Access ini. Pemiliknya harus mengikat ulang atau menghapus host tersebut terlebih dahulu.",
     "inUseHelp": "Pilih Cloudflare Access lain untuk host ini, alihkan secara eksplisit ke Langsung, atau hapus host sebelum menghapus yang ini.",
     "invalidInput": "Beberapa pengaturan Cloudflare Access tidak valid. Periksa kolom dan coba lagi.",
     "keepChanges": "Terapkan perubahan saya ke versi ini",
@@ -2964,6 +2945,9 @@
     "missing": "Cloudflare Access ini tidak tersedia lagi. Pilih yang lain atau buat yang baru.",
     "name": "Nama",
     "namePlaceholder": "mis. Akses produksi",
+    "organization": "Organisasi",
+    "organizationHelp": "Semua anggota organisasi ini dapat menggunakan Service Token ini. Hanya admin yang dapat mengubahnya.",
+    "personal": "Pribadi",
     "replace": "Ganti Service Token",
     "resourceIdConflict": "ID sumber daya ini tidak dapat digunakan. Tutup dan buka kembali formulir untuk mencoba lagi.",
     "retry": "Coba lagi",
@@ -2971,13 +2955,15 @@
     "revisionExhausted": "Konfigurasi ini tidak dapat diperbarui lagi. Buat yang baru.",
     "save": "Simpan",
     "saveUncertain": "Kami tidak dapat memastikan apakah perubahanmu tersimpan. Coba simpan ulang isian yang sama, atau tutup dan periksa daftar sebelum menambahkannya lagi.",
+    "scope": "Siapa yang dapat menggunakan",
+    "sectionEmpty": "Belum ada konfigurasi di sini.",
     "select": "Pilih Cloudflare Access",
     "summary_other": "{{count}} Cloudflare Access telah diatur",
     "title": "Cloudflare Access",
     "tokenHelp": "Akses aplikasi terlindungi dengan Token Layanan Cloudflare Access.",
     "unavailable": "Cloudflare Access tidak tersedia untuk akun ini.",
-    "unused": "Tidak digunakan oleh host mana pun",
-    "usedBy_other": "Digunakan oleh {{count}} host:"
+    "unused": "Tidak digunakan oleh host Anda",
+    "usedBy_other": "Digunakan oleh {{count}} host Anda:"
   },
   "connectors": {
     "access": {
@@ -4246,13 +4232,14 @@
         "skills": "Impor skill Anda",
         "slack": "Tambahkan Okou ke Slack",
         "sources": "Hubungkan pekerjaan Anda",
-        "team": "Undang rekan kerja"
+        "team": "Undang anggota tim"
       },
       "experience": {
-        "copy": "Hubungkan paket yang sudah Anda bayar dan pekerjaan Anda berjalan di sana, bukan memakai kredit Okou.",
-        "no": "Belum, ini yang pertama",
-        "noCopy": "Okou memilihkan tugas pertama untuk Anda.",
-        "title": "Pernah memakai Codex atau Claude Code?"
+        "copy": "Mulai dengan panduan, atau gunakan paket Codex atau Claude Code yang sudah Anda miliki.",
+        "no": "Saya baru mengenal agen AI",
+        "noCopy": "Okou membantu Anda memilih tugas pertama yang berguna.",
+        "title": "Bagaimana Anda ingin memulai dengan Okou?",
+        "trust": "Tugas berjalan dengan paket Codex atau Claude Code Anda, bukan kredit Okou, jadi Anda bisa melakukan lebih banyak tanpa khawatir soal pemakaian. Hubungkan sekarang atau nanti."
       },
       "industries": {
         "coaching": {
@@ -4301,7 +4288,7 @@
         }
       },
       "industry": {
-        "copy": "Okou memakai ini untuk memilih tugas pertama Anda dan sumber yang jadi titik awalnya.",
+        "copy": "Ini membantu Okou menampilkan alat yang relevan dan menyarankan tugas pertama yang sesuai dengan pekerjaan Anda.",
         "title": "Pekerjaan Anda seperti apa?"
       },
       "profile": {
@@ -4317,7 +4304,7 @@
       },
       "skills": {
         "copied": "Tersalin",
-        "copy": "Tempel prompt ini di sesi {{provider}} Anda sendiri, dan skill di komputer Anda akan masuk ke Okou.",
+        "copy": "Jalankan prompt ini di {{provider}} untuk mengimpor skill yang sudah Anda buat, agar Okou dapat langsung menggunakannya.",
         "copyError": "Prompt tidak dapat disalin.",
         "copyPrompt": "Salin prompt",
         "importedCopy": "Diimpor sebagai workflow Okou.",
@@ -4328,7 +4315,7 @@
         "promptLabel": "Prompt impor skill",
         "promptTitle": "Jalankan ini di {{provider}}",
         "startError": "Sesi impor tidak dapat dibuka.",
-        "title": "Bawa skill yang sudah Anda tulis.",
+        "title": "Bawa skill Anda ke Okou",
         "tryAgain": "Coba lagi",
         "waiting": "Skill yang diimpor muncul di sini begitu tiba."
       },
@@ -4340,7 +4327,7 @@
         "connectedCopy": "Buka Slack dan sebut @Okou untuk memberinya tugas.",
         "connectedStatus": "Ditambahkan ke workspace Anda",
         "connectedTitle": "Slack terhubung",
-        "copy": "Tambahkan sekali, lalu sebut @Okou di tempat pekerjaan sudah berjalan.",
+        "copy": "Sebut @Okou untuk memberinya tugas dan lihat hasilnya dalam percakapan tim yang sama.",
         "name": "Slack",
         "otherAdded": "Ditambahkan",
         "otherImessage": "iMessage",
@@ -4369,12 +4356,13 @@
         "previewWorkspace": "Northwind",
         "rowCopy": "Bekerja di kanal mana pun tempat Anda menambahkannya.",
         "rowTitle": "Okou for Slack",
-        "title": "Beri Okou pekerjaan tanpa meninggalkan Slack."
+        "title": "Teruskan pekerjaan di Slack"
       },
       "sources": {
-        "copy": "Ia bekerja di cloud, dari alat yang sudah dipakai tim Anda. Hasil 10x lipat, hambatan operasional lebih sedikit, biaya lebih rendah. Hubungkan satu sumber untuk memulai.",
-        "note": "Anda yang memilih akun mana yang dihubungkan.",
-        "title": "Okou untuk Anda, dan dipakai bersama seluruh tim."
+        "copy": "Semakin Okou memahami pekerjaan Anda, semakin cerdas ia bekerja. Hubungkan alat yang Anda gunakan setiap hari untuk memulai dengan tugas dari pekerjaan nyata Anda.",
+        "permissions": "Okou menggunakan sedikit sampel untuk menyesuaikan tugas pertama Anda. Anda yang menentukan apa yang dapat dilakukan Agent dan berapa lama.",
+        "securityLink": "Cara Okou melindungi data Anda",
+        "title": "Hubungkan alat kerja"
       },
       "startingPrompt": {
         "exact": {
@@ -4708,32 +4696,33 @@
         "connecting": "Menghubungkan…",
         "failedNote": "Kami tidak dapat menghubungkan {{provider}}. Coba lagi atau hubungkan nanti.",
         "retry": "Coba lagi",
-        "rowCopy": "Berjalan di paket Anda, bukan kredit Okou.",
+        "rowCopy": "Hubungkan agar tugas memakai paket Anda, bukan kredit Okou.",
         "unconfirmedNote": "Kami tidak dapat memeriksa koneksi {{provider}} Anda. Coba lagi atau hubungkan nanti."
       },
       "team": {
-        "copy": "Undang rekan kerja sekarang, atau nanti dari menu workspace.",
+        "copy": "Undang anggota tim untuk menjalankan alur kerja bersama.",
         "invite": "Kirim undangan",
         "invited": "Diundang",
-        "label": "Email rekan kerja",
-        "note": "Mereka bergabung ke workspace ini; akun mereka tetap milik mereka.",
+        "label": "Email anggota tim",
+        "note": "Mereka dapat langsung mulai bekerja dengan Okou.",
         "notSent": "Tidak terkirim",
-        "panelTitle": "Undang rekan kerja",
-        "placeholder": "teammate@company.com",
+        "panelTitle": "Undang anggota tim",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "Akun yang mereka hubungkan tetap milik mereka — tidak ada yang dibagikan tanpa mereka.",
-          "workflows": "Siapa pun di sini bisa menjalankan workflow yang sudah ada di workspace ini.",
-          "workspace": "Mereka masuk ke workspace ini, dengan sumber yang baru Anda hubungkan."
+          "accounts": "Menghubungkan alat mereka sendiri saat dibutuhkan.",
+          "workflows": "Dapat menjalankan semua alur kerja tim Anda.",
+          "workspace": "Bergabung ke workspace Anda."
         },
         "sending": "Mengirim…",
-        "title": "Bawa serta orang-orang yang mengerjakan ini bersama Anda."
+        "title": "Buat Okou berguna bagi seluruh tim Anda",
+        "trust": "Semua orang menggunakan alur kerja yang sama dan menghubungkan alat mereka sendiri."
       },
       "welcome": {
-        "copy": "Mulai dengan tugas pertama, dipilih untuk pekerjaan yang baru Anda hubungkan.",
+        "copy": "Tinjau tugas yang disarankan untuk pekerjaan Anda, sesuaikan dengan tujuan, lalu biarkan Okou memulai.",
         "offerTitle": "Satu jam pertama konsultasi gratis dari kami, plus hingga 100 kredit —",
         "promptLabel": "Prompt awal Anda",
         "start": "Mulai dengan Okou",
-        "title": "Okou siap untuk Anda"
+        "title": "Mulai dengan tugas yang berarti"
       }
     },
     "templatePicker": {
@@ -4856,8 +4845,7 @@
       "preparedDescription": "{{assistantName}} menyiapkan langkah berikutnya dari alat Anda.",
       "preparedTitle": "Alur kerja siap",
       "reviewDescription": "{{assistantName}} menyelesaikan alur kerja dan mengembalikan hasilnya.",
-      "reviewTitle": "Siap ditinjau",
-      "source": "Sumber"
+      "reviewTitle": "Siap ditinjau"
     },
     "workflowPicker": {
       "categoryDescription": "Pengaturan siap jalan yang bisa Anda sesuaikan dengan alat dan tujuan Anda.",
@@ -6871,8 +6859,10 @@
       "keepChanges": "Terapkan perubahan saya ke versi ini",
       "latest": "Pengaturan terakhir yang disimpan",
       "mode": "Koneksi",
+      "needsRebind": "Host ini perlu ditautkan ulang ke konfigurasi Cloudflare Access. Edit host untuk memilih konfigurasi lain atau Direct. Host tidak dapat tersambung sebelum itu.",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Nama host yang dipublikasikan",
+      "rebindHelp": "Pilih konfigurasi Cloudflare Access yang diizinkan atau Direct untuk memulihkan host ini. Tidak ada perubahan hingga Anda menyimpan.",
       "reviewHelp": "Draf Anda tetap disimpan. Konfirmasikan pengaturan terakhir sebelum menerapkan perubahan.",
       "title": "Cloudflare Access",
       "unavailable": "Cloudflare Access tidak tersedia untuk akun ini."
@@ -6915,7 +6905,6 @@
       "unused": "Tidak digunakan oleh host mana pun"
     },
     "credentialsHelp": "Kredensial hanya dapat ditulis dan tetap berada di luar sandbox. Tempelkan kunci lengkap; spasi dipertahankan. Kolom dikosongkan saat formulir ditutup.",
-    "credentialsTab": "Kredensial",
     "delete": "Hapus host",
     "deleteHelp": "Hapus host ini? Kredensialnya akan tetap disimpan. Agent tidak lagi melihat host ini dalam inventaris.",
     "description": "Konfigurasikan host SSH agar Agen Anda dapat menjalankan perintah jarak jauh.",
@@ -6942,7 +6931,6 @@
     "fingerprint": "Kunci host tersimpan",
     "host": "Nama host publik atau alamat IP",
     "hostSection": "Host",
-    "hostsTab": "Host",
     "label": "SSH",
     "loadFailed": "Tidak dapat memuat pengaturan SSH. Coba lagi.",
     "loading": "Memuat host SSH…",
@@ -6971,7 +6959,6 @@
     },
     "summary_one": "{{count}} host dikonfigurasi",
     "summary_other": "{{count}} host dikonfigurasi",
-    "title": "Host SSH",
     "unavailable": "Akses SSH tidak tersedia untuk akun ini.",
     "username": "Nama pengguna SSH"
   },
@@ -7103,7 +7090,6 @@
       "usernamePasswordHint": "Masukkan kata sandi untuk nama pengguna ini",
       "usernamePasswordMethod": "Nama pengguna dan kata sandi"
     },
-    "credentialsTab": "Kredensial",
     "delete": "Hapus host",
     "deleteHelp": "Hapus host tersimpan ini? Kredensialnya yang dapat digunakan kembali akan tetap disimpan.",
     "description": "Izinkan agen Anda melihat dan mengendalikan desktop jarak jauh Anda.",
@@ -7126,7 +7112,6 @@
     },
     "host": "Nama host atau alamat IP",
     "hostHint": "mis. desktop.example.com",
-    "hostsTab": "Host",
     "label": "VNC",
     "loadFailed": "Tidak dapat memuat konfigurasi VNC.",
     "loading": "Memuat konfigurasi VNC…",
@@ -7161,7 +7146,6 @@
     },
     "summary_one": "{{count}} host terkonfigurasi",
     "summary_other": "{{count}} host terkonfigurasi",
-    "title": "Akses jarak jauh VNC",
     "transport": {
       "appleDhDestinationHelp": "Untuk Apple DH, masukkan 127.0.0.1 atau ::1. Ini adalah alamat loopback Mac yang dijangkau melalui host SSH pilihan.",
       "destination": "Tujuan RFB",

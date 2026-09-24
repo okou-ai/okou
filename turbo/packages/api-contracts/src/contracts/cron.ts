@@ -554,6 +554,8 @@ const cronExecuteMorningBriefsResponseSchema = z.object({
   examined: z.number().int().nonnegative(),
   /** Slots this tick claimed. */
   claimed: z.number().int().nonnegative(),
+  /** Per-owner HTTP requests accepted for asynchronous execution. */
+  dispatched: z.number().int().nonnegative(),
   /** Slots that reached exactly one durable settlement this tick. */
   settled: z.number().int().nonnegative(),
   /** Slots held by a finite pre-reservation configuration deferral. */
@@ -589,6 +591,30 @@ export const cronExecuteMorningBriefsContract = c.router({
       401: apiErrorSchema,
     },
     summary: "Execute due native Morning Brief occurrences",
+  },
+});
+
+export const internalMorningBriefWorkerContract = c.router({
+  execute: {
+    method: "POST",
+    path: "/api/internal/morning-brief-worker",
+    headers: z.object({
+      "x-morning-brief-timestamp": z.string().optional(),
+      "x-morning-brief-signature": z.string().optional(),
+    }),
+    body: z.object({
+      orgId: z.string().min(1),
+      userId: z.string().min(1),
+      scheduledFor: z.iso.datetime(),
+    }),
+    responses: {
+      202: z.object({ accepted: z.literal(true) }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      503: apiErrorSchema,
+    },
+    summary:
+      "Accept one authenticated native Morning Brief slot for independent execution",
   },
 });
 

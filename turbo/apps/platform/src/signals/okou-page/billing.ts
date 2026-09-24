@@ -717,7 +717,6 @@ export const setupBillingRealtime$ = command(({ set }, signal: AbortSignal) => {
     {
       topic: "billing:changed",
       loopCommand$: reloadBillingStatusFromRealtime$,
-      options: { runOnSubscribe: true },
     },
     signal,
   );

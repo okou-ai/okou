@@ -157,6 +157,30 @@ async function exactSecretConnectorSources(
   };
 }
 
+async function gmailRefreshFixture() {
+  const fw = createFirewallApi(context);
+  const { actor, headers } = await firewallRun();
+  mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", "google-client-id");
+  mockOptionalEnv("GOOGLE_OAUTH_CLIENT_SECRET", "google-client-secret");
+  await fw.seedTestConnector(actor, {
+    connectorSlug: "gmail",
+    authMethod: "oauth",
+    accessToken: "stale-gmail-access",
+    refreshToken: "synthetic-gmail-refresh-secret",
+    expiresIn: -60,
+  });
+  const body = {
+    encryptedSecrets: fw.encryptedSecretsBody({
+      GMAIL_TOKEN: "stale-gmail-access",
+    }),
+    authHeaders: {
+      Authorization: `Bearer ${secretTemplate("GMAIL_TOKEN")}`,
+    },
+    ...(await exactSecretConnectorSources(actor, { GMAIL_TOKEN: "gmail" })),
+  };
+  return { fw, headers, body };
+}
+
 function gateFirstStoredSecretDecrypt(): {
   readonly started: Promise<void>;
   readonly release: () => void;
@@ -1684,6 +1708,136 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       throw new Error("Expected refresh after outage to succeed");
     }
     expect(recovered.body.headers.Authorization).toBe("Bearer after-outage");
+  });
+
+  it("recovers a temporary Gmail OAuth response within the same refresh", async () => {
+    const { fw, headers, body } = await gmailRefreshFixture();
+    let attempts = 0;
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        attempts += 1;
+        return attempts === 1
+          ? HttpResponse.json(
+              {
+                error: "temporarily_unavailable",
+                error_description: "synthetic-provider-private-text",
+              },
+              { status: 400 },
+            )
+          : HttpResponse.json({
+              access_token: "recovered-gmail-access",
+              expires_in: 3600,
+            });
+      }),
+    );
+
+    const refreshed = await fw.requestFirewallAuth(headers, body, [200]);
+    if (refreshed.status !== 200) {
+      throw new Error("Expected Gmail refresh to recover after one retry");
+    }
+    expect(attempts).toBe(2);
+    expect(refreshed.body.headers.Authorization).toBe(
+      "Bearer recovered-gmail-access",
+    );
+  });
+
+  it("preserves the Gmail grant after an exhausted temporary retry", async () => {
+    const { fw, headers, body } = await gmailRefreshFixture();
+    let attempts = 0;
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        attempts += 1;
+        return HttpResponse.json(
+          {
+            error: "server_error",
+            error_description: "synthetic-provider-private-text",
+          },
+          { status: 503 },
+        );
+      }),
+    );
+
+    const failed = await fw.requestFirewallAuth(headers, body, [502]);
+    if (failed.status !== 502) {
+      throw new Error("Expected exhausted Gmail refresh to fail");
+    }
+    expect(attempts).toBe(2);
+    expect(failed.body.error.failureReason).toBe("upstream_provider");
+    expect(JSON.stringify(failed.body)).not.toContain(
+      "synthetic-provider-private-text",
+    );
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        return HttpResponse.json({
+          access_token: "later-gmail-access",
+          expires_in: 3600,
+        });
+      }),
+    );
+    const recovered = await fw.requestFirewallAuth(headers, body, [200]);
+    if (recovered.status !== 200) {
+      throw new Error("Expected Gmail grant to recover on a later request");
+    }
+    expect(recovered.body.headers.Authorization).toBe(
+      "Bearer later-gmail-access",
+    );
+  });
+
+  it("does not retry a Gmail invalid_grant response", async () => {
+    const { fw, headers, body } = await gmailRefreshFixture();
+    let attempts = 0;
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        attempts += 1;
+        return HttpResponse.json({ error: "invalid_grant" }, { status: 400 });
+      }),
+    );
+
+    const failed = await fw.requestFirewallAuth(headers, body, [502]);
+    if (failed.status !== 502) {
+      throw new Error("Expected revoked Gmail grant to fail");
+    }
+    expect(attempts).toBe(1);
+    expect(failed.body.error.failureReason).toBe("reconnect_required");
+  });
+
+  it("does not retry a rate-limited Gmail refresh without Retry-After handling", async () => {
+    const { fw, headers, body } = await gmailRefreshFixture();
+    let attempts = 0;
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        attempts += 1;
+        return HttpResponse.json(
+          { error: "temporarily_unavailable" },
+          { status: 429 },
+        );
+      }),
+    );
+
+    const failed = await fw.requestFirewallAuth(headers, body, [502]);
+    if (failed.status !== 502) {
+      throw new Error("Expected Gmail rate limit to fail this request");
+    }
+    expect(attempts).toBe(1);
+    expect(failed.body.error.failureReason).toBe("upstream_provider");
+  });
+
+  it("does not replay a Gmail refresh after an ambiguous network failure", async () => {
+    const { fw, headers, body } = await gmailRefreshFixture();
+    let attempts = 0;
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        attempts += 1;
+        return HttpResponse.error();
+      }),
+    );
+
+    const failed = await fw.requestFirewallAuth(headers, body, [502]);
+    if (failed.status !== 502) {
+      throw new Error("Expected Gmail network refresh failure");
+    }
+    expect(attempts).toBe(1);
+    expect(failed.body.error.failureReason).toBe("upstream_provider");
   });
 
   it("treats refresh responses without an access token as upstream failures", async () => {

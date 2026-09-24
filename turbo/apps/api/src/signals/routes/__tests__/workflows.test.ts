@@ -967,6 +967,59 @@ describe("workflows", () => {
     );
   });
 
+  it("lists only the agent's unshadowed workflows with composer fields", async () => {
+    const actor = user();
+    const agent = await createAgent(actor, {
+      displayName: "Composer Workflow Agent",
+      visibility: "public",
+    });
+    const otherAgent = await createAgent(actor, {
+      displayName: "Other Composer Workflow Agent",
+      visibility: "public",
+    });
+    const workflowName = `composer-workflow-${randomUUID().slice(0, 8)}`;
+
+    const publicWorkflow = await createWorkflow(actor, {
+      agentId: agent.agentId,
+      name: workflowName,
+      displayName: "Public Workflow",
+      visibility: "public",
+      instruction: "# shared workflow",
+    });
+    const privateWorkflow = await createWorkflow(actor, {
+      agentId: agent.agentId,
+      name: workflowName,
+      displayName: "Private Workflow",
+      description: "Private override",
+      instruction: "# private override",
+    });
+    const otherAgentWorkflow = await createWorkflow(actor, {
+      agentId: otherAgent.agentId,
+      name: `other-${workflowName}`,
+      instruction: "# other agent workflow",
+    });
+
+    const composerList = await accept(
+      collectionClient().composer({
+        headers: authHeaders(actor),
+        query: { agentId: agent.agentId },
+      }),
+      [200],
+    );
+
+    expect(composerList.body).toContainEqual({
+      id: privateWorkflow.body.id,
+      name: workflowName,
+      displayName: "Private Workflow",
+      description: "Private override",
+    });
+    const listedIds = composerList.body.map((workflow) => {
+      return workflow.id;
+    });
+    expect(listedIds).not.toContain(publicWorkflow.body.id);
+    expect(listedIds).not.toContain(otherAgentWorkflow.body.id);
+  });
+
   it("rejects same-owner private workflow slugs while allowing other-owner private slugs", async () => {
     const actor = user();
     const other = user({ orgId: actor.orgId, orgRole: "org:member" });

@@ -1,5 +1,5 @@
 {
-  "id": "c8db5c2b-5bcb-42d0-a7be-3bfbe10d3cef",
+  "id": "1f888445-3e64-4fd4-bc0e-71d153357d9c",
   "prevId": "9fb594c3-3566-4299-99f1-a74a4f84752a",
   "version": "7",
   "dialect": "postgresql",
@@ -5606,75 +5606,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.blob_upload_intents": {
-      "name": "blob_upload_intents",
-      "schema": "",
-      "columns": {
-        "hash": {
-          "name": "hash",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "intent_id": {
-          "name": "intent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "blob_upload_intents_expires_at": {
-          "name": "blob_upload_intents_expires_at",
-          "columns": [
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "blob_upload_intents_hash_blobs_hash_fk": {
-          "name": "blob_upload_intents_hash_blobs_hash_fk",
-          "tableFrom": "blob_upload_intents",
-          "tableTo": "blobs",
-          "columnsFrom": [
-            "hash"
-          ],
-          "columnsTo": [
-            "hash"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "blob_upload_intents_hash_intent_id_pk": {
-          "name": "blob_upload_intents_hash_intent_id_pk",
-          "columns": [
-            "hash",
-            "intent_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.blobs": {
       "name": "blobs",
       "schema": "",
@@ -5710,20 +5641,6 @@
           "notNull": true,
           "default": 1
         },
-        "erasure_pending": {
-          "name": "erasure_pending",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "erasure_eligible_at": {
-          "name": "erasure_eligible_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now() + interval '49 hours'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -5753,12 +5670,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "blobs_erasure_pending_zero_refs": {
-          "name": "blobs_erasure_pending_zero_refs",
-          "value": "NOT \"blobs\".\"erasure_pending\" OR \"blobs\".\"ref_count\" = 0"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.browser_authorization_requests": {
@@ -9762,6 +9674,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "archived": {
+          "name": "archived",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "renamed_at": {
           "name": "renamed_at",
@@ -39437,7 +39356,9 @@
         "computer_use_host_updated",
         "video_model_updated",
         "image_model_updated",
-        "sort_touched"
+        "sort_touched",
+        "archived",
+        "unarchived"
       ]
     },
     "public.connector_external_code_session_status": {

@@ -34,9 +34,9 @@ const SOURCES_FIRST_ON = {
 
 const MAKE_QUESTION = "What do you want to make first";
 const INDUSTRY_QUESTION = "What kind of work do you do?";
-const SOURCES_QUESTION = "Okou is for you, and shared across your whole team.";
+const SOURCES_QUESTION = "Connect a work tool";
 const MARKETING_FIELD = "Marketing & content";
-const READY_TITLE = "Okou is ready for you";
+const READY_TITLE = "Start with a task that matters";
 const PROFILE_TITLE = "Here's what we've learned about you";
 const START_ACTION = "Start with Okou";
 const HANDOFF_PROMPT = "Draft the launch plan";
@@ -182,6 +182,39 @@ test("The switch opens the field question on /onboarding and continues to the so
   expect(fieldRadio(MARKETING_FIELD)).toBeChecked();
 });
 
+test.each([
+  {
+    locale: "ja-JP" as const,
+    name: "Okouのデータ保護について",
+    href: "https://www.okou.ai/ja/security",
+  },
+  {
+    locale: "zh-Hant" as const,
+    name: "瞭解 Okou 如何保護你的資料",
+    href: "https://www.okou.ai/zh-Hant/security",
+  },
+])(
+  "The source step links to the security page in $locale",
+  async ({ locale, name, href }) => {
+    mockOnboardingNeeded();
+    mockCatalog();
+
+    await setupPage({
+      context,
+      locale,
+      path: ROUTES.onboardingSources,
+      featureSwitches: SOURCES_FIRST_ON,
+    });
+
+    await waitFor(() => {
+      const link = queryAllByRoleFast("link").find((candidate) => {
+        return candidate.textContent?.trim() === name;
+      });
+      expect(link).toHaveAttribute("href", href);
+    });
+  },
+);
+
 test("A later step returns to the entry until a source is connected", async () => {
   mockOnboardingNeeded();
   mockCatalog();
@@ -257,10 +290,10 @@ test("Connected account context replaces the static starting prompt", async () =
 
   await expect(
     screen.findByRole("heading", {
-      name: "Have you used Codex or Claude Code?",
+      name: "How would you like to start with Okou?",
     }),
   ).resolves.toBeInTheDocument();
-  click(fieldRadio("No, I’m new to this"));
+  click(fieldRadio("I'm new to AI agents"));
   click(getButtonByName("Continue"));
 
   await expect(
@@ -327,9 +360,9 @@ test("The profile step shows a skeleton until the shared context result arrives"
   await screen.findByRole("heading", { name: SOURCES_QUESTION });
   click(getButtonByName("Continue"));
   await screen.findByRole("heading", {
-    name: "Have you used Codex or Claude Code?",
+    name: "How would you like to start with Okou?",
   });
-  click(fieldRadio("No, I’m new to this"));
+  click(fieldRadio("I'm new to AI agents"));
   click(getButtonByName("Continue"));
 
   await screen.findByRole("heading", { name: PROFILE_TITLE });
@@ -399,9 +432,9 @@ test("A failed profile can be retried without losing the rest of onboarding", as
   await screen.findByRole("heading", { name: SOURCES_QUESTION });
   click(getButtonByName("Continue"));
   await screen.findByRole("heading", {
-    name: "Have you used Codex or Claude Code?",
+    name: "How would you like to start with Okou?",
   });
-  click(fieldRadio("No, I’m new to this"));
+  click(fieldRadio("I'm new to AI agents"));
   click(getButtonByName("Continue"));
 
   await screen.findByRole("heading", { name: PROFILE_TITLE });

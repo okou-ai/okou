@@ -6,10 +6,10 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use sandbox::SandboxId;
 use tracing::{info, warn};
 
-use super::idle_lifecycle::SharedIdlePool;
 use super::ownership::{OwnershipTransitions, RunSandbox};
 use crate::status::StatusTracker;
 use runner_host::process;
+use runner_supervisor::idle_lifecycle::SharedIdlePool;
 use runner_types::ids::RunId;
 
 const ORPHANED_ACTIVE_RUN_ABSENT_SCANS_BEFORE_REMOVE: u8 = 2;

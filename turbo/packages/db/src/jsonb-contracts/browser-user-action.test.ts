@@ -48,36 +48,60 @@ describe("Browser user-action JSONB payload", () => {
     });
   });
 
-  it("decodes direct interaction without page metadata", () => {
+  it("accepts genuine number targets but keeps semantic kinds distinct", () => {
+    const field = {
+      key: "quantity",
+      label: "Quantity",
+      fieldKind: "number",
+      required: false,
+      backendNodeId: 45,
+      fingerprint: { tagName: "INPUT", inputType: "number" },
+    };
+    const payload = {
+      version: 1,
+      kind: "input",
+      callbackIds,
+      target: { ...inputTarget, fields: [field] },
+    };
+    expect(
+      parseBrowserUserActionPayload(payload).target.fields[0],
+    ).toMatchObject(field);
+    expect(() => {
+      parseBrowserUserActionPayload({
+        ...payload,
+        target: {
+          ...inputTarget,
+          fields: [
+            { ...field, fingerprint: { tagName: "INPUT", inputType: "text" } },
+          ],
+        },
+      });
+    }).toThrow("Invalid Browser user-action payload");
     expect(
       parseBrowserUserActionPayload({
-        version: 1,
-        kind: "direct_interaction",
-        callbackIds,
-        reason: "Complete the challenge in the Browser",
-      }),
-    ).toStrictEqual({
-      version: 1,
-      kind: "direct_interaction",
-      callbackIds,
-      reason: "Complete the challenge in the Browser",
-    });
+        ...payload,
+        target: {
+          ...inputTarget,
+          fields: [{ ...field, fieldKind: "one_time_code" }],
+        },
+      }).target.fields[0]?.fieldKind,
+    ).toBe("one_time_code");
   });
 
   it("rejects unknown versions, duplicate keys, and unsafe shapes", () => {
     expect(() => {
       return parseBrowserUserActionPayload({
         version: 2,
-        kind: "direct_interaction",
+        kind: "input",
         callbackIds,
-        reason: "New shape",
+        target: { ...inputTarget, fields: [] },
       });
     }).toThrow("Unsupported Browser user-action payload version");
     expect(() => {
       return parseBrowserUserActionPayload({
         version: 1,
-        kind: "direct_interaction",
-        reason: "Missing callback identities",
+        kind: "input",
+        target: { ...inputTarget, fields: [] },
       });
     }).toThrow("Invalid Browser user-action callback identities");
     expect(() => {

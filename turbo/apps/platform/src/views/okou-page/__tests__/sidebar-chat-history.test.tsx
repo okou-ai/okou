@@ -311,16 +311,21 @@ test("Keep check-mark chats and archive controls unchanged when archiving is dis
 test("Filter chats by All chats, Unread, or Archived", async () => {
   prepareDefaultAgent();
   const currentThread = createThread(EXISTING_THREAD_ID, "Release plan");
+  // A check-mark icon is an ordinary emoji; only the archived flag archives.
+  const checkMarkThread = createThread(RESEARCH_THREAD_ID, "✅ Shipped notes");
   const archivedReadThread = createThread(
     ARCHIVED_THREAD_ID,
-    "✅ Archived context",
+    "Archived context",
+    { archived: true },
   );
   const archivedUnreadThread = createThread(
     INCIDENT_THREAD_ID,
-    "✅ Waiting for review",
+    "Waiting for review",
+    { archived: true },
   );
   mockSidebarThreadStory([
     currentThread,
+    checkMarkThread,
     archivedReadThread,
     archivedUnreadThread,
   ]);
@@ -338,14 +343,17 @@ test("Filter chats by All chats, Unread, or Archived", async () => {
     featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
   });
 
+  const titles = [
+    "Release plan",
+    "✅ Shipped notes",
+    "Archived context",
+    "Waiting for review",
+  ];
   await waitFor(() => {
-    expect(
-      visibleThreadTitles([
-        "Release plan",
-        "✅ Archived context",
-        "✅ Waiting for review",
-      ]),
-    ).toStrictEqual(["Release plan"]);
+    expect(visibleThreadTitles(titles)).toStrictEqual([
+      "Release plan",
+      "✅ Shipped notes",
+    ]);
   });
 
   openChatListMenu();
@@ -358,48 +366,70 @@ test("Filter chats by All chats, Unread, or Archived", async () => {
   click(menuItemByText("Unread"));
 
   await waitFor(() => {
-    expect(
-      visibleThreadTitles([
-        "Release plan",
-        "✅ Archived context",
-        "✅ Waiting for review",
-      ]),
-    ).toStrictEqual(["✅ Waiting for review"]);
+    expect(visibleThreadTitles(titles)).toStrictEqual(["Waiting for review"]);
   });
   expect(within(sidebar()).getByText("Show all chats")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${INCIDENT_THREAD_ID}`);
+  });
 
   openChatListMenu();
   click(menuItemByText("Archived"));
 
   await waitFor(() => {
-    expect(
-      visibleThreadTitles([
-        "Release plan",
-        "✅ Archived context",
-        "✅ Waiting for review",
-      ]),
-    ).toStrictEqual(["✅ Archived context", "✅ Waiting for review"]);
+    expect(visibleThreadTitles(titles)).toStrictEqual([
+      "Archived context",
+      "Waiting for review",
+    ]);
   });
   expect(within(sidebar()).getByText("Show all chats")).toBeInTheDocument();
+  expect(pathname()).toBe(`/chats/${INCIDENT_THREAD_ID}`);
 
   openChatListMenu();
   click(menuItemByText("All chats"));
 
   await waitFor(() => {
-    expect(
-      visibleThreadTitles([
-        "Release plan",
-        "✅ Archived context",
-        "✅ Waiting for review",
-      ]),
-    ).toStrictEqual(["Release plan"]);
+    expect(visibleThreadTitles(titles)).toStrictEqual([
+      "Release plan",
+      "✅ Shipped notes",
+    ]);
   });
   expect(
     within(sidebar()).queryByText("Show all chats"),
   ).not.toBeInTheDocument();
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${EXISTING_THREAD_ID}`);
+  });
 });
 
-test("Hide the current chat after archiving it", async () => {
+test("Selecting a filter skips the chat open in the right pane", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Release plan"),
+    createThread(ARCHIVED_THREAD_ID, "Archived context", { archived: true }),
+    createThread(INCIDENT_THREAD_ID, "Waiting for review", { archived: true }),
+  ]);
+
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}?sidebar=${ARCHIVED_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
+  });
+  await waitFor(() => {
+    expect(visibleThreadTitles(["Release plan"])).toStrictEqual([
+      "Release plan",
+    ]);
+  });
+
+  openChatListMenu();
+  click(menuItemByText("Archived"));
+
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${INCIDENT_THREAD_ID}`);
+  });
+});
+
+test("Hide the current chat after archiving it without changing its title", async () => {
   prepareDefaultAgent();
   const untitledThread: SidebarThread = {
     ...createThread(EXISTING_THREAD_ID, "Unused title"),
@@ -429,22 +459,22 @@ test("Hide the current chat after archiving it", async () => {
   click(buttonByText("Show archived chats", sidebar()));
 
   await waitFor(() => {
-    expect(within(sidebar()).getByText("✅")).toBeInTheDocument();
+    expect(within(sidebar()).getByText("New chat")).toBeInTheDocument();
   });
-  openThreadMenu("✅");
+  expect(within(sidebar()).queryByText("✅")).not.toBeInTheDocument();
+  openThreadMenu("New chat");
   click(menuItemByText("Unarchive chat"));
 
   await waitFor(() => {
     expect(
       within(sidebar()).getByText("No archived chats"),
     ).toBeInTheDocument();
-    expect(within(sidebar()).queryByText("New Thread")).not.toBeInTheDocument();
-    expect(within(sidebar()).queryByText("✅")).not.toBeInTheDocument();
+    expect(within(sidebar()).queryByText("New chat")).not.toBeInTheDocument();
   });
 
   click(buttonByText("Show all chats", sidebar()));
   await expect(
-    within(sidebar()).findByText("New Thread"),
+    within(sidebar()).findByText("New chat"),
   ).resolves.toBeInTheDocument();
   expect(
     within(sidebar()).queryByText("No archived chats"),
@@ -454,10 +484,9 @@ test("Hide the current chat after archiving it", async () => {
 test("Find archived chats in All and Chats workspace search results", async () => {
   prepareDefaultAgent();
   const currentThread = createThread(EXISTING_THREAD_ID, "Release plan");
-  const archivedThread = createThread(
-    ARCHIVED_THREAD_ID,
-    "✅ Archived context",
-  );
+  const archivedThread = createThread(ARCHIVED_THREAD_ID, "Archived context", {
+    archived: true,
+  });
   mockSidebarThreadStory([currentThread, archivedThread]);
   await setupSidebarPage({
     context,
@@ -468,7 +497,7 @@ test("Find archived chats in All and Chats workspace search results", async () =
   await waitFor(() => {
     expect(within(sidebar()).getByText("Release plan")).toBeInTheDocument();
     expect(
-      within(sidebar()).queryByText("✅ Archived context"),
+      within(sidebar()).queryByText("Archived context"),
     ).not.toBeInTheDocument();
   });
 
@@ -486,7 +515,7 @@ test("Find archived chats in All and Chats workspace search results", async () =
       "aria-selected",
       "true",
     );
-    expect(within(dialog).getByText("✅ Archived context")).toBeInTheDocument();
+    expect(within(dialog).getByText("Archived context")).toBeInTheDocument();
   });
 
   click(buttonByText("Chats", dialog));
@@ -495,7 +524,7 @@ test("Find archived chats in All and Chats workspace search results", async () =
       "aria-selected",
       "true",
     );
-    expect(within(dialog).getByText("✅ Archived context")).toBeInTheDocument();
+    expect(within(dialog).getByText("Archived context")).toBeInTheDocument();
   });
 });
 

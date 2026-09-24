@@ -100,6 +100,11 @@ route-owned lease renewal only keeps an open home visit eligible for cron.
   winner collects evidence or contacts providers.
 - An unchanged evidence digest advances `next_refresh_at` without another model
   call. A failed attempt enters a cooldown while previous cards remain cached.
+- Cached entries are strictly validated on both GET and cron. An invalid set
+  (including cards from before `purpose` became required) is discarded with a
+  conditional, claim-aware update: its digest is cleared and refresh becomes
+  due immediately. GET returns the normal unavailable response instead of 500;
+  only the cron may regenerate cards. A concurrent refresh is never overwritten.
 - When the cached set changes, the API publishes
   `homeTaskRecommendationsChanged` on that member's user-org Ably channel. An
   open page records that new cards are available, but keeps its current cards

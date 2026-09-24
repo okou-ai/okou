@@ -255,6 +255,7 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_prepare_storage_manifest_cache_prefetch_decision"
   | "api_dispatch_prepare_storage_manifest_cache_mixed_lookup"
   | "api_dispatch_prepare_storage_manifest_cache_lookup"
+  | "api_dispatch_prepare_storage_manifest_cache_pool_acquire"
   | "api_dispatch_prepare_storage_manifest_cache_classify"
   | "api_dispatch_prepare_storage_manifest_cache_sign_misses"
   | "api_dispatch_prepare_storage_manifest_cache_upsert_misses"

@@ -36,18 +36,12 @@ import { parseTrustedPlatformActionUrl } from "./platform-action-url.ts";
 const REQUEST_TOKEN_PATTERN = /^vm0_browser_user_action_[A-Za-z0-9_-]{43}$/u;
 export const BROWSER_INPUT_CANCELLATION_PROMPT =
   "The user cancelled the browser input request.";
-export const BROWSER_INTERACTION_CANCELLATION_PROMPT =
-  "The user cancelled the browser interaction request.";
 
 type BrowserInputAction = Extract<
   BrowserUserActionResponse,
   { readonly kind: "input" }
 >;
-type BrowserDirectInteractionAction = Extract<
-  BrowserUserActionResponse,
-  { readonly kind: "direct_interaction" }
->;
-type BrowserUserAction = BrowserInputAction | BrowserDirectInteractionAction;
+type BrowserUserAction = BrowserInputAction;
 
 export interface BrowserUserActionDescriptor {
   readonly requestToken: string;
@@ -68,11 +62,17 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly callbackDelivered$: Computed<boolean>;
   readonly callbackFailed$: Computed<boolean>;
   readonly busy$: Computed<boolean>;
-  readonly entryState$: Computed<"idle" | "checking" | "ready" | "unavailable">;
+  readonly entryState$: Computed<
+    "idle" | "checking" | "ready" | "unavailable" | "invalid"
+  >;
+  readonly entryAction$: Computed<BrowserInputAction | null>;
   readonly beginEntry$: Command<Promise<void>, [AbortSignal]>;
-  readonly endEntry$: Command<void, []>;
+  readonly invalidateEntry$: Command<void, []>;
+  readonly startStandaloneEntry$: Command<Promise<void>, [AbortSignal]>;
+  readonly retryStandaloneRequest$: Command<Promise<void>, [AbortSignal]>;
   readonly refresh$: Command<void, []>;
   readonly updateDraft$: Command<void, [string, string]>;
+  readonly removeDraft$: Command<void, [string]>;
   readonly clearDraft$: Command<void, []>;
   readonly clearDraftRef$: Command<
     (() => void) | undefined,
@@ -87,7 +87,6 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
     [HTMLFormElement | null]
   >;
   readonly submit$: Command<Promise<void>, [AbortSignal]>;
-  readonly complete$: Command<Promise<void>, [AbortSignal]>;
   readonly cancel$: Command<Promise<void>, [AbortSignal]>;
   readonly continue$: Command<Promise<void>, [AbortSignal]>;
 }
@@ -95,14 +94,19 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
 function createEntrySignals(
   descriptor: BrowserUserActionDescriptor,
   refresh$: BrowserUserActionSignals["refresh$"],
-): Pick<BrowserUserActionSignals, "entryState$" | "beginEntry$" | "endEntry$"> {
-  const internalState$ = state<"idle" | "checking" | "ready" | "unavailable">(
-    "idle",
-  );
+): Pick<
+  BrowserUserActionSignals,
+  "entryState$" | "entryAction$" | "beginEntry$" | "invalidateEntry$"
+> {
+  const internalState$ = state<
+    "idle" | "checking" | "ready" | "unavailable" | "invalid"
+  >("idle");
+  const internalAction$ = state<BrowserInputAction | null>(null);
   const resetEntrySignal$ = resetSignal();
   const beginEntry$ = command(async ({ get, set }, signal: AbortSignal) => {
     const operationSignal = set(resetEntrySignal$, signal);
     set(internalState$, "checking");
+    set(internalAction$, null);
     const checked = await settle(
       accept(
         get(apiClient$)(browserUserActionsContract).preflight({
@@ -127,6 +131,7 @@ function createEntrySignals(
       checked.value.body.kind === "input" &&
       checked.value.body.state === "pending"
     ) {
+      set(internalAction$, checked.value.body);
       set(internalState$, "ready");
       return;
     }
@@ -136,17 +141,53 @@ function createEntrySignals(
       set(refresh$);
     }
   });
-  const endEntry$ = command(({ set }) => {
-    set(resetEntrySignal$);
-    set(internalState$, "idle");
+  const invalidateEntry$ = command(({ set }) => {
+    set(internalAction$, null);
+    set(internalState$, "invalid");
   });
   return {
     entryState$: computed((get) => {
       return get(internalState$);
     }),
+    entryAction$: computed((get) => {
+      return get(internalAction$);
+    }),
     beginEntry$,
-    endEntry$,
+    invalidateEntry$,
   };
+}
+
+function createStandaloneEntrySignals(
+  request$: BrowserUserActionSignals["request$"],
+  refresh$: BrowserUserActionSignals["refresh$"],
+  beginEntry$: BrowserUserActionSignals["beginEntry$"],
+): Pick<
+  BrowserUserActionSignals,
+  "startStandaloneEntry$" | "retryStandaloneRequest$"
+> {
+  const startStandaloneEntry$ = command(
+    async ({ get, set }, signal: AbortSignal) => {
+      const loaded = await settle(get(request$), signal);
+      if (!loaded.ok) {
+        return;
+      }
+      const request = loaded.value;
+      if (
+        request.kind === "action" &&
+        request.action.kind === "input" &&
+        request.action.state === "pending"
+      ) {
+        await set(beginEntry$, signal);
+      }
+    },
+  );
+  const retryStandaloneRequest$ = command(
+    async ({ set }, signal: AbortSignal) => {
+      set(refresh$);
+      await set(startStandaloneEntry$, signal);
+    },
+  );
+  return { startStandaloneEntry$, retryStandaloneRequest$ };
 }
 
 type BrowserUserActionCardSignalsRegistry = CardSignalsRegistry<
@@ -306,7 +347,12 @@ function createRequestSignals(descriptor: BrowserUserActionDescriptor) {
 
 function createDraftSignals(): Pick<
   BrowserUserActionSignals,
-  "draft$" | "updateDraft$" | "clearDraft$" | "clearDraftRef$" | "formRef$"
+  | "draft$"
+  | "updateDraft$"
+  | "removeDraft$"
+  | "clearDraft$"
+  | "clearDraftRef$"
+  | "formRef$"
 > {
   const internalDraft$ = state<ReadonlyMap<string, string>>(new Map());
   const ownerCount$ = state(0);
@@ -323,6 +369,13 @@ function createDraftSignals(): Pick<
   });
   const clearDraft$ = command(({ set }): void => {
     set(internalDraft$, new Map());
+  });
+  const removeDraft$ = command(({ set }, key: string): void => {
+    set(internalDraft$, (current) => {
+      const next = new Map(current);
+      next.delete(key);
+      return next;
+    });
   });
   const clearDraftKeys$ = command(({ set }, keys: readonly string[]): void => {
     if (keys.length === 0) {
@@ -373,6 +426,7 @@ function createDraftSignals(): Pick<
   return {
     draft$,
     updateDraft$,
+    removeDraft$,
     clearDraft$,
     clearDraftRef$: onRef(clearDraftOnMount$),
     formRef$: onRef(ownForm$),
@@ -397,6 +451,8 @@ interface BrowserUserActionMutationContext {
   readonly request$: BrowserUserActionSignals["request$"];
   readonly refresh$: BrowserUserActionSignals["refresh$"];
   readonly draft$: BrowserUserActionSignals["draft$"];
+  readonly entryAction$: BrowserUserActionSignals["entryAction$"];
+  readonly invalidateEntry$: BrowserUserActionSignals["invalidateEntry$"];
   readonly clearDraft$: BrowserUserActionSignals["clearDraft$"];
   readonly activeMutation$: State<boolean>;
   readonly deliverCallback$: Command<
@@ -405,11 +461,54 @@ interface BrowserUserActionMutationContext {
   >;
 }
 
+function browserInputSubmissionValues(
+  action: BrowserInputAction,
+  draft: ReadonlyMap<string, string>,
+): { key: string; value: string }[] | null {
+  const values: { key: string; value: string }[] = [];
+  for (const field of action.fields) {
+    const value = draft.get(field.key) ?? "";
+    if (value === "") {
+      if (field.required || field.control.siteRequired) {
+        return null;
+      }
+      if (field.fieldKind !== "number" || !draft.has(field.key)) {
+        continue;
+      }
+    }
+    values.push({ key: field.key, value });
+  }
+  return values;
+}
+
+function isInvalidBrowserInputValueResponse(result: {
+  readonly status: number;
+  readonly body: unknown;
+}): boolean {
+  if (
+    result.status !== 409 ||
+    typeof result.body !== "object" ||
+    result.body === null ||
+    !("error" in result.body)
+  ) {
+    return false;
+  }
+  const error = result.body.error;
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "BROWSER_USER_ACTION_INVALID_VALUE"
+  );
+}
+
 function createSubmitSignal({
   descriptor,
   request$,
   refresh$,
   draft$,
+  entryAction$,
+  invalidateEntry$,
   clearDraft$,
   activeMutation$,
   deliverCallback$,
@@ -430,16 +529,16 @@ function createSubmitSignal({
     ) {
       return;
     }
-    const draft = get(draft$);
-    const values = request.action.fields.flatMap((field) => {
-      const value = draft.get(field.key) ?? "";
-      return value === "" && !field.required ? [] : [{ key: field.key, value }];
-    });
+    const entryAction = get(entryAction$);
     if (
-      request.action.fields.some((field) => {
-        return field.required && (draft.get(field.key) ?? "") === "";
-      })
+      !entryAction ||
+      !actionMatches(entryAction, descriptor) ||
+      entryAction.state !== "pending"
     ) {
+      return;
+    }
+    const values = browserInputSubmissionValues(entryAction, get(draft$));
+    if (!values) {
       return;
     }
 
@@ -457,6 +556,10 @@ function createSubmitSignal({
     });
     signal.throwIfAborted();
     const status: number = result.status;
+    if (isInvalidBrowserInputValueResponse(result)) {
+      set(invalidateEntry$);
+      return;
+    }
     if (status !== 200) {
       set(clearDraft$);
       set(refresh$);
@@ -474,73 +577,6 @@ function createSubmitSignal({
       set(clearDraft$);
     }
     if (result.body.state === "succeeded") {
-      set(activeMutation$, true);
-      await set(
-        deliverCallback$,
-        descriptor.callbackPrompt,
-        result.body.callbackIds.success,
-        signal,
-      ).finally(() => {
-        set(activeMutation$, false);
-        set(refresh$);
-      });
-      signal.throwIfAborted();
-      return;
-    }
-    set(refresh$);
-  });
-}
-
-function cancellationPrompt(action: BrowserUserAction): string {
-  return action.kind === "direct_interaction"
-    ? BROWSER_INTERACTION_CANCELLATION_PROMPT
-    : BROWSER_INPUT_CANCELLATION_PROMPT;
-}
-
-function createCompleteSignal({
-  descriptor,
-  request$,
-  refresh$,
-  activeMutation$,
-  deliverCallback$,
-}: BrowserUserActionMutationContext): BrowserUserActionSignals["complete$"] {
-  return command(async ({ get, set }, signal: AbortSignal) => {
-    if (get(activeMutation$)) {
-      return;
-    }
-    const request = await get(request$);
-    signal.throwIfAborted();
-    if (get(activeMutation$)) {
-      return;
-    }
-    if (
-      request.kind !== "action" ||
-      request.action.kind !== "direct_interaction" ||
-      request.action.state !== "pending"
-    ) {
-      return;
-    }
-
-    set(activeMutation$, true);
-    const result = await accept(
-      get(apiClient$)(browserUserActionsContract).complete({
-        params: { requestToken: descriptor.requestToken },
-        body: {},
-        fetchOptions: { signal },
-      }),
-      [200, 403, 404, 409, 410],
-      signal,
-    ).finally(() => {
-      set(activeMutation$, false);
-    });
-    signal.throwIfAborted();
-    const status: number = result.status;
-    if (
-      status === 200 &&
-      actionMatches(result.body, descriptor) &&
-      result.body.kind === "direct_interaction" &&
-      result.body.state === "succeeded"
-    ) {
       set(activeMutation$, true);
       await set(
         deliverCallback$,
@@ -602,7 +638,7 @@ function createCancelSignal({
       set(activeMutation$, true);
       await set(
         deliverCallback$,
-        cancellationPrompt(result.body),
+        BROWSER_INPUT_CANCELLATION_PROMPT,
         result.body.callbackIds.cancellation,
         signal,
       ).finally(() => {
@@ -643,7 +679,7 @@ function createContinueSignal({
           }
         : request.action.state === "cancelled"
           ? {
-              prompt: cancellationPrompt(request.action),
+              prompt: BROWSER_INPUT_CANCELLATION_PROMPT,
               ids: request.action.callbackIds.cancellation,
             }
           : null;
@@ -662,19 +698,29 @@ function createContinueSignal({
   });
 }
 
-function createMutationSignals(
-  descriptor: BrowserUserActionDescriptor,
-  request$: BrowserUserActionSignals["request$"],
-  refresh$: BrowserUserActionSignals["refresh$"],
-  draft$: BrowserUserActionSignals["draft$"],
-  clearDraft$: BrowserUserActionSignals["clearDraft$"],
-): Pick<
+function createMutationSignals({
+  descriptor,
+  request$,
+  refresh$,
+  draft$,
+  clearDraft$,
+  entryAction$,
+  invalidateEntry$,
+}: Pick<
+  BrowserUserActionMutationContext,
+  | "descriptor"
+  | "request$"
+  | "refresh$"
+  | "draft$"
+  | "clearDraft$"
+  | "entryAction$"
+  | "invalidateEntry$"
+>): Pick<
   BrowserUserActionSignals,
   | "callbackDelivered$"
   | "callbackFailed$"
   | "busy$"
   | "submit$"
-  | "complete$"
   | "cancel$"
   | "continue$"
 > {
@@ -708,6 +754,8 @@ function createMutationSignals(
     request$,
     refresh$,
     draft$,
+    entryAction$,
+    invalidateEntry$,
     clearDraft$,
     activeMutation$,
     deliverCallback$,
@@ -724,7 +772,6 @@ function createMutationSignals(
       return get(activeMutation$);
     }),
     submit$: createSubmitSignal(context),
-    complete$: createCompleteSignal(context),
     cancel$: createCancelSignal(context),
     continue$: createContinueSignal(context),
   };
@@ -752,19 +799,27 @@ export function createBrowserUserActionSignals(
     }),
   );
   const entrySignals = createEntrySignals(descriptor, requestSignals.refresh$);
-  const draftSignals = createDraftSignals();
-  const mutationSignals = createMutationSignals(
-    descriptor,
+  const standaloneEntrySignals = createStandaloneEntrySignals(
     requestSignals.request$,
     requestSignals.refresh$,
-    draftSignals.draft$,
-    draftSignals.clearDraft$,
+    entrySignals.beginEntry$,
   );
+  const draftSignals = createDraftSignals();
+  const mutationSignals = createMutationSignals({
+    descriptor,
+    request$: requestSignals.request$,
+    refresh$: requestSignals.refresh$,
+    draft$: draftSignals.draft$,
+    clearDraft$: draftSignals.clearDraft$,
+    entryAction$: entrySignals.entryAction$,
+    invalidateEntry$: entrySignals.invalidateEntry$,
+  });
   return {
     ...descriptor,
     ...requestSignals,
     resumeRef$,
     ...entrySignals,
+    ...standaloneEntrySignals,
     ...draftSignals,
     ...mutationSignals,
   };

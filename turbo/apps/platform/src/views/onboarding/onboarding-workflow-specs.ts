@@ -1,4 +1,4 @@
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import type { OnboardingWorkflowConnectorSlug } from "@okouai/api-contracts/contracts/onboarding";
 
 export type OnboardingWorkflowCategoryId =
   | "engineering"
@@ -14,8 +14,9 @@ export type OnboardingWorkflowCategoryId =
 export interface OnboardingWorkflowSpec {
   readonly id: string;
   readonly prompt: string;
-  readonly requiredConnectorSlugs: readonly ConnectorSlug[];
-  readonly optionalConnectorSlugs?: readonly ConnectorSlug[];
+  // The API serves labels and icons for exactly this shared slug list.
+  readonly requiredConnectorSlugs: readonly OnboardingWorkflowConnectorSlug[];
+  readonly optionalConnectorSlugs?: readonly OnboardingWorkflowConnectorSlug[];
 }
 
 // Onboarding owns a focused six-workflow catalog per role. Keeping its prompt

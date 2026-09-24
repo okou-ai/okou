@@ -1,0 +1,26 @@
+[package]
+name = "runner-supervisor"
+version = "0.1.1"
+edition.workspace = true
+description = "Runner start-loop idle resource orchestration"
+
+[dependencies]
+runner-executor.workspace = true
+runner-host.workspace = true
+runner-lifecycle.workspace = true
+runner-types.workspace = true
+sandbox.workspace = true
+futures-util = { workspace = true, features = ["async-await", "std"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
+tokio-util = { workspace = true, features = ["rt"] }
+tracing = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+runner-lifecycle = { workspace = true, features = ["test-support"] }
+runner-storage.workspace = true
+sandbox-mock.workspace = true
+tempfile = { workspace = true, features = ["getrandom"] }
+tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true

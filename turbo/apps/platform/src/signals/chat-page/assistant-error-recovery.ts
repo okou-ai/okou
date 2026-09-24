@@ -6,21 +6,23 @@ import {
   getCodexChatGptAccountUnsupportedModel,
   isAgentExecutionTimeoutRunError,
 } from "@okouai/api-contracts/contracts/errors";
-import type { GetRunResponse } from "@okouai/api-contracts/contracts/runs";
-import type { RunDetailSignals } from "./run-detail.ts";
 import type { ModelProviderFramework } from "@okouai/api-contracts/contracts/model-provider-types";
+import { getMemberModelPolicyRoute } from "@okouai/api-contracts/contracts/member-model-policy";
 import {
   getFrameworkForType,
-  getBuiltInConcreteProviderType,
   isSupportedRunModel,
   type ModelProviderResponse,
-  type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
   knownRunFailureReasonSchema,
   type KnownRunFailureReason,
 } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { featureSwitch$ } from "../external/feature-switch.ts";
+import { orgModelPolicies$ } from "../external/org-model-policies.ts";
+import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { accept } from "../../lib/accept.ts";
+import { apiClient$ } from "../api-client.ts";
+import { personalModelProviderAccountRevision$ } from "../external/personal-model-providers.ts";
 import { resetPersonalCodexAccountSubscriptionUsage$ } from "../okou-page/settings/personal-model-providers.ts";
 import { textToMessageDocument } from "../okou-page/user-message-document-codec.ts";
 import type { ChatEventGroup, EnrichedChatEvent } from "./chat-event.ts";
@@ -53,10 +55,22 @@ type SubscriptionResetWindow = Exclude<
   "model" | "unknown"
 >;
 
+type PersonalSubscriptionProviderType =
+  | "codex-oauth-token"
+  | "claude-code-oauth-token";
+
+/**
+ * The personal subscription the thread's current model routes through. The
+ * card reads the route the next run will take rather than the failed run's
+ * captured account: retrying always goes through the current route.
+ */
+interface CurrentPersonalSubscription {
+  readonly providerType: PersonalSubscriptionProviderType;
+  readonly framework: ModelProviderFramework;
+}
+
 interface ClassifiedAssistantError {
   readonly sourceEventId: string;
-  readonly runId?: string;
-  readonly source?: GetRunResponse["source"];
   readonly failureReason: KnownRunFailureReason | null;
   readonly providerMessage: string;
   readonly kind: AssistantErrorRecoveryKind;
@@ -64,10 +78,11 @@ interface ClassifiedAssistantError {
   readonly scope: AssistantErrorRecoveryScope;
   readonly limitWindow: AssistantErrorRecoveryWindow | null;
   readonly retryLabel: string | null;
-  readonly failedModel: SupportedRunModel | null;
 }
 
 export type AssistantErrorRecovery = ClassifiedAssistantError & {
+  /** Present when the current route is a personal subscription. */
+  readonly personalSubscription: "connected" | "disconnected" | null;
   readonly accountLabel: string | null;
   readonly retryAt: string | null;
   readonly resetWindows: readonly {
@@ -81,7 +96,6 @@ export type AssistantErrorRecovery = ClassifiedAssistantError & {
     readonly resetAndTryAgain: {
       readonly resetsRemaining: number;
       readonly accountId: string;
-      readonly runId: string;
     } | null;
   };
 };
@@ -154,7 +168,6 @@ function classifyExecutionTimeout(
     scope: "framework",
     limitWindow: null,
     retryLabel: null,
-    failedModel: null,
   };
 }
 
@@ -164,7 +177,6 @@ function classifyAssistantErrorFromText(
 ): ClassifiedAssistantError | null {
   const normalized = normalizedProviderMessage(error);
   const retryLabel = resetLabelFromProviderMessage(normalized);
-  const unsupportedModel = getCodexChatGptAccountUnsupportedModel(error);
 
   if (isAgentExecutionTimeoutRunError(normalized)) {
     return classifyExecutionTimeout(event, error);
@@ -180,11 +192,10 @@ function classifyAssistantErrorFromText(
       scope: "framework",
       limitWindow: null,
       retryLabel: null,
-      failedModel: null,
     };
   }
 
-  if (unsupportedModel !== undefined) {
+  if (getCodexChatGptAccountUnsupportedModel(error) !== undefined) {
     return {
       sourceEventId: event.id,
       failureReason: null,
@@ -194,9 +205,6 @@ function classifyAssistantErrorFromText(
       scope: "model",
       limitWindow: null,
       retryLabel: null,
-      failedModel: isSupportedRunModel(unsupportedModel)
-        ? unsupportedModel
-        : null,
     };
   }
 
@@ -210,7 +218,6 @@ function classifyAssistantErrorFromText(
       scope: "model",
       limitWindow: null,
       retryLabel: null,
-      failedModel: null,
     };
   }
 
@@ -224,7 +231,6 @@ function classifyAssistantErrorFromText(
       scope: "model",
       limitWindow: null,
       retryLabel: null,
-      failedModel: null,
     };
   }
 
@@ -239,7 +245,6 @@ function classifyAssistantErrorFromText(
       scope: modelScoped ? "model" : "framework",
       limitWindow: modelScoped ? "model" : "unknown",
       retryLabel,
-      failedModel: null,
     };
   }
 
@@ -254,7 +259,6 @@ function classifyAssistantErrorFromText(
       scope: limitWindow === "model" ? "model" : "framework",
       limitWindow,
       retryLabel,
-      failedModel: null,
     };
   }
 
@@ -347,7 +351,6 @@ function classifyStructuredAssistantError(
   framework: ModelProviderFramework | null,
 ): ClassifiedAssistantError {
   const normalized = normalizedProviderMessage(error);
-  const unsupportedModel = getCodexChatGptAccountUnsupportedModel(error);
   const hasCodexUsageDetails =
     kind === "usage-limit" &&
     /you(?:'|’)ve hit your usage limit\b/iu.test(normalized);
@@ -383,12 +386,6 @@ function classifyStructuredAssistantError(
     retryLabel:
       hasCodexUsageDetails || hasClaudeUsageDetails
         ? resetLabelFromProviderMessage(normalized)
-        : null,
-    failedModel:
-      kind === "model-unavailable" &&
-      unsupportedModel !== undefined &&
-      isSupportedRunModel(unsupportedModel)
-        ? unsupportedModel
         : null,
   };
 }
@@ -493,26 +490,43 @@ function latestKnownResetAt(
   return latest?.value ?? null;
 }
 
-function runSourceFramework(
-  source: GetRunResponse["source"] | undefined,
-): ModelProviderFramework | null {
-  const provider = source?.runtimeProviderType ?? source?.providerType;
-  if (!provider) {
-    return null;
-  }
-  if (provider === "built-in") {
-    return source?.model && isSupportedRunModel(source.model)
-      ? getFrameworkForType(getBuiltInConcreteProviderType(source.model))
-      : null;
-  }
-  return getFrameworkForType(provider);
+function isPersonalSubscriptionProviderType(
+  type: string,
+): type is PersonalSubscriptionProviderType {
+  return type === "codex-oauth-token" || type === "claude-code-oauth-token";
 }
 
-function historicalSubscriptionError(
-  event: EnrichedChatEvent,
-  error: string,
-  source: GetRunResponse["source"] | undefined,
-): ClassifiedAssistantError | null {
+function createCurrentPersonalSubscriptionComputed(
+  selectedModel$: Computed<string | null>,
+): Computed<Promise<CurrentPersonalSubscription | null>> {
+  return computed(async (get): Promise<CurrentPersonalSubscription | null> => {
+    const selectedModel = get(selectedModel$);
+    if (selectedModel === null) {
+      return null;
+    }
+    const { policies } = await get(orgModelPolicies$);
+    const policy = policies.find((candidate) => {
+      return candidate.model === selectedModel;
+    });
+    if (!policy) {
+      return null;
+    }
+    const route = getMemberModelPolicyRoute(policy);
+    if (
+      route.credentialScope !== "member" ||
+      !isPersonalSubscriptionProviderType(route.providerType)
+    ) {
+      return null;
+    }
+    return {
+      providerType: route.providerType,
+      framework: getFrameworkForType(route.providerType),
+    };
+  });
+}
+
+/** An unclassified failure may still come from the subscription it ran on. */
+function maySubscriptionFail(event: EnrichedChatEvent, error: string): boolean {
   const subscriptionFailureReasons = [
     "reconnect_required",
     "invalid_credentials",
@@ -521,37 +535,68 @@ function historicalSubscriptionError(
     "provider_server_error",
     "response_connection_lost",
   ];
-  if (
+  return !(
     (event.eventType === "run.failed" &&
       event.failureReason !== undefined &&
       !subscriptionFailureReasons.includes(event.failureReason)) ||
     ["insufficient_credits", "pro_required"].includes(
       error.trim().toLowerCase(),
-    ) ||
-    source?.credentialScope !== "member" ||
-    (source.providerType !== "codex-oauth-token" &&
-      source.providerType !== "claude-code-oauth-token")
-  ) {
-    return null;
-  }
+    )
+  );
+}
+
+function subscriptionError(
+  event: EnrichedChatEvent,
+  error: string,
+  subscription: CurrentPersonalSubscription,
+): ClassifiedAssistantError {
   return {
     sourceEventId: event.id,
-    ...(event.runId ? { runId: event.runId } : {}),
-    source,
     failureReason: null,
     kind: "subscription-error",
     providerMessage: error,
-    framework: getFrameworkForType(source.providerType),
+    framework: subscription.framework,
     scope: "framework",
     limitWindow: null,
     retryLabel: null,
-    failedModel: null,
   };
 }
 
+function classifyCandidate(
+  candidate: { readonly event: EnrichedChatEvent; readonly error: string },
+  structuredKind: StructuredRecovery | undefined,
+): ClassifiedAssistantError | null {
+  if (structuredKind === undefined) {
+    return classifyAssistantErrorFromText(candidate.event, candidate.error);
+  }
+  if (structuredKind.kind === null) {
+    return null;
+  }
+  if (structuredKind.kind === "execution-timeout") {
+    return classifyExecutionTimeout(candidate.event, candidate.error);
+  }
+  return classifyStructuredAssistantError(
+    candidate.event,
+    candidate.error,
+    structuredKind.failureReason,
+    structuredKind.kind,
+    structuredRecoveryFrameworkFromMessage(
+      structuredKind.kind,
+      candidate.error,
+    ),
+  );
+}
+
+/**
+ * Classification reads the failure event itself. Only the fallbacks that ask
+ * whether the thread routes through a personal subscription read the current
+ * route, and never the failed run's details.
+ */
 function createClassifiedAssistantErrorComputed(
   visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>,
-  runDetails$: Computed<ReadonlyMap<string, RunDetailSignals>>,
+  currentPersonalSubscription$: Computed<
+    Promise<CurrentPersonalSubscription | null>
+  >,
 ): Computed<Promise<ClassifiedAssistantError | null>> {
   return computed(async (get): Promise<ClassifiedAssistantError | null> => {
     const candidate = latestAssistantErrorCandidate(
@@ -561,70 +606,111 @@ function createClassifiedAssistantErrorComputed(
       return null;
     }
 
-    const runId = candidate.event.runId;
-    const detailSignals = runId ? get(runDetails$).get(runId) : undefined;
-    const source = detailSignals
-      ? (await get(detailSignals.detail$))?.source
-      : undefined;
     const structuredKind = structuredRecoveryKind(candidate.event);
-    if (structuredKind === null) {
-      return historicalSubscriptionError(
-        candidate.event,
-        candidate.error,
-        source,
-      );
-    }
-
-    let classified: ClassifiedAssistantError | null;
-    if (structuredKind === undefined) {
-      classified = classifyAssistantErrorFromText(
-        candidate.event,
-        candidate.error,
-      );
-    } else if (structuredKind.kind === null) {
-      classified = null;
-    } else if (structuredKind.kind === "execution-timeout") {
-      classified = classifyExecutionTimeout(candidate.event, candidate.error);
-    } else {
-      const frameworkFromMessage = structuredRecoveryFrameworkFromMessage(
-        structuredKind.kind,
-        candidate.error,
-      );
-      const framework = runSourceFramework(source) ?? frameworkFromMessage;
-      classified = classifyStructuredAssistantError(
-        candidate.event,
-        candidate.error,
-        structuredKind.failureReason,
-        structuredKind.kind,
-        framework,
-      );
-    }
+    const classified =
+      structuredKind === null
+        ? null
+        : classifyCandidate(candidate, structuredKind);
     if (classified === null) {
-      return historicalSubscriptionError(
-        candidate.event,
-        candidate.error,
-        source,
-      );
+      if (!maySubscriptionFail(candidate.event, candidate.error)) {
+        return null;
+      }
+      const subscription = await get(currentPersonalSubscription$);
+      return subscription
+        ? subscriptionError(candidate.event, candidate.error, subscription)
+        : null;
     }
-    const sourceFramework = runSourceFramework(source);
-    const classifiedWithSource = sourceFramework
-      ? { ...classified, framework: sourceFramework }
-      : classified;
-    return {
-      ...classifiedWithSource,
-      ...(runId ? { runId } : {}),
-      ...(source ? { source } : {}),
-      ...((classified.kind === "model-unavailable" ||
-        classified.kind === "usage-limit") &&
-      source?.model &&
-      isSupportedRunModel(source.model)
-        ? { failedModel: source.model }
-        : {}),
-    };
+    if (classified.kind === "usage-limit" && classified.framework === null) {
+      const subscription = await get(currentPersonalSubscription$);
+      return subscription
+        ? { ...classified, framework: subscription.framework }
+        : classified;
+    }
+    return classified;
   });
 }
 
-function recoveryForExactAccount(
+interface PersonalSubscriptionRecovery {
+  readonly personalSubscription: AssistantErrorRecovery["personalSubscription"];
+  readonly provider: ModelProviderResponse | undefined;
+}
+
+/**
+ * The newest failure in the thread. A usage limit is reported after the page
+ * may already have read the subscription usage, so each new failure keys a
+ * fresh read of the accounts rather than reusing the session's cached list.
+ */
+function createLatestFailureEventIdComputed(
+  chatEvents$: ChatEventSignals["chatEvents$"],
+): Computed<string | null> {
+  return computed((get): string | null => {
+    const events = get(chatEvents$);
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const event = events[index];
+      if (
+        event.eventType === "run.failed" ||
+        event.eventType === "output.error"
+      ) {
+        return event.id;
+      }
+    }
+    return null;
+  });
+}
+
+function createFailureAccountsComputed(
+  latestFailureEventId$: Computed<string | null>,
+): Computed<Promise<readonly ModelProviderResponse[]>> {
+  return computed(async (get) => {
+    get(latestFailureEventId$);
+    get(personalModelProviderAccountRevision$);
+    const result = await accept(
+      get(apiClient$)(personalModelProvidersMainContract).list(),
+      [200],
+    );
+    return result.body.modelProviders;
+  });
+}
+
+/**
+ * The account the next run would spend: the active account of the current
+ * route's subscription type. A limit on another framework says nothing about
+ * that account, so it is only read when the frameworks agree.
+ */
+function createPersonalSubscriptionRecoveryComputed(
+  classifiedAssistantError$: Computed<Promise<ClassifiedAssistantError | null>>,
+  currentPersonalSubscription$: Computed<
+    Promise<CurrentPersonalSubscription | null>
+  >,
+  failureAccounts$: Computed<Promise<readonly ModelProviderResponse[]>>,
+): Computed<Promise<PersonalSubscriptionRecovery>> {
+  return computed(async (get): Promise<PersonalSubscriptionRecovery> => {
+    const none = { personalSubscription: null, provider: undefined } as const;
+    const classified = await get(classifiedAssistantError$);
+    if (classified?.kind !== "usage-limit") {
+      return none;
+    }
+    const subscription = await get(currentPersonalSubscription$);
+    if (
+      subscription === null ||
+      subscription.framework !== classified.framework
+    ) {
+      return none;
+    }
+    const provider = (await get(failureAccounts$)).find((candidate) => {
+      return (
+        candidate.type === subscription.providerType &&
+        candidate.isActive !== false
+      );
+    });
+    if (!provider || provider.needsReconnect) {
+      return { personalSubscription: "disconnected", provider: undefined };
+    }
+    return { personalSubscription: "connected", provider };
+  });
+}
+
+function recoveryForAccount(
   classified: ClassifiedAssistantError,
   provider: ModelProviderResponse | undefined,
 ): Pick<
@@ -637,20 +723,12 @@ function recoveryForExactAccount(
     classified.limitWindow,
   );
   const resetsRemaining = provider?.subscriptionResetCredits ?? 0;
-  const source = classified.source;
   const resetAndTryAgain =
     classified.framework === "codex" &&
     classified.scope === "framework" &&
     provider &&
-    !provider.needsReconnect &&
-    resetsRemaining > 0 &&
-    classified.runId &&
-    source?.account.status === "connected"
-      ? {
-          resetsRemaining,
-          accountId: source.account.id,
-          runId: classified.runId,
-        }
+    resetsRemaining > 0
+      ? { resetsRemaining, accountId: provider.id }
       : null;
   return {
     accountLabel: provider?.accountEmail ?? provider?.workspaceName ?? null,
@@ -665,17 +743,14 @@ function recoveryForExactAccount(
 }
 
 /**
- * Permanent failures never offer a blind retry. An unsupported model becomes
- * retryable only after the thread points at another model. The command reads
- * that same thread selection, so the card cannot immediately spend another run
- * on the unchanged route. A usage limit keeps its retry: the card shows when
- * each window resets, and whether another model avoids the limit depends on the
- * account the run routes through, which the card cannot decide.
+ * Permanent failures never offer a blind retry. Every other failure retries on
+ * the thread's current selection, which the card's model picker writes; the
+ * card does not track which model failed, so switching models is the user's
+ * call. A usage limit keeps its retry and shows when each window resets.
  */
 function tryAgainAction(
   classified: ClassifiedAssistantError,
   retryAt: string | null,
-  selectedModel: string | null,
 ): AssistantErrorRecovery["actions"]["tryAgain"] {
   if (
     classified.kind === "provider-settings" ||
@@ -686,69 +761,46 @@ function tryAgainAction(
   ) {
     return null;
   }
-
-  if (classified.kind !== "model-unavailable") {
-    return { notBefore: retryAt };
-  }
-
-  const replaced =
-    isSupportedRunModel(selectedModel) &&
-    selectedModel !== classified.failedModel;
-  return replaced ? { notBefore: null } : null;
+  return { notBefore: retryAt };
 }
 
 function createAssistantErrorRecoveryComputed(
   visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>,
-  runDetails$: Computed<ReadonlyMap<string, RunDetailSignals>>,
+  chatEvents$: ChatEventSignals["chatEvents$"],
   selectedModel$: Computed<string | null>,
 ) {
+  const currentPersonalSubscription$ =
+    createCurrentPersonalSubscriptionComputed(selectedModel$);
   const classifiedAssistantError$ = createClassifiedAssistantErrorComputed(
     visibleRenderedChatGroups$,
-    runDetails$,
+    currentPersonalSubscription$,
   );
+  const personalSubscriptionRecovery$ =
+    createPersonalSubscriptionRecoveryComputed(
+      classifiedAssistantError$,
+      currentPersonalSubscription$,
+      createFailureAccountsComputed(
+        createLatestFailureEventIdComputed(chatEvents$),
+      ),
+    );
   return computed(async (get): Promise<AssistantErrorRecovery | null> => {
     const classified = await get(classifiedAssistantError$);
     if (classified === null) {
       return null;
     }
-    let provider: ModelProviderResponse | undefined;
-
-    if (classified.kind === "usage-limit") {
-      const source = classified.source;
-      const detailSignals = classified.runId
-        ? get(runDetails$).get(classified.runId)
-        : undefined;
-      const providerType =
-        classified.framework === "codex"
-          ? "codex-oauth-token"
-          : classified.framework === "claude-code"
-            ? "claude-code-oauth-token"
-            : null;
-      const usesSubscription =
-        providerType !== null &&
-        source?.credentialScope === "member" &&
-        source.providerType === providerType;
-      provider =
-        usesSubscription &&
-        detailSignals &&
-        source.account.status === "connected"
-          ? await get(detailSignals.recoveryAccount$)
-          : undefined;
-    }
-
-    const recovery = recoveryForExactAccount(classified, provider);
+    const { personalSubscription, provider } = await get(
+      personalSubscriptionRecovery$,
+    );
+    const recovery = recoveryForAccount(classified, provider);
     return {
       ...classified,
+      personalSubscription,
       accountLabel: recovery.accountLabel,
       limitWindow: recovery.limitWindow,
       retryAt: recovery.retryAt,
       resetWindows: recovery.resetWindows,
       actions: {
-        tryAgain: tryAgainAction(
-          classified,
-          recovery.retryAt,
-          get(selectedModel$),
-        ),
+        tryAgain: tryAgainAction(classified, recovery.retryAt),
         resetAndTryAgain: recovery.resetAndTryAgain,
       },
     };
@@ -759,7 +811,6 @@ export function createAssistantErrorRecoverySignals(deps: {
   readonly threadId: string;
   readonly chatEvents: ChatEventSignals;
   readonly visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>;
-  readonly runDetails$: Computed<ReadonlyMap<string, RunDetailSignals>>;
 }) {
   const threadMeta$ = threadMeta(deps.threadId);
   /**
@@ -773,13 +824,13 @@ export function createAssistantErrorRecoverySignals(deps: {
   });
   const assistantErrorRecovery$ = createAssistantErrorRecoveryComputed(
     deps.visibleRenderedChatGroups$,
-    deps.runDetails$,
+    deps.chatEvents.chatEvents$,
     selectedModel$,
   );
   /**
    * Which event the recovery will attach to follows from the transcript alone,
-   * while the recovery itself waits on the run detail and the account behind
-   * it. Publishing the identity separately lets the one card that is waiting
+   * while the recovery itself may wait on the current route and its personal
+   * account. Publishing the identity separately lets the one card that is waiting
    * say so, instead of every error card in the thread reacting to the same
    * pending read.
    */
@@ -858,10 +909,7 @@ export function createAssistantErrorRecoverySignals(deps: {
           // This action is offered only for Codex runs; see the
           // `framework === "codex"` gate on `resetAndTryAgain`.
           type: "codex-oauth-token",
-          account: {
-            id: recovery.actions.resetAndTryAgain.accountId,
-            runId: recovery.actions.resetAndTryAgain.runId,
-          },
+          account: recovery.actions.resetAndTryAgain.accountId,
         },
         signal,
       );

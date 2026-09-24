@@ -268,6 +268,7 @@ function rebuiltCte(): SQL {
             'updatedAt', thread.updated_at,
             'pinnedAt', thread.pinned_at,
             'pinOrder', thread.pin_order,
+            'archived', thread.archived,
             'renamedAt', thread.renamed_at,
             'selectedModel', thread.selected_model,
             'modelSettings', thread.model_settings,

@@ -162,8 +162,6 @@ interface ModelProviderPickerProps {
   menuSignals?: ModelPickerMenuSignals;
   /** Replaces the menu's pages with the detached type/model flyout. */
   flyoutLayout?: boolean;
-  /** Model omitted from this caller's list of available choices. */
-  excludedModel?: SupportedRunModel;
   /**
    * When true, the trigger leaves the Fast suffix off the model's name because
    * the caller already shows that state. The composer's effort control sits
@@ -1046,18 +1044,14 @@ function resolveModelFirstModelPickerState({
   modelCapabilities,
   placeholder,
   fastLabel,
-  excludedModel,
 }: {
   value: ModelProviderSelection | null;
   policyResponse: { policies: OrgModelPolicy[] } | null | undefined;
   modelCapabilities: ModelPlanCapabilities;
   placeholder: string;
   fastLabel: string;
-  excludedModel: SupportedRunModel | undefined;
 }): ModelFirstModelPickerState {
-  const policies = (policyResponse?.policies ?? []).filter((policy) => {
-    return policy.model !== excludedModel;
-  });
+  const policies = policyResponse?.policies ?? [];
   const selection = selectionAllowedValue(value, policies, modelCapabilities);
   return {
     policies,
@@ -1186,7 +1180,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
   placeholder,
   fastLabel,
   mediaModelPanel,
-  excludedModel,
   showInheritOption,
   menuSignals,
   flyoutLayout,
@@ -1196,7 +1189,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
   placeholder: string;
   fastLabel: string;
   mediaModelPanel: MediaModelPanelState | undefined;
-  excludedModel: SupportedRunModel | undefined;
   showInheritOption: boolean;
   menuSignals: ModelPickerMenuSignals | undefined;
   flyoutLayout: boolean;
@@ -1244,7 +1236,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
     modelCapabilities: DEFAULT_MODEL_PLAN_CAPABILITIES,
     placeholder,
     fastLabel,
-    excludedModel,
   });
   if (menuSignals) {
     const MenuContent = flyoutLayout
@@ -1356,7 +1347,6 @@ function EnabledExplicitModelFirstModelPicker(
       placeholder={props.placeholder}
       fastLabel={props.fastLabel}
       mediaModelPanel={props.mediaModelPanel}
-      excludedModel={props.excludedModel}
       showInheritOption={props.showInheritOption ?? false}
       menuSignals={props.menuSignals}
       flyoutLayout={props.flyoutLayout ?? false}
@@ -1503,7 +1493,6 @@ export function ModelProviderPicker({
   mediaModelPanel,
   menuSignals,
   flyoutLayout = false,
-  excludedModel,
   fastShownByCaller,
 }: ModelProviderPickerProps) {
   const { t } = useTranslation();
@@ -1538,7 +1527,6 @@ export function ModelProviderPicker({
       modal={modal}
       showInheritOption={showInheritOption}
       fastLabel={fastLabel}
-      excludedModel={excludedModel}
       menuSignals={menuSignals}
       flyoutLayout={flyoutLayout}
       fastShownByCaller={fastShownByCaller ?? false}
