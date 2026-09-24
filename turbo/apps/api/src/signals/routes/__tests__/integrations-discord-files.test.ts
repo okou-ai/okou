@@ -46,7 +46,7 @@ import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { artifactCatalogRoutes } from "../artifact-catalog";
 import { integrationsDiscordFileRoutes } from "../integrations-discord-files";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const storage = createChatCallbacksApi(context);
 const chatFiles = createChatFilesBddApi(context);
@@ -188,12 +188,12 @@ async function uploadedDiscordNonce(request: Request, expectedBytes: Buffer) {
     throw new Error("Expected Discord multipart message payload");
   }
   const payload = deliveryPayloadSchema.parse(JSON.parse(payloadJson));
-  expect(payload.allowed_mentions.parse).toEqual([]);
+  expect(payload.allowed_mentions.parse).toStrictEqual([]);
   const attachment = form.get("files[0]");
   if (!(attachment instanceof File)) {
     throw new Error("Expected the canonical file in Discord multipart bytes");
   }
-  expect(Buffer.from(await attachment.arrayBuffer())).toEqual(expectedBytes);
+  expect(Buffer.from(await attachment.arrayBuffer())).toStrictEqual(expectedBytes);
   return payload.nonce;
 }
 
@@ -501,7 +501,7 @@ describe("Discord attachment downloads", () => {
 
     expect(response.body).toBe(source.bytes);
     expect(messageReads).toBe(2);
-    expect(requests).toEqual([
+    expect(requests).toStrictEqual([
       `${source.attachment.url}&version=1`,
       `${source.attachment.url}&version=2`,
     ]);
@@ -611,7 +611,7 @@ describe("Discord attachment downloads", () => {
       );
 
       expect(response.body.error.code).toBe("DISCORD_FILE_ERROR");
-      expect(attackerRequests).toEqual([]);
+      expect(attackerRequests).toStrictEqual([]);
     },
   );
 
@@ -680,6 +680,11 @@ describe("Canonical Discord file publication and delivery", () => {
     "does not publish after its %s closes during the provider access check",
     async (subjectKind) => {
       const fixture = await boundFixture();
+      await updateFeatureSwitchesForUser(context, fixture.actor, {
+        [FeatureSwitchKey.DiscordIntegration]: true,
+        [FeatureSwitchKey.PrivateArtifacts]: true,
+      });
+      storage.acceptChatObjectStorage();
       const jobs: string[] = [];
       onTestFinished(async () => {
         await removeErasureSubjectsFixture(jobs);
@@ -729,7 +734,7 @@ describe("Canonical Discord file publication and delivery", () => {
         catalogClient().list({ headers: fixture.headers }),
         [200],
       );
-      expect(catalog.body.artifacts).toEqual([]);
+      expect(catalog.body.artifacts).toStrictEqual([]);
     },
   );
 
@@ -793,7 +798,7 @@ describe("Canonical Discord file publication and delivery", () => {
     );
 
     expect(response.body.error.code).toBe("FORBIDDEN");
-    expect(deliveredMessages).toEqual([]);
+    expect(deliveredMessages).toStrictEqual([]);
     const catalog = await accept(
       catalogClient().list({ headers: fixture.headers }),
       [200],
@@ -823,7 +828,7 @@ describe("Canonical Discord file publication and delivery", () => {
       [200],
     );
 
-    expect(materialized.body).toEqual({
+    expect(materialized.body).toStrictEqual({
       ...upload.operation,
       url: upload.initialized.url,
       delivery: { status: "pending" },
@@ -861,7 +866,7 @@ describe("Canonical Discord file publication and delivery", () => {
       client.init({ headers: fixture.headers, body: upload.body }),
       [200],
     );
-    expect(duplicateInit.body).toEqual({
+    expect(duplicateInit.body).toStrictEqual({
       ...upload.operation,
       url: upload.initialized.url,
     });
@@ -902,7 +907,7 @@ describe("Canonical Discord file publication and delivery", () => {
       [200],
     );
 
-    expect(completed.body).toEqual({
+    expect(completed.body).toStrictEqual({
       ...upload.operation,
       url: upload.initialized.url,
       delivery: {
@@ -913,13 +918,13 @@ describe("Canonical Discord file publication and delivery", () => {
         permalink: `https://discord.com/channels/${fixture.guildId}/${fixture.channelId}/${deliveredMessageId}`,
       },
     });
-    expect(repeated.body).toEqual(completed.body);
+    expect(repeated.body).toStrictEqual(completed.body);
     expect(sends).toBe(1);
     const repeatedCatalog = await accept(
       catalogClient().list({ headers: fixture.headers }),
       [200],
     );
-    expect(repeatedCatalog.body.artifacts).toEqual(catalog.body.artifacts);
+    expect(repeatedCatalog.body.artifacts).toStrictEqual(catalog.body.artifacts);
   });
 
   it("rejects reuse of an operation for a different destination or file", async () => {
@@ -990,7 +995,7 @@ describe("Canonical Discord file publication and delivery", () => {
       catalogClient().list({ headers: fixture.headers }),
       [200],
     );
-    expect(catalog.body.artifacts).toEqual([]);
+    expect(catalog.body.artifacts).toStrictEqual([]);
   });
 
   it("reconciles a lost Discord send response without publishing or sending twice", async () => {
@@ -1067,6 +1072,95 @@ describe("Canonical Discord file publication and delivery", () => {
       },
     });
     expect(sends).toBe(1);
+  });
+
+  it("retries an explicit rate limit only on a new authorized completion request", async () => {
+    const fixture = await boundFixture();
+    const upload = await canonicalUpload(fixture);
+    const client = fileClients();
+    await accept(
+      client.materialize({ headers: fixture.headers, body: upload.operation }),
+      [200],
+    );
+    const nonces: string[] = [];
+    const deliveredMessageId = discordSnowflake();
+    const deliveredAttachmentId = discordSnowflake();
+    server.use(
+      http.post(
+        `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
+        async ({ request }) => {
+          const nonce = await uploadedDiscordNonce(request, upload.bytes);
+          nonces.push(nonce);
+          if (nonces.length === 1) {
+            return HttpResponse.json(
+              { retry_after: 0, global: false },
+              { status: 429 },
+            );
+          }
+          return HttpResponse.json(
+            discordFileMessage({
+              channelId: fixture.channelId,
+              messageId: deliveredMessageId,
+              authorId: fixture.botUserId,
+              bot: true,
+              nonce,
+              attachment: {
+                id: deliveredAttachmentId,
+                filename: upload.body.filename,
+                size: upload.bytes.byteLength,
+                url: `https://cdn.discordapp.com/attachments/${fixture.channelId}/${deliveredAttachmentId}/report.csv`,
+                content_type: "text/csv",
+              },
+            }),
+          );
+        },
+      ),
+    );
+    const limited = await accept(
+      client.complete({ headers: fixture.headers, body: upload.operation }),
+      [200],
+    );
+
+    expect(limited.body).toMatchObject({
+      ...upload.operation,
+      url: upload.initialized.url,
+      delivery: { status: "failed", retryable: true },
+    });
+    expect(nonces).toHaveLength(1);
+    await updateFeatureSwitchesForUser(context, fixture.actor, {
+      [FeatureSwitchKey.DiscordIntegration]: false,
+    });
+    const revoked = await accept(
+      client.complete({ headers: fixture.headers, body: upload.operation }),
+      [403],
+    );
+    expect(revoked.body.error.code).toBe("FORBIDDEN");
+    expect(nonces).toHaveLength(1);
+
+    await updateFeatureSwitchesForUser(context, fixture.actor, {
+      [FeatureSwitchKey.DiscordIntegration]: true,
+    });
+    const delivered = await accept(
+      client.complete({ headers: fixture.headers, body: upload.operation }),
+      [200],
+    );
+
+    expect(delivered.body).toMatchObject({
+      ...upload.operation,
+      url: upload.initialized.url,
+      delivery: {
+        status: "delivered",
+        messageId: deliveredMessageId,
+        attachmentId: deliveredAttachmentId,
+      },
+    });
+    expect(nonces).toHaveLength(2);
+    expect(nonces[1]).toBe(nonces[0]);
+    const catalog = await accept(
+      catalogClient().list({ headers: fixture.headers }),
+      [200],
+    );
+    expect(catalog.body.artifacts).toHaveLength(1);
   });
 
   it("does not infer a successful send from another author's matching nonce", async () => {
@@ -1200,7 +1294,7 @@ describe("Canonical Discord file publication and delivery", () => {
       throw overlapping.error;
     }
 
-    expect(overlapping.value.body.delivery).toEqual({ status: "pending" });
+    expect(overlapping.value.body.delivery).toStrictEqual({ status: "pending" });
     expect(completed.body.delivery).toMatchObject({
       status: "delivered",
       messageId: deliveredMessageId,
