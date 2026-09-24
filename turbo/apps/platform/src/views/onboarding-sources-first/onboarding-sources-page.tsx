@@ -2,6 +2,10 @@ import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { onboardingRecommendationLocaleSchema } from "@okouai/api-contracts/contracts/onboarding";
+import {
+  userLocaleSchema,
+  type UserLocale,
+} from "@okouai/api-contracts/contracts/user-preferences";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 import {
   captureSourceOnboardingConnected$,
@@ -21,7 +25,7 @@ import {
 } from "./onboarding-sources-first-data.ts";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 
-const SECURITY_PAGE_LOCALES: Readonly<Record<string, string>> = {
+const SECURITY_PAGE_LOCALES: Readonly<Record<UserLocale, string>> = {
   "de-DE": "de",
   "en-US": "en",
   "es-ES": "es",
@@ -85,7 +89,9 @@ export function OnboardingSourcesPage() {
     });
   });
   const securityLocale =
-    SECURITY_PAGE_LOCALES[i18n.resolvedLanguage || i18n.language] ?? "en";
+    SECURITY_PAGE_LOCALES[
+      userLocaleSchema.parse(i18n.resolvedLanguage ?? i18n.language)
+    ];
 
   return (
     <OnboardingStepLayout

@@ -182,6 +182,39 @@ test("The switch opens the field question on /onboarding and continues to the so
   expect(fieldRadio(MARKETING_FIELD)).toBeChecked();
 });
 
+test.each([
+  {
+    locale: "ja-JP" as const,
+    name: "Okouのデータ保護について",
+    href: "https://www.okou.ai/ja/security",
+  },
+  {
+    locale: "zh-Hant" as const,
+    name: "瞭解 Okou 如何保護你的資料",
+    href: "https://www.okou.ai/zh-Hant/security",
+  },
+])(
+  "The source step links to the security page in $locale",
+  async ({ locale, name, href }) => {
+    mockOnboardingNeeded();
+    mockCatalog();
+
+    await setupPage({
+      context,
+      locale,
+      path: ROUTES.onboardingSources,
+      featureSwitches: SOURCES_FIRST_ON,
+    });
+
+    await waitFor(() => {
+      const link = queryAllByRoleFast("link").find((candidate) => {
+        return candidate.textContent?.trim() === name;
+      });
+      expect(link).toHaveAttribute("href", href);
+    });
+  },
+);
+
 test("A later step returns to the entry until a source is connected", async () => {
   mockOnboardingNeeded();
   mockCatalog();
