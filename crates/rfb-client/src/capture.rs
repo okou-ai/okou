@@ -6,6 +6,7 @@ use crate::{
 };
 
 const MAX_PNG: usize = 16 * 1024 * 1024;
+const INITIAL_PNG_CAPACITY: usize = 1024;
 // png's streaming writer retains three <=32KiB rows, an 8KiB IDAT
 // buffer and bounded flate2 compressor state. Reserve conservatively before construction.
 const ENCODER_OVERHEAD: usize = 2 * 1024 * 1024;
@@ -44,22 +45,27 @@ impl Capture {
 
 struct BoundedOutput {
     buffer: Buffer,
-    len: usize,
     overflow: bool,
+    resource_limited: bool,
 }
 
 impl Write for BoundedOutput {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        let end = self.len.checked_add(bytes.len());
-        let Some(end) = end.filter(|&end| end <= self.buffer.len()) else {
+        let end = self.buffer.len().checked_add(bytes.len());
+        let Some(end) = end.filter(|&end| end <= MAX_PNG) else {
             self.overflow = true;
             return Err(std::io::Error::other("PNG limit exceeded"));
         };
-        self.buffer
-            .get_mut(self.len..end)
-            .ok_or_else(|| std::io::Error::other("invalid PNG output range"))?
-            .copy_from_slice(bytes);
-        self.len = end;
+        if end > self.buffer.capacity() {
+            let capacity = end
+                .max(self.buffer.capacity().saturating_mul(2))
+                .clamp(INITIAL_PNG_CAPACITY, MAX_PNG);
+            if self.buffer.try_reserve_capacity(capacity).is_err() {
+                self.resource_limited = true;
+                return Err(std::io::Error::other("PNG output memory limit exceeded"));
+            }
+        }
+        self.buffer.append(bytes);
         Ok(bytes.len())
     }
 
@@ -100,9 +106,9 @@ async fn encode_png(
 ) -> Result<Buffer, Error> {
     let overhead = budget.reserve(ENCODER_OVERHEAD)?;
     let mut output = BoundedOutput {
-        buffer: budget.buffer(MAX_PNG)?,
-        len: 0,
+        buffer: budget.buffer(0)?,
         overflow: false,
+        resource_limited: false,
     };
     let result = async {
         let mut encoder = png::Encoder::new(&mut output, u32::from(width), u32::from(height));
@@ -127,22 +133,14 @@ async fn encode_png(
     if result.is_err() {
         return Err(if output.overflow {
             Error::ImageTooLarge
+        } else if output.resource_limited {
+            Error::ResourceLimit
         } else {
             Error::ImageEncoding
         });
     }
-    // Keep only the actual PNG bytes. The transient old/new overlap is charged
-    // too, so retaining small screenshots does not consume 16MiB each.
     drop(overhead);
-    let mut png = budget.buffer(output.len)?;
-    png.copy_from_slice(
-        output
-            .buffer
-            .get(..output.len)
-            .ok_or(Error::ImageEncoding)?,
-    );
-    drop(output);
-    Ok(png)
+    Ok(output.buffer)
 }
 
 #[cfg(test)]
@@ -152,7 +150,49 @@ mod tests {
         task::{Context, Waker},
     };
 
-    use super::{Budget, encode_png};
+    use super::{Budget, ENCODER_OVERHEAD, Error, MAX_PNG, encode_png};
+    use crate::memory::MAX_MEMORY;
+
+    #[tokio::test]
+    async fn small_png_uses_and_retains_only_grown_capacity() {
+        let budget = Budget::default();
+        let pixels = vec![255; 64 * 64 * 4];
+        let png = encode_png(&pixels, 64, 64, &budget).await.unwrap();
+        assert!(png.len() < MAX_PNG);
+        assert!(budget.usage().1 < 3 * 1024 * 1024);
+        assert_eq!(budget.usage().0, png.capacity());
+        drop(png);
+        assert_eq!(budget.usage().0, 0);
+    }
+
+    #[tokio::test]
+    async fn small_png_succeeds_with_less_than_max_output_headroom() {
+        let budget = Budget::default();
+        let occupied = budget
+            .reserve(MAX_MEMORY - ENCODER_OVERHEAD - 64 * 1024)
+            .unwrap();
+        let pixels = vec![255; 64 * 64 * 4];
+        let png = encode_png(&pixels, 64, 64, &budget).await.unwrap();
+        assert!(png.len() < 64 * 1024);
+        drop(png);
+        assert_eq!(budget.usage().0, MAX_MEMORY - ENCODER_OVERHEAD - 64 * 1024);
+        drop(occupied);
+        assert_eq!(budget.usage().0, 0);
+    }
+
+    #[tokio::test]
+    async fn png_growth_failure_releases_temporary_reservations() {
+        let budget = Budget::default();
+        let occupied = budget.reserve(MAX_MEMORY - ENCODER_OVERHEAD - 512).unwrap();
+        let pixels = vec![255; 64 * 64 * 4];
+        assert!(matches!(
+            encode_png(&pixels, 64, 64, &budget).await,
+            Err(Error::ResourceLimit)
+        ));
+        assert_eq!(budget.usage().0, MAX_MEMORY - ENCODER_OVERHEAD - 512);
+        drop(occupied);
+        assert_eq!(budget.usage().0, 0);
+    }
 
     #[tokio::test]
     async fn cancelling_cpu_encoding_releases_output_and_compressor_reservations() {
@@ -164,6 +204,7 @@ mod tests {
         let mut context = Context::from_waker(Waker::noop());
         assert!(pending.as_mut().poll(&mut context).is_pending());
         assert!(budget.usage().0 > 0);
+        assert!(budget.usage().1 < 3 * 1024 * 1024);
         drop(pending);
         assert_eq!(budget.usage().0, 0);
     }
