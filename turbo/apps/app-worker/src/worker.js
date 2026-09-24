@@ -315,8 +315,18 @@ function appApiPrefetchResponse(response, prefetchState) {
   });
 }
 
-function sharedDatabaseWorkerPreloadScript(userId, orgId) {
-  return `<script>window.__okouSharedDatabaseWorkerBootstrap?.start(${serializeJsonForScript(userId)}, ${serializeJsonForScript(orgId)});</script>`;
+function sharedDatabaseWorkerPreloadScript(userId, orgId, requestUrl) {
+  const args = [userId, orgId];
+  // The page adds the same bypass to the Worker URL, so the edge must too.
+  const bypass = requestUrl.searchParams.get(VERCEL_PROTECTION_BYPASS);
+  if (bypass !== null) {
+    args.push(bypass);
+  }
+  return `<script>window.__okouSharedDatabaseWorkerBootstrap?.start(${args
+    .map((arg) => {
+      return serializeJsonForScript(arg);
+    })
+    .join(", ")});</script>`;
 }
 
 function clerkEdgeSessionAuthorizedParty(requestUrl, env) {
@@ -498,6 +508,7 @@ function rewriteAppPage(
             sharedDatabaseWorkerPreloadScript(
               edgeAuth.session.userId,
               edgeAuth.orgId,
+              requestUrl,
             ),
             { html: true },
           );

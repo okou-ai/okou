@@ -1180,9 +1180,11 @@ assert.match(prefixHtml, /id="root"/u);
 assert.match(prefixHtml, /id="app-bootstrap-skeleton"/u);
 assert.doesNotMatch(prefixHtml, /data-okou-api-bootstrap/u);
 // The Worker preload must not wait for the API prefetch budget.
+// The page adds its URL bypass to the Worker URL, so the edge forwards it.
 assert.deepEqual(sharedDatabaseWorkerPreloadArguments(prefixHtml), [
   "user_prefetch",
   "org_prefetch",
+  "query-secret",
 ]);
 assert.doesNotMatch(prefixHtml, /<\/body>/u);
 

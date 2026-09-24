@@ -37,10 +37,11 @@
     <script data-okou-shared-database-worker-bootstrap="">
       (function () {
         // The app worker calls start() from the response body with the Clerk
-        // identity it verified at the edge, so the SharedWorker script loads
-        // alongside Clerk and the app bundle. The bridge claims it later.
+        // identity it verified at the edge and any preview bypass in the page
+        // URL, so the SharedWorker script loads alongside Clerk and the app
+        // bundle. The bridge claims it later.
         var bootstrap = {
-          start: function (userId, orgId) {
+          start: function (userId, orgId, vercelProtectionBypass) {
             var meta = document.querySelector(
               'meta[name="okou-shared-database-worker"]',
             );
@@ -52,9 +53,11 @@
               return;
             }
             var url = new URL(meta.content, location.origin);
-            url.search +=
-              (url.search ? "&" : "?") +
-              new URLSearchParams({ userId: userId, orgId: orgId }).toString();
+            var params = new URLSearchParams({ userId: userId, orgId: orgId });
+            if (vercelProtectionBypass) {
+              params.set("x-vercel-protection-bypass", vercelProtectionBypass);
+            }
+            url.search += (url.search ? "&" : "?") + params.toString();
             var name = "okou_" + userId + "_" + orgId;
             var preloaded = {
               url: url.href,

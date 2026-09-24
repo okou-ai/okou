@@ -27,8 +27,15 @@ interface OkouPreloadedSharedDatabaseWorker {
 }
 
 interface OkouSharedDatabaseWorkerBootstrap {
-  /** Called from the app worker's response body with the edge identity. */
-  readonly start: (userId: string, orgId: string) => void;
+  /**
+   * Called from the app worker's response body with the edge identity and the
+   * preview bypass from the page URL, if any.
+   */
+  readonly start: (
+    userId: string,
+    orgId: string,
+    vercelProtectionBypass?: string,
+  ) => void;
   preloaded?: OkouPreloadedSharedDatabaseWorker;
 }
 

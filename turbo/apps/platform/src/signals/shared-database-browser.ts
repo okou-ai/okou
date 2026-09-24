@@ -68,8 +68,8 @@ type PreloadedSharedDatabaseWorker = NonNullable<
 
 /**
  * Takes the Worker that `index.html` started from the edge-verified identity.
- * A preview bypass is only known to the app, so a preloaded Worker whose URL
- * differs is a different Worker and is left unused.
+ * The edge only sees a preview bypass in the page URL, so a bypass restored
+ * from the cookie yields a different URL and the preloaded Worker is unused.
  */
 function claimPreloadedSharedWorker(
   url: URL,

@@ -45,10 +45,13 @@ function installSharedWorker(): ConstructedWorker[] {
 }
 
 /** Runs the deployed shell script, then the call the app worker injects. */
-function preloadFromAppShell(userId: string, orgId: string): void {
-  context.mocks.browser.url(`https://${pageOptions.host}${pageOptions.path}`);
-  const page = new DOMParser().parseFromString(indexHtml, "text/html");
-  const source = page.querySelector(
+function preloadFromAppShell(
+  page: { readonly host: string; readonly path: string },
+  ...startArguments: [string, string, string?]
+): void {
+  context.mocks.browser.url(`https://${page.host}${page.path}`);
+  const shell = new DOMParser().parseFromString(indexHtml, "text/html");
+  const source = shell.querySelector(
     "[data-okou-shared-database-worker-bootstrap]",
   )?.textContent;
   if (!source) {
@@ -68,12 +71,12 @@ function preloadFromAppShell(userId: string, orgId: string): void {
     { once: true },
   );
   new Function(source)();
-  window.__okouSharedDatabaseWorkerBootstrap?.start(userId, orgId);
+  window.__okouSharedDatabaseWorkerBootstrap?.start(...startArguments);
 }
 
 test("Reuse the Worker the app shell preloaded for the signed-in identity", async () => {
   const workers = installSharedWorker();
-  preloadFromAppShell("test-user-123", "org_default");
+  preloadFromAppShell(pageOptions, "test-user-123", "org_default");
   expect(workers).toHaveLength(1);
 
   await setupPage(pageOptions);
@@ -85,7 +88,7 @@ test("Reuse the Worker the app shell preloaded for the signed-in identity", asyn
 
 test("Report a preloaded Worker failure that happened before the app started", async () => {
   const workers = installSharedWorker();
-  preloadFromAppShell("test-user-123", "org_default");
+  preloadFromAppShell(pageOptions, "test-user-123", "org_default");
   const error = new Event("error", { cancelable: true });
   workers[0]!.worker.dispatchEvent(error);
   expect(error.defaultPrevented).toBeTruthy();
@@ -100,7 +103,7 @@ test("Report a preloaded Worker failure that happened before the app started", a
 
 test("Start the page's own Worker when the preloaded URL differs", async () => {
   const workers = installSharedWorker();
-  preloadFromAppShell("test-user-123", "org_other");
+  preloadFromAppShell(pageOptions, "test-user-123", "org_other");
 
   await setupPage(pageOptions);
 
@@ -109,4 +112,27 @@ test("Start the page's own Worker when the preloaded URL differs", async () => {
     "okou_test-user-123_org_default",
   ]);
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+test("Reuse the preloaded Worker when the preview URL carries its bypass", async () => {
+  const previewPage = {
+    ...pageOptions,
+    host: "pr-431-app.omby.ai",
+    path: "/agents?x-vercel-protection-bypass=preview-secret",
+  };
+  const workers = installSharedWorker();
+  preloadFromAppShell(
+    previewPage,
+    "test-user-123",
+    "org_default",
+    "preview-secret",
+  );
+
+  await setupPage(previewPage);
+
+  expect(workers).toHaveLength(1);
+  expect(
+    new URL(workers[0]!.url).searchParams.get("x-vercel-protection-bypass"),
+  ).toBe("preview-secret");
+  expect(window.__okouSharedDatabaseWorkerBootstrap?.preloaded).toBeUndefined();
 });
