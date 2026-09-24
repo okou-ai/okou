@@ -29,7 +29,7 @@ configure_codex_oauth() {
         ! jq -e '
             .tokens.refresh_token | type == "string" and length > 0
         ' <<<"$CODEX_OAUTH_E2E_AUTH_JSON" >/dev/null 2>&1; then
-        echo "Codex OAuth E2E credential is not a complete auth.json; reseed the environment Secret" >&2
+        echo "Codex OAuth E2E credential is not a complete auth.json; reseed the repository Secret" >&2
         return 1
     fi
 
@@ -120,7 +120,7 @@ configure_codex_oauth() {
                 .type == "codex-oauth-token" and .needsReconnect == true
             )
         ' <<<"$provider_state" >/dev/null 2>&1; then
-            echo "Codex OAuth E2E credential needs reconnection after run status $run_status; reseed the environment Secret" >&2
+            echo "Codex OAuth E2E credential needs reconnection after run status $run_status; reseed the repository Secret" >&2
         else
             echo "Codex OAuth E2E candidate run reached status $run_status after provider connection; inspect runner logs and verify token freshness" >&2
         fi
