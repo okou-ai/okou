@@ -243,7 +243,9 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(environment.OPENAI_API_KEY).toBe(
       modelProviderSecretPlaceholder("openai-api-key", "OPENAI_API_KEY"),
     );
-    expect(environment.OPENAI_BASE_URL).toBe("https://api.openai.com/v1");
+    // The native OpenAI Runner uses its canonical endpoint without an
+    // OPENAI_BASE_URL override.
+    expect(environment.OPENAI_BASE_URL).toBeUndefined();
     expect(environment.OPENAI_MODEL).toBe("gpt-6-astra");
     expect(environment.ANTHROPIC_API_KEY).toBeUndefined();
 
@@ -273,7 +275,9 @@ describe("CHAT-02: model-first provider policies", () => {
     );
 
     chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(run.runId, sandboxHeaders);
+    await completeChatRunOk(run.runId, sandboxHeaders, {
+      cliAgentType: "codex",
+    });
     expect((await api.readRun(actor, run.runId)).status).toBe("completed");
 
     const followUp = await sendChatRun(actor, {
@@ -289,9 +293,7 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(followUpEnvironment.OPENAI_API_KEY).toBe(
       modelProviderSecretPlaceholder("openai-api-key", "OPENAI_API_KEY"),
     );
-    expect(followUpEnvironment.OPENAI_BASE_URL).toBe(
-      "https://api.openai.com/v1",
-    );
+    expect(followUpEnvironment.OPENAI_BASE_URL).toBeUndefined();
     expect(followUpEnvironment.OPENAI_MODEL).toBe("gpt-6-astra");
     await cancelChatRun(actor, followUp.runId);
 
@@ -563,6 +565,7 @@ describe("CHAT-02: model-first provider policies", () => {
       restrictedBuiltInModels: false,
     });
     await seedBuiltInModelKey(LIMITED_FREE1_DEFAULT_RUN_MODEL);
+    await preparePiResourceHandoff(actor, agentId);
     const byokDisabled = await chat.requestSendEvent(
       actor,
       {
@@ -587,7 +590,19 @@ describe("CHAT-02: model-first provider policies", () => {
         modelProviderId: null,
       }),
     );
-    await cancelChatRun(actor, byokDisabled.body.runId);
+    const byokDisabledClaim = await claimChatRun(
+      runnerGroup,
+      byokDisabled.body.runId,
+    );
+    expect(byokDisabledClaim.claim.cliAgentType).toBe("pi");
+    expect(byokDisabledClaim.claim.piModelConfig).toMatchObject({
+      model: LIMITED_FREE1_DEFAULT_RUN_MODEL,
+    });
+    await cancelChatRun(
+      actor,
+      byokDisabled.body.runId,
+      byokDisabledClaim.sandboxHeaders,
+    );
 
     await upsertOrgPlanEntitlementFixture({
       orgId,
@@ -1633,8 +1648,13 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
     expect(firstClaim.claim.piModelConfig).toMatchObject({
+      provider: "openai-codex",
       model: "gpt-5.6-luna",
-      serviceTier: "priority",
+      serviceTier: "fast",
+      credentialBindings: [
+        expect.objectContaining({ secretName: "CHATGPT_ACCESS_TOKEN" }),
+        expect.objectContaining({ secretName: "CHATGPT_ACCOUNT_ID" }),
+      ],
     });
     await completeSandboxFirstPiRun({
       actor,
@@ -1643,7 +1663,7 @@ describe("CHAT-02: model-first provider policies", () => {
       checkpointObjects,
       prompt: firstPrompt,
       answer: "first Pi fast response",
-      responsesModel: { provider: "openai", model: "gpt-5.6-luna" },
+      responsesModel: { provider: "openai-codex", model: "gpt-5.6-luna" },
       usagePricingResolution,
     });
 
@@ -1670,7 +1690,9 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(followUpClaim.claim.piModelConfig).toMatchObject({
       provider: "openai",
       model: "gpt-5.6-luna",
-      credentialSecretName: "OPENAI_API_KEY",
+      credentialBindings: [
+        expect.objectContaining({ secretName: "OPENAI_API_KEY" }),
+      ],
       serviceTier: "priority",
     });
     expect(
@@ -1713,6 +1735,7 @@ describe("CHAT-02: model-first provider policies", () => {
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.OkouModels]: false,
       });
+      await preparePiResourceHandoff(actor, agentId);
 
       const run = await sendChatRun(actor, {
         agentId,
@@ -1958,11 +1981,16 @@ describe("CHAT-02: model-first provider policies", () => {
         model !== "claude-fable-5-1" &&
         !model.startsWith("deepseek");
       const baseUrl = `https://${usesUs ? "us." : ""}openrouter.ai/api${messages ? "" : "/v1"}`;
-      expect(claim.cliAgentType).toBe("pi");
-      expect(claim.piModelConfig).toMatchObject({
-        provider: messages ? "anthropic" : "openrouter",
-        baseUrl,
-      });
+      if (model === "claude-fable-5-1") {
+        expect(claim.cliAgentType).toBe("claude-code");
+        expect(claimEnvironment(claim).ANTHROPIC_BASE_URL).toBe(baseUrl);
+      } else {
+        expect(claim.cliAgentType).toBe("pi");
+        expect(claim.piModelConfig).toMatchObject({
+          provider: messages ? "anthropic" : "openrouter",
+          baseUrl,
+        });
+      }
       const name = `model-provider:${messages ? "openrouter-api-key" : "openrouter-codex"}`;
       expect(claim.billableFirewalls).toContain(name);
       if (usesUs) {
@@ -2291,9 +2319,8 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(authorization === `Bearer ${acquiredApiKey}`).toBeTruthy();
   }, 90_000);
 
-  it("rejects legacy blank OpenRouter provider secrets during firewall auth", async () => {
-    const fw = createFirewallApi(context);
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+  it("rejects legacy blank OpenRouter provider secrets before run admission", async () => {
+    const { actor, agentId } = await entitledChatActor();
     const { providerId } = await upsertOrgModelProvider(actor, {
       type: "openrouter-api-key",
       secret: "test-openrouter-key",
@@ -2313,36 +2340,21 @@ describe("CHAT-02: model-first provider policies", () => {
       secret: "   ",
     });
 
-    await preparePiResourceHandoff(actor, agentId);
-    const run = await sendChatRun(actor, {
+    // A blank legacy credential is no longer claimable: the external send
+    // boundary fails closed before a Sandbox can receive its secret bundle.
+    const prompt = "run with a legacy blank openrouter provider";
+    const rejected = await requestSendEventRaw(actor, {
       agentId,
-      prompt: "run with a legacy blank openrouter provider",
-      model: "claude-opus-4-8",
-    });
-    const { claim, sandboxHeaders } = await claimChatRun(
-      runnerGroup,
-      run.runId,
-    );
-    if (!claim.encryptedSecrets) {
-      throw new Error("Expected OpenRouter claim to carry encrypted secrets");
-    }
-
-    const rejected = await fw.requestFirewallAuth(
-      sandboxHeaders,
-      {
-        encryptedSecrets: claim.encryptedSecrets,
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
-        },
-        secretConnectorMap: claim.secretConnectorMap ?? undefined,
-        secretConnectorMetadataMap:
-          claim.secretConnectorMetadataMap ?? undefined,
+      prompt,
+      userMessage: {
+        version: 1,
+        parts: [{ type: "text", text: prompt }],
       },
-      [424],
-    );
+      model: "claude-opus-4-8",
+      hasTextContent: true,
+    });
+    expect(rejected.status).toBe(503);
     expectApiError(rejected.body);
-    expect(rejected.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
-
-    await api.requestCancelRun(actor, run.runId, [200]);
+    expect(rejected.body.error.code).toBe("PROVIDER_UNAVAILABLE");
   }, 60_000);
 });
