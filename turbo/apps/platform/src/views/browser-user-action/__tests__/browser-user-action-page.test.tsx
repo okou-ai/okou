@@ -279,11 +279,16 @@ test("The standalone form uses the existing input style with live number constra
 });
 
 test.each([
-  { clear: false, expected: [] },
-  { clear: true, expected: [{ key: "quantity", value: "" }] },
+  { clear: false, typedThenDeleted: false, expected: [] },
+  {
+    clear: true,
+    typedThenDeleted: false,
+    expected: [{ key: "quantity", value: "" }],
+  },
+  { clear: false, typedThenDeleted: true, expected: [] },
 ])(
-  "Optional number field can be untouched or explicitly cleared ($clear)",
-  async ({ clear, expected }) => {
+  "Optional number field can be untouched or explicitly cleared ($clear, $typedThenDeleted)",
+  async ({ clear, typedThenDeleted, expected }) => {
     let state: BrowserUserActionResponse["state"] = "pending";
     context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
       return respond(200, { ...numberAction(false), state });
@@ -315,6 +320,12 @@ test.each([
     if (clear) {
       click(button("Clear website value"));
       expect(button("Leave website value unchanged")).toBeVisible();
+    }
+    if (typedThenDeleted) {
+      const quantity = within(form).getByLabelText(/Quantity/u);
+      await fill(quantity, "12.5");
+      await fill(quantity, "");
+      expect(button("Clear website value")).toBeVisible();
     }
     click(button("Add to browser"));
     await expect(screen.findByText("Agent notified")).resolves.toBeVisible();

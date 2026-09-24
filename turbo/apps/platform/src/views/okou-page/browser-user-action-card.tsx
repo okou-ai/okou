@@ -498,7 +498,12 @@ function BrowserInputFields({
                 value={draft.get(field.key) ?? ""}
                 disabled={busy}
                 onChange={(event) => {
-                  onUpdate(field.key, event.currentTarget.value);
+                  const value = event.currentTarget.value;
+                  if (field.fieldKind === "number" && value === "") {
+                    onRemove(field.key);
+                  } else {
+                    onUpdate(field.key, value);
+                  }
                 }}
               />
             )}
