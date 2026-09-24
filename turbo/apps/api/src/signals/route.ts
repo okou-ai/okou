@@ -18,8 +18,6 @@ import { cronConnectorCatalogRoutes } from "./routes/cron-connector-catalog";
 import { cronOfficialWorkflowCatalogRoutes } from "./routes/cron-official-workflow-catalog";
 import { cronConnectorOauthStateCleanupRoutes } from "./routes/cron-connector-oauth-state-cleanup";
 import { cronDrainEmailOutboxRoutes } from "./routes/cron-drain-email-outbox";
-import { cronExecuteMorningBriefsRoutes } from "./routes/cron-execute-morning-briefs";
-import { internalMorningBriefWorkerRoutes } from "./routes/internal-morning-brief-worker";
 import { cronRefreshHomeTaskRecommendationsRoutes } from "./routes/cron-refresh-home-task-recommendations";
 import { cronExecuteWorkflowAutomationsRoutes } from "./routes/cron-execute-workflow-automations";
 import { cronMonitorChatEventQueueRoutes } from "./routes/cron-monitor-chat-event-queue";
@@ -121,7 +119,6 @@ import { mapsRoutes } from "./routes/maps";
 import { mcpConnectorsRoutes } from "./routes/mcp-connectors";
 import { mcpOAuthClientMetadataRoutes } from "./routes/mcp-oauth-client-metadata";
 import { mcpServerRoutes } from "./routes/mcp-server";
-import { morningBriefPreviewGithubCollectionRoutes } from "./routes/morning-brief-preview-github-collection";
 import { weatherRoutes } from "./routes/weather";
 import { modelPoliciesRoutes } from "./routes/model-policies";
 import { modelProviderGatewayRoutes } from "./routes/model-provider-gateways";
@@ -168,14 +165,6 @@ import { browserUserActionRoutes } from "./routes/browser-user-actions";
 import { workflowsRoutes } from "./routes/workflows";
 import { officialWorkflowRoutes } from "./routes/official-workflows";
 import { emailSubscriptionRoutes } from "./routes/email-subscription";
-import { morningBriefChatCollectionPreviewRoutes } from "./routes/morning-brief-chat-collection-preview";
-import { morningBriefCalendarCollectionPreviewRoutes } from "./routes/morning-brief-calendar-collection-preview";
-import { morningBriefCollectionPreviewRoutes } from "./routes/morning-brief-collection-preview";
-import { morningBriefDeliveryPreviewRoutes } from "./routes/morning-brief-delivery-preview";
-import { morningBriefGenerationPreviewRoutes } from "./routes/morning-brief-generation-preview";
-import { morningBriefGmailCollectionPreviewRoutes } from "./routes/morning-brief-gmail-collection-preview";
-import { morningBriefCompositionPreviewRoutes } from "./routes/morning-brief-composition-preview";
-import { morningBriefDebugTriggerRoutes } from "./routes/morning-brief-debug-trigger";
 import { morningBriefPreferenceRoutes } from "./routes/morning-brief-preference";
 import { workflowAutomationsRoutes } from "./routes/workflow-automations";
 import { integrationsGithubRoutes } from "./routes/integrations-github";
@@ -288,8 +277,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronOfficialWorkflowCatalogRoutes,
   ...cronConnectorOauthStateCleanupRoutes,
   ...cronDrainEmailOutboxRoutes,
-  ...cronExecuteMorningBriefsRoutes,
-  ...internalMorningBriefWorkerRoutes,
   ...cronRefreshHomeTaskRecommendationsRoutes,
   ...cronExecuteWorkflowAutomationsRoutes,
   ...cronMonitorChatEventQueueRoutes,
@@ -365,9 +352,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...mcpConnectorsRoutes,
   ...mcpOAuthClientMetadataRoutes,
   ...mcpServerRoutes,
-  // Registered here so the protected preview has real application ingress. It
-  // is 404 in production: the environment gate runs before authentication.
-  ...morningBriefPreviewGithubCollectionRoutes,
   ...weatherRoutes,
   ...scrapeRoutes,
   ...peopleSearchRoutes,
@@ -424,14 +408,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...paidToolsRoutes,
   ...userModelPreferenceRoutes,
   ...morningBriefPreferenceRoutes,
-  ...morningBriefDebugTriggerRoutes,
-  ...morningBriefCalendarCollectionPreviewRoutes,
-  ...morningBriefCollectionPreviewRoutes,
-  ...morningBriefGmailCollectionPreviewRoutes,
-  ...morningBriefGenerationPreviewRoutes,
-  ...morningBriefDeliveryPreviewRoutes,
-  ...morningBriefChatCollectionPreviewRoutes,
-  ...morningBriefCompositionPreviewRoutes,
   ...emailSubscriptionRoutes,
   ...workflowsRoutes,
   ...officialWorkflowRoutes,

@@ -1,15 +1,14 @@
 # Morning Brief migration state
 
-Morning Brief is being replaced by `simple-morning-brief`, a platform-funded
-server-side pipeline
-([#34637](https://github.com/vm0-ai/okou/issues/34637)). The replacement must
-carry the user's existing brief forward without asking anyone to reinstall or
-reconfigure it, so both the current Settings surface and the later migration
-read one authoritative description of what a member owns today:
-`morning-brief-migration-state.service.ts`.
+> The proposal to replace Official Workflow Morning Brief with the Native
+> `simple-morning-brief` pipeline was retired. Official Workflow is the sole
+> execution path after the stage-2 cleanup. This document remains relevant for
+> the shared installation/ownership reader and as migration history; its
+> Native transition discussions below are historical, not operational advice.
 
-This document records the invariants that reader encodes. It does not describe
-the new pipeline, which does not exist yet.
+`morning-brief-migration-state.service.ts` describes which Official Workflow
+installation a member owns. The preference surface continues to read that
+installation without relying on the retired Native projection.
 
 ## The exported contract
 

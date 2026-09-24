@@ -292,7 +292,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "lancy@okou.ai",
     displayName: "Native Morning Brief",
     description:
-      "Retiring the native Morning Brief pipeline in favor of the Official Workflow Run. Separate from the user's Morning Brief preference.",
+      "Retained only for historical Native email admission; no new execution entrypoint.",
     enabled: false,
   },
   [FeatureSwitchKey.TestOauthConnector]: {
