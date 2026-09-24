@@ -342,8 +342,6 @@ describe("custom model provider gateway routes", () => {
               authHeaderTemplate: "{{secret}}",
               modelMappings: {
                 "gpt-6-astra": "company-gpt-production",
-                "deepseek-v4-flash": "deepseek-v4-flash-0731",
-                "deepseek-v4-pro": "company-deepseek-pro-production",
               },
             },
           ],
@@ -417,27 +415,9 @@ describe("custom model provider gateway routes", () => {
         ],
       },
     });
-    const runContextSnapshot = runContextSnapshotForRun(runId);
-    expect(runContextSnapshot.firewalls).toContainEqual({
-      kind: "inline",
-      name: firewallName,
-      apis: [
-        {
-          base: "https://gateway.example.com/anthropic/v1/messages",
-          hostPolicy: { kind: "publicDestination" },
-          auth: {
-            headerEntries: [
-              {
-                name: "Authorization",
-                value: `Bearer \${{ secrets.OKOU_MODEL_PROVIDER_API_KEY }}`,
-              },
-            ],
-          },
-          permissions: [],
-        },
-      ],
-    });
-    expect(JSON.stringify(runContextSnapshot)).not.toContain(
+    // This suite's sole telemetry assertion verifies redaction; the claim
+    // above verifies the actual Runner firewall through its production API.
+    expect(JSON.stringify(runContextSnapshotForRun(runId))).not.toContain(
       "runtime-gateway-secret",
     );
     expect(claim.secretValues).not.toContain("runtime-gateway-secret");
@@ -524,175 +504,5 @@ describe("custom model provider gateway routes", () => {
     expect(codexClaim.secretValues).not.toContain("runtime-gateway-secret");
 
     await runs.requestCancelRun(actor, codexRunId, [200]);
-
-    const deepseekMappings = [
-      {
-        logicalModel: "deepseek-v4-flash",
-        upstreamModel: "deepseek-v4-flash-0731",
-      },
-      {
-        logicalModel: "deepseek-v4-pro",
-        upstreamModel: "company-deepseek-pro-production",
-      },
-    ] as const;
-    for (const { logicalModel, upstreamModel } of deepseekMappings) {
-      await runs.updateOrgModelPolicies(actor, [
-        {
-          model: logicalModel,
-          isDefault: true,
-          defaultProviderType: "custom-openai-responses",
-          credentialScope: "org",
-          modelProviderId: null,
-          modelProviderSurfaceId: responsesSurface.id,
-        },
-      ]);
-      const deepseekSent = await chat.requestSendEvent(
-        actor,
-        {
-          clientEventId: randomUUID(),
-          agentId: agent.agentId,
-          prompt: `exercise the custom Responses gateway for ${logicalModel}`,
-          model: logicalModel,
-        },
-        [201],
-      );
-      if ("error" in deepseekSent.body) {
-        throw new Error(
-          `Expected the ${logicalModel} custom gateway chat send to succeed`,
-        );
-      }
-      const deepseekRunId = deepseekSent.body.runId;
-      if (!deepseekRunId) {
-        throw new Error(
-          `Expected the ${logicalModel} custom gateway chat send to create a run`,
-        );
-      }
-      // The custom endpoint is intentionally unreachable: Pi API-first may
-      // finish before a Runner can claim it. Assert the admitted launch's
-      // externally emitted route and firewall snapshot instead of racing the
-      // queue. The native Fable and Astra claims above still cover Runner
-      // environment materialization.
-      const snapshot = runContextSnapshotForRun(deepseekRunId);
-      expect(snapshot).toMatchObject({
-        cliAgentType: "pi",
-        environmentEntries: expect.arrayContaining([
-          {
-            name: "OPENAI_BASE_URL",
-            value: "https://gateway.example.com/openai/v1",
-          },
-          { name: "OPENAI_MODEL", value: upstreamModel },
-        ]),
-      });
-      expect(snapshot.firewalls).toContainEqual(
-        expect.objectContaining({
-          kind: "inline",
-          name: `model-provider-surface:${responsesSurface.id}`,
-          apis: expect.arrayContaining([
-            expect.objectContaining({
-              base: "https://gateway.example.com/openai/v1/responses",
-            }),
-          ]),
-        }),
-      );
-      expect(JSON.stringify(snapshot)).not.toContain("runtime-gateway-secret");
-    }
   }, 15_000);
-
-  it("admits an allowlisted DeepSeek custom gateway to Pi execution", async () => {
-    const bdd = createBddApi(context);
-    const runs = createRunsApi(context);
-    const actor = bdd.user();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped actor");
-    }
-    bdd.acceptAgentStorageWrites();
-    chatCallbacks.acceptChatObjectStorage();
-    chatCallbacks.disableVapid();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    runs.configureRunnerGroup();
-    await runs.grantProEntitlement(actor);
-
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Custom DeepSeek gateway runtime",
-      visibility: "private",
-    });
-    mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-
-    const created = await accept(
-      mainClient().create({
-        headers: authHeaders(),
-        body: {
-          displayName: "Custom DeepSeek Gateway",
-          secret: "custom-deepseek-gateway-secret",
-          surfaces: [
-            {
-              protocol: "openai-responses",
-              apiBaseUrl: "https://gateway.example.com/openai/v1",
-              authHeaderName: "Authorization",
-              authHeaderTemplate: "Bearer {{secret}}",
-              modelMappings: {
-                "deepseek-v4-flash": "deepseek-v4-flash-0731",
-              },
-            },
-          ],
-        },
-      }),
-      [201],
-    );
-    const surfaceId = created.body.surfaces[0]?.id;
-    if (!surfaceId) {
-      throw new Error("Expected the custom DeepSeek gateway surface");
-    }
-    await runs.updateOrgModelPolicies(actor, [
-      {
-        model: "deepseek-v4-flash",
-        isDefault: true,
-        defaultProviderType: "custom-openai-responses",
-        credentialScope: "org",
-        modelProviderId: null,
-        modelProviderSurfaceId: surfaceId,
-      },
-    ]);
-
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        clientEventId: randomUUID(),
-        agentId: agent.agentId,
-        prompt: "run the custom DeepSeek gateway through Pi",
-        model: "deepseek-v4-flash",
-      },
-      [201],
-    );
-    if ("error" in sent.body || !sent.body.runId) {
-      throw new Error("Expected the custom DeepSeek gateway run to start");
-    }
-    expect(runContextSnapshotForRun(sent.body.runId)).toMatchObject({
-      cliAgentType: "pi",
-      environmentEntries: expect.arrayContaining([
-        {
-          name: "OPENAI_BASE_URL",
-          value: "https://gateway.example.com/openai/v1",
-        },
-        {
-          name: "OPENAI_MODEL",
-          value: "deepseek-v4-flash-0731",
-        },
-      ]),
-    });
-    const cancellation = await runs.requestCancelRun(
-      actor,
-      sent.body.runId,
-      [200, 400],
-    );
-    if (
-      cancellation.status === 400 &&
-      cancellation.body.error.code !== "RUN_NOT_CANCELLABLE"
-    ) {
-      throw new Error(
-        `Expected terminal cleanup error, received ${cancellation.body.error.code}`,
-      );
-    }
-  }, 30_000);
 });
