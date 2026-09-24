@@ -81,7 +81,7 @@ function browserInputWrites() {
     return (
       command.method === "Runtime.callFunctionOn" &&
       typeof command.params.functionDeclaration === "string" &&
-      command.params.functionDeclaration.includes("nextValue")
+      command.params.functionDeclaration.includes("setter.call")
     );
   });
 }
@@ -178,6 +178,8 @@ function mockNativeInputTarget(): void {
                 connected: true,
                 mainDocument: true,
                 writable: true,
+                siteRequired: false,
+                multiple: false,
               };
             }),
           },
@@ -236,6 +238,8 @@ describe("Browser user-action route", () => {
     let controlWritable = true;
     let controlConnected = true;
     let controlTagName = "INPUT";
+    let controlSiteRequired = false;
+    const controlMinLength = 3;
     let disconnectAfterNextWrite = false;
     let resolveNodeAvailable = true;
     let malformedNodeResponse = false;
@@ -302,6 +306,25 @@ describe("Browser user-action route", () => {
             result: { value: verificationMatches && controlConnected },
           };
         }
+        if (declaration.includes("cloneNode")) {
+          const values = Array.isArray(command.params.arguments)
+            ? command.params.arguments.flatMap((argument) => {
+                return typeof argument === "object" &&
+                  argument !== null &&
+                  "value" in argument &&
+                  typeof argument.value === "string"
+                  ? [argument.value]
+                  : [];
+              })
+            : [];
+          return {
+            result: {
+              value: values.every((value) => {
+                return value.length >= (controlMinLength ?? 0);
+              }),
+            },
+          };
+        }
         if (declaration.includes("nextValue")) {
           if (disconnectAfterNextWrite) {
             disconnectAfterNextWrite = false;
@@ -327,14 +350,23 @@ describe("Browser user-action route", () => {
               return {
                 tagName: controlTagName,
                 inputType:
-                  objectId === "native-username-object"
-                    ? "email"
-                    : objectId === "native-code-object"
-                      ? "tel"
-                      : "password",
+                  controlTagName === "TEXTAREA"
+                    ? "textarea"
+                    : objectId === "native-username-object"
+                      ? "email"
+                      : objectId === "native-code-object"
+                        ? "tel"
+                        : "password",
                 connected: controlConnected,
                 mainDocument: true,
                 writable: controlWritable,
+                siteRequired: controlSiteRequired,
+                multiple:
+                  controlTagName === "INPUT" &&
+                  objectId === "native-username-object",
+                ...(controlMinLength === undefined
+                  ? {}
+                  : { minLength: controlMinLength }),
               };
             }),
           },
@@ -579,6 +611,7 @@ describe("Browser user-action route", () => {
     expect(foreignPreflight.status).toBe(404);
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
 
+    controlSiteRequired = true;
     const preflight = await accept(
       userActionClient().preflight({
         headers: { authorization: "Bearer clerk-session" },
@@ -588,6 +621,28 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(preflight.body.state).toBe("pending");
+    expect(preflight.body).toMatchObject({
+      kind: "input",
+      fields: [
+        {
+          control: {
+            tagName: "INPUT",
+            inputType: "email",
+            siteRequired: true,
+            multiple: true,
+            minLength: 3,
+          },
+        },
+        {
+          control: {
+            tagName: "INPUT",
+            inputType: "password",
+            siteRequired: true,
+            minLength: 3,
+          },
+        },
+      ],
+    });
     expect(preflight.body).not.toHaveProperty("pageTargetId");
     expect(JSON.stringify(preflight.body)).not.toContain("backendNodeId");
     expect(browserInputWrites()).toHaveLength(0);
@@ -614,10 +669,26 @@ describe("Browser user-action route", () => {
         return (
           command.method === "Runtime.callFunctionOn" &&
           typeof command.params.functionDeclaration === "string" &&
-          command.params.functionDeclaration.includes("nextValue")
+          command.params.functionDeclaration.includes("setter.call")
         );
       }),
     ).toBeFalsy();
+
+    const invalidSiteValue = await userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: created.body.action.requestToken },
+      body: {
+        values: [
+          { key: "username", value: "user@example.com" },
+          { key: "password", value: "xy" },
+        ],
+      },
+    });
+    expect(invalidSiteValue).toMatchObject({
+      status: 409,
+      body: { error: { code: "BROWSER_USER_ACTION_INVALID_VALUE" } },
+    });
+    expect(browserInputWrites()).toHaveLength(0);
 
     const applied = await accept(
       userActionClient().apply({
@@ -633,9 +704,9 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(applied.body.state).toBe("succeeded");
-    expect(providerReadCount).toBe(3);
-    expect(context.mocks.browserUseCdp.connect).toHaveBeenCalledTimes(3);
-    expect(browserControlInspections()).toHaveLength(3);
+    expect(providerReadCount).toBe(4);
+    expect(context.mocks.browserUseCdp.connect).toHaveBeenCalledTimes(4);
+    expect(browserControlInspections()).toHaveLength(4);
     expect(browserInputWrites()).toHaveLength(1);
     expect(browserInputWrites()[0]?.[0].params.arguments).toStrictEqual([
       { value: "user@example.com" },
@@ -782,6 +853,54 @@ describe("Browser user-action route", () => {
     expect(optionalBlankWrite?.[0].params.arguments).toStrictEqual([
       { value: "required-only" },
     ]);
+
+    controlTagName = "TEXTAREA";
+    controlSiteRequired = false;
+    const multiline = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after multiline input",
+          pageTargetId: "native-input-target",
+          fields: [
+            {
+              key: "note",
+              label: "Note",
+              fieldKind: "text",
+              required: true,
+              backendNodeId: 43,
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+    const multilinePreflight = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: multiline.body.action.requestToken },
+        body: {},
+      }),
+      [200],
+    );
+    expect(multilinePreflight.body).toMatchObject({
+      kind: "input",
+      fields: [{ control: { tagName: "TEXTAREA", inputType: "textarea" } }],
+    });
+    const multilineApplied = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: multiline.body.action.requestToken },
+        body: { values: [{ key: "note", value: "first line\nsecond line" }] },
+      }),
+      [200],
+    );
+    expect(multilineApplied.body.state).toBe("succeeded");
+    expect(browserInputWrites().at(-1)?.[0].params.arguments).toStrictEqual([
+      { value: "first line\nsecond line" },
+    ]);
+    controlTagName = "INPUT";
 
     context.mocks.browserUseCdp.connect.mockClear();
     context.mocks.browserUseCdp.command.mockClear();

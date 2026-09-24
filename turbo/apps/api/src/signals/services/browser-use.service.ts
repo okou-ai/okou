@@ -616,12 +616,33 @@ function httpPageUrl(value: string): URL | null {
   return url.protocol === "http:" || url.protocol === "https:" ? url : null;
 }
 
-interface BrowserUseControlInspection {
+export interface BrowserUseControlInspection {
   readonly tagName: string;
   readonly inputType: string;
   readonly connected: boolean;
   readonly mainDocument: boolean;
   readonly writable: boolean;
+  readonly siteRequired: boolean;
+  readonly multiple: boolean;
+  readonly minLength?: number;
+  readonly maxLength?: number;
+  readonly pattern?: string;
+}
+
+function boundedOptionalControlLength(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (typeof value === "number" &&
+      Number.isInteger(value) &&
+      value >= 0 &&
+      value <= 4096)
+  );
+}
+
+function boundedOptionalControlPattern(value: unknown): boolean {
+  return (
+    value === undefined || (typeof value === "string" && value.length <= 512)
+  );
 }
 
 function safeControlInspection(
@@ -638,7 +659,12 @@ function safeControlInspection(
     candidate.inputType.length > 64 ||
     typeof candidate.connected !== "boolean" ||
     typeof candidate.mainDocument !== "boolean" ||
-    typeof candidate.writable !== "boolean"
+    typeof candidate.writable !== "boolean" ||
+    typeof candidate.siteRequired !== "boolean" ||
+    typeof candidate.multiple !== "boolean" ||
+    !boundedOptionalControlLength(candidate.minLength) ||
+    !boundedOptionalControlLength(candidate.maxLength) ||
+    !boundedOptionalControlPattern(candidate.pattern)
   ) {
     return null;
   }
@@ -648,6 +674,17 @@ function safeControlInspection(
     connected: candidate.connected,
     mainDocument: candidate.mainDocument,
     writable: candidate.writable,
+    siteRequired: candidate.siteRequired,
+    multiple: candidate.multiple,
+    ...(candidate.minLength === undefined
+      ? {}
+      : { minLength: candidate.minLength as number }),
+    ...(candidate.maxLength === undefined
+      ? {}
+      : { maxLength: candidate.maxLength as number }),
+    ...(candidate.pattern === undefined
+      ? {}
+      : { pattern: candidate.pattern as string }),
   };
 }
 
@@ -662,12 +699,21 @@ function browserUseControlInspectionFunction(): string {
       const textarea = control instanceof HTMLTextAreaElement;
       const supported =
         textarea || (input && supportedInputTypes.has(control.type));
+      const textual = supported && (textarea || control.type !== "number");
       return {
         tagName: typeof control.tagName === "string" ? control.tagName : "",
         inputType: input ? control.type : textarea ? "textarea" : "",
         connected: control.isConnected === true,
         mainDocument: control.ownerDocument === document,
         writable: supported && !control.readOnly && !control.disabled,
+        siteRequired: supported && control.required === true,
+        multiple: input && control.type === "email" && control.multiple === true,
+        ...(textual && control.minLength >= 0 && control.minLength <= 4096
+          ? { minLength: control.minLength } : {}),
+        ...(textual && control.maxLength >= 0 && control.maxLength <= 4096
+          ? { maxLength: control.maxLength } : {}),
+        ...(textual && input && control.pattern && control.pattern.length <= 512
+          ? { pattern: control.pattern } : {}),
       };
     });
   }`;
@@ -940,6 +986,7 @@ function isMissingBrowserUseNode(error: unknown): boolean {
 interface ResolvedBrowserUseUserActionField {
   readonly objectId: string;
   readonly value?: string;
+  readonly inspection: BrowserUseControlInspection;
 }
 
 interface WritableBrowserUseUserActionField {
@@ -1058,6 +1105,7 @@ async function resolveBrowserUseApplyFields(
     }
     resolved.push({
       objectId,
+      inspection,
       ...(field.value === undefined ? {} : { value: field.value }),
     });
   }
@@ -1069,12 +1117,18 @@ export async function preflightBrowserUseUserAction(
   cdpUrl: string,
   target: BrowserUseUserActionExactTarget,
   signal: AbortSignal,
-): Promise<"valid" | "stale"> {
+): Promise<
+  | {
+      readonly kind: "valid";
+      readonly controls: readonly BrowserUseControlInspection[];
+    }
+  | { readonly kind: "stale" }
+> {
   const cdpSignal = browserUseCdpSignal(signal);
   return await withBrowserUseCdpSocket(cdpUrl, cdpSignal, async (socket) => {
     const attached = await openBrowserUseApplyPage(socket, target, cdpSignal);
     if (!attached) {
-      return "stale";
+      return { kind: "stale" };
     }
     const resolved = await resolveBrowserUseApplyFields(
       socket,
@@ -1082,7 +1136,14 @@ export async function preflightBrowserUseUserAction(
       target.fields,
       cdpSignal,
     );
-    return resolved ? "valid" : "stale";
+    return resolved
+      ? {
+          kind: "valid",
+          controls: resolved.fields.map((field) => {
+            return field.inspection;
+          }),
+        }
+      : { kind: "stale" };
   });
 }
 
@@ -1105,6 +1166,67 @@ function browserUseAggregateValueArguments(
   return otherFields.flatMap((field) => {
     return [{ objectId: field.objectId }, { value: field.value }];
   });
+}
+
+async function validateBrowserUseApplyValues(
+  socket: WebSocket,
+  args: {
+    readonly sessionId: string;
+    readonly fields: readonly ResolvedBrowserUseUserActionField[];
+    readonly commandId: number;
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  const [firstField, ...otherFields] = args.fields;
+  if (!firstField) {
+    return true;
+  }
+  const checked = browserUseCdpValueSchema.parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: args.commandId,
+        method: "Runtime.callFunctionOn",
+        params: {
+          objectId: firstField.objectId,
+          functionDeclaration: `function (nextValue, ...otherControlValues) {
+            const controls = [this];
+            const values = [nextValue];
+            for (let index = 0; index < otherControlValues.length; index += 2) {
+              controls.push(otherControlValues[index]);
+              values.push(otherControlValues[index + 1]);
+            }
+            return controls.every((control, index) => {
+              const value = values[index];
+              if (value === null) {
+                return !control.required || control.value !== "";
+              }
+              if (typeof value !== "string") return false;
+              if (control.minLength >= 0 && value.length < control.minLength) return false;
+              if (control.maxLength >= 0 && value.length > control.maxLength) return false;
+              const clone = control.cloneNode(false);
+              clone.value = value;
+              return clone.value === value && clone.checkValidity();
+            });
+          }`,
+          arguments: [
+            { value: firstField.value ?? null },
+            ...otherFields.flatMap((field) => {
+              return [
+                { objectId: field.objectId },
+                { value: field.value ?? null },
+              ];
+            }),
+          ],
+          returnByValue: true,
+        },
+        sessionId: args.sessionId,
+      },
+      signal,
+    ),
+    { reportInput: true },
+  );
+  return checked.result.value === true;
 }
 
 async function writeBrowserUseApplyFields(
@@ -1205,7 +1327,7 @@ async function applyBrowserUseUserActionOnSocket(
   target: BrowserUseUserActionExactTarget,
   mutation: { writeStarted: boolean },
   signal: AbortSignal,
-): Promise<"succeeded" | "stale"> {
+): Promise<"succeeded" | "stale" | "invalid"> {
   const attached = await openBrowserUseApplyPage(socket, target, signal);
   if (!attached) {
     return "stale";
@@ -1219,12 +1341,25 @@ async function applyBrowserUseUserActionOnSocket(
   if (!resolved) {
     return "stale";
   }
+  if (
+    !(await validateBrowserUseApplyValues(
+      socket,
+      {
+        sessionId: attached.sessionId,
+        fields: resolved.fields,
+        commandId: resolved.commandId,
+      },
+      signal,
+    ))
+  ) {
+    return "invalid";
+  }
   await writeBrowserUseApplyFields(
     socket,
     {
       sessionId: attached.sessionId,
       fields: resolved.fields,
-      commandId: resolved.commandId,
+      commandId: resolved.commandId + (resolved.fields.length > 0 ? 1 : 0),
     },
     mutation,
     signal,
@@ -1236,7 +1371,7 @@ export async function applyBrowserUseUserAction(
   cdpUrl: string,
   target: BrowserUseUserActionExactTarget,
   signal: AbortSignal,
-): Promise<"succeeded" | "stale"> {
+): Promise<"succeeded" | "stale" | "invalid"> {
   const mutation = { writeStarted: false };
   const cdpSignal = browserUseCdpSignal(signal);
   const operation = await settleIncludingAbort(

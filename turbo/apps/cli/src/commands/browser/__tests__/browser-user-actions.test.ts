@@ -217,6 +217,7 @@ function actionResponse() {
         label: "Email",
         fieldKind: "username" as const,
         required: true,
+        control: { tagName: "INPUT" as const, inputType: "email" as const },
       },
     ],
   };

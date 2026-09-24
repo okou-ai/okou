@@ -112,6 +112,10 @@ describe("Browser user-action contracts", () => {
           label: "Password",
           fieldKind: "password" as const,
           required: true,
+          control: {
+            tagName: "INPUT" as const,
+            inputType: "password" as const,
+          },
         },
       ],
     };

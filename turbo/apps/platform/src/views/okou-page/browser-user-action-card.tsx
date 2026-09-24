@@ -5,6 +5,7 @@ import {
 import { cn } from "@okouai/ui";
 import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
 import { Input } from "@okouai/ui/components/ui/input";
+import { Textarea } from "@okouai/ui/components/ui/textarea";
 import { useGet, useLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
@@ -294,10 +295,6 @@ function StateFromRequest({
   return null;
 }
 
-function fieldInputType(fieldKind: string): "password" | "text" {
-  return fieldKind === "password" ? "password" : "text";
-}
-
 function fieldAutocomplete(
   fieldKind: string,
 ): "current-password" | "off" | "one-time-code" | "username" {
@@ -421,7 +418,7 @@ function BrowserInputFields({
                 id={requirementId}
                 className="text-xs font-normal text-muted-foreground"
               >
-                {field.required
+                {field.required || field.control.siteRequired
                   ? t(($) => {
                       return $.chat.browserInput.required;
                     })
@@ -438,24 +435,62 @@ function BrowserInputFields({
                 {field.description}
               </span>
             )}
-            <Input
-              id={inputId}
-              name={field.key}
-              type={fieldInputType(field.fieldKind)}
-              autoComplete={fieldAutocomplete(field.fieldKind)}
-              aria-describedby={
-                descriptionId
-                  ? `${requirementId} ${descriptionId}`
-                  : requirementId
-              }
-              required={field.required}
-              maxLength={BROWSER_USER_ACTION_MAX_VALUE_LENGTH}
-              value={draft.get(field.key) ?? ""}
-              disabled={busy}
-              onChange={(event) => {
-                onUpdate(field.key, event.currentTarget.value);
-              }}
-            />
+            {field.control.tagName === "TEXTAREA" ? (
+              <Textarea
+                id={inputId}
+                name={field.key}
+                aria-describedby={
+                  descriptionId
+                    ? `${requirementId} ${descriptionId}`
+                    : requirementId
+                }
+                required={field.required || field.control.siteRequired}
+                minLength={field.control.minLength}
+                maxLength={Math.min(
+                  field.control.maxLength ??
+                    BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
+                  BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
+                )}
+                value={draft.get(field.key) ?? ""}
+                disabled={busy}
+                onChange={(event) => {
+                  onUpdate(field.key, event.currentTarget.value);
+                }}
+              />
+            ) : (
+              <Input
+                id={inputId}
+                name={field.key}
+                type={
+                  field.fieldKind === "one_time_code"
+                    ? "text"
+                    : field.control.inputType
+                }
+                multiple={field.control.multiple}
+                inputMode={
+                  field.fieldKind === "one_time_code" ? "numeric" : undefined
+                }
+                autoComplete={fieldAutocomplete(field.fieldKind)}
+                aria-describedby={
+                  descriptionId
+                    ? `${requirementId} ${descriptionId}`
+                    : requirementId
+                }
+                required={field.required || field.control.siteRequired}
+                minLength={field.control.minLength}
+                maxLength={Math.min(
+                  field.control.maxLength ??
+                    BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
+                  BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
+                )}
+                pattern={field.control.pattern}
+                value={draft.get(field.key) ?? ""}
+                disabled={busy}
+                onChange={(event) => {
+                  onUpdate(field.key, event.currentTarget.value);
+                }}
+              />
+            )}
           </div>
         );
       })}
@@ -589,10 +624,15 @@ function PendingFormGate({
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const entryState = useGet(signals.entryState$);
+  const entryAction = useGet(signals.entryAction$);
   const beginEntry = useSet(signals.beginEntry$);
-  if (entryState === "ready") {
+  if (entryState === "ready" && entryAction) {
     return (
-      <PendingForm signals={signals} request={request} showTitle={showTitle} />
+      <PendingForm
+        signals={signals}
+        request={{ ...request, action: entryAction }}
+        showTitle={showTitle}
+      />
     );
   }
   return (
@@ -601,7 +641,7 @@ function PendingFormGate({
         siteOrigin={request.action.siteOrigin}
         showTitle={showTitle}
       />
-      {entryState !== "unavailable" ? (
+      {entryState !== "unavailable" && entryState !== "invalid" ? (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 size={16} className="animate-spin" />
           {t(($) => {
@@ -612,7 +652,9 @@ function PendingFormGate({
         <>
           <p role="alert" className="text-sm text-destructive">
             {t(($) => {
-              return $.chat.browserInput.unavailable;
+              return entryState === "invalid"
+                ? $.chat.browserInput.applyFailed
+                : $.chat.browserInput.unavailable;
             })}
           </p>
           <Button

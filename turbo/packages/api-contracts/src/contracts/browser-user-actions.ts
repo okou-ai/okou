@@ -123,6 +123,36 @@ export const browserUserActionDisplayFieldSchema = z
       .optional(),
     fieldKind: browserUserActionFieldKindSchema,
     required: z.boolean(),
+    control: z
+      .object({
+        tagName: z.enum(["INPUT", "TEXTAREA"]),
+        inputType: z.enum([
+          "textarea",
+          "text",
+          "search",
+          "email",
+          "tel",
+          "url",
+          "password",
+          "number",
+        ]),
+        siteRequired: z.boolean().optional(),
+        multiple: z.boolean().optional(),
+        minLength: z
+          .number()
+          .int()
+          .min(0)
+          .max(BROWSER_USER_ACTION_MAX_VALUE_LENGTH)
+          .optional(),
+        maxLength: z
+          .number()
+          .int()
+          .min(0)
+          .max(BROWSER_USER_ACTION_MAX_VALUE_LENGTH)
+          .optional(),
+        pattern: z.string().max(512).optional(),
+      })
+      .strict(),
   })
   .strict();
 

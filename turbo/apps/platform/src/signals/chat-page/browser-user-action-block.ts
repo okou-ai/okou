@@ -62,8 +62,12 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly callbackDelivered$: Computed<boolean>;
   readonly callbackFailed$: Computed<boolean>;
   readonly busy$: Computed<boolean>;
-  readonly entryState$: Computed<"idle" | "checking" | "ready" | "unavailable">;
+  readonly entryState$: Computed<
+    "idle" | "checking" | "ready" | "unavailable" | "invalid"
+  >;
+  readonly entryAction$: Computed<BrowserInputAction | null>;
   readonly beginEntry$: Command<Promise<void>, [AbortSignal]>;
+  readonly invalidateEntry$: Command<void, []>;
   readonly startStandaloneEntry$: Command<Promise<void>, [AbortSignal]>;
   readonly retryStandaloneRequest$: Command<Promise<void>, [AbortSignal]>;
   readonly refresh$: Command<void, []>;
@@ -89,14 +93,19 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
 function createEntrySignals(
   descriptor: BrowserUserActionDescriptor,
   refresh$: BrowserUserActionSignals["refresh$"],
-): Pick<BrowserUserActionSignals, "entryState$" | "beginEntry$"> {
-  const internalState$ = state<"idle" | "checking" | "ready" | "unavailable">(
-    "idle",
-  );
+): Pick<
+  BrowserUserActionSignals,
+  "entryState$" | "entryAction$" | "beginEntry$" | "invalidateEntry$"
+> {
+  const internalState$ = state<
+    "idle" | "checking" | "ready" | "unavailable" | "invalid"
+  >("idle");
+  const internalAction$ = state<BrowserInputAction | null>(null);
   const resetEntrySignal$ = resetSignal();
   const beginEntry$ = command(async ({ get, set }, signal: AbortSignal) => {
     const operationSignal = set(resetEntrySignal$, signal);
     set(internalState$, "checking");
+    set(internalAction$, null);
     const checked = await settle(
       accept(
         get(apiClient$)(browserUserActionsContract).preflight({
@@ -121,6 +130,7 @@ function createEntrySignals(
       checked.value.body.kind === "input" &&
       checked.value.body.state === "pending"
     ) {
+      set(internalAction$, checked.value.body);
       set(internalState$, "ready");
       return;
     }
@@ -130,11 +140,19 @@ function createEntrySignals(
       set(refresh$);
     }
   });
+  const invalidateEntry$ = command(({ set }) => {
+    set(internalAction$, null);
+    set(internalState$, "invalid");
+  });
   return {
     entryState$: computed((get) => {
       return get(internalState$);
     }),
+    entryAction$: computed((get) => {
+      return get(internalAction$);
+    }),
     beginEntry$,
+    invalidateEntry$,
   };
 }
 
@@ -419,6 +437,8 @@ interface BrowserUserActionMutationContext {
   readonly request$: BrowserUserActionSignals["request$"];
   readonly refresh$: BrowserUserActionSignals["refresh$"];
   readonly draft$: BrowserUserActionSignals["draft$"];
+  readonly entryAction$: BrowserUserActionSignals["entryAction$"];
+  readonly invalidateEntry$: BrowserUserActionSignals["invalidateEntry$"];
   readonly clearDraft$: BrowserUserActionSignals["clearDraft$"];
   readonly activeMutation$: State<boolean>;
   readonly deliverCallback$: Command<
@@ -427,11 +447,52 @@ interface BrowserUserActionMutationContext {
   >;
 }
 
+function browserInputSubmissionValues(
+  action: BrowserInputAction,
+  draft: ReadonlyMap<string, string>,
+): { key: string; value: string }[] | null {
+  const values: { key: string; value: string }[] = [];
+  for (const field of action.fields) {
+    const value = draft.get(field.key) ?? "";
+    if (value === "") {
+      if (field.required || field.control.siteRequired) {
+        return null;
+      }
+      continue;
+    }
+    values.push({ key: field.key, value });
+  }
+  return values;
+}
+
+function isInvalidBrowserInputValueResponse(result: {
+  readonly status: number;
+  readonly body: unknown;
+}): boolean {
+  if (
+    result.status !== 409 ||
+    typeof result.body !== "object" ||
+    result.body === null ||
+    !("error" in result.body)
+  ) {
+    return false;
+  }
+  const error = result.body.error;
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "BROWSER_USER_ACTION_INVALID_VALUE"
+  );
+}
+
 function createSubmitSignal({
   descriptor,
   request$,
   refresh$,
   draft$,
+  entryAction$,
+  invalidateEntry$,
   clearDraft$,
   activeMutation$,
   deliverCallback$,
@@ -452,16 +513,16 @@ function createSubmitSignal({
     ) {
       return;
     }
-    const draft = get(draft$);
-    const values = request.action.fields.flatMap((field) => {
-      const value = draft.get(field.key) ?? "";
-      return value === "" && !field.required ? [] : [{ key: field.key, value }];
-    });
+    const entryAction = get(entryAction$);
     if (
-      request.action.fields.some((field) => {
-        return field.required && (draft.get(field.key) ?? "") === "";
-      })
+      !entryAction ||
+      !actionMatches(entryAction, descriptor) ||
+      entryAction.state !== "pending"
     ) {
+      return;
+    }
+    const values = browserInputSubmissionValues(entryAction, get(draft$));
+    if (!values) {
       return;
     }
 
@@ -479,6 +540,10 @@ function createSubmitSignal({
     });
     signal.throwIfAborted();
     const status: number = result.status;
+    if (isInvalidBrowserInputValueResponse(result)) {
+      set(invalidateEntry$);
+      return;
+    }
     if (status !== 200) {
       set(clearDraft$);
       set(refresh$);
@@ -617,13 +682,24 @@ function createContinueSignal({
   });
 }
 
-function createMutationSignals(
-  descriptor: BrowserUserActionDescriptor,
-  request$: BrowserUserActionSignals["request$"],
-  refresh$: BrowserUserActionSignals["refresh$"],
-  draft$: BrowserUserActionSignals["draft$"],
-  clearDraft$: BrowserUserActionSignals["clearDraft$"],
-): Pick<
+function createMutationSignals({
+  descriptor,
+  request$,
+  refresh$,
+  draft$,
+  clearDraft$,
+  entryAction$,
+  invalidateEntry$,
+}: Pick<
+  BrowserUserActionMutationContext,
+  | "descriptor"
+  | "request$"
+  | "refresh$"
+  | "draft$"
+  | "clearDraft$"
+  | "entryAction$"
+  | "invalidateEntry$"
+>): Pick<
   BrowserUserActionSignals,
   | "callbackDelivered$"
   | "callbackFailed$"
@@ -662,6 +738,8 @@ function createMutationSignals(
     request$,
     refresh$,
     draft$,
+    entryAction$,
+    invalidateEntry$,
     clearDraft$,
     activeMutation$,
     deliverCallback$,
@@ -711,13 +789,15 @@ export function createBrowserUserActionSignals(
     entrySignals.beginEntry$,
   );
   const draftSignals = createDraftSignals();
-  const mutationSignals = createMutationSignals(
+  const mutationSignals = createMutationSignals({
     descriptor,
-    requestSignals.request$,
-    requestSignals.refresh$,
-    draftSignals.draft$,
-    draftSignals.clearDraft$,
-  );
+    request$: requestSignals.request$,
+    refresh$: requestSignals.refresh$,
+    draft$: draftSignals.draft$,
+    clearDraft$: draftSignals.clearDraft$,
+    entryAction$: entrySignals.entryAction$,
+    invalidateEntry$: entrySignals.invalidateEntry$,
+  });
   return {
     ...descriptor,
     ...requestSignals,
