@@ -38,7 +38,6 @@ async function completedPiRun() {
     context,
     { ...actor, orgId: requireOrgId(actor) },
     {
-      [FeatureSwitchKey.PiLoop]: true,
       [FeatureSwitchKey.OpenRouterUsRouting]: false,
     },
   );

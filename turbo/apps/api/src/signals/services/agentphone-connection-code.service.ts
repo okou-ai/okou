@@ -1,6 +1,5 @@
 import { createHmac, randomInt } from "node:crypto";
 
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { agentphoneConnectionCodes } from "@okouai/db/schema/agentphone-connection-code";
 import { and, eq, gt, isNull } from "drizzle-orm";
 
@@ -86,7 +85,6 @@ export async function createAgentPhoneConnectionCode(
   args: {
     readonly userId: string;
     readonly orgId: string;
-    readonly publicBrand: PublicBrand;
     readonly secret: string;
   },
 ): Promise<AgentPhoneConnectionCode> {
@@ -116,7 +114,6 @@ export async function createAgentPhoneConnectionCode(
       codeHash,
       userId: args.userId,
       orgId: args.orgId,
-      publicBrand: args.publicBrand,
       expiresAt,
       createdAt,
       updatedAt: createdAt,
@@ -128,7 +125,6 @@ export async function createAgentPhoneConnectionCode(
       ],
       set: {
         codeHash,
-        publicBrand: args.publicBrand,
         expiresAt,
         consumedAt: null,
         consumedPhoneHandle: null,
@@ -164,7 +160,6 @@ export async function consumeAgentPhoneConnectionCode(
         id: agentphoneConnectionCodes.id,
         userId: agentphoneConnectionCodes.userId,
         orgId: agentphoneConnectionCodes.orgId,
-        publicBrand: agentphoneConnectionCodes.publicBrand,
       })
       .from(agentphoneConnectionCodes)
       .where(
@@ -187,7 +182,6 @@ export async function consumeAgentPhoneConnectionCode(
       channel: args.channel,
       userId: code.userId,
       orgId: code.orgId,
-      publicBrand: code.publicBrand,
     });
 
     await tx

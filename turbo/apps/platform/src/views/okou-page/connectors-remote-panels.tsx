@@ -29,6 +29,9 @@ import { VncDialog } from "./vnc-dialog.tsx";
 import {
   CloudflareAccessConfigs,
   CloudflareAccessDialog,
+  CloudflareAccessConversionDialog,
+  CloudflareAccessDeletionDialog,
+  CloudflareAccessPromotionDialog,
 } from "./cloudflare-access.tsx";
 
 function ConnectionTypeFilter({
@@ -233,6 +236,9 @@ export function PrivateNetworkPanel() {
       </h2>
       <CloudflareAccessConfigs />
       <CloudflareAccessDialog />
+      <CloudflareAccessConversionDialog />
+      <CloudflareAccessDeletionDialog />
+      <CloudflareAccessPromotionDialog />
     </section>
   );
 }

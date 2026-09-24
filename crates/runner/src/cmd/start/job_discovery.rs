@@ -44,16 +44,16 @@
 //!    identity and commits the prepared sandbox only under the cancellation transfer guard. A
 //!    finalizing admission is handed to the specialized finalizing-successor path described in
 //!    [`finalizing_claim.rs`](https://github.com/okou-ai/okou/blob/main/crates/runner/src/cmd/start/finalizing_claim.rs#L1-L72).
-//! 6. **Transfer to the executor.** `ClaimedActivationGuard` owns the claimed setup while active
-//!    status and the spawn request are prepared. It publishes the active status using the matching
-//!    idle snapshot, builds the session-history restore plan, and takes the setup only when the
-//!    executor request is complete. Dropping the guard before that transfer schedules recovery
-//!    instead of losing the provider claim or sandbox ownership.
+//! 6. **Transfer to the executor.** The supervisor's `ClaimedActivationGuard` owns the claimed
+//!    setup while active status and the spawn request are prepared. It publishes the active status
+//!    using the matching idle snapshot; Runner builds the session-history restore plan and takes
+//!    the setup only after status publication and request preparation. Dropping the guard before
+//!    transfer schedules recovery instead of losing the provider claim or sandbox ownership.
 //! 7. **Complete and reconcile.** After handoff, `job_spawn` owns executor completion, provider
 //!    reporting, and the post-executor park-or-destroy decision. If cleanup proves destruction or
 //!    an idle-pool transfer, matching active status can be removed. If destruction is uncertain,
 //!    active status remains visible and `(run_id, sandbox_id)` is recorded for orphan reconciliation
-//!    by `ownership.rs` and `orphan_reap.rs`.
+//!    by `runner-supervisor`'s ownership and orphan-reaper modules.
 //!
 //! ## Local admission ownership
 //!
@@ -90,10 +90,9 @@
 //! ownership transition is proved; exact speculation uses its persisted idle snapshot until its
 //! commit point. The representative admission, cancellation, panic, status-recovery, telemetry,
 //! and orphan tests are in `tests/main_loop/admission.rs`, `tests/main_loop/telemetry.rs`,
-//! `tests/failure_recovery/outer_panic.rs`, `ownership.rs`, and `orphan_reap.rs`.
+//! `tests/failure_recovery/outer_panic.rs` and the supervisor's ownership and orphan-reaper tests.
 
 use std::collections::BTreeMap;
-use std::mem::ManuallyDrop;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::Instant;
@@ -108,7 +107,6 @@ use tracing::{info, warn};
 use super::factory_lifecycle::SharedFactory;
 use super::finalizing_claim::{FinalizingClaimRequest, spawn_finalizing_claim};
 use super::job_spawn::{JobProfile, SpawnContext, SpawnJobRequest, spawn_job};
-use super::ownership::{OwnershipTransitions, RunSandbox};
 #[cfg(test)]
 use super::{OuterJobPanicPoint, maybe_panic_outer_job};
 use crate::config::ProfileConfig;
@@ -120,10 +118,9 @@ use crate::executor::{
 };
 use crate::guest_timezone::{GuestTimezoneAssumption, GuestTimezoneIntent};
 use crate::idle_pool::{
-    BlankIdleReservationMiss, DestroyOutcome, ExactIdleReservationMiss, IdlePoolSnapshot,
-    IdleSandboxKind, IdleUnparkResult, ReservedIdleSandbox, RestoreReservedIdleResult,
-    ReusableIdleSandbox, SpeculativeIdleSandbox, SpeculativeIdleUnparkResult,
-    SpeculativeReparkResult,
+    BlankIdleReservationMiss, DestroyOutcome, IdlePoolSnapshot, IdleSandboxKind, IdleUnparkResult,
+    ReservedIdleSandbox, RestoreReservedIdleResult, ReusableIdleSandbox, SpeculativeIdleSandbox,
+    SpeculativeIdleUnparkResult, SpeculativeReparkResult,
 };
 use crate::lifecycle::RunnerMode;
 use crate::resource_budget::{BudgetLease, ResourceBudget};
@@ -131,17 +128,23 @@ use crate::status::{StatusPersistenceError, StatusTracker};
 use crate::telemetry::JobTelemetry;
 use runner_host::paths::short_digest;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
-use runner_lifecycle::active_runs::{ActiveRunGuard, ActiveRunReuseProof};
+use runner_lifecycle::active_runs::ActiveRunReuseProof;
 use runner_provider::{
-    ClaimedJob, JobCandidate, JobProvider, RunnerPreferenceRemovalReason, RunnerPreferenceTier,
+    ClaimedJob, JobCandidate, RunnerPreferenceRemovalReason, RunnerPreferenceTier,
 };
 use runner_provider::{
     RunCancellationHandle, RunCancellationRegistration, RunCancellationRegistry,
 };
+use runner_supervisor::claimed_activation::{
+    ClaimedActivationGuard, ClaimedActivationResources, ClaimedJobSetup, ReadyClaimedResource,
+    blank_pool_selection_telemetry, remove_failed_activation_status,
+    retain_uncertain_activation_ownership,
+};
+use runner_supervisor::finalizing_admission::FinalizingAdmission;
 use runner_supervisor::idle_lifecycle::{
-    IdleDestroyTracker, IdlePressureRequest, IdlePressureSelection, ReservedIdleActivation,
-    SharedIdlePool, add_preparing_run_with_idle_status_snapshot,
-    add_running_run_with_idle_status_snapshot, destroy_idle_jobs_and_wait,
+    IdlePressureRequest, IdlePressureSelection, ReservedIdleActivation, SharedIdlePool,
+    add_preparing_run_with_idle_status_snapshot, destroy_idle_jobs_and_wait,
+    reserve_reusable_idle_for_spawn, rollback_reserved_idle_for_spawn,
     select_idle_entries_for_pressure, set_idle_status_snapshot, spawn_idle_destroy_job,
 };
 use runner_types::ids::RunId;
@@ -212,13 +215,6 @@ enum SandboxAdmittedResource {
     Fresh(BudgetLease),
     Reusable(ReservedIdleActivation),
     ExactSpeculation(ExactSpeculation),
-}
-
-pub(super) struct FinalizingAdmission {
-    pub(super) predecessor: ActiveRunReuseProof,
-    pub(super) deadline: Instant,
-    pub(super) reuse_key: String,
-    pub(super) history_generation_run_id: RunId,
 }
 
 struct ExactSpeculation {
@@ -710,7 +706,7 @@ pub(super) async fn handle_discovered_job(
             pre_spawn_timing,
             active_run_guard,
         },
-        ctx.spawn_ctx,
+        claimed_activation_resources(ctx.spawn_ctx),
     );
     let request = match AssertUnwindSafe(build_spawn_job_request(&mut activation, ctx.spawn_ctx))
         .catch_unwind()
@@ -747,139 +743,14 @@ pub(super) async fn handle_discovered_job(
     DiscoveredJobResult::completed(needs_reuse_state_refresh)
 }
 
-pub(super) struct ReadyClaimedResource {
-    pub(super) reuse_entry: Option<ReusableIdleSandbox>,
-    pub(super) active_lease: BudgetLease,
-    pub(super) reuse_result: SandboxReuseResult,
-    pub(super) idle_snapshot: Option<IdlePoolSnapshot>,
-}
-
-pub(super) struct ClaimedJobSetup {
-    pub(super) claimed: ClaimedJob,
-    pub(super) cancellation: RunCancellationRegistration,
-    pub(super) profile_name: String,
-    pub(super) vcpu: u32,
-    pub(super) memory_mb: u32,
-    pub(super) workspace_disk_mb: u32,
-    pub(super) restore_guest_state: bool,
-    pub(super) device_rate_limits: Option<sandbox::DeviceRateLimits>,
-    pub(super) factory: SharedFactory,
-    pub(super) resource: ReadyClaimedResource,
-    pub(super) pre_spawn_timing: RunnerPreSpawnTiming,
-    pub(super) active_run_guard: ActiveRunGuard,
-}
-
-#[derive(Clone)]
-struct ActivationRecoveryContext {
-    provider: Arc<dyn JobProvider>,
-    exec_config: Arc<crate::executor::ExecutorConfig>,
-    status: Arc<StatusTracker>,
-    orphaned_active_runs: super::orphan_reap::OrphanedActiveRuns,
-    reuse_state_notify: Arc<tokio::sync::Notify>,
-}
-
-impl ActivationRecoveryContext {
-    fn new(ctx: &SpawnContext) -> Self {
-        Self {
-            provider: Arc::clone(&ctx.provider),
-            exec_config: Arc::clone(&ctx.exec_config),
-            status: Arc::clone(&ctx.status),
-            orphaned_active_runs: ctx.orphaned_active_runs.clone(),
-            reuse_state_notify: Arc::clone(&ctx.reuse_state_notify),
-        }
-    }
-}
-
-pub(super) struct ClaimedActivationGuard {
-    setup: ManuallyDrop<ClaimedJobSetup>,
-    armed: bool,
-    sandbox_id: SandboxId,
-    recovery: ActivationRecoveryContext,
-    cleanup: IdleDestroyTracker,
-}
-
-impl ClaimedActivationGuard {
-    pub(super) fn new(setup: ClaimedJobSetup, ctx: &SpawnContext) -> Self {
-        let sandbox_id = match &setup.resource.reuse_entry {
-            Some(entry) => entry.sandbox_id(),
-            None => SandboxId::new_v4(),
-        };
-        Self {
-            setup: ManuallyDrop::new(setup),
-            armed: true,
-            sandbox_id,
-            recovery: ActivationRecoveryContext::new(ctx),
-            cleanup: ctx.idle_destroy_tracker.clone(),
-        }
-    }
-
-    pub(super) async fn recover(
-        mut self,
-        reason: &'static str,
-        error: String,
-    ) -> ClaimedActivationRecovery {
-        recover_claimed_activation_failure(
-            self.take_setup(),
-            self.sandbox_id,
-            reason,
-            error,
-            &self.recovery,
-        )
-        .await
-    }
-
-    fn take_setup(&mut self) -> ClaimedJobSetup {
-        self.armed = false;
-        // SAFETY: `armed` is true exactly while `setup` has not been taken.
-        // Every take clears it first, and `Drop` only takes while it is true.
-        unsafe { ManuallyDrop::take(&mut self.setup) }
-    }
-}
-
-impl Drop for ClaimedActivationGuard {
-    fn drop(&mut self) {
-        if !self.armed {
-            return;
-        }
-        let setup = self.take_setup();
-        let sandbox_id = self.sandbox_id;
-        let recovery = self.recovery.clone();
-        self.cleanup.spawn_cleanup(
-            async move {
-                recover_claimed_activation_failure(
-                    setup,
-                    sandbox_id,
-                    "activation_task_dropped",
-                    "claimed activation task dropped before executor ownership transfer".to_owned(),
-                    &recovery,
-                )
-                .await
-                .finish()
-                .await;
-            },
-            "claimed_activation_drop",
-        );
-    }
-}
-
-pub(super) struct ClaimedActivationRecovery {
-    cancellation: RunCancellationRegistration,
-    telemetry: Option<JobTelemetry>,
-}
-
-impl ClaimedActivationRecovery {
-    pub(super) async fn finish(self) {
-        self.cancellation.unregister().await;
-        if let Some(telemetry) = self.telemetry {
-            telemetry.flush().await;
-        }
-    }
-
-    pub(super) async fn into_cancellation(self) -> RunCancellationRegistration {
-        if let Some(telemetry) = self.telemetry {
-            telemetry.flush().await;
-        }
-        self.cancellation
+pub(super) fn claimed_activation_resources(ctx: &SpawnContext) -> ClaimedActivationResources {
+    ClaimedActivationResources {
+        provider: Arc::clone(&ctx.provider),
+        exec_config: Arc::clone(&ctx.exec_config),
+        status: Arc::clone(&ctx.status),
+        orphaned_active_runs: ctx.orphaned_active_runs.clone(),
+        reuse_state_notify: Arc::clone(&ctx.reuse_state_notify),
+        idle_destroy_tracker: ctx.idle_destroy_tracker.clone(),
     }
 }
 
@@ -887,34 +758,21 @@ pub(super) async fn build_spawn_job_request(
     activation: &mut ClaimedActivationGuard,
     ctx: &SpawnContext,
 ) -> Result<SpawnJobRequest, StatusPersistenceError> {
-    let setup = &mut *activation.setup;
-    setup
-        .pre_spawn_timing
-        .record_resource_budget_occupancy(&ctx.budget);
-    let run_id = setup.claimed.context().run_id;
-    let sandbox_id = activation.sandbox_id;
+    activation.record_resource_budget_occupancy(&ctx.budget);
+    #[cfg(test)]
+    let run_id = activation.setup().claimed.context().run_id;
+    let sandbox_id = activation.sandbox_id();
     #[cfg(test)]
     maybe_panic_outer_job(
         ctx.outer_job_panic,
         OuterJobPanicPoint::ClaimedActivation,
         run_id,
     );
-    let started_at = Instant::now();
-    let status_result = publish_active_run_status(
-        &ctx.status,
-        run_id,
-        sandbox_id,
-        setup.resource.reuse_entry.is_some(),
-        setup.resource.idle_snapshot.clone(),
-    )
-    .await;
-    setup
-        .pre_spawn_timing
-        .record_phase_elapsed(RunnerPreSpawnPhase::ActiveStatusPublish, started_at);
-    status_result?;
+    activation.publish_active_status().await?;
     #[cfg(test)]
     ctx.test_observer.notify_active_run_status_published(run_id);
 
+    let setup = activation.setup();
     let session_history_restore_plan =
         build_session_history_restore_plan(SessionHistoryRestorePlanInput {
             http: &ctx.exec_config.http,
@@ -949,7 +807,7 @@ pub(super) async fn build_spawn_job_request(
         resource,
         pre_spawn_timing,
         active_run_guard,
-    } = activation.take_setup();
+    } = activation.take_setup_after_status();
     let ReadyClaimedResource {
         reuse_entry,
         active_lease,
@@ -979,116 +837,6 @@ pub(super) async fn build_spawn_job_request(
         session_history_restore_plan,
         active_run_guard,
     })
-}
-
-async fn publish_active_run_status(
-    status: &StatusTracker,
-    run_id: RunId,
-    sandbox_id: SandboxId,
-    reused_idle: bool,
-    idle_snapshot: Option<IdlePoolSnapshot>,
-) -> Result<(), StatusPersistenceError> {
-    if let Some(snapshot) = idle_snapshot {
-        if reused_idle {
-            add_running_run_with_idle_status_snapshot(status, run_id, sandbox_id, snapshot).await
-        } else {
-            add_preparing_run_with_idle_status_snapshot(status, run_id, sandbox_id, snapshot).await
-        }
-    } else {
-        status.add_preparing_run(run_id, sandbox_id).await
-    }
-}
-
-async fn recover_claimed_activation_failure(
-    setup: ClaimedJobSetup,
-    sandbox_id: SandboxId,
-    reason: &'static str,
-    error: String,
-    ctx: &ActivationRecoveryContext,
-) -> ClaimedActivationRecovery {
-    let ClaimedJobSetup {
-        claimed,
-        cancellation,
-        profile_name: _,
-        vcpu: _,
-        memory_mb: _,
-        workspace_disk_mb: _,
-        restore_guest_state: _,
-        device_rate_limits: _,
-        factory,
-        resource,
-        pre_spawn_timing,
-        active_run_guard,
-    } = setup;
-    let ReadyClaimedResource {
-        reuse_entry,
-        active_lease,
-        reuse_result,
-        idle_snapshot: _,
-    } = resource;
-    let (context, completion_auth, active_input_source) = claimed.into_parts();
-    let run_id = context.run_id;
-    drop(active_input_source);
-    let telemetry = blank_pool_selection_telemetry(
-        &context,
-        pre_spawn_timing.blank_pool_selection(),
-        &ctx.exec_config,
-    );
-    warn!(
-        run_id = %run_id,
-        sandbox_id = %sandbox_id,
-        error,
-        recovery_reason = reason,
-        activation_phase = "before_executor_handoff",
-        recovery_outcome = "destroy_or_release",
-        "recovering claimed activation before executor handoff"
-    );
-    let execution_failure = crate::executor::ExecutionFailure::from_error(error);
-    ctx.provider
-        .complete(
-            CompleteRequest {
-                run_id,
-                exit_code: execution_failure.exit_code,
-                failure_reason: None,
-                error: Some(execution_failure.error),
-                sandbox_id: None,
-                sandbox_reuse_result: Some(reuse_result),
-                workspace_reuse_result: None,
-                active_input_delivery_ids: Vec::new(),
-            },
-            completion_auth,
-        )
-        .await;
-    let cleanup_completed = if let Some(reuse_entry) = reuse_entry {
-        let cleanup = reuse_entry
-            .into_destroy_job(factory, active_lease, reason)
-            .run_retaining_lease(reason)
-            .await;
-        if cleanup.workspace_cache_promoted {
-            ctx.reuse_state_notify.notify_one();
-        }
-        drop(cleanup.budget_lease);
-        cleanup.outcome == DestroyOutcome::Completed
-    } else {
-        drop(active_lease);
-        true
-    };
-    if cleanup_completed {
-        remove_failed_activation_status(&ctx.status, run_id, sandbox_id).await;
-    } else {
-        retain_uncertain_activation_ownership(
-            ctx.status.as_ref(),
-            &ctx.orphaned_active_runs,
-            run_id,
-            sandbox_id,
-            reason,
-        );
-    }
-    drop(active_run_guard);
-    ClaimedActivationRecovery {
-        cancellation,
-        telemetry,
-    }
 }
 
 async fn claim_with_local_admission(
@@ -1389,12 +1137,12 @@ async fn prepare_ranked_preference_candidate(
         RunnerPreferenceTier::ExactSandbox,
         selected,
     ) && let Some(history_generation_run_id) = history_generation_run_id
-        && let Some(reservation) = reserve_reusable_idle(
+        && let Some(reservation) = reserve_reusable_idle_for_spawn(
+            ctx.idle_pool,
             reuse_key,
             profile_name,
             device_rate_limits,
             Some(history_generation_run_id),
-            ctx,
         )
         .await
     {
@@ -1428,8 +1176,14 @@ async fn prepare_ranked_preference_candidate(
         advertised_tier,
         RunnerPreferenceTier::ReusableSandbox,
         selected,
-    ) && let Some(reservation) =
-        reserve_reusable_idle(reuse_key, profile_name, device_rate_limits, None, ctx).await
+    ) && let Some(reservation) = reserve_reusable_idle_for_spawn(
+        ctx.idle_pool,
+        reuse_key,
+        profile_name,
+        device_rate_limits,
+        None,
+    )
+    .await
     {
         return reusable_preparation(candidate, reservation);
     }
@@ -1508,7 +1262,9 @@ async fn exact_speculative_preparation(
         warn!(%error, "failed to persist exact speculation idle reservation");
         rollback_reserved_idle_for_spawn(
             ReservedIdleActivation::new(reservation, idle_snapshot),
-            ctx.spawn_ctx,
+            &ctx.spawn_ctx.idle_pool,
+            &ctx.spawn_ctx.status,
+            &ctx.spawn_ctx.reuse_state_notify,
         )
         .await;
         return ordinary_preparation(candidate);
@@ -1629,9 +1385,14 @@ async fn acquire_local_admission_resource(
         )),
         IdlePressureSelection::Fresh(lease) => {
             if let Some(reuse_key) = candidate.reuse_key()
-                && let Some(reservation) =
-                    reserve_reusable_idle(reuse_key, profile_name, device_rate_limits, None, ctx)
-                        .await
+                && let Some(reservation) = reserve_reusable_idle_for_spawn(
+                    ctx.idle_pool,
+                    reuse_key,
+                    profile_name,
+                    device_rate_limits,
+                    None,
+                )
+                .await
             {
                 drop(lease);
                 return Some((
@@ -1648,92 +1409,6 @@ async fn acquire_local_admission_resource(
     }
 }
 
-async fn reserve_reusable_idle(
-    reuse_key: &str,
-    profile_name: &str,
-    device_rate_limits: &Option<sandbox::DeviceRateLimits>,
-    history_generation_run_id: Option<RunId>,
-    ctx: &DiscoveredJobContext<'_>,
-) -> Option<ReservedIdleActivation> {
-    reserve_reusable_idle_for_spawn(
-        reuse_key,
-        profile_name,
-        device_rate_limits,
-        history_generation_run_id,
-        ctx.spawn_ctx,
-    )
-    .await
-}
-
-pub(super) async fn reserve_reusable_idle_for_spawn(
-    reuse_key: &str,
-    profile_name: &str,
-    device_rate_limits: &Option<sandbox::DeviceRateLimits>,
-    history_generation_run_id: Option<RunId>,
-    ctx: &SpawnContext,
-) -> Option<ReservedIdleActivation> {
-    let (reservation, snapshot) = {
-        let mut pool = ctx.idle_pool.lock().await;
-        let reservation = match history_generation_run_id {
-            Some(history_generation_run_id) => pool.reserve_reusable_generation(
-                reuse_key,
-                profile_name,
-                device_rate_limits,
-                history_generation_run_id,
-            )?,
-            None => pool.reserve_reusable(reuse_key, profile_name, device_rate_limits)?,
-        };
-        let snapshot = pool.status_snapshot();
-        (reservation, snapshot)
-    };
-    Some(ReservedIdleActivation::new(reservation, snapshot))
-}
-
-pub(super) async fn reserve_exact_idle_for_spawn(
-    reuse_key: &str,
-    profile_name: &str,
-    device_rate_limits: &Option<sandbox::DeviceRateLimits>,
-    history_generation_run_id: RunId,
-    ctx: &SpawnContext,
-) -> Result<ReservedIdleActivation, ExactIdleReservationMiss> {
-    let (reservation, snapshot) = {
-        let mut pool = ctx.idle_pool.lock().await;
-        let reservation = pool.reserve_reusable_generation_with_reason(
-            reuse_key,
-            profile_name,
-            device_rate_limits,
-            history_generation_run_id,
-        )?;
-        let snapshot = pool.status_snapshot();
-        (reservation, snapshot)
-    };
-    Ok(ReservedIdleActivation::new(reservation, snapshot))
-}
-
-pub(super) async fn rollback_reserved_idle_for_spawn(
-    reservation: ReservedIdleActivation,
-    ctx: &SpawnContext,
-) {
-    let (reservation, _) = reservation.into_parts();
-    let (restore_result, snapshot) = {
-        let mut pool = ctx.idle_pool.lock().await;
-        let restore_result = pool.restore_reserved(reservation);
-        let snapshot = pool.status_snapshot();
-        (restore_result, snapshot)
-    };
-    set_idle_status_snapshot(&ctx.status, snapshot).await;
-    if let RestoreReservedIdleResult::Replaced(destroy_job)
-    | RestoreReservedIdleResult::Rejected(destroy_job) = restore_result
-    {
-        destroy_idle_jobs_and_wait(
-            vec![*destroy_job],
-            "finalizing_claim_reserved_idle_rollback",
-        )
-        .await;
-        ctx.reuse_state_notify.notify_one();
-    }
-}
-
 async fn rollback_untracked_resource(
     resource: LocalAdmissionResource,
     ctx: &mut DiscoveredJobContext<'_>,
@@ -1742,12 +1417,20 @@ async fn rollback_untracked_resource(
         LocalAdmissionResource::Fresh(budget_lease) => drop(budget_lease),
         LocalAdmissionResource::Finalizing(_) => {}
         LocalAdmissionResource::Reusable(reservation) => {
-            rollback_reserved_idle_for_spawn(reservation, ctx.spawn_ctx).await;
+            rollback_reserved_idle_for_spawn(
+                reservation,
+                &ctx.spawn_ctx.idle_pool,
+                &ctx.spawn_ctx.status,
+                &ctx.spawn_ctx.reuse_state_notify,
+            )
+            .await;
         }
         LocalAdmissionResource::ExactSpeculative(speculative) => {
             rollback_reserved_idle_for_spawn(
                 ReservedIdleActivation::new(*speculative.reservation, speculative.idle_snapshot),
-                ctx.spawn_ctx,
+                &ctx.spawn_ctx.idle_pool,
+                &ctx.spawn_ctx.status,
+                &ctx.spawn_ctx.reuse_state_notify,
             )
             .await;
         }
@@ -2508,50 +2191,13 @@ async fn recover_failed_parked_activation_status(
     ctx: &SpawnContext,
 ) {
     remove_failed_activation_status(&ctx.status, run_id, sandbox_id).await;
-    rollback_reserved_idle_for_spawn(reservation, ctx).await;
-}
-
-async fn remove_failed_activation_status(
-    status: &StatusTracker,
-    run_id: RunId,
-    sandbox_id: SandboxId,
-) {
-    match status.remove_run_if_matching(run_id, sandbox_id).await {
-        Ok(true) => {}
-        Ok(false) => {
-            warn!(
-                run_id = %run_id,
-                sandbox_id = %sandbox_id,
-                "failed activation status had already changed before recovery"
-            );
-        }
-        Err(error) => {
-            warn!(
-                run_id = %run_id,
-                sandbox_id = %sandbox_id,
-                %error,
-                "failed to persist active status removal during activation recovery"
-            );
-        }
-    }
-}
-
-fn retain_uncertain_activation_ownership(
-    status: &StatusTracker,
-    orphaned_active_runs: &super::orphan_reap::OrphanedActiveRuns,
-    run_id: RunId,
-    sandbox_id: SandboxId,
-    reason: &'static str,
-) {
-    warn!(
-        run_id = %run_id,
-        sandbox_id = %sandbox_id,
-        recovery_reason = reason,
-        recovery_outcome = "orphaned_after_uncertain_destroy",
-        "activation cleanup could not prove sandbox destruction; keeping active status for orphan reconciliation"
-    );
-    OwnershipTransitions::new(status)
-        .active_ownership_unknown(orphaned_active_runs, RunSandbox::new(run_id, sandbox_id));
+    rollback_reserved_idle_for_spawn(
+        reservation,
+        &ctx.idle_pool,
+        &ctx.status,
+        &ctx.reuse_state_notify,
+    )
+    .await;
 }
 
 async fn cleanup_claimed_speculation_for_fresh_fallback(
@@ -2701,23 +2347,6 @@ async fn complete_claimed_failure(
         .await;
     cancellation.unregister().await;
     ClaimedFailureCompletion { run_id, telemetry }
-}
-
-fn blank_pool_selection_telemetry(
-    context: &ExecutionContext,
-    selection: Option<BlankPoolSelection>,
-    exec_config: &crate::executor::ExecutorConfig,
-) -> Option<JobTelemetry> {
-    selection.map(|selection| {
-        let mut telemetry = JobTelemetry::new(
-            exec_config.http.clone(),
-            context.run_id,
-            context.sandbox_token.clone(),
-            exec_config.runner_hostname.clone(),
-        );
-        selection.record(&mut telemetry);
-        telemetry
-    })
 }
 
 async fn try_reuse_from_pool(
@@ -2895,7 +2524,9 @@ async fn try_reuse_from_pool(
                 drop(transfer_guard);
                 rollback_reserved_idle_for_spawn(
                     ReservedIdleActivation::new(entry, idle_snapshot),
-                    ctx.spawn_ctx,
+                    &ctx.spawn_ctx.idle_pool,
+                    &ctx.spawn_ctx.status,
+                    &ctx.spawn_ctx.reuse_state_notify,
                 )
                 .await;
                 return Ok((
@@ -3096,28 +2727,6 @@ async fn try_reuse_from_pool(
 mod tests {
     use super::*;
 
-    use crate::status::IdleSandbox;
-
-    fn read_active_run_phase(path: &std::path::Path) -> String {
-        let raw = std::fs::read_to_string(path).unwrap();
-        let status: serde_json::Value = serde_json::from_str(&raw).unwrap();
-        status["active_runs"][0]["phase"]
-            .as_str()
-            .unwrap()
-            .to_string()
-    }
-
-    fn idle_snapshot() -> IdlePoolSnapshot {
-        IdlePoolSnapshot {
-            revision: 1,
-            blank_sandboxes: vec![],
-            idle_sandboxes: vec![IdleSandbox {
-                reuse_key: "sess-removed-from-pool".into(),
-                sandbox_id: SandboxId::new_v4(),
-            }],
-        }
-    }
-
     #[test]
     fn ranked_preference_admission_matrix() {
         use RunnerPreferenceTier::{
@@ -3161,43 +2770,5 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[tokio::test]
-    async fn publish_active_run_status_writes_preparing_after_reuse_miss_snapshot() {
-        let dir = tempfile::tempdir().unwrap();
-        let status_path = dir.path().join("status.json");
-        let status = StatusTracker::new(status_path.clone(), 4, None, None);
-
-        publish_active_run_status(
-            &status,
-            RunId::new_v4(),
-            SandboxId::new_v4(),
-            false,
-            Some(idle_snapshot()),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(read_active_run_phase(&status_path), "preparing");
-    }
-
-    #[tokio::test]
-    async fn publish_active_run_status_writes_running_for_reused_idle_snapshot() {
-        let dir = tempfile::tempdir().unwrap();
-        let status_path = dir.path().join("status.json");
-        let status = StatusTracker::new(status_path.clone(), 4, None, None);
-
-        publish_active_run_status(
-            &status,
-            RunId::new_v4(),
-            SandboxId::new_v4(),
-            true,
-            Some(idle_snapshot()),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(read_active_run_phase(&status_path), "running");
     }
 }

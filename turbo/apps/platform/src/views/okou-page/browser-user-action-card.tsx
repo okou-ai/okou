@@ -607,10 +607,12 @@ function BrowserInputFields({
 function PendingFormActions({
   submitting,
   cancelling,
+  canSubmit,
   onCancel,
 }: {
   readonly submitting: boolean;
   readonly cancelling: boolean;
+  readonly canSubmit: boolean;
   readonly onCancel: () => void;
 }) {
   const { t } = useTranslation();
@@ -632,7 +634,7 @@ function PendingFormActions({
               return $.chat.browserInput.cancel;
             })}
       </Button>
-      <Button type="submit" disabled={busy}>
+      <Button type="submit" disabled={busy || !canSubmit}>
         {submitting && <Loader2 size={16} className="animate-spin" />}
         {submitting
           ? t(($) => {
@@ -659,8 +661,10 @@ function PendingForm({
   const pageSignal = useGet(pageSignal$);
   const draft = useGet(signals.draft$);
   const sharedBusy = useGet(signals.busy$);
+  const entryState = useGet(signals.entryState$);
   const updateDraft = useSet(signals.updateDraft$);
   const removeDraft = useSet(signals.removeDraft$);
+  const beginEntry = useSet(signals.beginEntry$);
   const formRef = useSet(signals.formRef$);
   const [submitLoadable, submit] = useLoadableSet(signals.submit$);
   const [cancelLoadable, cancel] = useLoadableSet(signals.cancel$);
@@ -699,7 +703,43 @@ function PendingForm({
         onRemove={removeDraft}
       />
 
-      {failed && (
+      {(entryState === "idle" || entryState === "checking") && (
+        <p
+          role="status"
+          className="flex items-center gap-2 text-sm text-muted-foreground"
+        >
+          <Loader2 size={16} className="animate-spin" />
+          {t(($) => {
+            return $.chat.browserInput.loadingDescription;
+          })}
+        </p>
+      )}
+
+      {(entryState === "unavailable" || entryState === "invalid") && (
+        <div className="flex flex-wrap items-center gap-2" role="alert">
+          <p className="text-sm text-destructive">
+            {t(($) => {
+              return entryState === "invalid"
+                ? $.chat.browserInput.applyFailed
+                : $.chat.browserInput.checkFailed;
+            })}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              detach(beginEntry(pageSignal), Reason.DomCallback);
+            }}
+          >
+            {t(($) => {
+              return $.chat.browserInput.retry;
+            })}
+          </Button>
+        </div>
+      )}
+
+      {failed && entryState !== "invalid" && (
         <p role="alert" className="text-sm text-destructive">
           {t(($) => {
             return cancelFailed
@@ -712,6 +752,7 @@ function PendingForm({
       <PendingFormActions
         submitting={submitting}
         cancelling={cancelling}
+        canSubmit={entryState !== "unavailable" && entryState !== "invalid"}
         onCancel={() => {
           detach(cancel(pageSignal), Reason.DomCallback);
         }}
@@ -720,7 +761,7 @@ function PendingForm({
   );
 }
 
-function PendingFormGate({
+function PendingFormWithCheck({
   signals,
   request,
   showTitle = true,
@@ -729,55 +770,18 @@ function PendingFormGate({
   readonly request: PendingBrowserInputRequest;
   readonly showTitle?: boolean;
 }) {
-  const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
   const entryState = useGet(signals.entryState$);
   const entryAction = useGet(signals.entryAction$);
-  const beginEntry = useSet(signals.beginEntry$);
-  if (entryState === "ready" && entryAction) {
-    return (
-      <PendingForm
-        signals={signals}
-        request={{ ...request, action: entryAction }}
-        showTitle={showTitle}
-      />
-    );
-  }
   return (
-    <div className="flex flex-col gap-4" role="status">
-      <PendingFormHeader
-        siteOrigin={request.action.siteOrigin}
-        showTitle={showTitle}
-      />
-      {entryState !== "unavailable" && entryState !== "invalid" ? (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 size={16} className="animate-spin" />
-          {t(($) => {
-            return $.chat.browserInput.loadingDescription;
-          })}
-        </p>
-      ) : (
-        <>
-          <p role="alert" className="text-sm text-destructive">
-            {t(($) => {
-              return entryState === "invalid"
-                ? $.chat.browserInput.applyFailed
-                : $.chat.browserInput.unavailable;
-            })}
-          </p>
-          <Button
-            type="button"
-            onClick={() => {
-              detach(beginEntry(pageSignal), Reason.DomCallback);
-            }}
-          >
-            {t(($) => {
-              return $.chat.browserInput.retry;
-            })}
-          </Button>
-        </>
-      )}
-    </div>
+    <PendingForm
+      signals={signals}
+      request={{
+        ...request,
+        action:
+          entryState === "ready" && entryAction ? entryAction : request.action,
+      }}
+      showTitle={showTitle}
+    />
   );
 }
 
@@ -819,7 +823,7 @@ function PendingInlineAction({
             <DialogHeader>
               <DialogTitle>{title}</DialogTitle>
             </DialogHeader>
-            <PendingFormGate
+            <PendingFormWithCheck
               signals={signals}
               request={request}
               showTitle={false}
@@ -895,7 +899,7 @@ function BrowserUserActionCardContent({
       variant === "inline" ? (
         <PendingInlineAction signals={signals} request={pendingRequest} />
       ) : (
-        <PendingFormGate signals={signals} request={pendingRequest} />
+        <PendingFormWithCheck signals={signals} request={pendingRequest} />
       );
   } else {
     content = (

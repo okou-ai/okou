@@ -28,10 +28,6 @@
  */
 
 import type { MorningBriefChatCollection } from "@okouai/api-contracts/contracts/morning-brief-chat-collection-preview";
-import type {
-  MorningBriefOccurrenceCollectionFacts,
-  MorningBriefOccurrenceSourceFact,
-} from "@okouai/db/jsonb-contracts/morning-brief-native-occurrence";
 import type { MorningBriefSourceFailure } from "@okouai/api-contracts/contracts/morning-brief-gmail-collection-preview";
 import { MORNING_BRIEF_COLLECTION_VERSION } from "@okouai/db/schema/morning-brief-collection-occurrence";
 import { command } from "ccstate";
@@ -243,82 +239,12 @@ export type MorningBriefCompositionOutcome =
   | {
       readonly kind: "authority-changed";
       readonly reason: MorningBriefAuthorityChange;
-      readonly sources: readonly MorningBriefSourceReport[];
     };
 
 /** Which fence withdrew a composed attempt's authority. */
 export type MorningBriefAuthorityChange =
   /** The Agent's instruction context moved between the read and the plan. */
   "instructions-changed";
-
-/** Keep one recorded reason a label rather than an unbounded string. */
-const MORNING_BRIEF_RECORDED_REASON_MAX = 200;
-
-function boundedReason(reason: string): string {
-  return reason.length <= MORNING_BRIEF_RECORDED_REASON_MAX
-    ? reason
-    : reason.slice(0, MORNING_BRIEF_RECORDED_REASON_MAX);
-}
-
-function occurrenceSourceFacts(
-  sources: readonly MorningBriefSourceReport[],
-): readonly MorningBriefOccurrenceSourceFact[] {
-  return sources.map((entry) => {
-    return {
-      source: entry.source,
-      coverage: entry.coverage,
-      items: entry.items,
-      includedInRequest: entry.includedInRequest,
-      droppedBySource: entry.omitted.bySource.known,
-      droppedByNormalizedCap: entry.omitted.byNormalizedCap,
-      droppedByRequest: entry.omitted.byRequest,
-    };
-  });
-}
-
-/**
- * The durable settlement account one composition produced.
- *
- * It exists because a brief that delivered nothing and a brief that had
- * nothing to say were indistinguishable from outside: #35656 needed a trace to
- * establish that five sources had in fact answered. The projection is counts
- * and labels only — no subject, body, sender, channel or container.
- */
-export function morningBriefCollectionFacts(
-  outcome: MorningBriefCompositionOutcome,
-): MorningBriefOccurrenceCollectionFacts {
-  if (outcome.kind === "denied") {
-    // Admission refused before any source ran, so there is nothing to account.
-    return {
-      outcome: "denied",
-      reason: boundedReason(outcome.reason),
-      sources: [],
-    };
-  }
-  if (outcome.kind === "incomplete") {
-    return {
-      outcome: "incomplete",
-      reason: boundedReason(
-        outcome.detail === ""
-          ? outcome.reason
-          : `${outcome.reason}: ${outcome.detail}`,
-      ),
-      sources: occurrenceSourceFacts(outcome.sources),
-    };
-  }
-  if (outcome.kind === "authority-changed") {
-    return {
-      outcome: "authority-changed",
-      reason: outcome.reason,
-      sources: occurrenceSourceFacts(outcome.sources),
-    };
-  }
-  return {
-    outcome: outcome.kind,
-    reason: null,
-    sources: occurrenceSourceFacts(outcome.result.sources),
-  };
-}
 
 function sourceDeadlineForComposition(
   deadline: MorningBriefCompositionDeadline,
@@ -472,9 +398,7 @@ export const composeMorningBrief$ = command(
       return { ...planned, sources: reduced.reports };
     }
     if (planned.kind !== "planned") {
-      // The source facts survive the refusal: a settled occurrence has to be
-      // able to show that five sources answered and still delivered nothing.
-      return { ...planned, sources: reduced.reports };
+      return planned;
     }
     return finishPlannedComposition(planned, reduced, base);
   },

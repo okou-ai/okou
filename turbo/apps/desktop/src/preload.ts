@@ -15,6 +15,12 @@ const desktopAuthApi: DesktopAuthApi = {
   getState() {
     return ipcRenderer.invoke(DESKTOP_AUTH_CHANNELS.getState);
   },
+  getLoginMethod() {
+    return ipcRenderer.invoke(DESKTOP_AUTH_CHANNELS.getLoginMethod);
+  },
+  setLoginMethod(method): Promise<void> {
+    return ipcRenderer.invoke(DESKTOP_AUTH_CHANNELS.setLoginMethod, method);
+  },
   openSignIn(): Promise<void> {
     return ipcRenderer.invoke(DESKTOP_AUTH_CHANNELS.openSignIn);
   },

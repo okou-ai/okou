@@ -1,10 +1,7 @@
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { agentphoneVerificationSendCooldowns } from "@okouai/db/schema/agentphone-verification-send-cooldown";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
-import {
-  PUBLIC_BRAND_PRESENTATION,
-  PUBLIC_BRAND,
-} from "@okouai/core/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
 import { command, computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -36,6 +33,7 @@ import {
   linkAgentPhoneUser,
   normalizeAgentPhoneHandle,
   publishAgentPhoneUserChanged,
+  publishAgentPhoneUserLinked,
   resolveAgentPhoneUserLinkForEvent,
   sendAgentPhoneText,
   storeInboundAgentPhoneMessage,
@@ -92,7 +90,7 @@ function notConfigured() {
     status: 503 as const,
     body: {
       error: {
-        message: "AgentPhone is not configured",
+        message: "Phone messaging is not configured",
         code: "NOT_CONFIGURED",
       },
     },
@@ -104,7 +102,7 @@ function unavailable() {
     status: 503 as const,
     body: {
       error: {
-        message: "AgentPhone verification text could not be sent",
+        message: "Verification text could not be sent",
         code: "PROVIDER_UNAVAILABLE",
       },
     },
@@ -219,15 +217,11 @@ async function sendAgentPhoneVerificationMessage(
 }
 
 // `startLink` only ever delivers via SMS, so we hard-code the channel for
-// signing. New Platform -> old API compatibility for the full retained rollback
-// lifetime, which has no fixed maximum evidenced, keeps the legacy signature
-// over Provider identity while new links add a brand-bound signature. Remove it
-// with #27750 after the old API is no longer serving or retained for rollback.
+// signing.
 const APPS_API_CONNECT_CHANNEL: AgentPhoneChannel = "sms";
 
 const getLinkStatus$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const requestPublicBrand = PUBLIC_BRAND;
 
   const config = getAgentPhoneConfig();
   const [link] = await get(db$)
@@ -249,7 +243,6 @@ const getLinkStatus$ = computed(async (get) => {
         phoneHandle: link.phoneHandle,
         agentPhoneNumber: config.agentPhoneNumber,
         configured: config.configured,
-        publicBrand: link.publicBrand,
       },
     };
   }
@@ -260,7 +253,6 @@ const getLinkStatus$ = computed(async (get) => {
       linked: false as const,
       agentPhoneNumber: config.agentPhoneNumber,
       configured: config.configured,
-      publicBrand: requestPublicBrand,
     },
   };
 });
@@ -291,7 +283,6 @@ const createLinkCode$ = command(async ({ get, set }, signal: AbortSignal) => {
   const code = await createAgentPhoneConnectionCode(set(writeDb$), {
     userId: auth.userId,
     orgId: auth.orgId,
-    publicBrand: PUBLIC_BRAND,
     secret: env("SECRETS_ENCRYPTION_KEY"),
   });
   signal.throwIfAborted();
@@ -503,7 +494,7 @@ const unlink$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
 
   if (deleted.length === 0) {
-    return notFound("No linked AgentPhone account");
+    return notFound("No linked phone number");
   }
 
   await publishAgentPhoneUserChanged(auth.userId);
@@ -527,14 +518,31 @@ function connectConflict(reason: LinkConflictReason) {
   return conflict(agentPhoneLinkConflictMessage(reason));
 }
 
-function agentPhoneConnectedMessage(): string {
-  return `Your phone number is now connected to ${PUBLIC_BRAND_PRESENTATION.brandName}.
+const AGENTPHONE_CONTACT_CARD_URL =
+  "https://static.vm0.io/agentphone-contact/a0a9471cbcf783bd04620f1be71dd8efaf0f49c6a23eb77e3cb4584e731fd685/okou.vcf";
 
-You can text this number like a teammate and it will actually do the work: research something, draft and send emails, summarize long documents, update a spreadsheet, file or triage tickets, post to Slack, dig through your GitHub or Notion, and a lot more.
+interface AgentPhoneConnectedMessage {
+  readonly body: string;
+  readonly mediaUrls?: readonly string[];
+}
 
-It is most useful once you connect the tools you already use. The ones people hook up most often are GitHub, Gmail, Notion, Google Drive / Sheets / Docs / Calendar, Slack, Sentry, and X. There are 100+ more available, and you can connect any of them whenever you need.
+function agentPhoneConnectedMessages(): readonly AgentPhoneConnectedMessage[] {
+  const { brandName } = PUBLIC_BRAND_PRESENTATION;
+  return [
+    {
+      body: `Your phone number is now connected to ${brandName}.
 
-A few things to try right now:
+You can text this number like a teammate and it will actually do the work: research something, draft and send emails, summarize long documents, update a spreadsheet, file or triage tickets, post to Slack, dig through your GitHub or Notion, and a lot more.`,
+    },
+    {
+      body: `Save ${brandName} to your contacts so you can find this chat anytime.`,
+      mediaUrls: [AGENTPHONE_CONTACT_CARD_URL],
+    },
+    {
+      body: "It is most useful once you connect the tools you already use. The ones people hook up most often are GitHub, Gmail, Notion, Google Drive / Sheets / Docs / Calendar, Slack, Sentry, and X. There are 100+ more available, and you can connect any of them whenever you need.",
+    },
+    {
+      body: `A few things to try right now:
 - "Summarize my unread Gmail from today"
 - "What's on my Google Calendar tomorrow?"
 - "List the open issues in my GitHub repo"
@@ -545,13 +553,41 @@ A few things to try right now:
 
 No tool connected yet? Just ask me anything and I'll still help, then point you to whatever I need access to.
 
-What would you like to start with?`;
+What would you like to start with?`,
+    },
+  ];
+}
+
+async function sendAgentPhoneConnectedMessages(
+  target: {
+    readonly agentphoneAgentId: string;
+    readonly toNumber: string;
+    readonly replyToMessageId?: string;
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  // Send sequentially so the provider receives the messages in reading order;
+  // only the first message threads onto the inbound connection code.
+  for (const [index, message] of agentPhoneConnectedMessages().entries()) {
+    await sendAgentPhoneMessage(
+      {
+        agentphoneAgentId: target.agentphoneAgentId,
+        toNumber: target.toNumber,
+        ...(index === 0 && target.replyToMessageId
+          ? { replyToMessageId: target.replyToMessageId }
+          : {}),
+        body: message.body,
+        ...(message.mediaUrls ? { mediaUrls: message.mediaUrls } : {}),
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+  }
 }
 
 const connectAgentPhone$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const publicBrand = PUBLIC_BRAND;
     const bodyResult = await get(connectBody$);
     signal.throwIfAborted();
     if (!bodyResult.ok) {
@@ -564,15 +600,12 @@ const connectAgentPhone$ = command(
     const phoneHandle = normalizeAgentPhoneHandle(body.phoneHandle, channel);
     if (
       !phoneHandle ||
-      body.publicBrand !== publicBrand ||
       !verifyAgentPhoneConnectSignature({
         phoneHandle,
         agentphoneAgentId: body.agentphoneAgentId,
         timestamp: body.timestamp,
         channel,
         signature: body.signature,
-        publicBrand: body.publicBrand,
-        publicBrandSignature: body.publicBrandSignature,
         secret: env("SECRETS_ENCRYPTION_KEY"),
       })
     ) {
@@ -581,13 +614,13 @@ const connectAgentPhone$ = command(
       );
     }
 
-    const writeDb = set(writeDb$);
-    const result = await linkAgentPhoneUser(writeDb, {
-      phoneHandle,
-      channel,
-      userId: auth.userId,
-      orgId: auth.orgId,
-      publicBrand,
+    const result = await set(writeDb$).transaction((tx) => {
+      return linkAgentPhoneUser(tx, {
+        phoneHandle,
+        channel,
+        userId: auth.userId,
+        orgId: auth.orgId,
+      });
     });
     signal.throwIfAborted();
 
@@ -595,15 +628,14 @@ const connectAgentPhone$ = command(
       return connectConflict(result.reason);
     }
 
-    await publishAgentPhoneUserChanged(auth.userId);
+    await publishAgentPhoneUserLinked(auth.userId);
     signal.throwIfAborted();
 
     await tapError(
-      sendAgentPhoneMessage(
+      sendAgentPhoneConnectedMessages(
         {
           agentphoneAgentId: body.agentphoneAgentId,
           toNumber: phoneHandle,
-          body: agentPhoneConnectedMessage(),
         },
         signal,
       ),
@@ -633,13 +665,13 @@ function okText(): Response {
   return textResponse("OK", 200);
 }
 
-function agentPhoneConnectionCodeReply(
-  result: Exclude<AgentPhoneConnectionCodeConsumeResult, { kind: "not-code" }>,
+function agentPhoneConnectionCodeFailureReply(
+  result: Extract<
+    AgentPhoneConnectionCodeConsumeResult,
+    { kind: "invalid" | "conflict" }
+  >,
 ): string {
   switch (result.kind) {
-    case "linked": {
-      return agentPhoneConnectedMessage();
-    }
     case "invalid": {
       return "This connection code is invalid or expired. Open Okou to get a new code.";
     }
@@ -811,7 +843,7 @@ function recentHistoryMessage(
 
   return {
     messageId: stringValue(item, ["messageId", "message_id", "id"]) ?? null,
-    content: content ?? (mediaUrl ? `[AgentPhone file] ${mediaUrl}` : null),
+    content: content ?? (mediaUrl ? `[Phone file] ${mediaUrl}` : null),
     direction: stringValue(item, ["direction"]) ?? null,
     channel: stringValue(item, ["channel"]) ?? null,
     fromNumber:
@@ -1018,12 +1050,27 @@ async function handleAgentPhoneConnectionCode(
   }
 
   if (result.kind === "linked") {
-    await publishAgentPhoneUserChanged(result.userId);
+    await publishAgentPhoneUserLinked(result.userId);
     signal.throwIfAborted();
   }
 
   await tapError(
-    sendAgentPhoneText(event, agentPhoneConnectionCodeReply(result), signal),
+    result.kind === "linked"
+      ? sendAgentPhoneConnectedMessages(
+          {
+            agentphoneAgentId: event.agentphoneAgentId,
+            toNumber: event.fromNumber,
+            ...(event.channel === "imessage"
+              ? { replyToMessageId: event.messageId }
+              : {}),
+          },
+          signal,
+        )
+      : sendAgentPhoneText(
+          event,
+          agentPhoneConnectionCodeFailureReply(result),
+          signal,
+        ),
     (error) => {
       log.warn("Handled AgentPhone connection code but reply failed", {
         result: result.kind,
@@ -1038,7 +1085,6 @@ async function handleAgentPhoneConnectionCode(
 
 const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
   const apiStartTime = now();
-  const publicBrand = PUBLIC_BRAND;
   const config = agentPhoneWebhookConfig();
   if (!config) {
     return textResponse("Not Found", 404);
@@ -1110,7 +1156,6 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
   const stored = await storeInboundAgentPhoneMessage(writeDb, {
     event: agentPhoneEventForStorage(event, userLink),
     userLinkId: userLink?.id ?? null,
-    publicBrand,
   });
   signal.throwIfAborted();
   if (!stored.inserted) {
@@ -1127,11 +1172,7 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   waitUntil(
     tapError(
-      set(
-        handleAgentPhoneMessage$,
-        { event, userLink, apiStartTime, publicBrand },
-        signal,
-      ),
+      set(handleAgentPhoneMessage$, { event, userLink, apiStartTime }, signal),
       (error) => {
         log.error("Error handling AgentPhone webhook", { error });
       },

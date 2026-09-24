@@ -58,6 +58,7 @@ export function buildAgentToolsPrompt(args: {
   readonly bankingEnabled: boolean;
   readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
+  readonly discordEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
   readonly presentationConvertEnabled: boolean;
 }): string {
@@ -89,6 +90,7 @@ export function buildAgentToolsPrompt(args: {
       ? [
           "- Okou Browser and Okou Computer Use are separate surfaces. `okou browser use` creates, reuses, or resumes a remote browser owned by the current chat thread, attaches it to `agent-browser`, and gives the user an authenticated `/browsers/:threadId` live view they can take over. `okou computer-use` drives apps on a desktop host the user connected separately. Running `agent-browser` on its own drives a local browser inside this sandbox: it creates no Okou Browser session and no user-viewable link.",
           "- Okou Browser lifetime: `okou browser use` and `okou browser lease` each extend the session's idle lease by a fixed 10 minutes and report when Okou will reclaim it. The session survives the end of this run, so a later run in the same thread attaches to the same live window and the user can keep working in it. Call `okou browser lease` while a long task keeps the browser idle; a reclaimed session can still resume its saved login profile and reopen its last captured HTTP(S) tab URLs on a best-effort basis.",
+          "- Browser form input: use `okou browser input-request` only when the user must personally enter supported form values. It opens a dedicated input form (not other Browser interactions); entered values are not included in the action URL or callback. Fill ordinary forms with `agent-browser` instead.",
         ]
       : []),
     ...(args.cloudBrowserEnabled === false
@@ -114,6 +116,12 @@ export function buildAgentToolsPrompt(args: {
     "- Slack messages: when the task explicitly asks to send or post to Slack, use `okou slack message send --help` for channels, DMs, and thread replies.",
     "- Slack channel discovery and history: use `okou slack channel list --help` to find channels shared by the connected user and bot, then `okou slack message history --help` to read shared channel or bot DM history.",
     "- Feishu messages: when the task explicitly asks to send or post to Feishu, use `okou feishu message send --help` for chats, DMs, and replies.",
+    ...(args.discordEnabled
+      ? [
+          "- Discord: use `okou discord channel list --help` and `okou discord message history --help` for conversations shared by the connected user and Okou. `message replies` reads a native thread; a Discord reply reference is not itself a thread. Read one bounded page at a time and continue with `nextBefore`; do not infer unread messages are absent. Ordinary context can be limited by the bot MESSAGE_CONTENT intent.",
+          "- When explicitly asked to send to Discord, use `okou discord message send --help` with the destination channel or native thread ID. Only your own bot DM is accessible. Mentions never notify users or roles. Long text is split without truncation; report partial delivery and already-delivered message links instead of blindly retrying the entire send. OAuth onboarding is deferred; these commands require an existing verified binding.",
+        ]
+      : []),
     ...(args.larkEnabled
       ? [
           "- Lark messages: when the task explicitly asks to send or post to Lark, use `okou lark message send --help` for chats, DMs, and replies.",

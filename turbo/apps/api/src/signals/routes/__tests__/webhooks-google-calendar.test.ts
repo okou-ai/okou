@@ -297,6 +297,16 @@ async function setupFixture(): Promise<CalendarScenario> {
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
   const { actor } = await wf.setupWorkflowOrg();
+  const { providerId } = await runsApi.ensureOrgModelProvider(actor);
+  await runsApi.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }

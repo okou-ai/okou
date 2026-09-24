@@ -21,7 +21,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { checkpoints } from "@okouai/db/schema/checkpoint";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";

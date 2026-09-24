@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.8](https://github.com/okou-ai/okou/compare/runner-executor-v0.1.7...runner-executor-v0.1.8) (2026-09-24)
+
+
+### Bug Fixes
+
+* **runner:** reject codex backfill timeout sandbox reuse ([#36666](https://github.com/okou-ai/okou/issues/36666)) ([c26dd10](https://github.com/okou-ai/okou/commit/c26dd1068f4f1f6264253014100cff096492246f))
+
+## [0.1.7](https://github.com/okou-ai/okou/compare/runner-executor-v0.1.6...runner-executor-v0.1.7) (2026-09-24)
+
+
+### Performance Improvements
+
+* **runner:** attribute guest storage batch server time ([#36600](https://github.com/okou-ai/okou/issues/36600)) ([8019ca6](https://github.com/okou-ai/okou/commit/8019ca6775d5873d8fcaa7ee4fbd71de37d79f56))
+* **test:** reduce rust coverage fixture overhead ([#36597](https://github.com/okou-ai/okou/issues/36597)) ([b89d4c3](https://github.com/okou-ai/okou/commit/b89d4c3688a8b2f14b03a2dd14a9e6792ae113c0))
+
 ## [0.1.6](https://github.com/okou-ai/okou/compare/runner-executor-v0.1.5...runner-executor-v0.1.6) (2026-09-24)
 
 

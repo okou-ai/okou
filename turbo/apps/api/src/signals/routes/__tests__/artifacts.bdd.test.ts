@@ -222,7 +222,9 @@ async function artifactActor(
   chatCallbacks.disableVapid();
   const runnerGroup = api.configureRunnerGroup();
   await api.grantProEntitlement(actor);
-  await api.ensureOrgModelProvider(actor);
+  // Artifact scenarios claim the chat run through the native Runner; Fable
+  // stays off Pi while Sonnet 5 would run API-first.
+  await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
   const agent = await bdd.createAgent(actor, {
     displayName,
     visibility: "private",
@@ -778,13 +780,7 @@ describe("video Artifact previews", () => {
 });
 
 describe("artifact upload provenance", () => {
-  it.each([
-    "automation-schedule",
-    "automation-event",
-    "automation-schedule",
-    "automation-event",
-    "goal",
-  ] as const)(
+  it.each(["automation-schedule", "automation-event", "goal"] as const)(
     "attributes run uploads to the %s source",
     async (triggerSource) => {
       const owner = await artifactActor(

@@ -9,11 +9,15 @@ import { expect, test } from "vitest";
 
 import {
   click,
+  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { pathname, search } from "../../../signals/location.ts";
-import { localStorageSignals } from "../../../signals/external/local-storage.ts";
+import {
+  listLocalStorageEntries,
+  localStorageSignals,
+} from "../../../signals/external/local-storage.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
@@ -37,8 +41,10 @@ const INDUSTRY_QUESTION = "What kind of work do you do?";
 const SOURCES_QUESTION = "Connect a work tool";
 const MARKETING_FIELD = "Marketing & content";
 const READY_TITLE = "Start with a task that matters";
-const PROFILE_TITLE = "Here's what we've learned about you";
 const START_ACTION = "Start with Okou";
+/** The preset request for a marketer with Gmail connected. */
+const FALLBACK_REQUEST =
+  "Find recurring customer questions in my Gmail emails from the past week and turn them into five social post ideas.";
 const HANDOFF_PROMPT = "Draft the launch plan";
 function generatedProfile() {
   return {
@@ -334,15 +340,6 @@ test("Connected account context replaces the static starting prompt", async () =
   click(getButtonByName("Continue"));
 
   await expect(
-    screen.findByRole("heading", { name: PROFILE_TITLE }),
-  ).resolves.toBeInTheDocument();
-  await expect(
-    screen.findByText("Keep important replies moving"),
-  ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe(ROUTES.onboardingProfile);
-  click(getButtonByName("Continue"));
-
-  await expect(
     screen.findByText("Clear the replies that matter"),
   ).resolves.toBeInTheDocument();
   expect(screen.getByDisplayValue(generatedPrompt)).toBeInTheDocument();
@@ -355,7 +352,7 @@ test("Connected account context replaces the static starting prompt", async () =
   expect(statusReads).toBe(0);
 });
 
-test("The profile step shows a skeleton until the shared context result arrives", async () => {
+test("The ready step shows the generated request once the shared context result arrives", async () => {
   mockMemberOnboardingNeeded();
   mockCatalog({ connected: true });
   const jobId = "e8b94a61-0c73-4ba4-904a-45f6a9f7496e";
@@ -402,57 +399,25 @@ test("The profile step shows a skeleton until the shared context result arrives"
   click(fieldRadio("I'm new to AI agents"));
   click(getButtonByName("Continue"));
 
-  await screen.findByRole("heading", { name: PROFILE_TITLE });
-  expect(
-    screen.getByText("Creating your profile from your connected work…"),
-  ).toBeInTheDocument();
-  expect(getButtonByName("Continue")).toBeDisabled();
+  await screen.findByRole("heading", { name: READY_TITLE });
+  expect(screen.queryByDisplayValue(generatedPrompt)).not.toBeInTheDocument();
 
   releaseResult.resolve();
-  await screen.findByText("Keep important replies moving");
-  expect(
-    screen.queryByText("Creating your profile from your connected work…"),
-  ).not.toBeInTheDocument();
-  expect(screen.queryByText("How you communicate")).not.toBeInTheDocument();
-  click(getButtonByName("Continue"));
-  await screen.findByRole("heading", { name: READY_TITLE });
-  expect(screen.getByDisplayValue(generatedPrompt)).toBeInTheDocument();
+  await expect(
+    screen.findByDisplayValue(generatedPrompt),
+  ).resolves.toBeInTheDocument();
 });
 
-test("A failed profile can be retried without losing the rest of onboarding", async () => {
+test("A failed recommendation leaves the preset request on the ready step", async () => {
   mockMemberOnboardingNeeded();
   mockCatalog({ connected: true });
   const failedJobId = "e8b94a61-0c73-4ba4-904a-45f6a9f7497e";
-  const retriedJobId = "e8b94a61-0c73-4ba4-904a-45f6a9f7498e";
-  const startedIndustries: string[] = [];
-  context.mocks.api(
-    onboardingRecommendationContract.start,
-    ({ body, respond }) => {
-      startedIndustries.push(body.industry);
-      return respond(202, {
-        jobId: startedIndustries.length === 1 ? failedJobId : retriedJobId,
-        status: "pending",
-      });
-    },
-  );
-  context.mocks.api(
-    onboardingRecommendationContract.get,
-    ({ params, respond }) => {
-      return params.jobId === failedJobId
-        ? respond(200, { jobId: failedJobId, status: "failed" })
-        : respond(200, {
-            jobId: retriedJobId,
-            status: "completed",
-            recommendation: {
-              kind: "task",
-              title: "Clear the inbox",
-              outcome: "Priority replies ready for review",
-              prompt: "Draft replies to the most important messages.",
-              profile: generatedProfile(),
-            },
-          });
-    },
-  );
+  context.mocks.api(onboardingRecommendationContract.start, ({ respond }) => {
+    return respond(202, { jobId: failedJobId, status: "pending" });
+  });
+  context.mocks.api(onboardingRecommendationContract.get, ({ respond }) => {
+    return respond(200, { jobId: failedJobId, status: "failed" });
+  });
 
   await setupPage({
     context,
@@ -474,30 +439,11 @@ test("A failed profile can be retried without losing the rest of onboarding", as
   click(fieldRadio("I'm new to AI agents"));
   click(getButtonByName("Continue"));
 
-  await screen.findByRole("heading", { name: PROFILE_TITLE });
-  expect(screen.getByRole("alert")).toHaveTextContent(
-    "We couldn't create your profile right now.",
-  );
-  click(getButtonByName("Try again"));
-  await screen.findByText("Keep important replies moving");
-  expect(startedIndustries).toStrictEqual(["marketing", "marketing"]);
-  click(getButtonByName("Continue"));
   await screen.findByRole("heading", { name: READY_TITLE });
-});
-
-test("A direct profile visit without a selected positioning returns to the first step", async () => {
-  mockMemberOnboardingNeeded();
-  mockCatalog({ connected: true });
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: ROUTES.onboardingProfile,
-    featureSwitches: SOURCES_FIRST_ON,
-  });
-
-  await screen.findByRole("heading", { name: INDUSTRY_QUESTION });
-  expect(pathname()).toBe(ROUTES.onboarding);
+  await expect(
+    screen.findByDisplayValue(FALLBACK_REQUEST),
+  ).resolves.toBeInTheDocument();
+  expect(getButtonByName(START_ACTION)).toBeEnabled();
 });
 
 test("The ready step completes onboarding once, before it runs the first request", async () => {
@@ -611,6 +557,7 @@ test("A refreshed ready step keeps the industry, model choice, and edited reques
   expect(sentIndustry).toBe("marketing");
   expect(sentProvider).toBe("claudeCode");
   expect(context.store.get(completedDraftStorage.get$)).toBeNull();
+  expect(listLocalStorageEntries("onboarding:")).toStrictEqual([]);
 });
 
 test("A member's run reaches the first request without the admin-only completion", async () => {
@@ -642,14 +589,19 @@ test("A member's run reaches the first request without the admin-only completion
     screen.findByRole("heading", { name: READY_TITLE }),
   ).resolves.toBeInTheDocument();
 
+  await fill(
+    screen.getByLabelText("Your starting prompt"),
+    "Draft my meeting agenda",
+  );
   click(getButtonByName(START_ACTION));
 
   await waitFor(() => {
-    expect(runPrompt).toBeTruthy();
+    expect(runPrompt).toBe("Draft my meeting agenda");
   });
   // `POST /api/onboarding/complete` is admin-only, so a member run would only
   // ever collect a 403 from it.
   expect(completions).toBe(0);
+  expect(listLocalStorageEntries("onboarding:")).toStrictEqual([]);
 });
 
 test("A step keeps the prompt handoff and redeem code it arrived with", async () => {

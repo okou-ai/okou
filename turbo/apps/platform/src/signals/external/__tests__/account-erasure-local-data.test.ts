@@ -5,6 +5,10 @@ import { testContext } from "../../__tests__/test-helpers.ts";
 import { deleteAccountLocalData$ } from "../account-erasure-local-data.ts";
 import { sourcesFirstDraftStorage } from "../../onboarding/onboarding-sources-first-state.ts";
 import {
+  listLocalStorageEntries,
+  localStorageSignals,
+} from "../local-storage.ts";
+import {
   ONBOARDING_CHECKOUT_STATE_PARAM,
   readOnboardingCheckoutDraft$,
   storeOnboardingCheckoutDraft$,
@@ -16,6 +20,9 @@ import {
 } from "../voice-draft-store.ts";
 
 const context = testContext();
+const onboardingStepStorage = localStorageSignals(
+  "onboarding:sources-first-step",
+);
 
 test("verified account deletion removes only that user's chat caches and voice drafts", async () => {
   const onboardingStorage = sourcesFirstDraftStorage;
@@ -57,6 +64,10 @@ test("verified account deletion removes only that user's chat caches and voice d
     onboardingStorage.set$,
     JSON.stringify({ userId: peer, orgId: "org_first", secret: "peer" }),
   );
+  context.store.set(
+    onboardingStepStorage.set$,
+    JSON.stringify({ userId: owner, orgId: "org_first", step: "ready" }),
+  );
   await context.store.set(deleteAccountLocalData$, owner, context.signal);
 
   const names = (await indexedDB.databases()).map((entry) => {
@@ -90,6 +101,9 @@ test("verified account deletion removes only that user's chat caches and voice d
     }),
   ).toBeTruthy();
   expect(context.store.get(onboardingStorage.get$)).toContain(peer);
+  expect(
+    listLocalStorageEntries("onboarding:sources-first-step"),
+  ).toStrictEqual([]);
   context.store.set(
     onboardingStorage.set$,
     JSON.stringify({ userId: owner, orgId: "org_first", secret: "owner" }),

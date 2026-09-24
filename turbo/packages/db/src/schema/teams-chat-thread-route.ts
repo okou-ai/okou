@@ -1,4 +1,5 @@
 import {
+  index,
   pgTable,
   text,
   timestamp,
@@ -41,6 +42,7 @@ export const teamsChatThreadRoutes = pgTable(
   },
   (table) => {
     return [
+      index("idx_teams_chat_thread_routes_thread").on(table.chatThreadId),
       uniqueIndex(
         "idx_teams_chat_thread_routes_conn_conversation_thread_user",
       ).on(

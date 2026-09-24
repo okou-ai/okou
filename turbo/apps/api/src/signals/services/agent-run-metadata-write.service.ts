@@ -109,7 +109,7 @@ export function normalizeRunMetadata(
 }
 
 export async function writeRunMetadataInTransaction(
-  tx: Tx,
+  tx: Pick<Tx, "update">,
   args: RunMetadataWriteArgs,
 ): Promise<readonly RunMetadataRow[]> {
   return await tx

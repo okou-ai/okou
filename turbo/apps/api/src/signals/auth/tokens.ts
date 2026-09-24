@@ -37,6 +37,8 @@ const CONDITIONAL_CAPABILITIES = [
   ["artifact:write", FeatureSwitchKey.PrivateArtifacts],
   ["banking:read", FeatureSwitchKey.Banking],
   ["lark:write", FeatureSwitchKey.LarkIntegration],
+  ["discord:read", FeatureSwitchKey.DiscordIntegration],
+  ["discord:write", FeatureSwitchKey.DiscordIntegration],
   ["presentation-convert:write", FeatureSwitchKey.PresentationConvert],
   ["user-template:write", FeatureSwitchKey.CustomTemplates],
   ["vnc:read", FeatureSwitchKey.VncAccess],

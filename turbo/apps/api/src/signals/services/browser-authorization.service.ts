@@ -3,7 +3,7 @@ import { command } from "ccstate";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { browserAuthorizationRequests } from "@okouai/db/schema/browser-session";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { env } from "../../lib/env";
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
@@ -114,8 +114,8 @@ async function resolveRunLocator(args: {
 /**
  * Extends the shared thread admission only for authorization-request creation.
  *
- * The shared helper's retained thread KEY SHARE protects deletion, but not a
- * non-key `user_id` or `agent_id` update. Creation can then wait while pinning
+ * The shared helper's retained thread KEY SHARE protects deletion and the
+ * keyed `user_id`, but not a non-key `agent_id` update. Creation can wait while pinning
  * its run, so it first upgrades this one thread to SHARE and compares the row
  * returned under that lock with the identity whose subjects were admitted.
  * Any change restarts the helper's whole bounded attempt, before a newly
@@ -291,7 +291,7 @@ export const createBrowserAuthorizationRequest$ = command(
 );
 
 /**
- * Rechecks every non-key thread identity field and reads the browser flag
+ * Rechecks every canonical thread identity field and reads the browser flag
  * without locking the thread row.
  *
  * #35311 made this route take the thread `FOR UPDATE` to remove a KEY SHARE ->

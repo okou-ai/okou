@@ -231,7 +231,7 @@ async function completeNativeToolHandoff({
   claim: Awaited<ReturnType<typeof api.claimRunnerJob>>;
   objects: Map<string, Buffer>;
   prefix: string;
-  model: "claude-sonnet-4-6";
+  model: "claude-sonnet-5";
   surfaceId: string | null;
   requests: readonly { body: unknown }[];
 }): Promise<void> {
@@ -380,9 +380,7 @@ async function completeNativeToolHandoff({
       modelProviderSurfaceId: surfaceId,
     },
   ]);
-  await authDeviceSupport.updateFeatureSwitches(actor, {
-    [FeatureSwitchKey.PiLoop]: true,
-  });
+
   const resumed = await sendChatRun(actor, {
     agentId,
     threadId: run.threadId,
@@ -436,18 +434,8 @@ describe("shared native Pi route activation", () => {
       url: "https://api.deepseek.com/responses",
     },
     {
-      type: "deepseek",
-      model: "deepseek-v4-pro",
-      url: "https://api.deepseek.com/responses",
-    },
-    {
       type: "openrouter-codex",
       model: "deepseek-v4-flash",
-      url: "https://openrouter.ai/api/v1/responses",
-    },
-    {
-      type: "openrouter-codex",
-      model: "deepseek-v4-pro",
       url: "https://openrouter.ai/api/v1/responses",
     },
   ] as const)(
@@ -470,9 +458,7 @@ describe("shared native Pi route activation", () => {
           modelProviderId: providerId,
         },
       ]);
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: true,
-      });
+
       mockPiResourceArchiveDownloads();
       const objects = mockPiCheckpointObjectStore();
       const requests: unknown[] = [];
@@ -552,7 +538,6 @@ describe("shared native Pi route activation", () => {
       }
       await configureBuiltInPiModel(actor, model);
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.PiMemory]: true,
       });
       const pricing = await createPiApiFirstTurnUsagePricingResolution(model);
@@ -587,9 +572,8 @@ describe("shared native Pi route activation", () => {
         userId: actor.userId,
         runId: first.runId,
       });
-      const nextEffort = model === "claude-sonnet-4-6" ? "high" : "extra";
       await chat.updateThreadModelSelection(actor, first.threadId, model, {
-        reasoningEffort: nextEffort,
+        reasoningEffort: "extra",
       });
       const second = await sendChatRun(
         actor,
@@ -618,7 +602,7 @@ describe("shared native Pi route activation", () => {
       await expect(
         chat.readThreadMetadata(actor, first.threadId),
       ).resolves.toMatchObject({
-        modelSettings: { [model]: { effort: nextEffort } },
+        modelSettings: { [model]: { effort: "extra" } },
       });
       await expectPiApiUsage(first.runId, model, "", {
         input: 5,
@@ -652,7 +636,7 @@ describe("shared native Pi route activation", () => {
     async (type) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const cliUrl = configureNativeCliArtifact();
-      const model = "claude-sonnet-4-6";
+      const model = "claude-sonnet-5";
       const secret = "selected-native-key";
       const upstreamModel =
         type === "azure-foundry" || type === "custom-anthropic-messages"
@@ -709,7 +693,6 @@ describe("shared native Pi route activation", () => {
         },
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.PiMemory]: true,
       });
       mockPiResourceArchiveDownloads();
@@ -781,9 +764,7 @@ describe("shared native Pi route activation", () => {
         );
       }
       await configureBuiltInPiModel(actor, model);
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: false,
-      });
+
       await api.heartbeatRunner(runnerGroup);
       await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
         status: "pending",
@@ -897,7 +878,7 @@ describe("shared native Pi route activation", () => {
     async (mode) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       configureNativeCliArtifact();
-      const model = "claude-sonnet-4-6";
+      const model = "claude-sonnet-5";
       const profile =
         "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/production";
       const { providerId } = await upsertOrgModelProvider(actor, {
@@ -929,7 +910,6 @@ describe("shared native Pi route activation", () => {
         },
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.PiMemory]: true,
       });
       mockPiResourceArchiveDownloads();
@@ -1071,7 +1051,7 @@ describe("shared native Pi route activation", () => {
     async (boundary) => {
       const { actor, agentId } = await entitledChatActor();
       configureNativeCliArtifact();
-      const model = "claude-sonnet-4-6";
+      const model = "claude-sonnet-5";
       const type =
         boundary === "wrong-region" ? "aws-bedrock" : "anthropic-api-key";
       const { providerId } = await upsertOrgModelProvider(
@@ -1104,9 +1084,7 @@ describe("shared native Pi route activation", () => {
           modelProviderId: providerId,
         },
       ]);
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: true,
-      });
+
       if (boundary === "old-cli") {
         mockEnv(
           "CLI_PKG_URL",
@@ -1148,11 +1126,9 @@ describe("shared native Pi route activation", () => {
     async (phase) => {
       const { actor, agentId } = await entitledChatActor();
       configureNativeCliArtifact();
-      const model = "claude-sonnet-4-6";
+      const model = "claude-sonnet-5";
       await configureBuiltInPiModel(actor, model);
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: true,
-      });
+
       const pricing = await createPiApiFirstTurnUsagePricingResolution(model);
       mockPiResourceArchiveDownloads();
       const objects = mockPiCheckpointObjectStore();
@@ -1217,7 +1193,6 @@ describe("shared native Pi route activation", () => {
       await entitledChatActor();
     configureNativeCliArtifact();
     await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PiLoop]: true,
       [FeatureSwitchKey.PersonalModelProviderAccounts]: false,
     });
     const model = "claude-sonnet-5";
@@ -1289,11 +1264,9 @@ describe("shared native Pi route activation", () => {
   it("does not switch the captured native route after a provider authentication failure", async () => {
     const { actor, agentId } = await entitledChatActor();
     configureNativeCliArtifact();
-    const model = "claude-sonnet-4-6";
+    const model = "claude-sonnet-5";
     await configureBuiltInPiModel(actor, model);
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PiLoop]: true,
-    });
+
     mockPiResourceArchiveDownloads();
     mockPiCheckpointObjectStore();
     let directCalls = 0;
@@ -1336,13 +1309,12 @@ describe("shared native Pi route activation", () => {
     async (usRoutingEnabled) => {
       const { actor, agentId } = await entitledChatActor();
       configureNativeCliArtifact();
-      const model = "claude-sonnet-4-6";
+      const model = "claude-sonnet-5";
       const withSelectedRoute = await configureBuiltInPiModelOnOpenRouter(
         actor,
         model,
       );
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.OpenRouterUsRouting]: usRoutingEnabled,
       });
       const pricing = await createPiApiFirstTurnUsagePricingResolution(model);
@@ -1362,10 +1334,10 @@ describe("shared native Pi route activation", () => {
             expect(request.headers.get("authorization")).toMatch(/^Bearer .+/u);
             expect(request.headers.get("x-api-key")).toBeNull();
             await expect(request.json()).resolves.toMatchObject({
-              model: "anthropic/claude-sonnet-4.6",
+              model: "anthropic/claude-sonnet-5",
             });
             return nativeMessagesResponse(
-              "anthropic/claude-sonnet-4.6",
+              "anthropic/claude-sonnet-5",
               "Managed native response",
             );
           },
@@ -1403,7 +1375,7 @@ describe("shared native Pi route activation", () => {
         source === "event" ? "team" : "pro",
       );
       configureNativeCliArtifact();
-      const model = "claude-sonnet-4-6";
+      const model = "claude-sonnet-5";
       const { providerId } = await upsertOrgModelProvider(actor, {
         type: "anthropic-api-key",
         secret: "selected-automation-key",
@@ -1418,7 +1390,6 @@ describe("shared native Pi route activation", () => {
         },
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.PiMemory]: true,
       });
       const pricing = await createPiApiFirstTurnUsagePricingResolution(model);
@@ -1524,7 +1495,7 @@ describe("shared native Pi route activation", () => {
 
   it("keeps official Claude member subscription credentials on Claude Code with Pi enabled", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const model = "claude-sonnet-4-6";
+    const model = "claude-sonnet-5";
     await misc.upsertPersonalModelProvider(
       actor,
       {
@@ -1542,9 +1513,7 @@ describe("shared native Pi route activation", () => {
         modelProviderId: null,
       },
     ]);
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PiLoop]: true,
-    });
+
     let nativeCalls = 0;
     server.use(
       http.post("https://api.anthropic.com/*", () => {

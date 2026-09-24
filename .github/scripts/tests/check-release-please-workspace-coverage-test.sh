@@ -192,3 +192,13 @@ expect_failure "$REPO" \
   "Release Please manifest contains unconfigured packages: native/guest-control-tests"
 
 echo "check-release-please-workspace-coverage-test: ok"
+
+setup_repo "standalone-ios"
+mkdir -p "$REPO/ios/Config"
+printf '0.1.0\n' > "$REPO/ios/version.txt"
+printf 'MARKETING_VERSION = 0.1.0 // x-release-please-version\n' > "$REPO/ios/Config/Shared.xcconfig"
+write_json "$REPO/release-please-config.json" '.packages.ios = {"release-type":"simple","component":"ios"}'
+write_json "$REPO/.release-please-manifest.json" '.ios = "0.1.0"'
+expect_success "$REPO"
+printf '0.1.1\n' > "$REPO/ios/version.txt"
+expect_failure "$REPO" "iOS manifest, version.txt, and MARKETING_VERSION must agree"

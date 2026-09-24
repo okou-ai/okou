@@ -55,7 +55,7 @@ const download$ = command(async ({ get }, signal: AbortSignal) => {
   signal.throwIfAborted();
 
   if (!message?.mediaUrl) {
-    return jsonResponse(404, "AgentPhone file not found", "NOT_FOUND");
+    return jsonResponse(404, "Phone file not found", "NOT_FOUND");
   }
   const mediaUrl = message.mediaUrl;
 
@@ -73,11 +73,7 @@ const download$ = command(async ({ get }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
   if (!downloadResponse) {
-    return jsonResponse(
-      502,
-      "Failed to download file from AgentPhone",
-      "BAD_GATEWAY",
-    );
+    return jsonResponse(502, "Failed to download phone file", "BAD_GATEWAY");
   }
   signal.throwIfAborted();
   if (!downloadResponse.ok) {
@@ -87,7 +83,7 @@ const download$ = command(async ({ get }, signal: AbortSignal) => {
     });
     return jsonResponse(
       502,
-      `Failed to download file from AgentPhone: ${downloadResponse.status}`,
+      `Failed to download phone file: ${downloadResponse.status}`,
       "BAD_GATEWAY",
     );
   }

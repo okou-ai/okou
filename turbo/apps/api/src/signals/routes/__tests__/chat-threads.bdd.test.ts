@@ -171,6 +171,18 @@ interface EntitledChatActor {
 
 type EntitledChatActorWithoutRunner = Omit<EntitledChatActor, "runnerGroup">;
 
+async function selectNativeClaudeModel(actor: ApiTestUser, providerId: string) {
+  await api.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
+}
+
 async function entitledChatActorWithoutRunner(
   displayName: string,
 ): Promise<EntitledChatActorWithoutRunner> {
@@ -182,6 +194,9 @@ async function entitledChatActorWithoutRunner(
   chatCallbacks.disableVapid();
   await api.grantProEntitlement(actor);
   const { providerId } = await api.ensureOrgModelProvider(actor);
+  // Thread lifecycle tests claim and complete a native-harness run. Fable is
+  // the permanently native Claude route now that Pi has no off switch.
+  await selectNativeClaudeModel(actor, providerId);
   const agent = await bdd.createAgent(actor, {
     displayName,
     visibility: "private",
@@ -776,7 +791,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         modelProviderId: providerId,
       },
       {
-        model: "claude-opus-4-8",
+        model: "claude-opus-5",
         isDefault: false,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
@@ -797,7 +812,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     if (snapshot.latestSeqId === null) {
       throw new Error("Expected snapshot cursor");
     }
-    await chat.updateThreadModelSelection(actor, thread.id, "claude-opus-4-8", {
+    await chat.updateThreadModelSelection(actor, thread.id, "claude-opus-5", {
       reasoningEffort: "extra",
     });
     const events = await threadEventPage(actor, snapshot.latestSeqId);
@@ -806,10 +821,10 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     ).toContainEqual(
       expect.objectContaining({
         id: thread.id,
-        selectedModel: "claude-opus-4-8",
+        selectedModel: "claude-opus-5",
         modelSettings: {
           "claude-sonnet-5": { effort: "high" },
-          "claude-opus-4-8": { effort: "extra" },
+          "claude-opus-5": { effort: "extra" },
         },
       }),
     );
@@ -819,7 +834,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         id: thread.id,
         modelSettings: {
           "claude-sonnet-5": { effort: "high" },
-          "claude-opus-4-8": { effort: "extra" },
+          "claude-opus-5": { effort: "extra" },
         },
       }),
     );
@@ -2198,7 +2213,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     const run = await sendChatRun(actor, {
       agentId,
       prompt: "pin the first run model",
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
     });
 
     let detail = await chat.readThread(actor, run.threadId);
@@ -2226,7 +2241,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     );
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "claude-opus-4-8",
+        model: "claude-opus-5",
         isDefault: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
@@ -2252,7 +2267,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 
     const thread = await chat.createThread(actor, {
       agentId,
-      model: "claude-opus-4-8",
+      model: "claude-opus-5",
     });
     const rejectedUpdate = await chat.requestUpdateThreadModelSelection(
       actor,
@@ -2333,7 +2348,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "claude-sonnet-5",
-      "claude-sonnet-4-6",
+      "claude-opus-5",
     ] as const) {
       const unconfiguredSelection =
         await chat.requestUpdateThreadModelSelection(
@@ -2635,12 +2650,9 @@ describe("CHAT-01 chat thread read state", () => {
     if (!peer.orgId) {
       throw new Error("Expected an organization-scoped peer");
     }
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: peer.userId, orgId: peer.orgId, orgRole: "org:admin" },
-      { [FeatureSwitchKey.PiLoop]: false },
-    );
-    await api.ensureOrgModelProvider(peer);
+
+    const peerProvider = await api.ensureOrgModelProvider(peer);
+    await selectNativeClaudeModel(peer, peerProvider.providerId);
     const peerAgent = await bdd.createAgent(peer, {
       displayName: "Unread peer agent",
       visibility: "private",
@@ -2652,7 +2664,11 @@ describe("CHAT-01 chat thread read state", () => {
 
     const sameUserOtherOrg = bdd.user({ userId: owner.userId });
     await api.grantProEntitlement(sameUserOtherOrg);
-    await api.ensureOrgModelProvider(sameUserOtherOrg);
+    const otherOrgProvider = await api.ensureOrgModelProvider(sameUserOtherOrg);
+    await selectNativeClaudeModel(
+      sameUserOtherOrg,
+      otherOrgProvider.providerId,
+    );
     const otherOrgAgent = await bdd.createAgent(sameUserOtherOrg, {
       displayName: "Unread other org agent",
       visibility: "private",

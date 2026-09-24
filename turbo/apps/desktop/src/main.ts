@@ -3,7 +3,7 @@ import {
   captureDesktopNativePermissionRecovery,
   captureDesktopSessionRestoreFailure,
 } from "./sentry-main";
-import { writeSync } from "node:fs";
+import { existsSync, writeSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -77,7 +77,16 @@ import {
 } from "./desktop-smoke-test";
 import { installDesktopTray, type DesktopTrayController } from "./desktop-tray";
 import { DesktopAuthSession } from "./desktop-auth-session";
-import { DesktopAuthWindow } from "./desktop-auth-window";
+import {
+  DesktopAuthWindow,
+  type DesktopAuthWindowRequest,
+} from "./desktop-auth-window";
+import { DesktopClerkNative } from "./desktop-clerk-native";
+import {
+  readDesktopLoginMethod,
+  writeDesktopLoginMethod,
+  type DesktopLoginMethod,
+} from "./desktop-login-method";
 import {
   installDesktopAuthIpc,
   notifyDesktopAuthChanged,
@@ -127,6 +136,30 @@ const desktopAuthSelectOrgUrl = buildDesktopAuthSelectOrgUrl(
   true,
 );
 const desktopAuthTokenUrl = buildDesktopAuthTokenUrl(config.authUrl);
+const nativeClerkSignInUrl = "native-clerk://sign-in";
+let loginMethod: DesktopLoginMethod = "browser";
+let nativeClerk: DesktopClerkNative | null = null;
+function nativeClerkAvailable(): boolean {
+  return (
+    process.platform === "darwin" &&
+    config.clerkPublishableKey !== null &&
+    existsSync(path.join(path.dirname(process.execPath), "clerk-auth-helper"))
+  );
+}
+function initializeLoginMethod(): void {
+  const selected = readDesktopLoginMethod(desktopPreferencesPath());
+  loginMethod = selected;
+  if (selected === "native" && !nativeClerkAvailable()) {
+    console.warn(
+      "Native Clerk is unavailable; browser sign-in recovery is required",
+    );
+    return;
+  }
+  nativeClerk =
+    selected === "native" && config.clerkPublishableKey
+      ? new DesktopClerkNative(config.clerkPublishableKey)
+      : null;
+}
 const localRendererUrl = desktopRendererUrl();
 const FEATURE_SWITCHES_PATH = "/api/feature-switches";
 const noAllowedAppOrigins: ReadonlySet<string> = new Set();
@@ -316,6 +349,46 @@ let authStorageClearing: Promise<void> | null = null;
 let authSession: DesktopAuthSession | null = null;
 let pendingDesktopAuthCallback: DesktopAuthCallback | null = null;
 
+async function runNativeClerkAuth(
+  request: DesktopAuthWindowRequest,
+): Promise<string | null> {
+  if (!nativeClerk) throw new Error("Native Clerk is unavailable");
+  if (request.url === nativeClerkSignInUrl) {
+    return await nativeClerk.signIn(request.signal);
+  }
+  if (request.url === desktopAuthTokenUrl) {
+    return await nativeClerk.getToken(request.signal);
+  }
+  if (request.url === desktopAuthSelectOrgUrl) {
+    const organizations = await nativeClerk.organizations(request.signal);
+    if (organizations.length === 0)
+      throw new Error("No Clerk organizations are available");
+    let selected = organizations[0];
+    if (organizations.length > 1) {
+      const window = currentDialogWindow();
+      const options = {
+        title: "Select workspace",
+        message: "Choose the workspace for this Desktop session",
+        buttons: [
+          ...organizations.map((organization) => organization.name),
+          "Cancel",
+        ],
+        cancelId: organizations.length,
+      };
+      const response = window
+        ? await dialog.showMessageBox(window, options)
+        : await dialog.showMessageBox(options);
+      request.signal.throwIfAborted();
+      if (response.response === organizations.length)
+        return await nativeClerk.getToken(request.signal);
+      selected = organizations[response.response];
+    }
+    if (!selected) throw new Error("No workspace was selected");
+    return await nativeClerk.setOrganization(selected.id, request.signal);
+  }
+  throw new Error("Unknown native Clerk auth operation");
+}
+
 function getAuthSession(): DesktopAuthSession {
   if (authSession) {
     return authSession;
@@ -332,7 +405,11 @@ function getAuthSession(): DesktopAuthSession {
     consumeUrl: (code, handoffId) =>
       buildDesktopAuthConsumeUrl(config.authUrl, code, handoffId),
     selectOrgUrl: desktopAuthSelectOrgUrl,
+    ...(loginMethod === "native"
+      ? { signInUrl: nativeClerkSignInUrl, nativeTokenProvider: true }
+      : {}),
     runAuthWindow: async (request) => {
+      if (loginMethod === "native") return await runNativeClerkAuth(request);
       await authStorageClearing;
       request.signal.throwIfAborted();
       return await authWindow.run(request);
@@ -740,20 +817,60 @@ export const notifyDesktopAutoUpdatesInstalled: DesktopMainModule["notifyDesktop
 
 async function signOutDesktopSession(): Promise<void> {
   getAuthSession().signOut();
-  authStorageClearing = (authStorageClearing ?? Promise.resolve()).then(
-    async () => {
-      await authWindow.clearStorage();
+  authStorageClearing = (authStorageClearing ?? Promise.resolve())
+    .catch(() => {})
+    .then(async () => {
       await computerUseController.stopForAuthChange();
-    },
-  );
+      if (nativeClerk) await nativeClerk.signOut();
+      await authWindow.clearStorage();
+    });
   await authStorageClearing;
+}
+
+async function switchDesktopLoginMethod(
+  method: DesktopLoginMethod,
+): Promise<void> {
+  if (method === loginMethod) return;
+  if (method === "native" && !nativeClerkAvailable()) {
+    throw new Error("Native Clerk is unavailable in this Desktop build");
+  }
+  await signOutDesktopSession();
+  if (loginMethod === "browser" && config.clerkPublishableKey) {
+    const previousNativeClerk = new DesktopClerkNative(
+      config.clerkPublishableKey,
+    );
+    try {
+      await previousNativeClerk.signOut();
+    } finally {
+      previousNativeClerk.dispose();
+    }
+  }
+  await computerUseController.stopForQuit("update_relaunch");
+  writeDesktopLoginMethod(desktopPreferencesPath(), method);
+  authSession?.abortForQuit();
+  quitConfirmation.allowQuitWithoutConfirmation();
+  appIsQuitting = true;
+  applicationMenu.dispose();
+  releaseKeepAwake();
+  globalShortcut.unregisterAll();
+  computerUseQuitPreparationComplete = true;
+  setImmediate(() => {
+    app.relaunch();
+    app.quit();
+  });
 }
 
 function installDesktopAuth(): void {
   installDesktopAuthIpc(
     {
       getState: () => getAuthSession().getAuthState(),
+      getLoginMethod: () => ({
+        method: loginMethod,
+        nativeAvailable: nativeClerkAvailable(),
+      }),
+      setLoginMethod: switchDesktopLoginMethod,
       openSignIn: () => {
+        if (loginMethod === "native") return getAuthSession().signIn();
         openExternal(desktopAuthStartUrl);
       },
       openOrgSelection: () => getAuthSession().selectOrganization(),
@@ -787,7 +904,9 @@ function installTray(): void {
       await refreshComputerUsePermissions();
     },
     openSignIn: () => {
-      openExternal(desktopAuthStartUrl);
+      if (loginMethod === "native")
+        void getAuthSession().signIn().catch(logDesktopAuthError);
+      else openExternal(desktopAuthStartUrl);
     },
     switchWorkspace: () => getAuthSession().selectOrganization(),
     signOut: signOutDesktopSession,
@@ -868,12 +987,15 @@ function openDesktopAuthStart(rawUrl: string): boolean {
   }
 
   if (desktopAuthStartGate.shouldOpen()) {
-    openExternal(desktopAuthStartUrl);
+    if (loginMethod === "native")
+      void getAuthSession().signIn().catch(logDesktopAuthError);
+    else openExternal(desktopAuthStartUrl);
   }
   return true;
 }
 
 function dispatchDesktopAuthCallback(callback: DesktopAuthCallback): void {
+  if (loginMethod === "native") return;
   desktopAuthStartGate.suppressRetry();
   if (authSession) {
     authSession.consumeCallback(callback, logDesktopAuthError);
@@ -1235,6 +1357,7 @@ if (!hasSingleInstanceLock) {
   });
 
   void app.whenReady().then(async () => {
+    initializeLoginMethod();
     applyDockIcon();
     hideDockForInactiveMainWindow();
     registerDesktopAuthProtocol();
@@ -1248,7 +1371,16 @@ if (!hasSingleInstanceLock) {
     refreshComputerUsePermissionsForState();
     developerTools.requestRefresh();
     installTray();
-    queueDesktopAuthCallbackArgv(process.argv);
+    if (loginMethod === "native") {
+      pendingDesktopAuthCallback = null;
+      setInterval(() => {
+        const session = getAuthSession();
+        if (session.getAuthority()) {
+          void session.checkNativeLiveness().catch(logDesktopAuthError);
+        }
+      }, 30_000);
+    }
+    if (loginMethod === "browser") queueDesktopAuthCallbackArgv(process.argv);
 
     if (isDesktopSmokeTestEnabled(process.env)) {
       desktopAuthSession.signOut();

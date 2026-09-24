@@ -50,14 +50,13 @@ describe("Pi capability gate", () => {
           modelProviderType,
           runtimeProviderType,
           codexServiceTier: undefined,
-          piEnabled: true,
         }),
       ).toBe(false);
     },
   );
 
   it("leaves every other admitted model alone", () => {
-    for (const selectedModel of ["claude-opus-5", "deepseek-v4-pro"]) {
+    for (const selectedModel of ["claude-opus-5", "deepseek-v4-flash"]) {
       expect(
         isPiExecutionRoute({
           selectedModel,
@@ -67,7 +66,6 @@ describe("Pi capability gate", () => {
               ? "anthropic-api-key"
               : "deepseek",
           codexServiceTier: undefined,
-          piEnabled: true,
         }),
       ).toBe(true);
     }

@@ -1,5 +1,145 @@
 # Deployment Compatibility
 
+## Runner claim first-body-chunk timing (2026-09-24)
+
+The Runner records two optional, successful-claim-only operation durations: time after
+response headers until the first non-empty application-visible body chunk, and
+from that chunk until the full body is collected. Their sum is the existing
+`runner_claim_response_body_read` duration; they do not represent a server
+flush or physical wire-byte measurement. The claim request and response,
+including context and auth, remain unchanged. An older Runner emits neither
+operation; the new Runner uses the existing generic operation stream, which an
+older API accepts without a claim-contract change. Missing observations during
+a staggered rollout are not zero-valued timings. Compare deployed cohorts by
+Runner/API version, size, host and time before interpreting a shifted total
+read distribution, because the new observation reads an initial chunk before
+collecting the rest.
+
+## Morning Brief settings status and collection account retirement (2026-09-24)
+
+`GET`/`PUT /api/preferences/morning-brief` no longer return `nextRunAt`,
+`timezone`, `lastDeliveredAt` or `lastRun`. The App does not validate API
+responses outside tests, so an older App bundle reading the new API sees the
+fields as absent and renders no next-run or delivery badge; a new App reading
+an older API ignores the extra fields.
+
+The `morningBriefChanged` realtime topic is retired: the API no longer
+publishes it and the App no longer subscribes to it, nor refetches the
+preference on `connector:changed`, `slack:changed` or a timezone update. The
+Settings card reflects server state when it loads. An older bundle keeps its
+subscription and simply receives nothing; an older API's publishes reach no
+subscriber in a new bundle. `connector:changed` and `slack:changed` are still
+published for their other consumers.
+
+Native Morning Brief execution no longer computes or writes the per-occurrence
+collection account, whose only reader was `lastRun`. The
+`morning_brief_native_occurrences.collection_facts` column is left in place
+because an older API may still write it during rollout; the new API neither
+reads nor writes it. Mixed versions are compatible: the column is nullable and
+nothing reads it. Rollback is safe; an older API simply resumes writing it.
+
+This API version still declares the column in Drizzle and uses full-row
+`select()`/`returning()` on the table, so the drop follows "Drop a Column as a
+Two-release Contract": first remove the Drizzle declaration in its own release,
+then drop the column in a later migration once every API that declares it has
+drained.
+
+## Discord verified foundation (2026-09-24)
+
+The Discord foundation adds seven new relations, their ownership constraints,
+and an additional unique key on the already unique chat-thread ID plus owner.
+Existing non-erasure API reads and writes remain legal after migration.
+The chat-thread ownership key also makes existing KEY SHARE locks retain the
+thread user until commit. No production writer transfers a thread between users;
+ordinary title, draft and other non-key updates remain legal. Race tests now
+exercise owner changes before the initial pin and observed blocking after it.
+New cleanup/export readers require the migration before API promotion, following
+the existing production release order. There are no historical Discord rows to
+backfill. `_discordIntegration` remains disabled for every organization by
+default, and no Gateway or OAuth onboarding is activated by this change.
+
+Old account-erasure workers do not ignore the new relations: their catalogue
+coverage guard rejects tables absent from their compiled ownership inventory,
+even while Discord is disabled. During the migration-to-compatible-API window,
+affected deletion jobs remain durable and retry after 60 seconds; they require
+workers with the Discord inventory to progress. Promote compatible API workers
+after the migration and keep them available to drain this backlog. Rolling back
+to an API with the old inventory stalls those jobs until compatible workers
+return. Do not weaken the catalogue guard or treat feature-off state as erasure
+compatibility.
+
+Status/preferences are new API contracts. No existing client or Runner protocol
+changes. Gateway version 1 carries only Discord event data; the API owns Okou
+identity resolution. Gateway handler/relay implementations land in their own
+slices before activation.
+
+Account exports add a bounded Discord source phase only when owned Discord rows
+exist. Once an opted-in development/test account has a durable export checkpoint
+in that phase, an older API cannot resume it; finish or restart that export with
+the new API. This is a non-GA, default-off surface and introduces no compatibility
+reader or rollback fallback. Application credentials remain environment-owned
+and are never exported or revoked by guild removal.
+
+## Chat search user keyword GIN index (2026-09-24)
+
+Migration `1214_chat_search_user_tsv_gin` installs `btree_gin` and builds
+`chat_event_search_messages_user_tsv_gin_idx` on `(user_id, tsv)` with
+`CREATE INDEX CONCURRENTLY`. It does not block chat search reads or projector
+writes. The build waits for older transactions database-wide, so the migration
+raises `lock_timeout` to 10 minutes and disables `statement_timeout` for its
+own session, then resets both. A failed build is retried from the start: the
+migration drops any INVALID index concurrently before rebuilding it.
+
+The new index keeps `fastupdate`, like `chat_event_search_messages_tsv_idx`.
+The search projector's GIN maintenance now drains both indexes from one shared
+30-second tick budget, so a foreground 4 MiB pending-list flush does not land
+inside a projection transaction. The API role must own the new index for
+`gin_clean_pending_list`, as it does the existing one.
+
+Old API/new DB remains compatible: the old projector does not maintain the new
+index, but the old API only serves until promotion. New API/old DB is not a
+serving combination, because maintenance resolves the new index by name. The
+release must complete the migration before API promotion. Rollback keeps the
+extension and index and rolls back only the API. The search query and its
+responses are unchanged; the planner chooses the new index. The existing
+`chat_event_search_messages_tsv_idx` stays until production plans confirm it
+is unused.
+
+## AgentPhone public brand retirement (2026-09-24)
+
+AgentPhone is Okou-only. Production rows in `agentphone_connection_codes`,
+`agentphone_user_links`, `agentphone_messages` and `chat_agentphone_context`
+were set to `public_brand = 'okou'` before this change (#36650).
+
+The API no longer reads or writes those four `public_brand` columns. Queued
+AgentPhone launches and file materialization use the fixed `okou` brand, and
+`GET /api/integrations/agentphone/link` no longer returns `publicBrand`. No App
+reads that response field, and the App does not validate responses.
+
+Migration `1223_agentphone_public_brand_okou_default` sets the column default to
+`'okou'` on `agentphone_user_links` (previously `'vm0'`), `agentphone_messages`
+and `chat_agentphone_context` (previously no default), matching
+`agentphone_connection_codes`. An old API therefore reads `okou` from rows the
+new API inserts, including the non-null brand that its queued-launch path
+requires, so old API/new DB and rollback remain compatible. The columns and
+their ORM declarations stay in place; drop them in a separate migration after
+older API deployments drain.
+
+The connect link no longer carries `publicBrand` / `brandSig`, and the connect
+request contract no longer declares `publicBrand` / `publicBrandSignature`.
+`app-v0.958.0` (tag commit `9a3f9b6429d1b9d0a1c1400ed49e703038501735`) is the
+first App that neither reads nor posts them; production `app/production` was
+deployed at `66a534132b49` on 2026-09-24 13:24 UTC and later at `63ad2eed786e`,
+both descendants of #36651. App builds `0.954.0` to `0.957.x` still require
+`brandSig` to show Connect, so this change raises the identified-App minimum
+version to `0.958.0`; those bundles receive `426` on their next API request and
+refresh into the live App. Links expire after ten minutes. A body that still
+carries the brand fields is not rejected, because undeclared keys are stripped. An App rollback below
+that release also requires rolling back the API below this change, because the
+older connect page requires `brandSig`. An API rollback below the expand change
+(#36651) also requires rolling back the App, because the older API requires the
+brand fields.
+
 ## Voice input model selection retirement (2026-09-24)
 
 Voice input always uses Gemini 3.1 Flash-Lite on Vertex AI. The Debug
@@ -14,6 +154,27 @@ update that carries nothing but this field is rejected as empty. The
 `org_members_metadata.voice_input_model` column is left in place: the new API
 neither reads nor writes it while an older API may still do so. Drop it in a
 separate migration after older API deployments drain.
+
+## Guest storage batch timing attribution (2026-09-24)
+
+Runner storage batch operations now include optional Guest-server duration, a
+nonnegative Runner-minus-Guest residual when the pair is consistent, and a
+fixed timing state. The API explicitly validates and forwards these fields to
+the sandbox operation log. An older Runner omits them and remains accepted by
+the new API. An older API strips the new optional fields; storage application
+still works, but the extra timing is unavailable until the API is promoted.
+Deploy the API before the Runner to retain the new samples. Mixed-version
+production comparisons must report field coverage and Runner version mix;
+missing timing is never a zero duration. The Guest protocol and storage apply
+behavior are unchanged.
+
+## Chat event split-write preparation
+
+See [the two-release chat event rollout](chat-event-split-write-rollout.md) for
+the temporary allocation bridge, inactive global control, reader/writer drain,
+activation prerequisites, late-content maintenance, and postactivation rollback
+floor. This release retains the legacy column and bridge. Migration and API
+promotion do not authorize or perform activation; contraction is a later PR.
 
 ## Codex 0.156.1 OAuth workspace routing
 
@@ -194,8 +355,8 @@ recreated. No schema migration is needed.
 
 The API and commit-addressed CLI now pin Pi 0.87.1. Its native catalog contains
 `claude-opus-5-5`, `gpt-6-sol`, and `gpt-6-luna`, so the Pi admission table can
-route those models through Pi when their existing product policy and PiLoop
-switch allow it. This change does not make a model newly addable to an
+route those models through Pi when their existing product policy allows it.
+This change does not make a model newly addable to an
 organization. GPT-6 Sol and Luna continue to use the global OpenRouter endpoint
 because neither is in the US endpoint allowlist.
 
@@ -1414,7 +1575,7 @@ CLI changes must ship through the same commit-addressed CLI artifact selection.
 Previously captured contexts retain their package and history reference; new
 contexts select the new reader. Old Runners already support 128 MiB history.
 
-Pi is enabled by default through `PiLoop`. Rolling the API back below this change
+Eligible routes use Pi. Rolling the API back below this change
 restores its 16 MiB validation and resume limit: larger saved histories stay in
 storage, but continuing those sessions requires the fixed API and CLI again.
 There is no history truncation, migration, or alternate reader for that rollback.
@@ -2753,6 +2914,75 @@ without first restoring a compatible authority reader. The temporary
 personal-only projection is retired only after #36261's rebind-capable App is
 live and #36262 raises the verified minimum App version.
 
+### Organization-to-personal Access conversion (#36262)
+
+PR #36449 (#36261) first shipped the rebind-capable App in `app-v0.954.0`.
+That tag targets commit `c0cb8cd57d3575a3a82045b0d4bfe8993cdf14b1`;
+the [production release run 35962027995](https://github.com/okou-ai/okou/actions/runs/35962027995)
+successfully promoted its App Worker at 2026-09-24 06:15 UTC and recorded
+version `0.954.0` on `app.okou.ai`. Production `app.okou.ai` was subsequently
+verified serving App `0.955.0` at commit
+`056f5ab8c347b116352f5353fb304b19796fa1c6`, a descendant of #36449's
+merge commit `f129327db18170f2bf9f43fae9bc9ec2245a9cf5`. The production
+App Worker promotion in [release run 35966963095](https://github.com/okou-ai/okou/actions/runs/35966963095)
+completed successfully on 2026-09-24. The later #36262 release raises the
+identified-App minimum version to `0.954.0`, so older identified Apps receive
+`426` before route matching and can refresh into the already-live recovery UI.
+It also retires the bounded personal-only Access response projection; current
+App requests already use `view=scoped`.
+
+The conversion preview contains only an aggregate count of other owners' SSH
+hosts and an opaque impact snapshot. The action requires a current organization
+admin, expected Access revision, and unchanged impact. The transaction locks
+the Access row before host rows, detaches other owners' references into
+`needs_rebind`, advances effective generations, then makes the same Access row
+personal to the admin without decrypting or replacing its Service Token.
+Admin-owned SSH references remain bound. After commit, Access-list and affected
+owner SSH/Runner invalidations are published. The existing best-effort notice
+limit still applies: a missed invalidation can leave cached authority usable
+for the remainder of an active Run; end the Run when immediate revocation is
+required.
+
+Migration `1210` must run before this API is promoted. Conversion writes cannot
+be rolled back to a pre-foundation API/Runner or an App older than `0.954.0`:
+those readers do not understand a retained protected host with no Access ID.
+Roll forward with compatible readers instead of interpreting such a host as
+Direct or deleting it. The API promotes before the App in the normal release;
+the prior production App verification makes that order safe for this writer.
+
+### Personal-to-organization Access promotion and reviewed deletion (#36707)
+
+Migration `1222` extends the database scope-change guard to allow the narrow
+Personal/owner -> Organization/no owner transition within the same
+organization, without moving the row, decrypting its Service Token or
+replacing existing SSH bindings. Deploy this migration **before** enabling the
+new API route. A current admin may promote only their own Personal row after
+reviewing its expanded audience; existing owner-host generations advance.
+Existing zero-reference DELETE and name/token PATCH request shapes remain
+compatible with scope-aware clients. Older API binaries remain compatible with
+the expanded trigger until new state is written; they do not offer the new
+promotion or reviewed delete operations.
+
+A current admin can preview Organization deletion impact with owner identity
+and per-owner host counts. The optional opaque snapshot is required only when
+other owners' hosts are affected. DELETE rechecks the exact revision and host
+set under the Access-before-host lock, blocks any actor-owned reference, and
+atomically detaches only other owners' references into `needs_rebind` before
+deleting the config (the same-org FK remains restrictive). Profiles missing
+from the member directory are shown by stable owner ID; their hosts still
+count. Any changed host set requires a fresh review. No affected-member
+message, new SSH/Runner cache invalidation or active-Run cancellation is
+added by this delete path. Fresh reads and SSH resolutions treat retained hosts
+as protected and unusable until explicitly rebound. An already-running Run
+may retain cached capability until completion; this is an accepted bounded
+Run-lifetime window, not immediate revocation.
+
+The already-shipped rebind-capable App and shared-aware Runner are prerequisites.
+After a member binds a promoted row or a reviewed deletion writes
+`needs_rebind`, rollback to pre-foundation API/Runner or pre-rebind App is
+unsafe; roll forward with compatible readers. The API-before-App release order
+is safe once migration `1222` and those prerequisites are verified.
+
 ## Feishu and Lark integration identity
 
 New runs use `triggerSource=feishu` or `triggerSource=lark` from the verified
@@ -3664,9 +3894,14 @@ heartbeat owns Browser access and lease renewal.
 The native input preflight endpoint uses the same team-only switch. It performs
 one bounded provider lookup and read-only CDP connection per explicit form
 entry, returning the verified control subtype and current applicable site
-constraints. A confirmed target mismatch marks a pending request stale;
-transient provider failures leave it pending for retry. The editable form uses
-that preflight response. Apply rechecks site constraints before any mutation.
+constraints. The editable form first uses the persisted request fields while
+preflight runs in the background, then adopts the observed controls without
+discarding the draft. A completed failed check blocks submission and offers
+retry. Preflight does not hold the thread write lock during provider or CDP
+I/O, so submission can proceed while the check is pending. A confirmed target
+mismatch marks a pending request stale; transient provider failures leave it
+pending for retry. Apply rechecks the exact target and site constraints before
+any mutation, even when preflight has not completed.
 Per `docs/fallback.md`, this pre-GA feature does not require compatibility with
 earlier Platform, API, or persisted-action shapes.
 The general number field kind expands the strict shared request and preflight

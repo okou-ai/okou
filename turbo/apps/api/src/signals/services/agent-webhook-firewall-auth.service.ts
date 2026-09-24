@@ -4,6 +4,7 @@ import {
   coordinatePersonalSubscriptionCredentials,
   reconcileLockedPersonalSubscriptionCredentials,
   readPersonalSubscriptionCredentialBundle,
+  capturePiCodexCredentialCiphertexts,
 } from "./model-provider-account.service";
 import {
   publishModelPoliciesChangedForOrgSafely,
@@ -6695,6 +6696,70 @@ async function syncPersonalSubscriptionRuntimeBundles(
     }
   }
   return expiresAt;
+}
+
+// Only the Pi API-first Codex path can use this optimistic read. The locked
+// snapshot captures both fields from one coherent version, then commits before
+// KMS; any refresh, reconnect, mirror drift, or metadata drift uses the existing
+// coordinating reader instead. Final run admission and model-HTTP revalidation
+// still own their independent authority checks.
+export async function resolvePiCodexFirstTurnSubscriptionBundleForApi(
+  args: ModelProviderRuntimeSecretForApiArgs,
+  signal: AbortSignal,
+) {
+  const lookup = resolveModelProviderRuntimeSecretLookup(args);
+  if (
+    lookup?.providerType === "codex-oauth-token" &&
+    lookup.secretName === "CHATGPT_ACCESS_TOKEN" &&
+    lookup.metadata.sourceId
+  ) {
+    const captured = await capturePiCodexCredentialCiphertexts({
+      db: args.db,
+      orgId: args.orgId,
+      userId: lookup.userId,
+      type: "codex-oauth-token",
+      sourceId: lookup.metadata.sourceId,
+      runId: args.runId,
+      featureSwitchContext: args.featureSwitchContext,
+    });
+    signal.throwIfAborted();
+    if (captured && !tokenExpiresAtNeedsRefresh(captured.tokenExpiresAt)) {
+      // Wait for both started decryptions even on failure or cancellation.
+      // Neither KMS call holds the snapshot transaction or advisory lock.
+      const [token, accountId] = await Promise.allSettled([
+        decryptStoredSecretValue(
+          captured.accessTokenCiphertext,
+          args.featureSwitchContext,
+        ),
+        decryptStoredSecretValue(
+          captured.accountIdCiphertext,
+          args.featureSwitchContext,
+        ),
+      ]);
+      signal.throwIfAborted();
+      if (token.status === "rejected") {
+        throw token.reason;
+      }
+      if (accountId.status === "rejected") {
+        throw accountId.reason;
+      }
+      // KMS may straddle the refresh buffer even for a fresh snapshot.
+      if (
+        !tokenExpiresAtNeedsRefresh(captured.tokenExpiresAt) &&
+        token.value.trim() &&
+        accountId.value.trim()
+      ) {
+        return {
+          status: "available" as const,
+          values: new Map([
+            ["CHATGPT_ACCESS_TOKEN", token.value],
+            ["CHATGPT_ACCOUNT_ID", accountId.value],
+          ]),
+        };
+      }
+    }
+  }
+  return await resolveCurrentPersonalSubscriptionBundleForApi(args, signal);
 }
 
 /** Refresh once, then read token, account ID and ancillary credentials together.

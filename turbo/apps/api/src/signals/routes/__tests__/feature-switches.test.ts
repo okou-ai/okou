@@ -17,35 +17,6 @@ function client() {
 }
 
 describe("/api/feature-switches", () => {
-  it("enables Pi loop for ordinary members unless they opt out", async () => {
-    const clerk = createRouteMocks(context).clerk;
-    const headers = { authorization: "Bearer clerk-session" };
-    const orgId = `org_${randomUUID()}`;
-    const userId = `user_${randomUUID()}`;
-    clerk.session(userId, orgId, "org:member");
-
-    const initial = await accept(client().get({ headers }), [200]);
-    expect(initial.body.switches[FeatureSwitchKey.PiLoop]).toBeUndefined();
-    expect(
-      initial.body.effectiveSwitches[FeatureSwitchKey.PiLoop],
-    ).toBeTruthy();
-
-    const optedOut = await accept(
-      client().update({
-        headers,
-        body: { switches: { [FeatureSwitchKey.PiLoop]: false } },
-      }),
-      [200],
-    );
-    expect(
-      optedOut.body.effectiveSwitches[FeatureSwitchKey.PiLoop],
-    ).toBeFalsy();
-
-    clerk.session(`user_${randomUUID()}`, orgId, "org:member");
-    const peer = await accept(client().get({ headers }), [200]);
-    expect(peer.body.effectiveSwitches[FeatureSwitchKey.PiLoop]).toBeTruthy();
-  });
-
   it("keeps the Okou Add Model switch personal within one organization", async () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };
@@ -104,6 +75,51 @@ describe("/api/feature-switches", () => {
     expect(
       elsewhere.body.effectiveSwitches[FeatureSwitchKey.LarkIntegration],
     ).toBeFalsy();
+  });
+
+  it("does not let staff or stored overrides re-enable the retiring native brief", async () => {
+    const clerk = createRouteMocks(context).clerk;
+    const headers = { authorization: "Bearer clerk-session" };
+    const userId = `user_${randomUUID()}`;
+    clerk.session(userId, "org_3ANttyrbWYJk6JKRSTRLEsbsDLe", "org:member");
+
+    const initial = await accept(client().get({ headers }), [200]);
+    expect(
+      initial.body.effectiveSwitches[FeatureSwitchKey.NativeMorningBrief],
+    ).toBeFalsy();
+    expect(
+      initial.body.effectiveSwitches[FeatureSwitchKey.MorningBrief],
+    ).toBeTruthy();
+
+    const refused = await accept(
+      client().update({
+        headers,
+        body: {
+          switches: {
+            [FeatureSwitchKey.NativeMorningBrief]: true,
+            [FeatureSwitchKey.OkouModels]: true,
+          },
+        },
+      }),
+      [400],
+    );
+    expect(refused.body.error.code).toBe("BAD_REQUEST");
+    const afterRefusal = await accept(client().get({ headers }), [200]);
+    expect(afterRefusal.body.switches).toStrictEqual({});
+
+    const optedOut = await accept(
+      client().update({
+        headers,
+        body: { switches: { [FeatureSwitchKey.NativeMorningBrief]: false } },
+      }),
+      [200],
+    );
+    expect(
+      optedOut.body.effectiveSwitches[FeatureSwitchKey.NativeMorningBrief],
+    ).toBeFalsy();
+    expect(
+      optedOut.body.effectiveSwitches[FeatureSwitchKey.MorningBrief],
+    ).toBeTruthy();
   });
 
   it.each([true, false])(

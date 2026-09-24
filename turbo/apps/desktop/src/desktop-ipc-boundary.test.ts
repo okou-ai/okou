@@ -277,6 +277,7 @@ describe("Desktop IPC boundary", () => {
 
     for (const channel of [
       DESKTOP_AUTH_CHANNELS.getState,
+      DESKTOP_AUTH_CHANNELS.getLoginMethod,
       DESKTOP_AUTH_CHANNELS.openSignIn,
       DESKTOP_AUTH_CHANNELS.openOrgSelection,
       DESKTOP_AUTH_CHANNELS.signOut,
@@ -285,8 +286,21 @@ describe("Desktop IPC boundary", () => {
         "Desktop auth is unavailable on this page",
       );
     }
+    await expect(
+      invokeIpc(DESKTOP_AUTH_CHANNELS.setLoginMethod, blockedAppUrl, "native"),
+    ).rejects.toThrow("Desktop auth is unavailable on this page");
+    await expect(
+      invokeIpc(DESKTOP_AUTH_CHANNELS.setLoginMethod, rendererUrl, "invalid"),
+    ).rejects.toThrow("Desktop login method is invalid");
+    await invokeIpc(
+      DESKTOP_AUTH_CHANNELS.setLoginMethod,
+      rendererUrl,
+      "native",
+    );
+    expect(api.setLoginMethod).toHaveBeenCalledWith("native");
 
     expect(api.getState).not.toHaveBeenCalled();
+    expect(api.getLoginMethod).not.toHaveBeenCalled();
     expect(api.openSignIn).not.toHaveBeenCalled();
     expect(api.openOrgSelection).not.toHaveBeenCalled();
     expect(api.signOut).not.toHaveBeenCalled();
@@ -438,6 +452,14 @@ function createComputerUseApi(): {
 
 function createDesktopAuthApi(): {
   readonly getState: ReturnType<typeof vi.fn<() => DesktopAuthState>>;
+  readonly getLoginMethod: ReturnType<
+    typeof vi.fn<
+      () => { readonly method: "browser"; readonly nativeAvailable: boolean }
+    >
+  >;
+  readonly setLoginMethod: ReturnType<
+    typeof vi.fn<(method: "browser" | "native") => Promise<void>>
+  >;
   readonly openSignIn: ReturnType<typeof vi.fn<() => void>>;
   readonly openOrgSelection: ReturnType<typeof vi.fn<() => Promise<void>>>;
   readonly signOut: ReturnType<typeof vi.fn<() => Promise<void>>>;
@@ -450,6 +472,11 @@ function createDesktopAuthApi(): {
         organization: null,
       };
     }),
+    getLoginMethod: vi.fn(() => ({
+      method: "browser" as const,
+      nativeAvailable: true,
+    })),
+    setLoginMethod: vi.fn(async () => {}),
     openSignIn: vi.fn(() => {}),
     openOrgSelection: vi.fn(async () => {}),
     signOut: vi.fn(async () => {}),

@@ -24,7 +24,7 @@ REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
 }
 CHECK_COVERAGE="${REPO_ROOT}/.github/scripts/check-release-please-workspace-coverage.sh"
 
-PR_JSON=$(gh pr view release-please--branches--main --repo "$GITHUB_REPOSITORY" --json number,headRefOid 2>/dev/null || echo "")
+PR_JSON=$(gh pr view release-please--branches--main --repo "$GITHUB_REPOSITORY" --json number,headRefOid,headRefName 2>/dev/null || echo "")
 if [ -z "$PR_JSON" ]; then
   echo "No release PR found, skipping"
   exit 0
@@ -50,18 +50,16 @@ create_gate_check() {
   echo "✅ Created $gate check run on $PR_HEAD with conclusion $conclusion"
 }
 
-# iOS has no release-please package. Only an unrelated release may report this
-# gate without running the iOS workflow; changes to the client still require CI.
+# GITHUB_TOKEN release PR updates do not trigger pull_request workflows. Dispatch
+# real iOS validation on the release branch; never synthesize a passing iOS check
+# when its inputs changed. The workflow's own check is attached to its run SHA.
 if grep -qE '^ios/|^\.github/workflows/ios\.yml$|^\.github/scripts/changed-base-ref\.sh$' <<<"$CHANGED_FILES"; then
-  create_gate_check \
-    ci-gate-ios \
-    failure \
-    "iOS changes require validation" \
-    "This release PR changes iOS inputs. Run the iOS workflow on this commit before merging."
-  echo "::error::Release PR changes iOS inputs and cannot skip iOS validation"
-  exit 1
+  release_branch=$(jq -er '.headRefName | select(type == "string" and length > 0)' <<<"$PR_JSON")
+  gh workflow run ios.yml --repo "$GITHUB_REPOSITORY" --ref "$release_branch"
+  echo "Dispatched iOS validation for release PR head $PR_HEAD"
+else
+  create_gate_check ci-gate-ios success "No iOS changes" "This release PR does not change iOS inputs."
 fi
-create_gate_check ci-gate-ios success "No iOS changes" "This release PR does not change iOS inputs."
 
 RELEASE_WORKTREE_ROOT=$(mktemp -d)
 RELEASE_WORKTREE="${RELEASE_WORKTREE_ROOT}/head"

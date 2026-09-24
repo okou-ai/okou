@@ -76,24 +76,6 @@ const EXPECTED_ADMITTED_ROUTES = [
   "claude-opus-5 | aws-bedrock | aws-bedrock | fast",
   "claude-opus-5 | custom-anthropic-messages | custom-anthropic-messages | standard",
   "claude-opus-5 | custom-anthropic-messages | custom-anthropic-messages | fast",
-  "claude-opus-4-8 | built-in | built-in | standard",
-  "claude-opus-4-8 | built-in | built-in | fast",
-  "claude-opus-4-8 | built-in | anthropic-api-key | standard",
-  "claude-opus-4-8 | built-in | anthropic-api-key | fast",
-  "claude-opus-4-8 | built-in | openrouter-api-key | standard",
-  "claude-opus-4-8 | built-in | openrouter-api-key | fast",
-  "claude-opus-4-8 | anthropic-api-key | anthropic-api-key | standard",
-  "claude-opus-4-8 | anthropic-api-key | anthropic-api-key | fast",
-  "claude-opus-4-8 | openrouter-api-key | openrouter-api-key | standard",
-  "claude-opus-4-8 | openrouter-api-key | openrouter-api-key | fast",
-  "claude-opus-4-8 | vercel-ai-gateway | vercel-ai-gateway | standard",
-  "claude-opus-4-8 | vercel-ai-gateway | vercel-ai-gateway | fast",
-  "claude-opus-4-8 | azure-foundry | azure-foundry | standard",
-  "claude-opus-4-8 | azure-foundry | azure-foundry | fast",
-  "claude-opus-4-8 | aws-bedrock | aws-bedrock | standard",
-  "claude-opus-4-8 | aws-bedrock | aws-bedrock | fast",
-  "claude-opus-4-8 | custom-anthropic-messages | custom-anthropic-messages | standard",
-  "claude-opus-4-8 | custom-anthropic-messages | custom-anthropic-messages | fast",
   "claude-sonnet-5 | built-in | built-in | standard",
   "claude-sonnet-5 | built-in | built-in | fast",
   "claude-sonnet-5 | built-in | anthropic-api-key | standard",
@@ -112,24 +94,6 @@ const EXPECTED_ADMITTED_ROUTES = [
   "claude-sonnet-5 | aws-bedrock | aws-bedrock | fast",
   "claude-sonnet-5 | custom-anthropic-messages | custom-anthropic-messages | standard",
   "claude-sonnet-5 | custom-anthropic-messages | custom-anthropic-messages | fast",
-  "claude-sonnet-4-6 | built-in | built-in | standard",
-  "claude-sonnet-4-6 | built-in | built-in | fast",
-  "claude-sonnet-4-6 | built-in | anthropic-api-key | standard",
-  "claude-sonnet-4-6 | built-in | anthropic-api-key | fast",
-  "claude-sonnet-4-6 | built-in | openrouter-api-key | standard",
-  "claude-sonnet-4-6 | built-in | openrouter-api-key | fast",
-  "claude-sonnet-4-6 | anthropic-api-key | anthropic-api-key | standard",
-  "claude-sonnet-4-6 | anthropic-api-key | anthropic-api-key | fast",
-  "claude-sonnet-4-6 | openrouter-api-key | openrouter-api-key | standard",
-  "claude-sonnet-4-6 | openrouter-api-key | openrouter-api-key | fast",
-  "claude-sonnet-4-6 | vercel-ai-gateway | vercel-ai-gateway | standard",
-  "claude-sonnet-4-6 | vercel-ai-gateway | vercel-ai-gateway | fast",
-  "claude-sonnet-4-6 | azure-foundry | azure-foundry | standard",
-  "claude-sonnet-4-6 | azure-foundry | azure-foundry | fast",
-  "claude-sonnet-4-6 | aws-bedrock | aws-bedrock | standard",
-  "claude-sonnet-4-6 | aws-bedrock | aws-bedrock | fast",
-  "claude-sonnet-4-6 | custom-anthropic-messages | custom-anthropic-messages | standard",
-  "claude-sonnet-4-6 | custom-anthropic-messages | custom-anthropic-messages | fast",
   "gpt-6-sol | built-in | built-in | standard",
   "gpt-6-sol | built-in | openai-api-key | standard",
   "gpt-6-sol | built-in | openai-api-key | fast",
@@ -209,16 +173,6 @@ const EXPECTED_ADMITTED_ROUTES = [
   "deepseek-v4.1-flash | openrouter-codex | openrouter-codex | fast",
   "deepseek-v4.1-flash | custom-openai-responses | custom-openai-responses | standard",
   "deepseek-v4.1-flash | custom-openai-responses | custom-openai-responses | fast",
-  "deepseek-v4-pro | built-in | deepseek | standard",
-  "deepseek-v4-pro | built-in | deepseek | fast",
-  "deepseek-v4-pro | built-in | openrouter-codex | standard",
-  "deepseek-v4-pro | built-in | openrouter-codex | fast",
-  "deepseek-v4-pro | deepseek | deepseek | standard",
-  "deepseek-v4-pro | deepseek | deepseek | fast",
-  "deepseek-v4-pro | openrouter-codex | openrouter-codex | standard",
-  "deepseek-v4-pro | openrouter-codex | openrouter-codex | fast",
-  "deepseek-v4-pro | custom-openai-responses | custom-openai-responses | standard",
-  "deepseek-v4-pro | custom-openai-responses | custom-openai-responses | fast",
   "deepseek-v4-flash | built-in | deepseek | standard",
   "deepseek-v4-flash | built-in | deepseek | fast",
   "deepseek-v4-flash | built-in | openrouter-codex | standard",
@@ -233,10 +187,10 @@ const EXPECTED_ADMITTED_ROUTES = [
 
 /**
  * The enumeration is driven by `ACTIVE_RUN_MODELS` and their providers, so it
- * does not shrink when admission narrows: all 298 combinations are still
+ * does not shrink when admission narrows: all 240 combinations are still
  * evaluated, and fewer of them are admitted.
  */
-const ENUMERATED_COMBINATIONS = 298;
+const ENUMERATED_COMBINATIONS = 240;
 
 interface Combination {
   readonly selectedModel: string;
@@ -326,9 +280,7 @@ describe("Pi admission policy table", () => {
     expect(ACTIVE_RUN_MODELS.filter(isPiNativeModel)).toStrictEqual([
       "claude-opus-5-5",
       "claude-opus-5",
-      "claude-opus-4-8",
       "claude-sonnet-5",
-      "claude-sonnet-4-6",
     ]);
     expect(ACTIVE_RUN_MODELS.filter(isPiGptModel)).toStrictEqual([
       "okou-1.0-max",
@@ -342,7 +294,6 @@ describe("Pi admission policy table", () => {
     ]);
     expect(ACTIVE_RUN_MODELS.filter(isPiDeepSeekModel)).toStrictEqual([
       "deepseek-v4.1-flash",
-      "deepseek-v4-pro",
       "deepseek-v4-flash",
     ]);
   });
@@ -382,7 +333,15 @@ describe("Pi admission policy table", () => {
   });
 
   it("classifies a retired or unknown model into no family", () => {
-    for (const model of ["claude-fable-5", "gpt-5.5", "deepseek-flash", null]) {
+    for (const model of [
+      "claude-fable-5",
+      "gpt-5.5",
+      "claude-opus-4-8",
+      "claude-sonnet-4-6",
+      "deepseek-v4-pro",
+      "deepseek-flash",
+      null,
+    ]) {
       expect(isPiNativeModel(model), String(model)).toBe(false);
       expect(isPiGptModel(model), String(model)).toBe(false);
       expect(isPiDeepSeekModel(model), String(model)).toBe(false);
@@ -396,18 +355,10 @@ describe("Pi admission decisions", () => {
     expect(combinations).toHaveLength(ENUMERATED_COMBINATIONS);
     const admitted = combinations
       .filter((combination) => {
-        return isPiExecutionRoute({ ...combination, piEnabled: true });
+        return isPiExecutionRoute(combination);
       })
       .map(label);
     expect(admitted).toStrictEqual([...EXPECTED_ADMITTED_ROUTES]);
-  });
-
-  it("admits nothing while the Pi loop switch is off", () => {
-    for (const combination of enumerateCombinations()) {
-      expect(isPiExecutionRoute({ ...combination, piEnabled: false })).toBe(
-        false,
-      );
-    }
   });
 
   it("keeps claude-fable-5-1 on the vendor harness on every route", () => {
@@ -426,10 +377,7 @@ describe("Pi admission decisions", () => {
       expect(isPiPolicyAdmittedRoute(combination), label(combination)).toBe(
         false,
       );
-      expect(
-        isPiExecutionRoute({ ...combination, piEnabled: true }),
-        label(combination),
-      ).toBe(false);
+      expect(isPiExecutionRoute(combination), label(combination)).toBe(false);
     }
   });
 
@@ -447,7 +395,7 @@ describe("Pi admission decisions", () => {
         codexServiceTier: undefined,
       };
       expect(isPiRouteRuntimeCapable(route)).toBe(true);
-      expect(isPiExecutionRoute({ ...route, piEnabled: true })).toBe(true);
+      expect(isPiExecutionRoute(route)).toBe(true);
     },
   );
 });

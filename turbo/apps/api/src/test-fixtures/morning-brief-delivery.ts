@@ -4,7 +4,7 @@ import { createStore } from "ccstate";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import { emailSuppressions } from "@okouai/db/schema/email-suppression";
 import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery";

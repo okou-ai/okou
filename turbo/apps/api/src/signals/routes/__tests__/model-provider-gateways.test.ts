@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "@okouai/api-contracts/contracts/model-providers";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   modelProviderConnectionsByIdContract,
   modelProviderConnectionsMainContract,
@@ -12,7 +11,6 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { modelProviderGatewayRoutes } from "../model-provider-gateways";
 
@@ -285,6 +283,46 @@ describe("custom model provider gateway routes", () => {
         modelMappings: { "gpt-5.6-sol": "openai/gpt-5.5" },
       },
     },
+    {
+      name: "retired DeepSeek V4 Pro model mapping",
+      surface: {
+        protocol: "openai-responses",
+        apiBaseUrl: "https://gateway.example.com",
+        authHeaderName: "Authorization",
+        authHeaderTemplate: "Bearer {{secret}}",
+        modelMappings: { "deepseek-v4-pro": "old-deployment" },
+      },
+    },
+    {
+      name: "retired DeepSeek V4 Pro upstream behind an active model mapping",
+      surface: {
+        protocol: "openai-responses",
+        apiBaseUrl: "https://gateway.example.com",
+        authHeaderName: "Authorization",
+        authHeaderTemplate: "Bearer {{secret}}",
+        modelMappings: { "deepseek-v4-flash": "deepseek/deepseek-v4-pro" },
+      },
+    },
+    {
+      name: "retired Claude Sonnet 4.6 upstream behind an active model mapping",
+      surface: {
+        protocol: "anthropic-messages",
+        apiBaseUrl: "https://gateway.example.com",
+        authHeaderName: "Authorization",
+        authHeaderTemplate: "Bearer {{secret}}",
+        modelMappings: { "claude-sonnet-5": "anthropic/claude-sonnet-4.6" },
+      },
+    },
+    {
+      name: "retired Claude Opus 4.8 upstream behind an active model mapping",
+      surface: {
+        protocol: "anthropic-messages",
+        apiBaseUrl: "https://gateway.example.com",
+        authHeaderName: "Authorization",
+        authHeaderTemplate: "Bearer {{secret}}",
+        modelMappings: { "claude-opus-5-5": "claude-opus-4-8" },
+      },
+    },
   ])("rejects $name", async ({ surface }) => {
     useSession();
     const response = await accept(
@@ -334,7 +372,7 @@ describe("custom model provider gateway routes", () => {
               authHeaderName: "Authorization",
               authHeaderTemplate: "Bearer {{secret}}",
               modelMappings: {
-                "claude-sonnet-5": "company-sonnet-production",
+                "claude-fable-5-1": "company-fable-production",
               },
             },
             {
@@ -343,9 +381,7 @@ describe("custom model provider gateway routes", () => {
               authHeaderName: "x-api-key",
               authHeaderTemplate: "{{secret}}",
               modelMappings: {
-                "gpt-5.6-sol": "company-gpt-production",
-                "deepseek-v4-flash": "deepseek-v4-flash-0731",
-                "deepseek-v4-pro": "company-deepseek-pro-production",
+                "gpt-6-astra": "company-gpt-production",
               },
             },
           ],
@@ -364,7 +400,7 @@ describe("custom model provider gateway routes", () => {
     }
     await runs.updateOrgModelPolicies(actor, [
       {
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         isDefault: true,
         defaultProviderType: "custom-anthropic-messages",
         credentialScope: "org",
@@ -379,7 +415,7 @@ describe("custom model provider gateway routes", () => {
         clientEventId: randomUUID(),
         agentId: agent.agentId,
         prompt: "exercise the custom gateway",
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
       },
       [201],
     );
@@ -396,7 +432,7 @@ describe("custom model provider gateway routes", () => {
     expect(claim.cliAgentType).toBe("claude-code");
     expect(claim.environment).toMatchObject({
       ANTHROPIC_BASE_URL: "https://gateway.example.com/anthropic",
-      ANTHROPIC_MODEL: "company-sonnet-production",
+      ANTHROPIC_MODEL: "company-fable-production",
     });
     const firewallName = `model-provider-surface:${messagesSurface.id}`;
     const firewall = claim.firewalls?.find((entry) => {
@@ -419,27 +455,9 @@ describe("custom model provider gateway routes", () => {
         ],
       },
     });
-    const runContextSnapshot = runContextSnapshotForRun(runId);
-    expect(runContextSnapshot.firewalls).toContainEqual({
-      kind: "inline",
-      name: firewallName,
-      apis: [
-        {
-          base: "https://gateway.example.com/anthropic/v1/messages",
-          hostPolicy: { kind: "publicDestination" },
-          auth: {
-            headerEntries: [
-              {
-                name: "Authorization",
-                value: `Bearer \${{ secrets.OKOU_MODEL_PROVIDER_API_KEY }}`,
-              },
-            ],
-          },
-          permissions: [],
-        },
-      ],
-    });
-    expect(JSON.stringify(runContextSnapshot)).not.toContain(
+    // This suite's sole telemetry assertion verifies redaction; the claim
+    // above verifies the actual Runner firewall through its production API.
+    expect(JSON.stringify(runContextSnapshotForRun(runId))).not.toContain(
       "runtime-gateway-secret",
     );
     expect(claim.secretValues).not.toContain("runtime-gateway-secret");
@@ -448,7 +466,7 @@ describe("custom model provider gateway routes", () => {
 
     await runs.updateOrgModelPolicies(actor, [
       {
-        model: "gpt-5.6-sol",
+        model: "gpt-6-astra",
         isDefault: true,
         defaultProviderType: "custom-openai-responses",
         credentialScope: "org",
@@ -462,7 +480,7 @@ describe("custom model provider gateway routes", () => {
         clientEventId: randomUUID(),
         agentId: agent.agentId,
         prompt: "exercise the custom Responses gateway",
-        model: "gpt-5.6-sol",
+        model: "gpt-6-astra",
       },
       [201],
     );
@@ -526,184 +544,5 @@ describe("custom model provider gateway routes", () => {
     expect(codexClaim.secretValues).not.toContain("runtime-gateway-secret");
 
     await runs.requestCancelRun(actor, codexRunId, [200]);
-
-    const deepseekMappings = [
-      {
-        logicalModel: "deepseek-v4-flash",
-        upstreamModel: "deepseek-v4-flash-0731",
-      },
-      {
-        logicalModel: "deepseek-v4-pro",
-        upstreamModel: "company-deepseek-pro-production",
-      },
-    ] as const;
-    for (const { logicalModel, upstreamModel } of deepseekMappings) {
-      await runs.updateOrgModelPolicies(actor, [
-        {
-          model: logicalModel,
-          isDefault: true,
-          defaultProviderType: "custom-openai-responses",
-          credentialScope: "org",
-          modelProviderId: null,
-          modelProviderSurfaceId: responsesSurface.id,
-        },
-      ]);
-      const deepseekSent = await chat.requestSendEvent(
-        actor,
-        {
-          clientEventId: randomUUID(),
-          agentId: agent.agentId,
-          prompt: `exercise the custom Responses gateway for ${logicalModel}`,
-          model: logicalModel,
-        },
-        [201],
-      );
-      if ("error" in deepseekSent.body) {
-        throw new Error(
-          `Expected the ${logicalModel} custom gateway chat send to succeed`,
-        );
-      }
-      const deepseekRunId = deepseekSent.body.runId;
-      if (!deepseekRunId) {
-        throw new Error(
-          `Expected the ${logicalModel} custom gateway chat send to create a run`,
-        );
-      }
-      await runs.heartbeatRunner(runnerGroup);
-      const deepseekClaim = await runs.claimRunnerJob(deepseekRunId);
-
-      expect(deepseekClaim.cliAgentType).toBe("codex");
-      expect(deepseekClaim.environment).toMatchObject({
-        OPENAI_BASE_URL: "https://gateway.example.com/openai/v1",
-        OPENAI_MODEL: upstreamModel,
-      });
-      const catalogModels =
-        deepseekClaim.codexRuntimeConfig?.modelCatalog?.models;
-      if (!Array.isArray(catalogModels) || catalogModels.length !== 1) {
-        throw new Error(`Expected one Codex catalog model for ${logicalModel}`);
-      }
-      const [catalogModel] = catalogModels;
-      if (!isRecord(catalogModel)) {
-        throw new Error(
-          `Expected a Codex catalog model record for ${logicalModel}`,
-        );
-      }
-      expect(catalogModel).toMatchObject({
-        slug: upstreamModel,
-        apply_patch_tool_type: "freeform",
-        input_modalities: ["text"],
-        base_instructions: expect.stringContaining("You are Codex"),
-        model_messages: {
-          instructions_template: expect.stringContaining("You are Codex"),
-        },
-      });
-      expect(deepseekClaim.appendSystemPrompt).toContain(
-        'okou image-recognition --file <image-path> --prompt "<instruction>"',
-      );
-
-      await runs.requestCancelRun(actor, deepseekRunId, [200]);
-    }
   }, 15_000);
-
-  it("admits an allowlisted DeepSeek custom gateway to Pi execution", async () => {
-    const bdd = createBddApi(context);
-    const runs = createRunsApi(context);
-    const actor = bdd.user();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped actor");
-    }
-    bdd.acceptAgentStorageWrites();
-    chatCallbacks.acceptChatObjectStorage();
-    chatCallbacks.disableVapid();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    runs.configureRunnerGroup();
-    await runs.grantProEntitlement(actor);
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      { [FeatureSwitchKey.PiLoop]: true },
-    );
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Custom DeepSeek gateway runtime",
-      visibility: "private",
-    });
-    mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-
-    const created = await accept(
-      mainClient().create({
-        headers: authHeaders(),
-        body: {
-          displayName: "Custom DeepSeek Gateway",
-          secret: "custom-deepseek-gateway-secret",
-          surfaces: [
-            {
-              protocol: "openai-responses",
-              apiBaseUrl: "https://gateway.example.com/openai/v1",
-              authHeaderName: "Authorization",
-              authHeaderTemplate: "Bearer {{secret}}",
-              modelMappings: {
-                "deepseek-v4-flash": "deepseek-v4-flash-0731",
-              },
-            },
-          ],
-        },
-      }),
-      [201],
-    );
-    const surfaceId = created.body.surfaces[0]?.id;
-    if (!surfaceId) {
-      throw new Error("Expected the custom DeepSeek gateway surface");
-    }
-    await runs.updateOrgModelPolicies(actor, [
-      {
-        model: "deepseek-v4-flash",
-        isDefault: true,
-        defaultProviderType: "custom-openai-responses",
-        credentialScope: "org",
-        modelProviderId: null,
-        modelProviderSurfaceId: surfaceId,
-      },
-    ]);
-
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        clientEventId: randomUUID(),
-        agentId: agent.agentId,
-        prompt: "run the custom DeepSeek gateway through Pi",
-        model: "deepseek-v4-flash",
-      },
-      [201],
-    );
-    if ("error" in sent.body || !sent.body.runId) {
-      throw new Error("Expected the custom DeepSeek gateway run to start");
-    }
-    expect(runContextSnapshotForRun(sent.body.runId)).toMatchObject({
-      cliAgentType: "pi",
-      environmentEntries: expect.arrayContaining([
-        {
-          name: "OPENAI_BASE_URL",
-          value: "https://gateway.example.com/openai/v1",
-        },
-        {
-          name: "OPENAI_MODEL",
-          value: "deepseek-v4-flash-0731",
-        },
-      ]),
-    });
-    const cancellation = await runs.requestCancelRun(
-      actor,
-      sent.body.runId,
-      [200, 400],
-    );
-    if (
-      cancellation.status === 400 &&
-      cancellation.body.error.code !== "RUN_NOT_CANCELLABLE"
-    ) {
-      throw new Error(
-        `Expected terminal cleanup error, received ${cancellation.body.error.code}`,
-      );
-    }
-  }, 30_000);
 });

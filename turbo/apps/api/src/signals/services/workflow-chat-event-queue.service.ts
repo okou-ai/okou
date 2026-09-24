@@ -4,7 +4,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import {
   and,
@@ -27,6 +27,7 @@ import {
   staleChatEventQueueThreadIds,
 } from "./chat-event-queue.service";
 import { insertChatEvent, replaceChatEvent } from "./chat-event.service";
+import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { recordOfficialWorkflowThreadProvenance } from "./morning-brief-thread-provenance.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import {
@@ -55,7 +56,7 @@ async function chatEventQueueAdmissionLock(
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
 }
 
-async function pendingTickForAutomation(
+export async function pendingTickForAutomation(
   db: Pick<Db, "select">,
   automationId: string,
 ): Promise<string | undefined> {
@@ -145,6 +146,7 @@ export interface WorkflowScheduleClaimPlan {
 
 interface WorkflowQueueAdmissionArgs {
   readonly automation: typeof workflowAutomations.$inferSelect;
+  readonly queueEventId?: string;
   readonly workflowName: string;
   readonly displayPrompt: string;
   readonly agentRunSource?: ChatAgentRunSourceAnnotation;
@@ -194,6 +196,44 @@ async function attemptWorkflowQueueAdmission(
   args: WorkflowQueueAdmissionArgs,
 ): Promise<WorkflowQueueAdmission> {
   const { automation } = args;
+  const splitWrites = await isSplitChatEventWriteEnabled(db);
+  const [workflow] = await db
+    .select({ displayName: workflows.displayName })
+    .from(workflows)
+    .where(eq(workflows.id, automation.workflowId))
+    .limit(1);
+  if (!workflow) {
+    throw new Error(`Workflow not found: ${automation.workflowId}`);
+  }
+  const automationUserMessage = createUserMessageDocument({
+    text: args.displayPrompt,
+    nonContentPart: {
+      type: "automation",
+      workflowName: workflow.displayName?.trim() || args.workflowName,
+      workflowId: automation.workflowId,
+      ...(args.triggerBrief === undefined
+        ? {}
+        : { automationBrief: args.triggerBrief }),
+    },
+  });
+  const userMessage = args.agentRunSource
+    ? withAgentRunSourceAnnotation(automationUserMessage, args.agentRunSource)
+    : automationUserMessage;
+  const event = {
+    id: args.queueEventId,
+    chatThreadId: args.chatThreadId,
+    eventType: "input.automation",
+    content: null,
+    userMessage,
+    runId: null,
+    automationId: automation.id,
+    workflowName: args.workflowName,
+    workflowAutomationEventType: args.workflowAutomationEventType,
+    workflowAutomationEventPayload: args.workflowAutomationEventPayload,
+    connectorSourceId: args.connectorSourceId,
+    publicBrand: args.publicBrand,
+    triggerBrief: args.triggerBrief ?? null,
+  } as const;
   return await db.transaction(async (tx) => {
     await chatEventQueueAdmissionLock(tx, args.chatThreadId);
 
@@ -209,45 +249,7 @@ async function attemptWorkflowQueueAdmission(
       return { kind: "schedule_unavailable", reason: "superseded" };
     }
 
-    const [workflow] = await tx
-      .select({ displayName: workflows.displayName })
-      .from(workflows)
-      .where(eq(workflows.id, automation.workflowId))
-      .limit(1);
-    if (!workflow) {
-      throw new Error(`Workflow not found: ${automation.workflowId}`);
-    }
-    const automationUserMessage = createUserMessageDocument({
-      text: args.displayPrompt,
-      nonContentPart: {
-        type: "automation",
-        workflowName: workflow.displayName?.trim() || args.workflowName,
-        workflowId: automation.workflowId,
-        ...(args.triggerBrief === undefined
-          ? {}
-          : { automationBrief: args.triggerBrief }),
-      },
-    });
-    const userMessage = args.agentRunSource
-      ? withAgentRunSourceAnnotation(automationUserMessage, args.agentRunSource)
-      : automationUserMessage;
-    const inserted = await insertChatEvent(tx, {
-      chatThreadId: args.chatThreadId,
-      eventType: "input.automation",
-      content: null,
-      userMessage,
-      runId: null,
-      automationId: automation.id,
-      workflowName: args.workflowName,
-      workflowAutomationEventType: args.workflowAutomationEventType,
-      workflowAutomationEventPayload: args.workflowAutomationEventPayload,
-      connectorSourceId: args.connectorSourceId,
-      publicBrand: args.publicBrand,
-      triggerBrief: args.triggerBrief ?? null,
-    });
-    if (!inserted) {
-      throw new Error("Workflow queue event insert returned no row");
-    }
+    // Acquire any provenance row lock before allocating the event sequence.
     // Every fired automation passes through here, including the scheduler's
     // bypass of thread creation when the binding already has a thread. The
     // automation's own owner and workflow identity resolve the classification,
@@ -259,6 +261,18 @@ async function attemptWorkflowQueueAdmission(
       orgId: automation.orgId,
       workflowIds: [automation.workflowId],
     });
+    const conflict = args.queueEventId === undefined ? "none" : "id";
+    // Context commits with the admitted event; a coalesced or superseded tick
+    // writes neither.
+    const inserted = await insertChatEvent(tx, event, conflict, {
+      splitWrites,
+    });
+    if (!inserted) {
+      if (args.queueEventId !== undefined) {
+        return { kind: "coalesced" };
+      }
+      throw new Error("Workflow queue event insert returned no row");
+    }
     await args.persistSourceTransition?.(tx);
     if (claim) {
       await args.scheduleClaim?.bindQueueEvent(tx, {

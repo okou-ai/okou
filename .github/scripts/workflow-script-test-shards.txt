@@ -34,6 +34,7 @@
 2 deploy-desktop-workflow-test.sh
 2 docker-toolchain-workflow-test.sh
 2 implicit-npm-audit-test.sh
+2 ios-testflight-workflow-test.sh
 2 kms-production-target-test.sh
 2 kms-recovery-snapshot-inspect-test.sh
 2 native-only-ci-test.sh

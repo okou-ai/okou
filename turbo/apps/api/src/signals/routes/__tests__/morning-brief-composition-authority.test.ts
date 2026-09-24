@@ -31,7 +31,7 @@ import {
   createWorkflowsBddApi,
   mockGoogleCalendarConnectorOAuth,
 } from "./helpers/api-bdd-workflows";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { seedRetainedNativeMorningBriefForUser } from "./helpers/feature-switches";
 import {
   seedSlackOrgConnection$,
   seedSlackOrgInstallation$,
@@ -487,7 +487,7 @@ async function setupOwner(
     { slackWorkspaceId: slack.slackWorkspaceId, userId: actor.userId },
     context.signal,
   );
-  await updateFeatureSwitchesForUser(
+  await seedRetainedNativeMorningBriefForUser(
     context,
     { orgId: actor.orgId, userId: actor.userId },
     { [FeatureSwitchKey.NativeMorningBrief]: true },

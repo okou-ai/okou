@@ -560,6 +560,8 @@ describe("okou workflow automations", () => {
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped workflow actor");
     }
+    // Fable keeps automation runs on the claimable native Runner route.
+    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const agent = await wf.createAgent(actor, {
       displayName: "Automation Agent",
     });
@@ -5729,7 +5731,7 @@ describe("okou workflow automations", () => {
     // The bound chat thread survives the automation deletion and still carries
     // the org default model selection.
     await expect(wf.readThreadSelectedModel(String(threadId))).resolves.toBe(
-      "claude-sonnet-5",
+      "claude-fable-5-1",
     );
   });
 

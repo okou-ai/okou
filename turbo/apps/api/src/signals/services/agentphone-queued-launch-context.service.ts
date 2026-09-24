@@ -1,9 +1,10 @@
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { agents } from "@okouai/db/schema/agent";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq } from "drizzle-orm";
 
 import { optionalEnv } from "../../lib/env";
@@ -43,7 +44,6 @@ type AgentPhoneLaunchContextRow = Pick<
   | "agentphoneAgentId"
 > & {
   readonly agentId: string;
-  readonly publicBrand: PublicBrand | null;
 };
 
 function requiredAgentPhoneLaunchContext(
@@ -61,8 +61,7 @@ function requiredAgentPhoneLaunchContext(
     row.fromNumber === null ||
     row.toNumber === null ||
     row.userLinkId === null ||
-    row.agentphoneAgentId === null ||
-    row.publicBrand === null
+    row.agentphoneAgentId === null
   ) {
     return null;
   }
@@ -79,7 +78,6 @@ function requiredAgentPhoneLaunchContext(
     toNumber: row.toNumber,
     userLinkId: row.userLinkId,
     agentphoneAgentId: row.agentphoneAgentId,
-    publicBrand: row.publicBrand,
   };
 }
 
@@ -108,7 +106,6 @@ async function loadAgentPhoneLaunchContext(
       userLinkId: chatAgentphoneContext.userLinkId,
       agentphoneAgentId: chatAgentphoneContext.agentphoneAgentId,
       agentId: agents.id,
-      publicBrand: chatAgentphoneContext.publicBrand,
     })
     .from(chatEvents)
     .innerJoin(
@@ -177,7 +174,7 @@ export async function loadAgentPhoneQueuedLaunchMaterial(
       }),
       context.threadContext,
     ),
-    publicBrand: context.publicBrand,
+    publicBrand: PUBLIC_BRAND,
     agentphoneDelivery: agentphoneDeliveryTargetSchema.parse({
       messageId: context.messageId,
       conversationId: context.conversationId,

@@ -83,8 +83,8 @@ lease before reading current Clerk membership. Failed attempts retry after 1,
 workers. Skipped requests do not extend an existing deadline. Explicit preference changes keep
 their own immediate behavior. Membership qualification preserves its lease;
 a new membership event or explicit choice invalidates an older retry writer.
-Worker notifications follow enrollment state or error changes; unchanged local
-deferrals do not repeatedly invalidate the preference shown in Settings.
+Settings reads the preference on load; enrollment progress is not pushed to an
+open page.
 
 Deletion records the departed membership generation even when enrollment has
 not started or an earlier live lookup already marked the member departed.
@@ -119,10 +119,9 @@ mutation, exactly as the preference surface does today.
   when an explicit account is missing or revoked.
 - `FeatureSwitchKey.NativeMorningBrief` (persisted/API key
   `simpleMorningBrief` for mixed-version compatibility) selects the
-  implementation. It is registered off by default and enabled for the staff org
-  allowlist only, under S8
-  ([#36203](https://github.com/okou-ai/okou/issues/36203)); a per-user override
-  still takes precedence over that allowlist in either direction. It is
+  implementation. During retirement stage 1 it has no enabled cohort, including
+  staff; a data migration resets stored `true` overrides and the API refuses
+  new ones. The key remains registered while the rollback drains. It is
   independent of `MorningBrief`, which remains the user-facing availability
   switch: turning the implementation switch on must never change whether a user
   has Morning Brief, and turning it off must not discard choices the user made
@@ -138,9 +137,9 @@ serialization rehearsal for the native pipeline, **not** an authority, an
 execution record, or a cache that makes anything faster. The legacy installation
 and its automation still decide everything; the legacy queries all still run.
 
-`FeatureSwitchKey.NativeMorningBrief` gates both directions and is off by
-default, so the production path is unchanged for every organization outside the
-staff org allowlist it is currently enabled for.
+`FeatureSwitchKey.NativeMorningBrief` remains registered for rollback
+compatibility, but stage 1 disables its staff cohort and existing opt-ins. The
+legacy installation stays authoritative after a verified rollback.
 
 ### What is copied, and when it may be used
 

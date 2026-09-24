@@ -23,7 +23,6 @@ import {
 } from "lucide-react";
 import {
   type TelegramBot,
-  type TelegramBotStatus,
   type TelegramSetupStatus,
   OFFICIAL_TELEGRAM_BOT_ID,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
@@ -54,8 +53,11 @@ import {
 } from "@okouai/ui/components/ui/popover";
 import { brandName$ } from "../../signals/branding.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { apiBase$ } from "../../signals/fetch.ts";
+import {
+  registerAndConnectTelegramBot$,
+  authorizeTelegramBot$,
+} from "../../signals/okou-page/telegram-authorization.ts";
 import {
   defaultAgentId$,
   defaultAgentName$,
@@ -65,14 +67,12 @@ import { isOrgAdmin$ } from "../../signals/org.ts";
 import {
   advanceTelegramAddSetupStep$,
   checkTelegramAddSetupStatus$,
-  closeTelegramAddDialogAfterRegistration$,
   completeTelegramAddDialogClose$,
   completeTelegramReinstallDialogClose$,
   copyTelegramValue$,
   disconnectTelegramAccount$,
   goBackTelegramAddSetupStep$,
   markTelegramAvatarFailed$,
-  registerTelegramBot$,
   reinstallTelegramBot$,
   setTelegramAddDialogOpen$,
   setTelegramReinstallDialogBotId$,
@@ -959,6 +959,7 @@ interface AddTelegramBotDialogInnerProps {
   agents: AgentResponse[];
   defaultAgent: DefaultAgentLabel;
   disabled: boolean;
+  secondary: boolean;
   botToken: string;
   open: boolean;
   agentId: string | undefined;
@@ -966,18 +967,17 @@ interface AddTelegramBotDialogInnerProps {
   setBotToken: (value: string) => void;
   setAgentId: (value: string | null) => void;
   setOpen: (open: boolean) => void;
-  closeAfterRegistration: (botId: string) => void;
-  onCloseComplete: (botId: string) => void;
   registerBot: (
     input: { botToken: string; defaultAgentId?: string },
     signal: AbortSignal,
-  ) => Promise<TelegramBotStatus>;
+  ) => Promise<void>;
   adding: boolean;
 }
 
 interface AddTelegramBotDialogFrameProps {
   open: boolean;
   disabled: boolean;
+  secondary: boolean;
   adding: boolean;
   flow: AddTelegramBotSetupFlow;
   canSubmit: boolean;
@@ -987,7 +987,6 @@ interface AddTelegramBotDialogFrameProps {
   agentId: string | undefined;
   selectedAgentLabel: string;
   onOpenChange: (open: boolean) => void;
-  onCloseComplete: (botId: string) => void;
   onAddBot: () => void;
   onCancel: () => void;
   onAgentChange: (value: string | null) => void;
@@ -996,6 +995,7 @@ interface AddTelegramBotDialogFrameProps {
 function AddTelegramBotDialogFrame({
   open,
   disabled,
+  secondary,
   adding,
   flow,
   canSubmit,
@@ -1005,7 +1005,6 @@ function AddTelegramBotDialogFrame({
   agentId,
   selectedAgentLabel,
   onOpenChange,
-  onCloseComplete,
   onAddBot,
   onCancel,
   onAgentChange,
@@ -1018,16 +1017,18 @@ function AddTelegramBotDialogFrame({
       onOpenChange={onOpenChange}
       onOpenChangeComplete={(nextOpen) => {
         if (!nextOpen) {
-          const registeredBotId = completeClose();
-          if (registeredBotId) {
-            onCloseComplete(registeredBotId);
-          }
+          completeClose();
         }
       }}
     >
       <DialogTrigger
         render={
-          <Button type="button" size="sm" disabled={disabled}>
+          <Button
+            type="button"
+            size="sm"
+            variant={secondary ? "neutral" : "default"}
+            disabled={disabled}
+          >
             <Plus size={16} />
             {t(($) => {
               return $.connectors.providerSettings.telegram.addBot;
@@ -1096,6 +1097,7 @@ function AddTelegramBotDialogInner({
   agents,
   defaultAgent,
   disabled,
+  secondary,
   botToken,
   open,
   agentId,
@@ -1103,8 +1105,6 @@ function AddTelegramBotDialogInner({
   setBotToken,
   setAgentId,
   setOpen,
-  closeAfterRegistration,
-  onCloseComplete,
   registerBot,
   adding,
 }: AddTelegramBotDialogInnerProps) {
@@ -1164,26 +1164,19 @@ function AddTelegramBotDialogInner({
     setOpen(false);
   };
 
-  const handleRegisteredBot = (bot: TelegramBotStatus) => {
-    closeAfterRegistration(bot.id);
-  };
-
   const handleAddBot = () => {
     if (!canSubmit || !agentId) {
       return;
     }
 
     detach(
-      (async () => {
-        const bot = await registerBot(
-          {
-            botToken: botToken.trim(),
-            defaultAgentId: agentId,
-          },
-          pageSignal,
-        );
-        handleRegisteredBot(bot);
-      })(),
+      registerBot(
+        {
+          botToken: botToken.trim(),
+          defaultAgentId: agentId,
+        },
+        pageSignal,
+      ),
       Reason.DomCallback,
     );
   };
@@ -1209,6 +1202,7 @@ function AddTelegramBotDialogInner({
     <AddTelegramBotDialogFrame
       open={open}
       disabled={disabled}
+      secondary={secondary}
       adding={adding}
       flow={flow}
       canSubmit={canSubmit}
@@ -1218,7 +1212,6 @@ function AddTelegramBotDialogInner({
       agentId={agentId}
       selectedAgentLabel={selectedAgentLabel}
       onOpenChange={handleOpenChange}
-      onCloseComplete={onCloseComplete}
       onAddBot={handleAddBot}
       onCancel={handleCancel}
       onAgentChange={setAgentId}
@@ -1383,10 +1376,12 @@ function AddTelegramBotDialog({
   agents,
   defaultAgent,
   disabled,
+  secondary,
 }: {
   agents: AgentResponse[];
   defaultAgent: DefaultAgentLabel;
   disabled: boolean;
+  secondary: boolean;
 }) {
   const botToken = useGet(telegramBotTokenForm$);
   const open = useGet(telegramAddDialogOpen$);
@@ -1400,18 +1395,10 @@ function AddTelegramBotDialog({
   const setBotToken = useSet(setTelegramBotTokenForm$);
   const setAgentId = useSet(setTelegramBotAgentForm$);
   const setOpen = useSet(setTelegramAddDialogOpen$);
-  const closeAfterRegistration = useSet(
-    closeTelegramAddDialogAfterRegistration$,
+  const [registerLoadable, registerBot] = useLoadableSet(
+    registerAndConnectTelegramBot$,
   );
-  const navigate = useSet(detachedNavigateTo$);
-  const [registerLoadable, registerBot] = useLoadableSet(registerTelegramBot$);
   const adding = registerLoadable.state === "loading";
-
-  const navigateToRegisteredBot = (botId: string) => {
-    navigate(ROUTES.telegramConnect, {
-      searchParams: new URLSearchParams({ bot: botId }),
-    });
-  };
 
   return (
     <AddTelegramBotDialogInner
@@ -1419,6 +1406,7 @@ function AddTelegramBotDialog({
       agents={agents}
       defaultAgent={defaultAgent}
       disabled={disabled}
+      secondary={secondary}
       botToken={botToken}
       open={open}
       agentId={agentId}
@@ -1426,8 +1414,6 @@ function AddTelegramBotDialog({
       setBotToken={setBotToken}
       setAgentId={setAgentId}
       setOpen={setOpen}
-      closeAfterRegistration={closeAfterRegistration}
-      onCloseComplete={navigateToRegisteredBot}
       registerBot={registerBot}
       adding={adding}
     />
@@ -1577,41 +1563,26 @@ function TelegramConnectAction({
   disabled: boolean;
 }) {
   const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const [connection, connect] = useLoadableSet(authorizeTelegramBot$);
   if (bot.isConnected) {
     return null;
   }
 
-  if (disabled) {
-    return (
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled
-        className="h-9 justify-center"
-      >
-        {t(($) => {
-          return $.connectors.actions.connect;
-        })}
-      </Button>
-    );
-  }
-
   return (
-    <Link
-      pathname={ROUTES.telegramConnect}
-      options={{
-        searchParams: new URLSearchParams({ bot: bot.id }),
+    <Button
+      type="button"
+      size="sm"
+      disabled={disabled || connection.state === "loading"}
+      onClick={() => {
+        detach(connect(bot.id, pageSignal), Reason.DomCallback);
       }}
-      className={cn(
-        buttonVariants({ variant: "outline", size: "sm" }),
-        "h-9 justify-center",
-      )}
+      className="h-9 justify-center"
     >
       {t(($) => {
         return $.connectors.actions.connect;
       })}
-    </Link>
+    </Button>
   );
 }
 
@@ -2207,6 +2178,9 @@ function TelegramBotsCard({
             agents={agents}
             defaultAgent={defaultAgent}
             disabled={agentsLoading}
+            secondary={bots.some((bot) => {
+              return !bot.isConnected;
+            })}
           />
         ) : null}
       </div>

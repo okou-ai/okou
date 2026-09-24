@@ -1066,6 +1066,16 @@ const sandboxOperationSchema = z.object({
   dns_readiness_timing: z
     .enum(["paired", "unavailable", "inconsistent"])
     .optional(),
+  storage_batch_guest_duration_ms: z
+    .number()
+    .int()
+    .min(0)
+    .max(4_294_967_295)
+    .optional(),
+  storage_batch_outer_residual_ms: z.number().int().nonnegative().optional(),
+  storage_batch_timing: z
+    .enum(["paired", "unavailable", "inconsistent"])
+    .optional(),
   runner_startup_path: runnerStartupPathSchema.optional(),
   sandbox_reuse_result: sandboxReuseResultSchema.optional(),
   runner_pre_spawn_concurrency_bucket:

@@ -6,7 +6,6 @@ import {
   OnboardingSlackPage,
 } from "../../views/onboarding-sources-first/onboarding-import-pages.tsx";
 import { OnboardingReadyPage } from "../../views/onboarding-sources-first/onboarding-ready-page.tsx";
-import { OnboardingProfilePage } from "../../views/onboarding-sources-first/onboarding-profile-page.tsx";
 import {
   OnboardingExperiencePage,
   OnboardingIndustryPage,
@@ -45,7 +44,9 @@ import {
   claimSourcesFirstStartEvent$,
   clearSourcesFirstDraft$,
   restoreSourcesFirstDraft$,
+  saveSourcesFirstStep$,
   setSourcesFirstFlow$,
+  SOURCES_FIRST_STEP_ROUTES,
   sourcesFirstDraft$,
   sourcesFirstSteps,
   type SourcesFirstStep,
@@ -121,14 +122,23 @@ function createSourcesFirstPageSetup(
 
     const status = await get(onboardingStatus$);
     signal.throwIfAborted();
+    let resumeStep: SourcesFirstStep | null = null;
     if (status.hasOrg) {
       const { orgId, userId } = await get(authenticatedIdentity$);
       signal.throwIfAborted();
-      set(restoreSourcesFirstDraft$, { orgId, userId });
+      resumeStep = set(restoreSourcesFirstDraft$, { orgId, userId });
     }
     if (!status.needsOnboarding) {
       set(clearSourcesFirstDraft$);
       set(forwardOnboardedVisitor$);
+      return;
+    }
+    if (
+      config.step === "industry" &&
+      resumeStep !== null &&
+      resumeStep !== "industry"
+    ) {
+      set(redirectTo$, SOURCES_FIRST_STEP_ROUTES[resumeStep]);
       return;
     }
     set(resumeOnboardingRecommendation$, signal);
@@ -145,10 +155,6 @@ function createSourcesFirstPageSetup(
     set(setSourcesFirstFlow$, flow);
 
     const draft = get(sourcesFirstDraft$);
-    if (config.step === "profile" && draft.industry === null) {
-      set(redirectTo$, ROUTES.onboarding);
-      return;
-    }
     if (config.step !== "industry" && config.step !== "sources") {
       // The user's own connections, reloaded on connect, decide whether any
       // source is there yet; the catalog is not needed for that.
@@ -168,6 +174,7 @@ function createSourcesFirstPageSetup(
       return;
     }
 
+    set(saveSourcesFirstStep$, config.step);
     set(updatePage$, createElement(config.Page), "none");
     set(updateDocumentTitle$, config.title());
     // One integration's status decides what a step offers, never whether the
@@ -251,16 +258,6 @@ export const setupOnboardingSkillsPage$ = createSourcesFirstPageSetup({
   },
   Page: OnboardingSkillsPage,
   enter: enterSkillImport$,
-});
-
-export const setupOnboardingProfilePage$ = createSourcesFirstPageSetup({
-  step: "profile",
-  title: () => {
-    return i18n.t(($) => {
-      return $.onboarding.sourcesFirst.documentTitles.profile;
-    });
-  },
-  Page: OnboardingProfilePage,
 });
 
 /** Keep the AgentPhone tile's link status current while this step is open. */

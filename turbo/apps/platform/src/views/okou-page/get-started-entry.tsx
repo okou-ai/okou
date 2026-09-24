@@ -2,6 +2,7 @@ import type {
   GetStartedClaim,
   GetStartedQuestKey,
 } from "@okouai/api-contracts/contracts/get-started";
+import type { AgentPhoneLinkCodeResponse } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import type { ReactNode } from "react";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -60,6 +61,13 @@ import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { SlackMark } from "./components/slack-mark.tsx";
+import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
+import {
+  agentPhoneLinkStatus$,
+  createAgentPhoneLinkCode$,
+  setAgentPhoneConnectDialogOpen$,
+} from "../../signals/okou-page/agentphone.ts";
+import { AgentPhoneConnectDialog } from "./agentphone-connect-dialog.tsx";
 import {
   GetStartedCheckinDialog,
   GetStartedQuestIntroDialog,
@@ -115,6 +123,14 @@ function XMark() {
 const QUEST_ICONS = Object.freeze<Record<GetStartedQuestKey, ReactNode>>({
   connector: <Link2 className="text-muted-foreground" />,
   slack: <SlackMark size={16} />,
+  // The same iMessage mark the phone card on Integrations carries.
+  imessage: (
+    <img
+      src={settingsIconAssetUrl("imessage")}
+      alt=""
+      className="size-4 shrink-0"
+    />
+  ),
   workflow: <Route className="text-muted-foreground" />,
   invite: <UserPlus className="text-muted-foreground" />,
   share: <XMark />,
@@ -161,6 +177,21 @@ function useQuestCopy(): Record<GetStartedQuestKey, QuestCopy> {
       unit: null,
       action: t(($) => {
         return $.chat.agentPage.getStarted.slack.action;
+      }),
+    },
+    imessage: {
+      name: t(($) => {
+        return $.chat.agentPage.getStarted.imessage.name;
+      }),
+      description: t(
+        ($) => {
+          return $.chat.agentPage.getStarted.imessage.description;
+        },
+        { assistantName },
+      ),
+      unit: null,
+      action: t(($) => {
+        return $.chat.agentPage.getStarted.imessage.action;
       }),
     },
     workflow: {
@@ -791,6 +822,7 @@ function ShareOnXDialog() {
  */
 function useQuestHandoffs(
   checkIn: (signal: AbortSignal) => Promise<void>,
+  connectPhone: () => void,
 ): Record<GetStartedQuestKey, () => void> {
   const pageSignal = useGet(pageSignal$);
   const openSettings = useSet(openSettingsDialogAt$);
@@ -804,6 +836,7 @@ function useQuestHandoffs(
     slack: () => {
       navigate(ROUTES.works);
     },
+    imessage: connectPhone,
     workflow: () => {
       navigate(ROUTES.workflows);
     },
@@ -904,7 +937,11 @@ function GetStartedPanel({
   const actions = useQuestActions(handoffs);
   const introEnabled = useQuestIntroEnabled();
   const opensModal = (quest: GetStartedQuest): boolean => {
-    return quest.key === "share" || (introEnabled && questHasIntro(quest.key));
+    return (
+      quest.key === "share" ||
+      quest.key === "imessage" ||
+      (introEnabled && questHasIntro(quest.key))
+    );
   };
   // The check-in leads whatever its state, because it is asked again tomorrow:
   // a daily row that changes place with the day would have to be found again
@@ -990,7 +1027,18 @@ export function GetStartedEntry() {
   // The dialogs outlive the dropdown that opened them, so the handoffs they
   // run are built here rather than inside the panel's own tree.
   const [checkinLoadable, checkIn] = useLoadableSet(checkInGetStarted$);
-  const handoffs = useQuestHandoffs(checkIn);
+  const [connectionCodeLoadable, createConnectionCode] = useLoadableSet(
+    createAgentPhoneLinkCode$,
+  );
+  const pageSignal = useGet(pageSignal$);
+  const setConnectOpen = useSet(setAgentPhoneConnectDialogOpen$);
+  const requestConnectionCode = () => {
+    detach(createConnectionCode(pageSignal), Reason.DomCallback);
+  };
+  const handoffs = useQuestHandoffs(checkIn, () => {
+    requestConnectionCode();
+    setConnectOpen(true);
+  });
 
   if (
     questsLoadable.state !== "hasData" ||
@@ -1004,6 +1052,9 @@ export function GetStartedEntry() {
   }
   const checkinQuest = questsLoadable.data.find((quest) => {
     return quest.key === "checkin";
+  });
+  const imessageQuest = questsLoadable.data.find((quest) => {
+    return quest.key === "imessage";
   });
 
   return (
@@ -1057,6 +1108,43 @@ export function GetStartedEntry() {
           streak={summary.checkinStreak}
         />
       )}
+      {/* The link is only read where the quest is offered. */}
+      {imessageQuest && (
+        <ImessageQuestDialog
+          connectionCode={
+            connectionCodeLoadable.state === "hasData"
+              ? connectionCodeLoadable.data
+              : null
+          }
+          connectionCodeFailed={connectionCodeLoadable.state === "hasError"}
+          onRetry={requestConnectionCode}
+        />
+      )}
     </>
+  );
+}
+
+/** The phone connect dialog every other entry point opens, fed the same way. */
+function ImessageQuestDialog({
+  connectionCode,
+  connectionCodeFailed,
+  onRetry,
+}: {
+  readonly connectionCode: AgentPhoneLinkCodeResponse | null;
+  readonly connectionCodeFailed: boolean;
+  readonly onRetry: () => void;
+}) {
+  const statusLoadable = useLastLoadable(agentPhoneLinkStatus$);
+  return (
+    <AgentPhoneConnectDialog
+      phoneNumber={
+        statusLoadable.state === "hasData"
+          ? statusLoadable.data.agentPhoneNumber
+          : null
+      }
+      connectionCode={connectionCode}
+      connectionCodeFailed={connectionCodeFailed}
+      onRetry={onRetry}
+    />
   );
 }

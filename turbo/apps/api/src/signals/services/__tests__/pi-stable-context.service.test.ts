@@ -173,6 +173,7 @@ describe("Pi stable context projection", () => {
       bankingEnabled: false,
       vncEnabled: false,
       larkEnabled: false,
+      discordEnabled: false,
       deliveryFormatGuidanceEnabled: false,
       presentationConvertEnabled: false,
       customConnectorMcpEnabled: false,

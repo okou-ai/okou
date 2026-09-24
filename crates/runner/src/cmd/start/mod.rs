@@ -8,16 +8,13 @@
 //! The sibling modules keep focused responsibilities out of this orchestration
 //! file:
 //! - `factory_lifecycle`: sandbox factory creation and shutdown.
-//! - `runner-supervisor`: idle-pool lifecycle, replenishment, status, and destroy policy.
+//! - `runner-supervisor`: idle-pool, heartbeat, claimed activation ownership, completion settlement, and orphan-recovery policy.
 //! - `identity`: persistent runner id storage.
 //! - `job_discovery`: discovery branch handling and idle-reuse admission.
-//! - `job_lifecycle`: cleanup, budget, and completion ownership state.
 //! - `job_spawn`: claimed job task spawning, completion, and panic cleanup.
 //! - `job_terminal_log`: terminal outcome tracing and diagnostic projection.
 //! - `mitm_restart`: mitmproxy crash restart and backoff.
-//! - `orphan_reap`: orphan active-run reconciliation.
-//! - `ownership`: active/idle/orphan ownership transition ordering.
-//! - `sandbox_finalization`: post-executor sandbox park/destroy finalization.
+//! - `runner-supervisor::sandbox_finalization`: post-executor park/handoff/destroy policy.
 //! - `signals`: lifecycle signal registration, task ownership, and dispatch.
 //!
 //! Important invariants:
@@ -96,14 +93,10 @@ mod finalizing_claim;
 mod heartbeat;
 mod identity;
 mod job_discovery;
-mod job_lifecycle;
 mod job_spawn;
 mod job_terminal_log;
 mod mitm_restart;
-mod orphan_reap;
-mod ownership;
 mod prune_idle;
-mod sandbox_finalization;
 mod signals;
 
 use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime, start_factories};
@@ -116,9 +109,6 @@ use mitm_restart::{
     finish_mitm_restart_before_shutdown, handle_mitm_restart_result, maybe_spawn_mitm_restart,
     recv_mitm_restart, stop_mitm_retries,
 };
-use orphan_reap::{
-    OrphanReapMode, OrphanReapProcessDiscovery, OrphanedActiveRuns, reap_orphaned_active_runs,
-};
 use runner_lifecycle::active_runs::ActiveRuns;
 use runner_lifecycle::workspace_image_cache::snapshot::WorkspaceCacheStateSnapshot;
 use runner_supervisor::blank_pool::{BlankPoolReplenisher, BlankProfile};
@@ -127,6 +117,9 @@ use runner_supervisor::heartbeat::{
     HeartbeatSnapshotMetadata, collect_heartbeat_state, refresh_initial_workspace_cache_snapshot,
 };
 use runner_supervisor::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
+#[cfg(test)]
+use runner_supervisor::orphan_reap::OrphanReapProcessDiscovery;
+use runner_supervisor::orphan_reap::{OrphanReapMode, OrphanedActiveRuns};
 use signals::{
     EarlySignals, SignalController, SignalHandlerTask, handle_stopping_signal, recv_handler_task,
 };
@@ -1090,6 +1083,7 @@ async fn run_start_with_home(
             signal_source: SignalSource::Real(signals),
         },
         orphan_reap: OrphanReapState {
+            #[cfg(test)]
             process_discovery: None,
         },
         #[cfg(test)]
@@ -1226,7 +1220,31 @@ struct SignalState {
 struct OrphanReapState {
     /// Deterministic process snapshot for orphan-reaper tests. Production leaves
     /// this unset and scans `/proc`.
+    #[cfg(test)]
     process_discovery: Option<OrphanReapProcessDiscovery>,
+}
+
+impl OrphanReapState {
+    async fn reap(
+        &self,
+        orphans: &OrphanedActiveRuns,
+        idle_pool: &SharedIdlePool,
+        status: &StatusTracker,
+        mode: OrphanReapMode,
+    ) {
+        #[cfg(test)]
+        runner_supervisor::orphan_reap::reap_orphaned_active_runs_with_discovery(
+            orphans,
+            idle_pool,
+            status,
+            mode,
+            self.process_discovery.as_ref(),
+        )
+        .await;
+        #[cfg(not(test))]
+        runner_supervisor::orphan_reap::reap_orphaned_active_runs(orphans, idle_pool, status, mode)
+            .await;
+    }
 }
 
 #[cfg(test)]
@@ -1683,6 +1701,34 @@ fn maybe_panic_outer_job(
 ) {
     if configured == Some(point) {
         panic!("simulated outer job panic at {point:?} for {run_id}");
+    }
+}
+
+#[cfg(test)]
+fn finalization_test_hooks(
+    configured: Option<OuterJobPanicPoint>,
+    observer: StartLoopTestObserver,
+) -> runner_supervisor::sandbox_finalization::FinalizationTestHooks {
+    use runner_supervisor::sandbox_finalization::{FinalizationTestEvent, FinalizationTestHooks};
+
+    FinalizationTestHooks {
+        on_event: Some(Arc::new(move |event| match event {
+            FinalizationTestEvent::BeforeIdlePoolOwnershipTransfer { run_id } => {
+                observer.notify_before_idle_pool_ownership_transfer(run_id);
+            }
+            FinalizationTestEvent::SandboxParkedForReuse { run_id, reuse_key } => {
+                observer.notify_sandbox_parked_for_reuse(run_id, reuse_key);
+            }
+            FinalizationTestEvent::HandoffOwned { run_id } => {
+                maybe_panic_outer_job(configured, OuterJobPanicPoint::HandoffOwned, run_id);
+            }
+            FinalizationTestEvent::IdlePoolOwned { run_id } => {
+                maybe_panic_outer_job(configured, OuterJobPanicPoint::IdlePoolOwned, run_id);
+            }
+            FinalizationTestEvent::DestroyCompleted { run_id } => {
+                maybe_panic_outer_job(configured, OuterJobPanicPoint::DestroyCompleted, run_id);
+            }
+        })),
     }
 }
 
@@ -2526,12 +2572,11 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
             result = jobs.join_next(), if !jobs.is_empty() => {
                 handle_job_result(result).await;
                 if !orphaned_active_runs.is_empty() {
-                    reap_orphaned_active_runs(
+                    orphan_reap.reap(
                         &orphaned_active_runs,
                         &shared.idle_pool,
                         &shared.status,
                         OrphanReapMode::Immediate,
-                        orphan_reap.process_discovery.as_ref(),
                     ).await;
                 }
             }
@@ -2542,12 +2587,11 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
             }
             // Reconcile active runs left visible after an outer job-task panic.
             _ = orphan_reap_tick.tick(), if !orphaned_active_runs.is_empty() => {
-                reap_orphaned_active_runs(
+                orphan_reap.reap(
                     &orphaned_active_runs,
                     &shared.idle_pool,
                     &shared.status,
                     OrphanReapMode::ConfirmAbsent,
-                    orphan_reap.process_discovery.as_ref(),
                 ).await;
             }
             // Mitmproxy crash detection
@@ -2774,12 +2818,11 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                 result = jobs.join_next() => {
                     handle_job_result(result).await;
                     if !orphaned_active_runs.is_empty() {
-                        reap_orphaned_active_runs(
+                        orphan_reap.reap(
                             &orphaned_active_runs,
                             &shared.idle_pool,
                             &shared.status,
                             OrphanReapMode::Immediate,
-                            orphan_reap.process_discovery.as_ref(),
                         ).await;
                     }
                 }
@@ -2816,14 +2859,14 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     teardown.phase_complete("running_jobs_drain", phase);
     if !orphaned_active_runs.is_empty() {
         let phase = teardown.phase_start("orphan_reap_shutdown_final");
-        reap_orphaned_active_runs(
-            &orphaned_active_runs,
-            &shared.idle_pool,
-            &shared.status,
-            OrphanReapMode::ShutdownFinal,
-            orphan_reap.process_discovery.as_ref(),
-        )
-        .await;
+        orphan_reap
+            .reap(
+                &orphaned_active_runs,
+                &shared.idle_pool,
+                &shared.status,
+                OrphanReapMode::ShutdownFinal,
+            )
+            .await;
         teardown.phase_complete("orphan_reap_shutdown_final", phase);
     }
     // Wait for any in-flight destroy tasks (from capacity or profile-mismatch
