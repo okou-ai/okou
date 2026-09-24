@@ -1,5 +1,28 @@
 # Changelog
 
+## [9.357.4](https://github.com/okou-ai/okou/compare/cli-v9.357.3...cli-v9.357.4) (2026-09-24)
+
+
+### Bug Fixes
+
+* **connector:** avoid unknown grants from incomplete aws checks ([#36490](https://github.com/okou-ai/okou/issues/36490)) ([a172bd9](https://github.com/okou-ai/okou/commit/a172bd956108f332743bc22036d8fad8a69ff62a))
+* **firewall:** enforce aws query requirements with action and target ([#36528](https://github.com/okou-ai/okou/issues/36528)) ([4e9d00e](https://github.com/okou-ai/okou/commit/4e9d00e79192bdd6468b3767e74e32e36855ee52))
+
+
+### Refactoring
+
+* **browser:** remove direct takeover action card ([#36446](https://github.com/okou-ai/okou/issues/36446)) ([c67a5a5](https://github.com/okou-ai/okou/commit/c67a5a5d643c5600ea7f78a68a7a5859edaa1657))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.501.0
+    * @okouai/connectors bumped to 3.15.4
+    * @okouai/core bumped to 8.707.0
+    * @okouai/pi-agent-runtime bumped to 1.40.4
+
 ## [9.357.3](https://github.com/okou-ai/okou/compare/cli-v9.357.2...cli-v9.357.3) (2026-09-24)
 
 

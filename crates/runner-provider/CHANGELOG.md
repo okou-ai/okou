@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.3.3...runner-provider-v0.3.4) (2026-09-24)
+
+
+### Bug Fixes
+
+* **runner:** defer poll reset errors until fallback degrades ([#36499](https://github.com/okou-ai/okou/issues/36499)) ([27f936e](https://github.com/okou-ai/okou/commit/27f936edcb4cb68c93f8acc5a9ae9387766fd852))
+
 ## [0.3.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.3.2...runner-provider-v0.3.3) (2026-09-24)
 
 
