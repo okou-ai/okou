@@ -384,9 +384,7 @@ test("Filter chats by All chats, Unread, or Archived", async () => {
     ).toStrictEqual(["✅ Archived context", "✅ Waiting for review"]);
   });
   expect(within(sidebar()).getByText("Show all chats")).toBeInTheDocument();
-  await waitFor(() => {
-    expect(pathname()).toBe(`/chats/${ARCHIVED_THREAD_ID}`);
-  });
+  expect(pathname()).toBe(`/chats/${INCIDENT_THREAD_ID}`);
 
   openChatListMenu();
   click(menuItemByText("All chats"));

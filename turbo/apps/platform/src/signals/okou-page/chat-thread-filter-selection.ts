@@ -2,7 +2,10 @@ import { command } from "ccstate";
 import { isEditableTarget } from "@okouai/ui";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { setupGlobalShortcut } from "../../lib/setup-global-shortcut.ts";
-import { currentChatThreadListIds$ } from "../agent-chat.ts";
+import {
+  currentChatThreadId$,
+  currentChatThreadListIds$,
+} from "../agent-chat.ts";
 import { chatThreadOnlyUnread$ } from "../chat-page/chat-thread-only-unread.ts";
 import { currentRightThread$ } from "../chat-page/chat-thread-pane-state.ts";
 import { loadLeftThread$ } from "../chat-page/chat-thread-panes.ts";
@@ -17,8 +20,9 @@ export type ChatThreadFilter = "all" | "unread" | "archived";
 
 const resetChatThreadFilterSelection$ = resetSignal();
 
-// Selecting a filter opens the first chat it lists in the main pane. Only the
-// latest selection navigates, so rapid toggles never land on a stale list.
+// Selecting a filter keeps the main chat when the filter still lists it and
+// otherwise opens the first listed chat. Only the latest selection navigates,
+// so rapid toggles never land on a stale list.
 export const selectChatThreadFilter$ = command(
   async ({ get, set }, filter: ChatThreadFilter, parentSignal: AbortSignal) => {
     const signal = set(resetChatThreadFilterSelection$, parentSignal);
@@ -30,6 +34,11 @@ export const selectChatThreadFilter$ = command(
 
     const threadIds = await get(currentChatThreadListIds$);
     signal.throwIfAborted();
+
+    const currentThreadId = get(currentChatThreadId$);
+    if (currentThreadId && threadIds.includes(currentThreadId)) {
+      return;
+    }
 
     const rightThreadId = get(currentRightThread$)?.threadId;
     const targetId = threadIds.find((threadId) => {

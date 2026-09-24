@@ -9,6 +9,7 @@ import {
   createThread,
   EXISTING_THREAD_ID,
   INCIDENT_THREAD_ID,
+  menuItemByText,
   mockSidebarThreadStory,
   openChatListMenu,
   prepareDefaultAgent,
@@ -167,4 +168,35 @@ test("Only the latest shortcut toggle navigates", async () => {
     within(list).findByText("Release plan"),
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe(`/chats/${EXISTING_THREAD_ID}`);
+});
+
+test("Keep the current chat when the selected filter lists it", async () => {
+  context.mocks.browser.userAgent(MAC_USER_AGENT);
+  prepareDefaultAgent();
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Release plan"),
+    createThread(INCIDENT_THREAD_ID, "Incident follow-up"),
+  ]);
+  await setupSidebarPage({
+    context,
+    path: `/chats/${INCIDENT_THREAD_ID}`,
+  });
+
+  const list = await screen.findByTestId("chat-list-column");
+  await expect(
+    within(list).findByText("Release plan"),
+  ).resolves.toBeInTheDocument();
+
+  openChatListMenu();
+  click(unreadOnlyMenuItem());
+  await expect(
+    within(list).findByText("No unread chats"),
+  ).resolves.toBeInTheDocument();
+
+  openChatListMenu();
+  click(menuItemByText("All chats"));
+  await expect(
+    within(list).findByText("Release plan"),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(`/chats/${INCIDENT_THREAD_ID}`);
 });
