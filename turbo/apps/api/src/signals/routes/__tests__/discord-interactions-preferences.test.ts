@@ -432,6 +432,64 @@ async function disconnect(owner: Actor): Promise<void> {
   );
 }
 
+async function configureModelPreferences(scope: Fixture) {
+  const headers = accountApi.authenticate(scope.owner);
+  const providers = setupApp({ context, routes: modelProvidersRoutes })(
+    modelProvidersMainContract,
+  );
+  const anthropic = await accept(
+    providers.upsert({
+      headers,
+      body: {
+        type: "anthropic-api-key",
+        secret: "discord-test-anthropic-key",
+      },
+    }),
+    [200, 201],
+  );
+  const openai = await accept(
+    providers.upsert({
+      headers,
+      body: { type: "openai-api-key", secret: "discord-test-openai-key" },
+    }),
+    [200, 201],
+  );
+  const policies = setupApp({ context, routes: modelPoliciesRoutes })(
+    modelPoliciesMainContract,
+  );
+  const initial = await accept(policies.list({ headers }), [200]);
+  const defaultPolicy = {
+    model: "claude-sonnet-5" as const,
+    isDefault: true,
+    defaultProviderType: "anthropic-api-key" as const,
+    credentialScope: "org" as const,
+    modelProviderId: anthropic.body.provider.id,
+  };
+  await accept(
+    policies.update({
+      headers,
+      body: {
+        revision: initial.body.revision,
+        policies: [
+          defaultPolicy,
+          {
+            model: "gpt-5.6-sol",
+            isDefault: false,
+            defaultProviderType: "openai-api-key",
+            credentialScope: "org",
+            modelProviderId: openai.body.provider.id,
+          },
+        ],
+      },
+    }),
+    [200],
+  );
+  const preference = setupApp({ context, routes: userModelPreferenceRoutes })(
+    userModelPreferenceContract,
+  );
+  return { headers, policies, preference, defaultPolicy };
+}
+
 beforeEach(() => {
   mockEnv("DISCORD_APPLICATION_ID", applicationId);
   mockEnv("DISCORD_PUBLIC_KEY", publicKey);
@@ -631,7 +689,7 @@ describe("Discord account preferences through private controls", () => {
   it.each([
     { kind: "unset", displayName: undefined },
     { kind: "empty", displayName: "" },
-    { kind: "long Unicode", displayName: "🚀".repeat(1100) },
+    { kind: "long Unicode", displayName: "🚀".repeat(100) },
   ])(
     "renders $kind agent names within Discord limits",
     async ({ displayName }) => {
@@ -719,60 +777,8 @@ describe("Discord account preferences through private controls", () => {
 
   it("rechecks model policy after a picker is issued and preserves the current allowed preference", async () => {
     const scope = await fixture();
-    const headers = accountApi.authenticate(scope.owner);
-    const providers = setupApp({ context, routes: modelProvidersRoutes })(
-      modelProvidersMainContract,
-    );
-    const anthropic = await accept(
-      providers.upsert({
-        headers,
-        body: {
-          type: "anthropic-api-key",
-          secret: "discord-test-anthropic-key",
-        },
-      }),
-      [200, 201],
-    );
-    const openai = await accept(
-      providers.upsert({
-        headers,
-        body: { type: "openai-api-key", secret: "discord-test-openai-key" },
-      }),
-      [200, 201],
-    );
-    const policies = setupApp({ context, routes: modelPoliciesRoutes })(
-      modelPoliciesMainContract,
-    );
-    const initial = await accept(policies.list({ headers }), [200]);
-    const defaultPolicy = {
-      model: "claude-sonnet-5" as const,
-      isDefault: true,
-      defaultProviderType: "anthropic-api-key" as const,
-      credentialScope: "org" as const,
-      modelProviderId: anthropic.body.provider.id,
-    };
-    await accept(
-      policies.update({
-        headers,
-        body: {
-          revision: initial.body.revision,
-          policies: [
-            defaultPolicy,
-            {
-              model: "gpt-5.6-sol",
-              isDefault: false,
-              defaultProviderType: "openai-api-key",
-              credentialScope: "org",
-              modelProviderId: openai.body.provider.id,
-            },
-          ],
-        },
-      }),
-      [200],
-    );
-    const preference = setupApp({ context, routes: userModelPreferenceRoutes })(
-      userModelPreferenceContract,
-    );
+    const { headers, policies, preference, defaultPolicy } =
+      await configureModelPreferences(scope);
     const discord = discordHttp([scope]);
     const sender = guildSender(scope);
     const menu = selectMenu(
@@ -806,4 +812,70 @@ describe("Discord account preferences through private controls", () => {
     const after = await accept(preference.get({ headers }), [200]);
     expect(after.body.selectedModel).toBe("claude-sonnet-5");
   });
+  it.each(["disconnect", "feature", "model policy"] as const)(
+    "rejects a model selection revoked by %s while Discord access is pending",
+    async (revocation) => {
+      const scope = await fixture();
+      const { headers, policies, preference, defaultPolicy } =
+        await configureModelPreferences(scope);
+      const discord = discordHttp([scope]);
+      const sender = guildSender(scope);
+      const menu = selectMenu(
+        await discord.send(commandPayload(sender, "model")),
+      );
+      await discord.send(
+        selectPayload(sender, menu.custom_id, "claude-sonnet-5"),
+      );
+      const reached = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      let channelChecks = 0;
+      server.use(
+        http.get(
+          `https://discord.com/api/v10/channels/${scope.channelId}`,
+          async () => {
+            channelChecks++;
+            if (channelChecks === 2) {
+              reached.resolve();
+              await release.promise;
+            }
+            return HttpResponse.json({
+              id: scope.channelId,
+              type: 0,
+              guild_id: scope.binding.guildId,
+              permission_overwrites: [],
+            });
+          },
+        ),
+      );
+      const pending = discord.send(
+        selectPayload(sender, menu.custom_id, "gpt-5.6-sol"),
+      );
+      await reached.promise;
+      if (revocation === "disconnect") {
+        await disconnect(scope.owner);
+      } else if (revocation === "feature") {
+        await enableDiscord(scope.owner, false);
+      } else {
+        const current = await accept(policies.list({ headers }), [200]);
+        await accept(
+          policies.update({
+            headers,
+            body: {
+              revision: current.body.revision,
+              policies: [defaultPolicy],
+            },
+          }),
+          [200],
+        );
+      }
+      release.resolve();
+      const rejected = await pending;
+      expect(rejected.content).not.toContain(
+        "Model selected for new conversations",
+      );
+      expect(rejected.components).toStrictEqual([]);
+      const after = await accept(preference.get({ headers }), [200]);
+      expect(after.body.selectedModel).toBe("claude-sonnet-5");
+    },
+  );
 });

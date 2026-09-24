@@ -279,6 +279,26 @@ const discordModelPicker$ = command(
     },
     signal: AbortSignal,
   ): Promise<DiscordAccountMessage> => {
+    if (args.selection !== undefined) {
+      const channelFailure = await set(
+        discordChannelFailure$,
+        args.binding,
+        args.actor,
+        signal,
+      );
+      if (channelFailure) {
+        return channelFailure;
+      }
+      // Provider permission checks can wait on HTTP. Re-read local authority
+      // afterward, before reading current policy and persisting a preference.
+      const current = await set(currentDiscordBinding$, args.actor, signal);
+      if (
+        current.kind !== "connected" ||
+        current.binding.connectionId !== args.binding.connectionId
+      ) {
+        return discordAccountMessage(STALE_CONTROL);
+      }
+    }
     const policies = await set(listOrgModelPolicies$, args.binding, signal);
     const visible = new Set(getBuiltInVisibleModels());
     const options = policies.policies.flatMap((policy) => {
@@ -300,27 +320,11 @@ const discordModelPicker$ = command(
           "You no longer have access to that model. Run `/okou model` again.",
         );
       }
-      const current = await set(currentDiscordBinding$, args.actor, signal);
-      if (
-        current.kind !== "connected" ||
-        current.binding.connectionId !== args.binding.connectionId
-      ) {
-        return discordAccountMessage(STALE_CONTROL);
-      }
-      const channelFailure = await set(
-        discordChannelFailure$,
-        current.binding,
-        args.actor,
-        signal,
-      );
-      if (channelFailure) {
-        return channelFailure;
-      }
       await set(
         updateUserModelPreference$,
         {
-          orgId: current.binding.orgId,
-          userId: current.binding.userId,
+          orgId: args.binding.orgId,
+          userId: args.binding.userId,
           preference: { selectedModel: option.value, serviceTier: null },
         },
         signal,
