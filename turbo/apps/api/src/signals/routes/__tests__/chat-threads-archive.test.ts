@@ -4,6 +4,7 @@ import {
   chatThreadMetadataContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -12,6 +13,7 @@ import { now } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { chatThreadArchiveRoutes } from "../chat-threads-archive";
 import { chatThreadGetRoutes } from "../chat-threads-get";
@@ -21,7 +23,7 @@ const store = createStore();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 
-async function seedChatThread(title: string) {
+async function seedChatThread(title: string, archivingEnabled = true) {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
   const agent = await bdd.createAgent(actor, {
@@ -40,6 +42,13 @@ async function seedChatThread(title: string) {
     { orgId: actor.orgId, userId: actor.userId },
     context.signal,
   );
+  if (archivingEnabled) {
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
+      { [FeatureSwitchKey.ChatThreadArchiving]: true },
+    );
+  }
   return { actor, orgId: actor.orgId, threadId: thread.id };
 }
 
@@ -161,6 +170,36 @@ describe("POST /api/chat-threads/:id/archive and /unarchive", () => {
         { id: unarchiveEventId, kind: "unarchived" },
       ]),
     );
+  });
+
+  it("is unavailable while chat thread archiving is switched off", async () => {
+    const fixture = await seedChatThread("Launch plan", false);
+    const headers = {
+      authorization: `Bearer ${okouToken({
+        userId: fixture.actor.userId,
+        orgId: fixture.orgId,
+        capabilities: ["chat-thread:write"],
+      })}`,
+    };
+    for (const request of [
+      archiveClient().archive({ headers, params: { id: fixture.threadId } }),
+      archiveClient().unarchive({ headers, params: { id: fixture.threadId } }),
+    ]) {
+      const response = await accept(request, [404]);
+      expect(response.body).toStrictEqual({
+        error: {
+          code: "NOT_FOUND",
+          message: "Chat thread archiving is not available",
+        },
+      });
+    }
+    await expect(
+      readMetadata({
+        userId: fixture.actor.userId,
+        orgId: fixture.orgId,
+        threadId: fixture.threadId,
+      }),
+    ).resolves.toMatchObject({ archived: false });
   });
 
   it("rejects an Okou run token without chat-thread:write", async () => {

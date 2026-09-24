@@ -2079,6 +2079,14 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       liveThread.id,
       "fal-ai/flux-pro/v1.1",
     );
+    if (!actor.orgId) {
+      throw new Error("Expected an organization-scoped snapshot actor");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
+      { [FeatureSwitchKey.ChatThreadArchiving]: true },
+    );
     await chat.requestSetThreadArchived(actor, liveThread.id, true, [204]);
 
     const incrementalSnapshotAt = initialSnapshotAt + 1000;

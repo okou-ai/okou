@@ -185,6 +185,7 @@ export function replayChatThreadEvents(
   for (const thread of snapshot) {
     threads.set(thread.id, {
       ...thread,
+      // Pre-1208 snapshots and old client caches omit the flag (#36551).
       archived: thread.archived ?? false,
       selectedModel: thread.selectedModel ?? null,
       modelSettings: thread.modelSettings ?? {},

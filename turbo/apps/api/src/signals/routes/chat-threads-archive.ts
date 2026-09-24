@@ -1,6 +1,8 @@
 import { command } from "ccstate";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { chatThreadArchiveContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -12,7 +14,10 @@ import { notFound } from "../../lib/error";
 import { withChatThreadContentWrite } from "../services/chat-thread-content-erasure-admission.service";
 import { appendChatThreadEvent } from "../services/chat-thread-event.service";
 import { chatThreadOrganizationCondition } from "../services/chat-thread-organization.service";
+import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
+
+const archivingUnavailable = notFound("Chat thread archiving is not available");
 
 /** Sets the flag and appends its sidebar event; false when the thread is not the caller's. */
 async function writeChatThreadArchived(
@@ -80,6 +85,13 @@ const archiveInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const params = get(pathParamsOf(chatThreadArchiveContract.archive));
   const query = get(queryOf(chatThreadArchiveContract.archive));
   signal.throwIfAborted();
+  const featureContext = await get(
+    userFeatureSwitchContext(auth.orgId, auth.userId),
+  );
+  signal.throwIfAborted();
+  if (!isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, featureContext)) {
+    return archivingUnavailable;
+  }
 
   const written = await writeChatThreadArchived(
     set(writeDb$),
@@ -107,6 +119,13 @@ const unarchiveInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const params = get(pathParamsOf(chatThreadArchiveContract.unarchive));
   const query = get(queryOf(chatThreadArchiveContract.unarchive));
   signal.throwIfAborted();
+  const featureContext = await get(
+    userFeatureSwitchContext(auth.orgId, auth.userId),
+  );
+  signal.throwIfAborted();
+  if (!isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, featureContext)) {
+    return archivingUnavailable;
+  }
 
   const written = await writeChatThreadArchived(
     set(writeDb$),
