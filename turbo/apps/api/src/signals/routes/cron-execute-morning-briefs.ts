@@ -4,7 +4,11 @@ import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import type { MorningBriefMemberIdentity } from "../services/morning-brief-enrollment-data.service";
-import { executeNativeMorningBriefTick$ } from "../services/morning-brief-native-executor.service";
+import {
+  dispatchNativeMorningBriefTick$,
+  executeNativeMorningBriefTick$,
+} from "../services/morning-brief-native-executor.service";
+import { dispatchNativeWorker } from "../services/morning-brief-native-dispatch.service";
 import {
   executeNativeMorningBriefSlot$,
   productionNativeTickDependencies,
@@ -21,6 +25,7 @@ import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
  */
 function createExecuteMorningBriefsRoute(
   scope?: MorningBriefMemberIdentity,
+  inlineTestOnly = false,
 ): RouteEntry["handler"] {
   return command(async ({ get, set }, signal: AbortSignal) => {
     if (!get(hasValidCronSecret$)) {
@@ -28,35 +33,40 @@ function createExecuteMorningBriefsRoute(
     }
 
     const db = set(writeDb$);
-    const result = await set(
-      executeNativeMorningBriefTick$,
-      productionNativeTickDependencies({
-        db,
-        scope,
-        // The real S5 generation engine and the real S6 delivery engine, bound
-        // here rather than inside the tick so a boundary double can replace the
-        // provider without replacing the scheduler.
-        executor: {
-          execute: async (owner, occurrence, executionSignal) => {
-            return await set(
-              executeNativeMorningBriefSlot$,
-              { owner, occurrence },
-              executionSignal,
-            );
-          },
+    const deps = productionNativeTickDependencies({
+      db,
+      scope,
+      // The real S5 generation engine and the real S6 delivery engine, bound
+      // here rather than inside the tick so a boundary double can replace the
+      // provider without replacing the scheduler.
+      executor: {
+        execute: async (owner, occurrence, executionSignal) => {
+          return await set(
+            executeNativeMorningBriefSlot$,
+            { owner, occurrence },
+            executionSignal,
+          );
         },
-        delivery: {
-          resolve: async (owner, occurrence, recoverySignal) => {
-            return await set(
-              recoverNativeMorningBriefDelivery$,
-              { owner, occurrence },
-              recoverySignal,
-            );
-          },
+      },
+      delivery: {
+        resolve: async (owner, occurrence, recoverySignal) => {
+          return await set(
+            recoverNativeMorningBriefDelivery$,
+            { owner, occurrence },
+            recoverySignal,
+          );
         },
-      }),
-      signal,
-    );
+      },
+    });
+    // The deployed Cron always dispatches. The inline test route keeps the
+    // existing slot-engine regression suite without a second production mode.
+    const result = inlineTestOnly
+      ? await set(executeNativeMorningBriefTick$, deps, signal)
+      : await set(
+          dispatchNativeMorningBriefTick$,
+          { deps, dispatch: dispatchNativeWorker },
+          signal,
+        );
     signal.throwIfAborted();
 
     return { status: 200 as const, body: result };
@@ -80,4 +90,11 @@ export function createScopedMorningBriefCronRoutesForTest(
   owner: MorningBriefMemberIdentity,
 ): readonly RouteEntry[] {
   return routesFor(createExecuteMorningBriefsRoute(owner));
+}
+
+/** Exercise the slot engine's original inline path without registering it in production. */
+export function createScopedInlineMorningBriefCronRoutesForTest(
+  owner: MorningBriefMemberIdentity,
+): readonly RouteEntry[] {
+  return routesFor(createExecuteMorningBriefsRoute(owner, true));
 }

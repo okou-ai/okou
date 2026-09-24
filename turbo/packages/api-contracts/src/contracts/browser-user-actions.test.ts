@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
+  BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH,
   browserUserActionApplyRequestSchema,
   browserUserActionCreateRequestSchema,
   browserUserActionResponseSchema,
@@ -29,6 +30,96 @@ describe("Browser user-action contracts", () => {
         ],
       }),
     ).toMatchObject({ kind: "input", fields: [{ key: "code" }] });
+  });
+
+  it("keeps number values as strings and bounds observed constraints", () => {
+    const request = browserUserActionCreateRequestSchema.parse({
+      kind: "input",
+      callbackPrompt: "Continue after quantity entry",
+      pageTargetId: "page-target",
+      fields: [
+        {
+          key: "quantity",
+          label: "Quantity",
+          fieldKind: "number",
+          required: false,
+          backendNodeId: 45,
+        },
+      ],
+    });
+    expect(request.fields[0]?.fieldKind).toBe("number");
+    expect(
+      browserUserActionApplyRequestSchema.parse({
+        values: [{ key: "quantity", value: "9007199254740993" }],
+      }).values[0]?.value,
+    ).toBe("9007199254740993");
+    const field = {
+      key: "quantity",
+      label: "Quantity",
+      fieldKind: "number",
+      required: false,
+      control: {
+        tagName: "INPUT",
+        inputType: "number",
+        min: "0.5",
+        max: "100",
+        step: "any",
+      },
+    };
+    expect(
+      browserUserActionResponseSchema.safeParse({
+        requestToken: "vm0_browser_user_action_public-token",
+        kind: "input",
+        state: "pending",
+        siteOrigin: "https://example.com",
+        completedAt: null,
+        agentId: uuid("1"),
+        threadId: uuid("2"),
+        callbackIds: {
+          success: {
+            clientEventId: uuid("3"),
+            chatThreadSortEventId: uuid("4"),
+          },
+          cancellation: {
+            clientEventId: uuid("5"),
+            chatThreadSortEventId: uuid("6"),
+          },
+        },
+        fields: [field],
+      }).success,
+    ).toBe(true);
+    expect(
+      browserUserActionResponseSchema.safeParse({
+        requestToken: "vm0_browser_user_action_public-token",
+        kind: "input",
+        state: "pending",
+        siteOrigin: "https://example.com",
+        completedAt: null,
+        agentId: uuid("1"),
+        threadId: uuid("2"),
+        callbackIds: {
+          success: {
+            clientEventId: uuid("3"),
+            chatThreadSortEventId: uuid("4"),
+          },
+          cancellation: {
+            clientEventId: uuid("5"),
+            chatThreadSortEventId: uuid("6"),
+          },
+        },
+        fields: [
+          {
+            ...field,
+            control: {
+              ...field.control,
+              step: "x".repeat(
+                BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH + 1,
+              ),
+            },
+          },
+        ],
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects duplicate field and submitted-value keys", () => {
@@ -112,6 +203,10 @@ describe("Browser user-action contracts", () => {
           label: "Password",
           fieldKind: "password" as const,
           required: true,
+          control: {
+            tagName: "INPUT" as const,
+            inputType: "password" as const,
+          },
         },
       ],
     };

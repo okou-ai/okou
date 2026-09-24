@@ -31,10 +31,10 @@ const SOURCES_FIRST_ON = {
 } as const;
 
 const INDUSTRY_QUESTION = "What kind of work do you do?";
-const SOURCES_QUESTION = "Okou is for you, and shared across your whole team.";
-const TEAM_QUESTION = "Bring the people who do this work with you.";
-const EXPERIENCE_QUESTION = "Have you used Codex or Claude Code?";
-const READY_TITLE = "Okou is ready for you";
+const SOURCES_QUESTION = "Connect a work tool";
+const TEAM_QUESTION = "Make Okou useful to your whole team";
+const EXPERIENCE_QUESTION = "How would you like to start with Okou?";
+const READY_TITLE = "Start with a task that matters";
 const MARKETING_FIELD = "Marketing & content";
 const TEAMMATE_EMAIL = "teammate@example.test";
 
@@ -178,7 +178,7 @@ test("Each step reports its own funnel event, counting invitees rather than nami
   await expect(
     screen.findByRole("heading", { name: TEAM_QUESTION }),
   ).resolves.toBeInTheDocument();
-  await fill(screen.getByLabelText("Teammate’s email"), TEAMMATE_EMAIL);
+  await fill(screen.getByLabelText("Team member’s email"), TEAMMATE_EMAIL);
   click(getButtonByName("Send invite"));
 
   await expect(screen.findByText("Invited")).resolves.toBeInTheDocument();
@@ -187,7 +187,7 @@ test("Each step reports its own funnel event, counting invitees rather than nami
   await expect(
     screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
   ).resolves.toBeInTheDocument();
-  click(choiceRadio("No, I’m new to this"));
+  click(choiceRadio("I'm new to AI agents"));
 
   await waitFor(() => {
     expect(posthog.events).toStrictEqual(

@@ -689,13 +689,23 @@ requests render an inert state.
 
 The fixed-height transcript card links to the authenticated full-page form in
 a new tab. The full-page route automatically calls the token-only Browser
-preflight before mounting any editable field. A confirmed page or control
-change makes the request stale; a temporary provider failure leaves
-a Retry action. The form does not poll while open, and submit revalidates the
-exact target before writing. The draft and mutation lock are local to the form
+preflight before mounting any editable field. Preflight returns the observed
+textarea or input subtype and current site constraints, including multiple
+email addresses and number `min`, `max`, and `step` attributes. The form uses
+that verified control rather than guessing from the Agent's semantic field
+kind. A confirmed page or control change makes the
+request stale; a temporary provider failure leaves a Retry action. The form
+does not poll while open, and submit revalidates the exact target and site
+constraints before writing. The draft and mutation lock are local to the form
 page, while the API serializes effects across tabs. Password fields clear when
 the form unmounts, terminal and non-retryable states clear the complete draft,
 and nothing is persisted across page reload.
+
+General number fields use the same form and Input styling as other controls,
+with a native number input and browser validity feedback. Their values remain
+strings throughout the handoff; optional number fields distinguish untouched
+from an explicit clear. One-time codes remain text inputs so leading zeroes
+survive. The inline transcript card remains a link to the standalone form.
 
 Apply or cancel completes before the form sends its normal chat callback.
 Request-owned event IDs make callback-only Continue retries idempotent without

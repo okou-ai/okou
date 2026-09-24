@@ -17,9 +17,9 @@ Two independent things keep it away from production users:
 
 - `isTestEndpointAllowed` is evaluated **before** authentication, so production
   answers `404` without doing any auth work — including for a caller who has
-  `simpleMorningBrief` enabled.
+  `FeatureSwitchKey.NativeMorningBrief` enabled.
 - The route requires an authenticated organization and user, the `github:read`
-  capability, the default-off `simpleMorningBrief` switch, a live canonical
+  capability, the default-off `FeatureSwitchKey.NativeMorningBrief` switch, a live canonical
   installed and enabled Morning Brief, a usable pinned Agent, and a current
   Clerk organization membership.
 
@@ -37,7 +37,7 @@ owned by the **shared** Morning Brief connector reader
 exact implementation and adds no second authorization engine:
 
 - `admitMorningBriefCollection({ db, clerk, orgId, userId, anchor }, signal)` is
-  the preview gate: the default-off `simpleMorningBrief` switch, a canonical
+  the preview gate: the default-off `FeatureSwitchKey.NativeMorningBrief` switch, a canonical
   installed and enabled Morning Brief, the member's current Clerk membership
   generation, and erasure-subject admission. It returns the frozen
   `MorningBriefCollectionScope` — owner, installation, exact automation,
@@ -357,7 +357,7 @@ implementation are owned elsewhere.
 
 The preview adds one route and no persisted state, so old and new application
 versions can run side by side: an older version simply does not serve the path,
-and a newer one serves `404` in production regardless. `simpleMorningBrief`
+and a newer one serves `404` in production regardless. `FeatureSwitchKey.NativeMorningBrief`
 stays default off, and the existing Settings surface and legacy scheduling
 remain authoritative. Rollback removes the route with no source-content
 cleanup or backfill. S5/S7 will call this collector internally under real

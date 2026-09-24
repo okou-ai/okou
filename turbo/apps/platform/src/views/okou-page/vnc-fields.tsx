@@ -635,7 +635,7 @@ function VncAuthenticationReplacement({
           checked={replace}
           disabled={disabled}
           onCheckedChange={(checked) => {
-            setReplace(checked === true);
+            setReplace(checked);
           }}
         />
         {t(($) => {

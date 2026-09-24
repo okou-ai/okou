@@ -63,6 +63,8 @@ export function browserUserActionFieldSupportsTarget(
       return fingerprint.inputType === "password";
     case "one_time_code":
       return ["text", "tel", "number"].includes(fingerprint.inputType);
+    case "number":
+      return fingerprint.inputType === "number";
   }
 }
 
@@ -155,7 +157,7 @@ function decodeField(value: unknown): BrowserUserActionInputField | null {
         0,
         BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH,
       )) ||
-    !["text", "username", "password", "one_time_code"].includes(
+    !["text", "username", "password", "one_time_code", "number"].includes(
       String(field.fieldKind),
     ) ||
     typeof field.required !== "boolean" ||

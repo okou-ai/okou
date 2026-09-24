@@ -17,6 +17,8 @@ import {
   ConnectorEntryCard,
   ConnectorEntryStatus,
 } from "./connector-entry-card.tsx";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
 
 export function VncConnectorCard({
   configuredCount,
@@ -24,6 +26,8 @@ export function VncConnectorCard({
   readonly configuredCount: number;
 }) {
   const { t } = useTranslation();
+  const threadRemoteAccess =
+    useGet(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess] === true;
   const rows = useLoadable(vncAgentAccessRows$);
   const open = useSet(openVncAccessManagement$);
   const signal = useGet(pageSignal$);
@@ -40,12 +44,13 @@ export function VncConnectorCard({
       interactive
       action={
         <Link
-          pathname={ROUTES.connectorVnc}
-          options={
-            configuredCount === 0
-              ? { searchParams: new URLSearchParams({ add: "1" }) }
-              : undefined
-          }
+          pathname={ROUTES.connectors}
+          options={{
+            searchParams: new URLSearchParams({
+              scope: "remote-control",
+              type: "vnc",
+            }),
+          }}
           aria-label={t(($) => {
             return $.vnc.manage;
           })}
@@ -75,7 +80,7 @@ export function VncConnectorCard({
         />
       }
       trailingAction={
-        configuredCount > 0 ? (
+        configuredCount > 0 && !threadRemoteAccess ? (
           <div className="relative z-20 min-w-0 max-w-full">
             <ConnectorAgentAccessButton
               agents={

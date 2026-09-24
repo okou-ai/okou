@@ -15,7 +15,6 @@ const c = initContract();
 export const builtinConnectorBriefSchema = z.object({
   slug: connectorSlugSchema,
   label: z.string(),
-  description: z.string(),
   icon: publicConnectorCatalogIconSchema,
   hasPermissions: z.boolean(),
 });

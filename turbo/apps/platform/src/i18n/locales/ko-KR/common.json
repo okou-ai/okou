@@ -1491,7 +1491,6 @@
         },
         "shareDialog": {
           "description": "공개 게시물을 제출하면 검토해요. 1인당 한 번 보상을 받을 수 있어요.",
-          "draft": "월요일 경쟁사 리포트를 {{assistantName}}에게 맡기고 있어요. 출처를 읽고 표로 정리해 줍니다.",
           "helper": "게시물은 공개 상태여야 하고 {{assistantName}}을(를) 언급해야 합니다.",
           "inputLabel": "게시물 링크",
           "openX": "X 열기",
@@ -1506,7 +1505,8 @@
           "stepPaste": "링크 붙여넣기",
           "stepWrite": "게시물 작성하기",
           "submit": "제출",
-          "title": "X에 {{assistantName}} 공유하기"
+          "title": "X에 {{assistantName}} 공유하기",
+          "writingPrompt": "{{assistantName}}에서 실제로 해 본 일을 자신의 말로 적어 주세요."
         },
         "slack": {
           "action": "추가",
@@ -1734,12 +1734,14 @@
       "cancelFailed": "요청을 취소하지 못했습니다. 다시 시도하세요.",
       "cancelled": "요청이 취소됨",
       "cancelling": "취소 중…",
+      "clearValue": "웹사이트의 값 지우기",
       "completed": "정보가 추가됨",
       "continue": "에이전트에게 알리기",
       "continuing": "에이전트에게 알리는 중…",
       "delivered": "에이전트에게 알림",
       "expired": "요청이 만료됨",
       "expiredDescription": "브라우저가 닫혔거나 이 요청이 더 이상 활성 상태가 아닙니다.",
+      "keepValue": "웹사이트의 값 유지하기",
       "loadFailed": "이 요청을 불러오지 못했습니다",
       "loadFailedDescription": "잠시 후 다시 시도하세요.",
       "loadingDescription": "요청을 확인하고 있습니다…",
@@ -1907,11 +1909,10 @@
         "newChat": "새 채팅",
         "newChatDescription": "새 채팅을 시작하고 이어서 필요한 중요한 정보를 포함하세요.",
         "openClaude": "Claude 열기",
-        "originalAccount": "개인 구독 {{account}}",
-        "originalAccountUnavailable": "개인 구독 연결이 끊어졌습니다",
-        "originalAccountUnknown": "개인 구독을 확인할 수 없습니다",
         "outputLimitDescription": "응답이 완료되기 전에 멈췄습니다. '계속'을 눌러 이어서 생성하세요.",
         "outputLimitTitle": "응답이 길이 제한에 도달했습니다",
+        "personalAccount": "개인 구독 {{account}}",
+        "personalAccountDisconnected": "개인 구독 연결이 끊어졌습니다",
         "providerBalanceDescription": "제공자 계정의 크레딧 잔액을 확인한 다음 다시 시도하세요.",
         "providerBalanceTitle": "모델 제공자 계정에 크레딧이 부족합니다",
         "providerConnectionDescription": "'모델 제공업체'에서 계정을 다시 연결하거나 업데이트한 다음 다시 시도하세요.",
@@ -2076,6 +2077,20 @@
       "removeQueuedMessage": "대기 중인 메시지 제거",
       "skipAutomationEvent": "자동화 이벤트 건너뛰기"
     },
+    "remoteAccess": {
+      "defaultEnabled": "채팅에서 기본적으로 사용",
+      "enabledCount_other": "{{count}}개 사용 중",
+      "loadFailed": "원격 액세스를 불러올 수 없습니다.",
+      "loading": "원격 액세스 로드 중…",
+      "off": "끄기",
+      "on": "켜기",
+      "requiresSsh": "SSH 호스트 {{name}}에 대한 액세스도 필요합니다.",
+      "retry": "다시 시도",
+      "startChat": "호스트 접근 권한을 변경하려면 채팅을 시작하세요.",
+      "title": "원격 액세스",
+      "unavailableSsh": "사용할 수 없는 SSH 호스트",
+      "useDefault": "기본값 사용"
+    },
     "replaceDraft": {
       "description": "계속하면 현재 작성 중인 초안이 삭제되고 워크플로 프롬프트가 시작됩니다.",
       "title": "작성 중인 초안을 교체하시겠습니까?"
@@ -2138,6 +2153,7 @@
       "linkCopied": "링크가 복사되었습니다",
       "messageShareFailed": "공유 링크를 만들지 못했습니다. 다시 시도해 주세요.",
       "publicDescription": "선택한 메시지와 첨부 파일이 공개됩니다.",
+      "selectAll": "모두 선택",
       "selectedCount_other": "{{count}}개 선택됨",
       "selectGroup": "메시지 그룹 선택",
       "shareLink": "공유된 대화 링크",
@@ -2851,7 +2867,6 @@
       "ariaLabel": "채팅 스레드",
       "changeIcon": "아이콘 변경",
       "emoji": {
-        "archive": "보관",
         "done": "완료",
         "idea": "아이디어",
         "no": "아니요",
@@ -2928,12 +2943,12 @@
     "configuration": "Cloudflare Access",
     "createNew": "새 Cloudflare Access 만들기",
     "delete": "Cloudflare Access 삭제",
-    "deleteHelp": "사용하지 않는 이 Cloudflare Access를 삭제할까요? 저장된 Service Token은 복구할 수 없습니다.",
+    "deleteHelp": "이 Cloudflare Access를 삭제할까요? 저장된 Service Token은 복구할 수 없습니다. 호스트가 사용 중이면 삭제할 수 없습니다.",
     "description": "Cloudflare Access 서비스 토큰으로 보호된 애플리케이션에 액세스하세요.",
     "edit": "Cloudflare Access 편집",
-    "empty": "아직 Cloudflare Access가 없습니다. 서비스 토큰을 추가하여 보호된 애플리케이션에 액세스하세요.",
     "failed": "Cloudflare Access 변경 사항을 저장하지 못했습니다. 다시 시도하세요.",
-    "inUse": "호스트가 이 Cloudflare Access를 사용 중입니다. 해당 호스트를 확인하고 먼저 다른 구성으로 변경하거나 삭제하세요.",
+    "forbidden": "조직 관리자만 공유 Cloudflare Access를 변경할 수 있습니다.",
+    "inUse": "SSH 호스트가 이 Cloudflare Access를 사용 중입니다. 호스트 소유자가 먼저 다시 연결하거나 호스트를 삭제해야 합니다.",
     "inUseHelp": "이 Cloudflare Access를 삭제하기 전에 해당 호스트에 다른 Cloudflare Access를 선택하거나, 명시적으로 직접 연결로 전환하거나, 호스트를 삭제하세요.",
     "invalidInput": "일부 Cloudflare Access 설정이 올바르지 않습니다. 입력 내용을 확인하고 다시 시도하세요.",
     "keepChanges": "이 버전에 내 변경 사항 적용",
@@ -2944,6 +2959,9 @@
     "missing": "이 Cloudflare Access는 더 이상 사용할 수 없습니다. 다른 항목을 선택하거나 새로 만드세요.",
     "name": "이름",
     "namePlaceholder": "예: 프로덕션 액세스",
+    "organization": "조직",
+    "organizationHelp": "이 조직의 모든 멤버가 이 서비스 토큰을 사용할 수 있습니다. 관리자만 변경할 수 있습니다.",
+    "personal": "개인",
     "replace": "Service Token 교체",
     "resourceIdConflict": "이 리소스 ID는 사용할 수 없습니다. 양식을 닫았다가 다시 열어 시도하세요.",
     "retry": "다시 시도",
@@ -2951,13 +2969,15 @@
     "revisionExhausted": "더 이상 업데이트할 수 없습니다. 새로 만드세요.",
     "save": "저장",
     "saveUncertain": "변경 사항이 저장되었는지 확인하지 못했습니다. 같은 내용으로 저장을 다시 시도하거나, 닫고 목록을 확인한 후 다시 추가하세요.",
+    "scope": "사용할 수 있는 사람",
+    "sectionEmpty": "아직 설정이 없습니다.",
     "select": "Cloudflare Access 선택",
     "summary_other": "Cloudflare Access {{count}}개 설정됨",
     "title": "Cloudflare Access",
     "tokenHelp": "Cloudflare Access 서비스 토큰으로 보호된 애플리케이션에 액세스하세요.",
     "unavailable": "이 계정에서는 Cloudflare Access를 사용할 수 없습니다.",
-    "unused": "사용 중인 호스트 없음",
-    "usedBy_other": "호스트 {{count}}개에서 사용:"
+    "unused": "내 호스트에서 사용 중이지 않음",
+    "usedBy_other": "내 호스트 {{count}}개에서 사용:"
   },
   "connectors": {
     "access": {
@@ -4218,6 +4238,22 @@
         "notNow": "나중에",
         "skip": "지금은 건너뛰기"
       },
+      "compliance": {
+        "frameworks": {
+          "ccpa": "CCPA / CPRA",
+          "gdpr": "GDPR",
+          "hipaa": "HIPAA",
+          "iso27001": "ISO/IEC 27001",
+          "soc2": "SOC 2 Type II"
+        },
+        "link": "보안 세부 정보",
+        "status": {
+          "aligned": "정렬",
+          "compliant": "준수",
+          "inProgress": "진행 중"
+        },
+        "title": "믿고 쓸 수 있도록, Okou의 컴플라이언스"
+      },
       "documentTitles": {
         "experience": "AI 사용 경험",
         "industry": "분야 선택",
@@ -4229,10 +4265,11 @@
         "team": "팀원 초대"
       },
       "experience": {
-        "copy": "이미 쓰고 있는 플랜을 연결하면 Okou 크레딧이 아니라 그 플랜에서 실행됩니다.",
-        "no": "아니요, 처음입니다",
-        "noCopy": "Okou가 첫 작업을 골라 드립니다.",
-        "title": "Codex나 Claude Code를 써 본 적 있나요?"
+        "copy": "안내를 받으며 시작하거나 기존 Codex 또는 Claude Code 요금제를 가져올 수 있습니다.",
+        "no": "AI 에이전트는 처음이에요",
+        "noCopy": "Okou가 유용한 첫 작업을 고르도록 도와줍니다.",
+        "title": "Okou를 어떻게 시작하고 싶으신가요?",
+        "trust": "작업이 Okou 크레딧 대신 Codex 또는 Claude Code 요금제로 실행되므로 사용량 걱정 없이 더 많이 활용할 수 있습니다. 지금이나 나중에 연결하세요."
       },
       "industries": {
         "coaching": {
@@ -4281,7 +4318,7 @@
         }
       },
       "industry": {
-        "copy": "첫 작업과 그 작업이 시작할 소스를 고르는 데 사용합니다.",
+        "copy": "Okou는 나와 팀을 위한 업무 어시스턴트입니다. 흩어진 정보를 클라우드에서 완료된 업무로 바꿉니다. 분야를 고르면 알맞은 첫 작업을 추천합니다.",
         "title": "어떤 일을 하시나요?"
       },
       "profile": {
@@ -4297,7 +4334,7 @@
       },
       "skills": {
         "copied": "복사됨",
-        "copy": "이 프롬프트를 본인의 {{provider}} 세션에 붙여 넣으면 내 컴퓨터의 스킬이 Okou로 들어옵니다.",
+        "copy": "{{provider}}에서 이 프롬프트를 실행해 이미 만든 스킬을 가져오면 Okou에서 바로 사용할 수 있습니다.",
         "copyError": "프롬프트를 복사하지 못했습니다.",
         "copyPrompt": "프롬프트 복사",
         "importedCopy": "Okou 워크플로로 가져왔습니다.",
@@ -4308,7 +4345,7 @@
         "promptLabel": "스킬 가져오기 프롬프트",
         "promptTitle": "{{provider}}에서 실행하세요",
         "startError": "가져오기 세션을 열지 못했습니다.",
-        "title": "이미 써 둔 스킬을 그대로 가져오세요.",
+        "title": "기존 스킬을 Okou로 가져오세요",
         "tryAgain": "다시 시도",
         "waiting": "가져온 스킬은 도착하는 대로 여기에 표시됩니다."
       },
@@ -4320,7 +4357,7 @@
         "connectedCopy": "Slack에서 @Okou을 멘션해 일을 맡기세요.",
         "connectedStatus": "워크스페이스에 추가됨",
         "connectedTitle": "Slack이 연결됐습니다",
-        "copy": "한 번만 추가하면, 일이 오가는 곳에서 @Okou을 부르기만 하면 됩니다.",
+        "copy": "@Okou를 멘션해 작업을 맡기고 같은 팀 대화에서 결과를 확인하세요.",
         "name": "Slack",
         "otherAdded": "추가됨",
         "otherImessage": "iMessage",
@@ -4349,12 +4386,13 @@
         "previewWorkspace": "Northwind",
         "rowCopy": "추가한 채널이면 어디서든 동작합니다.",
         "rowTitle": "Okou for Slack",
-        "title": "Slack을 떠나지 않고 Okou에게 일을 맡기세요."
+        "title": "Slack에서 업무를 이어가세요"
       },
       "sources": {
-        "copy": "클라우드에서, 팀이 이미 쓰는 도구로 일합니다. 성과는 10배, 운영 부담은 더 적게, 비용은 더 낮게. 소스를 하나 연결해 시작하세요.",
-        "note": "어떤 계정을 연결할지는 직접 고릅니다.",
-        "title": "Okou는 당신의 것이자, 팀 전체가 함께 쓰는 것입니다."
+        "copy": "Okou는 업무를 알수록 더 똑똑해집니다. 매일 쓰는 도구를 연결하고 실제 업무에 기반한 작업으로 시작하세요.",
+        "permissions": "Okou는 첫 작업을 맞춤화하기 위해 소량의 정보를 사용합니다. Agent가 무엇을 얼마나 오래 할 수 있는지는 직접 결정합니다.",
+        "securityLink": "Okou의 데이터 보호 방식",
+        "title": "업무 도구 연결"
       },
       "startingPrompt": {
         "exact": {
@@ -4688,32 +4726,33 @@
         "connecting": "연결 중…",
         "failedNote": "{{provider}}을(를) 연결하지 못했습니다. 다시 시도하거나 나중에 연결할 수 있습니다.",
         "retry": "다시 시도",
-        "rowCopy": "Okou 크레딧이 아니라 이 플랜에서 실행됩니다.",
+        "rowCopy": "연결하면 Okou 크레딧 대신 내 요금제로 실행할 수 있습니다.",
         "unconfirmedNote": "{{provider}} 연결 상태를 확인하지 못했습니다. 다시 시도하거나 나중에 연결할 수 있습니다."
       },
       "team": {
-        "copy": "지금 팀원을 초대하거나, 나중에 워크스페이스 메뉴에서 초대하세요.",
+        "copy": "팀원을 초대해 공유 워크플로를 함께 사용하세요.",
         "invite": "초대 보내기",
         "invited": "초대함",
         "label": "팀원 이메일",
-        "note": "이 워크스페이스에 합류합니다. 각자의 계정은 각자의 것으로 남습니다.",
+        "note": "바로 Okou와 함께 일을 시작할 수 있습니다.",
         "notSent": "보내지 못함",
         "panelTitle": "팀원 초대",
-        "placeholder": "teammate@company.com",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "연결한 계정은 각자의 것이며, 본인 없이는 아무것도 공유되지 않습니다.",
-          "workflows": "여기 있는 누구나 이 워크스페이스의 워크플로를 실행할 수 있습니다.",
-          "workspace": "방금 연결한 소스와 함께 이 워크스페이스로 들어옵니다."
+          "accounts": "필요할 때 자신의 도구를 연결합니다.",
+          "workflows": "팀이 만든 모든 워크플로를 실행할 수 있습니다.",
+          "workspace": "워크스페이스에 참여합니다."
         },
         "sending": "보내는 중…",
-        "title": "이 일을 함께하는 사람들을 불러오세요."
+        "title": "팀 전체가 Okou를 활용하세요",
+        "trust": "모두 같은 워크플로를 사용하고 각자 자신의 도구를 연결합니다."
       },
       "welcome": {
-        "copy": "방금 연결한 업무에 맞춰 고른 첫 작업으로 시작하세요.",
+        "copy": "업무에 맞춰 제안된 작업을 확인하고 목표에 맞게 조정한 뒤 Okou를 시작하세요.",
         "offerTitle": "첫 1시간 컨설팅은 무료, 크레딧도 최대 100 —",
         "promptLabel": "시작 프롬프트",
         "start": "Okou로 시작하기",
-        "title": "Okou가 준비됐습니다"
+        "title": "의미 있는 작업으로 시작하세요"
       }
     },
     "templatePicker": {
@@ -6375,7 +6414,7 @@
       }
     },
     "paidTools": {
-      "description": "Okou가 작업에 사용할 수 있는 유료 도구를 선택하세요. 사용할 때마다 크레딧이 소모됩니다.",
+      "description": "이 도구들은 기본 제공 크레딧을 사용하며, Okou가 작업 중 필요에 따라 자동으로 사용합니다. 도구를 끄면 Okou가 해당 도구를 사용하지 않습니다.",
       "disabledForCreation": "{{tool}} 기능이 내 설정에서 꺼져 있습니다",
       "loadError": "도구 설정을 불러올 수 없습니다.",
       "loading": "도구 설정을 불러오는 중…",
@@ -6385,7 +6424,7 @@
       "saving": "저장 중…",
       "scope": "이 설정은 {{workspace}}의 본인에게만 적용됩니다.",
       "timing": "변경 사항은 이후 실행에 적용됩니다. 실행 중이거나 이미 준비된 작업은 이전 설정을 유지할 수 있습니다.",
-      "title": "유료 도구",
+      "title": "기본 제공 도구",
       "tools": {
         "avatar-video-generation": {
           "description": "말하는 아바타 동영상을 만듭니다.",
@@ -6850,8 +6889,10 @@
       "keepChanges": "이 버전에 내 변경 사항 적용",
       "latest": "최근 저장된 설정",
       "mode": "연결",
+      "needsRebind": "이 호스트는 Cloudflare Access를 다시 연결해야 합니다. 호스트를 편집해 다른 설정에 연결하거나 직접 연결을 선택하세요. 그전에는 연결할 수 없습니다.",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "공개 호스트 이름",
+      "rebindHelp": "허용된 Cloudflare Access 설정 또는 직접 연결을 선택하고 저장해 호스트를 복구하세요. 저장하기 전에는 연결 방식이 바뀌지 않습니다.",
       "reviewHelp": "초안이 보존되었습니다. 변경 사항을 적용하기 전에 최근 저장된 설정을 확인하세요.",
       "title": "Cloudflare Access",
       "unavailable": "이 계정에서는 Cloudflare Access를 사용할 수 없습니다."
@@ -6894,7 +6935,6 @@
       "unused": "사용 중인 호스트 없음"
     },
     "credentialsHelp": "인증 정보는 쓰기 전용이며 샌드박스 외부에 보관됩니다. 전체 키를 붙여 넣으세요. 공백은 유지됩니다. 양식을 닫으면 입력란이 지워집니다.",
-    "credentialsTab": "자격 증명",
     "delete": "호스트 삭제",
     "deleteHelp": "이 호스트를 삭제할까요? 자격 증명은 유지됩니다. Agent의 호스트 목록에서 사라집니다.",
     "description": "에이전트가 원격 명령을 실행할 SSH 호스트를 구성하세요.",
@@ -6921,7 +6961,6 @@
     "fingerprint": "저장된 호스트 키",
     "host": "공개 호스트 이름 또는 IP 주소",
     "hostSection": "호스트",
-    "hostsTab": "호스트",
     "label": "SSH",
     "loadFailed": "SSH 설정을 불러오지 못했습니다. 다시 시도하세요.",
     "loading": "SSH 호스트 로딩 중…",
@@ -6950,7 +6989,6 @@
     },
     "summary_one": "호스트 {{count}}개 구성됨",
     "summary_other": "호스트 {{count}}개 구성됨",
-    "title": "SSH 호스트",
     "unavailable": "이 계정에서는 SSH 접근을 사용할 수 없습니다.",
     "username": "SSH 사용자 이름"
   },
@@ -7082,7 +7120,6 @@
       "usernamePasswordHint": "이 사용자 이름의 비밀번호를 입력하세요",
       "usernamePasswordMethod": "사용자 이름 및 비밀번호"
     },
-    "credentialsTab": "자격 증명",
     "delete": "호스트 삭제",
     "deleteHelp": "이 호스트를 삭제할까요? 재사용 가능한 자격 증명은 유지됩니다.",
     "description": "Agent가 원격 데스크톱을 보고 제어하도록 허용하세요.",
@@ -7105,7 +7142,6 @@
     },
     "host": "호스트 이름 또는 IP 주소",
     "hostHint": "예: desktop.example.com",
-    "hostsTab": "호스트",
     "label": "VNC",
     "loadFailed": "VNC 설정을 불러오지 못했습니다.",
     "loading": "VNC 설정을 불러오는 중…",
@@ -7140,7 +7176,6 @@
     },
     "summary_one": "설정된 호스트 {{count}}개",
     "summary_other": "설정된 호스트 {{count}}개",
-    "title": "VNC 원격 액세스",
     "transport": {
       "appleDhDestinationHelp": "Apple DH에서는 127.0.0.1 또는 ::1을 입력하세요. 선택한 SSH 호스트를 통해 접근하는 Mac 자체의 루프백 주소입니다.",
       "destination": "RFB 대상",

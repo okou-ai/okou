@@ -12,10 +12,16 @@ import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { and, asc, eq } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
+import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
+import { settle } from "../utils";
 import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
+import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
+import { publishSshRunnerInvalidation } from "./ssh-runtime-wakeup.service";
 import { enterVncWrite } from "./vnc-owner-lifecycle.service";
+
+const L = logger("ChatRemoteAccess");
 
 interface Owner {
   readonly orgId: string;
@@ -32,6 +38,34 @@ interface HostOwner extends Owner {
 
 interface ThreadHostOwner extends ThreadOwner {
   readonly connectionId: string;
+}
+
+async function notifyRemoteAccessChange(
+  db: Db,
+  owner: HostOwner,
+  protocol: RemoteAccessProtocol,
+  chatThreadId?: string,
+): Promise<void> {
+  const [client, runner] = await Promise.all([
+    settle(publishSshClientInvalidation(owner)),
+    settle(
+      publishSshRunnerInvalidation(db, {
+        orgId: owner.orgId,
+        userId: owner.userId,
+        ...(chatThreadId === undefined ? {} : { chatThreadId }),
+        connectionId: protocol === "ssh" ? owner.connectionId : null,
+      }),
+    ),
+  ]);
+  if (!client.ok || !runner.ok) {
+    L.warn("Failed to invalidate remote access clients", {
+      protocol,
+      connectionId: owner.connectionId,
+      chatThreadId,
+      clientError: client.ok ? undefined : client.error,
+      runnerError: runner.ok ? undefined : runner.error,
+    });
+  }
 }
 
 async function admitRemoteAccessWrite(
@@ -143,7 +177,7 @@ export async function updateRemoteHostDefault(
   protocol: RemoteAccessProtocol,
   enabled: boolean,
 ): Promise<RemoteHostDefault | null> {
-  return await db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     if (!(await admitRemoteAccessWrite(tx, owner, protocol))) {
       return null;
     }
@@ -182,6 +216,10 @@ export async function updateRemoteHostDefault(
       });
     return row ? toHostDefault(row) : null;
   });
+  if (result) {
+    await notifyRemoteAccessChange(db, owner, protocol);
+  }
+  return result;
 }
 
 export async function listThreadRemoteAccess(
@@ -260,7 +298,7 @@ export async function setThreadRemoteAccessOverride(
   protocol: RemoteAccessProtocol,
   enabled: boolean,
 ): Promise<ThreadRemoteHostAccess | null> {
-  return await db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     if (!(await admitRemoteAccessWrite(tx, owner, protocol))) {
       return null;
     }
@@ -336,6 +374,10 @@ export async function setThreadRemoteAccessOverride(
       });
     return toThreadAccess(host, enabled);
   });
+  if (result) {
+    await notifyRemoteAccessChange(db, owner, protocol, owner.chatThreadId);
+  }
+  return result;
 }
 
 export async function clearThreadRemoteAccessOverride(
@@ -343,7 +385,7 @@ export async function clearThreadRemoteAccessOverride(
   owner: ThreadHostOwner,
   protocol: RemoteAccessProtocol,
 ): Promise<ThreadRemoteHostAccess | null> {
-  return await db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     if (!(await admitRemoteAccessWrite(tx, owner, protocol))) {
       return null;
     }
@@ -407,4 +449,8 @@ export async function clearThreadRemoteAccessOverride(
       );
     return toThreadAccess(host, null);
   });
+  if (result) {
+    await notifyRemoteAccessChange(db, owner, protocol, owner.chatThreadId);
+  }
+  return result;
 }

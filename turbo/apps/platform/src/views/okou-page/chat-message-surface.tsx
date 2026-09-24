@@ -65,11 +65,11 @@ export const CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS =
 export const CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS =
   "h-7 w-7 rounded-full object-cover object-top @[900px]:h-9 @[900px]:w-9";
 
-// The row holds its height even when no action is visible because the stack
-// pull below is measured against it. Individual actions control their own
-// visibility so a run's debug link can stay visible beside hover-only Copy.
+// Hide the whole row only for fine hover pointers, and reveal it on hover or
+// keyboard focus. It holds its height while hidden because the stack pull below
+// is measured against it.
 export const CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS =
-  "flex h-7 justify-end gap-1 mt-1";
+  "flex h-7 justify-end gap-1 mt-1 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 focus-within:opacity-100";
 
 export const CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_ROW_CLASS =
   "pl-1.5 @[900px]:grid @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:pl-0";

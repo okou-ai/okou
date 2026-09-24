@@ -175,7 +175,14 @@ def test_explicit_connector_intent_selects_registered_owner(selected_kind: str) 
 
 
 @pytest.mark.parametrize("remaining_kind", ["builtin", "custom"])
-def test_removed_explicit_owner_cannot_fall_through_to_remaining_owner(remaining_kind: str) -> None:
+@pytest.mark.parametrize(
+    "intent",
+    [connector_intent.ConnectorIntent("present", "removed-owner"), connector_intent.MALFORMED],
+)
+def test_sole_remaining_owner_does_not_require_matching_intent(
+    remaining_kind: str,
+    intent: connector_intent.ConnectorIntent,
+) -> None:
     remaining = _runtime_firewall(
         "builtin" if remaining_kind == "builtin" else "custom",
         "remaining",
@@ -186,11 +193,12 @@ def test_removed_explicit_owner_cannot_fall_through_to_remaining_owner(remaining
         ITEMS_URL,
         [remaining],
         {"remaining": network_policy(unknown_policy="allow")},
-        intent=connector_intent.ConnectorIntent("present", "removed-owner"),
+        intent=intent,
     )
 
-    assert isinstance(result, matching.FirewallAmbiguous)
-    assert result.reason == "connector_intent_not_candidate"
+    assert isinstance(result, matching.FirewallAllow)
+    assert result.name == "remaining"
+    assert result.api_entry["auth"]["headers"]["Authorization"] == "Bearer remaining"
 
 
 def test_malformed_registered_custom_candidate_does_not_fall_back_to_builtin() -> None:

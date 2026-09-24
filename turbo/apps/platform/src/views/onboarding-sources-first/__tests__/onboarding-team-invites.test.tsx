@@ -23,8 +23,8 @@ const SOURCES_FIRST_ON = {
   [FeatureSwitchKey.OnboardingSourcesFirst]: true,
 } as const;
 
-const TEAM_QUESTION = "Bring the people who do this work with you.";
-const EXPERIENCE_QUESTION = "Have you used Codex or Claude Code?";
+const TEAM_QUESTION = "Make Okou useful to your whole team";
+const EXPERIENCE_QUESTION = "How would you like to start with Okou?";
 const TEAMMATE = "rowan@company.com";
 
 /** One connected source, which every step after the source step requires. */
@@ -65,7 +65,7 @@ async function openTeamStep(): Promise<void> {
 }
 
 async function typeInvite(email: string): Promise<void> {
-  await fill(screen.getByLabelText("Teammate’s email"), email);
+  await fill(screen.getByLabelText("Team member’s email"), email);
 }
 
 test("An invited teammate is only marked invited once the API accepts the address", async () => {

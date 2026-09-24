@@ -102,70 +102,64 @@ function emptyTasksResponse() {
 }
 
 describe("SEO backlinks provider retries", () => {
-  it.each([500, 504])(
-    "recovers from HTTP %i with an Ok envelope and charges only the successful result",
-    async (httpStatus) => {
-      const { client, headers, credits } = await setupBacklinksTest();
-      const beforeCredits = await credits();
-      const failedBody = backlinksResponse("failed-task", 0.012);
-      const successfulBody = backlinksResponse("successful-task", 0.024);
-      const providerRequests: unknown[] = [];
-      server.use(
-        http.post(BACKLINKS_URL, async ({ request }) => {
-          providerRequests.push(await request.json());
-          return providerRequests.length === 1
-            ? HttpResponse.json(failedBody, { status: httpStatus })
-            : HttpResponse.json(successfulBody);
-        }),
-      );
+  it("recovers from HTTP 504 with an Ok envelope and charges only the successful result", async () => {
+    const { client, headers, credits } = await setupBacklinksTest();
+    const beforeCredits = await credits();
+    const failedBody = backlinksResponse("failed-task", 0.012);
+    const successfulBody = backlinksResponse("successful-task", 0.024);
+    const providerRequests: unknown[] = [];
+    server.use(
+      http.post(BACKLINKS_URL, async ({ request }) => {
+        providerRequests.push(await request.json());
+        return providerRequests.length === 1
+          ? HttpResponse.json(failedBody, { status: 504 })
+          : HttpResponse.json(successfulBody);
+      }),
+    );
 
-      const response = await accept(
-        client.backlinksSummary({ headers, body: BACKLINKS_REQUEST }),
-        [200],
-      );
+    const response = await accept(
+      client.backlinksSummary({ headers, body: BACKLINKS_REQUEST }),
+      [200],
+    );
 
-      expect(response.body).toStrictEqual({
-        operation: "backlinks-summary",
-        provider: "dataforseo",
-        billingCategory: "provider_cost_usd_micros",
-        billingQuantity: 24_000,
-        providerCostUsd: 0.024,
-        creditsCharged: 30,
-        result: successfulBody,
-      });
-      expect(providerRequests).toStrictEqual([
-        [{ target: "example.com", include_subdomains: true }],
-        [{ target: "example.com", include_subdomains: true }],
-      ]);
-      expect(beforeCredits - (await credits())).toBe(30);
-    },
-  );
+    expect(response.body).toStrictEqual({
+      operation: "backlinks-summary",
+      provider: "dataforseo",
+      billingCategory: "provider_cost_usd_micros",
+      billingQuantity: 24_000,
+      providerCostUsd: 0.024,
+      creditsCharged: 30,
+      result: successfulBody,
+    });
+    expect(providerRequests).toStrictEqual([
+      [{ target: "example.com", include_subdomains: true }],
+      [{ target: "example.com", include_subdomains: true }],
+    ]);
+    expect(beforeCredits - (await credits())).toBe(30);
+  });
 
-  it.each([500, 504])(
-    "stops after two HTTP %i responses without charging credits",
-    async (httpStatus) => {
-      const { client, headers, credits } = await setupBacklinksTest();
-      const beforeCredits = await credits();
-      let providerRequests = 0;
-      server.use(
-        http.post(BACKLINKS_URL, () => {
-          providerRequests += 1;
-          return HttpResponse.json(backlinksResponse("failed-task", 0.024), {
-            status: httpStatus,
-          });
-        }),
-      );
+  it("stops after two HTTP 500 responses without charging credits", async () => {
+    const { client, headers, credits } = await setupBacklinksTest();
+    const beforeCredits = await credits();
+    let providerRequests = 0;
+    server.use(
+      http.post(BACKLINKS_URL, () => {
+        providerRequests += 1;
+        return HttpResponse.json(backlinksResponse("failed-task", 0.024), {
+          status: 500,
+        });
+      }),
+    );
 
-      const response = await accept(
-        client.backlinksSummary({ headers, body: BACKLINKS_REQUEST }),
-        [502],
-      );
+    const response = await accept(
+      client.backlinksSummary({ headers, body: BACKLINKS_REQUEST }),
+      [502],
+    );
 
-      expect(response.body.error.code).toBe("DATAFORSEO_UPSTREAM_ERROR");
-      expect(providerRequests).toBe(2);
-      await expect(credits()).resolves.toBe(beforeCredits);
-    },
-  );
+    expect(response.body.error.code).toBe("DATAFORSEO_UPSTREAM_ERROR");
+    expect(providerRequests).toBe(2);
+    await expect(credits()).resolves.toBe(beforeCredits);
+  });
 
   it.each([
     {

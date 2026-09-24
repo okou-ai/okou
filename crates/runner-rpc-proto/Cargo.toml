@@ -9,6 +9,7 @@ serde_json = { workspace = true, features = ["raw_value", "std"] }
 tokio = { workspace = true, features = ["io-util"] }
 
 [dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["macros", "net", "rt", "time"] }
 
 [lints]

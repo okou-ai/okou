@@ -8,7 +8,6 @@ import { activeRoute$ } from "./active-route.ts";
 import { chatThreadIndicatorsFromWorker$ } from "./shared-database.ts";
 import { chatThreadOnlyUnread$ } from "./chat-page/chat-thread-only-unread.ts";
 import { chatThreadOnlyArchived$ } from "./chat-page/chat-thread-only-archived.ts";
-import { isChatThreadArchived } from "./chat-page/chat-thread-title.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 import {
   chatThreadMetaMap$,
@@ -139,8 +138,7 @@ function createChatThreadListSignals(
       if (!filter.archiveEnabled) {
         return true;
       }
-      const archived = isChatThreadArchived(thread.title);
-      return filter.onlyArchived ? archived : !archived;
+      return filter.onlyArchived ? thread.archived : !thread.archived;
     });
   });
   const threadIds$ = computed((get): readonly string[] => {
@@ -165,7 +163,7 @@ function createChatThreadListSignals(
         return false;
       }
       return get(allThreads$).some((thread) => {
-        return isChatThreadArchived(thread.title);
+        return thread.archived;
       });
     }),
   };

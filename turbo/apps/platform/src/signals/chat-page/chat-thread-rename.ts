@@ -4,9 +4,7 @@ import { openRenameChatThreadDialog$ } from "../okou-page/sidebar-state.ts";
 import { renameChatThread$ } from "./chat-event.ts";
 import {
   applyChatThreadEmoji,
-  archiveChatThreadTitle,
   removeChatThreadEmoji,
-  unarchiveChatThreadTitle,
 } from "./chat-thread-title.ts";
 
 export interface RenameChatThreadDialogRequest {
@@ -57,36 +55,6 @@ export const setChatThreadEmojiFromThreadMeta$ = command(
       {
         threadId,
         title: applyChatThreadEmoji(currentTitle, emoji),
-        agentId: meta?.agentId,
-      },
-      signal,
-    );
-  },
-);
-
-export const archiveChatThreadFromThreadMeta$ = command(
-  async ({ get, set }, threadId: string, signal: AbortSignal) => {
-    const meta = get(chatThreadMetaMap$).get(threadId) ?? null;
-    await set(
-      renameChatThread$,
-      {
-        threadId,
-        title: archiveChatThreadTitle(meta?.title),
-        agentId: meta?.agentId,
-      },
-      signal,
-    );
-  },
-);
-
-export const unarchiveChatThreadFromThreadMeta$ = command(
-  async ({ get, set }, threadId: string, signal: AbortSignal) => {
-    const meta = get(chatThreadMetaMap$).get(threadId) ?? null;
-    await set(
-      renameChatThread$,
-      {
-        threadId,
-        title: unarchiveChatThreadTitle(meta?.title),
         agentId: meta?.agentId,
       },
       signal,

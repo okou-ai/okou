@@ -1,4 +1,5 @@
 import { useGet, useSet } from "ccstate-react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown, Filter } from "lucide-react";
 import {
@@ -20,9 +21,10 @@ import {
 import { openSshAccessManagement$ } from "../../signals/ssh.ts";
 import { openVncAccessManagement$ } from "../../signals/vnc-access.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { SshCredentials, SshDialog, SshHosts } from "./ssh-connector-page.tsx";
-import { VncCredentials, VncHosts } from "./vnc-connector-page.tsx";
+import { SshCredentials, SshDialog, SshHosts } from "./ssh-management.tsx";
+import { VncCredentials, VncHosts } from "./vnc-management.tsx";
 import { VncDialog } from "./vnc-dialog.tsx";
 import {
   CloudflareAccessConfigs,
@@ -106,6 +108,8 @@ export function RemoteControlPanel({
   readonly vncEnabled: boolean;
 }) {
   const { t } = useTranslation();
+  const threadRemoteAccess =
+    useGet(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess] === true;
   const type = useGet(remoteControlType$);
   const selectedType = type === "vnc" && !vncEnabled ? "all" : type;
   const view = useGet(remoteControlView$);
@@ -154,7 +158,7 @@ export function RemoteControlPanel({
                 return $.ssh.label;
               })}
             </h2>
-            {view === "connections" && (
+            {view === "connections" && !threadRemoteAccess && (
               <Button
                 variant="outline"
                 size="sm"
@@ -187,7 +191,7 @@ export function RemoteControlPanel({
                 return $.vnc.label;
               })}
             </h2>
-            {view === "connections" && (
+            {view === "connections" && !threadRemoteAccess && (
               <Button
                 variant="outline"
                 size="sm"

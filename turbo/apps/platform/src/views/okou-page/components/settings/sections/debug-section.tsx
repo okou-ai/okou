@@ -92,7 +92,7 @@ export function DebugSection() {
       {/* Each trigger spends real platform budget, so the card stays behind the
           debug switch and the native pipeline's own switch together. */}
       {features[FeatureSwitchKey.OkouDebug] &&
-        features[FeatureSwitchKey.SimpleMorningBrief] && (
+        features[FeatureSwitchKey.NativeMorningBrief] && (
           <MorningBriefTriggerCard />
         )}
       <VoiceInputModelSettings />

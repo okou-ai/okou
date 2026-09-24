@@ -12,25 +12,36 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
-use super::factory_lifecycle::SharedFactory;
-use super::idle_lifecycle::{
+use crate::SharedFactory;
+use crate::idle_lifecycle::{
     IdleDestroyTracker, SharedIdlePool, set_idle_status_snapshot, spawn_idle_destroy_job,
 };
-use crate::config::ProfileConfig;
-use crate::executor::{BlankPoolSelection, BlankPoolSelectionReason};
-use crate::idle_pool::{DestroyOutcome, IdleDestroyJob, IdlePool, ParkResult, ParkedIdleCandidate};
-use crate::lifecycle::RunnerMode;
-use crate::pre_spawn_admission::{BackgroundPreSpawnAdmissionLease, PreSpawnAdmission};
-use crate::resource_budget::{BudgetLease, ReservationWithHeadroomStatus, ResourceBudget};
-use crate::status::StatusTracker;
-use crate::workspace_mount::ensure_workspace_drive_mounted;
+use runner_executor::executor::{BlankPoolSelection, BlankPoolSelectionReason};
+use runner_executor::pre_spawn_admission::{BackgroundPreSpawnAdmissionLease, PreSpawnAdmission};
+use runner_lifecycle::idle_pool::{
+    DestroyOutcome, IdleDestroyJob, IdlePool, ParkResult, ParkedIdleCandidate,
+};
+use runner_lifecycle::lifecycle::RunnerMode;
+use runner_lifecycle::resource_budget::{
+    BudgetLease, ReservationWithHeadroomStatus, ResourceBudget,
+};
+use runner_lifecycle::status::StatusTracker;
+use runner_lifecycle::workspace_mount::ensure_workspace_drive_mounted;
 
 const TARGET_PERCENT: usize = 10;
 const EXACT_IDLE_CAPACITY_YIELD_AGE: Duration = Duration::from_secs(30 * 60);
 
+/// Resource shape needed by idle replenishment after Runner loads configuration.
+#[derive(Clone)]
+pub struct BlankProfile {
+    pub vcpu: u32,
+    pub memory_mb: u32,
+    pub workspace_disk_mb: u32,
+}
+
 struct BlankPoolPlan {
     profile_name: String,
-    profile: ProfileConfig,
+    profile: BlankProfile,
     factory: SharedFactory,
     target: usize,
     max_idle: usize,
@@ -40,7 +51,7 @@ struct BlankPoolPlan {
 }
 
 #[derive(Clone)]
-pub(super) struct BlankPoolDiagnostics {
+pub struct BlankPoolDiagnostics {
     plan: Option<BlankPoolDiagnosticPlan>,
     state: Arc<Mutex<BlankPoolObservedState>>,
 }
@@ -73,7 +84,7 @@ impl BlankPoolDiagnostics {
         }
     }
 
-    pub(super) fn classify_empty(
+    pub fn classify_empty(
         &self,
         profile_name: &str,
         device_rate_limits: &Option<sandbox::DeviceRateLimits>,
@@ -157,7 +168,7 @@ impl BlankPoolDiagnostics {
     }
 }
 
-pub(super) struct BlankPoolReplenisher {
+pub struct BlankPoolReplenisher {
     plan: Option<BlankPoolPlan>,
     diagnostics: BlankPoolDiagnostics,
     task: Option<JoinHandle<BlankPrepareResult>>,
@@ -167,7 +178,7 @@ pub(super) struct BlankPoolReplenisher {
 
 struct BlankPrepareInput {
     profile_name: String,
-    profile: ProfileConfig,
+    profile: BlankProfile,
     factory: SharedFactory,
     device_rate_limits: Option<sandbox::DeviceRateLimits>,
     budget: BlankPrepareBudget,
@@ -204,7 +215,7 @@ enum BackgroundStageResult<T, E> {
     Panicked,
 }
 
-pub(super) enum BlankPrepareResult {
+pub enum BlankPrepareResult {
     Ready {
         candidate: Box<ParkedIdleCandidate>,
         retired_exact: bool,
@@ -212,14 +223,14 @@ pub(super) enum BlankPrepareResult {
     Failed(BlankPrepareFailure),
 }
 
-pub(super) struct BlankPrepareFailure {
+pub struct BlankPrepareFailure {
     stage: &'static str,
     error: Option<String>,
 }
 
 impl BlankPoolReplenisher {
-    pub(super) fn new(
-        profiles: &BTreeMap<String, ProfileConfig>,
+    pub fn new(
+        profiles: &BTreeMap<String, BlankProfile>,
         factories: &BTreeMap<String, (SharedFactory, bool)>,
         budget: &Arc<ResourceBudget>,
         max_idle: usize,
@@ -248,15 +259,15 @@ impl BlankPoolReplenisher {
         }
     }
 
-    pub(super) fn diagnostics(&self) -> BlankPoolDiagnostics {
+    pub fn diagnostics(&self) -> BlankPoolDiagnostics {
         self.diagnostics.clone()
     }
 
-    pub(super) fn request_attempt(&mut self) {
+    pub fn request_attempt(&mut self) {
         self.attempt_requested = true;
     }
 
-    pub(super) fn cancel_if_inactive(&self, mode: RunnerMode) {
+    pub fn cancel_if_inactive(&self, mode: RunnerMode) {
         if mode != RunnerMode::Running
             && let Some(cancel) = self.task_cancel.as_ref()
         {
@@ -265,7 +276,7 @@ impl BlankPoolReplenisher {
         }
     }
 
-    pub(super) async fn maybe_start(
+    pub async fn maybe_start(
         &mut self,
         mode: RunnerMode,
         idle_pool: &SharedIdlePool,
@@ -441,11 +452,11 @@ impl BlankPoolReplenisher {
         self.task = Some(tokio::spawn(prepare_blank_sandbox(input, task_cancel)));
     }
 
-    pub(super) fn is_preparing(&self) -> bool {
+    pub fn is_preparing(&self) -> bool {
         self.task.is_some()
     }
 
-    pub(super) async fn wait_for_preparation(&mut self) -> Option<BlankPrepareResult> {
+    pub async fn wait_for_preparation(&mut self) -> Option<BlankPrepareResult> {
         let task = self.task.as_mut()?;
         let result = task.await;
         self.task = None;
@@ -459,7 +470,7 @@ impl BlankPoolReplenisher {
         })
     }
 
-    pub(super) async fn finish_preparation(
+    pub async fn finish_preparation(
         &mut self,
         result: BlankPrepareResult,
         idle_pool: &SharedIdlePool,
@@ -563,7 +574,7 @@ impl BlankPoolReplenisher {
         }
     }
 
-    pub(super) async fn shutdown(mut self) {
+    pub async fn shutdown(mut self) {
         if let Some(cancel) = self.task_cancel.as_ref() {
             cancel.cancel();
         }
@@ -576,7 +587,7 @@ impl BlankPoolReplenisher {
 }
 
 fn select_plan(
-    profiles: &BTreeMap<String, ProfileConfig>,
+    profiles: &BTreeMap<String, BlankProfile>,
     factories: &BTreeMap<String, (SharedFactory, bool)>,
     budget: &ResourceBudget,
     max_idle: usize,
@@ -610,7 +621,7 @@ fn select_plan(
     })
 }
 
-fn profile_capacity(profile: &ProfileConfig, budget: &ResourceBudget) -> usize {
+fn profile_capacity(profile: &BlankProfile, budget: &ResourceBudget) -> usize {
     let resource_capacity = std::cmp::min(
         budget.effective_vcpu() as usize / profile.vcpu as usize,
         budget.effective_memory_mb() as usize / profile.memory_mb as usize,
@@ -926,16 +937,13 @@ async fn destroy_candidate(candidate: ParkedIdleCandidate, context: &'static str
 mod tests {
     use super::*;
 
-    use crate::idle_pool::test_support::ParkedIdleCandidateBuilder;
-    use crate::idle_pool::{IdlePool, IdlePoolConfig, ParkingGate};
+    use runner_lifecycle::idle_pool::test_support::ParkedIdleCandidateBuilder;
+    use runner_lifecycle::idle_pool::{IdlePool, IdlePoolConfig, ParkingGate};
 
-    fn profile(vcpu: u32, memory_mb: u32) -> ProfileConfig {
-        ProfileConfig {
-            rootfs_hash: "rootfs".into(),
-            snapshot_hash: "snapshot".into(),
+    fn profile(vcpu: u32, memory_mb: u32) -> BlankProfile {
+        BlankProfile {
             vcpu,
             memory_mb,
-            rootfs_disk_mb: 8192,
             workspace_disk_mb: 10240,
         }
     }

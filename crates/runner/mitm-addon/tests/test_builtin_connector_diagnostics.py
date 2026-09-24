@@ -577,7 +577,6 @@ def test_shared_base_ownership_selects_route_specific_inactive_sibling():
 
     assert resolution is not None
     assert resolution.reason == "route_owner"
-    assert resolution.hint_status == "absent"
     assert resolution.candidate is not None
     assert resolution.candidate.connector_slug == "inactive"
 
@@ -603,54 +602,7 @@ def test_shared_base_ownership_suppresses_base_only_candidate():
     assert resolution.reason == "base_only"
 
 
-def test_shared_base_ownership_uses_intent_inside_candidate_set():
-    snapshot = _diagnostic_snapshot(
-        [
-            _firewall("active", "ACTIVE_TOKEN"),
-            _firewall("inactive", "INACTIVE_TOKEN"),
-        ]
-    )
-
-    resolution = builtin_connector_diagnostics.resolve_shared_base_ownership(
-        snapshot,
-        "https://shared.example.com/graphql/v2",
-        "POST",
-        active_firewall_names={"active"},
-        matched_firewall_name="active",
-        connector_intent="inactive",
-    )
-
-    assert resolution is not None
-    assert resolution.reason == "hint_owner"
-    assert resolution.hint_status == "used"
-    assert resolution.candidate is not None
-    assert resolution.candidate.connector_slug == "inactive"
-
-
-def test_shared_base_ownership_ignores_intent_outside_candidate_set():
-    snapshot = _diagnostic_snapshot(
-        [
-            _firewall("active", "ACTIVE_TOKEN"),
-            _firewall("inactive", "INACTIVE_TOKEN"),
-        ]
-    )
-
-    resolution = builtin_connector_diagnostics.resolve_shared_base_ownership(
-        snapshot,
-        "https://shared.example.com/graphql/v2",
-        "POST",
-        active_firewall_names={"active"},
-        matched_firewall_name="active",
-        connector_intent="other",
-    )
-
-    assert resolution is not None
-    assert resolution.candidate is None
-    assert resolution.reason == "base_only"
-    assert resolution.hint_status == "outside_candidate_set"
-
-
-def test_shared_base_active_route_owner_overrides_conflicting_intent():
+def test_shared_base_active_route_owner_suppresses_inactive_diagnostic():
     snapshot = _diagnostic_snapshot(
         [
             _firewall(
@@ -668,13 +620,11 @@ def test_shared_base_active_route_owner_overrides_conflicting_intent():
         "GET",
         active_firewall_names={"active"},
         matched_firewall_name="active",
-        connector_intent="inactive",
     )
 
     assert resolution is not None
     assert resolution.candidate is None
     assert resolution.reason == "active_route_owner"
-    assert resolution.hint_status == "ignored"
 
 
 def test_shared_base_ownership_normalizes_static_base_keys():

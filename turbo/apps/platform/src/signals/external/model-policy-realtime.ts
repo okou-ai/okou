@@ -15,7 +15,6 @@ export const setupModelPolicyRealtime$ = command(
           scope,
           topic: "modelPoliciesChanged",
           invalidations: [invalidateOrgModelPolicies$],
-          options: { runOnSubscribe: true },
         },
         signal,
       );

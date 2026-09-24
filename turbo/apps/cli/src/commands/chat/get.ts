@@ -3,7 +3,7 @@ import { Command } from "commander";
 
 import { getChatThread } from "../../lib/api/domains/chat";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import { resolveChatThreadId } from "./shared";
+import { formatChatEffort, resolveChatThreadId } from "./shared";
 
 interface GetOptions {
   readonly threadId?: string;
@@ -48,7 +48,9 @@ Notes:
       }
       console.log(chalk.dim(`  Title:  ${thread.title ?? "(untitled)"}`));
       console.log(
-        chalk.dim(`  Model:  ${thread.selectedModel ?? "(default)"}`),
+        chalk.dim(
+          `  Model:  ${thread.selectedModel ?? "(default)"}${formatChatEffort(thread.selectedModel, thread.modelSettings)}`,
+        ),
       );
     }),
   );

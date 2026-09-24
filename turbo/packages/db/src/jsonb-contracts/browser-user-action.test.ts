@@ -48,6 +48,46 @@ describe("Browser user-action JSONB payload", () => {
     });
   });
 
+  it("accepts genuine number targets but keeps semantic kinds distinct", () => {
+    const field = {
+      key: "quantity",
+      label: "Quantity",
+      fieldKind: "number",
+      required: false,
+      backendNodeId: 45,
+      fingerprint: { tagName: "INPUT", inputType: "number" },
+    };
+    const payload = {
+      version: 1,
+      kind: "input",
+      callbackIds,
+      target: { ...inputTarget, fields: [field] },
+    };
+    expect(
+      parseBrowserUserActionPayload(payload).target.fields[0],
+    ).toMatchObject(field);
+    expect(() => {
+      parseBrowserUserActionPayload({
+        ...payload,
+        target: {
+          ...inputTarget,
+          fields: [
+            { ...field, fingerprint: { tagName: "INPUT", inputType: "text" } },
+          ],
+        },
+      });
+    }).toThrow("Invalid Browser user-action payload");
+    expect(
+      parseBrowserUserActionPayload({
+        ...payload,
+        target: {
+          ...inputTarget,
+          fields: [{ ...field, fieldKind: "one_time_code" }],
+        },
+      }).target.fields[0]?.fieldKind,
+    ).toBe("one_time_code");
+  });
+
   it("rejects unknown versions, duplicate keys, and unsafe shapes", () => {
     expect(() => {
       return parseBrowserUserActionPayload({

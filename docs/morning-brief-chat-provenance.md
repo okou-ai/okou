@@ -100,12 +100,12 @@ commit together. Do not add a second rule.
 [The collector](../turbo/apps/api/src/signals/services/morning-brief-chat-collection.service.ts)
 is reachable through `POST /api/morning-brief/preview/chat-collection`, a
 developer verification surface with no Settings UI. Production answers 404
-before authentication, even when `simpleMorningBrief` is enabled for the caller;
+before authentication, even when `FeatureSwitchKey.NativeMorningBrief` is enabled for the caller;
 the environment decision lives in
 [preview endpoint access](../turbo/apps/api/src/signals/routes/preview-endpoint-access.ts)
 so a route in the deployed table never imports a test-only helper. Outside
 production the route still requires an authenticated organization and user, the
-`chat-event:read` capability, the default-off `simpleMorningBrief` switch, and a
+`chat-event:read` capability, the default-off `FeatureSwitchKey.NativeMorningBrief` switch, and a
 live installed and enabled Morning Brief. Its only input is the scheduled
 anchor: no thread, owner, Agent or destination may be supplied.
 
@@ -141,7 +141,7 @@ and no provenance repair.
 Admission goes through the shared connector-free
 [`admitMorningBriefCollection`](../turbo/apps/api/src/signals/services/morning-brief-connector-reader.service.ts),
 so unread Chat admits on the same authority the OAuth sources do, including the
-default-off `simpleMorningBrief` switch. It freezes one scope for the whole
+default-off `FeatureSwitchKey.NativeMorningBrief` switch. It freezes one scope for the whole
 attempt:
 
 | Frozen field       | What a change to it means                                                        |
@@ -318,7 +318,7 @@ rows safely. A rollback does not drop the column, and production collection
 stays disabled because the preview route does not exist there.
 
 Provenance is preserved regardless of the implementation switch, so turning
-`simpleMorningBrief` off cannot silently erase evidence that is needed later.
+`FeatureSwitchKey.NativeMorningBrief` off cannot silently erase evidence that is needed later.
 
 ### Activation gate, not a completed guarantee
 

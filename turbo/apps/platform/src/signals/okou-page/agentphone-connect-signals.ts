@@ -1,7 +1,6 @@
 import { command } from "ccstate";
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { accept } from "../../lib/accept.ts";
-import { capturePlausibleEvent } from "../../lib/plausible.ts";
 import { apiClient$ } from "../api-client.ts";
 import { searchParams$ } from "../route.ts";
 import { parseAgentPhoneConnectParams } from "./agentphone-connect-params.ts";
@@ -23,10 +22,6 @@ export const connectAgentPhoneAccount$ = command(
       [200],
     );
     signal.throwIfAborted();
-
-    capturePlausibleEvent("agentphone_connect", {
-      props: { channel: "agentphone" },
-    });
 
     return result.body;
   },

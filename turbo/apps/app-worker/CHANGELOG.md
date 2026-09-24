@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.8.111](https://github.com/okou-ai/okou/compare/app-worker-v1.8.110...app-worker-v1.8.111) (2026-09-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.708.0
+
+## [1.8.110](https://github.com/okou-ai/okou/compare/app-worker-v1.8.109...app-worker-v1.8.110) (2026-09-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.707.1
+
+## [1.8.109](https://github.com/okou-ai/okou/compare/app-worker-v1.8.108...app-worker-v1.8.109) (2026-09-24)
+
+
+### Performance Improvements
+
+* **platform:** preload the shared database worker from the edge session ([#36485](https://github.com/okou-ai/okou/issues/36485)) ([4baf399](https://github.com/okou-ai/okou/commit/4baf399a80e28365d9b9c6824408389bbd5fb81a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.707.0
+
 ## [1.8.108](https://github.com/okou-ai/okou/compare/app-worker-v1.8.107...app-worker-v1.8.108) (2026-09-24)
 
 

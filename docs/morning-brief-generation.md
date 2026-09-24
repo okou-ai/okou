@@ -39,7 +39,7 @@ real invocation and requires it unchanged.
 route table, so an operator can really invoke it on a development server or a
 protected preview deployment. `isPreviewEndpointAllowed` runs before
 authentication, so production answers `404` without doing any auth work, and it
-stays `404` even when `simpleMorningBrief` is enabled for the caller. On a
+stays `404` even when `FeatureSwitchKey.NativeMorningBrief` is enabled for the caller. On a
 preview deployment the request additionally needs the deployment's
 protection-bypass secret, which is environment protection and never owner
 authentication.

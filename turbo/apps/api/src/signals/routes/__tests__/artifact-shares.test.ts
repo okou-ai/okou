@@ -18,17 +18,22 @@ import {
   artifactSharePolicySchema,
   artifactSharesContract,
 } from "@okouai/api-contracts/contracts/artifact-shares";
+import { artifactDeliveryKey } from "@okouai/api-contracts/contracts/artifact-delivery";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { testContext, accept } from "../../../__tests__/test-context";
+import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { insertLegacyHostedSitePublicationFixture } from "../../../test-fixtures/hosted-sites";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactShareRoutes } from "../artifact-shares";
 import { featureSwitchesRoutes } from "../feature-switches";
+import { hostRoutes } from "../host";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { webFileUrlRoutes } from "../web-file-url";
@@ -57,6 +62,7 @@ const api = () => {
       ...artifactShareRoutes,
       ...artifactReferenceRoutes,
       ...featureSwitchesRoutes,
+      ...hostRoutes,
       ...uploadsPrepareRoutes,
       ...uploadsCompleteRoutes,
       ...webFileUrlRoutes,
@@ -230,6 +236,142 @@ async function fixture() {
   await flag(true);
   return { owner, org, organization, members, objects, session };
 }
+
+test("historical HTML snapshots keep token downloads and owner revocation while republishing is refused", async () => {
+  const f = await fixture();
+  // Public-only prepare cannot reproduce a retained private HTML publication.
+  // Seed that historical identity, then exercise its current HTTP contracts.
+  const legacy = await insertLegacyHostedSitePublicationFixture({
+    orgId: f.org,
+    userId: f.owner,
+    site: `snapshot-${randomUUID().slice(0, 8)}`,
+    files: [
+      {
+        path: "/index.html",
+        size: 13,
+        sha256: "a".repeat(64),
+        contentType: "text/html",
+      },
+    ],
+  });
+  f.objects.set(legacy.policyKey, JSON.stringify(legacy.policy));
+  for (const alias of [legacy.publicSlug, legacy.publicToken]) {
+    f.objects.set(
+      artifactDeliveryKey("okou", "html", alias),
+      JSON.stringify({
+        version: 1,
+        kind: "publication",
+        publicBrand: "okou",
+        shareId: legacy.shareId,
+        publicToken: legacy.publicToken,
+        targetKind: "html",
+      }),
+    );
+  }
+  context.mocks.s3.getSignedUrl.mockImplementation((_client, command) => {
+    return Promise.resolve(apiTestS3PresignedUrl(command));
+  });
+  const target = { kind: "html" as const, id: legacy.deploymentId };
+  for (const audience of ["public", "organization"] as const) {
+    const rejected = await accept(
+      api()(artifactSharesContract).update({
+        headers,
+        body: { target, audience },
+      }),
+      [400],
+    );
+    expect(rejected.body.error).toMatchObject({
+      code: "BAD_REQUEST",
+      message:
+        "Hosted sites are public. Publish a new deployment to update the site.",
+    });
+  }
+  const status = await accept(
+    api()(artifactSharesContract).status({ headers, body: target }),
+    [200],
+  );
+  expect(status.body).toMatchObject({
+    audience: "public",
+    selectedTarget: target,
+  });
+
+  const download = () => {
+    return api()(hostContract).files({
+      headers,
+      params: { publicSlug: legacy.publicToken },
+      query: { hostname: `${legacy.publicToken}.okou.app` },
+    });
+  };
+  f.session(`user_${randomUUID()}`, null);
+  const snapshot = await accept(download(), [200]);
+  expect(snapshot.body).toMatchObject({
+    siteId: legacy.siteId,
+    deploymentId: legacy.deploymentId,
+    fileCount: 1,
+  });
+  expect(
+    new URL(snapshot.body.files[0]!.downloadUrl).searchParams.get("object"),
+  ).toContain(`${legacy.snapshotPrefix}/index.html`);
+
+  f.session(`user_${randomUUID()}`);
+  await accept(
+    api()(artifactSharesContract).update({
+      headers,
+      body: { target, audience: "private" },
+    }),
+    [404],
+  );
+  await accept(download(), [200]);
+  f.session();
+  await flag(false);
+  const revoked = await accept(
+    api()(artifactSharesContract).update({
+      headers,
+      body: { target, audience: "private" },
+    }),
+    [200],
+  );
+  expect(revoked.body).toMatchObject({ audience: "private", url: null });
+  await accept(download(), [404]);
+});
+
+test("unshared historical HTML deployments cannot create new snapshots", async () => {
+  const f = await fixture();
+  // The current hosting API cannot create the historical private target.
+  // No policy is installed: this is a previously allocated, unshared identity.
+  const legacy = await insertLegacyHostedSitePublicationFixture({
+    orgId: f.org,
+    userId: f.owner,
+    site: `unshared-${randomUUID().slice(0, 8)}`,
+    files: [
+      {
+        path: "/index.html",
+        size: 13,
+        sha256: "a".repeat(64),
+        contentType: "text/html",
+      },
+    ],
+  });
+  const target = { kind: "html" as const, id: legacy.deploymentId };
+  for (const audience of ["public", "organization"] as const) {
+    await accept(
+      api()(artifactSharesContract).update({
+        headers,
+        body: { target, audience },
+      }),
+      [400],
+    );
+  }
+  const status = await accept(
+    api()(artifactSharesContract).status({ headers, body: target }),
+    [200],
+  );
+  expect(status.body).toMatchObject({
+    audience: "private",
+    selectedTarget: null,
+    shareId: null,
+  });
+});
 
 test.each(["private", "organization", "public"] as const)(
   "%s share status reuses the fresh membership name and observes renames",

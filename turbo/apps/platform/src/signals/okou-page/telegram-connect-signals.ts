@@ -4,7 +4,6 @@ import {
   type TelegramLinkStatusResponse,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { accept } from "../../lib/accept.ts";
-import { capturePlausibleEvent } from "../../lib/plausible.ts";
 import { apiClient$ } from "../api-client.ts";
 import { oauthBaseForNavigation$ } from "../fetch.ts";
 import { searchParams$ } from "../route.ts";
@@ -145,14 +144,6 @@ export const connectTelegramAccount$ = command(
       [200],
     );
     signal.throwIfAborted();
-
-    capturePlausibleEvent("telegram_connect", {
-      props: {
-        method: params.connectSignature
-          ? "connect_signature"
-          : "telegram_login",
-      },
-    });
 
     window.location.assign(
       `tg://resolve?domain=${result.body.botUsername.replace(/^@/, "")}`,

@@ -17,6 +17,7 @@ const routeTestContract = c.router({
     path: "/__test/computed",
     responses: {
       200: z.object({ ok: z.literal(true) }),
+      400: z.object({ error: z.string() }),
     },
   },
   command: {
@@ -201,5 +202,94 @@ describe("honoSignalHandler", () => {
       content: "The button is hard to find\nIncrease the contrast",
       userMessage: userMessageFeedbackDocument,
     });
+  });
+
+  it("keeps small and large JSON responses unchanged with an observer", async () => {
+    for (const content of ["界", "界".repeat(50_000)]) {
+      const handler$ = computed(() => {
+        return { status: 200 as const, body: { content } };
+      });
+      const baseline = await accept(
+        setupApp({
+          context,
+          routes: [{ route: routeTestContract.structured, handler: handler$ }],
+        })(routeTestContract).structured(),
+        [200],
+      );
+      const observed = await accept(
+        setupApp({
+          context,
+          routes: [
+            {
+              route: routeTestContract.structured,
+              handler: handler$,
+              observeJsonResponse: () => {
+                return undefined;
+              },
+            },
+          ],
+        })(routeTestContract).structured(),
+        [200],
+      );
+
+      expect(observed.body).toStrictEqual(baseline.body);
+      expect(observed.headers.get("content-type")).toBe(
+        baseline.headers.get("content-type"),
+      );
+    }
+  });
+
+  it("keeps unsuccessful JSON responses on the existing path", async () => {
+    const handler$ = computed(() => {
+      return { status: 400 as const, body: { error: "Invalid request" } };
+    });
+    const baseline = await accept(
+      setupApp({
+        context,
+        routes: [{ route: routeTestContract.computed, handler: handler$ }],
+      })(routeTestContract).computed(),
+      [400],
+    );
+    const observed = await accept(
+      setupApp({
+        context,
+        routes: [
+          {
+            route: routeTestContract.computed,
+            handler: handler$,
+            observeJsonResponse: () => {
+              return undefined;
+            },
+          },
+        ],
+      })(routeTestContract).computed(),
+      [400],
+    );
+    expect(observed.body).toStrictEqual(baseline.body);
+    expect(observed.headers.get("content-type")).toBe(
+      baseline.headers.get("content-type"),
+    );
+  });
+
+  it("keeps the JSON response when its observer fails", async () => {
+    const handler$ = computed(() => {
+      return { status: 200 as const, body: { ok: true as const } };
+    });
+    const response = await accept(
+      setupApp({
+        context,
+        routes: [
+          {
+            route: routeTestContract.computed,
+            handler: handler$,
+            observeJsonResponse() {
+              throw new Error("telemetry unavailable");
+            },
+          },
+        ],
+      })(routeTestContract).computed(),
+      [200],
+    );
+    expect(response.body).toStrictEqual({ ok: true });
   });
 });

@@ -44,12 +44,14 @@ function action(
         label: "Email",
         fieldKind: "username",
         required: true,
+        control: { tagName: "INPUT", inputType: "email" },
       },
       {
         key: "remembered",
         label: "Remembered answer",
         fieldKind: "text",
         required: false,
+        control: { tagName: "INPUT", inputType: "text" },
       },
     ],
     callbackIds: {
@@ -62,6 +64,30 @@ function action(
         chatThreadSortEventId: CANCEL_SORT_ID,
       },
     },
+  };
+}
+
+function numberAction(
+  required: boolean,
+): Extract<BrowserUserActionResponse, { kind: "input" }> {
+  return {
+    ...action("pending"),
+    fields: [
+      {
+        key: "quantity",
+        label: "Quantity",
+        fieldKind: "number",
+        required,
+        control: {
+          tagName: "INPUT",
+          inputType: "number",
+          siteRequired: false,
+          min: "10",
+          max: "20",
+          step: "0.5",
+        },
+      },
+    ],
   };
 }
 
@@ -150,6 +176,220 @@ test("The standalone route reuses the native browser input form", async () => {
   expect(document.title).toContain("Browser action");
 });
 
+test("The standalone form uses preflight's observed multiline and email controls", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, action(state));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    const pending = action("pending");
+    return respond(200, {
+      ...pending,
+      fields: [
+        {
+          ...pending.fields[0],
+          control: {
+            tagName: "INPUT",
+            inputType: "email",
+            siteRequired: true,
+            multiple: true,
+          },
+        },
+        {
+          ...pending.fields[1],
+          control: { tagName: "TEXTAREA", inputType: "textarea", minLength: 3 },
+        },
+      ],
+    });
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      { key: "email", value: "owner@example.test" },
+      { key: "remembered", value: "first line\nsecond line" },
+    ]);
+    state = "succeeded";
+    return respond(200, action(state));
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const email = within(form).getByLabelText(/Email/u);
+  const multiline = within(form).getByLabelText(/Remembered answer/u);
+  expect(email).toHaveAttribute("type", "email");
+  expect(email).toHaveAttribute("multiple");
+  expect(email).toBeRequired();
+  expect(multiline.tagName).toBe("TEXTAREA");
+  expect(multiline).toHaveAttribute("minlength", "3");
+  await fill(email, "owner@example.test");
+  await fill(multiline, "first line\nsecond line");
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
+test("The standalone form uses the existing input style with live number constraints", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  let applied = false;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, { ...numberAction(true), state });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, numberAction(true));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    applied = true;
+    expect(body.values).toStrictEqual([{ key: "quantity", value: "12.5" }]);
+    state = "succeeded";
+    return respond(200, { ...numberAction(true), state });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const quantity = within(form).getByLabelText(/Quantity/u);
+  expect(quantity).toHaveAttribute("data-slot", "input");
+  expect(quantity).toHaveAttribute("type", "number");
+  expect(quantity).toHaveAttribute("min", "10");
+  expect(quantity).toHaveAttribute("max", "20");
+  expect(quantity).toHaveAttribute("step", "0.5");
+  expect(quantity).toBeRequired();
+  await fill(quantity, "12.5");
+  click(button("Add to browser"));
+  await waitFor(() => {
+    expect(applied).toBeTruthy();
+  });
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
+test.each([
+  { clear: false, typedThenDeleted: false, expected: [] },
+  {
+    clear: true,
+    typedThenDeleted: false,
+    expected: [{ key: "quantity", value: "" }],
+  },
+  { clear: false, typedThenDeleted: true, expected: [] },
+])(
+  "Optional number field can be untouched or explicitly cleared ($clear, $typedThenDeleted)",
+  async ({ clear, typedThenDeleted, expected }) => {
+    let state: BrowserUserActionResponse["state"] = "pending";
+    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+      return respond(200, { ...numberAction(false), state });
+    });
+    context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+      return respond(200, numberAction(false));
+    });
+    context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+      expect(body.values).toStrictEqual(expected);
+      state = "succeeded";
+      return respond(200, { ...numberAction(false), state });
+    });
+    context.mocks.api(chatEventsContract.send, ({ respond }) => {
+      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    });
+    await setupPage({
+      context,
+      path: route(),
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+    });
+    const form = await screen.findByRole("form", {
+      name: "Enter information in browser",
+    });
+    expect(within(form).getByLabelText(/Quantity/u)).toHaveAttribute(
+      "type",
+      "number",
+    );
+    if (clear) {
+      click(button("Clear website value"));
+    }
+    if (typedThenDeleted) {
+      const quantity = within(form).getByLabelText(/Quantity/u);
+      await fill(quantity, "12.5");
+      await fill(quantity, "");
+    }
+    expect(
+      button(clear ? "Leave website value unchanged" : "Clear website value"),
+    ).toBeVisible();
+    click(button("Add to browser"));
+    await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  },
+);
+
+test("Changed site constraints require a fresh preflight without losing ordinary draft text", async () => {
+  let preflights = 0;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, action("pending"));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    preflights += 1;
+    const pending = action("pending");
+    return respond(200, {
+      ...pending,
+      fields: [
+        pending.fields[0],
+        {
+          ...pending.fields[1],
+          control: {
+            tagName: "TEXTAREA",
+            inputType: "textarea",
+            minLength: preflights === 1 ? 3 : 5,
+          },
+        },
+      ],
+    });
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ respond }) => {
+    return respond(409, {
+      error: {
+        code: "BROWSER_USER_ACTION_INVALID_VALUE",
+        message: "Browser input does not meet the website control constraints",
+      },
+    });
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  let form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
+  await fill(within(form).getByLabelText(/Remembered answer/u), "abcd");
+  click(button("Add to browser"));
+  await screen.findByRole("alert");
+  click(button("Retry"));
+  form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  expect(preflights).toBe(2);
+  expect(within(form).getByLabelText(/Remembered answer/u)).toHaveAttribute(
+    "minlength",
+    "5",
+  );
+  expect(within(form).getByLabelText(/Remembered answer/u)).toHaveValue("abcd");
+});
+
 test("Returning to a pending standalone form keeps its password draft", async () => {
   const pending = {
     ...action("pending"),
@@ -159,6 +399,7 @@ test("Returning to a pending standalone form keeps its password draft", async ()
         label: "Password",
         fieldKind: "password" as const,
         required: true,
+        control: { tagName: "INPUT" as const, inputType: "password" as const },
       },
     ],
   };

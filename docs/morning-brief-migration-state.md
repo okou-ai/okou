@@ -117,7 +117,8 @@ mutation, exactly as the preference surface does today.
   thread's explicit connector account before the org default; a migrated brief
   must resolve the same account and must not silently fall back to another one
   when an explicit account is missing or revoked.
-- `FeatureSwitchKey.SimpleMorningBrief` (`simpleMorningBrief`) selects the
+- `FeatureSwitchKey.NativeMorningBrief` (persisted/API key
+  `simpleMorningBrief` for mixed-version compatibility) selects the
   implementation. It is registered off by default and enabled for the staff org
   allowlist only, under S8
   ([#36203](https://github.com/okou-ai/okou/issues/36203)); a per-user override
@@ -137,7 +138,7 @@ serialization rehearsal for the native pipeline, **not** an authority, an
 execution record, or a cache that makes anything faster. The legacy installation
 and its automation still decide everything; the legacy queries all still run.
 
-`FeatureSwitchKey.SimpleMorningBrief` gates both directions and is off by
+`FeatureSwitchKey.NativeMorningBrief` gates both directions and is off by
 default, so the production path is unchanged for every organization outside the
 staff org allowlist it is currently enabled for.
 
@@ -293,7 +294,7 @@ instant.
 Only the installation this document's canonical selection reports as a member's
 installed Morning Brief is journaled. Additional installations, manual runs and
 every other automation kind keep their existing untracked behavior, and the
-journal activates no native work: the `simpleMorningBrief` switch is not
+journal activates no native work: the `FeatureSwitchKey.NativeMorningBrief` switch is not
 consulted here at all. The table is additive and unconditional — it has no
 feature-gated creation, and it is written only on the legacy path.
 

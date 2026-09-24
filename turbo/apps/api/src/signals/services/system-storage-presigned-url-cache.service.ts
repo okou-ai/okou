@@ -6,6 +6,11 @@ import { z } from "zod";
 
 import { joinAll, safeSync } from "../utils";
 import { executeRawRows } from "../../lib/db-raw-rows";
+import {
+  withPgPoolAcquisitionCapture,
+  type PgPoolAcquisition,
+  type PgPoolAcquisitionCapture,
+} from "../../lib/db-instrumentation";
 import { env } from "../../lib/env";
 import type { Db } from "../external/db";
 import {
@@ -180,6 +185,11 @@ type StorageManifestPrefetchCountBucket =
   | "97_128"
   | "129_plus";
 
+type StorageManifestPrefetchLargeCountBucket =
+  | "129_192"
+  | "193_256"
+  | "257_plus";
+
 type StorageManifestPrefetchDecision =
   | "insufficient_groups"
   | "over_request_limit"
@@ -271,11 +281,24 @@ function storageManifestPrefetchCountBucket(
   return "129_plus";
 }
 
+function storageManifestPrefetchLargeCountBucket(
+  count: number,
+): StorageManifestPrefetchLargeCountBucket {
+  if (count <= 192) {
+    return "129_192";
+  }
+  if (count <= 256) {
+    return "193_256";
+  }
+  return "257_plus";
+}
+
 class StorageManifestCacheTiming {
   private readonly windows = new Map<
     StorageManifestCacheActionType,
     StorageManifestCacheTimingWindow
   >();
+  private readonly poolAcquisitions: PgPoolAcquisition[] = [];
 
   constructor(
     private readonly context: StorageManifestCacheObservationContext,
@@ -306,6 +329,10 @@ class StorageManifestCacheTiming {
     })().finally(() => {
       window.finishedAt = now();
     });
+  }
+
+  recordPoolAcquisitions(acquisitions: readonly PgPoolAcquisition[]): void {
+    this.poolAcquisitions.push(...acquisitions);
   }
 
   flush(): void {
@@ -339,7 +366,26 @@ class StorageManifestCacheTiming {
         "nested",
         window.startedAt,
         finishedAt,
-        dimensions,
+        actionType === "api_dispatch_prepare_storage_manifest_cache_lookup"
+          ? {
+              ...dimensions,
+              storage_manifest_cache_pool_acquire_count_bucket:
+                storageManifestCacheCountBucket(this.poolAcquisitions.length),
+            }
+          : dimensions,
+      );
+    }
+    for (const acquisition of this.poolAcquisitions) {
+      this.context.timing.recordDuration(
+        "api_dispatch_prepare_storage_manifest_cache_pool_acquire",
+        "nested",
+        acquisition.durationMs,
+        now(),
+        {
+          ...dimensions,
+          storage_manifest_cache_lookup_kind: "legacy",
+          storage_manifest_cache_pool_acquire_path: acquisition.path,
+        },
       );
     }
   }
@@ -776,11 +822,20 @@ function recordStorageManifestPrefetchDecision(args: {
     now(),
     {
       storage_manifest_branch: args.observation.branch,
+      storage_manifest_cache_scope: "all_scopes",
       storage_manifest_cache_prefetch_decision: args.decision,
       storage_manifest_cache_prefetch_requested_count_bucket:
         storageManifestPrefetchCountBucket(args.requestedCount),
+      ...(args.requestedCount > 128
+        ? {
+            storage_manifest_cache_prefetch_requested_large_count_bucket:
+              storageManifestPrefetchLargeCountBucket(args.requestedCount),
+          }
+        : {}),
       storage_manifest_cache_logical_lookup_count_bucket:
         storageManifestCacheCountBucket(args.logicalLookupCount),
+      storage_manifest_cache_prefetch_unique_pair_count_observed:
+        args.uniquePairCount === undefined ? "no" : "yes",
       ...(args.uniquePairCount === undefined
         ? {}
         : {
@@ -889,6 +944,26 @@ function storageManifestPresignedUrlCacheLookupPairs(
   return { pairs, cacheKeysByRequest };
 }
 
+function storageManifestPresignedUrlUniquePairCount(
+  input: StorageManifestPresignedUrlCachePrefetchInput,
+): number {
+  const pairs = new Set<string>();
+  for (const request of input.systemRequests) {
+    pairs.add(`system_storage:${systemStoragePresignedUrlCacheKey(request)}`);
+  }
+  for (const request of input.workflowSkillRequests) {
+    pairs.add(
+      `workflow_skill_storage:${workflowSkillStoragePresignedUrlCacheKey(request)}`,
+    );
+  }
+  for (const request of input.readOnlyRequests) {
+    pairs.add(
+      `readonly_storage:${readOnlyStoragePresignedUrlCacheKey(request)}`,
+    );
+  }
+  return pairs.size;
+}
+
 function storageManifestExceedsObjectKeyLowerBound(
   input: StorageManifestPresignedUrlCachePrefetchInput,
 ): boolean {
@@ -942,6 +1017,70 @@ async function lookupMixedStorageManifestPresignedUrlCacheRows(
     );
 }
 
+async function measureMixedStorageManifestPresignedUrlCacheRows(args: {
+  readonly db: Db;
+  readonly pairs: readonly StorageManifestPresignedUrlCacheLookupPair[];
+  readonly requestedCount: number;
+  readonly logicalLookupCount: number;
+  readonly observation:
+    | StorageManifestCacheMixedLookupObservationContext
+    | undefined;
+}) {
+  const acquisitionCapture: PgPoolAcquisitionCapture = { acquisitions: [] };
+  return await measureApiDispatchTiming(
+    args.observation?.timing,
+    "api_dispatch_prepare_storage_manifest_cache_mixed_lookup",
+    "nested",
+    async () => {
+      const lookup = async () => {
+        return await lookupMixedStorageManifestPresignedUrlCacheRows(
+          args.db,
+          args.pairs,
+        );
+      };
+      const rows = args.observation
+        ? withPgPoolAcquisitionCapture(acquisitionCapture, lookup)
+        : lookup();
+      return await rows.finally(() => {
+        for (const acquisition of acquisitionCapture.acquisitions) {
+          args.observation?.timing.recordDuration(
+            "api_dispatch_prepare_storage_manifest_cache_pool_acquire",
+            "nested",
+            acquisition.durationMs,
+            now(),
+            {
+              storage_manifest_branch: args.observation?.branch ?? "unobserved",
+              storage_manifest_cache_scope: "all_scopes",
+              storage_manifest_cache_lookup_kind: "mixed",
+              storage_manifest_cache_pool_acquire_path: acquisition.path,
+              storage_manifest_cache_requested_count_bucket:
+                storageManifestCacheCountBucket(args.requestedCount),
+              storage_manifest_cache_unique_key_count_bucket:
+                storageManifestCacheCountBucket(args.pairs.length),
+            },
+          );
+        }
+      });
+    },
+    () => {
+      return {
+        storage_manifest_branch: args.observation?.branch ?? "unobserved",
+        storage_manifest_cache_scope: "all_scopes",
+        storage_manifest_cache_requested_count_bucket:
+          storageManifestCacheCountBucket(args.requestedCount),
+        storage_manifest_cache_unique_key_count_bucket:
+          storageManifestCacheCountBucket(args.pairs.length),
+        storage_manifest_cache_logical_lookup_count_bucket:
+          storageManifestCacheCountBucket(args.logicalLookupCount),
+        storage_manifest_cache_pool_acquire_count_bucket:
+          storageManifestCacheCountBucket(
+            acquisitionCapture.acquisitions.length,
+          ),
+      };
+    },
+  );
+}
+
 export function prefetchStorageManifestPresignedUrlCacheRows(args: {
   readonly db: Db;
   readonly input: StorageManifestPresignedUrlCachePrefetchInput;
@@ -981,6 +1120,9 @@ export function prefetchStorageManifestPresignedUrlCacheRows(args: {
         decision: "over_object_key_lower_bound",
         requestedCount,
         logicalLookupCount: args.input.logicalLookupCount,
+        uniquePairCount: args.observation
+          ? storageManifestPresignedUrlUniquePairCount(args.input)
+          : undefined,
       });
       return undefined;
     }
@@ -1018,26 +1160,13 @@ export function prefetchStorageManifestPresignedUrlCacheRows(args: {
       uniquePairCount: pairs.length,
     });
 
-    const rows = await measureApiDispatchTiming(
-      args.observation?.timing,
-      "api_dispatch_prepare_storage_manifest_cache_mixed_lookup",
-      "nested",
-      async () => {
-        return await lookupMixedStorageManifestPresignedUrlCacheRows(
-          args.db,
-          pairs,
-        );
-      },
-      {
-        storage_manifest_branch: args.observation?.branch ?? "unobserved",
-        storage_manifest_cache_requested_count_bucket:
-          storageManifestCacheCountBucket(requestedCount),
-        storage_manifest_cache_unique_key_count_bucket:
-          storageManifestCacheCountBucket(pairs.length),
-        storage_manifest_cache_logical_lookup_count_bucket:
-          storageManifestCacheCountBucket(args.input.logicalLookupCount),
-      },
-    );
+    const rows = await measureMixedStorageManifestPresignedUrlCacheRows({
+      db: args.db,
+      pairs,
+      requestedCount,
+      logicalLookupCount: args.input.logicalLookupCount,
+      observation: args.observation,
+    });
 
     const rowsByScope = new Map<
       StorageManifestPresignedUrlCacheScope,
@@ -1096,10 +1225,20 @@ async function storagePresignedUrlCacheRows(args: {
     });
   }
   const lookup = async () => {
-    return await lookupStoragePresignedUrlCacheRows({
-      db: args.db,
-      scope: args.scope,
-      cacheKeys: args.cacheKeys,
+    const query = async () => {
+      return await lookupStoragePresignedUrlCacheRows({
+        db: args.db,
+        scope: args.scope,
+        cacheKeys: args.cacheKeys,
+      });
+    };
+    const timing = args.timing;
+    if (!timing) {
+      return await query();
+    }
+    const capture: PgPoolAcquisitionCapture = { acquisitions: [] };
+    return await withPgPoolAcquisitionCapture(capture, query).finally(() => {
+      timing.recordPoolAcquisitions(capture.acquisitions);
     });
   };
   return args.timing

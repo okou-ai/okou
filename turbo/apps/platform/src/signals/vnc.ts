@@ -25,6 +25,7 @@ import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { apiClient$ } from "./api-client.ts";
 import { reloadAgents$, reloadAgentById$ } from "./agent.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
+import { invalidateRemoteAccess$ } from "./remote-access-refresh.ts";
 import { onRef, resetSignal, settle, waitForOperation } from "./utils.ts";
 
 export const vncIdentity$ = computed(async (get) => {
@@ -75,6 +76,7 @@ export const invalidateVnc$ = command(({ set }) => {
   set(reload$, (value) => {
     return value + 1;
   });
+  set(invalidateRemoteAccess$);
 });
 
 export const retryVnc$ = command(({ set }) => {
@@ -140,7 +142,6 @@ export interface VncDialogState {
   readonly credential: VncCredentialResponse | null;
 }
 const dialog$ = state<VncDialogState | null>(null);
-const view$ = state<"hosts" | "credentials">("hosts");
 export type VncProfile = VncSecurity["type"];
 export type VncAuthMethod = VncCredentialResponse["authMethod"];
 
@@ -232,9 +233,6 @@ export const vncDialog$ = computed(async (get) => {
   const dialog = get(dialog$);
   return dialog?.identity === (await get(vncIdentity$)) ? dialog : null;
 });
-export const vncView$ = computed((get) => {
-  return get(view$);
-});
 export const vncEditor$ = computed((get) => {
   return get(editor$);
 });
@@ -246,11 +244,6 @@ export const vncSaveMessage$ = computed((get) => {
 });
 export const vncConflict$ = computed((get) => {
   return get(conflict$);
-});
-export const changeVncView$ = command(({ set }, value: string) => {
-  if (value === "hosts" || value === "credentials") {
-    set(view$, value);
-  }
 });
 export const chooseVncCredential$ = command(
   ({ get, set }, selection: string | null) => {
@@ -336,11 +329,6 @@ export const closeVncDialog$ = command(({ set }) => {
     sshConnectionId: "",
     replace: false,
   });
-});
-export const refreshVnc$ = command(({ set }) => {
-  set(closeVncDialog$);
-  set(view$, "hosts");
-  set(invalidateVnc$);
 });
 export const mountVncForm$ = onRef(
   command(({ get, set }, form: HTMLFormElement, signal: AbortSignal) => {

@@ -22,6 +22,7 @@ import type { VideoModel } from "@okouai/core/video-model-catalog";
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { onRef } from "../utils.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
+import { threadRemoteAccess$ } from "../remote-access.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import type { DraftSignals, ChatAttachment } from "./chat-draft.ts";
 import { createComposerFeedbackModel } from "./chat-feedback.ts";
@@ -286,6 +287,8 @@ export interface ComposerSignals {
   readonly create: ComposerCreateSignals;
   readonly taskChips: ComposerTaskChipsSignals;
   readonly agentId: string;
+  readonly threadId?: string;
+  readonly remoteAccess$: ReturnType<typeof threadRemoteAccess$>;
   readonly editor: ComposerEditorSignals;
   readonly voice: ComposerVoiceInputSignals;
   readonly feedback: WorkflowComposerSignals["feedback"];
@@ -606,7 +609,6 @@ export function createComposerSignals(
   const agentId$ = computed((): string => {
     return options.agentId;
   });
-  const feedback = createComposerFeedbackModel();
   const temporaryModelNoticeEnabled$ =
     createTemporaryModelNoticeEnabled(options);
   const ui = createComposerUiSignals();
@@ -620,7 +622,7 @@ export function createComposerSignals(
         ? { feedbackPlaceholder: forwardFeedbackPlaceholder }
         : {}),
     },
-    feedback,
+    createComposerFeedbackModel(),
   );
   const create = createComposerCreateSignals(workflowComposer, ui, {
     image: options.imageModel !== undefined,
@@ -679,9 +681,10 @@ export function createComposerSignals(
       );
     }),
   );
-
   return {
     agentId: options.agentId,
+    threadId: options.threadId,
+    remoteAccess$: threadRemoteAccess$(options.threadId ?? ""),
     paidToolHints$: createPaidToolHints(create, draft, workflowComposer, ui),
     create,
     taskChips,

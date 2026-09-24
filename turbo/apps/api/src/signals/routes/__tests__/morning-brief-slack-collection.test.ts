@@ -166,7 +166,7 @@ async function fixture(
   await updateFeatureSwitchesForUser(
     context,
     { orgId, userId },
-    { [FeatureSwitchKey.SimpleMorningBrief]: options.feature !== false },
+    { [FeatureSwitchKey.NativeMorningBrief]: options.feature !== false },
   );
   const botToken = `xoxb-test-${randomUUID()}`;
   const installation =
@@ -1695,7 +1695,7 @@ describe("Morning Brief collection completion admission", () => {
       { orgId: f.orgId, userId: f.userId },
       {
         [FeatureSwitchKey.MorningBrief]: true,
-        [FeatureSwitchKey.SimpleMorningBrief]: true,
+        [FeatureSwitchKey.NativeMorningBrief]: true,
       },
     );
   }

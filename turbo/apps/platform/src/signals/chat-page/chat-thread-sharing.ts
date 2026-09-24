@@ -11,9 +11,10 @@ import {
 
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
+import { messageDocumentToDisplayText } from "../okou-page/user-message-document-codec.ts";
 import { apiClient$ } from "../api-client.ts";
 import { writeToClipboard } from "../okou-page/clipboard.ts";
-import type { ChatEventGroup } from "./chat-event.ts";
+import type { ChatEventGroup, EnrichedChatEvent } from "./chat-event.ts";
 import type { ChatThreadScrollSignals } from "./chat-thread-scroll.ts";
 import { buildRunWorkFolding } from "./run-work-folding.ts";
 
@@ -29,6 +30,7 @@ export type ToggleSharedThreadSelectionResult =
   | "selected"
   | "deselected"
   | "too-large";
+export type SetSharedThreadSelectionResult = "selected" | "too-large";
 
 export interface ChatThreadSharingSignals {
   readonly phase$: Computed<SharedThreadSelectionPhase>;
@@ -40,6 +42,12 @@ export interface ChatThreadSharingSignals {
   readonly toggle$: Command<
     ToggleSharedThreadSelectionResult,
     [string, readonly ShareableChatEvent[]]
+  >;
+  readonly selectAll$: Command<SetSharedThreadSelectionResult, []>;
+  readonly clear$: Command<void, []>;
+  readonly selectRange$: Command<
+    SetSharedThreadSelectionResult,
+    [string, string]
   >;
   readonly create$: Command<Promise<void>, [AbortSignal]>;
   /**
@@ -70,6 +78,40 @@ function groupBytes(events: readonly ShareableChatEvent[]): number {
   }, 0);
 }
 
+export function shareableEventFromChatEvent(
+  event: EnrichedChatEvent,
+): ShareableChatEvent | null {
+  if (event.seqId === undefined) {
+    return null;
+  }
+  if (event.eventType === "output.message") {
+    return event.content && event.content.length > 0
+      ? { id: event.id, text: event.content }
+      : null;
+  }
+  if (
+    event.eventType !== "input.prompt" &&
+    event.eventType !== "input.automation"
+  ) {
+    return null;
+  }
+  const displayText = messageDocumentToDisplayText(event.userMessage)?.trim();
+  if (displayText) {
+    return { id: event.id, text: displayText };
+  }
+  const automation = event.userMessage?.parts.find((part) => {
+    return part.type === "automation";
+  });
+  if (automation?.type !== "automation") {
+    return null;
+  }
+  const automationText =
+    automation.automationBrief?.trim() || automation.workflowName.trim();
+  return automationText.length > 0
+    ? { id: event.id, text: automationText }
+    : null;
+}
+
 export function chatGroupForSharing(group: ChatEventGroup): ChatEventGroup {
   return group.role === "assistant"
     ? {
@@ -83,22 +125,42 @@ export function chatGroupForSharing(group: ChatEventGroup): ChatEventGroup {
     : group;
 }
 
-function shareableEventIds(
-  groups: readonly ChatEventGroup[],
-): ReadonlySet<string> {
+interface ShareableGroup {
+  readonly key: string;
+  readonly events: readonly ShareableChatEvent[];
+}
+
+function shareableGroups(groups: readonly ChatEventGroup[]): ShareableGroup[] {
   const activeGroups = groups.flatMap((group) => {
     const events = group.events.filter((event) => {
       return !event.isQueued;
     });
     return events.length === 0 ? [] : [{ ...group, events }];
   });
-  return new Set(
-    buildRunWorkFolding(activeGroups).visibleGroups.flatMap((group) => {
-      return chatGroupForSharing(group).events.map((event) => {
-        return event.id;
-      });
-    }),
-  );
+  return buildRunWorkFolding(activeGroups).visibleGroups.flatMap((group) => {
+    const events = chatGroupForSharing(group).events.flatMap((event) => {
+      const shareable = shareableEventFromChatEvent(event);
+      return shareable ? [shareable] : [];
+    });
+    const first = events[0];
+    return first ? [{ key: first.id, events }] : [];
+  });
+}
+
+function selectedGroupsFor(
+  groups: readonly ShareableGroup[],
+): ReadonlyMap<string, SelectedGroup> | null {
+  const selected = new Map<string, SelectedGroup>();
+  let totalBytes = 0;
+  for (const group of groups) {
+    const bytes = groupBytes(group.events);
+    totalBytes += bytes;
+    if (totalBytes > SHARED_THREAD_SELECTION_TEXT_LIMIT_BYTES) {
+      return null;
+    }
+    selected.set(group.key, { events: group.events, bytes });
+  }
+  return selected;
 }
 
 function filterSelectedGroups(
@@ -121,6 +183,70 @@ function filterSelectedGroups(
     }
   }
   return changed ? next : selected;
+}
+
+function createSelectRangeCommand(
+  shareableGroups$: Computed<ShareableGroup[]>,
+  internalSelectedGroups$: State<ReadonlyMap<string, SelectedGroup>>,
+): ChatThreadSharingSignals["selectRange$"] {
+  return command(
+    (
+      { get, set },
+      startEventId: string,
+      endEventId: string,
+    ): SetSharedThreadSelectionResult => {
+      const groups = get(shareableGroups$);
+      const start = groups.findIndex((group) => {
+        return group.events.some((event) => {
+          return event.id === startEventId;
+        });
+      });
+      const end = groups.findIndex((group) => {
+        return group.events.some((event) => {
+          return event.id === endEventId;
+        });
+      });
+      if (start === -1 || end === -1) {
+        return "selected";
+      }
+      const next = selectedGroupsFor(
+        groups.slice(Math.min(start, end), Math.max(start, end) + 1),
+      );
+      if (next === null) {
+        return "too-large";
+      }
+      set(internalSelectedGroups$, next);
+      return "selected";
+    },
+  );
+}
+
+function createSelectAllCommand(
+  shareableGroups$: Computed<ShareableGroup[]>,
+  internalSelectedGroups$: State<ReadonlyMap<string, SelectedGroup>>,
+): ChatThreadSharingSignals["selectAll$"] {
+  return command(({ get, set }): SetSharedThreadSelectionResult => {
+    const next = selectedGroupsFor(get(shareableGroups$));
+    if (next === null) {
+      return "too-large";
+    }
+    set(internalSelectedGroups$, next);
+    return "selected";
+  });
+}
+
+function createSharingEventIds(
+  shareableGroups$: Computed<ShareableGroup[]>,
+): Computed<Set<string>> {
+  return computed((get) => {
+    return new Set(
+      get(shareableGroups$).flatMap((group) => {
+        return group.events.map((event) => {
+          return event.id;
+        });
+      }),
+    );
+  });
 }
 
 function isPersistedPrompt(event: ChatEventGroup["events"][number]): boolean {
@@ -279,11 +405,12 @@ export function createChatThreadSharingSignals(
     new Map(),
   );
   const internalCreatedSharedThreadId$ = state<string | null>(null);
-  const sharingEventIds$ = computed((get) => {
+  const shareableGroups$ = computed((get) => {
     // Use the complete transcript: scrolling a selected row out of the render
     // window must not remove it from the share.
-    return shareableEventIds(get(allChatGroups$));
+    return shareableGroups(get(allChatGroups$));
   });
+  const sharingEventIds$ = createSharingEventIds(shareableGroups$);
   const selectedGroups$ = computed((get) => {
     const selected = get(internalSelectedGroups$);
     if (selected.size === 0) {
@@ -354,6 +481,20 @@ export function createChatThreadSharingSignals(
     },
   );
 
+  const selectAll$ = createSelectAllCommand(
+    shareableGroups$,
+    internalSelectedGroups$,
+  );
+
+  const clear$ = command(({ set }) => {
+    set(internalSelectedGroups$, new Map());
+  });
+
+  const selectRange$ = createSelectRangeCommand(
+    shareableGroups$,
+    internalSelectedGroups$,
+  );
+
   const create$ = createShareCommand(
     threadId,
     selectedGroups$,
@@ -385,6 +526,9 @@ export function createChatThreadSharingSignals(
     start$,
     close$,
     toggle$,
+    selectAll$,
+    clear$,
+    selectRange$,
     create$,
     shareMessage$,
   };

@@ -16,6 +16,7 @@ import { STAFF_ORG_ID_HASHES, fnv1a } from "./identity-hash";
 export interface FeatureSwitch {
   readonly maintainer: string;
   readonly description?: string;
+  readonly displayName?: string;
   readonly enabled: boolean;
   readonly enabledUserHashes?: readonly string[];
   readonly enabledEmailHashes?: readonly string[];
@@ -25,6 +26,7 @@ export interface FeatureSwitch {
 export interface FeatureSwitchMetadata {
   readonly maintainer: string;
   readonly description?: string;
+  readonly displayName?: string;
   readonly rolloutStage: FeatureSwitchRolloutStage;
 }
 
@@ -286,10 +288,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Enable Morning Brief and email subscription management in Preferences.",
     enabled: true,
   },
-  [FeatureSwitchKey.SimpleMorningBrief]: {
+  [FeatureSwitchKey.NativeMorningBrief]: {
     maintainer: "lancy@okou.ai",
+    displayName: "Native Morning Brief",
     description:
-      "Select the platform-funded simple-morning-brief pipeline instead of the Official Workflow Run. Separate from the user's Morning Brief preference.",
+      "Select the platform-funded native Morning Brief pipeline instead of the Official Workflow Run. Separate from the user's Morning Brief preference.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -494,7 +497,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.ChatThreadArchiving]: {
     maintainer: "ethan@okou.ai",
     description:
-      "Treat the check-mark chat icon as archived and hide archived chats from the sidebar unless they are unread or explicitly shown.",
+      "Let users archive chats and hide archived chats from the sidebar unless they are unread or explicitly shown.",
     enabled: false,
   },
   [FeatureSwitchKey.ComposerSlashTemplatePanel]: {
@@ -694,6 +697,9 @@ export function getFeatureSwitchMetadata(): Record<
     result[key] = {
       maintainer: featureSwitch.maintainer,
       description: featureSwitch.description,
+      ...(featureSwitch.displayName === undefined
+        ? {}
+        : { displayName: featureSwitch.displayName }),
       rolloutStage: getFeatureSwitchRolloutStage(key, featureSwitch),
     };
   }

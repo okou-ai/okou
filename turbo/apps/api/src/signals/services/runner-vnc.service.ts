@@ -50,7 +50,10 @@ function hasTransportAuthority(
   row: CurrentVncAuthority,
   transport: TransportSnapshot,
 ) {
-  return transport.type === "direct" || row.sshGrantAgentId !== null;
+  return (
+    transport.type === "direct" ||
+    (row.threadMode ? row.sshAllowed : row.sshGrantAgentId !== null)
+  );
 }
 
 function hasValidAppleDhRoute(
@@ -246,6 +249,9 @@ export async function resolveRunnerVnc(
     throw new Error("VNC connection has an invalid stored profile");
   }
   const transport = storedTransportSnapshot(row);
+  if (row.threadMode && !hasTransportAuthority(row, transport)) {
+    return { outcome: "unavailable" };
+  }
   const capability = selectedCapability(
     row,
     transport,
@@ -254,7 +260,7 @@ export async function resolveRunnerVnc(
   if (!capability) {
     return { outcome: "unsupported_profile" };
   }
-  if (!hasTransportAuthority(row, transport)) {
+  if (!row.threadMode && !hasTransportAuthority(row, transport)) {
     return { outcome: "unavailable" };
   }
   const security = storedRunnerSecurity(row, transport);

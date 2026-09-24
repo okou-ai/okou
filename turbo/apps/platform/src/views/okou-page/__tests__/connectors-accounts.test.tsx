@@ -5,7 +5,7 @@ import {
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
@@ -914,4 +914,55 @@ test("Prevent account additions when a connector target is unavailable", async (
   ).resolves.toBeInTheDocument();
   expect(getConnectorAction("button", "Add account", manager)).toBeDisabled();
   expect(within(manager).queryByRole("group", { name: "Default" })).toBeNull();
+});
+
+test("Keep connector account summaries while a realtime refresh loads", async () => {
+  const [connector] = mockConnectors(context, [
+    { connectorSlug: "github", externalUsername: "work" },
+  ]);
+  if (!connector) {
+    throw new Error("Expected GitHub connector");
+  }
+  const work = builtinAccount({
+    id: connector.id,
+    displayName: "Work",
+    isDefault: true,
+    externalUsername: "work",
+  });
+  const refreshStarted = context.mocks.deferred<void>();
+  const releaseRefresh = context.mocks.deferred<void>();
+  let overviewRequests = 0;
+  mockConnectorOverviewAccountSummaries(context, async () => {
+    overviewRequests += 1;
+    if (overviewRequests > 1) {
+      refreshStarted.resolve();
+      await releaseRefresh.promise;
+    }
+    return [
+      {
+        target: work.target,
+        accountCount: 2,
+        attentionCount: 0,
+        defaultConnection: work,
+      },
+    ];
+  });
+  await setupAccountsPage();
+  await waitFor(() => {
+    expect(getConnectorCard("GitHub")).toHaveTextContent("2 accounts");
+  });
+
+  act(() => {
+    context.mocks.ably.trigger("computerUseHostsChanged");
+  });
+  await refreshStarted.promise;
+
+  const card = getConnectorCard("GitHub");
+  expect(card).toHaveTextContent("2 accounts");
+  expect(within(card).queryByText("Loading accounts…")).toBeNull();
+
+  releaseRefresh.resolve();
+  await waitFor(() => {
+    expect(getConnectorCard("GitHub")).toHaveTextContent("2 accounts");
+  });
 });

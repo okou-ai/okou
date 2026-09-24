@@ -38,9 +38,9 @@ use super::builtin_firewall_catalog::{
 };
 use super::connector_runtime_sync::ConnectorRuntimeSyncHandle;
 use super::{
-    ApiClaimTiming, ClaimedJob, CompletionAuth, CompletionAuthError, CompletionReportTiming,
-    JobCandidate, JobDiscoverySource, JobProvider, RunnerPreference, RunnerPreferenceClaimState,
-    parse_runner_preference,
+    ApiClaimTiming, ClaimResponseAttribution, ClaimedJob, CompletionAuth, CompletionAuthError,
+    CompletionReportTiming, JobCandidate, JobDiscoverySource, JobProvider, RunnerPreference,
+    RunnerPreferenceClaimState, parse_runner_preference,
 };
 use crate::active_input::{ActiveInputNotifications, ActiveInputSource};
 use crate::duration::duration_ms;
@@ -185,6 +185,7 @@ struct SuccessfulClaimResponse {
     request_to_response_headers_elapsed: Duration,
     response_body_read_elapsed: Duration,
     response_decode_elapsed: Duration,
+    response_attribution: ClaimResponseAttribution,
 }
 
 #[derive(Clone, Copy)]
@@ -862,12 +863,14 @@ impl JobProvider for ApiProvider {
                 request_to_response_headers_elapsed,
                 response_body_read_elapsed,
                 response_decode_elapsed,
+                response_attribution,
             })) => {
                 let api_claim_timing = ApiClaimTiming::new(
                     claim_request_elapsed,
                     request_to_response_headers_elapsed,
                     response_body_read_elapsed,
                     response_decode_elapsed,
+                    response_attribution,
                 );
                 let deferred_active_input = ctx
                     .pi_launch_config
@@ -1564,6 +1567,10 @@ impl ApiClient {
         }
 
         let resp = check_api_status(resp, "claim").await?;
+        let content_encoding = resp
+            .headers()
+            .get(reqwest::header::CONTENT_ENCODING)
+            .cloned();
         let response_body_read_started_at = Instant::now();
         let body = resp
             .bytes()
@@ -1573,12 +1580,15 @@ impl ApiClient {
         let response_decode_started_at = Instant::now();
         let context = decode_api_json_bytes(&body).map_err(ClaimApiError::ResponseDecode)?;
         let response_decode_elapsed = response_decode_started_at.elapsed();
+        let response_attribution =
+            ClaimResponseAttribution::from_body_and_encoding(body.len(), content_encoding.as_ref());
 
         Ok(Some(SuccessfulClaimResponse {
             context,
             request_to_response_headers_elapsed,
             response_body_read_elapsed,
             response_decode_elapsed,
+            response_attribution,
         }))
     }
 
@@ -5576,6 +5586,14 @@ mod tests {
                     + claim_timing.response_body_read_elapsed()
                     + claim_timing.response_decode_elapsed()
         );
+        assert_eq!(
+            claim_timing.response_attribution().body_size_bucket(),
+            "lt_4_kib"
+        );
+        assert_eq!(
+            claim_timing.response_attribution().content_encoding(),
+            "absent"
+        );
         let context = claimed.context();
 
         assert_eq!(context.run_id, run_id);
@@ -5627,6 +5645,41 @@ mod tests {
             context.codex_runtime_config.as_ref().unwrap().provider_id,
             "fixture_provider"
         );
+        claim_mock.assert_calls_async(1).await;
+    }
+
+    #[tokio::test]
+    async fn api_client_claim_buckets_large_received_body_with_observed_identity_encoding() {
+        let server = MockServer::start_async().await;
+        let run_id: RunId = RUNNER_CLAIM_RESPONSE_FIXTURE_RUN_ID.parse().unwrap();
+        let claim_path = format!("/api/runners/jobs/{run_id}/claim");
+        let mut response: serde_json::Value =
+            serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
+        response["prompt"] = serde_json::Value::String("界".repeat(50_000));
+        let serialized = serde_json::to_string(&response).unwrap();
+        assert!((64 * 1024..256 * 1024).contains(&serialized.len()));
+        let claim_mock = server
+            .mock_async(|when, then| {
+                when.method(POST).path(claim_path.as_str());
+                then.status(200)
+                    .header("content-type", "application/json")
+                    .header("content-encoding", "identity")
+                    .body(serialized);
+            })
+            .await;
+        let api = api_client_for_server(&server);
+
+        let claimed = api
+            .claim_for_test(&JobCandidate::new(
+                run_id,
+                crate::profile::DEFAULT_PROFILE.to_string(),
+            ))
+            .await
+            .unwrap()
+            .expect("large synthetic claim response should decode");
+        let attribution = claimed.response_attribution;
+        assert_eq!(attribution.body_size_bucket(), "64_256_kib");
+        assert_eq!(attribution.content_encoding(), "identity");
         claim_mock.assert_calls_async(1).await;
     }
 

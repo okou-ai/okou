@@ -1,7 +1,7 @@
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Plug, Plus, Terminal } from "lucide-react";
+import { Plus } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -31,9 +31,7 @@ import {
 } from "@okouai/api-contracts/contracts/ssh-connections";
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
 import {
-  sshView$,
   type SshDialogState,
-  changeSshView$,
   sshCredentials$,
   sshCredentialEditor$,
   chooseSshCredential$,
@@ -66,19 +64,10 @@ import {
 } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { ROUTES } from "../../signals/route-paths.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
-import { Link } from "../router/link.tsx";
 import { SshLoadError } from "./ssh-load-error.tsx";
 import { localizedSshError } from "../../lib/ssh-error.ts";
 import { SshAttention, SshHostWarning } from "./ssh-connection-status.tsx";
-import {
-  DetailPageBreadcrumbBar,
-  DetailPageHeader,
-  DetailPageMain,
-  DetailPageShell,
-} from "../components/detail-page-layout.tsx";
+import { RemoteHostDefaultToggle } from "./remote-access-controls.tsx";
 
 function EndpointFields({
   connection,
@@ -339,7 +328,7 @@ function CredentialFields({
             disabled={disabled}
             checked={editor.replace}
             onCheckedChange={(checked) => {
-              return replace(checked === true);
+              return replace(checked);
             }}
           />
           {t(($) => {
@@ -791,6 +780,7 @@ function useSshHostSaveBlocked(dialog: SshDialogState, isSaving: boolean) {
   const unavailableProtectedHost =
     dialog.connection !== null &&
     "transport" in dialog.connection &&
+    "configId" in dialog.connection.transport &&
     configs.state === "hasData" &&
     configs.data === null;
   const invalidAccess =
@@ -813,6 +803,7 @@ function useSshHostSaveBlocked(dialog: SshDialogState, isSaving: boolean) {
 }
 
 function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
+  const { t } = useTranslation();
   const uncertain = useGet(sshSaveUncertain$);
   const fieldsDisabled = isSaving || uncertain;
   const transport = useGet(sshTransportEditor$);
@@ -847,6 +838,18 @@ function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
           >
             {hostEditor ? (
               <>
+                {dialog.connection &&
+                  "transport" in dialog.connection &&
+                  "needsRebind" in dialog.connection.transport && (
+                    <p
+                      role="alert"
+                      className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+                    >
+                      {t(($) => {
+                        return $.ssh.cloudflare.rebindHelp;
+                      })}
+                    </p>
+                  )}
                 <EndpointFields
                   connection={dialog.connection}
                   disabled={fieldsDisabled}
@@ -923,7 +926,11 @@ function HostCard({
   const signal = useGet(pageSignal$);
   const configs = useLoadable(cloudflareAccessConfigs$);
   const configId =
-    "transport" in connection ? connection.transport.configId : null;
+    "transport" in connection && "configId" in connection.transport
+      ? connection.transport.configId
+      : null;
+  const needsRebind =
+    "transport" in connection && "needsRebind" in connection.transport;
   const unavailable =
     configId !== null && configs.state === "hasData" && configs.data === null;
   const config =
@@ -935,10 +942,21 @@ function HostCard({
   return (
     <article className="grid gap-3 rounded-xl border bg-card p-5">
       <h2 className="font-semibold">{connection.displayName}</h2>
-      <SshHostWarning
-        connectionId={connection.id}
-        generation={connection.generation}
-      />
+      {needsRebind ? (
+        <p
+          role="alert"
+          className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+        >
+          {t(($) => {
+            return $.ssh.cloudflare.needsRebind;
+          })}
+        </p>
+      ) : (
+        <SshHostWarning
+          connectionId={connection.id}
+          generation={connection.generation}
+        />
+      )}
       <p className="text-sm text-muted-foreground">
         {connection.credentialName}
       </p>
@@ -978,6 +996,7 @@ function HostCard({
           })
         )}
       </p>
+      <RemoteHostDefaultToggle protocol="ssh" connectionId={connection.id} />
       <div className="flex flex-wrap gap-2">
         <Button
           variant="outline"
@@ -1204,89 +1223,5 @@ export function SshCredentials() {
         );
       })}
     </div>
-  );
-}
-
-export function SshConnectorPage() {
-  const { t } = useTranslation();
-  const directoryEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorDirectory] === true;
-  const view = useGet(sshView$);
-  const changeView = useSet(changeSshView$);
-  return (
-    <DetailPageShell>
-      <DetailPageBreadcrumbBar>
-        <Link
-          pathname={ROUTES.connectors}
-          options={
-            directoryEnabled
-              ? {
-                  searchParams: new URLSearchParams({
-                    scope: "remote-control",
-                  }),
-                }
-              : undefined
-          }
-          className="inline-flex min-w-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-inherit no-underline transition-colors hover:bg-state-hover hover:text-foreground"
-        >
-          <Plug size={14} className="shrink-0" aria-hidden="true" />
-          {t(($) => {
-            return $.appShell.sidebar.navigation.connectors;
-          })}
-        </Link>
-        <span className="select-none text-muted-foreground/40">/</span>
-        <span
-          aria-current="page"
-          className="min-w-0 truncate rounded-md px-1.5 py-0.5 font-medium text-foreground"
-        >
-          {t(($) => {
-            return $.ssh.label;
-          })}
-        </span>
-      </DetailPageBreadcrumbBar>
-      <DetailPageHeader>
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gray-100 text-muted-foreground sm:h-16 sm:w-16">
-            <Terminal size={28} aria-hidden="true" />
-          </span>
-          <div className="min-w-0">
-            <h1 className="text-lg font-semibold tracking-tight text-foreground sm:text-xl">
-              {t(($) => {
-                return $.ssh.title;
-              })}
-            </h1>
-            <p className="mt-1.5 text-sm text-muted-foreground">
-              {t(($) => {
-                return $.ssh.description;
-              })}
-            </p>
-          </div>
-        </div>
-      </DetailPageHeader>
-      <DetailPageMain constrainContent>
-        <div className="mb-5">
-          <SegmentControl
-            value={view}
-            onValueChange={changeView}
-            aria-label={t(($) => {
-              return $.ssh.title;
-            })}
-          >
-            <SegmentControlItem value="hosts">
-              {t(($) => {
-                return $.ssh.hostsTab;
-              })}
-            </SegmentControlItem>
-            <SegmentControlItem value="credentials">
-              {t(($) => {
-                return $.ssh.credentialsTab;
-              })}
-            </SegmentControlItem>
-          </SegmentControl>
-        </div>
-        {view === "hosts" ? <SshHosts /> : <SshCredentials />}
-        <SshDialog />
-      </DetailPageMain>
-    </DetailPageShell>
   );
 }

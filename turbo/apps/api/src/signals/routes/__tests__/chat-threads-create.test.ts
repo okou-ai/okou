@@ -811,6 +811,7 @@ describe("POST /api/chat-threads", () => {
       agentId: fixture.agentId,
       title: "Deep dive on P2",
       pinnedAt: null,
+      archived: false,
       selectedModel: OTHER_WORKSPACE_MODEL,
       modelSettings: {},
       serviceTier: null,

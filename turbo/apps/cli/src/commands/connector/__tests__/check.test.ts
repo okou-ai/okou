@@ -495,6 +495,10 @@ describe("okou connector check command", () => {
         "POST",
         "--connector",
         "aws",
+        "--aws-service",
+        "sts",
+        "--aws-action",
+        "GetFederationToken",
         "--json",
       ]);
 
@@ -511,7 +515,9 @@ describe("okou connector check command", () => {
         ]),
         actions: expect.arrayContaining([
           expect.objectContaining({
-            command: expect.stringContaining("okou connector check"),
+            command: expect.stringContaining(
+              "--aws-service 'sts' --aws-action 'GetFederationToken'",
+            ),
           }),
         ]),
       });

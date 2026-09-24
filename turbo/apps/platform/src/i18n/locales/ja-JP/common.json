@@ -1491,7 +1491,6 @@
         },
         "shareDialog": {
           "description": "公開投稿を送信して審査を受けます。報酬の獲得は1人1回です。",
-          "draft": "毎週月曜の競合レポートを{{assistantName}}に任せています。情報源を読んで、表にまとめて返してくれます。",
           "helper": "投稿は公開で、{{assistantName}} に触れている必要があります。",
           "inputLabel": "投稿のリンク",
           "openX": "X を開く",
@@ -1506,7 +1505,8 @@
           "stepPaste": "リンクを貼る",
           "stepWrite": "投稿を書く",
           "submit": "送信",
-          "title": "{{assistantName}} を X でシェア"
+          "title": "{{assistantName}} を X でシェア",
+          "writingPrompt": "{{assistantName}}で実際に試したことを、自分の言葉で書いてください。"
         },
         "slack": {
           "action": "追加",
@@ -1734,12 +1734,14 @@
       "cancelFailed": "リクエストをキャンセルできませんでした。もう一度お試しください。",
       "cancelled": "リクエストをキャンセルしました",
       "cancelling": "キャンセルしています…",
+      "clearValue": "サイトの値を消去",
       "completed": "情報を追加しました",
       "continue": "エージェントに通知",
       "continuing": "通知しています…",
       "delivered": "エージェントに通知しました",
       "expired": "リクエストの有効期限が切れました",
       "expiredDescription": "ブラウザが閉じられたか、このリクエストは無効になりました。",
+      "keepValue": "サイトの値を変更しない",
       "loadFailed": "このリクエストを読み込めませんでした",
       "loadFailedDescription": "しばらくしてからもう一度お試しください。",
       "loadingDescription": "リクエストを確認しています…",
@@ -1907,11 +1909,10 @@
         "newChat": "新しいチャット",
         "newChatDescription": "新しいチャットを始め、引き継ぎたい大切な情報を含めてください。",
         "openClaude": "Claude を開く",
-        "originalAccount": "個人サブスクリプション {{account}}",
-        "originalAccountUnavailable": "個人サブスクリプションの接続が切れています",
-        "originalAccountUnknown": "個人サブスクリプションを確認できません",
         "outputLimitDescription": "応答が完了する前に止まりました。「続ける」を選ぶと続きから生成できます。",
         "outputLimitTitle": "応答が長さの上限に達しました",
+        "personalAccount": "個人サブスクリプション {{account}}",
+        "personalAccountDisconnected": "個人サブスクリプションの接続が切れています",
         "providerBalanceDescription": "プロバイダーアカウントの残高を確認してから、再試行してください。",
         "providerBalanceTitle": "モデルプロバイダーのアカウント残高が不足しています",
         "providerConnectionDescription": "「モデルプロバイダー」でアカウントを再接続または更新してから、再試行してください。",
@@ -2076,6 +2077,20 @@
       "removeQueuedMessage": "キューに入れられたメッセージを削除する",
       "skipAutomationEvent": "オートメーションイベントをスキップする"
     },
+    "remoteAccess": {
+      "defaultEnabled": "チャットで既定で有効",
+      "enabledCount_other": "{{count}} 件有効",
+      "loadFailed": "リモートアクセスを読み込めませんでした。",
+      "loading": "リモートアクセスを読み込み中…",
+      "off": "オフ",
+      "on": "オン",
+      "requiresSsh": "SSH ホスト {{name}} へのアクセスも必要です。",
+      "retry": "再試行",
+      "startChat": "ホストのアクセスを変更するにはチャットを開始してください。",
+      "title": "リモートアクセス",
+      "unavailableSsh": "利用できない SSH ホスト",
+      "useDefault": "既定を使用"
+    },
     "replaceDraft": {
       "description": "続行すると、現在のコンポーザーの下書きが消去され、ワークフローのプロンプトが開始されます。",
       "title": "コンポーザーの下書きを置き換えますか？"
@@ -2138,6 +2153,7 @@
       "linkCopied": "リンクをコピーしました",
       "messageShareFailed": "共有リンクを作成できませんでした。もう一度お試しください。",
       "publicDescription": "選択したメッセージと添付ファイルが公開されます。",
+      "selectAll": "すべて選択",
       "selectedCount_other": "{{count}}件選択中",
       "selectGroup": "メッセージグループを選択",
       "shareLink": "共有された会話のリンク",
@@ -2851,7 +2867,6 @@
       "ariaLabel": "チャットスレッド",
       "changeIcon": "アイコンの変更",
       "emoji": {
-        "archive": "アーカイブ",
         "done": "完了",
         "idea": "アイデア",
         "no": "いいえ",
@@ -2928,12 +2943,12 @@
     "configuration": "Cloudflare Access",
     "createNew": "新しい Cloudflare Access を作成",
     "delete": "Cloudflare Access を削除",
-    "deleteHelp": "未使用の Cloudflare Access を削除しますか？保存された Service Token は復元できません。",
+    "deleteHelp": "この Cloudflare Access を削除しますか？保存された Service Token は復元できません。ホストが使用中の場合は削除できません。",
     "description": "Cloudflare Access サービストークンで保護されたアプリケーションにアクセスします。",
     "edit": "Cloudflare Access を編集",
-    "empty": "Cloudflare Access はまだありません。サービストークンを追加して保護されたアプリケーションにアクセスします。",
     "failed": "Cloudflare Accessの変更を保存できませんでした。再試行してください。",
-    "inUse": "この Cloudflare Access はホストが使用しています。対象ホストを確認し、先に別の設定に変更するか削除してください。",
+    "forbidden": "共有 Cloudflare Access を変更できるのは組織の管理者だけです。",
+    "inUse": "SSH ホストがこの Cloudflare Access を使用しています。ホストの所有者が先に別の設定へ再接続するか、ホストを削除する必要があります。",
     "inUseHelp": "この Cloudflare Access を削除する前に、対象ホストに別の Cloudflare Access を選択するか、明示的に直接接続に切り替えるか、ホストを削除してください。",
     "invalidInput": "一部のCloudflare Access設定が無効です。入力内容を確認して再試行してください。",
     "keepChanges": "このバージョンに自分の変更を適用",
@@ -2944,6 +2959,9 @@
     "missing": "この Cloudflare Access は利用できなくなりました。別のものを選択するか作成してください。",
     "name": "名前",
     "namePlaceholder": "例: 本番環境へのアクセス",
+    "organization": "組織",
+    "organizationHelp": "この組織のメンバー全員がこのサービストークンを使用できます。変更できるのは管理者だけです。",
+    "personal": "個人",
     "replace": "Service Token を置換",
     "resourceIdConflict": "このリソース ID は使用できません。フォームを閉じて開き直し、もう一度お試しください。",
     "retry": "再試行",
@@ -2951,13 +2969,15 @@
     "revisionExhausted": "これ以上更新できません。新しく作成してください。",
     "save": "保存",
     "saveUncertain": "変更が保存されたか確認できませんでした。同じ内容で保存を再試行するか、閉じて一覧を確認してから追加し直してください。",
+    "scope": "使用できるユーザー",
+    "sectionEmpty": "ここにはまだ設定がありません。",
     "select": "Cloudflare Access を選択",
     "summary_other": "{{count}} 件の Cloudflare Access を設定済み",
     "title": "Cloudflare Access",
     "tokenHelp": "Cloudflare Access サービストークンで保護されたアプリケーションにアクセスします。",
     "unavailable": "このアカウントでは Cloudflare Access を利用できません。",
-    "unused": "使用中のホストはありません",
-    "usedBy_other": "{{count}} 台のホストが使用："
+    "unused": "あなたのホストでは使用されていません",
+    "usedBy_other": "あなたのホスト {{count}} 台が使用："
   },
   "connectors": {
     "access": {
@@ -4218,6 +4238,22 @@
         "notNow": "後で",
         "skip": "今はスキップ"
       },
+      "compliance": {
+        "frameworks": {
+          "ccpa": "CCPA / CPRA",
+          "gdpr": "GDPR",
+          "hipaa": "HIPAA",
+          "iso27001": "ISO/IEC 27001",
+          "soc2": "SOC 2 Type II"
+        },
+        "link": "セキュリティの詳細",
+        "status": {
+          "aligned": "整合",
+          "compliant": "準拠",
+          "inProgress": "進行中"
+        },
+        "title": "安心して使えるための、Okou のコンプライアンス"
+      },
       "documentTitles": {
         "experience": "AI の利用経験",
         "industry": "分野を選ぶ",
@@ -4226,13 +4262,14 @@
         "skills": "スキルをインポート",
         "slack": "Okou を Slack に追加",
         "sources": "仕事をつなぐ",
-        "team": "メンバーを招待"
+        "team": "チームメンバーを招待"
       },
       "experience": {
-        "copy": "すでに払っているプランをつなげば、仕事は Okou クレジットではなくそちらで動きます。",
-        "no": "いいえ、はじめてです",
-        "noCopy": "Okou が最初のタスクを選びます。",
-        "title": "Codex か Claude Code を使ったことはありますか？"
+        "copy": "ガイド付きで始めるか、利用中の Codex または Claude Code のプランを使えます。",
+        "no": "AI エージェントは初めてです",
+        "noCopy": "Okou が役立つ最初のタスク選びをお手伝いします。",
+        "title": "Okou をどう使い始めますか？",
+        "trust": "タスクは Okou クレジットではなく、お使いの Codex または Claude Code のプランで実行されるため、使用量を気にせず活用できます。今でも後からでも接続できます。"
       },
       "industries": {
         "coaching": {
@@ -4281,7 +4318,7 @@
         }
       },
       "industry": {
-        "copy": "最初のタスクと、その出発点になるデータソースを選ぶために使います。",
+        "copy": "Okou は、あなたとチームのための仕事のアシスタントです。散らばった情報を、クラウドで完了した仕事に変えます。分野を選ぶと、合った最初のタスクを提案します。",
         "title": "どんな仕事をしていますか？"
       },
       "profile": {
@@ -4297,7 +4334,7 @@
       },
       "skills": {
         "copied": "コピーしました",
-        "copy": "このプロンプトを自分の {{provider}} のセッションに貼り付けると、手元のスキルが Okou に取り込まれます。",
+        "copy": "{{provider}} でこのプロンプトを実行して作成済みのスキルを取り込むと、Okou ですぐに使えます。",
         "copyError": "プロンプトをコピーできませんでした。",
         "copyPrompt": "プロンプトをコピー",
         "importedCopy": "Okou のワークフローとしてインポートしました。",
@@ -4308,7 +4345,7 @@
         "promptLabel": "スキルインポート用プロンプト",
         "promptTitle": "{{provider}} で実行してください",
         "startError": "インポートセッションを開けませんでした。",
-        "title": "すでに書いたスキルを持ち込む。",
+        "title": "作成済みのスキルを Okou に取り込む",
         "tryAgain": "もう一度試す",
         "waiting": "インポートされたスキルは、届き次第ここに表示されます。"
       },
@@ -4320,7 +4357,7 @@
         "connectedCopy": "Slack で @Okou とメンションすれば仕事を任せられます。",
         "connectedStatus": "ワークスペースに追加済み",
         "connectedTitle": "Slack に接続しました",
-        "copy": "一度追加すれば、仕事が動いている場所で @Okou と呼ぶだけです。",
+        "copy": "@Okou にタスクを頼めば、同じ会話でチームが結果を確認できます。",
         "name": "Slack",
         "otherAdded": "追加済み",
         "otherImessage": "iMessage",
@@ -4349,12 +4386,13 @@
         "previewWorkspace": "Northwind",
         "rowCopy": "追加したチャンネルならどこでも動きます。",
         "rowTitle": "Okou for Slack",
-        "title": "Slack から離れずに Okou へ仕事を任せる。"
+        "title": "Slack で仕事を進めましょう"
       },
       "sources": {
-        "copy": "クラウドで、チームがすでに使っているツールから動きます。成果は 10 倍、運用の手間は少なく、コストは低く。まずはソースを 1 つつないでください。",
-        "note": "どのアカウントをつなぐかはあなたが選びます。",
-        "title": "Okou はあなたのため、そしてチーム全員で使うためのものです。"
+        "copy": "Okou はあなたの仕事を知るほど賢くなります。毎日使うツールを接続して、実際の仕事に基づいたタスクから始めましょう。",
+        "permissions": "Okou は最初のタスクを最適化するために少量の情報を使います。Agent に何をどのくらいの期間任せるかは、あなたが決められます。",
+        "securityLink": "Okouのデータ保護について",
+        "title": "仕事のツールを接続"
       },
       "startingPrompt": {
         "exact": {
@@ -4688,32 +4726,33 @@
         "connecting": "接続中…",
         "failedNote": "{{provider}} をつなげませんでした。もう一度試すか、あとでつなげます。",
         "retry": "もう一度試す",
-        "rowCopy": "Okou クレジットではなく、このプランで動きます。",
+        "rowCopy": "接続すると、Okouクレジットではなく自分のプランで実行できます。",
         "unconfirmedNote": "{{provider}} の接続を確認できませんでした。もう一度試すか、あとでつなげます。"
       },
       "team": {
-        "copy": "今すぐ誘っても、後からワークスペースのメニューで誘ってもかまいません。",
+        "copy": "チームメンバーを招待して、共有ワークフローを一緒に使いましょう。",
         "invite": "招待を送る",
         "invited": "招待済み",
-        "label": "メンバーのメールアドレス",
-        "note": "このワークスペースに参加します。相手のアカウントは相手のものです。",
+        "label": "チームメンバーのメールアドレス",
+        "note": "すぐに Okou を使い始められます。",
         "notSent": "未送信",
-        "panelTitle": "メンバーを招待",
-        "placeholder": "teammate@company.com",
+        "panelTitle": "チームメンバーを招待",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "相手のつないだアカウントは相手のもの。本人の許可なく共有されません。",
-          "workflows": "ここにいる人は、このワークスペースのワークフローを実行できます。",
-          "workspace": "このワークスペースに参加し、いま接続したソースをそのまま使えます。"
+          "accounts": "必要に応じて自分のツールを接続します。",
+          "workflows": "チームが作成したワークフローをすべて実行できます。",
+          "workspace": "あなたのワークスペースに参加します。"
         },
         "sending": "送信中…",
-        "title": "この仕事をしている人たちを一緒に。"
+        "title": "チーム全員で Okou を活用しましょう",
+        "trust": "全員が同じワークフローを使い、それぞれ自分のツールを接続します。"
       },
       "welcome": {
-        "copy": "いま接続した仕事に合わせて選んだ、最初のタスクから始めましょう。",
+        "copy": "仕事に合わせた提案を確認し、目的に合わせて調整してから Okou に任せましょう。",
         "offerTitle": "最初の 1 時間のコンサルティングは無料、さらに最大 100 クレジット —",
         "promptLabel": "最初のプロンプト",
         "start": "Okou を使い始める",
-        "title": "Okou の準備ができました"
+        "title": "意味のあるタスクから始めましょう"
       }
     },
     "templatePicker": {
@@ -6375,7 +6414,7 @@
       }
     },
     "paidTools": {
-      "description": "Okou がタスクで使用できる有料ツールを選択します。使用するたびにクレジットを消費します。",
+      "description": "これらのツールは組み込みクレジットを消費し、Okou はタスクの実行中に必要に応じて自動で使用します。オフにしたツールは使用されません。",
       "disabledForCreation": "{{tool}}はあなたの設定でオフです",
       "loadError": "ツールの設定を読み込めませんでした。",
       "loading": "ツールの設定を読み込み中…",
@@ -6385,7 +6424,7 @@
       "saving": "保存中…",
       "scope": "この設定は {{workspace}} のあなたにのみ適用されます。",
       "timing": "変更は今後の実行に適用されます。実行中または準備済みのタスクには以前の設定が適用される場合があります。",
-      "title": "有料ツール",
+      "title": "組み込みツール",
       "tools": {
         "avatar-video-generation": {
           "description": "話すアバターの動画を生成します。",
@@ -6850,8 +6889,10 @@
       "keepChanges": "このバージョンに自分の変更を適用",
       "latest": "最後に保存された設定",
       "mode": "接続",
+      "needsRebind": "このホストは Cloudflare Access の再設定が必要です。編集して別の設定に紐付けるか、直接接続を選んでください。それまでは接続できません。",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "公開ホスト名",
+      "rebindHelp": "このホストを復旧するには、使用可能な Cloudflare Access 設定または直接接続を選んで保存してください。保存するまで接続方法は変わりません。",
       "reviewHelp": "下書きは保持されています。変更を適用する前に、最後に保存された設定を確認してください。",
       "title": "Cloudflare Access",
       "unavailable": "このアカウントでは Cloudflare Access を利用できません。"
@@ -6894,7 +6935,6 @@
       "unused": "使用中のホストはありません"
     },
     "credentialsHelp": "認証情報は書き込み専用で、サンドボックスの外部に保持されます。鍵全体を貼り付けてください。空白はそのまま保持されます。フォームを閉じたときに入力欄を消去します。",
-    "credentialsTab": "認証情報",
     "delete": "ホストを削除",
     "deleteHelp": "このホストを削除しますか？認証情報は保持されます。Agent のホスト一覧には表示されなくなります。",
     "description": "エージェントがリモートコマンドを実行できる SSH ホストを設定します。",
@@ -6921,7 +6961,6 @@
     "fingerprint": "記憶したホスト鍵",
     "host": "公開ホスト名または IP アドレス",
     "hostSection": "ホスト",
-    "hostsTab": "ホスト",
     "label": "SSH",
     "loadFailed": "SSH設定を読み込めませんでした。再試行してください。",
     "loading": "SSH ホストを読み込み中…",
@@ -6950,7 +6989,6 @@
     },
     "summary_one": "{{count}} 台のホストを設定済み",
     "summary_other": "{{count}} 台のホストを設定済み",
-    "title": "SSH ホスト",
     "unavailable": "このアカウントでは SSH アクセスを利用できません。",
     "username": "SSH ユーザー名"
   },
@@ -7082,7 +7120,6 @@
       "usernamePasswordHint": "このユーザー名のパスワードを入力",
       "usernamePasswordMethod": "ユーザー名とパスワード"
     },
-    "credentialsTab": "認証情報",
     "delete": "ホストを削除",
     "deleteHelp": "このホストを削除しますか？再利用可能な認証情報は保持されます。",
     "description": "Agent がリモートデスクトップを表示・操作できるようにします。",
@@ -7105,7 +7142,6 @@
     },
     "host": "ホスト名または IP アドレス",
     "hostHint": "例：desktop.example.com",
-    "hostsTab": "ホスト",
     "label": "VNC",
     "loadFailed": "VNC 設定を読み込めませんでした。",
     "loading": "VNC 設定を読み込み中…",
@@ -7140,7 +7176,6 @@
     },
     "summary_one": "設定済みホスト {{count}} 台",
     "summary_other": "設定済みホスト {{count}} 台",
-    "title": "VNC リモートアクセス",
     "transport": {
       "appleDhDestinationHelp": "Apple DH には 127.0.0.1 または ::1 を入力してください。選択した SSH ホスト経由で到達する Mac 自身のループバックアドレスです。",
       "destination": "RFB接続先",

@@ -120,6 +120,89 @@ def test_query_action_distinguishes_ec2_permissions_with_index_parity() -> None:
     assert indexed == linear
 
 
+@pytest.mark.parametrize("indexed", [True, False])
+def test_action_rule_also_requires_declared_url_query(indexed: bool) -> None:
+    permissions = [
+        firewall_permission(
+            "describe-instances",
+            "POST /?Version=2016-11-15 AWS sigv4=ec2 action=DescribeInstances",
+        )
+    ]
+    args = {
+        "base": "https://ec2.amazonaws.com",
+        "permissions": permissions,
+        "method": "POST",
+        "headers": _headers(host="ec2.amazonaws.com", service="ec2"),
+        "allow": ("describe-instances",),
+        "indexed": indexed,
+    }
+
+    _assert_allowed(
+        _match(
+            **args,
+            url="https://ec2.amazonaws.com/?Action=DescribeInstances&Version=2016-11-15",
+        ),
+        "describe-instances",
+    )
+    for url in (
+        "https://ec2.amazonaws.com/?Action=DescribeInstances",
+        "https://ec2.amazonaws.com/?Action=DescribeInstances&Version=wrong",
+        "https://ec2.amazonaws.com/?Action=DescribeInstances&Version=2016-11-15&Version=2016-11-15",
+    ):
+        _assert_unknown(_match(**args, url=url))
+
+    body = b"Action=DescribeInstances"
+    form_args = {
+        **args,
+        "headers": _headers(
+            host="ec2.amazonaws.com",
+            service="ec2",
+            content_type="application/x-www-form-urlencoded",
+            extra=(("Content-Length", str(len(body))),),
+        ),
+        "body": body,
+    }
+    _assert_allowed(
+        _match(**form_args, url="https://ec2.amazonaws.com/?Version=2016-11-15"),
+        "describe-instances",
+    )
+    _assert_unknown(_match(**form_args, url="https://ec2.amazonaws.com/"))
+
+
+@pytest.mark.parametrize("indexed", [True, False])
+def test_target_rule_also_requires_declared_url_query(indexed: bool) -> None:
+    target = "DynamoDB_20120810.GetItem"
+    permissions = [
+        firewall_permission(
+            "get-item",
+            f"POST /?Version=2012-08-10 AWS sigv4=dynamodb target={target}",
+        )
+    ]
+    args = {
+        "base": "https://dynamodb.us-east-1.amazonaws.com",
+        "permissions": permissions,
+        "method": "POST",
+        "headers": _headers(
+            host="dynamodb.us-east-1.amazonaws.com",
+            service="dynamodb",
+            extra=(("X-Amz-Target", target),),
+        ),
+        "allow": ("get-item",),
+        "indexed": indexed,
+    }
+
+    _assert_allowed(
+        _match(**args, url="https://dynamodb.us-east-1.amazonaws.com/?Version=2012-08-10"),
+        "get-item",
+    )
+    for url in (
+        "https://dynamodb.us-east-1.amazonaws.com/",
+        "https://dynamodb.us-east-1.amazonaws.com/?Version=wrong",
+        "https://dynamodb.us-east-1.amazonaws.com/?Version=2012-08-10&Version=2012-08-10",
+    ):
+        _assert_unknown(_match(**args, url=url))
+
+
 def test_query_action_inspects_form_body_at_most_once(monkeypatch) -> None:
     permissions = [
         firewall_permission(

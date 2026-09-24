@@ -250,6 +250,51 @@ describe("GET /api/indicators", () => {
     });
   });
 
+  it("reports a finished thread with a new active Run as active instead of unread", async () => {
+    prepareChatRuntime();
+    const actor = bdd.user();
+    const agentId = await createEntitledAgent(actor, "Rerun indicator agent");
+    const rerun = await createCancelledThread({
+      actor,
+      agentId,
+      prompt: "Rerun indicator thread",
+    });
+    const unread = await createCancelledThread({
+      actor,
+      agentId,
+      prompt: "Still unread indicator thread",
+    });
+    const followUp = await chat.requestSendEvent(
+      actor,
+      { agentId, threadId: rerun.threadId, prompt: "Follow-up active Run" },
+      [201],
+    );
+    if (followUp.status !== 201 || followUp.body.runId === null) {
+      throw new Error("Expected the follow-up to create an active Run");
+    }
+    await seedMembership(actor);
+
+    const indicators = await accept(
+      client().indicators({
+        headers: {
+          authorization: `Bearer ${okouToken({
+            actor,
+            capabilities: ["chat-thread:read"],
+          })}`,
+        },
+      }),
+      [200],
+    );
+    expect(indicators.body).toStrictEqual({
+      agents: { [agentId]: "unread" },
+      threads: {
+        [rerun.threadId]: "active",
+        [unread.threadId]: "unread",
+      },
+      unreadAt: { [unread.threadId]: unread.unreadAt },
+    });
+  });
+
   it("limits active threads after filtering out inaccessible Agents", async () => {
     prepareChatRuntime();
     const actor = bdd.user();

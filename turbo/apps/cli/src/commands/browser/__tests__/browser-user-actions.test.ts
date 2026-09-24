@@ -217,6 +217,7 @@ function actionResponse() {
         label: "Email",
         fieldKind: "username" as const,
         required: true,
+        control: { tagName: "INPUT" as const, inputType: "email" as const },
       },
     ],
   };
@@ -335,6 +336,33 @@ describe("okou browser user-action commands", () => {
         return command.method === "Target.detachFromTarget";
       }),
     ).toBe(true);
+  });
+
+  it("captures a number field without converting its semantic kind", async () => {
+    installCdp();
+    let requestBody: unknown;
+    installCreateRoute((body) => {
+      requestBody = body;
+    });
+    await browserCommand.parseAsync([
+      "node",
+      "okou",
+      "input-request",
+      "--field",
+      JSON.stringify({
+        key: "quantity",
+        label: "Quantity",
+        fieldKind: "number",
+        required: false,
+        target: "#quantity",
+      }),
+      "--callback-prompt",
+      "Continue after quantity entry",
+    ]);
+    expect(requestBody).toMatchObject({
+      fields: [{ key: "quantity", fieldKind: "number", backendNodeId: 42 }],
+    });
+    expect(JSON.stringify(requestBody)).not.toContain("#quantity");
   });
 
   it("resolves an XPath target locally without sending it to the API", async () => {

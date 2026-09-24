@@ -1,6 +1,7 @@
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Terminal } from "lucide-react";
 import {
   Dialog,
@@ -19,6 +20,7 @@ import {
   updateAgentSshAccess$,
 } from "../../../../signals/ssh.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
+import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
 import { AvatarFromUrl } from "../../sidebar-shared.tsx";
 import { LoadingSwitch } from "../../../components/loading-switch.tsx";
@@ -26,11 +28,13 @@ import { SshLoadError } from "../../ssh-load-error.tsx";
 
 export function SshAccessManagementDialog() {
   const { t } = useTranslation();
+  const threadRemoteAccess =
+    useGet(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess] === true;
   const open = useLoadable(sshAccessManagementOpen$);
   const close = useSet(closeSshAccessManagement$);
   const search = useGet(sshAccessSearch$);
   const setSearch = useSet(searchSshAccess$);
-  if (open.state !== "hasData" || !open.data) {
+  if (threadRemoteAccess || open.state !== "hasData" || !open.data) {
     return null;
   }
   return (

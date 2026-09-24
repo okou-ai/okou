@@ -21,6 +21,11 @@ export function localizedCloudflareAccessError(
         return $.cloudflareAccess.missing;
       });
     }
+    case CLOUDFLARE_ACCESS_ERROR_CODES.FORBIDDEN: {
+      return i18n.t(($) => {
+        return $.cloudflareAccess.forbidden;
+      });
+    }
     case CLOUDFLARE_ACCESS_ERROR_CODES.IN_USE: {
       return i18n.t(($) => {
         return $.cloudflareAccess.inUse;

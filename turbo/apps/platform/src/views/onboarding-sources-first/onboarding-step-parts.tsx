@@ -4,7 +4,8 @@ import { Card, Radio, surfaceVariants, cn } from "@okouai/ui";
 import { settingsIconAssetUrl } from "../okou-page/components/settings/settings-icon-assets.ts";
 
 /** Okou's own onboarding illustrations. */
-const ILLUSTRATION_BASE = "https://static.okou.io/web/assets/onboarding/";
+export const ILLUSTRATION_BASE =
+  "https://static.okou.io/web/assets/onboarding/";
 
 /**
  * Illustrations keep their own aspect ratio, so a mark is sized by height and

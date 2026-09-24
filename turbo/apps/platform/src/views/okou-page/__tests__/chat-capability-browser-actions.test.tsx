@@ -65,18 +65,21 @@ function browserInputAction(
         description: "The email used for this account",
         fieldKind: "username",
         required: true,
+        control: { tagName: "INPUT", inputType: "email" },
       },
       {
         key: "password",
         label: "Password",
         fieldKind: "password",
         required: true,
+        control: { tagName: "INPUT", inputType: "password" },
       },
       {
         key: "code",
         label: "Verification code",
         fieldKind: "one_time_code",
         required: false,
+        control: { tagName: "INPUT", inputType: "tel" },
       },
     ],
     callbackIds: {
@@ -506,7 +509,18 @@ test("A pending Browser input card opens the exact standalone form URL", async (
     events: completedConversation(`[Enter details](${browserInputUrl()})`),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, browserInputAction("pending"));
+    return respond(200, {
+      ...browserInputAction("pending"),
+      fields: [
+        {
+          key: "quantity",
+          label: "Quantity",
+          fieldKind: "number",
+          required: false,
+          control: { tagName: "INPUT", inputType: "number" },
+        },
+      ],
+    });
   });
 
   await setupPage({

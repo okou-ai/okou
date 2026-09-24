@@ -490,7 +490,7 @@ async function setupOwner(
   await updateFeatureSwitchesForUser(
     context,
     { orgId: actor.orgId, userId: actor.userId },
-    { [FeatureSwitchKey.SimpleMorningBrief]: true },
+    { [FeatureSwitchKey.NativeMorningBrief]: true },
   );
   // Connector and permission setup reinstall their own doubles, so the store
   // the composition reads through is restored last.

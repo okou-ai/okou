@@ -1,4 +1,5 @@
 import { isMemberModelPolicyAvailable } from "@okouai/api-contracts/contracts/member-model-policy";
+import { getModelReasoningEfforts } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import chalk from "chalk";
 import { Command } from "commander";
 import type { ChatThreadMetadata } from "@okouai/api-contracts/contracts/chat-threads";
@@ -19,10 +20,12 @@ import {
 } from "../../lib/domain/model-policy-display";
 import { isUuid } from "../../lib/utils/uuid";
 import { getOkouChatThreadId } from "../../lib/okou-env";
+import { formatChatEffort, parseChatEffort } from "./shared";
 
 interface ModelOptions {
   readonly help?: boolean;
   readonly thread?: string;
+  readonly effort?: string;
 }
 
 function getCurrentChatThreadId(): string | undefined {
@@ -56,6 +59,9 @@ function printSwitchableModels(policies: readonly OrgModelPolicy[]): void {
     const defaultMarker = policy.isDefault ? chalk.dim(" (default)") : "";
     console.log(`  - ${formatModelName(policy)}${defaultMarker}`);
     console.log(`    provider: ${formatModelProviderRoute(policy)}`);
+    console.log(
+      `    efforts: ${getModelReasoningEfforts(policy.model).join(", ")}`,
+    );
   }
 }
 
@@ -70,7 +76,7 @@ function formatThreadModel(
   const policy = policies.policies.find((candidate) => {
     return candidate.model === model;
   });
-  return `${policy?.modelLabel ?? getModelDisplayName(model)} (${model})`;
+  return `${policy?.modelLabel ?? getModelDisplayName(model)} (${model})${formatChatEffort(thread.selectedModel, thread.modelSettings)}`;
 }
 
 function printCurrentModel(
@@ -90,8 +96,18 @@ async function printModelHelp(command: Command): Promise<void> {
   console.log(chalk.bold("Switchable models:"));
   printSwitchableModels(result.policies);
   console.log();
+  console.log(
+    "Effort levels depend on the model; Claude uses extra where Codex uses xhigh.",
+  );
   console.log("Use the model id in parentheses:");
-  console.log(chalk.cyan("  okou chat model [--thread <thread-id>] <model>"));
+  console.log(
+    chalk.cyan(
+      "  okou chat model [--thread <thread-id>] <model> [--effort <level>]",
+    ),
+  );
+  console.log(
+    chalk.cyan("  okou chat model [--thread <thread-id>] --effort <level>"),
+  );
 }
 
 async function printCurrentModelAndChoices(threadId: string): Promise<void> {
@@ -109,7 +125,11 @@ async function printCurrentModelAndChoices(threadId: string): Promise<void> {
   console.log(chalk.cyan(`  okou chat model --thread ${threadId} <model>`));
 }
 
-async function switchModel(threadId: string, model: string): Promise<void> {
+async function switchModel(
+  threadId: string,
+  model: string,
+  effort?: string,
+): Promise<void> {
   const result = await listModelPolicies();
   const policy = result.policies.find((candidate) => {
     return candidate.model === model;
@@ -128,14 +148,47 @@ async function switchModel(threadId: string, model: string): Promise<void> {
     );
   }
 
+  const reasoningEffort =
+    effort === undefined ? undefined : parseChatEffort(effort, model);
   const updated = await updateChatThreadModelSelection({
     threadId,
     model,
+    ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
   });
 
   console.log(chalk.green("✓ Chat model updated"));
   console.log(chalk.dim(`  Thread: ${updated.threadId}`));
-  console.log(chalk.dim(`  Model:  ${policy.modelLabel} (${model})`));
+  console.log(
+    chalk.dim(
+      `  Model:  ${policy.modelLabel} (${model})${reasoningEffort ? ` · effort ${reasoningEffort}` : ""}`,
+    ),
+  );
+}
+
+async function updateCurrentEffort(
+  threadId: string,
+  effort: string,
+): Promise<void> {
+  const thread = await getChatThread({ threadId });
+  if (!thread.selectedModel) {
+    printUsageError(
+      "This chat thread has no selected model",
+      "Pass a model: okou chat model --thread <thread-id> <model> --effort <level>",
+    );
+  }
+  const reasoningEffort = parseChatEffort(effort, thread.selectedModel);
+  await updateChatThreadModelSelection({
+    threadId,
+    model: thread.selectedModel,
+    reasoningEffort,
+  });
+  console.log(chalk.green("✓ Chat model updated"));
+  console.log(chalk.dim(`  Thread: ${threadId}`));
+  console.log(
+    chalk.dim(
+      `  Model:  ${getModelDisplayName(thread.selectedModel)} (${thread.selectedModel}) · effort ${reasoningEffort}`,
+    ),
+  );
 }
 
 export const modelCommand = new Command()
@@ -144,6 +197,7 @@ export const modelCommand = new Command()
   .argument("[model]", "Model id to use for this chat thread")
   .helpOption(false)
   .option("--thread <id>", "Chat thread ID (defaults to OKOU_CHAT_THREAD_ID)")
+  .option("--effort <level>", "Set reasoning effort for the selected model")
   .option("-h, --help", "Show help with switchable models")
   .addHelpText(
     "after",
@@ -153,9 +207,12 @@ Examples:
   Show another chat model:  okou chat model --thread <thread-id>
   Switch this model:        okou chat model claude-sonnet-5
   Switch another model:     okou chat model --thread <thread-id> claude-sonnet-5
+  Switch with effort:       okou chat model claude-opus-5-5 --effort extra
+  Change only effort:      okou chat model --effort max
 
 Notes:
   - Defaults --thread to OKOU_CHAT_THREAD_ID
+  - Effort levels depend on the model; Claude uses extra where Codex uses xhigh
   - Authenticates via OKOU_TOKEN (requires chat-thread:write capability to switch)`,
   )
   .action(
@@ -181,11 +238,15 @@ Notes:
         }
 
         if (!model) {
-          await printCurrentModelAndChoices(threadId);
+          if (options.effort !== undefined) {
+            await updateCurrentEffort(threadId, options.effort);
+          } else {
+            await printCurrentModelAndChoices(threadId);
+          }
           return;
         }
 
-        await switchModel(threadId, model);
+        await switchModel(threadId, model, options.effort);
       },
     ),
   );

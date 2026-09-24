@@ -1,15 +1,13 @@
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Monitor, Plug, Plus } from "lucide-react";
-import { Button, SegmentControl, SegmentControlItem } from "@okouai/ui";
+import { Plus } from "lucide-react";
+import { Button } from "@okouai/ui";
 import type { VncConnectionResponse } from "@okouai/api-contracts/contracts/vnc-connections";
 import type { VncCredentialResponse } from "@okouai/api-contracts/contracts/vnc-credentials";
 import {
-  changeVncView$,
   openVncDialog$,
   vncConnections$,
   vncCredentials$,
-  vncView$,
   vncAuthMethodForProfile,
   vncSshConnectionId,
   type VncAuthMethod,
@@ -17,20 +15,10 @@ import {
 } from "../../signals/vnc.ts";
 import { sshConnections$ } from "../../signals/ssh.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { ROUTES } from "../../signals/route-paths.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { Link } from "../router/link.tsx";
-import {
-  DetailPageBreadcrumbBar,
-  DetailPageHeader,
-  DetailPageMain,
-  DetailPageShell,
-} from "../components/detail-page-layout.tsx";
 import { VncCredentialImpact } from "./vnc-fields.tsx";
-import { VncDialog } from "./vnc-dialog.tsx";
 import { VncLoadError } from "./vnc-load-error.tsx";
+import { RemoteHostDefaultToggle } from "./remote-access-controls.tsx";
 
 function VncProfileLabel({ profile }: { readonly profile: VncProfile }) {
   const { t } = useTranslation();
@@ -168,6 +156,7 @@ function VncHostCard({
           </>
         )}
       </p>
+      <RemoteHostDefaultToggle protocol="vnc" connectionId={connection.id} />
       <div className="flex flex-wrap gap-2">
         <Button
           variant="outline"
@@ -380,98 +369,5 @@ export function VncCredentials() {
         );
       })}
     </div>
-  );
-}
-
-function VncPageHeader() {
-  const { t } = useTranslation();
-  const directoryEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorDirectory] === true;
-  return (
-    <>
-      <DetailPageBreadcrumbBar>
-        <Link
-          pathname={ROUTES.connectors}
-          options={
-            directoryEnabled
-              ? {
-                  searchParams: new URLSearchParams({
-                    scope: "remote-control",
-                  }),
-                }
-              : undefined
-          }
-          className="inline-flex min-w-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-inherit no-underline transition-colors hover:bg-state-hover hover:text-foreground"
-        >
-          <Plug size={14} className="shrink-0" aria-hidden="true" />
-          {t(($) => {
-            return $.appShell.sidebar.navigation.connectors;
-          })}
-        </Link>
-        <span className="select-none text-muted-foreground/40">/</span>
-        <span
-          aria-current="page"
-          className="min-w-0 truncate px-1.5 py-0.5 font-medium"
-        >
-          {t(($) => {
-            return $.vnc.label;
-          })}
-        </span>
-      </DetailPageBreadcrumbBar>
-      <DetailPageHeader>
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gray-100 text-muted-foreground sm:h-16 sm:w-16">
-            <Monitor size={28} aria-hidden="true" />
-          </span>
-          <div className="min-w-0">
-            <h1 className="text-lg font-semibold tracking-tight text-foreground sm:text-xl">
-              {t(($) => {
-                return $.vnc.title;
-              })}
-            </h1>
-            <p className="mt-1.5 text-sm text-muted-foreground">
-              {t(($) => {
-                return $.vnc.description;
-              })}
-            </p>
-          </div>
-        </div>
-      </DetailPageHeader>
-    </>
-  );
-}
-
-export function VncConnectorPage() {
-  const { t } = useTranslation();
-  const view = useGet(vncView$);
-  const changeView = useSet(changeVncView$);
-  return (
-    <DetailPageShell>
-      <VncPageHeader />
-      <DetailPageMain constrainContent>
-        <div className="mb-5">
-          <SegmentControl
-            value={view}
-            onValueChange={changeView}
-            aria-label={t(($) => {
-              return $.vnc.title;
-            })}
-          >
-            <SegmentControlItem value="hosts">
-              {t(($) => {
-                return $.vnc.hostsTab;
-              })}
-            </SegmentControlItem>
-            <SegmentControlItem value="credentials">
-              {t(($) => {
-                return $.vnc.credentialsTab;
-              })}
-            </SegmentControlItem>
-          </SegmentControl>
-        </div>
-        {view === "hosts" ? <VncHosts /> : <VncCredentials />}
-        <VncDialog />
-      </DetailPageMain>
-    </DetailPageShell>
   );
 }

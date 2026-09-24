@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.5.41](https://github.com/okou-ai/okou/compare/host-worker-v1.5.40...host-worker-v1.5.41) (2026-09-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.503.0
+
+## [1.5.40](https://github.com/okou-ai/okou/compare/host-worker-v1.5.39...host-worker-v1.5.40) (2026-09-24)
+
+
+### Bug Fixes
+
+* **hosting:** migrate snapshot aliases to rolling site pointers ([#36537](https://github.com/okou-ai/okou/issues/36537)) ([af047ab](https://github.com/okou-ai/okou/commit/af047ab6c6581147c5dfd0c81f9380015bc9302b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.502.0
+
+## [1.5.39](https://github.com/okou-ai/okou/compare/host-worker-v1.5.38...host-worker-v1.5.39) (2026-09-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.501.0
+
 ## [1.5.38](https://github.com/okou-ai/okou/compare/host-worker-v1.5.37...host-worker-v1.5.38) (2026-09-24)
 
 
