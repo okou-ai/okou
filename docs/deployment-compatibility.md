@@ -1,5 +1,18 @@
 # Deployment Compatibility
 
+## Morning Brief collection account retirement (2026-09-24)
+
+Native Morning Brief execution no longer computes or writes the per-occurrence
+collection account. Its only reader, the preference API's `lastRun`, was
+already removed. The `morning_brief_native_occurrences.collection_facts` column
+is left in place because an older API may still write it during rollout; the
+new API neither reads nor writes it.
+
+Mixed versions are compatible: the column is nullable and nothing reads it, so
+rows written by either version settle and schedule the same way. Rollback is
+safe; an older API simply resumes writing the column. Drop it in a separate
+migration after older API deployments drain.
+
 ## Chat search user keyword GIN index (2026-09-24)
 
 Migration `1214_chat_search_user_tsv_gin` installs `btree_gin` and builds

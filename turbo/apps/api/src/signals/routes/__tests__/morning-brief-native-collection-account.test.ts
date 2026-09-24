@@ -1,10 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import { cronExecuteMorningBriefsContract } from "@okouai/api-contracts/contracts/cron";
-import type {
-  MorningBriefOccurrenceCollectionFacts,
-  MorningBriefOccurrenceSourceFact,
-} from "@okouai/db/jsonb-contracts/morning-brief-native-occurrence";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
@@ -45,7 +41,8 @@ import {
 import { seedOrgMembership$ } from "./helpers/org-membership";
 
 /**
- * What a settled native Morning Brief occurrence is able to say afterwards.
+ * How a native Morning Brief occurrence settles for a busy, a quiet and a
+ * failing morning.
  *
  * A real production run (#35656) collected from all five sources and delivered
  * nothing: no model request, no generation row, no Chat message, no email. The
@@ -60,7 +57,7 @@ import { seedOrgMembership$ } from "./helpers/org-membership";
  *   bounded by the attempt's own absolute deadline rather than by a second,
  *   fixed budget that ignores how many sources answered;
  * - a delivered brief, a genuinely empty one and a failed collection each
- *   record a distinguishable durable account on the occurrence row.
+ *   settle with a distinct outcome on the occurrence row.
  *
  * Only the provider HTTP boundaries are doubled. The membership boundary is
  * additionally given a deterministic, controlled latency, because the defect is
@@ -543,17 +540,7 @@ function chargeMembershipLatency(): { calls: () => number } {
   };
 }
 
-/** One source's line in the occurrence's durable collection account. */
-function sourceFact(
-  facts: MorningBriefOccurrenceCollectionFacts | null | undefined,
-  source: string,
-): MorningBriefOccurrenceSourceFact | undefined {
-  return facts?.sources.find((entry) => {
-    return entry.source === source;
-  });
-}
-
-describe("native Morning Brief collection account", () => {
+describe("native Morning Brief collection settlement", () => {
   it(
     "delivers a multi-source brief whose authority revalidation outlives a fixed budget",
     async () => {
@@ -601,19 +588,7 @@ describe("native Morning Brief collection account", () => {
       expect(occurrences[0]?.outcome).toBe("delivered");
       expect(occurrences[0]?.scheduledFor.getTime()).toBe(due.getTime());
       expect(occurrences[0]?.settledAt).not.toBeNull();
-
-      // And the account says what it had to work with, durably on the row
-      // rather than only in a trace.
       expect(occurrences[0]?.state).toBe("settled");
-      const facts = occurrences[0]?.collectionFacts;
-      expect(facts?.reason).toBeNull();
-      expect(sourceFact(facts, "gmail")).toMatchObject({
-        coverage: "complete",
-        items: 1,
-        includedInRequest: 1,
-      });
-      expect(sourceFact(facts, "github")?.items).toBe(1);
-      expect(sourceFact(facts, "slack")?.items).toBe(1);
     },
     TEST_TIMEOUT_MS,
   );
@@ -634,15 +609,6 @@ describe("native Morning Brief collection account", () => {
       await expect(readNativeDeliveries(f)).resolves.toHaveLength(0);
       const occurrences = await readNativeOccurrences(f);
       expect(occurrences[0]?.outcome).toBe("empty-skip");
-
-      const facts = occurrences[0]?.collectionFacts;
-      expect(facts?.reason).toBeNull();
-      // Every applicable source answered, and every one of them held nothing.
-      expect(sourceFact(facts, "slack")).toMatchObject({
-        coverage: "empty",
-        items: 0,
-      });
-      expect(sourceFact(facts, "chat")?.items).toBe(0);
     },
     TEST_TIMEOUT_MS,
   );
@@ -662,15 +628,6 @@ describe("native Morning Brief collection account", () => {
       await expect(readNativeDeliveries(f)).resolves.toHaveLength(0);
       const occurrences = await readNativeOccurrences(f);
       expect(occurrences[0]?.outcome).toBe("collection-failed");
-
-      // The three settlements are distinguishable: this one names the sources
-      // that could not answer, where the quiet morning had no reason at all.
-      const facts = occurrences[0]?.collectionFacts;
-      expect(facts?.reason ?? occurrences[0]?.deferReason).not.toBeNull();
-      expect(sourceFact(facts, "gmail")).toMatchObject({
-        coverage: "failed",
-        items: 0,
-      });
     },
     TEST_TIMEOUT_MS,
   );
