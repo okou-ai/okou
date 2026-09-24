@@ -23,9 +23,13 @@ export const agentphoneUserLinks = pgTable(
     phoneHandle: varchar("phone_handle", { length: 254 }).notNull(),
     userId: text("user_id").notNull(),
     orgId: text("org_id").notNull(),
+    /**
+     * Retired: current APIs neither read nor write it and rely on the
+     * `okou` default; drop it after older API deployments drain.
+     */
     publicBrand: text("public_brand")
       .$type<PublicBrand>()
-      .default("vm0")
+      .default("okou")
       .notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

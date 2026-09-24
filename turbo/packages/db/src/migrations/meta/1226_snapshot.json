@@ -1,6 +1,6 @@
 {
-  "id": "0677b172-04c3-4b89-9f27-0117b38f6952",
-  "prevId": "174ecc92-5750-4f51-82df-cd43056facec",
+  "id": "0d9e3a3e-1dc0-448e-bda6-a0e9f65ac3f7",
+  "prevId": "460ec184-a92e-4223-91df-fffab306524c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -5629,7 +5629,7 @@
       "checkConstraints": {
         "billing_run_attribution_source_check": {
           "name": "billing_run_attribution_source_check",
-          "value": "\"billing_run_attribution\".\"source\" IN ('chat', 'automation', 'slack', 'teams', 'telegram', 'email', 'agentphone', 'github', 'agent', 'other')"
+          "value": "\"billing_run_attribution\".\"source\" IN ('chat', 'automation', 'slack', 'discord', 'teams', 'telegram', 'email', 'agentphone', 'github', 'agent', 'other')"
         },
         "billing_run_attribution_thread_context_check": {
           "name": "billing_run_attribution_thread_context_check",
@@ -7671,6 +7671,193 @@
       },
       "isRLSEnabled": false
     },
+    "public.chat_discord_context": {
+      "name": "chat_discord_context",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "connection_id": {
+          "name": "connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "route_id": {
+          "name": "route_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chat_thread_id": {
+          "name": "chat_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "guild_id": {
+          "name": "guild_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "channel_id": {
+          "name": "channel_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bot_user_id": {
+          "name": "bot_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_brand": {
+          "name": "public_brand",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "conversation_context": {
+          "name": "conversation_context",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "message_text": {
+          "name": "message_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message_files": {
+          "name": "message_files",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "message_assets": {
+          "name": "message_assets",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "mention_display_names": {
+          "name": "mention_display_names",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "sender_display_name": {
+          "name": "sender_display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sender_user_id": {
+          "name": "sender_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel_type": {
+          "name": "channel_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "destination_channel_id": {
+          "name": "destination_channel_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_chat_discord_context_route": {
+          "name": "idx_chat_discord_context_route",
+          "columns": [
+            {
+              "expression": "route_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_chat_discord_context_chat": {
+          "name": "idx_chat_discord_context_chat",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "chat_discord_context_route_owner_fk": {
+          "name": "chat_discord_context_route_owner_fk",
+          "tableFrom": "chat_discord_context",
+          "tableTo": "discord_chat_thread_routes",
+          "columnsFrom": [
+            "route_id",
+            "connection_id",
+            "chat_thread_id"
+          ],
+          "columnsTo": [
+            "id",
+            "connection_id",
+            "chat_thread_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.chat_event_search_message_watermarks": {
       "name": "chat_event_search_message_watermarks",
       "schema": "",
@@ -8463,7 +8650,16 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "chat_events_id_thread_unique": {
+          "name": "chat_events_id_thread_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "chat_thread_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {
         "chat_events_event_type_check": {
@@ -8504,7 +8700,7 @@
         },
         "chat_events_context_type_check": {
           "name": "chat_events_context_type_check",
-          "value": "\"chat_events\".\"context_type\" IN (\n          'web',\n          'slack',\n          'feishu',\n          'teams',\n          'telegram',\n          'github',\n          'agentphone',\n          'automation',\n          'goal',\n          'agent_run'\n        )"
+          "value": "\"chat_events\".\"context_type\" IN (\n          'web',\n          'slack',\n          'discord',\n          'feishu',\n          'teams',\n          'telegram',\n          'github',\n          'agentphone',\n          'automation',\n          'goal',\n          'agent_run'\n        )"
         },
         "chat_events_input_context_type_check": {
           "name": "chat_events_input_context_type_check",
@@ -10399,7 +10595,16 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "uq_chat_threads_id_user": {
+          "name": "uq_chat_threads_id_user",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "user_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {
         "chat_threads_computer_access_check": {
@@ -14049,6 +14254,1207 @@
       },
       "indexes": {},
       "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.discord_chat_deliveries": {
+      "name": "discord_chat_deliveries",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "connection_id": {
+          "name": "connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ingress_id": {
+          "name": "ingress_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "chat_event_id": {
+          "name": "chat_event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "chat_thread_id": {
+          "name": "chat_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "route_id": {
+          "name": "route_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel_id": {
+          "name": "channel_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content": {
+          "name": "content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "parts": {
+          "name": "parts",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "last_attempt_at": {
+          "name": "last_attempt_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "retry_at": {
+          "name": "retry_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "delivered_at": {
+          "name": "delivered_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_discord_chat_deliveries_event": {
+          "name": "idx_discord_chat_deliveries_event",
+          "columns": [
+            {
+              "expression": "chat_event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_discord_chat_deliveries_ingress": {
+          "name": "idx_discord_chat_deliveries_ingress",
+          "columns": [
+            {
+              "expression": "ingress_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_discord_chat_deliveries_pending": {
+          "name": "idx_discord_chat_deliveries_pending",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "last_attempt_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_discord_chat_deliveries_owner": {
+          "name": "idx_discord_chat_deliveries_owner",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_discord_chat_deliveries_connection": {
+          "name": "idx_discord_chat_deliveries_connection",
+          "columns": [
+            {
+              "expression": "connection_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_discord_chat_deliveries_thread": {
+          "name": "idx_discord_chat_deliveries_thread",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_discord_chat_deliveries_route": {
+          "name": "idx_discord_chat_deliveries_route",
+          "columns": [
+            {
+              "expression": "route_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "discord_chat_deliveries_connection_id_discord_org_connections_id_fk": {
+          "name": "discord_chat_deliveries_connection_id_discord_org_connections_id_fk",
+          "tableFrom": "discord_chat_deliveries",
+          "tableTo": "discord_org_connections",
+          "columnsFrom": [
+            "connection_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "discord_chat_deliveries_ingress_id_discord_chat_ingress_id_fk": {
+          "name": "discord_chat_deliveries_ingress_id_discord_chat_ingress_id_fk",
+          "tableFrom": "discord_chat_deliveries",
+          "tableTo": "discord_chat_ingress",
+          "columnsFrom": [
+            "ingress_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "discord_chat_deliveries_chat_event_id_chat_events_id_fk": {
+          "name": "discord_chat_deliveries_chat_event_id_chat_events_id_fk",
+          "tableFrom": "discord_chat_deliveries",
+          "tableTo": "chat_events",
+          "columnsFrom": [
+            "chat_event_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "discord_chat_deliveries_chat_thread_id_chat_threads_id_fk": {
+          "name": "discord_chat_deliveries_chat_thread_id_chat_threads_id_fk",
+          "tableFrom": "discord_chat_deliveries",
+          "tableTo": "chat_threads",
+          "columnsFrom": [
+            "chat_thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "discord_chat_deliveries_route_id_discord_chat_thread_routes_id_fk": {
+          "name": "discord_chat_deliveries_route_id_discord_chat_thread_routes_id_fk",
+          "tableFrom": "discord_chat_deliveries",
+          "tableTo": "discord_chat_thread_routes",
+          "columnsFrom": [
+            "route_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "discord_chat_deliveries_event_thread_fk": {
+          "name": "discord_chat_deliveries_event_thread_fk",
+          "tableFrom": "discord_chat_deliveries",
+          "tableTo": "chat_events",
+          "columnsFrom": [
+            "chat_event_id",
+            "chat_thread_id"
+          ],
+          "columnsTo": [
+            "id",
+            "chat_thread_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "discord_chat_deliveries_connection_owner_fk": {
+          "name": "discord_chat_deliveries_connection_owner_fk",
+          "tableFrom": "discord_chat_deliveries",
+          "tableTo": "discord_org_connections",
+          "columnsFrom": [
+            "connection_id",
+            "user_id"
+          ],
+          "columnsTo": [
+            "id",
+            "user_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "discord_chat_deliveries_route_owner_fk": {
+          "name": "discord_chat_deliveries_route_owner_fk",
+          "tableFrom": "discord_chat_deliveries",
+          "tableTo": "discord_chat_thread_routes",
+          "columnsFrom": [
+            "route_id",
+            "connection_id",
+            "chat_thread_id"
+          ],
+          "columnsTo": [
+            "id",
+            "connection_id",
+            "chat_thread_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "discord_chat_deliveries_ingress_owner_fk": {
+          "name": "discord_chat_deliveries_ingress_owner_fk",
+          "tableFrom": "discord_chat_deliveries",
+          "tableTo": "discord_chat_ingress",
+          "columnsFrom": [
+            "ingress_id",
+            "connection_id"
+          ],
+          "columnsTo": [
+            "id",
+            "connection_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "discord_chat_deliveries_source_check": {
+          "name": "discord_chat_deliveries_source_check",
+          "value": "(\"discord_chat_deliveries\".\"chat_event_id\" IS NOT NULL AND \"discord_chat_deliveries\".\"ingress_id\" IS NULL AND \"discord_chat_deliveries\".\"chat_thread_id\" IS NOT NULL AND \"discord_chat_deliveries\".\"route_id\" IS NOT NULL) OR (\"discord_chat_deliveries\".\"chat_event_id\" IS NULL AND \"discord_chat_deliveries\".\"ingress_id\" IS NOT NULL AND \"discord_chat_deliveries\".\"chat_thread_id\" IS NULL AND \"discord_chat_deliveries\".\"route_id\" IS NULL)"
+        },
+        "discord_chat_deliveries_status_check": {
+          "name": "discord_chat_deliveries_status_check",
+          "value": "\"discord_chat_deliveries\".\"status\" IN ('pending', 'delivered', 'failed', 'suppressed')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.discord_chat_ingress": {
+      "name": "discord_chat_ingress",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "connection_id": {
+          "name": "connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "route_id": {
+          "name": "route_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "event_id": {
+          "name": "event_id",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload": {
+          "name": "payload",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_brand": {
+          "name": "public_brand",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "retry_count": {
+          "name": "retry_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "processing_attempt_count": {
+          "name": "processing_attempt_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "claim_token": {
+          "name": "claim_token",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "claimed_at": {
+          "name": "claimed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "retry_at": {
+          "name": "retry_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_error_class": {
+          "name": "last_error_class",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_discord_chat_ingress_connection": {
+          "name": "idx_discord_chat_ingress_connection",
+          "columns": [
+            {
+              "expression": "connection_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_discord_chat_ingress_route": {
+          "name": "idx_discord_chat_ingress_route",
+          "columns": [
+            {
+              "expression": "route_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_discord_chat_ingress_retry_sweep": {
+          "name": "idx_discord_chat_ingress_retry_sweep",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "retry_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "discord_chat_ingress_connection_id_discord_org_connections_id_fk": {
+          "name": "discord_chat_ingress_connection_id_discord_org_connections_id_fk",
+          "tableFrom": "discord_chat_ingress",
+          "tableTo": "discord_org_connections",
+          "columnsFrom": [
+            "connection_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "discord_chat_ingress_route_connection_fk": {
+          "name": "discord_chat_ingress_route_connection_fk",
+          "tableFrom": "discord_chat_ingress",
+          "tableTo": "discord_chat_thread_routes",
+          "columnsFrom": [
+            "route_id",
+            "connection_id"
+          ],
+          "columnsTo": [
+            "id",
+            "connection_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_discord_chat_ingress_event": {
+          "name": "uq_discord_chat_ingress_event",
+          "nullsNotDistinct": false,
+          "columns": [
+            "event_id"
+          ]
+        },
+        "uq_discord_chat_ingress_message": {
+          "name": "uq_discord_chat_ingress_message",
+          "nullsNotDistinct": false,
+          "columns": [
+            "message_id"
+          ]
+        },
+        "uq_discord_chat_ingress_connection": {
+          "name": "uq_discord_chat_ingress_connection",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "connection_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "chk_discord_chat_ingress_status": {
+          "name": "chk_discord_chat_ingress_status",
+          "value": "\"discord_chat_ingress\".\"status\" IN ('pending', 'processing', 'retryable', 'processed', 'terminal')"
+        },
+        "chk_discord_chat_ingress_retry_count": {
+          "name": "chk_discord_chat_ingress_retry_count",
+          "value": "\"discord_chat_ingress\".\"retry_count\" >= 0"
+        },
+        "chk_discord_chat_ingress_processing_attempt_count": {
+          "name": "chk_discord_chat_ingress_processing_attempt_count",
+          "value": "\"discord_chat_ingress\".\"processing_attempt_count\" >= 0"
+        },
+        "chk_discord_chat_ingress_claim": {
+          "name": "chk_discord_chat_ingress_claim",
+          "value": "(\"discord_chat_ingress\".\"status\" = 'processing' AND \"discord_chat_ingress\".\"claim_token\" IS NOT NULL AND \"discord_chat_ingress\".\"claimed_at\" IS NOT NULL) OR (\"discord_chat_ingress\".\"status\" <> 'processing' AND \"discord_chat_ingress\".\"claim_token\" IS NULL AND \"discord_chat_ingress\".\"claimed_at\" IS NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.discord_chat_thread_routes": {
+      "name": "discord_chat_thread_routes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "connection_id": {
+          "name": "connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel_id": {
+          "name": "channel_id",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "session_key": {
+          "name": "session_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chat_thread_id": {
+          "name": "chat_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "destination_channel_id": {
+          "name": "destination_channel_id",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_discord_chat_thread_routes_chat": {
+          "name": "idx_discord_chat_thread_routes_chat",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "discord_chat_thread_routes_connection_owner_fk": {
+          "name": "discord_chat_thread_routes_connection_owner_fk",
+          "tableFrom": "discord_chat_thread_routes",
+          "tableTo": "discord_org_connections",
+          "columnsFrom": [
+            "connection_id",
+            "user_id"
+          ],
+          "columnsTo": [
+            "id",
+            "user_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "discord_chat_thread_routes_chat_owner_fk": {
+          "name": "discord_chat_thread_routes_chat_owner_fk",
+          "tableFrom": "discord_chat_thread_routes",
+          "tableTo": "chat_threads",
+          "columnsFrom": [
+            "chat_thread_id",
+            "user_id"
+          ],
+          "columnsTo": [
+            "id",
+            "user_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_discord_chat_thread_routes_session": {
+          "name": "uq_discord_chat_thread_routes_session",
+          "nullsNotDistinct": false,
+          "columns": [
+            "connection_id",
+            "channel_id",
+            "session_key",
+            "user_id"
+          ]
+        },
+        "uq_discord_chat_thread_routes_connection": {
+          "name": "uq_discord_chat_thread_routes_connection",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "connection_id"
+          ]
+        },
+        "uq_discord_chat_thread_routes_context": {
+          "name": "uq_discord_chat_thread_routes_context",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "connection_id",
+            "chat_thread_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.discord_gateway_receipts": {
+      "name": "discord_gateway_receipts",
+      "schema": "",
+      "columns": {
+        "event_digest": {
+          "name": "event_digest",
+          "type": "varchar(64)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.discord_org_connections": {
+      "name": "discord_org_connections",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "guild_id": {
+          "name": "guild_id",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "discord_user_id": {
+          "name": "discord_user_id",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_discord_org_connections_user": {
+          "name": "idx_discord_org_connections_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_discord_org_connections_sender": {
+          "name": "idx_discord_org_connections_sender",
+          "columns": [
+            {
+              "expression": "discord_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "discord_org_connections_guild_id_discord_org_installations_guild_id_fk": {
+          "name": "discord_org_connections_guild_id_discord_org_installations_guild_id_fk",
+          "tableFrom": "discord_org_connections",
+          "tableTo": "discord_org_installations",
+          "columnsFrom": [
+            "guild_id"
+          ],
+          "columnsTo": [
+            "guild_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_discord_org_connections_guild_sender": {
+          "name": "uq_discord_org_connections_guild_sender",
+          "nullsNotDistinct": false,
+          "columns": [
+            "guild_id",
+            "discord_user_id"
+          ]
+        },
+        "uq_discord_org_connections_guild_user": {
+          "name": "uq_discord_org_connections_guild_user",
+          "nullsNotDistinct": false,
+          "columns": [
+            "guild_id",
+            "user_id"
+          ]
+        },
+        "uq_discord_org_connections_owner": {
+          "name": "uq_discord_org_connections_owner",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "user_id"
+          ]
+        },
+        "uq_discord_org_connections_sender_owner": {
+          "name": "uq_discord_org_connections_sender_owner",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "discord_user_id",
+            "user_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.discord_org_installations": {
+      "name": "discord_org_installations",
+      "schema": "",
+      "columns": {
+        "guild_id": {
+          "name": "guild_id",
+          "type": "varchar(255)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "guild_name": {
+          "name": "guild_name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bot_user_id": {
+          "name": "bot_user_id",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "installed_by_user_id": {
+          "name": "installed_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_discord_org_installations_installer_guild": {
+          "name": "idx_discord_org_installations_installer_guild",
+          "columns": [
+            {
+              "expression": "installed_by_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "guild_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_discord_org_installations_org": {
+          "name": "uq_discord_org_installations_org",
+          "nullsNotDistinct": false,
+          "columns": [
+            "org_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.discord_user_agent_preferences": {
+      "name": "discord_user_agent_preferences",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "connection_id": {
+          "name": "connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "selected_agent_id": {
+          "name": "selected_agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_discord_user_agent_preferences_connection": {
+          "name": "idx_discord_user_agent_preferences_connection",
+          "columns": [
+            {
+              "expression": "connection_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "discord_user_agent_preferences_selected_agent_id_agents_id_fk": {
+          "name": "discord_user_agent_preferences_selected_agent_id_agents_id_fk",
+          "tableFrom": "discord_user_agent_preferences",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "selected_agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "discord_user_agent_preferences_connection_owner_fk": {
+          "name": "discord_user_agent_preferences_connection_owner_fk",
+          "tableFrom": "discord_user_agent_preferences",
+          "tableTo": "discord_org_connections",
+          "columnsFrom": [
+            "connection_id",
+            "user_id"
+          ],
+          "columnsTo": [
+            "id",
+            "user_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "discord_user_agent_preferences_user_id_org_id_pk": {
+          "name": "discord_user_agent_preferences_user_id_org_id_pk",
+          "columns": [
+            "user_id",
+            "org_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.discord_user_dm_preferences": {
+      "name": "discord_user_dm_preferences",
+      "schema": "",
+      "columns": {
+        "discord_user_id": {
+          "name": "discord_user_id",
+          "type": "varchar(255)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "connection_id": {
+          "name": "connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_discord_user_dm_preferences_connection": {
+          "name": "idx_discord_user_dm_preferences_connection",
+          "columns": [
+            {
+              "expression": "connection_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_discord_user_dm_preferences_user": {
+          "name": "idx_discord_user_dm_preferences_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "discord_user_dm_preferences_sender_owner_fk": {
+          "name": "discord_user_dm_preferences_sender_owner_fk",
+          "tableFrom": "discord_user_dm_preferences",
+          "tableTo": "discord_org_connections",
+          "columnsFrom": [
+            "connection_id",
+            "discord_user_id",
+            "user_id"
+          ],
+          "columnsTo": [
+            "id",
+            "discord_user_id",
+            "user_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

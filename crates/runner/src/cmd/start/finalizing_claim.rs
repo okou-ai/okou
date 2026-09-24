@@ -59,7 +59,6 @@ use super::factory_lifecycle::SharedFactory;
 use super::job_discovery::{
     ClaimedActivationGuard, ClaimedJobSetup, FinalizingAdmission, ReadyClaimedResource,
     ReservedActivation, ReservedActivationRequest, activate_reserved_idle, build_spawn_job_request,
-    reserve_exact_idle_for_spawn, rollback_reserved_idle_for_spawn,
 };
 use super::job_spawn::{SpawnContext, run_job};
 #[cfg(test)]
@@ -77,6 +76,7 @@ use runner_provider::ClaimedJob;
 use runner_provider::RunCancellationRegistration;
 use runner_supervisor::idle_lifecycle::{
     IdlePressureRequest, IdlePressureSelection, ReservedIdleActivation,
+    reserve_exact_idle_for_spawn, rollback_reserved_idle_for_spawn,
     select_idle_entries_for_pressure,
 };
 use runner_types::ids::RunId;
@@ -237,7 +237,13 @@ async fn run_finalizing_claim(
         Ok(Ok(resource)) => resource,
         Ok(Err(failure)) => {
             if let Some(reservation) = reserved_exact.take() {
-                rollback_reserved_idle_for_spawn(reservation, &ctx).await;
+                rollback_reserved_idle_for_spawn(
+                    reservation,
+                    &ctx.idle_pool,
+                    &ctx.status,
+                    &ctx.reuse_state_notify,
+                )
+                .await;
             }
             return complete_claimed_without_sandbox(
                 claimed,
@@ -251,7 +257,13 @@ async fn run_finalizing_claim(
         }
         Err(payload) => {
             if let Some(reservation) = reserved_exact.take() {
-                rollback_reserved_idle_for_spawn(reservation, &ctx).await;
+                rollback_reserved_idle_for_spawn(
+                    reservation,
+                    &ctx.idle_pool,
+                    &ctx.status,
+                    &ctx.reuse_state_notify,
+                )
+                .await;
             }
             let cancellation = complete_claimed_without_sandbox(
                 claimed,
@@ -333,7 +345,13 @@ async fn run_finalizing_claim(
             if cancellation_handle.is_cancelled() {
                 drop(transfer_guard);
                 drop(active_run_guard);
-                rollback_reserved_idle_for_spawn(reservation, &ctx).await;
+                rollback_reserved_idle_for_spawn(
+                    reservation,
+                    &ctx.idle_pool,
+                    &ctx.status,
+                    &ctx.reuse_state_notify,
+                )
+                .await;
                 pre_spawn_timing.record_finalizing_handoff(
                     FinalizingHandoffOutcome::ActivationFailed,
                     Some(FinalizingHandoffReason::ActivationCancelled),
@@ -640,11 +658,11 @@ async fn wait_for_finalizing_resource(
         };
         if let Some(missing_exact_reason) = missing_exact_reason {
             let exact_lookup = reserve_exact_idle_for_spawn(
+                &ctx.idle_pool,
                 &admission.reuse_key,
                 profile_name,
                 device_rate_limits,
                 admission.history_generation_run_id,
-                ctx,
             )
             .await;
             let exact_lookup_miss = match exact_lookup {
@@ -656,7 +674,13 @@ async fn wait_for_finalizing_resource(
             };
             if cancel.is_cancelled() {
                 if let Some(reservation) = reserved_exact.take() {
-                    rollback_reserved_idle_for_spawn(reservation, ctx).await;
+                    rollback_reserved_idle_for_spawn(
+                        reservation,
+                        &ctx.idle_pool,
+                        &ctx.status,
+                        &ctx.reuse_state_notify,
+                    )
+                    .await;
                     ctx.reuse_state_notify.notify_one();
                 }
                 return FinalizingWaitOutcome::cancelled(None);
@@ -942,11 +966,11 @@ async fn reserve_fallback_exact(
     ctx: &SpawnContext,
 ) -> Result<FallbackExactLookup, Box<ExecutionFailure>> {
     let reservation = match reserve_exact_idle_for_spawn(
+        &ctx.idle_pool,
         reuse_key,
         profile_name,
         device_rate_limits,
         history_generation_run_id,
-        ctx,
     )
     .await
     {
@@ -964,7 +988,13 @@ async fn accept_fallback_exact(
     ctx: &SpawnContext,
 ) -> Result<ReservedIdleActivation, Box<ExecutionFailure>> {
     if cancellation.token().is_cancelled() {
-        rollback_reserved_idle_for_spawn(reservation, ctx).await;
+        rollback_reserved_idle_for_spawn(
+            reservation,
+            &ctx.idle_pool,
+            &ctx.status,
+            &ctx.reuse_state_notify,
+        )
+        .await;
         ctx.reuse_state_notify.notify_one();
         return Err(ExecutionFailure::cancelled().into());
     }

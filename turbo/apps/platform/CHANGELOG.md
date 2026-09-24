@@ -11,6 +11,27 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.960.0](https://github.com/okou-ai/okou/compare/app-v0.959.0...app-v0.960.0) (2026-09-24)
+
+
+### Features
+
+* **platform:** add the get started imessage quest and unify the phone connect dialog ([#36655](https://github.com/okou-ai/okou/issues/36655)) ([fc14031](https://github.com/okou-ai/okou/commit/fc140318a21f6ae3ea2c350abf9482e67a089482))
+
+
+### Bug Fixes
+
+* **platform:** keep mark all read visible and toggle disabled state ([#36723](https://github.com/okou-ai/okou/issues/36723)) ([d4ab66f](https://github.com/okou-ai/okou/commit/d4ab66fe7a1b3eeb0aaf19a15f289bbeaf83c6dd))
+* **platform:** simplify email subscription status ui ([#36717](https://github.com/okou-ai/okou/issues/36717)) ([16765c0](https://github.com/okou-ai/okou/commit/16765c08c39abe992c2a96b578e43eb67f18708e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.506.0
+    * @okouai/core bumped to 8.709.0
+
 ## [0.959.0](https://github.com/okou-ai/okou/compare/app-v0.958.0...app-v0.959.0) (2026-09-24)
 
 
