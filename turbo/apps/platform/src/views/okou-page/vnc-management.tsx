@@ -105,7 +105,7 @@ function VncHostCard({
   const sshConnections = useLoadable(sshConnections$);
   const sshConnectionId = vncSshConnectionId(connection);
   const sshConnection =
-    sshConnectionId && sshConnections.state === "hasData"
+    sshConnectionId !== null && sshConnections.state === "hasData"
       ? sshConnections.data?.find((candidate) => {
           return candidate.id === sshConnectionId;
         })
@@ -113,6 +113,8 @@ function VncHostCard({
   const needsSshRebind =
     !!sshConnection &&
     "transport" in sshConnection &&
+    typeof sshConnection.transport === "object" &&
+    sshConnection.transport !== null &&
     "needsRebind" in sshConnection.transport;
   const destination = `${connection.host.includes(":") ? `[${connection.host}]` : connection.host}:${connection.port}`;
   return (
