@@ -1,6 +1,7 @@
 import { command, computed, state } from "ccstate";
 import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
 import { apiClient$ } from "./api-client.ts";
+import { discardApiBootstrapResponse } from "./api-client-base.ts";
 import { accept } from "../lib/accept.ts";
 
 const reloadOrg$ = state(0);
@@ -53,6 +54,7 @@ export const isOrgAdmin$ = computed(async (get) => {
  * Trigger a re-fetch of the org signal.
  */
 export const refreshOrg$ = command(({ set }) => {
+  discardApiBootstrapResponse(orgContract.get.method, orgContract.get.path);
   set(reloadOrg$, (x) => {
     return x + 1;
   });

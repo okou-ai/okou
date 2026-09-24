@@ -11,6 +11,7 @@ import {
   userModelPreferenceContract,
 } from "@okouai/api-contracts/contracts/user-model-preference";
 import { apiClient$ } from "../api-client.ts";
+import { discardApiBootstrapResponse } from "../api-client-base.ts";
 import { accept } from "../../lib/accept.ts";
 import { setAblyPayloadLoop$ } from "../realtime.ts";
 
@@ -27,6 +28,10 @@ export const userModelPreference$ = computed(async (get) => {
 });
 
 export const reloadUserModelPreference$ = command(({ set }) => {
+  discardApiBootstrapResponse(
+    userModelPreferenceContract.get.method,
+    userModelPreferenceContract.get.path,
+  );
   set(internalReloadUserModelPreference$, (value) => {
     return value + 1;
   });

@@ -6,6 +6,7 @@ import type {
   UpdateOrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { apiClient$ } from "../api-client.ts";
+import { discardApiBootstrapResponse } from "../api-client-base.ts";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
@@ -61,6 +62,10 @@ export const orgModelPolicies$ = computed(async (get) => {
 });
 
 export const invalidateOrgModelPolicies$ = command(({ set }) => {
+  discardApiBootstrapResponse(
+    modelPoliciesMainContract.list.method,
+    modelPoliciesMainContract.list.path,
+  );
   set(internalReloadOrgModelPolicies$, (value) => {
     return value + 1;
   });
