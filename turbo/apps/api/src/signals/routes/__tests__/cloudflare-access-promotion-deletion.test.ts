@@ -2,13 +2,17 @@ import { randomUUID } from "node:crypto";
 
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
 import { createStore } from "ccstate";
 import { expect, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { mockOptionalEnv } from "../../../lib/env";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { cloudflareAccessRoutes } from "../cloudflare-access";
 import { sshConnectionsRoutes } from "../ssh-connections";
+import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
@@ -70,32 +74,30 @@ async function createConfig(scope: "personal" | "organization" = "personal") {
     )
   ).body;
 }
-async function createHost(configId: string) {
-  return (
-    await accept(
-      hosts().create({
-        headers,
-        body: {
-          id: randomUUID(),
-          displayName: "Protected host",
-          host: "ssh.example.com",
-          port: 443,
-          credential: {
-            create: {
-              name: "Login",
-              username: "deploy",
-              authentication: {
-                method: "password",
-                password: "synthetic-password",
-              },
-            },
+function hostCreation(configId: string) {
+  return hosts().create({
+    headers,
+    body: {
+      id: randomUUID(),
+      displayName: "Protected host",
+      host: "ssh.example.com",
+      port: 443,
+      credential: {
+        create: {
+          name: "Login",
+          username: "deploy",
+          authentication: {
+            method: "password",
+            password: "synthetic-password",
           },
-          transport: { type: "cloudflare_access", configId },
         },
-      }),
-      [201],
-    )
-  ).body;
+      },
+      transport: { type: "cloudflare_access", configId },
+    },
+  });
+}
+async function createHost(configId: string) {
+  return (await accept(hostCreation(configId), [201])).body;
 }
 
 test("only an admin may promote their own Personal configuration in place without losing SSH bindings", async () => {
@@ -171,7 +173,34 @@ test("only an admin may promote their own Personal configuration in place withou
       sshHosts: [],
     }),
   );
-  await createHost(personal.id);
+  const memberHost = await createHost(personal.id);
+  mockOptionalEnv(
+    "CLERK_WEBHOOK_SIGNING_SECRET",
+    "synthetic-access-signing-secret",
+  );
+  const event = { type: "user.deleted", data: { id: admin.userId } };
+  context.mocks.clerk.verifyWebhook.mockResolvedValueOnce(event);
+  await accept(
+    setupApp({ context, routes: webhooksClerkRoutes })(
+      webhookClerkContract,
+    ).post({ body: JSON.stringify(event) }),
+    [200],
+  );
+  await flushWaitUntilForTest();
+  session(member, "member");
+  expect(
+    (await accept(configs().list({ headers, query }), [200])).body.configs,
+  ).toContainEqual(
+    expect.objectContaining({ id: personal.id, scope: "organization" }),
+  );
+  expect(
+    (await accept(hosts().list({ headers }), [200])).body.connections,
+  ).toContainEqual(
+    expect.objectContaining({
+      id: memberHost.id,
+      transport: { type: "cloudflare_access", configId: personal.id },
+    }),
+  );
 });
 
 test("an admin sees owner counts before deleting other owners' hosts; stale or unreviewed requests cannot detach them", async () => {
@@ -332,6 +361,99 @@ test("a reviewed deletion is stale when a member removes the last reference", as
   expect(
     (await accept(configs().list({ headers, query }), [200])).body.configs,
   ).toContainEqual(expect.objectContaining({ id: shared.id }));
+});
+
+test("losing admin role after a deletion preview cannot detach another member's host", async () => {
+  useSecretKmsProbe();
+  const admin = await actor();
+  const shared = await createConfig("organization");
+  const member = await actor(admin.orgId, "member");
+  const host = await createHost(shared.id);
+  session(admin, "admin");
+  const preview = (
+    await accept(
+      configs().deletionPreview({ headers, params: { configId: shared.id } }),
+      [200],
+    )
+  ).body;
+  await store.set(
+    seedOrgMembership$,
+    { ...admin, role: "member" },
+    context.signal,
+  );
+  session(admin, "member");
+  await expect(
+    accept(
+      configs().delete({
+        headers,
+        query,
+        params: { configId: shared.id },
+        body: {
+          expectedRevision: preview.expectedRevision,
+          impactSnapshot: preview.impactSnapshot,
+        },
+      }),
+      [403],
+    ),
+  ).resolves.toMatchObject({
+    body: { error: { code: "CLOUDFLARE_ACCESS_FORBIDDEN" } },
+  });
+  session(member, "member");
+  expect(
+    (await accept(hosts().list({ headers }), [200])).body.connections,
+  ).toContainEqual(
+    expect.objectContaining({
+      id: host.id,
+      transport: { type: "cloudflare_access", configId: shared.id },
+    }),
+  );
+});
+
+test("binding and reviewed deletion serialize without leaving a broken SSH reference", async () => {
+  useSecretKmsProbe();
+  await actor();
+  const shared = await createConfig("organization");
+  const preview = (
+    await accept(
+      configs().deletionPreview({ headers, params: { configId: shared.id } }),
+      [200],
+    )
+  ).body;
+  const [deleted, bound] = await Promise.all([
+    accept(
+      configs().delete({
+        headers,
+        query,
+        params: { configId: shared.id },
+        body: {
+          expectedRevision: preview.expectedRevision,
+          impactSnapshot: preview.impactSnapshot,
+        },
+      }),
+      [204, 409],
+    ),
+    accept(hostCreation(shared.id), [201, 404, 409]),
+  ]);
+  const listed = (await accept(hosts().list({ headers }), [200])).body
+    .connections;
+  const remaining = (await accept(configs().list({ headers, query }), [200]))
+    .body.configs;
+  if (bound.status === 201) {
+    expect(deleted.status).toBe(409);
+    expect(remaining).toContainEqual(
+      expect.objectContaining({ id: shared.id }),
+    );
+    expect(listed).toContainEqual(
+      expect.objectContaining({
+        id: bound.body.id,
+        transport: { type: "cloudflare_access", configId: shared.id },
+      }),
+    );
+  } else {
+    expect(deleted.status).toBe(204);
+    expect(remaining).toStrictEqual([]);
+    expect(listed).toStrictEqual([]);
+  }
 });
 
 test("a newly bound self-owned host blocks deletion after an initially empty review", async () => {
