@@ -253,7 +253,8 @@ mod apple_srp_tests {
     use serde_json::{Value, json};
 
     fn parse(value: Value, supports_ssh: bool) -> Result<Credential, Failure> {
-        let response: ResolveResponse = serde_json::from_value(value).unwrap();
+        let response: ResolveResponse =
+            serde_json::from_value(value).map_err(|_| Failure::InvalidCredential)?;
         let ResolveResponse::ResolvedAppleSrp {
             host,
             port,
@@ -332,7 +333,10 @@ mod apple_srp_tests {
         ] {
             let mut invalid = response();
             invalid["authentication"][field] = json!(value);
-            assert!(serde_json::from_value::<ResolveResponse>(invalid).is_err());
+            assert!(
+                matches!(parse(invalid, true), Err(Failure::InvalidCredential)),
+                "accepted overlong {field}"
+            );
         }
     }
 }
