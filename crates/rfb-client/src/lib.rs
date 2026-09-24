@@ -10,6 +10,7 @@
 #![forbid(unsafe_code)]
 
 mod apple_dh;
+mod apple_rsa_srp;
 mod apple_srp;
 mod authentication;
 mod capture;
@@ -76,6 +77,8 @@ pub enum AuthenticationStage {
     AppleDhAuthentication,
     /// Completing Apple Direct SRP security type 36 and SecurityResult.
     AppleSrpAuthentication,
+    /// Completing Apple RSA/SRP security type 33 and SecurityResult.
+    AppleRsaSrpAuthentication,
 }
 
 impl AuthenticationStage {
@@ -90,6 +93,7 @@ impl AuthenticationStage {
             Self::X509PlainAuthentication => "x509_plain_authentication",
             Self::AppleDhAuthentication => "apple_dh_authentication",
             Self::AppleSrpAuthentication => "apple_srp_authentication",
+            Self::AppleRsaSrpAuthentication => "apple_rsa_srp_authentication",
         }
     }
 }
@@ -226,6 +230,38 @@ impl fmt::Debug for AppleSrpCredentials {
     }
 }
 
+/// Validated Apple RSA/SRP type-33 credentials. Unlike direct SRP, the
+/// RSA-2048 username envelope leaves room for only 234 UTF-8 bytes.
+/// Owned credentials are zeroized on drop and Debug is redacted.
+pub struct AppleRsaSrpCredentials {
+    username: Zeroizing<Vec<u8>>,
+    password: Zeroizing<Vec<u8>>,
+}
+
+impl AppleRsaSrpCredentials {
+    pub fn new(username: String, password: String) -> Result<Self, Error> {
+        Self::new_zeroizing(username, Zeroizing::new(password))
+    }
+
+    pub fn new_zeroizing(username: String, mut password: Zeroizing<String>) -> Result<Self, Error> {
+        let username = Zeroizing::new(username.into_bytes());
+        let password = Zeroizing::new(std::mem::take(&mut *password).into_bytes());
+        if !(1..=234).contains(&username.len()) || username.contains(&0) {
+            return Err(Error::InvalidAppleRsaSrpUsername);
+        }
+        if !(1..=1023).contains(&password.len()) || password.contains(&0) {
+            return Err(Error::InvalidAppleRsaSrpPassword);
+        }
+        Ok(Self { username, password })
+    }
+}
+
+impl fmt::Debug for AppleRsaSrpCredentials {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("AppleRsaSrpCredentials([REDACTED])")
+    }
+}
+
 /// Exact certificate-TLS VeNCrypt authentication selected by the caller.
 ///
 /// `None` verifies the server and encrypts the session, but does not
@@ -340,6 +376,34 @@ where
     Ok(authenticated)
 }
 
+/// Authenticate exactly Apple RSA/SRP security type 33 on a caller-owned stream.
+/// The RSA key is received from the peer and is not a trusted server identity.
+/// A future product caller must independently enforce verified SSH terminating
+/// on the Mac and a literal loopback RFB destination before using this engine.
+/// No direct/raw saved profile is admitted by this crate.
+pub async fn authenticate_apple_rsa_srp<S>(
+    stream: S,
+    credentials: AppleRsaSrpCredentials,
+    deadline: Instant,
+) -> Result<Authenticated<S>, Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin + 'static,
+{
+    let deadline = deadline.min(Instant::now() + MAX_HANDSHAKE_DURATION);
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::RfbVersion,
+        });
+    }
+    let authenticated = apple_rsa_srp::authenticate(stream, credentials, deadline).await?;
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::AppleRsaSrpAuthentication,
+        });
+    }
+    Ok(authenticated)
+}
+
 /// Authenticate an owned stream using one exact certificate-TLS VeNCrypt profile.
 ///
 /// `server_name` is the saved DNS name or unbracketed IP used for certificate
@@ -426,6 +490,12 @@ pub enum Error {
     InvalidAppleSrpPassword,
     #[error("invalid or unsupported Apple SRP parameters or framing")]
     InvalidAppleSrpParameters,
+    #[error("Apple RSA/SRP username must contain 1-234 UTF-8 bytes without NUL")]
+    InvalidAppleRsaSrpUsername,
+    #[error("Apple RSA/SRP password must contain 1-1023 UTF-8 bytes without NUL")]
+    InvalidAppleRsaSrpPassword,
+    #[error("invalid or unsupported Apple RSA/SRP key or framing")]
+    InvalidAppleRsaSrpParameters,
     #[error("OS cryptographic randomness failed")]
     Randomness,
     #[error("invalid TLS server name")]
