@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
   agentsByIdContract,
@@ -92,17 +93,89 @@ test("Find workspace agents by name with case and whitespace normalization", asy
   expect(within(dialog).getByText("1 result")).toBeVisible();
   expect(within(dialog).queryByText("Support Agent")).toBeNull();
 
-  const agentsTab = queryAllByRoleFast("tab", dialog).find((tab) => {
-    return tab.textContent === "Agents";
+  const agentsFilter = queryAllByRoleFast("button", dialog).find((button) => {
+    return button.textContent === "Agents";
   });
-  if (!agentsTab) {
+  if (!agentsFilter) {
     throw new Error("Expected Agents search filter");
   }
-  click(agentsTab);
-  expect(agentsTab).toHaveAttribute("aria-selected", "true");
+  click(agentsFilter);
+  expect(agentsFilter).toHaveAttribute("aria-pressed", "true");
+  click(agentsFilter);
+  expect(agentsFilter).toHaveAttribute("aria-pressed", "true");
+  expect(search).toHaveValue("  REseaRCH  ");
   expect(
     within(dialog).getByRole("option", { name: "Research Agent" }),
   ).toBeVisible();
+});
+
+test("Navigate workspace search filters without changing the query or clearing selection", async () => {
+  const user = userEvent.setup({ delay: null });
+  prepareAgents();
+  await setupPage({ context, path: `/agents/${DEFAULT_AGENT_ID}/chat` });
+  const trigger = screen.getByLabelText("Search workspace", {
+    selector: "button",
+  });
+  await user.click(trigger);
+  const dialog = await screen.findByRole("dialog", { name: SEARCH_LABEL });
+  const search = within(dialog).getByRole("combobox");
+  await user.click(search);
+  await user.type(search, "Research");
+  await within(dialog).findByRole("option", { name: "Research Agent" });
+
+  const group = within(dialog).getByRole("group", { name: SEARCH_LABEL });
+  const filters = queryAllByRoleFast("button", group);
+  expect(
+    filters.map((button) => {
+      return button.textContent;
+    }),
+  ).toStrictEqual([
+    "All",
+    "Chats",
+    "Messages",
+    "Agents",
+    "Workflows",
+    "Artifacts",
+  ]);
+  await user.click(filters[0]!);
+  expect(filters[0]).toHaveFocus();
+  expect(filters[0]).toHaveAttribute("aria-pressed", "true");
+  await user.keyboard(" ");
+  expect(filters[0]).toHaveAttribute("aria-pressed", "true");
+  expect(within(dialog).getByText("1 result")).toBeInTheDocument();
+
+  for (const [offset, filter] of filters.slice(1).entries()) {
+    const index = offset + 1;
+    await user.keyboard("{ArrowRight}");
+    expect(filter).toHaveFocus();
+    expect(filter).toHaveAttribute("aria-pressed", "false");
+    expect(filters[offset]).toHaveAttribute("aria-pressed", "true");
+    await user.keyboard(index % 2 === 0 ? " " : "{Enter}");
+    expect(filter).toHaveAttribute("aria-pressed", "true");
+    expect(search).toHaveValue("Research");
+    const hasResult = index === 3;
+    await waitFor(() => {
+      expect(
+        within(dialog).getByText(hasResult ? "1 result" : "0 results"),
+      ).toBeInTheDocument();
+      expect(queryAllByRoleFast("option", dialog)).toHaveLength(
+        hasResult ? 1 : 0,
+      );
+    });
+  }
+
+  await user.keyboard(" ");
+  expect(filters[5]).toHaveAttribute("aria-pressed", "true");
+  await user.click(search);
+  expect(search).toHaveFocus();
+  expect(search).toHaveValue("Research");
+  await user.click(filters[5]!);
+  expect(filters[5]).toHaveFocus();
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: SEARCH_LABEL })).toBeNull();
+    expect(trigger).toHaveFocus();
+  });
 });
 
 test("Selecting a workspace agent search result opens its chat", async () => {

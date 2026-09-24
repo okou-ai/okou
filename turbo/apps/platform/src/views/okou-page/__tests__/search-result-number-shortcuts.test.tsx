@@ -332,13 +332,13 @@ test.each([
       ]);
       expect(numberedHints(dialog)).toStrictEqual(["1", "2", "3", "4"]);
     });
-    const tab = queryAllByRoleFast("tab", dialog).find((item) => {
+    const filterButton = queryAllByRoleFast("button", dialog).find((item) => {
       return item.textContent === filter;
     });
-    if (!tab) {
+    if (!filterButton) {
       throw new Error(`Expected ${filter} filter`);
     }
-    click(tab);
+    click(filterButton);
     await waitFor(() => {
       expect(searchResultTitles(dialog)).toStrictEqual(titles);
       expect(numberedHints(dialog)).toStrictEqual(hints);

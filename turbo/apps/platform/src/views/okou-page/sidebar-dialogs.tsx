@@ -28,6 +28,8 @@ import type { ArtifactCatalogKind } from "@okouai/api-contracts/contracts/artifa
 import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
 import {
   Button,
+  buttonVariants,
+  cn,
   CommandDialog,
   CommandGroup,
   CommandInput,
@@ -38,6 +40,8 @@ import {
   DialogTitle,
   Input,
   RunningIndicator,
+  Toggle,
+  ToggleGroup,
 } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { useTranslation } from "react-i18next";
@@ -787,32 +791,6 @@ function SpotlightArtifactCommandItem({
   );
 }
 
-function SpotlightFilterButton({
-  active,
-  label,
-  onSelect,
-}: {
-  readonly active: boolean;
-  readonly label: string;
-  readonly onSelect: () => void;
-}) {
-  return (
-    // Reserve the outline border in both states so selecting a filter does not
-    // shift its label or the neighboring buttons.
-    <Button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      variant={active ? "outline" : "quiet"}
-      size="xs"
-      className="border aria-[selected=false]:border-transparent"
-      onClick={onSelect}
-    >
-      {label}
-    </Button>
-  );
-}
-
 function SpotlightSearchInput() {
   const { t } = useTranslation("agents");
 
@@ -895,23 +873,43 @@ function SpotlightSearchFilterBar({
     // No divider: the search field and the list are already separated by their
     // own padding, and a full-bleed rule ran into the dialog's 24px corners.
     <div className="mb-3 flex h-7 items-center justify-between px-5">
-      <div
-        role="tablist"
+      <ToggleGroup<ThreeColumnSearchFilter>
+        aria-label={t(($) => {
+          return $.sidebar.searchWorkspace;
+        })}
+        value={[filter]}
+        onValueChange={(value) => {
+          const nextFilter = value[0];
+          if (nextFilter !== undefined) {
+            onSelect(nextFilter);
+          }
+        }}
         className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
       >
         {options.map((option) => {
           return (
-            <SpotlightFilterButton
+            <Toggle
               key={option.value}
-              active={filter === option.value}
-              label={option.label}
-              onSelect={() => {
-                return onSelect(option.value);
+              value={option.value}
+              variant="quiet"
+              size="xs"
+              className={({ pressed }) => {
+                return cn(
+                  buttonVariants({
+                    variant: pressed ? "outline" : "quiet",
+                    size: "xs",
+                  }),
+                  // Reserve the border and keep keyboard focus visible in the scroller.
+                  "shrink-0 border focus-visible:ring-inset focus-visible:ring-offset-0",
+                  !pressed && "border-transparent",
+                );
               }}
-            />
+            >
+              {option.label}
+            </Toggle>
           );
         })}
-      </div>
+      </ToggleGroup>
       <span
         className="ml-2 shrink-0 text-xs text-muted-foreground"
         role="status"
