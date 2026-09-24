@@ -22,6 +22,8 @@ import { bodyResultOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
+  buildOneClickUnsubscribeUrl,
+  buildUnsubscribeHeaders,
   cleanupExpiredEmailOutboxItems$,
   drainEmailOutboxItems$,
 } from "../services/email-common.service";
@@ -210,6 +212,9 @@ async function seedLinkedNativeMail(
         toAddresses: body.to_address,
         subject: "Historical Native Morning Brief",
         template: historicalNativeMailTemplate,
+        headers: buildUnsubscribeHeaders(
+          buildOneClickUnsubscribeUrl(owner.userId),
+        ),
         createdAt: at,
       })
       .returning(itemStateSelection());
