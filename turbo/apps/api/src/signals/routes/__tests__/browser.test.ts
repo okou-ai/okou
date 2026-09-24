@@ -1044,6 +1044,9 @@ describe("Browser user-action route", () => {
         },
       },
     });
+    context.mocks.browserUseCdp.connect.mockClear();
+    context.mocks.browserUseCdp.command.mockClear();
+    providerReadCount = 0;
 
     const created = await accept(
       userActionClient().create({
