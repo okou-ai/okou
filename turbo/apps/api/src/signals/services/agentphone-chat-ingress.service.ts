@@ -1,10 +1,12 @@
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
+import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { and, eq } from "drizzle-orm";
 
 import type { Db } from "../external/db";
+import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
 import { appendChatThreadEvent } from "./chat-thread-event.service";
 import {
   loadNewChatThreadMediaModels,
@@ -13,7 +15,11 @@ import {
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { Tx } from "../../lib/db-types";
-import { isIntegrationDmSessionKey } from "../../lib/integration-dm-session";
+import {
+  integrationDmSessionKey,
+  isIntegrationDmSessionKey,
+} from "../../lib/integration-dm-session";
+import type { AgentPhoneUserLink } from "./agentphone-shared.service";
 
 interface AgentPhoneChatThreadRouteKey {
   readonly agentphoneUserLinkId: string;
@@ -305,5 +311,74 @@ export async function ensureAgentPhoneChatThreadRoute(
       null,
     );
     return route;
+  });
+}
+
+/** Seed an unused DM session with its welcome; never replace an active route. */
+export async function bindAgentPhoneWelcomeChatThreadRoute(
+  db: Db,
+  args: {
+    readonly userLink: AgentPhoneUserLink;
+    readonly chatThreadId: string;
+    readonly conversationId: string | null;
+  },
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    if (
+      !(await admitPiStableContextSubjects(tx, [
+        { subjectKind: "user", subjectId: args.userLink.userId },
+        { subjectKind: "organization", subjectId: args.userLink.orgId },
+      ]))
+    ) {
+      throw new Error("AgentPhone welcome account is unavailable");
+    }
+    const [link] = await tx
+      .select({ id: agentphoneUserLinks.id })
+      .from(agentphoneUserLinks)
+      .where(eq(agentphoneUserLinks.id, args.userLink.id))
+      .for("update");
+    if (!link) {
+      throw new Error("AgentPhone welcome connection was revoked");
+    }
+    const [thread] = await tx
+      .select({
+        agentId: agents.id,
+        selectedModel: chatThreads.selectedModel,
+        codexServiceTier: chatThreads.codexServiceTier,
+      })
+      .from(chatThreads)
+      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+      .where(
+        and(
+          eq(chatThreads.id, args.chatThreadId),
+          eq(chatThreads.userId, args.userLink.userId),
+          eq(agents.orgId, args.userLink.orgId),
+        ),
+      )
+      .limit(1);
+    if (!thread) {
+      throw new Error("AgentPhone welcome thread is unavailable");
+    }
+    if (!thread.selectedModel) {
+      throw new Error("AgentPhone welcome thread has no pinned model");
+    }
+    await tx
+      .insert(agentphoneChatThreadRoutes)
+      .values({
+        agentphoneUserLinkId: args.userLink.id,
+        rootMessageId: integrationDmSessionKey({
+          agentId: thread.agentId,
+          selectedModel: thread.selectedModel,
+          serviceTier: thread.codexServiceTier === "fast" ? "priority" : null,
+        }),
+        conversationId: args.conversationId,
+        chatThreadId: args.chatThreadId,
+      })
+      .onConflictDoNothing({
+        target: [
+          agentphoneChatThreadRoutes.agentphoneUserLinkId,
+          agentphoneChatThreadRoutes.rootMessageId,
+        ],
+      });
   });
 }

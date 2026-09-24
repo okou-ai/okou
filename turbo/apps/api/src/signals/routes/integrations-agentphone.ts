@@ -19,7 +19,6 @@ import { bodyResultOf } from "../context/request";
 import { request$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$, type Db } from "../external/db";
-import { sendAgentPhoneMessage } from "../external/agentphone-client";
 import type { RouteEntry } from "../route-entry";
 import {
   consumeAgentPhoneConnectionCode,
@@ -49,6 +48,8 @@ import {
   isAgentPhoneMentionText,
   type AgentPhoneUserLink,
 } from "../services/agentphone-shared.service";
+import { sendAgentPhoneConnectedMessages } from "../services/agentphone-welcome.service";
+import { handleAgentPhoneSignup$ } from "../services/agentphone-signup.service";
 import { safeJsonParse, tapError } from "../utils";
 
 interface AgentPhoneConfig {
@@ -525,73 +526,6 @@ function agentPhoneLinkConflictMessage(reason: LinkConflictReason): string {
 
 function connectConflict(reason: LinkConflictReason) {
   return conflict(agentPhoneLinkConflictMessage(reason));
-}
-
-const AGENTPHONE_CONTACT_CARD_URL =
-  "https://static.vm0.io/agentphone-contact/a0a9471cbcf783bd04620f1be71dd8efaf0f49c6a23eb77e3cb4584e731fd685/okou.vcf";
-
-interface AgentPhoneConnectedMessage {
-  readonly body: string;
-  readonly mediaUrls?: readonly string[];
-}
-
-function agentPhoneConnectedMessages(): readonly AgentPhoneConnectedMessage[] {
-  const { brandName } = PUBLIC_BRAND_PRESENTATION;
-  return [
-    {
-      body: `Your phone number is now connected to ${brandName}.
-
-You can text this number like a teammate and it will actually do the work: research something, draft and send emails, summarize long documents, update a spreadsheet, file or triage tickets, post to Slack, dig through your GitHub or Notion, and a lot more.`,
-    },
-    {
-      body: `Save ${brandName} to your contacts so you can find this chat anytime.`,
-      mediaUrls: [AGENTPHONE_CONTACT_CARD_URL],
-    },
-    {
-      body: "It is most useful once you connect the tools you already use. The ones people hook up most often are GitHub, Gmail, Notion, Google Drive / Sheets / Docs / Calendar, Slack, Sentry, and X. There are 100+ more available, and you can connect any of them whenever you need.",
-    },
-    {
-      body: `A few things to try right now:
-- "Summarize my unread Gmail from today"
-- "What's on my Google Calendar tomorrow?"
-- "List the open issues in my GitHub repo"
-- "Find my meeting notes in Notion"
-- "Catch me up on my unread Slack messages"
-- "Triage my latest Sentry error and open a GitHub PR to fix it"
-- "What's trending on X about [topic]?"
-
-No tool connected yet? Just ask me anything and I'll still help, then point you to whatever I need access to.
-
-What would you like to start with?`,
-    },
-  ];
-}
-
-async function sendAgentPhoneConnectedMessages(
-  target: {
-    readonly agentphoneAgentId: string;
-    readonly toNumber: string;
-    readonly replyToMessageId?: string;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  // Send sequentially so the provider receives the messages in reading order;
-  // only the first message threads onto the inbound connection code.
-  for (const [index, message] of agentPhoneConnectedMessages().entries()) {
-    await sendAgentPhoneMessage(
-      {
-        agentphoneAgentId: target.agentphoneAgentId,
-        toNumber: target.toNumber,
-        ...(index === 0 && target.replyToMessageId
-          ? { replyToMessageId: target.replyToMessageId }
-          : {}),
-        body: message.body,
-        ...(message.mediaUrls ? { mediaUrls: message.mediaUrls } : {}),
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-  }
 }
 
 const connectAgentPhone$ = command(
@@ -1096,6 +1030,69 @@ async function handleAgentPhoneConnectionCode(
   return true;
 }
 
+const dispatchAcceptedAgentPhoneEvent$ = command(
+  async (
+    { set },
+    args: {
+      readonly event: AgentPhoneMessageEvent;
+      readonly publicBrand: typeof PUBLIC_BRAND;
+      readonly apiStartTime: number;
+    },
+    signal: AbortSignal,
+  ): Promise<Response> => {
+    const { event, publicBrand, apiStartTime } = args;
+    const writeDb = set(writeDb$);
+    const userLink = await resolveAgentPhoneUserLinkForEvent(writeDb, event);
+    signal.throwIfAborted();
+
+    // The signup receipt and its inbox row commit together. Replays can resume
+    // an existing receipt without creating a new job after retention expires.
+    if (
+      await set(
+        handleAgentPhoneSignup$,
+        { event, userLink, publicBrand },
+        signal,
+      )
+    ) {
+      return okText();
+    }
+    const stored = await storeInboundAgentPhoneMessage(writeDb, {
+      event: agentPhoneEventForStorage(event, userLink),
+      userLinkId: userLink?.id ?? null,
+      publicBrand,
+    });
+    signal.throwIfAborted();
+    if (!stored.inserted) {
+      return okText();
+    }
+
+    if (
+      await handleAgentPhoneConnectionCode(writeDb, event, userLink, signal)
+    ) {
+      return okText();
+    }
+
+    if (!shouldDispatchAgentPhoneEvent(event)) {
+      return okText();
+    }
+
+    waitUntil(
+      tapError(
+        set(
+          handleAgentPhoneMessage$,
+          { event, userLink, apiStartTime, publicBrand },
+          signal,
+        ),
+        (error) => {
+          log.error("Error handling AgentPhone webhook", { error });
+        },
+      ),
+    );
+
+    return okText();
+  },
+);
+
 const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
   const apiStartTime = now();
   const publicBrand = PUBLIC_BRAND;
@@ -1163,42 +1160,11 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
     return okText();
   }
 
-  const writeDb = set(writeDb$);
-  const userLink = await resolveAgentPhoneUserLinkForEvent(writeDb, event);
-  signal.throwIfAborted();
-
-  const stored = await storeInboundAgentPhoneMessage(writeDb, {
-    event: agentPhoneEventForStorage(event, userLink),
-    userLinkId: userLink?.id ?? null,
-    publicBrand,
-  });
-  signal.throwIfAborted();
-  if (!stored.inserted) {
-    return okText();
-  }
-
-  if (await handleAgentPhoneConnectionCode(writeDb, event, userLink, signal)) {
-    return okText();
-  }
-
-  if (!shouldDispatchAgentPhoneEvent(event)) {
-    return okText();
-  }
-
-  waitUntil(
-    tapError(
-      set(
-        handleAgentPhoneMessage$,
-        { event, userLink, apiStartTime, publicBrand },
-        signal,
-      ),
-      (error) => {
-        log.error("Error handling AgentPhone webhook", { error });
-      },
-    ),
+  return set(
+    dispatchAcceptedAgentPhoneEvent$,
+    { event, publicBrand, apiStartTime },
+    signal,
   );
-
-  return okText();
 });
 
 export const integrationsAgentPhoneRoutes: readonly RouteEntry[] = [

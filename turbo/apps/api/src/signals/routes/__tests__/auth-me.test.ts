@@ -80,6 +80,62 @@ test("returns the server-verified Clerk session on both fresh and cached profile
   expect(context.mocks.clerk.users.getUser).toHaveBeenCalledOnce();
 });
 
+test("returns the verified primary phone for an account without email", async () => {
+  const current = actor();
+  const phoneNumber = "+15550100201";
+  context.mocks.clerk.users.getUser.mockResolvedValue({
+    id: current.userId,
+    primaryEmailAddressId: null,
+    emailAddresses: [],
+    primaryPhoneNumberId: "primary-phone",
+    phoneNumbers: [
+      {
+        id: "secondary-phone",
+        phoneNumber: "+15550100202",
+        verification: { status: "verified" },
+      },
+      {
+        id: "primary-phone",
+        phoneNumber,
+        verification: { status: "verified" },
+      },
+    ],
+  });
+
+  const expected = { ...current, email: null, phoneNumber };
+  expect((await accept(client().me({ headers }), [200])).body).toStrictEqual(
+    expected,
+  );
+  expect((await accept(client().me({ headers }), [200])).body).toStrictEqual(
+    expected,
+  );
+});
+
+test("does not use an unverified primary phone or substitute a secondary phone", async () => {
+  const current = actor();
+  context.mocks.clerk.users.getUser.mockResolvedValue({
+    id: current.userId,
+    primaryEmailAddressId: null,
+    emailAddresses: [],
+    primaryPhoneNumberId: "primary-phone",
+    phoneNumbers: [
+      {
+        id: "primary-phone",
+        phoneNumber: "+15550100203",
+        verification: { status: "unverified" },
+      },
+      {
+        id: "secondary-phone",
+        phoneNumber: "+15550100204",
+        verification: { status: "verified" },
+      },
+    ],
+  });
+
+  const response = await accept(client().me({ headers }), [500]);
+  expect(response.body).toStrictEqual({ error: "Internal server error" });
+});
+
 test("preserves the auth error when Clerk no longer exposes the user", async () => {
   actor();
   context.mocks.clerk.users.getUser.mockRejectedValue(

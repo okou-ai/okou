@@ -97,6 +97,8 @@ function identityHandlers(
   options: {
     userId?: string;
     orgId?: string;
+    email?: string | null;
+    phoneNumber?: string;
     sessionId?: string | null;
     observed?: string[];
   } = {},
@@ -108,7 +110,8 @@ function identityHandlers(
       expect(request.headers.get("cookie")).toBeNull();
       return HttpResponse.json({
         userId: options.userId ?? token,
-        email: "app@example.test",
+        email: options.email === undefined ? "app@example.test" : options.email,
+        ...(options.phoneNumber ? { phoneNumber: options.phoneNumber } : {}),
         orgId: "app-org",
         ...(options.sessionId === null
           ? {}
@@ -230,6 +233,28 @@ describe("Okou App session authority", () => {
     replies.push(Promise.resolve("fresh"));
     expect(await session.getAuthState()).toEqual(signedOut);
     expect(session.getCachedToken()).toBeNull();
+  });
+
+  it("restores a phone-only App account without inventing an email", async () => {
+    const { session, replies } = createSession();
+    identityHandlers({
+      userId: "phone-user",
+      email: null,
+      phoneNumber: "+15550100201",
+    });
+    replies.push(Promise.resolve("phone-session"));
+
+    expect(await session.getAuthState()).toEqual({
+      status: "signed_in",
+      user: {
+        userId: "phone-user",
+        email: null,
+        phoneNumber: "+15550100201",
+      },
+      organization: { id: "app-org", name: "App workspace" },
+    });
+    expect(session.getAuthority()).not.toBeNull();
+    session.abortForQuit();
   });
 
   it("pauses restoration after an unavailable attempt and re-arms it on request", async () => {

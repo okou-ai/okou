@@ -19,7 +19,9 @@ export const authContract = c.router({
     responses: {
       200: z.object({
         userId: z.string(),
-        email: z.string(),
+        email: z.string().nullable(),
+        // Phone-only accounts have no email. Older APIs omit this field.
+        phoneNumber: z.string().min(1).optional(),
         orgId: z.string().nullable(),
         // Older API deployments omit this. Only Clerk session auth supplies it.
         sessionId: z.string().optional(),

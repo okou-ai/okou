@@ -6,7 +6,8 @@ import type { DesktopIdentity } from "./config";
 
 export interface DesktopAuthUser {
   readonly userId: string;
-  readonly email: string;
+  readonly email: string | null;
+  readonly phoneNumber?: string;
 }
 
 export interface DesktopAuthOrganization {

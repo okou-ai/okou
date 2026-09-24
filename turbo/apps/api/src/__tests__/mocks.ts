@@ -12,6 +12,8 @@ import { computed } from "ccstate";
 import { ws } from "msw";
 import { onTestFinished, vi, type Mock } from "vitest";
 import { z } from "zod";
+import * as featureSwitch from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { createDeferredPromise } from "../signals/utils";
 
@@ -109,6 +111,7 @@ type PinnedRequestCallback = (
 ) => void;
 
 export interface ApiTestMocks {
+  readonly overrideAnonymousAgentPhoneSignup: (enabled: boolean) => void;
   readonly piSdk: {
     readonly controlInitialization: typeof controlPiSdkInitialization;
   };
@@ -154,6 +157,7 @@ export interface ApiTestMocks {
     readonly authenticateRequest: AsyncMock;
     readonly verifyWebhook: AsyncMock;
     readonly organizations: {
+      readonly createOrganization: AsyncMock;
       readonly createOrganizationInvitation: AsyncMock;
       readonly getOrganization: AsyncMock;
       readonly getOrganizationInvitationList: AsyncMock;
@@ -167,6 +171,7 @@ export interface ApiTestMocks {
       readonly updateOrganizationLogo: AsyncMock;
     };
     readonly users: {
+      readonly createUser: AsyncMock;
       readonly getUser: AsyncMock;
       readonly getUserList: AsyncMock;
       readonly getOrganizationMembershipList: AsyncMock;
@@ -396,6 +401,7 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
     authenticateRequest: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     verifyWebhook: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     organizations: {
+      createOrganization: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       createOrganizationInvitation:
         vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       getOrganization: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -415,6 +421,7 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
       updateOrganizationLogo: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     },
     users: {
+      createUser: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       getUser: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       getUserList: vi
         .fn<(...args: unknown[]) => Promise<unknown>>()
@@ -569,6 +576,9 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
   };
 
   return {
+    overrideAnonymousAgentPhoneSignup: (enabled) => {
+      overrideAnonymousAgentPhoneSignup(enabled);
+    },
     piSdk: {
       controlInitialization: async (input, signal) => {
         return await controlPiSdkInitialization(input, signal);
@@ -1610,6 +1620,30 @@ async function controlPiSdkInitialization(
   };
 }
 
+const anonymousAgentPhoneSignupControl = vi.hoisted(
+  (): { restore?: () => void } => {
+    return {};
+  },
+);
+
+function overrideAnonymousAgentPhoneSignup(enabled: boolean): void {
+  anonymousAgentPhoneSignupControl.restore?.();
+  const evaluate = featureSwitch.isFeatureEnabled;
+  // Configuration-only exception: anonymous signup is gated by a static
+  // deployment switch, which cannot be changed by the per-user feature API.
+  // Keep the real evaluator for every other switch and outside this test.
+  const override = vi
+    .spyOn(featureSwitch, "isFeatureEnabled")
+    .mockImplementation((key, identity) => {
+      return key === FeatureSwitchKey.AgentPhoneSignup
+        ? enabled
+        : evaluate(key, identity);
+    });
+  anonymousAgentPhoneSignupControl.restore = () => {
+    override.mockRestore();
+  };
+}
+
 export function getApiTestMocks(): ApiTestMocks {
   return apiTestMocks;
 }
@@ -1634,6 +1668,8 @@ export function apiTestS3PresignedUrl(command: unknown): string {
 }
 
 export function resetApiTestMocks(): void {
+  anonymousAgentPhoneSignupControl.restore?.();
+  anonymousAgentPhoneSignupControl.restore = undefined;
   apiTestMocks.abortSignal.timeout.mockReset();
   apiTestMocks.ably.channelGet.mockReset();
   apiTestMocks.ably.batchPublish.mockReset();
@@ -1668,6 +1704,7 @@ export function resetApiTestMocks(): void {
   apiTestMocks.browserUseCdp.command.mockReset();
   apiTestMocks.clerk.authenticateRequest.mockReset();
   apiTestMocks.clerk.verifyWebhook.mockReset();
+  apiTestMocks.clerk.organizations.createOrganization.mockReset();
   apiTestMocks.clerk.organizations.createOrganizationInvitation.mockReset();
   apiTestMocks.clerk.organizations.getOrganization.mockReset();
   apiTestMocks.clerk.organizations.getOrganizationInvitationList.mockReset();
@@ -1679,6 +1716,7 @@ export function resetApiTestMocks(): void {
   apiTestMocks.clerk.organizations.updateOrganization.mockReset();
   apiTestMocks.clerk.organizations.updateOrganizationMembership.mockReset();
   apiTestMocks.clerk.organizations.updateOrganizationLogo.mockReset();
+  apiTestMocks.clerk.users.createUser.mockReset();
   apiTestMocks.clerk.users.getUser.mockReset();
   apiTestMocks.clerk.users.getUserList.mockReset();
   apiTestMocks.clerk.users.getUserList.mockResolvedValue({ data: [] });

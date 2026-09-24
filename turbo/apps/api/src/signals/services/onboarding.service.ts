@@ -14,6 +14,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { and, eq, isNull } from "drizzle-orm";
 
 import type { AuthContext } from "../../types/auth";
+import { resourceUnavailable } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { db$, writeDb$, type Db } from "../external/db";
 import { nowDate } from "../../lib/time";
@@ -25,6 +26,7 @@ import {
 import type { WorkflowMember } from "./workflow-data.service";
 import { writeOrgMetadataWithDefaultPlanEntitlement } from "./org-plan-entitlements.service";
 import { initializeOnboardingOrgModelPolicies } from "./model-policy.service";
+import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
 
 const L = logger("onboarding.service");
 
@@ -37,13 +39,15 @@ type DefaultAgentMetadata = NonNullable<
   OnboardingStatusResponse["defaultAgentMetadata"]
 >;
 
-type CompleteOnboardingResponse = {
-  readonly status: 200;
-  readonly body: {
-    readonly onboardingComplete: true;
-    readonly needsOnboarding: false;
-  };
-};
+type CompleteOnboardingResponse =
+  | {
+      readonly status: 200;
+      readonly body: {
+        readonly onboardingComplete: true;
+        readonly needsOnboarding: false;
+      };
+    }
+  | ReturnType<typeof resourceUnavailable>;
 
 async function markOnboardingComplete(
   db: Db,
@@ -51,13 +55,21 @@ async function markOnboardingComplete(
   industry: OnboardingIndustry | undefined,
   modelProvider: OnboardingSubscriptionProvider | undefined,
   userId: string,
-): Promise<boolean> {
+): Promise<"completed" | "already-complete" | "unavailable"> {
   const updatedAt = nowDate();
   // An unanswered field leaves the column alone: the make-something flow never
   // asks the question, and it must not erase an answer the org already gave.
   const industryWrite =
     industry === undefined ? {} : { onboardingIndustry: industry };
   return await db.transaction(async (tx) => {
+    if (
+      !(await admitPiStableContextSubjects(tx, [
+        { subjectKind: "user", subjectId: userId },
+        { subjectKind: "organization", subjectId: orgId },
+      ]))
+    ) {
+      return "unavailable";
+    }
     const rows = await writeOrgMetadataWithDefaultPlanEntitlement(
       tx,
       orgId,
@@ -91,11 +103,16 @@ async function markOnboardingComplete(
         modelProvider,
       );
     }
-    return rows.length > 0;
+    return rows.length > 0 ? "completed" : "already-complete";
   });
 }
 
-type TimezoneFallbackOutcome = "missing" | "invalid" | "stored" | "preserved";
+type TimezoneFallbackOutcome =
+  | "missing"
+  | "invalid"
+  | "stored"
+  | "preserved"
+  | "unavailable";
 
 async function preserveOrStoreTimezoneFallback(
   db: Db,
@@ -113,22 +130,32 @@ async function preserveOrStoreTimezoneFallback(
   }
 
   const updatedAt = nowDate();
-  const rows = await db
-    .insert(orgMembersMetadata)
-    .values({
-      orgId: args.orgId,
-      userId: args.userId,
-      timezone: args.timezone,
-      createdAt: updatedAt,
-      updatedAt,
-    })
-    .onConflictDoUpdate({
-      target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
-      set: { timezone: args.timezone, updatedAt },
-      setWhere: isNull(orgMembersMetadata.timezone),
-    })
-    .returning({ timezone: orgMembersMetadata.timezone });
-  return rows.length > 0 ? "stored" : "preserved";
+  return await db.transaction(async (tx) => {
+    if (
+      !(await admitPiStableContextSubjects(tx, [
+        { subjectKind: "user", subjectId: args.userId },
+        { subjectKind: "organization", subjectId: args.orgId },
+      ]))
+    ) {
+      return "unavailable";
+    }
+    const rows = await tx
+      .insert(orgMembersMetadata)
+      .values({
+        orgId: args.orgId,
+        userId: args.userId,
+        timezone: args.timezone,
+        createdAt: updatedAt,
+        updatedAt,
+      })
+      .onConflictDoUpdate({
+        target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
+        set: { timezone: args.timezone, updatedAt },
+        setWhere: isNull(orgMembersMetadata.timezone),
+      })
+      .returning({ timezone: orgMembersMetadata.timezone });
+    return rows.length > 0 ? "stored" : "preserved";
+  });
 }
 
 interface CompleteOnboardingArgs {
@@ -144,7 +171,10 @@ interface MorningBriefOnboardingOutcome {
   readonly timezone: TimezoneFallbackOutcome;
   readonly provisioning:
     | EnsureMorningBriefDefaultEnabledResult
-    | { readonly outcome: "skipped"; readonly reason: "already-complete" };
+    | {
+        readonly outcome: "skipped";
+        readonly reason: "already-complete" | "account-unavailable";
+      };
 }
 
 function defaultAgentId(orgId: string): Computed<Promise<string | null>> {
@@ -269,7 +299,7 @@ export const completeOnboarding$ = command(
     signal: AbortSignal,
   ): Promise<CompleteOnboardingResponse> => {
     const writeDb = set(writeDb$);
-    const firstCompletion = await markOnboardingComplete(
+    const completion = await markOnboardingComplete(
       writeDb,
       args.orgId,
       args.industry,
@@ -277,6 +307,10 @@ export const completeOnboarding$ = command(
       args.member.userId,
     );
     signal.throwIfAborted();
+    if (completion === "unavailable") {
+      return resourceUnavailable("This account is unavailable.");
+    }
+    const firstCompletion = completion === "completed";
 
     const additiveOutcome = await settle(
       (async (): Promise<MorningBriefOnboardingOutcome> => {
@@ -286,6 +320,13 @@ export const completeOnboarding$ = command(
           timezone: args.timezone,
         });
         signal.throwIfAborted();
+        if (timezone === "unavailable") {
+          return {
+            firstCompletion,
+            timezone,
+            provisioning: { outcome: "skipped", reason: "account-unavailable" },
+          };
+        }
         const provisioning = firstCompletion
           ? await set(
               ensureMorningBriefDefaultEnabled$,
@@ -303,6 +344,12 @@ export const completeOnboarding$ = command(
       })(),
       signal,
     );
+    if (
+      additiveOutcome.ok &&
+      additiveOutcome.value.timezone === "unavailable"
+    ) {
+      return resourceUnavailable("This account is unavailable.");
+    }
 
     if (
       additiveOutcome.ok &&

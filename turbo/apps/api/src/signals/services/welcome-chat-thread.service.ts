@@ -16,6 +16,7 @@ import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service"
 import { chatThreadModelPinColumns } from "./chat-thread-model.service";
 import { resolveDefaultModelFirstPin } from "./model-selection.service";
 import { userPreferences } from "./user-data.service";
+import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
 
 interface WelcomeThreadAction {
   readonly userId: string;
@@ -59,7 +60,7 @@ export type WelcomeThreadDeliveryOutcome =
     }
   | {
       readonly outcome: "skipped";
-      readonly reason: "default-agent-not-ready";
+      readonly reason: "default-agent-not-ready" | "account-unavailable";
     };
 
 export const createWelcomeChatThread$ = command(
@@ -97,6 +98,14 @@ export const createWelcomeChatThread$ = command(
     });
 
     const result = await db.transaction(async (tx) => {
+      if (
+        !(await admitPiStableContextSubjects(tx, [
+          { subjectKind: "user", subjectId: args.userId },
+          { subjectKind: "organization", subjectId: args.orgId },
+        ]))
+      ) {
+        return { kind: "account-unavailable" as const };
+      }
       const thread = await createChatThreadInTransaction(tx, {
         ...args,
         agentId: agent.id,
@@ -119,6 +128,17 @@ export const createWelcomeChatThread$ = command(
       return thread;
     });
     signal.throwIfAborted();
+    if (result.kind === "account-unavailable") {
+      return {
+        status: 409 as const,
+        body: {
+          error: {
+            code: "ACCOUNT_UNAVAILABLE" as const,
+            message: "This account is unavailable.",
+          },
+        },
+      };
+    }
     if (
       result.kind === "invalid_connector_selection" ||
       result.kind === "invalid_remote_access_selection"
@@ -164,7 +184,13 @@ export const deliverWelcomeChatThread$ = command(
       return { outcome: "already-delivered", threadId };
     }
     if (result.status === 409) {
-      return { outcome: "skipped", reason: "default-agent-not-ready" };
+      return {
+        outcome: "skipped",
+        reason:
+          result.body.error.code === "ACCOUNT_UNAVAILABLE"
+            ? "account-unavailable"
+            : "default-agent-not-ready",
+      };
     }
     // Creation's only remaining answer is the invalid-connector-selection 400,
     // which automatic delivery cannot reach because it selects no connectors.

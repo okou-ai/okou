@@ -92,7 +92,10 @@ export function AuthStepCard({
           <span className="compact-step-copy">
             <strong>Signed in</strong>
             <span>
-              {signedInAuth.user.email} - {activeOrganization.name}
+              {signedInAuth.user.email ??
+                signedInAuth.user.phoneNumber ??
+                signedInAuth.user.userId}{" "}
+              - {activeOrganization.name}
             </span>
           </span>
         </div>

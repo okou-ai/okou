@@ -76,7 +76,29 @@ const getAuthMeInner$ = command(
 
     const email = primaryEmail(user);
     if (!email) {
-      throw new Error(`No primary email found for user ${auth.userId}`);
+      const phone = user.phoneNumbers?.find((candidate) => {
+        return (
+          candidate.id === user.primaryPhoneNumberId &&
+          candidate.verification?.status === "verified"
+        );
+      });
+      if (!phone) {
+        throw new Error(`No primary identifier found for user ${auth.userId}`);
+      }
+      // The shared cache stores email profiles. A phone-only identity comes
+      // directly from Clerk without manufacturing an email or caching it there.
+      return {
+        status: 200 as const,
+        body: {
+          userId: auth.userId,
+          email: null,
+          phoneNumber: phone.phoneNumber,
+          orgId: auth.orgId ?? null,
+          ...(auth.tokenType === "session" && auth.sessionId
+            ? { sessionId: auth.sessionId }
+            : {}),
+        },
+      };
     }
 
     const refreshedAt = new Date(now());

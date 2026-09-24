@@ -268,7 +268,9 @@ function buildAuthSubmenu(
   }
 
   return [
-    disabledLabel(`Signed in as ${state.auth.user.email}`),
+    disabledLabel(
+      `Signed in as ${state.auth.user.email ?? state.auth.user.phoneNumber ?? state.auth.user.userId}`,
+    ),
     disabledLabel(
       `Workspace: ${state.auth.organization?.name ?? "Not selected"}`,
     ),
