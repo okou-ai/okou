@@ -25,6 +25,7 @@ export const runnerVncSecuritySchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("x509_vnc"), trust: vncTrustSchema }).strict(),
   z.object({ type: z.literal("x509_plain"), trust: vncTrustSchema }).strict(),
   z.object({ type: z.literal("apple_dh") }).strict(),
+  z.object({ type: z.literal("apple_srp") }).strict(),
 ]);
 
 const commonRequestSchema = z
@@ -45,8 +46,9 @@ const supportedProfileSchema = z
       "vnc_password",
       "username_password",
       "apple_dh_username_password",
+      "apple_srp_username_password",
     ]),
-    securityType: z.enum(["x509_vnc", "x509_plain", "apple_dh"]),
+    securityType: z.enum(["x509_vnc", "x509_plain", "apple_dh", "apple_srp"]),
     transportType: z.enum(["direct", "ssh"]).optional(),
   })
   .strict()
@@ -58,6 +60,9 @@ const supportedProfileSchema = z
         profile.securityType === "x509_plain") ||
       (profile.authMethod === "apple_dh_username_password" &&
         profile.securityType === "apple_dh" &&
+        profile.transportType === "ssh") ||
+      (profile.authMethod === "apple_srp_username_password" &&
+        profile.securityType === "apple_srp" &&
         profile.transportType === "ssh")
     );
   }, "VNC Runner profiles require an exact authentication/security pair");
@@ -100,6 +105,17 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
   z
     .object({
       outcome: z.literal("resolved_apple_dh"),
+      host: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
+      port: z.int().min(1).max(65_535),
+      generation: generationSchema,
+      transport: transportSnapshotSchema,
+      authentication: vncAuthenticationSchema,
+      security: runnerVncSecuritySchema,
+    })
+    .strict(),
+  z
+    .object({
+      outcome: z.literal("resolved_apple_srp"),
       host: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
       port: z.int().min(1).max(65_535),
       generation: generationSchema,

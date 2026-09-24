@@ -5702,7 +5702,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await runs.grantProEntitlement(actor);
     await integrations.configureSlackRunModelPolicies(actor);
     await bdd.readOnboardingStatus(actor);
-    await integrations.enableAuditLinkSwitch(actor);
+    await integrations.enableOkouDebug(actor);
     const slackUser1 = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUser1,
@@ -6689,7 +6689,7 @@ describe("INT-02: Telegram integration", () => {
     runs.acceptTelemetryIngest();
     const runnerGroup = runs.configureRunnerGroup();
     const actor = integrations.user();
-    await integrations.enableAuditLinkSwitch(actor);
+    await integrations.enableOkouDebug(actor);
     await configureFastCodexPreference(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD Telegram Fast agent",
@@ -6812,12 +6812,11 @@ describe("INT-02: Telegram integration", () => {
       codexAgentMessageText: "telegram fast reply",
     });
     await flushWaitUntilAndAssert(() => {
-      const providerOutput = JSON.stringify(sentMessages);
-      expect(providerOutput).toContain("telegram fast reply");
-      expect(providerOutput).toContain("GPT 6 Astra Fast");
-      expect(providerOutput).toContain(
-        `https://app.okou.ai/activities/${runId}`,
-      );
+      expect(sentMessages).toStrictEqual([
+        expect.objectContaining({
+          text: "telegram fast reply\n\n<i>GPT 6 Astra Fast</i>",
+        }),
+      ]);
     });
   });
 
@@ -7595,7 +7594,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     );
     expect(notConfigured.body).toStrictEqual({
       error: {
-        message: "AgentPhone is not configured",
+        message: "Phone messaging is not configured",
         code: "NOT_CONFIGURED",
       },
     });
@@ -7650,12 +7649,16 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       timestamp,
       signature: connectParams.get("sig") ?? "",
       channel: connectParams.get("channel") ?? undefined,
-      publicBrand:
-        connectParams.get("publicBrand") === "okou"
-          ? ("okou" as const)
-          : undefined,
-      publicBrandSignature: connectParams.get("brandSig") ?? undefined,
     };
+    const forgedConnect = await integrations.requestConnectAgentPhone(
+      actor,
+      { ...connectBody, signature: "0".repeat(64) },
+      [400],
+    );
+    expect(forgedConnect.body).toMatchObject({
+      error: { code: "BAD_REQUEST" },
+    });
+
     const connected = await integrations.requestConnectAgentPhone(
       actor,
       connectBody,
@@ -7682,7 +7685,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     );
     expect(missingAgentMessage.body).toStrictEqual({
       error: {
-        message: "AgentPhone agent not found",
+        message: "Phone agent not found",
         code: "NOT_FOUND",
       },
     });
@@ -7717,28 +7720,19 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       error: { code: "AGENTPHONE_ERROR" },
     });
 
+    // An older App bundle still posts the ignored brand fields; the link
+    // signature is verified and the request reaches the ownership conflict.
     const duplicateConnect = await integrations.requestConnectAgentPhone(
       integrations.user(),
-      connectBody,
+      {
+        ...connectBody,
+        publicBrand: "okou",
+        publicBrandSignature: connectParams.get("brandSig") ?? "",
+      },
       [409],
     );
     expect(duplicateConnect.body).toMatchObject({
       error: { code: "CONFLICT" },
-    });
-
-    const strippedNewConnect = await integrations.requestConnectAgentPhone(
-      integrations.user(),
-      {
-        phoneHandle: connectBody.phoneHandle,
-        agentphoneAgentId: connectBody.agentphoneAgentId,
-        timestamp: connectBody.timestamp,
-        signature: connectBody.signature,
-        channel: connectBody.channel,
-      },
-      [400],
-    );
-    expect(strippedNewConnect.body).toMatchObject({
-      error: { code: "BAD_REQUEST" },
     });
 
     const alreadyLinkedStart = await integrations.requestStartAgentPhoneLink(
@@ -7779,7 +7773,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     );
     expect(unavailable.body).toStrictEqual({
       error: {
-        message: "AgentPhone verification text could not be sent",
+        message: "Verification text could not be sent",
         code: "PROVIDER_UNAVAILABLE",
       },
     });

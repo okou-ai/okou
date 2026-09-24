@@ -19,13 +19,10 @@ import {
 } from "./agentphone-chat-callback-payload";
 import {
   agentPhoneReplyDestination,
-  formatAgentPhoneAuditLink,
   markdownToImessagePlain,
-  resolveAgentPhoneAuditLogsUrl,
   resolveAgentPhoneReplyFooterText,
   storeOutboundAgentPhoneMessage,
 } from "./agentphone-shared.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 
@@ -214,14 +211,9 @@ async function loadAgentPhoneChatDeliveryContext(
 
 function buildAgentPhoneResponseText(args: {
   readonly mainText: string;
-  readonly logsUrl: string | undefined;
   readonly footerText: string | undefined;
 }): string {
-  return [
-    markdownToImessagePlain(args.mainText),
-    args.logsUrl ? formatAgentPhoneAuditLink(args.logsUrl) : undefined,
-    args.footerText,
-  ]
+  return [markdownToImessagePlain(args.mainText), args.footerText]
     .filter((part): part is string => {
       return Boolean(part);
     })
@@ -253,45 +245,6 @@ async function sendAgentPhoneReply(
   );
   signal.throwIfAborted();
   return result;
-}
-
-async function resolveAgentPhonePresentation(
-  args: {
-    readonly db: Db;
-    readonly runId: string;
-    readonly run: AgentPhoneChatRunContext;
-  },
-  signal: AbortSignal,
-): Promise<{
-  readonly logsUrl: string | undefined;
-  readonly footerText: string | undefined;
-}> {
-  const featureContext = await loadUserFeatureSwitchContext(
-    args.db,
-    args.run.orgId,
-    args.run.userId,
-  );
-  signal.throwIfAborted();
-  const [logsUrl, footerText] = await Promise.all([
-    resolveAgentPhoneAuditLogsUrl(
-      {
-        orgId: args.run.orgId,
-        userId: args.run.userId,
-        runId: args.runId,
-        getFeatureOverrides: () => {
-          return Promise.resolve(featureContext.overrides ?? {});
-        },
-      },
-      signal,
-    ),
-    resolveAgentPhoneReplyFooterText({
-      db: args.db,
-      orgId: args.run.orgId,
-      composeId: args.run.agentId,
-    }),
-  ]);
-  signal.throwIfAborted();
-  return { logsUrl, footerText };
 }
 
 async function recordAgentPhoneChatDelivery(args: {
@@ -335,18 +288,15 @@ async function deliverClaimedAgentPhoneChatCallback(
   if (!binding) {
     return "skipped_revoked";
   }
-  const presentation = await resolveAgentPhonePresentation(
-    {
-      db: args.db,
-      runId: args.callback.runId,
-      run,
-    },
-    signal,
-  );
+  const footerText = await resolveAgentPhoneReplyFooterText({
+    db: args.db,
+    orgId: run.orgId,
+    composeId: run.agentId,
+  });
+  signal.throwIfAborted();
   const body = buildAgentPhoneResponseText({
     mainText: messageContent,
-    logsUrl: presentation.logsUrl,
-    footerText: presentation.footerText,
+    footerText,
   });
   const sent = await sendAgentPhoneReply(
     {

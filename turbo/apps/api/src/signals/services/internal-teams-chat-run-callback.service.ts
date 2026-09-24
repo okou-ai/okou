@@ -7,10 +7,7 @@ import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route
 import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 import { agents } from "@okouai/db/schema/agent";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { and, countDistinct, eq, isNotNull } from "drizzle-orm";
-import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import type { Db } from "../external/db";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
@@ -20,7 +17,6 @@ import {
 } from "../external/teams-bot-client";
 import { now, nowDate } from "../../lib/time";
 import { settleIncludingAbort } from "../utils";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { resolveIntegrationAgentResponsePresentation } from "./integration-agent-response-presentation.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
@@ -203,14 +199,9 @@ async function countTeamsMentioners(args: {
 
 function buildTeamsResponseText(args: {
   readonly mainText: string;
-  readonly logsUrl: string | undefined;
   readonly footerText: string | undefined;
 }): string {
-  return [
-    args.mainText,
-    args.logsUrl ? `[Audit](${args.logsUrl})` : undefined,
-    args.footerText ? `_${args.footerText}_` : undefined,
-  ]
+  return [args.mainText, args.footerText ? `_${args.footerText}_` : undefined]
     .filter((part): part is string => {
       return Boolean(part);
     })
@@ -274,15 +265,12 @@ async function deliverClaimedTeamsChatCallback(
     return "skipped_revoked";
   }
 
-  const [mentionerCount, featureContext] = await Promise.all([
-    countTeamsMentioners({
-      db: args.db,
-      tenantId: payload.tenantId,
-      conversationId: payload.conversationId,
-      threadId: payload.threadId,
-    }),
-    loadUserFeatureSwitchContext(args.db, run.orgId, run.userId),
-  ]);
+  const mentionerCount = await countTeamsMentioners({
+    db: args.db,
+    tenantId: payload.tenantId,
+    conversationId: payload.conversationId,
+    threadId: payload.threadId,
+  });
   signal.throwIfAborted();
   const replyTo =
     payload.teamsUserDisplayName ??
@@ -292,16 +280,12 @@ async function deliverClaimedTeamsChatCallback(
     {
       db: args.db,
       orgId: run.orgId,
-      userId: run.userId,
       runId: args.callback.runId,
       agentId: run.agentId,
       replyToMention:
         payload.conversationType !== "personal" && mentionerCount > 1
           ? replyTo
           : undefined,
-      getFeatureOverrides: () => {
-        return Promise.resolve(featureContext.overrides ?? {});
-      },
     },
     signal,
   );
@@ -319,7 +303,6 @@ async function deliverClaimedTeamsChatCallback(
       tenantId: payload.tenantId,
       text: buildTeamsResponseText({
         mainText: messageContent,
-        logsUrl: presentation.logsUrl,
         footerText: presentation.footerText,
       }),
     },
@@ -469,7 +452,6 @@ async function loadTeamsAdmissionFailureContext(
 }
 
 interface TeamsAdmissionFailurePresentation {
-  readonly logsUrl: string | undefined;
   readonly footerText: string | undefined;
 }
 
@@ -477,26 +459,24 @@ async function resolveTeamsAdmissionFailurePresentation(
   args: TeamsChatAdmissionFailureArgs,
   signal: AbortSignal,
 ): Promise<TeamsAdmissionFailurePresentation> {
-  const [mentionerCount, featureContext, orgRows, agentRows] =
-    await Promise.all([
-      countTeamsMentioners({
-        db: args.db,
-        tenantId: args.target.tenantId,
-        conversationId: args.target.conversationId,
-        threadId: args.target.threadId,
-      }),
-      loadUserFeatureSwitchContext(args.db, args.orgId, args.userId),
-      args.db
-        .select({ defaultAgentId: orgMetadata.defaultAgentId })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, args.orgId))
-        .limit(1),
-      args.db
-        .select({ displayName: agents.displayName, name: agents.name })
-        .from(agents)
-        .where(eq(agents.id, args.agentId))
-        .limit(1),
-    ]);
+  const [mentionerCount, orgRows, agentRows] = await Promise.all([
+    countTeamsMentioners({
+      db: args.db,
+      tenantId: args.target.tenantId,
+      conversationId: args.target.conversationId,
+      threadId: args.target.threadId,
+    }),
+    args.db
+      .select({ defaultAgentId: orgMetadata.defaultAgentId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, args.orgId))
+      .limit(1),
+    args.db
+      .select({ displayName: agents.displayName, name: agents.name })
+      .from(agents)
+      .where(eq(agents.id, args.agentId))
+      .limit(1),
+  ]);
   signal.throwIfAborted();
 
   const footerParts: string[] = [];
@@ -513,11 +493,7 @@ async function resolveTeamsAdmissionFailurePresentation(
       }`,
     );
   }
-  const logsUrl = isFeatureEnabled(FeatureSwitchKey.OkouDebug, featureContext)
-    ? `${env("APP_URL")}/activities`
-    : undefined;
   return {
-    logsUrl,
     footerText: footerParts.length > 0 ? footerParts.join(" · ") : undefined,
   };
 }
@@ -577,7 +553,6 @@ export async function deliverTeamsChatAdmissionFailure(
       tenantId: args.target.tenantId,
       text: buildTeamsResponseText({
         mainText: context.messageContent,
-        logsUrl: presentation.logsUrl,
         footerText: presentation.footerText,
       }),
     },

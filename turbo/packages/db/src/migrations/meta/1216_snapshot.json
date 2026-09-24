@@ -1,6 +1,6 @@
 {
-  "id": "a8fbdfe6-e77e-4b46-84ad-40ae80a99065",
-  "prevId": "26f5c3e5-8e28-4cb7-8505-5ed290894148",
+  "id": "4fd4a686-52f2-484e-bf43-417be614fcfd",
+  "prevId": "a101e24e-1e3e-43c5-8deb-4f8a11851955",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2854,6 +2854,21 @@
         }
       },
       "indexes": {
+        "idx_agentphone_chat_thread_routes_thread": {
+          "name": "idx_agentphone_chat_thread_routes_thread",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_agentphone_chat_thread_routes_link_root": {
           "name": "idx_agentphone_chat_thread_routes_link_root",
           "columns": [
@@ -4434,6 +4449,22 @@
           ],
           "isUnique": false,
           "where": "\"background_jobs\".\"status\" = 'running'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_background_jobs_completed_clerk_deletion": {
+          "name": "idx_background_jobs_completed_clerk_deletion",
+          "columns": [
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"background_jobs\".\"kind\" = 'clerk-user-deletion' AND \"background_jobs\".\"status\" = 'completed'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -7218,6 +7249,18 @@
           "primaryKey": false,
           "notNull": true
         },
+        "source_user_id": {
+          "name": "source_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_org_id": {
+          "name": "source_org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -7226,7 +7269,38 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "chat_agent_run_context_source_user_idx": {
+          "name": "chat_agent_run_context_source_user_idx",
+          "columns": [
+            {
+              "expression": "source_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "chat_agent_run_context_source_org_idx": {
+          "name": "chat_agent_run_context_source_org_idx",
+          "columns": [
+            {
+              "expression": "source_org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -7343,7 +7417,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "chat_agentphone_context_thread_idx": {
+          "name": "chat_agentphone_context_thread_idx",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "chat_agentphone_context_chat_thread_id_chat_threads_id_fk": {
           "name": "chat_agentphone_context_chat_thread_id_chat_threads_id_fk",
@@ -7434,6 +7524,21 @@
         }
       },
       "indexes": {
+        "chat_automation_context_thread_idx": {
+          "name": "chat_automation_context_thread_idx",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "chat_automation_context_automation_id_idx": {
           "name": "chat_automation_context_automation_id_idx",
           "columns": [
@@ -7469,6 +7574,99 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.chat_content_erasure_subjects": {
+      "name": "chat_content_erasure_subjects",
+      "schema": "",
+      "columns": {
+        "subject_kind": {
+          "name": "subject_kind",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject_id": {
+          "name": "subject_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_reference": {
+          "name": "source_reference",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "confirmed_at": {
+          "name": "confirmed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_sweep_at": {
+          "name": "next_sweep_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "chat_content_erasure_next_sweep": {
+          "name": "chat_content_erasure_next_sweep",
+          "columns": [
+            {
+              "expression": "next_sweep_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "subject_kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "subject_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"chat_content_erasure_subjects\".\"completed_at\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "chat_content_erasure_subjects_subject_kind_subject_id_pk": {
+          "name": "chat_content_erasure_subjects_subject_kind_subject_id_pk",
+          "columns": [
+            "subject_kind",
+            "subject_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chat_content_erasure_subject_kind": {
+          "name": "chat_content_erasure_subject_kind",
+          "value": "\"chat_content_erasure_subjects\".\"subject_kind\" IN ('user', 'organization')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.chat_event_search_message_watermarks": {
@@ -7663,6 +7861,50 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.chat_event_sequences": {
+      "name": "chat_event_sequences",
+      "schema": "",
+      "columns": {
+        "chat_thread_id": {
+          "name": "chat_thread_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "last_seq_id": {
+          "name": "last_seq_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "chat_event_sequences_chat_thread_id_chat_threads_id_fk": {
+          "name": "chat_event_sequences_chat_thread_id_chat_threads_id_fk",
+          "tableFrom": "chat_event_sequences",
+          "tableTo": "chat_threads",
+          "columnsFrom": [
+            "chat_thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chat_event_sequences_nonnegative": {
+          "name": "chat_event_sequences_nonnegative",
+          "value": "\"chat_event_sequences\".\"last_seq_id\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.chat_event_snapshot_scan_state": {
       "name": "chat_event_snapshot_scan_state",
       "schema": "",
@@ -7841,6 +8083,37 @@
         "chat_event_snapshots_terminal_cursor_check": {
           "name": "chat_event_snapshots_terminal_cursor_check",
           "value": "(\n          \"chat_event_snapshots\".\"terminal_event_id\" IS NULL\n          AND \"chat_event_snapshots\".\"terminal_seq_id\" = 0\n        ) OR (\n          \"chat_event_snapshots\".\"terminal_event_id\" IS NOT NULL\n          AND \"chat_event_snapshots\".\"terminal_seq_id\" > 0\n          AND \"chat_event_snapshots\".\"terminal_seq_id\" <= \"chat_event_snapshots\".\"last_seq_id\"\n        )"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.chat_event_write_control": {
+      "name": "chat_event_write_control",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "'global'"
+        },
+        "activated_at": {
+          "name": "activated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chat_event_write_control_singleton": {
+          "name": "chat_event_write_control_singleton",
+          "value": "\"chat_event_write_control\".\"id\" = 'global'"
         }
       },
       "isRLSEnabled": false
@@ -8320,7 +8593,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "chat_feishu_context_thread_idx": {
+          "name": "chat_feishu_context_thread_idx",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "chat_feishu_context_chat_thread_id_chat_threads_id_fk": {
           "name": "chat_feishu_context_chat_thread_id_chat_threads_id_fk",
@@ -8422,7 +8711,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "chat_github_context_thread_idx": {
+          "name": "chat_github_context_thread_idx",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "chat_github_context_chat_thread_id_chat_threads_id_fk": {
           "name": "chat_github_context_chat_thread_id_chat_threads_id_fk",
@@ -8558,7 +8863,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "chat_slack_context_thread_idx": {
+          "name": "chat_slack_context_thread_idx",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "chat_slack_context_chat_thread_id_chat_threads_id_fk": {
           "name": "chat_slack_context_chat_thread_id_chat_threads_id_fk",
@@ -8719,7 +9040,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "chat_teams_context_thread_idx": {
+          "name": "chat_teams_context_thread_idx",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "chat_teams_context_chat_thread_id_chat_threads_id_fk": {
           "name": "chat_teams_context_chat_thread_id_chat_threads_id_fk",
@@ -8856,7 +9193,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "chat_telegram_context_thread_idx": {
+          "name": "chat_telegram_context_thread_idx",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "chat_telegram_context_chat_thread_id_chat_threads_id_fk": {
           "name": "chat_telegram_context_chat_thread_id_chat_threads_id_fk",
@@ -9142,7 +9495,23 @@
           "default": 0
         }
       },
-      "indexes": {},
+      "indexes": {
+        "chat_thread_event_sequences_org_idx": {
+          "name": "chat_thread_event_sequences_org_idx",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "chat_thread_event_sequences_user_id_org_id_pk": {
@@ -9305,6 +9674,21 @@
             },
             {
               "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "chat_thread_events_org_idx": {
+          "name": "chat_thread_events_org_idx",
+          "columns": [
+            {
+              "expression": "org_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -9783,13 +10167,6 @@
           "notNull": true,
           "default": "now()"
         },
-        "last_chat_event_seq_id": {
-          "name": "last_chat_event_seq_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
         "provenance": {
           "name": "provenance",
           "type": "varchar(32)",
@@ -9809,6 +10186,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "last_chat_event_seq_id": {
+          "name": "last_chat_event_seq_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         }
       },
       "indexes": {
@@ -15401,6 +15785,21 @@
         }
       },
       "indexes": {
+        "idx_github_chat_thread_routes_thread": {
+          "name": "idx_github_chat_thread_routes_thread",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_github_chat_thread_routes_install_repo_subject_user": {
           "name": "idx_github_chat_thread_routes_install_repo_subject_user",
           "columns": [
@@ -31845,6 +32244,21 @@
         }
       },
       "indexes": {
+        "idx_teams_chat_thread_routes_thread": {
+          "name": "idx_teams_chat_thread_routes_thread",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_teams_chat_thread_routes_conn_conversation_thread_user": {
           "name": "idx_teams_chat_thread_routes_conn_conversation_thread_user",
           "columns": [
@@ -32328,6 +32742,21 @@
         }
       },
       "indexes": {
+        "idx_telegram_chat_thread_routes_thread": {
+          "name": "idx_telegram_chat_thread_routes_thread",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_telegram_chat_thread_routes_chat_user_link": {
           "name": "idx_telegram_chat_thread_routes_chat_user_link",
           "columns": [

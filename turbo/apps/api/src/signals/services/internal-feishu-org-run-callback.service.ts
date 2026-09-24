@@ -20,10 +20,6 @@ import {
   feishuOrgCallbackPayloadSchema as callbackPayloadSchema,
   type FeishuOrgCallbackPayload,
 } from "./feishu-org-callback-payload";
-import {
-  loadUserFeatureSwitchContext,
-  userFeatureSwitchOverrides,
-} from "./feature-switches.service";
 import type {
   InternalRunCallbackDispatchResult,
   InternalRunCallbackEnvelope,
@@ -46,10 +42,6 @@ interface RunContext {
 interface HandleFeishuCallbackInput {
   readonly db: Db;
   readonly callback: InternalRunCallbackEnvelope;
-  readonly getFeatureOverrides: (
-    orgId: string,
-    userId: string,
-  ) => Promise<Record<string, boolean>>;
   readonly formatRunError: (params: {
     readonly runId: string;
     readonly chatThreadId: string | null | undefined;
@@ -235,11 +227,9 @@ async function handleFeishuCallback(
     {
       db: args.db,
       orgId: run.orgId,
-      userId: run.userId,
       runId: args.callback.runId,
       agentId: payload.agentId ?? run.agentId,
       defaultAgentId: installation.defaultAgentId ?? undefined,
-      getFeatureOverrides: args.getFeatureOverrides,
     },
     signal,
   );
@@ -250,7 +240,6 @@ async function handleFeishuCallback(
       : (output ?? "Task completed successfully.");
   const responseMessage = buildFeishuAgentResponseMessage({
     text: responseText,
-    auditUrl: presentation.logsUrl,
     footerText: presentation.footerText,
   });
   await sendFeishuCallbackResponse(
@@ -277,7 +266,7 @@ async function handleFeishuCallback(
 
 export const handleFeishuOrgInternalCallback$ = command(
   async (
-    { get, set },
+    { set },
     callback: InternalRunCallbackEnvelope,
     signal: AbortSignal,
   ): Promise<InternalRunCallbackDispatchResult> => {
@@ -285,9 +274,6 @@ export const handleFeishuOrgInternalCallback$ = command(
       {
         db: set(writeDb$),
         callback,
-        getFeatureOverrides: (orgId, userId) => {
-          return get(userFeatureSwitchOverrides(orgId, userId));
-        },
         formatRunError: (params) => {
           return set(formatRunErrorForRunOwner$, params, signal);
         },
@@ -318,12 +304,6 @@ export async function handleFeishuOrgInternalCallbackWithoutCcstate(
     {
       db,
       callback,
-      getFeatureOverrides: async (orgId, userId) => {
-        return (
-          (await loadUserFeatureSwitchContext(db, orgId, userId)).overrides ??
-          {}
-        );
-      },
       formatRunError: (params) => {
         return Promise.resolve(
           formatRunErrorForExternalSurface({

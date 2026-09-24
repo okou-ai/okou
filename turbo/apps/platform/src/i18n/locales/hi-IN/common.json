@@ -347,7 +347,7 @@
     },
     "sources": {
       "agent": "एजेंट",
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "automationEvent": "ऑटोमेशन घटना",
       "automationSchedule": "ऑटोमेशन शेड्यूल",
       "email": "ईमेल",
@@ -3473,7 +3473,7 @@
         "invalidSignature": "इस लिंक पर हस्ताक्षर मान्य नहीं है.",
         "invalidTimestamp": "इस लिंक पर टाइमस्टैम्प मान्य नहीं है.",
         "invalidTitle": "कनेक्ट लिंक अमान्य है",
-        "risk": "SMS और MMS उत्तर विश्वसनीय रूप से वितरित नहीं किए जा सकते हैं। सबसे विश्वसनीय अनुभव के लिए, इस AgentPhone नंबर के साथ iMessage का उपयोग करें।",
+        "risk": "SMS और MMS उत्तर विश्वसनीय रूप से वितरित नहीं किए जा सकते हैं। सबसे विश्वसनीय अनुभव के लिए, इस नंबर के साथ iMessage का उपयोग करें।",
         "successDescription": "{{phone}} जुड़ा हुआ है. {{assistantName}} के साथ चैट शुरू करने के लिए एक टेक्स्ट संदेश भेजें।",
         "successTitle": "फ़ोन नंबर कनेक्ट हो गया"
       },
@@ -4024,8 +4024,8 @@
         "uninstallTitle": "Telegram बॉट अनइंस्टॉल करें?"
       },
       "toasts": {
-        "agentphoneConnected": "AgentPhone जुड़ा",
-        "agentphoneDisconnected": "AgentPhone डिस्कनेक्ट हो गया",
+        "agentphoneConnected": "फ़ोन नंबर कनेक्ट हो गया",
+        "agentphoneDisconnected": "फ़ोन नंबर डिस्कनेक्ट हो गया",
         "slackConnected": "Slack सफलतापूर्वक कनेक्ट हुआ",
         "slackDisconnected": "Slack से डिस्कनेक्ट हो गया",
         "slackInstalled": "Slack सफलतापूर्वक स्थापित हुआ",
@@ -7110,6 +7110,7 @@
       "add": "क्रेडेंशियल जोड़ें",
       "appleDhFieldHelp": "हर फ़ील्ड 1–63 UTF-8 बाइट का होना चाहिए। NUL की अनुमति नहीं है।",
       "appleDhMethod": "Apple DH उपयोगकर्ता नाम और पासवर्ड",
+      "appleSrpMethod": "Apple Direct SRP उपयोगकर्ता नाम और पासवर्ड",
       "authentication": "प्रमाणीकरण विधि",
       "createNew": "नया क्रेडेंशियल बनाएं",
       "delete": "क्रेडेंशियल हटाएं",
@@ -7179,6 +7180,8 @@
     "security": {
       "appleDh": "Mac स्क्रीन शेयरिंग (Apple DH)",
       "appleDhHelp": "इसके लिए सहेजे गए SSH कनेक्शन से macOS स्क्रीन शेयरिंग चाहिए। RFB गंतव्य उसी Mac पर 127.0.0.1 या ::1 होना चाहिए। SSH पूरे VNC सत्र की सुरक्षा करता है। अपने नियंत्रण वाले Mac SSH होस्ट का उपयोग करें; होस्ट कुंजी आगे के प्रॉक्सी को नकार नहीं सकती।",
+      "appleSrp": "Mac स्क्रीन शेयरिंग (Apple Direct SRP)",
+      "appleSrpHelp": "इसके लिए Mac से सहेजा गया SSH कनेक्शन और RFB गंतव्य 127.0.0.1 या ::1 चाहिए। SRP खाते और सर्वर प्रमाण को सत्यापित करता है; SSH पूरे VNC सत्र की सुरक्षा करता है। SSH होस्ट कुंजी चुने गए एंडपॉइंट की पहचान करती है, लेकिन आगे के प्रॉक्सी को नकार नहीं सकती।",
       "caBundle": "CA प्रमाणपत्र (PEM)",
       "caHelp": "अधिकतम 8 CA प्रमाणपत्र, कुल 64 KiB। निजी कुंजी या सर्वर प्रमाणपत्र न चिपकाएँ।",
       "caHint": "सर्वर प्रमाणपत्र जारी करने वाले सार्वजनिक CA प्रमाणपत्र चिपकाएँ",
@@ -7198,6 +7201,7 @@
     "summary_other": "{{count}} कॉन्फ़िगर किए गए होस्ट",
     "transport": {
       "appleDhDestinationHelp": "Apple DH के लिए 127.0.0.1 या ::1 दर्ज करें। यह चुने गए SSH होस्ट से पहुँचा जाने वाला Mac का अपना लूपबैक पता है।",
+      "appleSrpDestinationHelp": "Apple Direct SRP के लिए 127.0.0.1 या ::1 दर्ज करें। यह चुने गए SSH होस्ट से पहुँचा जाने वाला Mac का अपना लूपबैक पता है।",
       "destination": "RFB गंतव्य",
       "destinationHelp": "SSH रूट के लिए इस होस्ट और पोर्ट तक चुने गए SSH सर्वर से पहुँचा जाता है, Runner से सीधे नहीं।",
       "direct": "Runner से सीधे",

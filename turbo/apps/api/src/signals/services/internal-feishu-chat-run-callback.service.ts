@@ -22,7 +22,6 @@ import {
   feishuChatCallbackPayloadSchema,
   type FeishuDeliveryTarget,
 } from "./feishu-chat-callback-payload";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { resolveIntegrationAgentResponsePresentation } from "./integration-agent-response-presentation.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
@@ -310,21 +309,17 @@ async function deliverClaimedFeishuChatCallback(
     return "skipped_revoked";
   }
 
-  const [mentionerCount, featureContext] = await Promise.all([
-    countFeishuMentioners({
-      db: args.db,
-      installationId: payload.installationId,
-      chatId: payload.chatId,
-      threadId: payload.threadId,
-    }),
-    loadUserFeatureSwitchContext(args.db, run.orgId, run.userId),
-  ]);
+  const mentionerCount = await countFeishuMentioners({
+    db: args.db,
+    installationId: payload.installationId,
+    chatId: payload.chatId,
+    threadId: payload.threadId,
+  });
   signal.throwIfAborted();
   const presentation = await resolveIntegrationAgentResponsePresentation(
     {
       db: args.db,
       orgId: run.orgId,
-      userId: run.userId,
       runId: args.callback.runId,
       agentId: run.agentId,
       defaultAgentId: binding.defaultAgentId ?? undefined,
@@ -332,16 +327,12 @@ async function deliverClaimedFeishuChatCallback(
         payload.replyInThread && mentionerCount > 1
           ? `<at id=${binding.feishuOpenId}></at>`
           : undefined,
-      getFeatureOverrides: () => {
-        return Promise.resolve(featureContext.overrides ?? {});
-      },
     },
     signal,
   );
   signal.throwIfAborted();
   const message = buildFeishuAgentResponseMessage({
     text: messageContent,
-    auditUrl: presentation.logsUrl,
     footerText: presentation.footerText,
   });
   if (payload.replyInThread) {
