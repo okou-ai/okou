@@ -171,6 +171,82 @@ describe("CHAT-02: shared user message queue", () => {
     await cancelChatRun(actor, runId);
   }, 90_000);
 
+  it("skips a recalled queue head when dispatching a later idle Web send", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+
+    const anchor = await sendChatRun(actor, {
+      agentId,
+      prompt: "recalled queue head anchor",
+    });
+    const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
+    const recalledId = randomUUID();
+    const queued = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: anchor.threadId,
+        prompt: "recalled before dispatch",
+        clientEventId: recalledId,
+      },
+      [201],
+    );
+    if (queued.status !== 201) {
+      throw new Error("Expected the first Web message to queue");
+    }
+    expect(queued.body.runId).toBeNull();
+    const recall = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: anchor.threadId,
+        revokesEventId: recalledId,
+        clientEventId: randomUUID(),
+      },
+      [201],
+    );
+    if (recall.status !== 201) {
+      throw new Error("Expected the queued message recall to succeed");
+    }
+    expect(recall.body.runId).toBeNull();
+
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+    await flushWaitUntilForTest();
+
+    const nextId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: anchor.threadId,
+        prompt: "dispatch after a recalled head",
+        clientEventId: nextId,
+      },
+      [201],
+    );
+    if (sent.status !== 201 || !sent.body.runId) {
+      throw new Error("Expected the later Web send to dispatch itself");
+    }
+    const runId = sent.body.runId;
+    const claimed = await waitForThreadMessages(
+      actor,
+      anchor.threadId,
+      (events) => {
+        return userMessages(events).some((message) => {
+          return message.revokesEventId === nextId && message.runId === runId;
+        });
+      },
+    );
+    expect(userMessages(claimed.events)).not.toContainEqual(
+      expect.objectContaining({
+        revokesEventId: recalledId,
+        runId,
+      }),
+    );
+    await cancelChatRun(actor, runId);
+  }, 90_000);
+
   it("persists user-forwarded run provenance across chat threads", async () => {
     const { actor, agentId } = await entitledChatActor();
     if (!actor.orgId) {
@@ -1796,6 +1872,61 @@ describe("CHAT-02: shared user message queue", () => {
       "queue-first message to recall",
     );
     await cancelChatRun(actor, promoted.runId);
+  }, 90_000);
+
+  it("waits when a fresh cancellation recovery is the only dispatch blocker", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+
+    const anchor = await sendChatRun(actor, {
+      agentId,
+      prompt: "cancel before the next send",
+    });
+    const { sandboxHeaders } = await claimChatRun(runnerGroup, anchor.runId);
+    await api.requestCancelRun(actor, anchor.runId, [200]);
+    await waitForRunStatus(actor, anchor.runId, "cancelled");
+
+    const queuedId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: anchor.threadId,
+        prompt: "send during cancellation recovery",
+        clientEventId: queuedId,
+      },
+      [201],
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected recovery-blocked input to be accepted");
+    }
+    expect(sent.body.runId).toBeNull();
+    const beforeRecovery = await chat.listThreadEvents(actor, anchor.threadId);
+    expect(userMessages(beforeRecovery.events)).not.toContainEqual(
+      expect.objectContaining({
+        revokesEventId: queuedId,
+        runId: expect.any(String),
+      }),
+    );
+
+    await failChatRun(anchor.runId, sandboxHeaders, "Run cancelled");
+    await flushWaitUntilForTest();
+    const messages = await waitForThreadMessages(
+      actor,
+      anchor.threadId,
+      (events) => {
+        return userMessages(events).some((message) => {
+          return message.revokesEventId === queuedId && Boolean(message.runId);
+        });
+      },
+    );
+    const launchedRunId = userMessages(messages.events).find((message) => {
+      return message.revokesEventId === queuedId;
+    })?.runId;
+    if (!launchedRunId) {
+      throw new Error("Expected the queued send after cancellation recovery");
+    }
+    await cancelChatRun(actor, launchedRunId);
   }, 90_000);
 
   it("auto-fires queued messages after cancellation recovery completes", async () => {
