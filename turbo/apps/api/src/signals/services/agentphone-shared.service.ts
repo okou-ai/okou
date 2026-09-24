@@ -1,5 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { agents } from "@okouai/db/schema/agent";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
@@ -7,7 +5,6 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { eq } from "drizzle-orm";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 
-import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
 
@@ -35,10 +32,17 @@ const AGENTPHONE_PHONE_HANDLE_PATTERN = /^\+[1-9]\d{7,14}$/u;
 
 /** Handle that addresses the assistant in a group conversation. */
 const AGENTPHONE_MENTION_PATTERN = /(^|\s)@okou\b/iu;
+// Native iMessage mentions can arrive as display names without an at-sign or
+// mention metadata. Treat only an opening name followed by a separator as an
+// address, keeping embedded names, domains and longer names as group chatter.
+const AGENTPHONE_OPENING_NAME_PATTERN = /^\s*okou(?=$|[\s,，:：!！?？])/iu;
 
-/** Whether free-form message text addresses the assistant by handle. */
+/** Whether free-form message text addresses the assistant by handle or name. */
 export function isAgentPhoneMentionText(value: string): boolean {
-  return AGENTPHONE_MENTION_PATTERN.test(value);
+  return (
+    AGENTPHONE_MENTION_PATTERN.test(value) ||
+    AGENTPHONE_OPENING_NAME_PATTERN.test(value)
+  );
 }
 
 export function isAgentPhoneChannel(value: string): value is AgentPhoneChannel {
@@ -170,10 +174,6 @@ export async function storeOutboundAgentPhoneMessage(
     .onConflictDoNothing();
 }
 
-export function formatAgentPhoneAuditLink(logsUrl: string): string {
-  return `Audit: ${logsUrl}`;
-}
-
 export function markdownToImessagePlain(markdown: string): string {
   if (markdown.length === 0) {
     return markdown;
@@ -271,29 +271,4 @@ export async function resolveAgentPhoneReplyFooterText(args: {
 
   const label = await resolveComposeLabel(args.db, args.composeId);
   return label ? `Responded by ${label}` : undefined;
-}
-
-export async function resolveAgentPhoneAuditLogsUrl(
-  args: {
-    readonly getFeatureOverrides: (
-      orgId: string,
-      userId: string,
-    ) => Promise<Record<string, boolean>>;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly runId: string;
-  },
-  signal: AbortSignal,
-): Promise<string | undefined> {
-  const overrides = await args.getFeatureOverrides(args.orgId, args.userId);
-  signal.throwIfAborted();
-  const enabled = isFeatureEnabled(FeatureSwitchKey.OkouDebug, {
-    userId: args.userId,
-    orgId: args.orgId,
-    overrides,
-  });
-  if (!enabled) {
-    return undefined;
-  }
-  return `${env("APP_URL")}/activities/${encodeURIComponent(args.runId)}`;
 }

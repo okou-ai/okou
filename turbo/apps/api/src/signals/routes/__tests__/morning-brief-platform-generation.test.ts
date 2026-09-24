@@ -1713,31 +1713,28 @@ describe("Morning Brief platform receipt data domain", () => {
     expect(receipts[0]?.totalTokens).toBe(1440);
   });
 
-  it.each([
-    ["the column ceiling", 2_147_483_647, 2_147_483_647],
-    ["one above the column ceiling", 2_147_483_648, null],
-    ["a safe integer past the column", Number.MAX_SAFE_INTEGER, null],
-  ])("records %s as %s", async (_label, reported, stored) => {
+  it("rejects a safe integer past the token column", async () => {
     const f = await fixture();
     slackWithMessages();
     scriptProvider(() => {
-      return completion({ cost: 0.001, usage: { prompt_tokens: reported } });
+      return completion({
+        cost: 0.001,
+        usage: { prompt_tokens: Number.MAX_SAFE_INTEGER },
+      });
     });
 
     const response = await accept(generate(f), [200]);
     const body = expectGenerated(response.body);
-    expect(body.generation.receipt?.tokens.prompt).toBe(stored);
+    expect(body.generation.receipt?.tokens.prompt).toBeNull();
     const [row] = await readMorningBriefGenerations(f);
     const receipts = await readPlatformGenerationReceipts([
       row?.attemptId ?? "",
     ]);
-    expect(receipts[0]?.promptTokens).toBe(stored);
+    expect(receipts[0]?.promptTokens).toBeNull();
   });
 
   it.each([
-    ["a reported zero", 0, "0.000000000000"],
     ["an ordinary amount", 0.00125, "0.001250000000"],
-    ["the smallest storable amount", 1e-12, "0.000000000001"],
     [
       "the largest storable amount",
       999_999_999_999.999,

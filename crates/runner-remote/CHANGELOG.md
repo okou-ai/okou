@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.5](https://github.com/okou-ai/okou/compare/runner-remote-v0.2.4...runner-remote-v0.2.5) (2026-09-24)
+
+
+### Performance Improvements
+
+* **runner:** pipeline bounded sftp chunks during file transfer ([#36634](https://github.com/okou-ai/okou/issues/36634)) ([977077d](https://github.com/okou-ai/okou/commit/977077d531545f8578fc91272212e3af56468bbd))
+* **test:** reduce rust coverage fixture overhead ([#36597](https://github.com/okou-ai/okou/issues/36597)) ([b89d4c3](https://github.com/okou-ai/okou/commit/b89d4c3688a8b2f14b03a2dd14a9e6792ae113c0))
+
 ## [0.2.4](https://github.com/okou-ai/okou/compare/runner-remote-v0.2.3...runner-remote-v0.2.4) (2026-09-24)
 
 ## [0.2.3](https://github.com/okou-ai/okou/compare/runner-remote-v0.2.2...runner-remote-v0.2.3) (2026-09-24)

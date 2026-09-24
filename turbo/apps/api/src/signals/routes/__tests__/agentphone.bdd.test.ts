@@ -610,7 +610,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       const chat = createChatFilesBddApi(context);
       const integrations = createBddIntegrationApi(context);
       const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
-      await integrations.enableAuditLinkSwitch(actor);
+      await integrations.enableOkouDebug(actor);
       const conversationId = uniqueConversationId();
 
       // Linked DM creates a run and sends a typing indicator.
@@ -734,8 +734,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         conversationId,
       ]);
 
-      // Completion converts markdown output to iMessage plain text and binds
-      // the delayed audit link to the configured Okou app origin.
+      // Completion converts markdown output to iMessage plain text.
       const beforeCompletion = sends.messages.length;
       await completeSandboxRun(run1.sandboxToken, run1.runId, 0, {
         resultText: MARKDOWN_RUN_OUTPUT,
@@ -745,11 +744,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       expect(completionReply.toNumber).toBe(phone);
       expect(completionReply.conversationId).toBeUndefined();
       expect(completionReply.replyToMessageId).toBe(messageId1);
-      expect(completionReply.body).toContain(EXPECTED_PLAIN_RUN_OUTPUT);
-      expect(completionReply.body).toContain(
-        `Audit: https://app.okou.ai/activities/${run1.runId}`,
-      );
-      expect(completionReply.body).not.toContain("Responded by");
+      expect(completionReply.body).toBe(EXPECTED_PLAIN_RUN_OUTPUT);
     },
   );
 
@@ -1160,12 +1155,12 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(drained.body.job).toBeNull();
   });
 
-  it("uses the configured Okou audit URL when a queued AgentPhone launch fails", async () => {
+  it("delivers the queued AgentPhone launch failure with debug enabled", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const ap = createAgentPhoneBddApi(context);
     const integrations = createBddIntegrationApi(context);
     const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
-    await integrations.enableAuditLinkSwitch(actor);
+    await integrations.enableOkouDebug(actor);
 
     await ap.postAgentPhoneInboundMessage({
       channel: "sms",
@@ -1188,10 +1183,14 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const completionBodies = sends.messages
       .slice(beforeCompletion)
       .map((send) => {
-        return send.body ?? "";
+        return send.body;
       });
-    expect(completionBodies).toContainEqual(
-      expect.stringContaining("https://app.okou.ai/activities/"),
+    expect(completionBodies).toHaveLength(2);
+    expect(completionBodies).toStrictEqual(
+      expect.arrayContaining([
+        "Task completed successfully.",
+        "Oops, something went wrong. Please try again later.",
+      ]),
     );
   });
 
@@ -1202,7 +1201,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const ap = createAgentPhoneBddApi(context);
     const integrations = createBddIntegrationApi(context);
     const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
-    await integrations.enableAuditLinkSwitch(actor);
+    await integrations.enableOkouDebug(actor);
     const messageId = `ap-msg-dedup-${randomUUID()}`;
     const message = {
       channel: "sms" as const,
@@ -1226,9 +1225,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const sendsBeforeCompletion = sends.messages.length;
     await completeSandboxRun(run.sandboxToken, run.runId, 0);
     await waitForSendCount(sends, sendsBeforeCompletion + 1);
-    expect(lastSend(sends).body).toContain(
-      `Audit: https://app.okou.ai/activities/${run.runId}`,
-    );
+    expect(lastSend(sends).body).toBe("Task completed successfully.");
     const sendsAfterCompletion = sends.messages.length;
 
     await webhooks.requestAgentComplete(
@@ -1767,17 +1764,71 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     );
     await waitForSendCount(sends, beforeMentionObject + 1);
 
-    // Group chatter that names no handle is still ignored.
+    // Mentioning the name inside ordinary group chatter does not address it.
     await ap.postAgentPhoneInboundMessage({
       channel: "imessage",
       from: phone,
-      body: "okou would probably know",
+      body: "I think okou would probably know",
       conversationId,
       isGroup: true,
     });
     await runs.heartbeatRunner(runnerGroup);
     const idle = await runs.pollRunner(runnerGroup);
     expect(idle.body.job).toBeNull();
+  });
+
+  it("replies in the group when iMessage drops the at-sign from an opening mention", async () => {
+    const runs = createRunsApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    const { phone, runnerGroup, sends } = await entitledLinkedActor();
+    const conversationId = uniqueConversationId();
+
+    // The provider delivers native iMessage mentions as plain display names.
+    for (const body of [
+      "Okou hi",
+      "okou hi",
+      "  OKOU，帮我总结",
+      "Okou",
+      "okou would probably know",
+    ]) {
+      const beforeReply = sends.messages.length;
+      const messageId = await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        body,
+        conversationId,
+        isGroup: true,
+      });
+      const run = await claimDispatchedRun(runnerGroup);
+      expect(run.prompt).toBe(body.trim());
+      await completeSandboxRun(run.sandboxToken, run.runId, 0);
+      await waitForSendCount(sends, beforeReply + 1);
+      expect(lastSend(sends)).toMatchObject({
+        toNumber: bddGroupId(conversationId),
+        replyToMessageId: messageId,
+        body: "Task completed successfully.",
+      });
+    }
+
+    // A URL, a longer name, or an embedded name is not an opening address.
+    const beforeChatter = sends.messages.length;
+    for (const body of [
+      "okou.ai has the answer",
+      "OkouHelper hi",
+      "I think Okou would probably know",
+    ]) {
+      await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        body,
+        conversationId,
+        isGroup: true,
+      });
+      await runs.heartbeatRunner(runnerGroup);
+      const idle = await runs.pollRunner(runnerGroup);
+      expect(idle.body.job).toBeNull();
+    }
+    expect(sends.messages).toHaveLength(beforeChatter);
   });
 
   it("does not send a group reply to one member when the provider group id is missing", async () => {

@@ -1788,6 +1788,73 @@ type SubscriptionCredentialSnapshot = NonNullable<
   Awaited<ReturnType<typeof lockSubscriptionCredentialSnapshot>>
 >;
 
+/** Strict Pi Codex first-turn fast path. Copy only a coherent, connected active
+ * account's ciphertext under the user lock. Never decrypt or write in this
+ * transaction; callers check token freshness before decrypting outside it.
+ * Historical writes and KMS rotation can leave equal plaintext under different
+ * ciphertexts, so those snapshots must use the coordinating reader instead. */
+export async function capturePiCodexCredentialCiphertexts(
+  args: Omit<SubscriptionCredentialOwner, "type"> & {
+    readonly type: typeof CODEX_TYPE;
+    readonly sourceId: string;
+  },
+): Promise<{
+  readonly tokenExpiresAt: Date | null;
+  readonly accessTokenCiphertext: string;
+  readonly accountIdCiphertext: string;
+} | null> {
+  return await args.db.transaction(async (tx) => {
+    const snapshot = await lockSubscriptionCredentialSnapshot(
+      { ...args, db: tx },
+      args.sourceId,
+    );
+    const active = snapshot?.active;
+    const provider = snapshot?.provider;
+    if (
+      !active ||
+      !provider ||
+      active.id !== args.sourceId ||
+      active.needsReconnect ||
+      provider.needsReconnect ||
+      active.authMethod !== provider.authMethod ||
+      active.tokenExpiresAt?.getTime() !== provider.tokenExpiresAt?.getTime() ||
+      active.lastRefreshErrorCode !== provider.lastRefreshErrorCode
+    ) {
+      return null;
+    }
+    const canonical = snapshot.accountSecrets.filter((secret) => {
+      return secret.modelProviderAccountId === active.id;
+    });
+    if (
+      snapshot.mirror.length === 0 ||
+      snapshot.mirror.length !== canonical.length
+    ) {
+      return null;
+    }
+    const byName = new Map(
+      canonical.map((secret) => {
+        return [secret.name, secret.encryptedValue] as const;
+      }),
+    );
+    if (
+      snapshot.mirror.some((secret) => {
+        return byName.get(secret.name) !== secret.encryptedValue;
+      })
+    ) {
+      return null;
+    }
+    const accessTokenCiphertext = byName.get("CHATGPT_ACCESS_TOKEN");
+    const accountIdCiphertext = byName.get(CODEX_ACCOUNT_ID_SECRET);
+    return accessTokenCiphertext && accountIdCiphertext
+      ? {
+          tokenExpiresAt: active.tokenExpiresAt,
+          accessTokenCiphertext,
+          accountIdCiphertext,
+        }
+      : null;
+  });
+}
+
 async function credentialValues(
   rows: readonly { readonly name: string; readonly encryptedValue: string }[],
   featureSwitchContext: FeatureSwitchContext,

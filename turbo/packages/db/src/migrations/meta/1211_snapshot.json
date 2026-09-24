@@ -1,5 +1,5 @@
 {
-  "id": "7315184f-50a6-4402-9c53-d85a47f0bebf",
+  "id": "a8fbdfe6-e77e-4b46-84ad-40ae80a99065",
   "prevId": "26f5c3e5-8e28-4cb7-8505-5ed290894148",
   "version": "7",
   "dialect": "postgresql",
@@ -37976,11 +37976,11 @@
         },
         "chk_vnc_connections_profile": {
           "name": "chk_vnc_connections_profile",
-          "value": "(\"vnc_connections\".\"auth_method\" = 'vnc_password' AND \"vnc_connections\".\"security_type\" = 'x509_vnc') OR (\"vnc_connections\".\"auth_method\" = 'username_password' AND \"vnc_connections\".\"security_type\" = 'x509_plain') OR (\"vnc_connections\".\"auth_method\" = 'apple_dh_username_password' AND \"vnc_connections\".\"security_type\" = 'apple_dh' AND \"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1') AND \"vnc_connections\".\"x509_server_name\" IS NULL)"
+          "value": "(\"vnc_connections\".\"auth_method\" = 'vnc_password' AND \"vnc_connections\".\"security_type\" = 'x509_vnc') OR (\"vnc_connections\".\"auth_method\" = 'username_password' AND \"vnc_connections\".\"security_type\" = 'x509_plain') OR (\"vnc_connections\".\"auth_method\" = 'apple_dh_username_password' AND \"vnc_connections\".\"security_type\" = 'apple_dh' AND \"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1') AND \"vnc_connections\".\"x509_server_name\" IS NULL) OR (\"vnc_connections\".\"auth_method\" = 'apple_srp_username_password' AND \"vnc_connections\".\"security_type\" = 'apple_srp' AND \"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1') AND \"vnc_connections\".\"x509_server_name\" IS NULL)"
         },
         "chk_vnc_connections_trust": {
           "name": "chk_vnc_connections_trust",
-          "value": "(\"vnc_connections\".\"security_type\" = 'apple_dh' AND \"vnc_connections\".\"trust_mode\" = 'none' AND \"vnc_connections\".\"ca_bundle\" IS NULL) OR (\"vnc_connections\".\"security_type\" <> 'apple_dh' AND ((\"vnc_connections\".\"trust_mode\" = 'system' AND \"vnc_connections\".\"ca_bundle\" IS NULL) OR (\"vnc_connections\".\"trust_mode\" = 'custom_ca' AND \"vnc_connections\".\"ca_bundle\" IS NOT NULL AND octet_length(\"vnc_connections\".\"ca_bundle\") BETWEEN 1 AND 65536)))"
+          "value": "(\"vnc_connections\".\"security_type\" IN ('apple_dh', 'apple_srp') AND \"vnc_connections\".\"trust_mode\" = 'none' AND \"vnc_connections\".\"ca_bundle\" IS NULL) OR (\"vnc_connections\".\"security_type\" NOT IN ('apple_dh', 'apple_srp') AND ((\"vnc_connections\".\"trust_mode\" = 'system' AND \"vnc_connections\".\"ca_bundle\" IS NULL) OR (\"vnc_connections\".\"trust_mode\" = 'custom_ca' AND \"vnc_connections\".\"ca_bundle\" IS NOT NULL AND octet_length(\"vnc_connections\".\"ca_bundle\") BETWEEN 1 AND 65536)))"
         }
       },
       "isRLSEnabled": false
@@ -38141,7 +38141,7 @@
         },
         "chk_vnc_credentials_auth": {
           "name": "chk_vnc_credentials_auth",
-          "value": "(\"vnc_credentials\".\"auth_method\" = 'vnc_password' AND \"vnc_credentials\".\"username\" IS NULL) OR (\"vnc_credentials\".\"auth_method\" = 'username_password' AND \"vnc_credentials\".\"username\" IS NOT NULL AND octet_length(\"vnc_credentials\".\"username\") BETWEEN 1 AND 255) OR (\"vnc_credentials\".\"auth_method\" = 'apple_dh_username_password' AND \"vnc_credentials\".\"username\" IS NOT NULL AND octet_length(\"vnc_credentials\".\"username\") BETWEEN 1 AND 63)"
+          "value": "(\"vnc_credentials\".\"auth_method\" = 'vnc_password' AND \"vnc_credentials\".\"username\" IS NULL) OR (\"vnc_credentials\".\"auth_method\" = 'username_password' AND \"vnc_credentials\".\"username\" IS NOT NULL AND octet_length(\"vnc_credentials\".\"username\") BETWEEN 1 AND 255) OR (\"vnc_credentials\".\"auth_method\" = 'apple_dh_username_password' AND \"vnc_credentials\".\"username\" IS NOT NULL AND octet_length(\"vnc_credentials\".\"username\") BETWEEN 1 AND 63) OR (\"vnc_credentials\".\"auth_method\" = 'apple_srp_username_password' AND \"vnc_credentials\".\"username\" IS NOT NULL AND octet_length(\"vnc_credentials\".\"username\") BETWEEN 1 AND 255)"
         },
         "chk_vnc_credentials_password": {
           "name": "chk_vnc_credentials_password",
@@ -38152,160 +38152,6 @@
           "value": "\"vnc_credentials\".\"revision\" > 0"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.morning_brief_native_schedule_skips": {
-      "name": "morning_brief_native_schedule_skips",
-      "schema": "",
-      "columns": {
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner_epoch": {
-          "name": "owner_epoch",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "scheduled_anchor_at": {
-          "name": "scheduled_anchor_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "skipped_at": {
-          "name": "skipped_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "idx_morning_brief_native_schedule_skips_at": {
-          "name": "idx_morning_brief_native_schedule_skips_at",
-          "columns": [
-            {
-              "expression": "skipped_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "fk_morning_brief_native_schedule_skips_owner": {
-          "name": "fk_morning_brief_native_schedule_skips_owner",
-          "tableFrom": "morning_brief_native_schedule_skips",
-          "tableTo": "morning_brief_native_schedules",
-          "columnsFrom": [
-            "org_id",
-            "user_id"
-          ],
-          "columnsTo": [
-            "org_id",
-            "user_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "morning_brief_native_schedule_skips_pk": {
-          "name": "morning_brief_native_schedule_skips_pk",
-          "columns": [
-            "org_id",
-            "user_id",
-            "owner_epoch",
-            "scheduled_anchor_at"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.workflow_schedule_skips": {
-      "name": "workflow_schedule_skips",
-      "schema": "",
-      "columns": {
-        "automation_id": {
-          "name": "automation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "scheduled_anchor_at": {
-          "name": "scheduled_anchor_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "skipped_at": {
-          "name": "skipped_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "idx_workflow_schedule_skips_at": {
-          "name": "idx_workflow_schedule_skips_at",
-          "columns": [
-            {
-              "expression": "skipped_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "workflow_schedule_skips_automation_id_workflow_automations_id_fk": {
-          "name": "workflow_schedule_skips_automation_id_workflow_automations_id_fk",
-          "tableFrom": "workflow_schedule_skips",
-          "tableTo": "workflow_automations",
-          "columnsFrom": [
-            "automation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "workflow_schedule_skips_pk": {
-          "name": "workflow_schedule_skips_pk",
-          "columns": [
-            "automation_id",
-            "scheduled_anchor_at"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.official_workflow_automation_identities": {
@@ -38567,24 +38413,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "deferred_anchor_at": {
-          "name": "deferred_anchor_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "deferred_until": {
-          "name": "deferred_until",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "deferred_reason": {
-          "name": "deferred_reason",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "last_run_at": {
           "name": "last_run_at",
           "type": "timestamp",
@@ -38724,28 +38552,6 @@
           "method": "btree",
           "with": {}
         },
-        "idx_workflow_automations_deferred_retry": {
-          "name": "idx_workflow_automations_deferred_retry",
-          "columns": [
-            {
-              "expression": "deferred_until",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "next_run_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"workflow_automations\".\"deferred_until\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_workflow_automations_official_blueprint_unique": {
           "name": "idx_workflow_automations_official_blueprint_unique",
           "columns": [
@@ -38801,10 +38607,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "workflow_automations_deferral_pair_check": {
-          "name": "workflow_automations_deferral_pair_check",
-          "value": "(\n          \"workflow_automations\".\"deferred_anchor_at\" IS NULL\n          AND \"workflow_automations\".\"deferred_until\" IS NULL\n          AND \"workflow_automations\".\"deferred_reason\" IS NULL\n        ) OR (\n          \"workflow_automations\".\"deferred_anchor_at\" IS NOT NULL\n          AND \"workflow_automations\".\"deferred_until\" IS NOT NULL\n          AND \"workflow_automations\".\"deferred_reason\" IS NOT NULL\n        )"
-        },
         "workflow_automations_schedule_config_check": {
           "name": "workflow_automations_schedule_config_check",
           "value": "(\n            kind = 'schedule'\n            AND event_type IS NULL\n            AND event_config IS NULL\n            AND (\n              (schedule_type = 'cron' AND cron_expression IS NOT NULL AND interval_seconds IS NULL AND at_time IS NULL)\n              OR (schedule_type = 'loop' AND interval_seconds IS NOT NULL AND cron_expression IS NULL AND at_time IS NULL)\n              OR (schedule_type = 'once' AND at_time IS NOT NULL AND cron_expression IS NULL AND interval_seconds IS NULL)\n            )\n          )\n          OR (\n            kind = 'event'\n            AND event_type IN ('chat-run-finished', 'gmail-new-message', 'gmail-label-applied', 'github-deployment-status-created', 'github-issue-comment-created', 'github-pull-request', 'github-pull-request-review-submitted', 'github-workflow-job-completed', 'github-workflow-run-completed', 'google-calendar-event-created', 'google-calendar-event-updated', 'google-calendar-event-cancelled', 'google-forms-response-submitted', 'google-meet-transcript-generated', 'notion-child-page-created', 'notion-database-item-created', 'notion-page-content-updated', 'stripe-invoice-paid', 'webhook-received')\n            AND event_config IS NOT NULL\n            AND schedule_type IS NULL\n            AND cron_expression IS NULL\n            AND interval_seconds IS NULL\n            AND at_time IS NULL\n          )"

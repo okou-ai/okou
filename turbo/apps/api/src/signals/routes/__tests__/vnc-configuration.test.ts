@@ -432,6 +432,57 @@ describe("VNC owner configuration", () => {
     expect(JSON.stringify(created.body)).not.toContain(password);
   });
 
+  it("bounds Apple SRP UTF-8 credentials before encryption and returns no password", async () => {
+    const kms = useSecretKmsProbe();
+    await owner();
+    for (const [username, password] of [
+      ["", "secret"],
+      ["operator", ""],
+      ["é".repeat(128), "secret"],
+      ["operator", "é".repeat(512)],
+      ["oper\u0000ator", "secret"],
+      ["operator", "sec\u0000ret"],
+    ]) {
+      const result = await rawRequest("/api/vnc/credentials", {
+        id: randomUUID(),
+        name: "Mac SRP login",
+        authentication: {
+          method: "apple_srp_username_password",
+          username,
+          password,
+        },
+      });
+      expect(result.status).toBe(400);
+      expect(result.body).toMatchObject({
+        error: { code: "VNC_INVALID_INPUT" },
+      });
+    }
+    expect(kms.generateDataKeyCalls).toBe(0);
+
+    const username = `${"é".repeat(127)}x`;
+    const password = "p".repeat(1023);
+    const created = await accept(
+      credentials().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          name: "Mac SRP login",
+          authentication: {
+            method: "apple_srp_username_password",
+            username,
+            password,
+          },
+        },
+      }),
+      [201],
+    );
+    expect(created.body).toMatchObject({
+      authMethod: "apple_srp_username_password",
+      username,
+    });
+    expect(JSON.stringify(created.body)).not.toContain(password);
+  });
+
   it("rejects unsupported authentication and security profiles without changing saved configuration", async () => {
     useSecretKmsProbe();
     await owner();

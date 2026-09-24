@@ -157,28 +157,19 @@ export function buildFeishuNoticeMessage(args: {
 
 export function buildFeishuAgentResponseMessage(args: {
   readonly text: string;
-  readonly auditUrl?: string;
   readonly footerText?: string;
 }): FeishuOutboundMessage {
   const { assistantName } = PUBLIC_BRAND_PRESENTATION;
-  const footerElements: Readonly<Record<string, unknown>>[] =
-    args.auditUrl || args.footerText
-      ? [
-          { tag: "hr" },
-          {
-            tag: "markdown",
-            content: [
-              args.auditUrl ? `[Audit](${args.auditUrl})` : undefined,
-              args.footerText ? `*${args.footerText}*` : undefined,
-            ]
-              .filter((part): part is string => {
-                return Boolean(part);
-              })
-              .join(" · "),
-            text_size: "notation",
-          },
-        ]
-      : [];
+  const footerElements: Readonly<Record<string, unknown>>[] = args.footerText
+    ? [
+        { tag: "hr" },
+        {
+          tag: "markdown",
+          content: `*${args.footerText}*`,
+          text_size: "notation",
+        },
+      ]
+    : [];
   return cardMessage({
     title: assistantName,
     template: "blue",

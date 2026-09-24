@@ -694,6 +694,31 @@ async fn execute_inner_nonzero_without_guest_error_returns_failure_message() {
 }
 
 #[tokio::test]
+async fn execute_inner_codex_backfill_timeout_rejects_sandbox_reuse() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_executor_config(dir.path()).await;
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    overrides.push_wait_process_exit(ProcessExit::new(1, 1, Vec::new(), Vec::new()));
+    overrides.push_read_file_result(Ok(None));
+    let guest_error = "execution: codex app-server child exited while waiting for initialize: exit status: 1; stderr tail: Error: failed to initialize sqlite state runtime under /home/user/.codex: timed out waiting for state db backfill at /home/user/.codex after 30s (status: running)";
+    overrides.push_read_file_result(Ok(Some(guest_error.as_bytes().to_vec())));
+    let factory = sandbox_mock::MockSandboxFactory::with_overrides(overrides);
+    let mut context = minimal_context();
+    context.cli_agent_type = "codex".to_string();
+
+    let outcome = run_new_sandbox_outcome(&factory, &context, &config, &default_params())
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.exit_code(), 1);
+    assert_eq!(outcome.error(), Some(guest_error));
+    assert_eq!(
+        outcome.sandbox_reuse_disposition,
+        SandboxReuseDisposition::Ineligible(SandboxReuseRejection::CodexStateBackfillTimeout),
+    );
+}
+
+#[tokio::test]
 async fn execute_inner_non_exited_zero_code_is_failure() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
