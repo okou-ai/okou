@@ -1719,6 +1719,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const prerequisiteByTriggerSource = {
       web: null,
       slack: null,
+      discord: null,
       teams: null,
       feishu: null,
       lark: null,

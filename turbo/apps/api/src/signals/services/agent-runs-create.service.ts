@@ -518,6 +518,7 @@ function buildAgentRunPlatformEnvironment(args: {
     web: "web",
     agent: "web",
     slack: "slack",
+    discord: "discord",
     teams: "teams",
     feishu: "feishu",
     lark: "lark",

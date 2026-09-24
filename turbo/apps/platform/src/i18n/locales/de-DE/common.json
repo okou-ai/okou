@@ -350,6 +350,7 @@
       "agentphone": "iMessage",
       "automationEvent": "Automatisierungsereignis",
       "automationSchedule": "Automatisierungszeitplan",
+      "discord": "Discord",
       "email": "E-Mail",
       "feishu": "Feishu",
       "github": "GitHub",
@@ -2031,6 +2032,7 @@
     "newChat": "Neuer Chat",
     "origins": {
       "agentphone": "iMessage",
+      "discord": "Discord",
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",

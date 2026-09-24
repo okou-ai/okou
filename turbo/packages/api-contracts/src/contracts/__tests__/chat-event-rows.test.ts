@@ -198,6 +198,68 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
     ).toStrictEqual([...CHAT_EVENT_TYPES]);
   });
 
+  it.each([
+    "https://discord.com/channels/111111111111111111/222222222222222222/333333333333333333",
+    undefined,
+  ])(
+    "preserves Discord source links through raw-row serialization without exposing private context (%s)",
+    (href) => {
+      const source = {
+        type: "source",
+        kind: "discord",
+        ...(href === undefined ? {} : { href }),
+      };
+      const row = canonicalRow({
+        eventType: "input.prompt",
+        contextType: "discord",
+        contextId: "00000000-0000-4000-8000-000000000015",
+        payload: {
+          userMessage: {
+            version: 1,
+            parts: [{ type: "text", text: "Review this message" }, source],
+          },
+        },
+      });
+      const projected = chatEventFromRow(
+        chatEventRowSchema.parse(JSON.parse(JSON.stringify(row))),
+      );
+      expect(projected).toMatchObject({
+        eventType: "input.prompt",
+        userMessage: {
+          version: 1,
+          parts: [{ type: "text", text: "Review this message" }, source],
+        },
+      });
+      expect(projected).not.toHaveProperty("contextId");
+      expect(projected).not.toHaveProperty("contextType");
+    },
+  );
+
+  it("rejects private Discord launch fields in public source metadata", () => {
+    const row = canonicalRow({
+      eventType: "input.prompt",
+      contextType: "discord",
+      contextId: "00000000-0000-4000-8000-000000000015",
+      payload: {
+        userMessage: {
+          version: 1,
+          parts: [
+            { type: "text", text: "Review this message" },
+            {
+              type: "source",
+              kind: "discord",
+              connectionId: "00000000-0000-4000-8000-000000000016",
+              conversationContext: "Private channel history",
+            },
+          ],
+        },
+      },
+    });
+    expect(() => {
+      return chatEventFromRow(row);
+    }).toThrow();
+  });
+
   it("emits the canonical interrupt run as interruptsRunId, never runId", () => {
     const target = "00000000-0000-4000-8000-000000000010";
     const projected = chatEventFromRow(

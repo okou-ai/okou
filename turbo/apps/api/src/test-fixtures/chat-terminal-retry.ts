@@ -19,6 +19,7 @@ import { installApiTestConnectorCatalog } from "./connector-catalog";
  */
 export async function withSplitChatEventDatabase(
   work: () => Promise<void>,
+  options: { readonly contracted?: boolean } = {},
 ): Promise<void> {
   const originalUrl = env("DATABASE_URL");
   const url = new URL(originalUrl);
@@ -58,6 +59,16 @@ export async function withSplitChatEventDatabase(
       await db().execute(sql`
         UPDATE chat_event_write_control SET activated_at = now() WHERE id = 'global'
       `);
+      if (options.contracted) {
+        // The separately authorized Release 2 DDL is exercised only in this
+        // disposable database. Preparation API code must remain usable in its
+        // fixed active mode after the legacy allocator has been removed.
+        await db().execute(sql`
+          DROP TRIGGER bridge_chat_event_sequence_allocation ON chat_threads;
+          DROP FUNCTION bridge_chat_event_sequence_allocation();
+          ALTER TABLE chat_threads DROP COLUMN last_chat_event_seq_id
+        `);
+      }
       await work();
     })(),
   );
