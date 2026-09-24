@@ -729,7 +729,11 @@ export class DesktopAuthSession {
         lifetime.signal,
       );
       lifetime.signal.throwIfAborted();
-      if (state.status === "signed_in" && this.sessionId === sessionId) {
+      if (
+        state.status === "signed_in" &&
+        this.sessionId !== null &&
+        this.sessionId === sessionId
+      ) {
         this.appState = state;
         this.sessionId = sessionId;
         if (this.rememberAuthority(state, lifetime)) this.onChange();

@@ -435,6 +435,18 @@ describe("Okou App session authority", () => {
     expect(session.getAuthority()).not.toBe(oldAuthority);
   });
 
+  it("does not keep legacy API authority on a repeated identity read without a session ID", async () => {
+    const { session, replies, windows } = createSession();
+    identityHandlers({ userId: "same-user", sessionId: null });
+    replies.push(Promise.resolve("opaque-old"), Promise.resolve("opaque-new"));
+    await session.getAuthState();
+    const oldAuthority = session.getAuthority();
+
+    expect((await session.getAuthState()).status).toBe("signed_in");
+    expect(windows).toHaveLength(2);
+    expect(session.getAuthority()).not.toBe(oldAuthority);
+  });
+
   it("withdraws old authority at expiry when an in-flight renewal stalls", async () => {
     const { session, replies, windows } = createSession();
     identityHandlers({ userId: "same-user" });
