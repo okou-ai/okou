@@ -126,12 +126,12 @@ interface SearchProjectionWriteStats {
 
 interface ChatEventSearchProjectionOptions {
   readonly chatThreadIds?: readonly string[];
-  readonly ginIndexName?: string;
+  readonly ginIndexNames?: readonly string[];
 }
 
 interface ChatEventSearchTestProjectionOptions {
   readonly chatThreadIds: readonly string[];
-  readonly ginIndexName?: string;
+  readonly ginIndexNames?: readonly string[];
 }
 
 type SearchableRole = "user" | "assistant";
@@ -857,37 +857,36 @@ async function projectChatEventSearch(
   let attemptedThreads = 0;
   for (const chatThreadId of candidateThreads) {
     signal.throwIfAborted();
-    if (options.ginIndexName !== undefined) {
-      // One shared budget for the whole tick, not 30 seconds per thread. A
-      // large pre-existing backlog may need a separate operational drain.
-      if (maintenanceBudgetMs <= 0) {
-        deferredThreads += candidateThreads.length - attemptedThreads;
-        break;
-      }
-      const started = performance.now();
-      const maintained = await settle(
-        maintainChatSearchGin(
-          db,
-          options.ginIndexName,
-          maintenanceBudgetMs,
-          signal,
-        ),
-      );
-      signal.throwIfAborted();
-      maintenanceBudgetMs -= performance.now() - started;
-      if (!maintained.ok) {
-        if (
-          !isLockNotAvailable(maintained.error) &&
-          !isStatementTimeout(maintained.error)
-        ) {
-          throw maintained.error;
+    if (options.ginIndexNames !== undefined) {
+      // One shared budget for the whole tick and every index, not 30 seconds
+      // per thread or index. A large pre-existing backlog may need a separate
+      // operational drain.
+      let deferRemaining = false;
+      for (const ginIndexName of options.ginIndexNames) {
+        if (maintenanceBudgetMs <= 0) {
+          deferRemaining = true;
+          break;
         }
-        // Avoid repeatedly charging a failed cleanup to every candidate. The
-        // untouched threads and their watermarks remain eligible next tick.
-        deferredThreads += candidateThreads.length - attemptedThreads;
-        break;
+        const started = performance.now();
+        const maintained = await settle(
+          maintainChatSearchGin(db, ginIndexName, maintenanceBudgetMs, signal),
+        );
+        signal.throwIfAborted();
+        maintenanceBudgetMs -= performance.now() - started;
+        if (!maintained.ok) {
+          if (
+            !isLockNotAvailable(maintained.error) &&
+            !isStatementTimeout(maintained.error)
+          ) {
+            throw maintained.error;
+          }
+          // Avoid repeatedly charging a failed cleanup to every candidate. The
+          // untouched threads and their watermarks remain eligible next tick.
+          deferRemaining = true;
+          break;
+        }
       }
-      if (maintenanceBudgetMs <= 0) {
+      if (deferRemaining || maintenanceBudgetMs <= 0) {
         deferredThreads += candidateThreads.length - attemptedThreads;
         break;
       }
@@ -927,7 +926,12 @@ export const projectChatEventSearch$ = command(
     return await projectChatEventSearch(
       db,
       {
-        ginIndexName: "public.chat_event_search_messages_tsv_idx",
+        // Every GIN index on the projection keeps fastupdate; drain each one
+        // before its pending list reaches the foreground flush threshold.
+        ginIndexNames: [
+          "public.chat_event_search_messages_tsv_idx",
+          "public.chat_event_search_messages_user_tsv_gin_idx",
+        ],
       },
       signal,
     );
@@ -947,7 +951,7 @@ export const projectChatEventSearchTestScope$ = command(
         chatThreadIds: options.chatThreadIds,
         // Scoped route tests must never drain another test's shared index. GIN
         // maintenance tests supply their own disposable index explicitly.
-        ginIndexName: options.ginIndexName,
+        ginIndexNames: options.ginIndexNames,
       },
       signal,
     );
