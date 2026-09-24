@@ -15,7 +15,11 @@ readonly PERSONAL_SUBSCRIPTION_PRIORITY_COMMIT=8a5e1299b4d26bd114ccec017b84b7a83
 readonly ORG_MEMBER_MORNING_BRIEF_ELIGIBILITY_DROP_COMMIT=6e1abbb785dc1613d0f5cd1b1dd80fae694abb46
 readonly HOSTED_PUBLICATION_RUNTIME_COMMIT=f205ec54fc463f43b1106a3659e5d6a8c979cab8
 readonly PREPARED_DOMAIN_TRIGGER_RELEASE=eb2f211a9af41450d0d5dad10c0c8ad12fac0a24
+# #36301 was the last of the four explicit API-writer preparations for #33749
+# to land on main. Older APIs still need the artifact/chat triggers removed by 1205.
+readonly ARTIFACT_CHAT_TRIGGER_WRITERS_COMMIT=065f970bbb8c21c10ef709495d5824d0a6183e50
 readonly MARKETING_PRIVACY_CLEANUP_READER_PATH=turbo/apps/api/src/signals/services/marketing-privacy-cleanup.service.ts
+readonly CHAT_THREAD_SNAPSHOT_R2_READER_PATH=turbo/apps/api/src/signals/services/chat-thread-snapshot-object.ts
 readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6
 readonly PI_LAUNCH_CONFIG_VERSIONS_READER_COMMIT=8d8f3a3e14d23f7471e0773bd9acb988f59217af
 readonly PI_SESSION_CONSTRUCTION_READER_COMMIT=322efb6d72508e15b90dc788100a776da1485751
@@ -114,6 +118,12 @@ if ! git merge-base --is-ancestor "$PREPARED_DOMAIN_TRIGGER_RELEASE" "$TARGET_CO
   fail "Rollback target lacks prepared billing, OAuth and hosting writers; first supported release is ${PREPARED_DOMAIN_TRIGGER_RELEASE}."
 fi
 
+# Migration 1206 drops eleven artifact/chat triggers before the new API deploys.
+# A rollback keeps the contracted schema, so pre-writer API binaries are unsafe.
+if ! git merge-base --is-ancestor "$ARTIFACT_CHAT_TRIGGER_WRITERS_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates artifact/chat explicit writers: ${ARTIFACT_CHAT_TRIGGER_WRITERS_COMMIT} (first supported release: 3a2a331d50503a73407029ed9074e7d6930778da, API 1.664.0)."
+fi
+
 # #34296 introduced optional-storage cleanup before 1139 removed that helper.
 # Resolve its first addition on canonical main, including after file deletion,
 # so squash merging the preparation cannot turn an unmerged branch SHA into a
@@ -125,6 +135,18 @@ if [[ ! "$privacy_cleanup_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$privacy_cleanup_reader_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates marketing privacy storage cleanup preparation: ${privacy_cleanup_reader_commit}."
+fi
+
+# Snapshot compaction retires the JSONB payload as soon as the R2-capable API
+# serves. Resolve the canonical main introduction so squash merging the reader
+# cannot leave a branch-only SHA as the permanent rollback floor.
+snapshot_r2_reader_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$CHAT_THREAD_SNAPSHOT_R2_READER_PATH" | sed -n '1p')
+if [[ ! "$snapshot_r2_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged chat thread snapshot R2 reader on main."
+fi
+if ! git merge-base --is-ancestor "$snapshot_r2_reader_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the chat thread snapshot R2 reader: ${snapshot_r2_reader_commit}."
 fi
 
 # Terminal presentation trusts the stored cause without repairing old records.

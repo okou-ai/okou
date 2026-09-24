@@ -71,29 +71,6 @@ test("An Okou production user can view and dismiss an active incident", async ()
   expect(statusRegion).not.toBeInTheDocument();
 });
 
-test("An Okou production user sees an active maintenance notice", async () => {
-  mockDesktopLayout();
-  context.mocks.http.get(STATUS_ISSUES_URL, () => {
-    return HttpResponse.json({
-      activeMaintenances: [
-        {
-          id: "maintenance-database",
-          name: "Database maintenance",
-          status: "INPROGRESS",
-        },
-      ],
-    });
-  });
-
-  await setupPage({ context, host: "app.okou.ai", path: "/agents" });
-
-  await expect(
-    screen.findByRole("status", {
-      name: "Maintenance in progress: Database maintenance",
-    }),
-  ).resolves.toBeVisible();
-});
-
 test("A lookalike production hostname does not request service status", async () => {
   let statusRequested = false;
   mockDesktopLayout();

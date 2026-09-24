@@ -22,6 +22,8 @@ export const chatThreadSnapshots = pgTable(
       .$type<ChatThreadSnapshotProjections>()
       .notNull()
       .default([]),
+    /** Immutable R2 snapshot object; null for rows written before the R2 cutover. */
+    objectKey: text("object_key"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

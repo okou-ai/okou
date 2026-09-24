@@ -125,7 +125,13 @@
             "release-type": "rust",
             "component": "runner-rs"
         },
+        "crates/runner-executor": {
+            "release-type": "rust"
+        },
         "crates/runner-host": {
+            "release-type": "rust"
+        },
+        "crates/runner-lifecycle": {
             "release-type": "rust"
         },
         "crates/runner-network": {

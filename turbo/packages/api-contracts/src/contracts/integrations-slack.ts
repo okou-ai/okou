@@ -4,13 +4,6 @@ import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-const slackEnvironmentSchema = z.object({
-  requiredSecrets: z.array(z.string()),
-  requiredVars: z.array(z.string()),
-  missingSecrets: z.array(z.string()),
-  missingVars: z.array(z.string()),
-});
-
 const slackOrgStatusSchema = z.object({
   isConnected: z.boolean(),
   isInstalled: z.boolean().optional(),
@@ -19,7 +12,6 @@ const slackOrgStatusSchema = z.object({
   installUrl: z.string().nullable().optional(),
   connectUrl: z.string().nullable().optional(),
   defaultAgentName: z.string().nullable().optional(),
-  environment: slackEnvironmentSchema.optional(),
   /** True when the installation's granted scopes are outdated (admin-only). */
   scopeMismatch: z.boolean().optional(),
   /** OAuth install URL for re-authorization (admin-only, when scopeMismatch). */

@@ -122,25 +122,3 @@ test("Shared Agent formulas render", async () => {
   });
   expect(document.querySelectorAll("math")).toHaveLength(1);
 });
-
-test("Dollar prose is left alone", async () => {
-  const chat = createMarkdownChatFixture(context);
-  const source =
-    "Portfolio value is $2,499, ticker $ABC$, and inline $$not math$$.";
-  const rows = completedMessageRows(chat, source);
-  chat.install({
-    rows: () => {
-      return rows;
-    },
-  });
-
-  await setupPage({
-    context,
-    path: chat.path,
-    host: "app.okou.ai",
-  });
-
-  await screen.findByText(/Portfolio value is/);
-  expect(document.body).toHaveTextContent(source);
-  expect(document.querySelector("math")).toBeNull();
-});

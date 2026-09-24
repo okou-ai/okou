@@ -6,7 +6,7 @@ use super::{
     harness::{CONNECTION, Harness, PASSWORD, Reply, TOKEN},
     terminal, wait_for,
 };
-use crate::test_fixtures::http::{HttpClient, HttpClientConfig};
+use crate::test_fixtures::http::{HttpClientConfig, http_client};
 use crate::vnc::{
     VncRuntime,
     tests::peer::{PLAIN_PASSWORD, PLAIN_USERNAME, Peer},
@@ -38,12 +38,11 @@ async fn vnc_uses_the_shared_generation_bound_ssh_transport_for_all_supported_pr
         } else {
             Peer::new().await
         };
-        let http = HttpClient::new(HttpClientConfig {
+        let http = http_client(HttpClientConfig {
             api_url: harness.api.base_url(),
             vercel_bypass: None,
             client_session_id: "vnc-over-ssh-test".into(),
-        })
-        .unwrap();
+        });
         let vnc = VncRuntime::official(http, TOKEN, harness.identity)
             .unwrap()
             .unwrap();
@@ -94,7 +93,8 @@ async fn vnc_uses_the_shared_generation_bound_ssh_transport_for_all_supported_pr
                             {"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"direct"},
                             {"authMethod":"username_password","securityType":"x509_plain","transportType":"direct"},
                             {"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"ssh"},
-                            {"authMethod":"username_password","securityType":"x509_plain","transportType":"ssh"}
+                            {"authMethod":"username_password","securityType":"x509_plain","transportType":"ssh"},
+                            {"authMethod":"apple_dh_username_password","securityType":"apple_dh","transportType":"ssh"}
                         ]
                     }));
                 then.status(200).json_body(json!({

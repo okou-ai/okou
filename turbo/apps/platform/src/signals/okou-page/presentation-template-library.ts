@@ -792,6 +792,18 @@ export function createImportedPresentationTemplateSignals() {
     },
   );
 
+  /** Read uploaded templates once, when a composer selection needs them. */
+  const loadImportedPresentationTemplates$ = command(
+    async (
+      { get },
+      signal: AbortSignal,
+    ): Promise<readonly PresentationTemplateSummary[]> => {
+      const templates = await get(importedPresentationTemplates$);
+      signal.throwIfAborted();
+      return templates;
+    },
+  );
+
   const resetImportedPresentationTemplatePicker$ = command(({ set }) => {
     set(internalPreviewTemplateId$, null);
     set(internalPreviewSlideIndex$, 0);
@@ -803,6 +815,7 @@ export function createImportedPresentationTemplateSignals() {
     presentationTemplatesRealtimeReady$,
     retryImportedPresentationTemplates$: refreshPresentationTemplates$,
     importedPresentationTemplates$,
+    loadImportedPresentationTemplates$,
     importedPresentationTemplatePickerItems$,
     importedPresentationTemplateDeletedIds$,
     ...detailSignals,

@@ -5,10 +5,7 @@ import {
   integrationsSlackContract,
 } from "@okouai/api-contracts/contracts/integrations-slack";
 import { integrationsSlackDownloadFileContract } from "@okouai/api-contracts/contracts/integrations";
-import { guaranteedConnectorProvidedBindingNames } from "@okouai/api-contracts/contracts/connector-schemas";
 import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
-import { agents } from "@okouai/db/schema/agent";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { and, eq } from "drizzle-orm";
@@ -21,7 +18,6 @@ import {
   slackOrgInstallation,
   slackOrgStatus,
 } from "../services/slack-data.service";
-import { userConfiguredAgentEnvironmentRequirements } from "../services/agent-execution-config";
 import { publishSlackAdminSignal$ } from "../services/slack-connect.service";
 import { getFileInfo, isSlackApiClientError } from "../../lib/slack-client";
 import {
@@ -31,10 +27,8 @@ import {
 } from "../external/slack-file-fetcher";
 import type { SlackView } from "../external/slack-block-kit";
 import { createSlackClient } from "../external/slack-message-client";
-import { db$, writeDb$, type Db } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
-import { builtinConnectorList } from "../services/connector-data.service";
-import { userSecrets, userVariables } from "../services/user-data.service";
 import { decryptPersistentSecretValue } from "../services/crypto.utils";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { env } from "../../lib/env";
@@ -42,91 +36,6 @@ import { getOAuthApiOrigin } from "../../lib/oauth-origin";
 import { OFFICIAL_SLACK_APP_NAME } from "../../lib/slack-official-app";
 import type { RouteEntry } from "../route-entry";
 import { bestEffort, settle } from "../utils";
-
-type SlackEnvironment = NonNullable<
-  z.infer<typeof slackOrgStatusSchema>["environment"]
->;
-
-function emptySlackEnvironment(): SlackEnvironment {
-  return {
-    requiredSecrets: [],
-    requiredVars: [],
-    missingSecrets: [],
-    missingVars: [],
-  };
-}
-
-const getSlackEnvironment$ = computed(
-  async (get): Promise<SlackEnvironment> => {
-    const auth = get(organizationAuthContext$);
-    const db = get(db$);
-
-    const [meta] = await db
-      .select({ defaultAgentId: orgMetadata.defaultAgentId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, auth.orgId))
-      .limit(1);
-
-    if (!meta?.defaultAgentId) {
-      return emptySlackEnvironment();
-    }
-
-    const [agent] = await db
-      .select({ name: agents.name })
-      .from(agents)
-      .where(
-        and(eq(agents.id, meta.defaultAgentId), eq(agents.orgId, auth.orgId)),
-      )
-      .limit(1);
-
-    if (!agent) {
-      return emptySlackEnvironment();
-    }
-
-    const { secrets: requiredSecrets, vars: requiredVars } =
-      userConfiguredAgentEnvironmentRequirements(agent.name);
-
-    const [userSecretList, userVarList, userBuiltinConnectors] =
-      await Promise.all([
-        get(userSecrets({ orgId: auth.orgId, userId: auth.userId })),
-        get(userVariables({ orgId: auth.orgId, userId: auth.userId })),
-        get(builtinConnectorList({ orgId: auth.orgId, userId: auth.userId })),
-      ]);
-
-    const existingSecretNames = new Set([
-      ...userSecretList.secrets.map((s) => {
-        return s.name;
-      }),
-      ...guaranteedConnectorProvidedBindingNames({
-        bindings: userBuiltinConnectors.connectorProvidedBindings,
-        namespace: "secrets",
-      }),
-    ]);
-    const existingVarNames = new Set([
-      ...userVarList.variables.map((v) => {
-        return v.name;
-      }),
-      ...guaranteedConnectorProvidedBindingNames({
-        bindings: userBuiltinConnectors.connectorProvidedBindings,
-        namespace: "vars",
-      }),
-    ]);
-
-    const missingSecrets = requiredSecrets.filter((name) => {
-      return !existingSecretNames.has(name);
-    });
-    const missingVars = requiredVars.filter((name) => {
-      return !existingVarNames.has(name);
-    });
-
-    return {
-      requiredSecrets,
-      requiredVars,
-      missingSecrets,
-      missingVars,
-    };
-  },
-);
 
 const getSlackStatusInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
@@ -143,7 +52,6 @@ const getSlackStatusInner$ = computed(async (get) => {
     ? {
         workspaceName: status.workspaceName,
         defaultAgentName: status.defaultAgentName,
-        environment: await get(getSlackEnvironment$),
       }
     : {
         installUrl: status.installUrl,

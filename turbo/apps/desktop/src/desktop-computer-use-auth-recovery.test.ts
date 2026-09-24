@@ -34,6 +34,12 @@ function deferred<T>() {
 }
 
 const api = "https://api.okou.ai";
+function sessionToken(expiresInSeconds: number, label: string): string {
+  const payload = Buffer.from(
+    JSON.stringify({ exp: Math.floor(Date.now() / 1_000) + expiresInSeconds }),
+  ).toString("base64url");
+  return `header.${payload}.${label}`;
+}
 const server = setupServer();
 const cleanups: (() => Promise<void>)[] = [];
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
@@ -221,6 +227,7 @@ lines.on('line', line => {
           userId: user,
           email: "fixture@example.test",
           orgId: `org-${user}`,
+          sessionId: `sess-${user}`,
         });
       if (url.pathname === "/api/org")
         return HttpResponse.json({ id: `org-${user}`, name: "Workspace" });
@@ -401,6 +408,60 @@ it.each(["refresh", "sign-out", "quit"] as const)(
     ).toBe(false);
   },
 );
+
+it("keeps the same Computer Use host online through a verified bearer renewal", async () => {
+  const app = desktop();
+  server.use(
+    http.get(`${api}/api/auth/me`, () =>
+      HttpResponse.json({
+        userId: "same-user",
+        email: "fixture@example.test",
+        orgId: "org-same-user",
+        sessionId: "sess-same-user",
+      }),
+    ),
+    http.get(`${api}/api/org`, () =>
+      HttpResponse.json({ id: "org-same-user", name: "Workspace" }),
+    ),
+  );
+  app.authReply(Promise.resolve(sessionToken(60, "old")));
+  await app.authorize();
+  await app.controller.start({ userInitiated: true });
+  expect(app.controller.getHostState().status).toBe("online");
+  const authority = app.auth.getAuthority();
+  const hostId = app.controller.getHostState().hostId;
+  const nativeStarts = app.nativeStarts();
+  const now = Date.now();
+  const clock = vi.spyOn(Date, "now").mockReturnValue(now + 50_000);
+  try {
+    const reply = deferred<string | null>();
+    app.authReply(reply.promise);
+    const renewal = app.auth.getAuthState();
+    expect(app.authWindows()).toBe(2);
+    expect(app.auth.getAuthority()).toBe(authority);
+    expect(app.controller.getHostState().status).toBe("online");
+    reply.resolve(sessionToken(60, "fresh"));
+    expect((await renewal).status).toBe("signed_in");
+    await app.settle();
+    expect(app.auth.getAuthority()).toBe(authority);
+    expect(app.controller.getHostState()).toMatchObject({
+      status: "online",
+      hostId,
+    });
+    expect(app.nativeStarts()).toBe(nativeStarts);
+    expect(
+      app.requests.filter((request) => request.path.endsWith("/hosts/start")),
+    ).toHaveLength(1);
+    expect(
+      app.requests.filter((request) => request.path.endsWith("/host/stop")),
+    ).toHaveLength(0);
+    app.command = { id: "after-renewal", kind: "apps.list", payload: {} };
+    app.tick(5000);
+    expect(await app.completed.promise).toMatchObject({ status: "succeeded" });
+  } finally {
+    clock.mockRestore();
+  }
+});
 
 it("recovers Okou after repeated hidden identity refresh and executes a new command", async () => {
   const app = desktop();

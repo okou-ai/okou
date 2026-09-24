@@ -335,9 +335,26 @@ native-title handling and optional tooltip. Their typography, radius and focus
 styles also share one base definition. Dimensions, icon sizing, transitions and
 disabled appearance remain owned by each styled control. `ToggleButton` keeps
 the native button and `onClick` contract; it does not manage state or change
-group keyboard behavior. Single-value settings keep a selection when the active
-choice is activated again. Use the existing `SegmentControl` for a new radio
-group that needs group-level keyboard navigation.
+group keyboard behavior.
+
+Use `Toggle` inside `ToggleGroup` for filters and multi-select controls whose
+arrow keys move focus without selecting. These are thin Base UI wrappers:
+`ToggleGroup` retains array `value`/`onValueChange`, `multiple`, and event details;
+`Toggle` retains `pressed`/`onPressedChange` and the group composition contract.
+The group owns roving focus; Tab enters/leaves the group and Enter/Space activates
+the focused item. The `filter`, `quiet`, and `primary` variants preserve compact
+filter pills, quiet toolbar choices, and filled schedule choices respectively.
+They share button typography/focus and reuse `buttonVariants` for button-shaped
+choices. Filter rings are inset so horizontal scroll clipping cannot hide focus.
+`ToggleButton` remains the compatible standalone `selected`/`onClick` control;
+do not place it inside a `ToggleGroup` as a substitute for `Toggle`.
+
+Business callers that require one selection reject an empty array while keeping
+their controlled value, including an explicit All value. The generic group must
+still permit empty selections. Permission Allow/Deny controls are explicit
+commands and retain `Button` activation, including reapplying the current policy;
+`ask` and `mixed` do not imply Deny. Use `SegmentControl` for radio groups whose
+selection should follow arrow-key focus.
 
 Both buttons keep `showTooltip` off by default. Enabling it requires an
 `aria-label`, which also supplies the tooltip content; the native `title` is
@@ -718,12 +735,24 @@ element with `render` and gets no wrapper. It is App-owned rather than shared,
 because its radius and shadow read the App-only `--okou-chat-card-*` variables,
 which the App stylesheet declares at `:root`.
 
-The border is deliberately `border-[1px] border-gray-400` rather than the shared
-`border` hairline and a semantic border token. A fractional border visibly
-repaints when card contents resolve, so a card would flicker at its edge as an
-image or an iframe lands; a whole pixel does not. Unifying the transcript's
-border width and color with the rest of the product is a separate visual
-decision.
+The base `ChatCard` border keeps a whole pixel rather than the shared `border`
+hairline. A fractional border visibly repaints when card contents resolve, so a
+card would flicker at its edge as an image or an iframe lands; a whole pixel
+does not. Its color uses `border-border/70`, the same neutral stroke used by the
+transcript's connector-action and mail-draft shells. Those shells keep the
+shared half-pixel width, so the stable `ChatCard` edge remains slightly heavier.
+
+The chat-card radius token resolves to 16px, one step below the 20px page-card
+radius. Connector-action and mail-draft cards use the same token. Their content
+uses a 16px horizontal inset; vertical spacing stays with each card's layout.
+Selected and disabled states may still tint or attenuate the neutral stroke.
+
+Keep the component boundary with the behavior. Mail-draft cards own loading,
+error, reconnect, deleted and selected states, and actionable drafts retain a
+native `button`; connector actions have a separate state and confirmation flow.
+Reuse the shared geometry and stroke rule for these shells, and use `ChatCard`
+where its stable edge and shadow fit. Do not add a generic wrapper solely to
+share styling.
 
 `cn()` merges the base with the caller's `className`, so a conflicting base
 utility is dropped rather than outranked and no layer ordering is involved. The

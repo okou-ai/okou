@@ -22,6 +22,7 @@ const STEP_ROUTES: Readonly<Record<SourcesFirstStep, RoutePath>> = {
   team: ROUTES.onboardingTeam,
   experience: ROUTES.onboardingExperience,
   skills: ROUTES.onboardingSkills,
+  profile: ROUTES.onboardingProfile,
   slack: ROUTES.onboardingSlack,
   ready: ROUTES.onboardingReady,
 };

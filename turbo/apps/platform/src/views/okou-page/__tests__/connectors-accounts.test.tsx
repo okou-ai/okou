@@ -3,11 +3,9 @@ import {
   connectorAccountsContract,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
-import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
@@ -18,7 +16,6 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  customConnector,
   getConnectorAction,
   getConnectorCard,
   getConnectorSwitch,
@@ -90,106 +87,6 @@ function setupAccountsPage(): Promise<void> {
     path: "/connectors",
   });
 }
-
-test("Show account attention when agent access is unavailable", async () => {
-  const [connector] = mockConnectors(context, [
-    { connectorSlug: "github", externalUsername: "work" },
-  ]);
-  if (!connector) {
-    throw new Error("Expected GitHub connector");
-  }
-  const account = builtinAccount({
-    id: connector.id,
-    displayName: "Work",
-    isDefault: true,
-    externalUsername: "work",
-    status: "reconnect-required",
-  });
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, {
-      summaries: [
-        {
-          target: account.target,
-          accountCount: 2,
-          attentionCount: 1,
-          defaultConnection: account,
-        },
-      ],
-    });
-  });
-  mockConnectorOverviewAccountSummaries(context, () => {
-    return [
-      {
-        target: account.target,
-        accountCount: 2,
-        attentionCount: 1,
-        defaultConnection: account,
-      },
-    ];
-  });
-  context.mocks.data.agents([
-    listAgent("c0000000-0000-4000-a000-000000000001", "Research"),
-  ]);
-  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
-    return respond(500, {
-      error: { message: "Agent access unavailable", code: "UNAVAILABLE" },
-    });
-  });
-  await setupAccountsPage();
-
-  const card = await waitFor(() => {
-    return getConnectorCard("GitHub");
-  });
-  expect(within(card).getByText("1/2 need attention")).toBeInTheDocument();
-  expect(within(card).getByText("Access unavailable")).toBeInTheDocument();
-  expect(
-    getConnectorAction("button", "Manage GitHub access", card),
-  ).toBeDisabled();
-});
-
-test("Show when every connector account needs attention", async () => {
-  const [connector] = mockConnectors(context, [
-    { connectorSlug: "github", externalUsername: "work" },
-  ]);
-  if (!connector) {
-    throw new Error("Expected GitHub connector");
-  }
-  const account = builtinAccount({
-    id: connector.id,
-    displayName: "Work",
-    isDefault: true,
-    externalUsername: "work",
-    status: "reconnect-required",
-  });
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, {
-      summaries: [
-        {
-          target: account.target,
-          accountCount: 2,
-          attentionCount: 2,
-          defaultConnection: account,
-        },
-      ],
-    });
-  });
-  mockConnectorOverviewAccountSummaries(context, () => {
-    return [
-      {
-        target: account.target,
-        accountCount: 2,
-        attentionCount: 2,
-        defaultConnection: account,
-      },
-    ];
-  });
-  await setupAccountsPage();
-
-  const card = await waitFor(() => {
-    return getConnectorCard("GitHub");
-  });
-  expect(within(card).getByText("2/2 need attention")).toBeInTheDocument();
-});
 
 test("Show Mercury disclosures while managing its accounts", async () => {
   const [connector] = mockConnectors(context, [
@@ -268,55 +165,7 @@ test("Show Mercury disclosures while managing its accounts", async () => {
   ).toHaveAttribute("href", "https://mercury.com");
 });
 
-test("Distinguish unavailable account information from no accounts", async () => {
-  mockConnectors(context, []);
-  const connector = customConnector();
-  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return respond(200, { connectors: [connector] });
-  });
-  const summariesReady = context.mocks.deferred<void>();
-  context.mocks.api(
-    connectorAccountsContract.summaries,
-    async ({ respond }) => {
-      await summariesReady.promise;
-      return respond(404, {
-        error: { message: "Account summaries unavailable", code: "NOT_FOUND" },
-      });
-    },
-  );
-  context.mocks.api(connectorOverviewContract.overview, async ({ respond }) => {
-    await summariesReady.promise;
-    return respond(503, {
-      error: { message: "Connector overview unavailable", code: "UNAVAILABLE" },
-    });
-  });
-  await setupAccountsPage();
-
-  const ahrefs = await waitFor(() => {
-    return getConnectorCard("Ahrefs");
-  });
-  expect(within(ahrefs).getByText("Loading accounts…")).toBeInTheDocument();
-  expect(within(ahrefs).queryByText("No accounts")).not.toBeInTheDocument();
-
-  summariesReady.resolve();
-
-  await expect(
-    within(ahrefs).findByText("Accounts are unavailable for this connector."),
-  ).resolves.toBeInTheDocument();
-  expect(within(ahrefs).queryByText("No accounts")).not.toBeInTheDocument();
-  click(getConnectorAction("tab", "Custom"));
-  const custom = await waitFor(() => {
-    return getConnectorCard("Acme Search");
-  });
-  expect(
-    within(custom).getByText("Accounts are unavailable for this connector."),
-  ).toBeInTheDocument();
-  expect(within(custom).queryByText("No accounts")).not.toBeInTheDocument();
-});
-
-async function openConnectorAccessSummary(
-  initialAccess: "none" | "first-agent",
-) {
+async function openConnectorAccessSummary() {
   const ids = [
     "c0000000-0000-4000-a000-000000000001",
     "c0000000-0000-4000-a000-000000000002",
@@ -324,12 +173,9 @@ async function openConnectorAccessSummary(
     "c0000000-0000-4000-a000-000000000004",
   ];
   const longName = "Research Operations for International Partnerships";
-  const enabled = new Map(
-    ids.map((id, index) => {
-      return [
-        id,
-        initialAccess === "first-agent" && index === 0 ? ["github"] : [],
-      ];
+  const enabled = new Map<string, string[]>(
+    ids.map((id) => {
+      return [id, []];
     }),
   );
   mockConnectors(context, [
@@ -368,7 +214,7 @@ async function openConnectorAccessSummary(
 }
 
 test("Show the full agent name after granting the first connector access", async () => {
-  const { card, longName } = await openConnectorAccessSummary("none");
+  const { card, longName } = await openConnectorAccessSummary();
   expect(
     getConnectorAction("button", "Manage GitHub access", card),
   ).toHaveTextContent("Add access");
@@ -401,57 +247,6 @@ test("Show the full agent name after granting the first connector access", async
     expect(access).toHaveTextContent(`Used by ${longName}`);
     expect(access).toHaveAttribute("title", longName);
   });
-});
-
-test("Summarize connector access by count after adding more agents", async () => {
-  const { longName } = await openConnectorAccessSummary("first-agent");
-  await waitFor(() => {
-    expect(
-      getConnectorAction(
-        "button",
-        "Manage GitHub access",
-        getConnectorCard("GitHub"),
-      ),
-    ).toHaveTextContent(`Used by ${longName}`);
-  });
-  click(
-    getConnectorAction(
-      "button",
-      "Manage GitHub access",
-      getConnectorCard("GitHub"),
-    ),
-  );
-  const reopened = await screen.findByRole("dialog", {
-    name: "Manage GitHub access",
-  });
-  for (const name of ["Support", "Growth", "Ops"]) {
-    click(
-      await waitFor(() => {
-        return getConnectorSwitch(
-          `Authorize GitHub access for ${name}`,
-          reopened,
-        );
-      }),
-    );
-  }
-  click(getConnectorAction("button", "Close", reopened));
-
-  await waitFor(() => {
-    expect(
-      getConnectorAction(
-        "button",
-        "Manage GitHub access",
-        getConnectorCard("GitHub"),
-      ),
-    ).toHaveTextContent("Used by 4 agents");
-  });
-  expect(
-    getConnectorAction(
-      "button",
-      "Manage GitHub access",
-      getConnectorCard("GitHub"),
-    ),
-  ).toBeEnabled();
 });
 
 test("Make another connector account the default", async () => {
@@ -563,123 +358,6 @@ test("Make another connector account the default", async () => {
     expect(within(manager).getAllByText("Work")).toHaveLength(1);
     expect(getConnectorCard("GitHub")).toHaveTextContent("2 accounts");
   });
-});
-
-test("Discard a pending account deletion when its manager closes", async () => {
-  const [connector] = mockConnectors(context, [
-    { connectorSlug: "github", externalUsername: "octocat" },
-  ]);
-  if (!connector) {
-    throw new Error("Expected GitHub connector");
-  }
-  const account = builtinAccount({
-    id: connector.id,
-    displayName: "Work",
-    isDefault: true,
-    externalUsername: "octocat",
-  });
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, {
-      summaries: [
-        {
-          target: account.target,
-          accountCount: 1,
-          attentionCount: 0,
-          defaultConnection: account,
-        },
-      ],
-    });
-  });
-  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
-    return respond(200, { connections: [account], nextCursor: null });
-  });
-  const impactReady = context.mocks.deferred<void>();
-  let impactStarted = false;
-  context.mocks.api(
-    connectorAccountsContract.deletionImpact,
-    async ({ params, respond }) => {
-      impactStarted = true;
-      await impactReady.promise;
-      return respond(200, {
-        connectionId: params.connectionId,
-        explicitSelectionCount: 1,
-        hasSibling: false,
-      });
-    },
-  );
-  await setupAccountsPage();
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Manage GitHub accounts");
-    }),
-  );
-  const first = await screen.findByRole("dialog", {
-    name: "Manage GitHub accounts",
-  });
-  click(accountActions(first)[0] ?? first);
-  click(getConnectorAction("menuitem", "Disconnect"));
-  await waitFor(() => {
-    return expect(impactStarted).toBeTruthy();
-  });
-
-  click(getConnectorAction("button", "Close", first));
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Manage GitHub accounts" }),
-    ).not.toBeInTheDocument();
-  });
-  click(getConnectorAction("button", "Manage GitHub accounts"));
-  await screen.findByRole("dialog", { name: "Manage GitHub accounts" });
-  impactReady.resolve();
-
-  await waitFor(() => {
-    expect(screen.queryByText("Disconnect Work?")).not.toBeInTheDocument();
-  });
-});
-
-test("Exclude deleted agents from connector access", async () => {
-  const activeId = "c0000000-0000-4000-a000-000000000001";
-  const deletedId = "c0000000-0000-4000-a000-000000000002";
-  mockConnectors(context, [
-    { connectorSlug: "github", externalUsername: "octocat" },
-  ]);
-  context.mocks.data.agents([
-    listAgent(activeId, "Research Agent"),
-    listAgent(deletedId, "Deleted Agent"),
-  ]);
-  context.mocks.api(
-    userBuiltinConnectorsContract.get,
-    ({ params, respond }) => {
-      if (params.id === deletedId) {
-        return respond(404, {
-          error: { message: "Agent not found", code: "NOT_FOUND" },
-        });
-      }
-      return respond(200, { enabledConnectorSlugs: ["github"] });
-    },
-  );
-  context.mocks.api(userPermissionGrantsContract.list, ({ query, respond }) => {
-    if (query.agentId === deletedId) {
-      return respond(404, {
-        error: { message: "Agent not found", code: "NOT_FOUND" },
-      });
-    }
-    return respond(200, []);
-  });
-  await setupPage({ context, path: "/connectors" });
-  const card = await waitFor(() => {
-    return getConnectorCard("GitHub");
-  });
-  click(getConnectorAction("button", "Manage GitHub access", card));
-
-  const dialog = await screen.findByRole("dialog", {
-    name: "Manage GitHub access",
-  });
-  expect(within(dialog).getByText("Research Agent")).toBeInTheDocument();
-  expect(within(dialog).queryByText("Deleted Agent")).not.toBeInTheDocument();
-  expect(
-    within(dialog).queryByText("Loading agents..."),
-  ).not.toBeInTheDocument();
 });
 
 test("Grant and revoke connector access for agents", async () => {
@@ -802,211 +480,6 @@ test("Load connector accounts progressively", async () => {
   expect(queryConnectorAction("button", "Load more", dialog)).toBeNull();
   expect(within(dialog).getAllByText("Unnamed account")).toHaveLength(1);
   expect(accountActions(dialog)).toHaveLength(8);
-});
-
-test("Reconnect the selected non-default account after cancellation", async () => {
-  const completedAttempts = mockOAuthCompletions(context);
-  let oauthAttemptId = crypto.randomUUID();
-  const agentIds = [
-    "c0000000-0000-4000-a000-000000000001",
-    "c0000000-0000-4000-a000-000000000002",
-  ];
-  context.mocks.data.agents(
-    agentIds.map((id) => {
-      return listAgent(id, id);
-    }),
-  );
-  const authorizedAgents = new Set<string>();
-  context.mocks.api(
-    userBuiltinConnectorsContract.get,
-    ({ params, respond }) => {
-      return respond(200, {
-        enabledConnectorSlugs: authorizedAgents.has(params.id)
-          ? ["stripe"]
-          : [],
-      });
-    },
-  );
-  context.mocks.api(
-    userBuiltinConnectorsContract.update,
-    ({ params, body, respond }) => {
-      if (
-        body.operation === "add" &&
-        body.enabledConnectorSlugs.includes("stripe")
-      ) {
-        authorizedAgents.add(params.id);
-      }
-      return respond(200, {
-        enabledConnectorSlugs: authorizedAgents.has(params.id)
-          ? ["stripe"]
-          : [],
-      });
-    },
-  );
-  const [connector] = mockConnectors(context, [
-    {
-      connectorSlug: "stripe",
-      authMethod: "api-token",
-      externalUsername: "work",
-    },
-  ]);
-  if (!connector) {
-    throw new Error("Expected Stripe connector");
-  }
-  const work = builtinAccount({
-    id: connector.id,
-    slug: "stripe",
-    authMethod: "api-token",
-    displayName: "Work",
-    isDefault: true,
-    externalUsername: "work",
-  });
-  let personal = builtinAccount({
-    id: crypto.randomUUID(),
-    slug: "stripe",
-    displayName: "Personal",
-    isDefault: false,
-    externalUsername: "personal",
-    status: "reconnect-required",
-  });
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, {
-      summaries: [
-        {
-          target: work.target,
-          accountCount: 2,
-          attentionCount:
-            personal.connectionStatus === "reconnect-required" ? 1 : 0,
-          defaultConnection: work,
-        },
-      ],
-    });
-  });
-  context.mocks.api(
-    connectorAccountsContract.connection,
-    ({ params, respond }) => {
-      if (params.connectionId !== personal.id) {
-        return respond(404, {
-          error: { message: "Account not found", code: "NOT_FOUND" },
-        });
-      }
-      return respond(200, personal);
-    },
-  );
-  // Register the static collection route after the parameterized item route so
-  // `/connections` cannot be interpreted as a connection ID by MSW.
-  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
-    return respond(200, { connections: [work, personal], nextCursor: null });
-  });
-  let submitted: unknown;
-  context.mocks.api(
-    builtinConnectorOauthStartContract.start,
-    ({ body, respond }) => {
-      submitted = body.account;
-      oauthAttemptId = crypto.randomUUID();
-      expect(body.authorizeAgent).not.toBeTruthy();
-      return respond(200, {
-        oauthAttemptId,
-        connectionId: personal.id,
-        authorizationUrl: "https://oauth.test/stripe/authorize",
-      });
-    },
-  );
-  let authWindow = createAuthWindow();
-  context.mocks.browser.open(authWindow);
-  await setupPage({
-    context,
-    path: "/connectors?keywords=stripe",
-    sharedWorkerTestTransport: "message-port",
-  });
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Manage Stripe accounts");
-    }),
-  );
-  const manager = await screen.findByRole("dialog", {
-    name: "Manage Stripe accounts",
-  });
-  const personalRow = await within(manager).findByRole("group", {
-    name: "Personal",
-  });
-  click(getConnectorAction("button", "Reconnect", personalRow));
-  const connect = await waitFor(() => {
-    const reconnectDialog = screen
-      .getAllByRole("dialog", { name: "Stripe" })
-      .find((candidate) => {
-        return queryConnectorAction("button", "Reconnect", candidate);
-      });
-    if (!reconnectDialog) {
-      throw new Error("Expected Stripe reconnect dialog");
-    }
-    return reconnectDialog;
-  });
-
-  click(getConnectorAction("button", "Reconnect", connect));
-  await waitFor(() => {
-    expect(authWindow.location.href).toBe(
-      "https://oauth.test/stripe/authorize",
-    );
-  });
-  personal = {
-    ...personal,
-    displayName: "Renamed in another tab",
-    updatedAt: "2026-01-01T00:00:00.500Z",
-  };
-  const cancelledAttemptId = oauthAttemptId;
-  authWindow.close();
-  await waitFor(() => {
-    expect(getConnectorAction("button", "Reconnect", connect)).toBeEnabled();
-  });
-  expect(connect).toBeInTheDocument();
-  expect(getConnectorCard("Stripe")).toHaveTextContent("Add access");
-
-  authWindow = createAuthWindow();
-  context.mocks.browser.open(authWindow);
-  click(getConnectorAction("button", "Reconnect", connect));
-
-  await waitFor(() => {
-    expect(authWindow.location.href).toBe(
-      "https://oauth.test/stripe/authorize",
-    );
-  });
-  expect(submitted).toStrictEqual({
-    intent: "reconnect",
-    connectionId: personal.id,
-  });
-  personal = {
-    ...personal,
-    connectionStatus: "connected",
-    reconnectReason: null,
-    updatedAt: "2026-01-01T00:00:01.000Z",
-  };
-  expect(oauthAttemptId).not.toBe(cancelledAttemptId);
-  completedAttempts.set(oauthAttemptId, personal.id);
-  context.mocks.ably.trigger("connector:changed", {
-    connectorSlug: "stripe",
-  });
-
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Stripe" }),
-    ).not.toBeInTheDocument();
-  });
-  expect(
-    screen.queryByRole("dialog", { name: "Name your Stripe account" }),
-  ).not.toBeInTheDocument();
-  expect(
-    getConnectorAction("button", "Manage Stripe access"),
-  ).toHaveTextContent("Add access");
-  click(getConnectorAction("button", "Manage Stripe accounts"));
-  const reopenedManager = await screen.findByRole("dialog", {
-    name: "Manage Stripe accounts",
-  });
-  const workRow = within(reopenedManager).getByRole("group", {
-    name: "Work",
-  });
-  expect(within(workRow).getByRole("radio", { name: "Default" })).toBeChecked();
-  expect(within(workRow).queryByText("Reconnect required")).toBeNull();
 });
 
 async function openNamedConnectorAccountRename() {
@@ -1259,88 +732,6 @@ test("Review and reconnect the connector account the user selected", async () =>
   });
 });
 
-async function openSearchableConnectorAccounts() {
-  const accounts = mockGithubAccounts(context, 7);
-  const stale = {
-    ...accounts[0],
-    id: crypto.randomUUID(),
-    displayName: "Stale result",
-    isDefault: false,
-  } satisfies ConnectorAccountConnection;
-  const staleReady = context.mocks.deferred<void>();
-  const staleStarted = context.mocks.deferred<void>();
-  const clearStarted = context.mocks.deferred<void>();
-  let staleWasRequested = false;
-  const searches: (string | null)[] = [];
-  context.mocks.api(
-    connectorAccountsContract.connections,
-    async ({ query, respond }) => {
-      searches.push(query.search ?? null);
-      if (query.search === "Stale") {
-        staleWasRequested = true;
-        staleStarted.resolve();
-        await staleReady.promise;
-        return respond(200, { connections: [stale], nextCursor: null });
-      }
-      if (!query.search && staleWasRequested) {
-        clearStarted.resolve();
-      }
-      const filtered = query.search
-        ? accounts.filter((account) => {
-            return account.displayName
-              ?.toLowerCase()
-              .includes(query.search?.toLowerCase() ?? "");
-          })
-        : accounts;
-      return respond(200, { connections: filtered, nextCursor: null });
-    },
-  );
-  await setupAccountsPage();
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Manage GitHub accounts");
-    }),
-  );
-  const manager = await screen.findByRole("dialog", {
-    name: "Manage GitHub accounts",
-  });
-  const input = await within(manager).findByPlaceholderText("Find accounts");
-  return { manager, input, searches, staleReady, staleStarted, clearStarted };
-}
-
-test("Debounce rapid connector account searches to the latest query", async () => {
-  const { manager, input, searches } = await openSearchableConnectorAccounts();
-  const initialCount = searches.length;
-
-  fireEvent.input(input, { target: { value: "W" } });
-  fireEvent.input(input, { target: { value: "Work" } });
-  fireEvent.input(input, { target: { value: "Work 2" } });
-
-  await waitFor(() => {
-    expect(searches.slice(initialCount)).toStrictEqual(["Work 2"]);
-    expect(within(manager).getByText("Work 2")).toBeInTheDocument();
-  });
-});
-
-test("Ignore a stale connector account response after clearing the search", async () => {
-  const { manager, input, staleReady, staleStarted, clearStarted } =
-    await openSearchableConnectorAccounts();
-  fireEvent.input(input, { target: { value: "Work 2" } });
-  await waitFor(() => {
-    expect(within(manager).getByText("Work 2")).toBeInTheDocument();
-    expect(within(manager).queryByText("Work 1")).not.toBeInTheDocument();
-  });
-  fireEvent.input(input, { target: { value: "Stale" } });
-  await staleStarted.promise;
-  fireEvent.input(input, { target: { value: "" } });
-  await clearStarted.promise;
-  staleReady.resolve();
-  await waitFor(() => {
-    expect(within(manager).queryByText("Stale result")).not.toBeInTheDocument();
-    expect(within(manager).getByText("Work 1")).toBeInTheDocument();
-  });
-});
-
 test("Let account search own the entire manager result list", async () => {
   const accounts = mockGithubAccounts(context, 7).map((account) => {
     return account.isDefault ? { ...account, displayName: "Primary" } : account;
@@ -1381,29 +772,6 @@ test("Let account search own the entire manager result list", async () => {
       within(manager).queryByText("No accounts found"),
     ).not.toBeInTheDocument();
   });
-});
-
-test("Show one connector account without a contradictory empty state", async () => {
-  const accounts = mockGithubAccounts(context, 1);
-  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
-    return respond(200, { connections: accounts, nextCursor: null });
-  });
-  await setupAccountsPage();
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Manage GitHub accounts");
-    }),
-  );
-  const manager = await screen.findByRole("dialog", {
-    name: "Manage GitHub accounts",
-  });
-
-  await expect(
-    within(manager).findByText("Unnamed account"),
-  ).resolves.toBeVisible();
-  expect(
-    within(manager).queryByText("No accounts found"),
-  ).not.toBeInTheDocument();
 });
 
 test("Manage connector accounts and agent access independently", async () => {

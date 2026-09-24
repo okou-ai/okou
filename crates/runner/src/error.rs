@@ -2,10 +2,7 @@ use std::time::Duration;
 
 use runner_types::ids::RunId;
 
-pub use runner_provider::{
-    ApiBodyReadError, ApiFailureKind, ApiRequestContext, ApiStatusError, ApiTransportCause,
-    ApiTransportError,
-};
+pub use runner_provider::{ApiBodyReadError, ApiStatusError, ApiTransportError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RunnerError {
@@ -43,6 +40,24 @@ pub enum RunnerError {
     ActiveJobs(Box<ActiveJobsError>),
 }
 
+impl From<runner_executor::ExecutorError> for RunnerError {
+    fn from(error: runner_executor::ExecutorError) -> Self {
+        use runner_executor::ExecutorError;
+        match error {
+            ExecutorError::Api(message) => Self::Api(message),
+            ExecutorError::ApiStatus(error) => Self::ApiStatus(error),
+            ExecutorError::ApiTransport(error) => Self::ApiTransport(error),
+            ExecutorError::ApiBodyRead(error) => Self::ApiBodyRead(error),
+            ExecutorError::Sandbox(error) => Self::Sandbox(error),
+            ExecutorError::Config(message) => Self::Config(message),
+            ExecutorError::Cancelled => Self::Cancelled,
+            ExecutorError::Internal(message) => Self::Internal(message),
+            ExecutorError::Snapshot(error) => Self::Snapshot(error),
+            ExecutorError::Io(error) => Self::Io(error),
+        }
+    }
+}
+
 impl From<runner_host::HostError> for RunnerError {
     fn from(error: runner_host::HostError) -> Self {
         match error {
@@ -75,6 +90,17 @@ impl From<runner_storage::StorageError> for RunnerError {
             runner_storage::StorageError::Config(message) => Self::Config(message),
             runner_storage::StorageError::Internal(message) => Self::Internal(message),
             runner_storage::StorageError::Io(error) => Self::Io(error),
+        }
+    }
+}
+
+impl From<runner_lifecycle::LifecycleError> for RunnerError {
+    fn from(error: runner_lifecycle::LifecycleError) -> Self {
+        match error {
+            runner_lifecycle::LifecycleError::Sandbox(error) => Self::Sandbox(error),
+            runner_lifecycle::LifecycleError::Config(message) => Self::Config(message),
+            runner_lifecycle::LifecycleError::Internal(message) => Self::Internal(message),
+            runner_lifecycle::LifecycleError::Io(error) => Self::Io(error),
         }
     }
 }

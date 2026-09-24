@@ -30,7 +30,7 @@ import {
   type GenerationTemplateRequest,
   type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
+import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
 import {
   VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS,
   type VoiceIoEditorContext,
@@ -208,7 +208,7 @@ export interface WorkflowComposerSignals {
     Promise<ComposerChatThreadSuggestionResult>
   >;
   readonly agentId$: Computed<Promise<string | null>>;
-  readonly workflows$: Computed<Promise<readonly WorkflowSummary[]>>;
+  readonly workflows$: Computed<Promise<readonly ComposerWorkflow[]>>;
   readonly reloadWorkflows$: Command<Promise<void>, [AbortSignal]>;
   readonly selectedSuggestionIndex$: Computed<number>;
   readonly setSelectedSuggestionIndex$: Command<void, [number]>;
@@ -1934,7 +1934,7 @@ function applyWorkflowNames(editor: Editor, names: readonly string[]): void {
 function createSyncWorkflowNamesCommand(
   editor: Editor,
   agentId$: Computed<Promise<string | null>>,
-  workflows$: Computed<Promise<readonly WorkflowSummary[]>>,
+  workflows$: Computed<Promise<readonly ComposerWorkflow[]>>,
 ): WorkflowNamesSyncCommand {
   const resetWorkflowNamesSyncSignal$ = resetSignal();
   return command(

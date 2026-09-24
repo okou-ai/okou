@@ -2,6 +2,12 @@ import { z } from "zod";
 
 import DEEPSEEK_V4_FLASH_MODEL_CATALOG from "./deepseek-model-catalog.json" with { type: "json" };
 import {
+  OKOU_MODEL_CODEX_CATALOG,
+  OKOU_MODEL_METADATA,
+  OKOU_RUN_MODELS,
+  type OkouRunModel,
+} from "./okou-model-metadata";
+import {
   MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
   SUPPORTED_RUN_MODELS,
   BUILT_IN_MODEL_PRICE_TIER,
@@ -216,15 +222,11 @@ const SUPPORTED_RUN_MODEL_SET: ReadonlySet<string> = new Set(
   SUPPORTED_RUN_MODELS,
 );
 
-export const OKOU_RUN_MODELS = [
-  "okou-1.0",
-  "okou-1.0-pro",
-  "okou-1.0-max",
-] as const satisfies readonly SupportedRunModel[];
+export { OKOU_RUN_MODELS, type OkouRunModel };
 
-export type OkouRunModel = (typeof OKOU_RUN_MODELS)[number];
-
-const OKOU_RUN_MODEL_SET: ReadonlySet<string> = new Set(OKOU_RUN_MODELS);
+const OKOU_RUN_MODEL_SET: ReadonlySet<string> = new Set(
+  OKOU_RUN_MODELS satisfies readonly SupportedRunModel[],
+);
 
 export function isOkouRunModel(
   model: string | null | undefined,
@@ -419,17 +421,26 @@ export const BUILT_IN_MODEL_TO_PROVIDER = {
   },
   "okou-1.0-max": {
     candidates: [
-      { concreteType: "openrouter-codex", apiModel: "@preset/okou-1-0-max" },
+      {
+        concreteType: "openrouter-codex",
+        apiModel: OKOU_MODEL_METADATA["okou-1.0-max"].presetModel,
+      },
     ],
   },
   "okou-1.0-pro": {
     candidates: [
-      { concreteType: "openrouter-codex", apiModel: "@preset/okou-1-0-pro" },
+      {
+        concreteType: "openrouter-codex",
+        apiModel: OKOU_MODEL_METADATA["okou-1.0-pro"].presetModel,
+      },
     ],
   },
   "okou-1.0": {
     candidates: [
-      { concreteType: "openrouter-codex", apiModel: "@preset/okou-1-0" },
+      {
+        concreteType: "openrouter-codex",
+        apiModel: OKOU_MODEL_METADATA["okou-1.0"].presetModel,
+      },
     ],
   },
   "deepseek-v4.1-flash": {
@@ -1468,6 +1479,9 @@ const CODEX_MODEL_CATALOG_OVERRIDES: Readonly<
   Partial<Record<ActiveRunModel, Record<string, unknown>>>
 > = {
   "deepseek-v4.1-flash": DEEPSEEK_V4_1_FLASH_MODEL_CATALOG,
+  "okou-1.0": OKOU_MODEL_CODEX_CATALOG,
+  "okou-1.0-pro": OKOU_MODEL_CODEX_CATALOG,
+  "okou-1.0-max": OKOU_MODEL_CODEX_CATALOG,
 };
 
 /**

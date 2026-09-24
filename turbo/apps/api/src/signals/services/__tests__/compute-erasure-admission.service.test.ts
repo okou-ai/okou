@@ -1855,19 +1855,6 @@ describe("actual compute transactions versus the B1 projector", () => {
 
     it("denied required projection returns no accepted batch or optional consumer effects", async () => {
       const f = await outputFixture();
-      await updateFeatureSwitchesForUser(
-        context,
-        { userId: f.actor.userId, orgId: f.orgId },
-        {
-          [FeatureSwitchKey.ThreadActivitySummary]: true,
-        },
-      );
-      onTestFinished(() => {
-        return deleteFeatureSwitchesForUser(context, {
-          userId: f.actor.userId,
-          orgId: f.orgId,
-        });
-      });
       await close(decision(f.actor.userId));
       context.mocks.ably.publish.mockClear();
       const body = outputBody(f);
@@ -2601,12 +2588,6 @@ describe("actual compute transactions versus the B1 projector", () => {
       async function activityFixture(orgId?: string) {
         mockOptionalEnv("OPENROUTER_API_KEY", undefined);
         const f = await outputFixture(orgId);
-        await updateFeatureSwitchesForUser(context, f, {
-          [FeatureSwitchKey.ThreadActivitySummary]: true,
-        });
-        onTestFinished(() => {
-          return deleteFeatureSwitchesForUser(context, f);
-        });
         return f;
       }
 

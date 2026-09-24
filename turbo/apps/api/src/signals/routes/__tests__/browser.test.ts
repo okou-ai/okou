@@ -40,10 +40,7 @@ import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
-import {
-  setBrowserTabSnapshotAsPreviousApi,
-  setComputerUseHostAsPreviousApi,
-} from "./helpers/runtime-state";
+import { setBrowserTabSnapshotAsPreviousApi } from "./helpers/runtime-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { testBrowserReconcileRoutes } from "../test-browser-reconcile";
 import { browserRoutes } from "../browser";
@@ -2141,7 +2138,7 @@ describe("okou browser route", () => {
     );
   });
 
-  it("normalizes a previous API host-only write during cloud browser rollout", async () => {
+  it("disables cloud browser when a computer host is selected", async () => {
     const { runs, chat, actor, agent } = await setupBrowserScenario();
     const sent = await chat.requestSendEvent(
       actor,
@@ -2157,12 +2154,14 @@ describe("okou browser route", () => {
     }
     const host = await computerUse.startComputerUseHost(actor);
 
-    // The preceding API version knows only computer_use_host_id, so this
-    // intentionally omits cloudBrowserEnabled from its update shape.
-    await setComputerUseHostAsPreviousApi(context, {
-      threadId: sent.body.threadId,
-      computerUseHostId: host.hostId,
-    });
+    await accept(
+      chatThreadComputerUseHostClient().update({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { id: sent.body.threadId },
+        body: { computerUseHostId: host.hostId },
+      }),
+      [204],
+    );
 
     const browserToken = runs.okouTokenForRunWithCapabilities(
       actor,

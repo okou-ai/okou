@@ -69,12 +69,31 @@ function authDeviceSupportApp(context: TestContext) {
 
 export function createAuthDeviceSupportApi(context: TestContext) {
   return {
+    async initializePreferences(actor: ApiTestUser) {
+      return await accept(
+        authDeviceSupportApp(context)(userPreferencesContract).initialize({
+          headers: authenticate(context, actor),
+          body: { locale: "en-US" },
+        }),
+        [200],
+      );
+    },
+
     async readPreferences(actor: ApiTestUser) {
       return await accept(
         authDeviceSupportApp(context)(userPreferencesContract).get({
           headers: authenticate(context, actor),
         }),
         [200],
+      );
+    },
+
+    async readUninitializedPreferences(actor: ApiTestUser) {
+      return await accept(
+        authDeviceSupportApp(context)(userPreferencesContract).get({
+          headers: authenticate(context, actor),
+        }),
+        [409],
       );
     },
 

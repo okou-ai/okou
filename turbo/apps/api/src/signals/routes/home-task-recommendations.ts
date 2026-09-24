@@ -1,6 +1,14 @@
-import { homeTaskRecommendationsContract } from "@okouai/api-contracts/contracts/home-task-recommendations";
+import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
+import {
+  homeTaskRecommendationsContract,
+  type HomeTaskRecommendation,
+  type HomeTaskRecommendationConnector,
+} from "@okouai/api-contracts/contracts/home-task-recommendations";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import {
+  getAllFeatureStates,
+  isFeatureEnabled,
+} from "@okouai/core/feature-switch";
 import { command } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -8,9 +16,13 @@ import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { queryOf } from "../context/request";
 import { clerk$ } from "../external/clerk";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$, type ReadonlyDb } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { agentExists } from "../services/agent-data.service";
+import {
+  isConnectorCatalogUnavailableError,
+  listConnectedConnectorBriefs,
+} from "../services/connector-catalog-reader.service";
 import { userFeatureSwitchOverrides } from "../services/feature-switches.service";
 import { loadCurrentMembershipId } from "../services/morning-brief-membership.service";
 import {
@@ -18,6 +30,57 @@ import {
   readHomeTaskRecommendations,
   touchHomeTaskRecommendations,
 } from "../services/home-task-recommendations.service";
+import { settle } from "../utils";
+
+/**
+ * Label and icon for the connectors the cards name, read from the per-connector
+ * projection for just those slugs. An unavailable catalog only drops the chips:
+ * the cards are still worth showing without them.
+ */
+async function recommendationConnectors(
+  args: {
+    readonly db: ReadonlyDb;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly overrides: Record<string, boolean>;
+    readonly recommendations: readonly HomeTaskRecommendation[];
+  },
+  signal: AbortSignal,
+): Promise<HomeTaskRecommendationConnector[] | undefined> {
+  const connectorSlugs = [
+    ...new Set(
+      args.recommendations.flatMap((recommendation) => {
+        return recommendation.connectors;
+      }),
+    ),
+  ].filter((slug) => {
+    return connectorSlugSchema.safeParse(slug).success;
+  });
+  if (connectorSlugs.length === 0) {
+    return [];
+  }
+  const briefs = await settle(
+    listConnectedConnectorBriefs({
+      db: args.db,
+      featureStates: getAllFeatureStates({
+        orgId: args.orgId,
+        userId: args.userId,
+        overrides: args.overrides,
+      }),
+      connectorSlugs,
+    }),
+    signal,
+  );
+  if (!briefs.ok) {
+    if (isConnectorCatalogUnavailableError(briefs.error)) {
+      return undefined;
+    }
+    throw briefs.error;
+  }
+  return briefs.value.map(({ slug, label, icon }) => {
+    return { slug, label, icon };
+  });
+}
 
 const list$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -74,7 +137,21 @@ const list$ = command(async ({ get, set }, signal: AbortSignal) => {
     { userId: auth.userId, orgId: auth.orgId, agentId },
     signal,
   );
-  return { status: 200 as const, body };
+  signal.throwIfAborted();
+  const connectors = await recommendationConnectors(
+    {
+      db: get(db$),
+      orgId: auth.orgId,
+      userId: auth.userId,
+      overrides,
+      recommendations: body.recommendations,
+    },
+    signal,
+  );
+  return {
+    status: 200 as const,
+    body: connectors === undefined ? body : { ...body, connectors },
+  };
 });
 
 const touch$ = command(async ({ get, set }, signal: AbortSignal) => {

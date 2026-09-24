@@ -149,67 +149,7 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-const nonRelocatableSchemaKeywords = [
-  "$id",
-  "$anchor",
-  "$dynamicAnchor",
-  "$dynamicRef",
-  "$recursiveAnchor",
-  "$recursiveRef",
-  "$defs",
-  "definitions",
-] as const;
-const reusableSchemaArrayKeywords = ["anyOf", "oneOf", "allOf"] as const;
-
-function hasReusableSchemaShape(value: Record<string, unknown>): boolean {
-  if (typeof value.type === "string") {
-    return true;
-  }
-  if (Array.isArray(value.type)) {
-    return value.type.every((item) => {
-      return typeof item === "string";
-    });
-  }
-  return (
-    reusableSchemaArrayKeywords.some((keyword) => {
-      return Array.isArray(value[keyword]);
-    }) ||
-    Array.isArray(value.enum) ||
-    Object.hasOwn(value, "const")
-  );
-}
-
-function reusableSchemaKey(value: unknown): string | null {
-  if (!isJsonObject(value)) {
-    return null;
-  }
-  if (
-    nonRelocatableSchemaKeywords.some((keyword) => {
-      return keyword in value;
-    })
-  ) {
-    return null;
-  }
-  if (
-    Object.keys(value).length === 3 &&
-    value.type === "string" &&
-    (value.format === "uuid" || value.format === "date-time") &&
-    typeof value.pattern === "string"
-  ) {
-    return `scalar\u0000${String(value.format)}\u0000${String(value.pattern)}`;
-  }
-  if (value.type === "object" && isJsonObject(value.properties)) {
-    return `object\u0000${JSON.stringify(value)}`;
-  }
-  if (hasReusableSchemaShape(value)) {
-    return `schema\u0000${JSON.stringify(value)}`;
-  }
-  return null;
-}
-
 const schemaMapKeywords = [
-  "$defs",
-  "definitions",
   "dependentSchemas",
   "patternProperties",
   "properties",
@@ -234,79 +174,18 @@ function includesString(values: readonly string[], value: string): boolean {
   return values.includes(value);
 }
 
-function forEachJsonObject(
-  value: unknown,
-  visit: (child: Record<string, unknown>) => void,
-): void {
-  if (isJsonObject(value)) {
-    visit(value);
-    return;
-  }
-  if (!Array.isArray(value)) {
-    return;
-  }
-  for (const child of value) {
-    if (isJsonObject(child)) {
-      visit(child);
-    }
-  }
-}
-
-function forEachJsonSchemaChild(
+function mapJsonSchemaChildren(
   schema: Record<string, unknown>,
-  visit: (child: Record<string, unknown>, insideDefinitions: boolean) => void,
-  insideDefinitions: boolean,
-): void {
-  for (const [keyword, value] of Object.entries(schema)) {
-    if (includesString(schemaMapKeywords, keyword) && isJsonObject(value)) {
-      const childInsideDefinitions =
-        insideDefinitions || keyword === "$defs" || keyword === "definitions";
-      for (const child of Object.values(value)) {
-        if (isJsonObject(child)) {
-          visit(child, childInsideDefinitions);
-        }
-      }
-      continue;
-    }
-    if (includesString(schemaArrayKeywords, keyword) && Array.isArray(value)) {
-      for (const child of value) {
-        if (isJsonObject(child)) {
-          visit(child, insideDefinitions);
-        }
-      }
-      continue;
-    }
-    if (includesString(schemaValueKeywords, keyword)) {
-      forEachJsonObject(value, (child) => {
-        visit(child, insideDefinitions);
-      });
-    }
-  }
-}
-
-function replaceJsonSchemaChildren(
-  schema: Record<string, unknown>,
-  replace: (
-    child: Record<string, unknown>,
-    insideDefinitions: boolean,
-  ) => unknown,
-  insideDefinitions: boolean,
+  map: (child: Record<string, unknown>) => Record<string, unknown>,
 ): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(schema).map(([keyword, value]) => {
       if (includesString(schemaMapKeywords, keyword) && isJsonObject(value)) {
-        const childInsideDefinitions =
-          insideDefinitions || keyword === "$defs" || keyword === "definitions";
         return [
           keyword,
           Object.fromEntries(
             Object.entries(value).map(([name, child]) => {
-              return [
-                name,
-                isJsonObject(child)
-                  ? replace(child, childInsideDefinitions)
-                  : child,
-              ];
+              return [name, isJsonObject(child) ? map(child) : child];
             }),
           ),
         ];
@@ -318,23 +197,19 @@ function replaceJsonSchemaChildren(
         return [
           keyword,
           value.map((child) => {
-            return isJsonObject(child)
-              ? replace(child, insideDefinitions)
-              : child;
+            return isJsonObject(child) ? map(child) : child;
           }),
         ];
       }
       if (includesString(schemaValueKeywords, keyword)) {
         if (isJsonObject(value)) {
-          return [keyword, replace(value, insideDefinitions)];
+          return [keyword, map(value)];
         }
         if (Array.isArray(value)) {
           return [
             keyword,
             value.map((child) => {
-              return isJsonObject(child)
-                ? replace(child, insideDefinitions)
-                : child;
+              return isJsonObject(child) ? map(child) : child;
             }),
           ];
         }
@@ -344,147 +219,62 @@ function replaceJsonSchemaChildren(
   );
 }
 
-interface ReusableSchema {
-  readonly count: number;
-  readonly definition: Record<string, unknown>;
-  readonly key: string;
-  readonly name: string;
-}
-
-function compactJsonSchema(
+function inlineJsonSchema(
   schema: Record<string, unknown>,
 ): Record<string, unknown> {
-  const occurrences = new Map<
-    string,
-    { count: number; definition: Record<string, unknown> }
-  >();
-  function count(value: unknown, insideDefinitions = false): void {
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        count(item, insideDefinitions);
+  function resolve(reference: string): Record<string, unknown> {
+    if (!reference.startsWith("#/")) {
+      throw new Error(`Unsupported JSON Schema reference ${reference}`);
+    }
+    let value: unknown = schema;
+    for (const encodedSegment of reference.slice(2).split("/")) {
+      const segment = encodedSegment
+        .replaceAll("~1", "/")
+        .replaceAll("~0", "~");
+      const property = isJsonObject(value)
+        ? Object.getOwnPropertyDescriptor(value, segment)
+        : undefined;
+      if (!property || !("value" in property)) {
+        throw new Error(`Unresolved JSON Schema reference ${reference}`);
       }
-      return;
+      value = property.value;
     }
     if (!isJsonObject(value)) {
-      return;
+      throw new Error(`JSON Schema reference is not an object ${reference}`);
     }
-    if (!insideDefinitions) {
-      const key = reusableSchemaKey(value);
-      if (key) {
-        const previous = occurrences.get(key);
-        occurrences.set(key, {
-          count: (previous?.count ?? 0) + 1,
-          definition: previous?.definition ?? value,
-        });
-        if (key.startsWith("scalar\u0000")) {
-          return;
-        }
-      }
-    }
-    forEachJsonSchemaChild(value, count, insideDefinitions);
-  }
-  count(schema);
-
-  const existingDefinitions = isJsonObject(schema.$defs) ? schema.$defs : {};
-  const usedNames = new Set(Object.keys(existingDefinitions));
-  const counters = new Map<string, number>();
-  function uniqueName(definition: Record<string, unknown>): string {
-    const base =
-      definition.format === "uuid"
-        ? "uuid"
-        : definition.format === "date-time"
-          ? "dateTime"
-          : definition.type === "object"
-            ? "object"
-            : "schema";
-    let index = (counters.get(base) ?? 0) + 1;
-    let name = index === 1 ? base : `${base}${index}`;
-    while (usedNames.has(name)) {
-      index += 1;
-      name = `${base}${index}`;
-    }
-    counters.set(base, index);
-    usedNames.add(name);
-    return name;
+    return value;
   }
 
-  const candidates = [...occurrences.entries()]
-    .filter(([, candidate]) => {
-      return candidate.count > 1;
-    })
-    .map(([key, candidate]) => {
-      return {
-        key,
-        ...candidate,
-        name: uniqueName(candidate.definition),
-      };
-    })
-    .sort((left, right) => {
-      const leftBytes = utf8Bytes(JSON.stringify(left.definition));
-      const rightBytes = utf8Bytes(JSON.stringify(right.definition));
-      return right.count * rightBytes - left.count * leftBytes;
-    });
-
-  function render(
-    selected: ReadonlyMap<string, ReusableSchema>,
+  function inline(
+    value: Record<string, unknown>,
+    activeReferences: ReadonlySet<string>,
   ): Record<string, unknown> {
-    function replace(
-      value: unknown,
-      insideDefinitions = false,
-      retainedKey?: string,
-    ): unknown {
-      if (!isJsonObject(value)) {
-        return value;
+    if ("$ref" in value) {
+      const reference = value.$ref;
+      if (typeof reference !== "string" || Object.keys(value).length !== 1) {
+        throw new Error("Unsupported JSON Schema reference with siblings");
       }
-      if (!insideDefinitions) {
-        const key = reusableSchemaKey(value);
-        const candidate =
-          key && key !== retainedKey ? selected.get(key) : undefined;
-        if (candidate) {
-          return { $ref: `#/$defs/${candidate.name}` };
-        }
+      if (activeReferences.has(reference)) {
+        throw new Error(`Cyclic JSON Schema reference ${reference}`);
       }
-      return replaceJsonSchemaChildren(
-        value,
-        (child, childInsideDefinitions) => {
-          return replace(child, childInsideDefinitions);
-        },
-        insideDefinitions,
+      return inline(
+        resolve(reference),
+        new Set(activeReferences).add(reference),
       );
     }
-
-    const rewritten = replace(schema);
-    if (!isJsonObject(rewritten) || selected.size === 0) {
-      return schema;
-    }
-    const definitions: Record<string, unknown> = { ...existingDefinitions };
-    for (const candidate of selected.values()) {
-      definitions[candidate.name] = replace(
-        candidate.definition,
-        false,
-        candidate.key,
-      );
-    }
-    return { ...rewritten, $defs: definitions };
+    const rewritten = mapJsonSchemaChildren(value, (child) => {
+      return inline(child, activeReferences);
+    });
+    const result = { ...rewritten };
+    delete result.$defs;
+    delete result.definitions;
+    return result;
   }
 
-  const selected = new Map<string, ReusableSchema>();
-  let compacted = schema;
-  let compactedBytes = utf8Bytes(JSON.stringify(compacted));
-  for (const candidate of candidates) {
-    const trialSelection = new Map(selected).set(candidate.key, candidate);
-    const trial = render(trialSelection);
-    const trialBytes = utf8Bytes(JSON.stringify(trial));
-    if (trialBytes < compactedBytes) {
-      selected.set(candidate.key, candidate);
-      compacted = trial;
-      compactedBytes = trialBytes;
-    }
-  }
-  return compacted;
+  return inline(schema, new Set());
 }
 
-function compactStandardSchema<Input, Output>(
+function inlineStandardSchema<Input, Output>(
   schema: StandardSchemaWithJSON<Input, Output>,
 ): StandardSchemaWithJSON<Input, Output> {
   const standard = schema["~standard"];
@@ -497,26 +287,20 @@ function compactStandardSchema<Input, Output>(
       },
       jsonSchema: {
         input(options) {
-          const converted = standard.jsonSchema.input(options);
-          return options.target === "draft-2020-12"
-            ? compactJsonSchema(converted)
-            : converted;
+          return inlineJsonSchema(standard.jsonSchema.input(options));
         },
         output(options) {
-          const converted = standard.jsonSchema.output(options);
-          return options.target === "draft-2020-12"
-            ? compactJsonSchema(converted)
-            : converted;
+          return inlineJsonSchema(standard.jsonSchema.output(options));
         },
       },
     },
   };
 }
 
-function compactZodSchema<Schema extends z.ZodType>(
+function inlineZodSchema<Schema extends z.ZodType>(
   schema: Schema,
 ): StandardSchemaWithJSON<z.input<Schema>, z.output<Schema>> {
-  return compactStandardSchema(
+  return inlineStandardSchema(
     schema as unknown as StandardSchemaWithJSON<
       z.input<Schema>,
       z.output<Schema>
@@ -585,7 +369,7 @@ function validationToolError(
 function uncheckedInputSchema<Input extends Record<string, unknown>>(
   schema: z.ZodType<Input>,
 ): StandardSchemaWithJSON<unknown, unknown> {
-  const advertised = compactZodSchema(schema);
+  const advertised = inlineZodSchema(schema);
   return {
     "~standard": {
       version: 1,
@@ -626,7 +410,7 @@ function registerChatTool<
     {
       ...advertisedConfig,
       inputSchema: uncheckedInputSchema(inputSchema),
-      outputSchema: compactZodSchema(outputSchema),
+      outputSchema: inlineZodSchema(outputSchema),
     },
     async (input, context) => {
       const parsed = inputSchema.safeParse(input);
@@ -695,7 +479,7 @@ function registerMessageTool(
         "Read visible messages in turn order (latest 20 by default). messageAt is accepted-input time for users and output-event time for assistants. Filter by runId or center the first page on eventId/seqId with around. Continue cursors with unchanged filters and no around; use nextContentCursor for truncated content. Offsets count UTF-16 units/files. History changes invalidate cursors. Reading does not mark read or bypass artifact authorization. Limits: 8 MiB gzip, 32 MiB decoded plus tail, 50,000 events, 15 seconds.",
       inputSchema: mcpGetChatMessagesInputSchema,
       outputSchema: mcpGetChatMessagesOutputSchema,
-      annotations: readAnnotations,
+      annotations: { ...readAnnotations, title: "Read Chat Messages" },
     },
     async (args, context) => {
       const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
@@ -772,6 +556,7 @@ function registerManageTools(
       inputSchema: mcpCreateChatThreadInputSchema,
       outputSchema: mcpCreateChatThreadOutputSchema,
       annotations: {
+        title: "Create Chat Thread",
         readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: false,
@@ -805,6 +590,7 @@ function registerManageTools(
       inputSchema: mcpUpdateChatThreadInputSchema,
       outputSchema: mcpUpdateChatThreadOutputSchema,
       annotations: {
+        title: "Update Chat Thread",
         readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: false,
@@ -849,6 +635,7 @@ function registerMutationTools(
         inputSchema: mcpSendChatMessageInputSchema,
         outputSchema: mcpSendChatMessageOutputSchema,
         annotations: {
+          title: "Send Chat Message",
           readOnlyHint: false,
           destructiveHint: false,
           idempotentHint: false,
@@ -885,6 +672,7 @@ function registerMutationTools(
         inputSchema: mcpRevokeQueuedMessageInputSchema,
         outputSchema: mcpRevokeQueuedMessageOutputSchema,
         annotations: {
+          title: "Revoke Queued Message",
           readOnlyHint: false,
           destructiveHint: true,
           idempotentHint: true,
@@ -917,6 +705,7 @@ function registerMutationTools(
         inputSchema: mcpCancelRunInputSchema,
         outputSchema: mcpCancelRunOutputSchema,
         annotations: {
+          title: "Cancel Run",
           readOnlyHint: false,
           destructiveHint: true,
           idempotentHint: true,
@@ -955,7 +744,7 @@ function registerDiscoveryTools(
         "List visible Agents, including the default, with bounded descriptions rather than instructions/configuration. Continue nextCursor with the same limit (default 20, max 50); pages may be shortened by response limits. Cursors expire after 24 hours and visibility is rechecked per page. Use agentId with create_chat_thread.",
       inputSchema: mcpListAgentsInputSchema,
       outputSchema: mcpListAgentsOutputSchema,
-      annotations: readAnnotations,
+      annotations: { ...readAnnotations, title: "List Agents" },
     },
     (input, context) => {
       const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
@@ -980,7 +769,7 @@ function registerDiscoveryTools(
         "List the current model catalog and member/workspace default. selectable means configurable; availability reports known plan or connection requirements. available is metadata only: quota, credentials, and admission are checked on send. This read does not repair configuration; open model settings for required setup. Use a selectable model id with create_chat_thread.",
       inputSchema: mcpListModelsInputSchema,
       outputSchema: mcpListModelsOutputSchema,
-      annotations: readAnnotations,
+      annotations: { ...readAnnotations, title: "List Models" },
     },
     (_input, context) => {
       const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
@@ -1015,7 +804,7 @@ function registerSearchAndStatusTools(
         "Search visible message text using whole words or CJK phrases of 2+ characters; every query group must match. Filter by thread, Agent, role, and sourceEventAt; bounds, newest-first order, and continuation all use that source-event clock. Results include bounded excerpts and real refs; use around with get_chat_messages for full context. Continue nextCursor with identical inputs (default 20, max 50). Empty pages may continue; scanLimited marks the 100-candidate budget. Indexing is asynchronous; empty results do not prove absence. Search does not mark read, and 32 MiB/50,000-event/15-second history limits fail explicitly.",
       inputSchema: mcpSearchChatMessagesInputSchema,
       outputSchema: mcpSearchChatMessagesOutputSchema,
-      annotations: readAnnotations,
+      annotations: { ...readAnnotations, title: "Search Chat Messages" },
     },
     async (args, context) => {
       const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
@@ -1054,7 +843,7 @@ function registerSearchAndStatusTools(
         "execution.",
       inputSchema: mcpGetChatStatusInputSchema,
       outputSchema: mcpGetChatStatusOutputSchema,
-      annotations: readAnnotations,
+      annotations: { ...readAnnotations, title: "Get Chat Status" },
     },
     async (args, context) => {
       const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
@@ -1099,10 +888,10 @@ function createChatServer(
       "list_chat_threads",
       {
         description:
-          "List your conversations newest-message first. Filter by Agent, literal title substring, lastMessageAt, activity, or unread; bounds, order, and continuation use lastMessageAt, while metadataUpdatedAt is the separate metadata clock. Continue nextCursor with identical filters. Pagination reads live metadata, so restart to refresh moved conversations. Unread covers retained terminal events and native deliveries, not all archives; activity is not run completion. Reading does not mark read. Use get_chat_thread for details.",
+          "List your conversations newest-message first. Filter by Agent, literal title substring, lastMessageAt, activity, or unread; bounds, order, and continuation use lastMessageAt, while metadataUpdatedAt is the separate metadata clock. Continue nextCursor with identical filters. Pagination reads live metadata, so restart to refresh moved conversations. Unread covers retained Run terminal events, not all archives; activity is not run completion. Reading does not mark read. Use get_chat_thread for details.",
         inputSchema: mcpListChatThreadsInputSchema,
         outputSchema: mcpListChatThreadsOutputSchema,
-        annotations: readAnnotations,
+        annotations: { ...readAnnotations, title: "List Chat Threads" },
       },
       async (args, context) => {
         const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
@@ -1123,10 +912,10 @@ function createChatServer(
       "get_chat_thread",
       {
         description:
-          "Read one owned conversation's title, Agent, selected/effective model, activity, and unread state. createdAt is creation, metadataUpdatedAt is metadata change, and lastMessageAt is message activity. Model metadata is current policy; admission is checked on send. Unread covers retained terminal events and native deliveries. This neither reads messages nor marks read, and idle activity does not prove execution success.",
+          "Read one owned conversation's title, Agent, selected/effective model, activity, and unread state. createdAt is creation, metadataUpdatedAt is metadata change, and lastMessageAt is message activity. Model metadata is current policy; admission is checked on send. Unread covers retained Run terminal events. This neither reads messages nor marks read, and idle activity does not prove execution success.",
         inputSchema: mcpGetChatThreadInputSchema,
         outputSchema: mcpGetChatThreadOutputSchema,
-        annotations: readAnnotations,
+        annotations: { ...readAnnotations, title: "Get Chat Thread" },
       },
       async (args, context) => {
         const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);

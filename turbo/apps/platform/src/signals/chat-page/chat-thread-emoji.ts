@@ -1,5 +1,6 @@
 import { command, computed, state } from "ccstate";
-import emojiGroups from "../../data/chat-thread-emoji.json";
+import emojiGroupsUrl from "../../data/chat-thread-emoji.json?url";
+import { fetchResource } from "../../lib/resource-fetch.ts";
 
 export interface ChatThreadEmojiItem {
   emoji: string;
@@ -11,9 +12,44 @@ interface ChatThreadEmojiGroup {
   emojis: ChatThreadEmojiItem[];
 }
 
-export const chatThreadEmojiGroups$ = computed((): ChatThreadEmojiGroup[] => {
-  return emojiGroups;
-});
+function isChatThreadEmojiGroups(
+  value: unknown,
+): value is ChatThreadEmojiGroup[] {
+  return (
+    Array.isArray(value) &&
+    value.every((group: unknown) => {
+      return (
+        typeof group === "object" &&
+        group !== null &&
+        "name" in group &&
+        typeof group.name === "string" &&
+        "emojis" in group &&
+        Array.isArray(group.emojis)
+      );
+    })
+  );
+}
+
+// The full emoji dataset is ~150KB, so it ships as a hashed static asset that
+// only the emoji picker fetches, instead of riding in the chat page bundle.
+export const chatThreadEmojiGroups$ = computed(
+  async (): Promise<ChatThreadEmojiGroup[]> => {
+    const response = await fetchResource(
+      new URL(emojiGroupsUrl, location.href),
+      {},
+    );
+    if (!response.ok) {
+      throw new Error(
+        `Failed to load emoji data (HTTP ${String(response.status)})`,
+      );
+    }
+    const groups: unknown = await response.json();
+    if (!isChatThreadEmojiGroups(groups)) {
+      throw new Error("Invalid emoji data");
+    }
+    return groups;
+  },
+);
 
 const internalChatThreadEmojiQuery$ = state("");
 

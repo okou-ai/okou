@@ -38,7 +38,6 @@ import {
   type ComputerUseAutomationPermissionTarget,
   type DesktopComputerUseState,
 } from "./computer-use-types";
-import { isComputerUseSetupRequired } from "./computer-use-startup-gate";
 import { ComputerUseRuntimeController } from "./computer-use-runtime-controller";
 import { DeveloperToolsController } from "./desktop-developer-tools-controller";
 import { createDesktopComputerUsePermissions } from "./desktop-computer-use-permissions";
@@ -63,7 +62,10 @@ import { DesktopMcpPluginManager } from "./desktop-mcp-plugin";
 import { DesktopKeepAwakeController } from "./desktop-keep-awake";
 import type { DesktopIdentityInfo } from "./desktop-bridge";
 import { DESKTOP_IDENTITY_CHANNEL } from "./desktop-identity-ipc-channels";
-import { startDesktopLaunchComputerUse } from "./desktop-launch-computer-use";
+import {
+  isLaunchComputerUseSetupRequired,
+  startDesktopLaunchComputerUse,
+} from "./desktop-launch-computer-use";
 import {
   DesktopQuitConfirmationController,
   buildDesktopQuitConfirmationOptions,
@@ -278,6 +280,7 @@ function notifyComputerUseChanged(): void {
 }
 
 let lastSessionAuthority: object | null = null;
+let authCleanup: Promise<void> = Promise.resolve();
 function notifyAuthChanged(): void {
   const authority = authSession?.getAuthority() ?? null;
   if (lastSessionAuthority !== authority) {
@@ -285,7 +288,7 @@ function notifyAuthChanged(): void {
     resetComputerUsePermissionState();
     // Finish auth-owned cleanup before permission inspection resumes. A
     // cancelled probe must not leave the native helper permanently paused.
-    void computerUseController.stopForAuthChange().catch(() => {
+    authCleanup = computerUseController.stopForAuthChange().catch(() => {
       console.warn("Computer Use session cleanup remains unproven");
     });
   }
@@ -1103,13 +1106,20 @@ async function maybeStartComputerUseAfterAuth(
 }
 
 async function shouldOpenComputerUseSetupWindowOnLaunch(): Promise<boolean> {
-  const permissions = await refreshComputerUsePermissionState();
-  if (!hasRequiredComputerUsePermissions(permissions)) {
-    return true;
-  }
-
-  const authState = await getAuthSession().getAuthState();
-  return isComputerUseSetupRequired({ authState, permissions });
+  // Hidden sign-in can invalidate a permission probe. Settle it first so the
+  // launch check reads permissions for the authority that will start the host.
+  return await isLaunchComputerUseSetupRequired({
+    getAuthState: () => getAuthSession().getAuthState(),
+    waitForAuthCleanup: async () => {
+      let cleanup: Promise<void>;
+      do {
+        cleanup = authCleanup;
+        await cleanup;
+      } while (cleanup !== authCleanup);
+    },
+    refreshPermissions: refreshComputerUsePermissionState,
+    canRecoverSession: () => getAuthSession().canRestoreSession(),
+  });
 }
 
 function handleDesktopAuthCallback(rawUrl: string): void {

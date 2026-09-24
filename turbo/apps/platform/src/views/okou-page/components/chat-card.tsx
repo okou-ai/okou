@@ -18,13 +18,11 @@ type ChatCardProps = useRender.ComponentProps<"div">;
  * `shadow-*`; no consumer overrides the shadow, and the paired `rounded-[…]`
  * and every colour and width utility in the base still merge normally.
  *
- * The border is deliberately `border-[1px] border-gray-400` rather than the
- * shared `border` hairline and a semantic border token that `docs/styles.md`
- * would otherwise ask for. A fractional border visibly repaints when card
- * contents resolve, so a card flickers at its edge as an image or an iframe
- * lands; a whole pixel does not. Unifying the transcript's border width and
- * colour with the rest of the product is a separate, separately reviewed
- * decision.
+ * The border keeps a whole pixel rather than the shared `border` hairline. A
+ * fractional border visibly repaints when card contents resolve, so a card
+ * flickers at its edge as an image or an iframe lands; a whole pixel does not.
+ * Its colour uses the shared semantic border token so transcript card shells
+ * share one stroke colour even where their stable border widths differ.
  *
  * `cn()` merges this base with the caller's `className`, so a conflicting base
  * utility is dropped rather than outranked, and the browser-session card's
@@ -39,7 +37,7 @@ export function ChatCard({ className, render, ref, ...props }: ChatCardProps) {
       "data-slot": "chat-card",
       ...props,
       className: cn(
-        "rounded-[var(--okou-chat-card-radius)] border-[1px] border-gray-400 bg-card shadow-[var(--okou-chat-card-shadow)]",
+        "rounded-[var(--okou-chat-card-radius)] border-[1px] border-border/70 bg-card shadow-[var(--okou-chat-card-shadow)]",
         className,
       ),
     },

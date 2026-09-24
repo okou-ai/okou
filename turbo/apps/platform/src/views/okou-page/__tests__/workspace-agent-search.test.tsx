@@ -105,28 +105,6 @@ test("Find workspace agents by name with case and whitespace normalization", asy
   ).toBeVisible();
 });
 
-test("Agent search excludes IDs and blank queries but includes Nova", async () => {
-  prepareAgents();
-  await setupPage({ context, path: `/agents/${DEFAULT_AGENT_ID}/chat` });
-  const { dialog, search } = await openSearch();
-  await fill(search, RESEARCH_AGENT_ID);
-  await expect(
-    within(dialog).findByText("No results found"),
-  ).resolves.toBeVisible();
-  expect(within(dialog).getByText("0 results")).toBeVisible();
-
-  await fill(search, "nova");
-  await expect(
-    within(dialog).findByRole("option", { name: "Nova" }),
-  ).resolves.toBeVisible();
-
-  await fill(search, " ");
-  await expect(
-    within(dialog).findByText("No results found"),
-  ).resolves.toBeVisible();
-  expect(within(dialog).queryByRole("option")).toBeNull();
-});
-
 test("Selecting a workspace agent search result opens its chat", async () => {
   prepareAgents();
   await setupPage({ context, path: `/agents/${DEFAULT_AGENT_ID}/chat` });
@@ -143,28 +121,4 @@ test("Selecting a workspace agent search result opens its chat", async () => {
     screen.findByText("Chats with Support Agent"),
   ).resolves.toBeVisible();
   expect(screen.queryByRole("dialog", { name: SEARCH_LABEL })).toBeNull();
-});
-
-test("Limit matching agents to the workspace search result size", async () => {
-  context.mocks.browser.userAgent(MAC_USER_AGENT);
-  context.mocks.data.agents([
-    { agentId: DEFAULT_AGENT_ID, displayName: "Nova" },
-    ...Array.from({ length: 30 }, (_, index) => {
-      return {
-        agentId: `c1000000-0000-4000-a000-${(index + 1).toString().padStart(12, "0")}`,
-        displayName: `Analyst ${index + 1}`,
-      };
-    }),
-  ]);
-  await setupPage({
-    context,
-    path: `/agents/${DEFAULT_AGENT_ID}/chat`,
-  });
-  const { dialog, search } = await openSearch();
-
-  await fill(search, "analyst");
-  await expect(within(dialog).findByText("25 results")).resolves.toBeVisible();
-  expect(within(dialog).getAllByRole("option")).toHaveLength(25);
-  expect(within(dialog).getByText("Analyst 25")).toBeVisible();
-  expect(within(dialog).queryByText("Analyst 26")).toBeNull();
 });

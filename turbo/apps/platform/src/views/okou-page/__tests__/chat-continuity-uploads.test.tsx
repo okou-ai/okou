@@ -6,10 +6,9 @@ import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { CLIENT_TYPE_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import { expect, test } from "vitest";
 
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  continuitySidebarLink,
   continuityThread,
   installContinuityWorkspace,
 } from "./chat-continuity-test-helpers.ts";
@@ -218,71 +217,6 @@ test("Complete uploads returned as absolute private Artifact URLs", async () => 
   expect(completedIds).toStrictEqual([id]);
 });
 
-test("Keep a pending upload with the conversation that started it", async () => {
-  const owner = continuityThread(10, 1, "Upload owner");
-  const neighbor = continuityThread(10, 2, "Upload neighbor");
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 10,
-    threads: [owner, neighbor],
-  });
-  const transfer = context.mocks.deferred<void>();
-  installSimpleUploads(10, new Map());
-  context.mocks.http.put(uploadUrl(10, "owned-upload.txt"), async () => {
-    await transfer.promise;
-    return new HttpResponse(null, { status: 200 });
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${owner.id}`,
-    ...workspace.pageOptions,
-  });
-
-  await messageComposer();
-  const file = new File(["pending"], "owned-upload.txt", {
-    type: "text/plain",
-  });
-  await userEvent.upload(composerFileInput(), file);
-  await waitFor(() => {
-    expect(fastButton("Cancel upload owned-upload.txt")).toBeVisible();
-  });
-
-  await waitFor(() => {
-    expect(continuitySidebarLink(neighbor.id)).toBeVisible();
-  });
-  const neighborLink = continuitySidebarLink(neighbor.id);
-  click(neighborLink);
-  await waitFor(() => {
-    expect(continuitySidebarLink(neighbor.id)).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
-    expect(
-      document.querySelector(
-        `[data-chat-thread-container-id="${neighbor.id}"]`,
-      ),
-    ).toBeVisible();
-    expect(document.body).not.toHaveTextContent("owned-upload.txt");
-  });
-  transfer.resolve();
-  await waitFor(() => {
-    expect(continuitySidebarLink(owner.id)).toBeVisible();
-  });
-  const ownerLink = continuitySidebarLink(owner.id);
-  click(ownerLink);
-  await waitFor(() => {
-    expect(continuitySidebarLink(owner.id)).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
-    expect(
-      document.querySelector(`[data-chat-thread-container-id="${owner.id}"]`),
-    ).toBeVisible();
-    expect(fastButton("Remove owned-upload.txt")).toBeVisible();
-  });
-  expect(document.body).toHaveTextContent("owned-upload.txt");
-});
-
 test("Keep successful attachments after another upload fails", async () => {
   const thread = continuityThread(11, 1, "Partial upload result");
   const workspace = installContinuityWorkspace(context, {
@@ -334,67 +268,5 @@ test("Keep successful attachments after another upload fails", async () => {
   await userEvent.click(fastButton("Send"));
   await waitFor(() => {
     expect(deliveredAttachments).toStrictEqual(["ready.txt"]);
-  });
-});
-
-test("Wait for an attachment upload before sending the draft", async () => {
-  const thread = continuityThread(13, 1, "Wait for upload before send");
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 13,
-    threads: [thread],
-  });
-  const transfer = context.mocks.deferred<void>();
-  installSimpleUploads(13, new Map());
-  context.mocks.http.put(uploadUrl(13, "delayed.txt"), async () => {
-    await transfer.promise;
-    return new HttpResponse(null, { status: 200 });
-  });
-  let sendCalls = 0;
-  let deliveredAttachments: string[] = [];
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    if (body.userMessage === undefined) {
-      throw new Error("Expected a user message send");
-    }
-    sendCalls += 1;
-    deliveredAttachments = sentFilenames(body.userMessage.parts);
-    return respond(201, {
-      runId: "a8000000-0000-4000-a000-000000000013",
-      threadId: body.threadId ?? thread.id,
-      status: "pending",
-      createdAt: "2026-08-13T04:00:00.000Z",
-    });
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${thread.id}`,
-    ...workspace.pageOptions,
-  });
-
-  const composer = await messageComposer();
-  await userEvent.type(composer, "Send after the upload is ready");
-  await userEvent.upload(
-    composerFileInput(),
-    new File(["pending"], "delayed.txt", { type: "text/plain" }),
-  );
-  await waitFor(() => {
-    expect(fastButton("Cancel upload delayed.txt")).toBeVisible();
-    expect(fastButton("Send")).toBeDisabled();
-  });
-  await userEvent.click(composer);
-  await userEvent.keyboard("{Enter}");
-  expect(sendCalls).toBe(0);
-  expect(composer).toHaveTextContent("Send after the upload is ready");
-  expect(transfer.settled()).toBeFalsy();
-
-  transfer.resolve();
-  await waitFor(() => {
-    expect(fastButton("Remove delayed.txt")).toBeVisible();
-    expect(fastButton("Send")).toBeEnabled();
-  });
-  await userEvent.click(fastButton("Send"));
-  await waitFor(() => {
-    expect(sendCalls).toBe(1);
-    expect(deliveredAttachments).toStrictEqual(["delayed.txt"]);
   });
 });

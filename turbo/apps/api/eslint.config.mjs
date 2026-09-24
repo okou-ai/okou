@@ -269,6 +269,17 @@ export default [
     },
   },
   {
+    files: ["src/signals/services/agent-webhook-firewall-auth.service.ts"],
+    rules: {
+      // One safe receipt after a bounded Gmail retry succeeds. Debug is dropped
+      // by Axiom, while a warning would misclassify the recovered attempt.
+      "api/no-logger-info": [
+        "error",
+        { allowedMessages: ["gmail token refresh recovered"] },
+      ],
+    },
+  },
+  {
     files: ["src/signals/services/conversation-history-deletion.service.ts"],
     rules: {
       // One content-free aggregate per committed lifecycle deletion, never on
@@ -604,19 +615,7 @@ export default [
       "src/test-fixtures/**/*.ts",
     ],
     rules: {
-      "ccstate/no-test-delay": [
-        "error",
-        {
-          allowed: [
-            {
-              file: "src/signals/routes/__tests__/morning-brief-composition.test.ts",
-              kinds: ["delay"],
-              reason:
-                "Issue #35737 verifies successful provider reads before a real source deadline; #35594 tracks replacing the pacing with a controlled deadline signal.",
-            },
-          ],
-        },
-      ],
+      "ccstate/no-test-delay": "error",
     },
   },
   {

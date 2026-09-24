@@ -3,6 +3,7 @@ import {
   isOkouRunModel,
   type OkouRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
+import { OKOU_MODEL_METADATA } from "@okouai/api-contracts/contracts/okou-model-metadata";
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { streamPiNative } from "./native-stream";
 import { stream as streamCodexResponses } from "@earendil-works/pi-ai/api/openai-codex-responses";
@@ -33,9 +34,8 @@ import {
 
 const PI_AGENT_USER_AGENT = "okou-pi-agent/1.0";
 
-const OKOU_PI_MODEL_CAPABILITIES = {
+const OKOU_PI_MODEL_COSTS = {
   "okou-1.0": {
-    name: "Okou 1.0",
     cost: {
       input: 0.2,
       output: 1.2,
@@ -53,7 +53,6 @@ const OKOU_PI_MODEL_CAPABILITIES = {
     },
   },
   "okou-1.0-pro": {
-    name: "Okou 1.0 Pro",
     cost: {
       input: 5,
       output: 30,
@@ -71,7 +70,6 @@ const OKOU_PI_MODEL_CAPABILITIES = {
     },
   },
   "okou-1.0-max": {
-    name: "Okou 1.0 Max",
     cost: {
       input: 5,
       output: 30,
@@ -91,7 +89,6 @@ const OKOU_PI_MODEL_CAPABILITIES = {
 } as const satisfies Record<
   OkouRunModel,
   {
-    readonly name: string;
     readonly cost: Model<Api>["cost"];
   }
 >;
@@ -104,10 +101,11 @@ function okouSourceModel(
   if (provider !== "openrouter" || !isOkouRunModel(model)) {
     return undefined;
   }
-  const capabilities = OKOU_PI_MODEL_CAPABILITIES[model];
+  const metadata = OKOU_MODEL_METADATA[model];
+  const pricing = OKOU_PI_MODEL_COSTS[model];
   return {
     id: model,
-    name: capabilities.name,
+    name: metadata.displayName,
     provider,
     // The source API tag only guards reuse of API-specific compatibility.
     // Okou executes on OpenRouter Responses without completions compatibility.
@@ -115,10 +113,10 @@ function okouSourceModel(
     baseUrl: "https://openrouter.ai/api/v1",
     // Reasoning is configured by the OpenRouter Preset, not by the client.
     reasoning: false,
-    input: ["text", "image"],
-    contextWindow: 1_050_000,
-    maxTokens: 128_000,
-    cost: capabilities.cost,
+    input: [...metadata.inputModalities],
+    contextWindow: metadata.pi.contextWindow,
+    maxTokens: metadata.pi.maxTokens,
+    cost: pricing.cost,
   };
 }
 
@@ -176,7 +174,7 @@ function sourceModel(provider: string, model: string): Model<Api> | undefined {
   // copies `source.compat` only when `source.api === dialect`, so recording the
   // upstream dialect keeps that guard false and leaves the wire unchanged.
   // This is the V4 text-only model, priced apart from V4.1; never substitute one
-  // for the other. The OpenRouter route still resolves from the 0.86.1 catalog.
+  // for the other. The OpenRouter route still resolves from the 0.87.1 catalog.
   if (provider === "deepseek" && model === "deepseek-v4-flash") {
     return {
       id: model,

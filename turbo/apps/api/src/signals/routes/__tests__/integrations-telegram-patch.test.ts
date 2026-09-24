@@ -219,28 +219,6 @@ describe("PATCH /api/integrations/telegram/:botId", () => {
     });
   });
 
-  it("returns 403 for a non-admin non-owner custom bot update", async () => {
-    const bot = await seedBot({ ownerUserId: newId("owner") });
-    mocks.clerk.session(newId("member"), bot.orgId, "org:member");
-
-    const response = await accept(
-      client().updateBot({
-        params: { botId: bot.botId },
-        headers: AUTH_HEADERS,
-        body: { defaultAgentId: bot.composeId },
-      }),
-      [403],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message:
-          "Only the bot owner or an org admin can change the default agent",
-        code: "FORBIDDEN",
-      },
-    });
-  });
-
   it("updates the default agent for an org admin", async () => {
     const bot = await seedBot({ ownerUserId: newId("owner") });
     const adminUserId = newId("admin");

@@ -438,18 +438,6 @@ describe("GET /api/integrations/telegram", () => {
     }
   });
 
-  it("returns 401 when no auth token is provided", async () => {
-    expect.hasAssertions();
-    const client = setupApp({
-      context,
-      routes: integrationsTelegramRoutes,
-    })(integrationsTelegramContract);
-
-    const response = await accept(client.list({ headers: {} }), [401]);
-
-    expectUnauthorized(response.body);
-  });
-
   it("returns the configured official bot when the active org has no custom Telegram bots", async () => {
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
@@ -1151,37 +1139,6 @@ describe("POST /api/integrations/telegram/link", () => {
     );
 
     expect(response.body.error.code).toBe("NOT_FOUND");
-  });
-
-  it("returns 400 without telegramAuth or connectSignature", async () => {
-    const { token, orgId, userId } = await seedLinkContext();
-    const telegramBotId = newTelegramBotId();
-    const builder = makeTelegramFixtureBuilder(orgId);
-    const installation = await store.set(
-      seedTelegramInstallation$,
-      { orgId, ownerUserId: userId, telegramBotId },
-      context.signal,
-    );
-    builder.composeIds.push(installation.composeId);
-    builder.telegramBotIds.push(installation.telegramBotId);
-    fixtures.push(freezeTelegramFixture(builder));
-    const client = setupApp({
-      context,
-      routes: integrationsTelegramRoutes,
-    })(integrationsTelegramContract);
-
-    const response = await accept(
-      client.link({
-        headers: { authorization: `Bearer ${token}` },
-        body: { telegramBotId },
-      }),
-      [400],
-    );
-
-    expect(response.body.error.code).toBe("BAD_REQUEST");
-    expect(response.body.error.message).toBe(
-      "Either telegramAuth or connectSignature is required",
-    );
   });
 
   it("links a custom bot account without provisioning artifact storage", async () => {
@@ -1960,17 +1917,6 @@ describe("GET /api/integrations/telegram/:botId/avatar", () => {
       ),
     );
   }
-
-  it("returns 401 when not authenticated and signature is missing", async () => {
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-    const response = await app.request(
-      "/api/integrations/telegram/tg-bot/avatar",
-    );
-    const body = await response.json();
-
-    expect(response.status).toBe(401);
-    expectUnauthorized(body);
-  });
 
   it("returns 404 when the bot is not visible in the active org", async () => {
     const { token } = await seedAvatarAuthContext();

@@ -12,8 +12,8 @@ use tokio_rustls::TlsConnector;
 use zeroize::Zeroizing;
 
 use crate::{
-    Authenticated, AuthenticationStage, Error, PlainCredentials, TrustRoots, VncPassword,
-    X509Authentication,
+    Authenticated, AuthenticatedStream, AuthenticationStage, Error, PlainCredentials, TrustRoots,
+    VncPassword, X509Authentication,
 };
 
 const RFB_VERSION: &[u8; 12] = b"RFB 003.008\n";
@@ -63,10 +63,12 @@ where
     )
     .await?;
 
-    Ok(Authenticated { stream })
+    Ok(Authenticated {
+        stream: AuthenticatedStream::verified_tls(stream),
+    })
 }
 
-async fn phase<T>(
+pub(crate) async fn phase<T>(
     stage: AuthenticationStage,
     deadline: Instant,
     future: impl Future<Output = Result<T, Error>>,
@@ -196,7 +198,7 @@ where
     read_security_result(stream).await
 }
 
-async fn read_security_result<S>(stream: &mut S) -> Result<(), Error>
+pub(crate) async fn read_security_result<S>(stream: &mut S) -> Result<(), Error>
 where
     S: AsyncRead + Unpin,
 {
@@ -210,7 +212,7 @@ where
     }
 }
 
-async fn discard_reason<S: AsyncRead + Unpin>(stream: &mut S) -> Result<(), Error> {
+pub(crate) async fn discard_reason<S: AsyncRead + Unpin>(stream: &mut S) -> Result<(), Error> {
     let length = stream.read_u32().await?;
     if length > MAX_ERROR_BYTES {
         return Err(Error::RemoteDataTooLarge);

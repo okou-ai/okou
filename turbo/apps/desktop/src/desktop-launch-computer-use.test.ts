@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DesktopAuthCallback } from "./desktop-auth";
-import { startDesktopLaunchComputerUse } from "./desktop-launch-computer-use";
+import {
+  isLaunchComputerUseSetupRequired,
+  startDesktopLaunchComputerUse,
+} from "./desktop-launch-computer-use";
 
 const pendingCallback: DesktopAuthCallback = {
   code: "a".repeat(32),
@@ -38,6 +41,101 @@ function launchOptions(
 }
 
 describe("startDesktopLaunchComputerUse", () => {
+  it("waits for hidden authentication before probing permissions on launch", async () => {
+    let finishAuth!: () => void;
+    const authentication = new Promise<void>((resolve) => {
+      finishAuth = resolve;
+    });
+    let finishCleanup!: () => void;
+    const cleanup = new Promise<void>((resolve) => {
+      finishCleanup = resolve;
+    });
+    let probed = false;
+    const options = launchOptions({
+      isComputerUseSetupRequired: () =>
+        isLaunchComputerUseSetupRequired({
+          getAuthState: async () => {
+            await authentication;
+            return {
+              status: "signed_in",
+              user: { userId: "user", email: "user@example.test" },
+              organization: { id: "org", name: "Workspace" },
+            };
+          },
+          waitForAuthCleanup: () => cleanup,
+          refreshPermissions: async () => {
+            probed = true;
+            return { accessibility: true, screenRecording: true };
+          },
+          canRecoverSession: () => true,
+        }),
+    });
+
+    startDesktopLaunchComputerUse(options);
+    await flushLaunchHandlers();
+    expect(probed).toBe(false);
+    expect(options.requestAutoStartComputerUse).not.toHaveBeenCalled();
+    finishAuth();
+    await flushLaunchHandlers();
+    expect(probed).toBe(false);
+    finishCleanup();
+    await flushLaunchHandlers();
+    expect(probed).toBe(true);
+    expect(options.requestAutoStartComputerUse).toHaveBeenCalledOnce();
+    expect(options.openSetupWindow).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])(
+    "routes a failed hidden restore to %s recovery only when recoverable",
+    async (canRecover) => {
+      const options = launchOptions({
+        isComputerUseSetupRequired: () =>
+          isLaunchComputerUseSetupRequired({
+            getAuthState: async () => ({
+              status: "signed_out",
+              user: null,
+              organization: null,
+            }),
+            waitForAuthCleanup: async () => {},
+            refreshPermissions: async () => ({
+              accessibility: true,
+              screenRecording: true,
+            }),
+            canRecoverSession: () => canRecover,
+          }),
+      });
+      startDesktopLaunchComputerUse(options);
+      await flushLaunchHandlers();
+      expect(options.requestAutoStartComputerUse).toHaveBeenCalledTimes(
+        canRecover ? 1 : 0,
+      );
+      expect(options.openSetupWindow).toHaveBeenCalledTimes(canRecover ? 0 : 1);
+    },
+  );
+
+  it("never auto-starts when macOS permissions are actually denied", async () => {
+    const options = launchOptions({
+      isComputerUseSetupRequired: () =>
+        isLaunchComputerUseSetupRequired({
+          getAuthState: async () => ({
+            status: "signed_out",
+            user: null,
+            organization: null,
+          }),
+          waitForAuthCleanup: async () => {},
+          refreshPermissions: async () => ({
+            accessibility: false,
+            screenRecording: true,
+          }),
+          canRecoverSession: () => true,
+        }),
+    });
+    startDesktopLaunchComputerUse(options);
+    await flushLaunchHandlers();
+    expect(options.openSetupWindow).toHaveBeenCalledOnce();
+    expect(options.requestAutoStartComputerUse).not.toHaveBeenCalled();
+  });
+
   it("auto-starts Computer Use when setup is ready", async () => {
     const options = launchOptions();
 

@@ -635,11 +635,6 @@ const LAUNCH_GATED_DIRECT_OKOU_CASES: readonly LaunchGatedDirectOkouCase[] = [
   },
 ];
 
-const LAUNCH_GATED_DIRECT_OKOU_CONNECTOR_SLUGS =
-  LAUNCH_GATED_DIRECT_OKOU_CASES.map((providerCase) => {
-    return providerCase.connectorSlug;
-  });
-
 const jsonTokenRequestSchema = z.record(z.string(), z.string());
 
 function launchGatedTokenRequestParams(
@@ -1706,28 +1701,6 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
   });
 
   it.each(["box", "hubspot", "meta-ads", "tiktok-ads"] as const)(
-    "returns %s provider errors to the configured App callback",
-    async (connectorSlug) => {
-      mockEnv("APP_URL", "https://app.okou.ai");
-      mockAuthenticatedSession();
-
-      const response = await requestOauthStart(connectorSlug, {
-        callbackTarget: "app",
-        headers: authHeaders(),
-        origin: API_ORIGIN,
-      });
-
-      expect(response.status).toBe(200);
-      const authorizationUrl = await authorizationUrlFromResponse(response);
-      expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-        `https://app.okou.ai/connectors/${connectorSlug}/callback`,
-      );
-      expectOauthState(authorizationUrl);
-      await rejectProviderAuthorization(authorizationUrl);
-    },
-  );
-
-  it.each(["box", "hubspot", "meta-ads", "tiktok-ads"] as const)(
     "keeps an omitted %s callback target on the existing Web callback",
     async (connectorSlug) => {
       mockAuthenticatedSession();
@@ -2076,28 +2049,6 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
   );
 
   it.each(REDIRECTING_DIRECT_OKOU_CONNECTOR_SLUGS)(
-    "returns %s provider errors to the configured App callback",
-    async (connectorSlug) => {
-      mockEnv("APP_URL", "https://app.okou.ai");
-      mockAuthenticatedSession();
-
-      const response = await requestOauthStart(connectorSlug, {
-        callbackTarget: "app",
-        headers: authHeaders(),
-        origin: API_ORIGIN,
-      });
-
-      expect(response.status).toBe(200);
-      const authorizationUrl = await authorizationUrlFromResponse(response);
-      expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-        `https://app.okou.ai/connectors/${connectorSlug}/callback`,
-      );
-      expectOauthState(authorizationUrl);
-      await rejectProviderAuthorization(authorizationUrl);
-    },
-  );
-
-  it.each(REDIRECTING_DIRECT_OKOU_CONNECTOR_SLUGS)(
     "keeps an omitted %s callback target on the existing Web callback",
     async (connectorSlug) => {
       mockAuthenticatedSession();
@@ -2177,25 +2128,6 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
         redirect_uri: redirectUri,
       },
     ]);
-  });
-
-  it("returns Notion provider errors to the configured App callback", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockAuthenticatedSession();
-
-    const response = await requestOauthStart("notion", {
-      callbackTarget: "app",
-      headers: authHeaders(),
-      origin: API_ORIGIN,
-    });
-
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      "https://app.okou.ai/connectors/notion/callback",
-    );
-    expectOauthState(authorizationUrl);
-    await rejectProviderAuthorization(authorizationUrl);
   });
 
   it("keeps an omitted Notion callback target on the existing Web callback", async () => {
@@ -2304,31 +2236,9 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
     },
   );
 
-  it.each(LAUNCH_GATED_DIRECT_OKOU_CONNECTOR_SLUGS)(
-    "returns %s provider errors to the configured App callback",
-    async (connectorSlug) => {
-      mockEnv("APP_URL", "https://app.okou.ai");
-      mockAuthenticatedSession();
-
-      const response = await requestOauthStart(connectorSlug, {
-        callbackTarget: "app",
-        headers: authHeaders(),
-        origin: API_ORIGIN,
-      });
-
-      expect(response.status).toBe(200);
-      const authorizationUrl = await authorizationUrlFromResponse(response);
-      expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-        `https://app.okou.ai/connectors/${connectorSlug}/callback`,
-      );
-      expectOauthState(authorizationUrl);
-      await rejectProviderAuthorization(authorizationUrl);
-    },
-  );
-
-  it.each(LAUNCH_GATED_DIRECT_OKOU_CONNECTOR_SLUGS)(
-    "keeps an omitted %s callback target on the existing Web callback",
-    async (connectorSlug) => {
+  it.each(LAUNCH_GATED_DIRECT_OKOU_CASES)(
+    "keeps an omitted $label callback target on the existing Web callback",
+    async ({ connectorSlug }) => {
       mockAuthenticatedSession();
 
       const response = await requestOauthStart(connectorSlug, {

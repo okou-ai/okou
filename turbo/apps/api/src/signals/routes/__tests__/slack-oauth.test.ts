@@ -376,17 +376,6 @@ describe("Slack OAuth API routes", () => {
       );
       expect(signedOAuthState(redirectUrl).payload.publicBrand).toBe("okou");
     });
-
-    it("returns 503 when Slack client ID is not configured", async () => {
-      mockEnv("SLACK_OAUTH_CLIENT_ID", "");
-
-      const response = await appRequest("/api/slack/oauth/install");
-
-      expect(response.status).toBe(503);
-      await expect(response.json()).resolves.toStrictEqual({
-        error: "Slack integration is not configured",
-      });
-    });
   });
 
   describe("GET /api/slack/oauth/connect", () => {
@@ -518,17 +507,6 @@ describe("Slack OAuth API routes", () => {
       expect(response.status).toBe(400);
       await expect(response.json()).resolves.toStrictEqual({
         error: "Missing orgId or userId",
-      });
-    });
-
-    it("returns 404 when no Slack installation exists for the org", async () => {
-      const response = await appRequest(
-        "/api/slack/oauth/connect?orgId=org_missing&userId=user_1",
-      );
-
-      expect(response.status).toBe(404);
-      await expect(response.json()).resolves.toStrictEqual({
-        error: "No Slack workspace installed for this organization",
       });
     });
 

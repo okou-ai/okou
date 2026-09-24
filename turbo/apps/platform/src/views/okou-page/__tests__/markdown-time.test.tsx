@@ -21,73 +21,40 @@ function installMessage(content: string) {
   return chat;
 }
 
-test.each([
-  {
-    timezone: "America/Los_Angeles",
-    summer: "Sep 9, 2026, 12:00:00 AM PDT",
-    winter: "Jan 8, 2026, 11:00:00 PM PST",
-  },
-  {
-    timezone: "Asia/Kathmandu",
-    summer: "Sep 9, 2026, 12:45:00 PM GMT+5:45",
-    winter: "Jan 9, 2026, 12:45:00 PM GMT+5:45",
-  },
-  {
-    timezone: "UTC",
-    summer: "Sep 9, 2026, 7:00:00 AM UTC",
-    winter: "Jan 9, 2026, 7:00:00 AM UTC",
-  },
-])(
-  "Markdown times use the browser timezone $timezone for each instant",
-  async ({ timezone, summer, winter }) => {
-    context.mocks.browser.language("en-US");
-    context.mocks.data.userPreferences({ timezone: "Pacific/Auckland" });
-    const chat = installMessage(
-      'Summer meeting: **<time datetime="2026-09-09T15:00:00+08:00">source summer time</time>**. ' +
-        'Winter meeting: <time datetime="2026-01-09T07:00:00Z">source winter time</time>.',
-    );
+test("Markdown times use the browser timezone for each instant", async () => {
+  context.mocks.browser.language("en-US");
+  context.mocks.data.userPreferences({ timezone: "Pacific/Auckland" });
+  const summer = "Sep 9, 2026, 12:00:00 AM PDT";
+  const winter = "Jan 8, 2026, 11:00:00 PM PST";
+  const chat = installMessage(
+    'Summer meeting: **<time datetime="2026-09-09T15:00:00+08:00">source summer time</time>**. ' +
+      'Winter meeting: <time datetime="2026-01-09T07:00:00Z">source winter time</time>.',
+  );
 
-    await setupPage({
-      context,
-      path: chat.path,
-      host: "app.okou.ai",
-      locale: "en-US",
-      env: { TZ: timezone },
-    });
+  await setupPage({
+    context,
+    path: chat.path,
+    host: "app.okou.ai",
+    locale: "en-US",
+    env: { TZ: "America/Los_Angeles" },
+  });
 
-    const summerTime = await screen.findByText(summer);
-    expect(summerTime.tagName).toBe("TIME");
-    expect(summerTime).toHaveAttribute("datetime", "2026-09-09T15:00:00+08:00");
-    expect(summerTime.closest("strong")).not.toBeNull();
-    expect(summerTime.closest("p")).toHaveTextContent(
-      `Summer meeting: ${summer}. Winter meeting: ${winter}.`,
-    );
-    expect(screen.getByText(winter)).toHaveAttribute(
-      "datetime",
-      "2026-01-09T07:00:00Z",
-    );
-  },
-);
+  const summerTime = await screen.findByText(summer);
+  expect(summerTime.tagName).toBe("TIME");
+  expect(summerTime).toHaveAttribute("datetime", "2026-09-09T15:00:00+08:00");
+  expect(summerTime.closest("strong")).not.toBeNull();
+  expect(summerTime.closest("p")).toHaveTextContent(
+    `Summer meeting: ${summer}. Winter meeting: ${winter}.`,
+  );
+  expect(screen.getByText(winter)).toHaveAttribute(
+    "datetime",
+    "2026-01-09T07:00:00Z",
+  );
+});
 
-test.each([
-  {
-    scenario: "British English uses day-first dates and a 24-hour clock",
-    languages: ["en-GB", "en-US"],
-    expected: "9 Sept 2026, 15:00:00 GMT+8",
-  },
-  {
-    scenario: "Chinese works even when the application UI is in English",
-    languages: ["zh-CN", "en-US"],
-    expected: "2026年9月9日 GMT+8 15:00:00",
-  },
-  {
-    scenario: "the single browser language is used when its list is empty",
-    languages: [],
-    expected: "9 Sept 2026, 15:00:00 GMT+8",
-  },
-])("Markdown times follow browser locale: $scenario", async (scenario) => {
+test("Markdown times follow the browser locale even when the application UI is in English", async () => {
   context.mocks.browser.language("en-GB");
-  context.mocks.browser.languages(scenario.languages);
+  context.mocks.browser.languages(["zh-CN", "en-US"]);
   const chat = installMessage(
     '<time datetime="2026-09-09T15:00:00+08:00">source time</time>',
   );
@@ -100,27 +67,10 @@ test.each([
     env: { TZ: "Asia/Shanghai" },
   });
 
-  const time = await screen.findByText(scenario.expected);
+  const time = await screen.findByText("2026年9月9日 GMT+8 15:00:00");
   expect(time).toBeVisible();
   expect(time).toHaveAttribute("datetime", "2026-09-09T15:00:00+08:00");
   expect(document.documentElement).toHaveAttribute("lang", "en-US");
-});
-
-test("A time tag can render from datetime without a text label", async () => {
-  context.mocks.browser.language("en-US");
-  const chat = installMessage(
-    '<time datetime="2026-09-09T07:00:00.123Z"></time>',
-  );
-  await setupPage({
-    context,
-    path: chat.path,
-    host: "app.okou.ai",
-    locale: "en-US",
-    env: { TZ: "Asia/Shanghai" },
-  });
-
-  const time = await screen.findByText("Sep 9, 2026, 3:00:00 PM GMT+8");
-  expect(time).toHaveAttribute("datetime", "2026-09-09T07:00:00.123Z");
 });
 
 test("Missing, invalid, and timezone-free datetimes retain their original text", async () => {

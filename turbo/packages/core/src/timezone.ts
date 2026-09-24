@@ -1,3 +1,5 @@
+export const DEFAULT_USER_TIMEZONE = "America/Los_Angeles";
+
 /**
  * Returns the GMT offset string for an IANA timezone at the current instant
  * (e.g. "GMT+05:30"). Called at render time so DST transitions are reflected

@@ -7,8 +7,10 @@ control and RPC services, shared contracts, and developer/test support.
 
 | Crate                    | Responsibility                                                                                        |
 | ------------------------ | ----------------------------------------------------------------------------------------------------- |
-| runner                   | Host-side run orchestration, sandbox lifecycle, images and operational CLI                            |
+| runner                   | Process-wide run composition, provider completion, sandbox finalization and operational CLI            |
+| runner-executor          | Claimed-run sandbox execution, session history, results, diagnostics and per-run telemetry             |
 | runner-host              | Runner host filesystem, process, lock, path and logging primitives                                    |
+| runner-lifecycle         | Idle sandbox, status and workspace image lifecycle                                                    |
 | runner-network           | Runner proxy, DNS, CA, network log capture and bounded upload                                         |
 | runner-provider          | API/local job discovery, claiming, completion, active input, cancellation and queue coordination      |
 | runner-remote            | Guest RPC, remote usage, SSH authority/sessions/files, and VNC sessions                               |
@@ -56,6 +58,8 @@ Runner -> runner-provider -> runner-host -> runner-types
 Runner -> runner-network  -> runner-host -> runner-types
 Runner -> runner-remote   -> runner-network, runner-provider, runner-host, runner-types
 Runner -> runner-storage  -> runner-host -> runner-types
+Runner -> runner-lifecycle -> runner-storage, runner-host, runner-types, sandbox
+Runner -> runner-executor -> runner-provider, runner-storage, runner-network, runner-remote, runner-lifecycle, runner-host, runner-types
 Runner -> guest-control-client -> guest-control-server (guest-init child)
 Guest  -> runner-rpc-client    -> Runner service endpoint
 Guest  -> process-control-ipc  -> guest-local process control / placement

@@ -5,6 +5,15 @@ import {
   validateAuthBaseUrl,
   validateBaseUrl,
 } from "./firewall-types";
+import {
+  AWS_PREDICATE_VALUE_RE,
+  AWS_QUERY_KEY_RE,
+  AWS_QUERY_VALUE_RE,
+  AWS_S3_PERMISSION_HEADER_QUERY_KEYS,
+  AWS_S3_PERMISSION_HEADER_NAMES,
+  isSensitiveAwsDiagnosticQueryKey,
+  parseRuleRemainder,
+} from "./firewall-expander";
 import { hasRawWhitespace, hasUnsafeUrlCodepoint } from "./firewall-url-utils";
 import { parseSegment, splitPathSegments } from "./segment-parser";
 
@@ -46,6 +55,30 @@ export interface FirewallRoutingPermissionApi {
   readonly routes: readonly FirewallRoutingPermissionRoute[];
 }
 
+export interface FirewallAwsDiagnosticQuerySelector {
+  readonly key: string;
+  readonly value?: string;
+}
+
+export interface FirewallAwsDiagnosticContext {
+  readonly sigv4Service: string;
+  readonly action?: string;
+  readonly target?: string;
+  readonly query: readonly FirewallAwsDiagnosticQuerySelector[];
+  readonly headerNames: readonly string[];
+}
+
+export interface FirewallRequestDecisionOptions {
+  /**
+   * Enables AWS-aware rule evaluation only for diagnostic callers. Omitting
+   * this option preserves the historical fail-closed behavior of other
+   * matcher consumers.
+   */
+  readonly awsDiagnostic?: {
+    readonly context?: FirewallAwsDiagnosticContext;
+  };
+}
+
 export type FirewallRequestBlockReason =
   | "permission_denied"
   | "unknown_endpoint"
@@ -78,6 +111,7 @@ export type FirewallRequestDecision =
       readonly relativePath: string;
       readonly permission?: string;
       readonly rule?: string;
+      readonly awsContextIncomplete?: true;
     }
   | {
       readonly kind: "block";
@@ -86,6 +120,7 @@ export type FirewallRequestDecision =
       readonly relativePath: string;
       readonly reason: FirewallRequestBlockReason;
       readonly permissions: readonly string[];
+      readonly awsContextIncomplete?: true;
     }
   | {
       readonly kind: "ambiguous";
@@ -129,6 +164,12 @@ interface DecisionRule {
   readonly method: string;
   readonly path: string;
   readonly specificity: PathSpecificity;
+  readonly awsPredicates?: ReadonlyMap<string, string>;
+  readonly awsQueryRequirements?: readonly {
+    readonly key: string;
+    readonly value?: string;
+  }[];
+  readonly awsQuerySelectorKeys?: ReadonlySet<string>;
 }
 
 interface DecisionApi {
@@ -138,6 +179,7 @@ interface DecisionApi {
   readonly hasMalformedRules: boolean;
   readonly permissionless: boolean;
   readonly routingIdentity: string | null;
+  readonly supportsAwsSigv4: boolean;
   readonly rules: readonly DecisionRule[];
 }
 
@@ -404,16 +446,57 @@ function matchingRulePath(rule: string, upperMethod: string): string | null {
 function compileDecisionRule(
   permission: string,
   rule: string,
+  serviceName: string,
+  supportsAwsSigv4: boolean,
+  awsDiagnosticEnabled: boolean,
 ): DecisionRule | null {
   const spaceIdx = rule.indexOf(" ");
   if (spaceIdx === -1) return null;
   const method = rule.slice(0, spaceIdx);
   if (!VALID_RULE_METHODS.has(method)) return null;
-  const path = rule.slice(spaceIdx + 1);
-  if (path.includes(" AWS ")) return null;
+  let parsed: ReturnType<typeof parseRuleRemainder>;
+  try {
+    parsed = parseRuleRemainder(
+      rule.slice(spaceIdx + 1),
+      rule,
+      permission,
+      serviceName,
+    );
+  } catch {
+    return null;
+  }
+  if (
+    parsed.awsPredicates !== undefined &&
+    (!supportsAwsSigv4 || !awsDiagnosticEnabled)
+  ) {
+    return null;
+  }
+  const path = parsed.path;
   const specificity = pathSpecificity(path);
   if (specificity === null) return null;
-  return { permission, raw: rule, method, path, specificity };
+  return {
+    permission,
+    raw: rule,
+    method,
+    path,
+    specificity,
+    ...(parsed.awsPredicates === undefined
+      ? {}
+      : { awsPredicates: parsed.awsPredicates }),
+    ...(parsed.queryRequirements === undefined
+      ? {}
+      : {
+          awsQueryRequirements: parsed.queryRequirements.map((requirement) => {
+            const separator = requirement.indexOf("=");
+            return separator === -1
+              ? { key: requirement }
+              : {
+                  key: requirement.slice(0, separator),
+                  value: requirement.slice(separator + 1),
+                };
+          }),
+        }),
+  };
 }
 
 function isValidPermissionName(permissionName: string): boolean {
@@ -586,10 +669,415 @@ function decisionApiRoutingIdentity(
   );
 }
 
+function awsQuerySelectorSignature(rule: DecisionRule): string | null {
+  const predicates = rule.awsPredicates;
+  const service = predicates?.get("sigv4");
+  if (
+    service === undefined ||
+    predicates?.has("action") ||
+    predicates?.has("target")
+  ) {
+    return null;
+  }
+
+  const pathIdentity = splitPathSegments(rule.path).map((segment) => {
+    const parsed = parseSegment(segment);
+    if (parsed.kind === "error") return null;
+    return parsed.kind === "literal"
+      ? { kind: "literal", value: parsed.value }
+      : {
+          kind: "param",
+          prefix: parsed.prefix,
+          suffix: parsed.suffix,
+          greedy: parsed.greedy,
+        };
+  });
+  if (
+    pathIdentity.some((segment) => {
+      return segment === null;
+    })
+  )
+    return null;
+  return JSON.stringify([rule.method, pathIdentity, service]);
+}
+
+function attachAwsQuerySelectorKeys(
+  rules: readonly DecisionRule[],
+): DecisionRule[] {
+  const keysBySignature = new Map<string, Set<string>>();
+  for (const rule of rules) {
+    const signature = awsQuerySelectorSignature(rule);
+    if (signature === null) continue;
+    const keys = keysBySignature.get(signature) ?? new Set<string>();
+    for (const requirement of rule.awsQueryRequirements ?? []) {
+      keys.add(requirement.key);
+    }
+    keysBySignature.set(signature, keys);
+  }
+  return rules.map((rule) => {
+    const signature = awsQuerySelectorSignature(rule);
+    if (signature === null) return rule;
+    return {
+      ...rule,
+      awsQuerySelectorKeys: keysBySignature.get(signature) ?? new Set(),
+    };
+  });
+}
+
+const AWS_S3_PERMISSION_HEADER_NAME_SET = new Set<string>(
+  AWS_S3_PERMISSION_HEADER_NAMES,
+);
+const AWS_IGNORED_QUERY_KEYS = new Set([
+  "partnumber",
+  "bucket-region",
+  "continuation-token",
+  "delimiter",
+  "encoding-type",
+  "fetch-owner",
+  "key-marker",
+  "marker",
+  "max-buckets",
+  "max-directory-buckets",
+  "max-keys",
+  "max-parts",
+  "max-uploads",
+  "part-number-marker",
+  "prefix",
+  "response-cache-control",
+  "response-content-disposition",
+  "response-content-encoding",
+  "response-content-language",
+  "response-content-type",
+  "response-expires",
+  "start-after",
+  "upload-id-marker",
+  "version-id-marker",
+  "x-amz-algorithm",
+  "x-amz-credential",
+  "x-amz-date",
+  "x-amz-expires",
+  "x-amz-signedheaders",
+  "x-amz-security-token",
+  "x-amz-signature",
+  "x-id",
+]);
+
+function isValidAwsDiagnosticQuery(
+  value: unknown,
+): value is readonly FirewallAwsDiagnosticQuerySelector[] {
+  if (!Array.isArray(value) || value.length > 32) return false;
+
+  const queryKeys = new Set<string>();
+  for (const selector of value) {
+    if (!isObjectRecord(selector)) return false;
+    if (
+      Object.keys(selector).some((key) => {
+        return !["key", "value"].includes(key);
+      })
+    ) {
+      return false;
+    }
+    const key = selector.key;
+    if (
+      typeof key !== "string" ||
+      key.length > 128 ||
+      !AWS_QUERY_KEY_RE.test(key) ||
+      isSensitiveAwsDiagnosticQueryKey(key) ||
+      queryKeys.has(key)
+    ) {
+      return false;
+    }
+    const queryValue = selector.value;
+    if (
+      queryValue !== undefined &&
+      (typeof queryValue !== "string" ||
+        queryValue.length > 256 ||
+        queryValue === "" ||
+        (queryValue !== "*" && !AWS_QUERY_VALUE_RE.test(queryValue)))
+    ) {
+      return false;
+    }
+    queryKeys.add(key);
+  }
+  return true;
+}
+
+function isValidAwsDiagnosticHeaderNames(
+  value: unknown,
+): value is readonly string[] {
+  if (
+    !Array.isArray(value) ||
+    value.length > AWS_S3_PERMISSION_HEADER_NAMES.length
+  ) {
+    return false;
+  }
+
+  const headerNames = new Set<string>();
+  for (const name of value) {
+    if (
+      typeof name !== "string" ||
+      !AWS_S3_PERMISSION_HEADER_NAME_SET.has(name) ||
+      headerNames.has(name)
+    ) {
+      return false;
+    }
+    headerNames.add(name);
+  }
+  return true;
+}
+
+function isValidAwsPredicate(
+  value: unknown,
+  maximumLength: number,
+): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= maximumLength &&
+    AWS_PREDICATE_VALUE_RE.test(value)
+  );
+}
+
+function isValidOptionalAwsPredicate(
+  value: unknown,
+  maximumLength: number,
+): boolean {
+  return value === undefined || isValidAwsPredicate(value, maximumLength);
+}
+
+function awsActionQueryMatches(
+  action: unknown,
+  query: readonly FirewallAwsDiagnosticQuerySelector[],
+): boolean {
+  if (action === undefined) return true;
+  const actionSelectors = query.filter((selector) => {
+    return selector.key === "Action";
+  });
+  return (
+    actionSelectors.length === 0 ||
+    (actionSelectors.length === 1 && actionSelectors[0]?.value === action)
+  );
+}
+
+function awsDiagnosticHeadersSupported(
+  service: string,
+  action: unknown,
+  target: unknown,
+  headerNames: readonly string[],
+): boolean {
+  return (
+    headerNames.length === 0 ||
+    (service === "s3" && action === undefined && target === undefined)
+  );
+}
+
+function isValidAwsDiagnosticContext(
+  value: unknown,
+): value is FirewallAwsDiagnosticContext {
+  if (!isObjectRecord(value)) return false;
+  const allowedKeys = new Set([
+    "sigv4Service",
+    "action",
+    "target",
+    "query",
+    "headerNames",
+  ]);
+  if (
+    Object.keys(value).some((key) => {
+      return !allowedKeys.has(key);
+    })
+  ) {
+    return false;
+  }
+
+  const service = value.sigv4Service;
+  const action = value.action;
+  const target = value.target;
+  const query = value.query;
+  const headerNames = value.headerNames;
+  if (
+    !isValidAwsPredicate(service, 128) ||
+    !isValidOptionalAwsPredicate(action, 256) ||
+    !isValidOptionalAwsPredicate(target, 256) ||
+    (action !== undefined && target !== undefined) ||
+    !isValidAwsDiagnosticQuery(query) ||
+    !isValidAwsDiagnosticHeaderNames(headerNames)
+  ) {
+    return false;
+  }
+  return (
+    awsActionQueryMatches(action, query) &&
+    (target === undefined ||
+      !query.some((selector) => {
+        return selector.key === "Action";
+      })) &&
+    awsDiagnosticHeadersSupported(service, action, target, headerNames)
+  );
+}
+
+function queryValues(
+  selectors: readonly FirewallAwsDiagnosticQuerySelector[],
+  key: string,
+): string[] {
+  return selectors
+    .filter((selector) => {
+      return selector.key === key;
+    })
+    .map((selector) => {
+      return selector.value ?? "";
+    });
+}
+
+function awsQueryRequirementsMatch(
+  rule: DecisionRule,
+  context: FirewallAwsDiagnosticContext,
+  strictExtraKeys: boolean,
+): boolean {
+  const requirements = rule.awsQueryRequirements ?? [];
+  const requiredKeys = new Set(
+    requirements.map((requirement) => {
+      return requirement.key;
+    }),
+  );
+
+  for (const requirement of requirements) {
+    const values = queryValues(context.query, requirement.key);
+    if (requirement.value === "*") {
+      if (
+        values.length === 0 ||
+        values.some((value) => {
+          return value === "";
+        }) ||
+        (strictExtraKeys && values.length !== 1)
+      ) {
+        return false;
+      }
+      continue;
+    }
+    if (values.length !== 1 || values[0] !== (requirement.value ?? "")) {
+      return false;
+    }
+  }
+
+  if (strictExtraKeys) {
+    return context.query.every((selector) => {
+      return (
+        requiredKeys.has(selector.key) ||
+        AWS_IGNORED_QUERY_KEYS.has(selector.key.toLowerCase())
+      );
+    });
+  }
+
+  const selectorKeys = rule.awsQuerySelectorKeys ?? new Set<string>();
+  return context.query.every((selector) => {
+    return !selectorKeys.has(selector.key) || requiredKeys.has(selector.key);
+  });
+}
+
+function awsRuleMatches(
+  rule: DecisionRule,
+  context: FirewallAwsDiagnosticContext,
+): boolean {
+  const predicates = rule.awsPredicates;
+  if (
+    predicates === undefined ||
+    predicates.get("sigv4") !== context.sigv4Service
+  ) {
+    return false;
+  }
+
+  const action = predicates.get("action");
+  if (action !== undefined) {
+    if (context.action !== undefined) return context.action === action;
+    const actionSelectors = queryValues(context.query, "Action");
+    return actionSelectors.length === 1 && actionSelectors[0] === action;
+  }
+  const target = predicates.get("target");
+  if (target !== undefined) return context.target === target;
+
+  if (context.sigv4Service === "s3") {
+    const requiredKeys = new Set(
+      (rule.awsQueryRequirements ?? []).map((requirement) => {
+        return requirement.key;
+      }),
+    );
+    for (const name of context.headerNames) {
+      const selectedKeys =
+        AWS_S3_PERMISSION_HEADER_QUERY_KEYS[
+          name as keyof typeof AWS_S3_PERMISSION_HEADER_QUERY_KEYS
+        ];
+      if (
+        selectedKeys.every((key) => {
+          return !requiredKeys.has(key);
+        })
+      ) {
+        return false;
+      }
+    }
+    return awsQueryRequirementsMatch(rule, context, true);
+  }
+
+  return awsQueryRequirementsMatch(rule, context, false);
+}
+
+function awsRuleNeedsMissingDiagnosticContext(
+  rule: DecisionRule,
+  context: FirewallAwsDiagnosticContext | undefined,
+): boolean {
+  const predicates = rule.awsPredicates;
+  if (predicates === undefined) return false;
+  if (context === undefined) return true;
+  if (predicates.get("sigv4") !== context.sigv4Service) return false;
+
+  const action = predicates.get("action");
+  const actionSelectors = queryValues(context.query, "Action");
+  if (action !== undefined) {
+    if (
+      context.action !== undefined ||
+      context.target !== undefined ||
+      actionSelectors.length > 0
+    ) {
+      return false;
+    }
+    return awsRuleMatches(rule, { ...context, action });
+  }
+
+  const target = predicates.get("target");
+  if (target !== undefined) {
+    if (
+      context.target !== undefined ||
+      context.action !== undefined ||
+      actionSelectors.length > 0
+    ) {
+      return false;
+    }
+    return awsRuleMatches(rule, { ...context, target });
+  }
+
+  const missingRequirements = (rule.awsQueryRequirements ?? []).filter(
+    (requirement) => {
+      return queryValues(context.query, requirement.key).length === 0;
+    },
+  );
+  if (missingRequirements.length === 0) return false;
+  const query = [
+    ...context.query,
+    ...missingRequirements.map((requirement) => {
+      return {
+        key: requirement.key,
+        value:
+          requirement.value === "*" ? "diagnostic" : (requirement.value ?? ""),
+      };
+    }),
+  ];
+  return awsRuleMatches(rule, { ...context, query });
+}
+
 function compileDecisionApi(
   api: Record<string, unknown>,
   serviceName: string,
   nameMalformed: boolean,
+  awsDiagnosticEnabled: boolean,
 ): DecisionApi | null {
   if (typeof api.base !== "string") return null;
 
@@ -600,6 +1088,9 @@ function compileDecisionApi(
     baseMalformed = true;
   }
   const authMalformed = !isValidAuthConfigForDecision(api.auth, serviceName);
+  const supportsAwsSigv4 =
+    api.awsSigv4Capability === true ||
+    (isObjectRecord(api.auth) && api.auth.awsSigv4 !== undefined);
   const routingIdentity = decisionApiRoutingIdentity(api);
   const rules: DecisionRule[] = [];
   const seenPermissionNames = new Set<string>();
@@ -643,7 +1134,13 @@ function compileDecisionApi(
           hasMalformedRules = true;
           continue;
         }
-        const compiledRule = compileDecisionRule(permissionName, rawRule);
+        const compiledRule = compileDecisionRule(
+          permissionName,
+          rawRule,
+          serviceName,
+          supportsAwsSigv4,
+          awsDiagnosticEnabled,
+        );
         if (compiledRule === null) {
           hasMalformedRules = true;
           continue;
@@ -662,12 +1159,14 @@ function compileDecisionApi(
     hasMalformedRules,
     permissionless,
     routingIdentity,
-    rules,
+    supportsAwsSigv4,
+    rules: attachAwsQuerySelectorKeys(rules),
   };
 }
 
 function compileDecisionFirewall(
   rawFirewall: unknown,
+  awsDiagnosticEnabled: boolean,
 ): DecisionFirewall | null {
   if (!isObjectRecord(rawFirewall)) return null;
 
@@ -685,7 +1184,12 @@ function compileDecisionFirewall(
   const apis: DecisionApi[] = [];
   for (const rawApi of rawApis) {
     if (!isObjectRecord(rawApi)) continue;
-    const api = compileDecisionApi(rawApi, name, nameMalformed);
+    const api = compileDecisionApi(
+      rawApi,
+      name,
+      nameMalformed,
+      awsDiagnosticEnabled,
+    );
     if (api !== null) {
       apis.push(api);
     }
@@ -695,12 +1199,15 @@ function compileDecisionFirewall(
   return { name, intentIdentity, nameMalformed, apis };
 }
 
-function compileDecisionFirewalls(rawFirewalls: unknown): DecisionFirewall[] {
+function compileDecisionFirewalls(
+  rawFirewalls: unknown,
+  awsDiagnosticEnabled: boolean,
+): DecisionFirewall[] {
   if (!Array.isArray(rawFirewalls) || rawFirewalls.length === 0) return [];
 
   const firewalls: DecisionFirewall[] = [];
   for (const rawFirewall of rawFirewalls) {
-    const firewall = compileDecisionFirewall(rawFirewall);
+    const firewall = compileDecisionFirewall(rawFirewall, awsDiagnosticEnabled);
     if (firewall !== null) {
       firewalls.push(firewall);
     }
@@ -1595,9 +2102,16 @@ function collectDecisionRules(
   collection: FirewallMatchCollection,
   apiMatch: CollectedApiMatch,
   upperMethod: string,
+  awsContext: FirewallAwsDiagnosticContext | undefined,
 ): void {
   for (const rule of apiMatch.api.rules) {
     if (rule.method !== "ANY" && rule.method !== upperMethod) continue;
+    if (
+      rule.awsPredicates !== undefined &&
+      (awsContext === undefined || !awsRuleMatches(rule, awsContext))
+    ) {
+      continue;
+    }
     if (!canRuleAffectCollection(collection, rule.specificity)) continue;
     if (
       matchFirewallPath(apiMatch.baseMatch.relativePath, rule.path) === null
@@ -1838,6 +2352,53 @@ function reduceSelectedOwner(
   return resolveFirewallDecision(state, networkPolicies);
 }
 
+function selectedAwsRulesNeedDiagnosticContext(
+  collection: FirewallMatchCollection,
+  selectedName: string | null,
+  upperMethod: string,
+  awsContext: FirewallAwsDiagnosticContext | undefined,
+): boolean {
+  if (selectedName === null) return false;
+  return selectedBaseApiMatches(collection, selectedName).some((apiMatch) => {
+    if (!apiMatch.api.supportsAwsSigv4) return false;
+    return apiMatch.api.rules.some((rule) => {
+      return (
+        rule.awsPredicates !== undefined &&
+        (rule.method === "ANY" || rule.method === upperMethod) &&
+        matchFirewallPath(apiMatch.baseMatch.relativePath, rule.path) !==
+          null &&
+        awsRuleNeedsMissingDiagnosticContext(rule, awsContext)
+      );
+    });
+  });
+}
+
+function annotateIncompleteAwsContext(
+  decision: FirewallRequestDecision,
+  collection: FirewallMatchCollection,
+  selectedName: string | null,
+  upperMethod: string,
+  awsContext: FirewallAwsDiagnosticContext | undefined,
+  awsDiagnosticEnabled: boolean,
+): FirewallRequestDecision {
+  if (!awsDiagnosticEnabled) return decision;
+  const unknownDecision =
+    (decision.kind === "allow" && decision.permission === undefined) ||
+    (decision.kind === "block" && decision.reason === "unknown_endpoint");
+  if (!unknownDecision) return decision;
+  if (
+    !selectedAwsRulesNeedDiagnosticContext(
+      collection,
+      selectedName,
+      upperMethod,
+      awsContext,
+    )
+  ) {
+    return decision;
+  }
+  return { ...decision, awsContextIncomplete: true };
+}
+
 export function matchFirewallBaseUrl(
   url: string,
   rawBase: string,
@@ -1868,9 +2429,21 @@ export function matchFirewallRequestDecision(
   url: string,
   networkPolicies: unknown = undefined,
   connectorIntent: FirewallConnectorIntent = { status: "absent" },
+  options: FirewallRequestDecisionOptions = {},
 ): FirewallRequestDecision {
-  const decisionFirewalls = compileDecisionFirewalls(firewalls);
+  const awsDiagnosticEnabled = options.awsDiagnostic !== undefined;
+  const decisionFirewalls = compileDecisionFirewalls(
+    firewalls,
+    awsDiagnosticEnabled,
+  );
   if (decisionFirewalls.length === 0) return { kind: "no_match" };
+
+  const suppliedAwsContext = options.awsDiagnostic?.context;
+  const awsContext =
+    suppliedAwsContext !== undefined &&
+    isValidAwsDiagnosticContext(suppliedAwsContext)
+      ? suppliedAwsContext
+      : undefined;
 
   const compiledNetworkPolicies = compileNetworkPolicies(networkPolicies);
   const upperMethod = method.toUpperCase();
@@ -1906,7 +2479,7 @@ export function matchFirewallRequestDecision(
         score: baseMatch.score,
       };
       if (!acceptCollectedApi(collection, apiMatch)) continue;
-      collectDecisionRules(collection, apiMatch, upperMethod);
+      collectDecisionRules(collection, apiMatch, upperMethod, awsContext);
     }
   }
 
@@ -1917,10 +2490,18 @@ export function matchFirewallRequestDecision(
     rawPathFromUrl(url),
   );
   if (selection.kind === "ambiguous") return selection.decision;
-  return reduceSelectedOwner(
+  const decision = reduceSelectedOwner(
     collection,
     selection.name,
     compiledNetworkPolicies,
+  );
+  return annotateIncompleteAwsContext(
+    decision,
+    collection,
+    selection.name,
+    upperMethod,
+    awsContext,
+    awsDiagnosticEnabled,
   );
 }
 

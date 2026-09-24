@@ -4,16 +4,169 @@ import { authHeadersSchema, initContract } from "./base";
 import { connectorSlugSchema } from "./connector-identity";
 import { apiErrorSchema } from "./errors";
 import { connectorRuntimeTargetSchema } from "./runners";
+import {
+  AWS_PREDICATE_VALUE_RE,
+  AWS_QUERY_KEY_RE,
+  AWS_QUERY_VALUE_RE,
+  AWS_S3_PERMISSION_HEADER_NAMES,
+  isSensitiveAwsDiagnosticQueryKey,
+} from "@okouai/connectors/firewall-expander";
 
 const c = initContract();
 
 const boundedNameSchema = z.string().min(1).max(255);
+const connectorCheckAwsQuerySelectorSchema = z
+  .object({
+    key: z.string().min(1).max(128).regex(AWS_QUERY_KEY_RE),
+    value: z
+      .string()
+      .max(256)
+      .refine((value) => {
+        return value === "*" || AWS_QUERY_VALUE_RE.test(value);
+      })
+      .optional(),
+  })
+  .strict();
+
+const connectorCheckAwsSelectorsBaseSchema = z
+  .object({
+    sigv4Service: z.string().min(1).max(128).regex(AWS_PREDICATE_VALUE_RE),
+    action: z.string().min(1).max(256).regex(AWS_PREDICATE_VALUE_RE).optional(),
+    target: z.string().min(1).max(256).regex(AWS_PREDICATE_VALUE_RE).optional(),
+    query: z.array(connectorCheckAwsQuerySelectorSchema).max(32).optional(),
+    headerNames: z
+      .array(z.enum(AWS_S3_PERMISSION_HEADER_NAMES))
+      .max(AWS_S3_PERMISSION_HEADER_NAMES.length)
+      .optional(),
+  })
+  .strict();
+
+type ConnectorCheckAwsSelectors = z.infer<
+  typeof connectorCheckAwsSelectorsBaseSchema
+>;
+type ConnectorCheckAwsQuerySelector = z.infer<
+  typeof connectorCheckAwsQuerySelectorSchema
+>;
+
+function validateAwsQuerySelectors(
+  selectors: readonly ConnectorCheckAwsQuerySelector[],
+  ctx: z.RefinementCtx,
+): void {
+  const seenQueryKeys = new Set<string>();
+  for (const [index, selector] of selectors.entries()) {
+    if (isSensitiveAwsDiagnosticQueryKey(selector.key)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["query", index, "key"],
+        message:
+          "AWS authentication query parameters cannot be diagnostic selectors",
+      });
+    }
+    if (selector.value === "") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["query", index, "value"],
+        message: "AWS query selector values must not be empty",
+      });
+    }
+    if (seenQueryKeys.has(selector.key)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["query", index, "key"],
+        message: `Duplicate AWS query selector: ${selector.key}`,
+      });
+    }
+    seenQueryKeys.add(selector.key);
+  }
+}
+
+function validateAwsActionQuery(
+  selectors: ConnectorCheckAwsSelectors,
+  ctx: z.RefinementCtx,
+): void {
+  if (selectors.action === undefined) return;
+  const actions = (selectors.query ?? []).filter((selector) => {
+    return selector.key === "Action";
+  });
+  if (
+    actions.length > 0 &&
+    (actions.length !== 1 || actions[0]?.value !== selectors.action)
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["query"],
+      message: "AWS Action query selector conflicts with the action selector",
+    });
+  }
+}
+
+function validateAwsHeaderSelectors(
+  selectors: ConnectorCheckAwsSelectors,
+  ctx: z.RefinementCtx,
+): void {
+  const seenHeaderNames = new Set<string>();
+  for (const [index, name] of (selectors.headerNames ?? []).entries()) {
+    if (seenHeaderNames.has(name)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["headerNames", index],
+        message: `Duplicate AWS permission-selector header: ${name}`,
+      });
+    }
+    seenHeaderNames.add(name);
+  }
+  if (
+    seenHeaderNames.size > 0 &&
+    (selectors.sigv4Service !== "s3" ||
+      selectors.action !== undefined ||
+      selectors.target !== undefined)
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["headerNames"],
+      message:
+        "AWS permission-selector headers are supported only for actionless S3 rules",
+    });
+  }
+}
+
+function validateAwsCheckSelectors(
+  selectors: ConnectorCheckAwsSelectors,
+  ctx: z.RefinementCtx,
+): void {
+  if (selectors.action !== undefined && selectors.target !== undefined) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["target"],
+      message: "AWS action and target selectors cannot be combined",
+    });
+  }
+  if (
+    selectors.target !== undefined &&
+    (selectors.query ?? []).some((selector) => {
+      return selector.key === "Action";
+    })
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["query"],
+      message: "AWS Action query selector conflicts with the target selector",
+    });
+  }
+  validateAwsQuerySelectors(selectors.query ?? [], ctx);
+  validateAwsActionQuery(selectors, ctx);
+  validateAwsHeaderSelectors(selectors, ctx);
+}
+
+const connectorCheckAwsSelectorsSchema =
+  connectorCheckAwsSelectorsBaseSchema.superRefine(validateAwsCheckSelectors);
 
 const connectorCheckUrlRequestSchema = z
   .object({
     mode: z.literal("url"),
     method: z.string().min(1).max(16),
     url: z.string().min(1).max(8192),
+    aws: connectorCheckAwsSelectorsSchema.optional(),
     connectorSlug: connectorSlugSchema.optional(),
     environmentName: boundedNameSchema.optional(),
   })
@@ -39,6 +192,7 @@ export const connectorCheckTargetAwareUrlRequestSchema = z
     mode: z.literal("url"),
     method: z.string().min(1).max(16),
     url: z.string().min(1).max(8192),
+    aws: connectorCheckAwsSelectorsSchema.optional(),
     environmentName: boundedNameSchema.optional(),
     includeCustomConnectors: z.literal(true).optional(),
     target: connectorRuntimeTargetSchema.optional(),
@@ -360,6 +514,10 @@ export type ConnectorCheckTargetAwareDiagnosticResult = z.infer<
 export type ConnectorCheckResponseBody = z.infer<
   typeof connectorCheckResponseBodySchema
 >;
+
+export const CONNECTOR_CHECK_AWS_CONTEXT_HEADER =
+  "x-okou-connector-check-aws-context";
+export const CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT = "insufficient";
 
 export const connectorCheckContract = c.router({
   check: {
