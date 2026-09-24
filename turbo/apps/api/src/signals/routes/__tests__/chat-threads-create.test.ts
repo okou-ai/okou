@@ -315,8 +315,8 @@ describe("POST /api/chat-threads", () => {
       remoteAccessClient().listThreadAccess({ headers, params: { threadId } }),
       [200],
     );
-    expect(replayed.body.ssh[0]?.overrideEnabled).toBe(false);
-    expect(replayed.body.vnc[0]?.overrideEnabled).toBe(true);
+    expect(replayed.body.ssh[0]).toMatchObject({ overrideEnabled: false });
+    expect(replayed.body.vnc[0]).toMatchObject({ overrideEnabled: true });
 
     await accept(
       sshClient().delete({ headers, params: { connectionId: hostId } }),
