@@ -11,6 +11,28 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.961.0](https://github.com/okou-ai/okou/compare/app-v0.960.0...app-v0.961.0) (2026-09-24)
+
+
+### Features
+
+* **access:** promote personal configurations and review shared deletion ([#36715](https://github.com/okou-ai/okou/issues/36715)) ([aa20d6a](https://github.com/okou-ai/okou/commit/aa20d6a8609326008f5da853bd9db75d0ad1d204))
+* **discord:** add canonical chat ingress and reply delivery ([#36685](https://github.com/okou-ai/okou/issues/36685)) ([99ddcab](https://github.com/okou-ai/okou/commit/99ddcab5538b064d842ad523f50579f3d14ebe1e))
+
+
+### Refactoring
+
+* **agentphone:** retire public brand and connect link brand signature ([#36722](https://github.com/okou-ai/okou/issues/36722)) ([3c4cdb4](https://github.com/okou-ai/okou/commit/3c4cdb4a0d241eed624b878dcd7b4717513e3724))
+* **morning-brief:** remove settings status line, realtime refresh and collection account ([#36719](https://github.com/okou-ai/okou/issues/36719)) ([8d8de09](https://github.com/okou-ai/okou/commit/8d8de09466c1ef81d3d2017e75351b315aa40b0b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.507.0
+    * @okouai/core bumped to 8.710.0
+
 ## [0.960.0](https://github.com/okou-ai/okou/compare/app-v0.959.0...app-v0.960.0) (2026-09-24)
 
 
