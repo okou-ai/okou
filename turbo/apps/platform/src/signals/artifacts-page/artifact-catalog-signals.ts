@@ -153,6 +153,7 @@ export const prepareArtifactCatalogPreviewHistory$ = command(
 
 export const closeArtifactCatalogPreview$ = command(
   ({ get, set }, signal: AbortSignal): boolean => {
+    signal.throwIfAborted();
     if (set(restoreMarkdownLightbox$)) {
       return true;
     }
