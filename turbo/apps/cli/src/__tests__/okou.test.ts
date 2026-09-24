@@ -124,8 +124,8 @@ describe("Okou CLI program", () => {
     expect(canonicalCommandNames).not.toContain("__agent-loop");
   });
 
-  it("should have exactly 45 canonical commands", () => {
-    expect(canonicalCommandNames).toHaveLength(45);
+  it("should have exactly 46 canonical commands", () => {
+    expect(canonicalCommandNames).toHaveLength(46);
   });
 });
 

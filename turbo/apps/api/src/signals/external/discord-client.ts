@@ -1,13 +1,9 @@
-import { delay } from "signal-timers";
 import { z } from "zod";
 
-import { now } from "../../lib/time";
 import { safeJsonParse, settle } from "../utils";
 
 const DISCORD_API_ORIGIN = "https://discord.com/api/v10";
 const REQUEST_TIMEOUT_MS = 15_000;
-const RATE_LIMIT_BUDGET_MS = 10_000;
-const MAX_ATTEMPTS = 3;
 
 export const discordSnowflakeSchema = z.string().regex(/^[1-9]\d{0,19}$/u);
 const permissionsSchema = z.string().regex(/^\d+$/u);
@@ -197,7 +193,7 @@ function decodeDiscordResponse<T>(
   return { kind: "ok", data: parsed.data };
 }
 
-/** Never repeat a write after an ambiguous network, timeout, or server failure. */
+/** Return every retry decision to the service that owns fresh authorization. */
 async function requestDiscord<T>(
   args: DiscordRequest<T>,
   signal: AbortSignal,
@@ -213,73 +209,53 @@ async function requestDiscord<T>(
   if (typeof args.body === "string") {
     headers["content-type"] = "application/json";
   }
-  let retryDeadline: number | undefined;
-  for (let attempt = 1; ; attempt += 1) {
-    const timeout = AbortSignal.timeout(
-      retryDeadline === undefined
-        ? REQUEST_TIMEOUT_MS
-        : Math.min(REQUEST_TIMEOUT_MS, Math.max(1, retryDeadline - now())),
+  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  const requestSignal = AbortSignal.any([signal, timeout]);
+  const responseResult = await settle(
+    fetch(`${DISCORD_API_ORIGIN}${args.path}`, {
+      method: args.method,
+      headers,
+      ...(args.body !== undefined ? { body: args.body } : {}),
+      redirect: "error",
+      signal: requestSignal,
+    }),
+    signal,
+  );
+  if (!responseResult.ok) {
+    return discordError(
+      timeout.aborted ? 504 : 502,
+      timeout.aborted ? "Discord request timed out" : "Discord request failed",
     );
-    const requestSignal = AbortSignal.any([signal, timeout]);
-    const responseResult = await settle(
-      fetch(`${DISCORD_API_ORIGIN}${args.path}`, {
-        method: args.method,
-        headers,
-        ...(args.body !== undefined ? { body: args.body } : {}),
-        redirect: "error",
-        signal: requestSignal,
-      }),
-      signal,
-    );
-    if (!responseResult.ok) {
-      return discordError(
-        timeout.aborted ? 504 : 502,
-        timeout.aborted
-          ? "Discord request timed out"
-          : "Discord request failed",
-      );
-    }
-    const response = responseResult.value;
-    const bodyResult = await settle(response.text(), signal);
-    if (!bodyResult.ok) {
-      return discordError(
-        timeout.aborted ? 504 : 502,
-        "Discord response could not be read",
-      );
-    }
-    signal.throwIfAborted();
-    if (response.status === 429) {
-      const rateLimit = rateLimitSchema.safeParse(
-        safeJsonParse(bodyResult.value),
-      );
-      if (!rateLimit.success) {
-        return discordError(
-          429,
-          "Discord returned an invalid rate limit response",
-        );
-      }
-      const retryAfterMs = Math.ceil(rateLimit.data.retry_after * 1000);
-      const limited: DiscordApiError = {
-        kind: "discord-error",
-        status: 429,
-        message: "Discord rate limit exceeded",
-        retryAfterMs,
-        global: rateLimit.data.global,
-      };
-      retryDeadline ??= now() + RATE_LIMIT_BUDGET_MS;
-      // Respect long waits instead of retrying earlier than Discord permits.
-      if (attempt >= MAX_ATTEMPTS || retryAfterMs >= retryDeadline - now()) {
-        return limited;
-      }
-      await delay(retryAfterMs, { signal });
-      signal.throwIfAborted();
-      if (now() >= retryDeadline) {
-        return limited;
-      }
-      continue;
-    }
-    return decodeDiscordResponse(response, bodyResult.value, args.schema);
   }
+  const response = responseResult.value;
+  const bodyResult = await settle(response.text(), signal);
+  if (!bodyResult.ok) {
+    return discordError(
+      timeout.aborted ? 504 : 502,
+      "Discord response could not be read",
+    );
+  }
+  signal.throwIfAborted();
+  if (response.status === 429) {
+    const rateLimit = rateLimitSchema.safeParse(
+      safeJsonParse(bodyResult.value),
+    );
+    if (!rateLimit.success) {
+      return discordError(
+        429,
+        "Discord returned an invalid rate limit response",
+      );
+    }
+    // The owning service must reauthorize before retrying after this delay.
+    return {
+      kind: "discord-error",
+      status: 429,
+      message: "Discord rate limit exceeded",
+      retryAfterMs: Math.ceil(rateLimit.data.retry_after * 1000),
+      global: rateLimit.data.global,
+    };
+  }
+  return decodeDiscordResponse(response, bodyResult.value, args.schema);
 }
 
 function fetchDiscordCurrentUser(

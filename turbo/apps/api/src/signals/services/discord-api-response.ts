@@ -31,16 +31,20 @@ export function discordApiFailure(
     return discordUnavailable();
   }
   if (result.status === 429) {
+    const retryAfterSeconds =
+      result.retryAfterMs === undefined
+        ? undefined
+        : Math.ceil(result.retryAfterMs / 1000);
     return {
       status: 429,
       body: {
         error: {
           code: "DISCORD_RATE_LIMITED",
           message:
-            "Discord rate limit reached. Retry after the indicated delay.",
-          ...(result.retryAfterMs !== undefined && {
-            retryAfterSeconds: Math.ceil(result.retryAfterMs / 1000),
-          }),
+            retryAfterSeconds === undefined
+              ? "Discord rate limit reached. Wait before retrying."
+              : `Discord rate limit reached. Retry after ${retryAfterSeconds} seconds.`,
+          ...(retryAfterSeconds !== undefined && { retryAfterSeconds }),
         },
       },
     };

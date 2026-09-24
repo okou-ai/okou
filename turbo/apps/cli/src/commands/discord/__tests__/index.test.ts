@@ -271,8 +271,8 @@ describe("okou discord", () => {
           {
             error: {
               code: "DISCORD_RATE_LIMITED",
-              message: "Discord rate limit reached. Retry after 1.5 seconds.",
-              retryAfterSeconds: 1.5,
+              message: "Discord rate limit reached. Retry after 60 seconds.",
+              retryAfterSeconds: 60,
               deliveredMessages: [
                 { id: messageId, channelId, url: messageUrl },
               ],
@@ -295,7 +295,7 @@ describe("okou discord", () => {
     ).rejects.toThrow("process.exit");
 
     const printed = errors.mock.calls.flat().join("\n");
-    expect(printed).toContain("Retry after 1.5 seconds");
+    expect(printed).toContain("Retry after 60 seconds");
     expect(printed).toContain(
       "Already delivered messages (do not resend these)",
     );

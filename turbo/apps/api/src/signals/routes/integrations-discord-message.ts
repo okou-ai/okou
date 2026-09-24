@@ -1,4 +1,6 @@
 import { command } from "ccstate";
+import { delay } from "signal-timers";
+import { now } from "../../lib/time";
 import {
   integrationsDiscordMessageContract,
   type SendDiscordMessageResponse,
@@ -28,6 +30,82 @@ function partialFailure(
   };
 }
 
+const sendChunk$ = command(
+  async (
+    { set },
+    args: {
+      orgId: string;
+      userId: string;
+      guildId?: string;
+      channelId: string;
+      content: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    let retryDeadline: number | undefined;
+    let retryFailure: DiscordFailureResponse | undefined;
+    for (let attempt = 1; ; attempt += 1) {
+      const access = await set(
+        requireDiscordConversationAccess$,
+        { ...args, mode: "write" },
+        signal,
+      );
+      if (access.kind === "denied") {
+        return access;
+      }
+      if (
+        retryDeadline !== undefined &&
+        now() >= retryDeadline &&
+        retryFailure
+      ) {
+        return { kind: "denied" as const, response: retryFailure };
+      }
+      const sent = await discordClient.createDiscordMessage(
+        {
+          botToken: access.botToken,
+          channelId: args.channelId,
+          content: args.content,
+        },
+        signal,
+      );
+      if (sent.kind === "ok") {
+        if (sent.data.channel_id !== args.channelId) {
+          throw new Error(
+            "Discord sent message response has another channel identity",
+          );
+        }
+        return {
+          kind: "delivered" as const,
+          message: {
+            id: sent.data.id,
+            channelId: sent.data.channel_id,
+            url: discordMessageUrl({
+              guildId: access.channel.guild_id,
+              channelId: sent.data.channel_id,
+              messageId: sent.data.id,
+            }),
+          },
+        };
+      }
+      const response = discordApiFailure(sent);
+      if (
+        sent.kind !== "discord-error" ||
+        sent.status !== 429 ||
+        sent.retryAfterMs === undefined
+      ) {
+        return { kind: "denied" as const, response };
+      }
+      retryDeadline ??= now() + 10_000;
+      if (attempt >= 3 || sent.retryAfterMs >= retryDeadline - now()) {
+        return { kind: "denied" as const, response };
+      }
+      retryFailure = response;
+      await delay(sent.retryAfterMs, { signal });
+      signal.throwIfAborted();
+    }
+  },
+);
+
 const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const body = await get(
@@ -39,40 +117,20 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const messages: SendDiscordMessageResponse["messages"] = [];
   for (const content of splitDiscordMessage(body.data.text)) {
-    const access = await set(
-      requireDiscordConversationAccess$,
+    const result = await set(
+      sendChunk$,
       {
         ...auth,
         guildId: body.data.guildId,
         channelId: body.data.channelId,
-        mode: "write",
+        content,
       },
       signal,
     );
-    if (access.kind === "denied") {
-      return partialFailure(access.response, messages);
+    if (result.kind === "denied") {
+      return partialFailure(result.response, messages);
     }
-    const sent = await discordClient.createDiscordMessage(
-      { botToken: access.botToken, channelId: body.data.channelId, content },
-      signal,
-    );
-    if (sent.kind !== "ok") {
-      return partialFailure(discordApiFailure(sent), messages);
-    }
-    if (sent.data.channel_id !== body.data.channelId) {
-      throw new Error(
-        "Discord sent message response has another channel identity",
-      );
-    }
-    messages.push({
-      id: sent.data.id,
-      channelId: sent.data.channel_id,
-      url: discordMessageUrl({
-        guildId: access.channel.guild_id,
-        channelId: sent.data.channel_id,
-        messageId: sent.data.id,
-      }),
-    });
+    messages.push(result.message);
   }
   return { status: 200 as const, body: { messages } };
 });

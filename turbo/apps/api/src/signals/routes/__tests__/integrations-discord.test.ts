@@ -676,6 +676,74 @@ describe("Discord native sends and transport failures", () => {
     ).toHaveLength(1);
   });
 
+  it.each(["binding", "feature", "channel"] as const)(
+    "rechecks %s access after a rate limit before resending",
+    async (revoked) => {
+      const f = await fixture();
+      server.use(
+        http.post(
+          `${API}/channels/${f.channelId}/messages`,
+          async () => {
+            if (revoked === "binding") {
+              context.mocks.clerk.session(f.userId, f.orgId, "org:admin");
+              await accept(
+                setupApp({ context, routes: integrationsDiscordRoutes })(
+                  integrationsDiscordContract,
+                ).disconnect({
+                  headers: { authorization: "Bearer clerk-session" },
+                  query: { action: "disconnect" },
+                }),
+                [200],
+              );
+            } else if (revoked === "feature") {
+              await updateFeatureSwitchesForUser(
+                context,
+                { orgId: f.orgId, userId: f.userId, orgRole: "org:admin" },
+                { [FeatureSwitchKey.DiscordIntegration]: false },
+              );
+            } else {
+              f.channels.get(f.channelId)!.permission_overwrites = [
+                {
+                  id: f.discordUserId,
+                  type: 1,
+                  deny: String(SEND),
+                  allow: "0",
+                },
+              ];
+            }
+            return HttpResponse.json(
+              { retry_after: 0, global: false },
+              { status: 429 },
+            );
+          },
+          { once: true },
+        ),
+      );
+      const response = await accept(send(f), [403, 404]);
+      expect(response.body.error.deliveredMessages).toStrictEqual([]);
+      expect(f.sentBodies).toStrictEqual([]);
+    },
+  );
+
+  it("surfaces read rate limits without replaying an authorized content request", async () => {
+    const f = await fixture();
+    server.use(
+      http.get(
+        `${API}/channels/${f.channelId}/messages`,
+        () => {
+          return HttpResponse.json(
+            { retry_after: 0, global: false },
+            { status: 429 },
+          );
+        },
+        { once: true },
+      ),
+    );
+    const limited = await accept(history(f), [429]);
+    expect(limited.body.error.retryAfterSeconds).toBe(0);
+    await accept(history(f), [200]);
+  });
+
   it("reports a provider rate-limit delay and preserves already-delivered chunks", async () => {
     const f = await fixture();
     const first = f.message(snowflake(), f.channelId, "first");
@@ -698,6 +766,7 @@ describe("Discord native sends and transport failures", () => {
     );
     const result = await accept(send(f, f.channelId, "x".repeat(4001)), [429]);
     expect(result.body.error.retryAfterSeconds).toBe(60);
+    expect(result.body.error.message).toContain("60 seconds");
     expect(
       result.body.error.deliveredMessages?.map((entry) => {
         return entry.id;
