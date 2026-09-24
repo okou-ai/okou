@@ -196,13 +196,12 @@ includes `availability: { status: "ready" }` for configured hosts and
 underlying SSH host needs Cloudflare Access rebinding. Blocked IDs are diagnostic
 only; their owners must rebind the SSH host or explicitly choose Direct, and
 fresh Runner admission remains unavailable until then. Only use a current ready
-ID for a new session; ready is not a connectivity test. This adds a required
-field to the strict VNC inventory contract: an older CLI may reject the new
-response, while a new CLI rejects an older response. Deploy matching API and
-CLI support before enabling the default-off VNC feature for new Runs; do not
-activate it as part of this repair. Agents select shared or exclusive mode when
-opening each session; the server decides admission
-and may override the requested mode. The settings page adds no controller lock.
+ID for a new session; ready is not a connectivity test. The VNC inventory has
+one required `availability` field; this pre-GA feature does not retain a legacy
+response shape or CLI fallback. This repair does not activate `VncAccess`.
+Agents select shared or exclusive mode when opening each session; the server
+decides admission and may override the requested mode. The settings page adds
+no controller lock.
 
 The Credentials tab shows which hosts use each credential. Renaming does not
 rotate its authentication; explicitly replacing the password (and X509Plain
