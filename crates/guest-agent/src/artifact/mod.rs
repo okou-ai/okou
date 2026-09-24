@@ -9,7 +9,10 @@
 //! 4. PUT archive + manifest to S3
 //! 5. POST `/storages/commit`
 //!
-//! The pre-walked list is a best-effort observation of the artifact, not a
+//! The pre-walked list intentionally defines artifact membership from files
+//! readable at checkpoint time. An unreadable descendant is omitted so one
+//! file or subtree does not fail the entire checkpoint; a new version can thus
+//! omit a path that existed in the mounted parent version. The list is not a
 //! completeness proof. The configured mount root must be opened and its
 //! directory listing initialized, but failures while enumerating descendants,
 //! opening child entries, reading metadata, or hashing file contents can omit an
