@@ -652,31 +652,27 @@ test("Distinguish workflow tokens from text inside URLs", async () => {
   });
 });
 
-test("Load workflows once the user starts typing", async () => {
+test("Highlight a workflow in a restored draft", async () => {
   mockAgent();
   mockThread();
-  const requests: (string | undefined)[] = [];
-  context.mocks.api(
-    workflowsCollectionContract.composer,
-    ({ query, respond }) => {
-      requests.push(query.agentId);
-      return respond(200, [workflow("pr-review")]);
-    },
-  );
+  installWorkflows(() => {
+    return [workflow("pr-review")];
+  });
+  context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
+    return respond(200, {
+      draftUserMessage: {
+        version: 1,
+        parts: [{ type: "text" as const, text: "Please run /pr-review" }],
+      },
+      draftAttachments: null,
+    });
+  });
 
   await setupPage({ context, path: `/chats/${THREAD_ID}` });
 
-  const user = userEvent.setup();
   const editor = await findComposerEditor();
-  await user.click(editor);
-  await user.keyboard("R");
-  await waitFor(() => {
-    expect(requests).toStrictEqual([AGENT_ID]);
-  });
-
-  await user.keyboard("eview /pr-review");
   await waitFor(() => {
     expect(workflowHighlights(editor)).toHaveLength(1);
   });
-  expect(requests).toHaveLength(1);
+  expect(workflowHighlights(editor)[0]).toHaveTextContent("/pr-review");
 });

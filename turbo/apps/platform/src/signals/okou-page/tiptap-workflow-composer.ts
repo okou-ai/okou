@@ -1983,7 +1983,9 @@ function applyWorkflowNames(editor: Editor, names: readonly string[]): void {
     return;
   }
   storage.workflowNames = names;
-  if (editor.isInitialized) {
+  // `isInitialized` only turns true a tick after `mount()`; a mounted view
+  // must redraw even inside that tick, or a restored draft stays unhighlighted.
+  if (!editor.isDestroyed) {
     editor.view.dispatch(editor.state.tr);
   }
 }
