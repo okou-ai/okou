@@ -40,7 +40,7 @@ export async function sendPhoneMessage(
     return result.body;
   }
 
-  handleError(result, "Failed to send AgentPhone message");
+  handleError(result, "Failed to send phone message");
 }
 
 export async function initPhoneFileUpload(
@@ -55,7 +55,7 @@ export async function initPhoneFileUpload(
     return result.body;
   }
 
-  handleError(result, "Failed to initialize AgentPhone file upload");
+  handleError(result, "Failed to initialize phone file upload");
 }
 
 export async function completePhoneFileUpload(
@@ -70,7 +70,7 @@ export async function completePhoneFileUpload(
     return result.body;
   }
 
-  handleError(result, "Failed to complete AgentPhone file upload");
+  handleError(result, "Failed to complete phone file upload");
 }
 
 /**
@@ -98,7 +98,7 @@ export async function downloadPhoneFile(
   });
 
   if (!response.ok) {
-    let message = `Failed to download AgentPhone file (HTTP ${response.status})`;
+    let message = `Failed to download phone file (HTTP ${response.status})`;
     let code = "UNKNOWN";
     try {
       const body = (await response.json()) as {
@@ -114,7 +114,7 @@ export async function downloadPhoneFile(
 
   if (!response.body) {
     throw new ApiRequestError(
-      "AgentPhone download response has no body",
+      "Phone file download response has no body",
       "EMPTY_BODY",
       502,
     );

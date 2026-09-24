@@ -104,11 +104,11 @@ export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
   },
   "phone:read": {
     group: "Integrations",
-    label: "Download AgentPhone files",
+    label: "Download phone files",
   },
   "phone:write": {
     group: "Integrations",
-    label: "Send AgentPhone messages and files",
+    label: "Send phone messages and files",
   },
   "telegram:read": {
     group: "Integrations",

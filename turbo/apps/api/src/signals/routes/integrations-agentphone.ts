@@ -92,7 +92,7 @@ function notConfigured() {
     status: 503 as const,
     body: {
       error: {
-        message: "AgentPhone is not configured",
+        message: "Phone messaging is not configured",
         code: "NOT_CONFIGURED",
       },
     },
@@ -104,7 +104,7 @@ function unavailable() {
     status: 503 as const,
     body: {
       error: {
-        message: "AgentPhone verification text could not be sent",
+        message: "Verification text could not be sent",
         code: "PROVIDER_UNAVAILABLE",
       },
     },
@@ -503,7 +503,7 @@ const unlink$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
 
   if (deleted.length === 0) {
-    return notFound("No linked AgentPhone account");
+    return notFound("No linked phone number");
   }
 
   await publishAgentPhoneUserChanged(auth.userId);
@@ -597,7 +597,6 @@ async function sendAgentPhoneConnectedMessages(
 const connectAgentPhone$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const publicBrand = PUBLIC_BRAND;
     const bodyResult = await get(connectBody$);
     signal.throwIfAborted();
     if (!bodyResult.ok) {
@@ -610,15 +609,12 @@ const connectAgentPhone$ = command(
     const phoneHandle = normalizeAgentPhoneHandle(body.phoneHandle, channel);
     if (
       !phoneHandle ||
-      body.publicBrand !== publicBrand ||
       !verifyAgentPhoneConnectSignature({
         phoneHandle,
         agentphoneAgentId: body.agentphoneAgentId,
         timestamp: body.timestamp,
         channel,
         signature: body.signature,
-        publicBrand: body.publicBrand,
-        publicBrandSignature: body.publicBrandSignature,
         secret: env("SECRETS_ENCRYPTION_KEY"),
       })
     ) {
@@ -633,7 +629,7 @@ const connectAgentPhone$ = command(
       channel,
       userId: auth.userId,
       orgId: auth.orgId,
-      publicBrand,
+      publicBrand: PUBLIC_BRAND,
     });
     signal.throwIfAborted();
 
@@ -856,7 +852,7 @@ function recentHistoryMessage(
 
   return {
     messageId: stringValue(item, ["messageId", "message_id", "id"]) ?? null,
-    content: content ?? (mediaUrl ? `[AgentPhone file] ${mediaUrl}` : null),
+    content: content ?? (mediaUrl ? `[Phone file] ${mediaUrl}` : null),
     direction: stringValue(item, ["direction"]) ?? null,
     channel: stringValue(item, ["channel"]) ?? null,
     fromNumber:

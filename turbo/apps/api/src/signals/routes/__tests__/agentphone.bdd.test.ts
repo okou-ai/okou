@@ -302,7 +302,7 @@ function lastSend(sends: AgentPhoneSendCapture): AgentPhoneProviderSend {
 const AGENTPHONE_INTEGRATION_NOTE = [
   "# Integration Note",
   "",
-  "- AgentPhone messaging and files: use `okou phone --help`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress is sent on its own, so phone commands are for explicit extra messages or file delivery. Use `okou phone download-file -h` for `[AgentPhone file]` blocks. `okou phone upload-file -h` can share a local file when the phone channel supports the requested file delivery.",
+  "- Phone messaging and files: use `okou phone --help`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress is sent on its own, so phone commands are for explicit extra messages or file delivery. Use `okou phone download-file -h` for `[Phone file]` blocks. `okou phone upload-file -h` can share a local file when the phone channel supports the requested file delivery.",
 ].join("\n");
 
 function expectIntegrationImmediatelyBeforeRestrictedContent(
@@ -685,10 +685,10 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
           run1.appendSystemPrompt,
           [
             "# Current Integration",
-            "You are currently running inside: AgentPhone",
-            `Shared AgentPhone number: ${AGENTPHONE_BDD_PHONE_NUMBER}`,
+            "You are currently running inside: Phone text messaging (iMessage/SMS)",
+            `Shared phone number: ${AGENTPHONE_BDD_PHONE_NUMBER}`,
             `User phone handle: ${phone}`,
-            `AgentPhone Agent ID: ${AGENTPHONE_BDD_AGENT_ID}`,
+            `Phone agent ID: ${AGENTPHONE_BDD_AGENT_ID}`,
             "Channel: imessage",
             "Conversation type: dm",
             `Conversation ID: ${conversationId}`,
@@ -824,9 +824,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
           isGroup: false,
         });
         const run2 = await claimDispatchedRun(runnerGroup);
-        expect(run2.appendSystemPrompt).toContain(
-          "# AgentPhone Message Context",
-        );
+        expect(run2.appendSystemPrompt).toContain("# Phone Message Context");
         expect(run2.appendSystemPrompt).toContain("RELATIVE_INDEX");
         expect(run2.appendSystemPrompt).toContain(`MSG_ID: ${messageId1}`);
         expect(run2.appendSystemPrompt).toContain("SENDER: {id: BOT}");
@@ -999,10 +997,10 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       phoneRun1.appendSystemPrompt,
       [
         "# Current Integration",
-        "You are currently running inside: AgentPhone",
-        `Shared AgentPhone number: ${AGENTPHONE_BDD_PHONE_NUMBER}`,
+        "You are currently running inside: Phone text messaging (iMessage/SMS)",
+        `Shared phone number: ${AGENTPHONE_BDD_PHONE_NUMBER}`,
         `User phone handle: ${phone}`,
-        `AgentPhone Agent ID: ${AGENTPHONE_BDD_AGENT_ID}`,
+        `Phone agent ID: ${AGENTPHONE_BDD_AGENT_ID}`,
         "Channel: sms",
         "Conversation type: dm",
         `Message ID: ${smsMessageId}`,
@@ -1328,7 +1326,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(run1.prompt).toBe(
       [
         "what is in this photo",
-        `[AgentPhone file] photo one+final%2zraw.png (image/png)\n   [ID] ${mediaMessageId}`,
+        `[Phone file] photo one+final%2zraw.png (image/png)\n   [ID] ${mediaMessageId}`,
       ].join("\n\n"),
     );
     await expect(
@@ -1367,13 +1365,13 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       ],
     });
     const run = await claimDispatchedRun(runnerGroup);
-    expect(run.appendSystemPrompt).toContain("# AgentPhone Message Context");
+    expect(run.appendSystemPrompt).toContain("# Phone Message Context");
     expect(run.appendSystemPrompt).toContain("MSG_ID: rh-full");
     expect(run.appendSystemPrompt).toContain("prior context from provider");
     expect(run.appendSystemPrompt).toContain("CHANNEL: sms");
     expect(run.appendSystemPrompt).toContain("AT: 2026-06-01T08:00:00.000Z");
     expect(run.appendSystemPrompt).toContain(
-      "[AgentPhone file] https://media.agentphone.test/history-photo.png",
+      "[Phone file] https://media.agentphone.test/history-photo.png",
     );
     expect(
       run.appendSystemPrompt.match(/- RELATIVE_INDEX:/gu) ?? [],
@@ -1466,8 +1464,9 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
 
     const plainPromptUnlinked = await commandReply("hello again");
     expect(plainPromptUnlinked).toContain(
-      "This shared AgentPhone number connects you to Okou.",
+      "Click the link below to start using Okou.",
     );
+    expect(plainPromptUnlinked).not.toContain("AgentPhone");
     expect(plainPromptUnlinked).toContain("/agentphone/connect?");
     expect(plainPromptUnlinked).not.toContain(SMS_RISK_WARNING);
   });
@@ -1557,10 +1556,10 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       run1.appendSystemPrompt,
       [
         "# Current Integration",
-        "You are currently running inside: AgentPhone",
-        `Shared AgentPhone number: ${AGENTPHONE_BDD_PHONE_NUMBER}`,
+        "You are currently running inside: Phone text messaging (iMessage/SMS)",
+        `Shared phone number: ${AGENTPHONE_BDD_PHONE_NUMBER}`,
         `User phone handle: ${phone}`,
-        `AgentPhone Agent ID: ${AGENTPHONE_BDD_AGENT_ID}`,
+        `Phone agent ID: ${AGENTPHONE_BDD_AGENT_ID}`,
         "Channel: imessage",
         "Conversation type: group",
         `Conversation ID: ${conversationId}`,
@@ -1590,7 +1589,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       isGroup: true,
     });
     const run2 = await claimDispatchedRun(runnerGroup);
-    expect(run2.appendSystemPrompt).toContain("# AgentPhone Message Context");
+    expect(run2.appendSystemPrompt).toContain("# Phone Message Context");
     expect(run2.appendSystemPrompt).toContain(`SENDER: {id: ${phone}}`);
     expect(run2.appendSystemPrompt).toContain("SENDER: {id: BOT}");
     await completeSandboxRun(run2.sandboxToken, run2.runId, 0);
