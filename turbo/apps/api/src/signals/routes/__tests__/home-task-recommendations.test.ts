@@ -102,7 +102,8 @@ async function connectGmailAccount(
 
 describe("GET /api/home-task-recommendations", () => {
   it("keeps evidence, destinations, Gmail access, and cache scoped to the requested Agent", async () => {
-    const { actor, agentId, runnerGroup } = await fixture.entitledChatActor();
+    const { actor, agentId, runnerGroup } =
+      await fixture.entitledNativeChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped actor");
     }
@@ -468,7 +469,7 @@ describe("GET /api/home-task-recommendations", () => {
   });
 
   it("fails closed when Gmail detail permission is revoked during collection", async () => {
-    const { actor, agentId } = await fixture.entitledChatActor();
+    const { actor, agentId } = await fixture.entitledNativeChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped actor");
     }
@@ -570,7 +571,7 @@ describe("GET /api/home-task-recommendations", () => {
   });
 
   it("renews an open home's cron lease without loading or replacing cards", async () => {
-    const { actor, agentId } = await fixture.entitledChatActor();
+    const { actor, agentId } = await fixture.entitledNativeChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped actor");
     }
@@ -617,7 +618,8 @@ describe("GET /api/home-task-recommendations", () => {
   });
 
   it("asks the Agent to assess a Workflow only after repeated completed requests", async () => {
-    const { actor, agentId, runnerGroup } = await fixture.entitledChatActor();
+    const { actor, agentId, runnerGroup } =
+      await fixture.entitledNativeChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped actor");
     }
@@ -744,7 +746,8 @@ describe("GET /api/home-task-recommendations", () => {
   });
 
   it("keeps cards on malformed output and retries after the failure cooldown", async () => {
-    const { actor, agentId, runnerGroup } = await fixture.entitledChatActor();
+    const { actor, agentId, runnerGroup } =
+      await fixture.entitledNativeChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped actor");
     }

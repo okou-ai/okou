@@ -36,6 +36,11 @@ export function localizedCloudflareAccessError(
         return $.cloudflareAccess.changed;
       });
     }
+    case CLOUDFLARE_ACCESS_ERROR_CODES.IMPACT_CONFLICT: {
+      return i18n.t(($) => {
+        return $.cloudflareAccess.impactChanged;
+      });
+    }
     case CLOUDFLARE_ACCESS_ERROR_CODES.REVISION_EXHAUSTED: {
       return i18n.t(($) => {
         return $.cloudflareAccess.revisionExhausted;

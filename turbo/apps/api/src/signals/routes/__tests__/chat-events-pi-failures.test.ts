@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { piApiFirstTurnManifestSchema } from "@okouai/api-contracts/contracts/runners";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -42,7 +41,6 @@ const {
   api,
   chat,
   webhooks,
-  authDeviceSupport,
   entitledChatActor,
   configureBuiltInPiModel,
   configureUserOwnedGptPiModel,
@@ -599,9 +597,7 @@ describe("CHAT-02: model-first provider policies", () => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const usagePricingResolution = await createGptUsagePricingResolution();
       await configureBuiltInPiModel(actor, "gpt-5.6-terra");
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: true,
-      });
+
       mockPiResourceArchiveDownloads();
       const objects = mockPiCheckpointObjectStore();
       const consumedAgentEvents: { runId: string; eventType: string }[] = [];
@@ -964,9 +960,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const usagePricingResolution = await createGptUsagePricingResolution();
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PiLoop]: true,
-    });
+
     mockPiResourceArchiveDownloads();
     const objects = mockPiCheckpointObjectStore();
     const requests: unknown[] = [];

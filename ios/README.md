@@ -93,8 +93,12 @@ Associated-domain setup remains outstanding. Team `C5UWSXYB67` is configured for
 a later device build. Device signing, provisioning, and TestFlight distribution
 have not been validated.
 
-This local implementation does not add release CI, TestFlight groups, an
-App Store Connect app record, or an independent iOS minimum-build gate. Existing
+Internal TestFlight publication is integrated with release-please and the existing
+production approval. See [TestFlight releases](TESTFLIGHT.md) for the one-time
+App Store Connect group, signing, and credential setup. A successful signed CI
+upload and TestFlight installation have not yet been verified.
+
+This implementation does not add an independent iOS minimum-build gate. Existing
 HTTP 426 responses show a blocking update screen, but enforcing an iOS build
 floor requires the separately planned API middleware change. Old API-version
 compatibility and the future OpenAPI v1 migration are outside this MVP.

@@ -144,6 +144,10 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { postSubscriptionInvoicePaid } from "./helpers/stripe-billing-webhook";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import {
+  configureNativeCliArtifact,
+  createChatEventsFixture,
+} from "./helpers/chat-events-fixture";
+import {
   readAgentRunCallbacks$,
   seedAgentRunCallback$,
 } from "./helpers/agent-run-callback";
@@ -781,7 +785,33 @@ function codexAuthJson(): string {
   });
 }
 
-async function entitledRunActor(userOptions: ApiTestUserOptions = {}): Promise<{
+/**
+ * Chat-thread runs on the fixture's default Sonnet 5 route execute through Pi.
+ * Scenarios that exercise the native Runner claim protocol for a chat thread
+ * pin Fable, which model policy keeps on the claude-code Runner.
+ */
+const NATIVE_RUNNER_ROUTE = { model: "claude-fable-5-1" } as const;
+
+const piClaimFixture = createChatEventsFixture(context);
+
+/**
+ * Pi-eligible chat models execute API-first. An unavailable pending resource
+ * archive hands the turn to a sandbox Pi claim, so route tests can inspect the
+ * frozen claim without executing a provider request.
+ */
+async function preparePiSandboxClaim(
+  actor: ApiTestUser,
+  agentId: string,
+): Promise<void> {
+  await piClaimFixture.publishPendingPiInstructions(actor, agentId);
+  piClaimFixture.mockPiResourceArchiveDownloads(true);
+  piClaimFixture.mockPiCheckpointObjectStore();
+}
+
+async function entitledRunActor(
+  userOptions: ApiTestUserOptions = {},
+  route: { readonly model?: typeof NATIVE_RUNNER_ROUTE.model } = {},
+): Promise<{
   readonly actor: ApiTestUser;
   readonly agentId: string;
   readonly runnerGroup: string;
@@ -798,7 +828,7 @@ async function entitledRunActor(userOptions: ApiTestUserOptions = {}): Promise<{
   api.acceptTelemetryIngest();
   const runnerGroup = api.configureRunnerGroup();
   const granted = await api.grantProEntitlement(actor);
-  await api.ensureOrgModelProvider(actor);
+  await api.ensureOrgModelProvider(actor, route);
   const agent = await bdd.createAgent(actor, {
     displayName: "BDD lifecycle agent",
     description: "Exercises the full run lifecycle.",
@@ -868,7 +898,10 @@ async function setupSameThreadReuseScenario(sourceRunnerIdentity?: {
   const api = createRunsApi(context);
   const chat = createChatFilesBddApi(context);
   const webhooks = createWebhookCallbackApi(context);
-  const { actor, agentId, runnerGroup } = await entitledRunActor();
+  const { actor, agentId, runnerGroup } = await entitledRunActor(
+    {},
+    NATIVE_RUNNER_ROUTE,
+  );
 
   const first = await sendChatRunMessage(actor, {
     agentId,
@@ -4724,7 +4757,10 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   async function setupOrderedHeartbeats() {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
 
     const first = await sendChatRunMessage(actor, {
       agentId,
@@ -4927,7 +4963,10 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   it("prioritizes exact reusable work only for its runner and protection window", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
 
     const first = await sendChatRunMessage(actor, {
       agentId,
@@ -5089,7 +5128,10 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   it("prioritizes capable workspace work only for its matching runner", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
 
     const first = await sendChatRunMessage(actor, {
       agentId,
@@ -5978,11 +6020,6 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       throw new Error("Expected limited-free bootstrap agent");
     }
     const agentId = onboarding.defaultAgentId;
-    // This entitlement case claims the Runner job. Pi admission is covered by
-    // the dedicated route tests, so keep its execution path explicit.
-    await createConnectorBddApi(context).updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PiLoop]: false,
-    });
     await expect(api.readBillingStatus(actor)).resolves.toMatchObject({
       tier: "limited-free-1",
       credits: 1000,
@@ -5997,6 +6034,9 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     ).toMatchObject({ isDefault: true });
 
     await seedBuiltInModelKey("gpt-6-luna");
+    // Luna is Pi-eligible, so the limited-free default chat run is claimed as
+    // a sandbox Pi turn rather than a Codex Runner job.
+    await preparePiSandboxClaim(actor, agentId);
     const sent = await chat.requestSendEvent(
       actor,
       { agentId, prompt: "limited-free default model run" },
@@ -6007,9 +6047,11 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     }
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(sent.body.runId);
-    expect(claim.cliAgentType).toBe("codex");
-    expect(claim.environment).toMatchObject({ OPENAI_MODEL: "gpt-6-luna" });
-    expect(claim.environment).not.toHaveProperty("OPENAI_BASE_URL");
+    expect(claim.cliAgentType).toBe("pi");
+    expect(claim.piModelConfig).toMatchObject({
+      provider: "openai",
+      model: "gpt-6-luna",
+    });
     expect(claim.modelUsageProvider).toBe("gpt-6-luna");
     await api.requestCancelRun(actor, sent.body.runId, [200]);
 
@@ -6091,7 +6133,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
-  it("claims built-in GPT 5.6 runs with the selected OpenAI runtime model", async () => {
+  it("claims built-in GPT 5.6 chat runs through Pi with the selected OpenAI runtime model", async () => {
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
     const selectedModel = "gpt-5.6-sol";
@@ -6107,6 +6149,8 @@ describe("RUN-02: model provider selection and built-in admission", () => {
         modelProviderId: null,
       },
     ]);
+
+    await preparePiSandboxClaim(actor, agentId);
 
     const sent = await chat.requestSendEvent(
       actor,
@@ -6130,7 +6174,8 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     const claim = await api.claimRunnerJob(sent.body.runId);
     await expectBuiltInModelRunRuntimeRoute(sent.body.runId, selectedModel);
 
-    expect(claim.cliAgentType).toBe("codex");
+    // GPT 5.6 is Pi-eligible: chat runs launch a Pi turn, not a Codex job.
+    expect(claim.cliAgentType).toBe("pi");
     await expect(
       readRunLaunchSnapshotFixture(context, sent.body.runId),
     ).resolves.toStrictEqual({
@@ -6141,14 +6186,10 @@ describe("RUN-02: model provider selection and built-in admission", () => {
         runnerProfile: poll.body.job?.experimentalProfile,
       },
     });
-    expect(claim.environment).toMatchObject({
-      OPENAI_API_KEY: modelProviderPlaceholder(
-        "openai-api-key",
-        "OPENAI_API_KEY",
-      ),
-      OPENAI_MODEL: selectedModel,
+    expect(claim.piModelConfig).toMatchObject({
+      provider: "openai",
+      model: selectedModel,
     });
-    expect(claim.environment).not.toHaveProperty("OPENAI_BASE_URL");
     expect(
       claim.firewalls?.map((firewall) => {
         return firewallEntryName(firewall);
@@ -6203,6 +6244,9 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       },
     ]);
 
+    // This case exercises shared-key admission, so control the Pi handoff.
+    await preparePiSandboxClaim(actor, agentId);
+
     const sent = await chat.requestSendEvent(
       actor,
       {
@@ -6217,6 +6261,8 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       throw new Error("Expected the DeepSeek chat send to create a run");
     }
     expect(sent.body.runId).not.toBeNull();
+    // Join the API-to-Sandbox handoff before cancelling the admitted run.
+    await flushWaitUntilForTest();
     await api.requestCancelRun(actor, sent.body.runId, [200]);
   });
 
@@ -6302,10 +6348,13 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     "deepseek-v4-pro",
     "deepseek-v4.1-flash",
   ] as const)(
-    "claims built-in %s runs with the Responses adapter",
+    "claims built-in %s chat runs through the Pi Responses route",
     async (selectedModel) => {
       const api = createRunsApi(context);
       const chat = createChatFilesBddApi(context);
+      if (selectedModel === "deepseek-v4.1-flash") {
+        configureNativeCliArtifact();
+      }
       await seedBuiltInModelKey(selectedModel);
       const { actor, agentId, runnerGroup } = await entitledRunActor();
 
@@ -6318,6 +6367,8 @@ describe("RUN-02: model provider selection and built-in admission", () => {
           modelProviderId: null,
         },
       ]);
+
+      await preparePiSandboxClaim(actor, agentId);
 
       const sent = await chat.requestSendEvent(
         actor,
@@ -6336,49 +6387,14 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       const claim = await api.claimRunnerJob(sent.body.runId);
       await expectBuiltInModelRunRuntimeRoute(sent.body.runId, selectedModel);
 
-      expect(claim.cliAgentType).toBe("codex");
-      expect(claim.environment).toMatchObject({
-        OPENAI_API_KEY: modelProviderPlaceholder(
-          "deepseek",
-          "DEEPSEEK_API_KEY",
-        ),
-        OPENAI_BASE_URL: "https://api.deepseek.com/",
-        OPENAI_MODEL: getBuiltInApiModel(selectedModel),
-      });
-      expect(claim.environment).not.toHaveProperty("ANTHROPIC_MODEL");
-      expect(claim.codexRuntimeConfig).toMatchObject({
-        providerId: "deepseek",
-        name: "DeepSeek",
+      // DeepSeek is Pi-eligible: chat runs use Pi's Responses dialect rather
+      // than the native Codex Responses adapter.
+      expect(claim.cliAgentType).toBe("pi");
+      expect(claim.piModelConfig).toMatchObject({
+        provider: "deepseek",
         baseUrl: "https://api.deepseek.com/",
-        envKey: "OPENAI_API_KEY",
-        requiresOpenaiAuth: false,
-        wireApi: "responses",
-        supportsWebsockets: false,
+        model: getBuiltInApiModel(selectedModel),
       });
-      const catalogModels = claim.codexRuntimeConfig?.modelCatalog?.models;
-      if (!Array.isArray(catalogModels)) {
-        throw new Error(
-          `Expected a native DeepSeek Codex catalog for ${selectedModel}`,
-        );
-      }
-      expect(catalogModels).toContainEqual(
-        expect.objectContaining({
-          slug: getBuiltInApiModel(selectedModel),
-          apply_patch_tool_type: "freeform",
-          default_reasoning_level: "high",
-          input_modalities:
-            selectedModel === "deepseek-v4-pro" ? ["text"] : ["text", "image"],
-          base_instructions: expect.stringContaining("You are Codex"),
-          model_messages: expect.objectContaining({
-            instructions_template: expect.stringContaining("You are Codex"),
-          }),
-        }),
-      );
-      if (selectedModel === "deepseek-v4.1-flash") {
-        expect(catalogModels).toContainEqual(
-          expect.objectContaining({ context_window: 1_048_576 }),
-        );
-      }
       expect(
         claim.firewalls?.map((firewall) => {
           return firewallEntryName(firewall);
@@ -6389,7 +6405,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       const token = claim.platformEnvironment.OKOU_TOKEN;
       if (!token) {
         throw new Error(
-          "Expected the native DeepSeek run to expose OKOU_TOKEN",
+          "Expected the built-in DeepSeek run to expose OKOU_TOKEN",
         );
       }
       expect(
@@ -6425,6 +6441,8 @@ describe("RUN-02: model provider selection and built-in admission", () => {
         },
       ]);
 
+      await preparePiSandboxClaim(actor, agentId);
+
       const sent = await chat.requestSendEvent(
         actor,
         {
@@ -6440,32 +6458,13 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       await api.heartbeatRunner(runnerGroup);
       const claim = await api.claimRunnerJob(sent.body.runId);
 
-      expect(claim.cliAgentType).toBe("codex");
-      expect(claim.environment).toMatchObject({
-        OPENAI_API_KEY: modelProviderPlaceholder(
-          "openrouter-codex",
-          "OPENROUTER_API_KEY",
-        ),
-        OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
-        OPENAI_MODEL: `deepseek/${selectedModel}`,
-      });
-      expect(claim.codexRuntimeConfig).toMatchObject({
-        providerId: "openrouter-codex",
+      // DeepSeek is Pi-eligible: the OpenRouter workspace key is projected
+      // into Pi's Responses route instead of a Codex model catalog.
+      expect(claim.cliAgentType).toBe("pi");
+      expect(claim.piModelConfig).toMatchObject({
+        provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
-        wireApi: "responses",
-        modelCatalog: {
-          models: [
-            expect.objectContaining({
-              slug: `deepseek/${selectedModel}`,
-              context_window: 1_048_576,
-              input_modalities:
-                selectedModel === "deepseek-v4.1-flash"
-                  ? ["text", "image"]
-                  : ["text"],
-              apply_patch_tool_type: null,
-            }),
-          ],
-        },
+        model: `deepseek/${selectedModel}`,
       });
       expect(claim.modelUsageProvider).toBe(selectedModel);
       const token = claim.platformEnvironment.OKOU_TOKEN;
@@ -6543,6 +6542,10 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       },
     ]);
 
+    // Every model here is Pi-eligible in a chat thread; inspect the frozen
+    // sandbox Pi claim rather than executing a provider request.
+    await preparePiSandboxClaim(actor, agentId);
+
     async function claimModel(model: SupportedRunModel) {
       const sent = await chat.requestSendEvent(
         actor,
@@ -6557,10 +6560,9 @@ describe("RUN-02: model provider selection and built-in admission", () => {
         throw new Error(`Expected ${model} to create a run`);
       }
       await api.heartbeatRunner(runnerGroup);
-      return {
-        claim: await api.claimRunnerJob(sent.body.runId),
-        runId: sent.body.runId,
-      };
+      const claim = await api.claimRunnerJob(sent.body.runId);
+      expect(claim.cliAgentType).toBe("pi");
+      return { claim, runId: sent.body.runId };
     }
 
     const unsupported = await claimModel(unsupportedModel);
@@ -6816,7 +6818,8 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       [200, 201],
     );
 
-    // A member-scoped policy routes the gpt-5.6-luna model through the
+    // A member-scoped policy routes the gpt-6-astra model (native Codex
+    // Runner; Pi-eligible GPT models would run API-first) through the
     // personal provider; the org default stays on the anthropic provider.
     const orgProvider = await api.ensureOrgModelProvider(actor);
     await api.updateOrgModelPolicies(actor, [
@@ -6830,7 +6833,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       {
         // Member-scope routes resolve the provider per caller at run time,
         // so they must not pin a provider id.
-        model: "gpt-5.6-luna",
+        model: "gpt-6-astra",
         isDefault: false,
         defaultProviderType: "codex-oauth-token",
         credentialScope: "member",
@@ -6862,7 +6865,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
         agentId: agent.agentId,
         threadId: thread.id,
         prompt: "run on the pinned member provider",
-        model: "gpt-5.6-luna",
+        model: "gpt-6-astra",
       },
       [201],
     );
@@ -6873,7 +6876,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(sent.body.runId);
     expect(claim.cliAgentType).toBe("codex");
-    expect(claim.environment?.OPENAI_MODEL).toBe("gpt-5.6-luna");
+    expect(claim.environment?.OPENAI_MODEL).toBe("gpt-6-astra");
     expect(claim.environment?.CHATGPT_ACCESS_TOKEN).toBe(
       modelProviderPlaceholder("codex-oauth-token", "CHATGPT_ACCESS_TOKEN"),
     );
@@ -15537,7 +15540,10 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     const { runId, threadId } = await sendChatRunMessage(actor, {
       agentId,
       prompt: "ignore chat output after timeout",
@@ -15642,7 +15648,10 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
     const chat = createChatFilesBddApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const chatCallbacks = createChatCallbacksApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const { runId, threadId } = await sendChatRunMessage(actor, {
@@ -15741,7 +15750,10 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     failIfChatCallbackRouteIsFetched();
     const requestedAt = Date.parse("2026-07-23T08:00:00.000Z");
     mockNow(requestedAt);
@@ -16048,7 +16060,10 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     failIfChatCallbackRouteIsFetched();
     const requestedAt = Date.parse("2026-07-23T08:30:00.000Z");
     mockNow(requestedAt);
@@ -16157,6 +16172,21 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
     const chat = createChatFilesBddApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
+    // Astra stays on the native Codex Runner; Pi-eligible GPT models would
+    // execute API-first instead of reporting Codex items.
+    const { providerId: openAiProviderId } = await api.createOrgModelProvider(
+      actor,
+      { type: "openai-api-key", secret: "bdd-codex-first-output-key" },
+    );
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "gpt-6-astra",
+        isDefault: true,
+        defaultProviderType: "openai-api-key",
+        credentialScope: "org",
+        modelProviderId: openAiProviderId,
+      },
+    ]);
     failIfChatCallbackRouteIsFetched();
     const requestedAt = Date.parse("2026-07-23T09:00:00.000Z");
     mockNow(requestedAt);
@@ -16177,6 +16207,7 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
     mockNow(apiStartedAt);
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(runId);
+    expect(claim.cliAgentType).toBe("codex");
     await flushWaitUntilForTest();
     context.mocks.ably.publish.mockClear();
     mockNow(acknowledgedAt);
@@ -16244,7 +16275,10 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     failIfChatCallbackRouteIsFetched();
     const requestedAt = Date.parse("2026-07-23T10:00:00.000Z");
     const promotedAt = requestedAt + 120_000;
@@ -16307,7 +16341,10 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     failIfChatCallbackRouteIsFetched();
 
     const { runId, threadId } = await sendChatRunMessage(actor, {

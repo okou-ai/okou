@@ -331,6 +331,12 @@ runner_chat_send_parts() {
     local capture_network_bodies="${7:-false}"
     local payload
 
+    # Native-harness probes use their dedicated account's configured model
+    # explicitly; an empty initial model is not a workspace selection.
+    if [[ -z "$thread_id" && -z "$selected_model" ]]; then
+        selected_model="${E2E_NATIVE_CODEX_MODEL:-}"
+    fi
+
     if [[ -z "$client_event_id" ]]; then
         client_event_id="$(_runner_uuid)"
     fi
@@ -718,7 +724,7 @@ _runner_chat_execute() {
 runner_chat_start() {
     local agent_id="$1"
     local prompt="$2"
-    _runner_chat_execute "$agent_id" "$prompt" "" "deepseek-v4-flash"
+    _runner_chat_execute "$agent_id" "$prompt" "" "${E2E_NATIVE_CODEX_MODEL:-deepseek-v4-flash}"
 }
 
 runner_chat_continue() {
