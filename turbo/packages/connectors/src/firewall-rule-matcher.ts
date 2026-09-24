@@ -988,12 +988,17 @@ function awsRuleMatches(
 
   const action = predicates.get("action");
   if (action !== undefined) {
-    if (context.action !== undefined) return context.action === action;
-    const actionSelectors = queryValues(context.query, "Action");
-    return actionSelectors.length === 1 && actionSelectors[0] === action;
+    if (context.action !== undefined) {
+      if (context.action !== action) return false;
+    } else {
+      const actionSelectors = queryValues(context.query, "Action");
+      if (actionSelectors.length !== 1 || actionSelectors[0] !== action) {
+        return false;
+      }
+    }
   }
   const target = predicates.get("target");
-  if (target !== undefined) return context.target === target;
+  if (target !== undefined && context.target !== target) return false;
 
   if (context.sigv4Service === "s3") {
     const requiredKeys = new Set(
@@ -1031,27 +1036,32 @@ function awsRuleNeedsMissingDiagnosticContext(
 
   const action = predicates.get("action");
   const actionSelectors = queryValues(context.query, "Action");
+  let completedContext = context;
+  let missingSelector = false;
   if (action !== undefined) {
-    if (
-      context.action !== undefined ||
-      context.target !== undefined ||
-      actionSelectors.length > 0
-    ) {
-      return false;
+    if (context.target !== undefined) return false;
+    if (context.action !== undefined) {
+      if (context.action !== action) return false;
+    } else if (actionSelectors.length > 0) {
+      if (actionSelectors.length !== 1 || actionSelectors[0] !== action) {
+        return false;
+      }
+    } else {
+      completedContext = { ...completedContext, action };
+      missingSelector = true;
     }
-    return awsRuleMatches(rule, { ...context, action });
   }
 
   const target = predicates.get("target");
   if (target !== undefined) {
-    if (
-      context.target !== undefined ||
-      context.action !== undefined ||
-      actionSelectors.length > 0
-    ) {
+    if (context.action !== undefined || actionSelectors.length > 0)
       return false;
+    if (context.target !== undefined) {
+      if (context.target !== target) return false;
+    } else {
+      completedContext = { ...completedContext, target };
+      missingSelector = true;
     }
-    return awsRuleMatches(rule, { ...context, target });
   }
 
   const missingRequirements = (rule.awsQueryRequirements ?? []).filter(
@@ -1059,7 +1069,8 @@ function awsRuleNeedsMissingDiagnosticContext(
       return queryValues(context.query, requirement.key).length === 0;
     },
   );
-  if (missingRequirements.length === 0) return false;
+  if (missingRequirements.length > 0) missingSelector = true;
+  if (!missingSelector) return false;
   const query = [
     ...context.query,
     ...missingRequirements.map((requirement) => {
@@ -1070,7 +1081,7 @@ function awsRuleNeedsMissingDiagnosticContext(
       };
     }),
   ];
-  return awsRuleMatches(rule, { ...context, query });
+  return awsRuleMatches(rule, { ...completedContext, query });
 }
 
 function compileDecisionApi(
