@@ -15,7 +15,7 @@ control and RPC services, shared contracts, and developer/test support.
 | runner-provider          | API/local job discovery, claiming, completion, active input, cancellation and queue coordination      |
 | runner-remote            | Guest RPC, remote usage, SSH authority/sessions/files, and VNC sessions                               |
 | runner-storage           | Storage planning, archive delivery, host archive cache and R2 template cache                         |
-| runner-supervisor        | Start-loop idle replenishment, heartbeat, claimed-run completion settlement, ownership transitions, and orphan recovery above domain owners |
+| runner-supervisor        | Start-loop idle replenishment, post-executor sandbox finalization, heartbeat, claimed-run completion settlement, ownership transitions, and orphan recovery above domain owners |
 | runner-types             | Shared Runner identifiers, API payloads, storage manifest types and validation                        |
 | sandbox                  | Provider-neutral sandbox interfaces and shared lifecycle/control types                                |
 | sandbox-firecracker      | Firecracker provider: VM lifecycle, networking, NBD COW and snapshot restore                          |
@@ -61,7 +61,7 @@ Runner -> runner-remote   -> runner-network, runner-provider, runner-host, runne
 Runner -> runner-storage  -> runner-host -> runner-types
 Runner -> runner-lifecycle -> runner-storage, runner-host, runner-types, sandbox
 Runner -> runner-executor -> runner-provider, runner-storage, runner-network, runner-remote, runner-lifecycle, runner-host, runner-types
-Runner -> runner-supervisor -> runner-executor, runner-lifecycle, runner-provider, runner-host, runner-types, sandbox
+Runner -> runner-supervisor -> runner-executor, runner-lifecycle, runner-network, runner-storage, runner-provider, runner-host, runner-types, sandbox
 Runner -> guest-control-client -> guest-control-server (guest-init child)
 Guest  -> runner-rpc-client    -> Runner service endpoint
 Guest  -> process-control-ipc  -> guest-local process control / placement
