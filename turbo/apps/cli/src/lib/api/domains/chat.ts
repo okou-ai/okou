@@ -17,6 +17,7 @@ import {
   type ChatSearchResponse,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import {
   CHAT_EVENT_SCHEMA_VERSION_HEADER,
@@ -186,6 +187,7 @@ export async function createChatThread(options: {
   title: string;
   model?: string;
   serviceTier?: ChatThreadServiceTier | null;
+  reasoningEffort?: ReasoningEffort;
 }): Promise<ChatThreadCreateResult> {
   const config = await getClientConfig();
   const client = initClient(chatThreadsContract, config);
@@ -199,6 +201,9 @@ export async function createChatThread(options: {
       ...(options.serviceTier === undefined
         ? {}
         : { serviceTier: options.serviceTier }),
+      ...(options.reasoningEffort === undefined
+        ? {}
+        : { reasoningEffort: options.reasoningEffort }),
     },
   });
   if (result.status === 201) {
@@ -329,6 +334,7 @@ export async function listChatEventRows(
 export async function updateChatThreadModelSelection(options: {
   threadId: string;
   model: string | null;
+  reasoningEffort?: ReasoningEffort;
 }): Promise<{ threadId: string; selectedModel: string | null }> {
   const config = await getClientConfig();
   const client = initClient(chatThreadModelSelectionContract, config);
@@ -336,7 +342,12 @@ export async function updateChatThreadModelSelection(options: {
     options.model === null ? null : requireSupportedModel(options.model);
   const result = await client.update({
     params: { id: options.threadId },
-    body: { model },
+    body: {
+      model,
+      ...(options.reasoningEffort === undefined
+        ? {}
+        : { reasoningEffort: options.reasoningEffort }),
+    },
   });
   if (result.status === 204) {
     return {
