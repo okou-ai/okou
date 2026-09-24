@@ -31,7 +31,7 @@ const NAMESPACE = "c82377d6-ef22-4327-88b5-ac3e2059cff1";
 const PAGE_SIZE = 100;
 const cursorSchema = z.tuple([z.number().int().min(0).max(5), z.uuid()]);
 export const CONNECTOR_REMOTE_ERASURE_COLLECTOR_VERSION =
-  "0f077d83-b6a3-4754-a974-62fb64adad3f";
+  "038feb49-19ce-4ce9-a202-62dc73760c0d";
 
 type ResourceType =
   | "connector"
