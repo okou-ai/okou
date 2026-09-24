@@ -88,7 +88,10 @@ async function nativeWorkerHasCapacity(
         ),
       ),
     );
-  return (row?.active ?? 0) < env("MORNING_BRIEF_WORKER_CONCURRENCY");
+  if (row === undefined) {
+    throw new Error("Native Morning Brief capacity count returned no row");
+  }
+  return row.active < env("MORNING_BRIEF_WORKER_CONCURRENCY");
 }
 
 /**
@@ -2205,7 +2208,10 @@ export async function countResumableOccurrences(
     .select({ total: count() })
     .from(morningBriefNativeOccurrences)
     .where(resumableOccurrencesWhere(args));
-  return row?.total ?? 0;
+  if (row === undefined) {
+    throw new Error("Native Morning Brief resumable count returned no row");
+  }
+  return row.total;
 }
 
 /**
@@ -2413,7 +2419,10 @@ export async function countDueNativeOwners(
         lte(morningBriefNativeSchedules.nextRunAt, args.now),
       ),
     );
-  return row?.total ?? 0;
+  if (row === undefined) {
+    throw new Error("Native Morning Brief due count returned no row");
+  }
+  return row.total;
 }
 
 /**
@@ -2473,7 +2482,12 @@ export async function countPendingDeliveryOccurrences(
         isNotNull(morningBriefNativeOccurrences.generationAttemptId),
       ),
     );
-  return row?.total ?? 0;
+  if (row === undefined) {
+    throw new Error(
+      "Native Morning Brief pending delivery count returned no row",
+    );
+  }
+  return row.total;
 }
 
 /**
