@@ -26,7 +26,6 @@ const sourcesFirstStepSchema = z.enum([
   "team",
   "experience",
   "skills",
-  "profile",
   "slack",
   "ready",
 ]);
@@ -41,7 +40,6 @@ export const SOURCES_FIRST_STEP_ROUTES: Readonly<
   team: ROUTES.onboardingTeam,
   experience: ROUTES.onboardingExperience,
   skills: ROUTES.onboardingSkills,
-  profile: ROUTES.onboardingProfile,
   slack: ROUTES.onboardingSlack,
   ready: ROUTES.onboardingReady,
 };
@@ -376,8 +374,7 @@ const MEMBER_BASE_STEPS = [
 
 /**
  * Step order for one run. Members skip invite and Slack; answering the AI
- * experience question with a selected plan adds the skills step before the
- * profile. Both branches see their profile before Slack or their first task.
+ * experience question with a selected plan adds the skills step after it.
  */
 export function sourcesFirstSteps(
   flow: SourcesFirstFlow,
@@ -388,7 +385,7 @@ export function sourcesFirstSteps(
     provider === null ? [] : ["skills"];
   const slackStep: readonly SourcesFirstStep[] =
     flow === "owner" ? ["slack"] : [];
-  return [...base, ...skillSteps, "profile", ...slackStep, "ready"];
+  return [...base, ...skillSteps, ...slackStep, "ready"];
 }
 
 /** Progress markers: one per step of this run. */
