@@ -1204,7 +1204,7 @@ function LegacyConnectorsTabBar({
     <div className="flex flex-wrap items-center justify-between gap-3">
       <Tabs
         value={tab}
-        className="min-w-0 max-w-full"
+        className="min-w-0 w-full sm:w-auto"
         onValueChange={(value) => {
           if (value === "remote-control" || value === "private-network") {
             setScope(value);
@@ -1216,23 +1216,23 @@ function LegacyConnectorsTabBar({
           setActiveTab(value === "custom" ? "custom" : "builtin");
         }}
       >
-        <TabsList className="max-w-full overflow-x-auto">
-          <TabsTrigger value="builtin">
+        <TabsList className="grid h-auto w-full grid-cols-2 sm:inline-flex sm:w-auto">
+          <TabsTrigger value="builtin" className="h-8">
             {t(($) => {
               return $.connectors.catalog.tabs.builtin;
             })}
           </TabsTrigger>
-          <TabsTrigger value="custom">
+          <TabsTrigger value="custom" className="h-8">
             {t(($) => {
               return $.connectors.catalog.tabs.custom;
             })}
           </TabsTrigger>
-          <TabsTrigger value="remote-control">
+          <TabsTrigger value="remote-control" className="h-8">
             {t(($) => {
               return $.connectors.catalog.scope.remoteControl;
             })}
           </TabsTrigger>
-          <TabsTrigger value="private-network">
+          <TabsTrigger value="private-network" className="h-8">
             {t(($) => {
               return $.connectors.catalog.scope.privateNetwork;
             })}
