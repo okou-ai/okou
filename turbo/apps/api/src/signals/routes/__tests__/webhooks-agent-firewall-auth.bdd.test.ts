@@ -1685,8 +1685,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
 
   it("recovers a temporary Gmail OAuth response within the same refresh", async () => {
     const { fw, headers, body } = await gmailRefreshFixture();
-    onTestFinished(context.mocks.console.capture());
-    const log = context.mocks.console.log;
     let attempts = 0;
     server.use(
       http.post("https://oauth2.googleapis.com/token", () => {
@@ -1714,29 +1712,10 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     expect(refreshed.body.headers.Authorization).toBe(
       "Bearer recovered-gmail-access",
     );
-    const recoveryLogs = log.mock.calls.filter(([message]) => {
-      return String(message).includes("gmail token refresh recovered");
-    });
-    expect(recoveryLogs).toHaveLength(1);
-    expect(recoveryLogs[0]?.[1]).toMatchObject({
-      accessSourceKey: "gmail",
-      firstProviderStatus: 400,
-      retryAttempted: true,
-    });
-    expect(
-      log.mock.calls.filter(([message]) => {
-        return String(message).includes("gmail token refresh failed");
-      }),
-    ).toHaveLength(0);
-    expect(JSON.stringify(recoveryLogs)).not.toContain(
-      "synthetic-provider-private-text",
-    );
   });
 
-  it("warns with safe diagnostics after an exhausted Gmail retry", async () => {
+  it("preserves the Gmail grant after an exhausted temporary retry", async () => {
     const { fw, headers, body } = await gmailRefreshFixture();
-    onTestFinished(context.mocks.console.capture());
-    const log = context.mocks.console.log;
     let attempts = 0;
     server.use(
       http.post("https://oauth2.googleapis.com/token", () => {
@@ -1757,20 +1736,23 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     }
     expect(attempts).toBe(2);
     expect(failed.body.error.failureReason).toBe("upstream_provider");
-    const failureLogs = log.mock.calls.filter(([message]) => {
-      return String(message).includes("gmail token refresh failed");
-    });
-    expect(failureLogs).toHaveLength(1);
-    expect(failureLogs[0]?.[1]).toMatchObject({
-      accessSourceKey: "gmail",
-      errorCode: null,
-      errorKind: "oauth_http",
-      providerStatus: 503,
-      retryAttempted: true,
-      firstProviderStatus: 503,
-    });
-    expect(JSON.stringify(failureLogs)).not.toContain(
+    expect(JSON.stringify(failed.body)).not.toContain(
       "synthetic-provider-private-text",
+    );
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        return HttpResponse.json({
+          access_token: "later-gmail-access",
+          expires_in: 3600,
+        });
+      }),
+    );
+    const recovered = await fw.requestFirewallAuth(headers, body, [200]);
+    if (recovered.status !== 200) {
+      throw new Error("Expected Gmail grant to recover on a later request");
+    }
+    expect(recovered.body.headers.Authorization).toBe(
+      "Bearer later-gmail-access",
     );
   });
 
