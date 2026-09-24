@@ -784,6 +784,12 @@ if ! sudo grep -E -q 'parallel-shell-tool-oom-survived .*guest_wide=true memcg_o
   sudo tail -n 80 "$GLOBAL_MEMORY_LOG" >&2 || true
   fail "Guest-wide OOM scope or recovery was not verified"
 fi
+for _ in $(seq 1 50); do
+  if sudo grep -F -q 'oom_classification=contained_tool_oom' "$GLOBAL_MEMORY_LOG"; then
+    break
+  fi
+  sleep 0.1
+done
 if ! sudo grep -F -q 'oom_classification=contained_tool_oom' "$GLOBAL_MEMORY_LOG"; then
   sudo tail -n 80 "$GLOBAL_MEMORY_LOG" >&2 || true
   fail "Guest-wide tool OOM was not classified as contained"
