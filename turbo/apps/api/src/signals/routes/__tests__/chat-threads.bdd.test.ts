@@ -91,6 +91,7 @@ import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { chatEventDisplayText } from "./helpers/chat-event";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
 import {

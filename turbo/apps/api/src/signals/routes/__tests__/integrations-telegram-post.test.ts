@@ -2362,6 +2362,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     const fixture = await trackFixture(
       seedTelegramPostFixture({ linkTelegramUser: true }),
     );
+    // A native run stays queued, so its registered callback is still
+    // readable; a Pi API-first run can finish and settle it first.
+    await seedNativeFablePolicies(fixture);
     telegramApiMocks();
 
     const response = await postWebhook({

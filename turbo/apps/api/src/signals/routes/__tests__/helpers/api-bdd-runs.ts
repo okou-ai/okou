@@ -122,6 +122,7 @@ type RunnerActiveInputDeliveryStatus = 200 | 400 | 401 | 403 | 500;
 type OrgModelPolicyRequest = z.infer<
   (typeof modelPoliciesMainContract.update)["body"]
 >;
+export type OrgPolicyModel = OrgModelPolicyRequest["policies"][number]["model"];
 type OrgModelProviderUpsertRequest = z.infer<
   (typeof modelProvidersMainContract.upsert)["body"]
 >;
@@ -1068,7 +1069,7 @@ export function createRunsApi(
     async ensureOrgModelProvider(
       actor: ApiTestUser,
       options: {
-        readonly model?: OrgModelPolicyRequest["policies"][number]["model"];
+        readonly model?: OrgPolicyModel;
       } = {},
     ): Promise<{ readonly providerId: string }> {
       const providerResponse = await accept(
