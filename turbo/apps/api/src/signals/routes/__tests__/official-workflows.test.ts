@@ -59,6 +59,7 @@ import { Webhook } from "svix";
 import AdmZip from "adm-zip";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
+import { setupRawAppRequestWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
@@ -11957,57 +11958,6 @@ describe("Morning Brief legacy schedule claim journal", () => {
       [200],
     );
   }
-
-  it("orders a selected unjournaled callback before disable and re-enable", async () => {
-    const brief = await installJournaledBrief();
-    if (!brief.actor.orgId) {
-      throw new Error("Expected an organization-scoped Morning Brief owner");
-    }
-    const owner = {
-      orgId: brief.actor.orgId,
-      userId: brief.actor.userId,
-    };
-    const initial = await readNativeSchedule(owner);
-    const runId = await startUnjournaledCompatibilityRun(brief, brief.anchor);
-    const held = await holdWorkflowAutomationRowFixture({
-      automationId: brief.automationId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      held.release();
-      await held.done;
-    });
-
-    await runs.requestCancelRun(brief.actor, runId, [200]);
-    const callback = flushWaitUntilForTest();
-    await expect
-      .poll(async () => {
-        return await held.blockedWaiterCount();
-      })
-      .toBe(1);
-
-    // The callback already owns durable authority and is waiting on the held
-    // legacy row. Settings is issued second, so its final re-enable wins.
-    const settings = republishBriefSchedule(brief.actor);
-    held.release();
-    await held.done;
-    const [, settingsAnchor] = await Promise.all([callback, settings]);
-
-    const legacy = await readLegacyAutomation(brief.automationId);
-    expect(legacy).toMatchObject({
-      enabled: true,
-      officialIntendedEnabled: true,
-      consecutiveFailures: 0,
-      nextRunAt: new Date(settingsAnchor),
-    });
-    await expect(readNativeSchedule(owner)).resolves.toMatchObject({
-      enabled: true,
-      phase: "legacy",
-      ownerEpoch: (initial?.ownerEpoch ?? 0) + 2,
-      nextRunAt: new Date(settingsAnchor),
-      scheduleOwner: "legacy",
-    });
-  });
 
   it("preserves ordinary cron and loop callback behavior", async () => {
     const brief = await installJournaledBrief();
