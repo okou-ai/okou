@@ -3496,6 +3496,7 @@ dependencies = [
  "runner-remote",
  "runner-rpc-client",
  "runner-storage",
+ "runner-supervisor",
  "runner-types",
  "rustix",
  "sandbox",
@@ -3799,6 +3800,24 @@ dependencies = [
  "tracing",
  "url",
  "zstd",
+]
+
+[[package]]
+name = "runner-supervisor"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "runner-executor",
+ "runner-host",
+ "runner-lifecycle",
+ "runner-storage",
+ "runner-types",
+ "sandbox",
+ "sandbox-mock",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]
