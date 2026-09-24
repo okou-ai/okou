@@ -211,21 +211,28 @@
         transform: translate(-50%, -50%);
       }
 
+      /* The skeleton is often hidden within 200ms of first paint, so the hop
+         launches on frame 1: rises decelerate, falls accelerate. */
       @keyframes okou-app-skeleton-bounce {
-        0%,
-        8%,
-        67%,
+        0% {
+          transform: none;
+          animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+        }
+        11% {
+          transform: translateY(-14px) scale(0.93, 1.07);
+          animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0);
+        }
+        22% {
+          transform: translateY(0) scale(1.08, 0.9);
+          animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+        }
+        30% {
+          transform: translateY(-4px) scale(0.98, 1.02);
+          animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0);
+        }
+        38%,
         100% {
           transform: none;
-        }
-        21% {
-          transform: translateY(-15px) scale(0.92, 1.08);
-        }
-        35% {
-          transform: translateY(0) scale(1.08, 0.9);
-        }
-        48% {
-          transform: translateY(-5px) scale(0.97, 1.03);
         }
       }
 
@@ -245,22 +252,21 @@
         width: 56px;
         height: 66px;
         transform-origin: 50% 55%;
-        animation: okou-app-skeleton-bounce 2.85s cubic-bezier(0.2, 0.7, 0.2, 1)
-          infinite;
+        animation: okou-app-skeleton-bounce 1.2s infinite;
       }
 
       .app-bootstrap-skeleton__letter:nth-child(2) {
         width: 51px;
-        animation-delay: 170ms;
+        animation-delay: 80ms;
       }
 
       .app-bootstrap-skeleton__letter:nth-child(3) {
         width: 49px;
-        animation-delay: 340ms;
+        animation-delay: 160ms;
       }
 
       .app-bootstrap-skeleton__letter:nth-child(4) {
-        animation-delay: 510ms;
+        animation-delay: 240ms;
       }
 
       .app-bootstrap-skeleton__glyph {
@@ -294,6 +300,12 @@
         .app-bootstrap-skeleton__glyph {
         width: 55px;
         background-position: -156px 0;
+      }
+
+      @media (width < 40rem) {
+        .app-bootstrap-skeleton__wordmark {
+          transform: scale(0.8);
+        }
       }
 
       @media (prefers-reduced-motion: reduce) {

@@ -82,7 +82,6 @@ import {
   type CancelRunResult,
 } from "./run-cancel.service";
 import { scheduleChatThreadTitleGeneration } from "./chat-title.service";
-import { generateAndPersistInitialThinkingMessage } from "./chat-initial-thinking.service";
 import {
   isCodexFastServiceTierSupported,
   MODEL_FIRST_SELECTION_PROVIDER_ID,
@@ -116,7 +115,6 @@ import {
   officialWorkflowQueueContextId,
   webChatPublicBrandContextId,
 } from "./web-chat-public-brand-context.service";
-import { chatThreadAdmissionBlocked } from "./chat-active-run.service";
 import {
   agentRunSourceTitleSnapshot,
   hasAgentRunSourceAnnotation,
@@ -130,6 +128,7 @@ import {
   discardUnclaimedUserMessage,
   loadNextUnclaimedQueuedUserMessage,
   lockUserMessageQueueThread,
+  resolveWebChatQueueFirstDispatchPreflight,
   type QueuedUserMessage,
 } from "./chat-queued-event.service";
 import {
@@ -326,7 +325,6 @@ interface PreparedNormalSend {
   readonly videoRunOptions: ChatRunVideoOptionsRequest | null;
   readonly computerUseHostGrant: ResolvedComputerUseHostGrant | null;
   readonly persistedExplicitSelection: boolean;
-  readonly initialThinkingEnabled: boolean;
   readonly attachFileMetadata: ChatEventAttachFileMetadata[] | null;
   readonly runConfiguration: ResolvedRunConfiguration;
   readonly featureSwitchContext: FeatureSwitchContext;
@@ -508,19 +506,6 @@ interface NormalSendFeatureSwitches {
    * switches this request already read.
    */
   readonly featureSwitchContext: FeatureSwitchContext;
-}
-
-function initialThinkingForSend(
-  args: NormalSendArgs,
-  switches: NormalSendFeatureSwitches,
-): boolean {
-  return (
-    args.agentRunPreCreateSource === undefined &&
-    !isFeatureEnabled(
-      FeatureSwitchKey.ThreadActivitySummary,
-      switches.featureSwitchContext,
-    )
-  );
 }
 
 interface RuntimeNormalSendBody extends Omit<
@@ -3365,7 +3350,6 @@ const prepareNormalSend$ = command(
       videoRunOptions: templateContext.videoRunOptions,
       computerUseHostGrant: computerAccess.computerUseHostGrant,
       persistedExplicitSelection,
-      initialThinkingEnabled: initialThinkingForSend(args, featureSwitches),
       attachFileMetadata,
       runConfiguration,
       featureSwitchContext: featureSwitches.featureSwitchContext,
@@ -3478,7 +3462,6 @@ function scheduleAssociatedUserMessage(params: {
   readonly orgId: string;
   readonly runId: string;
   readonly appendQueueMarker: boolean;
-  readonly appendInitialThinking: boolean;
   readonly touchThreadSort: boolean;
   readonly attachFileMetadata: ChatEventAttachFileMetadata[] | null;
   readonly triggerSource: "web" | "agent";
@@ -3513,18 +3496,6 @@ function scheduleAssociatedUserMessage(params: {
           orgId: params.orgId,
         });
       }
-      if (params.appendInitialThinking) {
-        await bestEffort(
-          generateAndPersistInitialThinkingMessage({
-            db: params.db,
-            threadId: params.threadId,
-            userId: params.userId,
-            orgId: params.orgId,
-            runId: params.runId,
-            currentPrompt: params.body.prompt,
-          }),
-        );
-      }
       // Direct user messages move sidebar recency; the terminal callback will
       // publish again when the run-finished marker lands.
     })(),
@@ -3539,7 +3510,6 @@ function scheduleCreatedChatRunSideEffects(params: {
   readonly orgId: string;
   readonly runId: string;
   readonly runStatus: string;
-  readonly initialThinkingEnabled: boolean;
   readonly attachFileMetadata: ChatEventAttachFileMetadata[] | null;
   readonly touchThreadSort: boolean;
   readonly triggerSource: "web" | "agent";
@@ -3556,11 +3526,6 @@ function scheduleCreatedChatRunSideEffects(params: {
     userId: params.userId,
     orgId: params.orgId,
   });
-  const appendInitialThinking =
-    params.initialThinkingEnabled &&
-    params.runStatus !== "queued" &&
-    params.body.hasTextContent !== false &&
-    params.body.prompt.trim().length > 0;
   if (params.queueFirstClaim) {
     scheduleClaimedQueueFirstEventSideEffects({
       db: params.db,
@@ -3571,7 +3536,6 @@ function scheduleCreatedChatRunSideEffects(params: {
       runId: params.runId,
       createdAt: params.queueFirstClaim.createdAt,
       appendQueueMarker: params.runStatus === "queued",
-      appendInitialThinking,
     });
     return;
   }
@@ -3583,7 +3547,6 @@ function scheduleCreatedChatRunSideEffects(params: {
     orgId: params.orgId,
     runId: params.runId,
     appendQueueMarker: params.runStatus === "queued",
-    appendInitialThinking,
     touchThreadSort: params.touchThreadSort,
     attachFileMetadata: params.attachFileMetadata,
     triggerSource: params.triggerSource,
@@ -3604,7 +3567,6 @@ function scheduleClaimedQueueFirstEventSideEffects(params: {
   readonly runId: string;
   readonly createdAt: Date;
   readonly appendQueueMarker: boolean;
-  readonly appendInitialThinking: boolean;
 }): void {
   waitUntil(
     (async () => {
@@ -3622,18 +3584,6 @@ function scheduleClaimedQueueFirstEventSideEffects(params: {
         orgId: params.orgId,
         threadId: params.threadId,
       });
-      if (params.appendInitialThinking) {
-        await bestEffort(
-          generateAndPersistInitialThinkingMessage({
-            db: params.db,
-            threadId: params.threadId,
-            userId: params.userId,
-            orgId: params.orgId,
-            runId: params.runId,
-            currentPrompt: params.body.prompt,
-          }),
-        );
-      }
     })(),
   );
 }
@@ -4098,7 +4048,6 @@ function scheduleNormalChatRunSideEffects(params: {
     orgId: params.args.orgId,
     runId: params.runId,
     runStatus: params.runStatus,
-    initialThinkingEnabled: params.prepared.initialThinkingEnabled,
     attachFileMetadata: params.prepared.attachFileMetadata,
     touchThreadSort: shouldTouchThreadSortFromNormalSend(
       params.args.agentRunPreCreateSource,
@@ -4436,21 +4385,12 @@ const sendQueueFirstNormalEvent$ = command(
       args.timing,
       "api_dispatch_pre_create_agent_web_chat_queue_first_check_dispatchable",
       "nested",
-      async (): Promise<
-        | { readonly kind: "self"; readonly queuedMessage: QueuedUserMessage }
-        | { readonly kind: "wait" }
-        | { readonly kind: "drain" }
-      > => {
-        if (await chatThreadAdmissionBlocked(prepared.db, { threadId })) {
-          return { kind: "wait" };
-        }
-        const queuedMessage = await loadNextUnclaimedQueuedUserMessage(
+      () => {
+        return resolveWebChatQueueFirstDispatchPreflight(
           prepared.db,
           threadId,
+          queuedEventId,
         );
-        return queuedMessage?.id === queuedEventId
-          ? { kind: "self", queuedMessage }
-          : { kind: "drain" };
       },
     );
     signal.throwIfAborted();

@@ -69,12 +69,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Show video models, avatar/video templates and start cards, and video onboarding for new accounts",
     enabled: false,
   },
-  [FeatureSwitchKey.ThreadActivitySummary]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Generate short public activity summaries for active thread subscriptions.",
-    enabled: true,
-  },
   [FeatureSwitchKey.HomeTaskRecommendations]: {
     maintainer: "yuma@okou.ai",
     description:
@@ -482,6 +476,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable owner-scoped VNC host and credential configuration",
     enabled: false,
   },
+  [FeatureSwitchKey.ThreadRemoteAccess]: {
+    maintainer: "liangyou@okou.ai",
+    description: "Enable chat-scoped SSH and VNC host defaults and overrides",
+    enabled: false,
+  },
   [FeatureSwitchKey.ConnectorDirectory]: {
     maintainer: "tongx@okou.ai",
     description:
@@ -493,6 +492,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "lancy@okou.ai",
     description:
       "Pin chats from the desktop title and keep Pin, Share, and More visible in the mobile thread header.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.ChatMessageShare]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Share one assistant message and its user prompt from the message actions, copying the public link immediately.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

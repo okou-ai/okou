@@ -51,6 +51,37 @@ function chatEventSearchMessageFixture(args: {
   };
 }
 
+export async function insertSearchableMessageBatchFixture(args: {
+  readonly chatThreadId: string;
+  readonly userId: string;
+  readonly orgId: string;
+  readonly agentId: string;
+  readonly keyword: string;
+  readonly count: number;
+  readonly startAt: Date;
+  readonly startSeqId?: number;
+}): Promise<void> {
+  await db()
+    .insert(chatEventSearchMessages)
+    .values(
+      Array.from({ length: args.count }, (_, index) => {
+        const text = `${args.keyword} ${index}`;
+        return {
+          chatThreadId: args.chatThreadId,
+          seqId: (args.startSeqId ?? 1) + index,
+          runId: null,
+          userId: args.userId,
+          orgId: args.orgId,
+          agentId: args.agentId,
+          role: "user" as const,
+          createdAt: new Date(args.startAt.getTime() + index * 1000),
+          text,
+          textBigram: chatSearchIndexText(text),
+        };
+      }),
+    );
+}
+
 export async function insertOrphanedChatEventSearchProjectionFixture(args: {
   readonly chatThreadId: string;
   readonly text: string;

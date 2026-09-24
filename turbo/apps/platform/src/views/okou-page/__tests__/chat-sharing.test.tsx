@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { expect, test } from "vitest";
 
@@ -812,4 +813,80 @@ test("An oversized message group cannot be added to a shared snapshot", async ()
   await screen.findByText("Select fewer messages to share");
   expect(oversizedSelection).not.toBeChecked();
   expect(screen.getByText("A normal message remains available")).toBeVisible();
+});
+
+async function setupSingleMessageShare(conflict = false) {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const response = context.mocks.deferred<void>();
+  const createRequests: { eventIds: string[]; id: string | undefined }[] = [];
+  mockConversation();
+  context.mocks.api(sharedThreadsContract.create, async ({ body, respond }) => {
+    createRequests.push({ eventIds: [...body.eventIds], id: body.id });
+    await response.promise;
+    if (conflict) {
+      return respond(409, {
+        error: {
+          message: "A shared conversation with this ID already exists",
+          code: "CONFLICT",
+        },
+      });
+    }
+    return respond(201, { id: body.id ?? SHARED_THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.ChatMessageShare]: true },
+  });
+  await screen.findByText(ANSWER);
+  await waitFor(() => {
+    expect(buttonsNamed("Share message")).toHaveLength(1);
+  });
+  const share = requiredButtonNamed("Share message");
+  return { clipboard, createRequests, response, share };
+}
+
+test("Share one answer with its prompt by copying the link before creating the share", async () => {
+  const { clipboard, createRequests, response, share } =
+    await setupSingleMessageShare();
+  click(share);
+  // The button confirms in the click; it waits for neither the share nor a toast.
+  expect(clipboard.writes).toHaveLength(1);
+  expect(buttonsNamed("Share link copied")).toHaveLength(1);
+  expect(screen.queryByText("Link copied")).toBeNull();
+  await waitFor(() => {
+    expect(createRequests).toHaveLength(1);
+  });
+  const [request] = createRequests;
+  expect(request?.eventIds).toStrictEqual([PROMPT_EVENT_ID, ANSWER_EVENT_ID]);
+  expect(clipboard.writes).toStrictEqual([
+    `https://app.okou.ai/share/threads/${request?.id}`,
+  ]);
+  response.resolve();
+});
+
+test("Revert the button and report a dead copied link when creation fails", async () => {
+  const { response, share } = await setupSingleMessageShare(true);
+  click(share);
+  expect(buttonsNamed("Share link copied")).toHaveLength(1);
+  response.resolve();
+  await expect(
+    screen.findByText("The shared link could not be created. Try again."),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(buttonsNamed("Share message")).toHaveLength(1);
+  });
+});
+
+test("Hide single-message sharing while the switch is off", async () => {
+  mockConversation();
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+  });
+  await screen.findByText(ANSWER);
+  expect(buttonsNamed("Copy message").length).toBeGreaterThan(0);
+  expect(buttonsNamed("Share message")).toStrictEqual([]);
 });

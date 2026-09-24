@@ -1,7 +1,3 @@
-import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog";
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { marketingEventsContract } from "@okouai/api-contracts/contracts/marketing-events";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -16,6 +12,10 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  mockOnboardingConnectorCatalog,
+  onboardingSourceItem,
+} from "./onboarding-catalog-test-helpers.ts";
 import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
 import { mockOAuthCompletions } from "../../okou-page/__tests__/connector-page-test-helpers.ts";
 
@@ -45,73 +45,25 @@ function mockOnboardingNeeded(): void {
   });
 }
 
-function catalogItem(item: {
-  readonly slug: string;
-  readonly label: string;
-  readonly description: string;
-  readonly connected: boolean;
-}): PublicConnectorCatalogStatusItem {
-  return {
-    slug: item.slug,
-    label: item.label,
-    description: item.description,
-    icon: {
-      url: `https://icons.example.test/onboarding-${item.slug}.svg`,
-      invertInDarkMode: false,
-    },
-    category: "productivity",
-    generation: [],
-    tags: [],
-    authMethods: [
-      {
-        id: "oauth",
-        label: "OAuth",
-        description: null,
-        grantKind: "auth-code",
-        manualFields: [],
-        startOptions: [],
-      },
-    ],
-    permissionSummary: {
-      hasPermissions: false,
-      permissionCount: 0,
-      hasCategories: false,
-      hasDefaultPolicyOverrides: false,
-    },
-    connection: null,
-    connected: item.connected,
-    connectionStatus: item.connected ? "connected" : "not-connected",
-    scopeMismatch: false,
-    authMethodSupportsRefresh: false,
-    tokenExpiresAt: null,
-    singleAuthCodeAuthMethodId: "oauth",
-    connectNotice: null,
-  };
-}
-
 /**
  * One source already connected, so the steps behind the connect requirement
  * are reachable, and one that is not, to connect during the run.
  */
 function mockCatalog(): void {
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, {
-      connectors: [
-        catalogItem({
-          slug: "gmail",
-          label: "Gmail",
-          description: "Mail for your workspace",
-          connected: true,
-        }),
-        catalogItem({
-          slug: "notion",
-          label: "Notion",
-          description: "Shared notes for a team",
-          connected: false,
-        }),
-      ],
-    });
-  });
+  mockOnboardingConnectorCatalog(context, [
+    onboardingSourceItem({
+      slug: "gmail",
+      label: "Gmail",
+      description: "Mail for your workspace",
+      connected: true,
+    }),
+    onboardingSourceItem({
+      slug: "notion",
+      label: "Notion",
+      description: "Shared notes for a team",
+      connected: false,
+    }),
+  ]);
 }
 
 function getButtonByName(name: string): HTMLElement {
@@ -160,7 +112,7 @@ async function openIndustryStep(): Promise<void> {
   ).resolves.toBeInTheDocument();
 }
 
-test("One run of the source-first flow reports a single onboarding start, whatever the way back", async () => {
+test("One run of the source-first flow reports a single onboarding start", async () => {
   mockOnboardingNeeded();
   mockCatalog();
   const tags: string[] = [];
@@ -188,17 +140,7 @@ test("One run of the source-first flow reports a single onboarding start, whatev
   await expect(
     screen.findByRole("heading", { name: TEAM_QUESTION }),
   ).resolves.toBeInTheDocument();
-  click(getButtonByName("Back"));
-
-  await expect(
-    screen.findByRole("heading", { name: SOURCES_QUESTION }),
-  ).resolves.toBeInTheDocument();
-  click(getButtonByName("Continue"));
-
-  await expect(
-    screen.findByRole("heading", { name: TEAM_QUESTION }),
-  ).resolves.toBeInTheDocument();
-  // The steps, the way back and the guard all belong to the same run.
+  // The steps and the guard all belong to the same run.
   expect(tags).toStrictEqual(["onboarding-start"]);
 });
 
@@ -284,39 +226,6 @@ test("Each step reports its own funnel event, counting invitees rather than nami
   );
   // Who was invited stays in the browser; the funnel only counts them.
   expect(JSON.stringify(posthog.events)).not.toContain(TEAMMATE_EMAIL);
-});
-
-test("Leaving a step through Back reports it against the step that was left", async () => {
-  const posthog = context.mocks.posthog();
-  mockOnboardingNeeded();
-  mockCatalog();
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: ROUTES.onboardingSources,
-    host: "app.okou.ai",
-    featureSwitches: SOURCES_FIRST_ON,
-  });
-  await expect(
-    screen.findByRole("heading", { name: SOURCES_QUESTION }),
-  ).resolves.toBeInTheDocument();
-
-  click(getButtonByName("Back"));
-
-  await expect(
-    screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
-  ).resolves.toBeInTheDocument();
-  expect(posthog.events).toStrictEqual(
-    expect.arrayContaining([
-      onboardingEvent("Back", {
-        flow: "source_first",
-        step_key: "sources",
-        step_index: 1,
-        step_count: 7,
-      }),
-    ]),
-  );
 });
 
 test("A source card starts OAuth directly and reports a successful connect", async () => {

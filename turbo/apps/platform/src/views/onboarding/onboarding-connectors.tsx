@@ -17,14 +17,20 @@ import {
   builtinPollingOAuthDeviceAuthSlug$,
   getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail,
   runBuiltinConnectorConnectSuccess$,
+  selectedBuiltinConnectorCatalogItem$,
   selectedBuiltinConnectorSlug$,
   setSelectedBuiltinConnectorSlug$,
 } from "../../signals/okou-page/settings/connectors.ts";
+import { reloadBuiltinConnectors$ } from "../../signals/external/connectors.ts";
+import { onboardingSourceConnectors$ } from "../../signals/onboarding/onboarding-sources-first-catalog.ts";
 import {
-  connectorCatalogStatus$,
-  reloadBuiltinConnectors$,
-} from "../../signals/external/connectors.ts";
-import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
+  onboardingMakeConnectorItems$,
+  onboardingWorkflowConnectorItems$,
+} from "../../signals/onboarding/onboarding-connector-items.ts";
+import type {
+  PlatformConnectorCatalogConnectItem,
+  PlatformConnectorCatalogStatusItem,
+} from "../../signals/connector-domain.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ConnectModal } from "../okou-page/components/settings/add-connection-dialog.tsx";
 import { ConnectorCard } from "../okou-page/components/settings/connector-card.tsx";
@@ -36,12 +42,9 @@ import { ConnectorIcon } from "../okou-page/components/settings/connector-icons.
 import { defaultBuiltinConnectorAccountOptions } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
-type ConnectorSetupVariant = "workflow" | "prompt" | "sources";
-
-interface ConnectorSetupProps {
+interface ConnectorSetupBaseProps {
   readonly connectorSlugs: readonly string[];
   readonly requiredConnectorSlugs?: readonly string[];
-  readonly variant?: ConnectorSetupVariant;
   /**
    * The sources grid reports its own funnel events. The list layouts belong to
    * other flows and pass neither.
@@ -50,6 +53,18 @@ interface ConnectorSetupProps {
   readonly onConnected?: (connectorSlug: ConnectorSlug) => void;
   readonly children?: ReactNode;
 }
+
+/** The source step's grid: its connectors come from the onboarding sources. */
+type SourcesConnectorSetupProps = ConnectorSetupBaseProps & {
+  readonly variant: "sources";
+};
+
+/** The list layouts of the workflow run and template pages. */
+type ListConnectorSetupProps = ConnectorSetupBaseProps & {
+  readonly variant?: "workflow" | "prompt";
+};
+
+type ConnectorSetupProps = SourcesConnectorSetupProps | ListConnectorSetupProps;
 
 function parseConnectorSlugs(values: readonly string[]): ConnectorSlug[] {
   return values.flatMap((value) => {
@@ -71,7 +86,7 @@ function SourceConnectorCard({
   onActivate,
 }: {
   readonly connectorSlug: ConnectorSlug;
-  readonly connector: PlatformConnectorCatalogStatusItem;
+  readonly connector: PlatformConnectorCatalogConnectItem;
   readonly connected: boolean;
   readonly busy: boolean;
   readonly onActivate: () => void;
@@ -149,6 +164,25 @@ export function OnboardingConnectorSetup(props: ConnectorSetupProps) {
   return <ListConnectorSetup {...props} />;
 }
 
+/** The picked connector's full entry, for the connect modal it opens. */
+function useSelectedConnector(): {
+  readonly selectedConnector: PlatformConnectorCatalogStatusItem | undefined;
+  readonly setSelectedConnectorSlug: (slug: ConnectorSlug | null) => void;
+} {
+  const selectedConnectorSlug = useGet(selectedBuiltinConnectorSlug$);
+  const setSelectedConnectorSlug = useSet(setSelectedBuiltinConnectorSlug$);
+  const selectedLoadable = useLastLoadable(
+    selectedBuiltinConnectorCatalogItem$,
+  );
+  const selectedConnector =
+    selectedConnectorSlug !== null &&
+    selectedLoadable.state === "hasData" &&
+    selectedLoadable.data?.slug === selectedConnectorSlug
+      ? selectedLoadable.data
+      : undefined;
+  return { selectedConnector, setSelectedConnectorSlug };
+}
+
 function useSourceConnectorActivate(
   onConnectStart: ConnectorSetupProps["onConnectStart"],
   onConnected: ConnectorSetupProps["onConnected"],
@@ -158,7 +192,7 @@ function useSourceConnectorActivate(
   const directConnect = useSet(connectBuiltinConnectorOAuthAuthCodeAndSettle$);
   const runConnectSuccess = useSet(runBuiltinConnectorConnectSuccess$);
 
-  return (item: PlatformConnectorCatalogStatusItem, connected: boolean) => {
+  return (item: PlatformConnectorCatalogConnectItem, connected: boolean) => {
     onConnectStart?.(item.slug);
     const authMethod =
       getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail(item);
@@ -201,29 +235,24 @@ function SourcesConnectorGrid({
   connectorSlugs,
   onConnectStart,
   onConnected,
-}: ConnectorSetupProps) {
+}: SourcesConnectorSetupProps) {
   const validConnectorSlugs = parseConnectorSlugs(connectorSlugs);
   const connectorCatalogItemsLoadable = useLastLoadable(
-    connectorCatalogStatus$,
+    onboardingSourceConnectors$,
   );
   const retryCatalog = useSet(reloadBuiltinConnectors$);
   const { t } = useTranslation();
-  const setSelectedConnectorSlug = useSet(setSelectedBuiltinConnectorSlug$);
+  const { selectedConnector, setSelectedConnectorSlug } =
+    useSelectedConnector();
   const activate = useSourceConnectorActivate(onConnectStart, onConnected);
-  const selectedConnectorSlug = useGet(selectedBuiltinConnectorSlug$);
   const connectFlowSlug = useGet(builtinConnectFlowSlug$);
   const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
   const justConnectedSlugs = useGet(justConnectedBuiltinSlugs$);
   const connectorCatalogItems =
     connectorCatalogItemsLoadable.state === "hasData"
-      ? connectorCatalogItemsLoadable.data.connectors
+      ? connectorCatalogItemsLoadable.data
       : [];
-  const selectedConnector = selectedConnectorSlug
-    ? connectorCatalogItems.find((connector) => {
-        return connector.slug === selectedConnectorSlug;
-      })
-    : undefined;
   const selectedAccountOptions =
     defaultBuiltinConnectorAccountOptions(selectedConnector);
 
@@ -313,7 +342,7 @@ function SourcesConnectorGrid({
 
 /** The two list layouts this component still renders. */
 function listLayout(
-  variant: ConnectorSetupVariant | undefined,
+  variant: ListConnectorSetupProps["variant"],
 ): "workflow" | "prompt" {
   return variant === "prompt" ? "prompt" : "workflow";
 }
@@ -323,20 +352,24 @@ function ListConnectorSetup({
   requiredConnectorSlugs,
   variant,
   children,
-}: ConnectorSetupProps) {
+}: ListConnectorSetupProps) {
   const layout = listLayout(variant);
+  // Each layout belongs to one page, whose few connectors are looked up by
+  // slug: the workflow run page's workflow, the template link's connectors.
+  const connectorItems$ =
+    layout === "prompt"
+      ? onboardingMakeConnectorItems$
+      : onboardingWorkflowConnectorItems$;
   const validConnectorSlugs = parseConnectorSlugs(connectorSlugs);
   const requiredSet = new Set(
     parseConnectorSlugs(requiredConnectorSlugs ?? []),
   );
   const pageSignal = useGet(pageSignal$);
-  const connectorCatalogItemsLoadable = useLastLoadable(
-    connectorCatalogStatus$,
-  );
+  const connectorCatalogItemsLoadable = useLastLoadable(connectorItems$);
   const connect = useSet(connectBuiltinConnectorOAuthAuthCode$);
   const connectNoAuth = useSet(connectBuiltinConnectorNoAuth$);
-  const selectedConnectorSlug = useGet(selectedBuiltinConnectorSlug$);
-  const setSelectedConnectorSlug = useSet(setSelectedBuiltinConnectorSlug$);
+  const { selectedConnector, setSelectedConnectorSlug } =
+    useSelectedConnector();
   const connectFlowSlug = useGet(builtinConnectFlowSlug$);
   const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
@@ -348,13 +381,8 @@ function ListConnectorSetup({
 
   const connectorCatalogItems =
     connectorCatalogItemsLoadable.state === "hasData"
-      ? connectorCatalogItemsLoadable.data.connectors
+      ? connectorCatalogItemsLoadable.data
       : [];
-  const selectedConnector = selectedConnectorSlug
-    ? connectorCatalogItems.find((connector) => {
-        return connector.slug === selectedConnectorSlug;
-      })
-    : undefined;
   const selectedAccountOptions =
     defaultBuiltinConnectorAccountOptions(selectedConnector);
   const loading = connectorCatalogItemsLoadable.state === "loading";

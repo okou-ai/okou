@@ -77,14 +77,6 @@ test("A missing agent with no visible agent and no recorded default opens home",
   await expect(recoveredPathname(destination)).resolves.toBe(destination);
 });
 
-test("A missing agent that is itself the recorded default falls back to a visible agent", async () => {
-  visibleAgents([VISIBLE_AGENT_ID]);
-  recordedDefaultAgent(MISSING_AGENT_ID);
-
-  const destination = `/agents/${VISIBLE_AGENT_ID}/chat`;
-  await expect(recoveredPathname(destination)).resolves.toBe(destination);
-});
-
 test("A missing agent with no visible agent opens the agent list instead of bouncing through home", async () => {
   // Home redirects to the recorded default, which is the page that just failed,
   // so recovering through home here would navigate back and forth forever.

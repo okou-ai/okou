@@ -2003,6 +2003,9 @@ pub mod runners {
             /// Plain username/password authentication.
             #[serde(rename = "username_password")]
             UsernamePassword,
+            /// Apple DH username/password authentication with 63-byte fields.
+            #[serde(rename = "apple_dh_username_password")]
+            AppleDhUsernamePassword,
         }
 
         /// Security profile advertised by this Runner.
@@ -2014,6 +2017,9 @@ pub mod runners {
             /// VeNCrypt X509Plain.
             #[serde(rename = "x509_plain")]
             X509Plain,
+            /// Apple DH type 30, requiring SSH to Mac loopback.
+            #[serde(rename = "apple_dh")]
+            AppleDh,
         }
 
         /// Transport supported for this exact profile tuple.
@@ -2066,6 +2072,13 @@ pub mod runners {
                 /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
                 password: crate::SecretUtf8Text<1023>,
             },
+            /// Apple DH username/password fields; the Runner validates 63-byte bounds.
+            AppleDhUsernamePassword {
+                /// Bounded Plain username, preserving exact UTF-8 bytes.
+                username: String,
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
+            },
         }
 
         impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedAuthentication {
@@ -2077,6 +2090,8 @@ pub mod runners {
                     VncPassword,
                     #[serde(rename = "username_password")]
                     UsernamePassword,
+                    #[serde(rename = "apple_dh_username_password")]
+                    AppleDhUsernamePassword,
                 }
                 #[derive(serde::Deserialize)]
                 #[serde(field_identifier)]
@@ -2142,6 +2157,16 @@ pub mod runners {
                                     password,
                                 })
                             }
+                            (
+                                Some(Kind::AppleDhUsernamePassword),
+                                Some(password),
+                                Some(username),
+                            ) => Ok(
+                                ResolveResponseResolvedAuthentication::AppleDhUsernamePassword {
+                                    username,
+                                    password,
+                                },
+                            ),
                             _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
                         }
                     }
@@ -2243,6 +2268,8 @@ pub mod runners {
                 /// Required verified TLS trust policy.
                 trust: ResolveResponseResolvedSecurityX509VncTrust,
             },
+            /// Apple DH type 30; only the separately verified SSH channel protects the RFB session.
+            AppleDh,
         }
 
         impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedSecurity {
@@ -2254,6 +2281,8 @@ pub mod runners {
                     X509Vnc,
                     #[serde(rename = "x509_plain")]
                     X509Plain,
+                    #[serde(rename = "apple_dh")]
+                    AppleDh,
                 }
                 #[derive(serde::Deserialize)]
                 #[serde(field_identifier)]
@@ -2304,6 +2333,9 @@ pub mod runners {
                             }
                             (Some(Kind::X509Plain), Some(trust)) => {
                                 Ok(ResolveResponseResolvedSecurity::X509Plain { trust })
+                            }
+                            (Some(Kind::AppleDh), None) => {
+                                Ok(ResolveResponseResolvedSecurity::AppleDh)
                             }
                             _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
                         }
@@ -2435,8 +2467,23 @@ pub mod runners {
                 port: u64,
                 /// Current saved configuration generation.
                 generation: i64,
-                /// Explicit certificate identity for a transport-capable handoff.
+                /// Certificate identity for X509 transport handoffs; absent for Apple DH.
                 server_name: String,
+                /// Explicit direct or generation-bound SSH transport snapshot.
+                transport: ResolveResponseResolvedTransportTransport,
+                /// Credential for the explicitly saved method.
+                authentication: ResolveResponseResolvedAuthentication,
+                /// Explicit saved transport and trust policy; never downgrade.
+                security: ResolveResponseResolvedSecurity,
+            },
+            /// Apple DH credential and verified SSH-to-Mac-loopback transport only.
+            ResolvedAppleDh {
+                /// Current private destination.
+                host: String,
+                /// Current destination port.
+                port: u64,
+                /// Current saved configuration generation.
+                generation: i64,
                 /// Explicit direct or generation-bound SSH transport snapshot.
                 transport: ResolveResponseResolvedTransportTransport,
                 /// Credential for the explicitly saved method.
@@ -2459,6 +2506,8 @@ pub mod runners {
                     Resolved,
                     #[serde(rename = "resolved_transport")]
                     ResolvedTransport,
+                    #[serde(rename = "resolved_apple_dh")]
+                    ResolvedAppleDh,
                 }
                 #[derive(serde::Deserialize)]
                 #[serde(field_identifier)]
@@ -2622,6 +2671,23 @@ pub mod runners {
                                 port,
                                 generation,
                                 server_name,
+                                transport,
+                                authentication,
+                                security,
+                            }),
+                            (
+                                Some(Kind::ResolvedAppleDh),
+                                Some(host),
+                                Some(port),
+                                Some(generation),
+                                Some(authentication),
+                                Some(security),
+                                None,
+                                Some(transport),
+                            ) => Ok(ResolveResponse::ResolvedAppleDh {
+                                host,
+                                port,
+                                generation,
                                 transport,
                                 authentication,
                                 security,

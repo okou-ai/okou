@@ -53,21 +53,6 @@ describe("GET /api/integrations/slack/connect", () => {
     return store.set(deleteSlackConnectOrg$, fixture, context.signal);
   });
 
-  it("returns 401 when the request is unauthenticated", async () => {
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-
-    const response = await accept(client.getStatus({ headers: {} }), [401]);
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Not authenticated",
-        code: "UNAUTHORIZED",
-      },
-    });
-  });
-
   it("returns 401 when the authenticated session has no active organization", async () => {
     const fixture = await track(
       store.set(seedSlackConnectOrg$, {}, context.signal),

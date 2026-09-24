@@ -1740,6 +1740,44 @@ describe("workflow queue", () => {
     ).toContain(databaseSecond.id);
   });
 
+  it("uses the event ID to break equal-timestamp workflow queue ties", async () => {
+    const { scenario, automation, runningRunId } = await busyQueueFixture(2);
+    const pending = await pendingAutomationEvents(automation.threadId);
+    expect(pending).toHaveLength(2);
+    const [first, second] = pending;
+    if (!first || !second) {
+      throw new Error("Expected two webhook events to remain queued");
+    }
+    const [earlier, later] =
+      first.id < second.id ? [first, second] : [second, first];
+    // Public requests cannot force equal PostgreSQL microsecond timestamps.
+    await Promise.all(
+      [first.id, second.id].map((eventId) => {
+        return setWorkflowQueueEventCreatedAtFixture({
+          eventId,
+          createdAt: "2019-12-31 23:54:00.000100",
+        });
+      }),
+    );
+
+    await completeRunThroughSandbox(scenario, runningRunId);
+    const runId = (await workflowRunIds(automation.threadId))[1];
+    if (!runId) {
+      throw new Error("Expected the first tied queue event to create a run");
+    }
+    const claimedEvent = (await wf.readThreadEvents(automation.threadId)).find(
+      (event) => {
+        return event.runId === runId && event.eventType === "input.prompt";
+      },
+    );
+    expect(claimedEvent?.revokesEventId).toBe(earlier.id);
+    expect(
+      (await pendingAutomationEvents(automation.threadId)).map((event) => {
+        return event.id;
+      }),
+    ).toContain(later.id);
+  });
+
   it("retries when an earlier automation event becomes queue head during launch", async () => {
     const scenario = await setup();
     const automation = await createWebhookAutomation(scenario);

@@ -14,6 +14,7 @@ import type {
   PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import type { UserPermissionGrantResponse } from "@okouai/api-contracts/contracts/user-permission-grants";
 import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
@@ -22,7 +23,6 @@ import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 
 export const RESEARCH_AGENT_ID = "10000000-0000-4000-8000-000000000001";
 export const SUPPORT_AGENT_ID = "10000000-0000-4000-8000-000000000002";
-export const ARCHIVED_AGENT_ID = "10000000-0000-4000-8000-000000000003";
 const ACME_CONNECTOR_ID = "20000000-0000-4000-8000-000000000001";
 const DEEPWIKI_CONNECTOR_ID = "20000000-0000-4000-8000-000000000002";
 
@@ -101,6 +101,53 @@ export function catalogConnectorFixture(
     singleAuthCodeAuthMethodId: "oauth",
     connectNotice: null,
   };
+}
+
+/** Serves the connected ones among `connectors` as the user's connector overview. */
+export function mockConnectorOverview(
+  testContextValue: TestContext,
+  connectors: readonly PublicConnectorCatalogStatusItem[],
+): void {
+  const connected = connectors.filter((connector) => {
+    return connector.connected;
+  });
+  testContextValue.mocks.api(
+    connectorOverviewContract.overview,
+    ({ respond }) => {
+      return respond(200, {
+        builtinConnectors: connected.map((connector) => {
+          return {
+            slug: connector.slug,
+            label: connector.label,
+            description: connector.description,
+            icon: connector.icon,
+            hasPermissions: connector.permissionSummary.hasPermissions,
+          };
+        }),
+        customConnectors: [],
+        accountSummaries: connected.map((connector) => {
+          return {
+            target: { kind: "builtin" as const, connectorSlug: connector.slug },
+            accountCount: 1,
+            attentionCount: 0,
+            defaultConnection: connector.connection
+              ? {
+                  id: connector.connection.id ?? crypto.randomUUID(),
+                  authMethod: connector.connection.authMethod,
+                  displayName: null,
+                  externalId: null,
+                  externalUsername: connector.connection.externalUsername,
+                  externalEmail: connector.connection.externalEmail,
+                  connectionStatus: "connected" as const,
+                }
+              : null,
+          };
+        }),
+        computerUseHosts: [],
+        cloudBrowserEnabledByDefault: true,
+      });
+    },
+  );
 }
 
 function customConnectorBase() {

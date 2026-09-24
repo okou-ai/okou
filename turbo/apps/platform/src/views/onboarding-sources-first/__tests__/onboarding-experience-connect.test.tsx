@@ -1,8 +1,4 @@
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
-import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -17,6 +13,10 @@ import {
 import { pathname } from "../../../signals/location.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  connectedGmailSource,
+  mockOnboardingConnectorCatalog,
+} from "./onboarding-catalog-test-helpers.ts";
 
 const context = testContext();
 
@@ -30,52 +30,12 @@ const SLACK_QUESTION = "Give Okou a job without leaving Slack.";
 const CODEX_CARD = "Codex";
 const NEW_TO_THIS_CARD = "No, I’m new to this";
 const CONNECT_CODEX = "Connect Codex";
-const CANCELLED_NOTE =
-  "Codex isn’t connected. You can try again, or continue and connect it later.";
 const FAILED_NOTE =
   "We couldn’t connect Codex. You can try again, or continue and connect it later.";
 
 /** The step is only reachable once a source is connected. */
 function mockConnectedSource(): void {
-  const connector: PublicConnectorCatalogStatusItem = {
-    slug: "gmail",
-    label: "Gmail",
-    description: "Connect Gmail to continue",
-    icon: {
-      url: "https://icons.example.test/onboarding-gmail.svg",
-      invertInDarkMode: false,
-    },
-    category: "productivity",
-    generation: [],
-    tags: [],
-    authMethods: [
-      {
-        id: "oauth",
-        label: "OAuth",
-        description: null,
-        grantKind: "auth-code",
-        manualFields: [],
-        startOptions: [],
-      },
-    ],
-    permissionSummary: {
-      hasPermissions: false,
-      permissionCount: 0,
-      hasCategories: false,
-      hasDefaultPolicyOverrides: false,
-    },
-    connection: null,
-    connected: true,
-    connectionStatus: "connected",
-    scopeMismatch: false,
-    authMethodSupportsRefresh: false,
-    tokenExpiresAt: null,
-    singleAuthCodeAuthMethodId: "oauth",
-    connectNotice: null,
-  };
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [connector] });
-  });
+  mockOnboardingConnectorCatalog(context, [connectedGmailSource()]);
 }
 
 function connectedCodexAccount(): ModelProviderResponse {
@@ -224,72 +184,6 @@ test("The step reports connected once the account lists the subscription", async
   await waitFor(() => {
     expect(getButtonByName("Connected")).toBeDisabled();
   });
-});
-
-test("A device-auth dialog that reports success is not taken for the account", async () => {
-  // The dialog finishes, the account gains nothing: only the provider list
-  // decides what the step says.
-  context.mocks.data.personalModelProviders([]);
-  mockCodexDeviceAuthStart();
-  context.mocks.api(codexDeviceAuthContract.complete, ({ respond }) => {
-    return respond(200, {
-      status: "complete",
-      provider: connectedCodexAccount(),
-      created: true,
-    });
-  });
-
-  await openExperienceStep();
-
-  click(answerRadio(CODEX_CARD));
-
-  await waitFor(() => {
-    expect(getButtonByName(CONNECT_CODEX)).toBeEnabled();
-  });
-
-  click(getButtonByName(CONNECT_CODEX));
-
-  await expect(screen.findByText(CANCELLED_NOTE)).resolves.toBeInTheDocument();
-  expect(screen.queryByText("Connected")).not.toBeInTheDocument();
-});
-
-test("An approval the person never finishes leaves the step honest and passable", async () => {
-  context.mocks.data.personalModelProviders([]);
-  mockCodexDeviceAuthStart();
-  context.mocks.api(codexDeviceAuthContract.complete, ({ respond }) => {
-    return respond(200, { status: "pending", errorMessage: null });
-  });
-  context.mocks.api(codexDeviceAuthContract.cancel, ({ respond }) => {
-    return respond(200, { status: "cancelled" });
-  });
-
-  await openExperienceStep();
-
-  click(answerRadio(CODEX_CARD));
-
-  await waitFor(() => {
-    expect(getButtonByName(CONNECT_CODEX)).toBeEnabled();
-  });
-
-  click(getButtonByName(CONNECT_CODEX));
-
-  await expect(
-    screen.findByTestId("codex-device-auth-code"),
-  ).resolves.toBeInTheDocument();
-
-  closeDeviceAuthDialog();
-
-  // The account never gained the subscription, so the step says so instead of
-  // the connect the dialog started.
-  await expect(screen.findByText(CANCELLED_NOTE)).resolves.toBeInTheDocument();
-  expect(getButtonByName("Try again")).toBeEnabled();
-
-  click(getButtonByName("Continue"));
-
-  await expect(
-    screen.findByRole("heading", { name: SKILLS_QUESTION }),
-  ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe(ROUTES.onboardingSkills);
 });
 
 test("A failed connect says so and still lets the person continue", async () => {

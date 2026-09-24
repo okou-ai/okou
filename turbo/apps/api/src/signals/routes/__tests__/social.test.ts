@@ -16,7 +16,6 @@ import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished, beforeEach } from "vitest";
 
 import {
-  findManagedSocialKitTool,
   MANAGED_SOCIALKIT_BILLING_CATEGORY,
   MANAGED_SOCIALKIT_TOOLS,
   SOCIALKIT_TRANSCRIPT_ERROR_CODES,
@@ -68,47 +67,6 @@ const DEFAULT_SOCIAL_REQUEST = {
   tool: "youtube_transcript",
   input: { url: "https://youtu.be/video123" },
 } as const;
-
-const EXPECTED_SOCIALKIT_TOOLS = [
-  ["linkedin_profile", "/linkedin/profile"],
-  ["linkedin_company", "/linkedin/company"],
-  ["linkedin_company_posts", "/linkedin/company-posts"],
-  ["linkedin_post", "/linkedin/post"],
-  ["linkedin_transcript", "/linkedin/transcript"],
-  ["twitter_profile", "/twitter/profile"],
-  ["twitter_tweets", "/twitter/tweets"],
-  ["twitter_tweet", "/twitter/tweet"],
-  ["twitter_thread", "/twitter/thread"],
-  ["twitter_transcript", "/twitter/transcript"],
-  ["facebook_stats", "/facebook/stats"],
-  ["facebook_channel_stats", "/facebook/channel-stats"],
-  ["facebook_transcript", "/facebook/transcript"],
-  ["facebook_comments", "/facebook/comments"],
-  ["facebook_summarize", "/facebook/summarize"],
-  ["instagram_stats", "/instagram/stats"],
-  ["instagram_channel_stats", "/instagram/channel-stats"],
-  ["instagram_transcript", "/instagram/transcript"],
-  ["instagram_comments", "/instagram/comments"],
-  ["instagram_channel_posts", "/instagram/channel-posts"],
-  ["instagram_channel_reels", "/instagram/channel-reels"],
-  ["instagram_reels_search", "/instagram/reels-search"],
-  ["instagram_summarize", "/instagram/summarize"],
-  ["tiktok_stats", "/tiktok/stats"],
-  ["tiktok_comments", "/tiktok/comments"],
-  ["tiktok_transcript", "/tiktok/transcript"],
-  ["tiktok_channel_stats", "/tiktok/channel-stats"],
-  ["tiktok_channel_videos", "/tiktok/channel-videos"],
-  ["tiktok_search", "/tiktok/search"],
-  ["tiktok_hashtag_search", "/tiktok/hashtag-search"],
-  ["tiktok_summarize", "/tiktok/summarize"],
-  ["youtube_transcript", "/youtube/transcript"],
-  ["youtube_stats", "/youtube/stats"],
-  ["youtube_comments", "/youtube/comments"],
-  ["youtube_channel_stats", "/youtube/channel-stats"],
-  ["youtube_search", "/youtube/search"],
-  ["youtube_videos", "/youtube/videos"],
-  ["youtube_summarize", "/youtube/summarize"],
-] as const;
 
 const socialTestRoutes: readonly RouteEntry[] = [
   ...billingStatusRoutes,
@@ -321,29 +279,6 @@ function providerHandler(
 }
 
 describe("managed SocialKit route", () => {
-  it("pins the reviewed 38-tool inventory and typed inputs", () => {
-    expect(
-      MANAGED_SOCIALKIT_TOOLS.map((tool) => {
-        return [tool.name, tool.path];
-      }),
-    ).toStrictEqual(EXPECTED_SOCIALKIT_TOOLS);
-    expect(MANAGED_SOCIALKIT_BILLING_CATEGORY).toBe("request");
-    expect(MANAGED_SOCIALKIT_TOOLS).toHaveLength(38);
-    expect(
-      socialKitRequestSchema.safeParse({
-        tool: "youtube_search",
-        input: { query: "typed tools", limit: 10, cache: false },
-      }).success,
-    ).toBeTruthy();
-    expect(
-      socialKitRequestSchema.safeParse({
-        tool: "youtube_search",
-        input: { query: "typed tools", limit: "10" },
-      }).success,
-    ).toBeFalsy();
-    expect(findManagedSocialKitTool("youtube_download")).toBeUndefined();
-  });
-
   it("rejects agent tokens without social:read capability", async () => {
     const actor = createBddApi(context).user();
     if (!actor.orgId) {

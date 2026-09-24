@@ -451,7 +451,7 @@ fn classify_cli_failure_reason(
     // Subscription/usage limits are an expected quota state for both Codex
     // (ChatGPT plan "usage limit" or API billing "quota exceeded") and Claude
     // Code (Max plan "session limit" / "weekly limit" /
-    // org monthly spend limit), so classify them regardless of framework where
+    // monthly spend limit), so classify them regardless of framework where
     // the wording is shared. This lets the runner log these expected outcomes
     // at info instead of error.
     if normalized.contains("usage limit")
@@ -461,7 +461,7 @@ fn classify_cli_failure_reason(
         || normalized.contains("weekly limit")
         || (matches!(framework, AgentFramework::ClaudeCode)
             && (is_claude_subscription_access_disabled_error(&normalized)
-                || is_claude_monthly_spend_limit_error(&normalized)))
+                || is_claude_monthly_spend_limit_error(source, &normalized)))
     {
         return Some(FailureReason::UsageLimit);
     }
@@ -720,9 +720,12 @@ fn is_claude_subscription_access_disabled_error(normalized: &str) -> bool {
     normalized.contains("disabled claude subscription access") && normalized.contains("claude code")
 }
 
-fn is_claude_monthly_spend_limit_error(normalized: &str) -> bool {
-    normalized.contains("org's monthly spend limit")
-        && normalized.contains("claude.ai/settings/usage")
+fn is_claude_monthly_spend_limit_error(source: FailureDetailSource, normalized: &str) -> bool {
+    (normalized.contains("org's monthly spend limit")
+        && normalized.contains("claude.ai/settings/usage"))
+        || (source == FailureDetailSource::ClaudeResult
+            && normalized.trim()
+                == "you've hit your monthly spend limit. switch to another model to continue.")
 }
 
 fn is_codex_oauth_reconnect_required_run_error(error_message: &str) -> bool {

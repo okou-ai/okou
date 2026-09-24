@@ -1791,8 +1791,8 @@ describe("INT-01: Slack integration and Slack app routes", () => {
 
     const unauthenticatedConnectStatus =
       await integrations.requestSlackConnectStatus(null, [401]);
-    expect(unauthenticatedConnectStatus.body).toMatchObject({
-      error: { code: "UNAUTHORIZED" },
+    expect(unauthenticatedConnectStatus.body).toStrictEqual({
+      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
     });
 
     const connectStatus = await integrations.requestSlackConnectStatus(
@@ -1831,16 +1831,19 @@ describe("INT-01: Slack integration and Slack app routes", () => {
       null,
       [401],
     );
-    expect(unauthenticatedChannels.body).toMatchObject({
-      error: { code: "UNAUTHORIZED" },
+    expect(unauthenticatedChannels.body).toStrictEqual({
+      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
     });
 
     const missingChannels = await integrations.requestListSlackChannels(
       admin,
       [404],
     );
-    expect(missingChannels.body).toMatchObject({
-      error: { code: "NOT_FOUND" },
+    expect(missingChannels.body).toStrictEqual({
+      error: {
+        message: "No Slack installation found for this org",
+        code: "NOT_FOUND",
+      },
     });
 
     const unauthenticatedMessage = await integrations.requestSendSlackMessage(
@@ -2112,6 +2115,7 @@ describe("INT-01: Slack integration and Slack app routes", () => {
       isAdmin: true,
       workspaceName,
       scopeMismatch: false,
+      reinstallUrl: null,
     });
 
     const memberOrgStatus = await integrations.requestSlackIntegrationStatus(
@@ -6236,8 +6240,8 @@ describe("INT-02: Telegram integration", () => {
 
     const unauthenticatedList =
       await integrations.requestListTelegramIntegrations(null, [401]);
-    expect(unauthenticatedList.body).toMatchObject({
-      error: { code: "UNAUTHORIZED" },
+    expect(unauthenticatedList.body).toStrictEqual({
+      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
     });
 
     const initialList = await integrations.requestListTelegramIntegrations(
@@ -6283,8 +6287,11 @@ describe("INT-02: Telegram integration", () => {
       OFFICIAL_TELEGRAM_BOT_ID,
       [403],
     );
-    expect(officialDisconnect.body).toMatchObject({
-      error: { code: "FORBIDDEN" },
+    expect(officialDisconnect.body).toStrictEqual({
+      error: {
+        message: "The official Telegram bot cannot be uninstalled",
+        code: "FORBIDDEN",
+      },
     });
 
     const officialLink = await integrations.requestLinkTelegram(
@@ -6550,8 +6557,12 @@ describe("INT-02: Telegram integration", () => {
       { defaultAgentId: agent.agentId },
       [403],
     );
-    expect(memberUpdate.body).toMatchObject({
-      error: { code: "FORBIDDEN" },
+    expect(memberUpdate.body).toStrictEqual({
+      error: {
+        message:
+          "Only the bot owner or an org admin can change the default agent",
+        code: "FORBIDDEN",
+      },
     });
 
     const updated = await integrations.requestUpdateTelegramBot(
@@ -6625,8 +6636,8 @@ describe("INT-02: Telegram integration", () => {
       {},
       [401],
     );
-    expect(unauthenticatedAvatar.body).toMatchObject({
-      error: { code: "UNAUTHORIZED" },
+    expect(unauthenticatedAvatar.body).toStrictEqual({
+      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
     });
 
     const missingAvatar = await integrations.requestTelegramAvatar(
@@ -6644,8 +6655,11 @@ describe("INT-02: Telegram integration", () => {
       botId,
       [403],
     );
-    expect(memberDisconnect.body).toMatchObject({
-      error: { code: "FORBIDDEN" },
+    expect(memberDisconnect.body).toStrictEqual({
+      error: {
+        message: "Only the bot owner or an org admin can uninstall this bot",
+        code: "FORBIDDEN",
+      },
     });
 
     const disconnected = await integrations.requestDisconnectTelegramBot(

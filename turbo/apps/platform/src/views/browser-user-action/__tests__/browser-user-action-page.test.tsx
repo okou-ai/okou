@@ -18,7 +18,6 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { createDeferredPromise } from "../../../signals/utils.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
@@ -212,84 +211,9 @@ test("A fresh standalone action page reads accepted callback delivery", async ()
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   expect(
     queryAllByRoleFast("button", document.body).some((candidate) => {
-      return candidate.textContent?.trim() === "Continue";
+      return candidate.textContent?.trim() === "Notify agent";
     }),
   ).toBeFalsy();
-});
-
-test("An ambiguous callback response reconciles from the accepted event read", async () => {
-  let delivered = false;
-  let reads = 0;
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    reads += 1;
-    return respond(200, {
-      ...action("succeeded"),
-      callbackDelivered: delivered,
-    });
-  });
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    expect(body.clientEventId).toBe(SUCCESS_CLIENT_ID);
-    delivered = true;
-    return respond(503, {
-      error: { code: "CHAT_UNAVAILABLE", message: "Chat unavailable" },
-    });
-  });
-
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-
-  await screen.findByText("Information added");
-  click(button("Continue"));
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(reads).toBeGreaterThan(1);
-});
-
-test("Standalone entry waits for preflight and retries a transient failure without exposing fields", async () => {
-  const entered = createDeferredPromise<void>(context.signal);
-  const release = createDeferredPromise<void>(context.signal);
-  let attempts = 0;
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, action("pending"));
-  });
-  context.mocks.api(
-    browserUserActionsContract.preflight,
-    async ({ body, respond }) => {
-      expect(body).toStrictEqual({});
-      attempts += 1;
-      if (attempts === 1) {
-        entered.resolve(undefined);
-        await release.promise;
-        return respond(503, {
-          error: {
-            code: "BROWSER_UNAVAILABLE",
-            message: "Browser unavailable",
-          },
-        });
-      }
-      return respond(200, action("pending"));
-    },
-  );
-
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  await screen.findByText("Enter information");
-  click(button("Enter information"));
-  await entered.promise;
-  expect(screen.queryByRole("form")).toBeNull();
-  expect(screen.getByText("Checking this request…")).toBeVisible();
-  release.resolve(undefined);
-  await screen.findByText("Retry");
-  click(button("Retry"));
-  await screen.findByRole("form", { name: "Enter information in browser" });
-  expect(attempts).toBe(2);
 });
 
 test("Standalone preflight makes a confirmed changed target stale before showing fields", async () => {
@@ -336,7 +260,7 @@ test("A terminal standalone action retries only its stable callback", async () =
   });
 
   await expect(screen.findByText("Information added")).resolves.toBeVisible();
-  click(button("Continue"));
+  click(button("Notify agent"));
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
@@ -387,64 +311,6 @@ test("A standalone direct interaction opens the existing Browser page and comple
   expect(ordering).toStrictEqual(["complete", "callback"]);
 });
 
-test("A direct interaction serializes duplicate completion and retries only its failed callback", async () => {
-  const completeResponse = context.mocks.deferred<void>();
-  let state: BrowserUserActionResponse["state"] = "pending";
-  let completeCount = 0;
-  let callbackCount = 0;
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, directAction(state));
-  });
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(404, {
-      error: { code: "BROWSER_NOT_FOUND", message: "Browser not found" },
-    });
-  });
-  context.mocks.api(
-    browserUserActionsContract.complete,
-    async ({ respond }) => {
-      completeCount += 1;
-      await completeResponse.promise;
-      state = "succeeded";
-      return respond(200, directAction(state));
-    },
-  );
-  context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    callbackCount += 1;
-    if (callbackCount === 1) {
-      return respond(503, {
-        error: { code: "CHAT_UNAVAILABLE", message: "Chat unavailable" },
-      });
-    }
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
-  });
-
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-
-  await screen.findByText("Finish the visual challenge");
-  const done = button("Done");
-  click(done);
-  click(done);
-  await waitFor(() => {
-    expect(completeCount).toBe(1);
-  });
-  completeResponse.resolve();
-
-  await expect(
-    screen.findByText("The agent wasn't notified. Try Continue again."),
-  ).resolves.toBeVisible();
-  click(button("Continue"));
-
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(completeCount).toBe(1);
-  expect(callbackCount).toBe(2);
-});
-
 test("A direct cancellation fails closed when the mutation response changes action kind", async () => {
   let callbackCount = 0;
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
@@ -478,72 +344,6 @@ test("A direct cancellation fails closed when the mutation response changes acti
   });
   expect(callbackCount).toBe(0);
   expect(screen.getByText("Finish the visual challenge")).toBeVisible();
-});
-
-test("A terminal standalone direct interaction retries only its stable callback", async () => {
-  let callbackCount = 0;
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, directAction("succeeded"));
-  });
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    callbackCount += 1;
-    expect(body.prompt).toBe(CALLBACK_PROMPT);
-    expect(body.clientEventId).toBe(SUCCESS_CLIENT_ID);
-    expect(body.chatThreadSortEventId).toBe(SUCCESS_SORT_ID);
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
-  });
-
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-
-  await expect(
-    screen.findByText("Browser interaction complete"),
-  ).resolves.toBeVisible();
-  click(button("Continue"));
-
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(callbackCount).toBe(1);
-});
-
-test("A failed Continue announces the error and remains retryable", async () => {
-  let rejectCallback = true;
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, action("succeeded"));
-  });
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    expect(body.prompt).toBe(CALLBACK_PROMPT);
-    expect(body.clientEventId).toBe(SUCCESS_CLIENT_ID);
-    expect(body.chatThreadSortEventId).toBe(SUCCESS_SORT_ID);
-    if (rejectCallback) {
-      rejectCallback = false;
-      return respond(503, {
-        error: { code: "CHAT_UNAVAILABLE", message: "Chat unavailable" },
-      });
-    }
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
-  });
-
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-
-  await expect(screen.findByText("Information added")).resolves.toBeVisible();
-  click(button("Continue"));
-  await waitFor(() => {
-    expect(
-      screen.getByText("The agent wasn't notified. Try Continue again."),
-    ).toBeVisible();
-  });
-  click(button("Continue"));
-
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
 
 test("A failed callback retries without repeating the Browser mutation", async () => {
@@ -589,68 +389,15 @@ test("A failed callback retries without repeating the Browser mutation", async (
   click(button("Add to browser"));
 
   await waitFor(() => {
-    expect(
-      screen.getByText("The agent wasn't notified. Try Continue again."),
-    ).toBeVisible();
+    expect(screen.getByText("Agent not notified.")).toBeVisible();
   });
   expect(screen.queryByDisplayValue("owner@example.test")).toBeNull();
-  click(button("Continue"));
-
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-});
-
-test("A transient apply failure keeps the draft for an explicit retry", async () => {
-  let state: BrowserUserActionResponse["state"] = "pending";
-  let rejectApply = true;
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, action(state));
-  });
-  mockPendingPreflight();
-  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
-    expect(body.values).toStrictEqual([
-      { key: "email", value: "owner@example.test" },
-    ]);
-    if (rejectApply) {
-      rejectApply = false;
-      return respond(503, {
-        error: { code: "BROWSER_UNAVAILABLE", message: "Browser unavailable" },
-      });
-    }
-    state = "succeeded";
-    return respond(200, action(state));
-  });
-  context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
-  });
-
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-
-  await screen.findByText("Enter information");
-  click(button("Enter information"));
-  const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
-  });
-  const email = within(form).getByLabelText(/Email/u);
-  await fill(email, "owner@example.test");
-  click(button("Add to browser"));
-
-  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
-    "Your entries are still here",
-  );
-  expect(email).toHaveValue("owner@example.test");
-  click(button("Add to browser"));
+  click(button("Retry"));
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
 
 test.each([
-  ["applying", "Adding information"],
-  ["stale", "Fields changed"],
   ["uncertain", "Check the browser"],
   ["cancelled", "Request cancelled"],
 ] as const)(

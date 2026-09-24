@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.98.5](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.4...guest-agent-v0.98.5) (2026-09-24)
+
+
+### Bug Fixes
+
+* **guest-agent:** classify claude personal spend limit ([#36484](https://github.com/okou-ai/okou/issues/36484)) ([7687b34](https://github.com/okou-ai/okou/commit/7687b3416fee007d23a772ec7e9251bf7ab6b924))
+
+## [0.98.4](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.3...guest-agent-v0.98.4) (2026-09-23)
+
+
+### Bug Fixes
+
+* prepare codex oauth workspace routing before cli upgrade ([#36402](https://github.com/okou-ai/okou/issues/36402)) ([422349a](https://github.com/okou-ai/okou/commit/422349af6b60adf89b7719a440b89ba76c10e25f))
+
+
+### Refactoring
+
+* **runner:** extract runner-executor crate ([#36407](https://github.com/okou-ai/okou/issues/36407)) ([c7f9671](https://github.com/okou-ai/okou/commit/c7f967101042e43b12b244cc1e5de5a15402dad3))
+
 ## [0.98.3](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.2...guest-agent-v0.98.3) (2026-09-23)
 
 

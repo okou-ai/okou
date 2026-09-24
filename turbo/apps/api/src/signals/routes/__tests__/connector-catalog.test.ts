@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   connectorCatalogContract,
+  isOneClickConnectorGrantKind,
   type PublicConnectorCatalogListResponse,
   type PublicConnectorCatalogStatusResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
@@ -768,6 +769,82 @@ describe("GET /api/connector-catalog", () => {
         return authMethod.id;
       }),
     ).toStrictEqual(["api-token"]);
+  });
+
+  it("returns 401 for one-click connectors when not authenticated", async () => {
+    const client = setupApp({ context, routes: connectorCatalogRoutes })(
+      connectorCatalogContract,
+    );
+    const response = await accept(client.oneClick({ headers: {} }), [401]);
+
+    expect(response.body.error.code).toBe("UNAUTHORIZED");
+  });
+
+  it("lists one-click connectors with connection status and without per-connector detail", async () => {
+    const actor = bdd.user();
+    mockGitHubConnectorOAuth();
+    const start = await connectorsApi.startOauth(actor, "github", "oauth");
+    await connectorsApi.completeOauthCallback("github", {
+      code: `github-${randomUUID()}`,
+      state: stateFromAuthorizationUrl(start.authorizationUrl),
+    });
+    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+
+    const client = setupApp({ context, routes: connectorCatalogRoutes })(
+      connectorCatalogContract,
+    );
+    const [oneClick, status] = await Promise.all([
+      accept(
+        client.oneClick({ headers: { authorization: "Bearer clerk-session" } }),
+        [200],
+      ),
+      accept(
+        client.status({ headers: { authorization: "Bearer clerk-session" } }),
+        [200],
+      ),
+    ]);
+
+    assertPublicConnectorCatalogHasNoPrivateFields(oneClick.body);
+    const slugs = oneClick.body.connectors.map((connector) => {
+      return connector.slug;
+    });
+    const expectedSlugs = status.body.connectors.flatMap((connector) => {
+      return connector.authMethods.some((method) => {
+        return isOneClickConnectorGrantKind(method.grantKind);
+      })
+        ? [connector.slug]
+        : [];
+    });
+    expect(slugs).toStrictEqual(expectedSlugs);
+    expect(slugs).toContain("github");
+    expect(slugs).not.toContain("openai");
+
+    const github = oneClick.body.connectors.find((connector) => {
+      return connector.slug === "github";
+    });
+    const githubStatus = status.body.connectors.find((connector) => {
+      return connector.slug === "github";
+    });
+    expect(github).toStrictEqual({
+      slug: githubStatus?.slug,
+      label: githubStatus?.label,
+      description: githubStatus?.description,
+      icon: githubStatus?.icon,
+      ...(githubStatus?.popularityRank === undefined
+        ? {}
+        : { popularityRank: githubStatus.popularityRank }),
+      authMethods: githubStatus?.authMethods,
+      connection: githubStatus?.connection,
+      connected: true,
+      connectionStatus: "connected",
+      scopeMismatch: false,
+      authMethodSupportsRefresh: githubStatus?.authMethodSupportsRefresh,
+      tokenExpiresAt: githubStatus?.tokenExpiresAt,
+      singleAuthCodeAuthMethodId: "oauth",
+      connectNotice: null,
+    });
+    expect(github).not.toHaveProperty("permissionSummary");
+    expect(github).not.toHaveProperty("tags");
   });
 
   it("returns connected manual grant status from public API-created state", async () => {

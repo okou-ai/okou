@@ -1890,9 +1890,9 @@ const chatSearchResultSchema = z.object({
   matchedRanges: z.array(chatSearchMatchRangeSchema),
 });
 
-export const CHAT_SEARCH_RESULT_LIMIT = 25;
+export const CHAT_SEARCH_RESULT_LIMIT = 100;
 
-/** The newest matching messages, capped at 25 without pagination. */
+/** Up to 100 newest messages within an unordered set of 500 keyword matches. No pagination or full-history newest guarantee. */
 const chatSearchResponseSchema = z.object({
   results: z.array(chatSearchResultSchema).max(CHAT_SEARCH_RESULT_LIMIT),
 });
@@ -1918,7 +1918,7 @@ export const chatSearchContract = c.router({
       401: apiErrorSchema,
       403: apiErrorSchema,
     },
-    summary: "Search up to 25 newest chat messages within caller's org",
+    summary: "Search up to 100 messages from 500 scoped keyword candidates",
   },
 });
 

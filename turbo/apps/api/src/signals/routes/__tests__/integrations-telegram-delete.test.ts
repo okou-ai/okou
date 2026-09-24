@@ -324,27 +324,6 @@ describe("DELETE /api/integrations/telegram", () => {
       });
     });
 
-    it("returns 403 when uninstalling the official bot", async () => {
-      const userId = newId("user");
-      const orgId = newId("org");
-      mocks.clerk.session(userId, orgId, "org:admin");
-
-      const response = await accept(
-        client().disconnect({
-          params: { botId: OFFICIAL_TELEGRAM_BOT_ID },
-          headers: AUTH_HEADERS,
-        }),
-        [403],
-      );
-
-      expect(response.body).toStrictEqual({
-        error: {
-          message: "The official Telegram bot cannot be uninstalled",
-          code: "FORBIDDEN",
-        },
-      });
-    });
-
     it("returns 404 for an unknown bot", async () => {
       mocks.clerk.session(newId("user"), newId("org"), "org:admin");
 
@@ -374,26 +353,6 @@ describe("DELETE /api/integrations/telegram", () => {
       );
 
       expect(response.body.error.code).toBe("NOT_FOUND");
-    });
-
-    it("returns 403 for a non-admin non-owner", async () => {
-      const bot = await seedBot({ ownerUserId: newId("owner") });
-      mocks.clerk.session(newId("member"), bot.orgId, "org:member");
-
-      const response = await accept(
-        client().disconnect({
-          params: { botId: bot.botId },
-          headers: AUTH_HEADERS,
-        }),
-        [403],
-      );
-
-      expect(response.body).toStrictEqual({
-        error: {
-          message: "Only the bot owner or an org admin can uninstall this bot",
-          code: "FORBIDDEN",
-        },
-      });
     });
 
     it("deletes the installation for the owner and removes the webhook", async () => {

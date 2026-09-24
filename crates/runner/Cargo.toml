@@ -1,6 +1,6 @@
 [package]
 name = "runner"
-version = "0.213.5"
+version = "0.213.7"
 edition.workspace = true
 
 [dependencies]
@@ -12,7 +12,6 @@ sandbox-firecracker = { workspace = true }
 shell-quote = { workspace = true }
 
 async-trait = { workspace = true }
-base64 = { workspace = true, features = ["simd-unsafe", "std"] }
 bytes = { workspace = true, features = ["std"] }
 chrono = { workspace = true, features = ["now", "serde"] }
 clap = { workspace = true, features = ["color", "derive", "env", "error-context", "help", "std", "suggestions", "usage"] }
@@ -26,27 +25,22 @@ tokio-util = { workspace = true, features = ["io", "io-util", "rt"] }
 tracing = { workspace = true, features = ["attributes", "std"] }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["ansi", "fmt", "smallvec", "std", "tracing-log"] }
-tower-layer.workspace = true
-tower-service.workspace = true
 flate2 = { workspace = true, features = ["runtime_detection", "rust_backend"] }
 futures-util = { workspace = true, features = ["async-await", "async-await-macro", "sink", "std"] }
-hyper = { workspace = true }
 reqwest = { workspace = true, features = ["json", "rustls"] }
 rustix = { workspace = true, features = ["fs", "linux_4_11", "process", "std", "time"] }
 hex = { workspace = true, features = ["std"] }
-idna = { workspace = true, features = ["compiled_data", "std"] }
 libc = { workspace = true, features = ["std"] }
 sha2 = { workspace = true, features = ["alloc", "oid"] }
 tar = { workspace = true, features = ["xattr"] }
 tempfile = { workspace = true, features = ["getrandom"] }
-unicode-normalization = { workspace = true, features = ["std"] }
 url = { workspace = true, features = ["std"] }
 uuid = { workspace = true, features = ["serde", "std", "v4", "v5"] }
 sentry = { workspace = true, features = ["panic"] }
 which = { workspace = true, features = ["real-sys"] }
 zstd = { workspace = true, features = ["zstdmt"] }
-guest-control-proto = { workspace = true }
 runner-host.workspace = true
+runner-executor.workspace = true
 runner-lifecycle.workspace = true
 runner-network.workspace = true
 runner-provider.workspace = true
@@ -62,13 +56,12 @@ serde_json = { workspace = true, features = ["std"] }
 # cargo-workspace plugin includes dev-dependencies in its dependency graph,
 # so runner-rs gets auto-bumped when any guest crate version changes.
 [dev-dependencies]
+runner-executor = { workspace = true, features = ["test-support"] }
 runner-lifecycle = { workspace = true, features = ["test-support"] }
-runner-rpc-proto = { workspace = true }
 runner-network = { workspace = true, features = ["test-support"] }
 runner-storage = { workspace = true, features = ["test-support"] }
 guest-control-client = { workspace = true }
 log = { workspace = true }
-tracing-log = { workspace = true, features = ["log-tracer", "std"] }
 # `test-util` feature exposes `with_test_defaults_v2()` on `aws_sdk_s3::Config`,
 # which `aws_smithy_mocks::mock_client!` needs. Feature applies only to the
 # test build — no impact on the production binary.

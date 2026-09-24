@@ -501,6 +501,7 @@ export async function retryClerkRead<T>(
 /** Session identity as the API models it, independent of Clerk's auth object. */
 export interface ClerkSessionIdentity {
   readonly userId: string;
+  readonly sessionId: string | null;
   readonly orgId: string | null;
   readonly orgRole: string | null;
 }
@@ -718,6 +719,10 @@ export async function authenticateClerkSession(
 
   return {
     userId,
+    sessionId:
+      typeof auth.sessionId === "string" && auth.sessionId.length > 0
+        ? auth.sessionId
+        : null,
     orgId: auth.orgId ?? null,
     orgRole: auth.orgRole ?? null,
   };

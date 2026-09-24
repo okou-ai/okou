@@ -62,7 +62,6 @@ test.each([
     enabled: false,
     visible: false,
   },
-  { cohort: "new", createdAt: AFTER_CUTOFF, enabled: false, visible: false },
   {
     cohort: "unknown registration",
     createdAt: null,
@@ -181,48 +180,4 @@ test("New paid accounts cannot reopen the video catalog through a picker link", 
   expect(
     within(dialog).queryByLabelText(/^Select video template/u),
   ).not.toBeInTheDocument();
-});
-
-test("New paid accounts see neither video models nor video templates in compact pickers", async () => {
-  mockTemplateChat({ tier: "pro" });
-  context.mocks.browser.matchMedia((query) => {
-    return query === "(pointer: coarse)";
-  });
-  const user = userEvent.setup();
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    auth: { user: account(AFTER_CUTOFF) },
-  });
-
-  await openModels();
-  const models = await screen.findByRole("region", { name: "Models" });
-  const labels = queryAllByRoleFast("menuitem", models).map((button) => {
-    return button.getAttribute("aria-label");
-  });
-  expect(
-    labels.some((label) => {
-      return label?.startsWith("Change Image model,");
-    }),
-  ).toBeTruthy();
-  expect(
-    labels.some((label) => {
-      return label?.startsWith("Change Video model,");
-    }),
-  ).toBeFalsy();
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("region", { name: "Models" }),
-    ).not.toBeInTheDocument();
-  });
-
-  const dialog = await openTemplatePicker(user);
-  click(within(dialog).getByRole("combobox", { name: "Template category" }));
-  const options = await screen.findByRole("listbox");
-  expect(
-    queryAllByRoleFast("option", options).map((option) => {
-      return option.textContent;
-    }),
-  ).toStrictEqual(["Presentation", "Website", "Illustration", "Workflow"]);
 });

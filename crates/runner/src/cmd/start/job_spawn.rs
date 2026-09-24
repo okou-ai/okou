@@ -31,7 +31,6 @@ use super::sandbox_finalization::{
 };
 #[cfg(test)]
 use super::{OuterJobPanicPoint, StartLoopTestObserver, maybe_panic_outer_job};
-use crate::error::RunnerError;
 use crate::executor::{
     self, ExecutorConfig, RunnerPreSpawnConcurrency, RunnerPreSpawnPhase, RunnerPreSpawnTiming,
     SessionHistoryRestorePlan,
@@ -697,10 +696,10 @@ pub(super) async fn run_job(
                         .await
                     {
                         Ok(true) => Ok(()),
-                        Ok(false) => Err(RunnerError::Internal(format!(
+                        Ok(false) => Err(runner_executor::ExecutorError::Internal(format!(
                             "sandbox {sandbox_id} prepared after active status changed for run {run_id}"
                         ))),
-                        Err(error) => Err(RunnerError::Internal(format!(
+                        Err(error) => Err(runner_executor::ExecutorError::Internal(format!(
                             "persist prepared sandbox {sandbox_id} as running for run {run_id}: {error}"
                         ))),
                     }
@@ -946,6 +945,7 @@ mod tests {
             api_url: "http://localhost".into(),
             vercel_bypass: None,
             client_session_id: "runner-session-test".to_string(),
+            runner_version: env!("CARGO_PKG_VERSION"),
         })
         .unwrap()
     }

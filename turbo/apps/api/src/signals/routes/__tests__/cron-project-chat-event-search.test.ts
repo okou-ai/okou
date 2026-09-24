@@ -338,16 +338,46 @@ describe("GET /api/cron/project-chat-event-search", () => {
     if (!first || !second) {
       throw new Error("Expected two owned projection threads");
     }
-    await seedProjectionContent(first.threadId, `timeout ${randomUUID()}`);
+    await seedProjectionContent(
+      first.threadId,
+      `beforetimeout ${randomUUID()}`,
+    );
+    await projectOwnedChatEventSearch([first.threadId]);
+    const before = await readChatEventSearchProjectionRowsFixture(
+      first.threadId,
+    );
+    const marker = `timeoutretry${randomUUID().replaceAll("-", "")}`;
+    await insertSearchablePromptFixture({
+      chatThreadId: first.threadId,
+      text: marker,
+    });
     await seedProjectionContent(second.threadId, `continuing ${randomUUID()}`);
+
     const deferred = await withChatSearchStatementFailureFixture(
       first.threadId,
       "timeout",
       async () => {
-        return await projectOwnedChatEventSearch([
-          first.threadId,
-          second.threadId,
-        ]);
+        // The existing watermark is read without a row lock; the real upsert
+        // blocks only after this attempt has written the new search message.
+        const held = await holdChatEventSearchWatermarkRowLockFixture({
+          chatThreadId: first.threadId,
+          signal: context.signal,
+        });
+        onTestFinished(async () => {
+          held.release();
+          await held.done;
+        });
+        const result = await settleIncludingAbort(
+          projectOwnedChatEventSearch([first.threadId, second.threadId]),
+        );
+        // The failure fixture closes the pool after work returns, so the row
+        // holder must finish before its callback returns.
+        held.release();
+        await held.done;
+        if (!result.ok) {
+          throw result.error;
+        }
+        return result.value;
       },
     );
     expect(deferred).toMatchObject({
@@ -357,7 +387,12 @@ describe("GET /api/cron/project-chat-event-search", () => {
       closedThreads: 0,
       convergence: { eligibleThreads: 2, durableCaughtUpThreads: 1 },
     });
-    await expectNoProjection(first.threadId);
+    await expect(
+      readChatEventSearchProjectionRowsFixture(first.threadId),
+    ).resolves.toStrictEqual(before);
+    expect((await chat.searchChat(first.actor, marker)).results).toStrictEqual(
+      [],
+    );
     expect(
       (await readChatEventSearchProjectionFixture(second.threadId)).messages,
     ).toHaveLength(2);
@@ -368,7 +403,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
     ]);
     expect(retry).toMatchObject({
       threads: 1,
-      indexedEvents: 2,
+      indexedEvents: 1,
       deferredThreads: 0,
       convergence: { eligibleThreads: 2, durableCaughtUpThreads: 2 },
     });
@@ -382,8 +417,10 @@ describe("GET /api/cron/project-chat-event-search", () => {
       deferredThreads: 0,
     });
     expect(
-      (await readChatEventSearchProjectionFixture(first.threadId)).messages,
-    ).toHaveLength(2);
+      (await chat.searchChat(first.actor, marker)).results.map((result) => {
+        return result.chatThreadId;
+      }),
+    ).toStrictEqual([first.threadId]);
   }, 20_000);
 
   it("propagates server cancellation and rolls back the interrupted projection", async () => {

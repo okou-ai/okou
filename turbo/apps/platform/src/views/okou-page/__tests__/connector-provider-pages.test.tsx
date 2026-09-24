@@ -79,11 +79,6 @@ function telegramConnectPath(signature = "b".repeat(64)): string {
   return `/telegram/connect?${params.toString()}`;
 }
 
-function telegramLoginConnectPath(): string {
-  const params = new URLSearchParams({ bot: TELEGRAM_BOT_ID });
-  return `/telegram/connect?${params.toString()}`;
-}
-
 function feishuConnectorStatus(): PublicConnectorCatalogStatusItem {
   return {
     slug: "lark",
@@ -387,35 +382,6 @@ test("An invalid Telegram connection link is rejected", async () => {
   ).toBeFalsy();
 });
 
-test("Telegram login continues after bot domain configuration", async () => {
-  let domainConfigured = false;
-  context.mocks.api(
-    integrationsTelegramContract.getLinkStatus,
-    ({ respond }) => {
-      return respond(200, {
-        linked: false,
-        installation: {
-          id: TELEGRAM_BOT_ID,
-          botUsername: "agent_bot",
-          domainConfigured,
-        },
-      });
-    },
-  );
-
-  await setupPage({ context, path: telegramLoginConnectPath() });
-
-  await expect(
-    screen.findByRole("heading", { name: "Set Telegram login domain" }),
-  ).resolves.toBeInTheDocument();
-
-  domainConfigured = true;
-
-  await expect(
-    screen.findByRole("heading", { name: "Connect to Telegram" }),
-  ).resolves.toBeInTheDocument();
-});
-
 test("A user links their account to a Telegram bot", async () => {
   let linkedBody: unknown;
   context.mocks.data.telegramIntegration({ statuses: [telegramStatus()] });
@@ -469,8 +435,14 @@ test("A successful Feishu callback opens the connected bot", async () => {
     "https://applink.feishu.cn/client/bot/open?appId=cli_test";
   const locationAssign = context.mocks.browser.locationAssign();
   let callbackQuery: unknown;
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [feishuConnectorStatus()] });
+  const catalogReads: string[] = [];
+  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    catalogReads.push(params.connectorSlug);
+    return params.connectorSlug === "lark"
+      ? respond(200, { connector: feishuConnectorStatus() })
+      : respond(404, {
+          error: { code: "NOT_FOUND", message: "Connector not found" },
+        });
   });
   context.mocks.api(feishuOauthContract.callback, ({ query, respond }) => {
     callbackQuery = query;
@@ -487,10 +459,13 @@ test("A successful Feishu callback opens the connected bot", async () => {
     name: "Connecting Feishu…",
   });
   expect(heading).toBeInTheDocument();
-  const image = document.querySelector<HTMLImageElement>(
-    `img[src="${FEISHU_ICON_URL}"]`,
-  );
-  expect(image).toHaveAttribute("src", FEISHU_ICON_URL);
+  // The page reads the one entry it draws, not the whole catalog.
+  await waitFor(() => {
+    expect(
+      document.querySelector<HTMLImageElement>(`img[src="${FEISHU_ICON_URL}"]`),
+    ).toHaveAttribute("src", FEISHU_ICON_URL);
+  });
+  expect(catalogReads).toStrictEqual(["lark"]);
   await waitFor(() => {
     expect(locationAssign.calls).toStrictEqual([redirectUrl]);
   });

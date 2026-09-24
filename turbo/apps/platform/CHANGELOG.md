@@ -11,6 +11,70 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.952.0](https://github.com/okou-ai/okou/compare/app-v0.951.0...app-v0.952.0) (2026-09-24)
+
+
+### Features
+
+* **platform:** share a single assistant message with its prompt ([#36479](https://github.com/okou-ai/okou/issues/36479)) ([e3f9aba](https://github.com/okou-ai/okou/commit/e3f9aba6d6a53ddc8cfa14659cbde8c6d76f1443))
+
+
+### Bug Fixes
+
+* **platform:** constrain queue drawer to viewport width ([#36482](https://github.com/okou-ai/okou/issues/36482)) ([79d6677](https://github.com/okou-ai/okou/commit/79d66771abd57117ca0456d67f6e9a8c0180211d))
+
+
+### Refactoring
+
+* **platform:** drop activity log action from assistant message bar ([#36458](https://github.com/okou-ai/okou/issues/36458)) ([d538f9f](https://github.com/okou-ai/okou/commit/d538f9f49dd55970398ec9f75d5fccf03f6947a3))
+
+
+### Performance Improvements
+
+* serve composer slash workflows from a dedicated endpoint ([#36483](https://github.com/okou-ai/okou/issues/36483)) ([dd7f335](https://github.com/okou-ai/okou/commit/dd7f335ccb14eb39343545f7647892566db01e6f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.500.0
+    * @okouai/connectors bumped to 3.15.3
+    * @okouai/core bumped to 8.706.0
+    * @okouai/ui bumped to 1.12.0
+
+## [0.951.0](https://github.com/okou-ai/okou/compare/app-v0.950.1...app-v0.951.0) (2026-09-23)
+
+
+### Features
+
+* **chat:** show run logs beside user message copy ([#36403](https://github.com/okou-ai/okou/issues/36403)) ([d36a8fc](https://github.com/okou-ai/okou/commit/d36a8fc443f4bd68758cac766cf2cf68c1b50332))
+* **vnc:** admit apple dh through saved ssh loopback ([#36398](https://github.com/okou-ai/okou/issues/36398)) ([0646ce8](https://github.com/okou-ai/okou/commit/0646ce8df1312d2f8e09e2953843ab963c5a08eb))
+
+
+### Bug Fixes
+
+* **platform:** shrink app skeleton wordmark on mobile ([#36395](https://github.com/okou-ai/okou/issues/36395)) ([d29c47f](https://github.com/okou-ai/okou/commit/d29c47f26851096082ca1b29e794258d1e112c46))
+
+
+### Refactoring
+
+* remove thread activity summary feature switch ([#36379](https://github.com/okou-ai/okou/issues/36379)) ([b9a889e](https://github.com/okou-ai/okou/commit/b9a889e992e335323bcabef36777a776efe0b8c6))
+
+
+### Performance Improvements
+
+* load connector catalog data only where it renders ([#36391](https://github.com/okou-ai/okou/issues/36391)) ([0a61ba4](https://github.com/okou-ai/okou/commit/0a61ba404f2bfb5a4b9b4883d63db6d73b094eb2))
+* **platform:** load chat thread emoji data on picker open ([#36404](https://github.com/okou-ai/okou/issues/36404)) ([1e50f74](https://github.com/okou-ai/okou/commit/1e50f748375ae84a00dbce7ad060721827a414e2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.499.0
+    * @okouai/core bumped to 8.705.0
+
 ## [0.950.1](https://github.com/okou-ai/okou/compare/app-v0.950.0...app-v0.950.1) (2026-09-23)
 
 

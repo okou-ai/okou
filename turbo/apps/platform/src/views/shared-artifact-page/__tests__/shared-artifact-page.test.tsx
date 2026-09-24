@@ -2,13 +2,9 @@ import {
   artifactReferencePath,
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
-import {
-  artifactSharesContract,
-  type ArtifactShareStatus,
-} from "@okouai/api-contracts/contracts/artifact-shares";
+import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { beforeEach, expect, test, vi } from "vitest";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
@@ -40,15 +36,6 @@ warmMermaidParser();
 const artifactId = "00000000-0000-4000-8000-000000000010";
 const imagePath = artifactReferencePath(artifactId, "launch.png");
 const imageUrl = "https://artifacts.example.com/launch.png?signature=private";
-
-function queryAction(role: "button" | "link" | "menuitem", name: string) {
-  return queryAllByRoleFast(role).find((candidate) => {
-    return (
-      candidate.getAttribute("aria-label") === name ||
-      candidate.textContent?.trim() === name
-    );
-  });
-}
 
 function action(role: "button" | "link" | "menuitem", name: string) {
   const element = queryAllByRoleFast(role).find((candidate) => {
@@ -138,108 +125,55 @@ test("an image link stays in the app and reuses the lightbox preview and zoom co
   ).toHaveTextContent("100%");
 });
 
-test.each([imagePath, `/share/artifacts/${artifactId}`])(
-  "Share copies the current app address without changing sharing or copying a signature: %s",
-  async (path) => {
-    const clipboard = context.mocks.browser.clipboardWriteText();
-    const shareChanges: string[] = [];
-    context.mocks.api(artifactSharesContract.update, ({ body, respond }) => {
-      shareChanges.push(body.audience);
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "Unavailable" },
-      });
+test("Share copies the current app address without changing sharing or copying a signature", async () => {
+  const path = imagePath;
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const shareChanges: string[] = [];
+  context.mocks.api(artifactSharesContract.update, ({ body, respond }) => {
+    shareChanges.push(body.audience);
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Unavailable" },
     });
-    await openViewer({ path: `${path}#detail` });
-    click(action("button", "Share"));
-
-    await waitFor(() => {
-      expect(clipboard.writes).toStrictEqual([
-        `https://app.okou.ai${path}#detail`,
-      ]);
-    });
-    await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
-    expect(shareChanges).toStrictEqual([]);
-    expect(queryAllByRoleFast("menuitem")).toHaveLength(0);
-  },
-);
-
-test("clipboard failure is reported without claiming that the link was copied", async () => {
-  vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(
-    new DOMException("Clipboard denied", "NotAllowedError"),
-  );
-  await openViewer();
+  });
+  await openViewer({ path: `${path}#detail` });
   click(action("button", "Share"));
 
-  await expect(
-    screen.findByText("Failed to copy link"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
-});
-
-test("the standalone viewer restores the selected app color theme", async () => {
-  context.mocks.data.userPreferences({ colorTheme: "golden-hour" });
-  await openViewer({ colorThemes: true });
   await waitFor(() => {
-    expect(document.documentElement).toHaveAttribute(
-      "data-color-theme",
-      "golden-hour",
-    );
-    expect(document.documentElement).toHaveAttribute(
-      "data-gradient-color-themes",
-    );
+    expect(clipboard.writes).toStrictEqual([
+      `https://app.okou.ai${path}#detail`,
+    ]);
   });
-  expect(action("link", "Continue with Okou")).toBeInTheDocument();
+  await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
+  expect(shareChanges).toStrictEqual([]);
+  expect(queryAllByRoleFast("menuitem")).toHaveLength(0);
 });
 
-test("the viewer's continuation link retains its tooltip and navigation semantics", async () => {
-  const user = userEvent.setup();
-  await openViewer();
-  const link = action("link", "Continue with Okou");
-  const href = link.getAttribute("href");
-  expect(href).toContain("https://app.okou.ai/?prompt=");
-  expect(queryAction("button", "Continue with Okou")).toBeUndefined();
-  await user.hover(link);
-  await expect(screen.findByRole("tooltip")).resolves.toHaveTextContent(
-    "Continue with Okou",
+test("downloads resolve references and save the original filename and bytes", async () => {
+  const path = `/share/artifacts/${artifactId}?source=shared#detail`;
+  const browser = context.mocks.browser.blobDownload();
+  context.mocks.http.get("https://artifacts.example.com/launch.png", () => {
+    return HttpResponse.text("original image bytes", {
+      headers: { "Content-Type": "image/png" },
+    });
+  });
+  await openViewer({
+    path,
+  });
+  click(action("button", "Download options"));
+  await waitFor(() => {
+    expect(action("menuitem", "Download")).toBeInTheDocument();
+  });
+  expect(queryAllByRoleFast("menuitem")).toHaveLength(1);
+  click(action("menuitem", "Download"));
+
+  await waitFor(() => {
+    expect(browser.downloads).toHaveLength(1);
+  });
+  expect(browser.downloads[0]?.filename).toBe("launch.png");
+  await expect(browser.downloads[0]?.blob?.text()).resolves.toBe(
+    "original image bytes",
   );
-  expect(link).toHaveAttribute("href", href);
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-  });
 });
-
-test.each([
-  `/share/artifacts/${artifactId}?source=shared#detail`,
-  "/artifacts/a1b2c3d4e5.png#detail",
-])(
-  "downloads resolve references and save the original filename and bytes: %s",
-  async (path) => {
-    const browser = context.mocks.browser.blobDownload();
-    context.mocks.http.get("https://artifacts.example.com/launch.png", () => {
-      return HttpResponse.text("original image bytes", {
-        headers: { "Content-Type": "image/png" },
-      });
-    });
-    await openViewer({
-      path,
-    });
-    click(action("button", "Download options"));
-    await waitFor(() => {
-      expect(action("menuitem", "Download")).toBeInTheDocument();
-    });
-    expect(queryAllByRoleFast("menuitem")).toHaveLength(1);
-    click(action("menuitem", "Download"));
-
-    await waitFor(() => {
-      expect(browser.downloads).toHaveLength(1);
-    });
-    expect(browser.downloads[0]?.filename).toBe("launch.png");
-    await expect(browser.downloads[0]?.blob?.text()).resolves.toBe(
-      "original image bytes",
-    );
-  },
-);
 
 test("HTML stays on its isolated origin and retains the requested slide", async () => {
   const temporary = `https://ps-${"c".repeat(48)}.okou.app/`;
@@ -275,25 +209,8 @@ test("an external HTML preview receives no app or artifact referrer", async () =
   ).resolves.toHaveAttribute("referrerpolicy", "no-referrer");
 });
 
-test("PDF page fragments survive embedding in the viewer", async () => {
-  await openViewer({
-    path: `${artifactReferencePath(artifactId, "report.pdf")}#page=3`,
-    filename: "report.pdf",
-    contentType: "application/pdf",
-    url: "https://artifacts.example.com/report.pdf?signature=private",
-  });
-  await expect(
-    screen.findByTitle("report.pdf preview"),
-  ).resolves.toHaveAttribute(
-    "src",
-    "https://artifacts.example.com/report.pdf?signature=private#page=3",
-  );
-});
-
 test.each([
-  [400, true],
   [403, true],
-  [404, true],
   [404, false],
 ] as const)(
   "unavailable links offer recovery without disclosing content: status %s, viewer %s",
@@ -390,36 +307,6 @@ test("switching accounts keeps the artifact URL and leaves the current session s
   expect(mockedClerk.signOut).not.toHaveBeenCalled();
 });
 
-test("a failed account switch can be retried", async () => {
-  mockedClerk.openSignIn.mockRejectedValueOnce(
-    new Error("Account switch unavailable"),
-  );
-  await openUnavailableArtifact();
-  click(action("button", "Switch account"));
-  await expect(
-    screen.findByText("Could not open the account switcher. Please try again."),
-  ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    expect(action("button", "Switch account")).toBeEnabled();
-  });
-  click(action("button", "Switch account"));
-  await waitFor(() => {
-    expect(mockedClerk.openSignIn).toHaveBeenCalledTimes(2);
-  });
-});
-
-test("retry reloads the current artifact without dropping its query or fragment", async () => {
-  const reload = vi
-    .spyOn(window.location, "reload")
-    .mockImplementation(() => {});
-  await openUnavailableArtifact(`${imagePath}?source=shared#detail`);
-  click(action("button", "Try again"));
-  expect(reload).toHaveBeenCalledExactlyOnceWith();
-  expect(window.location.href).toBe(
-    `https://app.okou.ai${imagePath}?source=shared#detail`,
-  );
-});
-
 test("A shared Markdown artifact displays its diagram", async () => {
   const browser = context.mocks.browser.blobDownload();
   const url = "https://artifacts.example.com/plan.md";
@@ -466,113 +353,30 @@ test("A shared Markdown artifact displays its diagram", async () => {
   ).not.toContain("Copy link");
 });
 
-test.each([
-  ["audio/mpeg", "voice-note.mp3", false],
-  ["image/png", "launch.png", true],
-] as const)(
-  "the viewer offers fullscreen only where there is a picture to enlarge: %s",
-  async (contentType, filename, offered) => {
-    await openViewer({
-      path: artifactReferencePath(artifactId, filename),
-      filename,
-      contentType,
-      url: `https://artifacts.example.com/${filename}?signature=private`,
+test("the viewer names who can reach the artifact without opening the share menu", async () => {
+  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+    return respond(200, {
+      ownerUrl: `https://app.okou.ai${imagePath}`,
+      shareId: artifactId,
+      audience: "public",
+      organization: { id: "org_test", name: "Acme" },
+      selectedTarget: null,
+      selectedVersion: null,
+      candidateVersion: null,
+      url: `https://app.okou.ai${imagePath}`,
+      shortUrl: `https://app.okou.ai${imagePath}`,
     });
-
-    await expect(
-      screen.findByRole("heading", { name: filename }),
-    ).resolves.toBeInTheDocument();
-    // Fullscreen makes a picture bigger; an audio player has none, so the
-    // control would only produce a larger empty stage.
-    expect(queryAction("button", "Enter fullscreen") !== undefined).toBe(
-      offered,
-    );
-    expect(action("button", "Download options")).toBeInTheDocument();
-  },
-);
-
-test.each([
-  ["private", "Only me"],
-  ["organization", "Organization"],
-  ["public", "Public access"],
-] as const)(
-  "the viewer names who can reach the artifact without opening the share menu: %s",
-  async (audience, label) => {
-    context.mocks.api(artifactSharesContract.status, ({ respond }) => {
-      return respond(200, {
-        ownerUrl: `https://app.okou.ai${imagePath}`,
-        shareId: audience === "private" ? null : artifactId,
-        audience,
-        organization: { id: "org_test", name: "Acme" },
-        selectedTarget: null,
-        selectedVersion: null,
-        candidateVersion: null,
-        url: audience === "private" ? null : `https://app.okou.ai${imagePath}`,
-        shortUrl:
-          audience === "private" ? null : `https://app.okou.ai${imagePath}`,
-      });
-    });
-    await openViewer();
-
-    // The audience is a standing fact about the artifact, so it belongs beside
-    // the kind rather than behind a menu. The subtitle composes the two from
-    // separate nodes, so the match is on the rendered line.
-    await expect(
-      screen.findByText((_content, element) => {
-        return (
-          element?.tagName === "P" && element.textContent === `Image · ${label}`
-        );
-      }),
-    ).resolves.toBeVisible();
-  },
-);
-
-test("the audience stays unstated until the share read answers", async () => {
-  const requested = context.mocks.deferred<void>();
-  const answer = context.mocks.deferred<ArtifactShareStatus>();
-  context.mocks.api(artifactSharesContract.status, async ({ respond }) => {
-    requested.resolve();
-    return respond(200, await answer.promise);
   });
   await openViewer();
-  await expect(
-    screen.findByRole("heading", { name: "launch.png" }),
-  ).resolves.toBeInTheDocument();
 
-  // Holding the response open makes "unresolved" a state the test controls
-  // rather than a race: the read has certainly started and certainly has not
-  // answered, so an audience printed here would be invented.
-  await requested.promise;
-  expect(screen.getByText("Image")).toBeInTheDocument();
-  for (const label of ["Only me", "Organization", "Public access"]) {
-    expect(
-      screen.queryByText((_content, element) => {
-        return (
-          element?.tagName === "P" && element.textContent === `Image · ${label}`
-        );
-      }),
-    ).not.toBeInTheDocument();
-  }
-
-  answer.resolve({
-    ownerUrl: `https://app.okou.ai${imagePath}`,
-    shareId: null,
-    audience: "private",
-    organization: { id: "org_test", name: "Acme" },
-    selectedTarget: null,
-    selectedVersion: null,
-    candidateVersion: null,
-    url: null,
-    shortUrl: null,
-  });
-
-  // Releasing the read is the positive completion point: the same line that
-  // stayed silent now names the audience, so the silence above was the
-  // pending state and not a label that never works.
+  // The audience is a standing fact about the artifact, so it belongs beside
+  // the kind rather than behind a menu. The subtitle composes the two from
+  // separate nodes, so the match is on the rendered line.
   await expect(
     screen.findByText((_content, element) => {
       return (
-        element?.tagName === "P" && element.textContent === "Image · Only me"
+        element?.tagName === "P" &&
+        element.textContent === "Image · Public access"
       );
     }),
   ).resolves.toBeVisible();

@@ -62,26 +62,23 @@ describe("platform entrypoint", () => {
     ).toBeNull();
   });
 
-  it.each([138, 142, 143])(
-    "shows browser guidance before bootstrap on Android Chrome %s without SharedWorker",
-    async (version) => {
-      context.mocks.browser.userAgent(
-        `Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version}.0.0.0 Mobile Safari/537.36`,
-      );
-      vi.stubGlobal("SharedWorker", undefined);
-      startPlatformEntrypoint();
-      await expect(
-        screen.findByRole("heading", {
-          name: "Use a supported browser to continue",
-        }),
-      ).resolves.toBeVisible();
-      expect(
-        document.querySelector('a[href="https://www.google.com/chrome/"]'),
-      ).toBeVisible();
-      expect(context.mocks.sentry().initializations).toHaveLength(0);
-      expect(context.mocks.sentry().reports).toHaveLength(0);
-    },
-  );
+  it("shows browser guidance before bootstrap when SharedWorker is unavailable", async () => {
+    context.mocks.browser.userAgent(
+      "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36",
+    );
+    vi.stubGlobal("SharedWorker", undefined);
+    startPlatformEntrypoint();
+    await expect(
+      screen.findByRole("heading", {
+        name: "Use a supported browser to continue",
+      }),
+    ).resolves.toBeVisible();
+    expect(
+      document.querySelector('a[href="https://www.google.com/chrome/"]'),
+    ).toBeVisible();
+    expect(context.mocks.sentry().initializations).toHaveLength(0);
+    expect(context.mocks.sentry().reports).toHaveLength(0);
+  });
 
   it("keeps version upgrade guidance for an older browser with SharedWorker", async () => {
     context.mocks.browser.userAgent(

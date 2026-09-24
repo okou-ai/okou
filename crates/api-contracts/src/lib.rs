@@ -27,6 +27,9 @@
 //! constants only when they are part of an explicit Rust/TypeScript contract,
 //! and register them under `turbo/packages/api-contracts/src/rust-bindings/`.
 
+// Variant names mirror wire discriminants; changing their shared suffix would
+// break the generated contract's explicit names without improving hand-written code.
+#[allow(clippy::enum_variant_names)]
 pub mod generated;
 
 mod decode_path;

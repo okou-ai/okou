@@ -11,6 +11,10 @@ import {
 } from "@okouai/core";
 import { expect, test } from "vitest";
 import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
+import type {
+  ComposerWorkflow,
+  WorkflowSummary,
+} from "@okouai/api-contracts/contracts/workflows";
 
 import {
   click,
@@ -27,47 +31,29 @@ import {
   findComposerEditor,
   mockActiveTemplateThread,
   mockAgent,
-  mockComposerThreadSnapshot,
   mockThread,
   selectTemplate,
   THREAD_ID,
-  workflowSummary,
 } from "./chat-composer-test-helpers.ts";
 
-const SPLIT_THREAD_ID = "b1000000-0000-4000-a000-000000000105";
-
-type WorkflowFixture = ReturnType<typeof workflowSummary>;
-
-function installWorkflows(read: () => readonly WorkflowFixture[]): {
-  readonly requests: { readonly agentId: string | undefined }[];
-} {
-  const requests: { readonly agentId: string | undefined }[] = [];
-  context.mocks.api(workflowsCollectionContract.list, ({ query, respond }) => {
-    requests.push({ agentId: query.agentId });
+function installWorkflows(read: () => readonly ComposerWorkflow[]): void {
+  context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
     return respond(200, [...read()]);
   });
-  return { requests };
 }
 
 function workflow(
   name: string,
   options: {
-    readonly agentId?: string;
     readonly displayName?: string | null;
     readonly description?: string | null;
-    readonly visibility?: WorkflowFixture["visibility"];
-    readonly shadowedBy?: WorkflowFixture["shadowedBy"];
   } = {},
-): WorkflowFixture {
+): ComposerWorkflow {
   return {
-    ...workflowSummary({
-      name,
-      agentId: options.agentId ?? AGENT_ID,
-      displayName: options.displayName ?? null,
-      description: options.description ?? `${name} description`,
-    }),
-    visibility: options.visibility ?? "public",
-    shadowedBy: options.shadowedBy ?? null,
+    id: crypto.randomUUID(),
+    name,
+    displayName: options.displayName ?? null,
+    description: options.description ?? `${name} description`,
   };
 }
 
@@ -143,19 +129,6 @@ function workflowHighlights(editor: HTMLElement): HTMLElement[] {
   );
 }
 
-function composerForThread(threadId: string): HTMLElement {
-  const container = document.querySelector<HTMLElement>(
-    `[data-chat-thread-container-id="${threadId}"]`,
-  );
-  const composer = container?.querySelector<HTMLElement>(
-    '[role="textbox"][aria-label="Message"]',
-  );
-  if (!composer) {
-    throw new Error(`Expected composer for ${threadId}`);
-  }
-  return composer;
-}
-
 function composerFileInput(): HTMLInputElement {
   const input = document.querySelector<HTMLInputElement>('input[type="file"]');
   if (!input) {
@@ -187,319 +160,71 @@ function namedLink(name: string): HTMLElement {
   return link;
 }
 
-function installOffsetVisualViewport(): void {
-  const descriptor = Object.getOwnPropertyDescriptor(window, "visualViewport");
-  const viewport = Object.assign(new EventTarget(), {
-    width: 1024,
-    height: 620,
-    offsetLeft: 24,
-    offsetTop: 160,
-    pageLeft: 24,
-    pageTop: 160,
-    scale: 1,
-    onresize: null,
-    onscroll: null,
-    onscrollend: null,
-  });
-  Object.defineProperty(window, "visualViewport", {
-    configurable: true,
-    value: viewport,
-  });
-  context.signal.addEventListener(
-    "abort",
-    () => {
-      if (descriptor) {
-        Object.defineProperty(window, "visualViewport", descriptor);
-      } else {
-        Reflect.deleteProperty(window, "visualViewport");
-      }
+test("Multiple inline templates preserve every reference when you send", async () => {
+  const first = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
+  const second = PRESENTATION_TEMPLATE_PICKER_ITEMS[1];
+  if (!first || !second) {
+    throw new Error("Expected at least two presentation templates");
+  }
+  let sentTemplateTitles: string[] = [];
+  mockAgent();
+  mockChatLifecycle(context, {
+    threadId: THREAD_ID,
+    threadTitle: "My thread",
+    onSendRequest: (body) => {
+      sentTemplateTitles =
+        body.userMessage?.parts.flatMap((part) => {
+          return part.type === "template" ? [part.titleSnapshot] : [];
+        }) ?? [];
     },
-    { once: true },
-  );
-}
-
-test.each(["insert", "send"])(
-  "Multiple inline templates preserve every reference when you %s",
-  async (action) => {
-    const first = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
-    const second = PRESENTATION_TEMPLATE_PICKER_ITEMS[1];
-    if (!first || !second) {
-      throw new Error("Expected at least two presentation templates");
-    }
-    let sentTemplateTitles: string[] = [];
-    mockAgent();
-    mockChatLifecycle(context, {
-      threadId: THREAD_ID,
-      threadTitle: "My thread",
-      onSendRequest: (body) => {
-        sentTemplateTitles =
-          body.userMessage?.parts.flatMap((part) => {
-            return part.type === "template" ? [part.titleSnapshot] : [];
-          }) ?? [];
+  });
+  installWorkflows(() => {
+    return [];
+  });
+  context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
+    return respond(200, {
+      draftUserMessage: {
+        version: 1,
+        parts: [first, second].map((template) => {
+          return {
+            type: "template" as const,
+            titleSnapshot: template.title,
+            template: {
+              type: "presentation" as const,
+              selection: { templateId: template.templateId },
+            },
+          };
+        }),
       },
+      draftAttachments: null,
     });
-    installWorkflows(() => {
-      return [];
-    });
-    if (action === "send") {
-      context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
-        return respond(200, {
-          draftUserMessage: {
-            version: 1,
-            parts: [first, second].map((template) => {
-              return {
-                type: "template" as const,
-                titleSnapshot: template.title,
-                template: {
-                  type: "presentation" as const,
-                  selection: { templateId: template.templateId },
-                },
-              };
-            }),
-          },
-          draftAttachments: null,
-        });
-      });
-    }
-
-    await setupPage({ context, path: `/chats/${THREAD_ID}` });
-
-    const user = userEvent.setup();
-    const editor = await findComposerEditor();
-    await expect(screen.findByLabelText("Template")).resolves.toBeVisible();
-
-    if (action === "insert") {
-      await selectTemplate(first);
-      await selectTemplate(second);
-    }
-    await waitFor(() => {
-      return expect(composerInlineTemplates()).toHaveLength(2);
-    });
-    expect(editor.textContent).not.toContain("Ask me to automate");
-    if (action === "insert") {
-      return;
-    }
-
-    await user.click(editor);
-    await user.keyboard("{Enter}");
-
-    await waitFor(() => {
-      expect(sentTemplateTitles).toStrictEqual([first.title, second.title]);
-      expect(structuredTemplateReferences()).toHaveLength(2);
-    });
-    expect(
-      structuredTemplateReferences().map((reference) => {
-        return reference.textContent;
-      }),
-    ).toStrictEqual([first.title, second.title]);
-    expect(composerInlineTemplates()).toHaveLength(0);
-  },
-);
-
-test("Dismiss workflow suggestions without losing the query", async () => {
-  mockAgent();
-  mockThread();
-  installWorkflows(() => {
-    return [workflow("sales-research")];
   });
 
   await setupPage({ context, path: `/chats/${THREAD_ID}` });
 
   const user = userEvent.setup();
   const editor = await findComposerEditor();
+  await expect(screen.findByLabelText("Template")).resolves.toBeVisible();
+
+  await waitFor(() => {
+    return expect(composerInlineTemplates()).toHaveLength(2);
+  });
+  expect(editor.textContent).not.toContain("Ask me to automate");
+
   await user.click(editor);
-  await user.keyboard("/sales");
-  await expect(
-    screen.findByTestId("slash-workflow-menu"),
-  ).resolves.toBeVisible();
-
-  await user.keyboard("{Escape}");
+  await user.keyboard("{Enter}");
 
   await waitFor(() => {
-    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-    expect(editor).toHaveFocus();
-    expect(editor).toHaveTextContent("/sales");
+    expect(sentTemplateTitles).toStrictEqual([first.title, second.title]);
+    expect(structuredTemplateReferences()).toHaveLength(2);
   });
-
-  await user.keyboard("{ArrowLeft}{ArrowRight}");
-  await expect(
-    screen.findByTestId("slash-workflow-menu"),
-  ).resolves.toBeVisible();
-  const templateButton = screen.getByLabelText("Template");
-  templateButton.focus();
-
-  await waitFor(() => {
-    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-    expect(templateButton).toHaveFocus();
-    expect(editor).toHaveTextContent("/sales");
-  });
+  expect(
+    structuredTemplateReferences().map((reference) => {
+      return reference.textContent;
+    }),
+  ).toStrictEqual([first.title, second.title]);
+  expect(composerInlineTemplates()).toHaveLength(0);
 });
-
-test("Reopen workflow suggestions after a pointer interaction", async () => {
-  mockAgent();
-  mockThread();
-  installWorkflows(() => {
-    return [workflow("sales-research")];
-  });
-
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-
-  const user = userEvent.setup();
-  const editor = await findComposerEditor();
-  await user.click(editor);
-  await user.keyboard("/sales");
-  await expect(
-    screen.findByTestId("slash-workflow-menu"),
-  ).resolves.toBeVisible();
-
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-    expect(editor).toHaveFocus();
-    expect(editor).toHaveTextContent("/sales");
-  });
-
-  // The pointer event must reactivate the same logical caret without needing
-  // a synthetic keyboard selection change.
-  fireEvent.pointerUp(editor);
-  await expect(
-    screen.findByTestId("slash-workflow-menu"),
-  ).resolves.toBeVisible();
-  expect(editor).toHaveTextContent("/sales");
-});
-
-async function openWorkflowRefreshChat(initialWorkflows: WorkflowFixture[]) {
-  let workflows = initialWorkflows;
-  const primaryThread = {
-    id: THREAD_ID,
-    agentId: AGENT_ID,
-    title: "Primary workflow chat",
-  };
-  const splitThread = {
-    id: SPLIT_THREAD_ID,
-    agentId: AGENT_ID,
-    title: "Split workflow chat",
-  };
-  mockAgent();
-  mockThread();
-  mockComposerThreadSnapshot([primaryThread, splitThread]);
-  const traffic = installWorkflows(() => {
-    return workflows;
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}?sidebar=${SPLIT_THREAD_ID}`,
-  });
-
-  const user = userEvent.setup({ delay: null });
-  await waitFor(() => {
-    expect(composerForThread(THREAD_ID)).toBeVisible();
-    expect(composerForThread(SPLIT_THREAD_ID)).toBeVisible();
-  });
-  const primaryEditor = composerForThread(THREAD_ID);
-  const splitEditor = composerForThread(SPLIT_THREAD_ID);
-  await user.click(primaryEditor);
-  await user.keyboard("/release-report");
-  await waitFor(() => {
-    expect(primaryEditor).toHaveTextContent("/release-report");
-  });
-  await waitFor(() => {
-    expect(
-      context.mocks.ably.hasSubscription(
-        `chatThreadWorkflowsChanged:${THREAD_ID}`,
-      ),
-    ).toBeTruthy();
-    expect(
-      context.mocks.ably.hasSubscription(
-        `chatThreadWorkflowsChanged:${SPLIT_THREAD_ID}`,
-      ),
-    ).toBeTruthy();
-  });
-  return {
-    primaryEditor,
-    splitEditor,
-    user,
-    traffic,
-    updateWorkflows(next: WorkflowFixture[]) {
-      workflows = next;
-      context.mocks.ably.trigger(`chatThreadWorkflowsChanged:${THREAD_ID}`);
-      context.mocks.ably.trigger(
-        `chatThreadWorkflowsChanged:${SPLIT_THREAD_ID}`,
-      );
-    },
-  };
-}
-
-test("A newly available workflow highlights the existing draft without changing its text", async () => {
-  const { primaryEditor, updateWorkflows } = await openWorkflowRefreshChat([]);
-  expect(workflowHighlights(primaryEditor)).toHaveLength(0);
-  updateWorkflows([workflow("release-report")]);
-
-  await waitFor(() => {
-    expect(primaryEditor).toHaveTextContent("/release-report");
-    expect(workflowHighlights(primaryEditor)).toHaveLength(1);
-    expect(slashButton("/release-report")).toBeVisible();
-  });
-});
-
-const workflowRefreshPanes = [
-  { pane: "primary", threadId: THREAD_ID, input: " /latest", highlights: 2 },
-  { pane: "split", threadId: SPLIT_THREAD_ID, input: "/latest", highlights: 1 },
-] as const;
-
-async function discoverLatestWorkflow({
-  threadId,
-  input,
-}: {
-  threadId: string;
-  input: string;
-}) {
-  const { primaryEditor, user, traffic, updateWorkflows } =
-    await openWorkflowRefreshChat([workflow("release-report")]);
-  await waitFor(() => {
-    return expect(workflowHighlights(primaryEditor)).toHaveLength(1);
-  });
-  updateWorkflows([workflow("release-report"), workflow("first-live-change")]);
-  await waitFor(() => {
-    expect(traffic.requests.length).toBeGreaterThanOrEqual(4);
-  });
-  updateWorkflows([
-    workflow("release-report"),
-    workflow("first-live-change"),
-    workflow("latest-attached"),
-  ]);
-
-  const editor = composerForThread(threadId);
-  await user.click(editor);
-  await user.keyboard(input);
-  await waitFor(() => {
-    expect(slashButton("/latest-attached")).toBeVisible();
-  });
-  return { primaryEditor, user, editor };
-}
-
-test.each(workflowRefreshPanes)(
-  "Successive workflow updates appear in the $pane composer while both panes are open",
-  async (pane) => {
-    await discoverLatestWorkflow(pane);
-    expect(slashButton("/latest-attached")).toBeVisible();
-  },
-);
-
-test.each(workflowRefreshPanes)(
-  "Insert the latest live workflow into the $pane composer without replacing its draft",
-  async (pane) => {
-    const { primaryEditor, user, editor } = await discoverLatestWorkflow(pane);
-    await user.keyboard("{Enter}");
-
-    await waitFor(() => {
-      expect(workflowHighlights(editor)).toHaveLength(pane.highlights);
-      expect(editor).toHaveTextContent("/latest-attached");
-      expect(primaryEditor).toHaveTextContent("/release-report");
-    });
-  },
-);
 
 test("Insert an attached workflow with slash suggestions", async () => {
   mockAgent();
@@ -511,12 +236,8 @@ test("Insert an attached workflow with slash suggestions", async () => {
         description: "Escalate support cases",
       }),
       workflow("research-digest", { description: "Digest research" }),
-      workflow("organization-only", {
-        agentId: "e0000000-0000-4000-a000-000000000099",
-      }),
     ];
   });
-  installOffsetVisualViewport();
 
   await setupPage({ context, path: `/chats/${THREAD_ID}` });
 
@@ -528,7 +249,6 @@ test("Insert an attached workflow with slash suggestions", async () => {
   await waitFor(() => {
     expect(slashButton("/sales-research")).toBeVisible();
     expect(slashButton("/support-escalation")).toBeVisible();
-    expect(screen.queryByText("/organization-only")).toBeNull();
   });
 
   await user.keyboard("ReSeArCh");
@@ -552,7 +272,6 @@ test("Insert an attached workflow with slash suggestions", async () => {
     expect(workflowHighlights(editor)).toHaveLength(1);
     expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   });
-  expect(window.visualViewport?.offsetTop).toBe(160);
 });
 
 test("Find and insert a workflow with an abbreviated name", async () => {
@@ -594,6 +313,77 @@ test("Find and insert a workflow with an abbreviated name", async () => {
   });
 });
 
+test("Suggest effective workflows from an API that predates the composer endpoint", async () => {
+  mockAgent();
+  mockThread();
+  const summary = (
+    name: string,
+    options: {
+      readonly agentId?: string;
+      readonly description: string;
+      readonly visibility?: WorkflowSummary["visibility"];
+      readonly shadowedBy?: WorkflowSummary["shadowedBy"];
+    },
+  ): WorkflowSummary => {
+    return {
+      id: crypto.randomUUID(),
+      agentId: options.agentId ?? AGENT_ID,
+      agentName: null,
+      agentDisplayName: "Scout",
+      name,
+      displayName: null,
+      description: options.description,
+      visibility: options.visibility ?? "public",
+      ownerUserId: "user-1",
+      createdAt: "2026-06-01T00:00:00.000Z",
+      canManage: true,
+      canPublish: false,
+      official: null,
+      shadowedBy: options.shadowedBy ?? null,
+    };
+  };
+  const privateWorkflow = summary("pr-auto", {
+    description: "Review, repair, and merge one pull request",
+    visibility: "private",
+  });
+  context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
+    return respond(400, {
+      error: { message: "Invalid uuid", code: "BAD_REQUEST" },
+    });
+  });
+  context.mocks.api(workflowsCollectionContract.list, ({ respond }) => {
+    return respond(200, [
+      summary("pr-auto", {
+        description: "Legacy goal-driven pull request automation",
+        shadowedBy: {
+          id: privateWorkflow.id,
+          name: privateWorkflow.name,
+          displayName: privateWorkflow.displayName,
+        },
+      }),
+      privateWorkflow,
+      summary("pr-review", {
+        agentId: "e0000000-0000-4000-a000-000000000099",
+        description: "Another agent's workflow",
+      }),
+    ]);
+  });
+
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+
+  const user = userEvent.setup();
+  const editor = await findComposerEditor();
+  await user.click(editor);
+  await user.keyboard("/pr");
+
+  await waitFor(() => {
+    expect(slashButton("/pr-auto")).toHaveTextContent(
+      "Review, repair, and merge one pull request",
+    );
+  });
+  expect(slashWorkflowNames()).toStrictEqual(["/pr-auto"]);
+});
+
 test("Rank exact workflow names before prefixes, substrings, and abbreviations", async () => {
   mockAgent();
   mockThread();
@@ -630,145 +420,6 @@ test("Rank exact workflow names before prefixes, substrings, and abbreviations",
   });
 });
 
-test("Rank compact workflow abbreviations before scattered matches", async () => {
-  mockAgent();
-  mockThread();
-  installWorkflows(() => {
-    return [
-      workflow("pr-32809-app-production-watch"),
-      workflow("team-pr-auto"),
-      workflow("pr-auto-bravo"),
-      workflow("pr-auto-alpha"),
-      workflow("pr-auto"),
-    ];
-  });
-
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-
-  const user = userEvent.setup();
-  const editor = await findComposerEditor();
-  await user.click(editor);
-  await user.keyboard("/prauto");
-
-  await waitFor(() => {
-    expect(slashWorkflowNames()).toStrictEqual([
-      "/pr-auto",
-      "/pr-auto-bravo",
-      "/pr-auto-alpha",
-      "/team-pr-auto",
-      "/pr-32809-app-production-watch",
-    ]);
-  });
-  const highlighted = Array.from(
-    slashButton("/pr-auto").querySelectorAll(
-      '[data-slot="workflow-query-match"]',
-    ),
-    (element) => {
-      return element.textContent;
-    },
-  );
-  expect(highlighted).toStrictEqual(["pr", "auto"]);
-
-  await user.keyboard("{Enter}");
-
-  await waitFor(() => {
-    expect(editor).toHaveTextContent(/^\/pr-auto\s*$/);
-    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-  });
-});
-
-test("Keep numeric workflow identifiers contiguous in abbreviated queries", async () => {
-  mockAgent();
-  mockThread();
-  installWorkflows(() => {
-    return [
-      workflow("pr-26-809-ship-watch"),
-      workflow("pr-26819-ship-watch"),
-      workflow("pr-26809-ship-watch"),
-    ];
-  });
-
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-
-  const editor = await findComposerEditor();
-  await fill(editor, "/26809");
-  await waitFor(() => {
-    expect(slashWorkflowNames()).toStrictEqual(["/pr-26809-ship-watch"]);
-  });
-
-  await fill(editor, "/pr26809");
-  await waitFor(() => {
-    expect(slashWorkflowNames()).toStrictEqual(["/pr-26809-ship-watch"]);
-  });
-});
-
-test("Keep strict workflow matching for queries shorter than three characters", async () => {
-  mockAgent();
-  mockThread();
-  installWorkflows(() => {
-    return [workflow("pr-design-acceptance-url")];
-  });
-
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-
-  const editor = await findComposerEditor();
-  await fill(editor, "/pd");
-  await expect(
-    screen.findByText("No matching workflows"),
-  ).resolves.toBeVisible();
-});
-
-test("Suggest only the effective workflow when a private workflow shadows a public workflow", async () => {
-  const privateWorkflow = workflow("pr-auto", {
-    displayName: "PR Auto",
-    description: "Review, repair, and merge one pull request",
-    visibility: "private",
-  });
-  const publicWorkflow = workflow("pr-auto", {
-    displayName: "PR Auto",
-    description: "Legacy goal-driven pull request automation",
-    shadowedBy: {
-      id: privateWorkflow.id,
-      name: privateWorkflow.name,
-      displayName: privateWorkflow.displayName,
-    },
-  });
-  mockAgent();
-  mockThread();
-  installWorkflows(() => {
-    return [
-      workflow("aardvark"),
-      publicWorkflow,
-      privateWorkflow,
-      workflow("pr-implement"),
-      workflow("topic"),
-    ];
-  });
-
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-
-  const user = userEvent.setup();
-  const editor = await findComposerEditor();
-  await user.click(editor);
-  await user.keyboard("/pr");
-
-  await waitFor(() => {
-    const matchingButtons = slashMenuButtons().filter((button) => {
-      return button.textContent
-        ?.replace(/\s+/gu, " ")
-        .trim()
-        .startsWith("/pr-auto");
-    });
-    expect(matchingButtons).toHaveLength(1);
-  });
-  expect(slashButton("/pr-auto")).toHaveTextContent(
-    "Review, repair, and merge one pull request",
-  );
-  expect(
-    screen.queryByText("Legacy goal-driven pull request automation"),
-  ).toBeNull();
-});
-
 test("Send a template while the current run is active", async () => {
   const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
   if (!template) {
@@ -799,66 +450,57 @@ test("Send a template while the current run is active", async () => {
   expect((await findComposerEditor()).textContent).toBe("");
 });
 
-test.each(["find", "send"])(
-  "Use the workflow template picker to %s a workflow template",
-  async (action) => {
-    const template = WORKFLOW_TEMPLATE_ITEMS.find((item) => {
-      return item.id === "workflow-template:github-pr-summarizer";
-    });
-    if (!template) {
-      throw new Error("Expected the GitHub PR summarizer workflow template");
-    }
-    let sentTemplateTitle: string | undefined;
-    mockAgent();
-    mockChatLifecycle(context, {
-      threadId: THREAD_ID,
-      threadTitle: "Workflow templates",
-      onSendRequest: (body) => {
-        sentTemplateTitle = body.userMessage?.parts.find((part) => {
-          return part.type === "template";
-        })?.titleSnapshot;
-      },
-    });
-    installWorkflows(() => {
-      return [];
-    });
+test("Use the workflow template picker to send a workflow template", async () => {
+  const template = WORKFLOW_TEMPLATE_ITEMS.find((item) => {
+    return item.id === "workflow-template:github-pr-summarizer";
+  });
+  if (!template) {
+    throw new Error("Expected the GitHub PR summarizer workflow template");
+  }
+  let sentTemplateTitle: string | undefined;
+  mockAgent();
+  mockChatLifecycle(context, {
+    threadId: THREAD_ID,
+    threadTitle: "Workflow templates",
+    onSendRequest: (body) => {
+      sentTemplateTitle = body.userMessage?.parts.find((part) => {
+        return part.type === "template";
+      })?.titleSnapshot;
+    },
+  });
+  installWorkflows(() => {
+    return [];
+  });
 
-    await setupPage({ context, path: `/chats/${THREAD_ID}` });
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
 
-    const user = userEvent.setup({ delay: null });
-    const editor = await findComposerEditor();
-    const dialog = await openTemplateCategory("Workflow");
-    const search = within(dialog).getByLabelText("Search templates");
-    expect(search).toBeVisible();
-    await fill(
-      search,
-      action === "find" ? "merged pull requests" : template.title,
-    );
-    click(
-      await within(dialog).findByLabelText(
-        `Select workflow template ${template.title}`,
-      ),
-    );
+  const user = userEvent.setup({ delay: null });
+  const editor = await findComposerEditor();
+  const dialog = await openTemplateCategory("Workflow");
+  const search = within(dialog).getByLabelText("Search templates");
+  expect(search).toBeVisible();
+  await fill(search, template.title);
+  click(
+    await within(dialog).findByLabelText(
+      `Select workflow template ${template.title}`,
+    ),
+  );
 
-    await expectInlineTemplateInComposer(template.title);
-    if (action === "find") {
-      return;
-    }
-    await user.click(editor);
-    await user.keyboard("{Enter}");
+  await expectInlineTemplateInComposer(template.title);
+  await user.click(editor);
+  await user.keyboard("{Enter}");
 
-    await waitFor(() => {
-      expect(sentTemplateTitle).toBe(template.title);
-      expect(
-        structuredTemplateReferences().some((reference) => {
-          return reference.textContent === template.title;
-        }),
-      ).toBeTruthy();
-    });
-  },
-);
+  await waitFor(() => {
+    expect(sentTemplateTitle).toBe(template.title);
+    expect(
+      structuredTemplateReferences().some((reference) => {
+        return reference.textContent === template.title;
+      }),
+    ).toBeTruthy();
+  });
+});
 
-test("Workflow category filters activate explicitly and preserve the current category and search", async () => {
+test("Workflow category filters narrow templates and preserve the search", async () => {
   mockAgent();
   mockThread();
   installWorkflows(() => {
@@ -867,9 +509,7 @@ test("Workflow category filters activate explicitly and preserve the current cat
   await setupPage({ context, path: `/chats/${THREAD_ID}` });
   await findComposerEditor();
 
-  const user = userEvent.setup({ delay: null });
   const dialog = await openTemplateCategory("Workflow");
-  const all = namedButton("All");
   const everyone = namedButton("Everyone");
   const engineering = namedButton("Engineering");
   const inboxTemplateLabel = "Select workflow template Auto-inbox label";
@@ -880,22 +520,7 @@ test("Workflow category filters activate explicitly and preserve the current cat
     within(dialog).getByLabelText(engineeringTemplateLabel),
   ).toBeInTheDocument();
 
-  await user.click(all);
-  await user.keyboard("{ArrowRight}");
-
-  expect(everyone).toHaveFocus();
-  expect(
-    within(dialog).getByLabelText(engineeringTemplateLabel),
-  ).toBeInTheDocument();
-
-  await user.keyboard("{Enter}");
-
-  expect(within(dialog).getByLabelText(inboxTemplateLabel)).toBeInTheDocument();
-  expect(
-    within(dialog).queryByLabelText(engineeringTemplateLabel),
-  ).not.toBeInTheDocument();
-
-  await user.keyboard("{Enter}");
+  click(everyone);
 
   expect(everyone).toHaveAttribute("aria-pressed", "true");
   expect(within(dialog).getByLabelText(inboxTemplateLabel)).toBeInTheDocument();
@@ -903,69 +528,22 @@ test("Workflow category filters activate explicitly and preserve the current cat
     within(dialog).queryByLabelText(engineeringTemplateLabel),
   ).not.toBeInTheDocument();
 
-  await user.keyboard("{ArrowRight}");
+  const search = within(dialog).getByLabelText("Search templates");
+  await fill(search, "merged pull requests");
+  click(engineering);
 
-  expect(engineering).toHaveFocus();
-  expect(within(dialog).getByLabelText(inboxTemplateLabel)).toBeInTheDocument();
-
-  await user.keyboard(" ");
-
+  expect(search).toHaveValue("merged pull requests");
   await within(dialog).findByLabelText(engineeringTemplateLabel);
   expect(
     within(dialog).queryByLabelText(inboxTemplateLabel),
   ).not.toBeInTheDocument();
-
-  await user.keyboard("{Home}");
-
-  expect(all).toHaveFocus();
-  expect(
-    within(dialog).queryByLabelText(inboxTemplateLabel),
-  ).not.toBeInTheDocument();
-
-  await user.keyboard("{Enter}");
-
-  await within(dialog).findByLabelText(inboxTemplateLabel);
-
-  await user.keyboard("{Tab}");
-
-  expect(within(dialog).getByLabelText(inboxTemplateLabel)).toHaveFocus();
-
-  const search = within(dialog).getByLabelText("Search templates");
-  await fill(search, "merged pull requests");
-
-  expect(
-    within(dialog).getByLabelText(engineeringTemplateLabel),
-  ).toBeInTheDocument();
-  expect(
-    within(dialog).queryByLabelText(inboxTemplateLabel),
-  ).not.toBeInTheDocument();
-
-  click(engineering);
-
-  expect(search).toHaveValue("merged pull requests");
-  expect(
-    within(dialog).getByLabelText(engineeringTemplateLabel),
-  ).toBeInTheDocument();
-
-  click(engineering);
-
-  expect(engineering).toHaveAttribute("aria-pressed", "true");
-  expect(search).toHaveValue("merged pull requests");
-  expect(
-    within(dialog).getByLabelText(engineeringTemplateLabel),
-  ).toBeInTheDocument();
-  expect(dialog).toBeInTheDocument();
 });
 
 test("Continue from empty slash suggestions to all workflows", async () => {
   mockAgent();
   mockThread();
   installWorkflows(() => {
-    return [
-      workflow("organization-catalog-workflow", {
-        agentId: "e0000000-0000-4000-a000-000000000099",
-      }),
-    ];
+    return [];
   });
 
   await setupPage({ context, path: `/chats/${THREAD_ID}` });
@@ -1068,36 +646,4 @@ test("Distinguish workflow tokens from text inside URLs", async () => {
     expect(workflowHighlights(editor)).toHaveLength(0);
     expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   });
-});
-
-test("Activate a slash workflow with Enter after a cancelled pointer press", async () => {
-  mockAgent();
-  mockThread();
-  installWorkflows(() => {
-    return [workflow("release-report")];
-  });
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-  const user = userEvent.setup({ delay: null });
-  const editor = await findComposerEditor();
-  await user.click(editor);
-  await user.keyboard("Draft /release");
-  const option = await waitFor(() => {
-    return slashButton("/release-report");
-  });
-
-  await user.pointer({ target: option, keys: "[MouseLeft>]" });
-  expect(option).toHaveFocus();
-  expect(editor).toHaveTextContent("Draft /release");
-  await user.pointer({ target: editor, keys: "[/MouseLeft]" });
-  await user.pointer({ target: option, keys: "[MouseRight]" });
-  expect(editor).toHaveTextContent("Draft /release");
-
-  await user.keyboard("{Enter}");
-  await waitFor(() => {
-    expect(editor).toHaveTextContent("Draft /release-report");
-    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-    expect(editor).toHaveFocus();
-  });
-  await user.keyboard("next");
-  expect(editor).toHaveTextContent("Draft /release-report next");
 });

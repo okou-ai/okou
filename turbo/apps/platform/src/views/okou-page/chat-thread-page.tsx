@@ -76,6 +76,7 @@ import {
   getShortcutParts,
   Button,
   CopyButton,
+  ShareLinkButton,
   Checkbox,
   Input,
   Skeleton,
@@ -6682,47 +6683,89 @@ function UserMessageAttachments({
   );
 }
 
+function RunLogsAction({ runId }: { runId: string }) {
+  const { t } = useTranslation();
+  return (
+    <TooltipProvider delay={300}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Link
+              pathname="/activities/:activityRunId"
+              options={{ pathParams: { activityRunId: runId } }}
+              aria-label={t(($) => {
+                return $.chat.run.viewLogs;
+              })}
+              className={cn(
+                buttonVariants({
+                  variant: "quiet",
+                  size: "icon-xs",
+                  iconSize: "sm",
+                }),
+                "text-muted-foreground/60",
+              )}
+            >
+              <ChartLine />
+            </Link>
+          }
+        />
+        <TooltipContent side="bottom">
+          {t(($) => {
+            return $.chat.run.viewActivityLogs;
+          })}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 // The row below a user message is part of that message's frame, not a thing the
 // copy button brings with it. It stays even when there is no button to show —
 // a message nobody can copy, or a mode that offers no per-message action — so
 // the burst spacing that is measured against it does not collapse.
 function UserMessageActions({
   showCopy,
+  runId,
   onCopy,
 }: {
   showCopy: boolean;
+  runId: string | undefined;
   onCopy: () => Promise<boolean>;
 }) {
   const { t } = useTranslation();
+  const showActivityLogs = useGet(featureSwitch$)[FeatureSwitchKey.OkouDebug];
   return (
     <div
       data-chat-user-message-actions
       className={CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS}
     >
       {showCopy ? (
-        <CopyButton
-          copyAction={onCopy}
-          render={({ onClick, ref }, { copied }) => {
-            return (
-              <Button
-                ref={ref}
-                type="button"
-                variant="quiet"
-                size="icon-xs"
-                iconSize="sm"
-                showTooltip
-                onClick={onClick}
-                className="text-muted-foreground/60"
-                aria-label={t(($) => {
-                  return $.chat.actions.copyMessage;
-                })}
-              >
-                {copied ? <Check /> : <Copy />}
-              </Button>
-            );
-          }}
-        />
+        <span className="[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+          <CopyButton
+            copyAction={onCopy}
+            render={({ onClick, ref }, { copied }) => {
+              return (
+                <Button
+                  ref={ref}
+                  type="button"
+                  variant="quiet"
+                  size="icon-xs"
+                  iconSize="sm"
+                  showTooltip
+                  onClick={onClick}
+                  className="text-muted-foreground/60"
+                  aria-label={t(($) => {
+                    return $.chat.actions.copyMessage;
+                  })}
+                >
+                  {copied ? <Check /> : <Copy />}
+                </Button>
+              );
+            }}
+          />
+        </span>
       ) : null}
+      {showActivityLogs && runId && <RunLogsAction runId={runId} />}
     </div>
   );
 }
@@ -7851,6 +7894,7 @@ function PagedUserMessage({
                   still pulled up by the height this row holds. */}
               <UserMessageActions
                 showCopy={canCopy && sharingPhase === "idle"}
+                runId={sharingPhase === "idle" ? inputEvent?.runId : undefined}
                 onCopy={handleCopy}
               />
             </>
@@ -8084,6 +8128,7 @@ function PagedRunWorkAssistantContent({
         group={group}
         content={mainEvent.content ?? ""}
         thread={thread}
+        shareEvents={[mainEvent]}
         relatedArtifacts={runWorkSection?.remainingArtifactCards}
         embedded
       />
@@ -8204,6 +8249,7 @@ function PagedAssistantGroup({
           group={group}
           content={fullContent}
           thread={thread}
+          shareEvents={group.events}
         />
       ) : null}
     </div>
@@ -8583,12 +8629,79 @@ function RunLangfuseAction({
   return signals ? <RunLangfuseLink signals={signals} /> : null;
 }
 
+function MessageShareAction({
+  onShare,
+}: {
+  onShare: (revert: () => void) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <ShareLinkButton
+      onShare={onShare}
+      render={({ onClick, ref }, { copied }) => {
+        const copiedLabel = t(($) => {
+          return $.chat.sharing.shareLinkCopied;
+        });
+        if (copied) {
+          // The button itself confirms the copy; no toast or tooltip.
+          return (
+            <Button
+              ref={ref}
+              type="button"
+              variant="quiet"
+              size="xs"
+              onClick={onClick}
+              className="gap-1 px-1.5 text-muted-foreground"
+              aria-label={copiedLabel}
+              data-testid="chat-message-share"
+            >
+              <Check />
+              {copiedLabel}
+            </Button>
+          );
+        }
+        return (
+          <TooltipProvider delay={300}>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    ref={ref}
+                    type="button"
+                    variant="quiet"
+                    size="icon-xs"
+                    iconSize="sm"
+                    onClick={onClick}
+                    className="text-muted-foreground/60"
+                    aria-label={t(($) => {
+                      return $.chat.actions.shareMessage;
+                    })}
+                    data-testid="chat-message-share"
+                  >
+                    <Share2 />
+                  </Button>
+                }
+              />
+              <TooltipContent side="bottom">
+                {t(($) => {
+                  return $.chat.actions.shareMessage;
+                })}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        );
+      }}
+    />
+  );
+}
+
 function PagedGroupPrimaryActions({
   firstRunId,
   thread,
   hasContent,
   usage,
   onCopy,
+  onShare,
   relatedArtifacts,
 }: {
   firstRunId: string | undefined;
@@ -8596,12 +8709,15 @@ function PagedGroupPrimaryActions({
   hasContent: boolean;
   usage: ChatEventUsagePayload | undefined;
   onCopy: () => Promise<boolean>;
+  onShare: ((revert: () => void) => void) | undefined;
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
 }) {
   const { t } = useTranslation();
-  const showActivityLogs = useGet(featureSwitch$)[FeatureSwitchKey.OkouDebug];
+  const switches = useGet(featureSwitch$);
+  const showDebugActions = switches[FeatureSwitchKey.OkouDebug];
+  const showShare = switches[FeatureSwitchKey.ChatMessageShare] && onShare;
   const hasLeadingIconAction = Boolean(
-    (showActivityLogs && firstRunId) || hasContent,
+    (showDebugActions && firstRunId) || hasContent,
   );
   return (
     <div
@@ -8614,41 +8730,7 @@ function PagedGroupPrimaryActions({
       )}
       data-testid="chat-event-actions"
     >
-      {showActivityLogs && firstRunId && (
-        <TooltipProvider delay={300}>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Link
-                  pathname="/activities/:activityRunId"
-                  options={{
-                    pathParams: { activityRunId: firstRunId },
-                  }}
-                  aria-label={t(($) => {
-                    return $.chat.run.viewLogs;
-                  })}
-                  className={cn(
-                    buttonVariants({
-                      variant: "quiet",
-                      size: "icon-xs",
-                      iconSize: "sm",
-                    }),
-                    "text-muted-foreground/60",
-                  )}
-                >
-                  <ChartLine />
-                </Link>
-              }
-            />
-            <TooltipContent side="bottom">
-              {t(($) => {
-                return $.chat.run.viewActivityLogs;
-              })}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      )}
-      {showActivityLogs && firstRunId && (
+      {showDebugActions && firstRunId && (
         <RunLangfuseAction thread={thread} runId={firstRunId} />
       )}
       {hasContent && (
@@ -8691,6 +8773,7 @@ function PagedGroupPrimaryActions({
           }}
         />
       )}
+      {showShare && <MessageShareAction onShare={showShare} />}
       {relatedArtifacts ? (
         <RelatedArtifactsDialog cards={relatedArtifacts} />
       ) : null}
@@ -8703,17 +8786,21 @@ function PagedGroupActions({
   group,
   content,
   thread,
+  shareEvents,
   relatedArtifacts,
   embedded = false,
 }: {
   group: ChatEventGroup;
   content: string;
   thread: ChatPanelSignals;
+  /** The assistant events this action bar shares, with their user prompt. */
+  shareEvents: readonly EnrichedChatEvent[];
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
   embedded?: boolean;
 }) {
   const pageSignal = useGet(pageSignal$);
   const copyEvent = useSet(thread.copyEvent$);
+  const shareMessage = useSet(thread.sharing.shareMessage$);
   const sharingPhase = useGet(thread.sharing.phase$);
   if (sharingPhase !== "idle") {
     return null;
@@ -8728,6 +8815,29 @@ function PagedGroupActions({
   const handleCopy = () => {
     return copyEvent({ text: content, attachments: [] }, pageSignal);
   };
+  // Only persisted output messages can be shared; streaming text has no seqId.
+  const shareEventIds = shareEvents
+    .filter((event) => {
+      return (
+        event.eventType === "output.message" &&
+        event.seqId !== undefined &&
+        Boolean(event.content)
+      );
+    })
+    .map((event) => {
+      return event.id;
+    });
+  const handleShare =
+    shareEventIds.length > 0
+      ? (revert: () => void) => {
+          const share = async () => {
+            if (!(await shareMessage(shareEventIds, pageSignal))) {
+              revert();
+            }
+          };
+          detach(share(), Reason.DomCallback, "share chat message");
+        }
+      : undefined;
 
   const actions = (
     <div className={CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_CLASS}>
@@ -8737,6 +8847,7 @@ function PagedGroupActions({
         hasContent={hasContent}
         usage={usage}
         onCopy={handleCopy}
+        onShare={handleShare}
         relatedArtifacts={relatedArtifacts}
       />
     </div>

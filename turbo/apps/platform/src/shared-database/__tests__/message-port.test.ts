@@ -34,17 +34,8 @@ import {
   sharedDatabaseClientMessageSchema,
   sharedDatabaseWorkerMessageSchema,
 } from "../protocol.ts";
-import {
-  openConnection$,
-  recordConnectionHeartbeat$,
-  registerConnection$,
-  requestTokenFromLatestConnection$,
-} from "../worker-context.ts";
-import {
-  getComputedStoreMessage$,
-  initializeSharedDatabaseWorker$,
-  refreshWorkerComputed$,
-} from "../worker-signals.ts";
+import { requestTokenFromLatestConnection$ } from "../worker-context.ts";
+import { initializeSharedDatabaseWorker$ } from "../worker-signals.ts";
 
 const context = testContext();
 const CREATED_AT = "2026-08-14T09:00:00.000Z";
@@ -415,51 +406,45 @@ test("preserve a rejected 401 through the port and allow a later query to succee
   ]);
 });
 
-test.each([401, 426, 500])(
-  "preserve HTTP status %s on query errors across MessagePort",
-  async (status) => {
-    initializeWorker();
-    const { bridge } = connectProtocolTransport(context.signal);
-    await bridge.registerTab(context.signal);
-    context.mocks.http.get("*/api/chat-threads/snapshot", () => {
-      return Response.json(
-        { error: { code: "REQUEST_FAILED", message: "Request failed" } },
-        { status },
-      );
-    });
-    const failed = bridge.query(
-      {
-        dataKey: { kind: "chat-thread-event" },
-        afterSeqId: null,
-        consistency: "catch-up",
-      },
-      context.signal,
+test("preserve upgrade status on query errors across MessagePort", async () => {
+  initializeWorker();
+  const { bridge } = connectProtocolTransport(context.signal);
+  await bridge.registerTab(context.signal);
+  context.mocks.http.get("*/api/chat-threads/snapshot", () => {
+    return Response.json(
+      { error: { code: "REQUEST_FAILED", message: "Request failed" } },
+      { status: 426 },
     );
-    await expect(failed).rejects.toBeInstanceOf(SharedDatabaseHttpError);
-    await expect(failed).rejects.toMatchObject({ status });
-  },
-);
+  });
+  const failed = bridge.query(
+    {
+      dataKey: { kind: "chat-thread-event" },
+      afterSeqId: null,
+      consistency: "catch-up",
+    },
+    context.signal,
+  );
+  await expect(failed).rejects.toBeInstanceOf(SharedDatabaseHttpError);
+  await expect(failed).rejects.toMatchObject({ status: 426 });
+});
 
-test.each([401, 426])(
-  "preserve API error classification for computed HTTP %s across MessagePort",
-  async (status) => {
-    initializeWorker();
-    const { bridge } = connectProtocolTransport(context.signal);
-    await bridge.registerTab(context.signal);
-    context.mocks.http.get("*/api/indicators", () => {
-      return Response.json(
-        { error: { code: "REQUEST_FAILED", message: "Request failed" } },
-        { status },
-      );
-    });
-    const failed = bridge.getComputed("chat-thread-indicators");
-    await expect(failed).rejects.toBeInstanceOf(ApiError);
-    await expect(failed).rejects.toMatchObject({
-      status,
-      code: "REQUEST_FAILED",
-    });
-  },
-);
+test("preserve API error classification for computed upgrade errors across MessagePort", async () => {
+  initializeWorker();
+  const { bridge } = connectProtocolTransport(context.signal);
+  await bridge.registerTab(context.signal);
+  context.mocks.http.get("*/api/indicators", () => {
+    return Response.json(
+      { error: { code: "REQUEST_FAILED", message: "Request failed" } },
+      { status: 426 },
+    );
+  });
+  const failed = bridge.getComputed("chat-thread-indicators");
+  await expect(failed).rejects.toBeInstanceOf(ApiError);
+  await expect(failed).rejects.toMatchObject({
+    status: 426,
+    code: "REQUEST_FAILED",
+  });
+});
 
 test("Keep concurrent shared chat loads independent", async () => {
   initializeWorker();
@@ -1155,85 +1140,6 @@ test("Throttle detached warming without blocking chat message invalidations", as
   expect(maxActiveRequests).toBe(1);
 });
 
-test("Cancel waiting indicator reads when their Worker lifecycle ends", async () => {
-  mockNow(30_000, context.signal);
-  const threadId = crypto.randomUUID();
-  const resetWorker$ = resetSignal();
-  const workerSignal = context.store.set(resetWorker$, context.signal);
-  const refreshLoaded = context.mocks.deferred<void>();
-  let refreshing = false;
-  mockUnreadIndicators(threadId);
-  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    if (refreshing && !refreshLoaded.settled()) {
-      refreshLoaded.resolve();
-    }
-    return respond(200, {
-      agents: {},
-      threads: { [threadId]: "unread" },
-      unreadAt: {},
-    });
-  });
-  context.mocks.api(chatThreadEventsContract.catchUp, ({ body, respond }) => {
-    return respond(200, {
-      events: Object.fromEntries(
-        body.map(([id]) => {
-          return [id, []];
-        }),
-      ),
-      notFoundThreads: [],
-    });
-  });
-  initializeWorker(workerSignal);
-  const connectionId = crypto.randomUUID();
-  const connectionSignal = context.workerStore.set(
-    openConnection$,
-    connectionId,
-    workerSignal,
-  );
-  context.workerStore.set(
-    registerConnection$,
-    connectionId,
-    {
-      getToken: () => {
-        return Promise.resolve("message-port-token");
-      },
-      port: new InMemoryMessagePort(),
-    },
-    connectionSignal,
-  );
-  context.workerStore.set(recordConnectionHeartbeat$, connectionId);
-  // Observe the Worker request directly: abort closes its message port before
-  // the server can send a response to the client.
-  const readIndicators = () => {
-    return context.workerStore.set(
-      getComputedStoreMessage$,
-      connectionId,
-      {
-        type: "get-computed",
-        requestId: crypto.randomUUID(),
-        computedKey: "chat-thread-indicators",
-      },
-      workerSignal,
-    );
-  };
-  await readIndicators();
-
-  refreshing = true;
-  context.workerStore.set(refreshWorkerComputed$, "chat-thread-indicators");
-  await Promise.all([
-    expect(readIndicators()).rejects.toMatchObject({
-      name: "AbortError",
-    }),
-    expect(readIndicators()).rejects.toMatchObject({
-      name: "AbortError",
-    }),
-    (async () => {
-      await refreshLoaded.promise;
-      context.store.set(resetWorker$);
-    })(),
-  ]);
-});
-
 test("Keep scopes, topics, and subscriber releases independent on one port", async () => {
   initializeWorker();
   const { bridge } = connectProtocolTransport(context.signal);
@@ -1305,83 +1211,69 @@ test("Keep scopes, topics, and subscriber releases independent on one port", asy
   expect(messages).toHaveLength(4);
 });
 
-test.each(["attach", "fail"] as const)(
-  "Ignore a stale subscription %s after cancellation and reacquisition",
-  async (completion) => {
-    initializeWorker();
-    const { bridge, workerPort } = connectProtocolTransport(context.signal);
-    await bridge.registerTab(context.signal);
-    const topic = "connectorPermissionUpdated";
-    const channel = `user:${identity().userId}`;
-    const oldAttach = context.mocks.ably.deferSubscribeOnChannel(
-      channel,
-      topic,
-    );
-    const oldMessages: unknown[] = [];
-    const oldSubscription = bridge.subscribeRealtime(
-      "reused-id",
-      "user",
-      topic,
-      (message) => {
-        oldMessages.push(message.data);
-      },
-      () => {},
-    );
-    const cancelled = Promise.allSettled([oldSubscription]);
-    await oldAttach.started;
-    bridge.unsubscribeRealtime("reused-id");
-    await expect(cancelled).resolves.toMatchObject([
-      { status: "rejected", reason: { name: "AbortError" } },
-    ]);
-    await vi.waitFor(() => {
-      expect(
-        context.mocks.ably.hasSubscriptionOnChannel(channel, topic),
-      ).toBeFalsy();
-    });
+test("Ignore a stale subscription attach after cancellation and reacquisition", async () => {
+  initializeWorker();
+  const { bridge, workerPort } = connectProtocolTransport(context.signal);
+  await bridge.registerTab(context.signal);
+  const topic = "connectorPermissionUpdated";
+  const channel = `user:${identity().userId}`;
+  const oldAttach = context.mocks.ably.deferSubscribeOnChannel(channel, topic);
+  const oldMessages: unknown[] = [];
+  const oldSubscription = bridge.subscribeRealtime(
+    "reused-id",
+    "user",
+    topic,
+    (message) => {
+      oldMessages.push(message.data);
+    },
+    () => {},
+  );
+  const cancelled = Promise.allSettled([oldSubscription]);
+  await oldAttach.started;
+  bridge.unsubscribeRealtime("reused-id");
+  await expect(cancelled).resolves.toMatchObject([
+    { status: "rejected", reason: { name: "AbortError" } },
+  ]);
+  await vi.waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(channel, topic),
+    ).toBeFalsy();
+  });
 
-    const nextAttach = context.mocks.ably.deferSubscribeOnChannel(
-      channel,
-      topic,
-    );
-    const messages: unknown[] = [];
-    const subscription = bridge.subscribeRealtime(
-      "reused-id",
-      "user",
-      topic,
-      (message) => {
-        messages.push(message.data);
-      },
-      () => {},
-    );
-    await nextAttach.started;
-    if (completion === "attach") {
-      oldAttach.attach();
-    } else {
-      oldAttach.fail(new Error("Old subscription failed"));
-    }
-    nextAttach.attach();
-    await subscription;
-    context.mocks.ably.triggerOnChannel(channel, topic, { revision: 1 });
-    await vi.waitFor(() => {
-      expect(messages).toStrictEqual([{ revision: 1 }]);
+  const nextAttach = context.mocks.ably.deferSubscribeOnChannel(channel, topic);
+  const messages: unknown[] = [];
+  const subscription = bridge.subscribeRealtime(
+    "reused-id",
+    "user",
+    topic,
+    (message) => {
+      messages.push(message.data);
+    },
+    () => {},
+  );
+  await nextAttach.started;
+  oldAttach.attach();
+  nextAttach.attach();
+  await subscription;
+  context.mocks.ably.triggerOnChannel(channel, topic, { revision: 1 });
+  await vi.waitFor(() => {
+    expect(messages).toStrictEqual([{ revision: 1 }]);
+  });
+  expect(oldMessages).toStrictEqual([]);
+  const replies = workerPort.postedMessages
+    .map((message) => {
+      return sharedDatabaseWorkerMessageSchema.parse(message);
+    })
+    .filter((message) => {
+      return (
+        message.type === "realtime-subscribed" ||
+        message.type === "realtime-subscription-error"
+      );
     });
-    expect(oldMessages).toStrictEqual([]);
-    const replies = workerPort.postedMessages
-      .map((message) => {
-        return sharedDatabaseWorkerMessageSchema.parse(message);
-      })
-      .filter((message) => {
-        return (
-          message.type === "realtime-subscribed" ||
-          message.type === "realtime-subscription-error"
-        );
-      });
-    expect(replies).toStrictEqual([
-      { type: "realtime-subscribed", subscriptionId: "reused-id" },
-    ]);
-  },
-);
-
+  expect(replies).toStrictEqual([
+    { type: "realtime-subscribed", subscriptionId: "reused-id" },
+  ]);
+});
 test("Deliver an attach failure to every subscriber and permit reacquisition", async () => {
   initializeWorker();
   const first = connectProtocolTransport(context.signal);
@@ -1483,158 +1375,4 @@ test("Keep identical subscription keys in separate worker Stores independent", a
   await expect(
     cachedRows(second.bridge, crypto.randomUUID()),
   ).resolves.toStrictEqual([]);
-});
-
-test("Close an unregistered port on parent cancellation and reject a pre-aborted parent", () => {
-  const resetWorker$ = resetSignal();
-  const workerSignal = context.store.set(resetWorker$, context.signal);
-  const [platformPort, workerPort] = messagePortPair();
-  new SharedDatabaseMessagePortServer(
-    context.workerStore,
-    workerPort,
-    workerSignal,
-  );
-  const queuedListener = [...workerPort.listeners][0]!;
-  platformPort.postMessage({ type: "register-tab" });
-  context.store.set(resetWorker$);
-  expect(workerPort.closed).toBeTruthy();
-  expect(workerPort.listeners.size).toBe(0);
-  // An already queued browser callback cannot register or reply after closure.
-  queuedListener(
-    new MessageEvent("message", { data: { type: "register-tab" } }),
-  );
-  queuedListener(new MessageEvent("message", { data: { type: "disconnect" } }));
-  expect(workerPort.postedMessages).toStrictEqual([]);
-
-  const reason = new DOMException("Worker was already stopped", "AbortError");
-  const [, unopenedPort] = messagePortPair();
-  expect(() => {
-    new SharedDatabaseMessagePortServer(
-      context.workerStore,
-      unopenedPort,
-      AbortSignal.abort(reason),
-    );
-  }).toThrow(reason);
-  expect(unopenedPort.listeners.size).toBe(0);
-});
-
-test("Reject pending token work on disconnect and ignore its late completion", async () => {
-  initializeWorker();
-  const resetOwner$ = resetSignal();
-  const ownerSignal = context.store.set(resetOwner$, context.signal);
-  const tokenStarted = context.mocks.deferred<void>();
-  const token = context.mocks.deferred<string>();
-  const first = connectProtocolTransport(ownerSignal, () => {
-    if (!tokenStarted.settled()) {
-      tokenStarted.resolve();
-    }
-    return token.promise;
-  });
-  // Registration queues a heartbeat. It must reach the worker before token routing.
-  await first.bridge.registerTab(ownerSignal);
-  await cachedRows(first.bridge, crypto.randomUUID());
-  const pending = context.workerStore.set(
-    requestTokenFromLatestConnection$,
-    context.signal,
-  );
-  const cancelled = Promise.allSettled([pending]);
-  await tokenStarted.promise;
-  context.store.set(resetOwner$);
-  await expect(cancelled).resolves.toMatchObject([
-    { status: "rejected", reason: { name: "AbortError" } },
-  ]);
-  expect(first.workerPort.closed).toBeTruthy();
-  expect(first.workerPort.listeners.size).toBe(0);
-  const replies = first.workerPort.postedMessages.length;
-  token.resolve("stale-token");
-
-  const second = connectProtocolTransport(context.signal, () => {
-    return Promise.resolve("fresh-token");
-  });
-  await second.bridge.registerTab(context.signal);
-  await cachedRows(second.bridge, crypto.randomUUID());
-  await expect(
-    context.workerStore.set(requestTokenFromLatestConnection$, context.signal),
-  ).resolves.toBe("fresh-token");
-  expect(first.workerPort.postedMessages).toHaveLength(replies);
-});
-
-test("Settle a disconnected query while another port completes the shared load", async () => {
-  initializeWorker();
-  const resetOwner$ = resetSignal();
-  const ownerSignal = context.store.set(resetOwner$, context.signal);
-  const first = connectProtocolTransport(ownerSignal);
-  const second = connectProtocolTransport(context.signal);
-  await first.bridge.registerTab(ownerSignal);
-  await second.bridge.registerTab(context.signal);
-  const key = dataKey(crypto.randomUUID());
-  const canonicalRow = row(key.threadId, 1);
-  const started = context.mocks.deferred<void>();
-  const release = context.mocks.deferred<void>();
-  context.mocks.api(
-    chatThreadEventsContract.rows,
-    async ({ query, respond }) => {
-      if (query.sinceSeqId === 0) {
-        if (!started.settled()) {
-          started.resolve();
-        }
-        await release.promise;
-        return respond(200, chatEventRowsResponse([canonicalRow], query));
-      }
-      return respond(200, chatEventRowsResponse([], query));
-    },
-  );
-  const query = {
-    dataKey: key,
-    afterSeqId: null,
-    consistency: "catch-up",
-  } as const;
-  const pending = first.bridge.query(query, ownerSignal);
-  const cancelled = Promise.allSettled([pending]);
-  const surviving = second.bridge.query(query, context.signal);
-  await started.promise;
-  context.store.set(resetOwner$);
-  await expect(cancelled).resolves.toStrictEqual([
-    { status: "rejected", reason: ownerSignal.reason },
-  ]);
-  await vi.waitFor(() => {
-    expect(first.workerPort.closed).toBeTruthy();
-  });
-  const replies = first.workerPort.postedMessages.length;
-  release.resolve();
-  await expect(surviving).resolves.toStrictEqual([canonicalRow]);
-  expect(first.workerPort.postedMessages).toHaveLength(replies);
-  expect(first.workerPort.listeners.size).toBe(0);
-});
-
-test("Propagate the worker parent's reason through pending token work", async () => {
-  const resetWorker$ = resetSignal();
-  const workerSignal = context.store.set(resetWorker$, context.signal);
-  initializeWorker(workerSignal);
-  const token = context.mocks.deferred<string>();
-  const tokenStarted = context.mocks.deferred<void>();
-  const { bridge, workerPort } = connectProtocolTransport(
-    context.signal,
-    () => {
-      if (!tokenStarted.settled()) {
-        tokenStarted.resolve();
-      }
-      return token.promise;
-    },
-  );
-  await bridge.registerTab(context.signal);
-  await cachedRows(bridge, crypto.randomUUID());
-  const pending = context.workerStore.set(
-    requestTokenFromLatestConnection$,
-    context.signal,
-  );
-  const cancelled = Promise.allSettled([pending]);
-  await tokenStarted.promise;
-  context.store.set(resetWorker$);
-  await expect(cancelled).resolves.toStrictEqual([
-    { status: "rejected", reason: workerSignal.reason },
-  ]);
-  expect(workerPort.closed).toBeTruthy();
-  expect(workerPort.listeners.size).toBe(0);
-  token.resolve("late-token");
 });

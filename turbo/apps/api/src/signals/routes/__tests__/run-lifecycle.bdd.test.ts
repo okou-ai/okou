@@ -6632,6 +6632,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
         "codex-oauth-token",
         "CHATGPT_ACCOUNT_ID",
       ),
+      CODEX_OAUTH_ACCOUNT_ID: "workspace-id",
       OPENAI_MODEL: "gpt-5.6-sol",
     });
     expect(claim.environment).not.toHaveProperty("CHATGPT_REFRESH_TOKEN");
@@ -6858,6 +6859,15 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     expect(claim.environment?.CHATGPT_ACCESS_TOKEN).toBe(
       modelProviderPlaceholder("codex-oauth-token", "CHATGPT_ACCESS_TOKEN"),
     );
+    expect(claim.environment?.CHATGPT_ACCOUNT_ID).toBe(
+      modelProviderPlaceholder("codex-oauth-token", "CHATGPT_ACCOUNT_ID"),
+    );
+    // The saved account ID comes from the ID-token claim, not auth.json's
+    // informational tokens.account_id field.
+    expect(claim.environment?.CODEX_OAUTH_ACCOUNT_ID).toBe(
+      "ws_acct_bdd_id_token",
+    );
+    expect(claim.environment).not.toHaveProperty("CHATGPT_REFRESH_TOKEN");
     expect(
       claim.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN,
     ).toMatchObject({
@@ -15887,11 +15897,7 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
       }),
     ).toContain("Codex follow-up note");
     const codexThinking = afterCodex.events.filter((message) => {
-      return (
-        message.eventType === "output.thinking" &&
-        message.runId === runId &&
-        message.runEventId !== "thinking:initial"
-      );
+      return message.eventType === "output.thinking" && message.runId === runId;
     });
     expect(codexThinking).toStrictEqual([
       expect.objectContaining({
