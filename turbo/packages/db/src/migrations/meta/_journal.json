@@ -925,6 +925,13 @@
       "when": 1790231546789,
       "tag": "1209_account_erasure_blob_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 1210,
+      "version": "7",
+      "when": 1790241756723,
+      "tag": "1210_discord_canonical_delivery_state",
+      "breakpoints": true
     }
   ]
 }

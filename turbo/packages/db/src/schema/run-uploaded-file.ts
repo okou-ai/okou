@@ -14,10 +14,11 @@ import { sql } from "drizzle-orm";
 import { agentRuns } from "./agent-run";
 import { chatThreads } from "./chat-thread";
 import type {
+  CanonicalAssetDeliveryDestination,
   CanonicalAssetDeliveryError,
+  CanonicalAssetDiscordDeliveryState,
   CanonicalAssetMaterializationError,
   CanonicalAssetProvenance,
-  CanonicalAssetSlackDeliveryDestination,
   RunUploadedFileMetadata,
 } from "@okouai/db/jsonb-contracts/run-uploaded-file";
 
@@ -161,8 +162,10 @@ export const canonicalAssetDeliveries = pgTable(
       .$type<CanonicalAssetDeliveryStatus>()
       .notNull(),
     destination: jsonb("destination")
-      .$type<CanonicalAssetSlackDeliveryDestination>()
+      .$type<CanonicalAssetDeliveryDestination>()
       .notNull(),
+    providerState:
+      jsonb("provider_state").$type<CanonicalAssetDiscordDeliveryState>(),
     externalId: text("external_id"),
     url: text("url"),
     lastError: jsonb("last_error").$type<CanonicalAssetDeliveryError>(),

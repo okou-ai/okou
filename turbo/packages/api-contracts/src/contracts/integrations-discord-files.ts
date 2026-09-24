@@ -29,6 +29,7 @@ const discordUploadInitBodySchema = z.object({
   checksumSha256: z.string().regex(/^[a-f0-9]{64}$/u),
   operationId: z.uuid(),
   channelId: discordIdSchema,
+  guildId: discordIdSchema.optional(),
   comment: z.string().max(2000).optional(),
 });
 
@@ -68,6 +69,7 @@ const discordUploadResponseSchema = z.object({
 });
 
 const discordDownloadFileQuerySchema = z.object({
+  guildId: discordIdSchema.optional(),
   channelId: discordIdSchema,
   messageId: discordIdSchema,
   attachmentId: discordIdSchema,
