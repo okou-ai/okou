@@ -525,7 +525,7 @@ mock_claude_script = File.read(ARGV.fetch(1))
   /api/model-policies
   /api/feature-switches
   claude-code-oauth-token
-  claude-sonnet-4-6
+  claude-sonnet-5
   _realAgentInPreview
 ].each do |required_fragment|
   unless mock_claude_script.include?(required_fragment)

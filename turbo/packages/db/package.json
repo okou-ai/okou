@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "1.294.0",
+  "version": "1.295.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -93,6 +93,7 @@
     "test:pi-memory-stage1-cost": "tsx scripts/test-pi-memory-stage1-cost.ts",
     "test:pi-memory-stage1-alerts": "node --test ../../../ops/pi-memory-stage1/v1/fixtures.test.mjs",
     "test:gpt-55-retirement": "tsx scripts/test-gpt-55-retirement.ts",
+    "test:sonnet-46-opus-48-deepseek-v4-pro-retirement": "tsx scripts/test-sonnet-46-opus-48-deepseek-v4-pro-retirement.ts",
     "test:hosted-publication-history-audit": "tsx scripts/test-hosted-publication-history-audit.ts",
     "test:private-artifact-absolute-urls": "tsx scripts/test-private-artifact-absolute-urls.ts",
     "test:hosted-publication-runtime": "tsx scripts/test-hosted-publication-runtime.ts",

@@ -46,7 +46,7 @@ function isolatedAuth(): Exclude<SetupPageAuth, null> {
 function configureChatPrerequisites(): void {
   context.mocks.data.agents([{ agentId: AGENT_ID }]);
   context.mocks.data.userModelPreference({
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     serviceTier: null,
     modelSettings: {},
     selectedVideoModel: null,
@@ -76,7 +76,7 @@ function snapshotThread(
     updatedAt: CREATED_AT,
     pinnedAt: null,
     renamedAt: null,
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     serviceTier: null,
     modelSettings: {},
     computerUseHostId: null,
@@ -91,7 +91,7 @@ function threadMetadata(id: string, title: string): ChatThreadMetadata {
     id,
     agentId: AGENT_ID,
     title,
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     modelSettings: {},
     serviceTier: null,
     pinnedAt: null,
@@ -116,7 +116,7 @@ function threadEvent(args: {
     chatThreadId: args.threadId,
     agentId: AGENT_ID,
     title: args.title,
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     serviceTier: null,
     computerUseHostId: null,
     cloudBrowserEnabled: false,

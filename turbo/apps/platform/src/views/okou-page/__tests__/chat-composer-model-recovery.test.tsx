@@ -301,10 +301,10 @@ test("Complete Claude Code login from a blocked message", async () => {
   });
   const personalProviders = installPersonalProviders([]);
   context.mocks.browser.open(null);
-  installRunChat({ selectedModel: "claude-opus-4-8" });
+  installRunChat({ selectedModel: "claude-opus-5-5" });
   configurePersonalRoute({
-    model: "claude-opus-4-8",
-    modelLabel: "Claude Opus 4.8",
+    model: "claude-opus-5-5",
+    modelLabel: "Claude Opus 5.5",
     providerType: "claude-code-oauth-token",
   });
   context.mocks.api(claudeCodeDeviceAuthContract.start, ({ respond }) => {
@@ -329,7 +329,7 @@ test("Complete Claude Code login from a blocked message", async () => {
   await setupPage({ context, path: NEW_CHAT_PATH });
 
   const composer = await screen.findByRole("textbox", { name: "Message" });
-  await expect(composerModelTrigger("Claude Opus 4.8")).resolves.toBeVisible();
+  await expect(composerModelTrigger("Claude Opus 5.5")).resolves.toBeVisible();
   await fillComposer(composer, "Explain this failure");
   const sendButton = await findButton("Send");
   expect(sendButton).toBeDisabled();
@@ -431,10 +431,10 @@ test("Reconnect Claude Code for an existing chat", async () => {
     modelProviderId: CLAUDE_ROUTE_ID,
   });
   installPersonalProviders([inactiveProvider, activeProvider]);
-  installRunChat({ selectedModel: "claude-opus-4-8" });
+  installRunChat({ selectedModel: "claude-opus-5-5" });
   configurePersonalRoute({
-    model: "claude-opus-4-8",
-    modelLabel: "Claude Opus 4.8",
+    model: "claude-opus-5-5",
+    modelLabel: "Claude Opus 5.5",
     providerType: "claude-code-oauth-token",
     modelProviderId: CLAUDE_ROUTE_ID,
   });
@@ -453,7 +453,7 @@ test("Reconnect Claude Code for an existing chat", async () => {
   await setupPage({ context, path: RUN_PATH });
 
   await readyChat();
-  await expect(composerModelTrigger("Claude Opus 4.8")).resolves.toBeVisible();
+  await expect(composerModelTrigger("Claude Opus 5.5")).resolves.toBeVisible();
   const configureButton = await findButton("Configure model");
 
   click(configureButton);
@@ -477,7 +477,7 @@ test("A billing upgrade unlocks Pro-gated built-in models", async () => {
   installRunChat({ selectedModel: "gpt-5.6-luna" });
   context.mocks.data.orgModelPolicies([
     builtInPolicy("gpt-5.6-luna", "GPT 5.6 Luna", true),
-    builtInPolicy("claude-opus-4-8", "Claude Opus 4.8", false),
+    builtInPolicy("claude-opus-5-5", "Claude Opus 5.5", false),
   ]);
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     if (billing.upgraded) {
@@ -509,7 +509,7 @@ test("A billing upgrade unlocks Pro-gated built-in models", async () => {
   const picker = await composerModelTrigger("GPT 5.6 Luna");
   click(picker);
   await expect(findModelMenuOption(/GPT 5\.6 Luna/iu)).resolves.toBeVisible();
-  const gatedBuiltInOption = await findModelMenuOption(/Claude Opus 4\.8/iu);
+  const gatedBuiltInOption = await findModelMenuOption(/Claude Opus 5\.5/iu);
   expect(within(gatedBuiltInOption).getByText("Pro")).toBeVisible();
   await waitFor(() => {
     expect(context.mocks.ably.hasSubscription("billing:changed")).toBeTruthy();
@@ -519,7 +519,7 @@ test("A billing upgrade unlocks Pro-gated built-in models", async () => {
   context.mocks.ably.trigger("billing:changed");
 
   await waitFor(() => {
-    const builtInOption = modelMenuOption(/Claude Opus 4\.8/iu);
+    const builtInOption = modelMenuOption(/Claude Opus 5\.5/iu);
     expect(builtInOption).toBeVisible();
     expect(within(builtInOption).queryByText("Pro")).toBeNull();
   });

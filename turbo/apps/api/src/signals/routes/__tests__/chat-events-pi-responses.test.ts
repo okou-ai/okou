@@ -206,7 +206,6 @@ describe("CHAT-02: model-first provider policies", () => {
       [
         "deepseek-v4-flash",
         "deepseek-v4.1-flash",
-        "deepseek-v4-pro",
         "gpt-6-sol",
         "gpt-6-luna",
         "gpt-5.6-terra",
@@ -215,10 +214,7 @@ describe("CHAT-02: model-first provider policies", () => {
       // The other DeepSeek US-on routes are covered per model by the
       // provider-policy matrix; v4-flash still exercises real Responses I/O.
       const usSwitchValues =
-        selectedModel === "deepseek-v4.1-flash" ||
-        selectedModel === "deepseek-v4-pro"
-          ? [false]
-          : [false, true];
+        selectedModel === "deepseek-v4.1-flash" ? [false] : [false, true];
       return usSwitchValues.map((usRoutingEnabled) => {
         return {
           selectedModel,
@@ -494,8 +490,8 @@ describe("CHAT-02: model-first provider policies", () => {
       providerUrl: "https://api.deepseek.com/responses",
     },
     {
-      name: "DeepSeek Pro",
-      selectedModel: "deepseek-v4-pro",
+      name: "DeepSeek V4 Flash",
+      selectedModel: "deepseek-v4-flash",
       providerUrl: "https://api.deepseek.com/responses",
     },
   ] as const)(
