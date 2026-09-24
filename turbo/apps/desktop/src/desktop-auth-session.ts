@@ -62,7 +62,12 @@ type RunAuthWindow = (
 
 interface VerifiedAppIdentity {
   readonly state: DesktopAuthState;
-  /** Server-verified Clerk session, never inferred from unverified JWT claims. */
+  /**
+   * Server-verified Clerk session, never inferred from unverified JWT claims.
+   * An older API may omit it: permit initial sign-in but fail closed on host
+   * continuity. Remove omission handling once old APIs are neither serving nor
+   * retained for rollback (follow-up #36430).
+   */
   readonly sessionId: string | null;
 }
 
