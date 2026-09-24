@@ -940,7 +940,13 @@ describe("X daily resource usage webhook", () => {
         type: subjectKind === "user" ? "user.deleted" : "organization.deleted",
         data: { id: subjectId },
       });
-      await callbacks.requestClerkWebhook("{}", {}, [200]);
+      await gate.withAcquisitionAttemptTracking(async () => {
+        await callbacks.requestClerkWebhook("{}", {}, [200]);
+      });
+      // User deletion first captures its durable erasure inventory, which can
+      // finish after the webhook responds. Wait for this cleanup's own lock
+      // attempt before observing its blocked database participant.
+      await gate.acquisitionAttempted;
       await expect.poll(gate.waiterCount).toBeGreaterThanOrEqual(1);
 
       // Clerk must wait before owning the Run. Taking it first would make its
