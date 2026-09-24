@@ -86,7 +86,7 @@ test("An existing credential can be reused without entering or reading its secre
     requests.push(body);
     return respond(201, base);
   });
-  await page("/connectors?scope=remote-control&type=ssh&add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog");
   const hostFields = within(dialog).getByRole("group", { name: "Host" });
   const credentialFields = within(dialog).getByRole("group", {
@@ -391,7 +391,7 @@ test("Invalid host errors preserve credentials so the host can be corrected and 
       },
     });
   });
-  await page("/connectors?scope=remote-control&type=ssh&add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog");
   await selectNewCredential(dialog);
   await fill(within(dialog).getByLabelText("Display name"), "Deployment");
@@ -428,19 +428,20 @@ test("Invalid host errors preserve credentials so the host can be corrected and 
   });
 });
 async function page(path = "/connectors?scope=remote-control&type=ssh") {
-  const add = path.includes("&add=1");
   await setupPage({
     context,
-    path: path.replace("&add=1", ""),
+    path,
     auth,
   });
-  if (add) {
-    click(
-      await waitFor(() => {
-        return getAction("button", "Add host");
-      }),
-    );
-  }
+}
+
+async function openAddHostPage() {
+  await page();
+  click(
+    await waitFor(() => {
+      return getAction("button", "Add host");
+    }),
+  );
 }
 
 test("SSH is managed in Connectors Remote control", async () => {

@@ -34,10 +34,9 @@ beforeEach(() => {
 });
 
 async function page(path = "/connectors?scope=private-network") {
-  const add = path.includes("&add=1");
   await setupPage({
     context,
-    path: path.replace("&add=1", ""),
+    path,
     auth: {
       user: { id: "access-owner", fullName: "Access Owner" },
       organization: {
@@ -46,13 +45,6 @@ async function page(path = "/connectors?scope=private-network") {
       },
     },
   });
-  if (add) {
-    click(
-      await waitFor(() => {
-        return getAction("button", "Add Cloudflare Access");
-      }),
-    );
-  }
 }
 
 async function tokenFields(dialog: HTMLElement, name = config.name) {
@@ -111,7 +103,7 @@ test("Returning to Private network does not reopen an abandoned Access dialog", 
   });
 });
 
-test("The directory add intent is consumed and creates through the canonical API", async () => {
+test("Private network adds a configuration through the canonical API", async () => {
   let configs: CloudflareAccessConfig[] = [];
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs });
@@ -121,7 +113,12 @@ test("The directory add intent is consumed and creates through the canonical API
     configs = [created];
     return respond(201, created);
   });
-  await page("/connectors?scope=private-network&add=1");
+  await page();
+  click(
+    await waitFor(() => {
+      return getAction("button", "Add Cloudflare Access");
+    }),
+  );
   const dialog = await screen.findByRole("dialog", {
     name: "Add Cloudflare Access",
   });

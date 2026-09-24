@@ -139,20 +139,21 @@ function mockSettings(
 }
 
 async function page(path = "/connectors?scope=remote-control&type=vnc") {
-  const add = path.includes("&add=1");
   await setupPage({
     context,
-    path: path.replace("&add=1", ""),
+    path,
     auth,
     featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
   });
-  if (add) {
-    click(
-      await waitFor(() => {
-        return getAction("button", "Add host");
-      }),
-    );
-  }
+}
+
+async function openAddHostPage() {
+  await page();
+  click(
+    await waitFor(() => {
+      return getAction("button", "Add host");
+    }),
+  );
 }
 
 async function choose(dialog: HTMLElement, label: string, name: string) {
@@ -217,7 +218,7 @@ test("An owner reuses a VNC credential without exposing its password", async () 
     requests.push(body);
     return respond(201, host);
   });
-  await page("/connectors?scope=remote-control&type=vnc&add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await fillHost(dialog);
   expect(within(dialog).getByLabelText("RFB destination port")).toHaveValue(
@@ -249,7 +250,7 @@ test("An owner creates an SSH-backed route with a distinct RFB destination and c
     requests.push(body);
     return respond(201, tunneledHost);
   });
-  await page("/connectors?scope=remote-control&type=vnc&add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await fillHost(dialog);
   await choose(dialog, "Connection route", "Through saved SSH host");
@@ -364,7 +365,7 @@ test("Inline password creation preserves spaces and sends the selected custom ce
     requests.push(body);
     return respond(201, host);
   });
-  await page("/connectors?scope=remote-control&type=vnc&add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await fillHost(dialog);
   const credentialFields = within(dialog).getByRole("group", {
@@ -418,7 +419,7 @@ test("Inline X509Plain creation sends exact username/password and custom_ca trus
     requests.push(body);
     return respond(201, plainHost);
   });
-  await page("/connectors?scope=remote-control&type=vnc&add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await fillHost(dialog);
   await choose(
@@ -474,7 +475,7 @@ test("Profile selection filters credentials and clears incompatible choices", as
     connections: [],
     credentials: [credential, plainCredential],
   });
-  await page("/connectors?scope=remote-control&type=vnc&add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await waitFor(() => {
     expect(within(dialog).getByLabelText("Credential")).toHaveTextContent(
@@ -519,7 +520,7 @@ test("Apple DH host editor requires SSH loopback and omits X509 trust", async ()
     requests.push(body);
     return respond(201, appleHost);
   });
-  await page("/connectors?scope=remote-control&type=vnc&add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await choose(dialog, "Security profile", "Mac Screen Sharing (Apple DH)");
   expect(
@@ -1043,7 +1044,7 @@ test("An uncertain host creation freezes its draft and explicitly retries the sa
       ? new HttpResponse(null, { status: 204 })
       : HttpResponse.error();
   });
-  await page("/connectors?scope=remote-control&type=vnc&add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await fillHost(dialog);
   await fill(within(dialog).getByLabelText("Credential name"), "Retry login");
