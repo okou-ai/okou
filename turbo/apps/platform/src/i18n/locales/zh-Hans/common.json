@@ -7191,6 +7191,8 @@
       "ssh": "通过已保存的SSH主机",
       "sshConnection": "SSH主机",
       "sshHelp": "SSH仅保护Runner到SSH服务器这一跳。该服务器必须能够访问RFB目标。Agent必须同时获得VNC和SSH访问权限。",
+      "sshNeedsRebind": "此 VNC 连接使用的 SSH 主机需要重新绑定 Cloudflare Access。请先在 SSH 设置中重新绑定，或明确选择直连，再尝试连接。",
+      "sshNeedsRebindStatus": "SSH 需要重新绑定",
       "title": "连接路由",
       "unavailable": "此账户无法使用SSH设置。",
       "via": "SSH主机："

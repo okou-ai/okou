@@ -7205,6 +7205,8 @@
       "ssh": "Through saved SSH host",
       "sshConnection": "SSH host",
       "sshHelp": "SSH protects the Runner-to-SSH-server hop. That server must be able to reach the RFB destination. The Agent needs both VNC and SSH access.",
+      "sshNeedsRebind": "The SSH host for this VNC connection needs a new Cloudflare Access binding. Rebind it or explicitly choose Direct in SSH settings before connecting.",
+      "sshNeedsRebindStatus": "SSH needs rebind",
       "title": "Connection route",
       "unavailable": "SSH settings are not available for this account.",
       "via": "SSH host:"

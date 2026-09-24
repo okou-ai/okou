@@ -73,4 +73,9 @@ confirm that those hosts will need to be rebound. A changed revision or impact
 requires another review. Conversion retains the Access ID and stored Service
 Token. The admin's own hosts remain bound, while other members' hosts remain
 saved in needs-rebind state until their owners explicitly choose a permitted
-configuration or Direct.
+configuration or Direct. A saved VNC connection using such an SSH host remains
+visible to its owner with a rebind warning; fresh VNC Run inventories omit it
+until the SSH host is repaired, and fresh VNC Runner resolve/check calls return
+unavailable before releasing VNC credentials. The VNC route is never switched
+to Direct automatically. Already-running Runs may retain previously cached SSH
+authority until completion as described above.

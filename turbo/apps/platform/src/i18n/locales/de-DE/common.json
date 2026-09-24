@@ -7213,6 +7213,8 @@
       "ssh": "Über gespeicherten SSH-Host",
       "sshConnection": "SSH-Host",
       "sshHelp": "SSH schützt die Verbindung vom Runner zum SSH-Server. Dieser Server muss das RFB-Ziel erreichen können. Der Agent benötigt VNC- und SSH-Zugriff.",
+      "sshNeedsRebind": "Der SSH-Host dieser VNC-Verbindung benötigt eine neue Cloudflare-Access-Zuordnung. Verknüpfe ihn in den SSH-Einstellungen erneut oder wähle dort ausdrücklich Direkt, bevor du dich verbindest.",
+      "sshNeedsRebindStatus": "SSH muss neu verknüpft werden",
       "title": "Verbindungsroute",
       "unavailable": "SSH-Einstellungen sind für dieses Konto nicht verfügbar.",
       "via": "SSH-Host:"

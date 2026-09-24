@@ -80,6 +80,20 @@ function VncAuthenticationLabel({
   return null;
 }
 
+function VncRebindWarning() {
+  const { t } = useTranslation();
+  return (
+    <p
+      role="alert"
+      className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+    >
+      {t(($) => {
+        return $.vnc.transport.sshNeedsRebind;
+      })}
+    </p>
+  );
+}
+
 function VncHostCard({
   connection,
 }: {
@@ -96,6 +110,10 @@ function VncHostCard({
           return candidate.id === sshConnectionId;
         })
       : null;
+  const needsSshRebind =
+    !!sshConnection &&
+    "transport" in sshConnection &&
+    "needsRebind" in sshConnection.transport;
   const destination = `${connection.host.includes(":") ? `[${connection.host}]` : connection.host}:${connection.port}`;
   return (
     <article className="grid gap-3 rounded-xl border bg-card p-5">
@@ -103,10 +121,13 @@ function VncHostCard({
         <h2 className="break-all font-semibold">{connection.displayName}</h2>
         <span className="text-sm text-muted-foreground">
           {t(($) => {
-            return $.vnc.configured;
+            return needsSshRebind
+              ? $.vnc.transport.sshNeedsRebindStatus
+              : $.vnc.configured;
           })}
         </span>
       </div>
+      {needsSshRebind && <VncRebindWarning />}
       <p className="text-sm text-muted-foreground">
         {sshConnectionId
           ? t(($) => {

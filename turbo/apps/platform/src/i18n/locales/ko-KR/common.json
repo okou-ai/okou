@@ -7191,6 +7191,8 @@
       "ssh": "저장된 SSH 호스트를 통해",
       "sshConnection": "SSH 호스트",
       "sshHelp": "SSH는 Runner에서 SSH 서버까지의 구간을 보호합니다. 해당 서버에서 RFB 대상에 연결할 수 있어야 합니다. Agent에는 VNC와 SSH 액세스가 모두 필요합니다.",
+      "sshNeedsRebind": "이 VNC 연결의 SSH 호스트는 Cloudflare Access에 다시 연결해야 합니다. 연결하기 전에 SSH 설정에서 다시 연결하거나 명시적으로 직접 연결을 선택하세요.",
+      "sshNeedsRebindStatus": "SSH 재연결 필요",
       "title": "연결 경로",
       "unavailable": "이 계정에서는 SSH 설정을 사용할 수 없습니다.",
       "via": "SSH 호스트:"

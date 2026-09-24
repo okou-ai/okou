@@ -7213,6 +7213,8 @@
       "ssh": "सहेजे गए SSH होस्ट के माध्यम से",
       "sshConnection": "SSH होस्ट",
       "sshHelp": "SSH Runner से SSH सर्वर तक के चरण को सुरक्षित करता है। वह सर्वर RFB गंतव्य तक पहुँचने में सक्षम होना चाहिए। Agent को VNC और SSH दोनों एक्सेस चाहिए।",
+      "sshNeedsRebind": "इस VNC कनेक्शन के SSH होस्ट को Cloudflare Access से फिर जोड़ना होगा। कनेक्ट करने से पहले SSH सेटिंग में उसे फिर जोड़ें या वहाँ स्पष्ट रूप से Direct चुनें।",
+      "sshNeedsRebindStatus": "SSH को फिर जोड़ना होगा",
       "title": "कनेक्शन रूट",
       "unavailable": "इस खाते के लिए SSH सेटिंग उपलब्ध नहीं हैं।",
       "via": "SSH होस्ट:"

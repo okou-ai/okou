@@ -102,6 +102,7 @@ export async function listRunVncHosts(
     .select({
       id: vncConnections.id,
       transportType: vncConnections.transportType,
+      sshNeedsRebind: sshConnections.needsRebind,
       sshAllowed: runThreadSshAccess(db),
       displayName: vncConnections.displayName,
       host: vncConnections.host,
@@ -188,6 +189,7 @@ export async function listRunVncHosts(
   return {
     hosts: rows.flatMap((row) => {
       return row.id === null ||
+        (row.transportType === "ssh" && row.sshNeedsRebind !== false) ||
         (threadMode && row.transportType === "ssh" && !row.sshAllowed)
         ? []
         : [
