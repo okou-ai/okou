@@ -504,3 +504,34 @@ test("A failed preference save shows its error and can be retried", async () => 
     expect(sendMode).toBeEnabled();
   });
 });
+
+test("A shared theme cookie supersedes and removes an older host-only duplicate", async () => {
+  mockPreferences({ theme: "dark" });
+  let cookie = "__Secure-okou-theme=v1.dark; __Secure-okou-theme=v1.light";
+  const cookieWrites: string[] = [];
+  vi.spyOn(document, "cookie", "get").mockImplementation(() => {
+    return cookie;
+  });
+  vi.spyOn(document, "cookie", "set").mockImplementation((value) => {
+    cookieWrites.push(value);
+    if (
+      value === "__Secure-okou-theme=; Path=/; Max-Age=0; SameSite=Lax; Secure"
+    ) {
+      cookie = "__Secure-okou-theme=v1.light";
+    }
+  });
+
+  await setupPage({ context, path: "/settings", host: "app.vm0.ai" });
+
+  await expect(
+    screen.findByText("Your preferred color scheme"),
+  ).resolves.toBeVisible();
+  expectSelected(getFastRole("button", "Light"));
+  expect(document.documentElement).toHaveAttribute("data-theme", "light");
+  expect(cookieWrites).toContain(
+    "__Secure-okou-theme=; Path=/; Max-Age=0; SameSite=Lax; Secure",
+  );
+  expect(cookieWrites).toContain(
+    "__Secure-okou-theme=v1.light; Domain=.vm0.ai; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
+  );
+});
