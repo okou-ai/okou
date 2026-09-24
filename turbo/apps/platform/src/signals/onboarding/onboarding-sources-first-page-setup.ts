@@ -45,7 +45,9 @@ import {
   claimSourcesFirstStartEvent$,
   clearSourcesFirstDraft$,
   restoreSourcesFirstDraft$,
+  saveSourcesFirstStep$,
   setSourcesFirstFlow$,
+  SOURCES_FIRST_STEP_ROUTES,
   sourcesFirstDraft$,
   sourcesFirstSteps,
   type SourcesFirstStep,
@@ -121,14 +123,23 @@ function createSourcesFirstPageSetup(
 
     const status = await get(onboardingStatus$);
     signal.throwIfAborted();
+    let resumeStep: SourcesFirstStep | null = null;
     if (status.hasOrg) {
       const { orgId, userId } = await get(authenticatedIdentity$);
       signal.throwIfAborted();
-      set(restoreSourcesFirstDraft$, { orgId, userId });
+      resumeStep = set(restoreSourcesFirstDraft$, { orgId, userId });
     }
     if (!status.needsOnboarding) {
       set(clearSourcesFirstDraft$);
       set(forwardOnboardedVisitor$);
+      return;
+    }
+    if (
+      config.step === "industry" &&
+      resumeStep !== null &&
+      resumeStep !== "industry"
+    ) {
+      set(redirectTo$, SOURCES_FIRST_STEP_ROUTES[resumeStep]);
       return;
     }
     set(resumeOnboardingRecommendation$, signal);
@@ -168,6 +179,7 @@ function createSourcesFirstPageSetup(
       return;
     }
 
+    set(saveSourcesFirstStep$, config.step);
     set(updatePage$, createElement(config.Page), "none");
     set(updateDocumentTitle$, config.title());
     // One integration's status decides what a step offers, never whether the
