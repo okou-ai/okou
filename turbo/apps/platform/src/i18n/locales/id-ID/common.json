@@ -4226,13 +4226,14 @@
         "skills": "Impor skill Anda",
         "slack": "Tambahkan Okou ke Slack",
         "sources": "Hubungkan pekerjaan Anda",
-        "team": "Undang rekan kerja"
+        "team": "Undang anggota tim"
       },
       "experience": {
-        "copy": "Hubungkan paket yang sudah Anda bayar dan pekerjaan Anda berjalan di sana, bukan memakai kredit Okou.",
-        "no": "Belum, ini yang pertama",
-        "noCopy": "Okou memilihkan tugas pertama untuk Anda.",
-        "title": "Pernah memakai Codex atau Claude Code?"
+        "copy": "Mulai dengan panduan, atau gunakan paket Codex atau Claude Code yang sudah Anda miliki.",
+        "no": "Saya baru mengenal agen AI",
+        "noCopy": "Okou membantu Anda memilih tugas pertama yang berguna.",
+        "title": "Bagaimana Anda ingin memulai dengan Okou?",
+        "trust": "Tugas berjalan dengan paket Codex atau Claude Code Anda, bukan kredit Okou, jadi Anda bisa melakukan lebih banyak tanpa khawatir soal pemakaian. Hubungkan sekarang atau nanti."
       },
       "industries": {
         "coaching": {
@@ -4281,7 +4282,7 @@
         }
       },
       "industry": {
-        "copy": "Okou memakai ini untuk memilih tugas pertama Anda dan sumber yang jadi titik awalnya.",
+        "copy": "Ini membantu Okou menampilkan alat yang relevan dan menyarankan tugas pertama yang sesuai dengan pekerjaan Anda.",
         "title": "Pekerjaan Anda seperti apa?"
       },
       "profile": {
@@ -4297,7 +4298,7 @@
       },
       "skills": {
         "copied": "Tersalin",
-        "copy": "Tempel prompt ini di sesi {{provider}} Anda sendiri, dan skill di komputer Anda akan masuk ke Okou.",
+        "copy": "Jalankan prompt ini di {{provider}} untuk mengimpor skill yang sudah Anda buat, agar Okou dapat langsung menggunakannya.",
         "copyError": "Prompt tidak dapat disalin.",
         "copyPrompt": "Salin prompt",
         "importedCopy": "Diimpor sebagai workflow Okou.",
@@ -4308,7 +4309,7 @@
         "promptLabel": "Prompt impor skill",
         "promptTitle": "Jalankan ini di {{provider}}",
         "startError": "Sesi impor tidak dapat dibuka.",
-        "title": "Bawa skill yang sudah Anda tulis.",
+        "title": "Bawa skill Anda ke Okou",
         "tryAgain": "Coba lagi",
         "waiting": "Skill yang diimpor muncul di sini begitu tiba."
       },
@@ -4320,7 +4321,7 @@
         "connectedCopy": "Buka Slack dan sebut @Okou untuk memberinya tugas.",
         "connectedStatus": "Ditambahkan ke workspace Anda",
         "connectedTitle": "Slack terhubung",
-        "copy": "Tambahkan sekali, lalu sebut @Okou di tempat pekerjaan sudah berjalan.",
+        "copy": "Sebut @Okou untuk memberinya tugas dan lihat hasilnya dalam percakapan tim yang sama.",
         "name": "Slack",
         "otherAdded": "Ditambahkan",
         "otherImessage": "iMessage",
@@ -4349,12 +4350,13 @@
         "previewWorkspace": "Northwind",
         "rowCopy": "Bekerja di kanal mana pun tempat Anda menambahkannya.",
         "rowTitle": "Okou for Slack",
-        "title": "Beri Okou pekerjaan tanpa meninggalkan Slack."
+        "title": "Teruskan pekerjaan di Slack"
       },
       "sources": {
-        "copy": "Ia bekerja di cloud, dari alat yang sudah dipakai tim Anda. Hasil 10x lipat, hambatan operasional lebih sedikit, biaya lebih rendah. Hubungkan satu sumber untuk memulai.",
-        "note": "Anda yang memilih akun mana yang dihubungkan.",
-        "title": "Okou untuk Anda, dan dipakai bersama seluruh tim."
+        "copy": "Semakin Okou memahami pekerjaan Anda, semakin cerdas ia bekerja. Hubungkan alat yang Anda gunakan setiap hari untuk memulai dengan tugas dari pekerjaan nyata Anda.",
+        "permissions": "Okou menggunakan sedikit sampel untuk menyesuaikan tugas pertama Anda. Anda yang menentukan apa yang dapat dilakukan Agent dan berapa lama.",
+        "securityLink": "Cara Okou melindungi data Anda",
+        "title": "Hubungkan alat kerja"
       },
       "startingPrompt": {
         "exact": {
@@ -4688,32 +4690,33 @@
         "connecting": "Menghubungkan…",
         "failedNote": "Kami tidak dapat menghubungkan {{provider}}. Coba lagi atau hubungkan nanti.",
         "retry": "Coba lagi",
-        "rowCopy": "Berjalan di paket Anda, bukan kredit Okou.",
+        "rowCopy": "Hubungkan agar tugas memakai paket Anda, bukan kredit Okou.",
         "unconfirmedNote": "Kami tidak dapat memeriksa koneksi {{provider}} Anda. Coba lagi atau hubungkan nanti."
       },
       "team": {
-        "copy": "Undang rekan kerja sekarang, atau nanti dari menu workspace.",
+        "copy": "Undang anggota tim untuk menjalankan alur kerja bersama.",
         "invite": "Kirim undangan",
         "invited": "Diundang",
-        "label": "Email rekan kerja",
-        "note": "Mereka bergabung ke workspace ini; akun mereka tetap milik mereka.",
+        "label": "Email anggota tim",
+        "note": "Mereka dapat langsung mulai bekerja dengan Okou.",
         "notSent": "Tidak terkirim",
-        "panelTitle": "Undang rekan kerja",
-        "placeholder": "teammate@company.com",
+        "panelTitle": "Undang anggota tim",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "Akun yang mereka hubungkan tetap milik mereka — tidak ada yang dibagikan tanpa mereka.",
-          "workflows": "Siapa pun di sini bisa menjalankan workflow yang sudah ada di workspace ini.",
-          "workspace": "Mereka masuk ke workspace ini, dengan sumber yang baru Anda hubungkan."
+          "accounts": "Menghubungkan alat mereka sendiri saat dibutuhkan.",
+          "workflows": "Dapat menjalankan semua alur kerja tim Anda.",
+          "workspace": "Bergabung ke workspace Anda."
         },
         "sending": "Mengirim…",
-        "title": "Bawa serta orang-orang yang mengerjakan ini bersama Anda."
+        "title": "Buat Okou berguna bagi seluruh tim Anda",
+        "trust": "Semua orang menggunakan alur kerja yang sama dan menghubungkan alat mereka sendiri."
       },
       "welcome": {
-        "copy": "Mulai dengan tugas pertama, dipilih untuk pekerjaan yang baru Anda hubungkan.",
+        "copy": "Tinjau tugas yang disarankan untuk pekerjaan Anda, sesuaikan dengan tujuan, lalu biarkan Okou memulai.",
         "offerTitle": "Satu jam pertama konsultasi gratis dari kami, plus hingga 100 kredit —",
         "promptLabel": "Prompt awal Anda",
         "start": "Mulai dengan Okou",
-        "title": "Okou siap untuk Anda"
+        "title": "Mulai dengan tugas yang berarti"
       }
     },
     "templatePicker": {

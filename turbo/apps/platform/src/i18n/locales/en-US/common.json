@@ -4232,13 +4232,14 @@
         "skills": "Import your skills",
         "slack": "Add Okou to Slack",
         "sources": "Connect your work",
-        "team": "Invite a teammate"
+        "team": "Invite a team member"
       },
       "experience": {
-        "copy": "Connect the plan you already pay for and your work runs there, not on Okou credits.",
-        "no": "No, I’m new to this",
-        "noCopy": "Okou picks a first task for you.",
-        "title": "Have you used Codex or Claude Code?"
+        "copy": "Start with guidance, or bring the Codex or Claude Code plan you already use.",
+        "no": "I'm new to AI agents",
+        "noCopy": "Okou helps you choose a useful first task.",
+        "title": "How would you like to start with Okou?",
+        "trust": "Run tasks on your Codex or Claude Code plan instead of Okou credits, so you can do more without worrying about usage. Connect now or later."
       },
       "industries": {
         "coaching": {
@@ -4287,7 +4288,7 @@
         }
       },
       "industry": {
-        "copy": "Okou uses this to pick your first task and the sources it starts from.",
+        "copy": "This helps Okou show relevant tools and suggest a first task that fits your work.",
         "title": "What kind of work do you do?"
       },
       "profile": {
@@ -4303,7 +4304,7 @@
       },
       "skills": {
         "copied": "Copied",
-        "copy": "Paste this prompt into your own {{provider}} session and it brings the skills on your machine into Okou.",
+        "copy": "Run this prompt in {{provider}} to import the skills you've already built, so Okou can use them from day one.",
         "copyError": "The prompt could not be copied.",
         "copyPrompt": "Copy prompt",
         "importedCopy": "Imported as an Okou workflow.",
@@ -4314,7 +4315,7 @@
         "promptLabel": "Skill import prompt",
         "promptTitle": "Run this in {{provider}}",
         "startError": "The import session could not be opened.",
-        "title": "Bring the skills you already wrote.",
+        "title": "Bring your existing skills into Okou",
         "tryAgain": "Try again",
         "waiting": "Imported skills appear here as they arrive."
       },
@@ -4326,7 +4327,7 @@
         "connectedCopy": "Open Slack and mention @Okou to give it a task.",
         "connectedStatus": "Added to your workspace",
         "connectedTitle": "Slack is connected",
-        "copy": "Add it once, then mention @Okou where the work already happens.",
+        "copy": "Mention @Okou to give it a task and keep the result in the same team conversation.",
         "name": "Slack",
         "otherAdded": "Added",
         "otherImessage": "iMessage",
@@ -4355,12 +4356,13 @@
         "previewWorkspace": "Northwind",
         "rowCopy": "Works in any channel you add it to.",
         "rowTitle": "Okou for Slack",
-        "title": "Give Okou a job without leaving Slack."
+        "title": "Keep work moving in Slack"
       },
       "sources": {
-        "copy": "It works in the cloud, from the tools your team already uses. 10x the output, less operational friction, lower cost. Connect one source to start.",
-        "note": "You choose which accounts to connect.",
-        "title": "Okou is for you, and shared across your whole team."
+        "copy": "The more Okou knows about your work, the smarter it gets. Connect a tool you use every day to start with a task built on your real work.",
+        "permissions": "Okou uses a small sample to tailor your first task. You decide what Agents can do and for how long.",
+        "securityLink": "How Okou protects your data",
+        "title": "Connect a work tool"
       },
       "startingPrompt": {
         "exact": {
@@ -4694,32 +4696,33 @@
         "connecting": "Connecting…",
         "failedNote": "We couldn’t connect {{provider}}. You can try again, or continue and connect it later.",
         "retry": "Try again",
-        "rowCopy": "Runs on your plan, not on Okou credits.",
+        "rowCopy": "Connect to run on your plan instead of Okou credits.",
         "unconfirmedNote": "We couldn’t check your {{provider}} connection. You can try again, or continue and connect it later."
       },
       "team": {
-        "copy": "Invite a teammate now, or do it later from the workspace menu.",
+        "copy": "Invite a team member to run shared workflows with you.",
         "invite": "Send invite",
         "invited": "Invited",
-        "label": "Teammate’s email",
-        "note": "They join this workspace; their own accounts stay theirs.",
+        "label": "Team member’s email",
+        "note": "They can start working with Okou right away.",
         "notSent": "Not sent",
-        "panelTitle": "Invite a teammate",
-        "placeholder": "teammate@company.com",
+        "panelTitle": "Invite a team member",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "Their connected accounts stay theirs — nothing is shared without them.",
-          "workflows": "Anyone here can run the workflows this workspace already has.",
-          "workspace": "They land in this workspace, with the sources you just connected."
+          "accounts": "They connect their own tools when they need them.",
+          "workflows": "They can run any workflow your team has built.",
+          "workspace": "They join your workspace."
         },
         "sending": "Sending…",
-        "title": "Bring the people who do this work with you."
+        "title": "Make Okou useful to your whole team",
+        "trust": "Everyone uses the same workflows and connects their own tools."
       },
       "welcome": {
-        "copy": "Start with a first task, picked for the work you just connected.",
+        "copy": "Review a suggested task for your work, adjust it to your goal, and let Okou get started.",
         "offerTitle": "First hour of consulting is on us, plus up to 100 credits —",
         "promptLabel": "Your starting prompt",
         "start": "Start with Okou",
-        "title": "Okou is ready for you"
+        "title": "Start with a task that matters"
       }
     },
     "templatePicker": {

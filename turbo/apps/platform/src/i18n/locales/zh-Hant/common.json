@@ -4226,13 +4226,14 @@
         "skills": "匯入你的技能",
         "slack": "把Okou新增到Slack",
         "sources": "連線你的工作",
-        "team": "邀請一位同事"
+        "team": "邀請團隊成員"
       },
       "experience": {
-        "copy": "連線你已經在付費的套餐，任務就在那邊執行，不消耗Okou積分。",
-        "no": "沒有，我剛開始接觸",
-        "noCopy": "Okou會幫你挑一個上手任務。",
-        "title": "你用過Codex或Claude Code嗎？"
+        "copy": "可以從引導開始，也可以連接你已有的 Codex 或 Claude Code 訂閱。",
+        "no": "我是 AI Agent 新手",
+        "noCopy": "Okou 會幫你找到合適的第一項任務。",
+        "title": "你想怎樣開始使用 Okou？",
+        "trust": "連接 Codex 或 Claude Code 訂閱後，任務使用你已有的額度，不消耗 Okou credits，可以放心多用。現在或以後連接都可以。"
       },
       "industries": {
         "coaching": {
@@ -4281,7 +4282,7 @@
         }
       },
       "industry": {
-        "copy": "Okou會據此挑選你的第一個任務，以及從哪些資料來源開始。",
+        "copy": "選擇你的工作領域，Okou 會據此推薦相關工具和適合你的第一項任務。",
         "title": "你主要做哪類工作？"
       },
       "profile": {
@@ -4297,7 +4298,7 @@
       },
       "skills": {
         "copied": "已複製",
-        "copy": "將此提示詞貼到你的{{provider}}會話中，它會把你本機的技能匯入Okou。",
+        "copy": "在 {{provider}} 中執行這段提示詞，匯入你已經寫好的技能，Okou 馬上就能用上。",
         "copyError": "無法複製提示詞。",
         "copyPrompt": "複製提示詞",
         "importedCopy": "已匯入為Okou工作流。",
@@ -4308,7 +4309,7 @@
         "promptLabel": "技能匯入提示詞",
         "promptTitle": "在{{provider}}中執行",
         "startError": "無法開啟匯入會話。",
-        "title": "把你已經寫好的技能帶過來。",
+        "title": "把你已有的技能匯入 Okou",
         "tryAgain": "重試",
         "waiting": "匯入的技能會在到達後顯示在這裡。"
       },
@@ -4320,7 +4321,7 @@
         "connectedCopy": "開啟Slack，@Okou就能派任務。",
         "connectedStatus": "已新增到你的工作區",
         "connectedTitle": "Slack已連線",
-        "copy": "新增一次，之後在工作發生的地方@Okou就行。",
+        "copy": "在對話中 @Okou 交代任務，團隊可以在同一處看到結果。",
         "name": "Slack",
         "otherAdded": "已新增",
         "otherImessage": "iMessage",
@@ -4349,12 +4350,13 @@
         "previewWorkspace": "Northwind",
         "rowCopy": "在你新增它的任何頻道里都能用。",
         "rowTitle": "Okou for Slack",
-        "title": "不用離開Slack，就能給Okou派活。"
+        "title": "在 Slack 中繼續推進工作"
       },
       "sources": {
-        "copy": "它在雲端執行，直接用你團隊已有的工具。產出提升10倍，協作更順，成本更低。先連線一個資料來源開始。",
-        "note": "連線哪些帳號，由你決定。",
-        "title": "Okou為你所用，也服務你的整個團隊。"
+        "copy": "Okou 越了解你的工作，就越聰明。連接一個你每天在用的工具，從一項基於真實工作的任務開始。",
+        "permissions": "Okou 會參考少量資訊為你量身打造第一項任務；Agent 能做什麼、授權多久，都由你決定。",
+        "securityLink": "瞭解 Okou 如何保護你的資料",
+        "title": "連接一個工作工具"
       },
       "startingPrompt": {
         "exact": {
@@ -4688,32 +4690,33 @@
         "connecting": "連線中…",
         "failedNote": "無法連線{{provider}}。你可以重試，也可以先繼續，稍後再連線。",
         "retry": "重試",
-        "rowCopy": "用你自己的套餐執行，不消耗Okou積分。",
+        "rowCopy": "連接後可使用你的方案執行，不消耗 Okou 點數。",
         "unconfirmedNote": "無法確認{{provider}}的連線狀態。你可以重試，也可以先繼續，稍後再連線。"
       },
       "team": {
-        "copy": "現在就邀請同事，也可以稍後從工作區選單邀請。",
+        "copy": "邀請團隊成員，一起使用共享的工作流程。",
         "invite": "傳送邀請",
         "invited": "已邀請",
-        "label": "同事的郵箱",
-        "note": "他們會加入這個工作區，各自的帳號仍歸自己所有。",
+        "label": "團隊成員的電子郵件",
+        "note": "他們可以馬上開始使用 Okou。",
         "notSent": "未傳送",
-        "panelTitle": "邀請同事",
-        "placeholder": "teammate@company.com",
+        "panelTitle": "邀請團隊成員",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "他們連線的帳號仍歸自己所有——未經他們同意不會共享任何內容。",
-          "workflows": "這裡的每個人都能執行工作區裡已有的工作流。",
-          "workspace": "他們會直接進入這個工作區，用上你剛剛連線的資料來源。"
+          "accounts": "需要時連接自己的工具。",
+          "workflows": "可以執行團隊已建立的所有工作流程。",
+          "workspace": "加入你的工作區。"
         },
         "sending": "傳送中…",
-        "title": "把一起做這些事的同事帶進來。"
+        "title": "讓整個團隊一起用好 Okou",
+        "trust": "大家使用同一套工作流程，各自連接自己的工具。"
       },
       "welcome": {
-        "copy": "從第一個任務開始，它是照著你剛連線的工作內容挑的。",
+        "copy": "看看為你的工作推薦的任務，按目標調整，再讓 Okou 開始執行。",
         "offerTitle": "首小時諮詢免費，另贈最多100積分——",
         "promptLabel": "你的起始提示詞",
         "start": "開始使用Okou",
-        "title": "Okou已經準備好了"
+        "title": "從一項有價值的任務開始"
       }
     },
     "templatePicker": {

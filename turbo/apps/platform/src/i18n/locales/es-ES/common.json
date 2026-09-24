@@ -4296,13 +4296,14 @@
         "skills": "Importa tus skills",
         "slack": "Añadir Okou a Slack",
         "sources": "Conecta tu trabajo",
-        "team": "Invita a alguien del equipo"
+        "team": "Invitar a un miembro del equipo"
       },
       "experience": {
-        "copy": "Conecta el plan que ya pagas y tu trabajo se ejecuta ahí, no con créditos de Okou.",
-        "no": "No, es nuevo para mí",
-        "noCopy": "Okou elige una primera tarea por ti.",
-        "title": "¿Has usado Codex o Claude Code?"
+        "copy": "Empieza con ayuda o trae el plan de Codex o Claude Code que ya utilizas.",
+        "no": "Soy nuevo en los agentes de IA",
+        "noCopy": "Okou te ayuda a encontrar una primera tarea útil.",
+        "title": "¿Cómo quieres empezar con Okou?",
+        "trust": "Las tareas se ejecutan con tu plan de Codex o Claude Code en lugar de créditos de Okou, así puedes hacer más sin preocuparte por el consumo. Conéctalo ahora o más adelante."
       },
       "industries": {
         "coaching": {
@@ -4351,7 +4352,7 @@
         }
       },
       "industry": {
-        "copy": "Okou lo usa para elegir tu primera tarea y las fuentes desde las que empieza.",
+        "copy": "Así Okou puede mostrarte herramientas relevantes y sugerir una primera tarea adaptada a tu trabajo.",
         "title": "¿A qué tipo de trabajo te dedicas?"
       },
       "profile": {
@@ -4367,7 +4368,7 @@
       },
       "skills": {
         "copied": "Copiado",
-        "copy": "Pega este prompt en tu propia sesión de {{provider}} y traerá a Okou las skills de tu ordenador.",
+        "copy": "Ejecuta este prompt en {{provider}} para importar las skills que ya has creado y que Okou pueda usarlas desde el primer día.",
         "copyError": "No se pudo copiar el prompt.",
         "copyPrompt": "Copiar prompt",
         "importedCopy": "Importado como workflow de Okou.",
@@ -4378,7 +4379,7 @@
         "promptLabel": "Prompt de importación de skills",
         "promptTitle": "Ejecuta esto en {{provider}}",
         "startError": "No se pudo abrir la sesión de importación.",
-        "title": "Trae las skills que ya escribiste.",
+        "title": "Trae tus skills a Okou",
         "tryAgain": "Intentar de nuevo",
         "waiting": "Las skills importadas aparecen aquí a medida que llegan."
       },
@@ -4390,7 +4391,7 @@
         "connectedCopy": "Abre Slack y menciona a @Okou para encargarle una tarea.",
         "connectedStatus": "Añadido a tu workspace",
         "connectedTitle": "Slack está conectado",
-        "copy": "Añádelo una vez y menciona a @Okou donde ya ocurre el trabajo.",
+        "copy": "Menciona a @Okou para encargarle una tarea y compartir el resultado en la misma conversación.",
         "name": "Slack",
         "otherAdded": "Añadido",
         "otherImessage": "iMessage",
@@ -4419,12 +4420,13 @@
         "previewWorkspace": "Northwind",
         "rowCopy": "Funciona en cualquier canal donde lo añadas.",
         "rowTitle": "Okou for Slack",
-        "title": "Encárgale trabajo a Okou sin salir de Slack."
+        "title": "Sigue trabajando desde Slack"
       },
       "sources": {
-        "copy": "Trabaja en la nube, desde las herramientas que tu equipo ya usa. 10 veces más resultados, menos fricción operativa, menor coste. Conecta una fuente para empezar.",
-        "note": "Tú eliges qué cuentas conectar.",
-        "title": "Okou es para ti, y se comparte con todo tu equipo."
+        "copy": "Cuanto más sabe Okou de tu trabajo, más inteligente se vuelve. Conecta una herramienta que uses a diario y empieza con una tarea basada en tu trabajo real.",
+        "permissions": "Okou usa una pequeña muestra para adaptar tu primera tarea. Tú decides qué pueden hacer los Agents y durante cuánto tiempo.",
+        "securityLink": "Cómo protege Okou tus datos",
+        "title": "Conecta una herramienta de trabajo"
       },
       "startingPrompt": {
         "exact": {
@@ -4758,32 +4760,33 @@
         "connecting": "Conectando…",
         "failedNote": "No hemos podido conectar {{provider}}. Puedes volver a intentarlo o conectarlo más tarde.",
         "retry": "Volver a intentarlo",
-        "rowCopy": "Se ejecuta en tu plan, no con créditos de Okou.",
+        "rowCopy": "Conéctalo para ejecutar tareas con tu plan en lugar de créditos de Okou.",
         "unconfirmedNote": "No hemos podido comprobar tu conexión con {{provider}}. Puedes volver a intentarlo o conectarlo más tarde."
       },
       "team": {
-        "copy": "Invita a alguien ahora, o hazlo luego desde el menú del workspace.",
+        "copy": "Invita a un miembro del equipo a usar contigo los flujos de trabajo compartidos.",
         "invite": "Enviar invitación",
         "invited": "Invitado",
-        "label": "Correo de tu compañero",
-        "note": "Se unen a este workspace; sus cuentas siguen siendo suyas.",
+        "label": "Correo del miembro del equipo",
+        "note": "Podrá empezar a trabajar con Okou de inmediato.",
         "notSent": "No enviada",
-        "panelTitle": "Invita a alguien del equipo",
-        "placeholder": "teammate@company.com",
+        "panelTitle": "Invitar a un miembro del equipo",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "Sus cuentas conectadas siguen siendo suyas: no se comparte nada sin ellos.",
-          "workflows": "Cualquiera aquí puede ejecutar los workflows que ya tiene este workspace.",
-          "workspace": "Entran en este workspace, con las fuentes que acabas de conectar."
+          "accounts": "Conecta sus propias herramientas cuando las necesite.",
+          "workflows": "Puede ejecutar cualquier flujo de trabajo de tu equipo.",
+          "workspace": "Se une a tu espacio de trabajo."
         },
         "sending": "Enviando…",
-        "title": "Trae a la gente que hace este trabajo contigo."
+        "title": "Haz que Okou sea útil para todo tu equipo",
+        "trust": "Todos usan los mismos flujos de trabajo y conectan sus propias herramientas."
       },
       "welcome": {
-        "copy": "Empieza con una primera tarea, elegida para el trabajo que acabas de conectar.",
+        "copy": "Revisa una tarea sugerida para tu trabajo, ajústala a tu objetivo y deja que Okou empiece.",
         "offerTitle": "La primera hora de consultoría corre de nuestra cuenta, más hasta 100 créditos —",
         "promptLabel": "Tu prompt inicial",
         "start": "Empezar con Okou",
-        "title": "Okou está listo para ti"
+        "title": "Empieza con una tarea que importe"
       }
     },
     "templatePicker": {

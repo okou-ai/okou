@@ -20,7 +20,7 @@ import {
 
 const context = testContext();
 
-const SLACK_QUESTION = "Give Okou a job without leaving Slack.";
+const SLACK_QUESTION = "Keep work moving in Slack";
 const IMESSAGE_TILE = "iMessage";
 const CONNECTION_CODE = "12345678";
 

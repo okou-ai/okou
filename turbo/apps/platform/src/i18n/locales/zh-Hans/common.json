@@ -4226,13 +4226,14 @@
         "skills": "导入你的技能",
         "slack": "把Okou添加到Slack",
         "sources": "连接你的工作",
-        "team": "邀请一位同事"
+        "team": "邀请团队成员"
       },
       "experience": {
-        "copy": "连接你已经在付费的套餐，任务就在那边运行，不消耗Okou积分。",
-        "no": "没有，我刚开始接触",
-        "noCopy": "Okou会帮你挑一个上手任务。",
-        "title": "你用过Codex或Claude Code吗？"
+        "copy": "可以从引导开始，也可以接入你已有的 Codex 或 Claude Code 订阅。",
+        "no": "我是 AI Agent 新手",
+        "noCopy": "Okou 会帮你找到合适的第一项任务。",
+        "title": "你想怎样开始使用 Okou？",
+        "trust": "连接 Codex 或 Claude Code 订阅后，任务使用你已有的额度，不消耗 Okou credits，可以放心多用。现在或以后连接都可以。"
       },
       "industries": {
         "coaching": {
@@ -4281,7 +4282,7 @@
         }
       },
       "industry": {
-        "copy": "Okou会据此挑选你的第一个任务，以及从哪些数据源开始。",
+        "copy": "选择你的工作领域，Okou 会据此推荐相关工具和适合你的第一项任务。",
         "title": "你主要做哪类工作？"
       },
       "profile": {
@@ -4297,7 +4298,7 @@
       },
       "skills": {
         "copied": "已复制",
-        "copy": "将此提示词粘贴到你的{{provider}}会话中，它会把你本机的技能导入Okou。",
+        "copy": "在 {{provider}} 中运行这段提示词，导入你已经写好的技能，Okou 马上就能用上。",
         "copyError": "无法复制提示词。",
         "copyPrompt": "复制提示词",
         "importedCopy": "已导入为Okou工作流。",
@@ -4308,7 +4309,7 @@
         "promptLabel": "技能导入提示词",
         "promptTitle": "在{{provider}}中运行",
         "startError": "无法打开导入会话。",
-        "title": "把你已经写好的技能带过来。",
+        "title": "把你已有的技能导入 Okou",
         "tryAgain": "重试",
         "waiting": "导入的技能会在到达后显示在这里。"
       },
@@ -4320,7 +4321,7 @@
         "connectedCopy": "打开Slack，@Okou就能派任务。",
         "connectedStatus": "已添加到你的工作区",
         "connectedTitle": "Slack已连接",
-        "copy": "添加一次，之后在工作发生的地方@Okou就行。",
+        "copy": "在对话中 @Okou 交代任务，团队可以在同一处看到结果。",
         "name": "Slack",
         "otherAdded": "已添加",
         "otherImessage": "iMessage",
@@ -4349,12 +4350,13 @@
         "previewWorkspace": "Northwind",
         "rowCopy": "在你添加它的任何频道里都能用。",
         "rowTitle": "Okou for Slack",
-        "title": "不用离开Slack，就能给Okou派活。"
+        "title": "在 Slack 中继续推进工作"
       },
       "sources": {
-        "copy": "它在云端运行，直接用你团队已有的工具。产出提升10倍，协作更顺，成本更低。先连接一个数据源开始。",
-        "note": "连接哪些账号，由你决定。",
-        "title": "Okou为你所用，也服务你的整个团队。"
+        "copy": "Okou 越了解你的工作，就越聪明。连接一个你每天在用的工具，从一项基于真实工作的任务开始。",
+        "permissions": "Okou 会参考少量信息为你定制第一项任务；Agent 能做什么、授权多久，都由你决定。",
+        "securityLink": "了解 Okou 如何保护你的数据",
+        "title": "连接一个工作工具"
       },
       "startingPrompt": {
         "exact": {
@@ -4688,32 +4690,33 @@
         "connecting": "连接中…",
         "failedNote": "无法连接{{provider}}。你可以重试，也可以先继续，稍后再连接。",
         "retry": "重试",
-        "rowCopy": "用你自己的套餐运行，不消耗Okou积分。",
+        "rowCopy": "连接后可使用你的套餐运行，不消耗 Okou 积分。",
         "unconfirmedNote": "无法确认{{provider}}的连接状态。你可以重试，也可以先继续，稍后再连接。"
       },
       "team": {
-        "copy": "现在就邀请同事，也可以稍后从工作区菜单邀请。",
+        "copy": "邀请团队成员，一起使用共享的工作流。",
         "invite": "发送邀请",
         "invited": "已邀请",
-        "label": "同事的邮箱",
-        "note": "他们会加入这个工作区，各自的账号仍归自己所有。",
+        "label": "团队成员的邮箱",
+        "note": "他们可以马上开始使用 Okou。",
         "notSent": "未发送",
-        "panelTitle": "邀请同事",
-        "placeholder": "teammate@company.com",
+        "panelTitle": "邀请团队成员",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "他们连接的账号仍归自己所有——未经他们同意不会共享任何内容。",
-          "workflows": "这里的每个人都能运行工作区里已有的工作流。",
-          "workspace": "他们会直接进入这个工作区，用上你刚刚连接的数据源。"
+          "accounts": "需要时连接自己的工具。",
+          "workflows": "可以运行团队已搭建的所有工作流。",
+          "workspace": "加入你的工作区。"
         },
         "sending": "发送中…",
-        "title": "把一起做这些事的同事带进来。"
+        "title": "让整个团队一起用好 Okou",
+        "trust": "大家使用同一套工作流，各自连接自己的工具。"
       },
       "welcome": {
-        "copy": "从第一个任务开始，它是照着你刚连接的工作内容挑的。",
+        "copy": "看看为你的工作推荐的任务，按目标调整，再让 Okou 开始执行。",
         "offerTitle": "首小时咨询免费，另赠最多100积分——",
         "promptLabel": "你的起始提示词",
         "start": "开始使用Okou",
-        "title": "Okou已经准备好了"
+        "title": "从一项有价值的任务开始"
       }
     },
     "templatePicker": {
