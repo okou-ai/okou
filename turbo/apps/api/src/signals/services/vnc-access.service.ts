@@ -189,7 +189,7 @@ export async function listRunVncHosts(
   return {
     hosts: rows.flatMap((row) => {
       return row.id === null ||
-        (row.transportType === "ssh" && row.sshNeedsRebind !== false) ||
+        (row.transportType === "ssh" && row.sshNeedsRebind === null) ||
         (threadMode && row.transportType === "ssh" && !row.sshAllowed)
         ? []
         : [
@@ -200,6 +200,10 @@ export async function listRunVncHosts(
               port: row.port,
               authMethod: row.authMethod,
               securityType: row.securityType,
+              availability:
+                row.transportType === "ssh" && row.sshNeedsRebind
+                  ? { status: "blocked", reason: "needs_rebind" }
+                  : { status: "ready" },
             }),
           ];
     }),

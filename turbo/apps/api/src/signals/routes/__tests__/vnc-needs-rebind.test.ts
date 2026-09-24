@@ -133,10 +133,13 @@ describe("VNC depends on current SSH binding", () => {
           exp: seconds + 3600,
         })}`,
       };
-      const listIds = async () => {
+      const listHosts = async () => {
         return (
           await accept(inventory().list({ headers: guestHeaders }), [200])
-        ).body.hosts
+        ).body.hosts;
+      };
+      const listIds = async () => {
+        return (await listHosts())
           .map(({ id }) => {
             return id;
           })
@@ -167,6 +170,12 @@ describe("VNC depends on current SSH binding", () => {
 
       await expect(listIds()).resolves.toStrictEqual(
         [f.connectionId, target.connectionId].sort(),
+      );
+      await expect(listHosts()).resolves.toContainEqual(
+        expect.objectContaining({
+          id: target.connectionId,
+          availability: { status: "ready" },
+        }),
       );
       await expect(
         api.resolve(target, { supportedProfiles: [...vncTransportProfiles] }),
@@ -233,7 +242,21 @@ describe("VNC depends on current SSH binding", () => {
           )
         ).body.connections,
       ).toContainEqual(expect.objectContaining({ id: target.connectionId }));
-      await expect(listIds()).resolves.toStrictEqual([f.connectionId]);
+      await expect(listIds()).resolves.toStrictEqual(
+        [f.connectionId, target.connectionId].sort(),
+      );
+      await expect(listHosts()).resolves.toContainEqual(
+        expect.objectContaining({
+          id: target.connectionId,
+          availability: { status: "blocked", reason: "needs_rebind" },
+        }),
+      );
+      await expect(listHosts()).resolves.toContainEqual(
+        expect.objectContaining({
+          id: f.connectionId,
+          availability: { status: "ready" },
+        }),
+      );
       const kms = useSecretKmsProbe();
       await expect(
         api.resolve(target, { supportedProfiles: [...vncTransportProfiles] }),
@@ -258,6 +281,12 @@ describe("VNC depends on current SSH binding", () => {
       );
       await expect(listIds()).resolves.toStrictEqual(
         [f.connectionId, target.connectionId].sort(),
+      );
+      await expect(listHosts()).resolves.toContainEqual(
+        expect.objectContaining({
+          id: target.connectionId,
+          availability: { status: "ready" },
+        }),
       );
       await expect(
         api.resolve(target, { supportedProfiles: [...vncTransportProfiles] }),
