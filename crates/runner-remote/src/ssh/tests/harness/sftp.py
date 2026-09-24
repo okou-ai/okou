@@ -139,7 +139,7 @@ while True:
                 file_status(request, 3)
             else:
                 assert os.pwrite(fd, value, offset) == len(value)
-                if mode == "lost-write":
+                if mode == "lost-write" and offset >= 32768:
                     break
                 if mode == "mismatched-file":
                     file_status(request + 1000, 0)

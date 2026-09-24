@@ -204,21 +204,29 @@ async fn acknowledge_writes<S: AsyncRead + AsyncWrite + Unpin>(
     // Drain the whole batch so a normal status error still leaves a usable
     // channel for private staging cleanup. Transport/protocol errors poison it.
     let mut replies = BTreeMap::new();
+    let mut acknowledged = 0;
+    let mut failure = None;
     for _ in 0..pending.len() {
         let (id, reply) = client.receive_file().await?;
         replies.insert(id, reply);
-    }
-    for (id, bytes) in pending.drain(..) {
-        match replies.remove(&id) {
-            Some(FileReply::Write(Ok(()))) => {
-                hash.update(&bytes);
-                outcome.bytes += bytes.len() as u64;
+        while failure.is_none() && acknowledged < pending.len() {
+            let Some((next_id, bytes)) = pending.get(acknowledged) else {
+                return Err(FailureReason::Protocol.into());
+            };
+            match replies.remove(next_id) {
+                Some(FileReply::Write(Ok(()))) => {
+                    hash.update(bytes);
+                    outcome.bytes += bytes.len() as u64;
+                    acknowledged += 1;
+                }
+                Some(FileReply::Write(Err(error))) => failure = Some(error.into()),
+                Some(_) => failure = Some(FailureReason::Protocol.into()),
+                None => break,
             }
-            Some(FileReply::Write(Err(error))) => return Err(error.into()),
-            _ => return Err(FailureReason::Protocol.into()),
         }
     }
-    Ok(())
+    pending.clear();
+    failure.map_or(Ok(()), Err)
 }
 
 async fn download<S, W>(
