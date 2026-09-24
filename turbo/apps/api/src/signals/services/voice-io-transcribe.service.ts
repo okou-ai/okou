@@ -166,7 +166,6 @@ async function voiceAudio(
   signal.throwIfAborted();
   return {
     data: Buffer.from(bytes).toString("base64"),
-    format: "wav",
   };
 }
 

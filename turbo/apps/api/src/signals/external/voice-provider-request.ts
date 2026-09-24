@@ -12,7 +12,6 @@ const RECOVERY_BUDGET_MS = 15_000;
 const INITIAL_BACKOFF_MS = 1000;
 
 interface VoiceProviderContext {
-  readonly provider: "vertex";
   readonly model: string;
   readonly responseSchema?: string;
 }

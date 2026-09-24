@@ -93,71 +93,43 @@ type PolishedTranscript = z.infer<typeof polishedResponseSchema>;
 function transcriptJsonSchema(): VoiceJsonSchema {
   return {
     name: "voice_transcript",
-    strict: true,
-    schema: {
-      type: "object",
-      properties: {
-        transcript: {
-          type: "string",
-          description:
-            "Faithful transcription of new AUDIO in the languages actually spoken, preserving mixed-language words without translation and excluding only overlap already in SAVED_TRANSCRIPT.",
-          minLength: 1,
-          maxLength: VOICE_IO_POLISH_MAX_TEXT_CHARS,
-        },
-        language: { type: "string", minLength: 1, maxLength: 64 },
+    properties: {
+      transcript: {
+        description:
+          "Faithful transcription of new AUDIO in the languages actually spoken, preserving mixed-language words without translation and excluding only overlap already in SAVED_TRANSCRIPT.",
       },
-      required: ["transcript", "language"],
-      additionalProperties: false,
+      language: {},
     },
+    required: ["transcript", "language"],
   };
 }
 
 function transcribeAndPolishJsonSchema(): VoiceJsonSchema {
   return {
     name: "voice_transcript_and_polish",
-    strict: true,
-    schema: {
-      type: "object",
-      properties: {
-        transcript: {
-          type: "string",
-          minLength: 1,
-          maxLength: VOICE_IO_POLISH_MAX_TEXT_CHARS,
-        },
-        polishedText: {
-          type: "string",
-          description:
-            "The complete recording made send-ready in EXACTLY the same languages as transcript and SAVED_TRANSCRIPT. This is editing, never translation: Chinese stays Chinese, English stays English, and mixed-language words remain in their original languages. Include all of SAVED_TRANSCRIPT followed by new speech from AUDIO; never return only the final audio segment when earlier speech exists.",
-          minLength: 1,
-          maxLength: VOICE_IO_POLISH_MAX_TEXT_CHARS,
-        },
-        language: { type: "string", minLength: 1, maxLength: 64 },
+    properties: {
+      transcript: {},
+      polishedText: {
+        description:
+          "The complete recording made send-ready in EXACTLY the same languages as transcript and SAVED_TRANSCRIPT. This is editing, never translation: Chinese stays Chinese, English stays English, and mixed-language words remain in their original languages. Include all of SAVED_TRANSCRIPT followed by new speech from AUDIO; never return only the final audio segment when earlier speech exists.",
       },
-      required: ["transcript", "polishedText", "language"],
-      additionalProperties: false,
+      language: {},
     },
+    required: ["transcript", "polishedText", "language"],
   };
 }
 
 function polishedJsonSchema(): VoiceJsonSchema {
   return {
     name: "polished_voice_transcript",
-    strict: true,
-    schema: {
-      type: "object",
-      properties: {
-        polishedText: {
-          type: "string",
-          description:
-            "The complete transcript lightly edited in its original languages. Never translate it into English or any other language; preserve every language switch and embedded foreign-language word.",
-          minLength: 1,
-          maxLength: VOICE_IO_POLISH_MAX_TEXT_CHARS,
-        },
-        language: { type: "string", minLength: 1, maxLength: 64 },
+    properties: {
+      polishedText: {
+        description:
+          "The complete transcript lightly edited in its original languages. Never translate it into English or any other language; preserve every language switch and embedded foreign-language word.",
       },
-      required: ["polishedText", "language"],
-      additionalProperties: false,
+      language: {},
     },
+    required: ["polishedText", "language"],
   };
 }
 
