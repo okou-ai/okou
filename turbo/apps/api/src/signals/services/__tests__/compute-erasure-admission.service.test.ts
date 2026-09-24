@@ -2808,7 +2808,23 @@ describe("actual compute transactions versus the B1 projector", () => {
           const result = await writing;
           expect(result.ok).toBeTruthy();
           if (stage === "claim") {
-            expect(result).toMatchObject({ ok: true, value: ineligible(f) });
+            if (!result.ok) {
+              throw result.error;
+            }
+            if (result.value.status !== 200) {
+              throw new Error("Expected an activity summary response");
+            }
+            expect(result.value.body).toMatchObject({
+              runId: f.runId,
+              messages: [],
+            });
+            // The optional claim can exhaust its 250 ms lock deadline before
+            // closure commits. Either empty response is safe for that request;
+            // a fresh request must observe the committed closure.
+            expect(["ineligible", "unavailable"]).toContain(
+              result.value.body.status,
+            );
+            await expect(summarize(f)).resolves.toMatchObject(ineligible(f));
           }
           await expect(snapshot(f)).resolves.toHaveLength(0);
           await expect(contentState(f)).resolves.toStrictEqual(required);
