@@ -412,7 +412,7 @@ async function setupOwner(): Promise<Fixture> {
   await updateFeatureSwitchesForUser(
     context,
     { orgId: actor.orgId, userId: actor.userId },
-    { [FeatureSwitchKey.SimpleMorningBrief]: true },
+    { [FeatureSwitchKey.NativeMorningBrief]: true },
   );
   const membershipId = `orgmem_${randomUUID()}`;
   return {
@@ -758,7 +758,7 @@ describe("Morning Brief Gmail collection preview", () => {
     await updateFeatureSwitchesForUser(
       context,
       { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
-      { [FeatureSwitchKey.SimpleMorningBrief]: false },
+      { [FeatureSwitchKey.NativeMorningBrief]: false },
     );
     const switchOff = await collect(fixture, [404]);
     expect(switchOff.status).toBe(404);
@@ -784,7 +784,7 @@ describe("Morning Brief Gmail collection preview", () => {
     await updateFeatureSwitchesForUser(
       context,
       { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
-      { [FeatureSwitchKey.SimpleMorningBrief]: false },
+      { [FeatureSwitchKey.NativeMorningBrief]: false },
     );
     const switchedOff = await collect(fixture, [403]);
     expect(switchedOff.status).toBe(403);
@@ -792,7 +792,7 @@ describe("Morning Brief Gmail collection preview", () => {
     await updateFeatureSwitchesForUser(
       context,
       { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
-      { [FeatureSwitchKey.SimpleMorningBrief]: true },
+      { [FeatureSwitchKey.NativeMorningBrief]: true },
     );
     await setMorningBriefEnabledFixture(fixture.workflowId, false);
     const disabled = await collect(fixture, [403]);
@@ -810,7 +810,7 @@ describe("Morning Brief Gmail collection preview", () => {
     await updateFeatureSwitchesForUser(
       context,
       { orgId: actor.orgId, userId: actor.userId },
-      { [FeatureSwitchKey.SimpleMorningBrief]: true },
+      { [FeatureSwitchKey.NativeMorningBrief]: true },
     );
     const response = await collect(
       { actor: { ...actor, orgId: actor.orgId }, membershipId: "orgmem_none" },

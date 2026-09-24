@@ -3262,7 +3262,7 @@ backfill, `LOCK TABLE` or historical scan, so apply it before promoting API
 code. An older API neither reads nor writes the table, and a rollback leaves it
 in place holding only derived rows.
 
-`FeatureSwitchKey.SimpleMorningBrief` stays off by default. While it is off the
+`FeatureSwitchKey.NativeMorningBrief` stays off by default. While it is off the
 Settings read and write paths behave exactly as before; turning it on makes the
 Settings writers copy the member's installed state into the projection and lets
 the Settings GET answer from that copy. Turning it back off immediately restores
@@ -3324,7 +3324,7 @@ switch is only half the story:
 - **New code before migration** reaches the table from two places. The collector
   itself is registered in the deployed route table but is gated by the
   development / protected-preview environment check and by the default-off
-  `FeatureSwitchKey.SimpleMorningBrief`, so it cannot run in production at all.
+  `FeatureSwitchKey.NativeMorningBrief`, so it cannot run in production at all.
   The cleanup revocation added to membership, user and organization deletion is
   **unconditional** — it is a `DELETE` that runs whenever those webhooks fire,
   with no feature check in front of it. A default-off switch does not protect
@@ -3429,7 +3429,7 @@ found no occurrence to delete, and long before the member row itself is removed.
 - **New code before migration** must not be promoted. Membership, user and
   organization cleanup write this column **unconditionally**, in the same
   transaction that already revokes run authority, with no feature check in front
-  of it; the default-off `simpleMorningBrief` switch does not protect it.
+  of it; the default-off `FeatureSwitchKey.NativeMorningBrief` switch does not protect it.
   Promoting the API artifact before migration 1154 has shipped would make those
   Clerk cleanup webhooks fail with `42703`. Claiming and finalizing read the
   column in the same unconditional statement that locks the member row.

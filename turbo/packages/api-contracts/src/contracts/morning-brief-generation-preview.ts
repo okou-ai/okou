@@ -11,7 +11,7 @@ const c = initContract();
  *
  * It ships in the ordinary API route table and is reachable on a development
  * server and on a protected preview deployment; production answers 404 through
- * the environment gate even when `simpleMorningBrief` is on for the caller. The
+ * the environment gate even when `FeatureSwitchKey.NativeMorningBrief` is on for the caller. The
  * caller is an ordinary authenticated member acting on their own organization
  * and user, and the single input is a scheduled anchor. No owner, account,
  * model, prompt, source bundle or credential can be supplied.

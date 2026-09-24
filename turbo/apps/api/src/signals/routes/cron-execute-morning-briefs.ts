@@ -8,10 +8,7 @@ import {
   dispatchNativeMorningBriefTick$,
   executeNativeMorningBriefTick$,
 } from "../services/morning-brief-native-executor.service";
-import {
-  dispatchNativeWorker,
-  nativeHttpFanoutEnabled,
-} from "../services/morning-brief-native-dispatch.service";
+import { dispatchNativeWorker } from "../services/morning-brief-native-dispatch.service";
 import {
   executeNativeMorningBriefSlot$,
   productionNativeTickDependencies,
@@ -28,13 +25,13 @@ import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
  */
 function createExecuteMorningBriefsRoute(
   scope?: MorningBriefMemberIdentity,
+  inlineTestOnly = false,
 ): RouteEntry["handler"] {
   return command(async ({ get, set }, signal: AbortSignal) => {
     if (!get(hasValidCronSecret$)) {
       return cronUnauthorized();
     }
 
-    const fanout = nativeHttpFanoutEnabled();
     const db = set(writeDb$);
     const deps = productionNativeTickDependencies({
       db,
@@ -61,13 +58,15 @@ function createExecuteMorningBriefsRoute(
         },
       },
     });
-    const result = fanout
-      ? await set(
+    // The deployed Cron always dispatches. The inline test route keeps the
+    // existing slot-engine regression suite without a second production mode.
+    const result = inlineTestOnly
+      ? await set(executeNativeMorningBriefTick$, deps, signal)
+      : await set(
           dispatchNativeMorningBriefTick$,
           { deps, dispatch: dispatchNativeWorker },
           signal,
-        )
-      : await set(executeNativeMorningBriefTick$, deps, signal);
+        );
     signal.throwIfAborted();
 
     return { status: 200 as const, body: result };
@@ -91,4 +90,11 @@ export function createScopedMorningBriefCronRoutesForTest(
   owner: MorningBriefMemberIdentity,
 ): readonly RouteEntry[] {
   return routesFor(createExecuteMorningBriefsRoute(owner));
+}
+
+/** Exercise the slot engine's original inline path without registering it in production. */
+export function createScopedInlineMorningBriefCronRoutesForTest(
+  owner: MorningBriefMemberIdentity,
+): readonly RouteEntry[] {
+  return routesFor(createExecuteMorningBriefsRoute(owner, true));
 }

@@ -441,7 +441,7 @@ export const morningBriefPreference$ = command(
     signal.throwIfAborted();
     if (
       !isFeatureEnabled(
-        FeatureSwitchKey.SimpleMorningBrief,
+        FeatureSwitchKey.NativeMorningBrief,
         featureSwitchContext,
       )
     ) {

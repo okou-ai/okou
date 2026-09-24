@@ -175,14 +175,11 @@ runs:
         machine_secret_key="$(repo_secret OKOU_MACHINE_SECRET_KEY)"
         api_backend_url="$INPUT_API_BACKEND_URL"
         pi_memory_background_workers_enabled=""
-        morning_brief_http_fanout=""
         if [[ "$INPUT_APP" == "api" ]]; then
           if [[ "$INPUT_ENVIRONMENT" == "production" ]]; then
             pi_memory_background_workers_enabled="$(boolean_repo_var PI_MEMORY_BACKGROUND_WORKERS_ENABLED)"
-            morning_brief_http_fanout="$(boolean_repo_var MORNING_BRIEF_HTTP_FANOUT)"
           else
             pi_memory_background_workers_enabled="false"
-            morning_brief_http_fanout="false"
           fi
         fi
 
@@ -257,7 +254,6 @@ runs:
           add_env ENV "$deploy_env"
           add_env CLI_PKG_URL "$INPUT_CLI_PKG_URL"
           add_env PI_MEMORY_BACKGROUND_WORKERS_ENABLED "$pi_memory_background_workers_enabled"
-          add_env MORNING_BRIEF_HTTP_FANOUT "$morning_brief_http_fanout"
           if [[ "$INPUT_ENVIRONMENT" == "production" ]]; then
             add_secret CLOUDFLARE_BROWSER_RENDERING_API_TOKEN CLOUDFLARE_BROWSER_RENDERING_API_TOKEN
             add_secret ARTIFACT_PREVIEW_WAF_SECRET ARTIFACT_PREVIEW_WAF_SECRET

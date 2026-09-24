@@ -191,7 +191,7 @@ async function refreshWhileSelected(
   );
   signal.throwIfAborted();
   if (
-    !isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, featureSwitchContext)
+    !isFeatureEnabled(FeatureSwitchKey.NativeMorningBrief, featureSwitchContext)
   ) {
     return { outcome: "skipped", reason: "feature-disabled" };
   }

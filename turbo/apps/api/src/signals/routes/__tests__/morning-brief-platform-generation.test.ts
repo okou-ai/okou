@@ -240,7 +240,7 @@ async function fixture(
     { orgId, userId },
     {
       [FeatureSwitchKey.MorningBrief]: true,
-      [FeatureSwitchKey.SimpleMorningBrief]: options.feature !== false,
+      [FeatureSwitchKey.NativeMorningBrief]: options.feature !== false,
     },
   );
   const installation = await store.set(

@@ -12,10 +12,6 @@ const WORKER_PATH = "/api/internal/morning-brief-worker";
 const AUTH_SKEW_MS = 60_000;
 const WORKER_KEY_CONTEXT = "okou:morning-brief-worker-dispatch:v1";
 
-export function nativeHttpFanoutEnabled(): boolean {
-  return env("MORNING_BRIEF_HTTP_FANOUT") === "true";
-}
-
 function workerSigningKey(): Buffer {
   // The full configured string is the HKDF input; permissive hex decoding of
   // a malformed value could otherwise produce a predictable empty key.

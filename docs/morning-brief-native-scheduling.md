@@ -10,11 +10,13 @@ It covers `morning_brief_native_schedules`,
 `/api/cron/execute-morning-briefs` tick, and every writer that may change a
 member's choice, schedule or execution ownership.
 
-**This is not a general production rollout.** `simpleMorningBrief` stays
-registered off by default and is enabled for the staff org allowlist only, under
-S8 ([#36203](https://github.com/okou-ai/okou/issues/36203)). Every other
-organization is still off, a per-user override still wins over the allowlist,
-and the hard pre-activation gates are listed at the end.
+**This is not a general production rollout.** `FeatureSwitchKey.NativeMorningBrief`
+stays registered off by default and is enabled for the staff org allowlist only,
+under S8 ([#36203](https://github.com/okou-ai/okou/issues/36203)). It retains
+the persisted/API value `simpleMorningBrief` so existing overrides and older
+API/App versions keep their decision; the Lab display name is Native Morning
+Brief. Per-user overrides still win over the allowlist, including existing
+non-staff opt-ins. The hard acceptance gates are listed at the end.
 
 ## The two rows
 
@@ -317,16 +319,10 @@ contract, and in `turbo/apps/api/vercel.json` at `* * * * *`. It uses the normal
 `CRON_SECRET` bearer check; invalid authentication returns before any state read,
 any write and any provider call.
 
-The default-off `MORNING_BRIEF_HTTP_FANOUT` setting preserves the inline tick
-until the staff canary is separately activated. Production API deployments render
-this value from the resolved `MORNING_BRIEF_HTTP_FANOUT` GitHub variable
-(production Environment override, or repository default); missing or empty
-means `false`, and previews always use `false`. Enable it only
-after the code is deployed, the enrolled native owner set is scoped to the
-staff canary, and the worker endpoint, self-dispatch origin, and function
-lifetime have been verified. With fanout enabled, the same
-Cron still bootstraps legacy-phase rows and advances cutover/rollback, but
-**never** collects or calls the model. It discovers due anchors, expired or
+The Cron always uses HTTP fanout for admitted native work; there is no
+independent transport switch. `NativeMorningBrief` alone decides each member's
+new native admission and rollback target. The Cron still bootstraps legacy-phase
+rows and advances cutover/rollback, but **never** collects or calls the model. It discovers due anchors, expired or
 deferred occurrences, and pending deliveries in bounded batches; it sends
 signed, short internal POSTs concurrently and awaits only their `202` admission.
 When a backlog spans multiple bounded pages, the Cron rotates pages by minute
@@ -357,14 +353,16 @@ never travel in the dispatch payload.
 The single Hono Vercel build output currently hosts both HTTP routes and Cron
 routes, so the platform max-duration setting applies to that function; the Cron
 retains its own 45-second application limit. Verify the deployed timeout and
-self-dispatch origin before enabling fanout. During a mixed-version rollout,
-old Cron invocations may still be finishing; native schedule/occurrence fences
-remain authoritative for both, and flipping the flag off does not erase work
-already claimed. Activating the flag and retiring legacy automations are
-separate release decisions under #36203.
+self-dispatch origin before promoting the release. During a mixed-version
+rollout, older inline Cron invocations may still be finishing and older API
+instances may reject new worker signatures. Native schedule/occurrence fences
+remain authoritative; a rejected admission leaves the obligation for another
+tick. Turning `NativeMorningBrief` off stops new claims and enters the normal
+rollback drain, but does not erase work already claimed. Retiring legacy
+automations is a separate release decision under #36203.
 
-Both modes create **no agent Run, sandbox, tool loop, Run-credit admission or
-ledger debit**. Zero user or organization credits and a fully occupied
+The native pipeline creates **no agent Run, sandbox, tool loop, Run-credit
+admission or ledger debit**. Zero user or organization credits and a fully occupied
 agent-run queue cannot block them.
 
 ## Deployment compatibility

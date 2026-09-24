@@ -1724,7 +1724,7 @@ async function admitNativeWithinDeadline(
   );
   signal.throwIfAborted();
   if (
-    !isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, featureSwitchContext)
+    !isFeatureEnabled(FeatureSwitchKey.NativeMorningBrief, featureSwitchContext)
   ) {
     return { kind: "denied", reason: "feature-disabled" };
   }
@@ -1793,7 +1793,7 @@ async function admitWithinDeadline(
       );
       if (
         !isFeatureEnabled(
-          FeatureSwitchKey.SimpleMorningBrief,
+          FeatureSwitchKey.NativeMorningBrief,
           featureSwitchContext,
         )
       ) {

@@ -28,7 +28,7 @@ import {
  *
  * It is registered in the ordinary application composition so the production
  * gate, authentication and ownership checks are the deployed ones. Production
- * answers 404 before authentication regardless of `simpleMorningBrief`, so the
+ * answers 404 before authentication regardless of `FeatureSwitchKey.NativeMorningBrief`, so the
  * feature switch never exposes this surface. There is no Settings UI, no
  * durable ownership and no scheduled delivery here; the result is ephemeral.
  */

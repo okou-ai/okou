@@ -52,7 +52,7 @@ const log = logger("MorningBriefNativeCron");
  *   inside the request and never holds a transaction across a provider call.
  * - **Runless.** No agent Run, sandbox, tool loop, Run-credit admission or
  *   ledger debit. Zero user credits and a full agent-run queue cannot block it.
- * - **Default off.** With `simpleMorningBrief` off, no new native occurrence is
+ * - **Default off.** With `FeatureSwitchKey.NativeMorningBrief` off, no new native occurrence is
  *   admitted and zero provider calls happen. Already admitted native work keeps
  *   its recorded rollback-drain authority — the switch cannot erase a durable
  *   obligation, only stop new ones.
@@ -132,7 +132,7 @@ async function nativeAdmissionAllowed(
     owner.orgId,
     owner.userId,
   );
-  return isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, context);
+  return isFeatureEnabled(FeatureSwitchKey.NativeMorningBrief, context);
 }
 
 /**

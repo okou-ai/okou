@@ -170,7 +170,7 @@ async function fixture(): Promise<Fixture> {
   await updateFeatureSwitchesForUser(
     context,
     { orgId, userId },
-    { [FeatureSwitchKey.SimpleMorningBrief]: true },
+    { [FeatureSwitchKey.NativeMorningBrief]: true },
   );
   const installation = await store.set(
     seedSlackOrgInstallation$,

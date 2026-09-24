@@ -212,7 +212,7 @@ async function fixture(
   await updateFeatureSwitchesForUser(
     context,
     { orgId, userId },
-    { [FeatureSwitchKey.SimpleMorningBrief]: options.feature !== false },
+    { [FeatureSwitchKey.NativeMorningBrief]: options.feature !== false },
   );
   mockClerkMembership(orgId, userId);
   return {

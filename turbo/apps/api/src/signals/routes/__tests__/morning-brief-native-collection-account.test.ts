@@ -270,7 +270,7 @@ async function fixture(options: SourceOptions = {}): Promise<Fixture> {
   await updateFeatureSwitchesForUser(
     context,
     { orgId, userId },
-    { [FeatureSwitchKey.SimpleMorningBrief]: true },
+    { [FeatureSwitchKey.NativeMorningBrief]: true },
   );
   if (options.slack !== false) {
     const installation = await store.set(

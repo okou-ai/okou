@@ -64,7 +64,10 @@ import {
 } from "../../../test-fixtures/morning-brief-native-schedule";
 import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock";
 import { admitWorkflowAutomationEventFixture } from "../../../test-fixtures/workflow-queue";
-import { createScopedMorningBriefCronRoutesForTest } from "../cron-execute-morning-briefs";
+import {
+  createScopedInlineMorningBriefCronRoutesForTest,
+  createScopedMorningBriefCronRoutesForTest,
+} from "../cron-execute-morning-briefs";
 import { internalMorningBriefWorkerRoutes } from "../internal-morning-brief-worker";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
@@ -89,14 +92,12 @@ const TEST_WORKER_SIGNING_KEY = Buffer.from(
 );
 
 /**
- * The native Morning Brief cron, exercised through its registered route.
+ * The native Morning Brief pipeline, exercised through Cron and worker routes.
  *
- * Everything below runs the real modules: the actual `ROUTES` handler behind its
- * real cron-secret check, the real bootstrap and cutover writers, the real S5
- * generation engine and the real S6 Chat and shared-outbox delivery. The only
- * doubles are the external Slack, OpenRouter and Resend HTTP boundaries, so the
- * ownership, admission, single-invocation and delivery decisions under test are
- * the production ones.
+ * Fanout cases use the deployed Cron and signed worker routes. Historical
+ * inline cases use a test-only composition of the same native slot engine,
+ * bootstrap, cutover, S5 generation and S6 delivery; the deployed Cron has no
+ * inline mode. Only external Slack, OpenRouter and Resend boundaries are doubled.
  *
  * No test seeds a generation or delivery row directly, and none calls a preview
  * route: a delivered brief here is one the scheduler actually produced.
@@ -140,15 +141,23 @@ interface Fixture {
   readonly automationId: string;
 }
 
-function cronClient(owner: Fixture) {
+function cronClient(owner: Fixture, inline: boolean) {
   return setupApp({
     context,
-    routes: createScopedMorningBriefCronRoutesForTest(owner),
+    routes: inline
+      ? createScopedInlineMorningBriefCronRoutesForTest(owner)
+      : createScopedMorningBriefCronRoutesForTest(owner),
   })(cronExecuteMorningBriefsContract);
 }
 
 function tick(owner: Fixture, secret: string = CRON_SECRET) {
-  return cronClient(owner).execute({
+  return cronClient(owner, true).execute({
+    headers: { authorization: `Bearer ${secret}` },
+  });
+}
+
+function fanoutTick(owner: Fixture, secret: string = CRON_SECRET) {
+  return cronClient(owner, false).execute({
     headers: { authorization: `Bearer ${secret}` },
   });
 }
@@ -212,7 +221,7 @@ async function fixture(
   await updateFeatureSwitchesForUser(
     context,
     { orgId, userId },
-    { [FeatureSwitchKey.SimpleMorningBrief]: options.feature !== false },
+    { [FeatureSwitchKey.NativeMorningBrief]: options.feature !== false },
   );
   const installation = await store.set(
     seedSlackOrgInstallation$,
@@ -387,7 +396,6 @@ async function tickUntilNative(f: Fixture): Promise<void> {
 
 describe("native Morning Brief cron", () => {
   it("rejects unsigned worker requests without reading Morning Brief state", async () => {
-    mockEnv("MORNING_BRIEF_HTTP_FANOUT", "true");
     mockEnv("SECRETS_ENCRYPTION_KEY", TEST_WORKER_MASTER_KEY);
     const body = {
       orgId: `org_${randomUUID()}`,
@@ -447,7 +455,6 @@ describe("native Morning Brief cron", () => {
     const { calls } = scriptProviders();
     await tickUntilNative(f);
     const due = await makeNativeOccurrenceDue(f);
-    mockEnv("MORNING_BRIEF_HTTP_FANOUT", "true");
     mockEnv("SECRETS_ENCRYPTION_KEY", TEST_WORKER_MASTER_KEY);
 
     let dispatch:
@@ -480,7 +487,7 @@ describe("native Morning Brief cron", () => {
         },
       ),
     );
-    const scheduled = await accept(tick(f), [200]);
+    const scheduled = await accept(fanoutTick(f), [200]);
     expect(scheduled.body.dispatched).toBe(1);
     expect(scheduled.body.claimed).toBe(0);
     expect(calls.generation).toHaveLength(0);
@@ -549,7 +556,6 @@ describe("native Morning Brief cron", () => {
     await tickUntilNative(second);
     const firstAnchor = await makeNativeOccurrenceDue(first);
     const secondAnchor = await makeNativeOccurrenceDue(second);
-    mockEnv("MORNING_BRIEF_HTTP_FANOUT", "true");
     mockEnv("SECRETS_ENCRYPTION_KEY", TEST_WORKER_MASTER_KEY);
 
     const [firstAccepted, secondAccepted] = await Promise.all([
@@ -574,7 +580,7 @@ describe("native Morning Brief cron", () => {
     const f = await fixture();
     const { calls } = scriptProviders();
 
-    await accept(tick(f, "wrong-secret"), [401]);
+    await accept(fanoutTick(f, "wrong-secret"), [401]);
 
     expect(calls.generation).toHaveLength(0);
     await expect(readNativeSchedule(f)).resolves.toBeUndefined();
@@ -1586,7 +1592,7 @@ describe("native Morning Brief cron", () => {
     await updateFeatureSwitchesForUser(
       context,
       { orgId: f.orgId, userId: f.userId },
-      { [FeatureSwitchKey.SimpleMorningBrief]: false },
+      { [FeatureSwitchKey.NativeMorningBrief]: false },
     );
     for (let attempt = 0; attempt < 5; attempt += 1) {
       await accept(tick(f), [200]);
@@ -1702,7 +1708,7 @@ describe("native Morning Brief cron", () => {
     await updateFeatureSwitchesForUser(
       context,
       { orgId: f.orgId, userId: f.userId },
-      { [FeatureSwitchKey.SimpleMorningBrief]: false },
+      { [FeatureSwitchKey.NativeMorningBrief]: false },
     );
 
     for (let attempt = 0; attempt < 6; attempt += 1) {
@@ -1744,7 +1750,7 @@ describe("native Morning Brief cron", () => {
     await updateFeatureSwitchesForUser(
       context,
       { orgId: f.orgId, userId: f.userId },
-      { [FeatureSwitchKey.SimpleMorningBrief]: false },
+      { [FeatureSwitchKey.NativeMorningBrief]: false },
     );
     await accept(tick(f), [200]);
     await accept(tick(f), [200]);
@@ -1812,8 +1818,8 @@ describe("native Morning Brief cron", () => {
     scriptSlack();
     const { calls } = scriptProviders();
 
-    await accept(tick(f), [200]);
-    await accept(tick(f), [200]);
+    expect((await accept(fanoutTick(f), [200])).body.dispatched).toBe(0);
+    expect((await accept(fanoutTick(f), [200])).body.dispatched).toBe(0);
 
     const schedule = await readNativeSchedule(f);
     expect(schedule?.phase).toBe("legacy");

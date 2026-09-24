@@ -21,7 +21,7 @@ const FAILED = "Could not queue the Morning Brief. Try again.";
 function bothSwitches(): Record<string, boolean> {
   return {
     [FeatureSwitchKey.OkouDebug]: true,
-    [FeatureSwitchKey.SimpleMorningBrief]: true,
+    [FeatureSwitchKey.NativeMorningBrief]: true,
   };
 }
 
@@ -124,7 +124,7 @@ test("The card is absent while the debug switch is off", async () => {
   await setupPage({
     context,
     path: DEBUG_PATH,
-    featureSwitches: { [FeatureSwitchKey.SimpleMorningBrief]: true },
+    featureSwitches: { [FeatureSwitchKey.NativeMorningBrief]: true },
   });
   await expect(screen.findByText("Language")).resolves.toBeInTheDocument();
 

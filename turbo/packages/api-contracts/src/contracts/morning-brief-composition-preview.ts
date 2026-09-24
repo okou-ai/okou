@@ -13,7 +13,7 @@ const c = initContract();
  *
  * It is registered in the ordinary application composition, so the production
  * gate, authentication and ownership checks are the deployed ones. Production
- * answers 404 before authentication regardless of `simpleMorningBrief`.
+ * answers 404 before authentication regardless of `FeatureSwitchKey.NativeMorningBrief`.
  *
  * No connector is required to reach it: an owner with only Gmail, only Slack or
  * neither all run the same engine. The inputs are an anchor and, optionally, the

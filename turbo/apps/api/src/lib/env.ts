@@ -80,7 +80,6 @@ const SCHEMA = {
     .email()
     .optional(),
   CRON_SECRET: z.string().min(1),
-  MORNING_BRIEF_HTTP_FANOUT: z.enum(["true", "false"]).default("false"),
   MORNING_BRIEF_WORKER_CONCURRENCY: z.coerce
     .number()
     .int()

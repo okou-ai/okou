@@ -426,7 +426,7 @@ async function setMorningBriefEnabled(
   );
 }
 
-async function setSimpleMorningBriefEnabled(
+async function setNativeMorningBriefEnabled(
   actor: ApiTestUser,
   enabled: boolean,
 ): Promise<void> {
@@ -436,7 +436,7 @@ async function setSimpleMorningBriefEnabled(
   await updateFeatureSwitchesForUser(
     context,
     { orgId: actor.orgId, userId: actor.userId },
-    { [FeatureSwitchKey.SimpleMorningBrief]: enabled },
+    { [FeatureSwitchKey.NativeMorningBrief]: enabled },
   );
 }
 
@@ -1415,7 +1415,7 @@ describe("Morning Brief legacy schedule claim journal", () => {
 
     // The implementation switch cannot resurrect the deliberately paused
     // choice. Two real native ticks transfer ownership, but admit no slot.
-    await setSimpleMorningBriefEnabled(brief.actor, true);
+    await setNativeMorningBriefEnabled(brief.actor, true);
     await tickNativeMorningBrief(brief.actor);
     await tickNativeMorningBrief(brief.actor);
     await expect(
@@ -1446,7 +1446,7 @@ describe("Morning Brief legacy schedule claim journal", () => {
     if (!runId || !brief.actor.orgId) {
       throw new Error("Expected one organization-scoped Morning Brief Run");
     }
-    await setSimpleMorningBriefEnabled(brief.actor, true);
+    await setNativeMorningBriefEnabled(brief.actor, true);
     const held = await holdWorkflowAutomationRowFixture({
       automationId: brief.automationId,
       signal: context.signal,

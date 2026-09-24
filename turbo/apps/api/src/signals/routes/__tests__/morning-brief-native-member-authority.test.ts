@@ -411,7 +411,7 @@ async function setupOwner(objectStorage: Map<string, Buffer>): Promise<{
     context.signal,
   );
   await updateFeatureSwitchesForUser(context, owner, {
-    [FeatureSwitchKey.SimpleMorningBrief]: true,
+    [FeatureSwitchKey.NativeMorningBrief]: true,
   });
   await store.set(
     seedOrgMembership$,

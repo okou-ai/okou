@@ -138,16 +138,16 @@ describe("Morning Brief installed preference projection persistence", () => {
       workflowId: workflow.id,
       automationId: automation.id,
     };
-    await selectSimpleMorningBrief(brief, true);
+    await selectNativeMorningBrief(brief, true);
     return brief;
   }
 
-  async function selectSimpleMorningBrief(
+  async function selectNativeMorningBrief(
     brief: InstalledBrief,
     enabled: boolean,
   ): Promise<void> {
     await updateFeatureSwitchesForUser(context, brief.owner, {
-      [FeatureSwitchKey.SimpleMorningBrief]: enabled,
+      [FeatureSwitchKey.NativeMorningBrief]: enabled,
     });
   }
 
@@ -280,7 +280,7 @@ describe("Morning Brief installed preference projection persistence", () => {
       throw new Error("Expected a projected row");
     }
 
-    await selectSimpleMorningBrief(brief, false);
+    await selectNativeMorningBrief(brief, false);
     await db
       .update(workflowAutomations)
       .set({ enabled: false, nextRunAt: null })
