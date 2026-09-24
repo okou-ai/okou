@@ -1760,29 +1760,6 @@
       "uncertain": "Browser prüfen",
       "uncertainDescription": "Der Browser hat die Informationen möglicherweise erhalten. Bitten Sie den Agenten um eine Prüfung, bevor Sie es erneut versuchen."
     },
-    "browserInteraction": {
-      "applying": "Browserinteraktion wird abgeschlossen",
-      "applyingDescription": "Der Browser schließt diese Anfrage ab.",
-      "callbackFailed": "Der Agent wurde nicht benachrichtigt.",
-      "cancel": "Abbrechen",
-      "cancelFailed": "Diese Anfrage konnte nicht abgebrochen werden. Versuchen Sie es erneut.",
-      "cancelled": "Anfrage abgebrochen",
-      "cancelling": "Wird abgebrochen…",
-      "completed": "Browserinteraktion abgeschlossen",
-      "completeFailed": "Diese Anfrage konnte nicht abgeschlossen werden. Versuchen Sie es erneut.",
-      "completing": "Wird abgeschlossen…",
-      "continue": "Agent benachrichtigen",
-      "continuing": "Wird benachrichtigt…",
-      "delivered": "Agent benachrichtigt",
-      "description": "Öffnen Sie den Browser, schließen Sie diesen Schritt ab und wählen Sie dann „Fertig“.",
-      "done": "Fertig",
-      "finish": "Schritt abschließen",
-      "stale": "Browser nicht mehr verfügbar",
-      "staleDescription": "Bitten Sie den Agenten, eine neue Anfrage zu erstellen.",
-      "title": "Browser übernehmen",
-      "uncertain": "Browser prüfen",
-      "uncertainDescription": "Die Interaktion wurde möglicherweise abgeschlossen. Bitten Sie den Agenten um eine Prüfung, bevor Sie es erneut versuchen."
-    },
     "cards": {
       "viewDetails": "Details ansehen"
     },
@@ -4873,8 +4850,7 @@
       "preparedDescription": "{{assistantName}} bereitet aus Ihren Tools den nächsten Schritt vor.",
       "preparedTitle": "Workflow vorbereitet",
       "reviewDescription": "{{assistantName}} schließt den Workflow ab und gibt das Ergebnis zurück.",
-      "reviewTitle": "Bereit zur Überprüfung",
-      "source": "Quelle"
+      "reviewTitle": "Bereit zur Überprüfung"
     },
     "workflowPicker": {
       "categoryDescription": "Fertige Setups, die Sie an Ihre Tools und Ziele anpassen können.",

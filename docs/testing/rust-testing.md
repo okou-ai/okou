@@ -53,6 +53,12 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-executor -- --test-threads=1
 
+# Complete native Runner and extracted-domain test set, with ordinary Cargo targets
+cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
+  -p runner-types -p runner-host -p runner-provider -p runner-storage \
+  -p runner-network -p runner-remote -p runner-lifecycle -p runner-executor \
+  -p runner -- --test-threads=1
+
 # Specific test by name
 cargo test --manifest-path crates/Cargo.toml --profile local \
   -p shell-quote --lib tests::quoted_words_round_trip_through_posix_shell -- --exact

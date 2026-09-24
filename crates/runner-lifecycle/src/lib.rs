@@ -1,4 +1,4 @@
-//! Idle sandbox and workspace image lifecycle owned below the Runner process.
+//! Idle sandbox, memory prefetch, and workspace image lifecycle owned below the Runner process.
 
 // The opt-in test-support build compiles fixture-only branches without the
 // crate's own tests. Default production builds keep the workspace lint policy.
@@ -12,6 +12,7 @@ pub mod guest_timezone;
 pub mod idle_pool;
 pub mod idle_reuse_preparation;
 pub mod lifecycle;
+pub mod prefetch;
 pub mod resource_budget;
 pub mod restored_session_identity;
 pub mod status;

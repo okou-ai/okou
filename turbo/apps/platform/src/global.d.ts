@@ -18,6 +18,27 @@ interface OkouClerkBootstrap {
   readonly resolveClerkUI: (ui: ClerkUIConstructor) => void;
 }
 
+interface OkouPreloadedSharedDatabaseWorker {
+  readonly url: string;
+  readonly name: string;
+  readonly worker: SharedWorker;
+  /** The first error dispatched before the app attached its own listener. */
+  error: ErrorEvent | null;
+}
+
+interface OkouSharedDatabaseWorkerBootstrap {
+  /**
+   * Called from the app worker's response body with the edge identity and the
+   * preview bypass from the page URL, if any.
+   */
+  readonly start: (
+    userId: string,
+    orgId: string,
+    vercelProtectionBypass?: string,
+  ) => void;
+  preloaded?: OkouPreloadedSharedDatabaseWorker;
+}
+
 type OkouClerkRouter = NonNullable<ClerkOptions["routerPush"]>;
 
 interface OkouClerkRouterHandlers {
@@ -43,6 +64,8 @@ declare global {
     /** Route-owned handlers used by the callbacks captured during Clerk load. */
     __okouClerkRouter?: OkouClerkRouterHandlers;
     __okouClerkUI?: typeof ui;
+    /** Installed by `index.html`; claimed once by the shared database bridge. */
+    __okouSharedDatabaseWorkerBootstrap?: OkouSharedDatabaseWorkerBootstrap;
     /**
      * Set inline in `index.html` at the start of `<head>` parsing. Used by
      * `captureFirstSkeletonHide` to measure total time from page entry to

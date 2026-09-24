@@ -189,7 +189,7 @@ function installCdp(options: CdpOptions = {}): CdpCommand[] {
   return commands;
 }
 
-function actionResponse(kind: "input" | "direct_interaction") {
+function actionResponse() {
   const base = {
     requestToken: "opaque-action-token",
     state: "pending" as const,
@@ -207,34 +207,29 @@ function actionResponse(kind: "input" | "direct_interaction") {
       },
     },
   };
-  return kind === "input"
-    ? {
-        ...base,
-        kind,
-        siteOrigin: "https://example.com",
-        fields: [
-          {
-            key: "username",
-            label: "Email",
-            fieldKind: "username" as const,
-            required: true,
-          },
-        ],
-      }
-    : { ...base, kind, reason: "Complete the passkey prompt" };
+  return {
+    ...base,
+    kind: "input" as const,
+    siteOrigin: "https://example.com",
+    fields: [
+      {
+        key: "username",
+        label: "Email",
+        fieldKind: "username" as const,
+        required: true,
+      },
+    ],
+  };
 }
 
-function installCreateRoute(
-  observe: (body: unknown) => void,
-  kind: "input" | "direct_interaction" = "input",
-): void {
+function installCreateRoute(observe: (body: unknown) => void): void {
   server.use(
     http.post(
       "http://localhost:3000/api/browser/user-actions",
       async ({ request }) => {
         observe(await request.json());
         return HttpResponse.json(
-          { actionUrl: ACTION_URL, action: actionResponse(kind) },
+          { actionUrl: ACTION_URL, action: actionResponse() },
           { status: 201 },
         );
       },
@@ -436,78 +431,6 @@ describe("okou browser user-action commands", () => {
         );
       }),
     ).toHaveLength(2);
-  });
-
-  it("creates direct interaction without contacting agent-browser or CDP", async () => {
-    let requestBody: unknown;
-    installCreateRoute((body) => {
-      requestBody = body;
-    }, "direct_interaction");
-
-    await browserCommand.parseAsync([
-      "node",
-      "okou",
-      "interaction-request",
-      "--reason",
-      "Complete the passkey prompt",
-      "--callback-prompt",
-      "Continue after the user completes the passkey prompt",
-    ]);
-
-    expect(requestBody).toStrictEqual({
-      kind: "direct_interaction",
-      reason: "Complete the passkey prompt",
-      callbackPrompt: "Continue after the user completes the passkey prompt",
-    });
-    expect(spawnSyncMock).not.toHaveBeenCalled();
-    expect(consoleLog.mock.calls.flat().join("\n")).toContain(ACTION_URL);
-  });
-
-  it("prints one values-free JSON document with the authoritative URL", async () => {
-    installCreateRoute(() => {}, "direct_interaction");
-
-    await browserCommand.parseAsync([
-      "node",
-      "okou",
-      "interaction-request",
-      "--reason",
-      "Complete the passkey prompt",
-      "--callback-prompt",
-      "Continue after the user completes the passkey prompt",
-      "--json",
-    ]);
-
-    const output = consoleLog.mock.calls.flat().join("\n");
-    expect(JSON.parse(output)).toStrictEqual({
-      actionUrl: ACTION_URL,
-      nextAction:
-        "Return this exact action URL in your final response, then stop using the Browser in this turn.",
-    });
-    expect(output).not.toContain("requestToken");
-  });
-
-  it("fails closed on a malformed successful API response", async () => {
-    server.use(
-      http.post("http://localhost:3000/api/browser/user-actions", () => {
-        return HttpResponse.json({ actionUrl: ACTION_URL }, { status: 201 });
-      }),
-    );
-
-    await expect(
-      browserCommand.parseAsync([
-        "node",
-        "okou",
-        "interaction-request",
-        "--reason",
-        "Complete the passkey prompt",
-        "--callback-prompt",
-        "Continue after the user completes the passkey prompt",
-      ]),
-    ).rejects.toThrow("process.exit called");
-
-    expect(spawnSyncMock).not.toHaveBeenCalled();
-    expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(ACTION_URL);
-    expect(consoleError.mock.calls.flat().join("\n")).not.toContain(ACTION_URL);
   });
 
   it("rejects invalid field metadata before Browser or API access", async () => {

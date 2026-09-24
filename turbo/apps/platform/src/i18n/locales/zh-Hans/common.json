@@ -1757,29 +1757,6 @@
       "uncertain": "请检查浏览器",
       "uncertainDescription": "浏览器可能已收到这些信息。重试前，请先让 Agent 检查。"
     },
-    "browserInteraction": {
-      "applying": "正在完成浏览器交互",
-      "applyingDescription": "浏览器正在完成此请求。",
-      "callbackFailed": "未能通知 Agent。",
-      "cancel": "取消",
-      "cancelFailed": "无法取消此请求。请重试。",
-      "cancelled": "请求已取消",
-      "cancelling": "正在取消…",
-      "completed": "浏览器交互已完成",
-      "completeFailed": "无法完成此请求。请重试。",
-      "completing": "正在完成…",
-      "continue": "通知 Agent",
-      "continuing": "正在通知 Agent…",
-      "delivered": "已通知 Agent",
-      "description": "打开浏览器并完成此步骤，然后点击完成。",
-      "done": "完成",
-      "finish": "完成此步骤",
-      "stale": "浏览器已不可用",
-      "staleDescription": "请让 Agent 创建新请求。",
-      "title": "接管浏览器",
-      "uncertain": "请检查浏览器",
-      "uncertainDescription": "交互可能已完成。重试前，请先让 Agent 检查。"
-    },
     "cards": {
       "viewDetails": "查看详情"
     },
@@ -4859,8 +4836,7 @@
       "preparedDescription": "{{assistantName}}会从你的工具里准备好下一步。",
       "preparedTitle": "工作流已就绪",
       "reviewDescription": "{{assistantName}}会完成工作流并给出结果。",
-      "reviewTitle": "等你确认",
-      "source": "数据源"
+      "reviewTitle": "等你确认"
     },
     "workflowPicker": {
       "categoryDescription": "开箱即用的方案，可以按你的工具和目标调整。",

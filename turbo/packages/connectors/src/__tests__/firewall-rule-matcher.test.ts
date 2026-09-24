@@ -6,6 +6,7 @@ import {
   matchFirewallBaseUrl,
   findMatchingPermissions,
   matchFirewallRequestDecision,
+  type FirewallAwsDiagnosticContext,
 } from "../firewall-rule-matcher";
 import type { FirewallConfig } from "../firewall-types";
 
@@ -1908,6 +1909,227 @@ describe("findMatchingPermissions", () => {
       kind: "block",
       reason: "unknown_endpoint",
     });
+  });
+
+  it.each([
+    {
+      name: "Query action",
+      rule: "POST / AWS sigv4=ec2 action=DescribeInstances",
+      method: "POST",
+      url: "https://aws.example.com/",
+      partial: { sigv4Service: "ec2", query: [], headerNames: [] },
+      contrary: {
+        sigv4Service: "ec2",
+        action: "StartInstances",
+        query: [],
+        headerNames: [],
+      },
+    },
+    {
+      name: "JSON target",
+      rule: "POST / AWS sigv4=dynamodb target=DynamoDB_20120810.GetItem",
+      method: "POST",
+      url: "https://aws.example.com/",
+      partial: { sigv4Service: "dynamodb", query: [], headerNames: [] },
+      contrary: {
+        sigv4Service: "dynamodb",
+        target: "DynamoDB_20120810.PutItem",
+        query: [],
+        headerNames: [],
+      },
+    },
+    {
+      name: "S3 subresource",
+      rule: "GET /{Bucket}/{Key+}?acl AWS sigv4=s3",
+      method: "GET",
+      url: "https://aws.example.com/bucket/key",
+      partial: { sigv4Service: "s3", query: [], headerNames: [] },
+      contrary: {
+        sigv4Service: "s3",
+        query: [{ key: "versionId", value: "v1" }],
+        headerNames: [],
+      },
+    },
+  ])(
+    "distinguishes missing $name selectors from an explicit AWS miss",
+    ({ rule, method, url, partial, contrary }) => {
+      const firewalls = [
+        {
+          name: "aws",
+          apis: [
+            {
+              base: "https://aws.example.com",
+              auth: {},
+              awsSigv4Capability: true,
+              permissions: [{ name: "operation", rules: [rule] }],
+            },
+          ],
+        },
+      ];
+      const policy = { aws: { unknownPolicy: "ask" } };
+      const match = (context?: FirewallAwsDiagnosticContext) => {
+        return matchFirewallRequestDecision(
+          firewalls,
+          method,
+          url,
+          policy,
+          { status: "absent" },
+          { awsDiagnostic: context === undefined ? {} : { context } },
+        );
+      };
+
+      expect(match()).toMatchObject({
+        kind: "block",
+        reason: "unknown_endpoint",
+        awsContextIncomplete: true,
+      });
+      expect(match(partial)).toMatchObject({
+        kind: "block",
+        reason: "unknown_endpoint",
+        awsContextIncomplete: true,
+      });
+      const completeMiss = match(contrary);
+      expect(completeMiss).toMatchObject({
+        kind: "block",
+        reason: "unknown_endpoint",
+      });
+      expect(completeMiss).not.toHaveProperty("awsContextIncomplete");
+    },
+  );
+
+  it("keeps incomplete context on an allow-policy unknown without changing its outcome", () => {
+    const result = matchFirewallRequestDecision(
+      [
+        {
+          name: "aws",
+          apis: [
+            {
+              base: "https://aws.example.com",
+              auth: {},
+              awsSigv4Capability: true,
+              permissions: [
+                {
+                  name: "describe",
+                  rules: ["POST / AWS sigv4=ec2 action=DescribeInstances"],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      "POST",
+      "https://aws.example.com/",
+      { aws: { unknownPolicy: "allow" } },
+      { status: "absent" },
+      { awsDiagnostic: {} },
+    );
+    expect(result).toMatchObject({
+      kind: "allow",
+      awsContextIncomplete: true,
+    });
+  });
+
+  it("does not label an AWS service or S3 header contradiction as missing context", () => {
+    const firewalls = [
+      {
+        name: "aws",
+        apis: [
+          {
+            base: "https://aws.example.com",
+            auth: {},
+            awsSigv4Capability: true,
+            permissions: [
+              {
+                name: "get-acl",
+                rules: ["GET /{Bucket}/{Key+}?acl AWS sigv4=s3"],
+              },
+            ],
+          },
+        ],
+      },
+    ];
+    for (const context of [
+      { sigv4Service: "ec2", query: [], headerNames: [] },
+      {
+        sigv4Service: "s3",
+        query: [],
+        headerNames: ["x-amz-copy-source"],
+      },
+    ]) {
+      const result = matchFirewallRequestDecision(
+        firewalls,
+        "GET",
+        "https://aws.example.com/bucket/key",
+        { aws: { unknownPolicy: "ask" } },
+        { status: "absent" },
+        { awsDiagnostic: { context } },
+      );
+      expect(result).toMatchObject({
+        kind: "block",
+        reason: "unknown_endpoint",
+      });
+      expect(result).not.toHaveProperty("awsContextIncomplete");
+    }
+  });
+
+  it("does not mark unrelated non-AWS rules as incomplete AWS context", () => {
+    const result = matchFirewallRequestDecision(
+      [
+        {
+          name: "ordinary",
+          apis: [
+            {
+              base: "https://api.example.com",
+              auth: {},
+              permissions: [{ name: "read", rules: ["GET /items"] }],
+            },
+          ],
+        },
+      ],
+      "GET",
+      "https://api.example.com/other",
+      { ordinary: { unknownPolicy: "ask" } },
+      { status: "absent" },
+      { awsDiagnostic: {} },
+    );
+    expect(result).toMatchObject({ kind: "block", reason: "unknown_endpoint" });
+    expect(result).not.toHaveProperty("awsContextIncomplete");
+  });
+
+  it("does not use a less-specific AWS base or a host-only base as incomplete context", () => {
+    const result = matchFirewallRequestDecision(
+      [
+        {
+          name: "aws",
+          apis: [
+            {
+              base: "https://{awsHost+}.example.com",
+              auth: {},
+              awsSigv4Capability: true,
+              permissions: [
+                {
+                  name: "describe",
+                  rules: ["POST / AWS sigv4=ec2 action=DescribeInstances"],
+                },
+              ],
+            },
+            {
+              base: "https://ec2.example.com",
+              auth: {},
+              awsSigv4Capability: true,
+              permissions: [],
+            },
+          ],
+        },
+      ],
+      "POST",
+      "https://ec2.example.com/",
+      { aws: { unknownPolicy: "ask" } },
+      { status: "absent" },
+      { awsDiagnostic: {} },
+    );
+    expect(result).toMatchObject({ kind: "block", reason: "unknown_endpoint" });
+    expect(result).not.toHaveProperty("awsContextIncomplete");
   });
 
   it.each([

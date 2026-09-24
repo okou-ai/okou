@@ -52,7 +52,6 @@ export enum FeatureSwitchKey {
   PrivateArtifacts = "privateArtifacts",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
   PersonalModelProviderAccounts = "multipleSubscriptions",
-  AgentPhoneEntry = "agentPhoneEntry",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "_larkIntegration",
   VncAccess = "vncAccess",
@@ -86,4 +85,5 @@ export enum FeatureSwitchKey {
   BrowserNativeInput = "browserNativeInput",
   HomeTaskRecommendations = "homeTaskRecommendations",
   ClaudeCodeUsageReset = "claudeCodeUsageReset",
+  AgentResponsibilitySetup = "agentResponsibilitySetup",
 }

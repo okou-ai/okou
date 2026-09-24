@@ -8,6 +8,37 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.666.0](https://github.com/okou-ai/okou/compare/api-v1.665.0...api-v1.666.0) (2026-09-24)
+
+
+### Features
+
+* **platform:** share a single assistant message with its prompt ([#36479](https://github.com/okou-ai/okou/issues/36479)) ([e3f9aba](https://github.com/okou-ai/okou/commit/e3f9aba6d6a53ddc8cfa14659cbde8c6d76f1443))
+
+
+### Bug Fixes
+
+* **desktop:** renew verified sessions without restarting computer use ([#36431](https://github.com/okou-ai/okou/issues/36431)) ([c788e68](https://github.com/okou-ai/okou/commit/c788e68fdd564eb427e3c857eca4720bef4bcddb))
+* **firewall:** align aws permission overlap with ordinary rules ([#36442](https://github.com/okou-ai/okou/issues/36442)) ([ebedb8d](https://github.com/okou-ai/okou/commit/ebedb8db0d4680df5fc84fad02bcf33ca7d99da9))
+
+
+### Performance Improvements
+
+* **api:** bound chat search to 500 keyword candidates and 100 results ([#36456](https://github.com/okou-ai/okou/issues/36456)) ([a0e6363](https://github.com/okou-ai/okou/commit/a0e6363ad61b112002aeec1812972c9a0c451a3d))
+* **api:** coalesce web chat queue-first dispatch preflight ([#36457](https://github.com/okou-ai/okou/issues/36457)) ([4fd0518](https://github.com/okou-ai/okou/commit/4fd0518c819e774c23308c7f4ec39cc04c04cae7))
+* serve composer slash workflows from a dedicated endpoint ([#36483](https://github.com/okou-ai/okou/issues/36483)) ([dd7f335](https://github.com/okou-ai/okou/commit/dd7f335ccb14eb39343545f7647892566db01e6f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.500.0
+    * @okouai/connectors bumped to 3.15.3
+    * @okouai/core bumped to 8.706.0
+    * @okouai/db bumped to 1.292.1
+    * @okouai/pi-agent-runtime bumped to 1.40.3
+
 ## [1.665.0](https://github.com/okou-ai/okou/compare/api-v1.664.1...api-v1.665.0) (2026-09-23)
 
 

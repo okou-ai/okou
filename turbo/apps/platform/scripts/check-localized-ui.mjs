@@ -119,10 +119,6 @@ function getInternalAllowedLiterals() {
       "SharedWorker protocol validation error, not user-visible UI copy",
     ],
     [
-      "src/signals/shared-database-browser.ts\u0000okou_{…}_{…}{…}",
-      "SharedWorker browser identifier, not user-visible UI copy",
-    ],
-    [
       "src/signals/okou-page/tiptap-workflow-composer.ts\u0000paragraph+",
       "Tiptap document schema expression",
     ],

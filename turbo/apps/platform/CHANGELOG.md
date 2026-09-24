@@ -11,6 +11,38 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.952.0](https://github.com/okou-ai/okou/compare/app-v0.951.0...app-v0.952.0) (2026-09-24)
+
+
+### Features
+
+* **platform:** share a single assistant message with its prompt ([#36479](https://github.com/okou-ai/okou/issues/36479)) ([e3f9aba](https://github.com/okou-ai/okou/commit/e3f9aba6d6a53ddc8cfa14659cbde8c6d76f1443))
+
+
+### Bug Fixes
+
+* **platform:** constrain queue drawer to viewport width ([#36482](https://github.com/okou-ai/okou/issues/36482)) ([79d6677](https://github.com/okou-ai/okou/commit/79d66771abd57117ca0456d67f6e9a8c0180211d))
+
+
+### Refactoring
+
+* **platform:** drop activity log action from assistant message bar ([#36458](https://github.com/okou-ai/okou/issues/36458)) ([d538f9f](https://github.com/okou-ai/okou/commit/d538f9f49dd55970398ec9f75d5fccf03f6947a3))
+
+
+### Performance Improvements
+
+* serve composer slash workflows from a dedicated endpoint ([#36483](https://github.com/okou-ai/okou/issues/36483)) ([dd7f335](https://github.com/okou-ai/okou/commit/dd7f335ccb14eb39343545f7647892566db01e6f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.500.0
+    * @okouai/connectors bumped to 3.15.3
+    * @okouai/core bumped to 8.706.0
+    * @okouai/ui bumped to 1.12.0
+
 ## [0.951.0](https://github.com/okou-ai/okou/compare/app-v0.950.1...app-v0.951.0) (2026-09-23)
 
 

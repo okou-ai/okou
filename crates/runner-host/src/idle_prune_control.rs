@@ -10,31 +10,31 @@ use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 
-use runner_host::host_file::{DirMode, ensure_dir, validate_dir};
-use runner_host::paths::HomePaths;
-use runner_host::runner_process_identity::RunnerProcessIdentity;
+use crate::host_file::{DirMode, ensure_dir, validate_dir};
+use crate::paths::HomePaths;
+use crate::runner_process_identity::RunnerProcessIdentity;
 
 const FRAME_LIMIT: usize = 4096;
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct PruneIdleReport {
+pub struct PruneIdleReport {
     pub selected: usize,
     pub completed: usize,
     pub uncertain: usize,
 }
 
-pub(crate) type PruneIdleResponse = Result<PruneIdleReport, String>;
+pub type PruneIdleResponse = Result<PruneIdleReport, String>;
 
-pub(crate) struct PruneIdleListener {
+pub struct PruneIdleListener {
     listener: UnixListener,
     path: PathBuf,
     inode: u64,
 }
 
 impl PruneIdleListener {
-    pub(crate) fn bind(
+    pub fn bind(
         home: &HomePaths,
         base_dir: &Path,
         identity: RunnerProcessIdentity,
@@ -58,7 +58,7 @@ impl PruneIdleListener {
         Ok(server)
     }
 
-    pub(crate) async fn accept(&self) -> io::Result<UnixStream> {
+    pub async fn accept(&self) -> io::Result<UnixStream> {
         self.listener.accept().await.map(|(stream, _)| stream)
     }
 }
@@ -87,7 +87,7 @@ fn socket_path(home: &HomePaths, base_dir: &Path, identity: RunnerProcessIdentit
     home.runner_control_dir().join(hex::encode(prefix))
 }
 
-pub(crate) async fn read_request(
+pub async fn read_request(
     stream: &mut UnixStream,
     identity: RunnerProcessIdentity,
 ) -> io::Result<()> {
@@ -116,7 +116,7 @@ fn verify_peer(stream: &UnixStream, expected_pid: Option<u32>) -> io::Result<()>
     Ok(())
 }
 
-pub(crate) async fn request(
+pub async fn request(
     home: &HomePaths,
     base_dir: &Path,
     identity: RunnerProcessIdentity,
@@ -135,7 +135,7 @@ pub(crate) async fn request(
     read_frame_unbounded(&mut stream).await
 }
 
-pub(crate) async fn write_response(
+pub async fn write_response(
     stream: &mut UnixStream,
     response: &PruneIdleResponse,
 ) -> io::Result<()> {

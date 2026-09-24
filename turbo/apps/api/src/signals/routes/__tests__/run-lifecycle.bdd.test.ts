@@ -1105,6 +1105,24 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
+  it("prefers the installed CLI while retaining the legacy package URL in new run claims", async () => {
+    const api = createRunsApi(context);
+    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const run = await api.createRun(actor, {
+      agentId,
+      prompt: "use the Okou CLI",
+      modelProvider: "anthropic-api-key",
+    });
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(run.runId);
+    expect(claim.appendSystemPrompt).toContain(
+      "You have access to the Okou CLI. Run commands with: `okou <command>`.",
+    );
+    expect(claim.appendSystemPrompt).not.toContain("If `okou` is unavailable");
+    expect(claim.platformEnvironment.CLI_PKG_URL).toBeTruthy();
+    await api.requestCancelRun(actor, run.runId, [200]);
+  });
+
   it("advertises artifact sharing only when private artifacts are enabled", async () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);

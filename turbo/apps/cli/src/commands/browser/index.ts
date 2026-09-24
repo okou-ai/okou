@@ -91,11 +91,6 @@ interface InputRequestOptions extends OutputOptions {
   readonly field: readonly string[];
 }
 
-interface InteractionRequestOptions extends OutputOptions {
-  readonly callbackPrompt: string;
-  readonly reason: string;
-}
-
 function parseCountry(value: string): string {
   const normalized = value.trim().toLowerCase();
   if (!/^[a-z]{2}$/u.test(normalized)) {
@@ -380,40 +375,6 @@ const inputRequestCommand = new Command()
     }),
   );
 
-const interactionRequestCommand = new Command()
-  .name("interaction-request")
-  .description(
-    "Hand the current thread Browser to the user for direct interaction",
-  )
-  .requiredOption(
-    "--reason <text>",
-    "User-facing reason that direct Browser interaction is required",
-  )
-  .requiredOption(
-    "--callback-prompt <text>",
-    "Message that starts the next agent round after the user finishes",
-  )
-  .option("--json", "Print machine-readable output")
-  .action(
-    withErrorHandler(async (options: InteractionRequestOptions) => {
-      const request = browserUserActionCreateRequestSchema.safeParse({
-        kind: "direct_interaction",
-        reason: options.reason,
-        callbackPrompt: options.callbackPrompt,
-      });
-      if (!request.success) {
-        throw invalidRequest(
-          request.error.issues[0]?.message ??
-            "Browser interaction request is invalid",
-        );
-      }
-      renderBrowserUserAction(
-        await createBrowserUserAction(request.data),
-        options,
-      );
-    }),
-  );
-
 export const browserCommand = new Command()
   .name("browser")
   .description("Use a managed remote browser through agent-browser")
@@ -423,7 +384,6 @@ export const browserCommand = new Command()
   .addCommand(statusCommand)
   .addCommand(viewCommand)
   .addCommand(inputRequestCommand)
-  .addCommand(interactionRequestCommand)
   .addHelpText(
     "after",
     `
@@ -434,7 +394,6 @@ Examples:
   Use the browser:            agent-browser --session ${DEFAULT_AGENT_BROWSER_SESSION} open https://example.com
   Share live view:            okou browser view
   Request native input:       okou browser input-request --field '{"key":"username","label":"Email","fieldKind":"username","required":true,"target":"@e1"}' --callback-prompt "Continue after the user enters their email"
-  Request direct interaction: okou browser interaction-request --reason "Complete the passkey prompt" --callback-prompt "Continue after the user completes the passkey prompt"
 
 Notes:
   - The browser outlives this run; the user can keep working in it from the viewer link
@@ -445,5 +404,6 @@ Notes:
   - Threads can run their browsers in parallel
   - Input selectors and refs are resolved locally and are never sent to the API
   - Resolving an @eN ref focuses it but never types, clicks, or submits the website form
-  - After either request command succeeds, return its exact URL and run no later Browser command in this turn`,
+  - After input-request succeeds, return its exact URL and run no later Browser command in this turn
+  - To hand the Browser to the user, return the exact okou browser view URL, explain the step, ask for a chat reply when finished or blocked, and stop using the Browser in this turn`,
   );

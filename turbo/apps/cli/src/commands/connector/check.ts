@@ -5,6 +5,7 @@ import type { ConnectorCheckPolicy } from "@okouai/api-contracts/contracts/conne
 
 import {
   addAwsDiagnosticOptions,
+  AWS_INCOMPLETE_CONTEXT_GUIDANCE,
   buildDiagnosticRequest,
   connectorCheckRetryCommand,
   connectorPermissionRequestCommand,
@@ -30,7 +31,7 @@ import { customConnectorSettingsGuidance } from "./custom-connector-guidance";
 import { printConnectorCheckJson } from "./check-json";
 import { resolveDiagnosticConnectorSelector } from "./diagnostic-connector-selector";
 import {
-  diagnoseConnectorCheck,
+  diagnoseConnectorCheckWithContext,
   getBuiltinConnector,
 } from "../../lib/api/domains/connectors";
 import { getAgentUserBuiltinConnectors } from "../../lib/api/domains/agents";
@@ -488,6 +489,7 @@ function printUnknownEndpointPolicy(
   agentId: string | undefined,
   request: UrlDiagnosticRequest,
   platformOrigin: string,
+  suppressBuiltinUnknownAction: boolean,
 ): void {
   switch (policy.outcome) {
     case "allow":
@@ -501,6 +503,7 @@ function printUnknownEndpointPolicy(
       console.log(
         "Result: No permission matched. The unknown endpoint policy denies this request.",
       );
+      if (suppressBuiltinUnknownAction && target.kind === "builtin") return;
       printPermissionRequestCommands(
         target,
         "__unknown__",
@@ -514,6 +517,7 @@ function printUnknownEndpointPolicy(
       console.log(
         "Result: No permission matched. The unknown endpoint policy requires approval.",
       );
+      if (suppressBuiltinUnknownAction && target.kind === "builtin") return;
       printPermissionRequestCommands(
         target,
         "__unknown__",
@@ -534,6 +538,7 @@ function printUrlPermissionDiagnostic(
   result: ResolvedUrlDiagnostic,
   agentId: string | undefined,
   platformOrigin: string,
+  awsContextIncomplete: boolean,
 ): void {
   console.log("## Step 3: Permission policy check (auto-detected from URL)");
   console.log("");
@@ -566,12 +571,17 @@ function printUrlPermissionDiagnostic(
       `No named permission matches ${result.method} ${result.relativePath}. This request falls through to the unknown-endpoint policy.`,
     );
     console.log("");
+    if (awsContextIncomplete) {
+      console.log(AWS_INCOMPLETE_CONTEXT_GUIDANCE);
+      console.log("");
+    }
     printUnknownEndpointPolicy(
       result.connector.target,
       result.permission.policy,
       agentId,
       request,
       platformOrigin,
+      awsContextIncomplete,
     );
   }
   console.log("");
@@ -731,9 +741,14 @@ Permission recovery:
           ? undefined
           : await resolveDiagnosticConnectorSelector(opts.connector);
       const request = buildDiagnosticRequest({ ...opts, connector }, method);
-      const diagnostic = await diagnoseConnectorCheck(request);
+      const { diagnostic, awsContextIncomplete } =
+        await diagnoseConnectorCheckWithContext(request);
       if (opts.json) {
-        await printConnectorCheckJson(request, diagnostic);
+        await printConnectorCheckJson(
+          request,
+          diagnostic,
+          awsContextIncomplete,
+        );
         return;
       }
       const resolved = resolveConnectorCheckDiagnostic(request, diagnostic);
@@ -798,6 +813,7 @@ Permission recovery:
           result,
           ctx.agentId,
           ctx.platformOrigin,
+          awsContextIncomplete,
         );
       } else {
         printEnvironmentPermissionDiagnostic(

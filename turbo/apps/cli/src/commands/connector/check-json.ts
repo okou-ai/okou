@@ -19,6 +19,7 @@ import {
   currentChatSupportsActionCallback,
 } from "./action-url";
 import {
+  AWS_INCOMPLETE_CONTEXT_GUIDANCE,
   connectorCheckDiagnosticError,
   connectorCheckRetryCommand,
   connectorPermissionRequestCommand,
@@ -67,7 +68,16 @@ function permissionActions(
   diagnostic: ResolvedDiagnostic,
   origin: string,
   agentId: string | undefined,
+  awsContextIncomplete: boolean,
 ): CheckAction[] {
+  if (
+    awsContextIncomplete &&
+    diagnostic.mode === "url" &&
+    diagnostic.permission.kind === "unknown-endpoint" &&
+    diagnostic.connector.target.kind === "builtin"
+  ) {
+    return [];
+  }
   const permissions =
     diagnostic.mode === "url"
       ? diagnostic.permission.kind === "matched"
@@ -235,6 +245,7 @@ function checkConnectionActions(
 export async function printConnectorCheckJson(
   request: ConnectorCheckRequestBody,
   diagnostic: ConnectorCheckTargetAwareDiagnosticResult,
+  awsContextIncomplete: boolean,
 ): Promise<void> {
   const runBound = isRunBoundConnectorContext();
   const context = runBound ? "run" : "current";
@@ -265,6 +276,10 @@ export async function printConnectorCheckJson(
     requireUrlRequest(request);
   }
   const target = diagnostic.connector.target;
+  const incompleteUnknown =
+    awsContextIncomplete &&
+    diagnostic.mode === "url" &&
+    diagnostic.permission.kind === "unknown-endpoint";
   const evidence = await loadCheckEvidence(target, runBound, agentId);
   const { definition, currentConnection, account, authorized, origin } =
     evidence;
@@ -282,7 +297,13 @@ export async function printConnectorCheckJson(
     }).map((link): CheckAction => {
       return { kind: "link", ...link };
     }),
-    ...permissionActions(request, diagnostic, origin, agentId),
+    ...permissionActions(
+      request,
+      diagnostic,
+      origin,
+      agentId,
+      incompleteUnknown,
+    ),
   ];
   if (diagnostic.run.status === "not-configured") {
     actions.push({
@@ -330,6 +351,7 @@ export async function printConnectorCheckJson(
         guidance: [
           "Routing and permission diagnostics describe current intended state; they do not confirm that the runner has applied the latest update.",
           ...diagnosticContextGuidance(request),
+          ...(incompleteUnknown ? [AWS_INCOMPLETE_CONTEXT_GUIDANCE] : []),
           ...(runBound
             ? [
                 "Connector changes apply to future runs. Reconnect or change the thread selection, then start a new run.",

@@ -1757,29 +1757,6 @@
       "uncertain": "브라우저를 확인하세요",
       "uncertainDescription": "브라우저가 정보를 받았을 수 있습니다. 다시 시도하기 전에 에이전트에게 확인을 요청하세요."
     },
-    "browserInteraction": {
-      "applying": "브라우저 상호작용 완료 중",
-      "applyingDescription": "브라우저에서 이 요청을 완료하고 있습니다.",
-      "callbackFailed": "에이전트에게 알리지 못했습니다.",
-      "cancel": "취소",
-      "cancelFailed": "이 요청을 취소하지 못했습니다. 다시 시도하세요.",
-      "cancelled": "요청이 취소됨",
-      "cancelling": "취소 중…",
-      "completed": "브라우저 상호작용 완료",
-      "completeFailed": "이 요청을 완료하지 못했습니다. 다시 시도하세요.",
-      "completing": "완료 중…",
-      "continue": "에이전트에게 알리기",
-      "continuing": "에이전트에게 알리는 중…",
-      "delivered": "에이전트에게 알림",
-      "description": "브라우저를 열고 이 단계를 완료한 다음 완료를 선택하세요.",
-      "done": "완료",
-      "finish": "단계 완료",
-      "stale": "브라우저를 더 이상 사용할 수 없음",
-      "staleDescription": "에이전트에게 새 요청을 만들어 달라고 하세요.",
-      "title": "브라우저 제어권 가져오기",
-      "uncertain": "브라우저를 확인하세요",
-      "uncertainDescription": "상호작용이 완료되었을 수 있습니다. 다시 시도하기 전에 에이전트에게 확인을 요청하세요."
-    },
     "cards": {
       "viewDetails": "세부 정보 보기"
     },
@@ -4859,8 +4836,7 @@
       "preparedDescription": "{{assistantName}}가 도구에서 다음 단계를 준비합니다.",
       "preparedTitle": "워크플로 준비 완료",
       "reviewDescription": "{{assistantName}}가 워크플로를 완료하고 결과를 반환합니다.",
-      "reviewTitle": "검토 준비 완료",
-      "source": "소스"
+      "reviewTitle": "검토 준비 완료"
     },
     "workflowPicker": {
       "categoryDescription": "도구와 목표에 맞게 조정 가능한 즉시 실행 설정입니다.",

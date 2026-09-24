@@ -1789,29 +1789,6 @@
       "uncertain": "Comprueba el navegador",
       "uncertainDescription": "Es posible que el navegador haya recibido la información. Pide al agente que lo compruebe antes de volver a intentarlo."
     },
-    "browserInteraction": {
-      "applying": "Completando la interacción con el navegador",
-      "applyingDescription": "El navegador está finalizando esta solicitud.",
-      "callbackFailed": "No se notificó al agente.",
-      "cancel": "Cancelar",
-      "cancelFailed": "No se pudo cancelar esta solicitud. Inténtalo de nuevo.",
-      "cancelled": "Solicitud cancelada",
-      "cancelling": "Cancelando…",
-      "completed": "Interacción con el navegador completada",
-      "completeFailed": "No se pudo completar esta solicitud. Inténtalo de nuevo.",
-      "completing": "Completando…",
-      "continue": "Avisar al agente",
-      "continuing": "Avisando al agente…",
-      "delivered": "Agente notificado",
-      "description": "Abre el navegador, completa este paso y selecciona Hecho.",
-      "done": "Hecho",
-      "finish": "Finalizar paso",
-      "stale": "El navegador ya no está disponible",
-      "staleDescription": "Pide al agente que cree una nueva solicitud.",
-      "title": "Toma el control del navegador",
-      "uncertain": "Comprueba el navegador",
-      "uncertainDescription": "Es posible que la interacción se haya completado. Pide al agente que lo compruebe antes de volver a intentarlo."
-    },
     "cards": {
       "viewDetails": "Ver detalles"
     },
@@ -4929,8 +4906,7 @@
       "preparedDescription": "{{assistantName}} prepara el siguiente paso con tus herramientas.",
       "preparedTitle": "Flujo de trabajo preparado",
       "reviewDescription": "{{assistantName}} completa el flujo de trabajo y devuelve el resultado.",
-      "reviewTitle": "Listo para la revisión",
-      "source": "Fuente"
+      "reviewTitle": "Listo para la revisión"
     },
     "workflowPicker": {
       "categoryDescription": "Configuraciones listas para usar que puedes adaptar a tus herramientas y objetivos.",

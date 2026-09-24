@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.706.0](https://github.com/okou-ai/okou/compare/core-v8.705.0...core-v8.706.0) (2026-09-24)
+
+
+### Features
+
+* **platform:** share a single assistant message with its prompt ([#36479](https://github.com/okou-ai/okou/issues/36479)) ([e3f9aba](https://github.com/okou-ai/okou/commit/e3f9aba6d6a53ddc8cfa14659cbde8c6d76f1443))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.500.0
+
 ## [8.705.0](https://github.com/okou-ai/okou/compare/core-v8.704.1...core-v8.705.0) (2026-09-23)
 
 

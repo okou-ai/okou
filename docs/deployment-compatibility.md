@@ -3556,7 +3556,7 @@ data operation.
 The row is deliberately not an audit record. Its token hash is the primary
 key; searchable ownership, agent/thread authorization, provider-session
 identity, state, the strict versioned payload, and the two operational
-transition timestamps are the only persisted fields. Variant-specific callback
+transition timestamps are the only persisted fields. Input callback identities
 and exact-target data live only in that payload. Do not add a copied Browser
 expiry, originating run, diagnostic reason, or created/updated timestamps.
 

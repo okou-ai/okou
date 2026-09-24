@@ -90,16 +90,35 @@ export function captureDesktopNativeHelperError(
   });
 }
 
-/**
- * A silent session restore fails without any user-visible error, so an
- * unreported failure leaves the desktop signed out with no production signal.
- * An authoritative sign-out is expected and stays unreported.
+/** Known hidden-window stalls and socket disconnects are intentionally silent;
+ * recovery remains fail-closed and other unavailable failures stay visible.
  */
+function isSuppressedDesktopAuthRestoreCause(cause: unknown): boolean {
+  if (!(cause instanceof Error)) return false;
+  if (
+    cause.message === "Desktop auth session restore timed out" ||
+    cause.message === "Desktop auth window timed out"
+  )
+    return true;
+  if (!(cause instanceof TypeError) || cause.message !== "fetch failed")
+    return false;
+  return (
+    cause.cause instanceof Error &&
+    (cause.cause.message ===
+      "Client network socket disconnected before secure TLS connection was established" ||
+      cause.cause.message === "other side closed")
+  );
+}
+
 export function captureDesktopSessionRestoreFailure(failure: {
   readonly classification: DesktopAuthRestoreFailure;
   readonly cause: unknown;
 }): void {
-  if (!sentryDsn || failure.classification !== "unavailable") {
+  if (
+    !sentryDsn ||
+    failure.classification !== "unavailable" ||
+    isSuppressedDesktopAuthRestoreCause(failure.cause)
+  ) {
     return;
   }
 

@@ -1789,29 +1789,6 @@
       "uncertain": "Vérifiez le navigateur",
       "uncertainDescription": "Le navigateur a peut-être reçu les informations. Demandez à l’agent de vérifier avant de réessayer."
     },
-    "browserInteraction": {
-      "applying": "Finalisation de l’interaction avec le navigateur",
-      "applyingDescription": "Le navigateur finalise cette demande.",
-      "callbackFailed": "L’agent n’a pas été prévenu.",
-      "cancel": "Annuler",
-      "cancelFailed": "Impossible d’annuler cette demande. Réessayez.",
-      "cancelled": "Demande annulée",
-      "cancelling": "Annulation…",
-      "completed": "Interaction avec le navigateur terminée",
-      "completeFailed": "Impossible de terminer cette demande. Réessayez.",
-      "completing": "Finalisation…",
-      "continue": "Prévenir l’agent",
-      "continuing": "Notification en cours…",
-      "delivered": "Agent informé",
-      "description": "Ouvrez le navigateur, terminez cette étape, puis sélectionnez Terminé.",
-      "done": "Terminé",
-      "finish": "Terminer l’étape",
-      "stale": "Navigateur indisponible",
-      "staleDescription": "Demandez à l’agent de créer une nouvelle demande.",
-      "title": "Prenez le contrôle du navigateur",
-      "uncertain": "Vérifiez le navigateur",
-      "uncertainDescription": "L’interaction est peut-être terminée. Demandez à l’agent de vérifier avant de réessayer."
-    },
     "cards": {
       "viewDetails": "Voir les détails"
     },
@@ -4929,8 +4906,7 @@
       "preparedDescription": "{{assistantName}} prépare l'étape suivante à partir de vos outils.",
       "preparedTitle": "Workflow préparé",
       "reviewDescription": "{{assistantName}} termine le workflow et renvoie le résultat.",
-      "reviewTitle": "Prêt pour révision",
-      "source": "Source"
+      "reviewTitle": "Prêt pour révision"
     },
     "workflowPicker": {
       "categoryDescription": "Configurations prêtes à l'emploi que vous pouvez adapter à vos outils et objectifs.",

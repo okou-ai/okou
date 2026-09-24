@@ -1757,29 +1757,6 @@
       "uncertain": "Periksa browser",
       "uncertainDescription": "Browser mungkin telah menerima informasi. Minta agen memeriksanya sebelum mencoba lagi."
     },
-    "browserInteraction": {
-      "applying": "Menyelesaikan interaksi browser",
-      "applyingDescription": "Browser sedang menyelesaikan permintaan ini.",
-      "callbackFailed": "Agen belum diberi tahu.",
-      "cancel": "Batal",
-      "cancelFailed": "Permintaan ini tidak dapat dibatalkan. Coba lagi.",
-      "cancelled": "Permintaan dibatalkan",
-      "cancelling": "Membatalkan…",
-      "completed": "Interaksi browser selesai",
-      "completeFailed": "Permintaan ini tidak dapat diselesaikan. Coba lagi.",
-      "completing": "Menyelesaikan…",
-      "continue": "Beri tahu agen",
-      "continuing": "Memberi tahu agen…",
-      "delivered": "Agen diberi tahu",
-      "description": "Buka browser, selesaikan langkah ini, lalu pilih Selesai.",
-      "done": "Selesai",
-      "finish": "Selesaikan langkah",
-      "stale": "Browser tidak lagi tersedia",
-      "staleDescription": "Minta agen membuat permintaan baru.",
-      "title": "Ambil alih browser",
-      "uncertain": "Periksa browser",
-      "uncertainDescription": "Interaksi mungkin telah selesai. Minta agen memeriksanya sebelum mencoba lagi."
-    },
     "cards": {
       "viewDetails": "Lihat detail"
     },
@@ -4859,8 +4836,7 @@
       "preparedDescription": "{{assistantName}} menyiapkan langkah berikutnya dari alat Anda.",
       "preparedTitle": "Alur kerja siap",
       "reviewDescription": "{{assistantName}} menyelesaikan alur kerja dan mengembalikan hasilnya.",
-      "reviewTitle": "Siap ditinjau",
-      "source": "Sumber"
+      "reviewTitle": "Siap ditinjau"
     },
     "workflowPicker": {
       "categoryDescription": "Pengaturan siap jalan yang bisa Anda sesuaikan dengan alat dan tujuan Anda.",

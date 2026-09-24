@@ -36,18 +36,12 @@ import { parseTrustedPlatformActionUrl } from "./platform-action-url.ts";
 const REQUEST_TOKEN_PATTERN = /^vm0_browser_user_action_[A-Za-z0-9_-]{43}$/u;
 export const BROWSER_INPUT_CANCELLATION_PROMPT =
   "The user cancelled the browser input request.";
-export const BROWSER_INTERACTION_CANCELLATION_PROMPT =
-  "The user cancelled the browser interaction request.";
 
 type BrowserInputAction = Extract<
   BrowserUserActionResponse,
   { readonly kind: "input" }
 >;
-type BrowserDirectInteractionAction = Extract<
-  BrowserUserActionResponse,
-  { readonly kind: "direct_interaction" }
->;
-type BrowserUserAction = BrowserInputAction | BrowserDirectInteractionAction;
+type BrowserUserAction = BrowserInputAction;
 
 export interface BrowserUserActionDescriptor {
   readonly requestToken: string;
@@ -70,7 +64,8 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly busy$: Computed<boolean>;
   readonly entryState$: Computed<"idle" | "checking" | "ready" | "unavailable">;
   readonly beginEntry$: Command<Promise<void>, [AbortSignal]>;
-  readonly endEntry$: Command<void, []>;
+  readonly startStandaloneEntry$: Command<Promise<void>, [AbortSignal]>;
+  readonly retryStandaloneRequest$: Command<Promise<void>, [AbortSignal]>;
   readonly refresh$: Command<void, []>;
   readonly updateDraft$: Command<void, [string, string]>;
   readonly clearDraft$: Command<void, []>;
@@ -87,7 +82,6 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
     [HTMLFormElement | null]
   >;
   readonly submit$: Command<Promise<void>, [AbortSignal]>;
-  readonly complete$: Command<Promise<void>, [AbortSignal]>;
   readonly cancel$: Command<Promise<void>, [AbortSignal]>;
   readonly continue$: Command<Promise<void>, [AbortSignal]>;
 }
@@ -95,7 +89,7 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
 function createEntrySignals(
   descriptor: BrowserUserActionDescriptor,
   refresh$: BrowserUserActionSignals["refresh$"],
-): Pick<BrowserUserActionSignals, "entryState$" | "beginEntry$" | "endEntry$"> {
+): Pick<BrowserUserActionSignals, "entryState$" | "beginEntry$"> {
   const internalState$ = state<"idle" | "checking" | "ready" | "unavailable">(
     "idle",
   );
@@ -136,17 +130,45 @@ function createEntrySignals(
       set(refresh$);
     }
   });
-  const endEntry$ = command(({ set }) => {
-    set(resetEntrySignal$);
-    set(internalState$, "idle");
-  });
   return {
     entryState$: computed((get) => {
       return get(internalState$);
     }),
     beginEntry$,
-    endEntry$,
   };
+}
+
+function createStandaloneEntrySignals(
+  request$: BrowserUserActionSignals["request$"],
+  refresh$: BrowserUserActionSignals["refresh$"],
+  beginEntry$: BrowserUserActionSignals["beginEntry$"],
+): Pick<
+  BrowserUserActionSignals,
+  "startStandaloneEntry$" | "retryStandaloneRequest$"
+> {
+  const startStandaloneEntry$ = command(
+    async ({ get, set }, signal: AbortSignal) => {
+      const loaded = await settle(get(request$), signal);
+      if (!loaded.ok) {
+        return;
+      }
+      const request = loaded.value;
+      if (
+        request.kind === "action" &&
+        request.action.kind === "input" &&
+        request.action.state === "pending"
+      ) {
+        await set(beginEntry$, signal);
+      }
+    },
+  );
+  const retryStandaloneRequest$ = command(
+    async ({ set }, signal: AbortSignal) => {
+      set(refresh$);
+      await set(startStandaloneEntry$, signal);
+    },
+  );
+  return { startStandaloneEntry$, retryStandaloneRequest$ };
 }
 
 type BrowserUserActionCardSignalsRegistry = CardSignalsRegistry<
@@ -491,73 +513,6 @@ function createSubmitSignal({
   });
 }
 
-function cancellationPrompt(action: BrowserUserAction): string {
-  return action.kind === "direct_interaction"
-    ? BROWSER_INTERACTION_CANCELLATION_PROMPT
-    : BROWSER_INPUT_CANCELLATION_PROMPT;
-}
-
-function createCompleteSignal({
-  descriptor,
-  request$,
-  refresh$,
-  activeMutation$,
-  deliverCallback$,
-}: BrowserUserActionMutationContext): BrowserUserActionSignals["complete$"] {
-  return command(async ({ get, set }, signal: AbortSignal) => {
-    if (get(activeMutation$)) {
-      return;
-    }
-    const request = await get(request$);
-    signal.throwIfAborted();
-    if (get(activeMutation$)) {
-      return;
-    }
-    if (
-      request.kind !== "action" ||
-      request.action.kind !== "direct_interaction" ||
-      request.action.state !== "pending"
-    ) {
-      return;
-    }
-
-    set(activeMutation$, true);
-    const result = await accept(
-      get(apiClient$)(browserUserActionsContract).complete({
-        params: { requestToken: descriptor.requestToken },
-        body: {},
-        fetchOptions: { signal },
-      }),
-      [200, 403, 404, 409, 410],
-      signal,
-    ).finally(() => {
-      set(activeMutation$, false);
-    });
-    signal.throwIfAborted();
-    const status: number = result.status;
-    if (
-      status === 200 &&
-      actionMatches(result.body, descriptor) &&
-      result.body.kind === "direct_interaction" &&
-      result.body.state === "succeeded"
-    ) {
-      set(activeMutation$, true);
-      await set(
-        deliverCallback$,
-        descriptor.callbackPrompt,
-        result.body.callbackIds.success,
-        signal,
-      ).finally(() => {
-        set(activeMutation$, false);
-        set(refresh$);
-      });
-      signal.throwIfAborted();
-      return;
-    }
-    set(refresh$);
-  });
-}
-
 function createCancelSignal({
   descriptor,
   request$,
@@ -602,7 +557,7 @@ function createCancelSignal({
       set(activeMutation$, true);
       await set(
         deliverCallback$,
-        cancellationPrompt(result.body),
+        BROWSER_INPUT_CANCELLATION_PROMPT,
         result.body.callbackIds.cancellation,
         signal,
       ).finally(() => {
@@ -643,7 +598,7 @@ function createContinueSignal({
           }
         : request.action.state === "cancelled"
           ? {
-              prompt: cancellationPrompt(request.action),
+              prompt: BROWSER_INPUT_CANCELLATION_PROMPT,
               ids: request.action.callbackIds.cancellation,
             }
           : null;
@@ -674,7 +629,6 @@ function createMutationSignals(
   | "callbackFailed$"
   | "busy$"
   | "submit$"
-  | "complete$"
   | "cancel$"
   | "continue$"
 > {
@@ -724,7 +678,6 @@ function createMutationSignals(
       return get(activeMutation$);
     }),
     submit$: createSubmitSignal(context),
-    complete$: createCompleteSignal(context),
     cancel$: createCancelSignal(context),
     continue$: createContinueSignal(context),
   };
@@ -752,6 +705,11 @@ export function createBrowserUserActionSignals(
     }),
   );
   const entrySignals = createEntrySignals(descriptor, requestSignals.refresh$);
+  const standaloneEntrySignals = createStandaloneEntrySignals(
+    requestSignals.request$,
+    requestSignals.refresh$,
+    entrySignals.beginEntry$,
+  );
   const draftSignals = createDraftSignals();
   const mutationSignals = createMutationSignals(
     descriptor,
@@ -765,6 +723,7 @@ export function createBrowserUserActionSignals(
     ...requestSignals,
     resumeRef$,
     ...entrySignals,
+    ...standaloneEntrySignals,
     ...draftSignals,
     ...mutationSignals,
   };

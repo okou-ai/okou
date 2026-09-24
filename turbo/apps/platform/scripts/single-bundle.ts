@@ -1,10 +1,9 @@
 import type { Plugin } from "vite";
 import { CLERK_UI_ASSET_PATTERN } from "./clerk-ui.ts";
+import { SHARED_DATABASE_WORKER_FILE_PATTERN } from "./shared-database-worker-html.ts";
 
 export const RAW_JAVASCRIPT_OUTPUT_LIMIT_BYTES = 8_500_000;
 
-const SHARED_DATABASE_WORKER_FILE_PATTERN =
-  /^assets\/shared-database-worker-[^/]+\.js$/u;
 const VENDOR_FILE_PATTERN = /^assets\/vendor-[^/]+\.js$/u;
 const ROLLDOWN_RUNTIME_FILE_PATTERN = /^assets\/rolldown-runtime-[^/]+\.js$/u;
 
