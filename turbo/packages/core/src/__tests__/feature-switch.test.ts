@@ -66,6 +66,32 @@ describe("isFeatureEnabled", () => {
     });
   });
 
+  it("enables thread remote access for staff while respecting overrides", () => {
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    const external = { orgId: "org_nonexistent" };
+    expect(isFeatureEnabled(FeatureSwitchKey.ThreadRemoteAccess, {})).toBe(
+      false,
+    );
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.ThreadRemoteAccess, external),
+    ).toBe(false);
+    expect(isFeatureEnabled(FeatureSwitchKey.ThreadRemoteAccess, staff)).toBe(
+      true,
+    );
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.ThreadRemoteAccess, {
+        ...staff,
+        overrides: { [FeatureSwitchKey.ThreadRemoteAccess]: false },
+      }),
+    ).toBe(false);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.ThreadRemoteAccess, {
+        ...external,
+        overrides: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+      }),
+    ).toBe(true);
+  });
+
   it("keeps the multi-account subscription UI on the staff organization", () => {
     expect(
       isFeatureEnabled(FeatureSwitchKey.PersonalModelProviderAccounts, {
