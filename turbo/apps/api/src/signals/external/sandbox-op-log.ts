@@ -81,3 +81,44 @@ export function recordSandboxOperations(
     }),
   );
 }
+
+function claimResponseJsonSizeBucket(bytes: number): string {
+  if (bytes < 4 * 1024) {
+    return "lt_4_kib";
+  }
+  if (bytes < 16 * 1024) {
+    return "4_16_kib";
+  }
+  if (bytes < 64 * 1024) {
+    return "16_64_kib";
+  }
+  if (bytes < 256 * 1024) {
+    return "64_256_kib";
+  }
+  if (bytes < 1024 * 1024) {
+    return "256_kib_1_mib";
+  }
+  return "ge_1_mib";
+}
+
+/** The API JSON representation before any intermediary-controlled transfer. */
+export function recordClaimResponseJsonSerialization(args: {
+  readonly runId: string;
+  readonly byteLength: number;
+  readonly serializationDurationMs: number;
+}): void {
+  recordSandboxOperations([
+    {
+      sandboxType: "runner",
+      actionType: "api_claim_response_json_serialize",
+      durationMs: args.serializationDurationMs,
+      success: true,
+      runId: args.runId,
+      dimensions: {
+        serialized_json_size_bucket: claimResponseJsonSizeBucket(
+          args.byteLength,
+        ),
+      },
+    },
+  ]);
+}

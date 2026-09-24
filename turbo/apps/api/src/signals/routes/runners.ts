@@ -68,6 +68,7 @@ import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { runnerAuth$, type RunnerAuthContext } from "../auth/runner-auth";
 import { authorization$, request$ } from "../context/hono";
+import type { JsonResponseObserver } from "../context/route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$, type Db } from "../external/db";
@@ -81,7 +82,10 @@ import {
   createRunnerGroupRealtimeToken,
   publishChatThreadMessageCreatedSafely,
 } from "../external/realtime";
-import { recordSandboxOperations } from "../external/sandbox-op-log";
+import {
+  recordClaimResponseJsonSerialization,
+  recordSandboxOperations,
+} from "../external/sandbox-op-log";
 import { now, nowDate } from "../../lib/time";
 import { env } from "../../lib/env";
 import { badRequestMessage, notFound } from "../../lib/error";
@@ -3330,6 +3334,21 @@ const recordActiveInputDeliveryReceiptInner$ = command(
   },
 );
 
+const observeClaimJsonResponse: JsonResponseObserver = (
+  context,
+  observation,
+) => {
+  const runId = context.req.param("id");
+  if (runId === undefined) {
+    throw new Error("Validated claim route is missing run ID");
+  }
+  recordClaimResponseJsonSerialization({
+    runId,
+    byteLength: observation.byteLength,
+    serializationDurationMs: observation.serializationDurationMs,
+  });
+};
+
 export const runnersRoutes: readonly RouteEntry[] = [
   {
     route: runnersHeartbeatContract.heartbeat,
@@ -3342,6 +3361,7 @@ export const runnersRoutes: readonly RouteEntry[] = [
   {
     route: runnersJobClaimContract.claim,
     handler: claimInner$,
+    observeJsonResponse: observeClaimJsonResponse,
   },
   {
     route: runnersModelProviderFailuresContract.report,

@@ -500,6 +500,13 @@ impl RunnerPreSpawnTiming {
                 true,
                 None,
             );
+            let response_attribution = timing.response_attribution();
+            telemetry.record_bounded_outcome(
+                "runner_claim_response_body_attribution",
+                true,
+                response_attribution.body_size_bucket(),
+                Some(response_attribution.content_encoding()),
+            );
             telemetry.record(
                 "runner_claim_response_decode",
                 timing.response_decode_elapsed(),
