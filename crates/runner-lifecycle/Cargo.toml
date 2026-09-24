@@ -2,7 +2,7 @@
 name = "runner-lifecycle"
 version = "0.1.3"
 edition.workspace = true
-description = "Runner idle sandbox, status, and workspace image lifecycle"
+description = "Runner idle sandbox, memory prefetch, status, and workspace image lifecycle"
 
 [features]
 test-support = ["dep:sandbox-mock", "dep:tempfile", "runner-host/test-support"]
