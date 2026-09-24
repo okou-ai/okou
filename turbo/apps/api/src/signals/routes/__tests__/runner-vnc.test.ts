@@ -755,6 +755,208 @@ describe("private Runner VNC authority", () => {
     });
   });
 
+  it("admits Apple SRP only for an authorized SSH-to-Mac-loopback profile", async () => {
+    const f = await api.fixture();
+    const ssh = await accept(
+      setupApp({ context, routes: sshConnectionsRoutes })(
+        sshConnectionsContract,
+      ).create({
+        headers: vncSessionHeaders,
+        body: {
+          id: randomUUID(),
+          displayName: "Mac SSH",
+          host: "mac.example.com",
+          credential: inlineSshKey("ec2-user", "private-key"),
+        },
+      }),
+      [201],
+    );
+    const body = {
+      id: randomUUID(),
+      displayName: "Mac Screen Sharing SRP",
+      host: "127.0.0.1",
+      credential: {
+        create: {
+          name: "Mac SRP login",
+          authentication: {
+            method: "apple_srp_username_password" as const,
+            username: "operator",
+            password: "secret",
+          },
+        },
+      },
+      security: { type: "apple_srp" as const },
+      transport: { type: "ssh" as const, connectionId: ssh.body.id },
+    };
+    expect(
+      (
+        await accept(
+          api.connections().create({
+            headers: vncSessionHeaders,
+            body: { ...body, host: "localhost" },
+          }),
+          [400],
+        )
+      ).body.error.code,
+    ).toBe("VNC_INVALID_APPLE_SRP_ROUTE");
+    expect(
+      (
+        await accept(
+          api.connections().create({
+            headers: vncSessionHeaders,
+            body: { ...body, security: { type: "apple_dh" } },
+          }),
+          [400],
+        )
+      ).body.error.code,
+    ).toBe("VNC_PROFILE_MISMATCH");
+    const saved = await accept(
+      api.connections().create({ headers: vncSessionHeaders, body }),
+      [201],
+    );
+    expect(saved.body.security).toStrictEqual({ type: "apple_srp" });
+    const target = { ...f, connectionId: saved.body.id };
+    const profile = [
+      {
+        authMethod: "apple_srp_username_password" as const,
+        securityType: "apple_srp" as const,
+        transportType: "ssh" as const,
+      },
+    ];
+    const kms = useSecretKmsProbe();
+    await expect(api.resolve(target)).resolves.toStrictEqual({
+      outcome: "unsupported_profile",
+    });
+    expect(kms.decryptCalls).toBe(0);
+    await api.grantSsh(f, false);
+    await expect(
+      api.resolve(target, { supportedProfiles: profile }),
+    ).resolves.toStrictEqual({ outcome: "unavailable" });
+    expect(kms.decryptCalls).toBe(0);
+    await api.grantSsh(f, true);
+    await expect(
+      api.resolve(target, { supportedProfiles: profile }),
+    ).resolves.toStrictEqual({
+      outcome: "resolved_apple_srp",
+      host: "127.0.0.1",
+      port: 5900,
+      generation: 1,
+      transport: { type: "ssh", connectionId: ssh.body.id, generation: 1 },
+      authentication: {
+        method: "apple_srp_username_password",
+        username: "operator",
+        password: "secret",
+      },
+      security: { type: "apple_srp" },
+    });
+    expect(kms.decryptCalls).toBe(1);
+    const expectedTransport = {
+      type: "ssh" as const,
+      connectionId: ssh.body.id,
+      generation: 1,
+    };
+    expect((await check(target, 1, { expectedTransport })).body).toStrictEqual({
+      outcome: "valid",
+    });
+    for (const [change, code] of [
+      [{ host: "localhost" }, "VNC_INVALID_APPLE_SRP_ROUTE"],
+      [{ security: { type: "apple_dh" as const } }, "VNC_PROFILE_MISMATCH"],
+    ] as const) {
+      const rejected = await accept(
+        api.connections().update({
+          headers: vncSessionHeaders,
+          params: { connectionId: saved.body.id },
+          body: { expectedGeneration: 1, ...change },
+        }),
+        [400],
+      );
+      expect(rejected.body.error.code).toBe(code);
+    }
+    expect((await check(target, 1, { expectedTransport })).body).toStrictEqual({
+      outcome: "valid",
+    });
+    const rotated = await accept(
+      api.credentials().update({
+        headers: vncSessionHeaders,
+        params: { credentialId: saved.body.credentialId },
+        body: {
+          expectedRevision: 1,
+          authentication: {
+            method: "apple_srp_username_password",
+            username: "operator",
+            password: "new-secret",
+          },
+        },
+      }),
+      [200],
+    );
+    expect(rotated.body).toMatchObject({
+      authMethod: "apple_srp_username_password",
+      username: "operator",
+      revision: 2,
+    });
+    expect(JSON.stringify(rotated.body)).not.toContain("new-secret");
+    expect((await check(target, 1, { expectedTransport })).body).toStrictEqual({
+      outcome: "configuration_changed",
+    });
+    await expect(
+      api.resolve(target, { supportedProfiles: profile }),
+    ).resolves.toMatchObject({
+      outcome: "resolved_apple_srp",
+      generation: 2,
+      authentication: { password: "new-secret" },
+    });
+    const reboundSsh = await accept(
+      setupApp({ context, routes: sshConnectionsRoutes })(
+        sshConnectionsContract,
+      ).create({
+        headers: vncSessionHeaders,
+        body: {
+          id: randomUUID(),
+          displayName: "Other Mac SSH",
+          host: "other-mac.example.com",
+          credential: inlineSshKey("ec2-user", "private-key"),
+        },
+      }),
+      [201],
+    );
+    const rebound = await accept(
+      api.connections().update({
+        headers: vncSessionHeaders,
+        params: { connectionId: saved.body.id },
+        body: {
+          expectedGeneration: 2,
+          transport: { type: "ssh", connectionId: reboundSsh.body.id },
+        },
+      }),
+      [200],
+    );
+    expect(rebound.body).toMatchObject({
+      generation: 3,
+      transport: { type: "ssh", connectionId: reboundSsh.body.id },
+      security: { type: "apple_srp" },
+    });
+    expect((await check(target, 2, { expectedTransport })).body).toStrictEqual({
+      outcome: "configuration_changed",
+    });
+    const reboundTransport = {
+      type: "ssh" as const,
+      connectionId: reboundSsh.body.id,
+      generation: 1,
+    };
+    await expect(
+      api.resolve(target, { supportedProfiles: profile }),
+    ).resolves.toMatchObject({
+      outcome: "resolved_apple_srp",
+      generation: 3,
+      transport: reboundTransport,
+    });
+    await api.grantSsh(f, false);
+    expect(
+      (await check(target, 3, { expectedTransport: reboundTransport })).body,
+    ).toStrictEqual({ outcome: "unavailable" });
+  });
+
   it("rejects X509Plain for an old Runner before KMS and resolves it for a capable Runner", async () => {
     const f = await api.fixture();
     const kms = useSecretKmsProbe();

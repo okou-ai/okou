@@ -212,7 +212,14 @@ describe("CHAT-02: model-first provider policies", () => {
         "gpt-5.6-terra",
       ] as const
     ).flatMap((selectedModel) => {
-      return [false, true].map((usRoutingEnabled) => {
+      // The other DeepSeek US-on routes are covered per model by the
+      // provider-policy matrix; v4-flash still exercises real Responses I/O.
+      const usSwitchValues =
+        selectedModel === "deepseek-v4.1-flash" ||
+        selectedModel === "deepseek-v4-pro"
+          ? [false]
+          : [false, true];
+      return usSwitchValues.map((usRoutingEnabled) => {
         return {
           selectedModel,
           usRoutingEnabled,

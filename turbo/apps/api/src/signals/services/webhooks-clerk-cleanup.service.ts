@@ -25,6 +25,7 @@ import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import { secrets } from "@okouai/db/schema/secret";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
@@ -883,6 +884,7 @@ async function deleteOrgData(
   await db
     .delete(morningBriefEnrollments)
     .where(eq(morningBriefEnrollments.orgId, orgId));
+  await db.delete(orgModelPolicies).where(eq(orgModelPolicies.orgId, orgId));
   await db.delete(orgMetadata).where(eq(orgMetadata.orgId, orgId));
 }
 

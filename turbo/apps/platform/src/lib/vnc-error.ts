@@ -23,6 +23,11 @@ export function localizedVncError(code: string): string | undefined {
         return $.vnc.transport.appleDhDestinationHelp;
       });
     }
+    case VNC_ERROR_CODES.INVALID_APPLE_SRP_ROUTE: {
+      return i18n.t(($) => {
+        return $.vnc.transport.appleSrpDestinationHelp;
+      });
+    }
     case VNC_ERROR_CODES.INVALID_HOST: {
       return i18n.t(($) => {
         return $.vnc.errors.invalidHost;

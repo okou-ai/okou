@@ -4811,7 +4811,7 @@
         "unconfirmedNote": "Non siamo riusciti a verificare il collegamento a {{provider}}. Puoi riprovare o collegarlo più tardi."
       },
       "team": {
-        "copy": "Invita un membro del team a usare con te i flussi di lavoro condivisi.",
+        "copy": "Invita un membro del team a condividere i tuoi flussi di lavoro, mentre ognuno collega i propri strumenti.",
         "invite": "Invia invito",
         "invited": "Invitato",
         "label": "Email del membro del team",
@@ -4825,12 +4825,10 @@
           "workspace": "Entra nel tuo workspace."
         },
         "sending": "Invio in corso…",
-        "title": "Rendi Okou utile a tutto il team",
-        "trust": "Tutti usano gli stessi flussi di lavoro e collegano i propri strumenti."
+        "title": "Rendi Okou utile a tutto il team"
       },
       "welcome": {
         "copy": "Rivedi un compito suggerito per il tuo lavoro, adattalo al tuo obiettivo e lascia iniziare Okou.",
-        "offerTitle": "La prima ora di consulenza la offriamo noi, più fino a 100 crediti —",
         "promptLabel": "Il tuo prompt iniziale",
         "start": "Inizia con Okou",
         "title": "Inizia con un compito che conta"
@@ -7183,6 +7181,7 @@
       "add": "Aggiungi credenziali",
       "appleDhFieldHelp": "Ogni campo deve contenere da 1 a 63 byte UTF-8. NUL non è consentito.",
       "appleDhMethod": "Nome utente e password Apple DH",
+      "appleSrpMethod": "Nome utente e password Apple Direct SRP",
       "authentication": "Metodo di autenticazione",
       "createNew": "Crea credenziali",
       "delete": "Elimina credenziali",
@@ -7254,6 +7253,8 @@
     "security": {
       "appleDh": "Condivisione schermo Mac (Apple DH)",
       "appleDhHelp": "Richiede Condivisione schermo di macOS tramite una connessione SSH salvata. La destinazione RFB deve essere 127.0.0.1 o ::1 su quel Mac. SSH protegge l’intera sessione VNC. Usa un host SSH Mac che controlli: la sua chiave host non esclude un proxy successivo.",
+      "appleSrp": "Condivisione schermo Mac (Apple Direct SRP)",
+      "appleSrpHelp": "Richiede una connessione SSH salvata al Mac e 127.0.0.1 o ::1 come destinazione RFB. SRP verifica l’account e la prova del server; SSH protegge l’intera sessione VNC. La chiave host SSH identifica l’endpoint scelto, ma non esclude un proxy successivo.",
       "caBundle": "Certificati CA (PEM)",
       "caHelp": "Fino a 8 certificati CA, per un totale di 64 KiB. Non incollare una chiave privata né un certificato del server.",
       "caHint": "Incolla i certificati CA pubblici che hanno emesso il certificato del server",
@@ -7274,6 +7275,7 @@
     "summary_other": "{{count}} host configurati",
     "transport": {
       "appleDhDestinationHelp": "Per Apple DH, inserisci 127.0.0.1 o ::1. È l’indirizzo di loopback del Mac raggiunto tramite l’host SSH selezionato.",
+      "appleSrpDestinationHelp": "Per Apple Direct SRP, inserisci 127.0.0.1 o ::1. È l’indirizzo di loopback del Mac raggiunto tramite l’host SSH selezionato.",
       "destination": "Destinazione RFB",
       "destinationHelp": "Per i percorsi SSH, questo host e questa porta vengono raggiunti dal server SSH selezionato, non direttamente dal Runner.",
       "direct": "Diretto dal Runner",

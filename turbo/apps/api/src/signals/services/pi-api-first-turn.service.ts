@@ -103,7 +103,7 @@ import { logPiApiFirstTurnExecutionFailure } from "./pi-api-first-turn-failure-l
 import {
   isTerminalChatgptRefreshErrorCode,
   readModelProviderRuntimeReconnectStateForApi,
-  resolveCurrentPersonalSubscriptionBundleForApi,
+  resolvePiCodexFirstTurnSubscriptionBundleForApi,
   resolveModelProviderRuntimeSecretForApi,
 } from "./agent-webhook-firewall-auth.service";
 import {
@@ -830,7 +830,7 @@ async function resolveCodexSubscriptionCredentials(
   signal: AbortSignal,
 ): Promise<ReadonlyMap<string, string>> {
   const accessTokenResolution = await settle(
-    resolveCurrentPersonalSubscriptionBundleForApi(
+    resolvePiCodexFirstTurnSubscriptionBundleForApi(
       runtimeCredentialLookupArgs(args, references.accessToken),
       signal,
     ),

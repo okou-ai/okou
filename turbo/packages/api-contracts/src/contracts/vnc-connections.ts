@@ -54,6 +54,9 @@ const vncX509PlainSecurityVariantSchema = z
 const vncAppleDhSecurityVariantSchema = z
   .object({ type: z.literal("apple_dh") })
   .strict();
+const vncAppleSrpSecurityVariantSchema = z
+  .object({ type: z.literal("apple_srp") })
+  .strict();
 // Keep current-only Runner schemas as one-variant discriminated unions so the
 // Rust generator preserves the existing enum-shaped wire type.
 export const vncX509VncSecuritySchema = z.discriminatedUnion("type", [
@@ -66,6 +69,7 @@ export const vncSecuritySchema = z.discriminatedUnion("type", [
   vncX509VncSecurityVariantSchema,
   vncX509PlainSecurityVariantSchema,
   vncAppleDhSecurityVariantSchema,
+  vncAppleSrpSecurityVariantSchema,
 ]);
 
 export const createVncConnectionRequestSchema = z

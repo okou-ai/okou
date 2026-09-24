@@ -4811,7 +4811,7 @@
         "unconfirmedNote": "No hemos podido comprobar tu conexión con {{provider}}. Puedes volver a intentarlo o conectarlo más tarde."
       },
       "team": {
-        "copy": "Invita a un miembro del equipo a usar contigo los flujos de trabajo compartidos.",
+        "copy": "Invita a un miembro del equipo a compartir tus flujos de trabajo, mientras cada uno conecta sus propias herramientas.",
         "invite": "Enviar invitación",
         "invited": "Invitado",
         "label": "Correo del miembro del equipo",
@@ -4825,12 +4825,10 @@
           "workspace": "Se une a tu espacio de trabajo."
         },
         "sending": "Enviando…",
-        "title": "Haz que Okou sea útil para todo tu equipo",
-        "trust": "Todos usan los mismos flujos de trabajo y conectan sus propias herramientas."
+        "title": "Haz que Okou sea útil para todo tu equipo"
       },
       "welcome": {
         "copy": "Revisa una tarea sugerida para tu trabajo, ajústala a tu objetivo y deja que Okou empiece.",
-        "offerTitle": "La primera hora de consultoría corre de nuestra cuenta, más hasta 100 créditos —",
         "promptLabel": "Tu prompt inicial",
         "start": "Empezar con Okou",
         "title": "Empieza con una tarea que importe"
@@ -7183,6 +7181,7 @@
       "add": "Añadir credenciales",
       "appleDhFieldHelp": "Cada campo admite de 1 a 63 bytes UTF-8. No se permite NUL.",
       "appleDhMethod": "Nombre de usuario y contraseña de Apple DH",
+      "appleSrpMethod": "Nombre de usuario y contraseña de Apple Direct SRP",
       "authentication": "Método de autenticación",
       "createNew": "Crear credenciales",
       "delete": "Eliminar credenciales",
@@ -7254,6 +7253,8 @@
     "security": {
       "appleDh": "Compartir pantalla de Mac (Apple DH)",
       "appleDhHelp": "Requiere Compartir pantalla de macOS mediante una conexión SSH guardada. El destino RFB debe ser 127.0.0.1 o ::1 en ese Mac. SSH protege toda la sesión VNC. Usa un host SSH de Mac que controles; su clave de host no descarta un proxy posterior.",
+      "appleSrp": "Compartir pantalla de Mac (Apple Direct SRP)",
+      "appleSrpHelp": "Requiere una conexión SSH guardada al Mac y 127.0.0.1 o ::1 como destino RFB. SRP verifica la cuenta y la prueba del servidor; SSH protege toda la sesión VNC. La clave SSH identifica el extremo elegido, pero no descarta un proxy posterior.",
       "caBundle": "Certificados de CA (PEM)",
       "caHelp": "Hasta 8 certificados de CA, 64 KiB en total. No pegues una clave privada ni un certificado de servidor.",
       "caHint": "Pega los certificados públicos de CA que emitieron el certificado del servidor",
@@ -7274,6 +7275,7 @@
     "summary_other": "{{count}} hosts configurados",
     "transport": {
       "appleDhDestinationHelp": "Para Apple DH, introduce 127.0.0.1 o ::1. Es la dirección de bucle local del Mac, accesible mediante el host SSH seleccionado.",
+      "appleSrpDestinationHelp": "Para Apple Direct SRP, introduce 127.0.0.1 o ::1. Es la dirección de bucle local del Mac, accesible mediante el host SSH seleccionado.",
       "destination": "Destino RFB",
       "destinationHelp": "En las rutas SSH, se accede a este host y puerto desde el servidor SSH seleccionado, no directamente desde el Runner.",
       "direct": "Directa desde Runner",

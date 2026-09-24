@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.49.0](https://github.com/okou-ai/okou/compare/desktop-v0.48.142...desktop-v0.49.0) (2026-09-24)
+
+
+### Features
+
+* **desktop:** add opt-in native clerk sign-in ([#36649](https://github.com/okou-ai/okou/issues/36649)) ([a07ab31](https://github.com/okou-ai/okou/commit/a07ab319ff39b0964429c3b50ceb91b2c598b8e1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.504.0
+
 ## [0.48.142](https://github.com/okou-ai/okou/compare/desktop-v0.48.141...desktop-v0.48.142) (2026-09-24)
 
 
