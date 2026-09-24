@@ -6,6 +6,7 @@ import { workflowScheduleSkips } from "@okouai/db/schema/workflow-schedule-skip"
 import { and, eq, isNull } from "drizzle-orm";
 
 import type { Db } from "../external/db";
+import type { Tx } from "../../lib/db-types";
 import { calculateNextRun } from "./time-automation";
 import {
   lockMorningBriefLegacyWriterAuthority,
@@ -13,6 +14,93 @@ import {
 } from "./morning-brief-native-schedule.service";
 import { pendingTickForAutomation } from "./workflow-chat-event-queue.service";
 import { SCHEDULE_GRACE_MS, scheduleExpired } from "./schedule-expiry-policy";
+
+type Automation = typeof workflowAutomations.$inferSelect;
+type Authority = Exclude<
+  Awaited<ReturnType<typeof lockMorningBriefLegacyWriterAuthority>>,
+  { kind: "stale" }
+>;
+
+function stillExpired(
+  current: Automation | undefined,
+  initial: Pick<
+    Automation,
+    "orgId" | "ownerUserId" | "workflowId" | "officialBlueprintKey"
+  >,
+  args: { readonly anchor: Date; readonly at: Date },
+): current is Automation {
+  return (
+    current !== undefined &&
+    current.enabled &&
+    current.kind === "schedule" &&
+    (current.scheduleType === "cron" ||
+      current.scheduleType === "loop" ||
+      current.scheduleType === "once") &&
+    current.nextRunAt?.getTime() === args.anchor.getTime() &&
+    scheduleExpired(args.anchor, args.at) &&
+    current.orgId === initial.orgId &&
+    current.ownerUserId === initial.ownerUserId &&
+    current.workflowId === initial.workflowId &&
+    current.officialBlueprintKey === initial.officialBlueprintKey
+  );
+}
+
+async function isAlreadyClaimed(
+  tx: Tx,
+  current: Automation,
+  anchor: Date,
+  authority: Authority,
+): Promise<boolean> {
+  const [claim] = await tx
+    .select({ id: morningBriefScheduleClaims.id })
+    .from(morningBriefScheduleClaims)
+    .where(
+      and(
+        eq(morningBriefScheduleClaims.automationId, current.id),
+        eq(morningBriefScheduleClaims.scheduledAnchorAt, anchor),
+      ),
+    )
+    .limit(1);
+  if (claim || (await pendingTickForAutomation(tx, current.id))) {
+    return true;
+  }
+  if (authority.kind !== "selected") {
+    return false;
+  }
+  const [unsettledLegacy] = await tx
+    .select({ id: morningBriefScheduleClaims.id })
+    .from(morningBriefScheduleClaims)
+    .where(
+      and(
+        eq(morningBriefScheduleClaims.automationId, current.id),
+        eq(morningBriefScheduleClaims.settlement, "unsettled"),
+      ),
+    )
+    .limit(1);
+  const [unsettledNative] = await tx
+    .select({ scheduledFor: morningBriefNativeOccurrences.scheduledFor })
+    .from(morningBriefNativeOccurrences)
+    .where(
+      and(
+        eq(morningBriefNativeOccurrences.orgId, current.orgId),
+        eq(morningBriefNativeOccurrences.userId, current.ownerUserId),
+        eq(morningBriefNativeOccurrences.ownerEpoch, authority.row.ownerEpoch),
+        isNull(morningBriefNativeOccurrences.settledAt),
+      ),
+    )
+    .limit(1);
+  return unsettledLegacy !== undefined || unsettledNative !== undefined;
+}
+
+function futureAfterSkip(current: Automation, at: Date): Date | null {
+  if (current.scheduleType === "cron" && current.cronExpression) {
+    return calculateNextRun(current.cronExpression, current.timezone, at);
+  }
+  if (current.scheduleType === "loop" && current.intervalSeconds !== null) {
+    return new Date(at.getTime() + current.intervalSeconds * 1000);
+  }
+  return null;
+}
 
 /**
  * Settle only the old, unclaimed occurrence. No Run, failure or queue event is
@@ -39,7 +127,9 @@ export async function skipExpiredWorkflowSchedule(
       .from(workflowAutomations)
       .where(eq(workflowAutomations.id, args.automationId))
       .limit(1);
-    if (!initial) return "moved";
+    if (!initial) {
+      return "moved";
+    }
 
     const lineage = {
       orgId: initial.orgId,
@@ -51,7 +141,9 @@ export async function skipExpiredWorkflowSchedule(
       initial.officialBlueprintKey === MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY
         ? await lockMorningBriefLegacyWriterAuthority(tx, lineage)
         : ({ kind: "ordinary", fence: { kind: "ordinary" } } as const);
-    if (authority.kind === "stale") return "held";
+    if (authority.kind === "stale") {
+      return "held";
+    }
 
     const [current] = await tx
       .select()
@@ -59,74 +151,15 @@ export async function skipExpiredWorkflowSchedule(
       .where(eq(workflowAutomations.id, args.automationId))
       .for("update")
       .limit(1);
-    if (
-      !current ||
-      !current.enabled ||
-      current.kind !== "schedule" ||
-      (current.scheduleType !== "cron" &&
-        current.scheduleType !== "loop" &&
-        current.scheduleType !== "once") ||
-      current.nextRunAt?.getTime() !== args.anchor.getTime() ||
-      !scheduleExpired(args.anchor, args.at) ||
-      current.orgId !== initial.orgId ||
-      current.ownerUserId !== initial.ownerUserId ||
-      current.workflowId !== initial.workflowId ||
-      current.officialBlueprintKey !== initial.officialBlueprintKey
-    ) {
+    if (!stillExpired(current, initial, args)) {
       return "moved";
     }
-
-    // A previous claim or an admitted queue item is not an unclaimed miss.
-    const [claim] = await tx
-      .select({ id: morningBriefScheduleClaims.id })
-      .from(morningBriefScheduleClaims)
-      .where(
-        and(
-          eq(morningBriefScheduleClaims.automationId, current.id),
-          eq(morningBriefScheduleClaims.scheduledAnchorAt, args.anchor),
-        ),
-      )
-      .limit(1);
-    if (claim || (await pendingTickForAutomation(tx, current.id))) {
+    // Claimed, queued and running work is never settled by the expiry rule.
+    if (await isAlreadyClaimed(tx, current, args.anchor, authority)) {
       return "held";
     }
-    if (authority.kind === "selected") {
-      const [unsettledLegacy] = await tx
-        .select({ id: morningBriefScheduleClaims.id })
-        .from(morningBriefScheduleClaims)
-        .where(
-          and(
-            eq(morningBriefScheduleClaims.automationId, current.id),
-            eq(morningBriefScheduleClaims.settlement, "unsettled"),
-          ),
-        )
-        .limit(1);
-      const [unsettledNative] = await tx
-        .select({ scheduledFor: morningBriefNativeOccurrences.scheduledFor })
-        .from(morningBriefNativeOccurrences)
-        .where(
-          and(
-            eq(morningBriefNativeOccurrences.orgId, lineage.orgId),
-            eq(morningBriefNativeOccurrences.userId, lineage.userId),
-            eq(
-              morningBriefNativeOccurrences.ownerEpoch,
-              authority.row.ownerEpoch,
-            ),
-            isNull(morningBriefNativeOccurrences.settledAt),
-          ),
-        )
-        .limit(1);
-      if (unsettledLegacy || unsettledNative) return "held";
-    }
 
-    const nextRunAt =
-      current.scheduleType === "cron"
-        ? current.cronExpression
-          ? calculateNextRun(current.cronExpression, current.timezone, args.at)
-          : null
-        : current.scheduleType === "loop" && current.intervalSeconds !== null
-          ? new Date(args.at.getTime() + current.intervalSeconds * 1000)
-          : null;
+    const nextRunAt = futureAfterSkip(current, args.at);
     if (
       current.scheduleType !== "once" &&
       (nextRunAt === null || nextRunAt.getTime() <= args.at.getTime())
@@ -163,7 +196,9 @@ export async function skipExpiredWorkflowSchedule(
         ),
       )
       .returning({ id: workflowAutomations.id });
-    if (!updated) throw new Error("Expired schedule anchor moved while locked");
+    if (!updated) {
+      throw new Error("Expired schedule anchor moved while locked");
+    }
     await tx
       .insert(workflowScheduleSkips)
       .values({

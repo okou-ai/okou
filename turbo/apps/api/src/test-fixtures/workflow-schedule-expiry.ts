@@ -34,28 +34,16 @@ export async function seedExpiredSchedulesFixture(args: {
 }
 
 /** Select with the production candidate query, bounded to the fixture Workflow. */
-export async function readDueScheduleCandidateIdsFixture(args: {
-  readonly workflowId: string;
-  readonly at: Date;
-  readonly signal: AbortSignal;
-}) {
+export async function readDueScheduleCandidateIdsFixture(
+  args: {
+    readonly workflowId: string;
+    readonly at: Date;
+  },
+  signal: AbortSignal,
+) {
   const [expired, fresh] = await Promise.all([
-    dueWorkflowAutomationRows(
-      db(),
-      args.at,
-      args.signal,
-      undefined,
-      "expired",
-      args.workflowId,
-    ),
-    dueWorkflowAutomationRows(
-      db(),
-      args.at,
-      args.signal,
-      undefined,
-      "fresh",
-      args.workflowId,
-    ),
+    dueWorkflowAutomationRows(db(), { ...args, mode: "expired" }, signal),
+    dueWorkflowAutomationRows(db(), { ...args, mode: "fresh" }, signal),
   ]);
   return {
     expired: expired.map((row) => {

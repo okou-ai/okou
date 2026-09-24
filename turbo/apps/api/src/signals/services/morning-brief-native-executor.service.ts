@@ -831,7 +831,9 @@ const loadNativeDispatchTasks$ = command(
             });
           });
           signal.throwIfAborted();
-          if (outcome === "skipped") expired++;
+          if (outcome === "skipped") {
+            expired++;
+          }
           continue;
         }
         add({ ...owner, scheduledFor: anchor });

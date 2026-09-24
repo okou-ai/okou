@@ -639,7 +639,9 @@ describe("okou workflow automation scheduler", () => {
       }),
       [201],
     );
-    if (!created.body.nextRunAt) throw new Error("Missing one-time anchor");
+    if (!created.body.nextRunAt) {
+      throw new Error("Missing one-time anchor");
+    }
     mockNow(Date.parse(created.body.nextRunAt) + 30 * 60_000 + 1);
     const response = await accept(
       workflowAutomationExecutionClient().execute({
@@ -649,7 +651,7 @@ describe("okou workflow automation scheduler", () => {
     );
     expect(response.body).toMatchObject({ executed: 0, skipped: 1 });
     const after = await wf.readAutomation(created.body.id);
-    expect(after.enabled).toBe(false);
+    expect(after.enabled).toBeFalsy();
     expect(after.nextRunAt).toBeNull();
     expect(after.lastRunAt).toBeNull();
     expect(after.chatThreadId).toBeNull();
@@ -671,11 +673,13 @@ describe("okou workflow automation scheduler", () => {
       count: 201,
     });
     const fresh = await createDueLoopAutomation(scenario, 900);
-    const candidates = await readDueScheduleCandidateIdsFixture({
-      workflowId: scenario.workflowId,
-      at: new Date(now()),
-      signal: context.signal,
-    });
+    const candidates = await readDueScheduleCandidateIdsFixture(
+      {
+        workflowId: scenario.workflowId,
+        at: new Date(now()),
+      },
+      context.signal,
+    );
     expect(candidates.expired).toHaveLength(35);
     expect(candidates.fresh).toContain(fresh.automationId);
     const threadId = await executeDueWorkflowAutomations(fresh.automationId);
@@ -688,7 +692,9 @@ describe("okou workflow automation scheduler", () => {
     mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
     const scenario = await setup();
     const automation = await createDueLoopAutomation(scenario, 900);
-    if (!automation.nextRunAt) throw new Error("Missing loop anchor");
+    if (!automation.nextRunAt) {
+      throw new Error("Missing loop anchor");
+    }
     mockNow(Date.parse(automation.nextRunAt) + 30 * 60_000);
 
     const threadId = await executeDueWorkflowAutomations(
@@ -702,7 +708,9 @@ describe("okou workflow automation scheduler", () => {
     mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
     const scenario = await setup();
     const automation = await createDueLoopAutomation(scenario, 900);
-    if (!automation.nextRunAt) throw new Error("Missing loop anchor");
+    if (!automation.nextRunAt) {
+      throw new Error("Missing loop anchor");
+    }
     const at = Date.parse(automation.nextRunAt) + 30 * 60_000 + 1;
     mockNow(at);
 
@@ -714,7 +722,7 @@ describe("okou workflow automation scheduler", () => {
     );
     expect(first.body).toMatchObject({ executed: 0, skipped: 1 });
     const afterSkip = await wf.readAutomation(automation.automationId);
-    expect(afterSkip.enabled).toBe(true);
+    expect(afterSkip.enabled).toBeTruthy();
     expect(afterSkip.lastRunAt).toBeNull();
     expect(afterSkip.chatThreadId).toBeNull();
     expect(afterSkip.nextRunAt).toBe(new Date(at + 900_000).toISOString());

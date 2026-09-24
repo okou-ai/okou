@@ -7,7 +7,7 @@ import {
   workflows,
 } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, eq, gt, gte, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { writeDb$, type Db } from "../external/db";
 import { now, nowDate } from "../../lib/time";
@@ -554,88 +554,76 @@ async function ensureDueWorkflowAutomationChatThread(
   });
 }
 
-export async function dueWorkflowAutomationRows(
-  db: Db,
-  currentTime: Date,
-  signal: AbortSignal,
-  automationId?: string,
-  mode:
-    | "legacy"
-    | "fresh"
-    | "retry"
-    | "expired"
-    | "once"
-    | "once-retry"
-    | "once-expired" = "legacy",
-  workflowId?: string,
-): Promise<DueWorkflowAutomationRow[]> {
-  const cutoff = new Date(currentTime.getTime() - SCHEDULE_GRACE_MS);
+type DueMode =
+  | "legacy"
+  | "fresh"
+  | "retry"
+  | "expired"
+  | "once"
+  | "once-retry"
+  | "once-expired";
+
+const DUE_MODE_LIMIT: Readonly<Record<DueMode, number>> = Object.freeze({
+  legacy: DUE_BATCH_LIMIT,
+  fresh: FRESH_BATCH_LIMIT,
+  retry: RETRY_BATCH_LIMIT,
+  expired: EXPIRED_BATCH_LIMIT,
+  once: ONCE_BATCH_LIMIT,
+  "once-retry": ONCE_RETRY_BATCH_LIMIT,
+  "once-expired": ONCE_EXPIRED_BATCH_LIMIT,
+});
+
+interface DueSelection {
+  readonly at: Date;
+  readonly automationId?: string;
+  readonly workflowId?: string;
+  readonly mode?: DueMode;
+}
+
+function scheduleModeFilter(mode: DueMode, at: Date) {
+  if (mode === "legacy") {
+    return undefined;
+  }
+  const cutoff = new Date(at.getTime() - SCHEDULE_GRACE_MS);
+  const once = mode.startsWith("once");
+  const expired = mode === "expired" || mode === "once-expired";
+  const retry = mode === "retry" || mode === "once-retry";
   const eligibleDeferral = or(
     sql`${workflowAutomations.deferredAnchorAt} IS DISTINCT FROM ${workflowAutomations.nextRunAt}`,
     isNull(workflowAutomations.deferredUntil),
-    lte(workflowAutomations.deferredUntil, currentTime),
+    lte(workflowAutomations.deferredUntil, at),
   );
-  const modeFilter =
-    mode === "legacy"
-      ? undefined
-      : mode === "once" || mode === "once-retry" || mode === "once-expired"
-        ? and(
-            eq(workflowAutomations.scheduleType, "once"),
-            mode === "once-expired"
-              ? lt(workflowAutomations.nextRunAt, cutoff)
-              : gte(workflowAutomations.nextRunAt, cutoff),
-            mode === "once-expired"
-              ? eligibleDeferral
-              : mode === "once-retry"
-                ? and(
-                    eq(
-                      workflowAutomations.deferredAnchorAt,
-                      workflowAutomations.nextRunAt,
-                    ),
-                    lte(workflowAutomations.deferredUntil, currentTime),
-                  )
-                : or(
-                    sql`${workflowAutomations.deferredAnchorAt} IS DISTINCT FROM ${workflowAutomations.nextRunAt}`,
-                    isNull(workflowAutomations.deferredUntil),
-                  ),
-          )
-        : and(
-            or(
-              eq(workflowAutomations.scheduleType, "cron"),
-              eq(workflowAutomations.scheduleType, "loop"),
-            ),
-            mode === "expired"
-              ? lt(workflowAutomations.nextRunAt, cutoff)
-              : gte(workflowAutomations.nextRunAt, cutoff),
-            mode === "fresh"
-              ? or(
-                  sql`${workflowAutomations.deferredAnchorAt} IS DISTINCT FROM ${workflowAutomations.nextRunAt}`,
-                  isNull(workflowAutomations.deferredUntil),
-                )
-              : mode === "retry"
-                ? and(
-                    eq(
-                      workflowAutomations.deferredAnchorAt,
-                      workflowAutomations.nextRunAt,
-                    ),
-                    lte(workflowAutomations.deferredUntil, currentTime),
-                  )
-                : eligibleDeferral,
-          );
-  const limit =
-    mode === "legacy"
-      ? DUE_BATCH_LIMIT
-      : mode === "fresh"
-        ? FRESH_BATCH_LIMIT
-        : mode === "retry"
-          ? RETRY_BATCH_LIMIT
-          : mode === "expired"
-            ? EXPIRED_BATCH_LIMIT
-            : mode === "once-expired"
-              ? ONCE_EXPIRED_BATCH_LIMIT
-              : mode === "once-retry"
-                ? ONCE_RETRY_BATCH_LIMIT
-                : ONCE_BATCH_LIMIT;
+  const deferral = retry
+    ? and(
+        eq(workflowAutomations.deferredAnchorAt, workflowAutomations.nextRunAt),
+        lte(workflowAutomations.deferredUntil, at),
+      )
+    : expired
+      ? eligibleDeferral
+      : or(
+          sql`${workflowAutomations.deferredAnchorAt} IS DISTINCT FROM ${workflowAutomations.nextRunAt}`,
+          isNull(workflowAutomations.deferredUntil),
+        );
+  return and(
+    once
+      ? eq(workflowAutomations.scheduleType, "once")
+      : or(
+          eq(workflowAutomations.scheduleType, "cron"),
+          eq(workflowAutomations.scheduleType, "loop"),
+        ),
+    expired
+      ? lt(workflowAutomations.nextRunAt, cutoff)
+      : gte(workflowAutomations.nextRunAt, cutoff),
+    deferral,
+  );
+}
+
+export async function dueWorkflowAutomationRows(
+  db: Db,
+  args: DueSelection,
+  signal: AbortSignal,
+): Promise<DueWorkflowAutomationRow[]> {
+  const mode = args.mode ?? "legacy";
   const rows = await db
     .select({
       automation: workflowAutomationColumns(),
@@ -670,16 +658,16 @@ export async function dueWorkflowAutomationRows(
     )
     .where(
       and(
-        automationId === undefined
+        args.automationId === undefined
           ? undefined
-          : eq(workflowAutomations.id, automationId),
-        workflowId === undefined
+          : eq(workflowAutomations.id, args.automationId),
+        args.workflowId === undefined
           ? undefined
-          : eq(workflowAutomations.workflowId, workflowId),
+          : eq(workflowAutomations.workflowId, args.workflowId),
         eq(workflowAutomations.enabled, true),
         eq(workflowAutomations.kind, "schedule"),
-        lte(workflowAutomations.nextRunAt, currentTime),
-        modeFilter,
+        lte(workflowAutomations.nextRunAt, args.at),
+        scheduleModeFilter(mode, args.at),
       ),
     )
     .orderBy(
@@ -693,7 +681,7 @@ export async function dueWorkflowAutomationRows(
             ]
           : [workflowAutomations.nextRunAt, workflowAutomations.id]),
     )
-    .limit(limit);
+    .limit(DUE_MODE_LIMIT[mode]);
   signal.throwIfAborted();
   return rows;
 }
@@ -748,73 +736,155 @@ async function dueWorkflowAutomationIsFireable(
   return true;
 }
 
-async function executeDueWorkflowAutomations(
+type WorkflowPollerArgs = {
+  readonly db: Db;
+  readonly automationId?: string;
+  readonly startRun: (
+    input: RunWorkflowAutomationNowArgs,
+    signal: AbortSignal,
+  ) => Promise<RunWorkflowAutomationResult>;
+};
+
+type PollCounters = { executed: number; skipped: number; expired: number };
+
+async function loadDueWorkflowRows(
+  db: Db,
   args: {
-    readonly db: Db;
+    readonly currentTime: Date;
     readonly automationId?: string;
-    readonly startRun: (
-      input: RunWorkflowAutomationNowArgs,
-      signal: AbortSignal,
-    ) => Promise<RunWorkflowAutomationResult>;
+    readonly expiryEnabled: boolean;
   },
+  signal: AbortSignal,
+): Promise<DueWorkflowAutomationRow[]> {
+  const common = {
+    at: args.currentTime,
+    automationId: args.automationId,
+  };
+  if (!args.expiryEnabled) {
+    return await dueWorkflowAutomationRows(db, common, signal);
+  }
+  const modes: readonly DueMode[] = [
+    "expired",
+    "fresh",
+    "retry",
+    "once-expired",
+    "once",
+    "once-retry",
+  ];
+  const rows: DueWorkflowAutomationRow[] = [];
+  for (const mode of modes) {
+    rows.push(
+      ...(await dueWorkflowAutomationRows(db, { ...common, mode }, signal)),
+    );
+  }
+  return rows;
+}
+
+async function launchClaimedDueRow(
+  args: {
+    readonly poller: WorkflowPollerArgs;
+    readonly row: DueWorkflowAutomationRow;
+    readonly claimed: AutomationRow;
+    readonly scheduledAnchorAt: Date | null;
+    readonly journaled: boolean;
+    readonly currentTime: Date;
+    readonly expiryEnabled: boolean;
+    readonly counters: PollCounters;
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  const { poller, row, claimed, currentTime, counters } = args;
+  const execution = journaledScheduleExecution(
+    {
+      db: poller.db,
+      automation: claimed,
+      scheduledAnchorAt: args.journaled ? args.scheduledAnchorAt : null,
+      claimedAt: currentTime,
+    },
+    signal,
+  );
+  const chatThreadId = await tapError(
+    ensureDueWorkflowAutomationChatThread(poller.db, row, currentTime),
+    async (error) => {
+      await execution.recordFailure(error);
+      counters.skipped++;
+    },
+  );
+  signal.throwIfAborted();
+  if (!chatThreadId) {
+    return;
+  }
+  const due: DueWorkflowAutomation = {
+    automation: claimed,
+    agentId: row.agentId,
+    chatThreadId,
+  };
+  const scheduleContext = scheduleTriggerContext({
+    automation: claimed,
+    workflowName: row.workflowName,
+    firedAt: currentTime,
+  });
+  const result = await tapError(
+    startDueWorkflowAutomation(
+      {
+        startRun: poller.startRun,
+        due,
+        row,
+        currentTime,
+        scheduleContext,
+        scheduleClaim: execution.scheduleClaim,
+      },
+      signal,
+    ),
+    async (error) => {
+      await execution.recordFailure(error);
+      counters.skipped++;
+    },
+  );
+  signal.throwIfAborted();
+  if (!result) {
+    return;
+  }
+  if (execution.unclaimed()) {
+    if (args.expiryEnabled && args.scheduledAnchorAt) {
+      await deferWorkflowSchedule(poller.db, {
+        automationId: row.automation.id,
+        anchor: args.scheduledAnchorAt,
+        at: nowDate(),
+        reason: "unavailable",
+      });
+    }
+    counters.skipped++;
+    return;
+  }
+  if (result.kind === "enqueued") {
+    counters.executed++;
+    return;
+  }
+  if (result.kind !== "ok") {
+    await execution.recordFailure(result);
+    counters.skipped++;
+    return;
+  }
+  counters.executed++;
+}
+
+async function executeDueWorkflowAutomations(
+  args: WorkflowPollerArgs,
   signal: AbortSignal,
 ): Promise<ExecuteResult> {
   const currentTime = nowDate();
   const expiryEnabled = scheduleExpiryEnabled();
-  const rows = expiryEnabled
-    ? [
-        ...(await dueWorkflowAutomationRows(
-          args.db,
-          currentTime,
-          signal,
-          args.automationId,
-          "expired",
-        )),
-        ...(await dueWorkflowAutomationRows(
-          args.db,
-          currentTime,
-          signal,
-          args.automationId,
-          "fresh",
-        )),
-        ...(await dueWorkflowAutomationRows(
-          args.db,
-          currentTime,
-          signal,
-          args.automationId,
-          "retry",
-        )),
-        ...(await dueWorkflowAutomationRows(
-          args.db,
-          currentTime,
-          signal,
-          args.automationId,
-          "once-expired",
-        )),
-        ...(await dueWorkflowAutomationRows(
-          args.db,
-          currentTime,
-          signal,
-          args.automationId,
-          "once",
-        )),
-        ...(await dueWorkflowAutomationRows(
-          args.db,
-          currentTime,
-          signal,
-          args.automationId,
-          "once-retry",
-        )),
-      ]
-    : await dueWorkflowAutomationRows(
-        args.db,
-        currentTime,
-        signal,
-        args.automationId,
-      );
-  let executed = 0;
-  let skipped = 0;
-  let expired = 0;
+  const rows = await loadDueWorkflowRows(
+    args.db,
+    {
+      currentTime,
+      automationId: args.automationId,
+      expiryEnabled,
+    },
+    signal,
+  );
+  const counters: PollCounters = { executed: 0, skipped: 0, expired: 0 };
   const skipIfExpired = async (
     row: DueWorkflowAutomationRow,
   ): Promise<boolean> => {
@@ -841,13 +911,17 @@ async function executeDueWorkflowAutomations(
       });
     }
     signal.throwIfAborted();
-    if (outcome === "skipped") expired++;
-    skipped++;
+    if (outcome === "skipped") {
+      counters.expired++;
+    }
+    counters.skipped++;
     return true;
   };
 
   for (const row of rows) {
-    if (await skipIfExpired(row)) continue;
+    if (await skipIfExpired(row)) {
+      continue;
+    }
     if (
       !(await dueWorkflowAutomationIsFireable(
         args.db,
@@ -864,10 +938,12 @@ async function executeDueWorkflowAutomations(
           reason: "not_fireable",
         });
       }
-      skipped++;
+      counters.skipped++;
       continue;
     }
-    if (await skipIfExpired(row)) continue;
+    if (await skipIfExpired(row)) {
+      continue;
+    }
 
     // The journaled path keeps the pre-claim `next_run_at` and consumes it
     // inside the queue admission transaction, so its preparation runs before
@@ -883,100 +959,37 @@ async function executeDueWorkflowAutomations(
       : await claimAutomation(args.db, row.automation, currentTime);
     signal.throwIfAborted();
     if (!claimed) {
-      if (!(await skipIfExpired(row))) skipped++;
+      if (!(await skipIfExpired(row))) {
+        counters.skipped++;
+      }
       continue;
     }
 
-    const execution = journaledScheduleExecution(
+    await launchClaimedDueRow(
       {
-        db: args.db,
-        automation: claimed,
-        scheduledAnchorAt: journaled ? scheduledAnchorAt : null,
-        claimedAt: currentTime,
+        poller: args,
+        row,
+        claimed,
+        scheduledAnchorAt,
+        journaled,
+        currentTime,
+        expiryEnabled,
+        counters,
       },
       signal,
     );
-
-    const chatThreadId = await tapError(
-      ensureDueWorkflowAutomationChatThread(args.db, row, currentTime),
-      async (error) => {
-        await execution.recordFailure(error);
-        skipped++;
-      },
-    );
-    signal.throwIfAborted();
-    if (!chatThreadId) {
-      continue;
-    }
-
-    const due: DueWorkflowAutomation = {
-      automation: claimed,
-      agentId: row.agentId,
-      chatThreadId,
-    };
-
-    // The tick owns the fire time, so it builds the trigger line here rather
-    // than letting a later drain guess it from its own clock.
-    const scheduleContext = scheduleTriggerContext({
-      automation: claimed,
-      workflowName: row.workflowName,
-      firedAt: currentTime,
-    });
-    const result = await tapError(
-      startDueWorkflowAutomation(
-        {
-          startRun: args.startRun,
-          due,
-          row,
-          currentTime,
-          scheduleContext,
-          scheduleClaim: execution.scheduleClaim,
-        },
-        signal,
-      ),
-      async (error) => {
-        await execution.recordFailure(error);
-        skipped++;
-      },
-    );
-    signal.throwIfAborted();
-    if (!result) {
-      continue;
-    }
-    if (execution.unclaimed()) {
-      if (expiryEnabled && scheduledAnchorAt) {
-        await deferWorkflowSchedule(args.db, {
-          automationId: row.automation.id,
-          anchor: scheduledAnchorAt,
-          at: nowDate(),
-          reason: "unavailable",
-        });
-      }
-      skipped++;
-      continue;
-    }
-    if (result.kind === "enqueued") {
-      executed++;
-      continue;
-    }
-    if (result.kind !== "ok") {
-      await execution.recordFailure(result);
-      skipped++;
-      continue;
-    }
-    executed++;
   }
 
   log.debug("execute-workflow-automations tick complete", {
     dueCount: rows.length,
-    executed,
-    skipped,
-    expired,
+    ...counters,
   });
-  if (expired > 0) {
-    log.warn("Expired unclaimed workflow schedule anchors", { expired });
+  if (counters.expired > 0) {
+    log.warn("Expired unclaimed workflow schedule anchors", {
+      expired: counters.expired,
+    });
   }
-  return { executed, skipped };
+  return { executed: counters.executed, skipped: counters.skipped };
 }
 
 /**

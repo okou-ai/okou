@@ -1774,7 +1774,9 @@ export async function skipExpiredNativeMorningBriefSchedule(
       ),
     )
     .limit(1);
-  if (previousClaim) return "held";
+  if (previousClaim) {
+    return "held";
+  }
 
   const nextRunAt = computeNativeNextRunAt({
     enabled: schedule.enabled,
@@ -1797,7 +1799,9 @@ export async function skipExpiredNativeMorningBriefSchedule(
       ),
     )
     .returning({ ownerEpoch: morningBriefNativeSchedules.ownerEpoch });
-  if (!updated) throw new Error("Native schedule moved while locked");
+  if (!updated) {
+    throw new Error("Native schedule moved while locked");
+  }
   await tx
     .insert(morningBriefNativeScheduleSkips)
     .values({
