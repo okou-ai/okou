@@ -6240,8 +6240,8 @@ describe("INT-02: Telegram integration", () => {
 
     const unauthenticatedList =
       await integrations.requestListTelegramIntegrations(null, [401]);
-    expect(unauthenticatedList.body).toMatchObject({
-      error: { code: "UNAUTHORIZED" },
+    expect(unauthenticatedList.body).toStrictEqual({
+      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
     });
 
     const initialList = await integrations.requestListTelegramIntegrations(
@@ -6557,8 +6557,12 @@ describe("INT-02: Telegram integration", () => {
       { defaultAgentId: agent.agentId },
       [403],
     );
-    expect(memberUpdate.body).toMatchObject({
-      error: { code: "FORBIDDEN" },
+    expect(memberUpdate.body).toStrictEqual({
+      error: {
+        message:
+          "Only the bot owner or an org admin can change the default agent",
+        code: "FORBIDDEN",
+      },
     });
 
     const updated = await integrations.requestUpdateTelegramBot(
