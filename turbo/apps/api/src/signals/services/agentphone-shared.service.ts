@@ -35,10 +35,17 @@ const AGENTPHONE_PHONE_HANDLE_PATTERN = /^\+[1-9]\d{7,14}$/u;
 
 /** Handle that addresses the assistant in a group conversation. */
 const AGENTPHONE_MENTION_PATTERN = /(^|\s)@okou\b/iu;
+// Native iMessage mentions can arrive as display names without an at-sign or
+// mention metadata. Treat only an opening name followed by a separator as an
+// address, keeping embedded names, domains and longer names as group chatter.
+const AGENTPHONE_OPENING_NAME_PATTERN = /^\s*okou(?=$|[\s,，:：!！?？])/iu;
 
-/** Whether free-form message text addresses the assistant by handle. */
+/** Whether free-form message text addresses the assistant by handle or name. */
 export function isAgentPhoneMentionText(value: string): boolean {
-  return AGENTPHONE_MENTION_PATTERN.test(value);
+  return (
+    AGENTPHONE_MENTION_PATTERN.test(value) ||
+    AGENTPHONE_OPENING_NAME_PATTERN.test(value)
+  );
 }
 
 export function isAgentPhoneChannel(value: string): value is AgentPhoneChannel {
