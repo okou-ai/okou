@@ -17,11 +17,6 @@ import { invalidateOrgModelPolicies$ } from "./org-model-policies.ts";
  */
 const internalReloadPersonalModelProviders$ = state(0);
 
-/** Exact recovery reads share mutation invalidation without listing sibling usage. */
-export const personalModelProviderAccountRevision$ = computed((get) => {
-  return get(internalReloadPersonalModelProviders$);
-});
-
 /**
  * Listing personal providers makes the API read every connected subscription's
  * usage upstream, so opportunistic callers reuse a recent read instead of
