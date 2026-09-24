@@ -771,6 +771,60 @@ test("Renaming a template updates its card in the panel", async () => {
   expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
 });
 
+test.each([
+  { mode: "composing", isComposing: true, keyCode: 13, title: "季度 报告" },
+  {
+    mode: "Safari final Enter",
+    isComposing: false,
+    keyCode: 229,
+    title: "四半期 レポート",
+  },
+])(
+  "Confirming an IME candidate ($mode) keeps the template name focused and unsaved",
+  async ({ isComposing, keyCode, title }) => {
+    const user = userEvent.setup({ delay: null });
+    let updateRequests = 0;
+    mockCustomTemplateStore([customTemplate()], {
+      update: () => {
+        updateRequests += 1;
+        return undefined;
+      },
+    });
+    const { dialog } = await openCustomPanel();
+    const input = await openDetail(dialog, "Q3 board review");
+
+    fireEvent.compositionStart(input);
+    await fill(input, `  ${title}  `);
+    if (!isComposing) {
+      fireEvent.compositionEnd(input, { data: title });
+    }
+    fireEvent.keyDown(input, {
+      key: "Enter",
+      code: "Enter",
+      isComposing,
+      keyCode,
+    });
+
+    expect(input).toHaveFocus();
+    expect(input).toBeEnabled();
+    expect(input).toHaveValue(`  ${title}  `);
+    expect(updateRequests).toBe(0);
+
+    if (isComposing) {
+      fireEvent.compositionEnd(input, { data: title });
+    }
+    await user.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(renameField()).toHaveValue(title);
+    });
+    expect(renameField()).not.toHaveFocus();
+    expect(renameField()).toBeEnabled();
+    expect(updateRequests).toBe(1);
+    closeDetail();
+    await expect(within(dialog).findByText(title)).resolves.toBeInTheDocument();
+  },
+);
+
 function renameField(): HTMLElement {
   return screen.getByLabelText("Rename template");
 }
