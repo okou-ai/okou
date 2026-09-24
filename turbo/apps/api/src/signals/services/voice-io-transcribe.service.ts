@@ -1,15 +1,9 @@
-import { VOICE_IO_POLISH_MAX_TEXT_CHARS } from "@okouai/api-contracts/contracts/voice-io-polish";
 import { CLIENT_REQUEST_ID_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import type {
   VoiceIoTranscribeContext,
   VoiceIoTranscribeSegmentOptions,
   VoiceIoTranscribeSegmentResponse,
 } from "@okouai/api-contracts/contracts/voice-io-transcribe";
-import {
-  DEFAULT_VOICE_INPUT_MODEL,
-  type MultimodalVoiceInputModelId,
-  type VoiceInputModel,
-} from "@okouai/api-contracts/contracts/voice-input-models";
 import { command } from "ccstate";
 import { isSpanContextValid, trace } from "@opentelemetry/api";
 
@@ -18,24 +12,15 @@ import { notConfigured } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { request$, requestSignal$, setResHeader$ } from "../context/hono";
 import {
-  isLlmConfigured,
-  OpenRouterRequestError,
-} from "../external/openrouter";
-import {
   VOICE_NO_SPEECH,
   polishLongVoiceTranscript,
   transcribeVoice,
   finishIncrementalVoice,
-  reconcileVoiceSegmentTranscript,
 } from "../external/voice-completion";
-import {
-  isVoiceTranscriptionConfigured,
-  transcribeVoiceInputAudio,
-} from "../external/voice-input-transcription";
 import { settle } from "../utils";
 import { GcpLlmAuthError, gcpLlmConfiguration } from "../external/gcp-llm-auth";
 import {
-  isVertexVoiceModel,
+  VOICE_INPUT_MODEL,
   vertexVoiceDiagnosticFields,
   VertexVoiceError,
 } from "../external/vertex-voice";
@@ -53,48 +38,20 @@ const VOICE_TRANSCRIPT_MINIMUM_SUSPICIOUS_CHARACTERS = 100;
 type VoiceDraftTranscriptionInput = VoiceIoTranscribeContext &
   VoiceIoTranscribeSegmentOptions & {
     readonly files: readonly File[];
-    readonly model: VoiceInputModel;
     readonly debug: boolean;
     readonly audioDurationSeconds: number;
   };
-
-type VoiceDiagnosticModel = VoiceInputModel | MultimodalVoiceInputModelId;
 
 interface VoiceTranscriptionAttempt {
   stage:
     | "audio_read"
     | "transcription"
     | "finalization"
-    | "reconciliation"
-    | "stitching"
     | "polish"
     | "output_validation";
-  model: VoiceDiagnosticModel | undefined;
-  transcriptModel: VoiceDiagnosticModel;
+  /** Whether the failed stage called the voice model. */
+  modelCall: boolean;
   transcriptCharacters?: number;
-}
-
-function voiceModelFields(model: VoiceDiagnosticModel | undefined) {
-  if (model === undefined) {
-    return {};
-  }
-  const id = typeof model === "string" ? model : model.id;
-  const multimodal =
-    typeof model === "string"
-      ? model
-      : model.kind === "multimodal"
-        ? model.id
-        : undefined;
-  return {
-    model: id,
-    provider: multimodal
-      ? isVertexVoiceModel(multimodal)
-        ? "vertex"
-        : "openrouter"
-      : id === "fal-ai/elevenlabs/speech-to-text/scribe-v2"
-        ? "fal"
-        : "openrouter",
-  };
 }
 
 function hasExistingVoiceFailureOwner(error: unknown): boolean {
@@ -102,10 +59,7 @@ function hasExistingVoiceFailureOwner(error: unknown): boolean {
     error instanceof GcpLlmAuthError ||
     (error instanceof VertexVoiceError &&
       error.diagnosticOwner === "provider") ||
-    error instanceof VoiceProviderUnavailableError ||
-    error instanceof OpenRouterRequestError ||
-    (error instanceof VoiceResponseError &&
-      error.diagnosticOwner === "provider")
+    error instanceof VoiceProviderUnavailableError
   );
 }
 
@@ -144,9 +98,10 @@ async function emitVoiceFailure(
       type: "voice_transcription_failure",
       stage: attempt.stage,
       reason: voiceFailureReason(error),
-      ...voiceModelFields(attempt.model),
+      ...(attempt.modelCall
+        ? { model: VOICE_INPUT_MODEL, provider: "vertex" }
+        : {}),
       ...vertexFailureFields(error),
-      input_model: input.model.id,
       final: input.final,
       has_audio: input.files.length > 0,
       audio_duration_seconds: input.audioDurationSeconds,
@@ -168,22 +123,6 @@ async function emitVoiceFailure(
         : {}),
     }),
   );
-}
-
-function voicePolishModel(
-  input: VoiceDraftTranscriptionInput,
-): MultimodalVoiceInputModelId {
-  // GPT Audio requires audio input. Finalization without a remaining audio
-  // segment uses the shared text-capable polish model.
-  if (
-    input.model.kind === "transcription" ||
-    (input.files.length === 0 &&
-      (input.model.id === "openai/gpt-audio" ||
-        input.model.id === "openai/gpt-audio-mini"))
-  ) {
-    return DEFAULT_VOICE_INPUT_MODEL;
-  }
-  return input.model.id;
 }
 
 function transcriptionError<Status extends number>(
@@ -229,22 +168,6 @@ async function voiceAudio(
     data: Buffer.from(bytes).toString("base64"),
     format: "wav",
   };
-}
-
-function stitchTranscripts(pieces: readonly string[]): string {
-  const transcript = pieces
-    .map((piece) => {
-      return piece.trim();
-    })
-    .filter((text) => {
-      return text !== VOICE_NO_SPEECH;
-    })
-    .join(" ")
-    .trim();
-  if (transcript.length > VOICE_IO_POLISH_MAX_TEXT_CHARS) {
-    throw new VoiceResponseError("stitched_transcript_too_large");
-  }
-  return transcript;
 }
 
 function normalizeVoiceTranscript(
@@ -307,119 +230,39 @@ async function transcribeIncrementalVoice(
   signal: AbortSignal,
 ): Promise<VoiceIoTranscribeSegmentResponse> {
   const file = input.files[0];
-  const audio = file ? await voiceAudio(file, signal) : undefined;
-  if (audio && input.final && input.model.kind === "multimodal") {
+  if (!file) {
+    // Only a final request may omit audio; it polishes the saved prefix.
+    const saved = input.previousTranscript.trim();
+    if (!saved) {
+      return { transcript: "", polishedText: "", language: "und" };
+    }
+    attempt.stage = "polish";
+    attempt.modelCall = true;
+    const polished = await polishLongVoiceTranscript(saved, input, signal);
+    if (!polished) {
+      throw new VoiceResponseError("not_configured");
+    }
+    return normalizeVoiceTranscript({ transcript: "", ...polished });
+  }
+  const audio = await voiceAudio(file, signal);
+  attempt.modelCall = true;
+  if (input.final) {
     attempt.stage = "finalization";
-    attempt.model = input.model;
-    const result = await finishIncrementalVoice(
-      audio,
-      input,
-      input.model.id,
-      signal,
-    );
+    const result = await finishIncrementalVoice(audio, input, signal);
     if (!result) {
       throw new VoiceResponseError("not_configured");
     }
     return normalizeVoiceTranscript(result);
   }
   attempt.stage = "transcription";
-  attempt.model = audio ? input.model : undefined;
-  const result = audio
-    ? input.model.kind === "transcription"
-      ? {
-          transcript: await transcribeVoiceInputAudio(
-            input.model,
-            audio,
-            signal,
-          ),
-          language: "und",
-        }
-      : await transcribeVoice(audio, input, input.model.id, signal)
-    : { transcript: "", language: "und" };
+  const result = await transcribeVoice(audio, input, signal);
   if (!result) {
     throw new VoiceResponseError("not_configured");
   }
   const transcript =
     result.transcript === VOICE_NO_SPEECH ? "" : result.transcript;
   attempt.transcriptCharacters = transcript.trim().length;
-  if (
-    input.model.kind === "transcription" &&
-    input.overlapDurationSeconds > 0 &&
-    input.previousTranscript
-  ) {
-    attempt.stage = "reconciliation";
-    attempt.model = DEFAULT_VOICE_INPUT_MODEL;
-    attempt.transcriptModel = DEFAULT_VOICE_INPUT_MODEL;
-    const reconciled = await reconcileVoiceSegmentTranscript(
-      transcript,
-      input,
-      input.final,
-      DEFAULT_VOICE_INPUT_MODEL,
-      signal,
-    );
-    if (!reconciled) {
-      throw new VoiceResponseError("not_configured");
-    }
-    return normalizeVoiceTranscript(reconciled);
-  }
-  if (!input.final) {
-    return { transcript, language: result.language };
-  }
-  attempt.stage = "stitching";
-  attempt.model = undefined;
-  const completeTranscript = stitchTranscripts([
-    input.previousTranscript,
-    transcript,
-  ]);
-  if (!completeTranscript) {
-    return { transcript, polishedText: "", language: result.language };
-  }
-  attempt.stage = "polish";
-  attempt.model = voicePolishModel(input);
-  const polished = await polishLongVoiceTranscript(
-    completeTranscript,
-    input,
-    voicePolishModel(input),
-    signal,
-  );
-  if (!polished) {
-    throw new VoiceResponseError("not_configured");
-  }
-  return {
-    transcript,
-    ...polished,
-    polishedText:
-      polished.polishedText === VOICE_NO_SPEECH ? "" : polished.polishedText,
-  };
-}
-
-function voiceProvidersConfigured(
-  input: VoiceDraftTranscriptionInput,
-): boolean {
-  const audio = input.files.length > 0;
-  if (
-    audio &&
-    input.model.kind === "transcription" &&
-    !isVoiceTranscriptionConfigured(input.model)
-  ) {
-    return false;
-  }
-  if (
-    audio &&
-    input.model.kind === "multimodal" &&
-    !isVertexVoiceModel(input.model.id) &&
-    !isLlmConfigured()
-  ) {
-    return false;
-  }
-  const gemini =
-    (input.model.kind === "multimodal" && isVertexVoiceModel(input.model.id)) ||
-    (input.final && isVertexVoiceModel(voicePolishModel(input))) ||
-    (audio &&
-      input.model.kind === "transcription" &&
-      input.overlapDurationSeconds > 0 &&
-      Boolean(input.previousTranscript));
-  return !gemini || gcpLlmConfiguration() !== undefined;
+  return { transcript, language: result.language };
 }
 
 export const transcribeVoiceSegment$ = command(
@@ -430,26 +273,18 @@ export const transcribeVoiceSegment$ = command(
   ) => {
     const requestSignal = AbortSignal.any([signal, get(requestSignal$)]);
     requestSignal.throwIfAborted();
-    if (!voiceProvidersConfigured(input)) {
+    if (gcpLlmConfiguration() === undefined) {
       return notConfigured("Voice transcription is not configured");
     }
     if (input.debug) {
-      set(setResHeader$, "X-Voice-Input-Model", input.model.id);
-      if (input.final) {
-        set(setResHeader$, "X-Voice-Polish-Model", voicePolishModel(input));
-      }
-      set(
-        setResHeader$,
-        "Access-Control-Expose-Headers",
-        "Server-Timing, X-Voice-Input-Model, X-Voice-Polish-Model",
-        { append: true },
-      );
+      set(setResHeader$, "Access-Control-Expose-Headers", "Server-Timing", {
+        append: true,
+      });
     }
     const startedAt = performance.now();
     const attempt: VoiceTranscriptionAttempt = {
       stage: "audio_read",
-      model: undefined,
-      transcriptModel: input.model,
+      modelCall: false,
     };
     const generated = await settle(
       transcribeIncrementalVoice(input, attempt, requestSignal),
@@ -472,10 +307,7 @@ export const transcribeVoiceSegment$ = command(
     const rejected = rejectUnusableVoiceOutput(input, generated.value);
     if (rejected instanceof VoiceResponseError) {
       attempt.stage = "output_validation";
-      attempt.model =
-        rejected.reason === "transcription_rate_exceeded"
-          ? attempt.transcriptModel
-          : voicePolishModel(input);
+      attempt.modelCall = true;
       await Promise.allSettled([
         emitVoiceFailure(
           input,

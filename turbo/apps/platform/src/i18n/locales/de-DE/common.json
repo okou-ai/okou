@@ -6591,12 +6591,6 @@
           "trigger": "Morning Brief jetzt ausführen",
           "triggering": "Wird eingereiht…"
         },
-        "voiceInput": {
-          "default": "Standard ({{model}})",
-          "description": "Wähle das Modell für Spracheingabe v2. Spracherkennungsmodelle verwenden {{model}} zur Textbereinigung.",
-          "title": "Modell für Spracheingabe",
-          "unavailable": "Modell nicht verfügbar ({{model}})"
-        },
         "welcomeThread": {
           "create": "Willkommenschat erstellen",
           "creating": "Wird erstellt…",

@@ -117,7 +117,6 @@ export function userPreferences({
           orgMembersMetadata.cloudBrowserEnabledByDefault,
         theme: orgMembersMetadata.theme,
         colorTheme: orgMembersMetadata.colorTheme,
-        voiceInputModel: orgMembersMetadata.voiceInputModel,
         captureNetworkBodiesRemaining:
           orgMembersMetadata.captureNetworkBodiesRemaining,
       })
@@ -156,7 +155,7 @@ export function userPreferences({
       cloudBrowserEnabledByDefault: row.cloudBrowserEnabledByDefault,
       theme: parseThemePreference(row.theme),
       colorTheme: parseColorTheme(row.colorTheme),
-      voiceInputModel: row.voiceInputModel,
+      voiceInputModel: null,
       captureNetworkBodiesRemaining: row.captureNetworkBodiesRemaining ?? 0,
     };
   });
@@ -251,10 +250,7 @@ function mergeUserPreferences(
       existing.cloudBrowserEnabledByDefault,
     theme: preferences.theme ?? existing.theme ?? null,
     colorTheme: preferences.colorTheme ?? existing.colorTheme ?? null,
-    voiceInputModel:
-      preferences.voiceInputModel === undefined
-        ? existing.voiceInputModel
-        : preferences.voiceInputModel,
+    voiceInputModel: null,
     captureNetworkBodiesRemaining:
       preferences.captureNetworkBodiesRemaining ??
       existing.captureNetworkBodiesRemaining,
@@ -281,9 +277,6 @@ function userPreferenceUpdateColumns(
     ...(preferences.theme !== undefined && { theme: preferences.theme }),
     ...(preferences.colorTheme !== undefined && {
       colorTheme: preferences.colorTheme,
-    }),
-    ...(preferences.voiceInputModel !== undefined && {
-      voiceInputModel: preferences.voiceInputModel,
     }),
     ...(preferences.captureNetworkBodiesRemaining !== undefined && {
       captureNetworkBodiesRemaining: preferences.captureNetworkBodiesRemaining,
@@ -329,7 +322,6 @@ export const updateUserPreferences$ = command(
         cloudBrowserEnabledByDefault: merged.cloudBrowserEnabledByDefault,
         theme: merged.theme,
         colorTheme: merged.colorTheme,
-        voiceInputModel: merged.voiceInputModel,
         captureNetworkBodiesRemaining: merged.captureNetworkBodiesRemaining,
         createdAt: updatedAt,
         updatedAt,

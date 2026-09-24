@@ -6583,12 +6583,6 @@
           "trigger": "Run Morning Brief now",
           "triggering": "Queueing…"
         },
-        "voiceInput": {
-          "default": "Default ({{model}})",
-          "description": "Choose the model for voice input v2. Speech-to-text models and GPT Audio recordings over 90 seconds use {{model}} for cleanup.",
-          "title": "Voice input model",
-          "unavailable": "Unavailable model ({{model}})"
-        },
         "welcomeThread": {
           "create": "Create welcome thread",
           "creating": "Creating…",

@@ -6575,12 +6575,6 @@
           "trigger": "Jalankan Morning Brief sekarang",
           "triggering": "Mengantrekan…"
         },
-        "voiceInput": {
-          "default": "Default ({{model}})",
-          "description": "Pilih model untuk input suara v2. Model transkripsi menggunakan {{model}} untuk merapikan teks.",
-          "title": "Model input suara",
-          "unavailable": "Model tidak tersedia ({{model}})"
-        },
         "welcomeThread": {
           "create": "Buat obrolan sambutan",
           "creating": "Membuat…",

@@ -1,4 +1,3 @@
-import type { MultimodalVoiceInputModelId } from "@okouai/api-contracts/contracts/voice-input-models";
 import { z } from "zod";
 
 import { logger } from "../../lib/log";
@@ -18,22 +17,7 @@ import type { VoiceCompletionRequest } from "./voice-completion-types";
 import { requestVoiceProvider } from "./voice-provider-request";
 
 const L = logger("VertexVoice");
-type VertexVoiceModel = Exclude<
-  MultimodalVoiceInputModelId,
-  "openai/gpt-audio" | "openai/gpt-audio-mini"
->;
-// New public multimodal selections must make an explicit routing decision.
 const MODELS = {
-  "google/gemini-2.5-flash-lite": {
-    model: "gemini-2.5-flash-lite",
-    location: "us-west1",
-    host: "us-west1-aiplatform.googleapis.com",
-    generationConfig: {
-      thinkingConfig: { thinkingBudget: 0 },
-      temperature: 0,
-      maxOutputTokens: 65_535,
-    },
-  },
   "google/gemini-3.1-flash-lite": {
     model: "gemini-3.1-flash-lite",
     location: "us",
@@ -41,15 +25,6 @@ const MODELS = {
     generationConfig: {
       thinkingConfig: { thinkingLevel: "MINIMAL" },
       temperature: 0,
-      maxOutputTokens: 65_536,
-    },
-  },
-  "google/gemini-3.6-flash": {
-    model: "gemini-3.6-flash",
-    location: "us",
-    host: "aiplatform.us.rep.googleapis.com",
-    generationConfig: {
-      thinkingConfig: { thinkingLevel: "MINIMAL" },
       maxOutputTokens: 65_536,
     },
   },
@@ -62,13 +37,12 @@ const MODELS = {
       maxOutputTokens: 65_536,
     },
   },
-} as const satisfies Readonly<Record<VertexVoiceModel, unknown>>;
+} as const;
+type VertexVoiceModel = keyof typeof MODELS;
 
-export function isVertexVoiceModel(
-  model: MultimodalVoiceInputModelId,
-): model is VertexVoiceModel {
-  return Object.hasOwn(MODELS, model);
-}
+/** Voice input is served only by Gemini 3.1 Flash-Lite on Vertex AI. */
+export const VOICE_INPUT_MODEL =
+  "google/gemini-3.1-flash-lite" satisfies VertexVoiceModel;
 
 type VertexVoiceFailureReason =
   | GcpLlmTransportReason
