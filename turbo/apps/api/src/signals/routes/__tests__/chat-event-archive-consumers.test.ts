@@ -432,7 +432,7 @@ describe("archived chat event consumers", () => {
     const archivedVisible = `archived-export-${randomUUID()} \`${escapedOpen}\` suffix`;
     // Each message stays within PostgreSQL's indexed document limit while
     // their combined compressed snapshot crosses the export range boundary.
-    const archivedTexts = Array.from({ length: 24 }, () => {
+    const archivedTexts = Array.from({ length: 18 }, () => {
       return (
         withHiddenCitation(archivedVisible) +
         randomBytes(256 * 1024).toString("base64")
@@ -451,6 +451,11 @@ describe("archived chat event consumers", () => {
       context.signal,
     );
     await archiveAndRetain(fixture.threadId, archivedEventIds);
+    const snapshot = recordedPuts.find((put) => {
+      return put.key.startsWith(`chat-events/${fixture.threadId}/`);
+    });
+    expect(snapshot?.body.length).toBeGreaterThan(4 * 1024 * 1024);
+
     const tailVisible = `hot-tail-${randomUUID()} \`${escapedOpen}\` suffix`;
     // Each 64 KiB payload counts twice toward the 2 MiB export page bound;
     // 20 rows still cross a page without writing 100 large rows.
