@@ -128,6 +128,16 @@ test("only an admin may promote their own Personal configuration in place withou
     }),
     [404],
   );
+  await actor();
+  await accept(
+    configs().convertToOrganization({
+      headers,
+      params: { configId: personal.id },
+      body: { expectedRevision: 1 },
+    }),
+    [404],
+  );
+  session(admin, "admin");
   await accept(
     configs().convertToOrganization({
       headers,

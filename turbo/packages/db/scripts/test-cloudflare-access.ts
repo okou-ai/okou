@@ -352,6 +352,9 @@ try {
     "UPDATE cloudflare_access_configs SET user_id='foreign' WHERE id='00000000-0000-4000-8000-000000000006'",
     { code: "23514", constraint: "cloudflare_access_scope_change_guard" },
   );
+  await client.query(
+    "UPDATE ssh_connections SET learned_host_key_algorithm='ssh-ed25519',learned_host_key_fingerprint='SHA256:pin' WHERE id='00000000-0000-4000-8000-000000000010'",
+  );
   await migrate("1215_cloudflare_access_personal_promotion");
   await rejects(
     "UPDATE cloudflare_access_configs SET user_id='foreign' WHERE id='00000000-0000-4000-8000-000000000004'",
@@ -382,7 +385,7 @@ try {
   assert.deepEqual(
     (
       await client.query(
-        "SELECT cloudflare_access_id,needs_rebind,credential_id,learned_host_key_algorithm FROM ssh_connections WHERE id='00000000-0000-4000-8000-000000000010'",
+        "SELECT cloudflare_access_id,needs_rebind,credential_id,learned_host_key_algorithm,learned_host_key_fingerprint FROM ssh_connections WHERE id='00000000-0000-4000-8000-000000000010'",
       )
     ).rows,
     [
@@ -390,7 +393,8 @@ try {
         cloudflare_access_id: "00000000-0000-4000-8000-000000000011",
         needs_rebind: false,
         credential_id: "00000000-0000-4000-8000-000000000002",
-        learned_host_key_algorithm: null,
+        learned_host_key_algorithm: "ssh-ed25519",
+        learned_host_key_fingerprint: "SHA256:pin",
       },
     ],
   );
