@@ -1,18 +1,52 @@
 import {
   artifacts,
   imageArtifacts,
+  presentationArtifacts,
   videoArtifacts,
 } from "@okouai/db/schema/artifact";
+import { hostedSites } from "@okouai/db/schema/hosted-site";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 
+/** Clean both hosted kinds before the site and presentation cascade. */
+export async function deleteArtifactCatalogForHostedSiteId(
+  tx: Tx,
+  siteId: string,
+): Promise<void> {
+  // The hosted projector takes the same site lock before writing either kind.
+  const [site] = await tx
+    .select({ id: hostedSites.id })
+    .from(hostedSites)
+    .where(eq(hostedSites.id, siteId))
+    .for("update")
+    .limit(1);
+  if (!site) {
+    return;
+  }
+  const presentationIds = tx
+    .select({ id: presentationArtifacts.id })
+    .from(presentationArtifacts)
+    .where(eq(presentationArtifacts.hostedSiteId, siteId));
+  await tx
+    .delete(artifacts)
+    .where(
+      or(
+        and(eq(artifacts.kind, "hosted-site"), eq(artifacts.entityId, siteId)),
+        and(
+          eq(artifacts.kind, "presentation"),
+          inArray(artifacts.entityId, presentationIds),
+        ),
+      ),
+    );
+}
+
 /**
  * Remove catalog projections before deleting locked Runs. File and generated
  * media rows cascade from the Run, but the catalog has no foreign key to those
  * polymorphic entities. The caller keeps this write and the Run delete in one
- * transaction. Repeating it is safe while the legacy delete triggers remain.
+ * transaction. Repeating it is safe across retries and the cutover.
  */
 export async function deleteArtifactCatalogForRunIds(
   tx: Tx,

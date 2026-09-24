@@ -11789,6 +11789,93 @@ describe("Official Workflow Run admission", () => {
     await runs.requestCancelRun(actor, ordinary.body.runId, [200, 400]);
   });
 
+  it("launches an idle Official agent-run input with the annotated source budget", async () => {
+    const definitionName = `api-test-idle-official-${randomUUID()}`;
+    const { actor } = await workflowBdd.setupWorkflowOrg();
+    const { agentId } = await workflowBdd.createAgent(actor);
+    installCatalogStorageFixture();
+    await syncCatalog(catalog([activeDefinition(definitionName, [])]));
+    await setOfficialWorkflowsEnabled(actor, true);
+    const installation = await accept(
+      officialClient().install({
+        headers: authHeaders(actor),
+        params: { definitionName },
+        body: { agentId, blueprints: [] },
+      }),
+      [201],
+    );
+    onTestFinished(async () => {
+      installCatalogStorageFixture();
+      const createdRuns = await runs.listAgentRuns(actor, {
+        agent: agentId,
+        limit: 100,
+      });
+      for (const run of createdRuns.runs) {
+        await runs.requestCancelRun(actor, run.id, [200, 400]);
+      }
+      await flushWaitUntilForTest();
+      await bdd.deleteAgent(actor, agentId);
+      await cleanupCatalog();
+    });
+    runs.configureRunnerGroup();
+    runs.acceptStorageDownloads();
+
+    const sourceThread = await chat.createThread(actor, { agentId });
+    const source = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: sourceThread.id,
+        prompt: "source for idle Official launch",
+        clientEventId: randomUUID(),
+      },
+      [201],
+    );
+    if (source.status !== 201 || !source.body.runId) {
+      throw new Error("Expected a source Run on a separate chat thread");
+    }
+    const sourceRunId = source.body.runId;
+    await runs.claimRunnerJob(sourceRunId);
+    // No production endpoint mutates an existing Run's budget. Set up one
+    // remaining hop; assert its effect through the real delegation route below.
+    await setRunAutonomyBudgetFixture(context, sourceRunId, 1);
+
+    const launched = await accept(
+      workflowClient().run({
+        headers: officialQueueHeaders(actor, sourceRunId, {
+          origin: "agent_run",
+        }),
+        extraHeaders: { origin: "https://app.okou.ai" },
+        params: { workflowId: installation.body.workflow.id },
+      }),
+      [200],
+    );
+    if (!launched.body.runId) {
+      throw new Error("Expected the idle Official input to dispatch itself");
+    }
+    expect(launched.body.chatThreadId).not.toBe(sourceThread.id);
+    const claim = await runs.claimRunnerJob(launched.body.runId);
+    expect(claim.prompt).toBe(`/${installation.body.workflow.name}`);
+    expect(claim.appendSystemPrompt).toContain(`SOURCE_RUN_ID: ${sourceRunId}`);
+    expect(claim.appendSystemPrompt).toContain(
+      `SOURCE_THREAD_ID: ${sourceThread.id}`,
+    );
+
+    const denied = await accept(
+      workflowClient().run({
+        headers: officialQueueHeaders(actor, launched.body.runId, {
+          origin: "agent_run",
+        }),
+        extraHeaders: { origin: "https://app.okou.ai" },
+        params: { workflowId: installation.body.workflow.id },
+      }),
+      [409],
+    );
+    expect(denied.body).toMatchObject({
+      error: { code: "AUTONOMY_BUDGET_EXHAUSTED" },
+    });
+  });
+
   it.each([
     { encoding: "canonical", origin: "web", storedBrand: "okou" },
     { encoding: "legacy", origin: "agent_run", storedBrand: "okou" },

@@ -27,7 +27,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::super::{SshRuntime, network::Network};
 use crate::guest_rpc::{Run as RpcRun, Runtime as RpcRuntime};
-use crate::test_fixtures::http::{HttpClient, HttpClientConfig};
+use crate::test_fixtures::http::{HttpClientConfig, http_client};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_types::ids::RunId;
 
@@ -284,12 +284,11 @@ impl Harness {
         let (control, control_peer) = control_connection().await;
         let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 27).unwrap();
         let run = RunId::new_v4();
-        let http = HttpClient::new(HttpClientConfig {
+        let http = http_client(HttpClientConfig {
             api_url: api_url.unwrap_or_else(|| api.base_url()),
             vercel_bypass: None,
             client_session_id: "ssh-integration".into(),
-        })
-        .unwrap();
+        });
         let observed = Arc::new(Observed::default());
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let target = listener.local_addr().unwrap();

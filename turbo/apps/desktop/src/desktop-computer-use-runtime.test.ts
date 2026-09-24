@@ -82,6 +82,7 @@ function createDesktop() {
             userId: "app-user",
             email: "app@example.test",
             orgId: "app-org",
+            sessionId: "session-app-user",
           });
         case "/api/org":
           return HttpResponse.json({ id: "app-org", name: "App workspace" });
@@ -213,6 +214,7 @@ describe("production Okou Computer Use session wiring", () => {
                 userId: "app-user",
                 email: "app@example.test",
                 orgId: "app-org",
+                sessionId: "session-app-user",
               });
         }),
         http.post(startUrl, ({ request }) => {

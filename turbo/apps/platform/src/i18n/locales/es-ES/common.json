@@ -1435,6 +1435,7 @@
       "rename": "Renombrar",
       "saving": "Guardando...",
       "send": "Enviar",
+      "shareMessage": "Compartir mensaje",
       "stop": "Detener",
       "view": "Ver"
     },
@@ -2210,12 +2211,14 @@
       "createFailed": "No se pudo crear la conversación compartida. Inténtalo de nuevo.",
       "deselectGroup": "Deseleccionar grupo de mensajes",
       "linkCopied": "Enlace copiado",
+      "messageShareFailed": "No se pudo crear el enlace compartido. Inténtalo de nuevo.",
       "publicDescription": "Los mensajes seleccionados y sus archivos adjuntos serán públicos.",
       "selectedCount_one": "{{count}} seleccionado",
       "selectedCount_many": "{{count}} seleccionados",
       "selectedCount_other": "{{count}} seleccionados",
       "selectGroup": "Seleccionar grupo de mensajes",
       "shareLink": "Enlace de conversación compartida",
+      "shareLinkCopied": "Enlace para compartir copiado",
       "start": "Compartir mensajes",
       "tooLarge": "Selecciona menos mensajes para compartir"
     },
@@ -7159,6 +7162,8 @@
     "configured": "Configurado",
     "credential": {
       "add": "Añadir credenciales",
+      "appleDhFieldHelp": "Cada campo admite de 1 a 63 bytes UTF-8. No se permite NUL.",
+      "appleDhMethod": "Nombre de usuario y contraseña de Apple DH",
       "authentication": "Método de autenticación",
       "createNew": "Crear credenciales",
       "delete": "Eliminar credenciales",
@@ -7230,6 +7235,8 @@
     },
     "saving": "Guardando…",
     "security": {
+      "appleDh": "Compartir pantalla de Mac (Apple DH)",
+      "appleDhHelp": "Requiere Compartir pantalla de macOS mediante una conexión SSH guardada. El destino RFB debe ser 127.0.0.1 o ::1 en ese Mac. SSH protege toda la sesión VNC. Usa un host SSH de Mac que controles; su clave de host no descarta un proxy posterior.",
       "caBundle": "Certificados de CA (PEM)",
       "caHelp": "Hasta 8 certificados de CA, 64 KiB en total. No pegues una clave privada ni un certificado de servidor.",
       "caHint": "Pega los certificados públicos de CA que emitieron el certificado del servidor",
@@ -7250,6 +7257,7 @@
     "summary_other": "{{count}} hosts configurados",
     "title": "Acceso remoto VNC",
     "transport": {
+      "appleDhDestinationHelp": "Para Apple DH, introduce 127.0.0.1 o ::1. Es la dirección de bucle local del Mac, accesible mediante el host SSH seleccionado.",
       "destination": "Destino RFB",
       "destinationHelp": "En las rutas SSH, se accede a este host y puerto desde el servidor SSH seleccionado, no directamente desde el Runner.",
       "direct": "Directa desde Runner",

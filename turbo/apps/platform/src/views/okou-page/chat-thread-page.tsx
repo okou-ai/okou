@@ -76,6 +76,7 @@ import {
   getShortcutParts,
   Button,
   CopyButton,
+  ShareLinkButton,
   Checkbox,
   Input,
   Skeleton,
@@ -8127,6 +8128,7 @@ function PagedRunWorkAssistantContent({
         group={group}
         content={mainEvent.content ?? ""}
         thread={thread}
+        shareEvents={[mainEvent]}
         relatedArtifacts={runWorkSection?.remainingArtifactCards}
         embedded
       />
@@ -8247,6 +8249,7 @@ function PagedAssistantGroup({
           group={group}
           content={fullContent}
           thread={thread}
+          shareEvents={group.events}
         />
       ) : null}
     </div>
@@ -8626,12 +8629,79 @@ function RunLangfuseAction({
   return signals ? <RunLangfuseLink signals={signals} /> : null;
 }
 
+function MessageShareAction({
+  onShare,
+}: {
+  onShare: (revert: () => void) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <ShareLinkButton
+      onShare={onShare}
+      render={({ onClick, ref }, { copied }) => {
+        const copiedLabel = t(($) => {
+          return $.chat.sharing.shareLinkCopied;
+        });
+        if (copied) {
+          // The button itself confirms the copy; no toast or tooltip.
+          return (
+            <Button
+              ref={ref}
+              type="button"
+              variant="quiet"
+              size="xs"
+              onClick={onClick}
+              className="gap-1 px-1.5 text-muted-foreground"
+              aria-label={copiedLabel}
+              data-testid="chat-message-share"
+            >
+              <Check />
+              {copiedLabel}
+            </Button>
+          );
+        }
+        return (
+          <TooltipProvider delay={300}>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    ref={ref}
+                    type="button"
+                    variant="quiet"
+                    size="icon-xs"
+                    iconSize="sm"
+                    onClick={onClick}
+                    className="text-muted-foreground/60"
+                    aria-label={t(($) => {
+                      return $.chat.actions.shareMessage;
+                    })}
+                    data-testid="chat-message-share"
+                  >
+                    <Share2 />
+                  </Button>
+                }
+              />
+              <TooltipContent side="bottom">
+                {t(($) => {
+                  return $.chat.actions.shareMessage;
+                })}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        );
+      }}
+    />
+  );
+}
+
 function PagedGroupPrimaryActions({
   firstRunId,
   thread,
   hasContent,
   usage,
   onCopy,
+  onShare,
   relatedArtifacts,
 }: {
   firstRunId: string | undefined;
@@ -8639,12 +8709,15 @@ function PagedGroupPrimaryActions({
   hasContent: boolean;
   usage: ChatEventUsagePayload | undefined;
   onCopy: () => Promise<boolean>;
+  onShare: ((revert: () => void) => void) | undefined;
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
 }) {
   const { t } = useTranslation();
-  const showActivityLogs = useGet(featureSwitch$)[FeatureSwitchKey.OkouDebug];
+  const switches = useGet(featureSwitch$);
+  const showDebugActions = switches[FeatureSwitchKey.OkouDebug];
+  const showShare = switches[FeatureSwitchKey.ChatMessageShare] && onShare;
   const hasLeadingIconAction = Boolean(
-    (showActivityLogs && firstRunId) || hasContent,
+    (showDebugActions && firstRunId) || hasContent,
   );
   return (
     <div
@@ -8657,8 +8730,7 @@ function PagedGroupPrimaryActions({
       )}
       data-testid="chat-event-actions"
     >
-      {showActivityLogs && firstRunId && <RunLogsAction runId={firstRunId} />}
-      {showActivityLogs && firstRunId && (
+      {showDebugActions && firstRunId && (
         <RunLangfuseAction thread={thread} runId={firstRunId} />
       )}
       {hasContent && (
@@ -8701,6 +8773,7 @@ function PagedGroupPrimaryActions({
           }}
         />
       )}
+      {showShare && <MessageShareAction onShare={showShare} />}
       {relatedArtifacts ? (
         <RelatedArtifactsDialog cards={relatedArtifacts} />
       ) : null}
@@ -8713,17 +8786,21 @@ function PagedGroupActions({
   group,
   content,
   thread,
+  shareEvents,
   relatedArtifacts,
   embedded = false,
 }: {
   group: ChatEventGroup;
   content: string;
   thread: ChatPanelSignals;
+  /** The assistant events this action bar shares, with their user prompt. */
+  shareEvents: readonly EnrichedChatEvent[];
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
   embedded?: boolean;
 }) {
   const pageSignal = useGet(pageSignal$);
   const copyEvent = useSet(thread.copyEvent$);
+  const shareMessage = useSet(thread.sharing.shareMessage$);
   const sharingPhase = useGet(thread.sharing.phase$);
   if (sharingPhase !== "idle") {
     return null;
@@ -8738,6 +8815,29 @@ function PagedGroupActions({
   const handleCopy = () => {
     return copyEvent({ text: content, attachments: [] }, pageSignal);
   };
+  // Only persisted output messages can be shared; streaming text has no seqId.
+  const shareEventIds = shareEvents
+    .filter((event) => {
+      return (
+        event.eventType === "output.message" &&
+        event.seqId !== undefined &&
+        Boolean(event.content)
+      );
+    })
+    .map((event) => {
+      return event.id;
+    });
+  const handleShare =
+    shareEventIds.length > 0
+      ? (revert: () => void) => {
+          const share = async () => {
+            if (!(await shareMessage(shareEventIds, pageSignal))) {
+              revert();
+            }
+          };
+          detach(share(), Reason.DomCallback, "share chat message");
+        }
+      : undefined;
 
   const actions = (
     <div className={CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_CLASS}>
@@ -8747,6 +8847,7 @@ function PagedGroupActions({
         hasContent={hasContent}
         usage={usage}
         onCopy={handleCopy}
+        onShare={handleShare}
         relatedArtifacts={relatedArtifacts}
       />
     </div>

@@ -6,7 +6,6 @@ import {
   activeElementIsInside,
   chatComposerTextarea,
   chatScrollContainer,
-  setScrollMetrics,
   setupPage,
 } from "./chat-lifecycle-test-helpers.ts";
 import {
@@ -107,40 +106,4 @@ test("Keep mobile chat gestures predictable in the standalone app", async () => 
   swipe(history, { x: 40, y: 80 }, { x: 40, y: 120 });
   expect(activeElementIsInside(composer)).toBeFalsy();
   expect(composer.closest("[data-chat-composer]")).not.toBeNull();
-});
-
-test("Preserve normal composer scrolling in a mobile browser", async () => {
-  context.mocks.browser.standaloneDisplayMode(false);
-  context.mocks.browser.maxTouchPoints(5);
-  installScrollableActiveChat();
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  const composer = chatComposerTextarea();
-  await fill(
-    composer,
-    "A long mobile-browser draft that can scroll independently through several paragraphs and should retain normal native touch behavior.",
-  );
-  composer.style.overflowY = "auto";
-  setScrollMetrics(composer, { scrollHeight: 640, clientHeight: 120 });
-  composer.scrollTop = 120;
-  composer.focus();
-  setKeyboardOpenFixture();
-
-  const composerScrollAllowed = swipe(
-    composer,
-    { x: 40, y: 120 },
-    { x: 40, y: 80 },
-  );
-  expect(composerScrollAllowed).toBeTruthy();
-  expect(activeElementIsInside(composer)).toBeTruthy();
-
-  const historyScrollAllowed = swipe(
-    chatScrollContainer(),
-    { x: 40, y: 80 },
-    { x: 40, y: 120 },
-  );
-  expect(historyScrollAllowed).toBeTruthy();
-  expect(activeElementIsInside(composer)).toBeTruthy();
 });

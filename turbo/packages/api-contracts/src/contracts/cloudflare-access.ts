@@ -37,6 +37,15 @@ const sshHostReferenceSchema = z
 export const cloudflareAccessConfigSchema = cloudflareAccessConfigMetadataSchema
   .extend({ sshHosts: z.array(sshHostReferenceSchema) })
   .strict();
+export const scopedCloudflareAccessConfigSchema =
+  cloudflareAccessConfigSchema.extend({
+    scope: z.enum(["personal", "organization"]),
+  });
+const configResponseSchema = z.union([
+  cloudflareAccessConfigSchema,
+  scopedCloudflareAccessConfigSchema,
+]);
+const viewQuery = z.object({ view: z.literal("scoped").optional() }).strict();
 const c = initContract();
 const errors = {
   400: apiErrorSchema,
@@ -47,7 +56,10 @@ const errors = {
   500: apiErrorSchema,
 };
 const pathParams = z.object({ configId: z.uuid() }).strict();
-const createBody = createCloudflareAccessRequestSchema.extend({ id: z.uuid() });
+const createBody = createCloudflareAccessRequestSchema.extend({
+  id: z.uuid(),
+  scope: z.enum(["personal", "organization"]).optional(),
+});
 const updateBody = z
   .object({
     expectedRevision: revision,
@@ -67,10 +79,9 @@ export const cloudflareAccessContract = c.router({
     method: "GET",
     path: "/api/cloudflare-access/configs",
     headers: authHeadersSchema,
+    query: viewQuery,
     responses: {
-      200: z
-        .object({ configs: z.array(cloudflareAccessConfigSchema) })
-        .strict(),
+      200: z.object({ configs: z.array(configResponseSchema) }).strict(),
       ...errors,
     },
   },
@@ -78,9 +89,10 @@ export const cloudflareAccessContract = c.router({
     method: "POST",
     path: "/api/cloudflare-access/configs",
     headers: authHeadersSchema,
+    query: viewQuery,
     body: createBody,
     responses: {
-      201: cloudflareAccessConfigSchema,
+      201: configResponseSchema,
       204: c.noBody(),
       ...errors,
     },
@@ -89,14 +101,16 @@ export const cloudflareAccessContract = c.router({
     method: "PATCH",
     path: "/api/cloudflare-access/configs/:configId",
     headers: authHeadersSchema,
+    query: viewQuery,
     pathParams,
     body: updateBody,
-    responses: { 200: cloudflareAccessConfigSchema, ...errors },
+    responses: { 200: configResponseSchema, ...errors },
   },
   delete: {
     method: "DELETE",
     path: "/api/cloudflare-access/configs/:configId",
     headers: authHeadersSchema,
+    query: viewQuery,
     pathParams,
     body: deleteBody,
     responses: { 204: c.noBody(), ...errors },
@@ -105,7 +119,11 @@ export const cloudflareAccessContract = c.router({
 export type CloudflareAccessConfig = z.infer<
   typeof cloudflareAccessConfigSchema
 >;
+export type ScopedCloudflareAccessConfig = z.infer<
+  typeof scopedCloudflareAccessConfigSchema
+>;
 export type CreateCloudflareAccessRequest = z.infer<
   typeof createCloudflareAccessRequestSchema
 >;
+export type CreateCloudflareAccessConfigRequest = z.infer<typeof createBody>;
 export type UpdateCloudflareAccessRequest = z.infer<typeof updateBody>;

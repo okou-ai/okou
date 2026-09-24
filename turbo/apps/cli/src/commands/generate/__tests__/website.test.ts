@@ -105,12 +105,15 @@ describe("okou generate website command", () => {
     expect(stdout).toContain(
       "okou host ./generated/mockups/clearpath-demo --site clearpath-demo --spa\n",
     );
-    expect(stdout).toContain(
-      "Hosted websites are public: anyone with the returned URL can open them.",
+    expect(stdout).not.toContain("Hosted websites are public:");
+    expect(stdout).not.toContain("--visibility");
+    expect(stdout).not.toContain(
+      "supporting generated media at its default visibility",
     );
+    expect(stdout).not.toContain("okou web upload-file -f <file>");
   });
 
-  it("provides a valid public hosting command without sharing supporting images", async () => {
+  it("provides a direct host command without file-upload or visibility guidance", async () => {
     await generateCommand.parseAsync([
       "node",
       "cli",
@@ -125,8 +128,12 @@ describe("okou generate website command", () => {
     expect(stdout).toContain(
       "okou host ./generated/mockups/launch-site --site launch-site --spa\n",
     );
-    expect(stdout).toContain("okou web upload-file -f <file>");
-    expect(stdout).toContain("do not make supporting media public separately");
+    expect(stdout).not.toContain("okou web upload-file -f <file>");
+    expect(stdout).not.toContain("File upload is a separate delivery channel");
+    expect(stdout).not.toContain(
+      "do not make supporting media public separately",
+    );
+    expect(stdout).not.toContain("Hosted websites are public:");
     const imageWorkflow = stdout.split("\n").find((line) => {
       return line.startsWith("- Image workflow:");
     });

@@ -1,6 +1,6 @@
 import {
   cloudflareAccessContract,
-  type CreateCloudflareAccessRequest,
+  type CreateCloudflareAccessConfigRequest,
   type UpdateCloudflareAccessRequest,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { command } from "ccstate";
@@ -8,7 +8,7 @@ import { cloudflareAccessErrorResponse } from "../../lib/cloudflare-access-error
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
-import { bodyResultOf, pathParamsOf } from "../context/request";
+import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
@@ -34,19 +34,23 @@ const encryptionContext$ = command(async ({ get }, signal: AbortSignal) => {
   return context;
 });
 
-const listConfigs$ = command(async ({ get }, signal: AbortSignal) => {
-  const configs = await listCloudflareAccessConfigs(
-    get(db$),
-    get(organizationAuthContext$),
-  );
-  signal.throwIfAborted();
-  return configs;
-});
+const listConfigs$ = command(
+  async ({ get }, view: "legacy" | "scoped", signal: AbortSignal) => {
+    const configs = await listCloudflareAccessConfigs(
+      get(db$),
+      get(organizationAuthContext$),
+      view,
+    );
+    signal.throwIfAborted();
+    return configs;
+  },
+);
 
 const createConfig$ = command(
   async (
     { get, set },
-    body: CreateCloudflareAccessRequest & { readonly id: string },
+    body: CreateCloudflareAccessConfigRequest,
+    view: "legacy" | "scoped",
     signal: AbortSignal,
   ) => {
     const featureContext = await set(encryptionContext$, signal);
@@ -56,6 +60,7 @@ const createConfig$ = command(
       body,
       id: body.id,
       featureContext,
+      view,
     });
     signal.throwIfAborted();
     return config;
@@ -67,6 +72,7 @@ const updateConfig$ = command(
     { get, set },
     configId: string,
     body: UpdateCloudflareAccessRequest,
+    view: "legacy" | "scoped",
     signal: AbortSignal,
   ) => {
     const featureContext = await set(encryptionContext$, signal);
@@ -76,6 +82,7 @@ const updateConfig$ = command(
       configId,
       body,
       featureContext,
+      view,
     });
     signal.throwIfAborted();
     return result;
@@ -87,6 +94,7 @@ const deleteConfig$ = command(
     { get, set },
     configId: string,
     expectedRevision: number,
+    view: "legacy" | "scoped",
     signal: AbortSignal,
   ) => {
     const result = await deleteCloudflareAccessConfig({
@@ -94,15 +102,20 @@ const deleteConfig$ = command(
       owner: get(organizationAuthContext$),
       configId,
       expectedRevision,
+      view,
     });
     signal.throwIfAborted();
     return result;
   },
 );
 
-const list$ = command(async ({ set }, signal: AbortSignal) => {
+const list$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
-  const configs = await set(listConfigs$, signal);
+  const view =
+    get(queryOf(cloudflareAccessContract.list)).view === "scoped"
+      ? "scoped"
+      : "legacy";
+  const configs = await set(listConfigs$, view, signal);
   return { status: 200 as const, body: { configs } };
 });
 
@@ -113,9 +126,21 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  const config = await set(createConfig$, body.data, signal);
+  const view =
+    get(queryOf(cloudflareAccessContract.create)).view === "scoped"
+      ? "scoped"
+      : "legacy";
+  const config = await set(createConfig$, body.data, view, signal);
   if (!config.ok) {
-    return cloudflareAccessErrorResponse(409, config.code, config.message);
+    return cloudflareAccessErrorResponse(
+      config.kind === "forbidden"
+        ? 403
+        : config.kind === "not_found"
+          ? 404
+          : 409,
+      config.code,
+      config.message,
+    );
   }
   return config.value === undefined
     ? { status: 204 as const, body: undefined }
@@ -130,11 +155,19 @@ const update$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const { configId } = get(pathParamsOf(cloudflareAccessContract.update));
-  const result = await set(updateConfig$, configId, body.data, signal);
+  const view =
+    get(queryOf(cloudflareAccessContract.update)).view === "scoped"
+      ? "scoped"
+      : "legacy";
+  const result = await set(updateConfig$, configId, body.data, view, signal);
   return result.ok
     ? { status: 200 as const, body: result.value }
     : cloudflareAccessErrorResponse(
-        result.kind === "not_found" ? 404 : 409,
+        result.kind === "not_found"
+          ? 404
+          : result.kind === "forbidden"
+            ? 403
+            : 409,
         result.code,
         result.message,
       );
@@ -148,16 +181,25 @@ const delete$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const { configId } = get(pathParamsOf(cloudflareAccessContract.delete));
+  const view =
+    get(queryOf(cloudflareAccessContract.delete)).view === "scoped"
+      ? "scoped"
+      : "legacy";
   const result = await set(
     deleteConfig$,
     configId,
     body.data.expectedRevision,
+    view,
     signal,
   );
   return result.ok
     ? { status: 204 as const, body: undefined }
     : cloudflareAccessErrorResponse(
-        result.kind === "not_found" ? 404 : 409,
+        result.kind === "not_found"
+          ? 404
+          : result.kind === "forbidden"
+            ? 403
+            : 409,
         result.code,
         result.message,
       );

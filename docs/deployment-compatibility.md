@@ -1,5 +1,21 @@
 # Deployment Compatibility
 
+## Codex OAuth workspace ID preparation
+
+The API supplies the selected workspace ID as `CODEX_OAUTH_ACCOUNT_ID` for
+Codex OAuth runs. The guest writes that ID into `auth.json` and both placeholder
+JWT claims. Access and refresh tokens remain placeholders; the firewall still
+injects real credentials into outbound requests.
+
+The API retains the existing placeholder `CHATGPT_ACCOUNT_ID` for the firewall
+and Pi. This preparatory change keeps the Runner on Codex 0.155.1. An older
+Runner ignores the additive field; a newer Runner served by an older API, or
+claiming a context queued before API promotion, retains the original
+placeholder account ID when the new field is absent. An explicitly empty field
+is rejected as a broken API contract. Deploy this compatible change first;
+upgrade Codex to 0.156.1 only after the API rollout and old claimable contexts
+have drained. The follow-up upgrade and fallback removal are tracked by #36420.
+
 ## Chat thread snapshot R2 handoff (2026-09-23)
 
 Migration `1204_chat_thread_snapshot_r2_pointer` adds a nullable R2 object key to
@@ -58,6 +74,32 @@ Agent deletion uses the same operation before its Session/Run cascade. Repeated
 deletes coexist with the old triggers because deleting an absent catalog row is
 idempotent. The direct hosted-site and account-erasure paths need their own
 source-scoped cleanup before the delete triggers can be retired.
+
+## Artifact and chat trigger retirement (contract step)
+
+Migration `1206_retire_artifact_chat_triggers` removes the eleven triggers named
+in #33749 and their six unreferenced functions. It is a **contract step**, not
+an API expand step. It cannot ship while any serving API instance or supported
+rollback binary still relies on trigger-owned catalog writes/deletes, chat event
+seq or snapshot cursor derivation, append-only rejection, or computer-host/browser
+normalization. An old API against the contracted schema is not supported.
+
+Before applying this migration in production, confirm the explicit API paths from
+#36258, #36294, #36301 and #36304 have deployed to **all** serving instances.
+Any further production writer fixes discovered in this Draft PR must also ship
+before contraction; the migration cannot be its own expand release. The
+production rollback resolver rejects API targets before canonical
+main commit `065f970bbb8c21c10ef709495d5824d0a6183e50` (#36301, the last
+preparation to merge): the first supported rollback release is
+`3a2a331d50503a73407029ed9074e7d6930778da` (API 1.664.0). Older entries
+in the rollback dashboard remain visible but are rejected before artifact or
+host access. Record serving deployment and rollback evidence with the release.
+Verify the migration and its permanent inventory against a
+replayed database, plus API no-trigger integration coverage for ordinary file
+writes and deletion cascades, hosted-site/presentation deletion, chat event and
+snapshot concurrency/retries, and computer host selection on create/update.
+Do not infer production readiness from a merged commit or a passing isolated
+test. Preserve the shipped historical SQL migrations.
 
 This document focuses on three independently deployed surfaces that have
 cross-version API or persisted-state compatibility boundaries:
@@ -2505,9 +2547,10 @@ clients below the floor receive `426` before route matching. This floor increase
 is deliberately separate from the release that first published the replacement
 App, because production promotes the API before the App.
 
-Standalone Access mutations now publish only `cloudflare-access:changed`.
-Effective Service Token replacement still invalidates Runner authority for every
-referencing protected host. Actual SSH host writes continue publishing
+Standalone Access create, rename and delete publish only
+`cloudflare-access:changed`. Effective Service Token replacement also publishes
+`ssh:changed` to referencing host owners and invalidates Runner authority for
+every referencing protected host. Actual SSH host writes continue publishing
 `ssh:changed` and invalidating Runner authority; inline Access creation also
 publishes `cloudflare-access:changed` because it changes both resources. Neither
 browser event contains a token, configuration ID or host ID.
@@ -2602,6 +2645,41 @@ or write `needs_rebind=true` until the rebind-capable App is verified live and
 the later App compatibility floor is raised. A rollback to pre-foundation API
 after either new state is written is unsafe without first restoring a compatible
 authority reader; rolling back code does not roll back persisted state.
+
+### Scoped organization Cloudflare Access backend (#36265)
+
+The canonical Access API accepts an explicit `view=scoped` query on list and
+mutations. Without it, the list and mutation responses keep the exact
+personal-only shape expected by the currently deployed App, and organization
+rows cannot be managed through the old request shape. A scoped response adds
+`scope`; organization rows are visible to current members, but only current
+admins may create, rename, rotate or delete them. The discriminator is not an
+authorization credential. Inline SSH Access creation remains personal, while
+members may select same-organization shared rows for their own SSH hosts.
+Shared responses contain only the requesting member's SSH host references.
+Secrets remain write-only.
+
+Effective shared token rotation advances every referencing SSH host generation
+in the same transaction and publishes host-owner Runner/SSH invalidations and
+an organization Access-list signal after commit. The organization signal uses
+the org realtime channel, not a cached member list; the scoped App must
+subscribe to that channel. These notices remain best-effort, so a missed
+notice retains the documented active-Run cache window. Referenced deletion is
+blocked across all members. Personal records still erase with their owner;
+shared records survive a member erasure and are removed with the organization
+after SSH references. This release adds no conversion or `needs_rebind=true`
+writer.
+
+**Activation gate:** migration `1203` must have run in production, and every
+serving API authority reader and SSH Runner must include the #36260 foundation
+before this API begins creating or binding shared rows. The first foundation
+release reported successful migrations and Runner promotion, but its global
+health step was non-blocking; promotion alone is not proof of the entire live
+fleet. Verify actual serving versions before production activation. Once a
+shared row is bound, rolling back to a pre-foundation API or Runner is unsafe
+without first restoring a compatible authority reader. The temporary
+personal-only projection is retired only after #36261's rebind-capable App is
+live and #36262 raises the verified minimum App version.
 
 ## Feishu and Lark integration identity
 

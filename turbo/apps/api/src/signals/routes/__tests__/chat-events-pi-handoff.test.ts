@@ -1086,10 +1086,20 @@ describe("CHAT-02: model-first provider policies", () => {
       runnerId: runnerIdentity.runnerId,
       group: runnerGroup,
     });
+    const { providerId } = await api.ensureOrgModelProvider(actor);
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-fable-5-1",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
     const anchor = await sendChatRun(actor, {
       agentId,
       prompt: "hold capacity for the resume transfer",
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
     });
     await flushWaitUntilForTest();
     const anchorState = await api.readRun(actor, anchor.runId);

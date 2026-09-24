@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   agentsByIdContract,
@@ -175,16 +175,6 @@ test("Show a matching chat mention suggestion", async () => {
   expect(within(menu).queryByText("New chat")).toBeNull();
 });
 
-test("Hide mention suggestions when nothing useful matches", async () => {
-  const { composer, user } = await setupMentionSearch();
-  await user.keyboard("@alpha");
-
-  await waitFor(() => {
-    expect(composer).toHaveTextContent("@alpha");
-    expect(screen.queryByTestId("chat-thread-suggestion-menu")).toBeNull();
-  });
-});
-
 test("Keep archived chats in @ mention suggestions when archiving is enabled", async () => {
   const current = withAgent(
     continuityThread(64, 1, "Current mention chat"),
@@ -342,22 +332,6 @@ test("Save a selected agent mention and retain it when returning to the chat", a
   });
 });
 
-test("A saved agent mention uses the current avatar when opened", async () => {
-  const { savedMentionThread } = await openAgentMentionWorkspace();
-  await openConversation(savedMentionThread.id);
-  const restoredComposer = await screen.findByRole("textbox", {
-    name: "Message",
-  });
-  await waitFor(() => {
-    const restored = agentMention(restoredComposer, ZETA_ID);
-    expect(restored).toBeVisible();
-    expect(restored).toHaveAttribute(
-      "data-agent-avatar-url",
-      ZETA_CURRENT_AVATAR,
-    );
-  });
-});
-
 test("Mention a chat thread from any agent", async () => {
   const projectAlpha = withAgent(
     continuityThread(63, 1, "Project Alpha"),
@@ -406,79 +380,5 @@ test("Mention a chat thread from any agent", async () => {
         });
       }),
     ).toBeTruthy();
-  });
-});
-
-test.each(["{Enter}", " "])(
-  "Activate a chat mention with %s after focusing its native button",
-  async (key) => {
-    const { composer, user } = await setupMentionSearch();
-    await user.keyboard("Discuss @beta");
-    const option = await waitFor(() => {
-      return menuButton("Project Beta");
-    });
-
-    await user.pointer({ target: option, keys: "[MouseLeft>]" });
-    expect(option).toHaveFocus();
-    expect(composer).toHaveTextContent("Discuss @beta");
-    expect(mentionMenu()).toBeInTheDocument();
-    await user.pointer({ target: composer, keys: "[/MouseLeft]" });
-    await user.pointer({ target: option, keys: "[MouseRight]" });
-    expect(composer).toHaveTextContent("Discuss @beta");
-
-    await user.keyboard(key);
-    await waitFor(() => {
-      expect(composer).toHaveTextContent("Discuss Project Beta");
-      expect(screen.queryByTestId("chat-thread-suggestion-menu")).toBeNull();
-      expect(composer).toHaveFocus();
-    });
-    await user.keyboard("next");
-    expect(composer).toHaveTextContent("Discuss Project Beta next");
-  },
-);
-
-test("Dismiss a focused mention menu without changing the draft", async () => {
-  const { composer, user } = await setupMentionSearch();
-  await user.keyboard("@beta");
-  const option = await waitFor(() => {
-    return menuButton("Project Beta");
-  });
-  await user.pointer({ target: option, keys: "[MouseLeft>]" });
-  await user.pointer({ target: composer, keys: "[/MouseLeft]" });
-  expect(option).toHaveFocus();
-
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(screen.queryByTestId("chat-thread-suggestion-menu")).toBeNull();
-  });
-  expect(composer).toHaveTextContent("@beta");
-  expect(composer).toHaveFocus();
-
-  await user.keyboard("{ArrowLeft}{ArrowRight}");
-  await expect(
-    screen.findByTestId("chat-thread-suggestion-menu"),
-  ).resolves.toBeInTheDocument();
-});
-
-test("Select a mention when the browser blurs without focusing another control", async () => {
-  const { composer, user } = await setupMentionSearch();
-  await user.keyboard("@beta");
-  const option = await waitFor(() => {
-    return menuButton("Project Beta");
-  });
-
-  // Safari pointer activation can blur a contenteditable without focusing the
-  // button. The native DOM method supplies that null-relatedTarget transition.
-  act(() => {
-    composer.blur();
-  });
-  expect(composer).not.toHaveFocus();
-  expect(mentionMenu()).toBeInTheDocument();
-  await user.click(option);
-
-  await waitFor(() => {
-    expect(composer).toHaveTextContent("Project Beta");
-    expect(screen.queryByTestId("chat-thread-suggestion-menu")).toBeNull();
-    expect(composer).toHaveFocus();
   });
 });

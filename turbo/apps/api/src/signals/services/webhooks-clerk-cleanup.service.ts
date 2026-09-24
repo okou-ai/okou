@@ -12,6 +12,7 @@ import { builtinConnectorExternalCodeSessions } from "@okouai/db/schema/connecto
 import { builtinConnectorOauthDeviceAuthorizationSessions } from "@okouai/db/schema/connector-oauth-device-authorization-session";
 import { browserUserActionRequests } from "@okouai/db/schema/browser-session";
 import { connectors } from "@okouai/db/schema/connector";
+import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { deviceCodes } from "@okouai/db/schema/device-codes";
 import { exportJobs } from "@okouai/db/schema/export-job";
 import { githubUserLinks } from "@okouai/db/schema/github-user-link";
@@ -25,6 +26,8 @@ import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { secrets } from "@okouai/db/schema/secret";
+import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { sharedThreads } from "@okouai/db/schema/shared-thread";
@@ -40,7 +43,17 @@ import {
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
 import { command, computed, type Computed } from "ccstate";
-import { and, count, eq, inArray, isNotNull, like, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  inArray,
+  isNotNull,
+  like,
+  or,
+  sql,
+} from "drizzle-orm";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { pgTextDecoder } from "../../lib/db-structured-result";
@@ -807,6 +820,22 @@ async function deleteOrgData(
     .delete(browserUserActionRequests)
     .where(eq(browserUserActionRequests.orgId, orgId));
   await deleteClerkAgentLifecycleData(db, { kind: "organization", orgId });
+  // VNC references were removed at the start of organization cleanup. Remove
+  // Access rows before SSH hosts: rotation takes config then host locks.
+  // Delete hosts before credentials and configs for the restrictive FK.
+  await db.transaction(async (tx) => {
+    await tx
+      .select({ id: cloudflareAccessConfigs.id })
+      .from(cloudflareAccessConfigs)
+      .where(eq(cloudflareAccessConfigs.orgId, orgId))
+      .orderBy(asc(cloudflareAccessConfigs.id))
+      .for("update");
+    await tx.delete(sshConnections).where(eq(sshConnections.orgId, orgId));
+    await tx.delete(sshCredentials).where(eq(sshCredentials.orgId, orgId));
+    await tx
+      .delete(cloudflareAccessConfigs)
+      .where(eq(cloudflareAccessConfigs.orgId, orgId));
+  });
   await deleteConnectorOwnerState(db, { kind: "organization", orgId }, signal);
   await db.transaction(async (tx) => {
     await deleteStoragesWithPiMemoryCandidates(tx, eq(storages.orgId, orgId));
@@ -887,6 +916,23 @@ async function deleteUserData(
     .delete(browserUserActionRequests)
     .where(eq(browserUserActionRequests.userId, userId));
   await deleteClerkAgentLifecycleData(db, { kind: "user", userId });
+  // VNC references were removed before user cleanup. Delete only this user's
+  // SSH resources and personal Access configurations; organization Access
+  // configurations have no user owner and must survive creator deletion.
+  // Take config locks first to match token rotation's config-then-host order.
+  await db.transaction(async (tx) => {
+    await tx
+      .select({ id: cloudflareAccessConfigs.id })
+      .from(cloudflareAccessConfigs)
+      .where(eq(cloudflareAccessConfigs.userId, userId))
+      .orderBy(asc(cloudflareAccessConfigs.id))
+      .for("update");
+    await tx.delete(sshConnections).where(eq(sshConnections.userId, userId));
+    await tx.delete(sshCredentials).where(eq(sshCredentials.userId, userId));
+    await tx
+      .delete(cloudflareAccessConfigs)
+      .where(eq(cloudflareAccessConfigs.userId, userId));
+  });
   await db.transaction(async (tx) => {
     await deleteStoragesWithPiMemoryCandidates(tx, eq(storages.userId, userId));
   });

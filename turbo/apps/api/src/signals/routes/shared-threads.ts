@@ -1,7 +1,7 @@
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { command } from "ccstate";
 
-import { badRequestMessage, notFound } from "../../lib/error";
+import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { deleteSharedThread$ } from "../services/shared-thread-artifacts.service";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -67,6 +67,7 @@ const createSharedThreadInner$ = command(
         userId: auth.userId,
         threadId: params.threadId,
         eventIds: body.data.eventIds,
+        ...(body.data.id === undefined ? {} : { id: body.data.id }),
         publicBrand,
         canReadAttachments:
           auth.tokenType !== "agent" ||
@@ -92,6 +93,9 @@ const createSharedThreadInner$ = command(
       return badRequestMessage(
         "A selected artifact or hosted dependency is unavailable for sharing",
       );
+    }
+    if (result.kind === "id-conflict") {
+      return conflict("A shared conversation with this ID already exists");
     }
     return { status: 201 as const, body: { id: result.id } };
   },

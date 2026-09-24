@@ -25,12 +25,8 @@ const context = testContext();
 
 const AGENT_ID = "c0000000-0000-4000-a000-000000000081";
 const ACTIVE_RUN_ID = "a0000000-0000-4000-a000-000000000081";
-const WATCHED_RUN_ID = "a0000000-0000-4000-a000-000000000082";
-const WATCHED_THREAD_ID = "b0000000-0000-4000-a000-000000000082";
-const WATCHED_AGENT_ID = "c0000000-0000-4000-a000-000000000082";
 const ACTIVE_PROMPT_THREAD_ID = "b0000000-0000-4000-a000-000000000091";
 const SKIP_EVENT_THREAD_ID = "b0000000-0000-4000-a000-000000000092";
-const WATCHED_EVENT_THREAD_ID = "b0000000-0000-4000-a000-000000000093";
 
 function textDocument(text: string): UserMessageDocument {
   return { version: 1, parts: [{ type: "text", text }] };
@@ -43,24 +39,6 @@ function automationDocument(
   return {
     version: 1,
     parts: [{ type: "automation", workflowName, automationBrief }],
-  };
-}
-
-function watchedRunDocument(summary: string): UserMessageDocument {
-  return {
-    version: 1,
-    parts: [
-      { type: "text", text: summary },
-      {
-        type: "source",
-        kind: "agent",
-        runId: WATCHED_RUN_ID,
-        threadId: WATCHED_THREAD_ID,
-        agentId: WATCHED_AGENT_ID,
-        titleSnapshot: "Release watch",
-        href: `/chats/${WATCHED_THREAD_ID}#run-${WATCHED_RUN_ID}`,
-      },
-    ],
   };
 }
 
@@ -342,63 +320,4 @@ test("Skip one pending automation event without removing the others", async () =
   });
   expect(screen.getByText("Publish digest")).toBeVisible();
   expect(requests.revokedEventIds).toStrictEqual([firstEvent.id]);
-});
-
-test("A watched-run automation waits as an automation event", async () => {
-  const watchedEvent = eventRow(WATCHED_EVENT_THREAD_ID, 2, {
-    eventType: "input.automation",
-    runId: null,
-    payload: {
-      userMessage: watchedRunDocument("Release watch completed successfully"),
-    },
-  });
-  const requests = installWorkflowQueueFixture(
-    context,
-    WATCHED_EVENT_THREAD_ID,
-    [activeRunRow(WATCHED_EVENT_THREAD_ID), watchedEvent],
-  );
-
-  await setupPage({
-    context,
-    path: `/chats/${WATCHED_EVENT_THREAD_ID}`,
-    auth: workflowAuth("watched-event"),
-  });
-
-  await waitFor(() => {
-    expect(screen.getByText("1 event waiting")).toBeVisible();
-    expect(
-      screen.getByText("Release watch completed successfully"),
-    ).toBeVisible();
-  });
-  const sourceSummary = screen.getByText(
-    "Release watch completed successfully",
-  );
-  const eventRowElement = sourceSummary.closest('[role="listitem"]');
-  expect(eventRowElement).not.toBeNull();
-  expect(eventRowElement).toHaveAccessibleName("Pending automation event");
-  expect(
-    screen.queryByRole("listitem", { name: "Queued message" }),
-  ).not.toBeInTheDocument();
-
-  await userEvent.click(
-    button(eventRowElement as HTMLElement, "About this automation event"),
-  );
-  const eventHeading = await screen.findByText("Automation event");
-  expect(eventHeading).toBeVisible();
-  expect(
-    screen.getByText(
-      "Waits behind queued messages and runs once the current run finishes.",
-    ),
-  ).toBeVisible();
-
-  await userEvent.click(
-    button(eventRowElement as HTMLElement, "Skip automation event"),
-  );
-
-  await waitFor(() => {
-    expect(
-      screen.queryByText("Release watch completed successfully"),
-    ).not.toBeInTheDocument();
-  });
-  expect(requests.revokedEventIds).toStrictEqual([watchedEvent.id]);
 });

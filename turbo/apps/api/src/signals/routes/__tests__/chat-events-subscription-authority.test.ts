@@ -1179,14 +1179,26 @@ describe("CHAT-02: run-level model overrides", () => {
   )(
     "promotes queued and immediate $name Fast from $origin through API-first",
     async ({ route, origin }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup, providerId } =
+        await entitledChatActor();
+      await api.updateOrgModelPolicies(actor, [
+        {
+          model: "claude-fable-5-1",
+          isDefault: true,
+          defaultProviderType: "anthropic-api-key",
+          credentialScope: "org",
+          modelProviderId: providerId,
+        },
+      ]);
       const source = await sendChatRun(actor, {
         agentId,
         prompt: "source run for Terra handoff",
+        model: "claude-fable-5-1",
       });
       const anchor = await sendChatRun(actor, {
         agentId,
         prompt: "hold the Terra target thread",
+        model: "claude-fable-5-1",
       });
       const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
       const token = api.okouTokenForRunWithCapabilities(actor, source.runId, [

@@ -1410,6 +1410,7 @@
       "rename": "重命名",
       "saving": "正在保存…",
       "send": "发送",
+      "shareMessage": "分享消息",
       "stop": "停止",
       "view": "查看"
     },
@@ -2158,10 +2159,12 @@
       "createFailed": "无法创建分享对话，请重试。",
       "deselectGroup": "取消选择该组消息",
       "linkCopied": "链接已复制",
+      "messageShareFailed": "分享链接创建失败，请重试。",
       "publicDescription": "选中的消息及其附件将公开可见。",
       "selectedCount_other": "已选{{count}}条",
       "selectGroup": "选择该组消息",
       "shareLink": "分享对话链接",
+      "shareLinkCopied": "分享链接已复制",
       "start": "分享消息",
       "tooLarge": "选择的消息过多，请减少后再分享"
     },
@@ -7072,6 +7075,8 @@
     "configured": "已配置",
     "credential": {
       "add": "添加凭据",
+      "appleDhFieldHelp": "每项 1–63 个 UTF-8 字节，不允许 NUL 字符。",
+      "appleDhMethod": "Apple DH 用户名和密码",
       "authentication": "认证方式",
       "createNew": "新建凭据",
       "delete": "删除凭据",
@@ -7140,6 +7145,8 @@
     },
     "saving": "正在保存…",
     "security": {
+      "appleDh": "Mac 屏幕共享 (Apple DH)",
+      "appleDhHelp": "需要通过已保存的 SSH 连接访问 macOS 屏幕共享。RFB 目标必须是该 Mac 上的 127.0.0.1 或 ::1；SSH 保护整个 VNC 会话。 请使用你控制的 Mac SSH 主机；其主机密钥无法排除后续代理转发。",
       "caBundle": "CA证书（PEM）",
       "caHelp": "最多8个CA证书，总大小64 KiB。请勿粘贴私钥或服务器证书。",
       "caHint": "粘贴签发该服务器证书的公开CA证书",
@@ -7159,6 +7166,7 @@
     "summary_other": "已配置{{count}}台主机",
     "title": "VNC远程访问",
     "transport": {
+      "appleDhDestinationHelp": "Apple DH 请填写 127.0.0.1 或 ::1；这是通过所选 SSH 主机访问的 Mac 本机回环地址。",
       "destination": "RFB目标",
       "destinationHelp": "使用SSH路由时，将从所选SSH服务器访问此主机和端口，而不是由Runner直接访问。",
       "direct": "Runner直连",

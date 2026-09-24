@@ -1410,6 +1410,7 @@
       "rename": "Ubah nama",
       "saving": "Menyimpan...",
       "send": "Kirim",
+      "shareMessage": "Bagikan pesan",
       "stop": "Hentikan",
       "view": "Lihat"
     },
@@ -2158,10 +2159,12 @@
       "createFailed": "Percakapan yang dibagikan tidak dapat dibuat. Coba lagi.",
       "deselectGroup": "Batalkan pilihan grup pesan",
       "linkCopied": "Tautan disalin",
+      "messageShareFailed": "Tautan berbagi tidak dapat dibuat. Coba lagi.",
       "publicDescription": "Pesan yang dipilih dan lampirannya akan menjadi publik.",
       "selectedCount_other": "{{count}} dipilih",
       "selectGroup": "Pilih grup pesan",
       "shareLink": "Tautan percakapan yang dibagikan",
+      "shareLinkCopied": "Tautan berbagi disalin",
       "start": "Bagikan pesan",
       "tooLarge": "Pilih lebih sedikit pesan untuk dibagikan"
     },
@@ -7072,6 +7075,8 @@
     "configured": "Terkonfigurasi",
     "credential": {
       "add": "Tambah kredensial",
+      "appleDhFieldHelp": "Setiap kolom harus berisi 1–63 byte UTF-8. NUL tidak diizinkan.",
+      "appleDhMethod": "Nama pengguna dan kata sandi Apple DH",
       "authentication": "Metode autentikasi",
       "createNew": "Buat kredensial baru",
       "delete": "Hapus kredensial",
@@ -7140,6 +7145,8 @@
     },
     "saving": "Menyimpan…",
     "security": {
+      "appleDh": "Berbagi Layar Mac (Apple DH)",
+      "appleDhHelp": "Memerlukan Berbagi Layar macOS melalui koneksi SSH yang tersimpan. Tujuan RFB harus 127.0.0.1 atau ::1 pada Mac tersebut. SSH melindungi seluruh sesi VNC. Gunakan host SSH Mac yang Anda kendalikan; kunci host tidak dapat memastikan tidak ada proksi lanjutan.",
       "caBundle": "Sertifikat CA (PEM)",
       "caHelp": "Maksimal 8 sertifikat CA, total 64 KiB. Jangan tempel kunci privat atau sertifikat server.",
       "caHint": "Tempel sertifikat CA publik yang menerbitkan sertifikat server",
@@ -7159,6 +7166,7 @@
     "summary_other": "{{count}} host terkonfigurasi",
     "title": "Akses jarak jauh VNC",
     "transport": {
+      "appleDhDestinationHelp": "Untuk Apple DH, masukkan 127.0.0.1 atau ::1. Ini adalah alamat loopback Mac yang dijangkau melalui host SSH pilihan.",
       "destination": "Tujuan RFB",
       "destinationHelp": "Untuk rute SSH, host dan port ini dijangkau dari server SSH yang dipilih, bukan langsung dari Runner.",
       "direct": "Langsung dari Runner",

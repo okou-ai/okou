@@ -1910,6 +1910,131 @@ describe("findMatchingPermissions", () => {
     });
   });
 
+  it.each([
+    "POST / AWS sigv4=ec2 action=DescribeInstances",
+    "POST / AWS action=DescribeInstances sigv4=ec2",
+  ])(
+    "allows a different AWS permission despite denied alias %s",
+    (aliasRule) => {
+      const primary = {
+        name: "describe-primary",
+        rules: ["POST / AWS sigv4=ec2 action=DescribeInstances"],
+      };
+      const alias = { name: "describe-alias", rules: [aliasRule] };
+      const policy = {
+        aws: {
+          allow: ["describe-primary"],
+          deny: ["describe-alias"],
+          unknownPolicy: "ask",
+        },
+      };
+      const options = {
+        awsDiagnostic: {
+          context: {
+            sigv4Service: "ec2",
+            action: "DescribeInstances",
+            query: [],
+            headerNames: [],
+          },
+        },
+      };
+
+      for (const permissions of [
+        [alias, primary],
+        [primary, alias],
+      ]) {
+        const firewalls = [
+          {
+            name: "aws",
+            apis: [
+              {
+                base: "https://ec2.amazonaws.com",
+                auth: {},
+                awsSigv4Capability: true,
+                permissions,
+              },
+            ],
+          },
+        ];
+        expect(
+          matchFirewallRequestDecision(
+            firewalls,
+            "POST",
+            "https://ec2.amazonaws.com/",
+            policy,
+            { status: "absent" },
+            options,
+          ),
+        ).toMatchObject({ kind: "allow", permission: "describe-primary" });
+        expect(
+          matchFirewallRequestDecision(
+            firewalls,
+            "POST",
+            "https://ec2.amazonaws.com/",
+            policy,
+            { status: "absent" },
+            { awsDiagnostic: {} },
+          ),
+        ).toMatchObject({ kind: "block", reason: "unknown_endpoint" });
+      }
+    },
+  );
+
+  it.each(["deny", "ask"])(
+    "blocks one AWS permission listed in allow and %s",
+    (blockedState) => {
+      const firewalls = [
+        {
+          name: "aws",
+          apis: [
+            {
+              base: "https://ec2.amazonaws.com",
+              auth: {},
+              awsSigv4Capability: true,
+              permissions: [
+                {
+                  name: "describe-instances",
+                  rules: ["POST / AWS sigv4=ec2 action=DescribeInstances"],
+                },
+              ],
+            },
+          ],
+        },
+      ];
+      const policy = {
+        aws: {
+          allow: ["describe-instances"],
+          deny: blockedState === "deny" ? ["describe-instances"] : [],
+          ask: blockedState === "ask" ? ["describe-instances"] : [],
+          unknownPolicy: "ask",
+        },
+      };
+      expect(
+        matchFirewallRequestDecision(
+          firewalls,
+          "POST",
+          "https://ec2.amazonaws.com/",
+          policy,
+          { status: "absent" },
+          {
+            awsDiagnostic: {
+              context: {
+                sigv4Service: "ec2",
+                action: "DescribeInstances",
+                query: [],
+                headerNames: [],
+              },
+            },
+          },
+        ),
+      ).toMatchObject({
+        kind: "block",
+        reason: "permission_denied",
+        permissions: ["describe-instances"],
+      });
+    },
+  );
+
   it("matches bounded AWS target and S3 query/header selectors", () => {
     const firewalls = [
       {

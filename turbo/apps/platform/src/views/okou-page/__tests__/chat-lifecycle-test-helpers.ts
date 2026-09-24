@@ -301,13 +301,3 @@ export function activeElementIsInside(element: HTMLElement): boolean {
       element.contains(document.activeElement))
   );
 }
-
-export function setScrollMetrics(
-  element: HTMLElement,
-  metrics: { scrollHeight: number; clientHeight: number },
-): void {
-  Object.defineProperties(element, {
-    scrollHeight: { configurable: true, value: metrics.scrollHeight },
-    clientHeight: { configurable: true, value: metrics.clientHeight },
-  });
-}

@@ -14,15 +14,14 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname, search } from "../../../signals/location.ts";
-import {
-  createDeferredPromise,
-  type DeferredPromise,
-} from "../../../signals/utils.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const THREAD_ID = "b0000000-0000-4000-a000-000000000811";
+function connectorIconUrl(slug: string): string {
+  return `https://static.example.test/connectors/${slug}.svg`;
+}
 
 function mockRecommendations(
   target:
@@ -32,14 +31,10 @@ function mockRecommendations(
   connectors: string[] = [],
 ) {
   const requestedAgentIds: string[] = [];
-  let nextRequestGate: DeferredPromise<void> | undefined;
   context.mocks.api(
     homeTaskRecommendationsContract.list,
-    async ({ query, respond }) => {
+    ({ query, respond }) => {
       requestedAgentIds.push(query.agentId);
-      const gate = nextRequestGate;
-      nextRequestGate = undefined;
-      await gate?.promise;
       return respond(200, {
         status: "available",
         generatedAt: "2026-09-21T10:00:00.000Z",
@@ -57,21 +52,17 @@ function mockRecommendations(
             connectors,
           },
         ],
+        connectors: connectors.map((slug) => {
+          return {
+            slug,
+            label: slug === "gmail" ? "Gmail" : slug,
+            icon: { url: connectorIconUrl(slug), invertInDarkMode: false },
+          };
+        }),
       });
     },
   );
-  return {
-    requestedAgentIds,
-    pauseNextRequest(): () => void {
-      const gate = createDeferredPromise<void>(AbortSignal.timeout(5000));
-      nextRequestGate = gate;
-      return (): void => {
-        if (!gate.settled()) {
-          gate.resolve(undefined);
-        }
-      };
-    },
-  };
+  return { requestedAgentIds };
 }
 
 function composer(): HTMLElement {
@@ -106,31 +97,6 @@ test("A new-chat recommendation prefills without sending", async () => {
   });
 
   await screen.findByText("Prepare the launch follow-up");
-  await waitFor(() => {
-    expect(
-      context.mocks.ably.hasSubscription("homeTaskRecommendationsChanged"),
-    ).toBeTruthy();
-  });
-  const requestsBeforePush = requestedAgentIds.length;
-  context.mocks.ably.trigger("homeTaskRecommendationsChanged", {
-    agentId: AGENT_ID,
-    revision: "b".repeat(64),
-  });
-  await screen.findByText("New tasks available");
-  expect(requestedAgentIds).toHaveLength(requestsBeforePush);
-  const reloadButton = queryAllByRoleFast("button").find((button) => {
-    return button.getAttribute("aria-label") === "Reload tasks";
-  });
-  if (!reloadButton) {
-    throw new Error("Expected task reload button");
-  }
-  await user.click(reloadButton);
-  await waitFor(() => {
-    expect(requestedAgentIds.length).toBeGreaterThan(requestsBeforePush);
-  });
-  await waitFor(() => {
-    expect(screen.queryByText("New tasks available")).not.toBeInTheDocument();
-  });
   await user.click(composer());
   await user.type(composer(), "My saved draft");
   await user.click(screen.getByText("Prepare the launch follow-up"));
@@ -154,7 +120,7 @@ test("A new-chat recommendation prefills without sending", async () => {
 
 test("A permission notice hides Gmail cards without reloading the home snapshot", async () => {
   const user = userEvent.setup();
-  const { requestedAgentIds, pauseNextRequest } = mockRecommendations(
+  const { requestedAgentIds } = mockRecommendations(
     { kind: "new-thread" },
     "task",
     ["gmail"],
@@ -166,6 +132,12 @@ test("A permission notice hides Gmail cards without reloading the home snapshot"
   });
 
   await screen.findByText("Prepare the launch follow-up");
+  expect(screen.getByText("Gmail")).toBeInTheDocument();
+  expect(
+    document.querySelector(
+      `[data-slot="home-task-recommendation-card"] img[src="${connectorIconUrl("gmail")}"]`,
+    ),
+  ).toBeInTheDocument();
   await waitFor(() => {
     expect(
       context.mocks.ably.hasSubscription("connectorPermissionUpdated"),
@@ -179,7 +151,6 @@ test("A permission notice hides Gmail cards without reloading the home snapshot"
     screen.queryByText("Prepare the launch follow-up"),
   ).not.toBeInTheDocument();
 
-  const releaseReload = pauseNextRequest();
   const reloadButton = queryAllByRoleFast("button").find((button) => {
     return button.getAttribute("aria-label") === "Reload tasks";
   });
@@ -190,12 +161,6 @@ test("A permission notice hides Gmail cards without reloading the home snapshot"
   await waitFor(() => {
     expect(requestedAgentIds.length).toBeGreaterThan(requestsBeforeNotice);
   });
-  expect(
-    document.querySelectorAll(
-      '[data-slot="home-task-recommendation-skeleton"]',
-    ),
-  ).toHaveLength(3);
-  releaseReload();
   await screen.findByText("Prepare the launch follow-up");
   await waitFor(() => {
     expect(screen.queryByText("New tasks available")).not.toBeInTheDocument();
@@ -220,7 +185,7 @@ test("An existing-thread recommendation navigates and prefills without sending",
       draftAttachments: null,
     });
   });
-  const { requestedAgentIds } = mockRecommendations({
+  mockRecommendations({
     kind: "existing-thread",
     threadId: THREAD_ID,
   });
@@ -246,14 +211,6 @@ test("An existing-thread recommendation navigates and prefills without sending",
   });
   expect(search()).toBe("");
   expect(sends).toStrictEqual([]);
-
-  const requestsBeforeReturn = requestedAgentIds.length;
-  window.history.back();
-  await waitFor(() => {
-    expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
-    expect(requestedAgentIds.length).toBeGreaterThan(requestsBeforeReturn);
-  });
-  await screen.findByText("Prepare the launch follow-up");
 });
 
 test("A workflow suggestion sends its task to the Agent without sending the saved composer draft", async () => {

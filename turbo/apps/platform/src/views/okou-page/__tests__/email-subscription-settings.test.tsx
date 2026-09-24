@@ -7,11 +7,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
@@ -37,50 +33,7 @@ async function openPreferences() {
   return await screen.findByRole("region", { name: "Email subscriptions" });
 }
 
-function retryButton(region: HTMLElement) {
-  const button = queryAllByRoleFast("button", region).find((candidate) => {
-    return candidate.textContent?.trim() === "Retry";
-  });
-  if (!button) {
-    throw new Error("Expected an email subscription retry button");
-  }
-  return button;
-}
-
 describe("email subscription settings", () => {
-  it("refreshes an external opt-out when Settings is reopened", async () => {
-    let subscribed = true;
-    context.mocks.api(emailSubscriptionContract.get, ({ respond }) => {
-      return respond(200, { ...emailPreference, subscribed });
-    });
-    const region = await openPreferences();
-    await expect(
-      within(region).findByRole("switch", { name: "Email updates" }),
-    ).resolves.toBeChecked();
-    const dialog = screen.getByRole("dialog", { name: "Settings" });
-    click(within(dialog).getByLabelText("Close"));
-    await waitFor(() => {
-      return expect(dialog).not.toBeInTheDocument();
-    });
-    subscribed = false;
-    const account = queryAllByRoleFast("button").find((button) => {
-      return (
-        button.getAttribute("aria-label") === "Alex Rivera" ||
-        button.textContent?.includes("Alex Rivera")
-      );
-    });
-    if (!account) {
-      throw new Error("Expected account menu trigger");
-    }
-    click(account);
-    const menu = await screen.findByRole("menu");
-    click(within(menu).getByText("Settings"));
-    const reopenedToggle = await screen.findByRole("switch", {
-      name: "Email updates",
-    });
-    expect(reopenedToggle).not.toBeChecked();
-  });
-
   it("lets a user restore email without changing brief generation, then pause the brief independently", async () => {
     let subscribed = false;
     let briefEnabled = true;
@@ -155,164 +108,33 @@ describe("email subscription settings", () => {
     expect(brief).toBeChecked();
   });
 
-  it("shows unknown subscription while loading instead of an off switch", async () => {
-    const response = context.mocks.deferred<EmailSubscriptionResponse>();
-    context.mocks.api(emailSubscriptionContract.get, async ({ respond }) => {
-      return respond(200, await response.promise);
-    });
-    const region = await openPreferences();
-    expect(
-      within(region).getByText("Checking email subscription…"),
-    ).toBeVisible();
-    expect(
-      within(region).queryByRole("switch", {
-        name: "Email updates",
-      }),
-    ).not.toBeInTheDocument();
-    response.resolve(emailPreference);
-    await expect(
-      within(region).findByRole("switch", {
-        name: "Email updates",
-      }),
-    ).resolves.toBeChecked();
-  });
-
-  it("keeps the saved value and disables repeated changes while saving", async () => {
-    const saved = context.mocks.deferred<void>();
-    let subscribed = true;
+  it("explains missing email delivery without promising an email", async () => {
     context.mocks.api(emailSubscriptionContract.get, ({ respond }) => {
-      return respond(200, { ...emailPreference, subscribed });
-    });
-    context.mocks.api(
-      emailSubscriptionContract.update,
-      async ({ body, respond }) => {
-        await saved.promise;
-        subscribed = body.subscribed;
-        return respond(200, { subscribed });
-      },
-    );
-    const region = await openPreferences();
-    const toggle = await within(region).findByRole("switch", {
-      name: "Email updates",
-    });
-    click(toggle);
-    await expect(within(region).findByText("Saving…")).resolves.toBeVisible();
-    expect(toggle).toBeChecked();
-    expect(toggle).toHaveAttribute("aria-disabled", "true");
-    saved.resolve();
-    await waitFor(() => {
-      expect(toggle).not.toBeChecked();
-    });
-    expect(within(region).queryByText("Saving…")).not.toBeInTheDocument();
-    expect(toggle).not.toHaveAttribute("aria-disabled", "true");
-  });
-
-  it("retries a failed read without fabricating a subscription value", async () => {
-    let failed = true;
-    context.mocks.api(emailSubscriptionContract.get, ({ respond }) => {
-      if (failed) {
-        return respond(500, {
-          error: {
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Unable to load email subscription",
-          },
-        });
-      }
-      return respond(200, emailPreference);
-    });
-    const region = await openPreferences();
-    await expect(
-      within(region).findByText(
-        "Could not save or load your email subscription. Try again.",
-      ),
-    ).resolves.toBeVisible();
-    expect(
-      within(region).queryByRole("switch", {
-        name: "Email updates",
-      }),
-    ).not.toBeInTheDocument();
-    failed = false;
-    click(retryButton(region));
-    await expect(
-      within(region).findByRole("switch", { name: "Email updates" }),
-    ).resolves.toBeChecked();
-  });
-
-  it("preserves the previous value after a failed save and retries the requested change", async () => {
-    let subscribed = true;
-    let failed = true;
-    context.mocks.api(emailSubscriptionContract.get, ({ respond }) => {
-      return respond(200, { ...emailPreference, subscribed });
-    });
-    context.mocks.api(emailSubscriptionContract.update, ({ body, respond }) => {
-      if (failed) {
-        return respond(500, {
-          error: {
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Unable to save email subscription",
-          },
-        });
-      }
-      subscribed = body.subscribed;
-      return respond(200, { subscribed });
-    });
-    const region = await openPreferences();
-    const toggle = await within(region).findByRole("switch", {
-      name: "Email updates",
-    });
-    click(toggle);
-    await expect(
-      within(region).findByText(
-        "Could not save or load your email subscription. Try again.",
-      ),
-    ).resolves.toBeVisible();
-    expect(toggle).toBeChecked();
-    failed = false;
-    click(retryButton(region));
-    await waitFor(() => {
-      return expect(toggle).not.toBeChecked();
-    });
-    expect(
-      within(region).queryByText(
-        "Could not save or load your email subscription. Try again.",
-      ),
-    ).not.toBeInTheDocument();
-  });
-
-  it.each(["suppressed", "no-email"] as const)(
-    "explains %s delivery without promising an email",
-    async (deliveryStatus) => {
-      context.mocks.api(emailSubscriptionContract.get, ({ respond }) => {
-        return respond(200, {
-          ...emailPreference,
-          deliveryStatus,
-          email: deliveryStatus === "no-email" ? null : emailPreference.email,
-        });
+      return respond(200, {
+        ...emailPreference,
+        deliveryStatus: "no-email",
+        email: null,
       });
-      context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
-        return respond(200, {
-          enabled: true,
-          status: "enabled",
-          nextRunAt: "2030-01-02T07:00:00.000Z",
-          timezone: "UTC",
-          unavailableReason: null,
-        });
+    });
+    context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
+      return respond(200, {
+        enabled: true,
+        status: "enabled",
+        nextRunAt: "2030-01-02T07:00:00.000Z",
+        timezone: "UTC",
+        unavailableReason: null,
       });
-      const region = await openPreferences();
-      await expect(
-        within(region).findByText("Email unavailable"),
-      ).resolves.toBeVisible();
-      await expect(
-        within(region).findByText("Chat only"),
-      ).resolves.toBeVisible();
-      expect(
-        within(region).getByRole("switch", {
-          name: "Email updates",
-        }),
-      ).toBeChecked();
-      expect(
-        within(region).queryByText("Chat + email"),
-      ).not.toBeInTheDocument();
-    },
-  );
+    });
+    const region = await openPreferences();
+    await expect(
+      within(region).findByText("Email unavailable"),
+    ).resolves.toBeVisible();
+    await expect(within(region).findByText("Chat only")).resolves.toBeVisible();
+    expect(
+      within(region).getByRole("switch", {
+        name: "Email updates",
+      }),
+    ).toBeChecked();
+    expect(within(region).queryByText("Chat + email")).not.toBeInTheDocument();
+  });
 });

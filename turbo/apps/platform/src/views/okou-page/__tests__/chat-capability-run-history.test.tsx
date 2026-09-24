@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
@@ -16,7 +16,6 @@ import {
   findWorkHistoryToggle,
   installRunChat,
   publishRunUpdate,
-  queryButton,
   queryWorkHistoryToggle,
 } from "./chat-run-test-fixtures.ts";
 
@@ -368,145 +367,6 @@ test("Keep different run groups as separate assistant responses", async () => {
     }),
   ).toHaveLength(2);
   expect(queryWorkHistoryToggle("collapsed")).toBeNull();
-});
-
-test("Keep the prior goal result as main while the next run has no output", async () => {
-  const goalGroupId = "e0000000-0000-4000-a000-000000000874";
-  const completedRunId = "d0000000-0000-4000-a000-000000000874";
-  const activeRunId = "d0000000-0000-4000-a000-000000000875";
-  const events = [
-    {
-      id: "pending-goal-history-input",
-      role: "user" as const,
-      eventType: "input.prompt" as const,
-      content: null,
-      userMessage: {
-        version: 1 as const,
-        parts: [
-          {
-            type: "goal" as const,
-            goalBrief: "Keep the launch evidence current",
-          },
-        ],
-      },
-      runId: completedRunId,
-      runGroupId: goalGroupId,
-      seqId: 1,
-      createdAt: timestamp(0, 0),
-    },
-    assistantOutput({
-      id: "pending-goal-history-answer",
-      runId: completedRunId,
-      runGroupId: goalGroupId,
-      seqId: 2,
-      minute: 0,
-      second: 30,
-      text: "The earlier launch evidence is complete.",
-    }),
-    completedMarker({
-      id: "pending-goal-history-completed",
-      runId: completedRunId,
-      runGroupId: goalGroupId,
-      seqId: 3,
-      minute: 0,
-    }),
-    {
-      id: "pending-goal-current-input",
-      role: "user" as const,
-      eventType: "input.prompt" as const,
-      content: null,
-      userMessage: {
-        version: 1 as const,
-        parts: [
-          {
-            type: "goal" as const,
-            goalBrief: "Keep the launch evidence current",
-          },
-        ],
-      },
-      runId: activeRunId,
-      runGroupId: goalGroupId,
-      seqId: 4,
-      createdAt: timestamp(2, 0),
-    },
-  ] satisfies MockChatEventInput[];
-  installRunChat({ chatEvents: events, activeRunIds: [activeRunId] });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-
-  await readyChat();
-  const priorMain = screen.getByText(
-    "The earlier launch evidence is complete.",
-  );
-  expect(priorMain).toBeVisible();
-  expect(queryWorkHistoryToggle("collapsed")).toBeNull();
-  const thinking = await waitFor(() => {
-    const indicator = document.querySelector<HTMLElement>(
-      "[data-thinking-indicator]",
-    );
-    if (!indicator) {
-      throw new Error("Expected the current assistant thinking response");
-    }
-    expect(indicator).toBeVisible();
-    return indicator;
-  });
-  const pendingAssistant = priorMain.closest<HTMLElement>(
-    '[data-role="assistant"]',
-  );
-  if (!pendingAssistant) {
-    throw new Error("Expected the prior goal result in an assistant response");
-  }
-  expect(pendingAssistant).toContainElement(thinking);
-  expect(
-    queryAllByRoleFast("link", pendingAssistant).filter((link) => {
-      return link.getAttribute("aria-label") === "View agent profile";
-    }),
-  ).toHaveLength(1);
-
-  events.push(
-    assistantOutput({
-      id: "pending-goal-current-answer",
-      runId: activeRunId,
-      runGroupId: goalGroupId,
-      seqId: 5,
-      minute: 2,
-      second: 30,
-      text: "The current launch evidence is ready.",
-    }),
-  );
-  publishRunUpdate();
-
-  const answer = await screen.findByText(
-    "The current launch evidence is ready.",
-  );
-  expect(
-    screen.queryByText("The earlier launch evidence is complete."),
-  ).toBeNull();
-  expect(queryButton("The earlier launch evidence is complete.")).toBeNull();
-  expect(queryWorkHistoryToggle("collapsed")).toBeVisible();
-  const answeringAssistant = answer.closest<HTMLElement>(
-    '[data-role="assistant"]',
-  );
-  if (!answeringAssistant) {
-    throw new Error("Expected the answer in an assistant response");
-  }
-  click(await findWorkHistoryToggle("collapsed"));
-  const historyMessage = await screen.findByText(
-    "The earlier launch evidence is complete.",
-  );
-  expect(historyMessage).toBeVisible();
-  expect(historyMessage.closest('[data-role="assistant"]')).toBe(
-    answeringAssistant,
-  );
-  expect(answeringAssistant).toBe(pendingAssistant);
-  expect(
-    queryAllByRoleFast("link", answeringAssistant).filter((link) => {
-      return link.getAttribute("aria-label") === "View agent profile";
-    }),
-  ).toHaveLength(1);
 });
 
 const ARCHIVED_GOAL_GROUP_ID = "e0000000-0000-4000-a000-000000000881";

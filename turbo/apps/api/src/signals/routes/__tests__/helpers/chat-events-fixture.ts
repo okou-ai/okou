@@ -1787,10 +1787,22 @@ export function createChatEventsFixture(context: TestContext) {
     }
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     await api.heartbeatRunner(args.runnerGroup);
+    const { providerId } = await api.ensureOrgModelProvider(args.actor);
+    await api.updateOrgModelPolicies(args.actor, [
+      {
+        model: "claude-fable-5-1",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
     const anchor = await sendChatRun(args.actor, {
       agentId: args.agentId,
       prompt: "hold capacity for a capability-proven Pi launch",
-      model: "claude-sonnet-5",
+      // The anchor must stay on the native Runner while the queued target
+      // proves Pi admission; Sonnet 5 now uses the Pi checkpoint format.
+      model: "claude-fable-5-1",
     });
     await flushWaitUntilForTest();
     const anchorState = await api.readRun(args.actor, anchor.runId);

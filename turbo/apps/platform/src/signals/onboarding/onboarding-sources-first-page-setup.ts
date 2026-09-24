@@ -19,7 +19,7 @@ import { authenticatedIdentity$ } from "../auth.ts";
 import { captureSourceOnboardingStepViewed$ } from "../bootstrap/source-onboarding-telemetry.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
-import { connectorCatalogStatus$ } from "../external/connectors.ts";
+import { builtinConnectors$ } from "../external/connectors.ts";
 import { sendEvent$ } from "../marketing/events.ts";
 import {
   setAgentPhoneConnectDialogOpen$,
@@ -150,11 +150,11 @@ function createSourcesFirstPageSetup(
       return;
     }
     if (config.step !== "industry" && config.step !== "sources") {
-      const { connectors } = await get(connectorCatalogStatus$);
+      // The user's own connections, reloaded on connect, decide whether any
+      // source is there yet; the catalog is not needed for that.
+      const { connectors } = await get(builtinConnectors$);
       signal.throwIfAborted();
-      const hasSource = connectors.some((connector) => {
-        return connector.connected;
-      });
+      const hasSource = connectors.length > 0;
       if (!hasSource) {
         set(redirectTo$, ROUTES.onboarding);
         return;

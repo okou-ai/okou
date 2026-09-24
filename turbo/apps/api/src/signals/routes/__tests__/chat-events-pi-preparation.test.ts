@@ -309,15 +309,25 @@ describe("CHAT-02: model-first provider policies", () => {
   it.each(["pending", "cancelled", "queued"] as const)(
     "keeps %s admission responsive while API preparation is blocked",
     async (outcome) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup, providerId } =
+        await entitledChatActor();
       await api.heartbeatRunner(runnerGroup);
       let anchor: Awaited<ReturnType<typeof sendChatRun>> | undefined;
       if (outcome === "queued") {
         mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+        await api.updateOrgModelPolicies(actor, [
+          {
+            model: "claude-fable-5-1",
+            isDefault: true,
+            defaultProviderType: "anthropic-api-key",
+            credentialScope: "org",
+            modelProviderId: providerId,
+          },
+        ]);
         anchor = await sendChatRun(actor, {
           agentId,
           prompt: "hold admission capacity",
-          model: "claude-sonnet-5",
+          model: "claude-fable-5-1",
         });
       }
       await configureBuiltInPiModel(actor, "gpt-5.6-terra");
@@ -539,13 +549,23 @@ describe("CHAT-02: model-first provider policies", () => {
   );
 
   it("returns queued admission before a late SDK initializer finishes and releases its session once", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup, providerId } =
+      await entitledChatActor();
     await api.heartbeatRunner(runnerGroup);
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-fable-5-1",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
     const anchor = await sendChatRun(actor, {
       agentId,
       prompt: "hold capacity for late initialization",
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
     });
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
 

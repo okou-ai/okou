@@ -131,7 +131,7 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "gpt-5.6-luna",
+        model: "gpt-6-astra",
         isDefault: true,
         defaultProviderType: "codex-oauth-token",
         credentialScope: "member",
@@ -142,7 +142,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const run = await sendChatRun(actor, {
       agentId,
       prompt,
-      model: "gpt-5.6-luna",
+      model: "gpt-6-astra",
     });
     const { claim } = await claimChatRun(runnerGroup, run.runId);
     const appendSystemPrompt = claim.appendSystemPrompt ?? "";
@@ -404,7 +404,7 @@ describe("CHAT-02: model-first provider policies", () => {
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         isDefault: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
@@ -414,7 +414,7 @@ describe("CHAT-02: model-first provider policies", () => {
 
     const thread = await chat.createThread(actor, {
       agentId,
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
     });
 
     const captured = await withModelRoutingQueryReceipt(() => {
@@ -465,7 +465,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const orgId = requireOrgId(actor);
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         isDefault: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
@@ -476,7 +476,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const initial = await sendChatRun(actor, {
       agentId,
       prompt: "establish external plan capability admission",
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
     });
     const initialClaim = await claimChatRun(runnerGroup, initial.runId);
     chatCallbacks.mockChatOutputEvents([]);
@@ -579,7 +579,7 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         isDefault: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
@@ -610,7 +610,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const restrictedPolicies = await misc.listModelPolicies(actor);
     expect(restrictedPolicies.policies).toContainEqual(
       expect.objectContaining({
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         isDefault: true,
         defaultProviderType: "anthropic-api-key",
         modelProviderId: providerId,
@@ -626,7 +626,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const orgId = requireOrgId(actor);
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         isDefault: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
@@ -637,7 +637,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const initial = await sendChatRun(actor, {
       agentId,
       prompt: "establish final plan admission freshness",
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
     });
     const initialClaim = await claimChatRun(runnerGroup, initial.runId);
     chatCallbacks.mockChatOutputEvents([]);

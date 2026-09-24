@@ -3,6 +3,7 @@ import {
   homeTaskRecommendationsContract,
   homeTaskRecommendationsResponseSchema,
   type HomeTaskRecommendation,
+  type HomeTaskRecommendationConnector,
 } from "@okouai/api-contracts/contracts/home-task-recommendations";
 import {
   connectorChangedPayloadSchema,
@@ -58,6 +59,8 @@ export interface HomeTaskRecommendationSet {
   readonly revision: number;
   readonly contentRevision?: string;
   readonly recommendations: readonly HomeTaskRecommendation[];
+  /** Display metadata for the connector slugs the cards name. */
+  readonly connectors: readonly HomeTaskRecommendationConnector[];
 }
 
 /** Cards are requested and identified by the Agent currently owning the page. */
@@ -88,6 +91,9 @@ export const homeTaskRecommendations$ = computed(
       revision,
       contentRevision: data.revision,
       recommendations: data.recommendations,
+      // A catalog that was unavailable for this read sends no metadata; the
+      // cards then render without connector chips.
+      connectors: data.connectors ?? [],
     };
   },
 );

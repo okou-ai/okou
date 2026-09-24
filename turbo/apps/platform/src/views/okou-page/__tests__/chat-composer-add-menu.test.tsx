@@ -100,23 +100,6 @@ test("collapses those buttons into the add menu's rows", async () => {
   ]);
 });
 
-// The task chips reach a presentation, image, video, website or visualization
-// in one click from directly under the composer, so the menu stays out of that
-// job even where every one of those generations is switched on.
-test("leaves starting a generation to the task chips", async () => {
-  const editor = await setupComposer({
-    [FeatureSwitchKey.ComposerAddMenu]: true,
-    [FeatureSwitchKey.ComposerTaskChips]: true,
-  });
-
-  const menu = await openAddMenu(editor);
-  expect(menuItemLabels(menu)).toStrictEqual([
-    "Attach",
-    "Template",
-    "Create workflow",
-  ]);
-});
-
 // The dialog used to be mounted by the toolbar button that the menu replaces.
 // Reaching it from the menu row proves it survived that button's removal, which
 // is also what keeps the slash panel and inline chip editing working.

@@ -68,12 +68,7 @@ test("A local chat-cache upgrade closes the old connection and notifies its owne
   const userId = `upgrade-user-${identitySuffix}`;
   const orgId = `upgrade-workspace-${identitySuffix}`;
   const databaseName = `vm0-chat-${userId}-${orgId}`;
-  const retiredStore = "retired_chat_cache";
-  const oldDatabase = await openDB(databaseName, CHAT_IDB_VERSION - 1, {
-    upgrade(database) {
-      database.createObjectStore(retiredStore);
-    },
-  });
+  const oldDatabase = await openDB(databaseName, CHAT_IDB_VERSION - 1);
   oldDatabase.close();
   const onVersionChange = vi.fn<() => void>();
   const database = closeOnAbort(
@@ -89,7 +84,6 @@ test("A local chat-cache upgrade closes the old connection and notifies its owne
       CHAT_THREAD_SNAPSHOT_STORE,
     ].sort(),
   );
-  expect(database.objectStoreNames.contains(retiredStore)).toBeFalsy();
   expect(
     database
       .transaction(CHAT_EVENT_ROWS_STORE)

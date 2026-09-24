@@ -1521,6 +1521,21 @@ export const workflowDetailResponseSchema = workflowSummarySchema.extend({
 
 export const workflowListResponseSchema = z.array(workflowSummarySchema);
 
+/**
+ * What the chat composer needs to offer and highlight `/workflow` commands:
+ * the agent's own workflows that are not shadowed by a private override.
+ */
+export const composerWorkflowSchema = workflowSummarySchema.pick({
+  id: true,
+  name: true,
+  displayName: true,
+  description: true,
+});
+
+export const composerWorkflowListResponseSchema = z.array(
+  composerWorkflowSchema,
+);
+
 export const workflowAutomationsListEntrySchema = z.object({
   workflow: workflowSummarySchema,
   automation: workflowAutomationSummarySchema,
@@ -1591,6 +1606,20 @@ export const workflowsCollectionContract = c.router({
       403: apiErrorSchema,
     },
     summary: "List visible workflows, optionally scoped to one agent",
+  },
+  composer: {
+    method: "GET",
+    path: "/api/workflows/for-composer",
+    headers: authHeadersSchema,
+    query: z.object({ agentId: z.string().uuid() }),
+    responses: {
+      200: composerWorkflowListResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+    summary:
+      "List the slash-command workflows the composer offers for one agent",
   },
   create: {
     method: "POST",
@@ -1942,6 +1971,7 @@ export const workflowAutomationsContract = c.router({
 export type WorkflowFileEntry = z.infer<typeof workflowFileEntrySchema>;
 export type WorkflowFileMetadata = z.infer<typeof workflowFileMetadataSchema>;
 export type WorkflowSummary = z.infer<typeof workflowSummarySchema>;
+export type ComposerWorkflow = z.infer<typeof composerWorkflowSchema>;
 export type WorkflowDetailResponse = z.infer<
   typeof workflowDetailResponseSchema
 >;

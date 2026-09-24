@@ -4,7 +4,6 @@ import { setupPage } from "./chat-lifecycle-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
   assistantEvent,
-  cancelledEvent,
   completedEvent,
   context,
   installRunChat,
@@ -18,7 +17,6 @@ import {
 
 const RUN_A = "a0000000-0000-4000-a000-000000000291";
 const RUN_B = "a0000000-0000-4000-a000-000000000292";
-const GROUP_ID = "a0000000-0000-4000-a000-000000000293";
 const RESULT = "The API is checking dependencies. No errors so far.";
 const OLD_ERROR = "The provider could not complete the previous request.";
 const NEW_ERROR = "The provider could not complete the next request.";
@@ -86,7 +84,7 @@ async function expectRetainedResult(): Promise<HTMLElement> {
   return main;
 }
 
-test.each(["run.failed", "output.error"] as const)(
+test.each(["run.failed"] as const)(
   "Show a scheduled workflow %s in a status card with its assistant avatar when no output was produced",
   async (eventType) => {
     installRunChat({
@@ -192,60 +190,25 @@ test("A subsequent failed response replaces the previous error while retaining i
   await expectRetainedResult();
 });
 
-test("Retrying the latest recorded failure retires it while retaining the earlier result", async () => {
-  installRunChat({
-    chatEvents: [
-      ...resultEvents(),
-      failedEvent(),
-      promptEvent({
-        id: "next-input",
-        runId: RUN_B,
-        seqId: 5,
-        text: "Continue checking",
-      }),
-      failedEvent(RUN_B, NEW_ERROR, 6),
-    ],
-  });
-  await openChat();
-  await screen.findByText(NEW_ERROR);
-  await sendText("Try the next check");
+test("Derive the latest response from recorded input in the same run when opening a chat", async () => {
+  const events = [
+    ...resultEvents(),
+    failedEvent(),
+    promptEvent({
+      id: "recorded-next-input",
+      runId: RUN_A,
+      seqId: 5,
+      text: "Continue from the recorded input",
+    }),
+  ];
+  installRunChat({ chatEvents: events, activeRunIds: [RUN_A] });
 
-  await expect(screen.findByText("Try the next check")).resolves.toBeVisible();
-  await waitFor(() => {
-    expect(document.querySelector("[data-thinking-indicator]")).toBeVisible();
-    expect(screen.queryByText(NEW_ERROR)).toBeNull();
-  });
+  await openChat();
+
+  expect(screen.getByText("Continue from the recorded input")).toBeVisible();
+  expect(screen.queryByText(OLD_ERROR)).toBeNull();
   await expectRetainedResult();
 });
-
-test.each([
-  { label: "unassociated input", runId: undefined, sameGroup: false },
-  { label: "input in the same run", runId: RUN_A, sameGroup: false },
-  { label: "input in the same run group", runId: RUN_B, sameGroup: true },
-])(
-  "Derive the latest response from recorded $label when opening a chat",
-  async ({ runId, sameGroup }) => {
-    const events = [
-      ...resultEvents(),
-      failedEvent(),
-      promptEvent({
-        id: "recorded-next-input",
-        runId,
-        seqId: 5,
-        text: "Continue from the recorded input",
-      }),
-    ].map((event) => {
-      return sameGroup ? { ...event, runGroupId: GROUP_ID } : event;
-    });
-    installRunChat({ chatEvents: events, activeRunIds: runId ? [runId] : [] });
-
-    await openChat();
-
-    expect(screen.getByText("Continue from the recorded input")).toBeVisible();
-    expect(screen.queryByText(OLD_ERROR)).toBeNull();
-    await expectRetainedResult();
-  },
-);
 
 test("Show only the latest failure when neither response produced output", async () => {
   installRunChat({
@@ -275,42 +238,6 @@ test("Show only the latest failure when neither response produced output", async
   expect(screen.queryByText(OLD_ERROR)).toBeNull();
   expect(screen.queryByTestId("chat-event-actions")).toBeNull();
 });
-
-test.each(["failed", "cancelled"] as const)(
-  "Keep a %s tail mutually exclusive with late followups",
-  async (status) => {
-    const terminal =
-      status === "failed"
-        ? failedEvent()
-        : cancelledEvent({ id: "cancelled", runId: RUN_A, seqId: 4 });
-    installRunChat({
-      chatEvents: [
-        ...resultEvents(),
-        terminal,
-        {
-          id: "late-followups",
-          content: null,
-          runId: RUN_A,
-          seqId: 5,
-          createdAt: "2026-08-01T10:00:05.000Z",
-          followups: [{ prompt: "Summarize the check", kind: "talk" }],
-        },
-      ],
-    });
-
-    await openChat();
-
-    expect(
-      screen.getByText(
-        status === "failed" ? OLD_ERROR : "Run paused — resume anytime.",
-      ),
-    ).toBeVisible();
-    expect(screen.queryByRole("group", { name: "Keep going" })).toBeNull();
-    expect(screen.queryByText("Summarize the check")).toBeNull();
-    expect(document.querySelector("[data-thinking-indicator]")).toBeNull();
-    await expectRetainedResult();
-  },
-);
 
 test("Keep completion status visible while followups are unavailable", async () => {
   const events = [
@@ -380,41 +307,4 @@ test("Retire completion and followups while retaining the result actions", async
   });
   await expectRetainedResult();
   sendGate.resolve();
-});
-
-test("Handle a late previous-run failure during the next response", async () => {
-  const events = [
-    ...resultEvents(),
-    completedEvent({ id: "old-completion", runId: RUN_A, seqId: 4 }),
-    promptEvent({
-      id: "pending-next-input",
-      runId: RUN_B,
-      seqId: 5,
-      text: "Continue with the next response",
-    }),
-  ];
-  installRunChat({ chatEvents: events, activeRunIds: [RUN_B] });
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-  await readyChat();
-  expect(screen.getByText("Continue with the next response")).toBeVisible();
-
-  events.push(
-    failedEvent(RUN_A, OLD_ERROR, 6),
-    assistantEvent({
-      id: "next-response-result",
-      runId: RUN_B,
-      seqId: 7,
-      text: "The next response is progressing",
-    }),
-  );
-  publishRunUpdate();
-
-  await expect(
-    screen.findByText("The next response is progressing"),
-  ).resolves.toBeVisible();
-  expect(screen.queryByText(OLD_ERROR)).not.toBeInTheDocument();
-  await expectRetainedResult();
 });

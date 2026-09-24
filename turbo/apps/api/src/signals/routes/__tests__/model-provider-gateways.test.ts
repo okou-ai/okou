@@ -567,28 +567,34 @@ describe("custom model provider gateway routes", () => {
           `Expected the ${logicalModel} custom gateway chat send to create a run`,
         );
       }
-      await runs.heartbeatRunner(runnerGroup);
-      const deepseekClaim = await runs.claimRunnerJob(deepseekRunId);
-
-      // DeepSeek now runs on Pi even through a custom gateway; preserve the
-      // upstream mapping and firewall contract instead of a retired Codex catalog.
-      expect(deepseekClaim.cliAgentType).toBe("pi");
-      expect(deepseekClaim.environment).toMatchObject({
-        OPENAI_BASE_URL: "https://gateway.example.com/openai/v1",
-        OPENAI_MODEL: upstreamModel,
+      // The custom endpoint is intentionally unreachable: Pi API-first may
+      // finish before a Runner can claim it. Assert the admitted launch's
+      // externally emitted route and firewall snapshot instead of racing the
+      // queue. The native Fable and Astra claims above still cover Runner
+      // environment materialization.
+      const snapshot = runContextSnapshotForRun(deepseekRunId);
+      expect(snapshot).toMatchObject({
+        cliAgentType: "pi",
+        environmentEntries: expect.arrayContaining([
+          {
+            name: "OPENAI_BASE_URL",
+            value: "https://gateway.example.com/openai/v1",
+          },
+          { name: "OPENAI_MODEL", value: upstreamModel },
+        ]),
       });
-      expect(deepseekClaim.piModelConfig).toMatchObject({
-        provider: "deepseek",
-        baseUrl: "https://gateway.example.com/openai/v1",
-        model: upstreamModel,
-        catalogModel: logicalModel,
-      });
-      expect(deepseekClaim.appendSystemPrompt).toContain(
-        'okou image-recognition --file <image-path> --prompt "<instruction>"',
+      expect(snapshot.firewalls).toContainEqual(
+        expect.objectContaining({
+          kind: "inline",
+          name: `model-provider-surface:${responsesSurface.id}`,
+          apis: expect.arrayContaining([
+            expect.objectContaining({
+              base: "https://gateway.example.com/openai/v1/responses",
+            }),
+          ]),
+        }),
       );
-      // This fixture validates the mapped launch contract, not inference at
-      // gateway.example.com. Pi's API-first attempt can already have settled
-      // against that intentionally unreachable endpoint by cleanup time.
+      expect(JSON.stringify(snapshot)).not.toContain("runtime-gateway-secret");
     }
   }, 15_000);
 

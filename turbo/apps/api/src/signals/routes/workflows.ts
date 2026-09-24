@@ -377,6 +377,31 @@ const listWorkflowsInner$ = computed(async (get) => {
   return { status: 200 as const, body: [...workflows] };
 });
 
+const listComposerWorkflowsInner$ = computed(async (get) => {
+  const auth = get(organizationAuthContext$);
+  const { agentId } = get(queryOf(workflowsCollectionContract.composer));
+  const workflows = await get(
+    workflowList({ orgId: auth.orgId, member: memberFromAuth(auth), agentId }),
+  );
+  return {
+    status: 200 as const,
+    body: workflows.flatMap((workflow) => {
+      // A private override shadows the public workflow of the same name, so
+      // only the override is a command the composer can offer.
+      return workflow.shadowedBy
+        ? []
+        : [
+            {
+              id: workflow.id,
+              name: workflow.name,
+              displayName: workflow.displayName,
+              description: workflow.description,
+            },
+          ];
+    }),
+  };
+});
+
 interface WorkflowCreationHooks {
   readonly beforeAdmission?: () => Promise<void>;
   readonly beforeCopyAdmission?: () => Promise<void>;
@@ -2300,6 +2325,11 @@ export const workflowsRoutes: readonly RouteEntry[] = [
   {
     route: workflowsCollectionContract.list,
     handler: authRoute(workflowReadAuth, listWorkflowsInner$),
+  },
+  // Registered before the `/:workflowId` routes so the static path wins.
+  {
+    route: workflowsCollectionContract.composer,
+    handler: authRoute(workflowReadAuth, listComposerWorkflowsInner$),
   },
   {
     route: workflowsCollectionContract.create,

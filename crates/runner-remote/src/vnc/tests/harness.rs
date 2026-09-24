@@ -24,7 +24,7 @@ use super::{
     peer::{PLAIN_PASSWORD, PLAIN_USERNAME, Peer},
 };
 use crate::guest_rpc::{Run as RpcRun, Runtime};
-use crate::test_fixtures::http::{HttpClient, HttpClientConfig};
+use crate::test_fixtures::http::{HttpClientConfig, http_client};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_types::ids::RunId;
 
@@ -308,12 +308,11 @@ impl Harness {
     pub(super) async fn with_authority(peer: Peer, api_url: Option<String>) -> Self {
         let api = MockServer::start_async().await;
         let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 27).unwrap();
-        let http = HttpClient::new(HttpClientConfig {
+        let http = http_client(HttpClientConfig {
             api_url: api_url.unwrap_or_else(|| api.base_url()),
             vercel_bypass: None,
             client_session_id: "vnc-dispatch-test".into(),
-        })
-        .unwrap();
+        });
         let mut runtime = VncRuntime::official(http, TOKEN, identity)
             .unwrap()
             .unwrap();

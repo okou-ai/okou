@@ -30,12 +30,13 @@ use tokio_util::sync::CancellationToken;
 
 use runner_types::ids::RunId;
 
-use crate::{RemoteApiRequestFactory, RemoteInitError};
+use crate::RemoteInitError;
 use authority::{Authority, CredentialAuth, PreparedAuth, PreparedCredential, Trust};
 pub(crate) use forwarding::DirectTcpIpStream;
 use io::GuestIo;
 use network::{Network, PublicNetwork};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
+use runner_provider::HttpClient;
 
 const TERMINAL_RESERVE: Duration = Duration::from_secs(1);
 
@@ -115,7 +116,7 @@ impl SshRuntime {
     }
 
     pub fn official(
-        http: impl RemoteApiRequestFactory + 'static,
+        http: HttpClient,
         token: &str,
         identity: RunnerProcessIdentity,
     ) -> Result<Option<Arc<Self>>, RemoteInitError> {
@@ -125,7 +126,7 @@ impl SshRuntime {
         }
         // The prefix only selects transport. Every API call authenticates the
         // actual fleet secret and exact current winning claim independently.
-        let authority = Authority::new(Arc::new(http), token.to_owned(), identity)
+        let authority = Authority::new(http, token.to_owned(), identity)
             .map_err(|_| RemoteInitError::SshAuthority)?;
         Ok(Some(Arc::new(Self {
             authority: Arc::new(authority),
