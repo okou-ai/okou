@@ -1,8 +1,8 @@
 import { Command } from "commander";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
-  sshHostAvailabilitySchema,
   sshHostsContract,
+  sshHostsResponseSchema,
 } from "@okouai/api-contracts/contracts/ssh-access";
 import { z } from "zod";
 
@@ -36,25 +36,19 @@ const list = new Command("list")
       const client = initClient(sshHostsContract, await getClientConfig());
       const result = await client.list();
       if (result.status !== 200) handleError(result, "Cannot list SSH hosts");
-      if (
-        result.body.hosts.some((host) => {
-          return !sshHostAvailabilitySchema.safeParse(host.availability)
-            .success;
-        })
-      ) {
-        throw new Error(
-          "SSH host inventory response is invalid. Check API and CLI versions before using a host ID.",
-        );
+      const inventory = sshHostsResponseSchema.safeParse(result.body);
+      if (!inventory.success) {
+        throw new Error("Invalid SSH host inventory response.");
       }
       if (options.json) {
-        console.log(JSON.stringify(result.body));
+        console.log(JSON.stringify(inventory.data));
         return;
       }
-      if (result.body.hosts.length === 0)
+      if (inventory.data.hosts.length === 0)
         console.log(
           "No SSH hosts available to this Run. Ask the owner to check host setup and chat access in Connectors.",
         );
-      for (const host of result.body.hosts) {
+      for (const host of inventory.data.hosts) {
         const availability =
           host.availability.status === "blocked"
             ? "blocked: needs_rebind (ask the owner to rebind Cloudflare Access or explicitly choose Direct in Connectors)"

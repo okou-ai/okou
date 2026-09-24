@@ -474,18 +474,19 @@ describe("okou ssh command", () => {
     expect(spawn).not.toHaveBeenCalled();
   });
 
-  it("fails closed when the API omits host availability", async () => {
+  it("rejects an invalid host availability before printing inventory", async () => {
     server.use(
       http.get("http://localhost:3000/api/ssh/hosts", () => {
         return HttpResponse.json({
           hosts: [
             {
               id,
-              displayName: "Unknown status",
+              displayName: "Invalid status",
               host: "ssh.example.com",
               port: 22,
               username: "deploy",
               learnedHostKey: null,
+              availability: { status: "unknown" },
             },
           ],
         });
@@ -495,7 +496,7 @@ describe("okou ssh command", () => {
       sshCommand.parseAsync(["host", "list", "--json"], { from: "user" }),
     ).rejects.toThrow("CLI exit");
     expect(errors).toHaveBeenCalledWith(
-      expect.stringContaining("SSH host inventory response is invalid"),
+      expect.stringContaining("Invalid SSH host inventory response"),
     );
     expect(output).not.toHaveBeenCalled();
     expect(spawn).not.toHaveBeenCalled();
