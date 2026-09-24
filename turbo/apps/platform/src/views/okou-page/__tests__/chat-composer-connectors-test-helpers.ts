@@ -144,6 +144,11 @@ interface ComposerConnectorFixture {
   readonly createdThreadRequests: readonly {
     readonly threadId: string | undefined;
     readonly connectorSelections: readonly ConnectorAccountSelection[];
+    readonly initialRemoteAccessOverrides?: readonly {
+      protocol: "ssh" | "vnc";
+      connectionId: string;
+      enabled: boolean;
+    }[];
   }[];
   readonly lifecycle: ReturnType<typeof installMessageExperienceChat>;
 }
@@ -285,13 +290,25 @@ export function installComposerConnectorFixture(
   const createdThreadRequests: {
     threadId: string | undefined;
     connectorSelections: ConnectorAccountSelection[];
+    initialRemoteAccessOverrides?: readonly {
+      protocol: "ssh" | "vnc";
+      connectionId: string;
+      enabled: boolean;
+    }[];
   }[] = [];
   const lifecycle = installMessageExperienceChat({
     threadId: fixtureThreadId,
-    onThreadCreate: ({ clientThreadId, connectorSelections }) => {
+    onThreadCreate: ({
+      clientThreadId,
+      connectorSelections,
+      initialRemoteAccessOverrides,
+    }) => {
       createdThreadRequests.push({
         threadId: clientThreadId,
         connectorSelections: [...(connectorSelections ?? [])],
+        ...(initialRemoteAccessOverrides === undefined
+          ? {}
+          : { initialRemoteAccessOverrides }),
       });
     },
   });

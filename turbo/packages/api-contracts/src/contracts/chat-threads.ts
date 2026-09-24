@@ -14,6 +14,7 @@ import {
   connectorAccountTargetSchema,
 } from "./connector-accounts";
 import { apiErrorSchema } from "./errors";
+import { initialRemoteAccessOverrideSchema } from "./chat-remote-access";
 import { imageModelIdSchema } from "./image-models";
 import { requireUserMessageForDraftAttachments } from "./draft-user-message";
 import { hostedArtifactKindSchema } from "./host";
@@ -1125,6 +1126,23 @@ const chatThreadCreateBodySchema = z.object({
   clientThreadId: z.string().uuid().optional(),
   eventId: chatThreadEventIdSchema.optional(),
   connectorSelections: z.array(connectorAccountSelectionSchema).optional(),
+  initialRemoteAccessOverrides: z
+    .array(initialRemoteAccessOverrideSchema)
+    .superRefine((overrides, ctx) => {
+      const seen = new Set<string>();
+      for (const [index, override] of overrides.entries()) {
+        const key = `${override.protocol}:${override.connectionId}`;
+        if (seen.has(key)) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Duplicate remote access host",
+            path: [index],
+          });
+        }
+        seen.add(key);
+      }
+    })
+    .optional(),
   /**
    * Selected model id. The API resolves the effective model provider from org
    * policy and available credentials. Omit it to inherit the model of the run

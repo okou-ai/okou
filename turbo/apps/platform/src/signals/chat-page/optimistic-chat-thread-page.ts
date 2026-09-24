@@ -12,6 +12,7 @@ import {
   type UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ConnectorAccountSelection } from "@okouai/api-contracts/contracts/connector-accounts";
+import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
 import type { OrgModelPoliciesResponse } from "@okouai/api-contracts/contracts/model-providers";
 import type { UserModelPreferenceResponse } from "@okouai/api-contracts/contracts/user-model-preference";
 import { accept } from "../../lib/accept.ts";
@@ -89,6 +90,7 @@ interface SendNewThreadMessageRequest {
   forward?: ChatForwardContext;
   onOptimisticSend?: () => void;
   connectorSelections?: readonly ConnectorAccountSelection[];
+  initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
 }
 
 interface SendNewThreadMessageResult {
@@ -376,6 +378,7 @@ async function createChatThread(
     readonly imageModel?: ImageModel;
     readonly videoModel?: VideoModel;
     readonly connectorSelections?: readonly ConnectorAccountSelection[];
+    readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
   },
   signal: AbortSignal,
 ): Promise<void> {
@@ -400,6 +403,13 @@ async function createChatThread(
         ...(args.title ? { title: args.title } : {}),
         ...(args.connectorSelections?.length
           ? { connectorSelections: [...args.connectorSelections] }
+          : {}),
+        ...(args.initialRemoteAccessOverrides?.length
+          ? {
+              initialRemoteAccessOverrides: [
+                ...args.initialRemoteAccessOverrides,
+              ],
+            }
           : {}),
       },
       fetchOptions: { signal },
@@ -600,6 +610,7 @@ const sendNewThreadMessage$ = command(
         imageModel,
         videoModel,
         connectorSelections: request.connectorSelections,
+        initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
       },
       signal,
     );

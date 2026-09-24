@@ -266,6 +266,59 @@ test("Remote access is absent when no SSH or VNC hosts are configured", async ()
   expect(screen.queryByText("Remote access")).toBeNull();
 });
 
+test("A new chat has no remote access menu when no hosts are configured", async () => {
+  installComposerConnectorFixture();
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, { ssh: [], vnc: [] });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+  });
+  click(await findFastControl("button", "Connectors"));
+  await screen.findByText("Cloud browser");
+  expect(screen.queryByText("Remote access")).toBeNull();
+});
+
+test("A new chat leaves host defaults untouched when no choice is changed", async () => {
+  const fixture = installComposerConnectorFixture();
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: [
+          {
+            connectionId: "b0000000-0000-4000-8000-000000000001",
+            displayName: "SSH host 1",
+            defaultEnabled: true,
+          },
+        ],
+        vnc: [],
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+  });
+  click(await findFastControl("button", "Connectors"));
+  const remoteAccess = await screen.findByText("Remote access");
+  expect(remoteAccess.closest("button")).toHaveTextContent("1 enabled");
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  await fill(composer, "Use my defaults");
+  await userEvent.setup({ delay: null }).keyboard("{Enter}");
+  await waitFor(() => {
+    expect(fixture.createdThreadRequests).toStrictEqual([
+      { threadId: expect.any(String), connectorSelections: [] },
+    ]);
+  });
+});
+
 test("Remote access remains visible and can retry when host discovery fails", async () => {
   installComposerConnectorFixture();
   let failed = true;
@@ -364,8 +417,8 @@ test("Remote access can retry a failed chat permission read", async () => {
   await screen.findByText("1 enabled");
 });
 
-test("A new chat summarizes enabled host defaults before a thread exists", async () => {
-  installComposerConnectorFixture();
+test("A new chat applies draft host choices to the thread it creates", async () => {
+  const fixture = installComposerConnectorFixture();
   context.mocks.api(
     chatRemoteAccessContract.listHostDefaults,
     ({ respond }) => {
@@ -395,8 +448,43 @@ test("A new chat summarizes enabled host defaults before a thread exists", async
   const remoteAccess = await screen.findByText("Remote access");
   expect(remoteAccess.closest("button")).toHaveTextContent("1 enabled");
   click(remoteAccess);
-  await screen.findByText("Start a chat to change host access.");
-  expect(screen.queryByRole("combobox", { name: /SSH host/u })).toBeNull();
+  const first = await screen.findByRole("combobox", {
+    name: "SSH SSH host 1",
+  });
+  const second = screen.getByRole("combobox", { name: "SSH SSH host 2" });
+  expect(first).toHaveValue("default");
+  expect(second).toHaveValue("default");
+  const user = userEvent.setup({ delay: null });
+  await user.selectOptions(first, "off");
+  expect(remoteAccess.closest("button")).toHaveTextContent("0 enabled");
+  await user.selectOptions(first, "default");
+  expect(remoteAccess.closest("button")).toHaveTextContent("1 enabled");
+  await user.selectOptions(first, "off");
+  await user.selectOptions(second, "on");
+  expect(remoteAccess.closest("button")).toHaveTextContent("1 enabled");
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  await fill(composer, "Inspect both hosts");
+  await user.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(fixture.createdThreadRequests).toStrictEqual([
+      {
+        threadId: expect.any(String),
+        connectorSelections: [],
+        initialRemoteAccessOverrides: [
+          {
+            protocol: "ssh",
+            connectionId: "b0000000-0000-4000-8000-000000000001",
+            enabled: false,
+          },
+          {
+            protocol: "ssh",
+            connectionId: "b0000000-0000-4000-8000-000000000002",
+            enabled: true,
+          },
+        ],
+      },
+    ]);
+  });
 });
 
 test("Remote access in two chat panes reads and updates each pane's thread", async () => {

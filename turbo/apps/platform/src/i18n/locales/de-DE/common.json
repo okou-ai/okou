@@ -2094,7 +2094,6 @@
       "on": "Ein",
       "requiresSsh": "Benötigt auch Zugriff auf den SSH-Host {{name}}.",
       "retry": "Erneut versuchen",
-      "startChat": "Starten Sie einen Chat, um den Hostzugriff zu ändern.",
       "title": "Fernzugriff",
       "unavailableSsh": "nicht verfügbarer SSH-Host",
       "useDefault": "Standard verwenden"
