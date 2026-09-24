@@ -1889,6 +1889,34 @@ function telegramInputFiles(
     : [];
 }
 
+async function resolveTelegramChatMessageThread(
+  args: {
+    readonly source: TelegramAgentMessageArgs;
+    readonly chatId: string;
+    readonly rootMessageId: string | undefined;
+    readonly modelRoute: ModelRoutePin | undefined;
+  },
+  currentTime: Date,
+) {
+  const threadArgs = {
+    userId: args.source.userLink.userId,
+    orgId: args.source.orgId,
+    agentId: args.source.composeId,
+    selectedModel: args.modelRoute?.selectedModel ?? null,
+    serviceTier: args.modelRoute?.serviceTier ?? null,
+    currentTime,
+  };
+  return args.rootMessageId === undefined
+    ? await createTelegramChatThread(args.source.db, threadArgs)
+    : await ensureTelegramChatThreadRoute(args.source.db, {
+        ...threadArgs,
+        preserveThreadSettings: args.source.isDM,
+        ownerLink: telegramOwnerLink(args.source),
+        chatId: args.chatId,
+        rootMessageId: args.rootMessageId,
+      });
+}
+
 type PersistedTelegramChatMessage =
   | {
       readonly inserted: true;
@@ -1925,24 +1953,7 @@ const persistTelegramChatMessage$ = command(
     }
     const splitWrites = await isSplitChatEventWriteEnabled(args.source.db);
     signal.throwIfAborted();
-    const threadArgs = {
-      userId: args.source.userLink.userId,
-      orgId: args.source.orgId,
-      agentId: args.source.composeId,
-      selectedModel: args.modelRoute?.selectedModel ?? null,
-      serviceTier: args.modelRoute?.serviceTier ?? null,
-      currentTime,
-    };
-    const binding =
-      args.rootMessageId === undefined
-        ? await createTelegramChatThread(args.source.db, threadArgs)
-        : await ensureTelegramChatThreadRoute(args.source.db, {
-            ...threadArgs,
-            preserveThreadSettings: args.source.isDM,
-            ownerLink: telegramOwnerLink(args.source),
-            chatId: args.chatId,
-            rootMessageId: args.rootMessageId,
-          });
+    const binding = await resolveTelegramChatMessageThread(args, currentTime);
     signal.throwIfAborted();
 
     const file = extractTelegramFileForContext(args.source.message);
