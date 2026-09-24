@@ -115,6 +115,7 @@ import { setupSharedArtifact$ } from "./shared-artifact.ts";
 import { setupSharedThreadPage$ } from "./shared-thread-page/shared-thread-page-setup.ts";
 
 import { setupGlobalKeyboardShortcuts$ } from "./okou-page/nav.ts";
+import { setupChatThreadFilterShortcut$ } from "./okou-page/chat-thread-filter-selection.ts";
 import { bootstrapOnboardingGuard$ } from "./okou-page/onboard-guard.ts";
 import {
   applyFeatureSwitches$,
@@ -666,6 +667,7 @@ const completeBootstrap$ = command(
       set(setupNotificationListener$, signal),
 
       set(setupGlobalKeyboardShortcuts$, signal),
+      set(setupChatThreadFilterShortcut$, signal),
       set(watchOrgSwitch$, signal),
       set(syncInitialPreferences$, signal),
     ]);

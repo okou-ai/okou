@@ -367,6 +367,9 @@ test("Filter chats by All chats, Unread, or Archived", async () => {
     ).toStrictEqual(["✅ Waiting for review"]);
   });
   expect(within(sidebar()).getByText("Show all chats")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${INCIDENT_THREAD_ID}`);
+  });
 
   openChatListMenu();
   click(menuItemByText("Archived"));
@@ -381,6 +384,9 @@ test("Filter chats by All chats, Unread, or Archived", async () => {
     ).toStrictEqual(["✅ Archived context", "✅ Waiting for review"]);
   });
   expect(within(sidebar()).getByText("Show all chats")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${ARCHIVED_THREAD_ID}`);
+  });
 
   openChatListMenu();
   click(menuItemByText("All chats"));
@@ -397,6 +403,36 @@ test("Filter chats by All chats, Unread, or Archived", async () => {
   expect(
     within(sidebar()).queryByText("Show all chats"),
   ).not.toBeInTheDocument();
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${EXISTING_THREAD_ID}`);
+  });
+});
+
+test("Selecting a filter skips the chat open in the right pane", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Release plan"),
+    createThread(ARCHIVED_THREAD_ID, "✅ Archived context"),
+    createThread(INCIDENT_THREAD_ID, "✅ Waiting for review"),
+  ]);
+
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}?sidebar=${ARCHIVED_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
+  });
+  await waitFor(() => {
+    expect(visibleThreadTitles(["Release plan"])).toStrictEqual([
+      "Release plan",
+    ]);
+  });
+
+  openChatListMenu();
+  click(menuItemByText("Archived"));
+
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${INCIDENT_THREAD_ID}`);
+  });
 });
 
 test("Hide the current chat after archiving it", async () => {
