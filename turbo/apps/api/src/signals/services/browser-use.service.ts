@@ -1251,7 +1251,7 @@ export async function preflightBrowserUseUserAction(
         outcome,
         durationMs,
       };
-      if (outcome === "ok" && durationMs < 1_000) {
+      if (outcome === "ok" && durationMs < 1000) {
         L.debug("Browser input preflight CDP phase", fields);
       } else {
         L.warn("Browser input preflight CDP phase", fields);

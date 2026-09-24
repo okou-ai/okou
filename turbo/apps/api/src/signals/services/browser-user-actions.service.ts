@@ -1097,6 +1097,67 @@ async function markPendingBrowserUserActionStale(
   return stale ?? null;
 }
 
+type BrowserInputInspection =
+  | { readonly kind: "stale" }
+  | {
+      readonly kind: "valid";
+      readonly controls: readonly BrowserUseControlInspection[];
+    };
+
+async function inspectPendingBrowserUserAction(
+  row: RequestRow,
+  payload: Extract<BrowserUserActionPayload, { kind: "input" }>,
+  signal: AbortSignal,
+): Promise<ServiceResult<BrowserInputInspection>> {
+  const attemptId = randomUUID();
+  const providerStartedAt = performance.now();
+  const provider = await settle(
+    getBrowserUseSession(row.providerSessionId, signal),
+  );
+  signal.throwIfAborted();
+  const providerPhase = {
+    type: "browser_input_preflight_phase",
+    attemptId,
+    phase: "provider_session",
+    outcome: provider.ok ? "ok" : "error",
+    durationMs: Math.round(performance.now() - providerStartedAt),
+  };
+  if (provider.ok && providerPhase.durationMs < 1000) {
+    L.debug("Browser input preflight provider phase", providerPhase);
+  } else {
+    L.warn("Browser input preflight provider phase", providerPhase);
+  }
+  if (!provider.ok) {
+    return providerFailure(provider.error);
+  }
+  if (provider.value.status === "stopped") {
+    return { kind: "ok", value: { kind: "stale" } };
+  }
+  if (!provider.value.cdpUrl) {
+    return providerFailure(new Error("Browser provider is not active"));
+  }
+  const checked = await settle(
+    preflightBrowserUseUserAction(
+      provider.value.cdpUrl,
+      {
+        ...exactInputTarget(payload),
+        fields: payload.target.fields.map((field) => {
+          return {
+            backendNodeId: field.backendNodeId,
+            fingerprint: field.fingerprint,
+          };
+        }),
+      },
+      signal,
+      attemptId,
+    ),
+  );
+  signal.throwIfAborted();
+  return checked.ok
+    ? { kind: "ok", value: checked.value }
+    : providerFailure(checked.error);
+}
+
 export const preflightBrowserUserAction$ = command(
   async (
     { set },
@@ -1168,61 +1229,15 @@ export const preflightBrowserUserAction$ = command(
       return admitted.value;
     }
     const { row, payload } = admitted.value.value;
-    const attemptId = randomUUID();
-    const providerStartedAt = performance.now();
-    const provider = await settle(
-      getBrowserUseSession(row.providerSessionId, signal),
+    const inspected = await inspectPendingBrowserUserAction(
+      row,
+      payload,
+      signal,
     );
-    signal.throwIfAborted();
-    const providerPhase = {
-      type: "browser_input_preflight_phase",
-      attemptId,
-      phase: "provider_session",
-      outcome: provider.ok ? "ok" : "error",
-      durationMs: Math.round(performance.now() - providerStartedAt),
-    };
-    if (provider.ok && providerPhase.durationMs < 1_000) {
-      L.debug("Browser input preflight provider phase", providerPhase);
-    } else {
-      L.warn("Browser input preflight provider phase", providerPhase);
+    if (inspected.kind === "error") {
+      return inspected;
     }
-    if (!provider.ok) {
-      return providerFailure(provider.error);
-    }
-    let inspection:
-      | { readonly kind: "stale" }
-      | {
-          readonly kind: "valid";
-          readonly controls: readonly BrowserUseControlInspection[];
-        };
-    if (provider.value.status === "stopped") {
-      inspection = { kind: "stale" };
-    } else {
-      if (!provider.value.cdpUrl) {
-        return providerFailure(new Error("Browser provider is not active"));
-      }
-      const checked = await settle(
-        preflightBrowserUseUserAction(
-          provider.value.cdpUrl,
-          {
-            ...exactInputTarget(payload),
-            fields: payload.target.fields.map((field) => {
-              return {
-                backendNodeId: field.backendNodeId,
-                fingerprint: field.fingerprint,
-              };
-            }),
-          },
-          signal,
-          attemptId,
-        ),
-      );
-      signal.throwIfAborted();
-      if (!checked.ok) {
-        return providerFailure(checked.error);
-      }
-      inspection = checked.value;
-    }
+    const inspection = inspected.value;
     // Re-enter admission after remote I/O: apply or cancellation may have
     // consumed the request while the check was running.
     const verified = await withChatThreadContentWrite(
