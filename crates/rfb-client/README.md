@@ -253,9 +253,10 @@ An immutable `Capture` owns a PNG, timestamp, frame sequence, dimensions and
 cursor shape/hotspot describes that same snapshot. RFB does not supply its desktop
 position. PNG rows use the maintained `png` encoder, filter Up and flate2 level 1,
 with cooperative yields between rows. A conservative 2 MiB reservation covers
-encoder state and row/chunk buffers. Output is capped at 16 MiB; a larger image
-fails with `ImageTooLarge` without changing dimensions. Buffer capacity, temporary
-output compaction and cursor copies are charged. Kept captures retain that charge
+encoder state and row/chunk buffers. Output storage grows as encoded bytes arrive,
+and is capped at 16 MiB of PNG data; a larger image fails with `ImageTooLarge`
+without changing dimensions. Actual buffer capacity, possible old/new overlap
+during growth, and cursor copies are charged. Kept captures retain that charge
 after return and even after session close; enough retained images can make a later
 operation fail with `ResourceLimit`. Copies explicitly made by a caller are its
 responsibility. No image is written to disk or published by this crate.
