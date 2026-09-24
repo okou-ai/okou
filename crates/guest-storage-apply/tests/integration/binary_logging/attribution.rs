@@ -152,8 +152,8 @@ fn binary_records_download_scheduler_attribution() {
         let entry = operation(&ops, action).unwrap();
         assert_eq!(entry["success"], true);
         assert!(entry.get("error").is_none());
-        assert!(entry.get("outcome").is_none());
-        assert!(entry.get("reason").is_none());
+        assert_eq!(entry["outcome"], "file_lt_64_kib");
+        assert_eq!(entry["reason"], "other");
     }
     for phase in [
         "guest_storage_apply_plan_build",
@@ -632,6 +632,21 @@ fn binary_records_opened_file_size_around_bucket_boundary() {
         assert_eq!(entries.len(), 2, "unexpected {action} entries: {ops:?}");
         assert!(entries.iter().all(|entry| entry["success"] == false));
         assert!(entries.iter().all(|entry| entry.get("error").is_none()));
+        assert!(entries.iter().all(|entry| entry["reason"] == "other"));
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry["outcome"] == "file_lt_64_kib")
+                .count(),
+            1
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry["outcome"] == "file_64_kib_to_256_kib")
+                .count(),
+            1
+        );
     }
     assert_eq!(
         ops.iter()

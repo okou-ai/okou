@@ -98,8 +98,9 @@
 //! metrics and never emit remote-attribution rows. Once a local file opens, they
 //! emit `*_file_body_read` and `*_file_extract_outside_body_read`, splitting
 //! extraction wall time into compressed-file reads and remaining work. The
-//! rows inherit task success and carry no paths or URLs. An open failure emits
-//! only the task total because extraction never started.
+//! rows inherit task success, compressed-size bucket, and task role while
+//! carrying no paths or URLs. An open failure emits only the task total because
+//! extraction never started.
 //!
 //! # Compatibility boundary
 //!
@@ -166,24 +167,25 @@ impl DownloadTaskTelemetry {
         remote_metrics: Option<&RemoteArchiveTaskMetrics>,
         local_metrics: Option<&LocalArchiveTaskMetrics>,
     ) {
+        let outcome = self
+            .url_kind
+            .source_size_outcome(opened_file_compressed_bytes, remote_metrics);
+        let dimensions = SandboxOpDimensions {
+            outcome: Some(outcome),
+            reason: Some(self.task_kind.label()),
+        };
         record_sandbox_op_with_dimensions(
             self.archive_kind.total_action(),
             duration,
             success,
             error,
-            SandboxOpDimensions {
-                outcome: Some(
-                    self.url_kind
-                        .source_size_outcome(opened_file_compressed_bytes, remote_metrics),
-                ),
-                reason: Some(self.task_kind.label()),
-            },
+            dimensions,
         );
         if let Some(metrics) = remote_metrics {
             record_remote_archive_attribution(self.archive_kind, metrics, success);
         }
         if let Some(metrics) = local_metrics.filter(|metrics| metrics.extraction_started) {
-            record_local_archive_attribution(self.archive_kind, metrics, success);
+            record_local_archive_attribution(self.archive_kind, metrics, success, dimensions);
         }
     }
 }
@@ -823,18 +825,21 @@ fn record_local_archive_attribution(
     archive_kind: ArchiveKind,
     metrics: &LocalArchiveTaskMetrics,
     success: bool,
+    dimensions: SandboxOpDimensions<'_>,
 ) {
-    record_sandbox_op(
+    record_sandbox_op_with_dimensions(
         archive_kind.file_body_read_action(),
         metrics.body_read,
         success,
         None,
+        dimensions,
     );
-    record_sandbox_op(
+    record_sandbox_op_with_dimensions(
         archive_kind.file_extract_outside_body_read_action(),
         metrics.extract_outside_body_read,
         success,
         None,
+        dimensions,
     );
 }
 
