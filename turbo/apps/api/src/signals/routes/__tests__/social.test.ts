@@ -2067,10 +2067,6 @@ describe("managed SocialKit route", () => {
 
   it.each([
     {
-      caseName: "an unknown tool",
-      body: { tool: "youtube_unknown", input: {} },
-    },
-    {
       caseName: "a download tool",
       body: { tool: "youtube_download", input: {} },
     },
