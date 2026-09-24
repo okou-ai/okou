@@ -11,6 +11,39 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.957.0](https://github.com/okou-ai/okou/compare/app-v0.956.0...app-v0.957.0) (2026-09-24)
+
+
+### Features
+
+* **access:** enable guarded organization conversion ([#36623](https://github.com/okou-ai/okou/issues/36623)) ([5d1ba8b](https://github.com/okou-ai/okou/commit/5d1ba8b930cd414c3e3700996e25d79ba99a4ce6))
+* **platform:** add mod+shift+x shortcut to archive chat ([#36619](https://github.com/okou-ai/okou/issues/36619)) ([b86549d](https://github.com/okou-ai/okou/commit/b86549d4004c71724a5d390d43b32b5b7421f1dc))
+
+
+### Bug Fixes
+
+* align chat automation run now actions to the right ([#36639](https://github.com/okou-ai/okou/issues/36639)) ([0d1797c](https://github.com/okou-ai/okou/commit/0d1797c831dd4725525e9c390da1867ea03dfb79))
+* **app:** resume onboarding progress and clear completed drafts ([#36632](https://github.com/okou-ai/okou/issues/36632)) ([c1533f0](https://github.com/okou-ai/okou/commit/c1533f076962d8a4879106fc987fb18f83cbb7dd))
+* **browser:** keep input available during preflight ([#36608](https://github.com/okou-ai/okou/issues/36608)) ([eaeb850](https://github.com/okou-ai/okou/commit/eaeb85079a04b3e4bc14906c01251e4fba370784))
+* **chat:** configure remote access before chat creation ([#36599](https://github.com/okou-ai/okou/issues/36599)) ([f2f9e40](https://github.com/okou-ai/okou/commit/f2f9e40971439d1510ea1df5194a05b8216249c5))
+* **chat:** keep remote access menu mounted during refresh ([#36654](https://github.com/okou-ai/okou/issues/36654)) ([2067e33](https://github.com/okou-ai/okou/commit/2067e33171a2b18e63eaf305cddfd70279b0b80b))
+* **platform:** make telegram connect the primary action ([#36620](https://github.com/okou-ai/okou/issues/36620)) ([9a3b164](https://github.com/okou-ai/okou/commit/9a3b164cbbf7a57bb79d9dfeae364bd59dea32f8))
+* **platform:** match account menu subscription divider to menu separator ([#36635](https://github.com/okou-ai/okou/issues/36635)) ([3ad8eec](https://github.com/okou-ai/okou/commit/3ad8eec85c17e22e4211d139390e6f7d21539272))
+* **platform:** show actions on agent-bound message bubbles ([#36607](https://github.com/okou-ai/okou/issues/36607)) ([cfb46d6](https://github.com/okou-ai/okou/commit/cfb46d67e940ddd88912d2ef821379476860daec))
+
+
+### Refactoring
+
+* remove piloop feature switch ([#36382](https://github.com/okou-ai/okou/issues/36382)) ([878bc6d](https://github.com/okou-ai/okou/commit/878bc6d48524830c3da02f9622f7d056c7905a79))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.504.0
+    * @okouai/core bumped to 8.708.2
+
 ## [0.956.0](https://github.com/okou-ai/okou/compare/app-v0.955.0...app-v0.956.0) (2026-09-24)
 
 
