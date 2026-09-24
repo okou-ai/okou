@@ -61,7 +61,7 @@ Runner -> runner-remote   -> runner-network, runner-provider, runner-host, runne
 Runner -> runner-storage  -> runner-host -> runner-types
 Runner -> runner-lifecycle -> runner-storage, runner-host, runner-types, sandbox
 Runner -> runner-executor -> runner-provider, runner-storage, runner-network, runner-remote, runner-lifecycle, runner-host, runner-types
-Runner -> runner-supervisor -> runner-executor, runner-lifecycle, runner-host, runner-types, sandbox
+Runner -> runner-supervisor -> runner-executor, runner-lifecycle, runner-provider, runner-host, runner-types, sandbox
 Runner -> guest-control-client -> guest-control-server (guest-init child)
 Guest  -> runner-rpc-client    -> Runner service endpoint
 Guest  -> process-control-ipc  -> guest-local process control / placement
