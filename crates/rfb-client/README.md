@@ -118,7 +118,8 @@ the post-authentication RFB session.** For product use, the protected channel
 must terminate on the Mac itself, with saved SSH host-key verification and VNC
 on literal Mac loopback. The ignored exact-Mac fixture runs on that Mac through
 host-key-verified SSH, uses literal loopback VNC and a one-time dedicated test
-password, and checks both accepted and rejected credentials. It does not
+password, and checks accepted credentials, a corrupted server proof, and
+rejected credentials. It does not
 initialize or read the desktop. An earlier direct-public-port authentication
 probe is not a product transport policy.
 Security type 33 (Apple RSA-SRP) remains unsupported pending an independently

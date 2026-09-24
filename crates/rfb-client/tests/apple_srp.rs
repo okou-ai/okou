@@ -4,6 +4,16 @@
     reason = "synthetic peers and manual live fixture use assertions"
 )]
 
+use std::{
+    io,
+    pin::Pin,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    task::{Context, Poll},
+};
+
 use crypto_bigint::{
     BoxedUint, Odd,
     modular::{BoxedMontyForm, BoxedMontyParams},
@@ -14,7 +24,7 @@ use rfb_client::{
 };
 use sha2::{Digest, Sha256, Sha512};
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, DuplexStream, duplex},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf, duplex},
     time::{Duration, Instant},
 };
 use zeroize::Zeroizing;
@@ -498,15 +508,156 @@ async fn expired_deadline_writes_nothing() {
     assert_eq!(server.read(&mut byte).await.expect("read close"), 0);
 }
 
+// Manual Mac-only fault injection: parse only public framing lengths and flip
+// one byte of the final server proof. No packet content is logged or retained.
+enum MacReadPhase {
+    Banner(u8),
+    OfferCount,
+    Offers(u8),
+    ChallengeLength { read: u8, length: u32 },
+    Challenge(u32),
+    FinalLength { read: u8, length: u32 },
+    Final { offset: u32, remaining: u32 },
+    Done,
+}
+
+struct CorruptMacProof<S> {
+    inner: S,
+    phase: MacReadPhase,
+    flipped: Arc<AtomicBool>,
+}
+
+impl<S> CorruptMacProof<S> {
+    fn new(inner: S, flipped: Arc<AtomicBool>) -> Self {
+        Self {
+            inner,
+            phase: MacReadPhase::Banner(12),
+            flipped,
+        }
+    }
+
+    fn consume(&mut self, byte: &mut u8) {
+        self.phase = match std::mem::replace(&mut self.phase, MacReadPhase::Done) {
+            MacReadPhase::Banner(1) => MacReadPhase::OfferCount,
+            MacReadPhase::Banner(remaining) => MacReadPhase::Banner(remaining - 1),
+            MacReadPhase::OfferCount if *byte > 0 => MacReadPhase::Offers(*byte),
+            MacReadPhase::OfferCount => MacReadPhase::Done,
+            MacReadPhase::Offers(1) => MacReadPhase::ChallengeLength { read: 0, length: 0 },
+            MacReadPhase::Offers(remaining) => MacReadPhase::Offers(remaining - 1),
+            MacReadPhase::ChallengeLength { read, length } => {
+                let length = (length << 8) | u32::from(*byte);
+                if read == 3 {
+                    MacReadPhase::Challenge(length)
+                } else {
+                    MacReadPhase::ChallengeLength {
+                        read: read + 1,
+                        length,
+                    }
+                }
+            }
+            MacReadPhase::Challenge(1) => MacReadPhase::FinalLength { read: 0, length: 0 },
+            MacReadPhase::Challenge(remaining) => MacReadPhase::Challenge(remaining - 1),
+            MacReadPhase::FinalLength { read, length } => {
+                let length = (length << 8) | u32::from(*byte);
+                if read == 3 {
+                    MacReadPhase::Final {
+                        offset: 0,
+                        remaining: length,
+                    }
+                } else {
+                    MacReadPhase::FinalLength {
+                        read: read + 1,
+                        length,
+                    }
+                }
+            }
+            MacReadPhase::Final { offset, remaining } => {
+                if offset == 5 {
+                    *byte ^= 1;
+                    self.flipped.store(true, Ordering::SeqCst);
+                }
+                if remaining == 1 {
+                    MacReadPhase::Done
+                } else {
+                    MacReadPhase::Final {
+                        offset: offset + 1,
+                        remaining: remaining - 1,
+                    }
+                }
+            }
+            MacReadPhase::Done => MacReadPhase::Done,
+        };
+    }
+}
+
+impl<S: AsyncRead + Unpin> AsyncRead for CorruptMacProof<S> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let before = buf.filled().len();
+        let result = Pin::new(&mut self.inner).poll_read(cx, buf);
+        if matches!(result, Poll::Ready(Ok(()))) {
+            for byte in &mut buf.filled_mut()[before..] {
+                self.consume(byte);
+            }
+        }
+        result
+    }
+}
+
+impl<S: AsyncWrite + Unpin> AsyncWrite for CorruptMacProof<S> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.inner).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
+
+#[tokio::test]
+async fn mac_proof_fault_injector_changes_only_m2() {
+    let (client, mut server) = duplex(256);
+    let flipped = Arc::new(AtomicBool::new(false));
+    let mut client = CorruptMacProof::new(client, Arc::clone(&flipped));
+    let mut wire = b"RFB 003.889\n".to_vec();
+    wire.extend_from_slice(&[1, 36]);
+    wire.extend_from_slice(&4u32.to_be_bytes());
+    wire.extend_from_slice(&[0; 4]);
+    wire.extend_from_slice(&92u32.to_be_bytes());
+    wire.extend_from_slice(&[0x44; 92]);
+    server.write_all(&wire).await.expect("synthetic stream");
+
+    let mut received = vec![0; wire.len()];
+    for chunk in received.chunks_mut(7) {
+        client.read_exact(chunk).await.expect("fragmented read");
+    }
+    let proof_byte = wire.len() - 92 + 5;
+    wire[proof_byte] ^= 1;
+    assert_eq!(received, wire);
+    assert!(flipped.load(Ordering::SeqCst));
+}
+
 /// Run manually with a one-time credential on the dedicated Mac test host.
 /// This tests authentication only; it does not initialize, capture or control
 /// the desktop, and it does not enable any product route.
 #[tokio::test]
 #[ignore = "requires dedicated macOS test host and ephemeral credential"]
-async fn exact_mac_direct_srp_accepts_and_rejects_credentials() {
+async fn exact_mac_direct_srp_accepts_and_rejects_credentials_and_bad_proof() {
     let address = std::env::var("OKOU_MAC_VNC_ADDR").expect("test host address");
     let username = std::env::var("OKOU_MAC_VNC_USER").expect("test username");
     let password = std::env::var("OKOU_MAC_VNC_PASSWORD").expect("one-time test password");
+    let proof_password = Zeroizing::new(password.clone());
     let mut wrong_password = Zeroizing::new(password.clone());
     wrong_password.push('!');
     let stream = tokio::net::TcpStream::connect(&address)
@@ -522,6 +673,25 @@ async fn exact_mac_direct_srp_accepts_and_rejects_credentials() {
     .await
     .expect("direct SRP authentication");
     drop(authenticated);
+
+    let stream = tokio::net::TcpStream::connect(&address)
+        .await
+        .expect("connect test host for proof control");
+    let flipped = Arc::new(AtomicBool::new(false));
+    let stream = CorruptMacProof::new(stream, Arc::clone(&flipped));
+    let credentials = AppleSrpCredentials::new_zeroizing(username.clone(), proof_password)
+        .expect("valid proof-control credential");
+    let result = authenticate_apple_srp(
+        stream,
+        credentials,
+        Instant::now() + Duration::from_secs(30),
+    )
+    .await;
+    assert!(
+        flipped.load(Ordering::SeqCst),
+        "server proof was intercepted"
+    );
+    assert!(matches!(result, Err(Error::AuthenticationFailed)));
 
     // The successful handshake above is the same-host positive control for a
     // fresh connection using an intentionally different password.
