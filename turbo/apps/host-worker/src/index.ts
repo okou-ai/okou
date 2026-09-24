@@ -501,7 +501,17 @@ async function readDeliveryRecord(
     new URL(`/__artifact-delivery/${encodeURIComponent(key)}`, request.url),
   );
   const cached = await cache?.match(cacheKey);
-  if (cached) return artifactDeliveryRecordSchema.parse(await cached.json());
+  if (cached) {
+    const record = artifactDeliveryRecordSchema.parse(await cached.json());
+    // Publication and thread records recheck their policy before content.
+    // Legacy files have no policy, so their registry key is the revocation
+    // authority. A warm alias must not reach the one-year content cache after
+    // erasure has removed that key.
+    if (record.kind === "legacy-file" && !(await bucket.head(key))) {
+      return null;
+    }
+    return record;
+  }
   const object = await bucket.get(key);
   if (!object) return null;
   const record = artifactDeliveryRecordSchema.parse(
@@ -671,10 +681,7 @@ async function serveLegacyArtifactFile(
       },
     });
     if (!response.ok) return privateResponse(response);
-    response.headers.set(
-      "Cache-Control",
-      "public, max-age=31536000, immutable",
-    );
+    response.headers.set("Cache-Control", PRIVATE_NO_STORE_CACHE_CONTROL);
     return response;
   }
   const cache = (caches as CacheStorage & { readonly default: Cache }).default;
@@ -686,7 +693,7 @@ async function serveLegacyArtifactFile(
 
   const response = await serveArtifactFile(request, bucket, file);
   if (!response.ok) return privateResponse(response);
-  response.headers.set("Cache-Control", "public, max-age=31536000, immutable");
+  response.headers.set("Cache-Control", PRIVATE_NO_STORE_CACHE_CONTROL);
   if (request.method === "GET" && response.status === 200 && !ranged)
     execution.waitUntil(cache.put(key, response.clone()));
   return response;

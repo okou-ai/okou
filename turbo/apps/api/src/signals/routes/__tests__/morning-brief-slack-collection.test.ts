@@ -1481,7 +1481,7 @@ describe("Morning Brief collection ownership lifetime", () => {
   });
 
   it.each(["user.deleted", "organization.deleted"])(
-    "revokes collection ownership in the first transaction of %s",
+    "revokes collection ownership at the deletion boundary of %s",
     async (type) => {
       const f = await fixture();
       const survivor = await fixture();
@@ -1492,21 +1492,26 @@ describe("Morning Brief collection ownership lifetime", () => {
       await accept(collect(f), [200]);
       await accept(collect(survivor), [200]);
 
-      const remainder = await holdCleanupAfterRevocation(f, context.signal);
+      // Organization deletion still commits its legacy revocation and removal
+      // together. Durable user deletion instead stamps the owner atomically
+      // with its job receipt, preserving the occurrence until B1 captures it.
+      const remainder =
+        type === "organization.deleted"
+          ? await holdCleanupAfterRevocation(f, context.signal)
+          : null;
       await deleteClerkSubject(type, f);
-      await remainder.waitForArrival();
-      // Both deletions revoke inside the run-cancellation transaction they
-      // already commit, so the occurrence is gone and the refusal is durable
-      // long before the member row it hangs from is removed.
+      if (remainder) {
+        await remainder.waitForArrival();
+      }
       await expect(
         readMorningBriefCollectionOccurrences(f),
-      ).resolves.toStrictEqual([]);
+      ).resolves.toHaveLength(type === "user.deleted" ? 1 : 0);
       await expect(
         readMorningBriefCollectionOwnerRow(f),
       ).resolves.toMatchObject({ revokedAt: expect.any(Date) });
 
-      // What a caller actually observes: the owner is refused and no source is
-      // read, while the rest of the deletion has still not run.
+      // The owner is refused without reading another Slack source, even while
+      // user deletion remains blocked at its required remote capture boundary.
       const traffic = scriptSlack({});
       const refused = await accept(collect(f), [409]);
       expect(refused.body.error.code).toBe(
@@ -1514,7 +1519,7 @@ describe("Morning Brief collection ownership lifetime", () => {
       );
       expect(traffic.requests).toStrictEqual([]);
 
-      await remainder.release();
+      await remainder?.release();
       await flushWaitUntilForTest();
       await expect(
         readMorningBriefCollectionOccurrences(survivor),

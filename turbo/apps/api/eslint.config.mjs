@@ -687,6 +687,10 @@ export default [
       // The dormant persistence boundary has no HTTP ingress. Real PostgreSQL
       // sessions exercise first closure, lease recovery, and selector retirement.
       "src/signals/services/__tests__/account-erasure.service.test.ts",
+      // The signed webhook can start the B1 capture, but no API can expire a
+      // claimed worker lease or inspect whether a resumed page kept its exact
+      // capture revision. This focused test exercises those durable DB edges.
+      "src/signals/services/__tests__/account-erasure-user-executor.test.ts",
       // D2's ownership coverage guard reads a schema and returns a verdict. Its
       // negative cases describe schemas this repository does not have — a new
       // uncovered table, an account identity appearing on an account-free one —
@@ -704,6 +708,49 @@ export default [
       // whose row is already gone, and object absence is read back from the
       // provider rather than from a response this API serves.
       "src/signals/services/__tests__/account-erasure-hosted-site-collector.test.ts",
+      // The dormant artifact-byte sink must survive its catalog row vanishing
+      // between sealed capture and verification; no endpoint exposes that.
+      "src/signals/services/__tests__/account-erasure-artifact-file-collector.test.ts",
+      // Export result and staging bytes must disappear after the owner row is
+      // removed; no API can create that sealed-capture replay state.
+      "src/signals/services/__tests__/account-erasure-export-object-collector.test.ts",
+      // Provider profile capture needs a sealed catalog row followed by a
+      // deleted row and an authenticated provider read; no route exposes it.
+      "src/signals/services/__tests__/account-erasure-browser-profile-collector.test.ts",
+      // A stopped remote browser still retains a provider record. This DB
+      // capture/terminal-state test requires a removed thread and sealed lease.
+      "src/signals/services/__tests__/account-erasure-browser-session-collector.test.ts",
+      // R2 chat snapshot keys outlive their mutable SQL pointer; no HTTP
+      // endpoint can seal capture, remove the pointer and assert byte absence.
+      "src/signals/services/__tests__/account-erasure-chat-snapshot-collector.test.ts",
+      // A candidate SELECT can finish before the D1 lock is acquired; no
+      // endpoint can hold that exact DB boundary while sealing B1 capture.
+      "src/signals/services/__tests__/account-erasure-chat-snapshot-writer-fence.test.ts",
+      // B1 must persist >1,000 command locators and test provider absence
+      // after a sealed lease, a removed catalog row, and a held D1 PUT.
+      "src/signals/services/__tests__/account-erasure-computer-use-collector.test.ts",
+      // SSH remote B1 needs sealed encrypted selectors, a vanished owner row
+      // and persisted 503 replay. No public route exposes that worker state.
+      "src/signals/services/__tests__/account-erasure-ssh-remote-collector.test.ts",
+      // Connector credentials and watches must survive catalog removal in
+      // encrypted B1 pages; no endpoint exposes the sealed lease or a forged
+      // cross-owner watch relationship.
+      "src/signals/services/__tests__/account-erasure-connector-remote-collector.test.ts",
+      // No endpoint can seal direct VNC B1, remove its catalog rows and
+      // observe restart/retry against captured remote session locators.
+      "src/signals/services/__tests__/account-erasure-vnc-direct-collector.test.ts",
+      // Storage erasure must use a sealed locator after its catalog row is
+      // gone; no endpoint can construct that dormant executor state yet.
+      "src/signals/services/__tests__/account-erasure-storage-object-collector.test.ts",
+      // Public share aliases, copies and registry entries must be captured
+      // before their catalog rows vanish; no endpoint exposes sealed capture.
+      "src/signals/services/__tests__/account-erasure-artifact-share-collector.test.ts",
+      // Exact-hash capture and byte proof run through the durable B1 job; no
+      // product endpoint can hold a shared blob between capture and erase.
+      "src/signals/services/__tests__/account-erasure-shared-blob-collector.test.ts",
+      // The exact-hash PostgreSQL/S3 upload and erase interleaving cannot be
+      // selected through a product endpoint.
+      "src/signals/services/__tests__/shared-blob-erasure.service.test.ts",
       // Bounded job ownership needs real row-lock competition, expired leases,
       // handler-version skew and publication rollback unavailable through HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
@@ -940,6 +987,21 @@ export default [
       "src/signals/services/__tests__/pi-memory-phase2-job.test-fixture.ts",
       // No production endpoint can construct B1's dormant jobs or DB races.
       "src/signals/services/__tests__/account-erasure.service.test.ts",
+      "src/signals/services/__tests__/account-erasure-user-executor.test.ts",
+      "src/signals/services/__tests__/account-erasure-export-object-collector.test.ts",
+      "src/signals/services/__tests__/account-erasure-browser-profile-collector.test.ts",
+      "src/signals/services/__tests__/account-erasure-browser-session-collector.test.ts",
+      "src/signals/services/__tests__/account-erasure-chat-snapshot-collector.test.ts",
+      "src/signals/services/__tests__/account-erasure-chat-snapshot-writer-fence.test.ts",
+      "src/signals/services/__tests__/account-erasure-computer-use-collector.test.ts",
+      "src/signals/services/__tests__/account-erasure-ssh-remote-collector.test.ts",
+      "src/signals/services/__tests__/account-erasure-connector-remote-collector.test.ts",
+      "src/signals/services/__tests__/account-erasure-vnc-direct-collector.test.ts",
+      // Upload intents and shared blob erasure race at the exact-hash row.
+      "src/signals/services/__tests__/shared-blob-erasure.service.test.ts",
+      // Immutable Feishu ownership must be measured across admission,
+      // disconnect and rebind commits, which HTTP cannot interleave.
+      "src/signals/services/__tests__/account-erasure-relational-collector.test.ts",
       // Bounded job ownership needs row locks, expired leases, handler-version
       // skew and transaction rollback that callers cannot construct via HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",

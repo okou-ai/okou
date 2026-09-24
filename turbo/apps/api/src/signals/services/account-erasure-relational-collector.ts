@@ -15,6 +15,9 @@ import {
 
 import { executeRawRows } from "../../lib/db-raw-rows";
 import type { Tx } from "../../lib/db-types";
+import { nowDate } from "../../lib/time";
+import { settle } from "../utils";
+import { releaseDeletedConversationReferences } from "./conversation-history-deletion.service";
 import {
   ACCOUNT_OWNERSHIP_INVENTORY,
   DESCENDANT_REACH,
@@ -745,7 +748,7 @@ export function assertRelationalSweepComplete(
 }
 
 function subjectPredicate(root: RelationalErasureRoot, id: string) {
-  return sql.join(
+  const owner = sql.join(
     root.owners.map((owner) => {
       const column = sql`${sql.identifier(root.table)}.${sql.identifier(owner.column)}`;
       if (owner.kind === "direct") {
@@ -765,6 +768,12 @@ function subjectPredicate(root: RelationalErasureRoot, id: string) {
     }),
     sql` OR `,
   );
+  // The durable user.deleted task is the executor's control record. Erasing
+  // it inside its own sweep loses the lease before the worker can verify and
+  // complete the B1 job. Other background work remains account-owned.
+  return root.table === "background_jobs"
+    ? sql`(${owner}) AND ${sql.identifier(root.table)}.${sql.identifier("kind")} <> 'clerk-user-deletion'`
+    : owner;
 }
 
 /** The descendant's own membership test, built from the path's hops.
@@ -845,7 +854,7 @@ const RELATIONAL_NAMESPACE = "6f5d2a90-5a1e-4c6a-9b6f-1d0c8a4b7e33";
  * this changes whenever the sweep's observable behaviour changes.
  */
 export const RELATIONAL_ERASURE_COLLECTOR_VERSION =
-  "ba4130df-7969-4bf2-b389-5d05d16bac8d";
+  "a296ba1a-e288-4ad9-9238-29ad0ab2e36e";
 
 // The fence's own deadlines. A sweep waits for admission behind the exclusive
 // subject lock, so its lock timeout is the fence's, not a route's.
@@ -1041,6 +1050,24 @@ export async function sweepRelationalErasure(
       },
       binding.required,
     );
+    // A user-export worker can still write result or staging bytes after D1
+    // closes new admissions. Its durable row is the cleanup coordinator; do
+    // not sweep that row until export cleanup has quiesced the writer, aborted
+    // uploads and removed the row itself.
+    const exportOwner =
+      subject.subjectKind === "user"
+        ? sql`user_id = ${subject.subjectId}`
+        : sql`org_id = ${subject.subjectId}`;
+    const [activeExport] = await executeRawRows(
+      tx,
+      sql`SELECT id FROM background_jobs
+          WHERE ${exportOwner} AND kind = 'user-export'
+          LIMIT 1`,
+      z.object({ id: z.uuid() }),
+    );
+    if (activeExport) {
+      throw new Error("account_erasure_relational:export_work_unresolved");
+    }
     const owned = plan.order.map((root) => {
       return {
         table: root.table,
@@ -1053,6 +1080,13 @@ export async function sweepRelationalErasure(
       }),
     );
     let deleted = await deleteErasedArtifactCatalog(tx, subject.subjectId);
+    const blobReferences = new Map<string, number>();
+    let deletedConversations = 0;
+    const retainRemovedHash = (hash: string | null): void => {
+      if (hash !== null) {
+        blobReferences.set(hash, (blobReferences.get(hash) ?? 0) + 1);
+      }
+    };
     // Descendants first, every one of them, before any root is deleted. A
     // path joins upwards through rows that must still be there, and a path
     // longer than one hop passes through an intermediate owned by a different
@@ -1068,6 +1102,24 @@ export async function sweepRelationalErasure(
       }
       // Swept through the key explicitly, not left to a cascade: a declared
       // descendant whose key is `NO ACTION` would otherwise stay behind.
+      if (path.child === "conversations") {
+        // A conversation owns one content-addressed blob retain. Capture the
+        // actually deleted hashes in the same transaction; a later retry sees
+        // no rows and cannot double-release a shared blob.
+        const removed = await executeRawRows(
+          tx,
+          sql`DELETE FROM conversations
+              WHERE ${descendantPredicate(path, predicate)}
+              RETURNING cli_agent_session_history_hash AS hash`,
+          z.object({ hash: z.string().nullable() }),
+        );
+        deleted += removed.length;
+        deletedConversations += removed.length;
+        for (const row of removed) {
+          retainRemovedHash(row.hash);
+        }
+        continue;
+      }
       deleted +=
         (
           await tx.execute(
@@ -1076,7 +1128,31 @@ export async function sweepRelationalErasure(
           )
         ).rowCount ?? 0;
     }
+    // Delete candidate roots before storage roots. The storage FK cascades, so
+    // leaving candidate deletion to the generic root order could make the
+    // candidate rows vanish before their blob hashes are returned. Their
+    // descendants are already gone, and candidates have no incoming blocking
+    // root FK; the refcount update still waits until after all root deletion.
+    const candidateRoot = owned.find((root) => {
+      return root.table === "pi_memory_stage1_candidates";
+    });
+    if (candidateRoot) {
+      const removed = await executeRawRows(
+        tx,
+        sql`DELETE FROM pi_memory_stage1_candidates
+            WHERE ${candidateRoot.predicate}
+            RETURNING source_history_hash AS hash`,
+        z.object({ hash: z.string() }),
+      );
+      deleted += removed.length;
+      for (const row of removed) {
+        retainRemovedHash(row.hash);
+      }
+    }
     for (const root of owned) {
+      if (root.table === "pi_memory_stage1_candidates") {
+        continue;
+      }
       deleted +=
         (
           await tx.execute(
@@ -1084,6 +1160,12 @@ export async function sweepRelationalErasure(
                 WHERE ${root.predicate}`,
           )
         ).rowCount ?? 0;
+    }
+    if (blobReferences.size > 0) {
+      await releaseDeletedConversationReferences(tx, {
+        references: blobReferences,
+        deletedConversations,
+      });
     }
     return deleted;
   });
@@ -1271,7 +1353,7 @@ export function createRelationalErasureCollector(
         items: [item],
       };
     },
-    erase: async (lease) => {
+    erase: async (lease, signal) => {
       const subject = await leaseSubject(db, lease);
       if (!subject) {
         return unresolved("selector_missing");
@@ -1280,23 +1362,44 @@ export function createRelationalErasureCollector(
       if (boundary === null) {
         return unresolved("boundary_unproven");
       }
-      const deleted = await sweepRelationalErasure(
-        db,
-        subject,
-        {
-          jobId: lease.jobId,
-          generation: lease.generation,
-          captureRevision: lease.captureRevision,
-          inventoryRevision: lease.inventoryRevision,
-          producerBoundaryRef: boundary,
-          required: [
-            { sinkId: lease.item.sinkId, itemKey: lease.item.itemKey },
-          ],
-        },
-        plan,
+      const sweep = await settle(
+        sweepRelationalErasure(
+          db,
+          subject,
+          {
+            jobId: lease.jobId,
+            generation: lease.generation,
+            captureRevision: lease.captureRevision,
+            inventoryRevision: lease.inventoryRevision,
+            producerBoundaryRef: boundary,
+            required: [
+              { sinkId: lease.item.sinkId, itemKey: lease.item.itemKey },
+            ],
+          },
+          plan,
+        ),
+        signal,
       );
+      if (!sweep.ok) {
+        const { error } = sweep;
+        if (
+          error instanceof Error &&
+          error.message === "account_erasure_relational:export_work_unresolved"
+        ) {
+          return {
+            outcome: "pending",
+            errorCode: "boundary_unproven",
+            requestRef: null,
+            retryAt: new Date(nowDate().getTime() + 60_000),
+          };
+        }
+        throw error;
+      }
       return {
-        requestRef: requestReference(lease, deleted > 0 ? "erased" : "empty"),
+        requestRef: requestReference(
+          lease,
+          sweep.value > 0 ? "erased" : "empty",
+        ),
       };
     },
     verify: async (lease, producerBoundary) => {

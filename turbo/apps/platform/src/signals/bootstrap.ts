@@ -33,7 +33,7 @@ import {
   type RouterPathParams,
 } from "./route.ts";
 import { registerServiceWorker$ } from "../lib/push-notifications.ts";
-import { bestEffort, onDomEventFn } from "./utils.ts";
+import { bestEffort, detach, onDomEventFn, Reason } from "./utils.ts";
 import "./pwa-install.ts";
 import { ROUTES, type RoutePath } from "./route-paths.ts";
 
@@ -109,6 +109,7 @@ import { updatePage$ } from "./react-router.ts";
 import { setupLegacySettingsRedirect$ } from "./okou-page/settings/legacy-settings-redirect.ts";
 import { NotFoundPage } from "../views/not-found-page.tsx";
 import { setupSharedArtifact$ } from "./shared-artifact.ts";
+import { setupAccountErasureLocalLifecycle$ } from "./account-erasure-local-lifecycle.ts";
 import { setupSharedThreadPage$ } from "./shared-thread-page/shared-thread-page-setup.ts";
 
 import { setupGlobalKeyboardShortcuts$ } from "./okou-page/nav.ts";
@@ -623,6 +624,15 @@ const completeBootstrap$ = command(
     set(initTheme$, signal);
 
     render();
+
+    // The lifecycle owns its own session listener and cleanup loop. Starting
+    // it must not delay route readiness or give unrelated startup reads a head
+    // start before a user can interact with the rendered page.
+    detach(
+      bestEffort(set(setupAccountErasureLocalLifecycle$, signal), signal),
+      Reason.Daemon,
+      "account erasure local lifecycle",
+    );
 
     // These public protocol pages also run before an embedded Clerk session exists.
     // Hosted Clerk task continuations retain the same ownership via redirect_url.

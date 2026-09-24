@@ -1,6 +1,7 @@
 import type { RunnerCancellationResponse } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { eq } from "drizzle-orm";
+import { backgroundJobs } from "@okouai/db/schema/background-job";
+import { and, eq } from "drizzle-orm";
 
 import type { SandboxAuth } from "../../types/auth";
 import type { ReadonlyDb } from "../external/db";
@@ -47,5 +48,19 @@ export async function readRunCancellationState(
   ) {
     return { ...identity, state: "unavailable" };
   }
-  return { ...identity, state: "present", mode: run.mode };
+  // The committed deletion receipt is authoritative before B1 has captured
+  // enough locators to remove the Run. Keep it present for capture, but stop
+  // the authenticated Runner immediately while cleanup remains pending.
+  const [deletion] = await db
+    .select({ id: backgroundJobs.id })
+    .from(backgroundJobs)
+    .where(
+      and(
+        eq(backgroundJobs.kind, "clerk-user-deletion"),
+        eq(backgroundJobs.userId, run.userId),
+      ),
+    )
+    .limit(1);
+  signal.throwIfAborted();
+  return { ...identity, state: "present", mode: deletion ? "hard" : run.mode };
 }

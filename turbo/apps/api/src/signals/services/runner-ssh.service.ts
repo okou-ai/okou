@@ -1,4 +1,5 @@
 import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
+import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import {
   sshHostKeySchema,
   type RunnerSshResolveRequest,
@@ -21,6 +22,7 @@ import { and, eq, isNotNull, lt, ne, or, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import { decryptStoredSecretValue } from "./crypto.utils";
+import { settle } from "../utils";
 import {
   runThreadSshAccess,
   runUsesThreadRemoteAccess,
@@ -49,8 +51,10 @@ function currentConnectionQuery(
       host: sshConnections.host,
       port: sshConnections.port,
       username: sshCredentials.username,
+      credentialId: sshCredentials.id,
       authMethod: sshCredentials.authMethod,
       encryptedPassword: sshCredentials.encryptedPassword,
+      credentialRevision: sshCredentials.revision,
       generation: sshConnections.generation,
       algorithm: sshConnections.learnedHostKeyAlgorithm,
       fingerprint: sshConnections.learnedHostKeyFingerprint,
@@ -226,17 +230,12 @@ function learnedHostKey(row: {
   });
 }
 
-export async function resolveRunnerSsh(
-  db: Pick<Db, "select">,
-  input: SshResolveInput,
+async function decryptRunnerSsh(
+  row: NonNullable<Awaited<ReturnType<typeof currentConnection>>>,
   signal: AbortSignal,
 ): Promise<RunnerSshResolveResponse> {
-  const row = await currentConnection(db, input, false, signal);
-  if (!row) {
-    return unavailable;
-  }
   const hostKey = learnedHostKey(row);
-  // The joined snapshot is the authority handoff. Never hold DB locks across KMS.
+  // Never hold a database transaction or D1 lock across KMS.
   const common = {
     host: row.host,
     port: row.port,
@@ -296,6 +295,51 @@ export async function resolveRunnerSsh(
     });
   }
   return { outcome: "resolved", ...common, privateKey, passphrase };
+}
+
+export async function resolveRunnerSsh(
+  db: Db,
+  input: SshResolveInput,
+  signal: AbortSignal,
+): Promise<RunnerSshResolveResponse> {
+  const initial = await currentConnection(db, input, false, signal);
+  if (!initial) {
+    return unavailable;
+  }
+  const resolved = await decryptRunnerSsh(initial, signal);
+  // The KMS round trip can race user.deleted, a grant removal or a credential
+  // rotation. The existing D1 shared admission is the final authority handoff;
+  // it never spans KMS and prevents a committed closure from returning secrets.
+  const admitted = await db.transaction(async (tx) => {
+    const writable = await settle(
+      assertErasureSubjectWritable(tx, [
+        { subjectKind: "user", subjectId: initial.userId },
+        { subjectKind: "organization", subjectId: initial.orgId },
+      ]),
+      signal,
+    );
+    if (!writable.ok) {
+      if (
+        writable.error instanceof Error &&
+        writable.error.message === "account_erasure:subject_closed"
+      ) {
+        return false;
+      }
+      throw writable.error;
+    }
+    const current = await currentConnection(tx, input, false, signal);
+    return Boolean(
+      current &&
+      current.id === initial.id &&
+      current.generation === initial.generation &&
+      current.credentialId === initial.credentialId &&
+      current.credentialRevision === initial.credentialRevision &&
+      current.accessId === initial.accessId &&
+      current.access?.generation === initial.access?.generation,
+    );
+  });
+  signal.throwIfAborted();
+  return admitted ? resolved : unavailable;
 }
 
 export async function pinRunnerSsh(
