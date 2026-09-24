@@ -1,6 +1,7 @@
 import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { act, screen, waitFor, within } from "@testing-library/react";
@@ -141,6 +142,106 @@ test("A chat can override multiple SSH hosts and return to each host default", a
   });
 });
 
+test("A chat can enable multiple VNC hosts independently", async () => {
+  const hostIds = [
+    "b0000000-0000-4000-8000-000000000011",
+    "b0000000-0000-4000-8000-000000000012",
+  ];
+  installComposerConnectorFixture({ threadId: SCOUT_THREAD_ID });
+  const overrides = new Map<string, boolean>();
+  const host = (connectionId: string, index: number) => {
+    const overrideEnabled = overrides.get(connectionId) ?? null;
+    return {
+      connectionId,
+      displayName: `VNC host ${index + 1}`,
+      defaultEnabled: false,
+      overrideEnabled,
+      enabled: overrideEnabled ?? false,
+      source:
+        overrideEnabled === null ? ("default" as const) : ("override" as const),
+    };
+  };
+  context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
+    return respond(200, { configuredCount: hostIds.length });
+  });
+  context.mocks.api(vncConnectionsContract.list, ({ respond }) => {
+    return respond(200, {
+      connections: hostIds.map((id, index) => {
+        return {
+          id,
+          displayName: `VNC host ${index + 1}`,
+          host: `vnc-${index + 1}.example.com`,
+          port: 5900,
+          credentialId: "b0000000-0000-4000-8000-000000000013",
+          credentialName: "VNC login",
+          security: {
+            type: "x509_vnc" as const,
+            trust: { mode: "system" as const },
+          },
+          generation: 1,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        };
+      }),
+    });
+  });
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: [],
+        vnc: hostIds.map((connectionId, index) => {
+          const { displayName, defaultEnabled } = host(connectionId, index);
+          return { connectionId, displayName, defaultEnabled };
+        }),
+      });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.listThreadAccess,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: [],
+        vnc: hostIds.map(host),
+      });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.setThreadOverride,
+    ({ params, body, respond }) => {
+      overrides.set(params.connectionId, body.enabled);
+      return respond(
+        200,
+        host(params.connectionId, hostIds.indexOf(params.connectionId)),
+      );
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${SCOUT_THREAD_ID}`,
+    featureSwitches: {
+      [FeatureSwitchKey.ThreadRemoteAccess]: true,
+      [FeatureSwitchKey.VncAccess]: true,
+    },
+  });
+  click(await findFastControl("button", "Connectors"));
+  const remoteAccess = await screen.findByText("Remote access");
+  expect(remoteAccess.closest("button")).toHaveTextContent("0 enabled");
+  click(remoteAccess);
+  const first = await screen.findByRole("combobox", { name: "VNC VNC host 1" });
+  const user = userEvent.setup({ delay: null });
+  await user.selectOptions(first, "on");
+  await screen.findByText("1 enabled");
+  expect(screen.getByRole("combobox", { name: "VNC VNC host 2" })).toHaveValue(
+    "default",
+  );
+  await user.selectOptions(
+    screen.getByRole("combobox", { name: "VNC VNC host 2" }),
+    "on",
+  );
+  await screen.findByText("2 enabled");
+});
+
 test("Remote access is absent when no SSH or VNC hosts are configured", async () => {
   installComposerConnectorFixture({ threadId: SCOUT_THREAD_ID });
   context.mocks.api(
@@ -203,6 +304,61 @@ test("Remote access remains visible and can retry when host discovery fails", as
     "Couldn't load remote access.",
   );
   expect(document.body.textContent).not.toContain("private host error");
+  failed = false;
+  click(retry);
+  await screen.findByText("1 enabled");
+});
+
+test("Remote access can retry a failed chat permission read", async () => {
+  installComposerConnectorFixture({ threadId: SCOUT_THREAD_ID });
+  const host = {
+    connectionId: "b0000000-0000-4000-8000-000000000001",
+    displayName: "SSH host",
+    defaultEnabled: true,
+  };
+  let failed = true;
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, { ssh: [host], vnc: [] });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.listThreadAccess,
+    ({ respond }) => {
+      return failed
+        ? respond(500, {
+            error: { code: "INTERNAL_ERROR", message: "private chat error" },
+          })
+        : respond(200, {
+            ssh: [
+              {
+                ...host,
+                overrideEnabled: null,
+                enabled: true,
+                source: "default",
+              },
+            ],
+            vnc: [],
+          });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${SCOUT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+  });
+  click(await findFastControl("button", "Connectors"));
+  const remoteAccess = await screen.findByText("Remote access");
+  expect(remoteAccess.closest("button")).toHaveTextContent(
+    "Couldn't load remote access.",
+  );
+  click(remoteAccess);
+  const retry = await findFastControl("button", "Retry");
+  expect(retry.closest('[role="alert"]')).toHaveTextContent(
+    "Couldn't load remote access.",
+  );
+  expect(document.body.textContent).not.toContain("private chat error");
   failed = false;
   click(retry);
   await screen.findByText("1 enabled");

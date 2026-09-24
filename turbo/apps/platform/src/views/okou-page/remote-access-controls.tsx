@@ -271,9 +271,13 @@ function ThreadRemoteHostChoices({
   const defaults = useLoadable(remoteHostDefaults$);
   const access = useLoadable(remoteAccess$);
   const vncHosts = useLoadable(vncConnections$);
+  const accessFailed =
+    Boolean(threadId) &&
+    (access.state === "hasError" ||
+      (access.state === "hasData" && !access.data));
   return (
     <div className="min-h-0 overflow-y-auto p-1">
-      {defaults.state === "hasError" && (
+      {(defaults.state === "hasError" || accessFailed) && (
         <div
           role="alert"
           className="flex items-center justify-between gap-2 px-2 py-2 text-sm text-destructive"
@@ -302,13 +306,7 @@ function ThreadRemoteHostChoices({
             return $.chat.remoteAccess.loading;
           })}
         </p>
-      ) : access.state === "hasError" || !access.data ? (
-        <p role="alert" className="px-2 py-2 text-sm text-destructive">
-          {t(($) => {
-            return $.chat.remoteAccess.loadFailed;
-          })}
-        </p>
-      ) : (
+      ) : access.state === "hasError" || !access.data ? null : (
         <>
           {access.data.ssh.length > 0 && (
             <p className="px-2 pt-1 text-xs text-muted-foreground">
