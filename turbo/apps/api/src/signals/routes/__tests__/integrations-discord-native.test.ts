@@ -10,7 +10,6 @@ import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/int
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
@@ -23,8 +22,9 @@ import type {
 import { integrationsDiscordReadRoutes } from "../integrations-discord-read";
 import { integrationsDiscordMessageRoutes } from "../integrations-discord-message";
 import { integrationsDiscordRoutes } from "../integrations-discord";
-import { discordStatePreviewRoutes } from "../discord-state-preview";
 import { seedOrgMembership$ } from "./helpers/org-membership";
+import { createRouteMocks } from "./helpers/route-test";
+import { mockDiscordMemberships, seedDiscordFixture } from "./helpers/discord";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
@@ -77,24 +77,15 @@ async function fixture(
     { orgId, userId, orgRole: "org:admin" },
     { [FeatureSwitchKey.DiscordIntegration]: options.enabled ?? true },
   );
-  const seed = createAppWithRoutes({
-    signal: context.signal,
-    routes: discordStatePreviewRoutes,
+  mockDiscordMemberships(context, [{ orgId, userId }]);
+  await seedDiscordFixture(context, {
+    orgId,
+    userId,
+    guildId,
+    guildName: "Test guild",
+    discordUserId,
+    botUserId,
   });
-  const seeded = await seed.request("/api/test/discord-state", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: "Bearer clerk-session",
-    },
-    body: JSON.stringify({
-      guildId,
-      guildName: "Test guild",
-      discordUserId,
-      botUserId,
-    }),
-  });
-  expect(seeded.status).toBe(200);
   const seconds = Math.floor(now() / 1000);
   const headers = {
     authorization: `Bearer ${signSandboxJwtForTests({ scope: "okou", orgId, userId, runId: randomUUID(), capabilities: options.capabilities ?? ["discord:read", "discord:write"], iat: seconds, exp: seconds + 3600 })}`,
@@ -556,7 +547,7 @@ describe("Discord native authorization and reads", () => {
   it("revokes native access after disconnect without reusing a previously verified binding", async () => {
     const f = await fixture();
     await accept(history(f), [200]);
-    context.mocks.clerk.session(f.userId, f.orgId, "org:admin");
+    createRouteMocks(context).clerk.session(f.userId, f.orgId, "org:admin");
     await accept(
       setupApp({ context, routes: integrationsDiscordRoutes })(
         integrationsDiscordContract,
@@ -685,7 +676,11 @@ describe("Discord native sends and transport failures", () => {
           `${API}/channels/${f.channelId}/messages`,
           async () => {
             if (revoked === "binding") {
-              context.mocks.clerk.session(f.userId, f.orgId, "org:admin");
+              createRouteMocks(context).clerk.session(
+                f.userId,
+                f.orgId,
+                "org:admin",
+              );
               await accept(
                 setupApp({ context, routes: integrationsDiscordRoutes })(
                   integrationsDiscordContract,
