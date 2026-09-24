@@ -1491,7 +1491,6 @@
         },
         "shareDialog": {
           "description": "공개 게시물을 제출하면 검토해요. 1인당 한 번 보상을 받을 수 있어요.",
-          "draft": "월요일 경쟁사 리포트를 {{assistantName}}에게 맡기고 있어요. 출처를 읽고 표로 정리해 줍니다.",
           "helper": "게시물은 공개 상태여야 하고 {{assistantName}}을(를) 언급해야 합니다.",
           "inputLabel": "게시물 링크",
           "openX": "X 열기",
@@ -1506,7 +1505,8 @@
           "stepPaste": "링크 붙여넣기",
           "stepWrite": "게시물 작성하기",
           "submit": "제출",
-          "title": "X에 {{assistantName}} 공유하기"
+          "title": "X에 {{assistantName}} 공유하기",
+          "writingPrompt": "{{assistantName}}에서 실제로 해 본 일을 자신의 말로 적어 주세요."
         },
         "slack": {
           "action": "추가",

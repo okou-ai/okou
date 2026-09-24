@@ -1492,7 +1492,6 @@
         },
         "shareDialog": {
           "description": "Öffentlichen Beitrag zur Prüfung einreichen. Eine erfolgreiche Prämie pro Person.",
-          "draft": "Meinen Montags-Wettbewerbsreport mache ich mit {{assistantName}} — es liest die Quellen und liefert die Tabelle zurück.",
           "helper": "Der Post muss öffentlich sein und {{assistantName}} erwähnen.",
           "inputLabel": "Post-Link",
           "openX": "X öffnen",
@@ -1507,7 +1506,8 @@
           "stepPaste": "Link einfügen",
           "stepWrite": "Beitrag schreiben",
           "submit": "Einreichen",
-          "title": "{{assistantName}} auf X teilen"
+          "title": "{{assistantName}} auf X teilen",
+          "writingPrompt": "Schreibe in deinen eigenen Worten über etwas, das du mit {{assistantName}} tatsächlich ausprobiert hast."
         },
         "slack": {
           "action": "Hinzufügen",

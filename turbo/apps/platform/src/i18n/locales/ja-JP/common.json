@@ -1491,7 +1491,6 @@
         },
         "shareDialog": {
           "description": "公開投稿を送信して審査を受けます。報酬の獲得は1人1回です。",
-          "draft": "毎週月曜の競合レポートを{{assistantName}}に任せています。情報源を読んで、表にまとめて返してくれます。",
           "helper": "投稿は公開で、{{assistantName}} に触れている必要があります。",
           "inputLabel": "投稿のリンク",
           "openX": "X を開く",
@@ -1506,7 +1505,8 @@
           "stepPaste": "リンクを貼る",
           "stepWrite": "投稿を書く",
           "submit": "送信",
-          "title": "{{assistantName}} を X でシェア"
+          "title": "{{assistantName}} を X でシェア",
+          "writingPrompt": "{{assistantName}}で実際に試したことを、自分の言葉で書いてください。"
         },
         "slack": {
           "action": "追加",

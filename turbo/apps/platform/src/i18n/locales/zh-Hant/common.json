@@ -1491,7 +1491,6 @@
         },
         "shareDialog": {
           "description": "提交一條公開貼文供稽核。每人只能成功領取一次獎勵。",
-          "draft": "我每週一的競品報告都交給 {{assistantName}} 做——它會讀完資料，直接把表格給我。",
           "helper": "貼文必須是公開的，並且提到 {{assistantName}}。",
           "inputLabel": "貼文連結",
           "openX": "開啟 X",
@@ -1506,7 +1505,8 @@
           "stepPaste": "把連結貼回來",
           "stepWrite": "寫這則貼文",
           "submit": "提交",
-          "title": "在 X 上分享 {{assistantName}}"
+          "title": "在 X 上分享 {{assistantName}}",
+          "writingPrompt": "用自己的話寫下你實際用 {{assistantName}} 嘗試過的事。"
         },
         "slack": {
           "action": "新增",
