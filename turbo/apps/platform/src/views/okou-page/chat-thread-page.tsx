@@ -6314,8 +6314,7 @@ function SelectablePagedGroupRow({
     return selectedEventIds.has(event.id);
   }).length;
   const allSelected = selectedCount === events.length;
-  const checked =
-    selectedCount === 0 ? false : allSelected ? true : "indeterminate";
+  const indeterminate = selectedCount > 0 && !allSelected;
 
   const toggleGroup = () => {
     if (phase !== "selecting") {
@@ -6371,7 +6370,8 @@ function SelectablePagedGroupRow({
           })}
         </Field.Label>
         <Checkbox
-          checked={checked}
+          checked={allSelected}
+          indeterminate={indeterminate}
           disabled={phase !== "selecting"}
           className="absolute top-1/2 right-3 -translate-y-1/2"
           onCheckedChange={toggleGroup}

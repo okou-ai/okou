@@ -294,7 +294,7 @@ export function AccessFields({
             name="replaceToken"
             checked={replace}
             onCheckedChange={(checked) => {
-              return setReplace(checked === true);
+              return setReplace(checked);
             }}
           />
           {t(($) => {
