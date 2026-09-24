@@ -2890,7 +2890,7 @@ describe("okou browser route", () => {
       "use `okou browser input-request` only when the user must personally enter values",
     );
     expect(appendSystemPrompt).toContain(
-      "It supports native form input only, gives the user a dedicated input form, and does not pass their values to the agent in the request or callback. Do not read back their values from the page.",
+      "It supports native form input only, gives the user a dedicated input form, and does not pass their values to the agent in the request or callback.",
     );
     expect(appendSystemPrompt).toContain(
       "Fill ordinary forms with `agent-browser` instead.",
