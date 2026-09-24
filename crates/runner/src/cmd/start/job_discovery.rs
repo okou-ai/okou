@@ -136,6 +136,7 @@ use runner_provider::{
 use runner_provider::{
     RunCancellationHandle, RunCancellationRegistration, RunCancellationRegistry,
 };
+use runner_supervisor::finalizing_admission::FinalizingAdmission;
 use runner_supervisor::idle_lifecycle::{
     IdleDestroyTracker, IdlePressureRequest, IdlePressureSelection, ReservedIdleActivation,
     SharedIdlePool, add_preparing_run_with_idle_status_snapshot,
@@ -212,13 +213,6 @@ enum SandboxAdmittedResource {
     Fresh(BudgetLease),
     Reusable(ReservedIdleActivation),
     ExactSpeculation(ExactSpeculation),
-}
-
-pub(super) struct FinalizingAdmission {
-    pub(super) predecessor: ActiveRunReuseProof,
-    pub(super) deadline: Instant,
-    pub(super) reuse_key: String,
-    pub(super) history_generation_run_id: RunId,
 }
 
 struct ExactSpeculation {
