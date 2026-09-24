@@ -625,12 +625,13 @@ function BrowserSelectControl({
         })}
       </select>
       {ready && (!required || canKeep) && (
-        <div className="flex gap-2">
+        <div className="flex max-w-full flex-wrap gap-2">
           {!required && (
             <Button
               type="button"
               variant="link"
               size="xs"
+              className="h-auto min-h-7 max-w-full whitespace-normal py-1 text-left"
               disabled={busy}
               onClick={() => {
                 const fingerprint = field.control.optionSetFingerprint;
@@ -649,6 +650,7 @@ function BrowserSelectControl({
               type="button"
               variant="link"
               size="xs"
+              className="h-auto min-h-7 max-w-full whitespace-normal py-1 text-left"
               disabled={busy}
               onClick={() => {
                 if (field.required) {
