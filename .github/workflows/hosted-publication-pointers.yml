@@ -1,0 +1,301 @@
+name: Hosted Publication Pointer Migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Read-only plan, bounded migration, or independent verification"
+        type: choice
+        options: [dry-run, migrate, verify]
+        default: dry-run
+        required: true
+      org_id:
+        description: "Exact organization from the reviewed inventory"
+        type: string
+        required: true
+      site_ids:
+        description: "Explicit comma-separated site UUIDs; start with one site"
+        type: string
+        required: true
+      max_sites:
+        description: "Hard site limit (1 to 50)"
+        type: string
+        default: "1"
+        required: true
+      plan_run_id:
+        description: "Successful original dry-run ID; required for migrate/verify and retries"
+        type: string
+        default: ""
+        required: false
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: hosted-publication-pointers-production
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  migration:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - name: Check out dispatched source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Validate bounded selection and plan provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          import re
+          import subprocess
+          import uuid
+
+          # Read selection from the event file so the runner does not print raw
+          # organization/site IDs in a step's environment before masking them.
+          with open(os.environ["GITHUB_EVENT_PATH"]) as event_file:
+              selected = json.load(event_file)["inputs"]
+          org = selected["org_id"]
+          sites = [s.strip() for s in selected["site_ids"].split(",")]
+          for value in [org, *sites]:
+              escaped = value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print("::add-mask::" + escaped, flush=True)
+          mode = selected["mode"]
+          if mode not in ("dry-run", "migrate", "verify"):
+              raise SystemExit("invalid_mode")
+          if any(str(uuid.UUID(s)) != s for s in sites):
+              raise SystemExit("invalid_site_uuid")
+          limit = int(selected["max_sites"])
+          if not 1 <= len(sites) <= limit <= 50 or len(set(sites)) != len(sites):
+              raise SystemExit("invalid_site_limit")
+          if not re.fullmatch(r"org_[A-Za-z0-9_-]{1,128}", org):
+              raise SystemExit("invalid_org")
+          run_id = selected.get("plan_run_id", "")
+          if mode != "dry-run" and not run_id:
+              raise SystemExit("reviewed_plan_required")
+          if run_id:
+              if not run_id.isdigit():
+                  raise SystemExit("invalid_plan_run")
+              result = subprocess.run(
+                  ["gh", "api", f"repos/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{run_id}"],
+                  capture_output=True, text=True, check=True,
+              )
+              run = json.loads(result.stdout)
+              if (run["event"] != "workflow_dispatch" or run["head_branch"] != "main"
+                  or run["path"] != ".github/workflows/hosted-publication-pointers.yml"
+                  or run["conclusion"] != "success"):
+                  raise SystemExit("untrusted_plan_run")
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              output.write(f"MIGRATION_MODE={mode}\nMIGRATION_ORG={org}\n")
+              output.write(f"MIGRATION_SITES={','.join(sites)}\nMIGRATION_LIMIT={limit}\n")
+          PYTHON
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24.19.0
+
+      - name: Install frozen migration dependencies before credentials
+        working-directory: turbo
+        run: |
+          corepack enable pnpm
+          pnpm install --frozen-lockfile --ignore-scripts --filter @okouai/db...
+
+      - name: Resolve protected production database
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+
+          # Same HTTP resolver boundary as kms-production-preflight; fail closed
+          # without exposing provider responses, exception text or credentials.
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *args, **kwargs):
+                  raise ValueError("redirect")
+
+          def resolve():
+              project = os.environ["NEON_PROJECT_ID"]
+              if project != "hidden-lab-39609750":
+                  raise ValueError("project")
+              base = f"https://console.neon.tech/api/v2/projects/{project}"
+              headers = {"Authorization": "Bearer " + os.environ["NEON_API_KEY"]}
+              opener = urllib.request.build_opener(NoRedirect())
+
+              def read(url):
+                  with opener.open(urllib.request.Request(url, headers=headers), timeout=30) as response:
+                      return json.load(response)
+
+              result = read(base + "/branches")
+              # Never infer uniqueness from an explicitly truncated listing.
+              if result.get("pagination", {}).get("cursor"):
+                  raise ValueError("partial_branches")
+              production = [b for b in result["branches"] if b["name"] == "production"]
+              if len(production) != 1 or not production[0]["id"]:
+                  raise ValueError("branch")
+              query = urllib.parse.urlencode({"branch_id": production[0]["id"], "database_name": "neondb", "role_name": "neondb_owner", "pooled": "false"})
+              uri = read(base + "/connection_uri?" + query)["uri"]
+              if not isinstance(uri, str) or any(ord(c) <= 32 or ord(c) == 127 for c in uri):
+                  raise ValueError("uri")
+              parsed = urllib.parse.urlsplit(uri)
+              if (parsed.scheme not in ("postgres", "postgresql")
+                  or not parsed.hostname or not parsed.hostname.endswith(".neon.tech")
+                  or parsed.port not in (None, 5432) or parsed.path != "/neondb"
+                  or parsed.username != "neondb_owner" or not parsed.password or parsed.fragment):
+                  raise ValueError("uri")
+              parameters = urllib.parse.parse_qsl(parsed.query, strict_parsing=True)
+              if any(k not in ("sslmode", "channel_binding") for k, v in parameters):
+                  raise ValueError("uri_options")
+              if len({k for k, v in parameters}) != len(parameters):
+                  raise ValueError("uri_options")
+              parameters = dict(parameters)
+              parameters["sslmode"] = "verify-full"
+              uri = urllib.parse.urlunsplit(parsed._replace(query=urllib.parse.urlencode(parameters)))
+              print("::add-mask::" + uri.replace("%", "%25"), flush=True)
+              with open(os.environ["GITHUB_ENV"], "a") as output:
+                  output.write("DATABASE_URL=" + uri + "\n")
+
+          try:
+              resolve()
+          except Exception:
+              raise SystemExit("production_database_resolution_failed") from None
+          PYTHON
+
+      - name: Restore the private reviewed plan
+        if: inputs.plan_run_id != ''
+        working-directory: turbo/packages/db
+        env:
+          PLAN_RUN_ID: ${{ inputs.plan_run_id }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_HOSTED_SITES_BUCKET_NAME: ${{ vars.R2_HOSTED_SITES_BUCKET_NAME }}
+          R2_HOSTED_SITES_ACCESS_KEY_ID: ${{ secrets.R2_HOSTED_SITES_ACCESS_KEY_ID }}
+          R2_HOSTED_SITES_SECRET_ACCESS_KEY: ${{ secrets.R2_HOSTED_SITES_SECRET_ACCESS_KEY }}
+        run: |
+          node --input-type=module <<'JAVASCRIPT'
+          import { mkdir, writeFile } from "node:fs/promises";
+          import { join } from "node:path";
+          import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
+          const client = new S3Client({
+            region: "auto", endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+            credentials: { accessKeyId: process.env.R2_HOSTED_SITES_ACCESS_KEY_ID,
+              secretAccessKey: process.env.R2_HOSTED_SITES_SECRET_ACCESS_KEY },
+          });
+          try {
+            if (!/^[0-9]+$/.test(process.env.PLAN_RUN_ID ?? "") || process.env.R2_HOSTED_SITES_BUCKET_NAME !== "vm0-hosted-sites")
+              throw new Error("invalid_scope");
+            const result = await client.send(new GetObjectCommand({
+              Bucket: process.env.R2_HOSTED_SITES_BUCKET_NAME,
+              Key: `hosted-publication-migration-plans/${process.env.PLAN_RUN_ID}.json`,
+            }));
+            if (!result.Body || result.ContentLength === undefined || result.ContentLength > 32 * 1024 * 1024)
+              throw new Error("invalid_plan");
+            const body = await result.Body.transformToByteArray();
+            if (body.byteLength !== result.ContentLength) throw new Error("invalid_plan");
+            const directory = join(process.env.GITHUB_WORKSPACE, "migration-evidence");
+            await mkdir(directory, { recursive: true });
+            await writeFile(join(directory, "plan.json"), body, { flag: "wx", mode: 0o600 });
+          } catch {
+            process.exitCode = 1;
+            console.error("private_plan_restore_failed");
+          } finally { client.destroy(); }
+          JAVASCRIPT
+
+      # Deploy the Worker cache change and API writer change before applying a
+      # plan. Source checkout alone is not evidence that those readers shipped.
+      - name: Run the selected bounded operation
+        working-directory: turbo/packages/db
+        env:
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_HOSTED_SITES_BUCKET_NAME: ${{ vars.R2_HOSTED_SITES_BUCKET_NAME }}
+          R2_HOSTED_SITES_ACCESS_KEY_ID: ${{ secrets.R2_HOSTED_SITES_ACCESS_KEY_ID }}
+          R2_HOSTED_SITES_SECRET_ACCESS_KEY: ${{ secrets.R2_HOSTED_SITES_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          test "$R2_HOSTED_SITES_BUCKET_NAME" = "vm0-hosted-sites"
+          python3 - <<'PYTHON'
+          import os
+          from pathlib import Path
+          import subprocess
+
+          evidence = Path(os.environ["GITHUB_WORKSPACE"]) / "migration-evidence"
+          evidence.mkdir(exist_ok=True)
+          mode = os.environ["MIGRATION_MODE"]
+          args = ["pnpm", "exec", "tsx", "scripts/migrations/018-hosted-publication-pointers/backfill.ts",
+                  "--org-id", os.environ["MIGRATION_ORG"], "--plan", str(evidence / "plan.json"),
+                  "--max-sites", os.environ["MIGRATION_LIMIT"]]
+          for site in os.environ["MIGRATION_SITES"].split(","):
+              args += ["--site-id", site.strip()]
+          selected = args + (["--" + mode] if mode != "dry-run" else [])
+          subprocess.run(selected + ["--report", str(evidence / "report.json")], check=True)
+          if mode == "migrate":
+              subprocess.run(args + ["--verify", "--report", str(evidence / "verification.json")], check=True)
+          PYTHON
+
+      # This repository is public. Plans contain ownership IDs and share tokens;
+      # retain them only in a private R2 prefix with no delivery alias or route.
+      - name: Preserve the plan in private storage
+        if: success() && inputs.mode == 'dry-run' && inputs.plan_run_id == ''
+        working-directory: turbo/packages/db
+        env:
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_HOSTED_SITES_BUCKET_NAME: ${{ vars.R2_HOSTED_SITES_BUCKET_NAME }}
+          R2_HOSTED_SITES_ACCESS_KEY_ID: ${{ secrets.R2_HOSTED_SITES_ACCESS_KEY_ID }}
+          R2_HOSTED_SITES_SECRET_ACCESS_KEY: ${{ secrets.R2_HOSTED_SITES_SECRET_ACCESS_KEY }}
+        run: |
+          node --input-type=module <<'JAVASCRIPT'
+          import { readFile } from "node:fs/promises";
+          import { join } from "node:path";
+          import { createHash } from "node:crypto";
+          import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+          const client = new S3Client({
+            region: "auto", endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+            credentials: { accessKeyId: process.env.R2_HOSTED_SITES_ACCESS_KEY_ID,
+              secretAccessKey: process.env.R2_HOSTED_SITES_SECRET_ACCESS_KEY },
+          });
+          try {
+            if (!/^[0-9]+$/.test(process.env.GITHUB_RUN_ID ?? "") || process.env.R2_HOSTED_SITES_BUCKET_NAME !== "vm0-hosted-sites")
+              throw new Error("invalid_scope");
+            const body = await readFile(join(process.env.GITHUB_WORKSPACE, "migration-evidence/plan.json"));
+            if (body.byteLength > 32 * 1024 * 1024) throw new Error("plan_too_large");
+            const target = { Bucket: process.env.R2_HOSTED_SITES_BUCKET_NAME,
+              Key: `hosted-publication-migration-plans/${process.env.GITHUB_RUN_ID}.json` };
+            await client.send(new PutObjectCommand({ ...target, Body: body,
+              ContentType: "application/json", IfNoneMatch: "*" }));
+            const stored = await client.send(new GetObjectCommand(target));
+            if (!stored.Body || stored.ContentLength !== body.byteLength) throw new Error("invalid_readback");
+            const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
+            if (digest(await stored.Body.transformToByteArray()) !== digest(body)) throw new Error("invalid_readback");
+            console.log("Private migration plan saved and verified");
+          } catch {
+            process.exitCode = 1;
+            console.error("private_plan_storage_failed");
+          } finally { client.destroy(); }
+          JAVASCRIPT
+
+      - name: Preserve aggregate verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hosted-publication-results
+          path: |
+            migration-evidence/report.json
+            migration-evidence/verification.json
+          if-no-files-found: ignore
+          retention-days: 30
