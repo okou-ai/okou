@@ -620,9 +620,15 @@ describe("Browser user-action route", () => {
     ];
     let writeMatches = true;
     mockNativeSelectTarget({
-      mode: () => mode,
-      options: () => options,
-      writeMatches: () => writeMatches,
+      mode: () => {
+        return mode;
+      },
+      options: () => {
+        return options;
+      },
+      writeMatches: () => {
+        return writeMatches;
+      },
     });
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
@@ -645,8 +651,8 @@ describe("Browser user-action route", () => {
       [200],
     );
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const createSelect = async (required = false) =>
-      await accept(
+    const createSelect = async (required = false) => {
+      return await accept(
         userActionClient().create({
           headers: current.claim.browserHeaders,
           body: {
@@ -666,8 +672,9 @@ describe("Browser user-action route", () => {
         }),
         [201],
       );
-    const preflight = async (token: string) =>
-      await accept(
+    };
+    const preflight = async (token: string) => {
+      return await accept(
         userActionClient().preflight({
           headers: { authorization: "Bearer clerk-session" },
           params: { requestToken: token },
@@ -675,12 +682,13 @@ describe("Browser user-action route", () => {
         }),
         [200],
       );
+    };
     const apply = async (
       token: string,
       indexes: readonly number[],
       fingerprint: string,
-    ) =>
-      await userActionClient().apply({
+    ) => {
+      return await userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
         params: { requestToken: token },
         body: {
@@ -693,6 +701,7 @@ describe("Browser user-action route", () => {
           ],
         },
       });
+    };
     const first = await createSelect();
     expect(first.body.action.fields[0]).toMatchObject({
       fieldKind: "select",
@@ -700,7 +709,17 @@ describe("Browser user-action route", () => {
     });
     const token = first.body.action.requestToken;
     const checked = await preflight(token);
-    expect(checked.body.fields[0]?.control.options).toMatchObject(options);
+    expect(checked.body.fields[0]?.control.options).toMatchObject(
+      options.map((option) => {
+        return {
+          index: option.index,
+          label: option.label,
+          disabled: option.disabled,
+          selected: option.selected,
+          empty: option.empty,
+        };
+      }),
+    );
     const fingerprint = checked.body.fields[0]?.control.optionSetFingerprint;
     expect(fingerprint).toMatch(/^[a-f0-9]{64}$/);
     if (!fingerprint) {
@@ -714,9 +733,9 @@ describe("Browser user-action route", () => {
       body: { error: { code: "BROWSER_USER_ACTION_INVALID_VALUE" } },
     });
     expect(browserSelectWrites()).toHaveLength(0);
-    options = options.map((option) =>
-      option.index === 3 ? { ...option, label: "Changed" } : option,
-    );
+    options = options.map((option) => {
+      return option.index === 3 ? { ...option, label: "Changed" } : option;
+    });
     const drifted = await accept(apply(token, [3], fingerprint), [200]);
     expect(drifted.body.state).toBe("stale");
     expect(browserSelectWrites()).toHaveLength(0);
@@ -1240,7 +1259,7 @@ describe("Browser user-action route", () => {
         error: {
           code: "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL",
           message:
-            "--field 1: the selected Browser control is not a writable top-level input or textarea",
+            "--field 1: the selected Browser control is not a writable top-level input, textarea, or select",
         },
       },
     });

@@ -26,6 +26,7 @@ import type { FormEvent, ReactNode, Ref } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
+  BrowserSelectChoiceDraft,
   BrowserUserActionRequestState,
   BrowserUserActionSignals,
 } from "../../signals/chat-page/browser-user-action-block.ts";
@@ -473,13 +474,20 @@ function BrowserInputControl({
 
 function requiredSelectsSatisfied(
   action: PendingBrowserInputAction,
-  choiceDraft: ReadonlyMap<string, readonly number[]>,
+  choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>,
 ): boolean {
   return action.fields.every((field) => {
+    if (field.fieldKind !== "select") {
+      return true;
+    }
+    const choice = choiceDraft.get(field.key);
     if (
-      field.fieldKind !== "select" ||
-      (!field.required && !field.control.siteRequired)
+      choice &&
+      choice.optionSetFingerprint !== field.control.optionSetFingerprint
     ) {
+      return false;
+    }
+    if (!field.required && !field.control.siteRequired) {
       return true;
     }
     const options = field.control.options;
@@ -487,13 +495,40 @@ function requiredSelectsSatisfied(
       return false;
     }
     const selected =
-      choiceDraft.get(field.key) ??
-      options.filter((option) => option.selected).map((option) => option.index);
+      choice?.optionIndexes ??
+      options
+        .filter((option) => {
+          return option.selected;
+        })
+        .map((option) => {
+          return option.index;
+        });
     return selected.some((index) => {
       const option = options[index];
       return option && !option.disabled && !option.empty;
     });
   });
+}
+
+function selectedSelectIndices(
+  field: PendingBrowserInputField,
+  choice: BrowserSelectChoiceDraft | undefined,
+): readonly number[] {
+  if (
+    choice &&
+    choice.optionSetFingerprint === field.control.optionSetFingerprint
+  ) {
+    return choice.optionIndexes;
+  }
+  return (
+    field.control.options
+      ?.filter((option) => {
+        return option.selected;
+      })
+      .map((option) => {
+        return option.index;
+      }) ?? []
+  );
 }
 
 function BrowserSelectControl({
@@ -506,23 +541,22 @@ function BrowserSelectControl({
   onRemove,
 }: {
   readonly field: PendingBrowserInputField;
-  readonly choiceDraft: ReadonlyMap<string, readonly number[]>;
+  readonly choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>;
   readonly busy: boolean;
   readonly inputId: string;
   readonly describedBy: string;
-  readonly onUpdate: (key: string, indices: readonly number[]) => void;
+  readonly onUpdate: (
+    key: string,
+    indices: readonly number[],
+    optionSetFingerprint: string,
+  ) => void;
   readonly onRemove: (key: string) => void;
 }) {
   const { t } = useTranslation();
   const options = field.control.options;
   const ready =
     options !== undefined && field.control.optionSetFingerprint !== undefined;
-  const selected =
-    choiceDraft.get(field.key) ??
-    options
-      ?.filter((option) => option.selected)
-      .map((option) => option.index) ??
-    [];
+  const selected = selectedSelectIndices(field, choiceDraft.get(field.key));
   const multiple = field.control.inputType === "select-multiple";
   const required = field.required || field.control.siteRequired;
   return (
@@ -543,11 +577,15 @@ function BrowserSelectControl({
           multiple ? selected.map(String) : (selected[0]?.toString() ?? "")
         }
         onChange={(event) => {
+          if (!field.control.optionSetFingerprint) {
+            return;
+          }
           onUpdate(
             field.key,
-            [...event.currentTarget.selectedOptions].map((option) =>
-              Number(option.value),
-            ),
+            [...event.currentTarget.selectedOptions].map((option) => {
+              return Number(option.value);
+            }),
+            field.control.optionSetFingerprint,
           );
         }}
       >
@@ -556,36 +594,51 @@ function BrowserSelectControl({
             —
           </option>
         )}
-        {options?.map((option) => (
-          <option
-            key={option.index}
-            value={String(option.index)}
-            disabled={option.disabled}
-          >
-            {option.label || "—"}
-          </option>
-        ))}
+        {options?.map((option) => {
+          return (
+            <option
+              key={option.index}
+              value={String(option.index)}
+              disabled={option.disabled}
+            >
+              {option.label || "—"}
+            </option>
+          );
+        })}
       </select>
-      {!required && ready && (
+      {ready && (!required || choiceDraft.has(field.key)) && (
         <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="link"
-            size="xs"
-            disabled={busy}
-            onClick={() => onUpdate(field.key, [])}
-          >
-            {t(($) => $.chat.browserInput.clearValue)}
-          </Button>
+          {!required && (
+            <Button
+              type="button"
+              variant="link"
+              size="xs"
+              disabled={busy}
+              onClick={() => {
+                const fingerprint = field.control.optionSetFingerprint;
+                if (fingerprint) {
+                  onUpdate(field.key, [], fingerprint);
+                }
+              }}
+            >
+              {t(($) => {
+                return $.chat.browserInput.clearValue;
+              })}
+            </Button>
+          )}
           {choiceDraft.has(field.key) && (
             <Button
               type="button"
               variant="link"
               size="xs"
               disabled={busy}
-              onClick={() => onRemove(field.key)}
+              onClick={() => {
+                return onRemove(field.key);
+              }}
             >
-              {t(($) => $.chat.browserInput.keepValue)}
+              {t(($) => {
+                return $.chat.browserInput.keepValue;
+              })}
             </Button>
           )}
         </div>
@@ -648,8 +701,12 @@ function BrowserInputField({
   onRemoveChoice,
 }: BrowserInputEditProps & {
   readonly index: number;
-  readonly choiceDraft: ReadonlyMap<string, readonly number[]>;
-  readonly onUpdateChoice: (key: string, indices: readonly number[]) => void;
+  readonly choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>;
+  readonly onUpdateChoice: (
+    key: string,
+    indices: readonly number[],
+    optionSetFingerprint: string,
+  ) => void;
   readonly onRemoveChoice: (key: string) => void;
 }) {
   const { t } = useTranslation();
@@ -732,8 +789,12 @@ function BrowserInputFields({
   onRemoveChoice,
 }: Omit<BrowserInputEditProps, "field"> & {
   readonly action: PendingBrowserInputAction;
-  readonly choiceDraft: ReadonlyMap<string, readonly number[]>;
-  readonly onUpdateChoice: (key: string, indices: readonly number[]) => void;
+  readonly choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>;
+  readonly onUpdateChoice: (
+    key: string,
+    indices: readonly number[],
+    optionSetFingerprint: string,
+  ) => void;
   readonly onRemoveChoice: (key: string) => void;
 }) {
   return (
@@ -920,9 +981,9 @@ function PendingForm({
           entryState !== "unavailable" &&
           entryState !== "invalid" &&
           selectValuesValid &&
-          (!request.action.fields.some(
-            (field) => field.fieldKind === "select",
-          ) ||
+          (!request.action.fields.some((field) => {
+            return field.fieldKind === "select";
+          }) ||
             entryState === "ready")
         }
         onCancel={() => {

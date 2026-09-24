@@ -1472,9 +1472,9 @@ function validSelectApplyFields(
     if (selected === undefined) {
       if (
         (field.inspection.siteRequired || field.required) &&
-        !options.some(
-          (option) => option.selected && !option.disabled && !option.empty,
-        )
+        !options.some((option) => {
+          return option.selected && !option.disabled && !option.empty;
+        })
       ) {
         return false;
       }
@@ -1482,11 +1482,13 @@ function validSelectApplyFields(
     }
     if (
       (field.inspection.inputType === "select-one" && selected.length > 1) ||
-      selected.some((index) => !options[index] || options[index].disabled) ||
+      selected.some((index) => {
+        return !options[index] || options[index].disabled;
+      }) ||
       ((field.inspection.siteRequired || field.required) &&
-        selected.every(
-          (index) => options[index]?.empty || options[index]?.disabled,
-        ))
+        selected.every((index) => {
+          return options[index]?.empty || options[index]?.disabled;
+        }))
     ) {
       return false;
     }
@@ -1506,9 +1508,9 @@ async function validateBrowserUseApplyValues(
   if (!validSelectApplyFields(args.fields)) {
     return false;
   }
-  const scalarFields = args.fields.filter(
-    (field) => field.inspection.tagName !== "SELECT",
-  );
+  const scalarFields = args.fields.filter((field) => {
+    return field.inspection.tagName !== "SELECT";
+  });
   const [firstField, ...otherFields] = scalarFields;
   if (!firstField) {
     return true;
@@ -1668,8 +1670,8 @@ async function writeBrowserUseMixedSelectFields(
   if (!first) {
     return;
   }
-  const descriptor = (field: ResolvedBrowserUseUserActionField) =>
-    field.inspection.tagName === "SELECT"
+  const descriptor = (field: ResolvedBrowserUseUserActionField) => {
+    return field.inspection.tagName === "SELECT"
       ? {
           kind: "select",
           mode: field.inspection.inputType,
@@ -1678,6 +1680,7 @@ async function writeBrowserUseMixedSelectFields(
           indices: field.selection?.optionIndexes ?? null,
         }
       : { kind: "scalar", value: field.value ?? null };
+  };
   mutation.writeStarted = true;
   const result = browserUseCdpValueSchema.parse(
     await sendBrowserUseCdpCommand(
@@ -1735,10 +1738,12 @@ async function writeBrowserUseMixedSelectFields(
         }`,
           arguments: [
             { value: descriptor(first) },
-            ...others.flatMap((field) => [
-              { objectId: field.objectId },
-              { value: descriptor(field) },
-            ]),
+            ...others.flatMap((field) => {
+              return [
+                { objectId: field.objectId },
+                { value: descriptor(field) },
+              ];
+            }),
           ],
           returnByValue: true,
         },
@@ -1790,7 +1795,11 @@ async function applyBrowserUseUserActionOnSocket(
     fields: resolved.fields,
     commandId: resolved.commandId + (resolved.fields.length > 0 ? 1 : 0),
   };
-  if (resolved.fields.some((field) => field.inspection.tagName === "SELECT")) {
+  if (
+    resolved.fields.some((field) => {
+      return field.inspection.tagName === "SELECT";
+    })
+  ) {
     await writeBrowserUseMixedSelectFields(socket, writeArgs, mutation, signal);
   } else {
     await writeBrowserUseApplyFields(socket, writeArgs, mutation, signal);

@@ -143,9 +143,29 @@ function decodeCallbackIds(
   return success && cancellation ? { success, cancellation } : null;
 }
 
+function decodeFieldFingerprint(
+  value: unknown,
+): BrowserUserActionInputField["fingerprint"] | null {
+  const fingerprint = objectValue(value);
+  if (
+    !fingerprint ||
+    !hasOnlyKeys(fingerprint, ["tagName", "inputType"]) ||
+    (fingerprint.tagName !== "INPUT" &&
+      fingerprint.tagName !== "TEXTAREA" &&
+      fingerprint.tagName !== "SELECT") ||
+    !boundedString(fingerprint.inputType, 0, 64)
+  ) {
+    return null;
+  }
+  return {
+    tagName: fingerprint.tagName,
+    inputType: fingerprint.inputType,
+  };
+}
+
 function decodeField(value: unknown): BrowserUserActionInputField | null {
   const field = objectValue(value);
-  const fingerprint = objectValue(field?.fingerprint);
+  const safeFingerprint = decodeFieldFingerprint(field?.fingerprint);
   if (
     !field ||
     !hasOnlyKeys(field, [
@@ -176,26 +196,11 @@ function decodeField(value: unknown): BrowserUserActionInputField | null {
     typeof field.required !== "boolean" ||
     !Number.isSafeInteger(field.backendNodeId) ||
     Number(field.backendNodeId) <= 0 ||
-    !fingerprint ||
-    !hasOnlyKeys(fingerprint, ["tagName", "inputType"]) ||
-    (fingerprint.tagName !== "INPUT" &&
-      fingerprint.tagName !== "TEXTAREA" &&
-      fingerprint.tagName !== "SELECT") ||
-    !boundedString(fingerprint.inputType, 0, 64)
+    !safeFingerprint
   ) {
     return null;
   }
   const fieldKind = field.fieldKind as BrowserUserActionFieldKind;
-  const tagName: "INPUT" | "TEXTAREA" | "SELECT" =
-    fingerprint.tagName === "INPUT"
-      ? "INPUT"
-      : fingerprint.tagName === "SELECT"
-        ? "SELECT"
-        : "TEXTAREA";
-  const safeFingerprint: BrowserUserActionInputField["fingerprint"] = {
-    tagName,
-    inputType: fingerprint.inputType,
-  };
   if (!browserUserActionFieldSupportsTarget(fieldKind, safeFingerprint)) {
     return null;
   }

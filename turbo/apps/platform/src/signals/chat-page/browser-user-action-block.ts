@@ -57,10 +57,17 @@ export type BrowserUserActionRequestState =
   | { readonly kind: "expired" }
   | { readonly kind: "unavailable" };
 
+export interface BrowserSelectChoiceDraft {
+  readonly optionIndexes: readonly number[];
+  readonly optionSetFingerprint: string;
+}
+
 export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly request$: Computed<Promise<BrowserUserActionRequestState>>;
   readonly draft$: Computed<ReadonlyMap<string, string>>;
-  readonly choiceDraft$: Computed<ReadonlyMap<string, readonly number[]>>;
+  readonly choiceDraft$: Computed<
+    ReadonlyMap<string, BrowserSelectChoiceDraft>
+  >;
   readonly callbackDelivered$: Computed<boolean>;
   readonly callbackFailed$: Computed<boolean>;
   readonly busy$: Computed<boolean>;
@@ -74,7 +81,10 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly retryStandaloneRequest$: Command<Promise<void>, [AbortSignal]>;
   readonly refresh$: Command<void, []>;
   readonly updateDraft$: Command<void, [string, string]>;
-  readonly updateChoiceDraft$: Command<void, [string, readonly number[]]>;
+  readonly updateChoiceDraft$: Command<
+    void,
+    [string, readonly number[], string]
+  >;
   readonly removeChoiceDraft$: Command<void, [string]>;
   readonly removeDraft$: Command<void, [string]>;
   readonly clearDraft$: Command<void, []>;
@@ -366,15 +376,25 @@ function createDraftSignals(): Pick<
   | "formRef$"
 > {
   const internalDraft$ = state<ReadonlyMap<string, string>>(new Map());
-  const internalChoiceDraft$ = state<ReadonlyMap<string, readonly number[]>>(
-    new Map(),
-  );
-  const choiceDraft$ = computed((get) => get(internalChoiceDraft$));
+  const internalChoiceDraft$ = state<
+    ReadonlyMap<string, BrowserSelectChoiceDraft>
+  >(new Map());
+  const choiceDraft$ = computed((get) => {
+    return get(internalChoiceDraft$);
+  });
   const updateChoiceDraft$ = command(
-    ({ set }, key: string, indices: readonly number[]): void => {
-      set(internalChoiceDraft$, (current) =>
-        new Map(current).set(key, [...indices]),
-      );
+    (
+      { set },
+      key: string,
+      indices: readonly number[],
+      optionSetFingerprint: string,
+    ): void => {
+      set(internalChoiceDraft$, (current) => {
+        return new Map(current).set(key, {
+          optionIndexes: [...indices],
+          optionSetFingerprint,
+        });
+      });
     },
   );
   const removeChoiceDraft$ = command(({ set }, key: string): void => {
@@ -496,41 +516,63 @@ interface BrowserUserActionMutationContext {
   >;
 }
 
+function browserSelectSubmissionValue(
+  field: BrowserInputAction["fields"][number],
+  choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>,
+):
+  | Extract<
+      BrowserUserActionApplyRequest["values"][number],
+      { optionIndexes: readonly number[] }
+    >
+  | null
+  | undefined {
+  const options = field.control.options;
+  const optionSetFingerprint = field.control.optionSetFingerprint;
+  if (!options || !optionSetFingerprint) {
+    return null;
+  }
+  const choice = choiceDraft.get(field.key);
+  if (choice && choice.optionSetFingerprint !== optionSetFingerprint) {
+    return null;
+  }
+  const selection = choice?.optionIndexes;
+  if (selection === undefined) {
+    return (field.required || field.control.siteRequired) &&
+      !options.some((option) => {
+        return option.selected && !option.disabled && !option.empty;
+      })
+      ? null
+      : undefined;
+  }
+  if (
+    (field.required || field.control.siteRequired) &&
+    selection.every((index) => {
+      return options[index]?.empty;
+    })
+  ) {
+    return null;
+  }
+  return {
+    key: field.key,
+    optionIndexes: [...selection],
+    optionSetFingerprint,
+  };
+}
+
 function browserInputSubmissionValues(
   action: BrowserInputAction,
   draft: ReadonlyMap<string, string>,
-  choiceDraft: ReadonlyMap<string, readonly number[]>,
+  choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>,
 ): BrowserUserActionApplyRequest["values"] | null {
   const values: BrowserUserActionApplyRequest["values"][number][] = [];
   for (const field of action.fields) {
     if (field.fieldKind === "select") {
-      const options = field.control.options;
-      const optionSetFingerprint = field.control.optionSetFingerprint;
-      if (!options || !optionSetFingerprint) {
+      const selection = browserSelectSubmissionValue(field, choiceDraft);
+      if (selection === null) {
         return null;
       }
-      const selection = choiceDraft.get(field.key);
-      if (selection === undefined) {
-        if (
-          (field.required || field.control.siteRequired) &&
-          !options.some(
-            (option) => option.selected && !option.disabled && !option.empty,
-          )
-        ) {
-          return null;
-        }
-      } else {
-        if (
-          (field.required || field.control.siteRequired) &&
-          selection.every((index) => options[index]?.empty)
-        ) {
-          return null;
-        }
-        values.push({
-          key: field.key,
-          optionIndexes: [...selection],
-          optionSetFingerprint,
-        });
+      if (selection !== undefined) {
+        values.push(selection);
       }
       continue;
     }

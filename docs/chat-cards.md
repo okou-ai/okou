@@ -718,7 +718,9 @@ The form switches to those observed controls without clearing the draft.
 Select submission waits for preflight, identifies options by their position
 rather than their possibly duplicated value, and carries a snapshot fingerprint.
 An untouched select stays unchanged; an optional select can be explicitly
-cleared. Required selects reject empty placeholder choices. The API checks the
+cleared. Choice drafts are tied to the snapshot they were made against: after
+an option change during Retry, the user must choose again or discard the old
+draft. Required selects reject empty placeholder choices. The API checks the
 current options again before writing; option drift makes the action stale, and
 post-write mismatch yields an uncertain state instead of claiming success.
 Option values and submitted selections do not appear in the action URL or

@@ -190,13 +190,15 @@ function publicRequest(
                 ...(observed.options === undefined
                   ? {}
                   : {
-                      options: observed.options.map((option) => ({
-                        index: option.index,
-                        label: option.label,
-                        disabled: option.disabled,
-                        selected: option.selected,
-                        empty: option.empty,
-                      })),
+                      options: observed.options.map((option) => {
+                        return {
+                          index: option.index,
+                          label: option.label,
+                          disabled: option.disabled,
+                          selected: option.selected,
+                          empty: option.empty,
+                        };
+                      }),
                     }),
                 ...(observed.minLength === undefined
                   ? {}
@@ -1089,9 +1091,15 @@ function submittedValues(
   input: BrowserUserActionApplyRequest,
 ): ServiceResult<Map<string, SubmittedBrowserValue>> {
   const allowed = new Map(
-    payload.target.fields.map((field) => [field.key, field]),
+    payload.target.fields.map((field) => {
+      return [field.key, field];
+    }),
   );
-  const values = new Map(input.values.map((entry) => [entry.key, entry]));
+  const values = new Map(
+    input.values.map((entry) => {
+      return [entry.key, entry];
+    }),
+  );
   if (
     input.values.some((entry) => {
       const field = allowed.get(entry.key);
