@@ -46,10 +46,15 @@ their ORM declarations stay in place; drop them in a separate migration after
 older API deployments drain.
 
 The connect link no longer carries `publicBrand` / `brandSig`, and the connect
-request contract no longer declares `publicBrand` / `publicBrandSignature`. The
-App release that stopped reading and posting them was serving before this
-change, and links expire after ten minutes. A body that still carries the fields
-is not rejected, because undeclared keys are stripped. An App rollback below
+request contract no longer declares `publicBrand` / `publicBrandSignature`.
+`app-v0.958.0` (tag commit `9a3f9b6429d1b9d0a1c1400ed49e703038501735`) is the
+first App that neither reads nor posts them; production `app/production` was
+deployed at `66a534132b49` on 2026-09-24 13:24 UTC and later at `63ad2eed786e`,
+both descendants of #36651. App builds `0.954.0` to `0.957.x` still require
+`brandSig` to show Connect, so this change raises the identified-App minimum
+version to `0.958.0`; those bundles receive `426` on their next API request and
+refresh into the live App. Links expire after ten minutes. A body that still
+carries the brand fields is not rejected, because undeclared keys are stripped. An App rollback below
 that release also requires rolling back the API below this change, because the
 older connect page requires `brandSig`. An API rollback below the expand change
 (#36651) also requires rolling back the App, because the older API requires the
