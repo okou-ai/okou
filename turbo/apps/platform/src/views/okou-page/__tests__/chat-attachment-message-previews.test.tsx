@@ -1,8 +1,9 @@
+import userEvent from "@testing-library/user-event";
 import type {
   ChatThreadArtifactFile,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
@@ -229,7 +230,12 @@ test("Image navigation stays within the current message", async () => {
   expect(queryNamedButton("Previous image artifact")).toBeNull();
   expect(getNamedButton("Next image artifact")).toBeVisible();
 
-  fireEvent.keyDown(document, { key: "ArrowRight" });
+  await waitFor(() => {
+    expect(
+      screen.getByRole("group", { name: "gallery-first.png preview" }),
+    ).toHaveFocus();
+  });
+  await userEvent.setup({ delay: null }).keyboard("{ArrowRight}");
   await waitFor(() => {
     expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
       "alt",

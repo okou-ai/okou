@@ -145,8 +145,14 @@ const internalLightboxDialogFullscreen$ = state(false);
 const internalLightboxDialogMountToken$ = state(0);
 const internalLightboxDialogElement$ = state<HTMLDivElement | null>(null);
 
-export const lightboxDialogElement$ = command(({ get }) => {
-  return get(internalLightboxDialogElement$);
+export const lightboxDialogInitialFocus$ = command(({ get }) => {
+  const dialog = get(internalLightboxDialogElement$);
+  // Base UI owns initial focus on open. Images start on their stable canvas
+  // owner, while other previews retain their existing dialog focus.
+  return (
+    dialog?.querySelector<HTMLElement>("[data-image-navigation-owner]") ??
+    dialog
+  );
 });
 const resetLightboxPreviewSignal$ = resetSignal();
 export const attachmentLightboxImageCanvasSignals =
