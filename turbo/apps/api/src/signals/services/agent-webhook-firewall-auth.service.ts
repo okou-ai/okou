@@ -11,8 +11,9 @@ import {
 } from "../external/realtime";
 import { Buffer } from "node:buffer";
 import { performance } from "node:perf_hooks";
-import { setTimeout as delay } from "node:timers/promises";
 import { isDeepStrictEqual } from "node:util";
+
+import { delay } from "signal-timers";
 
 import {
   getSecretNameForType,
@@ -3116,7 +3117,7 @@ async function refreshPreparedLockedAccessToken(args: {
       ? refreshResult.error.status
       : null;
     const retryDelay = await settleIncludingAbort(
-      delay(250, undefined, { signal: refreshSignal }),
+      delay(250, { signal: refreshSignal }),
     );
     if (!retryDelay.ok) {
       refreshResult = retryDelay;
