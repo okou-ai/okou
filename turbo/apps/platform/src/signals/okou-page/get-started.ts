@@ -54,11 +54,7 @@ const getStartedStatus$ = computed(
     }
     await get(runtimeAuthenticatedIdentity$);
     const response = await accept(
-      // Asking for the iMessage quest is what lets the API list it; see the
-      // contract for why bundles that do not ask never receive it.
-      get(apiClient$)(getStartedContract).status({
-        query: { include: "imessage" },
-      }),
+      get(apiClient$)(getStartedContract).status(),
       [200, 403],
       undefined,
       { showErrorToast: false },
@@ -95,17 +91,11 @@ export const shareClaim$ = computed(async (get) => {
  * row reads as finished instead, without the credits. A workspace with no
  * AgentPhone number has nothing to text, so the row is not offered at all.
  */
-async function reconcileImessageQuest(
+function reconcileImessageQuest(
   quests: readonly GetStartedQuest[],
-  readLink: () => Promise<AgentPhoneLinkStatusResponse>,
-): Promise<readonly GetStartedQuest[]> {
-  const imessage = quests.find((quest) => {
-    return quest.key === "imessage";
-  });
-  if (!imessage?.canEarnMore) {
-    return quests;
-  }
-  const link = await readLink();
+  imessage: GetStartedQuest,
+  link: AgentPhoneLinkStatusResponse,
+): readonly GetStartedQuest[] {
   if (link.linked) {
     return quests.map((quest): GetStartedQuest => {
       return quest === imessage
@@ -163,15 +153,24 @@ export const getStartedQuests$ = computed(
       }
       return { ...quest, status, rejectedReason };
     });
-    return await reconcileImessageQuest(quests, () => {
-      return get(agentPhoneLinkStatus$);
+    const imessage = quests.find((quest) => {
+      return quest.key === "imessage";
     });
+    // Only a quest that can still be earned depends on the link.
+    if (!imessage?.canEarnMore) {
+      return quests;
+    }
+    return reconcileImessageQuest(
+      quests,
+      imessage,
+      await get(agentPhoneLinkStatus$),
+    );
   },
 );
 
 /**
  * What linking a phone still pays, or null once it pays nothing -- already
- * earned, already linked, or an API that does not offer the quest.
+ * earned, already linked, or not offered in this workspace.
  */
 export const imessageQuestReward$ = computed(
   async (get): Promise<number | null> => {

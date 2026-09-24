@@ -519,9 +519,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       );
     }
     async function imessageQuest(user: ApiTestUser) {
-      const status = await readGetStartedStatus(context, user, {
-        include: "imessage",
-      });
+      const status = await readGetStartedStatus(context, user);
       return status.quests.find((quest) => {
         return quest.key === "imessage";
       });
@@ -546,13 +544,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       canEarnMore: true,
       pendingCount: 0,
     });
-    // An App that predates the quest does not ask for it and never sees it.
-    const legacyStatus = await readGetStartedStatus(context, actor);
-    expect(
-      legacyStatus.quests.map((quest) => {
-        return quest.key;
-      }),
-    ).not.toContain("imessage");
 
     await linkWithCode(actor);
     await flushWaitUntilForTest();

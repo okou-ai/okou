@@ -9,7 +9,7 @@ import { badRequestMessage } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { bodyResultOf, queryOf } from "../context/request";
+import { bodyResultOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
@@ -36,8 +36,6 @@ const rewardsUnavailable = Object.freeze({
   },
 });
 
-const statusQuery$ = queryOf(getStartedContract.status);
-
 const status$ = command(async ({ get }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const enabled = await getStartedRewardsEnabled(
@@ -53,7 +51,6 @@ const status$ = command(async ({ get }, signal: AbortSignal) => {
     orgId: auth.orgId,
     userId: auth.userId,
     isAdmin: auth.orgRole === "admin",
-    includeImessage: get(statusQuery$)?.include === "imessage",
   });
   signal.throwIfAborted();
   return { status: 200 as const, body };

@@ -152,7 +152,7 @@ function configureQuestPage(
     imessage = false,
   }: {
     claimedToday?: boolean;
-    /** Whether the API offers the iMessage quest to a client that asks. */
+    /** Whether the status lists the iMessage quest. */
     imessage?: boolean;
   } = {},
 ): GetStartedStatus {
@@ -219,19 +219,8 @@ function configureQuestPage(
     shareClaim: null,
     recentGrants: [],
   };
-  context.mocks.api(getStartedContract.status, ({ query, respond }) => {
-    // Like the API, the iMessage quest is only listed to a client that asks.
-    return respond(
-      200,
-      query?.include === "imessage"
-        ? data
-        : {
-            ...data,
-            quests: data.quests.filter((quest) => {
-              return quest.key !== "imessage";
-            }),
-          },
-    );
+  context.mocks.api(getStartedContract.status, ({ respond }) => {
+    return respond(200, data);
   });
   context.mocks.api(getStartedContract.submitShare, ({ body, respond }) => {
     expect(body.url).toBe("https://x.com/molly/status/1873");
@@ -354,8 +343,6 @@ test("A member is only offered the steps they can finish themselves", async () =
   expect(screen.getByTestId("get-started-quest-share")).toBeInTheDocument();
   expect(within(panel).queryByText("Invite your team")).not.toBeInTheDocument();
   expect(within(panel).queryByText("Add to Slack")).not.toBeInTheDocument();
-  // An API from before the iMessage quest simply has no row for it.
-  expect(screen.queryByTestId("get-started-quest-imessage")).toBeNull();
   // The earned total counts only the quests this role was offered.
   expect(within(panel).getByText("400 earned")).toBeInTheDocument();
 });
@@ -517,9 +504,7 @@ test("Sharing on X restores pending state and an Ably review notification update
   expect(within(afterReview).queryByText("In review")).not.toBeInTheDocument();
 });
 
-test("Adding iMessage opens the phone connect dialog with its reward, which clears once earned", async () => {
-  const data = configureQuestPage(context, "member", { imessage: true });
-  const code = "31415926";
+function mockPhoneLinkCode(code: string): void {
   context.mocks.api(
     integrationsAgentPhoneContract.createLinkCode,
     ({ respond }) => {
@@ -529,6 +514,20 @@ test("Adding iMessage opens the phone connect dialog with its reward, which clea
       });
     },
   );
+}
+
+async function openImessageQuestDialog(): Promise<HTMLElement> {
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-imessage"));
+  return await screen.findByRole("dialog", {
+    name: "Text Okou from your iPhone",
+  });
+}
+
+test("Adding iMessage opens the phone connect dialog with its reward", async () => {
+  configureQuestPage(context, "member", { imessage: true });
+  const code = "31415926";
+  mockPhoneLinkCode(code);
   await setupPage({
     context,
     path: questChatPath(),
@@ -564,8 +563,24 @@ test("Adding iMessage opens the phone connect dialog with its reward, which clea
     "Copy +1 (903) 985-3128",
     "Close",
   ]);
+});
 
-  // The code arrives from the phone; the API grants the quest and says so.
+test("Linking the phone closes the Get started dialog and completes the quest", async () => {
+  const data = configureQuestPage(context, "member", { imessage: true });
+  mockPhoneLinkCode("27182818");
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+
+  const dialog = await openImessageQuestDialog();
+  await expect(
+    within(dialog).findByTestId("agentphone-link-qr"),
+  ).resolves.toBeInTheDocument();
+
+  // The code arrives from the phone: the API links it, grants the quest, and
+  // announces both.
   const imessage = data.quests.find((quest) => {
     return quest.key === "imessage";
   });
@@ -577,13 +592,29 @@ test("Adding iMessage opens the phone connect dialog with its reward, which clea
     earnedCredits: 1000,
     canEarnMore: false,
   });
-  context.mocks.ably.trigger(GET_STARTED_REWARDS_CHANGED_EVENT);
-  await waitFor(() => {
-    expect(within(dialog).queryByText("+1,000")).not.toBeInTheDocument();
+  context.mocks.data.agentPhoneIntegration({
+    linked: true,
+    publicBrand: "okou",
+    phoneHandle: "+15555550123",
+    agentPhoneNumber: "+19039853128",
+    configured: true,
   });
-  expect(normalizedText(screen.getByTestId("get-started-entry"))).toBe(
-    "Get more credits3/5",
-  );
+  context.mocks.ably.trigger("agentphone:changed");
+  context.mocks.ably.trigger(GET_STARTED_REWARDS_CHANGED_EVENT);
+
+  await expect(
+    screen.findByText("AgentPhone connected"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Text Okou from your iPhone" }),
+    ).not.toBeInTheDocument();
+  });
+  await waitFor(() => {
+    expect(normalizedText(screen.getByTestId("get-started-entry"))).toBe(
+      "Get more credits3/5",
+    );
+  });
 });
 
 test("A phone linked before the quest existed reads as done, without credits", async () => {

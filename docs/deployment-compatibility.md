@@ -1,24 +1,5 @@
 # Deployment Compatibility
 
-## Get started iMessage quest (2026-09-24)
-
-`GET /api/get-started` lists the new `imessage` quest only when the request
-carries `include=imessage`. Earlier App bundles look every listed quest up in a
-fixed copy table and throw on an unknown key, and the App does not validate
-responses, so they must never receive it; they do not send the parameter. The
-new App sends it, and an older API ignores the unknown query parameter and
-omits the row, which the new App renders as a list without that quest. Remove
-the parameter once the App version floor excludes bundles that predate it.
-`recentGrants` may contain an `imessage` claim for any client; no App reads it.
-
-Migration `1210_get_started_imessage_quest` only widens the quest, slot and
-amount checks on `get_started_claims`, so the previous API remains valid
-against it. The new API awards the quest in the transaction that inserts a
-phone link, and that insert would fail against the old checks, so the API must
-not be promoted before the migration; the normal migration-first release order
-covers this. Links that existed before the release are not credited; the App
-shows the quest as done when the link status reports a linked phone.
-
 ## Voice input model selection retirement (2026-09-24)
 
 Voice input always uses Gemini 3.1 Flash-Lite on Vertex AI. The Debug

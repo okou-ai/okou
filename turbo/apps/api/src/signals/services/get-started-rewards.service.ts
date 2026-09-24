@@ -363,8 +363,6 @@ export async function getStartedStatus(
     readonly orgId: string;
     readonly userId: string;
     readonly isAdmin: boolean;
-    /** Whether the client asked for the iMessage quest; see the contract. */
-    readonly includeImessage: boolean;
   },
 ): Promise<GetStartedStatus> {
   const at = nowDate();
@@ -436,9 +434,6 @@ export async function getStartedStatus(
     .limit(20);
   const quests = getStartedQuestKeySchema.options
     .filter((key) => {
-      if (key === "imessage") {
-        return args.includeImessage;
-      }
       return args.isAdmin || (key !== "slack" && key !== "invite");
     })
     .map((key) => {

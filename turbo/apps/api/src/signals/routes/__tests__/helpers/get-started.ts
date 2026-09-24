@@ -32,7 +32,6 @@ export async function readGetStartedStatus(
     readonly orgId: string | null;
     readonly orgRole?: "org:admin" | "org:member" | undefined;
   },
-  query?: { readonly include?: "imessage" },
 ) {
   if (!actor.orgId) {
     throw new Error("Expected reward organization");
@@ -46,10 +45,7 @@ export async function readGetStartedStatus(
     await accept(
       setupApp({ context, routes: getStartedRoutes })(
         getStartedContract,
-      ).status({
-        headers: { authorization: "Bearer clerk-session" },
-        ...(query ? { query } : {}),
-      }),
+      ).status({ headers: { authorization: "Bearer clerk-session" } }),
       [200],
     )
   ).body;

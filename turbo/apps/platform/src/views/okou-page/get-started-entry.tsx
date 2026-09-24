@@ -1108,7 +1108,7 @@ export function GetStartedEntry() {
           streak={summary.checkinStreak}
         />
       )}
-      {/* Only an API that offers the quest makes this page read the link. */}
+      {/* The link is only read where the quest is offered. */}
       {imessageQuest && (
         <ImessageQuestDialog
           connectionCode={
