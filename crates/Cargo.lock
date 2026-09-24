@@ -3819,6 +3819,7 @@ dependencies = [
  "runner-types",
  "sandbox",
  "sandbox-mock",
+ "serde_json",
  "tempfile",
  "thiserror",
  "tokio",

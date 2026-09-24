@@ -20,8 +20,6 @@ use super::job_lifecycle::{
     ActiveBudgetLease, CompletionPayload, FinalizationReady, RunCleanupDisposition, RunCleanupState,
 };
 use super::job_terminal_log::log_terminal_job_outcome;
-use super::orphan_reap::OrphanedActiveRuns;
-use super::ownership::{OwnershipTransitions, RunSandbox};
 use super::sandbox_finalization::{
     FinalizeContext, finalize_sandbox_for_completion_with_telemetry,
 };
@@ -45,6 +43,8 @@ use runner_provider::{ClaimedJob, CompletionReportTiming, JobProvider};
 use runner_provider::{RunCancellationHandle, RunCancellationRegistration, RunCancellationSignals};
 use runner_supervisor::blank_pool::BlankPoolDiagnostics;
 use runner_supervisor::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool};
+use runner_supervisor::orphan_reap::OrphanedActiveRuns;
+use runner_supervisor::ownership::{OwnershipTransitions, RunSandbox};
 use runner_types::ids::RunId;
 use runner_types::types::{ExecutionContext, SandboxReuseResult};
 
@@ -925,7 +925,6 @@ mod tests {
     use sandbox::SandboxId;
 
     use super::super::job_lifecycle::RunCleanupState;
-    use super::super::orphan_reap::OrphanedActiveRuns;
     use crate::http::{HttpClient, HttpClientConfig};
     use crate::idle_pool::{
         IdlePool, IdlePoolConfig, IdleUnparkResult, ParkResult,
@@ -938,6 +937,7 @@ mod tests {
     use runner_lifecycle::active_runs::ActiveRuns;
     use runner_provider::RunCancellationRegistry;
     use runner_supervisor::idle_lifecycle::SharedIdlePool;
+    use runner_supervisor::orphan_reap::OrphanedActiveRuns;
     use runner_types::ids::RunId;
 
     fn test_http_client() -> HttpClient {
