@@ -107,10 +107,7 @@ mod sandbox_finalization;
 mod signals;
 
 use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime, start_factories};
-use heartbeat::{
-    HEARTBEAT_PERIOD, HeartbeatContext, HeartbeatContextInit, HeartbeatController,
-    HeartbeatSnapshotMetadata, collect_heartbeat_state, refresh_initial_workspace_cache_snapshot,
-};
+use heartbeat::heartbeat_profiles;
 use identity::load_runner_process_identity;
 use job_discovery::{DiscoveredJob, DiscoveredJobContext, handle_discovered_job};
 use job_spawn::{SpawnContext, handle_job_result};
@@ -125,6 +122,10 @@ use orphan_reap::{
 use runner_lifecycle::active_runs::ActiveRuns;
 use runner_lifecycle::workspace_image_cache::snapshot::WorkspaceCacheStateSnapshot;
 use runner_supervisor::blank_pool::{BlankPoolReplenisher, BlankProfile};
+use runner_supervisor::heartbeat::{
+    HEARTBEAT_PERIOD, HeartbeatContext, HeartbeatContextInit, HeartbeatController,
+    HeartbeatSnapshotMetadata, collect_heartbeat_state, refresh_initial_workspace_cache_snapshot,
+};
 use runner_supervisor::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
 use signals::{
     EarlySignals, SignalController, SignalHandlerTask, handle_stopping_signal, recv_handler_task,
@@ -2031,11 +2032,12 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     if let Some(gate) = &test_hooks.before_initial_workspace_cache_scan {
         gate.enter_and_wait().await;
     }
+    let projected_heartbeat_profiles = heartbeat_profiles(&runner.profiles);
     let hb_ctx = HeartbeatContext::new(HeartbeatContextInit {
         idle_pool: &shared.idle_pool,
         runner_identity: runner.identity,
         group: &runner.group,
-        profiles: &runner.profiles,
+        profiles: &projected_heartbeat_profiles,
         budget: &capacity.budget,
         provider: Arc::clone(&provider_state.provider),
         workspace_cache: exec_config.workspace_cache.clone(),
@@ -2045,7 +2047,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     let initial_workspace_cache = refresh_initial_workspace_cache_snapshot(
         &workspace_cache_snapshot,
         exec_config.workspace_cache.as_ref(),
-        &runner.profiles,
+        &projected_heartbeat_profiles,
     )
     .await;
     #[cfg(test)]
@@ -2219,7 +2221,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                         // Live observability: fire an immediate "stopping"
                         // heartbeat before teardown removes the runner.
                         if let Err(error) = heartbeat.flush(RunnerMode::Stopping).await {
-                            terminal_error = Some(error);
+                            terminal_error = Some(error.into());
                             break;
                         }
                     }
@@ -2405,7 +2407,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                         &provider_state.cancel_tokens,
                         &lifecycle,
                     ).await;
-                    terminal_error = Some(error);
+                    terminal_error = Some(error.into());
                     break;
                 }
             }
@@ -2693,7 +2695,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     let phase = teardown.phase_start("heartbeat_drain");
     if let Err(error) = heartbeat.drain().await {
         error!(%error, "failed to drain heartbeat task");
-        terminal_error.get_or_insert(error);
+        terminal_error.get_or_insert(error.into());
     }
     let final_heartbeat_sequence = heartbeat.into_next_snapshot_sequence();
     teardown.phase_complete("heartbeat_drain", phase);
@@ -2747,7 +2749,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                 group: &runner.group,
                 sequence: final_heartbeat_sequence,
             },
-            &runner.profiles,
+            &projected_heartbeat_profiles,
             &capacity.budget,
             &pool,
             RunnerMode::Stopping,
