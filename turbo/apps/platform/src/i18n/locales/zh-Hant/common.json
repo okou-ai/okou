@@ -4233,7 +4233,7 @@
         "skills": "匯入你的技能",
         "slack": "把Okou新增到Slack",
         "sources": "連線你的工作",
-        "team": "邀請一位同事"
+        "team": "邀請團隊成員"
       },
       "experience": {
         "copy": "可以從引導開始，也可以連接你已有的 Codex 或 Claude Code 訂閱。",
@@ -4290,8 +4290,7 @@
       },
       "industry": {
         "copy": "選擇你的工作領域，Okou 會據此推薦相關工具和適合你的第一項任務。",
-        "title": "你主要做哪類工作？",
-        "trust": "此選擇不會連接帳號或讀取資料。"
+        "title": "你主要做哪類工作？"
       },
       "skills": {
         "copied": "已複製",
@@ -4350,10 +4349,8 @@
         "title": "在 Slack 中繼續推進工作"
       },
       "sources": {
-        "copy": "連接一個常用工作工具，讓 Okou 根據你的實際工作推薦第一項任務。",
-        "note": "連接工具不會啟動任務，也不會把登入憑證交給 Agent。",
-        "permissions": "Agent 預設只有最小權限；你可以控制可執行的操作和授權時長。",
-        "readNotice": "點擊繼續後，Okou 只會從已連接且支援此功能的資料來源讀取少量資訊來推薦任務，不會傳送訊息或修改資料。",
+        "copy": "Okou 越了解你的工作，就越聰明。連接一個你每天在用的工具，從一項基於真實工作的任務開始。",
+        "permissions": "Okou 會參考少量資訊為你量身打造第一項任務；Agent 能做什麼、授權多久，都由你決定。",
         "securityLink": "瞭解 Okou 如何保護你的資料",
         "title": "連接一個工作工具"
       },
@@ -4693,22 +4690,22 @@
         "unconfirmedNote": "無法確認{{provider}}的連線狀態。你可以重試，也可以先繼續，稍後再連線。"
       },
       "team": {
-        "copy": "邀請同事一起使用工作區裡的共享工作流程。",
+        "copy": "邀請團隊成員，一起使用共享的工作流程。",
         "invite": "傳送邀請",
         "invited": "已邀請",
-        "label": "同事的郵箱",
-        "note": "他們會加入這個工作區，各自的帳號仍歸自己所有。",
+        "label": "團隊成員的電子郵件",
+        "note": "他們可以馬上開始使用 Okou。",
         "notSent": "未傳送",
-        "panelTitle": "邀請同事",
-        "placeholder": "teammate@company.com",
+        "panelTitle": "邀請團隊成員",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "他們連線的帳號仍歸自己所有——未經他們同意不會共享任何內容。",
-          "workflows": "這裡的每個人都能執行工作區裡已有的工作流。",
-          "workspace": "他們會加入同一個工作空間。"
+          "accounts": "需要時連接自己的工具。",
+          "workflows": "可以執行團隊已建立的所有工作流程。",
+          "workspace": "加入你的工作區。"
         },
         "sending": "傳送中…",
         "title": "讓整個團隊一起用好 Okou",
-        "trust": "團隊可以共享工作流程；每個人的帳號和權限仍歸自己所有。"
+        "trust": "大家使用同一套工作流程，各自連接自己的工具。"
       },
       "welcome": {
         "copy": "看看為你的工作推薦的任務，按目標調整，再讓 Okou 開始執行。",

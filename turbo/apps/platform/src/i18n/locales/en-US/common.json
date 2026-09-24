@@ -4239,7 +4239,7 @@
         "skills": "Import your skills",
         "slack": "Add Okou to Slack",
         "sources": "Connect your work",
-        "team": "Invite a teammate"
+        "team": "Invite a team member"
       },
       "experience": {
         "copy": "Start with guidance, or bring the Codex or Claude Code plan you already use.",
@@ -4296,8 +4296,7 @@
       },
       "industry": {
         "copy": "This helps Okou show relevant tools and suggest a first task that fits your work.",
-        "title": "What kind of work do you do?",
-        "trust": "This choice does not connect or read an account."
+        "title": "What kind of work do you do?"
       },
       "skills": {
         "copied": "Copied",
@@ -4356,10 +4355,8 @@
         "title": "Keep work moving in Slack"
       },
       "sources": {
-        "copy": "Connect a tool you use at work so Okou can suggest a first task grounded in your real work.",
-        "note": "Connecting does not start a task or share your credentials with an Agent.",
-        "permissions": "Agent access starts with minimum permissions. You control actions and access duration.",
-        "readNotice": "Continue reads a small sample from supported connected sources to suggest a task. It sends no messages and changes no data.",
+        "copy": "The more Okou knows about your work, the smarter it gets. Connect a tool you use every day to start with a task built on your real work.",
+        "permissions": "Okou uses a small sample to tailor your first task. You decide what Agents can do and for how long.",
         "securityLink": "How Okou protects your data",
         "title": "Connect a work tool"
       },
@@ -4699,22 +4696,22 @@
         "unconfirmedNote": "We couldn’t check your {{provider}} connection. You can try again, or continue and connect it later."
       },
       "team": {
-        "copy": "Invite a teammate to run shared workflows with you.",
+        "copy": "Invite a team member to run shared workflows with you.",
         "invite": "Send invite",
         "invited": "Invited",
-        "label": "Teammate’s email",
-        "note": "They join this workspace; their own accounts stay theirs.",
+        "label": "Team member’s email",
+        "note": "They can start working with Okou right away.",
         "notSent": "Not sent",
-        "panelTitle": "Invite a teammate",
-        "placeholder": "teammate@company.com",
+        "panelTitle": "Invite a team member",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "Their connected accounts stay theirs — nothing is shared without them.",
-          "workflows": "Anyone here can run the workflows this workspace already has.",
-          "workspace": "They join the same workspace."
+          "accounts": "They connect their own tools when they need them.",
+          "workflows": "They can run any workflow your team has built.",
+          "workspace": "They join your workspace."
         },
         "sending": "Sending…",
         "title": "Make Okou useful to your whole team",
-        "trust": "You can share workflows while each person's accounts and permissions stay personal."
+        "trust": "Everyone uses the same workflows and connects their own tools."
       },
       "welcome": {
         "copy": "Review a suggested task for your work, adjust it to your goal, and let Okou get started.",

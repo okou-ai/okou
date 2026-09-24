@@ -76,11 +76,6 @@ export function OnboardingIndustryPage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.industry.copy;
       })}
-      trustPoints={[
-        t(($) => {
-          return $.onboarding.sourcesFirst.industry.trust;
-        }),
-      ]}
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
       })}

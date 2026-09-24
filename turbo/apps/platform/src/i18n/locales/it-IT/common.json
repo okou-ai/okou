@@ -4303,7 +4303,7 @@
         "skills": "Importa le tue skill",
         "slack": "Aggiungi Okou a Slack",
         "sources": "Collega il tuo lavoro",
-        "team": "Invita un collega"
+        "team": "Invita un membro del team"
       },
       "experience": {
         "copy": "Inizia con una guida oppure usa il tuo piano Codex o Claude Code.",
@@ -4360,8 +4360,7 @@
       },
       "industry": {
         "copy": "Così Okou può mostrarti gli strumenti pertinenti e suggerire un primo compito adatto al tuo lavoro.",
-        "title": "Che tipo di lavoro fai?",
-        "trust": "Questa scelta non collega né legge alcun account."
+        "title": "Che tipo di lavoro fai?"
       },
       "skills": {
         "copied": "Copiato",
@@ -4420,10 +4419,8 @@
         "title": "Porta avanti il lavoro in Slack"
       },
       "sources": {
-        "copy": "Collega uno strumento di lavoro affinché Okou suggerisca un primo compito basato su ciò che fai davvero.",
-        "note": "Collegare uno strumento non avvia un compito né comunica le tue credenziali a un agente.",
-        "permissions": "L’agente parte con autorizzazioni minime. Decidi tu quali azioni consentire e per quanto tempo.",
-        "readNotice": "Continuando, Okou legge un piccolo campione dalle fonti collegate supportate per suggerire un compito. Non invia messaggi né modifica dati.",
+        "copy": "Più Okou conosce il tuo lavoro, più diventa intelligente. Collega uno strumento che usi ogni giorno per iniziare con un’attività basata sul tuo lavoro reale.",
+        "permissions": "Okou usa un piccolo campione per personalizzare la tua prima attività. Sei tu a decidere cosa possono fare gli Agent e per quanto tempo.",
         "securityLink": "Come Okou protegge i tuoi dati",
         "title": "Collega uno strumento di lavoro"
       },
@@ -4763,22 +4760,22 @@
         "unconfirmedNote": "Non siamo riusciti a verificare il collegamento a {{provider}}. Puoi riprovare o collegarlo più tardi."
       },
       "team": {
-        "copy": "Invita un collega a usare con te i flussi di lavoro condivisi.",
+        "copy": "Invita un membro del team a usare con te i flussi di lavoro condivisi.",
         "invite": "Invia invito",
         "invited": "Invitato",
-        "label": "Email del collega",
-        "note": "Entrano in questo workspace; i loro account restano loro.",
+        "label": "Email del membro del team",
+        "note": "Potrà iniziare subito a lavorare con Okou.",
         "notSent": "Non inviato",
-        "panelTitle": "Invita un collega",
-        "placeholder": "teammate@company.com",
+        "panelTitle": "Invita un membro del team",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "Gli account che collegano restano loro: nulla viene condiviso senza di loro.",
-          "workflows": "Chiunque qui può eseguire i workflow che questo workspace ha già.",
-          "workspace": "Entrano nello stesso spazio di lavoro."
+          "accounts": "Collega i propri strumenti quando servono.",
+          "workflows": "Può eseguire tutti i flussi di lavoro del team.",
+          "workspace": "Entra nel tuo workspace."
         },
         "sending": "Invio in corso…",
         "title": "Rendi Okou utile a tutto il team",
-        "trust": "Potete condividere i flussi di lavoro, mentre account e autorizzazioni restano personali."
+        "trust": "Tutti usano gli stessi flussi di lavoro e collegano i propri strumenti."
       },
       "welcome": {
         "copy": "Rivedi un compito suggerito per il tuo lavoro, adattalo al tuo obiettivo e lascia iniziare Okou.",

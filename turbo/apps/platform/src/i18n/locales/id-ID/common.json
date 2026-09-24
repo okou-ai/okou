@@ -4233,7 +4233,7 @@
         "skills": "Impor skill Anda",
         "slack": "Tambahkan Okou ke Slack",
         "sources": "Hubungkan pekerjaan Anda",
-        "team": "Undang rekan kerja"
+        "team": "Undang anggota tim"
       },
       "experience": {
         "copy": "Mulai dengan panduan, atau gunakan paket Codex atau Claude Code yang sudah Anda miliki.",
@@ -4290,8 +4290,7 @@
       },
       "industry": {
         "copy": "Ini membantu Okou menampilkan alat yang relevan dan menyarankan tugas pertama yang sesuai dengan pekerjaan Anda.",
-        "title": "Pekerjaan Anda seperti apa?",
-        "trust": "Pilihan ini tidak menghubungkan atau membaca akun."
+        "title": "Pekerjaan Anda seperti apa?"
       },
       "skills": {
         "copied": "Tersalin",
@@ -4350,10 +4349,8 @@
         "title": "Teruskan pekerjaan di Slack"
       },
       "sources": {
-        "copy": "Hubungkan alat kerja yang Anda pakai agar Okou dapat menyarankan tugas pertama berdasarkan pekerjaan nyata Anda.",
-        "note": "Menghubungkan alat tidak memulai tugas atau memberikan kredensial Anda kepada Agent.",
-        "permissions": "Akses Agent dimulai dengan izin minimum. Anda mengatur tindakan dan lama akses.",
-        "readNotice": "Saat melanjutkan, Okou membaca sedikit informasi dari sumber terhubung yang didukung untuk menyarankan tugas. Tidak ada pesan yang dikirim atau data yang diubah.",
+        "copy": "Semakin Okou memahami pekerjaan Anda, semakin cerdas ia bekerja. Hubungkan alat yang Anda gunakan setiap hari untuk memulai dengan tugas dari pekerjaan nyata Anda.",
+        "permissions": "Okou menggunakan sedikit sampel untuk menyesuaikan tugas pertama Anda. Anda yang menentukan apa yang dapat dilakukan Agent dan berapa lama.",
         "securityLink": "Cara Okou melindungi data Anda",
         "title": "Hubungkan alat kerja"
       },
@@ -4693,22 +4690,22 @@
         "unconfirmedNote": "Kami tidak dapat memeriksa koneksi {{provider}} Anda. Coba lagi atau hubungkan nanti."
       },
       "team": {
-        "copy": "Undang rekan untuk menggunakan alur kerja bersama Anda.",
+        "copy": "Undang anggota tim untuk menjalankan alur kerja bersama.",
         "invite": "Kirim undangan",
         "invited": "Diundang",
-        "label": "Email rekan kerja",
-        "note": "Mereka bergabung ke workspace ini; akun mereka tetap milik mereka.",
+        "label": "Email anggota tim",
+        "note": "Mereka dapat langsung mulai bekerja dengan Okou.",
         "notSent": "Tidak terkirim",
-        "panelTitle": "Undang rekan kerja",
-        "placeholder": "teammate@company.com",
+        "panelTitle": "Undang anggota tim",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "Akun yang mereka hubungkan tetap milik mereka — tidak ada yang dibagikan tanpa mereka.",
-          "workflows": "Siapa pun di sini bisa menjalankan workflow yang sudah ada di workspace ini.",
-          "workspace": "Mereka bergabung ke ruang kerja yang sama."
+          "accounts": "Menghubungkan alat mereka sendiri saat dibutuhkan.",
+          "workflows": "Dapat menjalankan semua alur kerja tim Anda.",
+          "workspace": "Bergabung ke workspace Anda."
         },
         "sending": "Mengirim…",
         "title": "Buat Okou berguna bagi seluruh tim Anda",
-        "trust": "Alur kerja dapat dibagikan, sementara akun dan izin setiap orang tetap pribadi."
+        "trust": "Semua orang menggunakan alur kerja yang sama dan menghubungkan alat mereka sendiri."
       },
       "welcome": {
         "copy": "Tinjau tugas yang disarankan untuk pekerjaan Anda, sesuaikan dengan tujuan, lalu biarkan Okou memulai.",

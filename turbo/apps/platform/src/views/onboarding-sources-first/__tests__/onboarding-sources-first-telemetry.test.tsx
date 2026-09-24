@@ -236,7 +236,7 @@ test("Each step reports its own funnel event, counting invitees rather than nami
   await expect(
     screen.findByRole("heading", { name: TEAM_QUESTION }),
   ).resolves.toBeInTheDocument();
-  await fill(screen.getByLabelText("Teammate’s email"), TEAMMATE_EMAIL);
+  await fill(screen.getByLabelText("Team member’s email"), TEAMMATE_EMAIL);
   click(getButtonByName("Send invite"));
 
   await expect(screen.findByText("Invited")).resolves.toBeInTheDocument();

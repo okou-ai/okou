@@ -4304,8 +4304,7 @@
       },
       "industry": {
         "copy": "So kann Okou passende Tools anzeigen und eine erste Aufgabe vorschlagen, die zu deiner Arbeit passt.",
-        "title": "Welche Arbeit machst du?",
-        "trust": "Dadurch wird kein Konto verbunden oder gelesen."
+        "title": "Welche Arbeit machst du?"
       },
       "skills": {
         "copied": "Kopiert",
@@ -4364,10 +4363,8 @@
         "title": "Halte die Arbeit in Slack in Bewegung"
       },
       "sources": {
-        "copy": "Verbinde ein Arbeitstool, damit Okou eine erste Aufgabe aus deiner tatsächlichen Arbeit vorschlagen kann.",
-        "note": "Das Verbinden startet keine Aufgabe und gibt deine Zugangsdaten nicht an einen Agenten weiter.",
-        "permissions": "Agenten starten mit minimalen Berechtigungen. Du bestimmst Aktionen und Zugriffsdauer.",
-        "readNotice": "Mit Weiter liest Okou wenige Informationen aus verbundenen, unterstützten Quellen, um eine Aufgabe vorzuschlagen. Es werden keine Nachrichten gesendet oder Daten geändert.",
+        "copy": "Je mehr Okou über deine Arbeit weiß, desto klüger wird es. Verbinde ein Tool, das du täglich nutzt, und starte mit einer Aufgabe aus deiner echten Arbeit.",
+        "permissions": "Okou nutzt eine kleine Stichprobe, um deine erste Aufgabe anzupassen. Du entscheidest, was Agents tun dürfen und wie lange.",
         "securityLink": "So schützt Okou deine Daten",
         "title": "Ein Arbeitstool verbinden"
       },
@@ -4707,22 +4704,22 @@
         "unconfirmedNote": "Deine {{provider}}-Verbindung konnte nicht geprüft werden. Versuch es erneut oder verbinde es später."
       },
       "team": {
-        "copy": "Lade eine Person ein, damit ihr gemeinsame Workflows nutzen könnt.",
+        "copy": "Lade ein Teammitglied ein, um gemeinsame Workflows zu nutzen.",
         "invite": "Einladung senden",
         "invited": "Eingeladen",
         "label": "E-Mail des Teammitglieds",
-        "note": "Sie kommen in diesen Workspace; ihre eigenen Konten bleiben ihre.",
+        "note": "Es kann sofort mit Okou loslegen.",
         "notSent": "Nicht gesendet",
         "panelTitle": "Teammitglied einladen",
-        "placeholder": "teammate@company.com",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "Verbundene Konten bleiben ihre – ohne sie wird nichts geteilt.",
-          "workflows": "Alle hier können die Workflows dieses Workspace ausführen.",
-          "workspace": "Sie treten demselben Arbeitsbereich bei."
+          "accounts": "Verbindet bei Bedarf eigene Tools.",
+          "workflows": "Kann alle Workflows deines Teams ausführen.",
+          "workspace": "Tritt deinem Workspace bei."
         },
         "sending": "Wird gesendet…",
         "title": "Mach Okou für dein ganzes Team nützlich",
-        "trust": "Ihr könnt Workflows teilen, während Konten und Berechtigungen persönlich bleiben."
+        "trust": "Alle nutzen dieselben Workflows und verbinden ihre eigenen Tools."
       },
       "welcome": {
         "copy": "Prüfe den Vorschlag für deine Arbeit, passe ihn an dein Ziel an und lass Okou loslegen.",

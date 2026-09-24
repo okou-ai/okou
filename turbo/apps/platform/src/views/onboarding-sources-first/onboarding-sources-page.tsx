@@ -99,13 +99,7 @@ export function OnboardingSourcesPage() {
       })}
       trustPoints={[
         t(($) => {
-          return $.onboarding.sourcesFirst.sources.note;
-        }),
-        t(($) => {
           return $.onboarding.sourcesFirst.sources.permissions;
-        }),
-        t(($) => {
-          return $.onboarding.sourcesFirst.sources.readNotice;
         }),
       ]}
       footnote={
