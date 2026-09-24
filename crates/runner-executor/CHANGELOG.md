@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.6](https://github.com/okou-ai/okou/compare/runner-executor-v0.1.5...runner-executor-v0.1.6) (2026-09-24)
+
+
+### Performance Improvements
+
+* **runner:** attribute claim response size on both sides ([#36582](https://github.com/okou-ai/okou/issues/36582)) ([954136f](https://github.com/okou-ai/okou/commit/954136fe0a41a917ac49cdb76095075ee6b4f3a4))
+
+## [0.1.5](https://github.com/okou-ai/okou/compare/runner-executor-v0.1.4...runner-executor-v0.1.5) (2026-09-24)
+
+## [0.1.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.1.3...runner-executor-v0.1.4) (2026-09-24)
+
+## [0.1.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.1.2...runner-executor-v0.1.3) (2026-09-24)
+
 ## [0.1.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.1.1...runner-executor-v0.1.2) (2026-09-24)
 
 

@@ -45,7 +45,9 @@ import {
   claimSourcesFirstStartEvent$,
   clearSourcesFirstDraft$,
   restoreSourcesFirstDraft$,
+  saveSourcesFirstStep$,
   setSourcesFirstFlow$,
+  SOURCES_FIRST_STEP_ROUTES,
   sourcesFirstDraft$,
   sourcesFirstSteps,
   type SourcesFirstStep,
@@ -121,14 +123,23 @@ function createSourcesFirstPageSetup(
 
     const status = await get(onboardingStatus$);
     signal.throwIfAborted();
+    let resumeStep: SourcesFirstStep | null = null;
     if (status.hasOrg) {
       const { orgId, userId } = await get(authenticatedIdentity$);
       signal.throwIfAborted();
-      set(restoreSourcesFirstDraft$, { orgId, userId });
+      resumeStep = set(restoreSourcesFirstDraft$, { orgId, userId });
     }
     if (!status.needsOnboarding) {
       set(clearSourcesFirstDraft$);
       set(forwardOnboardedVisitor$);
+      return;
+    }
+    if (
+      config.step === "industry" &&
+      resumeStep !== null &&
+      resumeStep !== "industry"
+    ) {
+      set(redirectTo$, SOURCES_FIRST_STEP_ROUTES[resumeStep]);
       return;
     }
     set(resumeOnboardingRecommendation$, signal);
@@ -168,6 +179,7 @@ function createSourcesFirstPageSetup(
       return;
     }
 
+    set(saveSourcesFirstStep$, config.step);
     set(updatePage$, createElement(config.Page), "none");
     set(updateDocumentTitle$, config.title());
     // One integration's status decides what a step offers, never whether the
@@ -263,18 +275,9 @@ export const setupOnboardingProfilePage$ = createSourcesFirstPageSetup({
   Page: OnboardingProfilePage,
 });
 
-/**
- * The AgentPhone tile shows a real link, so the step watches that link for as
- * long as it is open. It is behind the same switch as the Works page entry,
- * and the watcher only runs where the tile does.
- */
+/** Keep the AgentPhone tile's link status current while this step is open. */
 const watchOnboardingAgentPhone$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const switches = await get(featureSwitches$);
-    signal.throwIfAborted();
-    if (!switches[FeatureSwitchKey.AgentPhoneEntry]) {
-      return;
-    }
+  async ({ set }, signal: AbortSignal): Promise<void> => {
     set(setAgentPhoneConnectDialogOpen$, false);
     await set(watchAgentPhoneConnection$, signal);
   },

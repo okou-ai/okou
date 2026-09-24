@@ -67,8 +67,6 @@ import { serializeAvatarSvgConfig } from "../okou-page/avatar-svg-utils.ts";
 import { AvatarMaker } from "../okou-page/avatar-maker.tsx";
 import { platformEmptyPrivateAgentsImg } from "../../lib/static-assets.ts";
 
-const MAX_PUBLIC_AGENTS = 7;
-
 type Visibility = "public" | "private";
 
 async function createWithErrorToast(
@@ -115,18 +113,8 @@ export function AgentsPageTabs() {
     (!responsibilitySetupEnabled || trimmedResponsibility !== "") &&
     !creating;
 
-  const agentsLoadable = useLoadable(sortedAgents$);
-  const publicAgentCount =
-    agentsLoadable.state === "hasData"
-      ? agentsLoadable.data.filter((agent) => {
-          return agent.visibility !== "private";
-        }).length
-      : 0;
-  const atPublicLimit = publicAgentCount >= MAX_PUBLIC_AGENTS;
-
-  const openCreateDialog = (target: Visibility) => {
+  const openCreateDialog = () => {
     resetDialog();
-    setVisibility(target);
     setDialogOpen(true);
   };
 
@@ -151,6 +139,7 @@ export function AgentsPageTabs() {
       }),
       pageSignal,
     );
+    setActiveTab(visibility);
     setDialogOpen(false);
     toast.success(
       t(
@@ -195,7 +184,6 @@ export function AgentsPageTabs() {
           <AgentTabsView
             activeTab={activeTab}
             onTabChange={setActiveTab}
-            atPublicLimit={atPublicLimit}
             onCreate={openCreateDialog}
           />
         </div>
@@ -221,13 +209,11 @@ export function AgentsPageTabs() {
 function AgentTabsView({
   activeTab,
   onTabChange,
-  atPublicLimit,
   onCreate,
 }: {
   activeTab: Visibility;
   onTabChange: (tab: Visibility) => void;
-  atPublicLimit: boolean;
-  onCreate: (visibility: Visibility) => void;
+  onCreate: () => void;
 }) {
   const { t } = useTranslation("agents");
   const agentsLoadable = useLoadable(sortedAgents$);
@@ -251,8 +237,6 @@ function AgentTabsView({
         ? a.visibility !== "private"
         : a.visibility === "private";
     }) ?? [];
-
-  const createDisabled = activeTab === "public" && atPublicLimit;
 
   return (
     <div className="flex flex-col gap-4">
@@ -279,10 +263,7 @@ function AgentTabsView({
           variant="neutral"
           size="sm"
           className="h-9 gap-2 shrink-0 rounded-lg"
-          disabled={createDisabled}
-          onClick={() => {
-            return onCreate(activeTab);
-          }}
+          onClick={onCreate}
         >
           <Plus size={14} />
           {t(($) => {
@@ -587,23 +568,17 @@ function CreateAgentFields({
   onNameChange,
   responsibility,
   onResponsibilityChange,
-  onConfirm,
-  canCreate,
   creating,
   visibility,
   onVisibilityChange,
-  avatarUrl,
 }: {
   newName: string;
   onNameChange: (name: string) => void;
   responsibility: string | null;
   onResponsibilityChange: (responsibility: string) => void;
-  onConfirm: (avatarUrl: string) => void;
-  canCreate: boolean;
   creating: boolean;
   visibility: Visibility;
   onVisibilityChange: (visibility: Visibility) => void;
-  avatarUrl: string;
 }) {
   const { t } = useTranslation("agents");
   return (
@@ -636,8 +611,13 @@ function CreateAgentFields({
             return onNameChange(e.target.value);
           }}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && canCreate) {
-              onConfirm(avatarUrl);
+            if (
+              e.key === "Enter" &&
+              (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229)
+            ) {
+              // Safari can end composition before the candidate-confirming
+              // keydown. Keep that Enter from implicitly submitting the form.
+              e.preventDefault();
             }
           }}
           placeholder={t(($) => {
@@ -732,46 +712,52 @@ function CreateTeammateDialogContent({
 
       <CreateAgentAvatarPreview />
 
-      <CreateAgentFields
-        newName={newName}
-        onNameChange={onNameChange}
-        responsibility={responsibility}
-        onResponsibilityChange={onResponsibilityChange}
-        onConfirm={onConfirm}
-        canCreate={canCreate}
-        creating={creating}
-        visibility={visibility}
-        onVisibilityChange={onVisibilityChange}
-        avatarUrl={avatarUrl}
-      />
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (canCreate) {
+            onConfirm(avatarUrl);
+          }
+        }}
+      >
+        <CreateAgentFields
+          newName={newName}
+          onNameChange={onNameChange}
+          responsibility={responsibility}
+          onResponsibilityChange={onResponsibilityChange}
+          creating={creating}
+          visibility={visibility}
+          onVisibilityChange={onVisibilityChange}
+        />
 
-      {/* Footer */}
-      <div className="flex justify-center gap-3 px-6 pt-4 pb-8">
-        <Button variant="outline" onClick={onCancel} disabled={creating}>
-          {t(($) => {
-            return $.actions.cancel;
-          })}
-        </Button>
-        <Button
-          onClick={() => {
-            return onConfirm(avatarUrl);
-          }}
-          disabled={!canCreate}
-        >
-          {creating ? (
-            <span className="inline-flex items-center gap-1.5">
-              <Loader2 size={14} className="animate-spin" />
-              {t(($) => {
-                return $.list.create.creating;
-              })}
-            </span>
-          ) : (
-            t(($) => {
-              return $.actions.create;
-            })
-          )}
-        </Button>
-      </div>
+        {/* Footer */}
+        <div className="flex justify-center gap-3 px-6 pt-4 pb-8">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            disabled={creating}
+          >
+            {t(($) => {
+              return $.actions.cancel;
+            })}
+          </Button>
+          <Button type="submit" disabled={!canCreate}>
+            {creating ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Loader2 size={14} className="animate-spin" />
+                {t(($) => {
+                  return $.list.create.creating;
+                })}
+              </span>
+            ) : (
+              t(($) => {
+                return $.actions.create;
+              })
+            )}
+          </Button>
+        </div>
+      </form>
     </DialogContent>
   );
 }

@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.5](https://github.com/okou-ai/okou/compare/runner-provider-v0.3.4...runner-provider-v0.3.5) (2026-09-24)
+
+
+### Performance Improvements
+
+* **runner:** attribute claim response size on both sides ([#36582](https://github.com/okou-ai/okou/issues/36582)) ([954136f](https://github.com/okou-ai/okou/commit/954136fe0a41a917ac49cdb76095075ee6b4f3a4))
+
+## [0.3.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.3.3...runner-provider-v0.3.4) (2026-09-24)
+
+
+### Bug Fixes
+
+* **runner:** defer poll reset errors until fallback degrades ([#36499](https://github.com/okou-ai/okou/issues/36499)) ([27f936e](https://github.com/okou-ai/okou/commit/27f936edcb4cb68c93f8acc5a9ae9387766fd852))
+
 ## [0.3.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.3.2...runner-provider-v0.3.3) (2026-09-24)
 
 

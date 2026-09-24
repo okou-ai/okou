@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.213.11](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.10...runner-rs-v0.213.11) (2026-09-24)
+
+
+### Documentation
+
+* **python:** clarify credential-free firewall fallback ([#36590](https://github.com/okou-ai/okou/issues/36590)) ([b1958f1](https://github.com/okou-ai/okou/commit/b1958f1f1ba27e8773833b7f4952f1db576b27a6))
+
+## [0.213.10](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.9...runner-rs-v0.213.10) (2026-09-24)
+
+
+### Refactoring
+
+* **runner:** move workspace cache snapshot into lifecycle ([#36558](https://github.com/okou-ai/okou/issues/36558)) ([327da7a](https://github.com/okou-ai/okou/commit/327da7ace47d1671ae0abf5b68238486953e6d6e))
+
+## [0.213.9](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.8...runner-rs-v0.213.9) (2026-09-24)
+
+
+### Refactoring
+
+* **runner:** extract idle orchestration supervisor ([#36548](https://github.com/okou-ai/okou/issues/36548)) ([52040cf](https://github.com/okou-ai/okou/commit/52040cf8ee4c98111707c2f2f742bbb295ec2951))
+* **runner:** move active-run handoff into lifecycle ([#36536](https://github.com/okou-ai/okou/issues/36536)) ([4e2a495](https://github.com/okou-ai/okou/commit/4e2a495027225aa1ff6ea29404113ef95b478b57))
+
+## [0.213.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.7...runner-rs-v0.213.8) (2026-09-24)
+
+
+### Bug Fixes
+
+* **firewall:** enforce aws query requirements with action and target ([#36528](https://github.com/okou-ai/okou/issues/36528)) ([4e9d00e](https://github.com/okou-ai/okou/commit/4e9d00e79192bdd6468b3767e74e32e36855ee52))
+
+
+### Refactoring
+
+* **runner:** move host control and prefetch to owner crates ([#36501](https://github.com/okou-ai/okou/issues/36501)) ([f7428ab](https://github.com/okou-ai/okou/commit/f7428aba43e5c5025458c923696c4c5ae6d9b540))
+
 ## [0.213.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.6...runner-rs-v0.213.7) (2026-09-24)
 
 

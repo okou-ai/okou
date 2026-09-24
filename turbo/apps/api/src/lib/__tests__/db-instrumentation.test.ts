@@ -1,7 +1,12 @@
 import { lookup as dnsLookup } from "node:dns";
 import type { LookupFunction } from "node:net";
 
-import { context, SpanStatusCode, type Tracer } from "@opentelemetry/api";
+import {
+  context,
+  ProxyTracerProvider,
+  SpanStatusCode,
+  type Tracer,
+} from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import {
   BasicTracerProvider,
@@ -24,6 +29,7 @@ import { createDeferredPromise } from "../../signals/utils";
 import {
   createInstrumentedPgStream,
   instrumentPgPool,
+  withPgPoolAcquisitionCapture,
 } from "../db-instrumentation";
 import { env } from "../env";
 
@@ -272,6 +278,7 @@ describe("instrumentPgPool", () => {
     stream: PgStreamFactory = () => {
       return createInstrumentedPgStream();
     },
+    queryTracer: Tracer = tracer,
   ): Pool {
     const pool = instrumentPgPool(
       new Pool({
@@ -282,7 +289,7 @@ describe("instrumentPgPool", () => {
         ...config,
         stream,
       }),
-      tracer,
+      queryTracer,
     );
     pools.push(pool);
     return pool;
@@ -380,6 +387,70 @@ describe("instrumentPgPool", () => {
     expectConnectionAcquisition(newSpan);
     expectNoConnectionAcquisition(idleSpan);
     expectNoConnectionAcquisition(queuedSpan);
+  });
+
+  it("captures pool acquisition paths per concurrent manifest lookup", async () => {
+    const pool = createPool();
+    const first = {
+      acquisitions: [] as { durationMs: number; path: AcquirePath }[],
+    };
+    const second = {
+      acquisitions: [] as { durationMs: number; path: AcquirePath }[],
+    };
+
+    await withPgPoolAcquisitionCapture(first, async () => {
+      await pool.query("SELECT 401 AS captured_new");
+      await pool.query("SELECT 402 AS captured_idle");
+    });
+
+    const heldClient = await pool.connect();
+    const firstQueued = withPgPoolAcquisitionCapture(first, async () => {
+      return await pool.query("SELECT 403 AS captured_first_queued");
+    });
+    const secondQueued = withPgPoolAcquisitionCapture(second, async () => {
+      return await pool.query("SELECT 404 AS captured_second_queued");
+    });
+    expect(pool.waitingCount).toBe(2);
+    heldClient.release();
+    await Promise.all([firstQueued, secondQueued]);
+
+    expect(
+      first.acquisitions.map(({ path }) => {
+        return path;
+      }),
+    ).toStrictEqual(["new", "idle", "queued"]);
+    expect(
+      second.acquisitions.map(({ path }) => {
+        return path;
+      }),
+    ).toStrictEqual(["queued"]);
+    for (const acquisition of [...first.acquisitions, ...second.acquisitions]) {
+      expect(Number.isFinite(acquisition.durationMs)).toBeTruthy();
+      expect(acquisition.durationMs).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("captures pool acquisition without a recording query span", async () => {
+    // A production API request cannot choose the process tracer; exercise this
+    // infrastructure boundary with a real pool and a non-recording tracer.
+    const pool = createPool(
+      {},
+      undefined,
+      new ProxyTracerProvider().getTracer("db-instrumentation-noop-test"),
+    );
+    const capture = {
+      acquisitions: [] as { durationMs: number; path: AcquirePath }[],
+    };
+
+    const result = await withPgPoolAcquisitionCapture(capture, async () => {
+      return await pool.query("SELECT 405 AS captured_without_span");
+    });
+
+    expect(result.rowCount).toBe(1);
+    expect(capture.acquisitions).toStrictEqual([
+      { durationMs: expect.any(Number), path: "new" },
+    ]);
+    expect(exporter.getFinishedSpans()).toHaveLength(0);
   });
 
   it("keeps a fast lookup on the single primary path", async () => {
@@ -690,9 +761,14 @@ describe("instrumentPgPool", () => {
     const timeoutPool = createPool({ connectionTimeoutMillis: 25 });
     const heldClient = await timeoutPool.connect();
     const timeoutStatement = "SELECT 301 AS acquisition_timeout";
+    const timeoutCapture = {
+      acquisitions: [] as { durationMs: number; path: AcquirePath }[],
+    };
 
     const timeoutError = await captureRejection(
-      timeoutPool.query(timeoutStatement),
+      withPgPoolAcquisitionCapture(timeoutCapture, async () => {
+        return await timeoutPool.query(timeoutStatement);
+      }),
     );
     heldClient.release();
 
@@ -704,6 +780,9 @@ describe("instrumentPgPool", () => {
     const timeoutSpan = findSpan(timeoutStatement);
     expect(timeoutSpan.status.code).toBe(SpanStatusCode.ERROR);
     expectAcquisition(timeoutSpan, "queued");
+    expect(timeoutCapture.acquisitions).toStrictEqual([
+      { durationMs: expect.any(Number), path: "queued" },
+    ]);
 
     const failurePool = createPool();
     const invalidStatement =

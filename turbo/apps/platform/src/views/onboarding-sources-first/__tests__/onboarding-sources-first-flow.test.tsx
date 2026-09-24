@@ -9,11 +9,15 @@ import { expect, test } from "vitest";
 
 import {
   click,
+  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { pathname, search } from "../../../signals/location.ts";
-import { localStorageSignals } from "../../../signals/external/local-storage.ts";
+import {
+  listLocalStorageEntries,
+  localStorageSignals,
+} from "../../../signals/external/local-storage.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
@@ -34,9 +38,9 @@ const SOURCES_FIRST_ON = {
 
 const MAKE_QUESTION = "What do you want to make first";
 const INDUSTRY_QUESTION = "What kind of work do you do?";
-const SOURCES_QUESTION = "Okou is for you, and shared across your whole team.";
+const SOURCES_QUESTION = "Connect a work tool";
 const MARKETING_FIELD = "Marketing & content";
-const READY_TITLE = "Okou is ready for you";
+const READY_TITLE = "Start with a task that matters";
 const PROFILE_TITLE = "Here's what we've learned about you";
 const START_ACTION = "Start with Okou";
 const HANDOFF_PROMPT = "Draft the launch plan";
@@ -182,6 +186,76 @@ test("The switch opens the field question on /onboarding and continues to the so
   expect(fieldRadio(MARKETING_FIELD)).toBeChecked();
 });
 
+test("The first step introduces Okou and its compliance progress", async () => {
+  mockOnboardingNeeded();
+  mockCatalog();
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboarding,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "Okou is the work assistant for you and your team. It turns scattered information into finished work, in the cloud. Pick your field for a first task that fits.",
+    ),
+  ).toBeInTheDocument();
+  const badges = Array.from(
+    document.querySelectorAll('[data-slot="badge"]'),
+  ).map((badge) => {
+    return badge.textContent;
+  });
+  expect(badges).toStrictEqual([
+    "SOC 2 Type IIIn progress",
+    "CCPA / CPRACompliant",
+    "GDPRCompliant",
+    "HIPAAAligned",
+    "ISO/IEC 27001Aligned",
+  ]);
+  const link = queryAllByRoleFast("link").find((candidate) => {
+    return candidate.textContent?.trim() === "Security details";
+  });
+  expect(link).toHaveAttribute("href", "https://www.okou.ai/en/security");
+});
+
+test.each([
+  {
+    locale: "ja-JP" as const,
+    name: "Okouのデータ保護について",
+    href: "https://www.okou.ai/ja/security",
+  },
+  {
+    locale: "zh-Hant" as const,
+    name: "瞭解 Okou 如何保護你的資料",
+    href: "https://www.okou.ai/zh-Hant/security",
+  },
+])(
+  "The source step links to the security page in $locale",
+  async ({ locale, name, href }) => {
+    mockOnboardingNeeded();
+    mockCatalog();
+
+    await setupPage({
+      context,
+      locale,
+      path: ROUTES.onboardingSources,
+      featureSwitches: SOURCES_FIRST_ON,
+    });
+
+    await waitFor(() => {
+      const link = queryAllByRoleFast("link").find((candidate) => {
+        return candidate.textContent?.trim() === name;
+      });
+      expect(link).toHaveAttribute("href", href);
+    });
+  },
+);
+
 test("A later step returns to the entry until a source is connected", async () => {
   mockOnboardingNeeded();
   mockCatalog();
@@ -257,10 +331,10 @@ test("Connected account context replaces the static starting prompt", async () =
 
   await expect(
     screen.findByRole("heading", {
-      name: "Have you used Codex or Claude Code?",
+      name: "How would you like to start with Okou?",
     }),
   ).resolves.toBeInTheDocument();
-  click(fieldRadio("No, I’m new to this"));
+  click(fieldRadio("I'm new to AI agents"));
   click(getButtonByName("Continue"));
 
   await expect(
@@ -327,9 +401,9 @@ test("The profile step shows a skeleton until the shared context result arrives"
   await screen.findByRole("heading", { name: SOURCES_QUESTION });
   click(getButtonByName("Continue"));
   await screen.findByRole("heading", {
-    name: "Have you used Codex or Claude Code?",
+    name: "How would you like to start with Okou?",
   });
-  click(fieldRadio("No, I’m new to this"));
+  click(fieldRadio("I'm new to AI agents"));
   click(getButtonByName("Continue"));
 
   await screen.findByRole("heading", { name: PROFILE_TITLE });
@@ -399,9 +473,9 @@ test("A failed profile can be retried without losing the rest of onboarding", as
   await screen.findByRole("heading", { name: SOURCES_QUESTION });
   click(getButtonByName("Continue"));
   await screen.findByRole("heading", {
-    name: "Have you used Codex or Claude Code?",
+    name: "How would you like to start with Okou?",
   });
-  click(fieldRadio("No, I’m new to this"));
+  click(fieldRadio("I'm new to AI agents"));
   click(getButtonByName("Continue"));
 
   await screen.findByRole("heading", { name: PROFILE_TITLE });
@@ -541,6 +615,7 @@ test("A refreshed ready step keeps the industry, model choice, and edited reques
   expect(sentIndustry).toBe("marketing");
   expect(sentProvider).toBe("claudeCode");
   expect(context.store.get(completedDraftStorage.get$)).toBeNull();
+  expect(listLocalStorageEntries("onboarding:")).toStrictEqual([]);
 });
 
 test("A member's run reaches the first request without the admin-only completion", async () => {
@@ -572,14 +647,19 @@ test("A member's run reaches the first request without the admin-only completion
     screen.findByRole("heading", { name: READY_TITLE }),
   ).resolves.toBeInTheDocument();
 
+  await fill(
+    screen.getByLabelText("Your starting prompt"),
+    "Draft my meeting agenda",
+  );
   click(getButtonByName(START_ACTION));
 
   await waitFor(() => {
-    expect(runPrompt).toBeTruthy();
+    expect(runPrompt).toBe("Draft my meeting agenda");
   });
   // `POST /api/onboarding/complete` is admin-only, so a member run would only
   // ever collect a 403 from it.
   expect(completions).toBe(0);
+  expect(listLocalStorageEntries("onboarding:")).toStrictEqual([]);
 });
 
 test("A step keeps the prompt handoff and redeem code it arrived with", async () => {

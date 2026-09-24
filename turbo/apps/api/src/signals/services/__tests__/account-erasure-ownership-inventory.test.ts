@@ -242,6 +242,23 @@ describe("account erasure ownership coverage guard", () => {
     );
   });
 
+  it("reopens deferred retention if a queue gains an account identity", () => {
+    // Deferral is limited to today's schema; a future durable ownership key
+    // requires a new decision instead of silently inheriting this carve-out.
+    for (const name of ["email_outbox", "feishu_chat_ingress"]) {
+      const widened = schemaTables.map((table) => {
+        return table.name === name
+          ? { name: table.name, columns: [...table.columns, "owner_user_id"] }
+          : table;
+      });
+      expect(() => {
+        return assertOwnershipInventoryCoverage(widened);
+      }).toThrow(
+        `account_erasure_inventory:undeclared_ownership_column:${name}.owner_user_id`,
+      );
+    }
+  });
+
   it("fails when a descendant starts carrying its own account identity", () => {
     // A row that names its own owner must be deleted directly. Leaving it
     // filed under a parent is how a cross-owner root goes missing.
@@ -317,14 +334,18 @@ describe("account erasure ownership coverage guard", () => {
         expect(ACCOUNT_OWNERSHIP_INVENTORY[parent]?.coverage).toBe("user_root");
       }
     }
-    // Mail arrives from a run and from an automation, and Morning Brief
-    // delivery is linked through the automation like any other: no column
-    // ever carried a delivery id, so listing one as a parent described a
-    // sweep that could not be written.
-    expect(ACCOUNT_OWNERSHIP_INVENTORY.email_outbox).toStrictEqual({
-      coverage: "user_descendant",
-      parents: ["agent_runs", "workflow_automations"],
-    });
+    // Product explicitly defers these two payload-bearing queues to a
+    // separate retention policy; they are not misclassified as content-free.
+    expect(
+      Object.entries(ACCOUNT_OWNERSHIP_INVENTORY)
+        .filter(([, entry]) => {
+          return entry.coverage === "deferred_retention";
+        })
+        .map(([table]) => {
+          return table;
+        })
+        .sort(),
+    ).toStrictEqual(["email_outbox", "feishu_chat_ingress"]);
     // The thread composer draft now also lives in its own child row. It holds
     // account content and names no account, so it has to be reached through
     // the thread that does.

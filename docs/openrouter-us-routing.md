@@ -23,12 +23,12 @@ The 2026-09-13 tests and official US catalog comparison in
 recheck, established US support for the current Claude Messages and GPT
 Responses routes. DeepSeek is intentionally excluded from US routing so its
 OpenRouter route retains the global provider pool instead of narrowing to one
-regional upstream. Gemini voice uses Google Cloud after
+regional upstream. Voice input uses Google Cloud after
 [#33769](https://github.com/vm0-ai/vm0/pull/33769) and is outside this OpenRouter
-switch. No remaining platform Chat Completions or dedicated transcription model
-has verified US support. Unsupported combinations retain their global endpoint,
-including all DeepSeek models, Claude Fable 5.1, the current internal
-text/image/translation helpers and dedicated transcription. Catalog presence
+switch. No remaining platform Chat Completions model has verified US support.
+Unsupported combinations retain their global endpoint, including all DeepSeek
+models, Claude Fable 5.1, and the current internal text/image/translation
+helpers. Catalog presence
 alone does not authorize another API or model; update the allowlist only after
 verifying that combination.
 

@@ -23,7 +23,7 @@ import {
  * invoke the real path on a development server or a protected preview
  * deployment. The environment gate runs before authentication, so production
  * answers 404 without doing any auth work, and it stays 404 even when
- * `simpleMorningBrief` is on for the caller.
+ * `FeatureSwitchKey.NativeMorningBrief` is on for the caller.
  *
  * Everything else is ordinary: the owner comes from the authenticated
  * organization and user, the native Slack read capability is required because

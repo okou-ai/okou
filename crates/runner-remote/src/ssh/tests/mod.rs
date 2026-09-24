@@ -358,8 +358,11 @@ async fn timeout_after_exec_ack_is_unknown_without_replay() {
 #[tokio::test]
 async fn full_binary_streams_fit_the_generic_budget_with_independent_truncation() {
     for (fragment, length) in [
-        (1, 1024 * 1024 + 1),
+        // Exercise byte-at-a-time framing without sending millions of SSH packets.
+        (1, 1024),
         (16384, 1024 * 1024),
+        // The last byte must cross the output budget in its own SSH frame.
+        (16384, 1024 * 1024 + 1),
         (17001, 1024 * 1024 + 1),
     ] {
         let stdout: Vec<u8> = (0..length).map(|index| index as u8).collect();

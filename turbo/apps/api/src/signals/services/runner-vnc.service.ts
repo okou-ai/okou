@@ -6,6 +6,10 @@ import {
   type RunnerVncResolveResponse,
 } from "@okouai/api-contracts/contracts/runner-vnc";
 import { vncAuthenticationSchema } from "@okouai/api-contracts/contracts/vnc-credentials";
+import {
+  assertErasureSubjectReadable,
+  assertErasureSubjectWritable,
+} from "@okouai/db/operations/account-erasure";
 import type { Db } from "../external/db";
 import type { ClerkClient } from "../external/clerk";
 import { decryptStoredSecretValue } from "./crypto.utils";
@@ -50,7 +54,10 @@ function hasTransportAuthority(
   row: CurrentVncAuthority,
   transport: TransportSnapshot,
 ) {
-  return transport.type === "direct" || row.sshGrantAgentId !== null;
+  return (
+    transport.type === "direct" ||
+    (row.threadMode ? row.sshAllowed : row.sshGrantAgentId !== null)
+  );
 }
 
 function hasValidAppleDhRoute(
@@ -160,6 +167,24 @@ export async function checkRunnerVnc(
   if (!hasValidAppleDhRoute(row, transport)) {
     return { outcome: "unavailable" };
   }
+  const admission = await settle(
+    db.transaction(async (tx) => {
+      await assertErasureSubjectReadable(tx, [
+        { subjectKind: "user", subjectId: row.userId },
+        { subjectKind: "organization", subjectId: row.orgId },
+      ]);
+    }),
+    signal,
+  );
+  if (!admission.ok) {
+    if (
+      admission.error instanceof Error &&
+      admission.error.message === "account_erasure:subject_closed"
+    ) {
+      return { outcome: "unavailable" };
+    }
+    throw admission.error;
+  }
   return {
     outcome:
       row.generation === input.expectedGeneration &&
@@ -246,6 +271,9 @@ export async function resolveRunnerVnc(
     throw new Error("VNC connection has an invalid stored profile");
   }
   const transport = storedTransportSnapshot(row);
+  if (row.threadMode && !hasTransportAuthority(row, transport)) {
+    return { outcome: "unavailable" };
+  }
   const capability = selectedCapability(
     row,
     transport,
@@ -254,13 +282,55 @@ export async function resolveRunnerVnc(
   if (!capability) {
     return { outcome: "unsupported_profile" };
   }
-  if (!hasTransportAuthority(row, transport)) {
+  if (!row.threadMode && !hasTransportAuthority(row, transport)) {
     return { outcome: "unavailable" };
   }
   const security = storedRunnerSecurity(row, transport);
   const authentication = await decryptRunnerAuthentication(row, signal);
   const current = await currentRunnerVncAuthority(db, input, signal);
   if (!(await isSameCurrentHandoff(current, row, transport, clerk, signal))) {
+    return { outcome: "unavailable" };
+  }
+  // KMS and Clerk membership reads are outside the D1 fence. A final scoped
+  // admission and primary read prevent a late SSH/VNC secret handoff after a
+  // committed account closure or a concurrently cancelled Run.
+  const admitted = await db.transaction(async (tx) => {
+    const result = await settle(
+      assertErasureSubjectWritable(tx, [
+        { subjectKind: "user", subjectId: row.userId },
+        { subjectKind: "organization", subjectId: row.orgId },
+      ]),
+      signal,
+    );
+    if (!result.ok) {
+      if (
+        result.error instanceof Error &&
+        result.error.message === "account_erasure:subject_closed"
+      ) {
+        return false;
+      }
+      throw result.error;
+    }
+    const latest = await currentRunnerVncAuthority(tx, input, signal);
+    if (!latest) {
+      return false;
+    }
+    const latestTransport = storedTransportSnapshot(latest);
+    return (
+      hasTransportAuthority(latest, latestTransport) &&
+      latest.generation === row.generation &&
+      latest.encryptedPassword === row.encryptedPassword &&
+      latest.username === row.username &&
+      latest.authMethod === row.authMethod &&
+      latest.securityType === row.securityType &&
+      latest.trustMode === row.trustMode &&
+      latest.caBundle === row.caBundle &&
+      latest.host === row.host &&
+      latest.port === row.port &&
+      sameTransport(latestTransport, transport)
+    );
+  });
+  if (!admitted) {
     return { outcome: "unavailable" };
   }
   const resolved = {

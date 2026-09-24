@@ -33,7 +33,7 @@ import {
   type RouterPathParams,
 } from "./route.ts";
 import { registerServiceWorker$ } from "../lib/push-notifications.ts";
-import { bestEffort, onDomEventFn } from "./utils.ts";
+import { bestEffort, detach, onDomEventFn, Reason } from "./utils.ts";
 import "./pwa-install.ts";
 import { ROUTES, type RoutePath } from "./route-paths.ts";
 
@@ -45,9 +45,6 @@ import { setupGithubConnectPage$ } from "./okou-page/github-connect-page.ts";
 import { setupTeamsConnectPage$ } from "./okou-page/teams-connect-page.ts";
 import { setupTelegramConnectPage$ } from "./okou-page/telegram-connect-page.ts";
 import { setupTelegramSettingsPage$ } from "./okou-page/telegram-settings-page.ts";
-import { setupSshConnectorPage$ } from "./okou-page/ssh-connector-page.ts";
-import { setupVncConnectorPage$ } from "./okou-page/vnc-connector-page.ts";
-import { setupCloudflareAccessConnectorPage$ } from "./okou-page/cloudflare-access-connector-page.ts";
 import { setupFeishuSettingsPage$ } from "./okou-page/feishu-settings-page.ts";
 import { setupFeishuOAuthCallbackPage$ } from "./okou-page/feishu-oauth-callback-page.ts";
 import { setupActivityDetailPage$ } from "./activity-page/activity-detail-page-setup.ts";
@@ -111,9 +108,11 @@ import { updatePage$ } from "./react-router.ts";
 import { setupLegacySettingsRedirect$ } from "./okou-page/settings/legacy-settings-redirect.ts";
 import { NotFoundPage } from "../views/not-found-page.tsx";
 import { setupSharedArtifact$ } from "./shared-artifact.ts";
+import { setupAccountErasureLocalLifecycle$ } from "./account-erasure-local-lifecycle.ts";
 import { setupSharedThreadPage$ } from "./shared-thread-page/shared-thread-page-setup.ts";
 
 import { setupGlobalKeyboardShortcuts$ } from "./okou-page/nav.ts";
+import { setupChatThreadFilterShortcut$ } from "./okou-page/chat-thread-filter-selection.ts";
 import { bootstrapOnboardingGuard$ } from "./okou-page/onboard-guard.ts";
 import {
   applyFeatureSwitches$,
@@ -322,18 +321,6 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.connectors,
     setup: setupAuthSidebarPageWrapper(setupConnectorsPage$),
-  },
-  {
-    path: ROUTES.connectorSsh,
-    setup: setupAuthSidebarPageWrapper(setupSshConnectorPage$),
-  },
-  {
-    path: ROUTES.connectorVnc,
-    setup: setupAuthSidebarPageWrapper(setupVncConnectorPage$),
-  },
-  {
-    path: ROUTES.connectorCloudflareAccess,
-    setup: setupAuthSidebarPageWrapper(setupCloudflareAccessConnectorPage$),
   },
   {
     path: ROUTES.agentIdeas,
@@ -637,6 +624,15 @@ const completeBootstrap$ = command(
 
     render();
 
+    // The lifecycle owns its own session listener and cleanup loop. Starting
+    // it must not delay route readiness or give unrelated startup reads a head
+    // start before a user can interact with the rendered page.
+    detach(
+      bestEffort(set(setupAccountErasureLocalLifecycle$, signal), signal),
+      Reason.Daemon,
+      "account erasure local lifecycle",
+    );
+
     // These public protocol pages also run before an embedded Clerk session exists.
     // Hosted Clerk task continuations retain the same ownership via redirect_url.
     if (isDesktopAuthFlow()) {
@@ -665,6 +661,7 @@ const completeBootstrap$ = command(
       set(setupNotificationListener$, signal),
 
       set(setupGlobalKeyboardShortcuts$, signal),
+      set(setupChatThreadFilterShortcut$, signal),
       set(watchOrgSwitch$, signal),
       set(syncInitialPreferences$, signal),
     ]);

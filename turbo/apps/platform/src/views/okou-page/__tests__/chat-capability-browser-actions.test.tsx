@@ -6,6 +6,7 @@ import {
   browserUserActionsContract,
   type BrowserUserActionResponse,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { compile } from "tailwindcss";
@@ -13,9 +14,11 @@ import { expect, test } from "vitest";
 
 import {
   click,
+  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   CAPABILITY_AGENT_ID,
   context,
@@ -46,16 +49,6 @@ const BROWSER_INPUT_SUCCESS_SORT_ID = "10000000-0000-4000-a000-000000001105";
 const BROWSER_INPUT_CANCEL_CLIENT_ID = "10000000-0000-4000-a000-000000001106";
 const BROWSER_INPUT_CANCEL_SORT_ID = "10000000-0000-4000-a000-000000001107";
 const BROWSER_INPUT_CALLBACK = "Continue after browser input";
-const BROWSER_INTERACTION_TOKEN = `vm0_browser_user_action_${"c".repeat(43)}`;
-const BROWSER_INTERACTION_SUCCESS_CLIENT_ID =
-  "10000000-0000-4000-a000-000000001108";
-const BROWSER_INTERACTION_SUCCESS_SORT_ID =
-  "10000000-0000-4000-a000-000000001109";
-const BROWSER_INTERACTION_CANCEL_CLIENT_ID =
-  "10000000-0000-4000-a000-000000001110";
-const BROWSER_INTERACTION_CANCEL_SORT_ID =
-  "10000000-0000-4000-a000-000000001111";
-const BROWSER_INTERACTION_CALLBACK = "Continue after browser interaction";
 
 function browserInputAction(
   state: BrowserUserActionResponse["state"],
@@ -75,18 +68,21 @@ function browserInputAction(
         description: "The email used for this account",
         fieldKind: "username",
         required: true,
+        control: { tagName: "INPUT", inputType: "email" },
       },
       {
         key: "password",
         label: "Password",
         fieldKind: "password",
         required: true,
+        control: { tagName: "INPUT", inputType: "password" },
       },
       {
         key: "code",
         label: "Verification code",
         fieldKind: "one_time_code",
         required: false,
+        control: { tagName: "INPUT", inputType: "tel" },
       },
     ],
     callbackIds: {
@@ -121,41 +117,6 @@ function browserInputUrl(
 function browserInputRelativeUrl(): string {
   const url = new URL(browserInputUrl());
   return `${url.pathname}${url.search}`;
-}
-
-function browserInteractionAction(
-  state: BrowserUserActionResponse["state"],
-): Extract<BrowserUserActionResponse, { kind: "direct_interaction" }> {
-  return {
-    kind: "direct_interaction",
-    requestToken: BROWSER_INTERACTION_TOKEN,
-    state,
-    completedAt: state === "pending" ? null : "2026-09-22T04:00:00.000Z",
-    agentId: CAPABILITY_AGENT_ID,
-    threadId: RUN_THREAD_ID,
-    reason: "Finish the visual challenge",
-    callbackIds: {
-      success: {
-        clientEventId: BROWSER_INTERACTION_SUCCESS_CLIENT_ID,
-        chatThreadSortEventId: BROWSER_INTERACTION_SUCCESS_SORT_ID,
-      },
-      cancellation: {
-        clientEventId: BROWSER_INTERACTION_CANCEL_CLIENT_ID,
-        chatThreadSortEventId: BROWSER_INTERACTION_CANCEL_SORT_ID,
-      },
-    },
-  };
-}
-
-function browserInteractionUrl(): string {
-  const url = new URL(
-    `/browser/actions/${BROWSER_INTERACTION_TOKEN}`,
-    "https://app.okou.ai",
-  );
-  url.searchParams.set("agentId", CAPABILITY_AGENT_ID);
-  url.searchParams.set("threadId", RUN_THREAD_ID);
-  url.searchParams.set("callbackPrompt", BROWSER_INTERACTION_CALLBACK);
-  return url.href;
 }
 
 /**
@@ -546,12 +507,87 @@ test("Recognize trusted assistant actions without trusting lookalikes", async ()
   expect(window.location.hostname).toBe("app.okou.ai");
 });
 
-test("A pending Browser input card opens the exact standalone form URL", async () => {
+test("A Browser input card opens a preflighted dialog and completes without navigation", async () => {
+  let reads = 0;
+  let preflights = 0;
+  let state: BrowserUserActionResponse["state"] = "pending";
+  let sentPrompt = "";
+  const firstCheckStarted = createDeferredPromise<void>(context.signal);
+  const releaseFirstCheck = createDeferredPromise<void>(context.signal);
   installCapabilityChat({
     events: completedConversation(`[Enter details](${browserInputUrl()})`),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, browserInputAction("pending"));
+    reads += 1;
+    return respond(200, {
+      ...browserInputAction(state),
+      fields: [
+        {
+          key: "notes",
+          label: "Notes",
+          fieldKind: "text",
+          required: false,
+          control: { tagName: "INPUT", inputType: "text" },
+        },
+        {
+          key: "quantity",
+          label: "Quantity",
+          fieldKind: "number",
+          required: false,
+          control: { tagName: "INPUT", inputType: "number" },
+        },
+      ],
+    });
+  });
+  context.mocks.api(
+    browserUserActionsContract.preflight,
+    async ({ params, body, respond }) => {
+      preflights += 1;
+      expect(params.requestToken).toBe(BROWSER_INPUT_TOKEN);
+      expect(body).toStrictEqual({});
+      if (preflights === 1) {
+        firstCheckStarted.resolve(undefined);
+        await releaseFirstCheck.promise;
+      }
+      return respond(200, {
+        ...browserInputAction("pending"),
+        fields: [
+          {
+            key: "notes",
+            label: "Notes",
+            fieldKind: "text",
+            required: false,
+            control: { tagName: "TEXTAREA", inputType: "textarea" },
+          },
+          {
+            key: "quantity",
+            label: "Quantity",
+            fieldKind: "number",
+            required: false,
+            control: {
+              tagName: "INPUT",
+              inputType: "number",
+              min: "1",
+              max: "9",
+            },
+          },
+        ],
+      });
+    },
+  );
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([{ key: "notes", value: "Ready" }]);
+    state = "succeeded";
+    return respond(200, browserInputAction(state));
+  });
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    sentPrompt = body.prompt ?? "";
+    expect(body.clientEventId).toBe(BROWSER_INPUT_SUCCESS_CLIENT_ID);
+    expect(body.chatThreadSortEventId).toBe(BROWSER_INPUT_SUCCESS_SORT_ID);
+    return respond(201, {
+      runId: crypto.randomUUID(),
+      threadId: RUN_THREAD_ID,
+    });
   });
 
   await setupPage({
@@ -562,15 +598,71 @@ test("A pending Browser input card opens the exact standalone form URL", async (
   });
   await readyChat();
 
-  const link = await waitFor(() => {
-    return linkByName("Enter information");
-  });
-  expect(link).toHaveAttribute("href", browserInputUrl());
-  expect(link).toHaveAttribute("target", "_blank");
-  expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  const openButton = await findButton("Enter information");
+  const currentUrl = window.location.href;
+  expect(preflights).toBe(0);
   expect(
     screen.queryByRole("dialog", { name: "Enter information in browser" }),
   ).toBeNull();
+
+  click(openButton);
+  const dialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
+  });
+  await firstCheckStarted.promise;
+  const earlyNotes = within(dialog).getByRole("textbox", { name: "Notes" });
+  expect(earlyNotes).toHaveProperty("tagName", "INPUT");
+  await fill(earlyNotes, "Draft");
+  expect(buttonsByName("Add to browser", dialog)[0]).toBeEnabled();
+  releaseFirstCheck.resolve(undefined);
+  await waitFor(() => {
+    expect(
+      within(dialog).getByRole("textbox", { name: "Notes" }),
+    ).toHaveProperty("tagName", "TEXTAREA");
+  });
+  expect(within(dialog).getByRole("textbox", { name: "Notes" })).toHaveValue(
+    "Draft",
+  );
+  expect(within(dialog).getByLabelText("Quantity")).toHaveAttribute(
+    "type",
+    "number",
+  );
+  expect(window.location.href).toBe(currentUrl);
+  expect(preflights).toBe(1);
+  const readsBeforeFocus = reads;
+  window.dispatchEvent(new Event("focus"));
+  expect(dialog).toBeVisible();
+  expect(within(dialog).getByLabelText("Notes")).toHaveValue("Draft");
+  expect(reads).toBe(readsBeforeFocus);
+
+  const closeButton = buttonsByName("Close", dialog)[0];
+  if (!closeButton) {
+    throw new Error("Browser input dialog close button was not visible");
+  }
+  click(closeButton);
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Enter information in browser" }),
+    ).toBeNull();
+  });
+  click(await findButton("Enter information"));
+  const reopenedDialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
+  });
+  await expect(
+    within(reopenedDialog).findByRole("textbox", { name: "Notes" }),
+  ).resolves.toBeVisible();
+  expect(preflights).toBe(2);
+  await fill(within(reopenedDialog).getByLabelText("Notes"), "Ready");
+  const submitButton = buttonsByName("Add to browser", reopenedDialog)[0];
+  if (!submitButton) {
+    throw new Error("Browser input submit button was not visible");
+  }
+  click(submitButton);
+
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  expect(sentPrompt).toBe(BROWSER_INPUT_CALLBACK);
+  expect(buttonsByName("Enter information")).toHaveLength(0);
 });
 
 test("A pending transcript card becomes consumed when the standalone form completes", async () => {
@@ -592,15 +684,58 @@ test("A pending transcript card becomes consumed when the standalone form comple
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await readyChat();
-  await waitFor(() => {
-    return linkByName("Enter information");
-  });
+  await findButton("Enter information");
 
   state = "succeeded";
   window.dispatchEvent(new Event("focus"));
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(linksByName("Enter information")).toHaveLength(0);
+  expect(buttonsByName("Enter information")).toHaveLength(0);
+});
+
+test("Closing the input dialog refreshes an action completed in another tab", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  installCapabilityChat({
+    events: completedConversation(`[Enter details](${browserInputUrl()})`),
+  });
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...browserInputAction(state),
+      callbackDelivered: state === "succeeded",
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, browserInputAction("pending"));
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await readyChat();
+
+  click(await findButton("Enter information"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
+  });
+  await expect(
+    within(dialog).findByLabelText("Account email"),
+  ).resolves.toBeVisible();
+
+  state = "succeeded";
+  window.dispatchEvent(new Event("focus"));
+  expect(dialog).toBeVisible();
+
+  const closeButton = buttonsByName("Close", dialog)[0];
+  if (!closeButton) {
+    throw new Error("Browser input dialog close button was not visible");
+  }
+  click(closeButton);
+
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  expect(buttonsByName("Enter information")).toHaveLength(0);
 });
 
 test("A freshly mounted transcript card reads accepted Browser callback delivery", async () => {
@@ -624,7 +759,7 @@ test("A freshly mounted transcript card reads accepted Browser callback delivery
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   expect(buttonsByName("Notify agent")).toHaveLength(0);
-  expect(linksByName("Enter information")).toHaveLength(0);
+  expect(buttonsByName("Enter information")).toHaveLength(0);
 });
 
 test("A mounted transcript card rechecks callback delivery on page return", async () => {
@@ -655,32 +790,8 @@ test("A mounted transcript card rechecks callback delivery on page return", asyn
   expect(buttonsByName("Notify agent")).toHaveLength(0);
 });
 
-test("A freshly mounted direct-interaction card reads accepted cancellation delivery", async () => {
-  installCapabilityChat({
-    events: completedConversation(
-      `[Verify details](${browserInteractionUrl()})`,
-    ),
-  });
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, {
-      ...browserInteractionAction("cancelled"),
-      callbackDelivered: true,
-    });
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  await readyChat();
-
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(buttonsByName("Notify agent")).toHaveLength(0);
-});
-
-test("Absolute and relative Browser input URLs open the same standalone form", async () => {
+test("Absolute and relative Browser input URLs both render dialog cards", async () => {
+  let reads = 0;
   installCapabilityChat({
     events: completedConversation(
       [
@@ -690,6 +801,10 @@ test("Absolute and relative Browser input URLs open the same standalone form", a
     ),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    reads += 1;
+    return respond(200, browserInputAction("pending"));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
     return respond(200, browserInputAction("pending"));
   });
 
@@ -702,76 +817,25 @@ test("Absolute and relative Browser input URLs open the same standalone form", a
   await readyChat();
 
   await waitFor(() => {
-    expect(linksByName("Enter information")).toHaveLength(2);
+    expect(buttonsByName("Enter information")).toHaveLength(2);
   });
-  for (const link of linksByName("Enter information")) {
-    expect((link as HTMLAnchorElement).href).toBe(browserInputUrl());
+  expect(linksByName("Enter information")).toHaveLength(0);
+
+  const openButton = buttonsByName("Enter information")[0];
+  if (!openButton) {
+    throw new Error("Browser input card button was not visible");
   }
-});
-
-test("Complete a direct Browser interaction before its stable callback", async () => {
-  const ordering: string[] = [];
-  let state: BrowserUserActionResponse["state"] = "pending";
-  const browser = managedBrowserSession({
-    status: "active",
-    screenshotUrl: INITIAL_SCREENSHOT_URL,
-    liveUrl: ACTIVE_BROWSER_URL,
+  click(openButton);
+  const dialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
   });
-  installCapabilityChat({
-    events: completedConversation(
-      `[Take over browser](${browserInteractionUrl()})`,
-    ),
-    onSend(send) {
-      ordering.push("callback");
-      expect(send.prompt).toBe(BROWSER_INTERACTION_CALLBACK);
-      expect(send.clientEventId).toBe(BROWSER_INTERACTION_SUCCESS_CLIENT_ID);
-      expect(send.chatThreadSortEventId).toBe(
-        BROWSER_INTERACTION_SUCCESS_SORT_ID,
-      );
-    },
-  });
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, browserInteractionAction(state));
-  });
-  context.mocks.api(browserUserActionsContract.complete, ({ respond }) => {
-    ordering.push("complete");
-    state = "succeeded";
-    return respond(200, browserInteractionAction(state));
-  });
-  context.mocks.api(browserContract.get, ({ params, respond }) => {
-    expect(params.threadId).toBe(RUN_THREAD_ID);
-    return respond(200, { browser });
-  });
-  context.mocks.api(browserContract.leaseByThread, ({ params, respond }) => {
-    expect(params.threadId).toBe(RUN_THREAD_ID);
-    return respond(200, { browser });
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  await readyChat();
-
   await expect(
-    screen.findByText("Finish the visual challenge"),
+    within(dialog).findByLabelText("Account email"),
   ).resolves.toBeVisible();
-  const actionCard = await screen.findByTestId("browser-user-action-card");
-  click(buttonsByName("Open browser", actionCard)[0]!);
-  expect(
-    screen.queryByRole("dialog", { name: "Take over the browser" }),
-  ).toBeNull();
-  await expect(
-    screen.findByRole("complementary", { name: "Live browser" }),
-  ).resolves.toBeVisible();
-  click(await findButton("Finish step"));
-  await screen.findByRole("dialog", { name: "Take over the browser" });
-  click(await findButton("Done"));
-
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(ordering).toStrictEqual(["complete", "callback"]);
+  const readsBeforeFocus = reads;
+  window.dispatchEvent(new Event("focus"));
+  expect(dialog).toBeVisible();
+  expect(reads).toBe(readsBeforeFocus);
 });
 
 test("Keep feature-disabled and foreign Browser actions inert without hiding the ordinary Browser card", async () => {
@@ -785,7 +849,6 @@ test("Keep feature-disabled and foreign Browser actions inert without hiding the
     events: completedConversation(
       [
         `[Disabled input](${browserInputUrl()})`,
-        `[Disabled interaction](${browserInteractionUrl()})`,
         `[Foreign input](${browserInputUrl({ threadId: OTHER_THREAD_ID })})`,
         `[Research session](${trustedBrowserUrl})`,
       ].join("\n\n"),
@@ -803,7 +866,7 @@ test("Keep feature-disabled and foreign Browser actions inert without hiding the
   });
   await readyChat();
   await waitFor(() => {
-    expect(screen.getAllByText("Request unavailable")).toHaveLength(2);
+    expect(screen.getAllByText("Request unavailable")).toHaveLength(1);
     expect(screen.getAllByText("Action unavailable")).toHaveLength(1);
   });
   expect(linksByName("Enter information")).toHaveLength(0);

@@ -28,7 +28,7 @@ import {
   readThreadEventTypes,
   seedRecipientAddress,
 } from "../../../test-fixtures/morning-brief-native-schedule";
-import { createScopedMorningBriefCronRoutesForTest } from "../cron-execute-morning-briefs";
+import { createScopedInlineMorningBriefCronRoutesForTest } from "../cron-execute-morning-briefs";
 import { morningBriefDebugTriggerRoutes } from "../morning-brief-debug-trigger";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { userPreferencesRoutes } from "../user-preferences";
@@ -103,7 +103,7 @@ interface Fixture {
 function cronClient(owner: Fixture) {
   return setupApp({
     context,
-    routes: createScopedMorningBriefCronRoutesForTest(owner),
+    routes: createScopedInlineMorningBriefCronRoutesForTest(owner),
   })(cronExecuteMorningBriefsContract);
 }
 
@@ -170,7 +170,7 @@ async function fixture(): Promise<Fixture> {
   await updateFeatureSwitchesForUser(
     context,
     { orgId, userId },
-    { [FeatureSwitchKey.SimpleMorningBrief]: true },
+    { [FeatureSwitchKey.NativeMorningBrief]: true },
   );
   const installation = await store.set(
     seedSlackOrgInstallation$,

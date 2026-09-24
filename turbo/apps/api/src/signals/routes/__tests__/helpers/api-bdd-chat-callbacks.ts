@@ -158,12 +158,85 @@ function storedS3ObjectResponse(
     Metadata: object?.metadata,
     Body: body
       ? {
+          transformToString(): Promise<string> {
+            return Promise.resolve(Buffer.from(body).toString("utf8"));
+          },
           async *[Symbol.asyncIterator](): AsyncGenerator<Uint8Array> {
             yield body;
           },
         }
       : undefined,
   };
+}
+
+function isHostedMetadataKey(key: string): boolean {
+  return (
+    key.startsWith("artifact-delivery/") ||
+    key.startsWith("artifact-shares/") ||
+    (key.startsWith("sites/") && key.endsWith(".json"))
+  );
+}
+
+function putHostedMetadata(
+  objects: StoredS3Object[],
+  bucket: string,
+  key: string,
+  input: Record<string, unknown>,
+) {
+  const previousIndex = objects.findIndex((object) => {
+    return object.bucket === bucket && object.key === key;
+  });
+  if (
+    (input.IfNoneMatch === "*" && previousIndex !== -1) ||
+    (typeof input.IfMatch === "string" &&
+      storedS3ObjectResponse(objects, bucket, key).ETag !== input.IfMatch)
+  ) {
+    throw Object.assign(new Error("Hosted metadata condition failed"), {
+      name: "PreconditionFailed",
+      $metadata: { httpStatusCode: 412 },
+    });
+  }
+  const body = input.Body;
+  if (typeof body !== "string" && !(body instanceof Uint8Array)) {
+    throw new Error("Expected hosted metadata bytes");
+  }
+  const bytes = Buffer.from(body);
+  const object: StoredS3Object = {
+    bucket,
+    key,
+    body: bytes,
+    size: bytes.byteLength,
+    ...(typeof input.ContentType === "string"
+      ? { contentType: input.ContentType }
+      : {}),
+    ...(isStringRecord(input.Metadata) ? { metadata: input.Metadata } : {}),
+  };
+  if (previousIndex === -1) {
+    objects.push(object);
+  } else {
+    objects[previousIndex] = object;
+  }
+  return { ETag: storedS3ObjectResponse(objects, bucket, key).ETag };
+}
+
+function requireHostedMetadataForRead(
+  objects: readonly StoredS3Object[],
+  command: string,
+  bucket: string,
+  key: string,
+): void {
+  if (
+    (command === "GetObjectCommand" || command === "HeadObjectCommand") &&
+    isHostedMetadataKey(key) &&
+    !objects.some((object) => {
+      return object.bucket === bucket && object.key === key;
+    })
+  ) {
+    throw Object.assign(new Error("Hosted metadata is missing"), {
+      name: "NoSuchKey",
+      $metadata: { httpStatusCode: 404 },
+    });
+  }
 }
 
 function deleteStoredS3Objects(
@@ -384,6 +457,7 @@ export function createChatCallbacksApi(context: TestContext) {
      * Object-storage fake for chat chains: session-history blobs download
      * with deterministic content (so session resume works end to end),
      * registered upload objects appear in prefix listings (upload complete),
+     * hosted metadata retains bytes/ETags and enforces conditional writes,
      * and every other command acks like the plain storage-write mock.
      */
     acceptChatObjectStorage(): {
@@ -445,7 +519,13 @@ export function createChatCallbacksApi(context: TestContext) {
               }),
             );
           }
+          if (isHostedMetadataKey(key)) {
+            return Promise.resolve(
+              putHostedMetadata(objects, bucket, key, input),
+            );
+          }
         }
+        requireHostedMetadataForRead(objects, name, bucket, key);
         if (name === "HeadObjectCommand") {
           return Promise.resolve(storedS3ObjectResponse(objects, bucket, key));
         }

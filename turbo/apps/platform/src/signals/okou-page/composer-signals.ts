@@ -21,6 +21,10 @@ import type { VideoModel } from "@okouai/core/video-model-catalog";
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { onRef } from "../utils.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
+import {
+  createPendingRemoteAccessSignals,
+  threadRemoteAccess$,
+} from "../remote-access.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import type { DraftSignals, ChatAttachment } from "./chat-draft.ts";
 import { createComposerFeedbackModel } from "./chat-feedback.ts";
@@ -278,6 +282,11 @@ export interface ComposerSignals {
   readonly create: ComposerCreateSignals;
   readonly taskChips: ComposerTaskChipsSignals;
   readonly agentId: string;
+  readonly threadId?: string;
+  readonly remoteAccess$: ReturnType<typeof threadRemoteAccess$>;
+  readonly pendingRemoteAccess: ReturnType<
+    typeof createPendingRemoteAccessSignals
+  >;
   readonly editor: ComposerEditorSignals;
   readonly voice: ComposerVoiceInputSignals;
   readonly feedback: WorkflowComposerSignals["feedback"];
@@ -308,6 +317,9 @@ interface CreateComposerSignalsOptions {
   };
   readonly chatEvents$: Computed<ChatEvent[]>;
   readonly threadId?: string;
+  readonly pendingRemoteAccess?: ReturnType<
+    typeof createPendingRemoteAccessSignals
+  >;
   readonly voiceDraftTarget: string;
   readonly connector?: ComposerConnectorSignals;
   readonly singleLineOnMobile: boolean;
@@ -589,6 +601,14 @@ function createPaidToolHints(
   });
 }
 
+function composerRemoteAccessSignals(options: CreateComposerSignalsOptions) {
+  return {
+    remoteAccess$: threadRemoteAccess$(options.threadId ?? ""),
+    pendingRemoteAccess:
+      options.pendingRemoteAccess ?? createPendingRemoteAccessSignals(),
+  };
+}
+
 export function createComposerSignals(
   options: CreateComposerSignalsOptions,
 ): ComposerSignals {
@@ -597,7 +617,6 @@ export function createComposerSignals(
   const agentId$ = computed((): string => {
     return options.agentId;
   });
-  const feedback = createComposerFeedbackModel();
   const temporaryModelNoticeEnabled$ =
     createTemporaryModelNoticeEnabled(options);
   const ui = createComposerUiSignals();
@@ -611,7 +630,7 @@ export function createComposerSignals(
         ? { feedbackPlaceholder: forwardFeedbackPlaceholder }
         : {}),
     },
-    feedback,
+    createComposerFeedbackModel(),
   );
   const create = createComposerCreateSignals(workflowComposer, ui, {
     image: options.imageModel !== undefined,
@@ -668,9 +687,10 @@ export function createComposerSignals(
       );
     }),
   );
-
   return {
     agentId: options.agentId,
+    threadId: options.threadId,
+    ...composerRemoteAccessSignals(options),
     paidToolHints$: createPaidToolHints(create, draft, workflowComposer, ui),
     create,
     taskChips,

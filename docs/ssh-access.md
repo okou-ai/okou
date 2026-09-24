@@ -7,8 +7,8 @@ SSH uses neither connector accounts nor connector permissions.
 
 ## Owner setup
 
-Open **Connectors -> Remote access -> SSH** (`/connectors/ssh`) to manage hosts for your
-current organization and user, without selecting or creating an Agent. The SSH
+Open **Connectors -> Remote control** (`/connectors?scope=remote-control&type=ssh`) to manage hosts for your
+current organization and user, without selecting or creating an Agent. This scope is available in both the legacy tabs and the Connector Directory. The SSH
 card uses the same presentation as connector cards: no hosts shows the service
 description and add affordance; one configured host shows its display name and
 multiple hosts show their count. Hosts without a reported failure use a green dot;
@@ -23,16 +23,11 @@ not configured for SSH; an Agent filter uses its independent SSH grant, even
 when no hosts are configured. SSH never opens generic connector account or
 permission dialogs.
 
-The zero-host card enters `/connectors/ssh?add=1`. The page consumes this intent
-once, checks the current inventory and opens **Add host** only if it is still
-empty. Cancelling, refreshing, or receiving a notification does not reopen it.
-
-The management page follows the Agent and Workflow detail-page layout, with
-**Connectors / SSH** breadcrumbs on desktop and mobile. Use the Connectors
-breadcrumb to return to the directory. Host management remains independent of
+The SSH card opens the Remote control scope with the SSH type selected. Use
+**Add host** there to create a host. Host management remains independent of
 Agent grants.
 
-The **Hosts** view configures a display name, public hostname or IP, port, and a
+The **Connections** view configures a display name, public hostname or IP, port, and a
 credential. Select an existing credential or create a named credential inline with
 the host. The **Credentials** view manages reusable logins owned by the same
 organization and user. Each credential contains an SSH username and either a
@@ -205,7 +200,7 @@ before key/password login. Rejected Access connections never retry as Direct.
 Existing CLI commands use the saved connection ID with no proxy/token options.
 For a protected host, the hostname and port in `okou ssh host list` identify the
 gateway, not the origin SSH port. Exec, Sessions and SFTP share this transport and
-retain their existing limits. Ask the owner to inspect `/connectors/ssh` diagnostics
+retain their existing limits. Ask the owner to inspect `/connectors?scope=remote-control&type=ssh` diagnostics
 when connection setup fails. An Access rejection can mean policy or token scope,
 not necessarily an expired token; gateway TLS/protocol failures remain distinct
 from SSH authentication and host-key failures.
@@ -230,13 +225,12 @@ remains unchanged, and later Agents can use bound configurations once authorized
 for SSH. SSH username/key/password and server host-key trust remain independent
 of the Service Token.
 
-Cloudflare Access also has its own Connector entry after SSH and VNC at
-`/connectors/cloudflare-access`; see [Cloudflare Access](cloudflare-access.md).
-It is owner configuration rather than a directly usable Agent service, so the
-standalone entry has no Agent grant, connector account, chat trigger or direct
-command. `/connectors/ssh` contains only **Hosts** and **Credentials**; the
-standalone entry is the sole management surface for adding, editing and deleting
-Cloudflare Access configurations. Referenced configurations cannot be deleted
+Cloudflare Access also has a Connector card that opens
+`/connectors?scope=private-network`; see [Cloudflare Access](cloudflare-access.md).
+It is owner configuration rather than a directly usable Agent service, so it
+has no Agent grant, connector account, chat trigger or direct command. The
+**Private network** scope manages Cloudflare Access configurations; the
+**Remote control** scope manages SSH and, when enabled, VNC. Referenced configurations cannot be deleted
 until their hosts are rebound or deleted. Client ID and Client Secret are never
 read back, including when replacing a token. Resource editors show public metadata
 and an explicit replacement checkbox: **Replace authentication** for an SSH
@@ -341,11 +335,21 @@ okou ssh exec <connection-id> --command 'uname -a' --json
 ```
 
 Use the exact UUID from the live inventory, not the display name or hostname.
-List again after an unavailable or unknown ID; never invent IDs or automatically
-replay a command whose effects are unknown.
-The inventory requires a current running Run, an Agent visible to its user, a current grant,
-and `ssh:read`. An authorized empty inventory is distinct from unavailable
-authority. Execution requires `ssh:write`. Both capabilities are minted only
+Each listed host has `availability: { "status": "ready" }` or
+`availability: { "status": "blocked", "reason": "needs_rebind" }`.
+`ready` means the host is configured and eligible to attempt, not that a live
+connection has been tested. A blocked host is visible for diagnosis only:
+the owner must explicitly rebind it to a permitted Cloudflare Access configuration
+or choose Direct in the Remote control tab of `/connectors`. Do not execute a
+blocked ID; Runner resolution and pinning still return unavailable before
+credentials are decrypted. List again after an unavailable or unknown ID; never
+invent IDs or automatically replay a command whose effects are unknown.
+The inventory requires a current running Run, an Agent visible to its user,
+`ssh:read`, and either the current Agent grant or the Run's chat-level host
+selection (when Thread Remote Access is enabled). A `hosts: []` result means no
+hosts are visible to this Run; it does not prove the owner has none saved.
+An authorized empty inventory is distinct from unavailable authority.
+Execution requires `ssh:write`. Both capabilities are minted only
 for feature-enabled Runs; newly eligible Runs must start with a fresh token.
 These commands are Run-only, not PAT commands. Agents cannot grant themselves
 access or send target addresses, credentials or host keys to the helper.

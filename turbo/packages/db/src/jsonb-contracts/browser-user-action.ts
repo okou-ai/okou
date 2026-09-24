@@ -38,19 +38,12 @@ export interface BrowserUserActionInputTarget {
   readonly fields: readonly BrowserUserActionInputField[];
 }
 
-export type BrowserUserActionPayload =
-  | {
-      readonly version: 1;
-      readonly kind: "input";
-      readonly callbackIds: BrowserUserActionCallbackIds;
-      readonly target: BrowserUserActionInputTarget;
-    }
-  | {
-      readonly version: 1;
-      readonly kind: "direct_interaction";
-      readonly callbackIds: BrowserUserActionCallbackIds;
-      readonly reason: string;
-    };
+export interface BrowserUserActionPayload {
+  readonly version: 1;
+  readonly kind: "input";
+  readonly callbackIds: BrowserUserActionCallbackIds;
+  readonly target: BrowserUserActionInputTarget;
+}
 
 export function browserUserActionFieldSupportsTarget(
   fieldKind: BrowserUserActionFieldKind,
@@ -70,6 +63,8 @@ export function browserUserActionFieldSupportsTarget(
       return fingerprint.inputType === "password";
     case "one_time_code":
       return ["text", "tel", "number"].includes(fingerprint.inputType);
+    case "number":
+      return fingerprint.inputType === "number";
   }
 }
 
@@ -162,7 +157,7 @@ function decodeField(value: unknown): BrowserUserActionInputField | null {
         0,
         BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH,
       )) ||
-    !["text", "username", "password", "one_time_code"].includes(
+    !["text", "username", "password", "one_time_code", "number"].includes(
       String(field.fieldKind),
     ) ||
     typeof field.required !== "boolean" ||
@@ -292,18 +287,6 @@ export function parseBrowserUserActionPayload(
   const callbackIds = decodeCallbackIds(payload.callbackIds);
   if (!callbackIds) {
     throw new Error("Invalid Browser user-action callback identities");
-  }
-  if (
-    payload.kind === "direct_interaction" &&
-    hasOnlyKeys(payload, ["version", "kind", "callbackIds", "reason"]) &&
-    boundedString(payload.reason, 1, BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH)
-  ) {
-    return {
-      version: 1,
-      kind: payload.kind,
-      callbackIds,
-      reason: payload.reason,
-    };
   }
   if (
     payload.kind === "input" &&

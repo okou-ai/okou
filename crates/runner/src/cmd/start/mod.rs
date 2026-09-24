@@ -8,7 +8,7 @@
 //! The sibling modules keep focused responsibilities out of this orchestration
 //! file:
 //! - `factory_lifecycle`: sandbox factory creation and shutdown.
-//! - `idle_lifecycle`: idle-pool lifecycle, status updates, and destroy helpers.
+//! - `runner-supervisor`: idle-pool lifecycle, replenishment, status, and destroy policy.
 //! - `identity`: persistent runner id storage.
 //! - `job_discovery`: discovery branch handling and idle-reuse admission.
 //! - `job_lifecycle`: cleanup, budget, and completion ownership state.
@@ -91,13 +91,10 @@ use runner_provider::{
 };
 use runner_provider::{RunCancellationRegistration, RunCancellationRegistry};
 
-mod active_runs;
-mod blank_pool;
 mod factory_lifecycle;
 mod finalizing_claim;
 mod heartbeat;
 mod identity;
-mod idle_lifecycle;
 mod job_discovery;
 mod job_lifecycle;
 mod job_spawn;
@@ -109,16 +106,9 @@ mod prune_idle;
 mod sandbox_finalization;
 mod signals;
 
-use active_runs::ActiveRuns;
-use blank_pool::BlankPoolReplenisher;
 use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime, start_factories};
-use heartbeat::{
-    HEARTBEAT_PERIOD, HeartbeatContext, HeartbeatContextInit, HeartbeatController,
-    HeartbeatSnapshotMetadata, WorkspaceCacheStateSnapshot, collect_heartbeat_state,
-    refresh_initial_workspace_cache_snapshot,
-};
+use heartbeat::heartbeat_profiles;
 use identity::load_runner_process_identity;
-use idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
 use job_discovery::{DiscoveredJob, DiscoveredJobContext, handle_discovered_job};
 use job_spawn::{SpawnContext, handle_job_result};
 use mitm_restart::{
@@ -129,6 +119,14 @@ use mitm_restart::{
 use orphan_reap::{
     OrphanReapMode, OrphanReapProcessDiscovery, OrphanedActiveRuns, reap_orphaned_active_runs,
 };
+use runner_lifecycle::active_runs::ActiveRuns;
+use runner_lifecycle::workspace_image_cache::snapshot::WorkspaceCacheStateSnapshot;
+use runner_supervisor::blank_pool::{BlankPoolReplenisher, BlankProfile};
+use runner_supervisor::heartbeat::{
+    HEARTBEAT_PERIOD, HeartbeatContext, HeartbeatContextInit, HeartbeatController,
+    HeartbeatSnapshotMetadata, collect_heartbeat_state, refresh_initial_workspace_cache_snapshot,
+};
+use runner_supervisor::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
 use signals::{
     EarlySignals, SignalController, SignalHandlerTask, handle_stopping_signal, recv_handler_task,
 };
@@ -532,7 +530,7 @@ async fn publish_live_runner_instance_or_shutdown_startup_resources(
                     "failed to persist stopped status after live runner publication failure"
                 );
             }
-            Err(e)
+            Err(e.into())
         }
     }
 }
@@ -2034,11 +2032,12 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     if let Some(gate) = &test_hooks.before_initial_workspace_cache_scan {
         gate.enter_and_wait().await;
     }
+    let projected_heartbeat_profiles = heartbeat_profiles(&runner.profiles);
     let hb_ctx = HeartbeatContext::new(HeartbeatContextInit {
         idle_pool: &shared.idle_pool,
         runner_identity: runner.identity,
         group: &runner.group,
-        profiles: &runner.profiles,
+        profiles: &projected_heartbeat_profiles,
         budget: &capacity.budget,
         provider: Arc::clone(&provider_state.provider),
         workspace_cache: exec_config.workspace_cache.clone(),
@@ -2048,7 +2047,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     let initial_workspace_cache = refresh_initial_workspace_cache_snapshot(
         &workspace_cache_snapshot,
         exec_config.workspace_cache.as_ref(),
-        &runner.profiles,
+        &projected_heartbeat_profiles,
     )
     .await;
     #[cfg(test)]
@@ -2107,8 +2106,22 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     let mut discover_fut = Box::pin(provider_state.provider.discover());
 
     let mut current_mode = startup_mode;
+    let blank_profiles = runner
+        .profiles
+        .iter()
+        .map(|(name, profile)| {
+            (
+                name.clone(),
+                BlankProfile {
+                    vcpu: profile.vcpu,
+                    memory_mb: profile.memory_mb,
+                    workspace_disk_mb: profile.workspace_disk_mb,
+                },
+            )
+        })
+        .collect();
     let mut blank_pool = BlankPoolReplenisher::new(
-        &runner.profiles,
+        &blank_profiles,
         &factories,
         &capacity.budget,
         capacity.max_idle,
@@ -2208,7 +2221,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                         // Live observability: fire an immediate "stopping"
                         // heartbeat before teardown removes the runner.
                         if let Err(error) = heartbeat.flush(RunnerMode::Stopping).await {
-                            terminal_error = Some(error);
+                            terminal_error = Some(error.into());
                             break;
                         }
                     }
@@ -2394,7 +2407,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                         &provider_state.cancel_tokens,
                         &lifecycle,
                     ).await;
-                    terminal_error = Some(error);
+                    terminal_error = Some(error.into());
                     break;
                 }
             }
@@ -2682,7 +2695,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     let phase = teardown.phase_start("heartbeat_drain");
     if let Err(error) = heartbeat.drain().await {
         error!(%error, "failed to drain heartbeat task");
-        terminal_error.get_or_insert(error);
+        terminal_error.get_or_insert(error.into());
     }
     let final_heartbeat_sequence = heartbeat.into_next_snapshot_sequence();
     teardown.phase_complete("heartbeat_drain", phase);
@@ -2736,7 +2749,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                 group: &runner.group,
                 sequence: final_heartbeat_sequence,
             },
-            &runner.profiles,
+            &projected_heartbeat_profiles,
             &capacity.budget,
             &pool,
             RunnerMode::Stopping,

@@ -45,13 +45,23 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-storage -- --test-threads=1
 
-# Extracted Runner idle sandbox and workspace lifecycle owner tests
+# Extracted Runner active-run, idle sandbox, workspace and cache snapshot owner tests
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-lifecycle -- --test-threads=1
 
 # Extracted Runner claimed-run execution and session-history owner tests
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-executor -- --test-threads=1
+
+# Extracted Runner idle and heartbeat orchestration owner tests
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner-supervisor -- --test-threads=1
+
+# Complete native Runner and extracted-domain test set, with ordinary Cargo targets
+cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
+  -p runner-types -p runner-host -p runner-provider -p runner-storage \
+  -p runner-network -p runner-remote -p runner-lifecycle -p runner-executor -p runner-supervisor \
+  -p runner -- --test-threads=1
 
 # Specific test by name
 cargo test --manifest-path crates/Cargo.toml --profile local \

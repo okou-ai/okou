@@ -14,6 +14,9 @@ import {
   advanceMorningBriefExecutionPhase,
   claimMorningBriefNativeOccurrence,
   closeRecoveredMorningBriefDelivery,
+  countDueNativeOwners,
+  countPendingDeliveryOccurrences,
+  countResumableOccurrences,
   deferMorningBriefNativeOccurrence,
   loadBootstrapCandidates,
   loadDueNativeOwners,
@@ -49,7 +52,7 @@ const log = logger("MorningBriefNativeCron");
  *   inside the request and never holds a transaction across a provider call.
  * - **Runless.** No agent Run, sandbox, tool loop, Run-credit admission or
  *   ledger debit. Zero user credits and a full agent-run queue cannot block it.
- * - **Default off.** With `simpleMorningBrief` off, no new native occurrence is
+ * - **Default off.** With `FeatureSwitchKey.NativeMorningBrief` off, no new native occurrence is
  *   admitted and zero provider calls happen. Already admitted native work keeps
  *   its recorded rollback-drain authority — the switch cannot erase a durable
  *   obligation, only stop new ones.
@@ -73,6 +76,8 @@ const BOOTSTRAP_SCAN_WINDOW = 200;
 
 /** Pending delivery recoveries examined per tick. */
 const DELIVERY_RECOVERY_BATCH = 25;
+/** Short 202 admissions, not concurrent model requests in the cron. */
+const DISPATCH_CONCURRENCY = 8;
 
 /** Unresolved drains reported per tick. */
 const DRAIN_REPORT_BATCH = 25;
@@ -90,6 +95,7 @@ interface TickCounters {
   materialized: number;
   examined: number;
   claimed: number;
+  dispatched: number;
   settled: number;
   deferred: number;
   deliveriesRecovered: number;
@@ -102,6 +108,7 @@ function emptyCounters(): TickCounters {
     materialized: 0,
     examined: 0,
     claimed: 0,
+    dispatched: 0,
     settled: 0,
     deferred: 0,
     deliveriesRecovered: 0,
@@ -125,7 +132,7 @@ async function nativeAdmissionAllowed(
     owner.orgId,
     owner.userId,
   );
-  return isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, context);
+  return isFeatureEnabled(FeatureSwitchKey.NativeMorningBrief, context);
 }
 
 /**
@@ -283,8 +290,12 @@ export interface NativeDeliveryRecovery {
 
 /** Everything the tick needs from outside itself. */
 export interface NativeTickDependencies {
-  /** Test-route ownership scope; production cron intentionally leaves it absent. */
+  /** One owner per worker invocation; the scheduler leaves it absent. */
   readonly scope?: MorningBriefMemberIdentity;
+  /** A delayed dispatch may only process its frozen slot, never a later one. */
+  readonly onlyScheduledFor?: Date;
+  /** Worker invocations have a separate deadline and do not run bootstrap or transitions. */
+  readonly workerMode?: boolean;
   readonly executor: NativeSlotExecutor;
   readonly delivery: NativeDeliveryRecovery;
   /**
@@ -334,6 +345,7 @@ const runDeliveryRecoveryPass$ = command(
     for (const occurrence of await loadPendingDeliveryOccurrences(db, {
       limit: DELIVERY_RECOVERY_BATCH,
       owner: deps.scope,
+      scheduledFor: deps.onlyScheduledFor,
     })) {
       if (args.overBudget()) {
         return true;
@@ -468,6 +480,7 @@ const runResumePass$ = command(
       now: nowDate(),
       limit: DUE_OWNER_BATCH,
       owner: deps.scope,
+      scheduledFor: deps.onlyScheduledFor,
     })) {
       if (overBudget()) {
         return true;
@@ -489,6 +502,7 @@ const runResumePass$ = command(
           now: nowDate(),
           leaseToken,
           membershipId,
+          workerMode: deps.workerMode,
         });
       });
       signal.throwIfAborted();
@@ -656,6 +670,42 @@ const advanceOneTransition$ = command(
     }
   },
 );
+const runBootstrap$ = command(
+  async (
+    { set },
+    args: {
+      readonly counters: TickCounters;
+      readonly scope?: MorningBriefMemberIdentity;
+      readonly overBudget: () => boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    // Bootstrap only writes legacy-phase schedules; it never cuts over an owner.
+    for (const owner of await loadBootstrapCandidates(db, {
+      limit: BOOTSTRAP_SCAN_WINDOW,
+      owner: args.scope,
+    })) {
+      if (args.overBudget() || args.counters.materialized >= DUE_OWNER_BATCH) {
+        break;
+      }
+      const membershipId = await set(currentMembershipId$, owner, signal);
+      signal.throwIfAborted();
+      if (membershipId === null) {
+        continue;
+      }
+      await db.transaction(async (tx) => {
+        await materializeMorningBriefNativeSchedule(tx, owner, {
+          membershipId,
+          at: nowDate(),
+        });
+      });
+      signal.throwIfAborted();
+      args.counters.materialized += 1;
+    }
+  },
+);
+
 /**
  * Run one bounded native Morning Brief tick.
  *
@@ -667,6 +717,187 @@ const advanceOneTransition$ = command(
  * so a long provider read is cancelled by the same budget that stops the loop
  * rather than being noticed only after it returns.
  */
+export interface NativeDispatchTask {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly scheduledFor: Date;
+}
+
+function rotatingDispatchOffset(
+  total: number,
+  batch: number,
+  at: Date,
+): number {
+  const pages = Math.max(1, Math.ceil(total / batch));
+  return (Math.floor(at.getTime() / 60_000) % pages) * batch;
+}
+
+const loadNativeDispatchTasks$ = command(
+  async (
+    { set },
+    args: {
+      readonly deps: NativeTickDependencies;
+      readonly counters: TickCounters;
+    },
+    signal: AbortSignal,
+  ): Promise<readonly NativeDispatchTask[]> => {
+    const db = set(writeDb$);
+    const at = nowDate();
+    const dueCount = await countDueNativeOwners(db, {
+      now: at,
+      owner: args.deps.scope,
+    });
+    signal.throwIfAborted();
+    const due = await loadDueNativeOwners(db, {
+      now: at,
+      limit: DUE_OWNER_BATCH,
+      offset: rotatingDispatchOffset(dueCount, DUE_OWNER_BATCH, at),
+      owner: args.deps.scope,
+    });
+    signal.throwIfAborted();
+    const oldestDueAt = due[0]?.nextRunAt;
+    if (
+      oldestDueAt &&
+      nowDate().getTime() - oldestDueAt.getTime() > 15 * 60_000
+    ) {
+      log.warn("Morning Brief fanout backlog is older than fifteen minutes", {
+        oldestDueAt: oldestDueAt.toISOString(),
+      });
+    }
+    const resumeCount = await countResumableOccurrences(db, {
+      now: at,
+      owner: args.deps.scope,
+    });
+    signal.throwIfAborted();
+    const resume = await loadResumableOccurrences(db, {
+      now: at,
+      limit: DUE_OWNER_BATCH,
+      offset: rotatingDispatchOffset(resumeCount, DUE_OWNER_BATCH, at),
+      owner: args.deps.scope,
+    });
+    signal.throwIfAborted();
+    const deliveryCount = await countPendingDeliveryOccurrences(db, {
+      owner: args.deps.scope,
+    });
+    signal.throwIfAborted();
+    const delivery = await loadPendingDeliveryOccurrences(db, {
+      limit: DELIVERY_RECOVERY_BATCH,
+      offset: rotatingDispatchOffset(
+        deliveryCount,
+        DELIVERY_RECOVERY_BATCH,
+        at,
+      ),
+      owner: args.deps.scope,
+    });
+    signal.throwIfAborted();
+    const tasks = new Map<string, NativeDispatchTask>();
+    const add = (task: NativeDispatchTask) => {
+      const key = `${task.orgId}\0${task.userId}\0${task.scheduledFor.toISOString()}`;
+      tasks.set(key, task);
+    };
+    for (const schedule of due) {
+      args.counters.examined += 1;
+      const owner = { orgId: schedule.orgId, userId: schedule.userId };
+      const admitted = await nativeAdmissionAllowed(db, owner);
+      signal.throwIfAborted();
+      if (!admitted) {
+        await set(
+          advanceOneTransition$,
+          {
+            deps: args.deps,
+            owner,
+            target: "legacy",
+            phase: schedule.phase,
+            counters: args.counters,
+          },
+          signal,
+        );
+        signal.throwIfAborted();
+        continue;
+      }
+      if (schedule.nextRunAt !== null) {
+        add({ ...owner, scheduledFor: schedule.nextRunAt });
+      }
+    }
+    for (const occurrence of [...resume, ...delivery]) {
+      add({
+        orgId: occurrence.orgId,
+        userId: occurrence.userId,
+        scheduledFor: occurrence.scheduledFor,
+      });
+    }
+    return [...tasks.values()];
+  },
+);
+
+/** Discovery remains durable in Postgres; a 202 never consumes the obligation. */
+export const dispatchNativeMorningBriefTick$ = command(
+  async (
+    { set },
+    args: {
+      readonly deps: NativeTickDependencies;
+      readonly dispatch: (
+        task: NativeDispatchTask,
+        signal: AbortSignal,
+      ) => Promise<boolean>;
+    },
+    signal: AbortSignal,
+  ): Promise<CronExecuteMorningBriefsResponse> => {
+    const counters = emptyCounters();
+    const deadline = AbortSignal.any([
+      signal,
+      AbortSignal.timeout(TICK_BUDGET_MS),
+    ]);
+    const overBudget = () => {
+      return deadline.aborted;
+    };
+    await set(
+      runBootstrap$,
+      { counters, scope: args.deps.scope, overBudget },
+      deadline,
+    );
+    signal.throwIfAborted();
+    if (overBudget()) {
+      return { ...counters, budgetExhausted: true };
+    }
+
+    // Eight short admissions may proceed concurrently; none waits for model
+    // work. A failed/lost 202 leaves the same obligation for the next tick.
+    const ready = await set(
+      loadNativeDispatchTasks$,
+      { deps: args.deps, counters },
+      deadline,
+    );
+    signal.throwIfAborted();
+    for (
+      let offset = 0;
+      offset < ready.length;
+      offset += DISPATCH_CONCURRENCY
+    ) {
+      if (overBudget()) {
+        return { ...counters, budgetExhausted: true };
+      }
+      const accepted = await Promise.all(
+        ready.slice(offset, offset + DISPATCH_CONCURRENCY).map(async (task) => {
+          return await args.dispatch(task, deadline);
+        }),
+      );
+      signal.throwIfAborted();
+      counters.dispatched += accepted.filter(Boolean).length;
+    }
+    if (
+      await set(
+        runTransitionPass$,
+        { deps: args.deps, counters, overBudget },
+        deadline,
+      )
+    ) {
+      return { ...counters, budgetExhausted: true };
+    }
+    return { ...counters, budgetExhausted: false };
+  },
+);
+
 export const executeNativeMorningBriefTick$ = command(
   async (
     { set },
@@ -676,46 +907,24 @@ export const executeNativeMorningBriefTick$ = command(
     const db = set(writeDb$);
     const counters = emptyCounters();
     const startedAt = nowDate();
-    const deadline = AbortSignal.any([
-      signal,
-      AbortSignal.timeout(TICK_BUDGET_MS),
-    ]);
+    const budgetMs = deps.workerMode ? 180_000 : TICK_BUDGET_MS;
+    const deadline = AbortSignal.any([signal, AbortSignal.timeout(budgetMs)]);
     const overBudget = (): boolean => {
       return (
         deadline.aborted ||
-        nowDate().getTime() - startedAt.getTime() >= TICK_BUDGET_MS
+        nowDate().getTime() - startedAt.getTime() >= budgetMs
       );
     };
     const exhausted = (): CronExecuteMorningBriefsResponse => {
       return { ...counters, budgetExhausted: true };
     };
 
-    // 0. Bootstrap. Bounded, idempotent materialization of the members whose
-    //    installed brief has no durable native row yet. It only ever writes a
-    //    `legacy`-phase row, so it is never a cutover on its own.
-    for (const owner of await loadBootstrapCandidates(db, {
-      limit: BOOTSTRAP_SCAN_WINDOW,
-      owner: deps.scope,
-    })) {
-      if (overBudget() || counters.materialized >= DUE_OWNER_BATCH) {
-        break;
-      }
-      const membershipId = await set(currentMembershipId$, owner, deadline);
-      signal.throwIfAborted();
-      if (membershipId === null) {
-        // The member no longer resolves, so nothing can be materialized for
-        // them. Skipping without consuming the work budget is what keeps a
-        // backlog of such owners from starving members that can still migrate.
-        continue;
-      }
-      await db.transaction(async (tx) => {
-        await materializeMorningBriefNativeSchedule(tx, owner, {
-          membershipId,
-          at: nowDate(),
-        });
-      });
-      signal.throwIfAborted();
-      counters.materialized += 1;
+    if (!deps.workerMode) {
+      await set(
+        runBootstrap$,
+        { counters, scope: deps.scope, overBudget },
+        deadline,
+      );
     }
 
     if (
@@ -737,6 +946,7 @@ export const executeNativeMorningBriefTick$ = command(
       now: nowDate(),
       limit: DUE_OWNER_BATCH,
       owner: deps.scope,
+      scheduledFor: deps.onlyScheduledFor,
     })) {
       if (overBudget()) {
         return exhausted();
@@ -747,12 +957,14 @@ export const executeNativeMorningBriefTick$ = command(
       // The switch gates new admission only. It never rewrites a durable
       // obligation, and a fresh default-off owner makes zero provider calls.
       if (!(await nativeAdmissionAllowed(db, owner))) {
-        await set(
-          advanceOneTransition$,
-          { deps, owner, target: "legacy", phase: schedule.phase, counters },
-          deadline,
-        );
-        signal.throwIfAborted();
+        if (!deps.workerMode) {
+          await set(
+            advanceOneTransition$,
+            { deps, owner, target: "legacy", phase: schedule.phase, counters },
+            deadline,
+          );
+          signal.throwIfAborted();
+        }
         continue;
       }
 
@@ -769,6 +981,7 @@ export const executeNativeMorningBriefTick$ = command(
           now: nowDate(),
           leaseToken,
           membershipId,
+          expectedScheduledFor: deps.onlyScheduledFor,
         });
       });
       signal.throwIfAborted();
@@ -781,7 +994,8 @@ export const executeNativeMorningBriefTick$ = command(
     }
 
     if (
-      await set(runTransitionPass$, { deps, counters, overBudget }, deadline)
+      !deps.workerMode &&
+      (await set(runTransitionPass$, { deps, counters, overBudget }, deadline))
     ) {
       return exhausted();
     }

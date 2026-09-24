@@ -1,5 +1,5 @@
 import { modelMenuOption } from "./chat-model-menu-test-helpers.ts";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
@@ -281,13 +281,14 @@ test("A copied video brief and avatar feedback can be edited and sent", async ()
     `<div data-okou-chat-message="${payload}">${prompt}</div>`,
   );
   clipboard.setData("text/plain", prompt);
-  fireEvent.paste(editor, { clipboardData: clipboard });
+  const user = userEvent.setup({ delay: null });
+  await user.click(editor);
+  await user.paste(clipboard);
 
   const feedback = await screen.findByRole("textbox", {
     name: "Ask or comment on this quote",
   });
   expect(feedback).toHaveTextContent("Keep the introduction.");
-  const user = userEvent.setup({ delay: null });
   await user.type(feedback, " Add the product facts.");
   await sendCurrent(editor, prompt);
 

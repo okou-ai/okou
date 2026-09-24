@@ -7,6 +7,8 @@ import {
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
 import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import {
@@ -86,7 +88,7 @@ test("An existing credential can be reused without entering or reading its secre
     requests.push(body);
     return respond(201, base);
   });
-  await page("/connectors/ssh?add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog");
   const hostFields = within(dialog).getByRole("group", { name: "Host" });
   const credentialFields = within(dialog).getByRole("group", {
@@ -391,7 +393,7 @@ test("Invalid host errors preserve credentials so the host can be corrected and 
       },
     });
   });
-  await page("/connectors/ssh?add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog");
   await selectNewCredential(dialog);
   await fill(within(dialog).getByLabelText("Display name"), "Deployment");
@@ -427,7 +429,7 @@ test("Invalid host errors preserve credentials so the host can be corrected and 
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
-async function page(path = "/connectors/ssh") {
+async function page(path = "/connectors?scope=remote-control&type=ssh") {
   await setupPage({
     context,
     path,
@@ -435,18 +437,131 @@ async function page(path = "/connectors/ssh") {
   });
 }
 
-test("SSH is a Connectors detail page with a working return breadcrumb", async () => {
+async function openAddHostPage() {
+  await page();
+  click(
+    await waitFor(() => {
+      return getAction("button", "Add host");
+    }),
+  );
+}
+
+test("SSH host settings update the chat default in thread remote access mode", async () => {
+  let enabled = false;
+  let updatedParams: { protocol: string; connectionId: string } | undefined;
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [base] });
+  });
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: [
+          {
+            connectionId: id,
+            displayName: "Deployment",
+            defaultEnabled: enabled,
+          },
+        ],
+        vnc: [],
+      });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.updateHostDefault,
+    ({ params, body, respond }) => {
+      updatedParams = {
+        protocol: params.protocol,
+        connectionId: params.connectionId,
+      };
+      enabled = body.enabled;
+      return respond(200, {
+        connectionId: id,
+        displayName: "Deployment",
+        defaultEnabled: enabled,
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/connectors?scope=remote-control&type=ssh",
+    auth,
+    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+  });
+  const toggle = await screen.findByRole("switch", {
+    name: "Enabled by default for chats",
+  });
+  await waitFor(() => {
+    expect(toggle).not.toBeDisabled();
+  });
+  expect(toggle).not.toBeChecked();
+  await userEvent.click(toggle);
+  await waitFor(() => {
+    expect(enabled).toBeTruthy();
+    expect(
+      screen.getByRole("switch", { name: "Enabled by default for chats" }),
+    ).toBeChecked();
+  });
+  expect(updatedParams).toStrictEqual({ protocol: "ssh", connectionId: id });
+});
+
+test("SSH host default can retry after its settings fail to load", async () => {
+  let failed = true;
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [base] });
+  });
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return failed
+        ? respond(500, {
+            error: { code: "INTERNAL_ERROR", message: "private default error" },
+          })
+        : respond(200, {
+            ssh: [
+              {
+                connectionId: id,
+                displayName: "Deployment",
+                defaultEnabled: true,
+              },
+            ],
+            vnc: [],
+          });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/connectors?scope=remote-control&type=ssh",
+    auth,
+    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+  });
+  await screen.findByText("Couldn't load remote access.");
+  expect(document.body.textContent).not.toContain("private default error");
+  expect(
+    screen.queryByRole("switch", { name: "Enabled by default for chats" }),
+  ).toBeNull();
+  failed = false;
+  click(
+    await waitFor(() => {
+      return getAction("button", "Retry");
+    }),
+  );
+  await expect(
+    screen.findByRole("switch", {
+      name: "Enabled by default for chats",
+    }),
+  ).resolves.toBeChecked();
+});
+
+test("SSH is managed in Connectors Remote control", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, { connections: [] });
   });
   await page();
   await screen.findByText("0 hosts configured");
-  expect(pathname()).toBe("/connectors/ssh");
-  const breadcrumb = screen.getByRole("navigation", { name: "Breadcrumb" });
-  expect(within(breadcrumb).getByText("SSH")).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
+  expect(pathname()).toBe("/connectors");
+  expect(window.location.search).toBe("?scope=remote-control&type=ssh");
+  expect(screen.getByRole("heading", { name: "SSH" })).toBeInTheDocument();
   expect(
     getAction(
       "link",
@@ -454,7 +569,13 @@ test("SSH is a Connectors detail page with a working return breadcrumb", async (
       screen.getByRole("navigation", { name: "Sidebar" }),
     ),
   ).toHaveAttribute("aria-current", "page");
-  click(getAction("link", "Connectors", breadcrumb));
+  click(
+    getAction(
+      "link",
+      "Connectors",
+      screen.getByRole("navigation", { name: "Sidebar" }),
+    ),
+  );
   await screen.findByPlaceholderText("Find connectors");
   expect(pathname()).toBe("/connectors");
 });
@@ -801,7 +922,7 @@ test("An ordinary owner can manage SSH without feature overrides", async () => {
   });
   await setupPage({
     context,
-    path: "/connectors/ssh",
+    path: "/connectors?scope=remote-control&type=ssh",
   });
   await screen.findByText("deploy@ssh.example.com:22");
   expect(getAction("button", "Add host")).toBeEnabled();

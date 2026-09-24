@@ -19,11 +19,14 @@ pub fn png_base64(width: u32, height: u32) -> std::io::Result<String> {
     header.extend_from_slice(&[8, 2, 0, 0, 0]);
     chunk(&mut png, b"IHDR", &header);
     let mut pixels = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::none());
+    let mut scanline = Vec::with_capacity(1 + width as usize * 3);
     for row in 0..height {
-        pixels.write_all(&[0])?;
+        scanline.clear();
+        scanline.push(0);
         for column in 0..width {
-            pixels.write_all(&[(row % 256) as u8, (column % 256) as u8, 128])?;
+            scanline.extend_from_slice(&[(row % 256) as u8, (column % 256) as u8, 128]);
         }
+        pixels.write_all(&scanline)?;
     }
     chunk(&mut png, b"IDAT", &pixels.finish()?);
     chunk(&mut png, b"IEND", &[]);

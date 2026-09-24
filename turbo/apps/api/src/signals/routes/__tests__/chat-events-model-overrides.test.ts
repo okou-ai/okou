@@ -4,7 +4,7 @@ import { piApiFirstTurnManifestSchema } from "@okouai/api-contracts/contracts/ru
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 import { testContext } from "../../../__tests__/test-context";
 import { env, mockOptionalEnv } from "../../../lib/env";
@@ -813,10 +813,22 @@ describe("CHAT-02: run-level model overrides", () => {
         );
       }
       let refreshAttempts = 0;
+      let releaseRefreshFailure: (() => void) | undefined;
       if (scenario.expired) {
+        const refreshFailureGate = createDeferredPromise<void>(context.signal);
+        onTestFinished(() => {
+          if (!refreshFailureGate.settled()) {
+            refreshFailureGate.resolve(undefined);
+          }
+        });
+        releaseRefreshFailure = () => {
+          refreshFailureGate.resolve(undefined);
+        };
         server.use(
-          http.post("https://auth.openai.com/oauth/token", () => {
+          http.post("https://auth.openai.com/oauth/token", async () => {
             refreshAttempts += 1;
+            // Let run admission commit before refresh marks the account disconnected.
+            await refreshFailureGate.promise;
             return HttpResponse.json(
               {
                 error: {
@@ -900,6 +912,7 @@ describe("CHAT-02: run-level model overrides", () => {
         model: "gpt-5.6-terra",
         runOptions: { codexServiceTier: scenario.tier },
       });
+      releaseRefreshFailure?.();
       if (scenario.name === "transient provider failure") {
         // Existing Pi recovery hands the same personal source to Sandbox. This
         // is not an organization API/model/account retry or a paid model route.

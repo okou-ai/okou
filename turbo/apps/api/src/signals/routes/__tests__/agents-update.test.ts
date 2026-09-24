@@ -118,7 +118,10 @@ async function createAgentAs(
   mocks.clerk.session(user.userId, user.orgId);
   context.mocks.s3.send.mockResolvedValue({});
   const response = await accept(
-    agentsCollectionClient().create({ headers: authHeaders(), body }),
+    agentsCollectionClient().create({
+      headers: authHeaders(),
+      body: { visibility: "public", ...body },
+    }),
     [201],
   );
   return { agentId: response.body.agentId };

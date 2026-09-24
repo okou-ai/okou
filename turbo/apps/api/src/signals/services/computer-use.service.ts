@@ -619,39 +619,44 @@ function offloadScreenshotForResult(
       return params.result;
     }
 
-    const [identity] = await db
-      .select({
-        orgId: computerUseHosts.orgId,
-        userId: computerUseHosts.userId,
-      })
-      .from(computerUseHosts)
-      .where(
-        and(
-          eq(computerUseHosts.tokenHash, hashSecret(params.hostToken)),
-          isNull(computerUseHosts.revokedAt),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!identity) {
-      return params.result;
-    }
-
-    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    const key = `computer-use/${identity.orgId}/${identity.userId}/${params.commandId}/screenshot.${extensionForScreenshotMime(parsed.mimeType)}`;
-    await get(putS3Object(bucket, key, parsed.buffer, parsed.mimeType));
-    signal.throwIfAborted();
-
-    const pointer: StoredScreenshotPointer = {
-      type: "s3",
-      bucket,
-      key,
-      mimeType: parsed.mimeType,
-      sizeBytes: parsed.buffer.length,
-      width: numberField(params.result, "screenshotWidth"),
-      height: numberField(params.result, "screenshotHeight"),
-    };
-    return { ...params.result, screenshot: pointer };
+    // Offload is outside command completion's row lock. Hold only the
+    // existing D1 subject admission across PUT so B1 cannot inventory a
+    // prefix while a late completion is still writing its bytes.
+    return await db.transaction(async (tx) => {
+      const [identity] = await tx
+        .select({
+          orgId: computerUseHosts.orgId,
+          userId: computerUseHosts.userId,
+        })
+        .from(computerUseHosts)
+        .where(
+          and(
+            eq(computerUseHosts.tokenHash, hashSecret(params.hostToken)),
+            isNull(computerUseHosts.revokedAt),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (!identity) {
+        return params.result;
+      }
+      await assertErasureSubjectWritable(tx, computerUseHostSubjects(identity));
+      signal.throwIfAborted();
+      const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+      const key = `computer-use/${identity.orgId}/${identity.userId}/${params.commandId}/screenshot.${extensionForScreenshotMime(parsed.mimeType)}`;
+      await get(putS3Object(bucket, key, parsed.buffer, parsed.mimeType));
+      signal.throwIfAborted();
+      const pointer: StoredScreenshotPointer = {
+        type: "s3",
+        bucket,
+        key,
+        mimeType: parsed.mimeType,
+        sizeBytes: parsed.buffer.length,
+        width: numberField(params.result, "screenshotWidth"),
+        height: numberField(params.result, "screenshotHeight"),
+      };
+      return { ...params.result, screenshot: pointer };
+    });
   });
 }
 
@@ -720,38 +725,40 @@ function offloadPluginContentForResult(
       return { error };
     }
 
-    const [identity] = await db
-      .select({
-        orgId: computerUseHosts.orgId,
-        userId: computerUseHosts.userId,
-      })
-      .from(computerUseHosts)
-      .where(
-        and(
-          eq(computerUseHosts.tokenHash, hashSecret(params.hostToken)),
-          isNull(computerUseHosts.revokedAt),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!identity) {
-      return params.result;
-    }
-
-    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    const key = `computer-use/${identity.orgId}/${identity.userId}/${params.commandId}/plugin-content.${extensionForPluginMime(pluginContent.mimeType)}`;
-    await get(putS3Object(bucket, key, buffer, pluginContent.mimeType));
-    signal.throwIfAborted();
-
-    const pointer: StoredPluginContentPointer = {
-      type: "s3",
-      bucket,
-      key,
-      mimeType: pluginContent.mimeType,
-      sizeBytes: buffer.length,
-      fileName: pluginContent.fileName,
-    };
-    return { ...params.result, pluginContent: pointer };
+    return await db.transaction(async (tx) => {
+      const [identity] = await tx
+        .select({
+          orgId: computerUseHosts.orgId,
+          userId: computerUseHosts.userId,
+        })
+        .from(computerUseHosts)
+        .where(
+          and(
+            eq(computerUseHosts.tokenHash, hashSecret(params.hostToken)),
+            isNull(computerUseHosts.revokedAt),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (!identity) {
+        return params.result;
+      }
+      await assertErasureSubjectWritable(tx, computerUseHostSubjects(identity));
+      signal.throwIfAborted();
+      const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+      const key = `computer-use/${identity.orgId}/${identity.userId}/${params.commandId}/plugin-content.${extensionForPluginMime(pluginContent.mimeType)}`;
+      await get(putS3Object(bucket, key, buffer, pluginContent.mimeType));
+      signal.throwIfAborted();
+      const pointer: StoredPluginContentPointer = {
+        type: "s3",
+        bucket,
+        key,
+        mimeType: pluginContent.mimeType,
+        sizeBytes: buffer.length,
+        fileName: pluginContent.fileName,
+      };
+      return { ...params.result, pluginContent: pointer };
+    });
   });
 }
 

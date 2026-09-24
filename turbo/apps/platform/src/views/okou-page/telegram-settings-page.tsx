@@ -959,6 +959,7 @@ interface AddTelegramBotDialogInnerProps {
   agents: AgentResponse[];
   defaultAgent: DefaultAgentLabel;
   disabled: boolean;
+  secondary: boolean;
   botToken: string;
   open: boolean;
   agentId: string | undefined;
@@ -978,6 +979,7 @@ interface AddTelegramBotDialogInnerProps {
 interface AddTelegramBotDialogFrameProps {
   open: boolean;
   disabled: boolean;
+  secondary: boolean;
   adding: boolean;
   flow: AddTelegramBotSetupFlow;
   canSubmit: boolean;
@@ -996,6 +998,7 @@ interface AddTelegramBotDialogFrameProps {
 function AddTelegramBotDialogFrame({
   open,
   disabled,
+  secondary,
   adding,
   flow,
   canSubmit,
@@ -1027,7 +1030,12 @@ function AddTelegramBotDialogFrame({
     >
       <DialogTrigger
         render={
-          <Button type="button" size="sm" disabled={disabled}>
+          <Button
+            type="button"
+            size="sm"
+            variant={secondary ? "neutral" : "default"}
+            disabled={disabled}
+          >
             <Plus size={16} />
             {t(($) => {
               return $.connectors.providerSettings.telegram.addBot;
@@ -1096,6 +1104,7 @@ function AddTelegramBotDialogInner({
   agents,
   defaultAgent,
   disabled,
+  secondary,
   botToken,
   open,
   agentId,
@@ -1209,6 +1218,7 @@ function AddTelegramBotDialogInner({
     <AddTelegramBotDialogFrame
       open={open}
       disabled={disabled}
+      secondary={secondary}
       adding={adding}
       flow={flow}
       canSubmit={canSubmit}
@@ -1383,10 +1393,12 @@ function AddTelegramBotDialog({
   agents,
   defaultAgent,
   disabled,
+  secondary,
 }: {
   agents: AgentResponse[];
   defaultAgent: DefaultAgentLabel;
   disabled: boolean;
+  secondary: boolean;
 }) {
   const botToken = useGet(telegramBotTokenForm$);
   const open = useGet(telegramAddDialogOpen$);
@@ -1419,6 +1431,7 @@ function AddTelegramBotDialog({
       agents={agents}
       defaultAgent={defaultAgent}
       disabled={disabled}
+      secondary={secondary}
       botToken={botToken}
       open={open}
       agentId={agentId}
@@ -1583,13 +1596,7 @@ function TelegramConnectAction({
 
   if (disabled) {
     return (
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled
-        className="h-9 justify-center"
-      >
+      <Button type="button" size="sm" disabled className="h-9 justify-center">
         {t(($) => {
           return $.connectors.actions.connect;
         })}
@@ -1603,10 +1610,7 @@ function TelegramConnectAction({
       options={{
         searchParams: new URLSearchParams({ bot: bot.id }),
       }}
-      className={cn(
-        buttonVariants({ variant: "outline", size: "sm" }),
-        "h-9 justify-center",
-      )}
+      className={cn(buttonVariants({ size: "sm" }), "h-9 justify-center")}
     >
       {t(($) => {
         return $.connectors.actions.connect;
@@ -2207,6 +2211,9 @@ function TelegramBotsCard({
             agents={agents}
             defaultAgent={defaultAgent}
             disabled={agentsLoading}
+            secondary={bots.some((bot) => {
+              return !bot.isConnected;
+            })}
           />
         ) : null}
       </div>

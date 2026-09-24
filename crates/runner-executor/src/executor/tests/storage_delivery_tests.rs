@@ -286,6 +286,41 @@ async fn guest_apply_telemetry_caps_large_batch_runs_and_retains_the_last_batch(
 }
 
 #[tokio::test]
+async fn guest_apply_telemetry_pairs_guest_server_duration_per_batch() {
+    let fixture = DeliveryFixture::new(3, 3, 35_000).await;
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    for guest_duration_ms in [Some(0), None, Some(u32::MAX)] {
+        let mut result = ExecResult::new(0, Vec::new(), Vec::new());
+        result.guest_duration_ms = guest_duration_ms;
+        overrides.push_storage_manifest_result(Ok(result));
+    }
+    let sandbox = MockSandbox::with_overrides("storage-batch-guest-timing", overrides);
+    let (manifest, files) = fixture.prepare(&sandbox).await;
+    let context = minimal_context();
+    let mut telemetry = test_telemetry(&fixture.config, &context);
+
+    download_storages_with_files(&sandbox, &context, manifest, &files, &mut telemetry)
+        .await
+        .unwrap();
+
+    let batches = telemetry.pending_storage_batch_payloads();
+    assert_eq!(batches.len(), 3);
+    assert_eq!(batches[0]["storage_batch_guest_duration_ms"], 0);
+    assert_eq!(batches[0]["storage_batch_timing"], "paired");
+    assert_eq!(
+        batches[0]["storage_batch_outer_residual_ms"],
+        batches[0]["duration_ms"]
+    );
+    assert_eq!(batches[1]["storage_batch_timing"], "unavailable");
+    assert!(batches[1].get("storage_batch_guest_duration_ms").is_none());
+    assert!(batches[1].get("storage_batch_outer_residual_ms").is_none());
+    assert_eq!(batches[2]["storage_batch_guest_duration_ms"], u32::MAX);
+    assert_eq!(batches[2]["storage_batch_timing"], "inconsistent");
+    assert!(batches[2].get("storage_batch_outer_residual_ms").is_none());
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
 async fn high_fanout_storage_plans_deliver_ready_files_without_refilling_archives() {
     for (count, ready) in [(7, 5), (64, 31), (122, 46), (143, 52)] {
         let fixture = DeliveryFixture::new(count, ready, 604).await;
@@ -893,11 +928,9 @@ async fn decoded_batch_failure_prevents_agent_spawn() {
     let fixture = DeliveryFixture::new(3, 3, 35_000).await;
     let overrides = Arc::new(MockSandboxOverrides::new());
     overrides.push_storage_manifest_result(Ok(ExecResult::new(0, Vec::new(), Vec::new())));
-    overrides.push_storage_manifest_result(Ok(ExecResult::new(
-        1,
-        Vec::new(),
-        b"second batch failed".to_vec(),
-    )));
+    let mut failed = ExecResult::new(1, Vec::new(), b"second batch failed".to_vec());
+    failed.guest_duration_ms = Some(0);
+    overrides.push_storage_manifest_result(Ok(failed));
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let mut context = minimal_context();
     context.storage_manifest = Some(fixture.manifest.clone());
@@ -925,6 +958,11 @@ async fn decoded_batch_failure_prevents_agent_spawn() {
     assert!(error.to_string().contains("storage download failed"));
     assert_eq!(overrides.storage_manifest_calls().len(), 2);
     assert!(overrides.start_agent_process_calls().is_empty());
+    let batches = telemetry.pending_storage_batch_payloads();
+    assert_eq!(batches.len(), 2);
+    assert_eq!(batches[1]["success"], false);
+    assert_eq!(batches[1]["storage_batch_guest_duration_ms"], 0);
+    assert_eq!(batches[1]["storage_batch_timing"], "paired");
     fixture.shutdown().await;
 }
 

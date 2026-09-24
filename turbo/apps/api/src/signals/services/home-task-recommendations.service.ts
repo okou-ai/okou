@@ -31,6 +31,7 @@ import {
   or,
 } from "drizzle-orm";
 
+import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { ClerkClient } from "../external/clerk";
 import type { Db } from "../external/db";
@@ -74,6 +75,7 @@ const ACTIVE_REQUEST_WINDOW_MS = 60 * 60 * 1000;
 const CRON_BATCH_LIMIT = 8;
 const CANDIDATE_LIMIT = 8;
 const MIN_JEV_CONFIDENCE = 0.65;
+const log = logger("home-task-recommendations");
 
 const cachedHomeTaskRecommendationsSchema = z
   .array(homeTaskRecommendationSchema.strict())
@@ -155,8 +157,10 @@ function cachedResponse(
 }
 
 async function readCachedRow(
-  db: Pick<Db, "select">,
+  db: Db,
   scope: HomeTaskScope,
+  at: Date,
+  signal: AbortSignal,
 ): Promise<CachedRow | undefined> {
   const [row] = await db
     .select({
@@ -164,6 +168,7 @@ async function readCachedRow(
       generatedAt: homeTaskRecommendations.generatedAt,
       inputDigest: homeTaskRecommendations.inputDigest,
       nextRefreshAt: homeTaskRecommendations.nextRefreshAt,
+      updatedAt: homeTaskRecommendations.updatedAt,
     })
     .from(homeTaskRecommendations)
     .where(
@@ -174,14 +179,65 @@ async function readCachedRow(
       ),
     )
     .limit(1);
-  return row === undefined
-    ? undefined
-    : {
-        ...row,
-        // This new table has one validated writer and no legacy producer.
-        // A malformed local row is corruption, not an empty recommendation set.
-        entries: cachedHomeTaskRecommendationsSchema.parse(row.entries),
-      };
+  signal.throwIfAborted();
+  if (row === undefined) {
+    return undefined;
+  }
+  const parsed = cachedHomeTaskRecommendationsSchema.safeParse(row.entries);
+  if (parsed.success) {
+    return { ...row, entries: parsed.data };
+  }
+
+  // This is a disposable derived cache, not conversation data. Reset the
+  // entire invalid set rather than inventing a purpose or showing partial cards.
+  // The content and update fence must still match, and an active claim must be
+  // left to finish; a concurrent valid refresh must never be erased here.
+  const repaired = await db
+    .update(homeTaskRecommendations)
+    .set({
+      entries: [],
+      generatedAt: null,
+      inputDigest: null,
+      nextRefreshAt: at,
+      claimId: null,
+      claimExpiresAt: null,
+      updatedAt: at,
+    })
+    .where(
+      and(
+        eq(homeTaskRecommendations.userId, scope.userId),
+        eq(homeTaskRecommendations.orgId, scope.orgId),
+        eq(homeTaskRecommendations.agentId, scope.agentId),
+        eq(homeTaskRecommendations.updatedAt, row.updatedAt),
+        eq(homeTaskRecommendations.entries, row.entries),
+        or(
+          isNull(homeTaskRecommendations.claimExpiresAt),
+          lte(homeTaskRecommendations.claimExpiresAt, at),
+        ),
+      ),
+    )
+    .returning({ agentId: homeTaskRecommendations.agentId });
+  signal.throwIfAborted();
+  if (repaired.length === 0) {
+    // Another request or a live refresh changed the row; never return the
+    // unvalidated snapshot or overwrite the new writer's claim.
+    return undefined;
+  }
+  log.warn("Reset invalid home task recommendation cache", {
+    issueCodes: [
+      ...new Set(
+        parsed.error.issues.map((issue) => {
+          return issue.code;
+        }),
+      ),
+    ],
+  });
+  return {
+    entries: [],
+    generatedAt: null,
+    inputDigest: null,
+    nextRefreshAt: at,
+  };
 }
 
 /** Register bounded cron demand without generating inside the user request. */
@@ -834,7 +890,7 @@ async function refreshHomeTaskRecommendationScope(
   signal: AbortSignal,
 ): Promise<HomeTaskRefreshOutcome> {
   const at = nowDate();
-  const cached = await readCachedRow(db, scope);
+  const cached = await readCachedRow(db, scope, at, signal);
   signal.throwIfAborted();
   if (!cached || cached.nextRefreshAt.getTime() > at.getTime()) {
     return "skipped";
@@ -1007,7 +1063,7 @@ export async function refreshDueHomeTaskRecommendations(
             );
           }
           if (outcome === "refreshed") {
-            const current = await readCachedRow(db, scope);
+            const current = await readCachedRow(db, scope, nowDate(), signal);
             await publishHomeTaskRecommendationsChangedSafely(
               scope,
               current
@@ -1065,7 +1121,7 @@ export async function readHomeTaskRecommendations(
   const at = nowDate();
   await registerHomeTaskRecommendationDemand(db, scope, at);
   signal.throwIfAborted();
-  const cached = await readCachedRow(db, scope);
+  const cached = await readCachedRow(db, scope, at, signal);
   signal.throwIfAborted();
   const visibleCached = await visibleCachedRow(db, scope, cached, signal);
   signal.throwIfAborted();

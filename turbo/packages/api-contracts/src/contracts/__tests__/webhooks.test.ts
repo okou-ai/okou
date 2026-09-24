@@ -181,6 +181,52 @@ describe("archive connection attempt telemetry", () => {
   });
 });
 
+describe("storage batch timing telemetry", () => {
+  const operation = {
+    ts: "2026-09-24T00:00:00Z",
+    action_type: "runner_storage_manifest_batch_apply",
+    duration_ms: 42,
+    success: true,
+    outcome: "dedicated_middle",
+    reason: "32_to_64_kib",
+  };
+
+  it("keeps bounded durations and fixed timing states while accepting legacy batches", () => {
+    const measured = {
+      ...operation,
+      storage_batch_guest_duration_ms: 0,
+      storage_batch_outer_residual_ms: 42,
+      storage_batch_timing: "paired",
+    };
+    const parsed = webhookTelemetryContract.send.body.parse({
+      runId: "run",
+      sandboxOperations: [
+        operation,
+        { ...measured, manifest_json: "private manifest" },
+      ],
+    });
+    expect(parsed.sandboxOperations).toStrictEqual([operation, measured]);
+  });
+
+  it("rejects negative, oversized, and unbounded timing values", () => {
+    for (const invalid of [
+      { storage_batch_guest_duration_ms: -1 },
+      { storage_batch_guest_duration_ms: 4_294_967_296 },
+      { storage_batch_guest_duration_ms: 1.5 },
+      { storage_batch_outer_residual_ms: -1 },
+      { storage_batch_outer_residual_ms: "42" },
+      { storage_batch_timing: "private diagnostic" },
+    ]) {
+      expect(
+        webhookTelemetryContract.send.body.safeParse({
+          runId: "run",
+          sandboxOperations: [{ ...operation, ...invalid }],
+        }).success,
+      ).toBe(false);
+    }
+  });
+});
+
 describe("Sandbox transient session output", () => {
   const body = {
     runId: "00000000-0000-4000-8000-000000000001",

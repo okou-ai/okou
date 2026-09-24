@@ -36,7 +36,8 @@ export enum FeatureSwitchKey {
   StripeInvoicePaidWorkflowAutomations = "stripeInvoicePaidWorkflowAutomations",
   OfficialWorkflows = "officialWorkflows",
   MorningBrief = "morningBrief",
-  SimpleMorningBrief = "simpleMorningBrief",
+  // Preserve the persisted/API key while renaming the feature itself.
+  NativeMorningBrief = "simpleMorningBrief",
   TestOauthConnector = "_testOauthConnector",
   FreshdeskConnector = "freshdeskConnector",
   StabilityAiConnector = "stabilityAiConnector",
@@ -52,7 +53,6 @@ export enum FeatureSwitchKey {
   PrivateArtifacts = "privateArtifacts",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
   PersonalModelProviderAccounts = "multipleSubscriptions",
-  AgentPhoneEntry = "agentPhoneEntry",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "_larkIntegration",
   VncAccess = "vncAccess",

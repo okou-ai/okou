@@ -79,7 +79,7 @@ describe("Morning Brief unread Chat collection boundaries", () => {
       context.signal,
     );
     await updateFeatureSwitchesForUser(context, member, {
-      [FeatureSwitchKey.SimpleMorningBrief]: true,
+      [FeatureSwitchKey.NativeMorningBrief]: true,
     });
     const threadId = await store.set(
       seedOrdinaryChatThreadFixture$,

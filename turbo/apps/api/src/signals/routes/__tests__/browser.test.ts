@@ -28,6 +28,7 @@ import { deleteChatThreadRootFixture } from "../../../test-fixtures/chat-thread-
 import {
   stageBrowserUserActionClosureFixture,
   stageBrowserUserActionCompletedAtFixture,
+  stageRetiredDirectBrowserUserActionFixture,
   stageStuckBrowserUserActionFixture,
 } from "../../../test-fixtures/browser-user-action";
 import { deleteAgentRunRootFixture } from "../../../test-fixtures/run-deletion";
@@ -80,7 +81,7 @@ function browserInputWrites() {
     return (
       command.method === "Runtime.callFunctionOn" &&
       typeof command.params.functionDeclaration === "string" &&
-      command.params.functionDeclaration.includes("nextValue")
+      command.params.functionDeclaration.includes("setter.call")
     );
   });
 }
@@ -114,6 +115,268 @@ function browserUserActionObjectId(backendNodeId: unknown): string {
   return backendNodeId === 44 ? "native-code-object" : "native-password-object";
 }
 
+function mockNativeInputTarget(): void {
+  context.mocks.browserUseCdp.command.mockImplementation((command) => {
+    switch (command.method) {
+      case "Target.getTargets": {
+        return {
+          targetInfos: [
+            {
+              targetId: "native-input-target",
+              type: "page",
+              url: "https://example.com/login",
+            },
+          ],
+        };
+      }
+      case "Browser.getWindowForTarget": {
+        return { windowId: 7 };
+      }
+      case "Target.attachToTarget": {
+        return { sessionId: "native-input-session" };
+      }
+      case "Page.getFrameTree": {
+        return {
+          frameTree: {
+            frame: {
+              id: "main-frame",
+              loaderId: "native-input-loader",
+              url: "https://example.com/login",
+            },
+          },
+        };
+      }
+      case "DOM.resolveNode": {
+        return { object: { objectId: "native-password-object" } };
+      }
+      case "Runtime.callFunctionOn": {
+        const declaration = String(command.params.functionDeclaration);
+        if (
+          declaration.includes("expected") ||
+          declaration.includes("nextValue")
+        ) {
+          return { result: { value: true } };
+        }
+        const objectIds = [
+          command.params.objectId,
+          ...(Array.isArray(command.params.arguments)
+            ? command.params.arguments.flatMap((argument) => {
+                return typeof argument === "object" &&
+                  argument !== null &&
+                  "objectId" in argument
+                  ? [argument.objectId]
+                  : [];
+              })
+            : []),
+        ];
+        return {
+          result: {
+            value: objectIds.map(() => {
+              return {
+                tagName: "INPUT",
+                inputType: "password",
+                connected: true,
+                mainDocument: true,
+                writable: true,
+                siteRequired: false,
+                multiple: false,
+              };
+            }),
+          },
+        };
+      }
+      default: {
+        return {};
+      }
+    }
+  });
+}
+
+function nativePasswordRequest(callbackPrompt: string) {
+  return {
+    kind: "input" as const,
+    callbackPrompt,
+    pageTargetId: "native-input-target",
+    fields: [
+      {
+        key: "password",
+        label: "Password",
+        fieldKind: "password" as const,
+        required: true,
+        backendNodeId: 42,
+      },
+    ],
+  };
+}
+
+async function createNativePasswordActionForPreflightTest(): Promise<{
+  readonly token: string;
+  readonly providerId: string;
+}> {
+  const { routeMocks, runs, chat, actor, agent } = await setupBrowserScenario();
+  const current = await createClaimedChatRun(
+    chat,
+    runs,
+    actor,
+    agent.agentId,
+    "Enter a password on the current Browser page",
+  );
+  await updateFeatureSwitchesForUser(context, actor, {
+    [FeatureSwitchKey.BrowserNativeInput]: true,
+  });
+  const providerId = randomUUID();
+  acceptBrowserUseCdpSessions([providerId]);
+  mockNativeInputTarget();
+  server.use(
+    http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+      const body = z
+        .strictObject({ name: z.string() })
+        .parse(await request.json());
+      return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+        status: 201,
+      });
+    }),
+    http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+      return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+    }),
+    http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+      return HttpResponse.json(providerBrowser(String(params.id)));
+    }),
+  );
+  await accept(
+    client().use({ headers: current.claim.browserHeaders, body: {} }),
+    [200],
+  );
+  routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+  const created = await accept(
+    userActionClient().create({
+      headers: current.claim.browserHeaders,
+      body: nativePasswordRequest("Continue after entering the password"),
+    }),
+    [201],
+  );
+  return { token: created.body.action.requestToken, providerId };
+}
+
+interface NativeNumberConstraints {
+  readonly min: string;
+  readonly max: string;
+  readonly step: string;
+}
+
+function validNumberValue(
+  value: unknown,
+  { min, max, step }: NativeNumberConstraints,
+): boolean {
+  if (value === null || value === "") {
+    return true;
+  }
+  if (typeof value !== "string") {
+    return false;
+  }
+  const numeric = Number(value);
+  return (
+    Number.isFinite(numeric) &&
+    numeric >= Number(min) &&
+    numeric <= Number(max) &&
+    (step === "any" || Number.isInteger((numeric - Number(min)) / Number(step)))
+  );
+}
+
+function mockNativeNumberTarget(args: {
+  readonly constraints: () => NativeNumberConstraints;
+  readonly verificationMatches: () => boolean;
+}): void {
+  context.mocks.browserUseCdp.command.mockImplementation((command) => {
+    switch (command.method) {
+      case "Target.getTargets": {
+        return {
+          targetInfos: [
+            {
+              targetId: "native-input-target",
+              type: "page",
+              url: "https://example.com/order",
+            },
+          ],
+        };
+      }
+      case "Target.attachToTarget": {
+        return { sessionId: "native-number-session" };
+      }
+      case "Browser.getWindowForTarget": {
+        return { windowId: 7 };
+      }
+      case "Page.getFrameTree": {
+        return {
+          frameTree: {
+            frame: {
+              id: "main-frame",
+              loaderId: "native-number-loader",
+              url: "https://example.com/order",
+            },
+          },
+        };
+      }
+      case "DOM.resolveNode": {
+        return { object: { objectId: "native-number-object" } };
+      }
+      case "Page.getLayoutMetrics": {
+        return {
+          cssVisualViewport: {
+            pageX: 0,
+            pageY: 0,
+            clientWidth: 1440,
+            clientHeight: 900,
+          },
+        };
+      }
+      case "Page.captureScreenshot": {
+        return { data: Buffer.from("screenshot").toString("base64") };
+      }
+      case "Runtime.callFunctionOn": {
+        const declaration = String(command.params.functionDeclaration);
+        if (declaration.includes("expectedValues")) {
+          return { result: { value: args.verificationMatches() } };
+        }
+        if (declaration.includes("cloneNode")) {
+          const first = Array.isArray(command.params.arguments)
+            ? command.params.arguments[0]
+            : undefined;
+          const value =
+            typeof first === "object" && first !== null && "value" in first
+              ? first.value
+              : undefined;
+          return {
+            result: { value: validNumberValue(value, args.constraints()) },
+          };
+        }
+        if (declaration.includes("nextValue")) {
+          return { result: { value: true } };
+        }
+        return {
+          result: {
+            value: [
+              {
+                tagName: "INPUT",
+                inputType: "number",
+                connected: true,
+                mainDocument: true,
+                writable: true,
+                siteRequired: false,
+                multiple: false,
+                ...args.constraints(),
+              },
+            ],
+          },
+        };
+      }
+      default: {
+        return {};
+      }
+    }
+  });
+}
+
 function browserUserActionTokenHash(requestToken: string): string {
   return createHash("sha256").update(requestToken).digest("hex");
 }
@@ -123,6 +386,285 @@ aroundEach(async (runTest) => {
 });
 
 describe("Browser user-action route", () => {
+  it("lets apply finish while the preflight provider read is still pending", async () => {
+    const { token } = await createNativePasswordActionForPreflightTest();
+    const readStarted = createDeferredPromise<void>(context.signal);
+    const releaseRead = createDeferredPromise<void>(context.signal);
+    let holdNextRead = true;
+    server.use(
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, async ({ params }) => {
+        if (holdNextRead) {
+          holdNextRead = false;
+          readStarted.resolve(undefined);
+          await releaseRead.promise;
+        }
+        return HttpResponse.json(providerBrowser(String(params.id)));
+      }),
+    );
+
+    const preflight = userActionClient().preflight({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: token },
+      body: {},
+    });
+    await readStarted.promise;
+    const applied = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+        body: { values: [{ key: "password", value: "synthetic-secret" }] },
+      }),
+      [200],
+    );
+    expect(applied.body.state).toBe("succeeded");
+    releaseRead.resolve(undefined);
+    const checked = await preflight;
+    expect(checked.status).toBe(409);
+    expect(browserInputWrites()).toHaveLength(1);
+  });
+
+  it("returns a retryable provider timeout when the internal CDP deadline expires", async () => {
+    const { token, providerId } =
+      await createNativePasswordActionForPreflightTest();
+    const deadline = new AbortController();
+    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
+      return milliseconds === 15_000 ? deadline.signal : undefined;
+    });
+    const discoveryStarted = createDeferredPromise<void>(context.signal);
+    const discoveryAborted = createDeferredPromise<void>(context.signal);
+    server.use(
+      http.get(
+        `https://${providerId}.cdp.browser-use.com/json/version`,
+        async ({ request }) => {
+          request.signal.addEventListener(
+            "abort",
+            () => {
+              discoveryAborted.resolve(undefined);
+            },
+            { once: true },
+          );
+          discoveryStarted.resolve(undefined);
+          await discoveryAborted.promise;
+          return HttpResponse.json({
+            webSocketDebuggerUrl: browserUseCdpWebSocketUrl(providerId),
+          });
+        },
+      ),
+    );
+    const preflight = userActionClient().preflight({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: token },
+      body: {},
+    });
+    await discoveryStarted.promise;
+    deadline.abort(new DOMException("CDP deadline", "TimeoutError"));
+    const checked = await preflight;
+    await discoveryAborted.promise;
+    expect(checked).toMatchObject({
+      status: 503,
+      body: { error: { code: "BROWSER_USE_TIMEOUT" } },
+    });
+  });
+
+  it("supports live number constraints, optional clear, and exact readback", async () => {
+    const { routeMocks, runs, chat, actor, agent } =
+      await setupBrowserScenario();
+    const current = await createClaimedChatRun(
+      chat,
+      runs,
+      actor,
+      agent.agentId,
+      "Enter a quantity in the current browser",
+    );
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BrowserNativeInput]: true,
+    });
+    const providerId = randomUUID();
+    acceptBrowserUseCdpSessions([providerId]);
+    let min = "10";
+    let max = "20";
+    let step = "0.5";
+    let verificationMatches = true;
+    mockNativeNumberTarget({
+      constraints: () => {
+        return { min, max, step };
+      },
+      verificationMatches: () => {
+        return verificationMatches;
+      },
+    });
+    server.use(
+      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+        const body = z
+          .strictObject({ name: z.string() })
+          .parse(await request.json());
+        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+          status: 201,
+        });
+      }),
+      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+        return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+      }),
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        return HttpResponse.json(providerBrowser(String(params.id)));
+      }),
+    );
+    await accept(
+      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      [200],
+    );
+    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    const createNumber = async (required = false) => {
+      return await accept(
+        userActionClient().create({
+          headers: current.claim.browserHeaders,
+          body: {
+            kind: "input",
+            callbackPrompt: "Continue after quantity entry",
+            pageTargetId: "native-input-target",
+            fields: [
+              {
+                key: "quantity",
+                label: "Quantity",
+                fieldKind: "number",
+                required,
+                backendNodeId: 45,
+              },
+            ],
+          },
+        }),
+        [201],
+      );
+    };
+    const created = await createNumber();
+    expect(created.body.action.fields[0]).toMatchObject({
+      fieldKind: "number",
+      control: { tagName: "INPUT", inputType: "number" },
+    });
+    const token = created.body.action.requestToken;
+    const preflight = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+        body: {},
+      }),
+      [200],
+    );
+    expect(preflight.body.fields[0]?.control).toMatchObject({
+      inputType: "number",
+      min: "10",
+      max: "20",
+      step: "0.5",
+    });
+    expect(JSON.stringify(preflight.body)).not.toContain("backendNodeId");
+
+    for (const value of ["not-a-number", "12.3"]) {
+      const invalidNumber = await userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+        body: { values: [{ key: "quantity", value }] },
+      });
+      expect(invalidNumber).toMatchObject({
+        status: 409,
+        body: { error: { code: "BROWSER_USER_ACTION_INVALID_VALUE" } },
+      });
+    }
+    expect(browserInputWrites()).toHaveLength(0);
+
+    min = "15";
+    const invalid = await userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: token },
+      body: { values: [{ key: "quantity", value: "12.5" }] },
+    });
+    expect(invalid).toMatchObject({
+      status: 409,
+      body: { error: { code: "BROWSER_USER_ACTION_INVALID_VALUE" } },
+    });
+    expect(browserInputWrites()).toHaveLength(0);
+    min = "10";
+    const applied = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+        body: { values: [{ key: "quantity", value: "12.5" }] },
+      }),
+      [200],
+    );
+    expect(applied.body.state).toBe("succeeded");
+    expect(browserInputWrites().at(-1)?.[0].params.arguments).toStrictEqual([
+      { value: "12.5" },
+    ]);
+
+    const untouched = await createNumber();
+    const writesBeforeUntouched = browserInputWrites().length;
+    const untouchedResult = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: untouched.body.action.requestToken },
+        body: { values: [] },
+      }),
+      [200],
+    );
+    expect(untouchedResult.body.state).toBe("succeeded");
+    expect(browserInputWrites()).toHaveLength(writesBeforeUntouched);
+
+    const clear = await createNumber();
+    const cleared = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: clear.body.action.requestToken },
+        body: { values: [{ key: "quantity", value: "" }] },
+      }),
+      [200],
+    );
+    expect(cleared.body.state).toBe("succeeded");
+    expect(browserInputWrites().at(-1)?.[0].params.arguments).toStrictEqual([
+      { value: "" },
+    ]);
+
+    const required = await createNumber(true);
+    const requiredEmpty = await userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: required.body.action.requestToken },
+      body: { values: [{ key: "quantity", value: "" }] },
+    });
+    expect(requiredEmpty).toMatchObject({
+      status: 400,
+      body: { error: { code: "BROWSER_USER_ACTION_REQUIRED_VALUE_MISSING" } },
+    });
+
+    min = "0";
+    max = "1e30";
+    step = "any";
+    const precise = await createNumber();
+    const preciseValue = "9007199254740993";
+    const preciseResult = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: precise.body.action.requestToken },
+        body: { values: [{ key: "quantity", value: preciseValue }] },
+      }),
+      [200],
+    );
+    expect(preciseResult.body.state).toBe("succeeded");
+    expect(browserInputWrites().at(-1)?.[0].params.arguments).toStrictEqual([
+      { value: preciseValue },
+    ]);
+
+    const mismatch = await createNumber();
+    verificationMatches = false;
+    const uncertain = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: mismatch.body.action.requestToken },
+        body: { values: [{ key: "quantity", value: "12.5" }] },
+      }),
+      [200],
+    );
+    expect(uncertain.body.state).toBe("uncertain");
+  });
+
   it("validates and applies CLI-resolved Browser input without exposing target or value data", async () => {
     const { routeMocks, runs, chat, actor, agent } =
       await setupBrowserScenario();
@@ -143,6 +685,8 @@ describe("Browser user-action route", () => {
     let controlWritable = true;
     let controlConnected = true;
     let controlTagName = "INPUT";
+    let controlSiteRequired = false;
+    const controlMinLength = 3;
     let disconnectAfterNextWrite = false;
     let resolveNodeAvailable = true;
     let malformedNodeResponse = false;
@@ -209,6 +753,25 @@ describe("Browser user-action route", () => {
             result: { value: verificationMatches && controlConnected },
           };
         }
+        if (declaration.includes("cloneNode")) {
+          const values = Array.isArray(command.params.arguments)
+            ? command.params.arguments.flatMap((argument) => {
+                return typeof argument === "object" &&
+                  argument !== null &&
+                  "value" in argument &&
+                  typeof argument.value === "string"
+                  ? [argument.value]
+                  : [];
+              })
+            : [];
+          return {
+            result: {
+              value: values.every((value) => {
+                return value.length >= (controlMinLength ?? 0);
+              }),
+            },
+          };
+        }
         if (declaration.includes("nextValue")) {
           if (disconnectAfterNextWrite) {
             disconnectAfterNextWrite = false;
@@ -234,14 +797,23 @@ describe("Browser user-action route", () => {
               return {
                 tagName: controlTagName,
                 inputType:
-                  objectId === "native-username-object"
-                    ? "email"
-                    : objectId === "native-code-object"
-                      ? "tel"
-                      : "password",
+                  controlTagName === "TEXTAREA"
+                    ? "textarea"
+                    : objectId === "native-username-object"
+                      ? "email"
+                      : objectId === "native-code-object"
+                        ? "tel"
+                        : "password",
                 connected: controlConnected,
                 mainDocument: true,
                 writable: controlWritable,
+                siteRequired: controlSiteRequired,
+                multiple:
+                  controlTagName === "INPUT" &&
+                  objectId === "native-username-object",
+                ...(controlMinLength === undefined
+                  ? {}
+                  : { minLength: controlMinLength }),
               };
             }),
           },
@@ -486,6 +1058,7 @@ describe("Browser user-action route", () => {
     expect(foreignPreflight.status).toBe(404);
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
 
+    controlSiteRequired = true;
     const preflight = await accept(
       userActionClient().preflight({
         headers: { authorization: "Bearer clerk-session" },
@@ -495,6 +1068,28 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(preflight.body.state).toBe("pending");
+    expect(preflight.body).toMatchObject({
+      kind: "input",
+      fields: [
+        {
+          control: {
+            tagName: "INPUT",
+            inputType: "email",
+            siteRequired: true,
+            multiple: true,
+            minLength: 3,
+          },
+        },
+        {
+          control: {
+            tagName: "INPUT",
+            inputType: "password",
+            siteRequired: true,
+            minLength: 3,
+          },
+        },
+      ],
+    });
     expect(preflight.body).not.toHaveProperty("pageTargetId");
     expect(JSON.stringify(preflight.body)).not.toContain("backendNodeId");
     expect(browserInputWrites()).toHaveLength(0);
@@ -521,10 +1116,26 @@ describe("Browser user-action route", () => {
         return (
           command.method === "Runtime.callFunctionOn" &&
           typeof command.params.functionDeclaration === "string" &&
-          command.params.functionDeclaration.includes("nextValue")
+          command.params.functionDeclaration.includes("setter.call")
         );
       }),
     ).toBeFalsy();
+
+    const invalidSiteValue = await userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: created.body.action.requestToken },
+      body: {
+        values: [
+          { key: "username", value: "user@example.com" },
+          { key: "password", value: "xy" },
+        ],
+      },
+    });
+    expect(invalidSiteValue).toMatchObject({
+      status: 409,
+      body: { error: { code: "BROWSER_USER_ACTION_INVALID_VALUE" } },
+    });
+    expect(browserInputWrites()).toHaveLength(0);
 
     const applied = await accept(
       userActionClient().apply({
@@ -540,9 +1151,9 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(applied.body.state).toBe("succeeded");
-    expect(providerReadCount).toBe(3);
-    expect(context.mocks.browserUseCdp.connect).toHaveBeenCalledTimes(3);
-    expect(browserControlInspections()).toHaveLength(3);
+    expect(providerReadCount).toBe(4);
+    expect(context.mocks.browserUseCdp.connect).toHaveBeenCalledTimes(4);
+    expect(browserControlInspections()).toHaveLength(4);
     expect(browserInputWrites()).toHaveLength(1);
     expect(browserInputWrites()[0]?.[0].params.arguments).toStrictEqual([
       { value: "user@example.com" },
@@ -690,142 +1301,57 @@ describe("Browser user-action route", () => {
       { value: "required-only" },
     ]);
 
-    context.mocks.browserUseCdp.connect.mockClear();
-    context.mocks.browserUseCdp.command.mockClear();
-    providerReadCount = 0;
-    const direct = await accept(
+    controlTagName = "TEXTAREA";
+    controlSiteRequired = false;
+    const multiline = await accept(
       userActionClient().create({
         headers: current.claim.browserHeaders,
         body: {
-          kind: "direct_interaction",
-          callbackPrompt: "Continue after verification",
-          reason: "Complete the verification in the Browser",
+          kind: "input",
+          callbackPrompt: "Continue after multiline input",
+          pageTargetId: "native-input-target",
+          fields: [
+            {
+              key: "note",
+              label: "Note",
+              fieldKind: "text",
+              required: true,
+              backendNodeId: 43,
+            },
+          ],
         },
       }),
       [201],
     );
-    expect(direct.body.action).not.toHaveProperty("siteOrigin");
-    expect(providerReadCount).toBe(0);
-    expect(context.mocks.browserUseCdp.connect).not.toHaveBeenCalled();
-    expect(context.mocks.browserUseCdp.command).not.toHaveBeenCalled();
-    const completed = await accept(
-      userActionClient().complete({
+    const multilinePreflight = await accept(
+      userActionClient().preflight({
         headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: direct.body.action.requestToken },
+        params: { requestToken: multiline.body.action.requestToken },
         body: {},
       }),
       [200],
     );
-    const completedAgain = await accept(
-      userActionClient().complete({
+    expect(multilinePreflight.body).toMatchObject({
+      kind: "input",
+      fields: [{ control: { tagName: "TEXTAREA", inputType: "textarea" } }],
+    });
+    const multilineApplied = await accept(
+      userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: direct.body.action.requestToken },
-        body: {},
+        params: { requestToken: multiline.body.action.requestToken },
+        body: { values: [{ key: "note", value: "first line\nsecond line" }] },
       }),
       [200],
     );
-    expect(completed.body.state).toBe("succeeded");
-    expect(completedAgain.body.callbackIds).toStrictEqual(
-      completed.body.callbackIds,
-    );
-    const beforeDirectCallback = await accept(
-      userActionClient().get({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: direct.body.action.requestToken },
-      }),
-      [200],
-    );
-    expect(beforeDirectCallback.body.callbackDelivered).toBeFalsy();
-    await chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        threadId: current.threadId,
-        prompt: "Continue after verification",
-        clientEventId: completed.body.callbackIds.success.clientEventId,
-        chatThreadSortEventId:
-          completed.body.callbackIds.success.chatThreadSortEventId,
-      },
-      [201],
-    );
-    const afterDirectCallback = await accept(
-      userActionClient().get({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: direct.body.action.requestToken },
-      }),
-      [200],
-    );
-    expect(afterDirectCallback.body.callbackDelivered).toBeTruthy();
-    expect(providerReadCount).toBe(0);
-    expect(context.mocks.browserUseCdp.connect).not.toHaveBeenCalled();
-    expect(context.mocks.browserUseCdp.command).not.toHaveBeenCalled();
+    expect(multilineApplied.body.state).toBe("succeeded");
+    expect(browserInputWrites().at(-1)?.[0].params.arguments).toStrictEqual([
+      { value: "first line\nsecond line" },
+    ]);
+    controlTagName = "INPUT";
 
-    const cancellable = await accept(
-      userActionClient().create({
-        headers: current.claim.sandboxHeaders,
-        body: {
-          kind: "direct_interaction",
-          callbackPrompt: "Continue after cancellation",
-          reason: "Complete or cancel the verification",
-        },
-      }),
-      [201],
-    );
     context.mocks.browserUseCdp.connect.mockClear();
     context.mocks.browserUseCdp.command.mockClear();
     providerReadCount = 0;
-    const cancelled = await accept(
-      userActionClient().cancel({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: cancellable.body.action.requestToken },
-        body: {},
-      }),
-      [200],
-    );
-    const cancelledAgain = await accept(
-      userActionClient().cancel({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: cancellable.body.action.requestToken },
-        body: {},
-      }),
-      [200],
-    );
-    expect(cancelled.body.state).toBe("cancelled");
-    expect(cancelledAgain.body.callbackIds).toStrictEqual(
-      cancelled.body.callbackIds,
-    );
-    const beforeCancellationCallback = await accept(
-      userActionClient().get({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: cancellable.body.action.requestToken },
-      }),
-      [200],
-    );
-    expect(beforeCancellationCallback.body.callbackDelivered).toBeFalsy();
-    await chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        threadId: current.threadId,
-        prompt: "The user cancelled the browser interaction request.",
-        clientEventId: cancelled.body.callbackIds.cancellation.clientEventId,
-        chatThreadSortEventId:
-          cancelled.body.callbackIds.cancellation.chatThreadSortEventId,
-      },
-      [201],
-    );
-    const afterCancellationCallback = await accept(
-      userActionClient().get({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: cancellable.body.action.requestToken },
-      }),
-      [200],
-    );
-    expect(afterCancellationCallback.body.callbackDelivered).toBeTruthy();
-    expect(providerReadCount).toBe(0);
-    expect(context.mocks.browserUseCdp.connect).not.toHaveBeenCalled();
-    expect(context.mocks.browserUseCdp.command).not.toHaveBeenCalled();
-
     const providerRetryCandidate = await accept(
       userActionClient().create({
         headers: current.claim.browserHeaders,
@@ -1348,15 +1874,11 @@ describe("Browser user-action route", () => {
     // a fixed expiry copied onto the request row.
     mockNow(STARTED_AT_MS + 9 * MINUTE_MS);
     await accept(
-      userActionClient().create({
+      client().lease({
         headers: current.claim.browserHeaders,
-        body: {
-          kind: "direct_interaction",
-          callbackPrompt: "Continue after renewing the Browser lease",
-          reason: "Renew the current Browser lease",
-        },
+        body: {},
       }),
-      [201],
+      [200],
     );
     mockNow(STARTED_AT_MS + 11 * MINUTE_MS);
     const renewed = await accept(
@@ -1403,11 +1925,7 @@ describe("Browser user-action route", () => {
     expect(browserInputWrites()).toHaveLength(writesBeforeExpiry);
     const cannotReviveExpiredBrowser = await userActionClient().create({
       headers: current.claim.browserHeaders,
-      body: {
-        kind: "direct_interaction",
-        callbackPrompt: "Continue after Browser expiry",
-        reason: "This request must not revive the expired Browser",
-      },
+      body: nativePasswordRequest("Continue after Browser expiry"),
     });
     expect(cannotReviveExpiredBrowser).toMatchObject({
       status: 409,
@@ -1430,15 +1948,6 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(preservedUncertain.body.state).toBe("uncertain");
-    const terminalAfterExpiry = await accept(
-      userActionClient().get({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: direct.body.action.requestToken },
-      }),
-      [200],
-    );
-    expect(terminalAfterExpiry.body.state).toBe("succeeded");
-
     await chat.deleteThread(actor, current.threadId);
     const erased = await userActionClient().get({
       headers: { authorization: "Bearer clerk-session" },
@@ -1447,6 +1956,91 @@ describe("Browser user-action route", () => {
     expect(erased).toMatchObject({
       status: 404,
       body: { error: { code: "BROWSER_USER_ACTION_NOT_FOUND" } },
+    });
+  }, 120_000);
+
+  it("retires legacy direct actions while preserving live Browser input requests", async () => {
+    const { routeMocks, runs, chat, actor, agent } =
+      await setupBrowserScenario();
+    const current = await createClaimedChatRun(
+      chat,
+      runs,
+      actor,
+      agent.agentId,
+      "Open a Browser for legacy action retirement",
+    );
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BrowserNativeInput]: true,
+    });
+
+    const providerId = randomUUID();
+    acceptBrowserUseCdpSessions([providerId]);
+    mockNativeInputTarget();
+    server.use(
+      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+        const body = z
+          .strictObject({ name: z.string() })
+          .parse(await request.json());
+        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+          status: 201,
+        });
+      }),
+      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+        return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+      }),
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, () => {
+        return HttpResponse.json(providerBrowser(providerId));
+      }),
+    );
+    await accept(
+      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      [200],
+    );
+    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+
+    const createAction = async (prompt: string) => {
+      return await accept(
+        userActionClient().create({
+          headers: current.claim.browserHeaders,
+          body: nativePasswordRequest(prompt),
+        }),
+        [201],
+      );
+    };
+    const legacy = await createAction("Legacy direct handoff");
+    const input = await createAction("Continue after native input");
+    await stageRetiredDirectBrowserUserActionFixture(
+      legacy.body.action.requestToken,
+    );
+
+    const reconciled = await reconcileBrowsers(current.threadId);
+    expect(reconciled.body).toMatchObject({ errors: 0 });
+    await expect(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: legacy.body.action.requestToken },
+      }),
+    ).resolves.toMatchObject({
+      status: 404,
+      body: { error: { code: "BROWSER_USER_ACTION_NOT_FOUND" } },
+    });
+    await expect(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: input.body.action.requestToken },
+      }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { kind: "input", state: "pending" },
+    });
+    await expect(
+      client().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { threadId: current.threadId },
+      }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { browser: { status: "active" } },
     });
   }, 120_000);
 
@@ -1466,6 +2060,7 @@ describe("Browser user-action route", () => {
 
     const providerId = randomUUID();
     acceptBrowserUseCdpSessions([providerId]);
+    mockNativeInputTarget();
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
         const body = z
@@ -1478,6 +2073,9 @@ describe("Browser user-action route", () => {
       http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
         return HttpResponse.json(providerBrowser(providerId), { status: 201 });
       }),
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, () => {
+        return HttpResponse.json(providerBrowser(providerId));
+      }),
     );
     await accept(
       client().use({ headers: current.claim.browserHeaders, body: {} }),
@@ -1485,34 +2083,30 @@ describe("Browser user-action route", () => {
     );
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
 
-    const createDirectAction = async (reason: string) => {
+    const createInputAction = async (reason: string) => {
       return await accept(
         userActionClient().create({
           headers: current.claim.browserHeaders,
-          body: {
-            kind: "direct_interaction",
-            callbackPrompt: `Continue after ${reason}`,
-            reason,
-          },
+          body: nativePasswordRequest(`Continue after ${reason}`),
         }),
         [201],
       );
     };
-    const pending = await createDirectAction("pending conversion");
-    const applying = await createDirectAction("applying conversion");
-    const succeeded = await createDirectAction("successful completion");
-    const cancelled = await createDirectAction("cancelled completion");
-    const raced = await createDirectAction("concurrent completion or closure");
+    const pending = await createInputAction("pending conversion");
+    const applying = await createInputAction("applying conversion");
+    const succeeded = await createInputAction("successful completion");
+    const cancelled = await createInputAction("cancelled completion");
+    const raced = await createInputAction("concurrent completion or closure");
 
     await stageStuckBrowserUserActionFixture({
       requestToken: applying.body.action.requestToken,
       applyStartedAt: new Date(STARTED_AT_MS),
     });
     await accept(
-      userActionClient().complete({
+      userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
         params: { requestToken: succeeded.body.action.requestToken },
-        body: {},
+        body: { values: [{ key: "password", value: "secret" }] },
       }),
       [200],
     );
@@ -1526,15 +2120,15 @@ describe("Browser user-action route", () => {
     );
     const finishedAt = new Date(STARTED_AT_MS + MINUTE_MS);
     mockNow(finishedAt.getTime());
-    const [capturedProviderId, completeRace, cancelRace] = await Promise.all([
+    const [capturedProviderId, applyRace, cancelRace] = await Promise.all([
       stageBrowserUserActionClosureFixture({
         requestToken: raced.body.action.requestToken,
         finishedAt,
       }),
-      userActionClient().complete({
+      userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
         params: { requestToken: raced.body.action.requestToken },
-        body: {},
+        body: { values: [{ key: "password", value: "secret" }] },
       }),
       userActionClient().cancel({
         headers: { authorization: "Bearer clerk-session" },
@@ -1543,14 +2137,14 @@ describe("Browser user-action route", () => {
       }),
     ]);
     expect(capturedProviderId).toBe(providerId);
-    expect([200, 409, 410]).toContain(completeRace.status);
+    expect([200, 409, 410]).toContain(applyRace.status);
     expect([200, 409, 410]).toContain(cancelRace.status);
     expect(
-      [completeRace, cancelRace].filter((response) => {
+      [applyRace, cancelRace].filter((response) => {
         return response.status === 200;
       }),
     ).toHaveLength(
-      completeRace.status === 200 || cancelRace.status === 200 ? 1 : 0,
+      applyRace.status === 200 || cancelRace.status === 200 ? 1 : 0,
     );
 
     await updateFeatureSwitchesForUser(context, actor, {
@@ -1607,7 +2201,7 @@ describe("Browser user-action route", () => {
     expect(convertedActions[2]?.body.state).toBe("succeeded");
     expect(convertedActions[3]?.body.state).toBe("cancelled");
     expect(convertedActions[4]?.body.state).toMatch(
-      /^(succeeded|cancelled|stale)$/u,
+      /^(succeeded|cancelled|stale|uncertain)$/u,
     );
 
     const repeated = await reconcileBrowsers(current.threadId);
@@ -1656,6 +2250,7 @@ describe("Browser user-action route", () => {
     const providerProfileId = randomUUID();
     const deletedProfiles: string[] = [];
     acceptBrowserUseCdpSessions([providerId]);
+    mockNativeInputTarget();
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
         const body = z
@@ -1675,6 +2270,9 @@ describe("Browser user-action route", () => {
       http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
         return HttpResponse.json(providerBrowser(providerId), { status: 201 });
       }),
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, () => {
+        return HttpResponse.json(providerBrowser(providerId));
+      }),
     );
     await accept(
       client().use({ headers: current.claim.browserHeaders, body: {} }),
@@ -1687,11 +2285,9 @@ describe("Browser user-action route", () => {
       const created = await accept(
         userActionClient().create({
           headers: current.claim.browserHeaders,
-          body: {
-            kind: "direct_interaction",
-            callbackPrompt: `Continue after retained action ${index.toString()}`,
-            reason: `Retained action ${index.toString()}`,
-          },
+          body: nativePasswordRequest(
+            `Continue after retained action ${index.toString()}`,
+          ),
         }),
         [201],
       );
@@ -1700,19 +2296,15 @@ describe("Browser user-action route", () => {
     const laterTerminal = await accept(
       userActionClient().create({
         headers: current.claim.browserHeaders,
-        body: {
-          kind: "direct_interaction",
-          callbackPrompt: "Continue after the later terminal action",
-          reason: "Later terminal action",
-        },
+        body: nativePasswordRequest("Continue after the later terminal action"),
       }),
       [201],
     );
     await accept(
-      userActionClient().complete({
+      userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
         params: { requestToken: laterTerminal.body.action.requestToken },
-        body: {},
+        body: { values: [{ key: "password", value: "secret" }] },
       }),
       [200],
     );

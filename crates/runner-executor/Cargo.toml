@@ -1,6 +1,6 @@
 [package]
 name = "runner-executor"
-version = "0.1.2"
+version = "0.1.6"
 edition.workspace = true
 description = "Claimed-run sandbox execution, session history, results, and telemetry"
 

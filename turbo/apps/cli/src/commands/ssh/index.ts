@@ -1,6 +1,9 @@
 import { Command } from "commander";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
-import { sshHostsContract } from "@okouai/api-contracts/contracts/ssh-access";
+import {
+  sshHostsContract,
+  sshHostsResponseSchema,
+} from "@okouai/api-contracts/contracts/ssh-access";
 import { z } from "zod";
 
 import {
@@ -24,7 +27,7 @@ function requireCapability(capability: "ssh:read" | "ssh:write") {
 
 const list = new Command("list")
   .description(
-    "List live owner hosts authorized for this Agent (not a connectivity check)",
+    "List hosts visible to this Run with configuration availability (not a connectivity check)",
   )
   .option("--json", "Print JSON")
   .action(
@@ -33,17 +36,25 @@ const list = new Command("list")
       const client = initClient(sshHostsContract, await getClientConfig());
       const result = await client.list();
       if (result.status !== 200) handleError(result, "Cannot list SSH hosts");
+      const inventory = sshHostsResponseSchema.safeParse(result.body);
+      if (!inventory.success) {
+        throw new Error("Invalid SSH host inventory response.");
+      }
       if (options.json) {
-        console.log(JSON.stringify(result.body));
+        console.log(JSON.stringify(inventory.data));
         return;
       }
-      if (result.body.hosts.length === 0)
+      if (inventory.data.hosts.length === 0)
         console.log(
-          "No SSH hosts configured. Ask the owner to add a host in SSH settings.",
+          "No SSH hosts available to this Run. Ask the owner to check host setup and chat access in Connectors.",
         );
-      for (const host of result.body.hosts) {
+      for (const host of inventory.data.hosts) {
+        const availability =
+          host.availability.status === "blocked"
+            ? "blocked: needs_rebind (ask the owner to rebind Cloudflare Access or explicitly choose Direct in Connectors)"
+            : "ready to attempt (connectivity not checked)";
         console.log(
-          `${host.id}  ${host.displayName}  ${host.username}@${host.host}:${host.port}  ${host.learnedHostKey ? "host key learned" : "host key not learned"}`,
+          `${host.id}  ${host.displayName}  ${host.username}@${host.host}:${host.port}  ${host.learnedHostKey ? "host key learned" : "host key not learned"}  ${availability}`,
         );
       }
     }),
@@ -60,7 +71,7 @@ const exec = new Command("exec")
     "after",
     `
 Safety:
-  - Use an exact current connection ID from okou ssh host list --json; list again after an unknown or unavailable ID.
+  - Use an exact current connection ID with availability.status=ready from okou ssh host list --json. Blocked IDs are diagnostic only; ask the owner to repair them. List again after an unknown or unavailable ID.
   - Inspect structured failure_reason and effects. effects=unknown means the remote command may have run; inspect remote state and never retry automatically.
   - First contact learns the host key (TOFU). An unexpected key requires owner verification and an explicit reset in SSH settings; never accept it automatically.`,
   )
@@ -128,12 +139,12 @@ Command guide (read the relevant subcommand's --help before use):
   - Download: okou ssh download <connection-id> <remote-file> <local-file> --json
 
 Operational safety:
-  - Start with okou ssh host list --json and use an exact current connection ID. Never invent an ID or automatically replay an uncertain command.
-  - The owner enables SSH access in Agent settings for all configured hosts; agents cannot grant access. Ask for a least-privilege remote SSH user. Configured does not mean connectivity tested.
+  - Start with okou ssh host list --json and use an exact current ID only when availability.status=ready. A blocked needs_rebind host must be explicitly rebound to permitted Cloudflare Access or changed to Direct by its owner. Ready means configured to attempt, not connectivity-tested. Never invent an ID or automatically replay an uncertain command.
+  - The owner controls SSH host access through Agent settings or per-chat host selection; agents cannot grant themselves access. Ask for a least-privilege remote SSH user.
   - First contact learns a host key (TOFU). An unexpected key requires owner verification and an explicit reset in SSH settings, never automatic acceptance.
   - Inspect structured failure_reason and effects instead of matching error text. effects=unknown means the remote operation may have run.
   - Host inventory is live, while execution authority is cached for this Run and invalidated by notifications. A missed notification can leave stale authority until this Run ends. Ask the owner to end active Runs when immediate revocation is required.
-  - Ask the owner to check connection diagnostics in /connectors/ssh when setup fails.
+  - Ask the owner to check connection diagnostics in the Remote control tab of /connectors when setup fails.
 
 File transfers (upload/download): ${FILE_LIMIT_HELP}
 `,

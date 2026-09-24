@@ -59,17 +59,8 @@ class ConnectorDiagnosticCandidate:
 SharedBaseOwnershipReason = Literal[
     "route_owner",
     "active_route_owner",
-    "hint_owner",
-    "active_hint_owner",
     "ambiguous_route_owners",
     "base_only",
-]
-
-SharedBaseOwnershipHintStatus = Literal[
-    "absent",
-    "used",
-    "ignored",
-    "outside_candidate_set",
 ]
 
 
@@ -78,7 +69,6 @@ class SharedBaseOwnershipResolution:
     candidate: ConnectorDiagnosticCandidate | None
     reason: SharedBaseOwnershipReason
     candidate_connector_slugs: tuple[str, ...]
-    hint_status: SharedBaseOwnershipHintStatus
 
 
 @dataclass(frozen=True)
@@ -239,41 +229,25 @@ def resolve_shared_base_ownership(
     *,
     active_firewall_names: set[str],
     matched_firewall_name: str,
-    connector_intent: str | None = None,
 ) -> SharedBaseOwnershipResolution | None:
     """Resolve shared-base ownership for an active unknown-endpoint allow.
 
     Only owners in the most-specific matching base tier participate.
-    Route-specific ownership takes precedence over connector intent.
+    Only a unique route-specific owner can override an active base-only match.
 
     ``reason`` values:
     - ``route_owner``: one route-specific inactive connector owns the request;
       ``candidate`` is that connector.
     - ``active_route_owner``: the unique route owner is active; ``candidate`` is
       ``None`` so normal authentication continues.
-    - ``hint_owner``: without a unique route owner, intent selects an inactive
-      connector; ``candidate`` is that connector.
-    - ``active_hint_owner``: intent selects an active connector; ``candidate`` is
-      ``None`` so normal authentication continues.
-    - ``ambiguous_route_owners``: multiple route owners remain and intent selects
-      none; ``candidate`` is ``None``.
-    - ``base_only``: only shared-base matches remain and intent selects none;
-      ``candidate`` is ``None``.
-
-    ``hint_status`` is ``absent`` when no intent was supplied, ``used`` when
-    intent selected the owner, ``ignored`` when a matching intent was not used
-    because a unique route owner took precedence, and ``outside_candidate_set``
-    when intent named no candidate. Route-owner reasons can use ``absent``,
-    ``ignored``, or ``outside_candidate_set``; hint-owner reasons use ``used``;
-    ambiguous and base-only reasons use ``absent`` or
-    ``outside_candidate_set``.
+    - ``ambiguous_route_owners``: multiple route owners remain; ``candidate`` is
+      ``None``.
+    - ``base_only``: only shared-base matches remain; ``candidate`` is ``None``.
 
     The current caller copies ownership fields into connector diagnostic proxy
     logs only after accepting a non-``None`` candidate and finding no existing
-    request auth material. Consequently, logged ``ownership_reason`` values are
-    currently limited to ``route_owner`` and ``hint_owner``, while
-    ``ownership_hint_status`` follows the combinations above. Suppressing reasons
-    remain returned outcomes only.
+    request auth material. Consequently, the logged ``ownership_reason`` is
+    ``route_owner``. Suppressing reasons remain returned outcomes only.
     """
     catalog = diagnostic_snapshot.catalog
     if catalog is None:
@@ -307,30 +281,11 @@ def resolve_shared_base_ownership(
                 candidate=None,
                 reason="active_route_owner",
                 candidate_connector_slugs=candidate_connector_slugs,
-                hint_status=_hint_status(connector_intent, matches, used=False),
             )
         return SharedBaseOwnershipResolution(
             candidate=selected,
             reason="route_owner",
             candidate_connector_slugs=candidate_connector_slugs,
-            hint_status=_hint_status(connector_intent, matches, used=False),
-        )
-
-    hint_match = _hint_match(connector_intent, matches)
-    if hint_match is not None:
-        selected = hint_match.candidate
-        if selected.connector_slug in active_firewall_names:
-            return SharedBaseOwnershipResolution(
-                candidate=None,
-                reason="active_hint_owner",
-                candidate_connector_slugs=candidate_connector_slugs,
-                hint_status="used",
-            )
-        return SharedBaseOwnershipResolution(
-            candidate=selected,
-            reason="hint_owner",
-            candidate_connector_slugs=candidate_connector_slugs,
-            hint_status="used",
         )
 
     reason = "ambiguous_route_owners" if route_matches else "base_only"
@@ -338,7 +293,6 @@ def resolve_shared_base_ownership(
         candidate=None,
         reason=reason,
         candidate_connector_slugs=candidate_connector_slugs,
-        hint_status=_hint_status(connector_intent, matches, used=False),
     )
 
 
@@ -374,33 +328,6 @@ def _ownership_matches(
             )
         )
     return matches
-
-
-def _hint_match(
-    connector_intent: str | None,
-    matches: list[_OwnershipMatch],
-) -> _OwnershipMatch | None:
-    if connector_intent is None:
-        return None
-    for match in matches:
-        if match.candidate.connector_slug == connector_intent:
-            return match
-    return None
-
-
-def _hint_status(
-    connector_intent: str | None,
-    matches: list[_OwnershipMatch],
-    *,
-    used: bool,
-) -> SharedBaseOwnershipHintStatus:
-    if connector_intent is None:
-        return "absent"
-    if used:
-        return "used"
-    if _hint_match(connector_intent, matches) is None:
-        return "outside_candidate_set"
-    return "ignored"
 
 
 def _candidate_from_match(

@@ -14,6 +14,7 @@ import {
   connectorAccountTargetSchema,
 } from "./connector-accounts";
 import { apiErrorSchema } from "./errors";
+import { initialRemoteAccessOverrideSchema } from "./chat-remote-access";
 import { imageModelIdSchema } from "./image-models";
 import { requireUserMessageForDraftAttachments } from "./draft-user-message";
 import { hostedArtifactKindSchema } from "./host";
@@ -343,6 +344,10 @@ const chatThreadSnapshotProjectionSchema = z.object({
   pinnedAt: z.string().nullable(),
   // Optional for existing snapshots and browser caches without manual ordering.
   pinOrder: z.string().nullable().optional(),
+  // Rollout fallback: snapshots compacted before migration 1208 and Web/CLI
+  // caches from older builds omit it. Remove once they are recompacted and the
+  // client floor excludes those builds (#36551).
+  archived: z.boolean().optional(),
   renamedAt: z.string().nullable(),
   selectedModel: z.string().nullable().default(null),
   modelSettings: modelSettingsSchema.optional(),
@@ -381,6 +386,8 @@ const chatThreadEventSchema = z.object({
     "video_model_updated",
     "image_model_updated",
     "sort_touched",
+    "archived",
+    "unarchived",
   ]),
   chatThreadId: z.string().uuid(),
   agentId: z.string().uuid(),
@@ -1096,6 +1103,9 @@ const chatThreadMetadataSchema = z.object({
   reasoningEffort: reasoningEffortSchema.nullable().optional(),
   serviceTier: chatThreadServiceTierSchema.nullable(),
   pinnedAt: z.string().nullable(),
+  // Rollout fallback for a new App reaching an API from before archiving.
+  // Remove once that API is outside the rollback window (#36551).
+  archived: z.boolean().optional(),
   computerUseHostId: z.string().uuid().nullable(),
   cloudBrowserEnabled: z.boolean(),
   selectedVideoModel: z.string().nullable(),
@@ -1116,6 +1126,23 @@ const chatThreadCreateBodySchema = z.object({
   clientThreadId: z.string().uuid().optional(),
   eventId: chatThreadEventIdSchema.optional(),
   connectorSelections: z.array(connectorAccountSelectionSchema).optional(),
+  initialRemoteAccessOverrides: z
+    .array(initialRemoteAccessOverrideSchema)
+    .superRefine((overrides, ctx) => {
+      const seen = new Set<string>();
+      for (const [index, override] of overrides.entries()) {
+        const key = `${override.protocol}:${override.connectionId}`;
+        if (seen.has(key)) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Duplicate remote access host",
+            path: [index],
+          });
+        }
+        seen.add(key);
+      }
+    })
+    .optional(),
   /**
    * Selected model id. The API resolves the effective model provider from org
    * policy and available credentials. Omit it to inherit the model of the run
@@ -1585,6 +1612,46 @@ export const chatThreadUnpinContract = c.router({
       404: apiErrorSchema,
     },
     summary: "Remove the pin from a chat thread",
+  },
+});
+
+/**
+ * Archive / unarchive a chat thread. Both are idempotent: they set the
+ * `archived` flag and append the matching thread event without touching the
+ * title.
+ */
+export const chatThreadArchiveContract = c.router({
+  archive: {
+    method: "POST",
+    path: "/api/chat-threads/:id/archive",
+    headers: authHeadersSchema,
+    pathParams: chatThreadIdPathParamsSchema,
+    query: z.object({ eventId: chatThreadEventIdSchema.optional() }).optional(),
+    body: c.noBody(),
+    responses: {
+      204: c.noBody(),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Archive a chat thread",
+  },
+  unarchive: {
+    method: "POST",
+    path: "/api/chat-threads/:id/unarchive",
+    headers: authHeadersSchema,
+    pathParams: chatThreadIdPathParamsSchema,
+    query: z.object({ eventId: chatThreadEventIdSchema.optional() }).optional(),
+    body: c.noBody(),
+    responses: {
+      204: c.noBody(),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Unarchive a chat thread",
   },
 });
 

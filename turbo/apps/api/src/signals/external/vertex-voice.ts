@@ -1,4 +1,3 @@
-import type { MultimodalVoiceInputModelId } from "@okouai/api-contracts/contracts/voice-input-models";
 import { z } from "zod";
 
 import { logger } from "../../lib/log";
@@ -18,22 +17,7 @@ import type { VoiceCompletionRequest } from "./voice-completion-types";
 import { requestVoiceProvider } from "./voice-provider-request";
 
 const L = logger("VertexVoice");
-type VertexVoiceModel = Exclude<
-  MultimodalVoiceInputModelId,
-  "openai/gpt-audio" | "openai/gpt-audio-mini"
->;
-// New public multimodal selections must make an explicit routing decision.
 const MODELS = {
-  "google/gemini-2.5-flash-lite": {
-    model: "gemini-2.5-flash-lite",
-    location: "us-west1",
-    host: "us-west1-aiplatform.googleapis.com",
-    generationConfig: {
-      thinkingConfig: { thinkingBudget: 0 },
-      temperature: 0,
-      maxOutputTokens: 65_535,
-    },
-  },
   "google/gemini-3.1-flash-lite": {
     model: "gemini-3.1-flash-lite",
     location: "us",
@@ -41,16 +25,6 @@ const MODELS = {
     generationConfig: {
       thinkingConfig: { thinkingLevel: "MINIMAL" },
       temperature: 0,
-      maxOutputTokens: 65_536,
-    },
-  },
-  "google/gemini-3.6-flash": {
-    model: "gemini-3.6-flash",
-    location: "us",
-    host: "aiplatform.us.rep.googleapis.com",
-    generationConfig: {
-      thinkingConfig: { thinkingLevel: "MINIMAL" },
-      maxOutputTokens: 65_536,
     },
   },
   "google/gemini-3.8-flash": {
@@ -59,16 +33,17 @@ const MODELS = {
     host: "aiplatform.us.rep.googleapis.com",
     generationConfig: {
       thinkingConfig: { thinkingLevel: "LOW" },
-      maxOutputTokens: 65_536,
     },
   },
-} as const satisfies Readonly<Record<VertexVoiceModel, unknown>>;
+} as const;
+type VertexVoiceModel = keyof typeof MODELS;
 
-export function isVertexVoiceModel(
-  model: MultimodalVoiceInputModelId,
-): model is VertexVoiceModel {
-  return Object.hasOwn(MODELS, model);
-}
+/** The largest output either voice model accepts. */
+export const VERTEX_VOICE_MAX_OUTPUT_TOKENS = 65_536;
+
+/** Voice input is served only by Gemini 3.1 Flash-Lite on Vertex AI. */
+export const VOICE_INPUT_MODEL =
+  "google/gemini-3.1-flash-lite" satisfies VertexVoiceModel;
 
 type VertexVoiceFailureReason =
   | GcpLlmTransportReason
@@ -293,6 +268,8 @@ function parseVertexResponse<T>(
 export async function generateVertexVoice<T>(
   args: VoiceCompletionRequest & {
     readonly model: VertexVoiceModel;
+    /** Bounds generation time as well as size; a looping model runs to this cap. */
+    readonly maxOutputTokens: number;
     readonly diagnosticOwner?: VertexVoiceDiagnosticOwner;
   },
   parseResponse: (content: string) => T,
@@ -311,12 +288,13 @@ export async function generateVertexVoice<T>(
             ? { inlineData: { mimeType: "audio/wav", data: part.audio.data } }
             : { text: part.text };
         });
-  const schema = args.jsonSchema?.schema;
+  const schema = args.jsonSchema;
   const body = JSON.stringify({
     systemInstruction: { parts: [{ text: args.systemPrompt }] },
     contents: [{ role: "user", parts }],
     generationConfig: {
       ...model.generationConfig,
+      maxOutputTokens: args.maxOutputTokens,
       ...(schema && {
         responseMimeType: "application/json",
         responseSchema: {
@@ -377,7 +355,6 @@ export async function generateVertexVoice<T>(
         return parseVertexResponse(body.text, parseResponse);
       },
       {
-        provider: "vertex",
         model: args.model,
         responseSchema: args.jsonSchema?.name,
       },

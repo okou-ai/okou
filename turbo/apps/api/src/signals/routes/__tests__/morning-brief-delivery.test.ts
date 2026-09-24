@@ -175,7 +175,7 @@ async function fixture(
   await updateFeatureSwitchesForUser(
     context,
     { orgId, userId },
-    { [FeatureSwitchKey.SimpleMorningBrief]: options.feature !== false },
+    { [FeatureSwitchKey.NativeMorningBrief]: options.feature !== false },
   );
   const installation = await store.set(
     seedSlackOrgInstallation$,
@@ -797,7 +797,7 @@ describe("Morning Brief native delivery", () => {
     await updateFeatureSwitchesForUser(
       context,
       { orgId: f.orgId, userId: f.userId },
-      { [FeatureSwitchKey.SimpleMorningBrief]: false },
+      { [FeatureSwitchKey.NativeMorningBrief]: false },
     );
 
     const response = await accept(deliver(f, attemptId), [409]);

@@ -177,7 +177,7 @@ describe("inline SSH resource creation", () => {
               return entry.id === result.credentialId;
             })?.hosts,
           ).toContainEqual({ id: result.id, displayName: result.displayName });
-          if (!("transport" in parsed)) {
+          if (!("transport" in parsed) || !("configId" in parsed.transport)) {
             throw new Error("Missing protected transport");
           }
           const selectedConfigId = parsed.transport.configId;
@@ -426,6 +426,120 @@ beforeEach(() => {
 
 describe("organization Cloudflare Access", () => {
   const scoped = { view: "scoped" as const };
+
+  it("lists retained hosts as needing rebind and recovers only after an explicit choice", async () => {
+    const admin = owner({}, "org:admin");
+    const shared = (
+      await accept(
+        configs().create({
+          headers,
+          query: scoped,
+          body: {
+            id: randomUUID(),
+            name: "Shared recovery gateway",
+            scope: "organization",
+            credentials: token,
+          },
+        }),
+        [201],
+      )
+    ).body;
+    const member = owner({ orgId: admin.orgId });
+    const saved = await host(shared.id);
+    const pinned = await accept(
+      state().action({
+        body: {
+          action: "set-learned-host-key",
+          ...member,
+          connectionId: saved.id,
+          ...hostKey,
+        },
+      }),
+      [200],
+    );
+    // Conversion is deferred to #36262, so only the test route can construct
+    // needsRebind before that production writer exists.
+    const retained = await accept(
+      state().action({
+        body: { action: "set-needs-rebind", ...member, connectionId: saved.id },
+      }),
+      [200],
+    );
+    const listed = (await accept(connections().list({ headers }), [200])).body
+      .connections[0];
+    expect(listed).toMatchObject({
+      id: saved.id,
+      host: saved.host,
+      credentialId: saved.credentialId,
+      learnedHostKey: hostKey,
+      generation: retained.body.generation,
+      transport: { type: "cloudflare_access", needsRebind: true },
+    });
+    expect(listed).not.toHaveProperty("transport.configId");
+    expect(JSON.stringify(listed)).not.toContain(token.clientSecret);
+
+    const edit = (
+      transport?:
+        | { type: "direct" }
+        | { type: "cloudflare_access"; configId: string },
+    ) => {
+      return connections().update({
+        headers,
+        params: { connectionId: saved.id },
+        body: {
+          expectedGeneration: retained.body.generation!,
+          displayName: "Retained host",
+          ...(transport ? { transport } : {}),
+        },
+      });
+    };
+    await expect(accept(edit(), [400])).resolves.toMatchObject({
+      body: { error: { code: "SSH_INVALID_INPUT" } },
+    });
+    await expect(
+      accept(
+        edit({ type: "cloudflare_access", configId: randomUUID() }),
+        [404],
+      ),
+    ).resolves.toMatchObject({
+      body: { error: { code: "CLOUDFLARE_ACCESS_NOT_FOUND" } },
+    });
+    const rebound = await accept(
+      edit({ type: "cloudflare_access", configId: shared.id }),
+      [200],
+    );
+    expect(rebound.body).toMatchObject({
+      transport: { type: "cloudflare_access", configId: shared.id },
+      host: saved.host,
+      credentialId: saved.credentialId,
+      learnedHostKey: hostKey,
+    });
+    expect(pinned.body.generation).toBe(2);
+
+    const needsDirect = await accept(
+      state().action({
+        body: { action: "set-needs-rebind", ...member, connectionId: saved.id },
+      }),
+      [200],
+    );
+    const direct = await accept(
+      connections().update({
+        headers,
+        params: { connectionId: saved.id },
+        body: {
+          expectedGeneration: needsDirect.body.generation!,
+          transport: { type: "direct" },
+        },
+      }),
+      [200],
+    );
+    expect(direct.body).not.toHaveProperty("transport");
+    expect(direct.body).toMatchObject({
+      host: saved.host,
+      credentialId: saved.credentialId,
+      learnedHostKey: hostKey,
+    });
+  });
 
   it("keeps old App responses personal-only while members can bind shared configurations without seeing other hosts", async () => {
     const admin = owner({}, "org:admin");
@@ -1190,8 +1304,11 @@ describe("protected SSH authority", () => {
   it("treats a protected host awaiting rebind as unavailable, never Direct", async () => {
     // Conversion is not exposed by the production API until the App floor is
     // raised; the test-only route constructs that otherwise unreachable state.
+    const kms = useSecretKmsProbe();
     const f = await fixture();
+    const readyHost = await host();
     expect((await resolve(f)).outcome).toBe("resolved_access");
+    const priorDecryptCalls = kms.decryptCalls;
     const changed = await accept(
       state().action({
         body: {
@@ -1215,7 +1332,49 @@ describe("protected SSH authority", () => {
     expect(
       (await accept(inventory.list({ headers: f.guestHeaders }), [200])).body
         .hosts,
-    ).toStrictEqual([]);
+    ).toStrictEqual([
+      {
+        id: readyHost.id,
+        displayName: readyHost.displayName,
+        host: readyHost.host,
+        port: 22,
+        username: "deploy",
+        learnedHostKey: null,
+        availability: { status: "ready" },
+      },
+      {
+        id: f.host.id,
+        displayName: f.host.displayName,
+        host: f.host.host,
+        port: 443,
+        username: "deploy",
+        learnedHostKey: null,
+        availability: { status: "blocked", reason: "needs_rebind" },
+      },
+    ]);
+    await accept(
+      connections().delete({
+        headers,
+        params: { connectionId: readyHost.id },
+      }),
+      [204],
+    );
+    const blockedOnly = await accept(
+      inventory.list({ headers: f.guestHeaders }),
+      [200],
+    );
+    expect(blockedOnly.body.hosts).toStrictEqual([
+      {
+        id: f.host.id,
+        displayName: f.host.displayName,
+        host: f.host.host,
+        port: 443,
+        username: "deploy",
+        learnedHostKey: null,
+        availability: { status: "blocked", reason: "needs_rebind" },
+      },
+    ]);
+    expect(JSON.stringify(blockedOnly.body)).not.toContain(token.clientSecret);
     expect(
       (
         await accept(
@@ -1249,6 +1408,7 @@ describe("protected SSH authority", () => {
         )
       ).body,
     ).toStrictEqual({ outcome: "unavailable" });
+    expect(kms.decryptCalls).toBe(priorDecryptCalls);
   });
 
   it("resolves a same-organization shared Access row for another member", async () => {
@@ -1720,6 +1880,7 @@ describe("protected SSH authority", () => {
         port: 443,
         username: "deploy",
         learnedHostKey: null,
+        availability: { status: "ready" },
       },
     ]);
   });

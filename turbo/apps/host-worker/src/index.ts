@@ -485,35 +485,51 @@ async function serveHostedSite(
   );
 }
 
-/** Alias ownership is immutable; permission state is read separately on every request. */
+/** File aliases are immutable; HTML aliases can move from snapshots to site pointers. */
 async function readDeliveryRecord(
   request: Request,
   bucket: R2Bucket,
   key: string,
+  targetKind: "file" | "html",
   execution: ExecutionContext,
 ): Promise<ArtifactDeliveryRecord | null> {
-  const cache = await caches.open("artifact-delivery-v1");
+  // Never consult old HTML registry entries: a warm pre-migration cache must
+  // not keep a named site bound to its former snapshot for another day.
+  const cache =
+    targetKind === "file" ? await caches.open("artifact-delivery-v1") : null;
   const cacheKey = new Request(
     new URL(`/__artifact-delivery/${encodeURIComponent(key)}`, request.url),
   );
-  const cached = await cache.match(cacheKey);
-  if (cached) return artifactDeliveryRecordSchema.parse(await cached.json());
+  const cached = await cache?.match(cacheKey);
+  if (cached) {
+    const record = artifactDeliveryRecordSchema.parse(await cached.json());
+    // Publication and thread records recheck their policy before content.
+    // Legacy files have no policy, so their registry key is the revocation
+    // authority. A warm alias must not reach the one-year content cache after
+    // erasure has removed that key.
+    if (record.kind === "legacy-file" && !(await bucket.head(key))) {
+      return null;
+    }
+    return record;
+  }
   const object = await bucket.get(key);
   if (!object) return null;
   const record = artifactDeliveryRecordSchema.parse(
     await new Response(object.body).json(),
   );
-  execution.waitUntil(
-    cache.put(
-      cacheKey,
-      new Response(JSON.stringify(record), {
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "public, max-age=86400",
-        },
-      }),
-    ),
-  );
+  if (cache) {
+    execution.waitUntil(
+      cache.put(
+        cacheKey,
+        new Response(JSON.stringify(record), {
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "public, max-age=86400",
+          },
+        }),
+      ),
+    );
+  }
   return record;
 }
 
@@ -604,6 +620,7 @@ async function serveArtifactDelivery(
         request,
         env.HOSTED_SITES_BUCKET,
         artifactDeliveryKey(brand, fileHost ? "file" : "html", alias),
+        fileHost ? "file" : "html",
         execution,
       );
       if (!record) return null;
@@ -664,10 +681,7 @@ async function serveLegacyArtifactFile(
       },
     });
     if (!response.ok) return privateResponse(response);
-    response.headers.set(
-      "Cache-Control",
-      "public, max-age=31536000, immutable",
-    );
+    response.headers.set("Cache-Control", PRIVATE_NO_STORE_CACHE_CONTROL);
     return response;
   }
   const cache = (caches as CacheStorage & { readonly default: Cache }).default;
@@ -679,7 +693,7 @@ async function serveLegacyArtifactFile(
 
   const response = await serveArtifactFile(request, bucket, file);
   if (!response.ok) return privateResponse(response);
-  response.headers.set("Cache-Control", "public, max-age=31536000, immutable");
+  response.headers.set("Cache-Control", PRIVATE_NO_STORE_CACHE_CONTROL);
   if (request.method === "GET" && response.status === 200 && !ranged)
     execution.waitUntil(cache.put(key, response.clone()));
   return response;

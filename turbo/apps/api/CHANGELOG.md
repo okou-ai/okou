@@ -8,6 +8,120 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.669.1](https://github.com/okou-ai/okou/compare/api-v1.669.0...api-v1.669.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* **api:** derive morning brief worker signing key ([#36544](https://github.com/okou-ai/okou/issues/36544)) ([c385f0c](https://github.com/okou-ai/okou/commit/c385f0cba94bf508f06f35019dc6e3638b689b14))
+
+
+### Performance Improvements
+
+* **runner:** attribute claim response size on both sides ([#36582](https://github.com/okou-ai/okou/issues/36582)) ([954136f](https://github.com/okou-ai/okou/commit/954136fe0a41a917ac49cdb76095075ee6b4f3a4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.503.1
+    * @okouai/connectors bumped to 3.15.5
+    * @okouai/core bumped to 8.708.1
+    * @okouai/db bumped to 1.293.1
+    * @okouai/pi-agent-runtime bumped to 1.40.7
+
+## [1.669.0](https://github.com/okou-ai/okou/compare/api-v1.668.0...api-v1.669.0) (2026-09-24)
+
+
+### Features
+
+* **browser:** support native number input ([#36549](https://github.com/okou-ai/okou/issues/36549)) ([d0006e3](https://github.com/okou-ai/okou/commit/d0006e3974bfc524e77388536422b5fe4fe70b7f))
+* enforce live chat ssh/vnc host access ([#36440](https://github.com/okou-ai/okou/issues/36440)) ([69b29a9](https://github.com/okou-ai/okou/commit/69b29a9ac264f582613a966fd8c1844a13f1b5ec))
+* store chat thread archive state instead of title emoji ([#36480](https://github.com/okou-ai/okou/issues/36480)) ([f5a0de6](https://github.com/okou-ai/okou/commit/f5a0de65c0621ca58c35edd65fc257417becdaa3))
+
+
+### Bug Fixes
+
+* **api:** keep artifact delivery in web chat after switching ([#36567](https://github.com/okou-ai/okou/issues/36567)) ([0e4515a](https://github.com/okou-ai/okou/commit/0e4515a5b79b3e8c13d33fb9ecf0f4356f0d5563))
+
+
+### Performance Improvements
+
+* **api:** attribute storage cache pool acquisition ([#36530](https://github.com/okou-ai/okou/issues/36530)) ([9e67181](https://github.com/okou-ai/okou/commit/9e67181ce016aaf66ace5f12544c0a35fcb4b002))
+* **indicators:** resolve unread threads without correlated subqueries ([#36557](https://github.com/okou-ai/okou/issues/36557)) ([55dea0f](https://github.com/okou-ai/okou/commit/55dea0f14bc599c5b54dd6137216970662e8144c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.503.0
+    * @okouai/core bumped to 8.708.0
+    * @okouai/db bumped to 1.293.0
+    * @okouai/pi-agent-runtime bumped to 1.40.6
+
+## [1.668.0](https://github.com/okou-ai/okou/compare/api-v1.667.0...api-v1.668.0) (2026-09-24)
+
+
+### Features
+
+* **app:** manage shared cloudflare access and recover ssh bindings ([#36449](https://github.com/okou-ai/okou/issues/36449)) ([f129327](https://github.com/okou-ai/okou/commit/f129327db18170f2bf9f43fae9bc9ec2245a9cf5))
+
+
+### Bug Fixes
+
+* **hosting:** migrate snapshot aliases to rolling site pointers ([#36537](https://github.com/okou-ai/okou/issues/36537)) ([af047ab](https://github.com/okou-ai/okou/commit/af047ab6c6581147c5dfd0c81f9380015bc9302b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.502.0
+    * @okouai/core bumped to 8.707.1
+    * @okouai/db bumped to 1.292.3
+    * @okouai/pi-agent-runtime bumped to 1.40.5
+
+## [1.667.0](https://github.com/okou-ai/okou/compare/api-v1.666.0...api-v1.667.0) (2026-09-24)
+
+
+### Features
+
+* require an agent responsibility and open a setup thread on create ([#36385](https://github.com/okou-ai/okou/issues/36385)) ([2129fd9](https://github.com/okou-ai/okou/commit/2129fd9d4c5d83bd217d5575f0879bbfcfec3238))
+
+
+### Bug Fixes
+
+* **api:** recover invalid home task recommendation caches ([#36494](https://github.com/okou-ai/okou/issues/36494)) ([e3afce0](https://github.com/okou-ai/okou/commit/e3afce0781bfb3ad7756eed6890364f1066ee634))
+* **api:** retry temporary gmail refresh responses ([#36489](https://github.com/okou-ai/okou/issues/36489)) ([2108c6d](https://github.com/okou-ai/okou/commit/2108c6dd1feb5035f278bf1912103a9b506ed9f4))
+* **api:** stop suggesting npx as cli fallback ([#36502](https://github.com/okou-ai/okou/issues/36502)) ([d1c05e2](https://github.com/okou-ai/okou/commit/d1c05e25be8c8e40c9d0db9fb83072536ade5ed4))
+* **connector:** avoid unknown grants from incomplete aws checks ([#36490](https://github.com/okou-ai/okou/issues/36490)) ([a172bd9](https://github.com/okou-ai/okou/commit/a172bd956108f332743bc22036d8fad8a69ff62a))
+* **firewall:** enforce aws query requirements with action and target ([#36528](https://github.com/okou-ai/okou/issues/36528)) ([4e9d00e](https://github.com/okou-ai/okou/commit/4e9d00e79192bdd6468b3767e74e32e36855ee52))
+
+
+### Refactoring
+
+* **browser:** remove direct takeover action card ([#36446](https://github.com/okou-ai/okou/issues/36446)) ([c67a5a5](https://github.com/okou-ai/okou/commit/c67a5a5d643c5600ea7f78a68a7a5859edaa1657))
+
+
+### Performance Improvements
+
+* **api:** remove redundant launch diagnostic CTE join ([#36515](https://github.com/okou-ai/okou/issues/36515)) ([9f86fb1](https://github.com/okou-ai/okou/commit/9f86fb16e75ddbcc18b7518c2ddba683827df6af))
+* **platform:** serve onboarding workflow connector marks from a dedicated endpoint ([#36481](https://github.com/okou-ai/okou/issues/36481)) ([a0047e6](https://github.com/okou-ai/okou/commit/a0047e6e1b2fb2648cf894589d397bbec0a34228))
+* trim duplicate and eager startup requests ([#36487](https://github.com/okou-ai/okou/issues/36487)) ([cb824d2](https://github.com/okou-ai/okou/commit/cb824d2c0827051eabf912a07fa9aab70b36e289))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.501.0
+    * @okouai/connectors bumped to 3.15.4
+    * @okouai/core bumped to 8.707.0
+    * @okouai/db bumped to 1.292.2
+    * @okouai/pi-agent-runtime bumped to 1.40.4
+
 ## [1.666.0](https://github.com/okou-ai/okou/compare/api-v1.665.0...api-v1.666.0) (2026-09-24)
 
 

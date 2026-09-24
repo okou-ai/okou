@@ -64,6 +64,7 @@ import { chatThreadPinRoutes } from "./chat-threads-pin";
 import { chatThreadPinOrderRoutes } from "./chat-threads-pin-order";
 import { chatThreadRenameRoutes } from "./chat-threads-rename";
 import { chatThreadUnpinRoutes } from "./chat-threads-unpin";
+import { chatThreadArchiveRoutes } from "./chat-threads-archive";
 
 const chatThreadIdSchema = z.string().uuid();
 const gunzipAsync = promisify(gunzip);
@@ -504,6 +505,7 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
     ),
   },
   ...chatThreadActivitySummaryRoutes,
+  ...chatThreadArchiveRoutes,
   ...chatThreadsArtifactsSyncRoutes,
   ...chatThreadComputerUseHostRoutes,
   ...chatThreadConnectorSelectionRoutes,

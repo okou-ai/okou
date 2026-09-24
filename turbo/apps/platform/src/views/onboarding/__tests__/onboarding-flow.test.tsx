@@ -4,7 +4,7 @@ import {
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
   ILLUSTRATION_TEMPLATE_ITEMS,
@@ -40,6 +40,7 @@ import {
 import { pathname, search } from "../../../signals/location.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { sessionStorageSignals } from "../../../signals/external/session-storage.ts";
 import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
 import { mockOAuthCompletions } from "../../okou-page/__tests__/connector-page-test-helpers.ts";
 
@@ -1102,6 +1103,107 @@ test("A completed checkout recovers an editable brief after video onboarding ret
     expect(pathname()).toBe(`/agents/${DEFAULT_ONBOARDING_AGENT.agentId}/chat`);
   });
 });
+
+test.each([
+  {
+    account: "the checkout owner",
+    ownerId: "test-user-123",
+    queryPrompt: null,
+    expectedBrief: "Introduce our new product to local business owners.",
+  },
+  {
+    account: "a different signed-in user",
+    ownerId: "user_previous_checkout_owner",
+    queryPrompt: "My own editable brief.",
+    expectedBrief: "My own editable brief.",
+  },
+])(
+  "A stored checkout return restores only the brief available to $account",
+  async ({ ownerId, queryPrompt, expectedBrief }) => {
+    // The old App stored this draft before sending the user to Stripe. Its
+    // producer has been removed, so current page interactions cannot create
+    // this historical state; recovery is still exercised through the Router.
+    const checkoutState = crypto.randomUUID();
+    for (const [key, value] of [
+      ["vm0:onboarding:checkout-state", checkoutState],
+      ["vm0:onboarding:checkout-owner", ownerId],
+      ["vm0:onboarding:checkout-prompt", "Run the old video template."],
+      [
+        "vm0:onboarding:checkout-note",
+        "Introduce our new product to local business owners.",
+      ],
+    ] as const) {
+      context.store.set(sessionStorageSignals(key).set$, value);
+    }
+    let runPrompt: string | undefined;
+    mockChatLifecycle(context, {
+      onRunCreate: (body) => {
+        runPrompt = body.prompt;
+      },
+    });
+    let paymentCompleted = false;
+    context.mocks.api(billingCheckoutContract.complete, ({ respond }) => {
+      paymentCompleted = true;
+      return respond(200, { completed: true });
+    });
+    context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
+      // Model the outstanding payment obligation at the external API boundary.
+      // Redirecting before fulfillment must not produce a ready composer.
+      if (!paymentCompleted) {
+        return respond(400, {
+          error: { code: "BAD_REQUEST", message: "Checkout is not complete" },
+        });
+      }
+      context.mocks.data.onboardingStatus({
+        needsOnboarding: false,
+        onboardingComplete: true,
+      });
+      return respond(200, {
+        needsOnboarding: false,
+        onboardingComplete: true,
+      });
+    });
+    mockOnboardingNeeded();
+    const params = new URLSearchParams({
+      onboarding_checkout_state: checkoutState,
+      onboarding_billing_session_id: "cs_test_stored_onboarding",
+      onboarding_billing: "pro",
+      template: "video-template:epic-grandeur",
+    });
+    if (queryPrompt !== null) {
+      params.set("prompt", queryPrompt);
+    }
+
+    await setupPage({
+      context,
+      path: `/onboarding/video-run?${params.toString()}`,
+    });
+
+    const editor = await screen.findByRole("textbox", { name: "Message" });
+    await waitFor(() => {
+      expect(editor).toHaveTextContent(expectedBrief);
+    });
+    expect(editor).toHaveAttribute("contenteditable", "true");
+    expect(editor.textContent).toBe(expectedBrief);
+    expect(pathname()).toBe(`/agents/${DEFAULT_ONBOARDING_AGENT.agentId}/chat`);
+    expect(runPrompt).toBeUndefined();
+
+    // Revisit onboarding through a browser navigation. Only a fulfilled
+    // checkout returns to chat instead of showing the first-time setup page.
+    act(() => {
+      window.history.pushState(null, "", "/onboarding");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await waitFor(() => {
+      expect(pathname()).toBe(
+        `/agents/${DEFAULT_ONBOARDING_AGENT.agentId}/chat`,
+      );
+    });
+    expect(
+      screen.getByRole("textbox", { name: "Message" }),
+    ).toBeInTheDocument();
+  },
+);
 
 test("Image creation opens its template gallery", async () => {
   const selectedTab = await expectCreativeChoiceOpensTemplateGallery({

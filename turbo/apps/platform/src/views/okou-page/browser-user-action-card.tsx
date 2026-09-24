@@ -3,8 +3,16 @@ import {
   type BrowserUserActionResponse,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { cn } from "@okouai/ui";
-import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
+import { Button } from "@okouai/ui/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@okouai/ui/components/ui/dialog";
 import { Input } from "@okouai/ui/components/ui/input";
+import { Textarea } from "@okouai/ui/components/ui/textarea";
 import { useGet, useLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
@@ -12,7 +20,6 @@ import {
   CheckCircle2,
   Globe,
   Loader2,
-  MousePointerClick,
   XCircle,
 } from "lucide-react";
 import type { FormEvent, ReactNode, Ref } from "react";
@@ -22,13 +29,9 @@ import type {
   BrowserUserActionRequestState,
   BrowserUserActionSignals,
 } from "../../signals/chat-page/browser-user-action-block.ts";
-import type { BrowserSessionSignals } from "../../signals/chat-page/browser-session-block.ts";
-import { openThreadBrowserSession$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatCard } from "./components/chat-card.tsx";
-import { ChatCardDetails } from "./components/chat-card-details.tsx";
-import { BrowserSessionCard } from "./browser-session-card.tsx";
 
 export type BrowserUserActionCardVariant = "inline" | "standalone";
 
@@ -299,10 +302,6 @@ function StateFromRequest({
   return null;
 }
 
-function fieldInputType(fieldKind: string): "password" | "text" {
-  return fieldKind === "password" ? "password" : "text";
-}
-
 function fieldAutocomplete(
   fieldKind: string,
 ): "current-password" | "off" | "one-time-code" | "username" {
@@ -325,11 +324,6 @@ function fieldAutocomplete(
 type PendingBrowserInputAction = Extract<
   BrowserUserActionResponse,
   { readonly kind: "input" }
->;
-
-type BrowserDirectInteractionAction = Extract<
-  BrowserUserActionResponse,
-  { readonly kind: "direct_interaction" }
 >;
 
 interface PendingBrowserInputRequest {
@@ -401,72 +395,209 @@ function DraftClearingState({
   );
 }
 
+type PendingBrowserInputField = PendingBrowserInputAction["fields"][number];
+
+interface BrowserInputEditProps {
+  readonly field: PendingBrowserInputField;
+  readonly draft: ReadonlyMap<string, string>;
+  readonly busy: boolean;
+  readonly onUpdate: (key: string, value: string) => void;
+  readonly onRemove: (key: string) => void;
+}
+
+function BrowserInputControl({
+  field,
+  draft,
+  busy,
+  onUpdate,
+  onRemove,
+  inputId,
+  describedBy,
+}: BrowserInputEditProps & {
+  readonly inputId: string;
+  readonly describedBy: string;
+}) {
+  const required = field.required || field.control.siteRequired;
+  const maxLength = Math.min(
+    field.control.maxLength ?? BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
+    BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
+  );
+  if (field.control.tagName === "TEXTAREA") {
+    return (
+      <Textarea
+        id={inputId}
+        name={field.key}
+        aria-describedby={describedBy}
+        required={required}
+        minLength={field.control.minLength}
+        maxLength={maxLength}
+        value={draft.get(field.key) ?? ""}
+        disabled={busy}
+        onChange={(event) => {
+          onUpdate(field.key, event.currentTarget.value);
+        }}
+      />
+    );
+  }
+  return (
+    <Input
+      id={inputId}
+      name={field.key}
+      type={
+        field.fieldKind === "one_time_code" ? "text" : field.control.inputType
+      }
+      multiple={field.control.multiple}
+      inputMode={field.fieldKind === "one_time_code" ? "numeric" : undefined}
+      autoComplete={fieldAutocomplete(field.fieldKind)}
+      aria-describedby={describedBy}
+      required={required}
+      minLength={field.control.minLength}
+      maxLength={maxLength}
+      pattern={field.control.pattern}
+      min={field.fieldKind === "number" ? field.control.min : undefined}
+      max={field.fieldKind === "number" ? field.control.max : undefined}
+      step={field.fieldKind === "number" ? field.control.step : undefined}
+      value={draft.get(field.key) ?? ""}
+      disabled={busy}
+      onChange={(event) => {
+        const value = event.currentTarget.value;
+        if (field.fieldKind === "number" && value === "") {
+          onRemove(field.key);
+        } else {
+          onUpdate(field.key, value);
+        }
+      }}
+    />
+  );
+}
+
+function OptionalNumberClearAction({
+  field,
+  draft,
+  busy,
+  onUpdate,
+  onRemove,
+}: BrowserInputEditProps) {
+  const { t } = useTranslation();
+  if (
+    field.fieldKind !== "number" ||
+    field.required ||
+    field.control.siteRequired
+  ) {
+    return null;
+  }
+  const clearing = draft.has(field.key) && draft.get(field.key) === "";
+  return (
+    <Button
+      type="button"
+      variant="link"
+      size="xs"
+      className="h-auto self-start p-0 text-xs"
+      disabled={busy}
+      onClick={() => {
+        if (clearing) {
+          onRemove(field.key);
+        } else {
+          onUpdate(field.key, "");
+        }
+      }}
+    >
+      {clearing
+        ? t(($) => {
+            return $.chat.browserInput.keepValue;
+          })
+        : t(($) => {
+            return $.chat.browserInput.clearValue;
+          })}
+    </Button>
+  );
+}
+
+function BrowserInputField({
+  field,
+  index,
+  draft,
+  busy,
+  onUpdate,
+  onRemove,
+}: BrowserInputEditProps & { readonly index: number }) {
+  const { t } = useTranslation();
+  const inputId = `browser-input-field-${index}`;
+  const requirementId = `${inputId}-requirement`;
+  const descriptionId = field.description
+    ? `${inputId}-description`
+    : undefined;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-baseline gap-1 text-sm text-foreground">
+        <label htmlFor={inputId} className="font-medium">
+          {field.label}
+        </label>
+        <span
+          id={requirementId}
+          className="text-xs font-normal text-muted-foreground"
+        >
+          {field.required || field.control.siteRequired
+            ? t(($) => {
+                return $.chat.browserInput.required;
+              })
+            : t(($) => {
+                return $.chat.browserInput.optional;
+              })}
+        </span>
+      </div>
+      {field.description && (
+        <span
+          id={descriptionId}
+          className="text-xs font-normal leading-4 text-muted-foreground"
+        >
+          {field.description}
+        </span>
+      )}
+      <BrowserInputControl
+        field={field}
+        inputId={inputId}
+        describedBy={
+          descriptionId ? `${requirementId} ${descriptionId}` : requirementId
+        }
+        draft={draft}
+        busy={busy}
+        onUpdate={onUpdate}
+        onRemove={onRemove}
+      />
+      <OptionalNumberClearAction
+        field={field}
+        draft={draft}
+        busy={busy}
+        onUpdate={onUpdate}
+        onRemove={onRemove}
+      />
+    </div>
+  );
+}
+
 function BrowserInputFields({
   action,
   draft,
   busy,
   onUpdate,
-}: {
+  onRemove,
+}: Omit<BrowserInputEditProps, "field"> & {
   readonly action: PendingBrowserInputAction;
-  readonly draft: ReadonlyMap<string, string>;
-  readonly busy: boolean;
-  readonly onUpdate: (key: string, value: string) => void;
 }) {
-  const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-4">
       {action.fields.map((field, index) => {
-        const inputId = `browser-input-field-${index}`;
-        const requirementId = `${inputId}-requirement`;
-        const descriptionId = field.description
-          ? `${inputId}-description`
-          : undefined;
         return (
-          <div key={field.key} className="flex flex-col gap-1.5">
-            <div className="flex items-baseline gap-1 text-sm text-foreground">
-              <label htmlFor={inputId} className="font-medium">
-                {field.label}
-              </label>
-              <span
-                id={requirementId}
-                className="text-xs font-normal text-muted-foreground"
-              >
-                {field.required
-                  ? t(($) => {
-                      return $.chat.browserInput.required;
-                    })
-                  : t(($) => {
-                      return $.chat.browserInput.optional;
-                    })}
-              </span>
-            </div>
-            {field.description && (
-              <span
-                id={descriptionId}
-                className="text-xs font-normal leading-4 text-muted-foreground"
-              >
-                {field.description}
-              </span>
-            )}
-            <Input
-              id={inputId}
-              name={field.key}
-              type={fieldInputType(field.fieldKind)}
-              autoComplete={fieldAutocomplete(field.fieldKind)}
-              aria-describedby={
-                descriptionId
-                  ? `${requirementId} ${descriptionId}`
-                  : requirementId
-              }
-              required={field.required}
-              maxLength={BROWSER_USER_ACTION_MAX_VALUE_LENGTH}
-              value={draft.get(field.key) ?? ""}
-              disabled={busy}
-              onChange={(event) => {
-                onUpdate(field.key, event.currentTarget.value);
-              }}
-            />
-          </div>
+          <BrowserInputField
+            key={field.key}
+            field={field}
+            index={index}
+            draft={draft}
+            busy={busy}
+            onUpdate={onUpdate}
+            onRemove={onRemove}
+          />
         );
       })}
     </div>
@@ -476,10 +607,12 @@ function BrowserInputFields({
 function PendingFormActions({
   submitting,
   cancelling,
+  canSubmit,
   onCancel,
 }: {
   readonly submitting: boolean;
   readonly cancelling: boolean;
+  readonly canSubmit: boolean;
   readonly onCancel: () => void;
 }) {
   const { t } = useTranslation();
@@ -501,7 +634,7 @@ function PendingFormActions({
               return $.chat.browserInput.cancel;
             })}
       </Button>
-      <Button type="submit" disabled={busy}>
+      <Button type="submit" disabled={busy || !canSubmit}>
         {submitting && <Loader2 size={16} className="animate-spin" />}
         {submitting
           ? t(($) => {
@@ -528,7 +661,10 @@ function PendingForm({
   const pageSignal = useGet(pageSignal$);
   const draft = useGet(signals.draft$);
   const sharedBusy = useGet(signals.busy$);
+  const entryState = useGet(signals.entryState$);
   const updateDraft = useSet(signals.updateDraft$);
+  const removeDraft = useSet(signals.removeDraft$);
+  const beginEntry = useSet(signals.beginEntry$);
   const formRef = useSet(signals.formRef$);
   const [submitLoadable, submit] = useLoadableSet(signals.submit$);
   const [cancelLoadable, cancel] = useLoadableSet(signals.cancel$);
@@ -564,9 +700,46 @@ function PendingForm({
         draft={draft}
         busy={busy}
         onUpdate={updateDraft}
+        onRemove={removeDraft}
       />
 
-      {failed && (
+      {(entryState === "idle" || entryState === "checking") && (
+        <p
+          role="status"
+          className="flex items-center gap-2 text-sm text-muted-foreground"
+        >
+          <Loader2 size={16} className="animate-spin" />
+          {t(($) => {
+            return $.chat.browserInput.loadingDescription;
+          })}
+        </p>
+      )}
+
+      {(entryState === "unavailable" || entryState === "invalid") && (
+        <div className="flex flex-wrap items-center gap-2" role="alert">
+          <p className="text-sm text-destructive">
+            {t(($) => {
+              return entryState === "invalid"
+                ? $.chat.browserInput.applyFailed
+                : $.chat.browserInput.checkFailed;
+            })}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              detach(beginEntry(pageSignal), Reason.DomCallback);
+            }}
+          >
+            {t(($) => {
+              return $.chat.browserInput.retry;
+            })}
+          </Button>
+        </div>
+      )}
+
+      {failed && entryState !== "invalid" && (
         <p role="alert" className="text-sm text-destructive">
           {t(($) => {
             return cancelFailed
@@ -579,6 +752,7 @@ function PendingForm({
       <PendingFormActions
         submitting={submitting}
         cancelling={cancelling}
+        canSubmit={entryState !== "unavailable" && entryState !== "invalid"}
         onCancel={() => {
           detach(cancel(pageSignal), Reason.DomCallback);
         }}
@@ -587,7 +761,7 @@ function PendingForm({
   );
 }
 
-function PendingFormGate({
+function PendingFormWithCheck({
   signals,
   request,
   showTitle = true,
@@ -596,48 +770,18 @@ function PendingFormGate({
   readonly request: PendingBrowserInputRequest;
   readonly showTitle?: boolean;
 }) {
-  const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
   const entryState = useGet(signals.entryState$);
-  const beginEntry = useSet(signals.beginEntry$);
-  if (entryState === "ready") {
-    return (
-      <PendingForm signals={signals} request={request} showTitle={showTitle} />
-    );
-  }
+  const entryAction = useGet(signals.entryAction$);
   return (
-    <div className="flex flex-col gap-4" role="status">
-      <PendingFormHeader
-        siteOrigin={request.action.siteOrigin}
-        showTitle={showTitle}
-      />
-      {entryState !== "unavailable" ? (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 size={16} className="animate-spin" />
-          {t(($) => {
-            return $.chat.browserInput.loadingDescription;
-          })}
-        </p>
-      ) : (
-        <>
-          <p role="alert" className="text-sm text-destructive">
-            {t(($) => {
-              return $.chat.browserInput.unavailable;
-            })}
-          </p>
-          <Button
-            type="button"
-            onClick={() => {
-              detach(beginEntry(pageSignal), Reason.DomCallback);
-            }}
-          >
-            {t(($) => {
-              return $.chat.browserInput.retry;
-            })}
-          </Button>
-        </>
-      )}
-    </div>
+    <PendingForm
+      signals={signals}
+      request={{
+        ...request,
+        action:
+          entryState === "ready" && entryAction ? entryAction : request.action,
+      }}
+      showTitle={showTitle}
+    />
   );
 }
 
@@ -649,345 +793,49 @@ function PendingInlineAction({
   readonly request: PendingBrowserInputRequest;
 }) {
   const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const beginEntry = useSet(signals.beginEntry$);
+  const dialogRef = useSet(signals.dialogRef$);
+  const title = t(($) => {
+    return $.chat.browserInput.title;
+  });
   return (
     <div className="flex h-full w-full flex-col justify-center gap-2 @[520px]:flex-row @[520px]:items-center @[520px]:justify-between @[520px]:gap-3">
       <PendingFormHeader siteOrigin={request.action.siteOrigin} compact />
       <div className="shrink-0 self-start pl-[26px] @[520px]:ml-auto @[520px]:self-auto @[520px]:pl-0">
-        <a
-          href={signals.originalUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={cn(
-            buttonVariants({ variant: "outline", size: "sm" }),
-            "shrink-0",
-          )}
+        <Dialog
+          onOpenChange={(nextOpen) => {
+            if (nextOpen) {
+              detach(beginEntry(pageSignal), Reason.DomCallback);
+            }
+          }}
         >
-          {t(($) => {
-            return $.chat.browserInput.open;
-          })}
-        </a>
-      </div>
-    </div>
-  );
-}
-
-function DirectTerminalActionState({
-  action,
-  callbackDelivered,
-  callbackFailed,
-  continuing,
-  onContinue,
-  variant,
-}: {
-  readonly action: BrowserDirectInteractionAction;
-  readonly callbackDelivered: boolean;
-  readonly callbackFailed: boolean;
-  readonly continuing: boolean;
-  readonly onContinue: () => void;
-  readonly variant: BrowserUserActionCardVariant;
-}) {
-  const { t } = useTranslation();
-  const cancelled = action.state === "cancelled";
-  if (callbackDelivered) {
-    return (
-      <ActionState
-        icon={<CheckCircle2 size={20} className="text-emerald-600" />}
-        title={t(($) => {
-          return $.chat.browserInteraction.delivered;
-        })}
-        variant={variant}
-      />
-    );
-  }
-  return (
-    <ActionState
-      icon={cancelled ? <XCircle size={20} /> : <CheckCircle2 size={20} />}
-      title={t(($) => {
-        return cancelled
-          ? $.chat.browserInteraction.cancelled
-          : $.chat.browserInteraction.completed;
-      })}
-      description={
-        callbackFailed
-          ? t(($) => {
-              return $.chat.browserInteraction.callbackFailed;
-            })
-          : undefined
-      }
-      variant={variant}
-      action={
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={continuing}
-          onClick={onContinue}
-        >
-          {continuing && <Loader2 size={15} className="animate-spin" />}
-          {continuing
-            ? t(($) => {
-                return $.chat.browserInteraction.continuing;
-              })
-            : callbackFailed
-              ? t(($) => {
-                  return $.chat.browserInput.retry;
-                })
-              : t(($) => {
-                  return $.chat.browserInteraction.continue;
+          <DialogTrigger
+            render={
+              <Button type="button" variant="outline" size="sm">
+                {t(($) => {
+                  return $.chat.browserInput.open;
                 })}
-        </Button>
-      }
-    />
-  );
-}
-
-function DirectStateFromAction({
-  action,
-  callbackDelivered,
-  callbackFailed,
-  continuing,
-  onContinue,
-  variant,
-}: {
-  readonly action: BrowserDirectInteractionAction;
-  readonly callbackDelivered: boolean;
-  readonly callbackFailed: boolean;
-  readonly continuing: boolean;
-  readonly onContinue: () => void;
-  readonly variant: BrowserUserActionCardVariant;
-}) {
-  const { t } = useTranslation();
-  if (action.state === "applying") {
-    return (
-      <ActionState
-        icon={<Loader2 size={20} className="animate-spin" />}
-        title={t(($) => {
-          return $.chat.browserInteraction.applying;
-        })}
-        description={t(($) => {
-          return $.chat.browserInteraction.applyingDescription;
-        })}
-        variant={variant}
-      />
-    );
-  }
-  if (action.state === "stale") {
-    return (
-      <ActionState
-        icon={<AlertCircle size={20} />}
-        title={t(($) => {
-          return $.chat.browserInteraction.stale;
-        })}
-        description={t(($) => {
-          return $.chat.browserInteraction.staleDescription;
-        })}
-        variant={variant}
-      />
-    );
-  }
-  if (action.state === "uncertain") {
-    return (
-      <ActionState
-        icon={<AlertCircle size={20} />}
-        title={t(($) => {
-          return $.chat.browserInteraction.uncertain;
-        })}
-        description={t(($) => {
-          return $.chat.browserInteraction.uncertainDescription;
-        })}
-        variant={variant}
-      />
-    );
-  }
-  if (action.state === "succeeded" || action.state === "cancelled") {
-    return (
-      <DirectTerminalActionState
-        action={action}
-        callbackDelivered={callbackDelivered}
-        callbackFailed={callbackFailed}
-        continuing={continuing}
-        onContinue={onContinue}
-        variant={variant}
-      />
-    );
-  }
-  return null;
-}
-
-function PendingDirectInteraction({
-  action,
-  browserSessionSignals,
-  signals,
-  variant,
-}: {
-  readonly action: BrowserDirectInteractionAction;
-  readonly browserSessionSignals: BrowserSessionSignals;
-  readonly signals: BrowserUserActionSignals;
-  readonly variant: BrowserUserActionCardVariant;
-}) {
-  const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const sharedBusy = useGet(signals.busy$);
-  const [completeLoadable, complete] = useLoadableSet(signals.complete$);
-  const [cancelLoadable, cancel] = useLoadableSet(signals.cancel$);
-  const completing = completeLoadable.state === "loading";
-  const cancelling = cancelLoadable.state === "loading";
-  const busy = sharedBusy || completing || cancelling;
-  const completeFailed = completeLoadable.state === "hasError";
-  const cancelFailed = cancelLoadable.state === "hasError";
-
-  return (
-    <section
-      aria-label={t(($) => {
-        return $.chat.browserInteraction.title;
-      })}
-      className="flex w-full flex-col gap-4"
-    >
-      <div className="flex items-start gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
-          <MousePointerClick size={20} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-[0.9375rem] font-medium text-foreground">
-            {t(($) => {
-              return $.chat.browserInteraction.title;
-            })}
-          </h2>
-          <p className="mt-1 text-sm leading-5 text-muted-foreground">
-            {action.reason}
-          </p>
-          <p className="mt-1 text-xs leading-4 text-muted-foreground">
-            {t(($) => {
-              return $.chat.browserInteraction.description;
-            })}
-          </p>
-        </div>
-      </div>
-
-      {variant === "standalone" && (
-        <BrowserSessionCard
-          signals={browserSessionSignals}
-          openMode="new-page"
-        />
-      )}
-
-      {(completeFailed || cancelFailed) && (
-        <p role="alert" className="text-sm text-destructive">
-          {cancelFailed
-            ? t(($) => {
-                return $.chat.browserInteraction.cancelFailed;
-              })
-            : t(($) => {
-                return $.chat.browserInteraction.completeFailed;
-              })}
-        </p>
-      )}
-
-      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <Button
-          type="button"
-          variant="outline"
-          disabled={busy}
-          onClick={() => {
-            detach(cancel(pageSignal), Reason.DomCallback);
-          }}
-        >
-          {cancelling && <Loader2 size={16} className="animate-spin" />}
-          {cancelling
-            ? t(($) => {
-                return $.chat.browserInteraction.cancelling;
-              })
-            : t(($) => {
-                return $.chat.browserInteraction.cancel;
-              })}
-        </Button>
-        <Button
-          type="button"
-          disabled={busy}
-          onClick={() => {
-            detach(complete(pageSignal), Reason.DomCallback);
-          }}
-        >
-          {completing && <Loader2 size={16} className="animate-spin" />}
-          {completing
-            ? t(($) => {
-                return $.chat.browserInteraction.completing;
-              })
-            : t(($) => {
-                return $.chat.browserInteraction.done;
-              })}
-        </Button>
-      </div>
-    </section>
-  );
-}
-
-function PendingInlineDirectInteraction({
-  action,
-  browserSessionSignals,
-  signals,
-}: {
-  readonly action: BrowserDirectInteractionAction;
-  readonly browserSessionSignals: BrowserSessionSignals;
-  readonly signals: BrowserUserActionSignals;
-}) {
-  const { t } = useTranslation();
-  const openBrowserSidebar = useSet(openThreadBrowserSession$);
-  return (
-    <div className="flex h-full w-full flex-col justify-center gap-1 @[380px]:gap-2 @[520px]:flex-row @[520px]:items-center @[520px]:justify-between @[520px]:gap-3">
-      <div className="flex min-w-0 max-w-full items-center gap-2.5 @[520px]:flex-1">
-        <MousePointerClick
-          size={16}
-          className="mt-1 shrink-0 self-start text-brand-text"
-        />
-        <div className="min-w-0 max-w-sm">
-          <div className="text-[0.9375rem] font-medium text-foreground">
-            {t(($) => {
-              return $.chat.browserInteraction.title;
-            })}
-          </div>
-          <p
-            className="mt-1 line-clamp-1 text-sm leading-5 text-muted-foreground"
-            title={action.reason}
-          >
-            {action.reason}
-          </p>
-        </div>
-      </div>
-      <div className="flex w-full flex-wrap items-center gap-1 self-start pl-[26px] @[380px]:gap-2 @[520px]:ml-auto @[520px]:w-auto @[520px]:self-auto @[520px]:pl-0">
-        <Button
-          type="button"
-          size="sm"
-          onClick={() => {
-            openBrowserSidebar(browserSessionSignals.threadId);
-          }}
-        >
-          {t(($) => {
-            return $.chat.thread.openBrowser;
-          })}
-        </Button>
-        <ChatCardDetails
-          title={t(($) => {
-            return $.chat.browserInteraction.title;
-          })}
-          triggerLabel={t(($) => {
-            return $.chat.browserInteraction.finish;
-          })}
-        >
-          <PendingDirectInteraction
-            action={action}
-            browserSessionSignals={browserSessionSignals}
-            signals={signals}
-            variant="inline"
+              </Button>
+            }
           />
-        </ChatCardDetails>
+          <DialogContent ref={dialogRef}>
+            <DialogHeader>
+              <DialogTitle>{title}</DialogTitle>
+            </DialogHeader>
+            <PendingFormWithCheck
+              signals={signals}
+              request={request}
+              showTitle={false}
+            />
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
 }
 
 function BrowserUserActionCardContent({
-  browserSessionSignals,
   callbackDelivered,
   callbackFailed,
   continuing,
@@ -997,7 +845,6 @@ function BrowserUserActionCardContent({
   signals,
   variant,
 }: {
-  readonly browserSessionSignals: BrowserSessionSignals;
   readonly callbackDelivered: boolean;
   readonly callbackFailed: boolean;
   readonly continuing: boolean;
@@ -1041,39 +888,6 @@ function BrowserUserActionCardContent({
     );
   } else if (
     requestLoadable.data.kind === "action" &&
-    requestLoadable.data.action.kind === "direct_interaction"
-  ) {
-    const { action } = requestLoadable.data;
-    if (action.state === "pending") {
-      content =
-        variant === "inline" ? (
-          <PendingInlineDirectInteraction
-            action={action}
-            browserSessionSignals={browserSessionSignals}
-            signals={signals}
-          />
-        ) : (
-          <PendingDirectInteraction
-            action={action}
-            browserSessionSignals={browserSessionSignals}
-            signals={signals}
-            variant={variant}
-          />
-        );
-    } else {
-      content = (
-        <DirectStateFromAction
-          action={action}
-          callbackDelivered={callbackDelivered}
-          callbackFailed={callbackFailed}
-          continuing={continuing}
-          onContinue={onContinue}
-          variant={variant}
-        />
-      );
-    }
-  } else if (
-    requestLoadable.data.kind === "action" &&
     requestLoadable.data.action.kind === "input" &&
     requestLoadable.data.action.state === "pending"
   ) {
@@ -1085,7 +899,7 @@ function BrowserUserActionCardContent({
       variant === "inline" ? (
         <PendingInlineAction signals={signals} request={pendingRequest} />
       ) : (
-        <PendingFormGate signals={signals} request={pendingRequest} />
+        <PendingFormWithCheck signals={signals} request={pendingRequest} />
       );
   } else {
     content = (
@@ -1105,11 +919,9 @@ function BrowserUserActionCardContent({
 }
 
 export function BrowserUserActionCard({
-  browserSessionSignals,
   signals,
   variant = "inline",
 }: {
-  readonly browserSessionSignals: BrowserSessionSignals;
   readonly signals: BrowserUserActionSignals;
   readonly variant?: BrowserUserActionCardVariant;
 }) {
@@ -1154,7 +966,6 @@ export function BrowserUserActionCard({
       resumeRef={needsReturnRefresh ? resumeRef : undefined}
     >
       <BrowserUserActionCardContent
-        browserSessionSignals={browserSessionSignals}
         callbackDelivered={callbackDelivered}
         callbackFailed={callbackFailed}
         continuing={continuing}

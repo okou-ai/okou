@@ -134,13 +134,14 @@ function pinnedAtMs(pinnedAt: string | null): number | null {
 
 /**
  * The persisted `chat_threads` pin columns, read through the snapshot the
- * compaction projector builds from those columns. Compaction consumes the
- * events it folds in, so a test reads this only after its event assertions.
+ * compaction projector builds from those columns, or null if the subject is
+ * closed and the client snapshot intentionally omits the thread. Compaction
+ * consumes the events it folds in, so read it only after event assertions.
  */
 async function compactedPinState(fixture: PinFixture): Promise<{
   readonly pinnedAtMs: number | null;
   readonly pinOrder: string | null;
-}> {
+} | null> {
   mockChatThreadSnapshotStorage(context);
   const compaction = setupApp({
     context,
@@ -159,7 +160,7 @@ async function compactedPinState(fixture: PinFixture): Promise<{
     return thread.id === fixture.threadId;
   });
   if (!projected) {
-    throw new Error("Expected the thread in the compacted snapshot");
+    return null;
   }
   return {
     pinnedAtMs: pinnedAtMs(projected.pinnedAt),
@@ -282,10 +283,9 @@ describe("account erasure fences chat-thread pin mutations", () => {
 
     await expect(readClosedPinnedAt(fixture)).resolves.toBe(pinnedAt);
     await expect(sidebarPinEvents(fixture)).resolves.toStrictEqual(before);
-    await expect(compactedPinState(fixture)).resolves.toStrictEqual({
-      pinnedAtMs: pinnedAtMs(pinnedAt),
-      pinOrder: "a0",
-    });
+    // Closing the organization hides its thread from the client snapshot;
+    // neither the rejected writes nor projection may silently erase SQL state.
+    await expect(compactedPinState(fixture)).resolves.toBeNull();
   });
 
   it("keeps an unrelated owner pinning while another subject is closed", async () => {

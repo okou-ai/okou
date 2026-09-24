@@ -53,7 +53,6 @@ describe("platform OpenRouter regional selection", () => {
     ["responses", "deepseek/deepseek-v4-pro"],
     ["responses", "google/gemini-3.6-flash"],
     ["chat/completions", "google/gemini-3.8-flash"],
-    ["audio/transcriptions", "openai/gpt-4o-transcribe"],
     ["responses", "new/unverified-model"],
   ] as const)("keeps non-US-routed %s %s global when enabled", (api, model) => {
     expect(

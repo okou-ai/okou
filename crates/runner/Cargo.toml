@@ -1,6 +1,6 @@
 [package]
 name = "runner"
-version = "0.213.7"
+version = "0.213.11"
 edition.workspace = true
 
 [dependencies]
@@ -46,6 +46,7 @@ runner-network.workspace = true
 runner-provider.workspace = true
 runner-remote.workspace = true
 runner-storage.workspace = true
+runner-supervisor.workspace = true
 runner-types.workspace = true
 
 [build-dependencies]

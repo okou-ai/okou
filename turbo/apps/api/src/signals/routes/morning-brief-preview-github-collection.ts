@@ -23,7 +23,7 @@ import {
  * about the real application's ingress. What keeps it away from production is
  * `isTestEndpointAllowed`, evaluated *before* authentication, so production
  * answers 404 without doing any auth work — including for a caller who has
- * `simpleMorningBrief` enabled.
+ * `FeatureSwitchKey.NativeMorningBrief` enabled.
  *
  * Everything else about this route is ordinary. The owner is the authenticated
  * organization and user, the GitHub read capability is required, and the only

@@ -20,7 +20,7 @@ import {
  * The development / protected-preview entrypoint for native delivery.
  *
  * The environment gate runs before authentication, so production answers 404
- * without doing any auth work and stays 404 even when `simpleMorningBrief` is
+ * without doing any auth work and stays 404 even when `FeatureSwitchKey.NativeMorningBrief` is
  * on for the caller. Everything after it is ordinary: the owner comes from the
  * authenticated organization and user, and the only input is a reference to a
  * result that already exists for that owner.

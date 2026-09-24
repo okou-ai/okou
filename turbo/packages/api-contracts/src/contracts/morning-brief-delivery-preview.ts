@@ -10,7 +10,7 @@ const c = initContract();
  *
  * It ships in the ordinary API route table and is reachable on a development
  * server and on a protected preview deployment; production answers 404 through
- * the environment gate before authentication, even when `simpleMorningBrief`
+ * the environment gate before authentication, even when `FeatureSwitchKey.NativeMorningBrief`
  * is on for the caller.
  *
  * The single input is a reference to a result the generation preview already

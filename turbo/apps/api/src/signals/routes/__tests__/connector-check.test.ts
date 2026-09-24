@@ -234,6 +234,35 @@ async function createOwnedRun(
   return { runId: run.runId, agentId: agent.agentId };
 }
 
+async function createAwsRunWithPermissionGrants(): Promise<string> {
+  const actor = bdd.user();
+  await seedAdminMembership(actor);
+  mockAwsExternalCodeProvider();
+  const session = await connectorsApi.startExternalCode(actor, "aws", "cli");
+  await connectorsApi.completeExternalCode(actor, "aws", {
+    sessionId: session.sessionId,
+    sessionToken: session.sessionToken,
+    code: awsVerificationCode(session.authorizationUrl),
+  });
+  await trackConnectedFixture(Promise.resolve({ actor, connectorSlug: "aws" }));
+  const { runId, agentId } = await createOwnedRun(actor, {
+    builtinConnectorSlugs: ["aws"],
+  });
+  await runsApi.applyUserPermissionGrant(actor, {
+    agentId,
+    connectorSlug: "aws",
+    permission: "sts:get-caller-identity-alias",
+    action: "deny",
+  });
+  await runsApi.applyUserPermissionGrant(actor, {
+    agentId,
+    connectorSlug: "aws",
+    permission: "sts:get-caller-identity",
+    action: "allow",
+  });
+  return okouToken(actor, runId, ["connector:read", "agent-run:read"]);
+}
+
 beforeEach(() => {
   context.mocks.clerk.authenticateRequest.mockResolvedValue({
     isAuthenticated: false,
@@ -494,35 +523,52 @@ describe("POST /api/connectors/diagnostics/check", () => {
     });
   });
 
-  it("reports AWS alias precedence and keeps incomplete checks on the unknown policy", async () => {
+  it("marks an AWS action with an omitted required query as incomplete", async () => {
     const actor = bdd.user();
-    await seedAdminMembership(actor);
-    mockAwsExternalCodeProvider();
-    const session = await connectorsApi.startExternalCode(actor, "aws", "cli");
-    await connectorsApi.completeExternalCode(actor, "aws", {
-      sessionId: session.sessionId,
-      sessionToken: session.sessionToken,
-      code: awsVerificationCode(session.authorizationUrl),
+    const base = {
+      mode: "url" as const,
+      method: "POST",
+      url: "https://sts.us-west-2.amazonaws.com/",
+      connectorSlug: "aws",
+    };
+    const action = { sigv4Service: "sts", action: "GetFederationToken" };
+    const incomplete = await checkWithSession(actor, { ...base, aws: action });
+    expect(incomplete.body).toMatchObject({
+      outcome: "resolved",
+      permission: { kind: "unknown-endpoint" },
     });
-    await trackConnectedFixture(
-      Promise.resolve({ actor, connectorSlug: "aws" }),
+    expect(incomplete.headers.get(CONNECTOR_CHECK_AWS_CONTEXT_HEADER)).toBe(
+      CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT,
     );
-    const { runId, agentId } = await createOwnedRun(actor, {
-      builtinConnectorSlugs: ["aws"],
+
+    const matched = await checkWithSession(actor, {
+      ...base,
+      aws: {
+        ...action,
+        query: [{ key: "Version", value: "2011-06-15" }],
+      },
     });
-    await runsApi.applyUserPermissionGrant(actor, {
-      agentId,
-      connectorSlug: "aws",
-      permission: "sts:get-caller-identity-alias",
-      action: "deny",
+    expect(matched.body).toMatchObject({
+      outcome: "resolved",
+      permission: {
+        kind: "matched",
+        permissions: [{ name: "sts:get-federation-token-versioned" }],
+      },
     });
-    await runsApi.applyUserPermissionGrant(actor, {
-      agentId,
-      connectorSlug: "aws",
-      permission: "sts:get-caller-identity",
-      action: "allow",
+    expect(matched.headers.get(CONNECTOR_CHECK_AWS_CONTEXT_HEADER)).toBeNull();
+
+    const contradictory = await checkWithSession(actor, {
+      ...base,
+      aws: { ...action, query: [{ key: "Version", value: "wrong" }] },
     });
-    const token = okouToken(actor, runId, ["connector:read", "agent-run:read"]);
+    expect(contradictory.body).toStrictEqual(incomplete.body);
+    expect(
+      contradictory.headers.get(CONNECTOR_CHECK_AWS_CONTEXT_HEADER),
+    ).toBeNull();
+  });
+
+  it("prefers the canonical AWS permission over a denied alias", async () => {
+    const token = await createAwsRunWithPermissionGrants();
     const response = await checkWithToken(token, {
       mode: "url",
       method: "POST",
@@ -543,7 +589,10 @@ describe("POST /api/connectors/diagnostics/check", () => {
         ],
       },
     });
+  });
 
+  it("keeps incomplete AWS checks on the unknown policy", async () => {
+    const token = await createAwsRunWithPermissionGrants();
     const incomplete = await checkWithToken(token, {
       mode: "url",
       method: "POST",

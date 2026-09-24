@@ -5,9 +5,11 @@ import {
   BROWSER_INITIAL_SCREEN_HEIGHT,
   BROWSER_SCREEN_WIDTH,
 } from "@okouai/api-contracts/contracts/browser";
+import { BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { z } from "zod";
 
 import { env } from "../../lib/env";
+import { logger } from "../../lib/log";
 import {
   readBoundedResponseText,
   safeJsonParse,
@@ -19,6 +21,7 @@ import {
 const BROWSER_USE_API_BASE_URL = "https://api.browser-use.com/api/v3";
 const BROWSER_USE_REQUEST_TIMEOUT_MS = 30_000;
 const BROWSER_USE_CDP_REQUEST_TIMEOUT_MS = 15_000;
+const L = logger("BrowserUseCDP");
 const MAX_BROWSER_USE_RESPONSE_BYTES = 512 * 1024;
 const MAX_BROWSER_USE_CDP_RESPONSE_BYTES = 64 * 1024;
 const MAX_BROWSER_USE_SCREENSHOT_RESPONSE_BYTES = 4 * 1024 * 1024;
@@ -342,13 +345,28 @@ async function withBrowserUseCdpSocket<T>(
   cdpUrl: string,
   signal: AbortSignal,
   operation: (socket: WebSocket) => Promise<T>,
+  observePhase?: BrowserUseCdpPhaseObserver,
 ): Promise<T> {
-  const websocketUrl = await browserUseCdpWebSocketUrl(cdpUrl, signal);
+  const websocketUrl = await observeBrowserUseCdpPhase(
+    "discovery",
+    signal,
+    observePhase,
+    async () => {
+      return await browserUseCdpWebSocketUrl(cdpUrl, signal);
+    },
+  );
   const socket = new WebSocket(websocketUrl);
   // Cancellation is rethrown only after the socket cleanup below has run.
   const result = await settleIncludingAbort(
     (async () => {
-      await waitForBrowserUseCdpSocket(socket, signal);
+      await observeBrowserUseCdpPhase(
+        "connection",
+        signal,
+        observePhase,
+        async () => {
+          return await waitForBrowserUseCdpSocket(socket, signal);
+        },
+      );
       return await operation(socket);
     })(),
   );
@@ -442,6 +460,65 @@ function browserUseCdpSignal(signal: AbortSignal): AbortSignal {
     signal,
     AbortSignal.timeout(BROWSER_USE_CDP_REQUEST_TIMEOUT_MS),
   ]);
+}
+
+type BrowserUseCdpPreflightPhase =
+  | "discovery"
+  | "connection"
+  | "target"
+  | "controls";
+type BrowserUseCdpPhaseOutcome = "ok" | "timeout" | "cancelled" | "error";
+type BrowserUseCdpPhaseObserver = (
+  phase: BrowserUseCdpPreflightPhase,
+  outcome: BrowserUseCdpPhaseOutcome,
+  durationMs: number,
+) => void;
+
+async function observeBrowserUseCdpPhase<T>(
+  phase: BrowserUseCdpPreflightPhase,
+  signal: AbortSignal,
+  observe: BrowserUseCdpPhaseObserver | undefined,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (!observe) {
+    return await operation();
+  }
+  const startedAt = performance.now();
+  const result = await settleIncludingAbort(operation());
+  const outcome = result.ok
+    ? "ok"
+    : signal.aborted
+      ? signal.reason instanceof Error && signal.reason.name === "TimeoutError"
+        ? "timeout"
+        : "cancelled"
+      : "error";
+  observe(phase, outcome, Math.round(performance.now() - startedAt));
+  if (!result.ok) {
+    throw result.error;
+  }
+  return result.value;
+}
+
+async function withBrowserUseCdpDeadline<T>(
+  signal: AbortSignal,
+  operation: (cdpSignal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const timeoutSignal = AbortSignal.timeout(BROWSER_USE_CDP_REQUEST_TIMEOUT_MS);
+  const result = await settleIncludingAbort(
+    operation(AbortSignal.any([signal, timeoutSignal])),
+  );
+  signal.throwIfAborted();
+  if (timeoutSignal.aborted) {
+    throw new BrowserUseProviderError(
+      503,
+      "BROWSER_USE_TIMEOUT",
+      "Managed browser check timed out",
+    );
+  }
+  if (!result.ok) {
+    throw result.error;
+  }
+  return result.value;
 }
 
 export async function listBrowserUseTabUrls(
@@ -616,12 +693,57 @@ function httpPageUrl(value: string): URL | null {
   return url.protocol === "http:" || url.protocol === "https:" ? url : null;
 }
 
-interface BrowserUseControlInspection {
+export interface BrowserUseControlInspection {
   readonly tagName: string;
   readonly inputType: string;
   readonly connected: boolean;
   readonly mainDocument: boolean;
   readonly writable: boolean;
+  readonly siteRequired: boolean;
+  readonly multiple: boolean;
+  readonly minLength?: number;
+  readonly maxLength?: number;
+  readonly pattern?: string;
+  readonly min?: string;
+  readonly max?: string;
+  readonly step?: string;
+}
+
+function boundedOptionalControlLength(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (typeof value === "number" &&
+      Number.isInteger(value) &&
+      value >= 0 &&
+      value <= 4096)
+  );
+}
+
+function boundedOptionalControlPattern(value: unknown): boolean {
+  return (
+    value === undefined || (typeof value === "string" && value.length <= 512)
+  );
+}
+
+function boundedOptionalNumberConstraint(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (typeof value === "string" &&
+      value.length <= BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
+  );
+}
+
+function boundedOptionalControlMetadata(
+  candidate: Readonly<Record<string, unknown>>,
+): boolean {
+  return (
+    boundedOptionalControlLength(candidate.minLength) &&
+    boundedOptionalControlLength(candidate.maxLength) &&
+    boundedOptionalControlPattern(candidate.pattern) &&
+    boundedOptionalNumberConstraint(candidate.min) &&
+    boundedOptionalNumberConstraint(candidate.max) &&
+    boundedOptionalNumberConstraint(candidate.step)
+  );
 }
 
 function safeControlInspection(
@@ -638,7 +760,10 @@ function safeControlInspection(
     candidate.inputType.length > 64 ||
     typeof candidate.connected !== "boolean" ||
     typeof candidate.mainDocument !== "boolean" ||
-    typeof candidate.writable !== "boolean"
+    typeof candidate.writable !== "boolean" ||
+    typeof candidate.siteRequired !== "boolean" ||
+    typeof candidate.multiple !== "boolean" ||
+    !boundedOptionalControlMetadata(candidate)
   ) {
     return null;
   }
@@ -648,6 +773,20 @@ function safeControlInspection(
     connected: candidate.connected,
     mainDocument: candidate.mainDocument,
     writable: candidate.writable,
+    siteRequired: candidate.siteRequired,
+    multiple: candidate.multiple,
+    ...(candidate.minLength === undefined
+      ? {}
+      : { minLength: candidate.minLength as number }),
+    ...(candidate.maxLength === undefined
+      ? {}
+      : { maxLength: candidate.maxLength as number }),
+    ...(candidate.pattern === undefined
+      ? {}
+      : { pattern: candidate.pattern as string }),
+    ...(candidate.min === undefined ? {} : { min: candidate.min as string }),
+    ...(candidate.max === undefined ? {} : { max: candidate.max as string }),
+    ...(candidate.step === undefined ? {} : { step: candidate.step as string }),
   };
 }
 
@@ -662,12 +801,31 @@ function browserUseControlInspectionFunction(): string {
       const textarea = control instanceof HTMLTextAreaElement;
       const supported =
         textarea || (input && supportedInputTypes.has(control.type));
+      const textual = supported && (textarea || control.type !== "number");
+      const number = input && control.type === "number";
+      const boundedNumberConstraints = !number ||
+        [control.min, control.max, control.step].every((value) =>
+          value.length <= ${BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH});
       return {
         tagName: typeof control.tagName === "string" ? control.tagName : "",
         inputType: input ? control.type : textarea ? "textarea" : "",
         connected: control.isConnected === true,
         mainDocument: control.ownerDocument === document,
-        writable: supported && !control.readOnly && !control.disabled,
+        writable: supported && boundedNumberConstraints && !control.readOnly && !control.disabled,
+        siteRequired: supported && control.required === true,
+        multiple: input && control.type === "email" && control.multiple === true,
+        ...(textual && control.minLength >= 0 && control.minLength <= 4096
+          ? { minLength: control.minLength } : {}),
+        ...(textual && control.maxLength >= 0 && control.maxLength <= 4096
+          ? { maxLength: control.maxLength } : {}),
+        ...(textual && input && control.pattern && control.pattern.length <= 512
+          ? { pattern: control.pattern } : {}),
+        ...(number && boundedNumberConstraints && control.min
+          ? { min: control.min } : {}),
+        ...(number && boundedNumberConstraints && control.max
+          ? { max: control.max } : {}),
+        ...(number && boundedNumberConstraints && control.step
+          ? { step: control.step } : {}),
       };
     });
   }`;
@@ -905,13 +1063,14 @@ export async function validateBrowserUseUserAction(
   },
   signal: AbortSignal,
 ): Promise<BrowserUseUserActionValidation> {
-  const cdpSignal = browserUseCdpSignal(signal);
-  return await withBrowserUseCdpSocket(cdpUrl, cdpSignal, async (socket) => {
-    return await validateBrowserUseUserActionOnSocket(
-      socket,
-      target,
-      cdpSignal,
-    );
+  return await withBrowserUseCdpDeadline(signal, async (cdpSignal) => {
+    return await withBrowserUseCdpSocket(cdpUrl, cdpSignal, async (socket) => {
+      return await validateBrowserUseUserActionOnSocket(
+        socket,
+        target,
+        cdpSignal,
+      );
+    });
   });
 }
 
@@ -940,6 +1099,7 @@ function isMissingBrowserUseNode(error: unknown): boolean {
 interface ResolvedBrowserUseUserActionField {
   readonly objectId: string;
   readonly value?: string;
+  readonly inspection: BrowserUseControlInspection;
 }
 
 interface WritableBrowserUseUserActionField {
@@ -1058,6 +1218,7 @@ async function resolveBrowserUseApplyFields(
     }
     resolved.push({
       objectId,
+      inspection,
       ...(field.value === undefined ? {} : { value: field.value }),
     });
   }
@@ -1069,20 +1230,72 @@ export async function preflightBrowserUseUserAction(
   cdpUrl: string,
   target: BrowserUseUserActionExactTarget,
   signal: AbortSignal,
-): Promise<"valid" | "stale"> {
-  const cdpSignal = browserUseCdpSignal(signal);
-  return await withBrowserUseCdpSocket(cdpUrl, cdpSignal, async (socket) => {
-    const attached = await openBrowserUseApplyPage(socket, target, cdpSignal);
-    if (!attached) {
-      return "stale";
+  attemptId: string,
+): Promise<
+  | {
+      readonly kind: "valid";
+      readonly controls: readonly BrowserUseControlInspection[];
     }
-    const resolved = await resolveBrowserUseApplyFields(
-      socket,
-      attached.sessionId,
-      target.fields,
+  | { readonly kind: "stale" }
+> {
+  return await withBrowserUseCdpDeadline(signal, async (cdpSignal) => {
+    const observePhase: BrowserUseCdpPhaseObserver = (
+      phase,
+      outcome,
+      durationMs,
+    ) => {
+      const fields = {
+        type: "browser_input_preflight_phase",
+        attemptId,
+        phase,
+        outcome,
+        durationMs,
+      };
+      if (outcome === "ok" && durationMs < 1000) {
+        L.debug("Browser input preflight CDP phase", fields);
+      } else {
+        L.warn("Browser input preflight CDP phase", fields);
+      }
+    };
+    return await withBrowserUseCdpSocket(
+      cdpUrl,
       cdpSignal,
+      async (socket) => {
+        const attached = await observeBrowserUseCdpPhase(
+          "target",
+          cdpSignal,
+          observePhase,
+          async () => {
+            return await openBrowserUseApplyPage(socket, target, cdpSignal);
+          },
+        );
+        if (!attached) {
+          return { kind: "stale" };
+        }
+        const resolved = await observeBrowserUseCdpPhase(
+          "controls",
+          cdpSignal,
+          observePhase,
+          async () => {
+            return await resolveBrowserUseApplyFields(
+              socket,
+              attached.sessionId,
+              target.fields,
+              cdpSignal,
+            );
+          },
+        );
+        return resolved
+          ? {
+              kind: "valid",
+              controls: resolved.fields.map((field) => {
+                return field.inspection;
+              }),
+            }
+          : { kind: "stale" };
+      },
+      observePhase,
     );
-    return resolved ? "valid" : "stale";
   });
 }
 
@@ -1105,6 +1318,67 @@ function browserUseAggregateValueArguments(
   return otherFields.flatMap((field) => {
     return [{ objectId: field.objectId }, { value: field.value }];
   });
+}
+
+async function validateBrowserUseApplyValues(
+  socket: WebSocket,
+  args: {
+    readonly sessionId: string;
+    readonly fields: readonly ResolvedBrowserUseUserActionField[];
+    readonly commandId: number;
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  const [firstField, ...otherFields] = args.fields;
+  if (!firstField) {
+    return true;
+  }
+  const checked = browserUseCdpValueSchema.parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: args.commandId,
+        method: "Runtime.callFunctionOn",
+        params: {
+          objectId: firstField.objectId,
+          functionDeclaration: `function (nextValue, ...otherControlValues) {
+            const controls = [this];
+            const values = [nextValue];
+            for (let index = 0; index < otherControlValues.length; index += 2) {
+              controls.push(otherControlValues[index]);
+              values.push(otherControlValues[index + 1]);
+            }
+            return controls.every((control, index) => {
+              const value = values[index];
+              if (value === null) {
+                return !control.required || control.value !== "";
+              }
+              if (typeof value !== "string") return false;
+              if (control.minLength >= 0 && value.length < control.minLength) return false;
+              if (control.maxLength >= 0 && value.length > control.maxLength) return false;
+              const clone = control.cloneNode(false);
+              clone.value = value;
+              return clone.value === value && clone.checkValidity();
+            });
+          }`,
+          arguments: [
+            { value: firstField.value ?? null },
+            ...otherFields.flatMap((field) => {
+              return [
+                { objectId: field.objectId },
+                { value: field.value ?? null },
+              ];
+            }),
+          ],
+          returnByValue: true,
+        },
+        sessionId: args.sessionId,
+      },
+      signal,
+    ),
+    { reportInput: true },
+  );
+  return checked.result.value === true;
 }
 
 async function writeBrowserUseApplyFields(
@@ -1205,7 +1479,7 @@ async function applyBrowserUseUserActionOnSocket(
   target: BrowserUseUserActionExactTarget,
   mutation: { writeStarted: boolean },
   signal: AbortSignal,
-): Promise<"succeeded" | "stale"> {
+): Promise<"succeeded" | "stale" | "invalid"> {
   const attached = await openBrowserUseApplyPage(socket, target, signal);
   if (!attached) {
     return "stale";
@@ -1219,12 +1493,25 @@ async function applyBrowserUseUserActionOnSocket(
   if (!resolved) {
     return "stale";
   }
+  if (
+    !(await validateBrowserUseApplyValues(
+      socket,
+      {
+        sessionId: attached.sessionId,
+        fields: resolved.fields,
+        commandId: resolved.commandId,
+      },
+      signal,
+    ))
+  ) {
+    return "invalid";
+  }
   await writeBrowserUseApplyFields(
     socket,
     {
       sessionId: attached.sessionId,
       fields: resolved.fields,
-      commandId: resolved.commandId,
+      commandId: resolved.commandId + (resolved.fields.length > 0 ? 1 : 0),
     },
     mutation,
     signal,
@@ -1236,7 +1523,7 @@ export async function applyBrowserUseUserAction(
   cdpUrl: string,
   target: BrowserUseUserActionExactTarget,
   signal: AbortSignal,
-): Promise<"succeeded" | "stale"> {
+): Promise<"succeeded" | "stale" | "invalid"> {
   const mutation = { writeStarted: false };
   const cdpSignal = browserUseCdpSignal(signal);
   const operation = await settleIncludingAbort(
@@ -1394,12 +1681,12 @@ function providerError(response: Response, body: unknown) {
   );
 }
 
-async function browserUseRequest(
+async function browserUseRequestWithStatus(
   path: string,
   init: RequestInit,
   signal: AbortSignal,
   acceptedStatuses: readonly number[] = [],
-): Promise<unknown> {
+): Promise<{ readonly status: number; readonly body: unknown }> {
   const apiKey = env("OKOU_BROWSER_USE_API_KEY");
   if (!apiKey) {
     throw new BrowserUseProviderError(
@@ -1459,7 +1746,43 @@ async function browserUseRequest(
   ) {
     throw providerError(result.value.response, result.value.body);
   }
-  return result.value.body;
+  return { status: result.value.response.status, body: result.value.body };
+}
+
+async function browserUseRequest(
+  path: string,
+  init: RequestInit,
+  signal: AbortSignal,
+  acceptedStatuses: readonly number[] = [],
+): Promise<unknown> {
+  const result = await browserUseRequestWithStatus(
+    path,
+    init,
+    signal,
+    acceptedStatuses,
+  );
+  return result.body;
+}
+
+/** A DELETE acknowledgement alone cannot prove that a profile is absent. */
+export async function browserUseProfileAbsent(
+  profileId: string,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const result = await browserUseRequestWithStatus(
+    `/profiles/${encodeURIComponent(profileId)}`,
+    { method: "GET" },
+    signal,
+    [404],
+  );
+  if (result.status === 404) {
+    return true;
+  }
+  const profile = browserUseProfileSchema.parse(result.body);
+  if (profile.id !== profileId) {
+    throw new Error("Managed browser provider returned a different profile");
+  }
+  return false;
 }
 
 export async function createBrowserUseProfile(
@@ -1516,6 +1839,28 @@ export async function createBrowserUseSession(
     signal,
   );
   return parseBrowserUseSession(body);
+}
+
+export async function browserUseSessionAbsent(
+  providerSessionId: string,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const result = await browserUseRequestWithStatus(
+    `/browsers/${encodeURIComponent(providerSessionId)}`,
+    { method: "GET" },
+    signal,
+    [404],
+  );
+  if (result.status === 404) {
+    return true;
+  }
+  const session = parseBrowserUseSession(result.body);
+  if (session.id !== providerSessionId) {
+    throw new Error("Managed browser provider returned a different session");
+  }
+  // A stopped session can still retain remote history or downloads. Only an
+  // authenticated not-found response proves its provider record is absent.
+  return false;
 }
 
 export async function getBrowserUseSession(

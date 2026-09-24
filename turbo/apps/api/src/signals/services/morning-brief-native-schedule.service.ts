@@ -11,8 +11,10 @@ import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/cont
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import {
   and,
+  count,
   desc,
   eq,
+  gt,
   isNotNull,
   isNull,
   lt,
@@ -24,6 +26,7 @@ import {
 import type { MorningBriefOccurrenceCollectionFacts } from "@okouai/db/jsonb-contracts/morning-brief-native-occurrence";
 
 import type { Tx } from "../../lib/db-types";
+import { env } from "../../lib/env";
 import type { ReadonlyDb } from "../external/db";
 import type { MorningBriefMemberIdentity } from "./morning-brief-enrollment-data.service";
 import {
@@ -66,6 +69,30 @@ type MorningBriefNativeWriter = Tx;
 
 /** How long one tick may hold a claimed slot before another may reclaim it. */
 const NATIVE_OCCURRENCE_LEASE_MS = 5 * 60 * 1000;
+async function nativeWorkerHasCapacity(
+  tx: MorningBriefNativeWriter,
+): Promise<boolean> {
+  // All worker claims serialize through this short transaction-scoped lock.
+  // The lock is never held during collection, generation, or delivery.
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(4104, 36495)`);
+  const [row] = await tx
+    .select({ active: count() })
+    .from(morningBriefNativeOccurrences)
+    .where(
+      and(
+        eq(morningBriefNativeOccurrences.state, "claimed"),
+        isNull(morningBriefNativeOccurrences.settledAt),
+        gt(
+          morningBriefNativeOccurrences.leaseExpiresAt,
+          sql`timezone('UTC', clock_timestamp())`,
+        ),
+      ),
+    );
+  if (row === undefined) {
+    throw new Error("Native Morning Brief capacity count returned no row");
+  }
+  return row.active < env("MORNING_BRIEF_WORKER_CONCURRENCY");
+}
 
 /**
  * The finite pre-reservation configuration deferral.
@@ -1608,6 +1635,7 @@ export async function claimMorningBriefNativeOccurrence(
     readonly now: Date;
     readonly leaseToken: string;
     readonly membershipId: string;
+    readonly expectedScheduledFor?: Date;
   },
 ): Promise<MorningBriefNativeClaim> {
   const schedule = await lockMorningBriefNativeSchedule(tx, owner);
@@ -1626,8 +1654,18 @@ export async function claimMorningBriefNativeOccurrence(
   if (schedule.scheduleOwner !== "native" || schedule.nextRunAt === null) {
     return { kind: "not-due" };
   }
-  if (schedule.nextRunAt.getTime() > args.now.getTime()) {
+  if (
+    schedule.nextRunAt.getTime() > args.now.getTime() ||
+    (args.expectedScheduledFor !== undefined &&
+      schedule.nextRunAt.getTime() !== args.expectedScheduledFor.getTime())
+  ) {
     return { kind: "not-due" };
+  }
+  if (
+    args.expectedScheduledFor !== undefined &&
+    !(await nativeWorkerHasCapacity(tx))
+  ) {
+    return { kind: "inadmissible", reason: "capacity" };
   }
 
   const anchor = schedule.nextRunAt;
@@ -2024,6 +2062,7 @@ export async function resumeMorningBriefNativeOccurrence(
     readonly now: Date;
     readonly leaseToken: string;
     readonly membershipId: string;
+    readonly workerMode?: boolean;
   },
 ): Promise<MorningBriefNativeClaim> {
   const schedule = await lockMorningBriefNativeSchedule(tx, owner);
@@ -2044,6 +2083,9 @@ export async function resumeMorningBriefNativeOccurrence(
   }
   if (schedule.membershipId !== args.membershipId) {
     return { kind: "inadmissible", reason: "membership-generation" };
+  }
+  if (args.workerMode && !(await nativeWorkerHasCapacity(tx))) {
+    return { kind: "inadmissible", reason: "capacity" };
   }
 
   const leaseExpiresAt = new Date(
@@ -2104,48 +2146,72 @@ export async function resumeMorningBriefNativeOccurrence(
  * died before it could settle. Without this reader an enabled owner would sit
  * with `next_run_at = NULL` forever.
  */
+function resumableOccurrencesWhere(args: {
+  readonly now: Date;
+  readonly owner?: MorningBriefMemberIdentity;
+  readonly scheduledFor?: Date;
+}) {
+  return and(
+    args.owner === undefined ? undefined : occurrenceOwnerWhere(args.owner),
+    args.scheduledFor === undefined
+      ? undefined
+      : eq(morningBriefNativeOccurrences.scheduledFor, args.scheduledFor),
+    isNull(morningBriefNativeOccurrences.settledAt),
+    // A bound attempt belongs to receipt recovery, never another model call.
+    isNull(morningBriefNativeOccurrences.generationAttemptId),
+    eq(morningBriefNativeOccurrences.deliveryPending, false),
+    or(
+      and(
+        eq(morningBriefNativeOccurrences.state, "deferred"),
+        isNotNull(morningBriefNativeOccurrences.deferredUntil),
+        lte(morningBriefNativeOccurrences.deferredUntil, args.now),
+      ),
+      and(
+        eq(morningBriefNativeOccurrences.state, "claimed"),
+        or(
+          isNull(morningBriefNativeOccurrences.leaseExpiresAt),
+          lt(morningBriefNativeOccurrences.leaseExpiresAt, args.now),
+        ),
+      ),
+    ),
+  );
+}
+
 export async function loadResumableOccurrences(
   db: MorningBriefNativeReader,
   args: {
     readonly now: Date;
     readonly limit: number;
+    readonly offset?: number;
     readonly owner?: MorningBriefMemberIdentity;
+    readonly scheduledFor?: Date;
   },
 ): Promise<readonly MorningBriefNativeOccurrenceRow[]> {
   return await db
     .select()
     .from(morningBriefNativeOccurrences)
-    .where(
-      and(
-        args.owner === undefined ? undefined : occurrenceOwnerWhere(args.owner),
-        isNull(morningBriefNativeOccurrences.settledAt),
-        // Receipt-first is a per-occurrence invariant, not a property of one
-        // scan happening to fit in one batch. A slot that already bound an
-        // attempt is reachable only through the receipt pass, which resolves
-        // its durable receipt by occurrence identity. Resuming it would call S5
-        // first, and after the real result sweep a completed collection with no
-        // generation reads as a healthy empty day — bypassing a Chat receipt
-        // that has already committed.
-        isNull(morningBriefNativeOccurrences.generationAttemptId),
-        eq(morningBriefNativeOccurrences.deliveryPending, false),
-        or(
-          and(
-            eq(morningBriefNativeOccurrences.state, "deferred"),
-            isNotNull(morningBriefNativeOccurrences.deferredUntil),
-            lte(morningBriefNativeOccurrences.deferredUntil, args.now),
-          ),
-          and(
-            eq(morningBriefNativeOccurrences.state, "claimed"),
-            or(
-              isNull(morningBriefNativeOccurrences.leaseExpiresAt),
-              lt(morningBriefNativeOccurrences.leaseExpiresAt, args.now),
-            ),
-          ),
-        ),
-      ),
+    .where(resumableOccurrencesWhere(args))
+    .orderBy(
+      morningBriefNativeOccurrences.scheduledFor,
+      morningBriefNativeOccurrences.orgId,
+      morningBriefNativeOccurrences.userId,
     )
-    .orderBy(morningBriefNativeOccurrences.scheduledFor)
-    .limit(args.limit);
+    .limit(args.limit)
+    .offset(args.offset ?? 0);
+}
+
+export async function countResumableOccurrences(
+  db: MorningBriefNativeReader,
+  args: { readonly now: Date; readonly owner?: MorningBriefMemberIdentity },
+): Promise<number> {
+  const [row] = await db
+    .select({ total: count() })
+    .from(morningBriefNativeOccurrences)
+    .where(resumableOccurrencesWhere(args));
+  if (row === undefined) {
+    throw new Error("Native Morning Brief resumable count returned no row");
+  }
+  return row.total;
 }
 
 /**
@@ -2305,11 +2371,43 @@ export async function loadDueNativeOwners(
   args: {
     readonly now: Date;
     readonly limit: number;
+    readonly offset?: number;
     readonly owner?: MorningBriefMemberIdentity;
+    readonly scheduledFor?: Date;
   },
 ): Promise<readonly MorningBriefNativeScheduleRow[]> {
   return await db
     .select()
+    .from(morningBriefNativeSchedules)
+    .where(
+      and(
+        args.owner === undefined ? undefined : scheduleWhere(args.owner),
+        args.scheduledFor === undefined
+          ? undefined
+          : eq(morningBriefNativeSchedules.nextRunAt, args.scheduledFor),
+        eq(morningBriefNativeSchedules.scheduleOwner, "native"),
+        eq(morningBriefNativeSchedules.enabled, true),
+        eq(morningBriefNativeSchedules.phase, "native"),
+        isNotNull(morningBriefNativeSchedules.nextRunAt),
+        lte(morningBriefNativeSchedules.nextRunAt, args.now),
+      ),
+    )
+    .orderBy(
+      morningBriefNativeSchedules.nextRunAt,
+      morningBriefNativeSchedules.orgId,
+      morningBriefNativeSchedules.userId,
+    )
+    .limit(args.limit)
+    .offset(args.offset ?? 0);
+}
+
+/** Count due rows so a busy or inaccessible prefix cannot starve later owners. */
+export async function countDueNativeOwners(
+  db: MorningBriefNativeReader,
+  args: { readonly now: Date; readonly owner?: MorningBriefMemberIdentity },
+): Promise<number> {
+  const [row] = await db
+    .select({ total: count() })
     .from(morningBriefNativeSchedules)
     .where(
       and(
@@ -2320,9 +2418,11 @@ export async function loadDueNativeOwners(
         isNotNull(morningBriefNativeSchedules.nextRunAt),
         lte(morningBriefNativeSchedules.nextRunAt, args.now),
       ),
-    )
-    .orderBy(morningBriefNativeSchedules.nextRunAt)
-    .limit(args.limit);
+    );
+  if (row === undefined) {
+    throw new Error("Native Morning Brief due count returned no row");
+  }
+  return row.total;
 }
 
 /**
@@ -2335,7 +2435,9 @@ export async function loadPendingDeliveryOccurrences(
   db: MorningBriefNativeReader,
   args: {
     readonly limit: number;
+    readonly offset?: number;
     readonly owner?: MorningBriefMemberIdentity;
+    readonly scheduledFor?: Date;
   },
 ): Promise<readonly MorningBriefNativeOccurrenceRow[]> {
   return await db
@@ -2350,12 +2452,42 @@ export async function loadPendingDeliveryOccurrences(
       // day.
       and(
         args.owner === undefined ? undefined : occurrenceOwnerWhere(args.owner),
+        args.scheduledFor === undefined
+          ? undefined
+          : eq(morningBriefNativeOccurrences.scheduledFor, args.scheduledFor),
         eq(morningBriefNativeOccurrences.deliveryPending, true),
         isNotNull(morningBriefNativeOccurrences.generationAttemptId),
       ),
     )
-    .orderBy(morningBriefNativeOccurrences.scheduledFor)
-    .limit(args.limit);
+    .orderBy(
+      morningBriefNativeOccurrences.scheduledFor,
+      morningBriefNativeOccurrences.orgId,
+      morningBriefNativeOccurrences.userId,
+    )
+    .limit(args.limit)
+    .offset(args.offset ?? 0);
+}
+
+export async function countPendingDeliveryOccurrences(
+  db: MorningBriefNativeReader,
+  args: { readonly owner?: MorningBriefMemberIdentity },
+): Promise<number> {
+  const [row] = await db
+    .select({ total: count() })
+    .from(morningBriefNativeOccurrences)
+    .where(
+      and(
+        args.owner === undefined ? undefined : occurrenceOwnerWhere(args.owner),
+        eq(morningBriefNativeOccurrences.deliveryPending, true),
+        isNotNull(morningBriefNativeOccurrences.generationAttemptId),
+      ),
+    );
+  if (row === undefined) {
+    throw new Error(
+      "Native Morning Brief pending delivery count returned no row",
+    );
+  }
+  return row.total;
 }
 
 /**

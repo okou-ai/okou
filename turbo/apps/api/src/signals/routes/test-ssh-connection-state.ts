@@ -237,6 +237,7 @@ async function createRuntime(
       ok: true as const,
       agentId,
       runId,
+      ...(body.chat && threadId ? { threadId } : {}),
       sandboxToken: generateSandboxToken(body.userId, runId, body.orgId),
     },
   };

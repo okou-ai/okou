@@ -107,6 +107,7 @@ describe("GET /api/chat-threads/:id/metadata", () => {
       modelSettings: {},
       serviceTier: null,
       pinnedAt: null,
+      archived: false,
       computerUseHostId: null,
       cloudBrowserEnabled: false,
       selectedVideoModel: DEFAULT_VIDEO_MODEL,

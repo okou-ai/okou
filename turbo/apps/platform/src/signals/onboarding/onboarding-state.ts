@@ -31,6 +31,7 @@ export interface OnboardingDraft {
 }
 
 interface OnboardingCheckoutDraft {
+  readonly userId: string;
   readonly prompt: string;
   readonly note: string;
 }
@@ -40,6 +41,7 @@ export const ONBOARDING_CHECKOUT_STATE_PARAM = "onboarding_checkout_state";
 const ONBOARDING_CHECKOUT_STATE_STORAGE_KEY = "vm0:onboarding:checkout-state";
 const ONBOARDING_CHECKOUT_PROMPT_STORAGE_KEY = "vm0:onboarding:checkout-prompt";
 const ONBOARDING_CHECKOUT_NOTE_STORAGE_KEY = "vm0:onboarding:checkout-note";
+const ONBOARDING_CHECKOUT_OWNER_STORAGE_KEY = "vm0:onboarding:checkout-owner";
 const onboardingCheckoutStateStorage = sessionStorageSignals(
   ONBOARDING_CHECKOUT_STATE_STORAGE_KEY,
 );
@@ -48,6 +50,9 @@ const onboardingCheckoutPromptStorage = sessionStorageSignals(
 );
 const onboardingCheckoutNoteStorage = sessionStorageSignals(
   ONBOARDING_CHECKOUT_NOTE_STORAGE_KEY,
+);
+const onboardingCheckoutOwnerStorage = sessionStorageSignals(
+  ONBOARDING_CHECKOUT_OWNER_STORAGE_KEY,
 );
 
 interface OnboardingUiState {
@@ -85,9 +90,17 @@ function emptyOnboardingUiState(): OnboardingUiState {
 }
 
 export const readOnboardingCheckoutDraft$ = command(
-  ({ get }, searchParams: URLSearchParams): OnboardingCheckoutDraft | null => {
+  (
+    { get },
+    searchParams: URLSearchParams,
+    userId: string,
+  ): OnboardingCheckoutDraft | null => {
     const stateId = searchParams.get(ONBOARDING_CHECKOUT_STATE_PARAM);
-    if (!stateId || get(onboardingCheckoutStateStorage.get$) !== stateId) {
+    if (
+      !stateId ||
+      get(onboardingCheckoutStateStorage.get$) !== stateId ||
+      get(onboardingCheckoutOwnerStorage.get$) !== userId
+    ) {
       return null;
     }
 
@@ -97,7 +110,7 @@ export const readOnboardingCheckoutDraft$ = command(
       return null;
     }
 
-    return { prompt, note };
+    return { userId, prompt, note };
   },
 );
 
@@ -105,7 +118,16 @@ const clearOnboardingCheckoutDraft$ = command(({ set }) => {
   set(onboardingCheckoutStateStorage.clear$);
   set(onboardingCheckoutPromptStorage.clear$);
   set(onboardingCheckoutNoteStorage.clear$);
+  set(onboardingCheckoutOwnerStorage.clear$);
 });
+
+export const clearOnboardingCheckoutDraftForUser$ = command(
+  ({ get, set }, userId: string) => {
+    if (get(onboardingCheckoutOwnerStorage.get$) === userId) {
+      set(clearOnboardingCheckoutDraft$);
+    }
+  },
+);
 
 const internalOnboardingDraft$ = state<OnboardingDraft>(emptyOnboardingDraft());
 const internalOnboardingUi$ = state<OnboardingUiState>(
@@ -187,7 +209,12 @@ function onboardingRouteText(
 }
 
 export const hydrateOnboardingRoute$ = command(
-  ({ get, set }, step: OnboardingRouteStep, searchParams: URLSearchParams) => {
+  (
+    { get, set },
+    step: OnboardingRouteStep,
+    searchParams: URLSearchParams,
+    userId: string,
+  ) => {
     set(resetOnboardingUi$);
     const choice = onboardingChoice(searchParams.get("choice"));
     if (step === "make" && !choice) {
@@ -197,7 +224,7 @@ export const hydrateOnboardingRoute$ = command(
     const current = get(internalOnboardingDraft$);
     const routeText = onboardingRouteText(
       searchParams,
-      set(readOnboardingCheckoutDraft$, searchParams),
+      set(readOnboardingCheckoutDraft$, searchParams, userId),
     );
     const categoryId = searchParams.get("category");
     const workflowId = searchParams.get("workflow");

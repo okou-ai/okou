@@ -10,6 +10,7 @@
 #![forbid(unsafe_code)]
 
 mod apple_dh;
+mod apple_srp;
 mod authentication;
 mod capture;
 mod framebuffer;
@@ -73,6 +74,8 @@ pub enum AuthenticationStage {
     X509PlainAuthentication,
     /// Completing Apple DH security type 30 and SecurityResult.
     AppleDhAuthentication,
+    /// Completing Apple Direct SRP security type 36 and SecurityResult.
+    AppleSrpAuthentication,
 }
 
 impl AuthenticationStage {
@@ -86,6 +89,7 @@ impl AuthenticationStage {
             Self::VncAuthentication => "vnc_authentication",
             Self::X509PlainAuthentication => "x509_plain_authentication",
             Self::AppleDhAuthentication => "apple_dh_authentication",
+            Self::AppleSrpAuthentication => "apple_srp_authentication",
         }
     }
 }
@@ -191,6 +195,37 @@ impl fmt::Debug for AppleDhCredentials {
     }
 }
 
+/// Validated Apple Direct SRP username and password. Owned password bytes are
+/// erased on drop; Debug never exposes either credential.
+pub struct AppleSrpCredentials {
+    username: Zeroizing<Vec<u8>>,
+    password: Zeroizing<Vec<u8>>,
+}
+
+impl AppleSrpCredentials {
+    pub fn new(username: String, password: String) -> Result<Self, Error> {
+        Self::new_zeroizing(username, Zeroizing::new(password))
+    }
+
+    pub fn new_zeroizing(username: String, mut password: Zeroizing<String>) -> Result<Self, Error> {
+        let username = Zeroizing::new(username.into_bytes());
+        let password = Zeroizing::new(std::mem::take(&mut *password).into_bytes());
+        if !(1..=255).contains(&username.len()) || username.contains(&0) {
+            return Err(Error::InvalidAppleSrpUsername);
+        }
+        if !(1..=1023).contains(&password.len()) || password.contains(&0) {
+            return Err(Error::InvalidAppleSrpPassword);
+        }
+        Ok(Self { username, password })
+    }
+}
+
+impl fmt::Debug for AppleSrpCredentials {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("AppleSrpCredentials([REDACTED])")
+    }
+}
+
 /// Exact certificate-TLS VeNCrypt authentication selected by the caller.
 ///
 /// `None` verifies the server and encrypts the session, but does not
@@ -276,6 +311,34 @@ where
     Ok(authenticated)
 }
 
+/// Authenticate exactly Apple Direct SRP (RFB security type 36) on a caller-owned
+/// stream. The server is authenticated by its SRP proof before the stream is
+/// returned, but post-authentication RFB traffic is not encrypted. The caller
+/// must provide a verified protective transport across untrusted networks.
+/// This engine is not yet admitted by any product profile.
+pub async fn authenticate_apple_srp<S>(
+    stream: S,
+    credentials: AppleSrpCredentials,
+    deadline: Instant,
+) -> Result<Authenticated<S>, Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin + 'static,
+{
+    let deadline = deadline.min(Instant::now() + MAX_HANDSHAKE_DURATION);
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::RfbVersion,
+        });
+    }
+    let authenticated = apple_srp::authenticate(stream, credentials, deadline).await?;
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::AppleSrpAuthentication,
+        });
+    }
+    Ok(authenticated)
+}
+
 /// Authenticate an owned stream using one exact certificate-TLS VeNCrypt profile.
 ///
 /// `server_name` is the saved DNS name or unbracketed IP used for certificate
@@ -356,6 +419,12 @@ pub enum Error {
     InvalidAppleDhPassword,
     #[error("invalid or unsupported Apple DH parameters")]
     InvalidAppleDhParameters,
+    #[error("Apple SRP username must contain 1-255 UTF-8 bytes without NUL")]
+    InvalidAppleSrpUsername,
+    #[error("Apple SRP password must contain 1-1023 UTF-8 bytes without NUL")]
+    InvalidAppleSrpPassword,
+    #[error("invalid or unsupported Apple SRP parameters or framing")]
+    InvalidAppleSrpParameters,
     #[error("OS cryptographic randomness failed")]
     Randomness,
     #[error("invalid TLS server name")]

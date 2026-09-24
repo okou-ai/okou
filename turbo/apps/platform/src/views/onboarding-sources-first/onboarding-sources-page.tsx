@@ -1,6 +1,5 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Lock } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { onboardingRecommendationLocaleSchema } from "@okouai/api-contracts/contracts/onboarding";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
@@ -15,6 +14,7 @@ import { startOnboardingRecommendation$ } from "../../signals/onboarding/onboard
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { OnboardingConnectorSetup } from "../onboarding/onboarding-connectors.tsx";
+import { securityPageUrl } from "./onboarding-security.ts";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import {
   FEATURED_SOURCE_SLUGS,
@@ -81,6 +81,23 @@ export function OnboardingSourcesPage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.sources.copy;
       })}
+      trustPoints={[
+        t(($) => {
+          return $.onboarding.sourcesFirst.sources.permissions;
+        }),
+      ]}
+      footnote={
+        <a
+          className="text-brand-text hover:text-brand-text-hover"
+          href={securityPageUrl(i18n.resolvedLanguage ?? i18n.language)}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {t(($) => {
+            return $.onboarding.sourcesFirst.sources.securityLink;
+          })}
+        </a>
+      }
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
       })}
@@ -113,12 +130,6 @@ export function OnboardingSourcesPage() {
         onConnectStart={captureConnectStarted}
         onConnected={captureConnected}
       />
-      <p className="mt-5 flex items-center gap-2 text-xs text-muted-foreground">
-        <Lock size={14} aria-hidden="true" />
-        {t(($) => {
-          return $.onboarding.sourcesFirst.sources.note;
-        })}
-      </p>
     </OnboardingStepLayout>
   );
 }

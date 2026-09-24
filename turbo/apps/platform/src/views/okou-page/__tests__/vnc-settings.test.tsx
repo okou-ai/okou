@@ -11,6 +11,7 @@ import {
   type VncCredentialResponse,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import {
   act,
   fireEvent,
@@ -24,6 +25,7 @@ import { expect, test } from "vitest";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { getConnectorAction } from "./connector-page-test-helpers.ts";
 import {
   getAction,
   queryAction,
@@ -137,14 +139,78 @@ function mockSettings(
   return data;
 }
 
-function page(path = "/connectors/vnc") {
-  return setupPage({
+async function page(path = "/connectors?scope=remote-control&type=vnc") {
+  await setupPage({
     context,
     path,
     auth,
     featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
   });
 }
+
+async function openAddHostPage() {
+  await page();
+  click(
+    await waitFor(() => {
+      return getAction("button", "Add host");
+    }),
+  );
+}
+
+test("VNC host settings update the chat default in thread remote access mode", async () => {
+  mockSettings();
+  let enabled = false;
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: [],
+        vnc: [
+          {
+            connectionId: host.id,
+            displayName: host.displayName,
+            defaultEnabled: enabled,
+          },
+        ],
+      });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.updateHostDefault,
+    ({ params, body, respond }) => {
+      expect(params.protocol).toBe("vnc");
+      expect(params.connectionId).toBe(host.id);
+      enabled = body.enabled;
+      return respond(200, {
+        connectionId: host.id,
+        displayName: host.displayName,
+        defaultEnabled: enabled,
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/connectors?scope=remote-control&type=vnc",
+    auth,
+    featureSwitches: {
+      [FeatureSwitchKey.VncAccess]: true,
+      [FeatureSwitchKey.ThreadRemoteAccess]: true,
+    },
+  });
+  const toggle = await screen.findByRole("switch", {
+    name: "Enabled by default for chats",
+  });
+  await waitFor(() => {
+    expect(toggle).not.toBeDisabled();
+  });
+  await userEvent.click(toggle);
+  await waitFor(() => {
+    expect(enabled).toBeTruthy();
+    expect(
+      screen.getByRole("switch", { name: "Enabled by default for chats" }),
+    ).toBeChecked();
+  });
+});
 
 async function choose(dialog: HTMLElement, label: string, name: string) {
   await userEvent.click(within(dialog).getByLabelText(label));
@@ -168,19 +234,58 @@ async function fillHost(dialog: HTMLElement) {
   );
 }
 
-test("The VNC connector page omits the redundant refresh action", async () => {
+test("VNC management omits the redundant refresh action", async () => {
   mockSettings();
   await page();
   await screen.findByText(host.displayName);
-  expect(
-    screen.getByRole("heading", { name: "VNC remote access" }),
-  ).toBeInTheDocument();
-  expect(
-    screen.getByText("Let your agents view and control remote desktops."),
-  ).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "VNC" })).toBeInTheDocument();
   expect(queryAction("button", "Refresh")).toBeNull();
-  expect(getAction("radio", "Hosts")).toHaveAttribute("aria-checked", "true");
+  expect(getAction("radio", "Connections")).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
   expect(getAction("radio", "Credentials")).toBeInTheDocument();
+});
+
+test("Returning to Connectors refreshes VNC hosts changed elsewhere", async () => {
+  const data = mockSettings();
+  await page();
+  await screen.findByText(host.displayName);
+
+  data.connections = [{ ...host, displayName: "Updated workstation" }];
+  click(
+    getAction(
+      "link",
+      "Connectors",
+      screen.getByRole("navigation", { name: "Sidebar" }),
+    ),
+  );
+  await waitFor(() => {
+    expect(window.location.search).toBe("");
+  });
+  click(getConnectorAction("tab", "Remote control"));
+  await screen.findByText("Updated workstation");
+  expect(screen.queryByText(host.displayName)).toBeNull();
+});
+
+test("Returning to Remote control does not reopen an abandoned VNC dialog", async () => {
+  mockSettings({ connections: [], credentials: [] });
+  await page("/connectors");
+  click(getConnectorAction("tab", "Remote control"));
+  const section = await screen.findByRole("region", { name: "VNC" });
+  click(getAction("button", "Add host", section));
+  await screen.findByRole("dialog", { name: "Add host" });
+
+  window.history.back();
+  await waitFor(() => {
+    expect(window.location.search).toBe("");
+  });
+  await screen.findByRole("heading", { name: "Remote access" });
+  click(getConnectorAction("tab", "Remote control"));
+  await waitFor(() => {
+    expect(window.location.search).toBe("?scope=remote-control");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
 });
 
 test("An owner reuses a VNC credential without exposing its password", async () => {
@@ -190,7 +295,7 @@ test("An owner reuses a VNC credential without exposing its password", async () 
     requests.push(body);
     return respond(201, host);
   });
-  await page("/connectors/vnc?add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await fillHost(dialog);
   expect(within(dialog).getByLabelText("RFB destination port")).toHaveValue(
@@ -222,7 +327,7 @@ test("An owner creates an SSH-backed route with a distinct RFB destination and c
     requests.push(body);
     return respond(201, tunneledHost);
   });
-  await page("/connectors/vnc?add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await fillHost(dialog);
   await choose(dialog, "Connection route", "Through saved SSH host");
@@ -337,7 +442,7 @@ test("Inline password creation preserves spaces and sends the selected custom ce
     requests.push(body);
     return respond(201, host);
   });
-  await page("/connectors/vnc?add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await fillHost(dialog);
   const credentialFields = within(dialog).getByRole("group", {
@@ -391,7 +496,7 @@ test("Inline X509Plain creation sends exact username/password and custom_ca trus
     requests.push(body);
     return respond(201, plainHost);
   });
-  await page("/connectors/vnc?add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await fillHost(dialog);
   await choose(
@@ -447,7 +552,7 @@ test("Profile selection filters credentials and clears incompatible choices", as
     connections: [],
     credentials: [credential, plainCredential],
   });
-  await page("/connectors/vnc?add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await waitFor(() => {
     expect(within(dialog).getByLabelText("Credential")).toHaveTextContent(
@@ -492,7 +597,7 @@ test("Apple DH host editor requires SSH loopback and omits X509 trust", async ()
     requests.push(body);
     return respond(201, appleHost);
   });
-  await page("/connectors/vnc?add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await choose(dialog, "Security profile", "Mac Screen Sharing (Apple DH)");
   expect(
@@ -1016,7 +1121,7 @@ test("An uncertain host creation freezes its draft and explicitly retries the sa
       ? new HttpResponse(null, { status: 204 })
       : HttpResponse.error();
   });
-  await page("/connectors/vnc?add=1");
+  await openAddHostPage();
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await fillHost(dialog);
   await fill(within(dialog).getByLabelText("Credential name"), "Retry login");
@@ -1103,7 +1208,7 @@ test("A known invalid credential response retains an editable draft without leak
   );
 });
 
-test("A disabled VNC deep link shows unavailability without accessing saved configuration", async () => {
+test("A disabled VNC scope hides VNC without accessing saved configuration", async () => {
   const requests: string[] = [];
   context.mocks.http.get("*/api/vnc/*", ({ request }) => {
     requests.push(`${request.method} ${new URL(request.url).pathname}`);
@@ -1114,13 +1219,13 @@ test("A disabled VNC deep link shows unavailability without accessing saved conf
   });
   await setupPage({
     context,
-    path: "/connectors/vnc?add=1",
+    path: "/connectors?scope=remote-control&type=vnc",
     auth,
     featureSwitches: { [FeatureSwitchKey.VncAccess]: false },
   });
-  await screen.findByText("VNC is not available in this workspace.");
+  await screen.findByRole("radio", { name: "Connections" });
+  expect(screen.queryByRole("heading", { name: "VNC" })).toBeNull();
   expect(screen.queryByRole("dialog")).toBeNull();
-  expect(queryAction("button", "Add host")).toBeNull();
   expect(requests).toStrictEqual([]);
 });
 

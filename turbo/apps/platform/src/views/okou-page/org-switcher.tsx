@@ -257,7 +257,6 @@ function OrgDropdownContent() {
     <DropdownMenuContent
       align="start"
       className="flex max-h-[min(420px,var(--available-height))] w-72 flex-col overflow-hidden"
-      finalFocus={false}
     >
       <div className="flex min-w-0 shrink-0 items-center gap-3 px-2 py-1.5">
         <WorkspaceLogo

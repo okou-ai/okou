@@ -1,6 +1,5 @@
 import {
   useGet,
-  useLoadable,
   useLastLoadable,
   useLastResolved,
   useSet,
@@ -387,7 +386,7 @@ function CustomConnectorDialogs({
 }) {
   const dialog = useGet(customConnectorDialog$);
   const closeDialog = useSet(closeCustomConnectorDialog$);
-  const accountSummariesLoadable = useLoadable(
+  const accountSummariesLoadable = useLastLoadable(
     connectorOverviewAccountSummaryByTarget$,
   );
   const accessAccountSummary =
@@ -464,7 +463,7 @@ export function CustomConnectorGrid({
    */
   readonly className?: string;
 }) {
-  const accountSummariesLoadable = useLoadable(
+  const accountSummariesLoadable = useLastLoadable(
     connectorOverviewAccountSummaryByTarget$,
   );
   const accountSummaryStatus = connectorAccountSummaryStatus(

@@ -23,6 +23,7 @@ import {
   installCapabilityChat,
   readyChat,
   RUN_PATH,
+  SECOND_CAPABILITY_RUN_ID,
 } from "./chat-capability-test-helpers.ts";
 import { installRunChat, promptEvent } from "./chat-run-test-fixtures.ts";
 
@@ -85,7 +86,7 @@ test("Hide the activity-log action outside debug mode", async () => {
   expect(screen.queryByLabelText("View run logs")).not.toBeInTheDocument();
 });
 
-test("Open an active run's logs beside Copy before any assistant output", async () => {
+test("Keep Copy to the right of an active run's logs before any assistant output", async () => {
   const prompt = "Check the connection";
   installRunChat({
     activeRunIds: [FIRST_CAPABILITY_RUN_ID],
@@ -136,7 +137,7 @@ test("Open an active run's logs beside Copy before any assistant output", async 
   const copy = buttonIn(actions, "Copy message");
   const logs = linkIn(actions, "View run logs");
   expect(
-    copy.compareDocumentPosition(logs) & Node.DOCUMENT_POSITION_FOLLOWING,
+    logs.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(logs).toHaveAttribute(
     "href",
@@ -179,6 +180,161 @@ test("Do not show user run logs before a run ID is assigned", async () => {
     throw new Error("User message action row was not available");
   }
   expect(findLink(actions, "View run logs")).toBeUndefined();
+  expect(buttonIn(actions, "Copy message")).toBeInTheDocument();
+});
+
+test("Copy workflow trigger bubbles and inspect their associated runs", async () => {
+  const triggerText = "The one-time scheduled run started.";
+  const legacyBrief = "Continue the weekly review";
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  installRunChat({
+    chatEvents: [
+      {
+        id: "started-workflow-trigger",
+        eventType: "input.prompt",
+        content: null,
+        runId: FIRST_CAPABILITY_RUN_ID,
+        seqId: 1,
+        createdAt: "2026-08-01T10:00:00.000Z",
+        userMessage: {
+          version: 1,
+          parts: [
+            {
+              type: "automation",
+              workflowName: "python-test",
+              automationBrief: "A different workflow summary",
+            },
+            { type: "text", text: triggerText },
+          ],
+        },
+      },
+      {
+        id: "legacy-workflow-trigger",
+        eventType: "input.prompt",
+        content: null,
+        runId: SECOND_CAPABILITY_RUN_ID,
+        seqId: 2,
+        createdAt: "2026-08-01T10:00:02.000Z",
+        userMessage: {
+          version: 1,
+          parts: [
+            {
+              type: "automation",
+              workflowName: "Weekly review",
+              automationBrief: legacyBrief,
+            },
+          ],
+        },
+      },
+    ],
+  });
+  context.mocks.api(logsByIdContract.getById, ({ params, respond }) => {
+    return respond(200, {
+      id: params.id,
+      sessionId: "workflow-session",
+      agentId: CAPABILITY_AGENT_ID,
+      displayName: "Workflow run inspection",
+      framework: "claude-code",
+      modelProvider: "anthropic-api-key",
+      selectedModel: "claude-sonnet-4-6",
+      triggerSource: "web",
+      status: "completed",
+      prompt: triggerText,
+      appendSystemPrompt: null,
+      error: null,
+      createdAt: "2026-08-01T10:00:00.000Z",
+      startedAt: "2026-08-01T10:00:00.000Z",
+      completedAt: "2026-08-01T10:00:01.000Z",
+      artifact: { name: null, version: null },
+    });
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
+  });
+  await readyChat();
+
+  const triggerActions = (await screen.findByText(triggerText))
+    .closest('[data-role="user"]')
+    ?.querySelector("[data-chat-user-message-actions]");
+  const legacyActions = screen
+    .getByText(legacyBrief)
+    .closest('[data-role="user"]')
+    ?.querySelector("[data-chat-user-message-actions]");
+  if (!triggerActions || !legacyActions) {
+    throw new Error("Workflow message action rows were not available");
+  }
+  const logs = linkIn(triggerActions, "View run logs");
+  expect(logs).toHaveAttribute(
+    "href",
+    `/activities/${FIRST_CAPABILITY_RUN_ID}`,
+  );
+  expect(linkIn(legacyActions, "View run logs")).toHaveAttribute(
+    "href",
+    `/activities/${SECOND_CAPABILITY_RUN_ID}`,
+  );
+
+  click(buttonIn(triggerActions, "Copy message"));
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([triggerText]);
+  });
+  click(buttonIn(legacyActions, "Copy message"));
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([triggerText, legacyBrief]);
+  });
+
+  click(logs);
+  await expect(
+    screen.findByRole("heading", { name: "Workflow run inspection" }),
+  ).resolves.toBeVisible();
+  expect(window.location.pathname).toBe(
+    `/activities/${FIRST_CAPABILITY_RUN_ID}`,
+  );
+});
+
+test("Copy goal continuation bubbles and expose their run logs", async () => {
+  const goalBrief = "Continue checking the release";
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  installRunChat({
+    chatEvents: [
+      {
+        id: "goal-continuation-input",
+        eventType: "input.prompt",
+        content: null,
+        runId: FIRST_CAPABILITY_RUN_ID,
+        seqId: 1,
+        createdAt: "2026-08-01T10:00:00.000Z",
+        userMessage: {
+          version: 1,
+          parts: [{ type: "goal", goalBrief }],
+        },
+      },
+    ],
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
+  });
+  await readyChat();
+
+  const actions = (await screen.findByText(goalBrief))
+    .closest('[data-role="user"]')
+    ?.querySelector("[data-chat-user-message-actions]");
+  if (!actions) {
+    throw new Error("Goal message action row was not available");
+  }
+  expect(linkIn(actions, "View run logs")).toHaveAttribute(
+    "href",
+    `/activities/${FIRST_CAPABILITY_RUN_ID}`,
+  );
+  click(buttonIn(actions, "Copy message"));
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([goalBrief]);
+  });
 });
 
 test("Keep run logs under the user message when a run fails without output", async () => {

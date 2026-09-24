@@ -2,6 +2,7 @@ import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
   type ChatEventSendBody,
   chatEventsContract,
+  chatThreadArchiveContract,
   chatThreadEventsContract,
   chatThreadsContract,
   chatThreadSnapshotArchiveSchema,
@@ -17,6 +18,7 @@ import {
   type ChatSearchResponse,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import {
   CHAT_EVENT_SCHEMA_VERSION_HEADER,
@@ -186,6 +188,7 @@ export async function createChatThread(options: {
   title: string;
   model?: string;
   serviceTier?: ChatThreadServiceTier | null;
+  reasoningEffort?: ReasoningEffort;
 }): Promise<ChatThreadCreateResult> {
   const config = await getClientConfig();
   const client = initClient(chatThreadsContract, config);
@@ -199,6 +202,9 @@ export async function createChatThread(options: {
       ...(options.serviceTier === undefined
         ? {}
         : { serviceTier: options.serviceTier }),
+      ...(options.reasoningEffort === undefined
+        ? {}
+        : { reasoningEffort: options.reasoningEffort }),
     },
   });
   if (result.status === 201) {
@@ -226,6 +232,27 @@ export async function renameChatThread(options: {
     return { threadId: options.threadId, title: options.title };
   }
   handleError(result, "Failed to rename chat thread");
+}
+
+export async function setChatThreadArchived(options: {
+  threadId: string;
+  archived: boolean;
+}): Promise<{ threadId: string; archived: boolean }> {
+  const config = await getClientConfig();
+  const client = initClient(chatThreadArchiveContract, config);
+  const request = { params: { id: options.threadId } };
+  const result = options.archived
+    ? await client.archive(request)
+    : await client.unarchive(request);
+  if (result.status === 204) {
+    return { threadId: options.threadId, archived: options.archived };
+  }
+  handleError(
+    result,
+    options.archived
+      ? "Failed to archive chat thread"
+      : "Failed to unarchive chat thread",
+  );
 }
 
 export async function getChatThread(options: {
@@ -329,6 +356,7 @@ export async function listChatEventRows(
 export async function updateChatThreadModelSelection(options: {
   threadId: string;
   model: string | null;
+  reasoningEffort?: ReasoningEffort;
 }): Promise<{ threadId: string; selectedModel: string | null }> {
   const config = await getClientConfig();
   const client = initClient(chatThreadModelSelectionContract, config);
@@ -336,7 +364,12 @@ export async function updateChatThreadModelSelection(options: {
     options.model === null ? null : requireSupportedModel(options.model);
   const result = await client.update({
     params: { id: options.threadId },
-    body: { model },
+    body: {
+      model,
+      ...(options.reasoningEffort === undefined
+        ? {}
+        : { reasoningEffort: options.reasoningEffort }),
+    },
   });
   if (result.status === 204) {
     return {

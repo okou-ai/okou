@@ -394,6 +394,35 @@ class TestAuthBaseUrlRewriteSafety:
         assert "super-secret-token" not in json.dumps(mock_log.call_args_list)
         assert "resolved-secret" not in json.dumps(mock_log.call_args_list)
 
+    async def test_forwarded_url_uses_resolved_query_over_base_and_client_aliases(
+        self, real_flow, mitm_ctx, tmp_path
+    ):
+        flow, allow, sandbox_info, token_meta = make_safety_rewrite_inputs(
+            real_flow,
+            tmp_path,
+            path="/hook?api_key=client;reg%69on=client&client=%C3%A9&&api%5fkey=client2",
+            resolved_base="https://real.example.com/webhook/super-secret-token?api%5Fkey=base;region=us",
+            auth_overrides={"query": {"api_key": "${{ secrets.API_KEY }}"}},
+            token_overrides={"query": {"api_key": "resolved-secret"}},
+        )
+        mock_forward = AsyncMock(return_value=(200, b"", http.Headers()))
+
+        with (
+            patch.object(auth, "get_firewall_headers", AsyncMock(return_value=token_meta)),
+            patch.object(auth, "forward_request", mock_forward),
+            mitm_ctx(),
+        ):
+            result = await handle_firewall_request_without_upstream_admission(
+                flow, allow, sandbox_info
+            )
+
+        assert result is auth.FirewallAuthHandlingResult.INLINE_PROVIDER_RESPONSE
+        mock_forward.assert_awaited_once()
+        assert mock_forward.call_args.args[0] == (
+            "https://real.example.com/webhook/super-secret-token"
+            "?region=us&client=%C3%A9&api_key=resolved-secret"
+        )
+
     async def test_truncated_upstream_response_returns_502_without_partial_body(
         self, headers, real_flow, mitm_ctx, tmp_path
     ):

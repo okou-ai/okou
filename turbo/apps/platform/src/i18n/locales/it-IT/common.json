@@ -1492,7 +1492,6 @@
         },
         "shareDialog": {
           "description": "Invia un post pubblico per la verifica. Un premio approvato per persona.",
-          "draft": "Il report settimanale sui concorrenti lo faccio con {{assistantName}}: legge le fonti e mi restituisce la tabella.",
           "helper": "Il post deve essere pubblico e menzionare {{assistantName}}.",
           "inputLabel": "Link del post",
           "openX": "Apri X",
@@ -1507,7 +1506,8 @@
           "stepPaste": "Incolla il link",
           "stepWrite": "Scrivi il post",
           "submit": "Invia",
-          "title": "Condividi {{assistantName}} su X"
+          "title": "Condividi {{assistantName}} su X",
+          "writingPrompt": "Scrivi con parole tue qualcosa che hai provato davvero con {{assistantName}}."
         },
         "slack": {
           "action": "Aggiungi",
@@ -1742,12 +1742,15 @@
       "cancelFailed": "Impossibile annullare la richiesta. Riprova.",
       "cancelled": "Richiesta annullata",
       "cancelling": "Annullamento…",
+      "checkFailed": "Impossibile verificare il browser. I dati inseriti sono conservati; riprova prima di inviarli.",
+      "clearValue": "Cancella il valore sul sito",
       "completed": "Informazioni aggiunte",
       "continue": "Avvisa l’agente",
       "continuing": "Notifica in corso…",
       "delivered": "Agente avvisato",
       "expired": "Richiesta scaduta",
       "expiredDescription": "Il browser è stato chiuso o questa richiesta non è più attiva.",
+      "keepValue": "Mantieni il valore sul sito",
       "loadFailed": "Impossibile caricare questa richiesta",
       "loadFailedDescription": "Riprova tra poco.",
       "loadingDescription": "Verifica della richiesta…",
@@ -1764,29 +1767,6 @@
       "unavailable": "Richiesta non disponibile",
       "uncertain": "Controlla il browser",
       "uncertainDescription": "Il browser potrebbe aver ricevuto le informazioni. Chiedi all’agente di controllare prima di riprovare."
-    },
-    "browserInteraction": {
-      "applying": "Completamento dell’interazione nel browser",
-      "applyingDescription": "Il browser sta completando questa richiesta.",
-      "callbackFailed": "L’agente non è stato avvisato.",
-      "cancel": "Annulla",
-      "cancelFailed": "Impossibile annullare questa richiesta. Riprova.",
-      "cancelled": "Richiesta annullata",
-      "cancelling": "Annullamento…",
-      "completed": "Interazione nel browser completata",
-      "completeFailed": "Impossibile completare questa richiesta. Riprova.",
-      "completing": "Completamento…",
-      "continue": "Avvisa l’agente",
-      "continuing": "Notifica in corso…",
-      "delivered": "Agente avvisato",
-      "description": "Apri il browser, completa questo passaggio, quindi seleziona Fine.",
-      "done": "Fine",
-      "finish": "Completa il passaggio",
-      "stale": "Browser non più disponibile",
-      "staleDescription": "Chiedi all’agente di creare una nuova richiesta.",
-      "title": "Prendi il controllo del browser",
-      "uncertain": "Controlla il browser",
-      "uncertainDescription": "L’interazione potrebbe essere stata completata. Chiedi all’agente di controllare prima di riprovare."
     },
     "cards": {
       "viewDetails": "Visualizza dettagli"
@@ -1946,11 +1926,10 @@
         "newChat": "Nuova chat",
         "newChatDescription": "Avvia una nuova chat e aggiungi le informazioni importanti che vuoi conservare.",
         "openClaude": "Apri Claude",
-        "originalAccount": "Abbonamento personale {{account}}",
-        "originalAccountUnavailable": "Abbonamento personale disconnesso",
-        "originalAccountUnknown": "Abbonamento personale non verificato",
         "outputLimitDescription": "La risposta si è fermata prima di terminare. Scegli «Continua» per riprendere.",
         "outputLimitTitle": "La risposta ha raggiunto il limite di lunghezza",
+        "personalAccount": "Abbonamento personale {{account}}",
+        "personalAccountDisconnected": "Abbonamento personale disconnesso",
         "providerBalanceDescription": "Controlla il credito del tuo account presso il provider, poi riprova.",
         "providerBalanceTitle": "Il tuo account del provider ha bisogno di più credito",
         "providerConnectionDescription": "Apri Fornitori di modelli per ricollegare o aggiornare il tuo account, poi riprova.",
@@ -2122,6 +2101,21 @@
       "removeQueuedMessage": "Rimuovi il messaggio in coda",
       "skipAutomationEvent": "Salta evento di automazione"
     },
+    "remoteAccess": {
+      "defaultEnabled": "Abilitato per impostazione predefinita nelle chat",
+      "enabledCount_one": "{{count}} attivo",
+      "enabledCount_many": "{{count}} attivi",
+      "enabledCount_other": "{{count}} attivi",
+      "loadFailed": "Impossibile caricare l'accesso remoto.",
+      "loading": "Caricamento accesso remoto…",
+      "off": "Disattivo",
+      "on": "Attivo",
+      "requiresSsh": "Richiede anche l'accesso all'host SSH {{name}}.",
+      "retry": "Riprova",
+      "title": "Accesso remoto",
+      "unavailableSsh": "host SSH non disponibile",
+      "useDefault": "Usa impostazione predefinita"
+    },
     "replaceDraft": {
       "description": "Continuando, la bozza corrente nell'editor verrà cancellata e verrà avviato un prompt del workflow.",
       "title": "Sostituire la bozza nell'editor?"
@@ -2188,6 +2182,7 @@
       "linkCopied": "Link copiato",
       "messageShareFailed": "Impossibile creare il link condiviso. Riprova.",
       "publicDescription": "I messaggi selezionati e i relativi allegati saranno pubblici.",
+      "selectAll": "Seleziona tutto",
       "selectedCount_one": "{{count}} selezionato",
       "selectedCount_many": "{{count}} selezionati",
       "selectedCount_other": "{{count}} selezionati",
@@ -2894,7 +2889,6 @@
       "ariaLabel": "Discussione della chat",
       "changeIcon": "Cambia icona",
       "emoji": {
-        "archive": "Archivia",
         "done": "Fatto",
         "idea": "Idea",
         "no": "No",
@@ -2971,12 +2965,12 @@
     "configuration": "Cloudflare Access",
     "createNew": "Crea nuovo Cloudflare Access",
     "delete": "Elimina Cloudflare Access",
-    "deleteHelp": "Eliminare questo Cloudflare Access inutilizzato? Il Service Token salvato non sarà recuperabile.",
+    "deleteHelp": "Eliminare questo Cloudflare Access? Il Service Token salvato non sarà recuperabile. Non è possibile eliminarlo finché un host lo utilizza.",
     "description": "Accedi alle applicazioni protette con i token di servizio Cloudflare Access.",
     "edit": "Modifica Cloudflare Access",
-    "empty": "Nessun Cloudflare Access. Aggiungi un token di servizio per accedere alle applicazioni protette.",
     "failed": "Impossibile salvare la modifica Cloudflare Access. Riprova.",
-    "inUse": "Un host usa questo Cloudflare Access. Controlla gli host interessati e cambia la loro configurazione o eliminali prima.",
+    "forbidden": "Solo gli amministratori dell'organizzazione possono modificare Cloudflare Access condiviso.",
+    "inUse": "Un host SSH utilizza questo Cloudflare Access. Il proprietario deve prima associarlo a un'altra configurazione o eliminarlo.",
     "inUseHelp": "Seleziona un altro Cloudflare Access per questi host, passa esplicitamente a Diretta oppure eliminali prima di eliminare questo.",
     "invalidInput": "Alcune impostazioni Cloudflare Access non sono valide. Controlla i campi e riprova.",
     "keepChanges": "Applica le mie modifiche a questa versione",
@@ -2987,6 +2981,9 @@
     "missing": "Questo Cloudflare Access non è più disponibile. Selezionane un altro o creane uno.",
     "name": "Nome",
     "namePlaceholder": "ad es. Accesso produzione",
+    "organization": "Organizzazione",
+    "organizationHelp": "Tutti i membri dell'organizzazione possono usare questo Service Token. Solo gli amministratori possono modificarlo.",
+    "personal": "Personale",
     "replace": "Sostituisci Service Token",
     "resourceIdConflict": "Questo ID risorsa non può essere utilizzato. Chiudi e riapri il modulo per riprovare.",
     "retry": "Riprova",
@@ -2994,6 +2991,8 @@
     "revisionExhausted": "Questa configurazione non può più essere aggiornata. Creane una nuova.",
     "save": "Salva",
     "saveUncertain": "Non abbiamo potuto confermare se le modifiche sono state salvate. Riprova lo stesso salvataggio, oppure chiudi e controlla l’elenco prima di aggiungerle di nuovo.",
+    "scope": "Chi può usarlo",
+    "sectionEmpty": "Non ci sono ancora configurazioni qui.",
     "select": "Seleziona Cloudflare Access",
     "summary_one": "{{count}} Cloudflare Access impostato",
     "summary_many": "{{count}} Cloudflare Access impostati",
@@ -3001,10 +3000,10 @@
     "title": "Cloudflare Access",
     "tokenHelp": "Accedi alle applicazioni protette con i token di servizio Cloudflare Access.",
     "unavailable": "Cloudflare Access non è disponibile per questo account.",
-    "unused": "Non utilizzate da alcun host",
-    "usedBy_one": "Usata da {{count}} host:",
-    "usedBy_many": "Usata da {{count}} host:",
-    "usedBy_other": "Usata da {{count}} host:"
+    "unused": "Nessuno dei tuoi host la usa",
+    "usedBy_one": "Usata da {{count}} dei tuoi host:",
+    "usedBy_many": "Usata da {{count}} dei tuoi host:",
+    "usedBy_other": "Usata da {{count}} dei tuoi host:"
   },
   "connectors": {
     "access": {
@@ -4273,6 +4272,22 @@
         "notNow": "Non ora",
         "skip": "Salta per ora"
       },
+      "compliance": {
+        "frameworks": {
+          "ccpa": "CCPA / CPRA",
+          "gdpr": "GDPR",
+          "hipaa": "HIPAA",
+          "iso27001": "ISO/IEC 27001",
+          "soc2": "SOC 2 Type II"
+        },
+        "link": "Dettagli sulla sicurezza",
+        "status": {
+          "aligned": "Allineato",
+          "compliant": "Conforme",
+          "inProgress": "In corso"
+        },
+        "title": "La conformità di Okou, pensata per la tua fiducia"
+      },
       "documentTitles": {
         "experience": "La tua esperienza con l'IA",
         "industry": "Scegli il tuo ambito",
@@ -4281,13 +4296,14 @@
         "skills": "Importa le tue skill",
         "slack": "Aggiungi Okou a Slack",
         "sources": "Collega il tuo lavoro",
-        "team": "Invita un collega"
+        "team": "Invita un membro del team"
       },
       "experience": {
-        "copy": "Collega il piano che già paghi e il lavoro gira lì, senza consumare crediti Okou.",
-        "no": "No, è la prima volta",
-        "noCopy": "Okou sceglie una prima attività per te.",
-        "title": "Hai già usato Codex o Claude Code?"
+        "copy": "Inizia con una guida oppure usa il tuo piano Codex o Claude Code.",
+        "no": "Sono alle prime armi con gli agenti AI",
+        "noCopy": "Okou ti aiuta a scegliere un primo compito utile.",
+        "title": "Come vuoi iniziare con Okou?",
+        "trust": "Le attività usano il tuo piano Codex o Claude Code invece dei crediti Okou, così puoi fare di più senza preoccuparti dei consumi. Collegalo ora o più tardi."
       },
       "industries": {
         "coaching": {
@@ -4336,7 +4352,7 @@
         }
       },
       "industry": {
-        "copy": "Okou lo usa per scegliere la tua prima attività e le fonti da cui parte.",
+        "copy": "Okou è l’assistente di lavoro per te e il tuo team. Trasforma le informazioni sparse in lavoro fatto, nel cloud. Scegli il tuo settore per una prima attività su misura.",
         "title": "Che tipo di lavoro fai?"
       },
       "profile": {
@@ -4352,7 +4368,7 @@
       },
       "skills": {
         "copied": "Copiato",
-        "copy": "Incolla questo prompt nella tua sessione di {{provider}} e porterà in Okou le skill che hai sul computer.",
+        "copy": "Esegui questo prompt in {{provider}} per importare le skill che hai già creato, così Okou può usarle da subito.",
         "copyError": "Non è stato possibile copiare il prompt.",
         "copyPrompt": "Copia prompt",
         "importedCopy": "Importato come workflow di Okou.",
@@ -4363,7 +4379,7 @@
         "promptLabel": "Prompt per l’importazione delle skill",
         "promptTitle": "Esegui questo in {{provider}}",
         "startError": "Non è stato possibile aprire la sessione di importazione.",
-        "title": "Porta con te le skill che hai già scritto.",
+        "title": "Porta le tue skill in Okou",
         "tryAgain": "Riprova",
         "waiting": "Le skill importate compaiono qui man mano che arrivano."
       },
@@ -4375,7 +4391,7 @@
         "connectedCopy": "Apri Slack e menziona @Okou per affidargli un lavoro.",
         "connectedStatus": "Aggiunto al tuo workspace",
         "connectedTitle": "Slack è collegato",
-        "copy": "Aggiungilo una volta, poi menziona @Okou dove il lavoro già accade.",
+        "copy": "Menziona @Okou per assegnargli un compito e trova il risultato nella stessa conversazione.",
         "name": "Slack",
         "otherAdded": "Aggiunto",
         "otherImessage": "iMessage",
@@ -4404,12 +4420,13 @@
         "previewWorkspace": "Northwind",
         "rowCopy": "Funziona in qualsiasi canale in cui lo aggiungi.",
         "rowTitle": "Okou for Slack",
-        "title": "Affida un lavoro a Okou senza uscire da Slack."
+        "title": "Porta avanti il lavoro in Slack"
       },
       "sources": {
-        "copy": "Lavora nel cloud, dagli strumenti che il tuo team già usa. Dieci volte il risultato, meno attrito operativo, costi più bassi. Collega una fonte per iniziare.",
-        "note": "Scegli tu quali account collegare.",
-        "title": "Okou è per te, e si condivide con tutto il team."
+        "copy": "Più Okou conosce il tuo lavoro, più diventa intelligente. Collega uno strumento che usi ogni giorno per iniziare con un’attività basata sul tuo lavoro reale.",
+        "permissions": "Okou usa un piccolo campione per personalizzare la tua prima attività. Sei tu a decidere cosa possono fare gli Agent e per quanto tempo.",
+        "securityLink": "Come Okou protegge i tuoi dati",
+        "title": "Collega uno strumento di lavoro"
       },
       "startingPrompt": {
         "exact": {
@@ -4743,32 +4760,33 @@
         "connecting": "Collegamento…",
         "failedNote": "Non siamo riusciti a collegare {{provider}}. Puoi riprovare o collegarlo più tardi.",
         "retry": "Riprova",
-        "rowCopy": "Gira sul tuo piano, non sui crediti Okou.",
+        "rowCopy": "Collegalo per usare il tuo piano anziché i crediti Okou.",
         "unconfirmedNote": "Non siamo riusciti a verificare il collegamento a {{provider}}. Puoi riprovare o collegarlo più tardi."
       },
       "team": {
-        "copy": "Invita un collega adesso, o fallo più tardi dal menu del workspace.",
+        "copy": "Invita un membro del team a usare con te i flussi di lavoro condivisi.",
         "invite": "Invia invito",
         "invited": "Invitato",
-        "label": "Email del collega",
-        "note": "Entrano in questo workspace; i loro account restano loro.",
+        "label": "Email del membro del team",
+        "note": "Potrà iniziare subito a lavorare con Okou.",
         "notSent": "Non inviato",
-        "panelTitle": "Invita un collega",
-        "placeholder": "teammate@company.com",
+        "panelTitle": "Invita un membro del team",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "Gli account che collegano restano loro: nulla viene condiviso senza di loro.",
-          "workflows": "Chiunque qui può eseguire i workflow che questo workspace ha già.",
-          "workspace": "Entrano in questo workspace, con le fonti che hai appena collegato."
+          "accounts": "Collega i propri strumenti quando servono.",
+          "workflows": "Può eseguire tutti i flussi di lavoro del team.",
+          "workspace": "Entra nel tuo workspace."
         },
         "sending": "Invio in corso…",
-        "title": "Porta con te le persone che fanno questo lavoro."
+        "title": "Rendi Okou utile a tutto il team",
+        "trust": "Tutti usano gli stessi flussi di lavoro e collegano i propri strumenti."
       },
       "welcome": {
-        "copy": "Comincia con una prima attività, scelta per il lavoro che hai appena collegato.",
+        "copy": "Rivedi un compito suggerito per il tuo lavoro, adattalo al tuo obiettivo e lascia iniziare Okou.",
         "offerTitle": "La prima ora di consulenza la offriamo noi, più fino a 100 crediti —",
         "promptLabel": "Il tuo prompt iniziale",
         "start": "Inizia con Okou",
-        "title": "Okou è pronto per te"
+        "title": "Inizia con un compito che conta"
       }
     },
     "templatePicker": {
@@ -6426,7 +6444,7 @@
       }
     },
     "paidTools": {
-      "description": "Scegli gli strumenti a pagamento che Okou può usare nelle tue attività. Ogni utilizzo consuma crediti.",
+      "description": "Questi strumenti consumano crediti integrati e Okou li usa automaticamente mentre lavora alle tue attività. Se disattivi uno strumento, Okou non lo userà.",
       "disabledForCreation": "{{tool}} è disattivato per te",
       "loadError": "Impossibile caricare le impostazioni.",
       "loading": "Caricamento delle impostazioni…",
@@ -6436,7 +6454,7 @@
       "saving": "Salvataggio…",
       "scope": "Queste impostazioni si applicano solo a te in {{workspace}}.",
       "timing": "Le modifiche valgono per le esecuzioni future. Le attività in corso o già preparate potrebbero mantenere le impostazioni precedenti.",
-      "title": "Strumenti a pagamento",
+      "title": "Strumenti integrati",
       "tools": {
         "avatar-video-generation": {
           "description": "Crea video con avatar parlanti.",
@@ -6603,12 +6621,6 @@
           "title": "Morning Brief",
           "trigger": "Esegui Morning Brief ora",
           "triggering": "Messa in coda…"
-        },
-        "voiceInput": {
-          "default": "Predefinito ({{model}})",
-          "description": "Scegli il modello per input vocale v2. I modelli di trascrizione usano {{model}} per rifinire il testo.",
-          "title": "Modello di input vocale",
-          "unavailable": "Modello non disponibile ({{model}})"
         },
         "welcomeThread": {
           "create": "Crea chat di benvenuto",
@@ -6902,8 +6914,10 @@
       "keepChanges": "Applica le mie modifiche a questa versione",
       "latest": "Ultime impostazioni salvate",
       "mode": "Connessione",
+      "needsRebind": "Questo host richiede una nuova configurazione Cloudflare Access. Modificalo per associarlo di nuovo o scegliere Direct. Fino ad allora non potrà connettersi.",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Nome host pubblicato",
+      "rebindHelp": "Scegli una configurazione Cloudflare Access consentita o Direct per ripristinare questo host. Nulla cambia finché non salvi.",
       "reviewHelp": "La bozza viene conservata. Conferma le ultime impostazioni salvate prima di applicare le modifiche.",
       "title": "Cloudflare Access",
       "unavailable": "Cloudflare Access non è disponibile per questo account."
@@ -6952,7 +6966,6 @@
       "unused": "Non utilizzate da alcun host"
     },
     "credentialsHelp": "Le credenziali sono di sola scrittura e restano fuori dal sandbox. Incolla la chiave completa; gli spazi vengono conservati. I campi vengono cancellati alla chiusura del modulo.",
-    "credentialsTab": "Credenziali",
     "delete": "Elimina host",
     "deleteHelp": "Eliminare questo host? Le sue credenziali saranno conservate. Gli Agents non lo vedranno più nell’inventario.",
     "description": "Configura host SSH per consentire ai tuoi agenti di eseguire comandi remoti.",
@@ -6979,7 +6992,6 @@
     "fingerprint": "Chiave host memorizzata",
     "host": "Nome host pubblico o indirizzo IP",
     "hostSection": "Host",
-    "hostsTab": "Host",
     "label": "SSH",
     "loadFailed": "Impossibile caricare le impostazioni SSH. Riprova.",
     "loading": "Caricamento degli host SSH…",
@@ -7009,7 +7021,6 @@
     "summary_one": "{{count}} host configurato",
     "summary_many": "{{count}} host configurati",
     "summary_other": "{{count}} host configurati",
-    "title": "Host SSH",
     "unavailable": "L’accesso SSH non è disponibile per questo account.",
     "username": "Nome utente SSH"
   },
@@ -7146,7 +7157,6 @@
       "usernamePasswordHint": "Inserisci la password per questo nome utente",
       "usernamePasswordMethod": "Nome utente e password"
     },
-    "credentialsTab": "Credenziali",
     "delete": "Elimina host",
     "deleteHelp": "Eliminare questo host salvato? Le credenziali riutilizzabili verranno conservate.",
     "description": "Consenti ai tuoi agenti di visualizzare e controllare i tuoi desktop remoti.",
@@ -7169,7 +7179,6 @@
     },
     "host": "Nome host o indirizzo IP",
     "hostHint": "ad es. desktop.example.com",
-    "hostsTab": "Host",
     "label": "VNC",
     "loadFailed": "Impossibile caricare la configurazione VNC.",
     "loading": "Caricamento della configurazione VNC…",
@@ -7205,7 +7214,6 @@
     "summary_one": "{{count}} host configurato",
     "summary_many": "{{count}} host configurati",
     "summary_other": "{{count}} host configurati",
-    "title": "Accesso remoto VNC",
     "transport": {
       "appleDhDestinationHelp": "Per Apple DH, inserisci 127.0.0.1 o ::1. È l’indirizzo di loopback del Mac raggiunto tramite l’host SSH selezionato.",
       "destination": "Destinazione RFB",

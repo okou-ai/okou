@@ -55,12 +55,7 @@ use futures_util::FutureExt;
 use tokio::task::JoinSet;
 use tracing::info;
 
-use super::active_runs::{ActiveRunHandoffRequest, ActiveRunReuseState};
 use super::factory_lifecycle::SharedFactory;
-use super::idle_lifecycle::{
-    IdlePressureRequest, IdlePressureSelection, ReservedIdleActivation,
-    select_idle_entries_for_pressure,
-};
 use super::job_discovery::{
     ClaimedActivationGuard, ClaimedJobSetup, FinalizingAdmission, ReadyClaimedResource,
     ReservedActivation, ReservedActivationRequest, activate_reserved_idle, build_spawn_job_request,
@@ -77,8 +72,13 @@ use crate::idle_pool::{ExactIdleReservationMiss, FinalizingHandoffCandidate};
 use crate::resource_budget::{BudgetLease, ResourceBudget};
 use crate::telemetry::JobTelemetry;
 use crate::workspace_image_cache::WorkspaceImagePrepareLockPolicy;
+use runner_lifecycle::active_runs::{ActiveRunHandoffRequest, ActiveRunReuseState};
 use runner_provider::ClaimedJob;
 use runner_provider::RunCancellationRegistration;
+use runner_supervisor::idle_lifecycle::{
+    IdlePressureRequest, IdlePressureSelection, ReservedIdleActivation,
+    select_idle_entries_for_pressure,
+};
 use runner_types::ids::RunId;
 use runner_types::types::{CompleteRequest, SandboxReuseResult};
 
@@ -1024,10 +1024,10 @@ mod tests {
 
     use tokio::sync::Notify;
 
-    use super::super::active_runs::{ActiveRunHandoffDeliveryResult, ActiveRuns};
     use super::*;
     use crate::idle_pool::test_support::ParkedIdleCandidateBuilder;
     use crate::resource_budget::ResourceBudget;
+    use runner_lifecycle::active_runs::{ActiveRunHandoffDeliveryResult, ActiveRuns};
     use sandbox_mock::{MockSandbox, MockSandboxFactory, MockSandboxOverrides};
 
     fn delivered_handoff_request() -> (

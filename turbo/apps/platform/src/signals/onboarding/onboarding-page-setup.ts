@@ -19,6 +19,7 @@ import {
   OnboardingPresentationRunPage,
 } from "../../views/onboarding/onboarding-template-run-pages.tsx";
 import { hideAppSkeleton$, showAppSkeleton$ } from "../app-skeleton.ts";
+import { authenticatedIdentity$ } from "../auth.ts";
 import { brandName$, type BrandName } from "../branding.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
@@ -104,6 +105,8 @@ function createOnboardingPageSetup(
   return command(async ({ get, set }, signal: AbortSignal) => {
     set(showAppSkeleton$);
     const searchParams = get(searchParams$);
+    const { userId } = await get(authenticatedIdentity$);
+    signal.throwIfAborted();
 
     const status = await get(onboardingStatus$);
     signal.throwIfAborted();
@@ -119,7 +122,7 @@ function createOnboardingPageSetup(
     }
 
     set(sendEvent$, "onboarding-start");
-    set(hydrateOnboardingRoute$, config.step, searchParams);
+    set(hydrateOnboardingRoute$, config.step, searchParams, userId);
     const draft = get(onboardingDraft$);
     if (config.fallbackPath && !hasRequiredSelection(config.step, draft)) {
       set(detachedNavigateTo$, config.fallbackPath, {
@@ -224,7 +227,9 @@ export const setupRetiredOnboardingVideoPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(showAppSkeleton$);
     const params = get(searchParams$);
-    const checkoutDraft = set(readOnboardingCheckoutDraft$, params);
+    const { userId } = await get(authenticatedIdentity$);
+    signal.throwIfAborted();
+    const checkoutDraft = set(readOnboardingCheckoutDraft$, params, userId);
     const prompt =
       checkoutDraft?.note.trim() ||
       params.get("prompt")?.trim() ||
@@ -240,7 +245,7 @@ export const setupRetiredOnboardingVideoPage$ = command(
     }
     signal.throwIfAborted();
     set(resetOnboardingDraft$);
-    // The home route owns the onboarding guard. Do not auto-submit the old
+    // Open the recovered brief for editing. Do not auto-submit the old
     // template prompt after a completed payment or a stale marketing link.
     set(detachedNavigateTo$, ROUTES.home, {
       searchParams: new URLSearchParams(prompt ? { prompt } : {}),

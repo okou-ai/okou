@@ -205,6 +205,7 @@ async function collectThread(
           lastReadAt: chatThreads.lastReadAt,
           pinnedAt: chatThreads.pinnedAt,
           pinOrder: chatThreads.pinOrder,
+          archived: chatThreads.archived,
           renamedAt: chatThreads.renamedAt,
           selectedModel: chatThreads.selectedModel,
           selectedImageModel: chatThreads.selectedImageModel,

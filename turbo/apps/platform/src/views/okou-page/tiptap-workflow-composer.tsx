@@ -432,15 +432,18 @@ function useComposerWorkflowSuggestions(
   query: string | undefined,
 ) {
   const workflowsLoadable = useLastLoadable(composer.workflow.workflows$);
+  // Null means the list is not requested yet; the last loadable keeps that
+  // null while the first request is in flight.
+  const requested =
+    workflowsLoadable.state === "hasData" ? workflowsLoadable.data : undefined;
   const workflows = buildComposerSlashWorkflows({
     agentId: composer.agentId,
-    workflows:
-      workflowsLoadable.state === "hasData" ? workflowsLoadable.data : [],
+    workflows: requested ?? [],
   });
   return {
     workflows:
       query === undefined ? [] : findWorkflowQueryMatches(workflows, query),
-    loading: workflowsLoadable.state === "loading",
+    loading: workflowsLoadable.state === "loading" || requested === null,
   };
 }
 

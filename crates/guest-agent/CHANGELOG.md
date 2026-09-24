@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.98.6](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.5...guest-agent-v0.98.6) (2026-09-24)
+
+
+### Documentation
+
+* **rust:** correct Codex cleanup caller reference ([#36553](https://github.com/okou-ai/okou/issues/36553)) ([7ae4bff](https://github.com/okou-ai/okou/commit/7ae4bff91af19cb48a6db38f00bc31809aba9f64))
+
 ## [0.98.5](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.4...guest-agent-v0.98.5) (2026-09-24)
 
 

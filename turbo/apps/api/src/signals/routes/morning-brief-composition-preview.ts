@@ -24,7 +24,7 @@ import {
  * nothing connected gets an honest empty answer rather than a rejection.
  *
  * Production answers 404 before authentication regardless of
- * `simpleMorningBrief`, so the feature switch never exposes this surface, and a
+ * `FeatureSwitchKey.NativeMorningBrief`, so the feature switch never exposes this surface, and a
  * preview composition is never promoted into production delivery.
  */
 

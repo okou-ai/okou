@@ -28,7 +28,7 @@ import {
   readThreadEventTypes,
   seedRecipientAddress,
 } from "../../../test-fixtures/morning-brief-native-schedule";
-import { createScopedMorningBriefCronRoutesForTest } from "../cron-execute-morning-briefs";
+import { createScopedInlineMorningBriefCronRoutesForTest } from "../cron-execute-morning-briefs";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
@@ -55,7 +55,7 @@ import { createRouteMocks } from "./helpers/route-test";
  * occurrence settled, so the owner saw silence rather than an error, and from
  * outside that run was indistinguishable from a genuinely quiet morning.
  *
- * Two things are under test here, both through the registered production cron
+ * Two slot-engine behaviors are under test here through a test-only inline
  * route with the real generation, Chat and shared-outbox engines behind it:
  *
  * - a healthy multi-source collection reaches its single model request even
@@ -146,7 +146,7 @@ afterEach(() => {
 function cronClient(owner: Fixture) {
   return setupApp({
     context,
-    routes: createScopedMorningBriefCronRoutesForTest(owner),
+    routes: createScopedInlineMorningBriefCronRoutesForTest(owner),
   })(cronExecuteMorningBriefsContract);
 }
 
@@ -270,7 +270,7 @@ async function fixture(options: SourceOptions = {}): Promise<Fixture> {
   await updateFeatureSwitchesForUser(
     context,
     { orgId, userId },
-    { [FeatureSwitchKey.SimpleMorningBrief]: true },
+    { [FeatureSwitchKey.NativeMorningBrief]: true },
   );
   if (options.slack !== false) {
     const installation = await store.set(

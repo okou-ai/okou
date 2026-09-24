@@ -1,4 +1,5 @@
 import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
+import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import {
   sshHostKeySchema,
   type RunnerSshResolveRequest,
@@ -16,11 +17,16 @@ import { agentSshAccess } from "@okouai/db/schema/agent-ssh-access";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { sshConnectionObservations } from "@okouai/db/schema/ssh-connection-observation";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
-import { and, eq, lt, ne, or, sql } from "drizzle-orm";
+import { and, eq, isNotNull, lt, ne, or, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import { decryptStoredSecretValue } from "./crypto.utils";
+import { settle } from "../utils";
+import {
+  runThreadSshAccess,
+  runUsesThreadRemoteAccess,
+} from "./run-thread-remote-access.service";
 
 type SshResolveInput = RunnerSshResolveRequest & {
   readonly runId: string;
@@ -34,17 +40,21 @@ function currentConnectionQuery(
   db: Pick<Db, "select">,
   input: SshResolveInput,
   lockAuthority: boolean,
+  threadMode: boolean,
 ) {
   const query = db
     .select({
       id: sshConnections.id,
+      agentId: agents.id,
       orgId: agentRuns.orgId,
       userId: agentRuns.userId,
       host: sshConnections.host,
       port: sshConnections.port,
       username: sshCredentials.username,
+      credentialId: sshCredentials.id,
       authMethod: sshCredentials.authMethod,
       encryptedPassword: sshCredentials.encryptedPassword,
+      credentialRevision: sshCredentials.revision,
       generation: sshConnections.generation,
       algorithm: sshConnections.learnedHostKeyAlgorithm,
       fingerprint: sshConnections.learnedHostKeyFingerprint,
@@ -76,7 +86,7 @@ function currentConnectionQuery(
         or(eq(agents.visibility, "public"), eq(agents.owner, agentRuns.userId)),
       ),
     )
-    .innerJoin(
+    .leftJoin(
       agentSshAccess,
       and(
         eq(agentSshAccess.agentId, agents.id),
@@ -123,11 +133,12 @@ function currentConnectionQuery(
           agentRuns.runnerHeartbeatGeneration,
           input.runnerIdentity.heartbeatGeneration,
         ),
+        threadMode ? runThreadSshAccess(db) : isNotNull(agentSshAccess.agentId),
       ),
     );
   return lockAuthority
     ? query.for("share", {
-        of: [agentRuns, agentSessions, agents, agentSshAccess, sshCredentials],
+        of: [agentRuns, agentSessions, agents, sshCredentials],
       })
     : query;
 }
@@ -138,10 +149,34 @@ async function currentConnection(
   lockAuthority: boolean,
   signal: AbortSignal,
 ) {
-  const [row] = await currentConnectionQuery(db, input, lockAuthority);
+  const threadMode = await runUsesThreadRemoteAccess(db, input.runId, signal);
+  const [row] = await currentConnectionQuery(
+    db,
+    input,
+    lockAuthority,
+    threadMode,
+  );
   signal.throwIfAborted();
   if (!row) {
     return null;
+  }
+  if (lockAuthority && !threadMode) {
+    // The nullable grant join cannot be row-locked with the outer query.
+    const [grant] = await db
+      .select({ agentId: agentSshAccess.agentId })
+      .from(agentSshAccess)
+      .where(
+        and(
+          eq(agentSshAccess.agentId, row.agentId),
+          eq(agentSshAccess.orgId, row.orgId),
+          eq(agentSshAccess.userId, row.userId),
+        ),
+      )
+      .for("share");
+    signal.throwIfAborted();
+    if (!grant) {
+      return null;
+    }
   }
   if (row.needsRebind) {
     return null;
@@ -195,17 +230,12 @@ function learnedHostKey(row: {
   });
 }
 
-export async function resolveRunnerSsh(
-  db: Pick<Db, "select">,
-  input: SshResolveInput,
+async function decryptRunnerSsh(
+  row: NonNullable<Awaited<ReturnType<typeof currentConnection>>>,
   signal: AbortSignal,
 ): Promise<RunnerSshResolveResponse> {
-  const row = await currentConnection(db, input, false, signal);
-  if (!row) {
-    return unavailable;
-  }
   const hostKey = learnedHostKey(row);
-  // The joined snapshot is the authority handoff. Never hold DB locks across KMS.
+  // Never hold a database transaction or D1 lock across KMS.
   const common = {
     host: row.host,
     port: row.port,
@@ -265,6 +295,51 @@ export async function resolveRunnerSsh(
     });
   }
   return { outcome: "resolved", ...common, privateKey, passphrase };
+}
+
+export async function resolveRunnerSsh(
+  db: Db,
+  input: SshResolveInput,
+  signal: AbortSignal,
+): Promise<RunnerSshResolveResponse> {
+  const initial = await currentConnection(db, input, false, signal);
+  if (!initial) {
+    return unavailable;
+  }
+  const resolved = await decryptRunnerSsh(initial, signal);
+  // The KMS round trip can race user.deleted, a grant removal or a credential
+  // rotation. The existing D1 shared admission is the final authority handoff;
+  // it never spans KMS and prevents a committed closure from returning secrets.
+  const admitted = await db.transaction(async (tx) => {
+    const writable = await settle(
+      assertErasureSubjectWritable(tx, [
+        { subjectKind: "user", subjectId: initial.userId },
+        { subjectKind: "organization", subjectId: initial.orgId },
+      ]),
+      signal,
+    );
+    if (!writable.ok) {
+      if (
+        writable.error instanceof Error &&
+        writable.error.message === "account_erasure:subject_closed"
+      ) {
+        return false;
+      }
+      throw writable.error;
+    }
+    const current = await currentConnection(tx, input, false, signal);
+    return Boolean(
+      current &&
+      current.id === initial.id &&
+      current.generation === initial.generation &&
+      current.credentialId === initial.credentialId &&
+      current.credentialRevision === initial.credentialRevision &&
+      current.accessId === initial.accessId &&
+      current.access?.generation === initial.access?.generation,
+    );
+  });
+  signal.throwIfAborted();
+  return admitted ? resolved : unavailable;
 }
 
 export async function pinRunnerSsh(

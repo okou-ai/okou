@@ -1,6 +1,6 @@
 [package]
 name = "guest-storage-apply"
-version = "0.24.18"
+version = "0.24.19"
 edition.workspace = true
 
 [dependencies]
@@ -17,6 +17,7 @@ guest-telemetry.workspace = true
 
 [dev-dependencies]
 httpmock = { workspace = true, features = ["cookies"] }
+proptest = { workspace = true, features = ["std"] }
 tempfile = { workspace = true, features = ["getrandom"] }
 
 [lints]

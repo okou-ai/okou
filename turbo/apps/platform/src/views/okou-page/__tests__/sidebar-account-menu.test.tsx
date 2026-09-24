@@ -567,8 +567,8 @@ test("Review personal subscription usage in the account menu", async () => {
   expect(
     within(panel).getByRole("heading", { name: "Claude Code" }),
   ).toBeInTheDocument();
-  expect(within(panel).getAllByText("5h")).toHaveLength(2);
-  expect(within(panel).getAllByText("week")).toHaveLength(2);
+  expect(within(panel).getAllByText("5H")).toHaveLength(2);
+  expect(within(panel).getAllByText("Week")).toHaveLength(2);
   expect(within(panel).getByText("82%")).toBeInTheDocument();
   expect(within(panel).getByText("55%")).toBeInTheDocument();
   expect(within(panel).getByText("88%")).toBeInTheDocument();
@@ -582,7 +582,7 @@ test("Review personal subscription usage in the account menu", async () => {
   ).not.toBeInTheDocument();
 
   const codexFiveHour = within(panel).getByRole("progressbar", {
-    name: "Codex 5h remaining",
+    name: "Codex 5H remaining",
   });
   expect(codexFiveHour).toHaveAttribute("aria-valuenow", "82");
   fireEvent.focus(codexFiveHour);
@@ -787,7 +787,6 @@ test("Toggle network-body capture in Debug settings", async () => {
     theme: "system",
     colorTheme: null,
     captureNetworkBodiesRemaining: 0,
-    voiceInputModel: null,
   };
   context.mocks.data.userPreferences(preferences);
   context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {

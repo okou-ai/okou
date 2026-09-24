@@ -297,6 +297,7 @@ import { VncLoadError } from "./vnc-load-error.tsx";
 import { VncConnectorCard } from "./components/settings/vnc-connector-card.tsx";
 import { SshLoadError } from "./ssh-load-error.tsx";
 import { SshConnectorCard } from "./components/settings/ssh-connector-card.tsx";
+import { ThreadRemoteAccessSection } from "./remote-access-controls.tsx";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { orgModelPolicies$ } from "../../signals/external/org-model-policies.ts";
 import {
@@ -6265,9 +6266,11 @@ function AddConnectorsDialog({
 function ComputerUseConnectorMenuSection({
   computerUse,
   onOpenDownloadDialog,
+  remoteAccess,
 }: {
   computerUse: ComposerComputerUse;
   onOpenDownloadDialog: () => void;
+  remoteAccess?: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
@@ -6294,6 +6297,7 @@ function ComputerUseConnectorMenuSection({
           />
         </span>
       </label>
+      {remoteAccess}
       <div className="mx-2 my-1 border-t border-border/50" />
       <div className="px-2 pb-1 pt-1 text-xs text-muted-foreground">
         {t(($) => {
@@ -6379,6 +6383,40 @@ function ComputerUseConnectorMenuSection({
         }
       />
     </div>
+  );
+}
+
+function ComposerRemoteAccessMenu({
+  signals,
+  computerUse,
+  onOpenDownloadDialog,
+  remoteMenuOpen,
+  onRemoteMenuOpenChange,
+}: {
+  signals: ComposerSignals;
+  computerUse: ComposerComputerUse | undefined;
+  onOpenDownloadDialog: () => void;
+  remoteMenuOpen: boolean;
+  onRemoteMenuOpenChange: (open: boolean) => void;
+}) {
+  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess];
+  const remoteAccess = enabled ? (
+    <ThreadRemoteAccessSection
+      threadId={signals.threadId}
+      remoteAccess$={signals.remoteAccess$}
+      pendingRemoteAccess={signals.pendingRemoteAccess}
+      open={remoteMenuOpen}
+      onOpenChange={onRemoteMenuOpenChange}
+    />
+  ) : null;
+  return computerUse ? (
+    <ComputerUseConnectorMenuSection
+      computerUse={computerUse}
+      onOpenDownloadDialog={onOpenDownloadDialog}
+      remoteAccess={remoteAccess}
+    />
+  ) : (
+    remoteAccess
   );
 }
 
@@ -7212,6 +7250,12 @@ function ConnectorsPopoverButton({
 }) {
   const { t } = useTranslation();
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
+  const remoteMenuOpen = useGet(
+    signals.connector.connectorUiState$,
+  ).remoteMenuOpen;
+  const setRemoteMenuOpen = (open: boolean) => {
+    updateConnectorUi({ remoteMenuOpen: open });
+  };
   const accountMenuOpen = useGet(signals.connector.accounts.menuOpen$);
   const closeAccountMenu = useSet(signals.connector.accounts.closeMenu$);
   const downloadDialogOpen = useGet(
@@ -7247,20 +7291,24 @@ function ConnectorsPopoverButton({
         popoverSearch: "",
       });
       closeAccountMenu();
+      setRemoteMenuOpen(false);
     }
   };
 
   return (
     <Popover
       onOpenChange={(open, eventDetails) => {
-        if (
-          !open &&
-          accountMenuOpen &&
-          eventDetails.reason === "outside-press"
-        ) {
-          eventDetails.cancel();
-          closeAccountMenu();
-          return;
+        if (!open && eventDetails.reason === "outside-press") {
+          if (accountMenuOpen) {
+            eventDetails.cancel();
+            closeAccountMenu();
+            return;
+          }
+          if (remoteMenuOpen) {
+            eventDetails.cancel();
+            setRemoteMenuOpen(false);
+            return;
+          }
         }
         handleOpenChange(open);
       }}
@@ -7309,6 +7357,8 @@ function ConnectorsPopoverButton({
           sshAccess={sshAccess}
           vncAccess={vncAccess}
           computerUse={computerUse}
+          remoteMenuOpen={remoteMenuOpen}
+          onRemoteMenuOpenChange={setRemoteMenuOpen}
           onOpenAddDialog={onOpenAddDialog}
           onOpenDownloadDialog={() => {
             setDownloadDialogOpen(true);
@@ -7334,6 +7384,8 @@ function ComposerConnectorsPopoverBody({
   sshAccess,
   vncAccess,
   computerUse,
+  remoteMenuOpen,
+  onRemoteMenuOpenChange,
   onOpenAddDialog,
   onOpenDownloadDialog,
 }: {
@@ -7342,11 +7394,15 @@ function ComposerConnectorsPopoverBody({
   sshAccess: ReturnType<typeof matchingComposerAccess>;
   vncAccess: ReturnType<typeof matchingComposerAccess>;
   computerUse: ComposerComputerUse | undefined;
+  remoteMenuOpen: boolean;
+  onRemoteMenuOpenChange: (open: boolean) => void;
   onOpenAddDialog: () => void;
   onOpenDownloadDialog: () => void;
 }) {
   const { t } = useTranslation();
   const agentId = signals.agentId;
+  const threadRemoteAccessEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess] === true;
   const connectorData = useLastResolved(signals.connector.data$);
   const connectorsLoading = connectorData === undefined;
   const { agentConnectors, agentCustomConnectors } =
@@ -7364,8 +7420,8 @@ function ComposerConnectorsPopoverBody({
   const connectorItems = composerPopoverItems({
     agentConnectors,
     agentCustomConnectors,
-    sshAccess: sshAccess ?? undefined,
-    vncAccess: vncAccess ?? undefined,
+    sshAccess: threadRemoteAccessEnabled ? undefined : (sshAccess ?? undefined),
+    vncAccess: threadRemoteAccessEnabled ? undefined : (vncAccess ?? undefined),
     sshLabel: t(($) => {
       return $.ssh.label;
     }),
@@ -7666,12 +7722,12 @@ function ComposerConnectorsPopoverBody({
           )}
         </div>
       )}
-      {vncRows.state === "hasError" && (
+      {!threadRemoteAccessEnabled && vncRows.state === "hasError" && (
         <div className="px-3 py-2">
           <VncLoadError />
         </div>
       )}
-      {sshRows.state === "hasError" && (
+      {!threadRemoteAccessEnabled && sshRows.state === "hasError" && (
         <div className="px-3 py-2">
           <SshLoadError />
         </div>
@@ -7699,14 +7755,13 @@ function ComposerConnectorsPopoverBody({
           }
         />
       </div>
-      {computerUse && (
-        <ComputerUseConnectorMenuSection
-          computerUse={computerUse}
-          onOpenDownloadDialog={() => {
-            onOpenDownloadDialog();
-          }}
-        />
-      )}
+      <ComposerRemoteAccessMenu
+        signals={signals}
+        computerUse={computerUse}
+        remoteMenuOpen={remoteMenuOpen}
+        onRemoteMenuOpenChange={onRemoteMenuOpenChange}
+        onOpenDownloadDialog={onOpenDownloadDialog}
+      />
     </div>
   );
 }

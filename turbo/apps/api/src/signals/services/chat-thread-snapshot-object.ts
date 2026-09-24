@@ -10,13 +10,20 @@ function scopeDigest(userId: string, orgId: string): string {
   return sha256(`${userId}\0${orgId}`);
 }
 
+export function chatThreadSnapshotObjectPrefix(
+  userId: string,
+  orgId: string,
+): string {
+  return `${SNAPSHOT_OBJECT_PREFIX}/${scopeDigest(userId, orgId)}/`;
+}
+
 export function chatThreadSnapshotObjectKey(args: {
   readonly userId: string;
   readonly orgId: string;
   readonly latestSeqId: number | null;
   readonly body: Buffer;
 }): string {
-  return `${SNAPSHOT_OBJECT_PREFIX}/${scopeDigest(args.userId, args.orgId)}/${(args.latestSeqId ?? 0).toString()}-${sha256(args.body)}.json.gz`;
+  return `${chatThreadSnapshotObjectPrefix(args.userId, args.orgId)}${(args.latestSeqId ?? 0).toString()}-${sha256(args.body)}.json.gz`;
 }
 
 export function isOwnedChatThreadSnapshotObjectKey(
@@ -25,7 +32,7 @@ export function isOwnedChatThreadSnapshotObjectKey(
   orgId: string,
   latestSeqId: number | null,
 ): boolean {
-  const prefix = `${SNAPSHOT_OBJECT_PREFIX}/${scopeDigest(userId, orgId)}/`;
+  const prefix = chatThreadSnapshotObjectPrefix(userId, orgId);
   if (!objectKey.startsWith(prefix)) {
     return false;
   }

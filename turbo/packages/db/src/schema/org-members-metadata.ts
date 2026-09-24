@@ -53,7 +53,10 @@ export const orgMembersMetadata = pgTable(
     selectedVideoModel: varchar("selected_video_model", { length: 255 }),
     /** Member default for built-in image generation. Seeds new chat threads. */
     selectedImageModel: varchar("selected_image_model", { length: 255 }),
-    /** Voice input v2 model selected in Debug preferences. */
+    /**
+     * Retired Debug voice input model selection. Current APIs neither read nor
+     * write it; drop it after older API deployments drain.
+     */
     voiceInputModel: varchar("voice_input_model", { length: 255 }),
     onboardingDone: boolean("onboarding_done").notNull().default(false),
     /**

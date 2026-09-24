@@ -724,6 +724,12 @@ const connectors = [
             name: "sts:get-caller-identity-alias",
             rules: ["POST / AWS action=GetCallerIdentity sigv4=sts"],
           },
+          {
+            name: "sts:get-federation-token-versioned",
+            rules: [
+              "POST /?Version=2011-06-15 AWS sigv4=sts action=GetFederationToken",
+            ],
+          },
         ],
       },
       {

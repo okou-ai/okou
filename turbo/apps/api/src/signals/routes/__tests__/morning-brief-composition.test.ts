@@ -176,7 +176,7 @@ async function setupOwner(options: OwnerSourceOptions = {}): Promise<Fixture> {
   await updateFeatureSwitchesForUser(
     context,
     { orgId: actor.orgId, userId: actor.userId },
-    { [FeatureSwitchKey.SimpleMorningBrief]: true },
+    { [FeatureSwitchKey.NativeMorningBrief]: true },
   );
   return {
     actor: { ...actor, orgId: actor.orgId },

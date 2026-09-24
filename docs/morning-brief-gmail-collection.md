@@ -42,7 +42,7 @@ not an authenticated fetch proxy.
 derives the `MorningBriefCollectionScope` — owner, installation, exact
 automation, Agent, nullable bound thread, anchor, timezone and the immutable
 membership id — from
-`simpleMorningBrief`, the canonical
+`FeatureSwitchKey.NativeMorningBrief`, the canonical
 [migration state](./morning-brief-migration-state.md), the member's current
 Clerk membership and erasure admission. Nothing in a request body contributes to
 it.
@@ -342,7 +342,7 @@ authentication and ownership checks are the ones under test. It exists to make
 the reader a real consumed boundary, not to ship a feature:
 
 - **Production answers 404 before authentication**, whether or not
-  `simpleMorningBrief` is on. The gate is the existing production
+  `FeatureSwitchKey.NativeMorningBrief` is on. The gate is the existing production
   `isTestEndpointAllowed` helper; no test fixture or test-only helper is imported
   into production code.
 - Development and protected preview additionally require the authenticated
@@ -412,7 +412,7 @@ the reader a real consumed boundary, not to ship a feature:
 
 ## Rollout, scale and compatibility
 
-`simpleMorningBrief` stays default-off and unchanged; existing Settings and
+`FeatureSwitchKey.NativeMorningBrief` stays default-off and unchanged; existing Settings and
 legacy execution remain authoritative. Rollback removes the optional preview
 consumer with no source-content cleanup or backfill, because nothing is
 persisted. Old and new API binaries can run together: this change adds one route
