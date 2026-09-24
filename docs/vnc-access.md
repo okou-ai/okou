@@ -112,9 +112,10 @@ credential.
 
 ## Owner setup in the app
 
-With `vncAccess` enabled, open **Connectors → Remote access → VNC**.
-The independent VNC page at `/connectors/vnc` manages hosts and reusable
-credentials. Choose **Direct from Runner** or **Through saved SSH host**. The
+With `vncAccess` enabled, open **Connectors → Remote control** at
+`/connectors?scope=remote-control&type=vnc`. The VNC type filter shows saved
+connections and reusable credentials; VNC controls are absent when the switch
+is disabled. Choose **Direct from Runner** or **Through saved SSH host**. The
 SSH choice lists the current owner's secret-free saved SSH hosts; SSH
 credentials and learned host-key material are not copied into VNC state. A
 missing or deleted selection blocks saving and preserves the draft until the

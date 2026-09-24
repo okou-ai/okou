@@ -1,9 +1,9 @@
 # Cloudflare Access
 
-Cloudflare Access is a standalone Connector setting for reusable, user-owned
-Service Tokens. Open **Connectors -> Remote access -> Cloudflare Access** at
-`/connectors/cloudflare-access`. In the Remote access category it follows SSH
-and VNC.
+Cloudflare Access is a Connector setting for reusable, user-owned Service
+Tokens. Open **Connectors -> Private network** at
+`/connectors?scope=private-network`. The Cloudflare Access card in the catalog
+opens that scope in both the legacy tabs and the Connector Directory.
 
 Cloudflare Access is not a directly usable Agent service. It has no Agent grant,
 account picker, connector authorization, chat trigger, or direct command. A
@@ -27,7 +27,7 @@ SSH. Mutations and reconnect catch-up refresh Platform through
 token, configuration ID, or host ID.
 
 The SSH host form retains its Cloudflare Access selector and inline creation,
-but configuration management lives only on the standalone page. Both flows read
+while configuration management lives in the **Private network** scope. Both flows read
 and mutate the same canonical state. There is no feature switch, schema migration,
 data copy, separate enabled state, or second set of records. The temporary
 SSH-prefixed API and Access-only `ssh:changed` bridge were retired after the
