@@ -211,11 +211,7 @@ const discordAgentPicker$ = command(
       ...(defaultAgent
         ? [
             {
-              label: discordAccountLabel(
-                defaultAgent.displayName
-                  ? `Workspace default: ${defaultAgent.displayName}`
-                  : "Workspace default",
-              ),
+              label: "Workspace default",
               value: "default",
             },
           ]
