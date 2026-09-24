@@ -242,7 +242,7 @@ describe("Pi Codex credential ciphertext snapshot", () => {
     });
     await secondEntered.promise;
     let returned = false;
-    void settled.then(() => {
+    const observed = settled.then(() => {
       returned = true;
     });
     // A separate account API request yields the event loop while the KMS
@@ -254,6 +254,7 @@ describe("Pi Codex credential ciphertext snapshot", () => {
     expect(returned).toBeFalsy();
     release.resolve(TEST_DATA_KEY);
     await expect(pending).rejects.toThrow("KMS unavailable");
+    await observed;
     expect(probe.decryptCalls).toBe(2);
   }, 30_000);
 
@@ -280,7 +281,7 @@ describe("Pi Codex credential ciphertext snapshot", () => {
     await entered.promise;
     controller.abort(new DOMException("cancelled", "AbortError"));
     let returned = false;
-    void settled.then(() => {
+    const observed = settled.then(() => {
       returned = true;
     });
     await authDeviceSupport.deletePersonalModelProviderAccount(
@@ -290,6 +291,7 @@ describe("Pi Codex credential ciphertext snapshot", () => {
     expect(returned).toBeFalsy();
     release.resolve(TEST_DATA_KEY);
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    await observed;
     expect(probe.decryptCalls).toBe(2);
   }, 30_000);
 
