@@ -9,7 +9,10 @@ import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
 import { click } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  testContext,
+  warmMermaidParser,
+} from "../../../signals/__tests__/test-helpers.ts";
 import {
   artifact,
   findArtifactAction,
@@ -18,6 +21,8 @@ import {
 } from "./artifact-catalog-test-helpers.ts";
 
 const context = testContext();
+
+warmMermaidParser();
 
 test("An avatar card and reopened viewer share one private video URL", async () => {
   const fileId = "f0000000-0000-4000-a000-000000000004";
@@ -292,6 +297,62 @@ test("Catalog previews remain stable after opening another artifact", async () =
   await expect(
     screen.findByTestId("attachment-lightbox-image"),
   ).resolves.toHaveAttribute("src", artifacts[0]!.firstUrl);
+});
+
+test("Closing a catalog Markdown diagram returns to the preview before browsing back", async () => {
+  const filename = "layer-audit.md";
+  const url = `https://artifacts.example.com/${filename}`;
+  const artifactId = "a0000000-0000-4000-a000-000000000031";
+  const fileId = "f0000000-0000-4000-a000-000000000031";
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, {
+      artifacts: [artifact({ id: artifactId, title: filename })],
+      nextCursor: null,
+    });
+  });
+  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+    return respond(200, {
+      ...artifact({ id: artifactId, title: filename }),
+      kind: "file",
+      file: {
+        id: fileId,
+        filename,
+        contentType: "text/markdown",
+        size: 68,
+        url,
+        previewImageUrl: null,
+      },
+    });
+  });
+  context.mocks.http.get(url, () => {
+    return HttpResponse.text(
+      "# Layer audit\n\n```mermaid\nflowchart LR\n  Fullscreen --> Diagram\n```",
+      { headers: { "Content-Type": "text/markdown" } },
+    );
+  });
+
+  await setupArtifactCatalogPage(context, {
+    path: `/artifacts?tab=file&artifact=${artifactId}`,
+  });
+  await screen.findByText("Layer audit");
+  await waitFor(() => {
+    expect(getButtonByName("Expand diagram")).toBeEnabled();
+  });
+  const previewUrl = window.location.href;
+  expect(previewUrl).toContain("artifact=");
+
+  click(getButtonByName("Expand diagram"));
+  await screen.findByTestId("attachment-lightbox-image");
+  click(getButtonByName("Close"));
+  await screen.findByText("Layer audit");
+  expect(window.location.href).toBe(previewUrl);
+  expect(screen.getByTestId("attachment-lightbox")).toBeInTheDocument();
+
+  click(getButtonByName("Close"));
+  await waitFor(() => {
+    expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
+    expect(window.location.href).not.toContain("artifact=");
+  });
 });
 
 test("Opening an unpreviewable binary downloads it with the correct filename", async () => {

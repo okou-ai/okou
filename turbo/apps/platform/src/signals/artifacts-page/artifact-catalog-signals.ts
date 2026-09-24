@@ -7,6 +7,7 @@ import { downloadAttachment$ } from "../attachment-download.ts";
 import { isTextPreviewKind } from "../text-preview.ts";
 import {
   closeLightboxWithDialogExit$,
+  restoreMarkdownLightbox$,
   openAudioLightbox$,
   openDocumentLightbox$,
   openImageLightbox$,
@@ -151,7 +152,10 @@ export const prepareArtifactCatalogPreviewHistory$ = command(
 );
 
 export const closeArtifactCatalogPreview$ = command(
-  ({ get, set }, signal: AbortSignal) => {
+  ({ get, set }, signal: AbortSignal): boolean => {
+    if (set(restoreMarkdownLightbox$)) {
+      return true;
+    }
     const artifactId = artifactIdFromCatalogSearchParams(get(searchParams$));
     const previewArtifactId = artifactIdFromHistoryState(
       get(historyState$),
@@ -163,9 +167,10 @@ export const closeArtifactCatalogPreview$ = command(
       artifactId === previewArtifactId
     ) {
       window.history.back();
-      return;
+      return false;
     }
     set(closeLightboxWithDialogExit$, signal);
+    return false;
   },
 );
 

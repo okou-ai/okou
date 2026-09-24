@@ -906,6 +906,72 @@ async function setupMarkdownDiagramAttachments(): Promise<void> {
   await findNamedButton("Open markdown preview for first.md");
 }
 
+test.each([
+  { fullscreen: false, mode: "windowed" },
+  { fullscreen: true, mode: "fullscreen" },
+])(
+  "Closing a diagram returns to its $mode Markdown preview",
+  async ({ fullscreen, mode }) => {
+    const browser = context.mocks.browser.blobDownload();
+    await setupMarkdownDiagramAttachments();
+
+    click(getNamedButton("Open markdown preview for first.md"));
+    await screen.findByText("First notes");
+    if (fullscreen) {
+      click(getNamedButton("Enter fullscreen"));
+      await findNamedButton("Exit fullscreen");
+    }
+    const reader = screen.getByTestId("attachment-lightbox");
+    expect(reader).toHaveAttribute("data-mode", mode);
+    await waitFor(() => {
+      expect(getNamedButton("Expand diagram")).toBeEnabled();
+    });
+
+    click(getNamedButton("Expand diagram"));
+    const diagram = await screen.findByTestId("attachment-lightbox-image");
+    expect(diagram).toHaveAttribute("alt", "diagram.svg");
+    const diagramUrl = diagram.getAttribute("src");
+    expect(diagramUrl).toMatch(/^blob:/);
+    expect(screen.getByTestId("attachment-lightbox")).toHaveAttribute(
+      "data-mode",
+      "windowed",
+    );
+    expect(screen.queryByText("First notes")).not.toBeInTheDocument();
+
+    click(getNamedButton("Close"));
+    await screen.findByText("First notes");
+    expect(screen.getByTestId("attachment-lightbox")).toHaveAttribute(
+      "data-mode",
+      mode,
+    );
+    expect(getNamedButton("Expand diagram")).toBeEnabled();
+    expect(browser.revokedUrls).toContain(diagramUrl);
+
+    await closeFocusedPreview();
+    expect(screen.queryByText("First notes")).not.toBeInTheDocument();
+  },
+);
+
+test("Escape from an expanded Markdown diagram returns to its reader", async () => {
+  await setupMarkdownDiagramAttachments();
+
+  click(getNamedButton("Open markdown preview for first.md"));
+  await screen.findByText("First notes");
+  await waitFor(() => {
+    expect(getNamedButton("Expand diagram")).toBeEnabled();
+  });
+  click(getNamedButton("Expand diagram"));
+  await screen.findByTestId("attachment-lightbox-image");
+
+  await userEvent.setup().keyboard("{Escape}");
+  await screen.findByText("First notes");
+  expect(screen.getByTestId("attachment-lightbox")).toHaveAttribute(
+    "data-mode",
+    "windowed",
+  );
+  await closeFocusedPreview();
+});
+
 test("Markdown diagrams get fresh URLs when reopened or moved to split view", async () => {
   const browser = context.mocks.browser.blobDownload();
   await setupMarkdownDiagramAttachments();

@@ -1277,7 +1277,7 @@ function useCloseArtifactPreview() {
   const connectionAttempt = useGet(connectorConnectionAttempt$);
   return () => {
     cancelConnection(connectionAttempt);
-    closeArtifactCatalogPreview(rootSignal);
+    return closeArtifactCatalogPreview(rootSignal);
   };
 }
 
@@ -1422,8 +1422,10 @@ function ArtifactPreviewDialogContent({
           details.cancel();
           return;
         }
-        if (!nextOpen && visible) {
-          closeWithAnimation();
+        if (!nextOpen && visible && closeWithAnimation()) {
+          // The diagram yielded to its parent Markdown preview; this Dialog
+          // stays open instead of letting the dismiss gesture close both.
+          details.cancel();
         }
       }}
     >

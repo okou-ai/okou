@@ -140,6 +140,10 @@ export type AttachmentLightboxState = AttachmentLightboxInput &
   };
 
 const internalLightboxState$ = state<AttachmentLightboxState | null>(null);
+const internalMarkdownParent$ = state<{
+  preview: AttachmentLightboxState;
+  fullscreen: boolean;
+} | null>(null);
 const internalLightboxDialogVisible$ = state(false);
 const internalLightboxDialogFullscreen$ = state(false);
 const internalLightboxDialogMountToken$ = state(0);
@@ -149,9 +153,15 @@ export const lightboxDialogElement$ = command(({ get }) => {
   return get(internalLightboxDialogElement$);
 });
 const resetLightboxPreviewSignal$ = resetSignal();
+const resetNestedDiagramPreviewSignal$ = resetSignal();
 export const attachmentLightboxImageCanvasSignals =
   createZoomableImageCanvasSignals();
+const clearNestedDiagram$ = command(({ set }) => {
+  set(internalMarkdownParent$, null);
+  set(resetNestedDiagramPreviewSignal$);
+});
 const disposeLightboxSession$ = command(({ set }) => {
+  set(clearNestedDiagram$);
   set(internalLightboxDialogVisible$, false);
   set(internalLightboxDialogFullscreen$, false);
   set(internalLightboxState$, null);
@@ -187,6 +197,19 @@ export const lightboxDialogVisible$ = computed((get) => {
 
 export const lightboxDialogFullscreen$ = computed((get) => {
   return get(internalLightboxDialogFullscreen$);
+});
+
+/** Close an expanded diagram back to its Markdown reader, if one owns it. */
+export const restoreMarkdownLightbox$ = command(({ get, set }): boolean => {
+  const parent = get(internalMarkdownParent$);
+  if (!parent || !get(internalLightboxDialogVisible$)) {
+    return false;
+  }
+  set(internalLightboxState$, parent.preview);
+  set(internalLightboxDialogFullscreen$, parent.fullscreen);
+  set(attachmentLightboxImageCanvasSignals.reset$);
+  set(clearNestedDiagram$);
+  return true;
 });
 
 export const toggleLightboxDialogFullscreen$ = command(({ get, set }) => {
@@ -295,6 +318,7 @@ export const openImageLightbox$ = command(
     if (set(routeToOpenArtifactSidebar$, input, target)) {
       return;
     }
+    set(clearNestedDiagram$);
     set(attachmentLightboxImageCanvasSignals.reset$);
     const previewSignal = set(resetLightboxPreviewSignal$, get(rootSignal$));
     const image = imageLightboxState(input, previewSignal);
@@ -310,9 +334,29 @@ export const openImageLightbox$ = command(
  * rendered in the reader's browser, so it has no stable link to share.
  */
 export const openDiagramLightbox$ = command(
-  ({ set }, file: File, signal: AbortSignal) => {
+  ({ get, set }, file: File, signal: AbortSignal) => {
     signal.throwIfAborted();
-    set(openImageLightbox$, { file, shareAvailable: false });
+    const parent = get(internalLightboxState$);
+    if (parent?.kind !== "markdown" || !get(internalLightboxDialogVisible$)) {
+      set(openImageLightbox$, { file, shareAvailable: false });
+      return;
+    }
+
+    // Keep the Markdown's resource and parsed tree alive while the diagram
+    // replaces it. The child's object URL has its own shorter lifetime.
+    set(internalMarkdownParent$, {
+      preview: parent,
+      fullscreen: get(internalLightboxDialogFullscreen$),
+    });
+    set(attachmentLightboxImageCanvasSignals.reset$);
+    const previewSignal = set(resetNestedDiagramPreviewSignal$, signal);
+    const image = imageLightboxState(
+      { file, shareAvailable: false },
+      previewSignal,
+    );
+    const preview = attachmentPreviewSignalsFor(image);
+    set(internalLightboxDialogFullscreen$, false);
+    set(internalLightboxState$, { ...image, preview, ...preview });
   },
 );
 
@@ -335,6 +379,7 @@ export const navigateImageLightbox$ = command(
       splitViewAvailable?: boolean;
     },
   ) => {
+    set(clearNestedDiagram$);
     set(attachmentLightboxImageCanvasSignals.reset$);
     set(resetLightboxPreviewSignal$, get(rootSignal$));
     const preview = attachmentPreviewSignalsFor(value);
@@ -356,6 +401,7 @@ export const openDocumentLightbox$ = command(
     if (set(routeToOpenArtifactSidebar$, value, target)) {
       return;
     }
+    set(clearNestedDiagram$);
     set(resetLightboxPreviewSignal$, get(rootSignal$));
     set(internalLightboxDialogVisible$, true);
     set(internalLightboxDialogFullscreen$, false);
@@ -394,6 +440,7 @@ function createSimpleLightboxOpener(kind: "audio" | "file" | "video") {
       if (set(routeToOpenArtifactSidebar$, value, target)) {
         return;
       }
+      set(clearNestedDiagram$);
       set(resetLightboxPreviewSignal$, get(rootSignal$));
       set(internalLightboxDialogVisible$, true);
       set(internalLightboxDialogFullscreen$, false);
