@@ -18,7 +18,6 @@ interface PlatformRuntimeConfig {
   readonly clerkPublishableKey: string;
   readonly publicArtifactsBaseUrl: "https://cdn.vm0.io" | "https://cdn.vm7.io";
   readonly publicStaticAssetsBaseUrl: string;
-  readonly plausibleScriptUrl: string | null;
   readonly postHogHost: string | null;
   readonly postHogKey: string | null;
   readonly sentryDsn: string | null;
@@ -117,9 +116,6 @@ export function resolvePlatformRuntimeConfig(): PlatformRuntimeConfig {
       ),
       publicArtifactsBaseUrl: "https://cdn.vm0.io",
       publicStaticAssetsBaseUrl,
-      plausibleScriptUrl: optionalBuildValue(
-        import.meta.env.VITE_PLAUSIBLE_SCRIPT_URL_PRODUCTION,
-      ),
       postHogHost: "https://j.okou.io",
       postHogKey: optionalBuildValue(import.meta.env.VITE_POSTHOG_KEY),
       sentryDsn: optionalBuildValue(import.meta.env.VITE_SENTRY_DSN_PROD),
@@ -138,10 +134,6 @@ export function resolvePlatformRuntimeConfig(): PlatformRuntimeConfig {
     ),
     publicArtifactsBaseUrl: "https://cdn.vm7.io",
     publicStaticAssetsBaseUrl,
-    plausibleScriptUrl:
-      environment === "preview"
-        ? optionalBuildValue(import.meta.env.VITE_PLAUSIBLE_SCRIPT_URL_PREVIEW)
-        : null,
     postHogHost: null,
     postHogKey: null,
     sentryDsn: null,

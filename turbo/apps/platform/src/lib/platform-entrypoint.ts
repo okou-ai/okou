@@ -3,7 +3,6 @@ import "./accept-browser.ts";
 import { browserUpgradeRequired } from "./browser-support.ts";
 import { initSentry } from "./sentry.ts";
 import { captureFirstSkeletonPaint, initPostHog } from "./posthog.ts";
-import { initPlausible } from "./plausible.ts";
 import { setupVisualViewportKeyboardState } from "./visual-viewport-keyboard.ts";
 import "../polyfill.ts";
 import { createRoot } from "react-dom/client";
@@ -27,7 +26,6 @@ function startApplication(rootSignal: AbortSignal): void {
 
   async function main() {
     const store = createStore();
-    initPlausible(rootSignal);
     setupVisualViewportKeyboardState(rootSignal, () => {
       return store.set(resetViewportSettleSignal$, rootSignal);
     });

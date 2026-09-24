@@ -197,7 +197,6 @@ runs:
           runner_default_group="vm0/production"
           concurrent_run_limit_cap="10"
           slack_redirect_base_url="$(repo_var SLACK_REDIRECT_BASE_URL)"
-          plausible_script_url="$(first_non_empty "$(repo_var PLAUSIBLE_SCRIPT_URL_PROD)" "$(repo_var PLAUSIBLE_SCRIPT_URL)")"
           strapi_url="$(repo_var STRAPI_URL)"
           private_artifacts_bucket="user-artifact-private-prod"
           private_artifacts_access_key_id="$(repo_secret R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID)"
@@ -216,7 +215,6 @@ runs:
           runner_default_group="vm0/development-${INPUT_JOB_REF}"
           concurrent_run_limit_cap="0"
           slack_redirect_base_url="$INPUT_WEB_URL"
-          plausible_script_url="$(repo_var PLAUSIBLE_SCRIPT_URL)"
           strapi_url=""
           private_artifacts_bucket="user-artifact-private-dev"
           private_artifacts_access_key_id="$(repo_secret R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV)"
@@ -350,7 +348,6 @@ runs:
           add_var MICROSOFT_TEAMS_APP_TENANT_ID MICROSOFT_TEAMS_APP_TENANT_ID
         fi
         add_env SLACK_REDIRECT_BASE_URL "$slack_redirect_base_url"
-        add_env PLAUSIBLE_SCRIPT_URL "$plausible_script_url"
         if [[ "$INPUT_APP" == "web" && "$INPUT_ENVIRONMENT" == "production" ]]; then
           add_var POSTHOG_KEY POSTHOG_KEY
           add_var POSTHOG_HOST POSTHOG_HOST
