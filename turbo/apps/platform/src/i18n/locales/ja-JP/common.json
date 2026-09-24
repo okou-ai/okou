@@ -1436,6 +1436,11 @@
         },
         "earned": "{{amount}} 獲得",
         "howRewardsWork": "報酬の仕組み",
+        "imessage": {
+          "action": "追加",
+          "description": "iPhone から {{assistantName}} にメッセージ",
+          "name": "iMessage に追加"
+        },
         "inReview": "確認中",
         "intro": {
           "checkin": {
@@ -3579,9 +3584,10 @@
       "agentphone": {
         "authorizedSender": "承認された送信者",
         "codeExpiry": "10分後に期限切れになります",
+        "codeLabel": "コード",
         "connectAria": "電話を接続する",
-        "connectDescription": "コードをスキャンするか「メッセージ」を開き、入力済みのコードを送信してください。",
-        "connectTitle": "電話を接続する",
+        "connectDescription": "カメラでスキャンし、入力済みのコードを送信してください。",
+        "connectTitle": "iPhone から {{assistantName}} にメッセージ",
         "copyAria": "{{phone}} をコピーします",
         "copyCodeAria": "接続コード {{code}} をコピー",
         "copyCodeError": "接続コードをコピーできませんでした",
@@ -3592,13 +3598,12 @@
         "creatingCode": "接続コードを作成中…",
         "description": "{{assistantName}} へのテキスト メッセージ アクセス",
         "destination": "iMessage または SMS で",
-        "manualSend": "または",
-        "manualSendTo": "を次の番号に送信：",
         "openMessages": "メッセージを開く",
         "options": "電話オプション",
         "phoneLabel": "電話",
         "qrTitle": "スキャンして、接続コードが入力された「メッセージ」を開く",
         "risk": "可能な場合は iMessage を使用してください。SMS および MMS の返信は確実に届かないことがあります。",
+        "sendToLabel": "送信先",
         "tryAgain": "もう一度試す"
       },
       "catalogDiagnostics": {

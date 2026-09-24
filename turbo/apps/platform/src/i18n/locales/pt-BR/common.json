@@ -1461,6 +1461,11 @@
         },
         "earned": "{{amount}} ganhos",
         "howRewardsWork": "Como funcionam as recompensas",
+        "imessage": {
+          "action": "Adicionar",
+          "description": "Mande mensagem para {{assistantName}} pelo iPhone",
+          "name": "Adicionar ao iMessage"
+        },
         "inReview": "Em análise",
         "intro": {
           "checkin": {
@@ -3653,9 +3658,10 @@
       "agentphone": {
         "authorizedSender": "Remetente autorizado",
         "codeExpiry": "Expira em 10 minutos",
+        "codeLabel": "Código",
         "connectAria": "Conectar telefone",
-        "connectDescription": "Escaneie o código ou abra o app Mensagens e envie o código preenchido.",
-        "connectTitle": "Conectar telefone",
+        "connectDescription": "Escaneie com a câmera e envie o código preenchido.",
+        "connectTitle": "Mande mensagem para {{assistantName}} pelo iPhone",
         "copyAria": "Copiar {{phone}}",
         "copyCodeAria": "Copiar código de conexão {{code}}",
         "copyCodeError": "Falha ao copiar o código de conexão",
@@ -3666,13 +3672,12 @@
         "creatingCode": "Criando código de conexão…",
         "description": "Acesso ao {{assistantName}} por mensagens de texto",
         "destination": "iMessage ou SMS para",
-        "manualSend": "ou envie",
-        "manualSendTo": "para",
         "openMessages": "Abrir Mensagens",
         "options": "Opções do telefone",
         "phoneLabel": "Telefone",
         "qrTitle": "Escaneie para abrir o app Mensagens com o código de conexão preenchido",
         "risk": "Use o iMessage quando possível. As respostas por SMS e MMS podem não chegar de forma confiável.",
+        "sendToLabel": "Enviar para",
         "tryAgain": "Tentar novamente"
       },
       "catalogDiagnostics": {

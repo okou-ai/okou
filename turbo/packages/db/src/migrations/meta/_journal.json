@@ -1002,6 +1002,13 @@
       "when": 1790257729937,
       "tag": "1220_chat_thread_sequence_erasure_index",
       "breakpoints": true
+    },
+    {
+      "idx": 1221,
+      "version": "7",
+      "when": 1790260335751,
+      "tag": "1221_get_started_imessage_quest",
+      "breakpoints": true
     }
   ]
 }

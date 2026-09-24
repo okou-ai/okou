@@ -1437,6 +1437,11 @@
         },
         "earned": "{{amount}} erhalten",
         "howRewardsWork": "So funktionieren Prämien",
+        "imessage": {
+          "action": "Hinzufügen",
+          "description": "Schreib {{assistantName}} von deinem iPhone",
+          "name": "Zu iMessage hinzufügen"
+        },
         "inReview": "In Prüfung",
         "intro": {
           "checkin": {
@@ -3595,9 +3600,10 @@
       "agentphone": {
         "authorizedSender": "Autorisierter Absender",
         "codeExpiry": "Läuft in 10 Minuten ab",
+        "codeLabel": "Code",
         "connectAria": "Telefon anschließen",
-        "connectDescription": "Scannen Sie den Code oder öffnen Sie Nachrichten und senden Sie dann den vorausgefüllten Code.",
-        "connectTitle": "Telefon anschließen",
+        "connectDescription": "Scannen Sie mit Ihrer Kamera und senden Sie dann den vorausgefüllten Code.",
+        "connectTitle": "Schreiben Sie {{assistantName}} von Ihrem iPhone",
         "copyAria": "Kopieren Sie {{phone}}",
         "copyCodeAria": "Verbindungscode {{code}} kopieren",
         "copyCodeError": "Verbindungscode konnte nicht kopiert werden",
@@ -3608,13 +3614,12 @@
         "creatingCode": "Verbindungscode wird erstellt…",
         "description": "SMS-Zugriff auf {{assistantName}}",
         "destination": "iMessage oder SMS an",
-        "manualSend": "oder senden Sie",
-        "manualSendTo": "an",
         "openMessages": "Nachrichten öffnen",
         "options": "Telefonoptionen",
         "phoneLabel": "Telefon",
         "qrTitle": "Scannen, um Nachrichten mit dem vorausgefüllten Verbindungscode zu öffnen",
         "risk": "Verwenden Sie nach Möglichkeit iMessage. SMS- und MMS-Antworten kommen möglicherweise nicht zuverlässig an.",
+        "sendToLabel": "Senden an",
         "tryAgain": "Erneut versuchen"
       },
       "catalogDiagnostics": {

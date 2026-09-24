@@ -1436,6 +1436,11 @@
         },
         "earned": "{{amount}} diperoleh",
         "howRewardsWork": "Cara kerja hadiah",
+        "imessage": {
+          "action": "Tambahkan",
+          "description": "Kirim pesan ke {{assistantName}} dari iPhone kamu",
+          "name": "Tambahkan ke iMessage"
+        },
         "inReview": "Sedang ditinjau",
         "intro": {
           "checkin": {
@@ -3579,9 +3584,10 @@
       "agentphone": {
         "authorizedSender": "Pengirim yang diizinkan",
         "codeExpiry": "Kedaluwarsa dalam 10 menit",
+        "codeLabel": "Kode",
         "connectAria": "Hubungkan telepon",
-        "connectDescription": "Pindai kode atau buka Pesan, lalu kirim kode yang sudah terisi.",
-        "connectTitle": "Hubungkan telepon",
+        "connectDescription": "Pindai dengan kamera, lalu kirim kode yang sudah terisi.",
+        "connectTitle": "Kirim pesan ke {{assistantName}} dari iPhone",
         "copyAria": "Salin {{phone}}",
         "copyCodeAria": "Salin kode koneksi {{code}}",
         "copyCodeError": "Gagal menyalin kode koneksi",
@@ -3592,13 +3598,12 @@
         "creatingCode": "Membuat kode koneksi…",
         "description": "Akses {{assistantName}} lewat pesan teks",
         "destination": "iMessage atau SMS ke",
-        "manualSend": "atau kirim",
-        "manualSendTo": "ke",
         "openMessages": "Buka Pesan",
         "options": "Opsi telepon",
         "phoneLabel": "Telepon",
         "qrTitle": "Pindai untuk membuka Pesan dengan kode koneksi yang sudah terisi",
         "risk": "Gunakan iMessage jika memungkinkan. Balasan SMS dan MMS mungkin tidak selalu terkirim.",
+        "sendToLabel": "Kirim ke",
         "tryAgain": "Coba lagi"
       },
       "catalogDiagnostics": {
