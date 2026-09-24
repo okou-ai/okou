@@ -482,7 +482,7 @@ describe("CHAT effort: thread configuration", () => {
     const explicitClaim = await claimChatRun(runnerGroup, explicit.runId);
     expect(explicitClaim.claim.platformEnvironment).toMatchObject({
       OKOU_CODEX_SERVICE_TIER: "fast",
-      OKOU_REASONING_EFFORT: "max",
+      OKOU_REASONING_EFFORT: "ultra",
     });
     await expect(
       chat.readThreadMetadata(actor, thread.id),
