@@ -290,6 +290,58 @@ describe("account erasure connector remote capture", () => {
     );
   });
 
+  it("leaves source credentials intact when their envelope cannot fit a durable selector", async () => {
+    const userId = `connector_erasure_${randomUUID()}`;
+    const orgId = `connector_org_${randomUUID()}`;
+    const connectorId = randomUUID();
+    const secretId = randomUUID();
+    await db.insert(connectors).values({
+      id: connectorId,
+      orgId,
+      userId,
+      connectorSlug: "gmail",
+      authMethod: "oauth",
+      storageVersion: 1,
+    });
+    onTestFinished(async () => {
+      await db.delete(connectors).where(eq(connectors.id, connectorId));
+    });
+    await db.insert(secrets).values({
+      id: secretId,
+      name: "access_token",
+      encryptedValue: "x".repeat(3073),
+      type: "connector",
+      connectorId,
+      orgId,
+      userId,
+    });
+    const { job, handler } = await begin(userId);
+    const [lease] = await claimErasureWork(db, job.id, "inventory");
+    if (!lease) {
+      throw new Error("Expected a connector inventory lease");
+    }
+    await expect(
+      executeErasureWork(db, lease, handler, context.signal),
+    ).rejects.toThrow("account_erasure:invalid_selector");
+    await expect(
+      db
+        .select({ id: secrets.id })
+        .from(secrets)
+        .where(eq(secrets.id, secretId)),
+    ).resolves.toHaveLength(1);
+    const [inventory] = await db
+      .select({ complete: accountErasureWork.captureComplete })
+      .from(accountErasureWork)
+      .where(
+        and(
+          eq(accountErasureWork.jobId, job.id),
+          eq(accountErasureWork.kind, "inventory"),
+        ),
+      );
+    expect(inventory).toBeDefined();
+    expect(inventory?.complete).toBeFalsy();
+  });
+
   it("rejects a watch whose connector belongs to another account without capturing or deleting it", async () => {
     const userId = `connector_erasure_${randomUUID()}`;
     const peerId = `connector_peer_${randomUUID()}`;
