@@ -197,11 +197,8 @@ test("The first step introduces Okou and its compliance progress", async () => {
     screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
   ).resolves.toBeInTheDocument();
   expect(
-    screen.getByText("Okou is the work assistant for you and your team."),
-  ).toBeInTheDocument();
-  expect(
     screen.getByText(
-      "Work in progress. No SOC 2 report or ISO certificate yet.",
+      "Okou is the work assistant for you and your team. It brings scattered information together, makes it useful, and carries out the next steps in the cloud. Tell it what you do, and it will suggest the right tools and a first task.",
     ),
   ).toBeInTheDocument();
   const badges = Array.from(

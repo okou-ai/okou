@@ -4227,7 +4227,6 @@
           "soc2": "SOC 2 Type II"
         },
         "link": "Detail keamanan",
-        "note": "Masih berlangsung. Belum ada laporan SOC 2 atau sertifikat ISO.",
         "status": {
           "aligned": "Selaras",
           "compliant": "Patuh",
@@ -4299,12 +4298,8 @@
         }
       },
       "industry": {
-        "copy": "Ini membantu Okou menampilkan alat yang relevan dan menyarankan tugas pertama yang sesuai dengan pekerjaan Anda.",
+        "copy": "Okou adalah asisten kerja untuk Anda dan tim Anda. Okou menyatukan informasi yang tersebar, membuatnya berguna, dan menjalankan langkah berikutnya di cloud. Beri tahu bidang kerja Anda, dan Okou akan menyarankan alat yang tepat serta tugas pertama.",
         "title": "Pekerjaan Anda seperti apa?"
-      },
-      "intro": {
-        "copy": "Okou menyatukan informasi yang tersebar, membuatnya berguna, dan menjalankan langkah berikutnya di cloud.",
-        "title": "Okou adalah asisten kerja untuk Anda dan tim Anda."
       },
       "profile": {
         "communicationStyle": "Cara Anda berkomunikasi",

@@ -2,26 +2,6 @@ import { Badge } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { securityPageUrl } from "./onboarding-security.ts";
 
-/** Who Okou is, said once before the first question. */
-export function OnboardingIntro() {
-  const { t } = useTranslation();
-
-  return (
-    <div className="mt-12">
-      <p className="text-lg font-semibold leading-7 text-foreground">
-        {t(($) => {
-          return $.onboarding.sourcesFirst.intro.title;
-        })}
-      </p>
-      <p className="mt-2 text-base leading-[1.7] text-muted-foreground">
-        {t(($) => {
-          return $.onboarding.sourcesFirst.intro.copy;
-        })}
-      </p>
-    </div>
-  );
-}
-
 /** A framework and its status, as the public security page states them. */
 interface ComplianceItem {
   readonly name: string;
@@ -113,11 +93,6 @@ export function OnboardingCompliance() {
           );
         })}
       </ul>
-      <p className="mt-3 text-xs leading-5 text-muted-foreground">
-        {t(($) => {
-          return $.onboarding.sourcesFirst.compliance.note;
-        })}
-      </p>
     </section>
   );
 }

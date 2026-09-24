@@ -78,14 +78,12 @@ function OnboardingTrustPoints({
 
 /** The step's left column: what it asks, and why it is worth answering. */
 function OnboardingStepExplanation({
-  intro,
   title,
   description,
   trustPoints,
   footnote,
   supplement,
 }: {
-  readonly intro?: ReactNode;
   readonly title: string;
   readonly description: string;
   readonly trustPoints?: readonly string[];
@@ -94,10 +92,7 @@ function OnboardingStepExplanation({
 }) {
   return (
     <>
-      {intro}
-      <h1
-        className={`${intro ? "mt-8" : "mt-12"} text-[30px] font-semibold leading-[1.16] tracking-[-0.02em] lg:text-[34px]`}
-      >
+      <h1 className="mt-12 text-[30px] font-semibold leading-[1.16] tracking-[-0.02em] lg:text-[34px]">
         {title}
       </h1>
       <p className="mt-5 text-base leading-[1.7] text-muted-foreground">
@@ -131,7 +126,6 @@ export function OnboardingStepLayout({
   secondaryLabel,
   onSecondary,
   onBack,
-  intro,
   trustPoints,
   footnote,
   supplement,
@@ -149,8 +143,6 @@ export function OnboardingStepLayout({
   readonly secondaryLabel?: string;
   readonly onSecondary?: () => void;
   readonly onBack?: () => void;
-  /** What Okou is, above the question, for the step that opens the flow. */
-  readonly intro?: ReactNode;
   readonly trustPoints?: readonly string[];
   /** A line under the action, for a step that carries an offer or a note. */
   readonly footnote?: ReactNode;
@@ -180,7 +172,6 @@ export function OnboardingStepLayout({
           <div className="lg:mx-auto lg:w-full lg:max-w-[480px]">
             <OnboardingStepProgress current={currentStep} total={totalSteps} />
             <OnboardingStepExplanation
-              intro={intro}
               title={title}
               description={description}
               trustPoints={trustPoints}

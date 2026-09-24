@@ -4241,7 +4241,6 @@
           "soc2": "SOC 2 Type II"
         },
         "link": "Sicherheitsdetails",
-        "note": "In Arbeit. Noch kein SOC-2-Bericht und kein ISO-Zertifikat.",
         "status": {
           "aligned": "Ausgerichtet",
           "compliant": "Konform",
@@ -4313,12 +4312,8 @@
         }
       },
       "industry": {
-        "copy": "So kann Okou passende Tools anzeigen und eine erste Aufgabe vorschlagen, die zu deiner Arbeit passt.",
+        "copy": "Okou ist der Arbeitsassistent für dich und dein Team. Es führt verstreute Informationen zusammen, macht sie nutzbar und erledigt die nächsten Schritte in der Cloud. Sag ihm, was du machst, und es schlägt passende Tools und eine erste Aufgabe vor.",
         "title": "Welche Arbeit machst du?"
-      },
-      "intro": {
-        "copy": "Es führt verstreute Informationen zusammen, macht sie nutzbar und erledigt die nächsten Schritte in der Cloud.",
-        "title": "Okou ist der Arbeitsassistent für dich und dein Team."
       },
       "profile": {
         "communicationStyle": "So kommunizieren Sie",

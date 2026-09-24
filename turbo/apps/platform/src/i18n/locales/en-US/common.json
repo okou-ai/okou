@@ -4233,7 +4233,6 @@
           "soc2": "SOC 2 Type II"
         },
         "link": "Security details",
-        "note": "Work in progress. No SOC 2 report or ISO certificate yet.",
         "status": {
           "aligned": "Aligned",
           "compliant": "Compliant",
@@ -4305,12 +4304,8 @@
         }
       },
       "industry": {
-        "copy": "This helps Okou show relevant tools and suggest a first task that fits your work.",
+        "copy": "Okou is the work assistant for you and your team. It brings scattered information together, makes it useful, and carries out the next steps in the cloud. Tell it what you do, and it will suggest the right tools and a first task.",
         "title": "What kind of work do you do?"
-      },
-      "intro": {
-        "copy": "It brings scattered information together, makes it useful, and carries out the next steps in the cloud.",
-        "title": "Okou is the work assistant for you and your team."
       },
       "profile": {
         "communicationStyle": "How you communicate",

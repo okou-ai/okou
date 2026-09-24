@@ -4297,7 +4297,6 @@
           "soc2": "SOC 2 Type II"
         },
         "link": "Detalles de seguridad",
-        "note": "En curso. Aún no hay informe SOC 2 ni certificado ISO.",
         "status": {
           "aligned": "Alineado",
           "compliant": "Cumple",
@@ -4369,12 +4368,8 @@
         }
       },
       "industry": {
-        "copy": "Así Okou puede mostrarte herramientas relevantes y sugerir una primera tarea adaptada a tu trabajo.",
+        "copy": "Okou es el asistente de trabajo para ti y tu equipo. Reúne la información dispersa, la hace útil y lleva a cabo los siguientes pasos en la nube. Cuéntale a qué te dedicas y te sugerirá las herramientas adecuadas y una primera tarea.",
         "title": "¿A qué tipo de trabajo te dedicas?"
-      },
-      "intro": {
-        "copy": "Reúne la información dispersa, la hace útil y lleva a cabo los siguientes pasos en la nube.",
-        "title": "Okou es el asistente de trabajo para ti y tu equipo."
       },
       "profile": {
         "communicationStyle": "Cómo te comunicas",
