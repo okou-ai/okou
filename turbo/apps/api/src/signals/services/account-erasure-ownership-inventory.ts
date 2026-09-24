@@ -86,6 +86,7 @@ const ACCOUNT_OWNERSHIP_COLUMNS = [
   "telegram_official_user_link_id",
   "sender_user_id",
   "from_user_id",
+  "source_user_id",
 ] as const;
 
 /** How account erasure treats one table.
@@ -94,6 +95,8 @@ const ACCOUNT_OWNERSHIP_COLUMNS = [
  *   declared ownership columns. Ownership is the account that owns the row,
  *   not the agent or organization it hangs under, so a thread the deleted
  *   account created inside somebody else's Agent is still a root here.
+ *   A root may retain parent reaches while historical rows still have nullable
+ *   copied ownership; those rows are swept before the parent roots disappear.
  * - `user_descendant`: rows carry no account identity and are removed with the
  *   named roots, by foreign-key cascade or by a root's own deletion. A
  *   collector owes a sweep from every declared parent, so the list is plural.
@@ -108,7 +111,12 @@ const ACCOUNT_OWNERSHIP_COLUMNS = [
  *   they remain for a separate, future retention/cleanup policy.
  */
 export type AccountOwnershipEntry =
-  | { readonly coverage: "user_root"; readonly ownership: readonly string[] }
+  | {
+      readonly coverage: "user_root";
+      readonly ownership: readonly string[];
+      /** Transitional reach for rows written before nullable ownership existed. */
+      readonly parents?: readonly string[];
+    }
   | {
       readonly coverage: "user_descendant";
       readonly parents: readonly string[];
@@ -275,7 +283,7 @@ export const DESCENDANT_REACH: Readonly<
         },
       ],
       basis:
-        "The source ids intentionally carry no foreign keys because the provenance must survive deletion of the live source run, thread or agent. `source_chat_thread_id` is non-null and is the account's thread.",
+        "The source ids intentionally carry no foreign keys because provenance outlives its source. Nullable source_user_id owns new and backfilled rows; this source-thread reach also removes historical rows whose ownership has not been copied yet.",
     },
   ],
   chat_event_search_message_watermarks: [
@@ -483,7 +491,8 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   built_in_model_keys: { coverage: "not_account_scoped" },
   canonical_asset_deliveries: { coverage: "not_account_scoped" },
   chat_agent_run_context: {
-    coverage: "user_descendant",
+    coverage: "user_root",
+    ownership: ["source_user_id"],
     parents: ["chat_threads"],
   },
   chat_agentphone_context: {
@@ -499,11 +508,17 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
     parents: ["chat_threads"],
   },
   chat_event_search_messages: { coverage: "user_root", ownership: ["user_id"] },
+  chat_event_sequences: {
+    coverage: "user_descendant",
+    parents: ["chat_threads"],
+  },
+  chat_event_write_control: { coverage: "not_account_scoped" },
   chat_event_snapshot_scan_state: { coverage: "not_account_scoped" },
   chat_event_snapshots: {
     coverage: "user_descendant",
     parents: ["chat_threads"],
   },
+  chat_content_erasure_subjects: { coverage: "not_account_scoped" },
   chat_events: { coverage: "user_descendant", parents: ["chat_threads"] },
   chat_discord_context: {
     coverage: "user_descendant",
@@ -1172,7 +1187,8 @@ function assertReachDeclared(
   columns: ReadonlyMap<string, ReadonlySet<string>>,
   reaches: readonly DescendantReach[],
 ): void {
-  if (entry.coverage !== "user_descendant") {
+  const parents = "parents" in entry ? entry.parents : undefined;
+  if (!parents) {
     fail("reach_not_a_descendant", table);
   }
   for (const reach of reaches) {
@@ -1183,7 +1199,7 @@ function assertReachDeclared(
       fail("reach_path_invalid", table);
     }
     const last = reach.path[reach.path.length - 1];
-    if (!last || !entry.parents.includes(last.parent)) {
+    if (!last || !parents.includes(last.parent)) {
       fail("reach_parent_undeclared", `${table}->${last?.parent ?? ""}`);
     }
     let below = table;
@@ -1284,13 +1300,17 @@ export function assertOwnershipInventoryCoverage(
     if (!present.has(name)) {
       fail("unknown_table", name);
     }
-    if (entry.coverage !== "user_descendant") {
+    const parents =
+      entry.coverage === "user_descendant" || entry.coverage === "user_root"
+        ? entry.parents
+        : undefined;
+    if (!parents) {
       continue;
     }
-    if (entry.parents.length === 0) {
+    if (parents.length === 0) {
       fail("descendant_unanchored", name);
     }
-    for (const parent of entry.parents) {
+    for (const parent of parents) {
       if (ACCOUNT_OWNERSHIP_INVENTORY[parent]?.coverage !== "user_root") {
         fail("unknown_parent", `${name}->${parent}`);
       }

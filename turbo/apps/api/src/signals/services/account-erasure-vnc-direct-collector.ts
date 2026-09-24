@@ -14,7 +14,7 @@ import {
 } from "@okouai/db/operations/account-erasure";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentVncAccess } from "@okouai/db/schema/agent-vnc-access";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatThreadVncAccessOverrides } from "@okouai/db/schema/chat-thread-vnc-access-override";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";

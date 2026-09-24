@@ -1,7 +1,8 @@
+import { reserveFixtureChatEventSequence } from "./chat-event-sequences";
 import { storedExecutionContextSchema } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/schema/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { randomUUID } from "node:crypto";
 import { seedLiteralGoalArchive } from "./goal-retirement";
@@ -333,13 +334,9 @@ async function appendHistoricalGoalEvent(
     readonly userMessage?: ReturnType<typeof createUserMessageDocument>;
   },
 ) {
-  const [thread] = await tx
-    .update(chatThreads)
-    .set({
-      lastChatEventSeqId: sql`${chatThreads.lastChatEventSeqId} + 1`,
-    })
-    .where(eq(chatThreads.id, event.chatThreadId))
-    .returning({ seqId: chatThreads.lastChatEventSeqId });
+  const thread = {
+    seqId: await reserveFixtureChatEventSequence(tx, event.chatThreadId, 1),
+  };
   if (!thread) {
     throw new Error("Missing historical fixture thread");
   }

@@ -15,7 +15,7 @@ import {
   browserSessionInstances,
   browserSessions,
 } from "@okouai/db/schema/browser-session";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";

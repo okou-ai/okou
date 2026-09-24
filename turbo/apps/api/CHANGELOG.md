@@ -8,6 +8,28 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.671.1](https://github.com/okou-ai/okou/compare/api-v1.671.0...api-v1.671.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* retire claude sonnet 4.6, claude opus 4.8, and deepseek v4 pro ([#36698](https://github.com/okou-ai/okou/issues/36698)) ([66a5341](https://github.com/okou-ai/okou/commit/66a534132b49aee893bcbae2cb94b150f19396c8))
+
+
+### Performance Improvements
+
+* **db:** add btree_gin user and keyword index for chat search ([#36697](https://github.com/okou-ai/okou/issues/36697)) ([030c632](https://github.com/okou-ai/okou/commit/030c632f999b8c4f08d801a2d1a97391b2f0a128))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.505.1
+    * @okouai/core bumped to 8.708.4
+    * @okouai/db bumped to 1.295.1
+    * @okouai/pi-agent-runtime bumped to 1.40.10
+
 ## [1.671.0](https://github.com/okou-ai/okou/compare/api-v1.670.0...api-v1.671.0) (2026-09-24)
 
 

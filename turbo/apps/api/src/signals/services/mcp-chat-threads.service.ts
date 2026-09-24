@@ -12,7 +12,7 @@ import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat
 import { agentDisplayName } from "@okouai/core/public-brand";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import {
   and,

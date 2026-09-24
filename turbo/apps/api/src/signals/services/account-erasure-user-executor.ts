@@ -62,6 +62,8 @@ import {
 } from "./account-erasure-hosted-site-collector";
 import {
   RELATIONAL_ERASURE_COLLECTOR_VERSION,
+  PRE_SPLIT_RELATIONAL_ERASURE_COLLECTOR_VERSION,
+  type RelationalErasureCollectorVersion,
   assertRelationalSweepComplete,
   createRelationalErasureCollector,
   planRelationalErasure,
@@ -213,6 +215,9 @@ async function ensureUserErasureJob(
     .from(accountErasureSinks)
     .where(eq(accountErasureSinks.jobId, projected.id));
   if (existing.length > 0) {
+    // Existing captures own their provider obligations across DB/API rollout.
+    // Remove the preceding-version allowance in PR2 only after those captures
+    // complete or retire, together with the relational collector branch.
     if (
       existing.length !== sinkSpecs.length ||
       !sinkSpecs.every((spec) => {
@@ -220,7 +225,10 @@ async function ensureUserErasureJob(
           return (
             sink.sinkId === sinkId(backgroundJob.id, spec.name) &&
             sink.domain === spec.domain &&
-            sink.collectorVersion === spec.version
+            (sink.collectorVersion === spec.version ||
+              (spec.name === "relational" &&
+                sink.collectorVersion ===
+                  PRE_SPLIT_RELATIONAL_ERASURE_COLLECTOR_VERSION))
           );
         });
       })
@@ -247,7 +255,10 @@ async function ensureUserErasureJob(
   return await reviseErasureInventory(db, projected.id, projected, required);
 }
 
-async function handlers(db: Db) {
+async function handlers(
+  db: Db,
+  relationalVersion: RelationalErasureCollectorVersion = RELATIONAL_ERASURE_COLLECTOR_VERSION,
+) {
   const plan = await planRelationalErasure(db);
   const byName: Record<SinkName, ErasureHandler> = {
     artifact_file: createArtifactFileErasureCollector(db),
@@ -261,7 +272,7 @@ async function handlers(db: Db) {
     hosted_site: createHostedSiteErasureCollector(db),
     shared_blob: createSharedBlobErasureCollector(db),
     storage_object: createStorageObjectErasureCollector(db),
-    relational: createRelationalErasureCollector(db, plan),
+    relational: createRelationalErasureCollector(db, plan, relationalVersion),
     ssh_remote: createSshRemoteErasureCollector(db),
     vnc_direct: createVncDirectErasureCollector(db),
   };
@@ -276,7 +287,25 @@ async function driveWork(
   signal: AbortSignal,
 ): Promise<number> {
   const stopAt = now() + WORK_BUDGET_MS;
-  const { byName } = await handlers(db);
+  const [relationalSink] = await db
+    .select({ version: accountErasureSinks.collectorVersion })
+    .from(accountErasureSinks)
+    .where(
+      and(
+        eq(accountErasureSinks.jobId, erasureJobId),
+        eq(accountErasureSinks.sinkId, sinkId(backgroundJob.id, "relational")),
+      ),
+    );
+  const relationalVersion = relationalSink?.version;
+  if (
+    relationalVersion !== RELATIONAL_ERASURE_COLLECTOR_VERSION &&
+    relationalVersion !== PRE_SPLIT_RELATIONAL_ERASURE_COLLECTOR_VERSION
+  ) {
+    throw new Error(
+      "Account erasure relational collector version is unsupported",
+    );
+  }
+  const { byName } = await handlers(db, relationalVersion);
   const byId = new Map(
     sinkSpecs.map((spec) => {
       return [sinkId(backgroundJob.id, spec.name), byName[spec.name]];

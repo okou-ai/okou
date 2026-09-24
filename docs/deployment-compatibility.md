@@ -93,6 +93,14 @@ production comparisons must report field coverage and Runner version mix;
 missing timing is never a zero duration. The Guest protocol and storage apply
 behavior are unchanged.
 
+## Chat event split-write preparation
+
+See [the two-release chat event rollout](chat-event-split-write-rollout.md) for
+the temporary allocation bridge, inactive global control, reader/writer drain,
+activation prerequisites, late-content maintenance, and postactivation rollback
+floor. This release retains the legacy column and bridge. Migration and API
+promotion do not authorize or perform activation; contraction is a later PR.
+
 ## Codex 0.156.1 OAuth workspace routing
 
 The API supplies the selected workspace ID as `CODEX_OAUTH_ACCOUNT_ID` for

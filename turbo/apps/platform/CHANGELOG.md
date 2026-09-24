@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.959.0](https://github.com/okou-ai/okou/compare/app-v0.958.0...app-v0.959.0) (2026-09-24)
+
+
+### Features
+
+* **platform:** drop the profile step from source-first onboarding ([#36708](https://github.com/okou-ai/okou/issues/36708)) ([5287ecb](https://github.com/okou-ai/okou/commit/5287ecb8e4602353b78bed2cfe71533f98a886ea))
+
+
+### Bug Fixes
+
+* retire claude sonnet 4.6, claude opus 4.8, and deepseek v4 pro ([#36698](https://github.com/okou-ai/okou/issues/36698)) ([66a5341](https://github.com/okou-ai/okou/commit/66a534132b49aee893bcbae2cb94b150f19396c8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.505.1
+    * @okouai/core bumped to 8.708.4
+
 ## [0.958.0](https://github.com/okou-ai/okou/compare/app-v0.957.0...app-v0.958.0) (2026-09-24)
 
 

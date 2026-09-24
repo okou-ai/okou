@@ -5,7 +5,7 @@ import {
   type ErasureSubject,
 } from "@okouai/db/operations/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { eq } from "drizzle-orm";
 
 import { pgBooleanDecoder } from "../../lib/db-structured-result";

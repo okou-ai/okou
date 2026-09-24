@@ -103,3 +103,54 @@ describe("archive event replay", () => {
     ).toMatchObject({ archived: true });
   });
 });
+
+describe("independently committed activity touches", () => {
+  it("keeps maximum activity time when sequence order differs from commit time", () => {
+    const later = {
+      ...created,
+      kind: "sort_touched" as const,
+      id: "00000000-0000-4000-8000-000000000021",
+      seqId: 2,
+      createdAt: "2026-09-09T00:00:10.000Z",
+    };
+    const older = {
+      ...later,
+      id: "00000000-0000-4000-8000-000000000022",
+      seqId: 3,
+      createdAt: "2026-09-09T00:00:05.000Z",
+    };
+    expect(replayChatThreadEvents([], [created, later, older])[0]?.sortAt).toBe(
+      later.createdAt,
+    );
+    const snapshot = replayChatThreadEvents([], [created, later]);
+    expect(replayChatThreadEvents(snapshot, [older])[0]?.sortAt).toBe(
+      later.createdAt,
+    );
+  });
+
+  it("still applies explicit pin order independently of activity time", () => {
+    const pinned = {
+      ...created,
+      id: "00000000-0000-4000-8000-000000000023",
+      seqId: 2,
+      kind: "pinned" as const,
+      pinOrder: "b",
+      createdAt: "2026-09-09T00:00:10.000Z",
+    };
+    const moved = {
+      ...pinned,
+      id: "00000000-0000-4000-8000-000000000024",
+      seqId: 3,
+      kind: "sort_touched" as const,
+      pinOrder: "a",
+      createdAt: "2026-09-09T00:00:01.000Z",
+    };
+    expect(
+      replayChatThreadEvents([], [created, pinned, moved])[0],
+    ).toMatchObject({
+      pinOrder: "a",
+      pinnedAt: pinned.createdAt,
+      sortAt: created.createdAt,
+    });
+  });
+});

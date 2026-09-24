@@ -14,7 +14,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";

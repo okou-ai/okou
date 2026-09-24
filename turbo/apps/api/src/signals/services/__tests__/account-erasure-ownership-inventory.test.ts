@@ -123,6 +123,10 @@ describe("account erasure ownership coverage guard", () => {
     expect(tables).toContain("hosted_sites");
     expect(tables).toContain("run_uploaded_files");
     expect(tables).toContain("chat_event_search_messages");
+    expect(roots).toContainEqual({
+      table: "chat_agent_run_context",
+      ownership: ["source_user_id"],
+    });
     // Account-owned tables the barrel omits are roots too.
     expect(tables).toContain("push_subscriptions");
     expect(tables).toContain("user_connectors");
@@ -321,7 +325,7 @@ describe("account erasure ownership coverage guard", () => {
   it("anchors every descendant to roots that still delete it", () => {
     const descendants = Object.entries(ACCOUNT_OWNERSHIP_INVENTORY).flatMap(
       ([table, entry]) => {
-        return entry.coverage === "user_descendant"
+        return "parents" in entry && entry.parents
           ? [{ table, parents: entry.parents }]
           : [];
       },
@@ -360,14 +364,14 @@ describe("account erasure ownership coverage guard", () => {
 
     for (const [table, reaches] of Object.entries(DESCENDANT_REACH)) {
       const entry = ACCOUNT_OWNERSHIP_INVENTORY[table];
-      expect(entry?.coverage).toBe("user_descendant");
+      expect(["user_descendant", "user_root"]).toContain(entry?.coverage);
       expect(reaches.length).toBeGreaterThan(0);
       for (const reach of reaches) {
         // A reach without a reason is a guess about which rows are the
         // account's, so the guard requires one.
         expect(reach.basis.length).toBeGreaterThan(0);
         const last = reach.path[reach.path.length - 1];
-        if (entry?.coverage === "user_descendant") {
+        if (entry && "parents" in entry) {
           expect(entry.parents).toContain(last?.parent);
         }
       }

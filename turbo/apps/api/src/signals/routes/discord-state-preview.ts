@@ -8,7 +8,7 @@ import { testDiscordStateContract } from "@okouai/api-contracts/contracts/test-d
 import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";

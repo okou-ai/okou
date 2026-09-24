@@ -49,6 +49,7 @@ export const telegramChatThreadRoutes = pgTable(
   },
   (table) => {
     return [
+      index("idx_telegram_chat_thread_routes_thread").on(table.chatThreadId),
       uniqueIndex("idx_telegram_chat_thread_routes_chat_user_link")
         .on(table.telegramUserLinkId, table.chatId, table.rootMessageId)
         .where(sql`telegram_user_link_id IS NOT NULL`),

@@ -16,7 +16,8 @@ import {
   chatEventTerminalPredicate,
   chatEvents,
 } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { command } from "ccstate";
 import {
   and,
@@ -391,7 +392,7 @@ async function selectUnreadCandidates(
       agentId: agents.id,
       agentOwner: agents.owner,
       provenance: chatThreads.provenance,
-      seqBound: chatThreads.lastChatEventSeqId,
+      seqBound: chatEventSequences.lastSeqId,
       terminalEventId: terminal.eventId,
       terminalRunId: terminal.runId,
       terminalSeqId: terminal.seqId,
@@ -399,6 +400,10 @@ async function selectUnreadCandidates(
     })
     .from(chatThreads)
     .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+    .innerJoin(
+      chatEventSequences,
+      eq(chatEventSequences.chatThreadId, chatThreads.id),
+    )
     .crossJoinLateral(terminal)
     .where(
       and(

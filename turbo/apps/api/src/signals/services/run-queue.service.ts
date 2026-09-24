@@ -5,7 +5,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agents } from "@okouai/db/schema/agent";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import {
   and,
@@ -100,6 +100,8 @@ async function lockQueuedRunThreads(
   // Terminal cleanup takes the provider lock. Queue-marker revocation later
   // writes thread sequence numbers, so own those threads before locking runs
   // or providers, in the same order as completion and final launch admission.
+  // NO KEY UPDATE preserves that control exclusion while allowing an output
+  // writer holding the run to finish its event FK check before we obtain it.
   // Include marker parents for historical runs without a thread binding.
   await tx
     .select({ id: chatThreads.id })
@@ -120,7 +122,7 @@ async function lockQueuedRunThreads(
       ),
     )
     .orderBy(chatThreads.id)
-    .for("update");
+    .for("no key update");
 }
 
 type QueuedRunnerJobPayload = NonNullable<

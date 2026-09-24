@@ -1,5 +1,5 @@
 import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, exists, type SQL } from "drizzle-orm";
 
 import type { Db } from "../external/db";
