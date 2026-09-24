@@ -5,8 +5,10 @@ import { createAppWithRoutes } from "../../../app-factory-core";
 import { avatarVideoRoutes } from "../avatar-video";
 import { videoIoGenerateRoutes } from "../video-io-generate";
 import { voiceIoSpeechRoutes } from "../voice-io-speech";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+const mocks = createRouteMocks(context);
 const endpoints = [
   { path: "/api/video-io/generate", method: "POST" },
   { path: "/api/video-io/generate/private", method: "POST" },
@@ -47,7 +49,7 @@ test.each(endpoints)(
 test.each(endpoints)(
   "tells a stale caller that $method $path is retired before validating generation input",
   async ({ path, method }) => {
-    context.mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
     const response = await app().request(path, {
       method,
       headers: {

@@ -19,8 +19,10 @@ import { builtInGenerationRoutes } from "../built-in-generation";
 import { webhooksBuiltInGenerationRoutes } from "../webhooks-built-in-generations";
 import { installArtifactReferenceStorage } from "./helpers/artifact-reference-storage";
 import { seedOrgMembership$ } from "./helpers/org-membership";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const videoBytes = Buffer.from("previously accepted video output");
 const providers = [
@@ -93,7 +95,7 @@ describe("completion of video jobs accepted before retirement", () => {
         { ...identity, role: "admin" },
         context.signal,
       );
-      context.mocks.clerk.session(identity.userId, identity.orgId);
+      mocks.clerk.session(identity.userId, identity.orgId);
       const pricing = await createUsagePricingFixture({
         configured: entry.categories.map((category) => {
           return {
@@ -195,13 +197,13 @@ describe("completion of video jobs accepted before retirement", () => {
       if (entry.privateArtifacts) {
         expect(result.url).toContain("/artifacts/");
         expect(result.sourceUrl).toBeUndefined();
-        context.mocks.clerk.session(`user_${randomUUID()}`, identity.orgId);
+        mocks.clerk.session(`user_${randomUUID()}`, identity.orgId);
         const peer = await client.get({
           headers,
           params: { generationId: job.generationId },
         });
         expect(peer.status).toBe(404);
-        context.mocks.clerk.session(identity.userId, identity.orgId);
+        mocks.clerk.session(identity.userId, identity.orgId);
       } else {
         expect(result.sourceUrl).toBe(sourceUrl);
       }
