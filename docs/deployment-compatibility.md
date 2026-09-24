@@ -207,8 +207,8 @@ recreated. No schema migration is needed.
 
 The API and commit-addressed CLI now pin Pi 0.87.1. Its native catalog contains
 `claude-opus-5-5`, `gpt-6-sol`, and `gpt-6-luna`, so the Pi admission table can
-route those models through Pi when their existing product policy and PiLoop
-switch allow it. This change does not make a model newly addable to an
+route those models through Pi when their existing product policy allows it.
+This change does not make a model newly addable to an
 organization. GPT-6 Sol and Luna continue to use the global OpenRouter endpoint
 because neither is in the US endpoint allowlist.
 
@@ -1427,7 +1427,7 @@ CLI changes must ship through the same commit-addressed CLI artifact selection.
 Previously captured contexts retain their package and history reference; new
 contexts select the new reader. Old Runners already support 128 MiB history.
 
-Pi is enabled by default through `PiLoop`. Rolling the API back below this change
+Eligible routes use Pi. Rolling the API back below this change
 restores its 16 MiB validation and resume limit: larger saved histories stay in
 storage, but continuing those sessions requires the fixed API and CLI again.
 There is no history truncation, migration, or alternate reader for that rollback.
@@ -2765,6 +2765,42 @@ shared row is bound, rolling back to a pre-foundation API or Runner is unsafe
 without first restoring a compatible authority reader. The temporary
 personal-only projection is retired only after #36261's rebind-capable App is
 live and #36262 raises the verified minimum App version.
+
+### Organization-to-personal Access conversion (#36262)
+
+PR #36449 (#36261) first shipped the rebind-capable App in `app-v0.954.0`.
+That tag targets commit `c0cb8cd57d3575a3a82045b0d4bfe8993cdf14b1`;
+the [production release run 35962027995](https://github.com/okou-ai/okou/actions/runs/35962027995)
+successfully promoted its App Worker at 2026-09-24 06:15 UTC and recorded
+version `0.954.0` on `app.okou.ai`. Production `app.okou.ai` was subsequently
+verified serving App `0.955.0` at commit
+`056f5ab8c347b116352f5353fb304b19796fa1c6`, a descendant of #36449's
+merge commit `f129327db18170f2bf9f43fae9bc9ec2245a9cf5`. The production
+App Worker promotion in [release run 35966963095](https://github.com/okou-ai/okou/actions/runs/35966963095)
+completed successfully on 2026-09-24. The later #36262 release raises the
+identified-App minimum version to `0.954.0`, so older identified Apps receive
+`426` before route matching and can refresh into the already-live recovery UI.
+It also retires the bounded personal-only Access response projection; current
+App requests already use `view=scoped`.
+
+The conversion preview contains only an aggregate count of other owners' SSH
+hosts and an opaque impact snapshot. The action requires a current organization
+admin, expected Access revision, and unchanged impact. The transaction locks
+the Access row before host rows, detaches other owners' references into
+`needs_rebind`, advances effective generations, then makes the same Access row
+personal to the admin without decrypting or replacing its Service Token.
+Admin-owned SSH references remain bound. After commit, Access-list and affected
+owner SSH/Runner invalidations are published. The existing best-effort notice
+limit still applies: a missed invalidation can leave cached authority usable
+for the remainder of an active Run; end the Run when immediate revocation is
+required.
+
+Migration `1210` must run before this API is promoted. Conversion writes cannot
+be rolled back to a pre-foundation API/Runner or an App older than `0.954.0`:
+those readers do not understand a retained protected host with no Access ID.
+Roll forward with compatible readers instead of interpreting such a host as
+Direct or deleting it. The API promotes before the App in the normal release;
+the prior production App verification makes that order safe for this writer.
 
 ## Feishu and Lark integration identity
 

@@ -114,6 +114,9 @@ interface DesktopAuthSessionOptions {
   readonly consumeUrl: (code: string, handoffId: string | null) => string;
   /** `buildDesktopAuthSelectOrgUrl(authUrl, true)`. */
   readonly selectOrgUrl: string;
+  /** Present only when sign-in is owned by a native token provider. */
+  readonly signInUrl?: string;
+  readonly nativeTokenProvider?: boolean;
   readonly runAuthWindow: RunAuthWindow;
   /** Zero-arg "something changed" signal; defaults to a no-op. */
   readonly onChange?: () => void;
@@ -157,6 +160,8 @@ export class DesktopAuthSession {
     handoffId: string | null,
   ) => string;
   private readonly selectOrgUrl: string;
+  private readonly signInUrl: string | undefined;
+  private readonly nativeTokenProvider: boolean;
   private readonly runAuthWindow: RunAuthWindow;
   private readonly onChange: () => void;
   private readonly onAuthCompleted: (
@@ -222,6 +227,8 @@ export class DesktopAuthSession {
     this.tokenUrl = options.tokenUrl;
     this.consumeUrl = options.consumeUrl;
     this.selectOrgUrl = options.selectOrgUrl;
+    this.signInUrl = options.signInUrl;
+    this.nativeTokenProvider = options.nativeTokenProvider ?? false;
     this.runAuthWindow = options.runAuthWindow;
     this.onChange = options.onChange ?? (() => {});
     this.onAuthCompleted = options.onAuthCompleted ?? (() => {});
@@ -249,6 +256,12 @@ export class DesktopAuthSession {
       return null;
     }
     return await this.refresh();
+  }
+
+  /** Checks Clerk's current client while an online native host is idle. */
+  async checkNativeLiveness(): Promise<void> {
+    if (!this.nativeTokenProvider || !this.authority || this.signingIn) return;
+    await this.tokenRefresh();
   }
 
   /** False once restoration needs an interactive sign-in. */
@@ -330,6 +343,12 @@ export class DesktopAuthSession {
   ): Promise<void> {
     this.tokenRefresh.clear();
     await this.authenticate(this.consumeUrl(code, handoffId), true, false);
+  }
+
+  async signIn(): Promise<void> {
+    if (!this.signInUrl) throw new Error("Native sign-in is unavailable");
+    this.tokenRefresh.clear();
+    await this.authenticate(this.signInUrl, true, true);
   }
 
   async selectOrganization(): Promise<void> {
@@ -430,7 +449,10 @@ export class DesktopAuthSession {
             state.organization?.id === oldState.organization?.id &&
             sessionId === oldSessionId &&
             renewedExpiry !== null &&
-            renewedExpiry > expiresAt
+            (renewedExpiry > expiresAt ||
+              (this.nativeTokenProvider &&
+                token === oldToken &&
+                renewedExpiry === expiresAt))
           ) {
             this.token = token;
             this.sessionId = sessionId;

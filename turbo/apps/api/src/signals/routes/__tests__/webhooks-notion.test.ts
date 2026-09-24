@@ -442,6 +442,8 @@ describe("POST /api/webhooks/notion", () => {
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped workflow actor");
     }
+    // Fable keeps Notion workflow runs on the claimable native Runner route.
+    await runsApi.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const agent = await wf.createAgent(actor, {
       displayName: "Notion Webhook Agent",
     });

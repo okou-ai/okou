@@ -184,3 +184,266 @@ test("organization erasure removes shared Access after its member SSH references
     (await accept(hosts().list({ headers }), [200])).body.connections,
   ).toStrictEqual([]);
 });
+
+test("admin conversion retains the config and hosts while other owners must rebind", async () => {
+  useSecretKmsProbe();
+  const admin = await owner();
+  const shared = await createShared();
+  const adminHost = await createHost(shared.id);
+  const member = await owner(admin.orgId, "member");
+  const memberHost = await createHost(shared.id);
+  const secondMember = await owner(admin.orgId, "member");
+  const secondMemberHost = await createHost(shared.id);
+
+  await expect(
+    accept(
+      configs().conversionPreview({
+        headers,
+        params: { configId: shared.id },
+      }),
+      [403],
+    ),
+  ).resolves.toMatchObject({
+    body: { error: { code: "CLOUDFLARE_ACCESS_FORBIDDEN" } },
+  });
+
+  mocks.clerk.session(admin.userId, admin.orgId, "org:admin");
+  const preview = (
+    await accept(
+      configs().conversionPreview({
+        headers,
+        params: { configId: shared.id },
+      }),
+      [200],
+    )
+  ).body;
+  expect(preview).toMatchObject({
+    expectedRevision: 1,
+    otherHostCount: 2,
+    impactSnapshot: expect.stringMatching(/^[a-f0-9]{64}$/u),
+  });
+  expect(JSON.stringify(preview)).not.toContain(memberHost.id);
+  expect(JSON.stringify(preview)).not.toContain(member.userId);
+  expect(JSON.stringify(preview)).not.toContain(secondMemberHost.id);
+  expect(JSON.stringify(preview)).not.toContain(secondMember.userId);
+  mocks.clerk.session(member.userId, member.orgId, "org:member");
+  await expect(
+    accept(
+      configs().convertToPersonal({
+        headers,
+        params: { configId: shared.id },
+        body: {
+          expectedRevision: preview.expectedRevision,
+          impactSnapshot: preview.impactSnapshot,
+        },
+      }),
+      [403],
+    ),
+  ).resolves.toMatchObject({
+    body: { error: { code: "CLOUDFLARE_ACCESS_FORBIDDEN" } },
+  });
+  mocks.clerk.session(admin.userId, admin.orgId, "org:admin");
+  const converted = await accept(
+    configs().convertToPersonal({
+      headers,
+      params: { configId: shared.id },
+      body: {
+        expectedRevision: preview.expectedRevision,
+        impactSnapshot: preview.impactSnapshot,
+      },
+    }),
+    [200],
+  );
+  expect(converted.body).toMatchObject({
+    id: shared.id,
+    scope: "personal",
+    revision: 2,
+    generation: 2,
+    sshHosts: [{ id: adminHost.id }],
+  });
+  expect(JSON.stringify(converted.body)).not.toContain("client-secret");
+  expect(
+    (await accept(hosts().list({ headers }), [200])).body.connections,
+  ).toContainEqual(
+    expect.objectContaining({
+      id: adminHost.id,
+      generation: adminHost.generation + 1,
+      transport: { type: "cloudflare_access", configId: shared.id },
+    }),
+  );
+
+  mocks.clerk.session(member.userId, member.orgId, "org:member");
+  const retained = (
+    await accept(hosts().list({ headers }), [200])
+  ).body.connections.find((host) => {
+    return host.id === memberHost.id;
+  });
+  expect(retained).toMatchObject({
+    id: memberHost.id,
+    host: memberHost.host,
+    port: memberHost.port,
+    credentialId: memberHost.credentialId,
+    generation: memberHost.generation + 1,
+    transport: { type: "cloudflare_access", needsRebind: true },
+  });
+  expect(retained).not.toHaveProperty("transport.configId");
+  expect(
+    (await accept(configs().list({ headers, query }), [200])).body.configs,
+  ).toStrictEqual([]);
+
+  mocks.clerk.session(secondMember.userId, secondMember.orgId, "org:member");
+  expect(
+    (await accept(hosts().list({ headers }), [200])).body.connections,
+  ).toContainEqual(
+    expect.objectContaining({
+      id: secondMemberHost.id,
+      generation: secondMemberHost.generation + 1,
+      transport: { type: "cloudflare_access", needsRebind: true },
+    }),
+  );
+
+  await webhook("user.deleted", admin.userId);
+  mocks.clerk.session(member.userId, member.orgId, "org:member");
+  expect(
+    (await accept(hosts().list({ headers }), [200])).body.connections,
+  ).toContainEqual(expect.objectContaining({ id: memberHost.id }));
+});
+
+test("conversion requires a fresh preview after binding or revision drift", async () => {
+  useSecretKmsProbe();
+  const admin = await owner();
+  const shared = await createShared();
+  const initial = (
+    await accept(
+      configs().conversionPreview({
+        headers,
+        params: { configId: shared.id },
+      }),
+      [200],
+    )
+  ).body;
+  const member = await owner(admin.orgId, "member");
+  await createHost(shared.id);
+  mocks.clerk.session(admin.userId, admin.orgId, "org:admin");
+  await expect(
+    accept(
+      configs().convertToPersonal({
+        headers,
+        params: { configId: shared.id },
+        body: {
+          expectedRevision: initial.expectedRevision,
+          impactSnapshot: initial.impactSnapshot,
+        },
+      }),
+      [409],
+    ),
+  ).resolves.toMatchObject({
+    body: { error: { code: "CLOUDFLARE_ACCESS_IMPACT_CONFLICT" } },
+  });
+  const updated = (
+    await accept(
+      configs().conversionPreview({
+        headers,
+        params: { configId: shared.id },
+      }),
+      [200],
+    )
+  ).body;
+  expect(updated.otherHostCount).toBe(1);
+  expect(updated.impactSnapshot).not.toBe(initial.impactSnapshot);
+  await accept(
+    configs().update({
+      headers,
+      query,
+      params: { configId: shared.id },
+      body: { expectedRevision: 1, name: "Renamed shared gateway" },
+    }),
+    [200],
+  );
+  await expect(
+    accept(
+      configs().convertToPersonal({
+        headers,
+        params: { configId: shared.id },
+        body: {
+          expectedRevision: updated.expectedRevision,
+          impactSnapshot: updated.impactSnapshot,
+        },
+      }),
+      [409],
+    ),
+  ).resolves.toMatchObject({
+    body: { error: { code: "CLOUDFLARE_ACCESS_REVISION_CONFLICT" } },
+  });
+  mocks.clerk.session(member.userId, member.orgId, "org:member");
+  expect(
+    (await accept(hosts().list({ headers }), [200])).body.connections[0],
+  ).toMatchObject({
+    transport: { type: "cloudflare_access", configId: shared.id },
+  });
+});
+
+test("conversion and concurrent host binding retain a valid admin-owned reference", async () => {
+  useSecretKmsProbe();
+  await owner();
+  const shared = await createShared();
+  const preview = (
+    await accept(
+      configs().conversionPreview({
+        headers,
+        params: { configId: shared.id },
+      }),
+      [200],
+    )
+  ).body;
+  const [converted, host] = await Promise.all([
+    accept(
+      configs().convertToPersonal({
+        headers,
+        params: { configId: shared.id },
+        body: {
+          expectedRevision: preview.expectedRevision,
+          impactSnapshot: preview.impactSnapshot,
+        },
+      }),
+      [200, 409],
+    ),
+    createHost(shared.id),
+  ]);
+  if (converted.status === 409) {
+    expect(converted.body.error.code).toBe("CLOUDFLARE_ACCESS_IMPACT_CONFLICT");
+    const latest = (
+      await accept(
+        configs().conversionPreview({
+          headers,
+          params: { configId: shared.id },
+        }),
+        [200],
+      )
+    ).body;
+    await accept(
+      configs().convertToPersonal({
+        headers,
+        params: { configId: shared.id },
+        body: {
+          expectedRevision: latest.expectedRevision,
+          impactSnapshot: latest.impactSnapshot,
+        },
+      }),
+      [200],
+    );
+  }
+  expect(
+    (await accept(configs().list({ headers, query }), [200])).body.configs,
+  ).toContainEqual(
+    expect.objectContaining({ id: shared.id, scope: "personal" }),
+  );
+  expect(
+    (await accept(hosts().list({ headers }), [200])).body.connections,
+  ).toContainEqual(
+    expect.objectContaining({
+      id: host.id,
+      transport: { type: "cloudflare_access", configId: shared.id },
+    }),
+  );
+});

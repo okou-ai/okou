@@ -79,7 +79,7 @@
         "oxlint",
         "tsup"
       ],
-      "ignoreBinaries": ["electron-forge", "oxlint", "tsup"]
+      "ignoreBinaries": ["electron-forge", "mkfifo", "oxlint", "tsup"]
     },
     "packages/core": {
       "entry": [

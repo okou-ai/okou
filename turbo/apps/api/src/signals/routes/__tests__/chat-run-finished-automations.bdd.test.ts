@@ -79,6 +79,23 @@ async function setupChatAutomationFixture(): Promise<ChatAutomationFixture> {
   const runnerGroup = api.configureRunnerGroup();
   await api.grantProEntitlement(actor);
   const { providerId } = await api.ensureOrgModelProvider(actor);
+  // Completion and queue fixtures use the retained native Claude route.
+  await api.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+    {
+      model: "claude-sonnet-5",
+      isDefault: false,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   const agent = await bdd.createAgent(actor, {
     displayName: "Chat run finished automation agent",
     description: "Exercises chat-run-finished automation dispatch.",
@@ -170,7 +187,7 @@ async function startWatchedChatRun(
       agentId: fixture.agentId,
       prompt,
       clientEventId: randomUUID(),
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
     },
     [201],
   );

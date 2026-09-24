@@ -2997,6 +2997,13 @@
     "clientSecret": "Segreto client del Service Token",
     "clientSecretPlaceholder": "Incolla il Client Secret del Service Token",
     "configuration": "Cloudflare Access",
+    "convert": "Rendi personale",
+    "convertConfirm": "Ho capito che questi host non potranno connettersi finché i proprietari non li ricollegheranno.",
+    "convertHelp": "Conserva questo Service Token per uso personale. I tuoi host possono restare collegati.",
+    "convertUncertain": "Impossibile confermare la conversione. Controlla la configurazione aggiornata prima di riprovare.",
+    "convertWarning_one": "Host SSH di un altro utente interessato: {{count}}. Non sarà disponibile finché il proprietario non lo ricollegherà o sceglierà Direct.",
+    "convertWarning_many": "Host SSH di altri utenti interessati: {{count}}. Non saranno disponibili finché i proprietari non li ricollegheranno o sceglieranno Direct.",
+    "convertWarning_other": "Host SSH di altri utenti interessati: {{count}}. Non saranno disponibili finché i proprietari non li ricollegheranno o sceglieranno Direct.",
     "createNew": "Crea nuovo Cloudflare Access",
     "delete": "Elimina Cloudflare Access",
     "deleteHelp": "Eliminare questo Cloudflare Access? Il Service Token salvato non sarà recuperabile. Non è possibile eliminarlo finché un host lo utilizza.",
@@ -3004,6 +3011,7 @@
     "edit": "Modifica Cloudflare Access",
     "failed": "Impossibile salvare la modifica Cloudflare Access. Riprova.",
     "forbidden": "Solo gli amministratori dell'organizzazione possono modificare Cloudflare Access condiviso.",
+    "impactChanged": "Gli host interessati dalla conversione sono cambiati. Controlla l'impatto aggiornato prima di confermare di nuovo.",
     "inUse": "Un host SSH utilizza questo Cloudflare Access. Il proprietario deve prima associarlo a un'altra configurazione o eliminarlo.",
     "inUseHelp": "Seleziona un altro Cloudflare Access per questi host, passa esplicitamente a Diretta oppure eliminali prima di eliminare questo.",
     "invalidInput": "Alcune impostazioni Cloudflare Access non sono valide. Controlla i campi e riprova.",
@@ -3022,6 +3030,7 @@
     "resourceIdConflict": "Questo ID risorsa non può essere utilizzato. Chiudi e riapri il modulo per riprovare.",
     "retry": "Riprova",
     "reviewHelp": "La bozza viene conservata. Conferma le ultime impostazioni salvate prima di applicare le modifiche.",
+    "reviewLatest": "Controlla l'impatto aggiornato",
     "revisionExhausted": "Questa configurazione non può più essere aggiornata. Creane una nuova.",
     "save": "Salva",
     "saveUncertain": "Non abbiamo potuto confermare se le modifiche sono state salvate. Riprova lo stesso salvataggio, oppure chiudi e controlla l’elenco prima di aggiungerle di nuovo.",
@@ -4802,7 +4811,7 @@
         "unconfirmedNote": "Non siamo riusciti a verificare il collegamento a {{provider}}. Puoi riprovare o collegarlo più tardi."
       },
       "team": {
-        "copy": "Invita un membro del team a usare con te i flussi di lavoro condivisi.",
+        "copy": "Invita un membro del team a condividere i tuoi flussi di lavoro, mentre ognuno collega i propri strumenti.",
         "invite": "Invia invito",
         "invited": "Invitato",
         "label": "Email del membro del team",
@@ -4816,12 +4825,10 @@
           "workspace": "Entra nel tuo workspace."
         },
         "sending": "Invio in corso…",
-        "title": "Rendi Okou utile a tutto il team",
-        "trust": "Tutti usano gli stessi flussi di lavoro e collegano i propri strumenti."
+        "title": "Rendi Okou utile a tutto il team"
       },
       "welcome": {
         "copy": "Rivedi un compito suggerito per il tuo lavoro, adattalo al tuo obiettivo e lascia iniziare Okou.",
-        "offerTitle": "La prima ora di consulenza la offriamo noi, più fino a 100 crediti —",
         "promptLabel": "Il tuo prompt iniziale",
         "start": "Inizia con Okou",
         "title": "Inizia con un compito che conta"

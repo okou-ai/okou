@@ -77,10 +77,7 @@ export function OnboardingCompliance() {
   });
 
   return (
-    <section
-      aria-label={title}
-      className="mt-10 border-t border-t-gray-400 pt-6"
-    >
+    <section aria-label={title} className="mt-10">
       <img
         src={`${ILLUSTRATION_BASE}v3-compliance-fit_480.png`}
         srcSet={`${ILLUSTRATION_BASE}v3-compliance-fit_960.png 2x`}

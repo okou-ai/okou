@@ -5,12 +5,14 @@ import {
   Code,
   Ellipsis,
   FolderPlus,
+  KeyRound,
   LogOut,
   Play,
   Square,
   Plug,
   Trash,
 } from "lucide-react";
+import { useLastLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { DesktopAuthState } from "../../desktop-bridge";
 import {
@@ -19,11 +21,13 @@ import {
 } from "../../computer-use-types";
 import {
   addFilesystemPluginAllowedDirectory$,
+  desktopLoginMethodData$,
   importMcpPluginServers$,
   openDesktopOrgSelection$,
   removeFilesystemPluginAllowedDirectory$,
   removeMcpPluginServer$,
   setFilesystemPluginEnabled$,
+  setDesktopLoginMethod$,
   setMcpPluginServerEnabled$,
   signOutDesktop$,
   startComputerUse$,
@@ -417,6 +421,46 @@ function FilesystemPluginPanel({
   );
 }
 
+function LoginMethodPanel() {
+  const methodLoadable = useLastLoadable(desktopLoginMethodData$);
+  const [switchLoadable, switchMethod] = useLoadableSet(setDesktopLoginMethod$);
+  const method =
+    methodLoadable.state === "hasData" ? methodLoadable.data : null;
+  const error =
+    switchLoadable.state === "hasError" ? switchLoadable.error : null;
+
+  return (
+    <Panel title="Login method" icon={<KeyRound size={18} />}>
+      <CheckboxRow
+        title="Native Clerk sign-in"
+        subtitle="Switching signs you out, stops Computer Use, and restarts Desktop. Sign in again after the restart."
+        meta={method?.method === "native" ? "Native" : "Browser"}
+        checked={method?.method === "native"}
+        disabled={
+          method === null ||
+          (!method.nativeAvailable && method.method !== "native") ||
+          switchLoadable.state === "loading"
+        }
+        onChange={(enabled) => {
+          void switchMethod(enabled ? "native" : "browser");
+        }}
+      />
+      {error !== null && (
+        <div className="inline-alert inline-alert-error" role="alert">
+          <AlertCircle size={16} />
+          <span>{error instanceof Error ? error.message : String(error)}</span>
+        </div>
+      )}
+      {method && !method.nativeAvailable && (
+        <p className="compact-empty">
+          Native Clerk requires a packaged macOS build with a Clerk publishable
+          key.
+        </p>
+      )}
+    </Panel>
+  );
+}
+
 function McpPluginsPanel({
   state,
 }: {
@@ -593,6 +637,7 @@ export function ReadyExperience({
       {!running && <PermissionAutoRefresh />}
       {developerToolsEnabled && (
         <>
+          <LoginMethodPanel />
           <FilesystemPluginPanel state={state} />
           <McpPluginsPanel state={state} />
           <RuntimePanel state={state} />

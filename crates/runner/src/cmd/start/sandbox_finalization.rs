@@ -20,7 +20,6 @@ use tracing::{info, warn};
 use super::job_lifecycle::{
     ActiveBudgetLease, BudgetOwnership, FinalizationReady, RunCleanupState,
 };
-use super::ownership::OwnershipTransitions;
 #[cfg(test)]
 use super::{OuterJobPanicPoint, StartLoopTestObserver, maybe_panic_outer_job};
 use crate::executor::{SandboxReuseDisposition, SandboxReuseTerminal};
@@ -48,6 +47,7 @@ use runner_provider::RunCancellationHandle;
 use runner_supervisor::idle_lifecycle::{
     SharedIdlePool, destroy_idle_jobs_and_wait, destroy_idle_payload_and_wait,
 };
+use runner_supervisor::ownership::OwnershipTransitions;
 use runner_types::ids::RunId;
 use runner_types::types::reuse_key_kind;
 use runner_types::types::{

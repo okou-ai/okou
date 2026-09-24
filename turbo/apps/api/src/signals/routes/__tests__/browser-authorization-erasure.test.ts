@@ -168,7 +168,17 @@ async function createAuthorizationRunFixture(options?: {
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  const { providerId } = await runs.ensureOrgModelProvider(actor);
+  // Authorization requests need an active native run while the request is held.
+  await runs.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   // Shared visibility: a private Agent can only be run by its owner, so a
   // thread user distinct from the Agent owner cannot exist for one.
   const agent = await bdd.createAgent(owner, {
@@ -180,6 +190,7 @@ async function createAuthorizationRunFixture(options?: {
     {
       agentId: agent.agentId,
       prompt: "Ask the user to enable a cloud browser",
+      model: "claude-fable-5-1",
     },
     [201],
   );

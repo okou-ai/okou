@@ -41,10 +41,7 @@ export const scopedCloudflareAccessConfigSchema =
   cloudflareAccessConfigSchema.extend({
     scope: z.enum(["personal", "organization"]),
   });
-const configResponseSchema = z.union([
-  cloudflareAccessConfigSchema,
-  scopedCloudflareAccessConfigSchema,
-]);
+const configResponseSchema = scopedCloudflareAccessConfigSchema;
 const viewQuery = z.object({ view: z.literal("scoped").optional() }).strict();
 const c = initContract();
 const errors = {
@@ -74,6 +71,17 @@ const updateBody = z
     { message: "At least one Cloudflare Access field must be updated" },
   );
 const deleteBody = z.object({ expectedRevision: revision }).strict();
+const impactSnapshot = z.string().regex(/^[a-f0-9]{64}$/u);
+const conversionPreviewSchema = z
+  .object({
+    expectedRevision: revision,
+    otherHostCount: z.int().nonnegative(),
+    impactSnapshot,
+  })
+  .strict();
+const conversionBody = z
+  .object({ expectedRevision: revision, impactSnapshot })
+  .strict();
 export const cloudflareAccessContract = c.router({
   list: {
     method: "GET",
@@ -115,6 +123,21 @@ export const cloudflareAccessContract = c.router({
     body: deleteBody,
     responses: { 204: c.noBody(), ...errors },
   },
+  conversionPreview: {
+    method: "GET",
+    path: "/api/cloudflare-access/configs/:configId/conversion-preview",
+    headers: authHeadersSchema,
+    pathParams,
+    responses: { 200: conversionPreviewSchema, ...errors },
+  },
+  convertToPersonal: {
+    method: "POST",
+    path: "/api/cloudflare-access/configs/:configId/convert-to-personal",
+    headers: authHeadersSchema,
+    pathParams,
+    body: conversionBody,
+    responses: { 200: configResponseSchema, ...errors },
+  },
 });
 export type CloudflareAccessConfig = z.infer<
   typeof cloudflareAccessConfigSchema
@@ -127,3 +150,7 @@ export type CreateCloudflareAccessRequest = z.infer<
 >;
 export type CreateCloudflareAccessConfigRequest = z.infer<typeof createBody>;
 export type UpdateCloudflareAccessRequest = z.infer<typeof updateBody>;
+export type CloudflareAccessConversionPreview = z.infer<
+  typeof conversionPreviewSchema
+>;
+export type ConvertCloudflareAccessRequest = z.infer<typeof conversionBody>;

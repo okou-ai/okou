@@ -40,7 +40,7 @@ const {
   api,
   chat,
   connectors,
-  entitledChatActor,
+  entitledChatActor: createEntitledChatActor,
   sendChatRun,
   claimChatRun,
   completeChatRunOk,
@@ -49,6 +49,22 @@ const {
   chatThreadsClient,
   sessionHeaders,
 } = createChatEventsFixture(context);
+
+// Connector selection tests observe claimable native runs; Sonnet's Pi route
+// can finish API-first before these Runner assertions execute.
+async function entitledChatActor() {
+  const result = await createEntitledChatActor();
+  await api.updateOrgModelPolicies(result.actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: result.providerId,
+    },
+  ]);
+  return result;
+}
 
 function chatThreadConnectorSelectionsClient() {
   return setupApp({ context, routes: chatThreadRoutes })(
@@ -121,7 +137,7 @@ async function configureRuntimeContextGateway(
             authHeaderName: "Authorization",
             authHeaderTemplate: "Bearer {{secret}}",
             modelMappings: {
-              "claude-sonnet-5": "anthropic/claude-sonnet-4.6",
+              "claude-fable-5-1": "anthropic/claude-fable-5.1",
             },
           },
         ],
@@ -135,7 +151,7 @@ async function configureRuntimeContextGateway(
   }
   await api.updateOrgModelPolicies(actor, [
     {
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
       isDefault: true,
       defaultProviderType: "custom-anthropic-messages",
       credentialScope: "org",
@@ -364,7 +380,7 @@ describe("CHAT-02: thread connector account selection", () => {
     expect(claimed.claim.environment).toMatchObject({
       ANTHROPIC_BASE_URL:
         "https://runtime-context-priority.example.com/anthropic",
-      ANTHROPIC_MODEL: "anthropic/claude-sonnet-4.6",
+      ANTHROPIC_MODEL: "anthropic/claude-fable-5.1",
     });
     expect(
       claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
@@ -982,7 +998,7 @@ describe("CHAT-02: thread connector account selection", () => {
         headers: sessionHeaders(actor),
         body: {
           agentId,
-          model: "claude-sonnet-5",
+          model: "claude-fable-5-1",
           connectorSelections: [
             {
               connectionId: connection.id,

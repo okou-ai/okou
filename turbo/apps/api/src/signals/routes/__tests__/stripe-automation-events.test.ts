@@ -200,6 +200,8 @@ async function setupScenario(
   if (!actor.orgId) {
     throw new Error("Expected an organization-scoped workflow owner");
   }
+  // Fable keeps Stripe workflow runs on the claimable native Runner route.
+  await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
   const { agentId } = await workflows.createAgent(actor, {
     displayName: "Stripe Automation Event Agent",
   });
