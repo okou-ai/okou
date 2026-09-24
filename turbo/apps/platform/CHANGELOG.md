@@ -11,6 +11,29 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.956.0](https://github.com/okou-ai/okou/compare/app-v0.955.0...app-v0.956.0) (2026-09-24)
+
+
+### Features
+
+* **platform:** introduce okou and compliance progress on the first onboarding step ([#36562](https://github.com/okou-ai/okou/issues/36562)) ([77a73be](https://github.com/okou-ai/okou/commit/77a73be2c6194d6c34ca30138ba7b2c32b9f0879))
+
+
+### Bug Fixes
+
+* **api:** derive morning brief worker signing key ([#36544](https://github.com/okou-ai/okou/issues/36544)) ([c385f0c](https://github.com/okou-ai/okou/commit/c385f0cba94bf508f06f35019dc6e3638b689b14))
+* **artifacts:** archive public hosted sites on download ([#36538](https://github.com/okou-ai/okou/issues/36538)) ([b3eca00](https://github.com/okou-ai/okou/commit/b3eca00b8a577ff22997960762ee38722443c00e))
+* **ui:** refine account menu subscription usage ([#36371](https://github.com/okou-ai/okou/issues/36371)) ([2cc261d](https://github.com/okou-ai/okou/commit/2cc261d8ff46105e5906d230484d9fffcb335567))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.503.1
+    * @okouai/connectors bumped to 3.15.5
+    * @okouai/core bumped to 8.708.1
+
 ## [0.955.0](https://github.com/okou-ai/okou/compare/app-v0.954.0...app-v0.955.0) (2026-09-24)
 
 

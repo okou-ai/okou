@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.708.1](https://github.com/okou-ai/okou/compare/core-v8.708.0...core-v8.708.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* **api:** derive morning brief worker signing key ([#36544](https://github.com/okou-ai/okou/issues/36544)) ([c385f0c](https://github.com/okou-ai/okou/commit/c385f0cba94bf508f06f35019dc6e3638b689b14))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.503.1
+
 ## [8.708.0](https://github.com/okou-ai/okou/compare/core-v8.707.1...core-v8.708.0) (2026-09-24)
 
 

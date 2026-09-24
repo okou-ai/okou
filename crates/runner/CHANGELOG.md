@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.213.11](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.10...runner-rs-v0.213.11) (2026-09-24)
+
+
+### Documentation
+
+* **python:** clarify credential-free firewall fallback ([#36590](https://github.com/okou-ai/okou/issues/36590)) ([b1958f1](https://github.com/okou-ai/okou/commit/b1958f1f1ba27e8773833b7f4952f1db576b27a6))
+
 ## [0.213.10](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.9...runner-rs-v0.213.10) (2026-09-24)
 
 
