@@ -3,7 +3,7 @@ import {
   type BrowserUserActionResponse,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { cn } from "@okouai/ui";
-import { Button } from "@okouai/ui/components/ui/button";
+import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
 import { Input } from "@okouai/ui/components/ui/input";
 import { useGet, useLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -611,7 +611,7 @@ function PendingFormGate({
         siteOrigin={request.action.siteOrigin}
         showTitle={showTitle}
       />
-      {entryState === "checking" ? (
+      {entryState !== "unavailable" ? (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 size={16} className="animate-spin" />
           {t(($) => {
@@ -620,13 +620,11 @@ function PendingFormGate({
         </p>
       ) : (
         <>
-          {entryState === "unavailable" && (
-            <p role="alert" className="text-sm text-destructive">
-              {t(($) => {
-                return $.chat.browserInput.unavailable;
-              })}
-            </p>
-          )}
+          <p role="alert" className="text-sm text-destructive">
+            {t(($) => {
+              return $.chat.browserInput.unavailable;
+            })}
+          </p>
           <Button
             type="button"
             onClick={() => {
@@ -634,9 +632,7 @@ function PendingFormGate({
             }}
           >
             {t(($) => {
-              return entryState === "unavailable"
-                ? $.chat.browserInput.retry
-                : $.chat.browserInput.open;
+              return $.chat.browserInput.retry;
             })}
           </Button>
         </>
@@ -653,34 +649,23 @@ function PendingInlineAction({
   readonly request: PendingBrowserInputRequest;
 }) {
   const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const beginEntry = useSet(signals.beginEntry$);
-  const endEntry = useSet(signals.endEntry$);
   return (
     <div className="flex h-full w-full flex-col justify-center gap-2 @[520px]:flex-row @[520px]:items-center @[520px]:justify-between @[520px]:gap-3">
       <PendingFormHeader siteOrigin={request.action.siteOrigin} compact />
       <div className="shrink-0 self-start pl-[26px] @[520px]:ml-auto @[520px]:self-auto @[520px]:pl-0">
-        <ChatCardDetails
-          title={t(($) => {
-            return $.chat.browserInput.title;
-          })}
-          triggerLabel={t(($) => {
+        <a
+          href={signals.originalUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={cn(
+            buttonVariants({ variant: "outline", size: "sm" }),
+            "shrink-0",
+          )}
+        >
+          {t(($) => {
             return $.chat.browserInput.open;
           })}
-          onOpenChange={(open) => {
-            if (open) {
-              detach(beginEntry(pageSignal), Reason.DomCallback);
-            } else {
-              endEntry();
-            }
-          }}
-        >
-          <PendingFormGate
-            signals={signals}
-            request={request}
-            showTitle={false}
-          />
-        </ChatCardDetails>
+        </a>
       </div>
     </div>
   );
@@ -1131,6 +1116,7 @@ export function BrowserUserActionCard({
   const pageSignal = useGet(pageSignal$);
   const requestLoadable = useLoadable(signals.request$);
   const refresh = useSet(signals.refresh$);
+  const retryStandaloneRequest = useSet(signals.retryStandaloneRequest$);
   const resumeRef = useSet(signals.resumeRef$);
   const locallyDelivered = useGet(signals.callbackDelivered$);
   const callbackFailed = useGet(signals.callbackFailed$);
@@ -1143,19 +1129,29 @@ export function BrowserUserActionCard({
       : undefined;
   const callbackDelivered =
     locallyDelivered || action?.callbackDelivered === true;
-  const needsDeliveryRefresh =
+  const needsReturnRefresh =
     action !== undefined &&
-    (action.state === "succeeded" || action.state === "cancelled") &&
-    !callbackDelivered;
+    ((variant === "inline" &&
+      action.kind === "input" &&
+      action.state === "pending") ||
+      ((action.state === "succeeded" || action.state === "cancelled") &&
+        !callbackDelivered));
   const continuing = busy || continueLoadable.state === "loading";
   const onContinue = () => {
     detach(continueAction(pageSignal), Reason.DomCallback);
+  };
+  const onRefresh = () => {
+    if (variant === "standalone") {
+      detach(retryStandaloneRequest(pageSignal), Reason.DomCallback);
+    } else {
+      refresh();
+    }
   };
 
   return (
     <BrowserActionSurface
       variant={variant}
-      resumeRef={needsDeliveryRefresh ? resumeRef : undefined}
+      resumeRef={needsReturnRefresh ? resumeRef : undefined}
     >
       <BrowserUserActionCardContent
         browserSessionSignals={browserSessionSignals}
@@ -1163,7 +1159,7 @@ export function BrowserUserActionCard({
         callbackFailed={callbackFailed}
         continuing={continuing}
         onContinue={onContinue}
-        refresh={refresh}
+        refresh={onRefresh}
         requestLoadable={requestLoadable}
         signals={signals}
         variant={variant}

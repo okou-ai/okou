@@ -3,6 +3,7 @@ import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event
 import { createStore, type Store } from "ccstate";
 import { afterEach, beforeAll, beforeEach } from "vitest";
 import { installPlatformLifecycle } from "../../test/platform-lifecycle.ts";
+import { installSharedDatabaseWorkerBootstrap } from "../../test/shared-database-worker-bootstrap.ts";
 import { logger, resetLoggerForTest } from "../log";
 import { resetLocalStorageForTest$ } from "../external/local-storage";
 import { resetSessionStorageForTest$ } from "../external/session-storage.ts";
@@ -132,6 +133,7 @@ export function testContext(): TestContext {
 
   beforeEach(() => {
     installPlatformLifecycle(context.signal);
+    installSharedDatabaseWorkerBootstrap(context.signal);
   });
 
   afterEach(() => {

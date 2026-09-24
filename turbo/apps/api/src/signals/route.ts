@@ -128,6 +128,7 @@ import { onboardingCompleteRoutes } from "./routes/onboarding-complete";
 import { onboardingRecommendationRoutes } from "./routes/onboarding-recommendations";
 import { onboardingStatusRoutes } from "./routes/onboarding-status";
 import { onboardingSourcesRoutes } from "./routes/onboarding-sources";
+import { onboardingWorkflowConnectorsRoutes } from "./routes/onboarding-workflow-connectors";
 import { orgInviteRoutes } from "./routes/org-invite";
 import { orgDeleteRoutes } from "./routes/org-delete";
 import { orgLogoRoutes } from "./routes/org-logo";
@@ -229,6 +230,7 @@ import { userPermissionGrantsRoutes } from "./routes/user-permission-grants";
 import { userModelPreferenceRoutes } from "./routes/user-model-preference";
 import { avatarVideoRoutes } from "./routes/avatar-video";
 import { voiceIoQuotaRoutes } from "./routes/voice-io-quota";
+import { agentSetupPromptRoutes } from "./routes/agent-setup-prompts";
 import { voiceIoPolishRoutes } from "./routes/voice-io-polish";
 import { voiceIoSpeechRoutes } from "./routes/voice-io-speech";
 import { voiceIoSttRoutes } from "./routes/voice-io-stt";
@@ -387,6 +389,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...meModelProvidersUpsertRoutes,
   ...voiceIoQuotaRoutes,
   ...voiceIoPolishRoutes,
+  ...agentSetupPromptRoutes,
   ...voiceIoSpeechRoutes,
   ...voiceIoSttRoutes,
   ...voiceIoTranscribeRoutes,
@@ -402,6 +405,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...onboardingRecommendationRoutes,
   ...onboardingStatusRoutes,
   ...onboardingSourcesRoutes,
+  ...onboardingWorkflowConnectorsRoutes,
   ...orgInviteRoutes,
   ...orgDeleteRoutes,
   ...orgLogoRoutes,

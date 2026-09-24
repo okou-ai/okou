@@ -4859,8 +4859,7 @@
       "preparedDescription": "{{assistantName}} は、ツールから次のステップを準備します。",
       "preparedTitle": "ワークフローが準備されました",
       "reviewDescription": "{{assistantName}} はワークフローを完了し、結果を返します。",
-      "reviewTitle": "レビューの準備ができました",
-      "source": "ソース"
+      "reviewTitle": "レビューの準備ができました"
     },
     "workflowPicker": {
       "categoryDescription": "すぐに実行できるセットアップなので、ツールや目標に合わせて調整できます。",

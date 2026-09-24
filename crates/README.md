@@ -7,10 +7,10 @@ control and RPC services, shared contracts, and developer/test support.
 
 | Crate                    | Responsibility                                                                                        |
 | ------------------------ | ----------------------------------------------------------------------------------------------------- |
-| runner                   | Process-wide run composition, provider completion, sandbox finalization and operational CLI            |
+| runner                   | Process-wide composition, `start` orchestration, operational CLI and build packaging                  |
 | runner-executor          | Claimed-run sandbox execution, session history, results, diagnostics and per-run telemetry             |
-| runner-host              | Runner host filesystem, process, lock, path and logging primitives                                    |
-| runner-lifecycle         | Idle sandbox, status and workspace image lifecycle                                                    |
+| runner-host              | Runner host filesystem, live process registry, local control IPC, locks, paths and logging primitives |
+| runner-lifecycle         | Idle sandbox, memory prefetch, status and workspace image lifecycle                                   |
 | runner-network           | Runner proxy, DNS, CA, network log capture and bounded upload                                         |
 | runner-provider          | API/local job discovery, claiming, completion, active input, cancellation and queue coordination      |
 | runner-remote            | Guest RPC, remote usage, SSH authority/sessions/files, and VNC sessions                               |

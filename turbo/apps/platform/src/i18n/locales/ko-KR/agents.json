@@ -510,6 +510,9 @@
       "description": "에이전트 이름을 지정하고 사용 권한을 설정하세요.",
       "namePlaceholder": "예: 연구 보조",
       "newAgentAlt": "새 에이전트",
+      "responsibilityLabel": "이 에이전트가 어떤 일을 도와주길 원하시나요?",
+      "responsibilityPlaceholder": "예: 매주 월요일 HubSpot에서 지난주 파이프라인을 요약하고 주의가 필요한 거래를 알려 주세요.",
+      "setupFailed": "에이전트 설정이 완료되지 않았습니다. 다시 시도하기 전에 에이전트 목록을 확인하세요.",
       "success": "{{agentName}}이(가) 성공적으로 생성되었습니다",
       "title": "새 에이전트 생성",
       "visibility": {

@@ -4865,8 +4865,7 @@
       "preparedDescription": "{{assistantName}} prepares the next step from your tools.",
       "preparedTitle": "Workflow prepared",
       "reviewDescription": "{{assistantName}} completes the workflow and returns the result.",
-      "reviewTitle": "Ready for review",
-      "source": "Source"
+      "reviewTitle": "Ready for review"
     },
     "workflowPicker": {
       "categoryDescription": "Ready-to-run setups you can adapt to your tools and goals.",

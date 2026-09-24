@@ -19,18 +19,18 @@ enum PrefetchOutcome {
     ReadFailed { bytes: u64, error: std::io::Error },
 }
 
-pub(crate) struct MemoryPrefetchCandidate {
-    pub(crate) path: PathBuf,
-    pub(crate) memory_mb: u32,
+pub struct MemoryPrefetchCandidate {
+    pub path: PathBuf,
+    pub memory_mb: u32,
 }
 
-pub(crate) struct MemoryPrefetchTasks {
+pub struct MemoryPrefetchTasks {
     cancel: CancellationToken,
     handles: Vec<JoinHandle<()>>,
 }
 
 impl MemoryPrefetchTasks {
-    pub(crate) fn spawn(
+    pub fn spawn(
         candidates: impl IntoIterator<Item = MemoryPrefetchCandidate>,
         budget_mb: u64,
     ) -> Self {
@@ -119,19 +119,19 @@ impl MemoryPrefetchTasks {
         Self { cancel, handles }
     }
 
-    #[cfg(test)]
-    pub(crate) fn empty() -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn empty() -> Self {
         Self {
             cancel: CancellationToken::new(),
             handles: Vec::new(),
         }
     }
 
-    pub(crate) fn cancel(&self) {
+    pub fn cancel(&self) {
         self.cancel.cancel();
     }
 
-    pub(crate) async fn drain(&mut self) {
+    pub async fn drain(&mut self) {
         for handle in self.handles.drain(..) {
             if let Err(error) = handle.await {
                 warn!(error = %error, "memory prefetch task failed");
@@ -139,13 +139,13 @@ impl MemoryPrefetchTasks {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn task_count(&self) -> usize {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn task_count(&self) -> usize {
         self.handles.len()
     }
 
-    #[cfg(test)]
-    pub(crate) fn from_test_handle(cancel: CancellationToken, handle: JoinHandle<()>) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn from_test_handle(cancel: CancellationToken, handle: JoinHandle<()>) -> Self {
         Self {
             cancel,
             handles: vec![handle],

@@ -16,6 +16,7 @@ import {
   getPublicConnectorCatalogStatus,
   getPublicConnectorCatalogPermissionDetail,
   isConnectorCatalogUnavailableError,
+  listConnectedConnectorBriefs,
   listConnectorCatalogConnectItems,
   listPublicConnectorCatalog,
   listPublicConnectorCatalogStatus,
@@ -179,6 +180,35 @@ export const listConnectorCatalogConnectItems$ = command(
         featureStates: context.featureStates,
         connections: connectorState.value,
         filter,
+      }),
+      signal,
+    );
+    if (!catalog.ok) {
+      return connectorCatalogUnavailable();
+    }
+
+    return { status: 200 as const, body: catalog.value };
+  },
+);
+
+/**
+ * Label and icon for a named set of connectors, read from the per-connector
+ * projection without the caller's connection status.
+ */
+export const listConnectorCatalogBriefs$ = command(
+  async (
+    { set },
+    connectorSlugs: readonly ConnectorSlug[],
+    signal: AbortSignal,
+  ) => {
+    const context = await set(connectorCatalogRequestContext$);
+    signal.throwIfAborted();
+
+    const catalog = await settleConnectorCatalogRead(
+      listConnectedConnectorBriefs({
+        db: context.db,
+        featureStates: context.featureStates,
+        connectorSlugs,
       }),
       signal,
     );

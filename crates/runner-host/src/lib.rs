@@ -1,4 +1,4 @@
-//! Runner host filesystem, process, lock, path, and logging primitives.
+//! Runner host filesystem, process registry, local control IPC, locks, paths, and logging primitives.
 
 pub mod bounded_command;
 pub mod child_cleanup;
@@ -7,6 +7,8 @@ pub mod error;
 pub mod host;
 pub mod host_env;
 pub mod host_file;
+pub mod idle_prune_control;
+pub mod live_runner_instances;
 pub mod lock;
 pub mod log_file;
 pub mod parent_death;
