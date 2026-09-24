@@ -41,11 +41,12 @@ const creationRoute = {
     401: apiErrorSchema,
     402: apiErrorSchema,
     403: apiErrorSchema,
+    410: apiErrorSchema,
     500: apiErrorSchema,
     502: apiErrorSchema,
     503: apiErrorSchema,
   },
-  summary: "Generate and persist WAV speech audio",
+  summary: "Retired built-in speech generation endpoint",
 } as const;
 
 export const voiceIoSpeechContract = c.router({

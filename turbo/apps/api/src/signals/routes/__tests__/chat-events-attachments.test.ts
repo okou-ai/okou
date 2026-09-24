@@ -7,11 +7,9 @@ import type {
 import {
   ILLUSTRATION_TEMPLATE_ITEMS,
   PRESENTATION_TEMPLATE_PICKER_ITEMS,
-  VIDEO_TEMPLATE_ITEMS,
   WEBSITE_TEMPLATE_ITEMS,
   WORKFLOW_TEMPLATE_ITEMS,
 } from "@okouai/core";
-import { avatarTemplateStylePresetId } from "@okouai/core/avatar-template";
 import { formatUserPresentationTemplateId } from "@okouai/core/presentation-template-selection";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
@@ -746,31 +744,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(presentationPrompt).not.toContain("- Artifact type: presentation");
     await cancelChatRun(actor, presentation.runId);
 
-    const videoTemplate = VIDEO_TEMPLATE_ITEMS.find((item) => {
-      return item.id === "video-template:epic-grandeur";
-    });
-    if (!videoTemplate) {
-      throw new Error("Expected the epic-grandeur video template");
-    }
-    const video = await sendChatRun(actor, {
-      agentId,
-      prompt: "make a product video",
-      template: {
-        type: "video",
-        selection: { stylePresetId: videoTemplate.id },
-      },
-    });
-    const videoRun = await api.readRun(actor, video.runId);
-    const videoPrompt = videoRun.appendSystemPrompt ?? "";
-    expect(videoPrompt).toContain("# Inline Templates");
-    expect(videoPrompt).toContain(
-      `Template: ${videoTemplate.title} (${videoTemplate.id})`,
-    );
-    expect(videoPrompt).toContain(
-      `okou generate video --provider built-in --template ${videoTemplate.id}`,
-    );
-    await cancelChatRun(actor, video.runId);
-
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped actor");
     }
@@ -823,36 +796,6 @@ describe("CHAT-02: generation templates and attachments", () => {
       (await api.readRun(actor, withoutVideoRunOptions.runId)).prompt,
     ).not.toContain("# Video Generation Defaults");
     await cancelChatRun(actor, withoutVideoRunOptions.runId);
-
-    const avatarId = 81;
-    const avatarVoiceId = "en-US-ChristopherNeural";
-    const avatar = await sendChatRun(actor, {
-      agentId,
-      prompt: "make a presenter video",
-      template: {
-        type: "video",
-        selection: {
-          stylePresetId: avatarTemplateStylePresetId(avatarId),
-          titleSnapshot: "Do not inject this avatar name",
-          previewUrl: "https://example.com/untrusted-avatar.jpg",
-          voiceId: avatarVoiceId,
-          aspectRatio: "landscape",
-        },
-      },
-    });
-    const avatarRun = await api.readRun(actor, avatar.runId);
-    const avatarPrompt = avatarRun.appendSystemPrompt ?? "";
-    expect(avatarPrompt).toContain("# Inline Templates");
-    expect(avatarPrompt).toContain(`Public JoggAI avatar ID: ${avatarId}`);
-    expect(avatarPrompt).toContain(`Public JoggAI voice ID: ${avatarVoiceId}`);
-    expect(avatarPrompt).toContain("Aspect ratio: landscape");
-    expect(avatarPrompt).not.toContain("--list-voices");
-    expect(avatarPrompt).toContain(
-      `okou generate avatar-video --provider built-in --avatar-id ${avatarId} --voice-id ${avatarVoiceId} --aspect-ratio landscape`,
-    );
-    expect(avatarPrompt).not.toContain("Do not inject this avatar name");
-    expect(avatarPrompt).not.toContain("untrusted-avatar.jpg");
-    await cancelChatRun(actor, avatar.runId);
 
     const websiteTemplate = WEBSITE_TEMPLATE_ITEMS[0];
     if (!websiteTemplate) {
@@ -979,31 +922,26 @@ describe("CHAT-02: generation templates and attachments", () => {
     );
     await cancelChatRun(actor, second.runId);
 
-    // Turn 3: attaching a video preset now only resolves the video template live
-    // — templates no longer merge across turns or types.
-    const videoTemplate = VIDEO_TEMPLATE_ITEMS.find((item) => {
-      return item.id === "video-template:epic-grandeur";
-    });
-    if (!videoTemplate) {
-      throw new Error("Expected the epic-grandeur video template");
+    // Turn 3: attaching a website template resolves only that selection.
+    const websiteTemplate = WEBSITE_TEMPLATE_ITEMS[0];
+    if (!websiteTemplate) {
+      throw new Error("Expected a registered website template");
     }
     const third = await sendChatRun(actor, {
       agentId,
       threadId: first.threadId,
-      prompt: "now make a video",
+      prompt: "now make a website",
       template: {
-        type: "video",
-        selection: { stylePresetId: videoTemplate.id },
+        type: "website",
+        selection: { websiteTemplateId: websiteTemplate.id },
       },
     });
     const thirdPrompt = (await api.readRun(actor, third.runId))
       .appendSystemPrompt;
     expect(thirdPrompt).toContain(
-      `Template: ${videoTemplate.title} (${videoTemplate.id})`,
+      `Template: ${websiteTemplate.title} (${websiteTemplate.id})`,
     );
-    expect(thirdPrompt).toContain(
-      `okou generate video --provider built-in --template ${videoTemplate.id}`,
-    );
+    expect(thirdPrompt).toContain("When you produce a website");
     expect(thirdPrompt).toContain("# Incomplete Rounds Context");
     expect(thirdPrompt).not.toContain("# Web Chat Run Context");
     // The illustration style is gone entirely for this turn: it's not attached
@@ -1187,7 +1125,24 @@ describe("CHAT-02: generation templates and attachments", () => {
           type: "video",
           selection: { stylePresetId: "video-style:missing" },
         },
-        message: "Unknown video template",
+        message: "Video and avatar templates are no longer available",
+      },
+      {
+        template: {
+          type: "video",
+          selection: { stylePresetId: "video-template:epic-grandeur" },
+        },
+        message: "Video and avatar templates are no longer available",
+      },
+      {
+        template: {
+          type: "video",
+          selection: {
+            stylePresetId: "avatar-template:81",
+            avatarOptions: { voiceId: "en-US-ChristopherNeural" },
+          },
+        },
+        message: "Video and avatar templates are no longer available",
       },
       {
         template: {

@@ -1,5 +1,41 @@
 # Deployment Compatibility
 
+## Video and avatar template retirement (2026-09-24)
+
+The App no longer offers video or avatar templates, and the CLI exposes video,
+voice, and avatar generation only as connector discovery and guidance. The API
+rejects new built-in video, voice, and avatar submissions, including private
+artifact variants, with an authenticated `410 GENERATION_RETIRED` response.
+JoggAI avatar and voice catalogs are retired at the same boundary. Old clients
+receive the explicit error before a provider request, job submission, or charge.
+Existing paid-tool preferences and video model catalogs, settings, and pricing
+remain readable; those model entries do not reopen the retired submission APIs.
+
+Video and intro-video template wire shapes remain valid for immutable chat
+history. New message admission rejects these templates, including avatar IDs
+inside the video envelope. Old onboarding URLs and drafts return users to the
+remaining choices instead of starting a retired task. Historical artifact and
+template previews remain readable. Accepted jobs retain their status, webhook,
+completion, artifact, and billing paths so an API rollout does not strand them.
+Chat microphone input, transcription, and message read-aloud remain separate.
+
+A new App or CLI can run against the preceding API because it stops offering
+these operations locally. An old App or pinned CLI against the new API may
+still offer them but receives the retirement response. Retirement is effective
+only after all serving API instances run this change; rolling back the API can
+re-enable submission. No database rewrite or migration is included. The public
+website is a separate deployment and must publish its companion removal of
+video galleries and built-in video/voice service pages to align discoverability.
+
+The old video-onboarding Stripe return handler is a bounded compatibility
+bridge tracked in [#36506](https://github.com/okou-ai/okou/issues/36506).
+Remove it after the replacement App is live, the client-version floor excludes
+old checkout creators, the old App is outside the rollback window, and issued
+video-onboarding sessions are terminal with payment and onboarding fulfillment
+reconciled. Remove its dedicated state reader and bridge tests at the same time.
+History rendering and the current editor's supported-template policy are not
+part of that cleanup: a current client can still copy an immutable old message.
+
 ## Codex OAuth workspace ID preparation
 
 The API supplies the selected workspace ID as `CODEX_OAUTH_ACCOUNT_ID` for

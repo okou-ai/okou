@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   ILLUSTRATION_TEMPLATE_ITEMS,
   PRESENTATION_TEMPLATE_PICKER_ITEMS,
-  VIDEO_TEMPLATE_ITEMS,
   WEBSITE_TEMPLATE_ITEMS,
   WORKFLOW_TEMPLATE_ITEMS,
 } from "@okouai/core";
@@ -312,84 +311,6 @@ describe("buildGenerationTemplatePrompt", () => {
     expect(result.prompt).toContain("--compiled-prompt");
     expect(result.prompt).toContain("resolved compatible CLI options");
     expect(result.prompt).toContain("required reference image URLs");
-  });
-
-  it("builds video template preset guidance", () => {
-    const item = VIDEO_TEMPLATE_ITEMS[0]!;
-
-    const result = buildGenerationTemplatePrompt({
-      type: "video",
-      selection: {
-        stylePresetId: item.id,
-      },
-    });
-
-    expect(result).toStrictEqual({
-      status: "resolved",
-      prompt: expect.stringContaining("# Artifact Template Context"),
-    });
-    if (result.status !== "resolved") {
-      return;
-    }
-    expect(result.prompt).toContain(`Template: ${item.title} (${item.id})`);
-    expect(result.prompt).toContain(
-      `Template source: okou-ai/okou-skills@main:${item.sourcePath}`,
-    );
-    expect(result.prompt).not.toContain("nexu-io/open-design");
-    expect(result.prompt).toContain(
-      `okou generate video --provider built-in --template ${item.id}`,
-    );
-    expect(result.prompt).toContain(
-      "Run once to fetch the locked video authoring packet",
-    );
-    expect(result.prompt).toContain(
-      "read its SKILL.md before final generation",
-    );
-    expect(result.prompt).toContain("without `--template`");
-  });
-
-  it("reads avatar options from the flat fields older bundles wrote", () => {
-    const flat = buildGenerationTemplatePrompt({
-      type: "video",
-      selection: {
-        stylePresetId: "avatar-template:42",
-        voiceId: "voice-legacy",
-        aspectRatio: "landscape",
-      },
-    });
-    const nested = buildGenerationTemplatePrompt({
-      type: "video",
-      selection: {
-        stylePresetId: "avatar-template:42",
-        avatarOptions: { voiceId: "voice-legacy", aspectRatio: "landscape" },
-      },
-    });
-
-    expect(flat.status).toBe("resolved");
-    expect(nested).toStrictEqual(flat);
-    if (flat.status !== "resolved") {
-      return;
-    }
-    expect(flat.prompt).toContain("Public JoggAI voice ID: voice-legacy");
-    expect(flat.prompt).toContain("Aspect ratio: landscape");
-  });
-
-  it("prefers nested avatar options over the flat fallback", () => {
-    const result = buildGenerationTemplatePrompt({
-      type: "video",
-      selection: {
-        stylePresetId: "avatar-template:42",
-        avatarOptions: { voiceId: "voice-nested" },
-        voiceId: "voice-flat",
-      },
-    });
-
-    expect(result.status).toBe("resolved");
-    if (result.status !== "resolved") {
-      return;
-    }
-    expect(result.prompt).toContain("Public JoggAI voice ID: voice-nested");
-    expect(result.prompt).not.toContain("voice-flat");
   });
 
   it("builds workflow template guidance", () => {

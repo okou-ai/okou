@@ -1,14 +1,9 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 
-import {
-  PutObjectCommand,
-  type PutObjectCommandInput,
-} from "@aws-sdk/client-s3";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
 import type { OrgTier } from "@okouai/api-contracts/contracts/orgs";
-import { onTestFinished } from "vitest";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
 
@@ -17,48 +12,30 @@ import { server } from "../../../mocks/server";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { now } from "../../../lib/time";
 import { billingStatusRoutes } from "../billing-status";
-import { voiceIoSpeechRoutes } from "../voice-io-speech";
 import { voiceIoSttRoutes } from "../voice-io-stt";
 import { voiceIoQuotaRoutes } from "../voice-io-quota";
 import { seedUserBehaviorCount } from "../../../test-fixtures/user-behavior-count";
 import {
-  createUsagePricingFixture,
   seedOrgMetadata,
   type UsagePricingFixture,
 } from "../../../test-fixtures/system-config-seeds";
 import { seedOrgMembership$ } from "./helpers/org-membership";
-import { seedCompose$, seedRun$ } from "./helpers/usage-state";
+
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const store = createStore();
 const mocks = createRouteMocks(context);
-const TEST_BUCKET = "test-user-artifacts";
 const AUDIO_INPUT_BEHAVIOR_KEY = "audio_input";
 const AUDIO_INPUT_FREE_QUOTA = 10;
 const FREE_DAILY_RATE_LIMIT = 10;
 const FREE_DAILY_DURATION_LIMIT_SECONDS = 10 * 60;
 const PRO_DAILY_RATE_LIMIT = 300;
 const PRO_DAILY_DURATION_LIMIT_SECONDS = 200 * 60;
-const OPENAI_AUDIO_SPEECH_URL = "https://api.openai.com/v1/audio/speech";
 const BYTEPLUS_ASR_FLASH_URL =
   "https://byteplus-proxy.vm0.ai/api/v3/auc/bigmodel/recognize/flash";
-const VOICE_IO_TTS_MODEL = "gpt-4o-mini-tts";
-const SPEECH_PRICING_ROW = {
-  kind: "audio",
-  provider: VOICE_IO_TTS_MODEL,
-  category: "output_audio_seconds",
-  unitPrice: 5,
-  unitSize: 1,
-} as const;
-const SPEECH_CONTENT_TYPE = "audio/wav";
 const DAILY_RATE_KEY_PREFIX = "audio_input_daily";
 const DAILY_DURATION_KEY_PREFIX = "audio_input_dur";
-
-interface SpeechPricing {
-  readonly unitPrice: number;
-  readonly unitSize: number;
-}
 
 interface VoiceFixture {
   readonly orgId: string;
@@ -76,7 +53,6 @@ function createVoiceIoTestApp(
     signal: context.signal,
     routes: [
       ...voiceIoQuotaRoutes,
-      ...voiceIoSpeechRoutes,
       ...voiceIoSttRoutes,
       ...billingStatusRoutes,
     ],
@@ -98,23 +74,6 @@ function sttDailyRateKey(date: Date = currentDate()): string {
 
 function sttDailyDurationKey(date: Date = currentDate()): string {
   return `${DAILY_DURATION_KEY_PREFIX}_${date.toISOString().slice(0, 10)}`;
-}
-
-function putObjectInput(): PutObjectCommandInput {
-  const command = context.mocks.s3.send.mock.calls
-    .map(([candidate]) => {
-      return candidate;
-    })
-    .find((candidate): candidate is PutObjectCommand => {
-      return (
-        candidate instanceof PutObjectCommand &&
-        candidate.input.Bucket === TEST_BUCKET
-      );
-    });
-  if (!command) {
-    throw new Error("Expected generated speech to be uploaded to S3");
-  }
-  return command.input;
 }
 
 function writeAscii(bytes: Uint8Array, offset: number, value: string): void {
@@ -239,20 +198,6 @@ function okouToken(args: {
   });
 }
 
-async function createSpeechPricingResolution(
-  state: "configured" | "missing",
-): Promise<UsagePricingFixture["resolution"]> {
-  const fixture = await createUsagePricingFixture(
-    state === "configured"
-      ? { configured: [SPEECH_PRICING_ROW] }
-      : { missing: [SPEECH_PRICING_ROW] },
-  );
-  onTestFinished(async () => {
-    await fixture.cleanup();
-  });
-  return fixture.resolution;
-}
-
 // Isolation comes from random org/user IDs; no teardown is needed.
 async function seedVoiceFixture(options: {
   readonly credits?: number;
@@ -275,34 +220,6 @@ async function seedVoiceFixture(options: {
   );
 
   return fixture;
-}
-
-// Reads the org credit balance through the product billing surface so charge
-// assertions stay on externally observable state.
-async function orgCredits(fixture: VoiceFixture): Promise<number> {
-  mocks.clerk.session(fixture.userId, fixture.orgId);
-  const app = createVoiceIoTestApp();
-  const response = await app.request("/api/billing/status", {
-    headers: authHeaders(),
-  });
-  expect(response.status).toBe(200);
-  const body: unknown = await response.json();
-  if (
-    typeof body !== "object" ||
-    body === null ||
-    !("credits" in body) ||
-    typeof body.credits !== "number"
-  ) {
-    throw new Error("Expected billing status credits");
-  }
-  return body.credits;
-}
-
-function expectedCredits(
-  durationSeconds: number,
-  pricing: SpeechPricing,
-): number {
-  return Math.ceil((durationSeconds * pricing.unitPrice) / pricing.unitSize);
 }
 
 function sttFile(
@@ -1055,333 +972,5 @@ describe("POST /api/voice-io/*", () => {
       },
     });
     expect(calledBytePlus).toBeFalsy();
-  });
-
-  it("returns 401 from /speech when unauthenticated", async () => {
-    const app = createVoiceIoTestApp();
-    const response = await app.request("/api/voice-io/speech", {
-      method: "POST",
-      body: JSON.stringify({ text: "hello" }),
-    });
-
-    expect(response.status).toBe(401);
-    await expect(response.json()).resolves.toStrictEqual({
-      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    });
-  });
-
-  it("rejects empty /speech text before OpenAI", async () => {
-    const fixture = await seedVoiceFixture({});
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    let calledOpenAi = false;
-    server.use(
-      http.post(OPENAI_AUDIO_SPEECH_URL, () => {
-        calledOpenAi = true;
-        return new HttpResponse(wavBytes(1));
-      }),
-    );
-
-    const app = createVoiceIoTestApp();
-    const response = await app.request("/api/voice-io/speech", {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ text: "   " }),
-    });
-
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toStrictEqual({
-      error: { message: "text is required", code: "BAD_REQUEST" },
-    });
-    expect(calledOpenAi).toBeFalsy();
-  });
-
-  it("rejects unsupported /speech voices before OpenAI", async () => {
-    const fixture = await seedVoiceFixture({});
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    let calledOpenAi = false;
-    server.use(
-      http.post(OPENAI_AUDIO_SPEECH_URL, () => {
-        calledOpenAi = true;
-        return new HttpResponse(wavBytes(1));
-      }),
-    );
-
-    const app = createVoiceIoTestApp();
-    const response = await app.request("/api/voice-io/speech", {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ text: "hello", voice: "unknown" }),
-    });
-
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toStrictEqual({
-      error: { message: "Unsupported voice: unknown", code: "BAD_REQUEST" },
-    });
-    expect(calledOpenAi).toBeFalsy();
-  });
-
-  it("blocks /speech before OpenAI when credits are insufficient", async () => {
-    const fixture = await seedVoiceFixture({ credits: 0 });
-    const usagePricingResolution =
-      await createSpeechPricingResolution("configured");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    let calledOpenAi = false;
-    server.use(
-      http.post(OPENAI_AUDIO_SPEECH_URL, () => {
-        calledOpenAi = true;
-        return new HttpResponse(wavBytes(1));
-      }),
-    );
-
-    const app = createVoiceIoTestApp(usagePricingResolution);
-    const response = await app.request("/api/voice-io/speech", {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ text: "hello" }),
-    });
-
-    expect(response.status).toBe(402);
-    await expect(response.json()).resolves.toStrictEqual({
-      error: {
-        message: "Insufficient credits. Please add credits to continue.",
-        code: "INSUFFICIENT_CREDITS",
-      },
-    });
-    expect(calledOpenAi).toBeFalsy();
-  });
-
-  it("blocks /speech before OpenAI when pricing is missing", async () => {
-    const fixture = await seedVoiceFixture({ credits: 1000 });
-    const usagePricingResolution =
-      await createSpeechPricingResolution("missing");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    let calledOpenAi = false;
-    server.use(
-      http.post(OPENAI_AUDIO_SPEECH_URL, () => {
-        calledOpenAi = true;
-        return new HttpResponse(wavBytes(1));
-      }),
-    );
-
-    const app = createVoiceIoTestApp(usagePricingResolution);
-    const response = await app.request("/api/voice-io/speech", {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ text: "hello" }),
-    });
-    expect(response.status).toBe(503);
-    await expect(response.json()).resolves.toStrictEqual({
-      error: {
-        message: "Audio generation pricing is not configured",
-        code: "NOT_CONFIGURED",
-      },
-    });
-    expect(calledOpenAi).toBeFalsy();
-  });
-
-  it("generates /speech WAV files and rounds fractional usage for run-scoped agent tokens", async () => {
-    const fixture = await seedVoiceFixture({});
-    const usagePricingResolution =
-      await createSpeechPricingResolution("configured");
-    const { composeId } = await store.set(
-      seedCompose$,
-      { orgId: fixture.orgId, userId: fixture.userId },
-      context.signal,
-    );
-    const { runId } = await store.set(
-      seedRun$,
-      {
-        orgId: fixture.orgId,
-        userId: fixture.userId,
-        composeId,
-        triggerSource: "web",
-      },
-      context.signal,
-    );
-
-    const wav = wavBytes(1.56);
-    let observedBody: unknown = null;
-    server.use(
-      http.post(OPENAI_AUDIO_SPEECH_URL, async ({ request }) => {
-        observedBody = await request.json();
-        return new HttpResponse(wav, {
-          status: 200,
-          headers: { "content-type": SPEECH_CONTENT_TYPE },
-        });
-      }),
-    );
-
-    const token = okouToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-      runId,
-    });
-    const app = createVoiceIoTestApp(usagePricingResolution);
-    const response = await app.request("/api/voice-io/speech", {
-      method: "POST",
-      headers: { authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        text: "make this a file",
-        voice: "marin",
-        instructions: "calm delivery",
-      }),
-    });
-
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body).toMatchObject({
-      contentType: SPEECH_CONTENT_TYPE,
-      size: wav.byteLength,
-      privateArtifacts: false,
-      durationSeconds: 2,
-      creditsCharged: expectedCredits(2, SPEECH_PRICING_ROW),
-      model: VOICE_IO_TTS_MODEL,
-      voice: "marin",
-    });
-    expect(observedBody).toMatchObject({
-      model: VOICE_IO_TTS_MODEL,
-      voice: "marin",
-      input: "make this a file",
-      instructions: "calm delivery",
-      response_format: "wav",
-    });
-
-    if (
-      !(
-        typeof body === "object" &&
-        body !== null &&
-        "id" in body &&
-        "filename" in body &&
-        "url" in body
-      )
-    ) {
-      throw new Error("Expected speech response id and filename");
-    }
-    const fileId = String(body.id);
-    const filename = String(body.filename);
-    const url = String(body.url);
-    expect(filename).toBe(`voice-${fileId.slice(0, 8)}.wav`);
-
-    const putInput = putObjectInput();
-    expect(putInput.Bucket).toBe(TEST_BUCKET);
-    expect(putInput.Key).toMatch(/^artifacts\/[0-9a-z]{10}\.wav$/u);
-    expect(url).toBe(
-      `https://a.okou.io/${String(putInput.Key).replace(/^artifacts\//u, "")}`,
-    );
-    expect(putInput.Metadata).toStrictEqual({
-      "artifact-id": fileId,
-      filename: encodeURIComponent(filename),
-      "public-brand": "okou",
-      "user-id": encodeURIComponent(fixture.userId),
-    });
-    expect(putInput.ContentType).toBe(SPEECH_CONTENT_TYPE);
-    const putBody = putInput.Body;
-    expect(Buffer.isBuffer(putBody)).toBeTruthy();
-    if (!Buffer.isBuffer(putBody)) {
-      throw new Error("Expected S3 put body to be a Buffer");
-    }
-    expect(new Uint8Array(putBody)).toStrictEqual(wav);
-
-    // The metered charge (2 seconds at the audio rate) is asserted through
-    // the response body above and the exact org balance drop, observed on the
-    // product billing surface.
-    await expect(orgCredits(fixture)).resolves.toBe(
-      10_000 - expectedCredits(2, SPEECH_PRICING_ROW),
-    );
-  });
-
-  it("uses actual /speech WAV data bytes when the data chunk size is oversized", async () => {
-    const fixture = await seedVoiceFixture({});
-    const usagePricingResolution =
-      await createSpeechPricingResolution("configured");
-    const { composeId } = await store.set(
-      seedCompose$,
-      { orgId: fixture.orgId, userId: fixture.userId },
-      context.signal,
-    );
-    const { runId } = await store.set(
-      seedRun$,
-      {
-        orgId: fixture.orgId,
-        userId: fixture.userId,
-        composeId,
-        triggerSource: "web",
-      },
-      context.signal,
-    );
-    const wav = wavBytesWithOversizedDataChunk(10);
-    server.use(
-      http.post(OPENAI_AUDIO_SPEECH_URL, () => {
-        return new HttpResponse(wav, {
-          status: 200,
-          headers: { "content-type": SPEECH_CONTENT_TYPE },
-        });
-      }),
-    );
-
-    const token = okouToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-      runId,
-    });
-    const app = createVoiceIoTestApp(usagePricingResolution);
-    const response = await app.request("/api/voice-io/speech", {
-      method: "POST",
-      headers: { authorization: `Bearer ${token}` },
-      body: JSON.stringify({ text: "hello", voice: "nova" }),
-    });
-
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body).toMatchObject({
-      size: wav.byteLength,
-      durationSeconds: 10,
-      creditsCharged: expectedCredits(10, SPEECH_PRICING_ROW),
-      model: VOICE_IO_TTS_MODEL,
-      voice: "nova",
-    });
-
-    // 10 seconds metered from the actual data bytes (not the oversized chunk
-    // declaration) — pinned by the response body above and the balance drop.
-    await expect(orgCredits(fixture)).resolves.toBe(
-      10_000 - expectedCredits(10, SPEECH_PRICING_ROW),
-    );
-  });
-
-  it("returns 500 from /speech without persisted output when OpenAI fails", async () => {
-    const fixture = await seedVoiceFixture({
-      credits: 1000,
-    });
-    const usagePricingResolution =
-      await createSpeechPricingResolution("configured");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    server.use(
-      http.post(OPENAI_AUDIO_SPEECH_URL, () => {
-        return HttpResponse.json(
-          { error: { message: "rate limit exceeded" } },
-          { status: 429 },
-        );
-      }),
-    );
-
-    const app = createVoiceIoTestApp(usagePricingResolution);
-    const response = await app.request("/api/voice-io/speech", {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ text: "hello" }),
-    });
-
-    expect(response.status).toBe(500);
-    await expect(response.json()).resolves.toStrictEqual({
-      error: {
-        message: "Speech generation failed",
-        code: "INTERNAL_SERVER_ERROR",
-      },
-    });
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
-
-    // No output persisted (S3 untouched above) and no usage settled: the org
-    // balance is unchanged on the product billing surface.
-    await expect(orgCredits(fixture)).resolves.toBe(1000);
   });
 });

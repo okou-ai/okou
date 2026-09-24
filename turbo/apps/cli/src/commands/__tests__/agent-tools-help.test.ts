@@ -226,7 +226,9 @@ describe("agent-facing operational CLI help", () => {
       "use --provider <name> directly when the type supports it",
     );
     expect(generate).not.toContain("list every available provider");
-    expect(generate).toContain("avatar-video uses --script or --audio-url");
+    expect(generate).toContain(
+      "Video, avatar-video, voice/audio, text, code, and document use connectors",
+    );
     expect(generate).toContain(
       "wait for it to finish and use the returned artifact",
     );
