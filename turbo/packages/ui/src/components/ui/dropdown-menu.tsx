@@ -133,6 +133,29 @@ const DropdownMenuItem = React.forwardRef<
 });
 DropdownMenuItem.displayName = "DropdownMenuItem";
 
+const DropdownMenuCheckboxItem = React.forwardRef<
+  HTMLElement,
+  MenuPrimitive.CheckboxItem.Props
+>(({ className, ...props }, ref) => {
+  return (
+    <MenuPrimitive.CheckboxItem
+      ref={ref}
+      data-slot="dropdown-menu-checkbox-item"
+      className={(state) => {
+        return cn(
+          "relative flex cursor-default select-none items-center gap-2 rounded-lg px-2 outline-none transition-colors hover:bg-state-hover data-highlighted:bg-state-hover data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+          MENU_ROW_HEIGHT_CLASS,
+          typeof className === "function" ? className(state) : className,
+        );
+      }}
+      {...props}
+    />
+  );
+});
+DropdownMenuCheckboxItem.displayName = "DropdownMenuCheckboxItem";
+
+const DropdownMenuCheckboxItemIndicator = MenuPrimitive.CheckboxItemIndicator;
+
 function DropdownMenuRadioGroup(props: MenuPrimitive.RadioGroup.Props) {
   return (
     <MenuPrimitive.RadioGroup
@@ -224,6 +247,8 @@ export {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuCheckboxItem,
+  DropdownMenuCheckboxItemIndicator,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuRadioItemIndicator,
