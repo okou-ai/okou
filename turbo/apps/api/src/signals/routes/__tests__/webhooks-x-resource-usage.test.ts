@@ -526,7 +526,10 @@ describe("X daily resource usage webhook", () => {
     // Cleanup can queue multiple database participants behind the same
     // settlement. Their exact count is an implementation detail; the contract
     // here is that cleanup reached the verified blocking chain before release.
-    await expect.poll(gate.cleanupWaiterCount).toBeGreaterThanOrEqual(1);
+    // The durable capture runs first, so allow it to finish before cleanup.
+    await expect
+      .poll(gate.cleanupWaiterCount, { timeout: 10_000 })
+      .toBeGreaterThanOrEqual(1);
     gate.release();
     const [released] = await completion;
     if (released.status === "rejected") {

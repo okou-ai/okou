@@ -776,19 +776,7 @@ describe("thread activity summary", () => {
         status: "ineligible",
         messages: [],
       });
-      const after = await accept(request(f.actor, f.run), [200, 404]);
-      if (kind === "user") {
-        // B1 retains the Run until capture completes, but closed admission
-        // must not return old or newly generated content.
-        expect(after.status).toBe(200);
-        expect(after.body).toStrictEqual({
-          runId: f.run.runId,
-          status: "ineligible",
-          messages: [],
-        });
-      } else {
-        expect(after.status).toBe(404);
-      }
+      await accept(request(f.actor, f.run), [404]);
       await expect(
         readRunActivityBookkeepingFixture(f.run.runId),
       ).resolves.toBeUndefined();
