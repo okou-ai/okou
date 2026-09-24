@@ -104,16 +104,18 @@ runner shard directory. On same-repository pull requests, the separate
 changes. It does not run for merge queue, push, reusable-workflow callers,
 forks, or unrelated PR edits. The job waits for the ordinary runner E2E matrix,
 uses the immutable PR-head preview, and has a repository-wide non-canceling
-concurrency group because all approved PRs share one test ChatGPT account.
+concurrency group so only one approved PR at a time uses the test ChatGPT
+account. By default, GitHub retains only one pending job in that group; a newer
+pending job replaces the older one.
 
-Configure `CODEX_OAUTH_E2E_AUTH_JSON` as a Secret on the existing GitHub
-`production` environment. Its value is the complete JSON content of the
-dedicated paid ChatGPT test account's Codex `auth.json`, including its tokens;
-do not substitute an API key or a refresh token alone. A triggering PR requests
-the environment's human approval before the Secret is available. Approvers
-must inspect PR-controlled workflow and test code because that environment
-also contains other production secrets. The job passes only this named OAuth
-Secret to the test and never uploads its value as an artifact.
+Create a dedicated GitHub `codex-oauth-e2e` environment with required reviewers
+and only the `CODEX_OAUTH_E2E_AUTH_JSON` Secret. Its value is the complete JSON
+content of the dedicated paid ChatGPT test account's Codex `auth.json`,
+including its tokens; do not substitute an API key or a refresh token alone. A
+triggering PR requests the environment's human approval before the Secret is
+available. Approvers must inspect PR-controlled workflow and test code. The
+job cannot access the `production` environment's secrets; it passes only this
+named OAuth Secret to the test and never uploads its value as an artifact.
 
 The test connects a personal `codex-oauth-token` provider through the public
 API, selects member-scoped `gpt-5.6-luna`, and requires both user-visible

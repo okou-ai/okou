@@ -2994,7 +2994,7 @@ jobs:
   cli-e2e-03-runner-codex-oauth:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: production
+    environment: codex-oauth-e2e
     concurrency:
       # One shared auth.json can rotate its refresh token during a run.
       group: cli-e2e-codex-oauth-account
