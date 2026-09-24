@@ -561,7 +561,9 @@ export const openSshDialog$ = command(
           : "direct",
       configId:
         connection && "transport" in connection
-          ? connection.transport.configId
+          ? "configId" in connection.transport
+            ? connection.transport.configId
+            : ""
           : null,
     });
     set(dialog$, {
