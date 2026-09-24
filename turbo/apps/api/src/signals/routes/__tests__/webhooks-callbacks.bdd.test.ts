@@ -7341,6 +7341,61 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       );
     });
 
+    it("rejects a custom connector token write when deletion commits during provider exchange", async () => {
+      const fixture = await prepareUserErasure();
+      const connectors = createConnectorBddApi(context);
+      const provider = mockCustomConnectorOAuth2Provider(context);
+      const custom = await connectors.createCustomConnector(
+        fixture.doomed,
+        customOauthConnectorBodyForTeardown("user", provider),
+      );
+      const exchangeStarted = createDeferredPromise<void>(context.signal);
+      const releaseExchange = createDeferredPromise<void>(context.signal);
+      onTestFinished(() => {
+        if (!releaseExchange.settled()) {
+          releaseExchange.resolve(undefined);
+        }
+      });
+      server.use(
+        http.post(provider.tokenUrl, async () => {
+          exchangeStarted.resolve(undefined);
+          await releaseExchange.promise;
+          return HttpResponse.json({
+            access_token: "custom-oauth-initial-access-token",
+            refresh_token: "custom-oauth-refresh-token",
+            id_token: "custom-oauth-id-token",
+            token_type: "Bearer",
+            expires_in: 3600,
+          });
+        }),
+      );
+      const state = oauthStateFromAuthorizationUrl(
+        await connectors.startCustomConnectorOAuth2(fixture.doomed, custom.id),
+      );
+      const callback = settle(
+        connectors.completeCustomConnectorOAuth2CallbackResult({
+          code: "late-custom-provider-exchange",
+          state,
+        }),
+      );
+      await exchangeStarted.promise;
+      await startUserDeletion(fixture);
+      await flushWaitUntilForTest();
+      releaseExchange.resolve(undefined);
+      await expect(callback).resolves.toMatchObject({
+        ok: true,
+        value: {
+          body: {
+            status: "error",
+            message: "OAuth token exchange failed - please try again",
+          },
+        },
+      });
+      await expect(
+        connectors.readCustomConnector(fixture.doomed, custom.id),
+      ).resolves.toMatchObject({ connected: false });
+    });
+
     it("invalidates only the deleted user's pending builtin and custom OAuth states", async () => {
       const fixture = await prepareUserErasure();
       const { doomed, peer, sharedAgent } = fixture;
