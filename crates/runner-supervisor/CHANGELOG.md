@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.5...runner-supervisor-v0.1.6) (2026-09-24)
+
+
+### Refactoring
+
+* **runner:** move sandbox finalization into supervisor ([#36716](https://github.com/okou-ai/okou/issues/36716)) ([ad6aabe](https://github.com/okou-ai/okou/commit/ad6aabea7501cd2af5942027bf3387c262277cf1))
+
 ## [0.1.5](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.4...runner-supervisor-v0.1.5) (2026-09-24)
 
 
