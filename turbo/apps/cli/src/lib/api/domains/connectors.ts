@@ -25,6 +25,8 @@ import {
   type PublicConnectorCatalogStatusResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
+  CONNECTOR_CHECK_AWS_CONTEXT_HEADER,
+  CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT,
   connectorCheckContract,
   connectorCheckDiagnosticResultSchema,
   connectorCheckTargetAwareDiagnosticResultSchema,
@@ -263,9 +265,14 @@ function normalizeBuiltinDiagnostic(
   return diagnostic;
 }
 
-export async function diagnoseConnectorCheck(
+export interface ConnectorCheckWithContext {
+  readonly diagnostic: ConnectorCheckTargetAwareDiagnosticResult;
+  readonly awsContextIncomplete: boolean;
+}
+
+export async function diagnoseConnectorCheckWithContext(
   request: ConnectorCheckRequestBody,
-): Promise<ConnectorCheckTargetAwareDiagnosticResult> {
+): Promise<ConnectorCheckWithContext> {
   const config = await getClientConfig();
   const client = initClient(connectorCheckContract, {
     ...config,
@@ -275,15 +282,27 @@ export async function diagnoseConnectorCheck(
   const result = await client.check({ body: request });
 
   if (result.status === 200) {
-    if ("target" in request || "includeCustomConnectors" in request) {
-      return connectorCheckTargetAwareDiagnosticResultSchema.parse(result.body);
-    }
-    return normalizeBuiltinDiagnostic(
-      connectorCheckDiagnosticResultSchema.parse(result.body),
-    );
+    const diagnostic =
+      "target" in request || "includeCustomConnectors" in request
+        ? connectorCheckTargetAwareDiagnosticResultSchema.parse(result.body)
+        : normalizeBuiltinDiagnostic(
+            connectorCheckDiagnosticResultSchema.parse(result.body),
+          );
+    return {
+      diagnostic,
+      awsContextIncomplete:
+        result.headers.get(CONNECTOR_CHECK_AWS_CONTEXT_HEADER) ===
+        CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT,
+    };
   }
 
   handleError(result, "Failed to diagnose connector");
+}
+
+export async function diagnoseConnectorCheck(
+  request: ConnectorCheckRequestBody,
+): Promise<ConnectorCheckTargetAwareDiagnosticResult> {
+  return (await diagnoseConnectorCheckWithContext(request)).diagnostic;
 }
 
 /**
