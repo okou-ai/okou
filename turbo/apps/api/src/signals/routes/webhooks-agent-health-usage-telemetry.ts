@@ -71,6 +71,9 @@ interface SandboxOperationDimensionInput {
   readonly dns_readiness_guest_duration_ms?: number;
   readonly dns_readiness_host_residual_ms?: number;
   readonly dns_readiness_timing?: string;
+  readonly storage_batch_guest_duration_ms?: number;
+  readonly storage_batch_outer_residual_ms?: number;
+  readonly storage_batch_timing?: string;
   readonly runner_startup_path?: RunnerStartupPath;
   readonly sandbox_reuse_result?: SandboxReuseResult;
   readonly runner_pre_spawn_concurrency_bucket?: RunnerPreSpawnConcurrencyBucket;
@@ -160,6 +163,22 @@ function dnsReadinessDimensions(
   };
 }
 
+function storageBatchDimensions(
+  op: SandboxOperationDimensionInput,
+): Record<string, string | number> {
+  return {
+    ...(op.storage_batch_guest_duration_ms !== undefined
+      ? { storage_batch_guest_duration_ms: op.storage_batch_guest_duration_ms }
+      : {}),
+    ...(op.storage_batch_outer_residual_ms !== undefined
+      ? { storage_batch_outer_residual_ms: op.storage_batch_outer_residual_ms }
+      : {}),
+    ...(op.storage_batch_timing
+      ? { storage_batch_timing: op.storage_batch_timing }
+      : {}),
+  };
+}
+
 function archiveConnectionAttemptDimensions(
   op: SandboxOperationDimensionInput,
 ): Record<string, number | boolean> {
@@ -208,6 +227,7 @@ function sandboxOperationDimensions(
       : {}),
     ...archiveConnectionAttemptDimensions(op),
     ...dnsReadinessDimensions(op),
+    ...storageBatchDimensions(op),
     ...(op.runner_startup_path
       ? { runner_startup_path: op.runner_startup_path }
       : {}),
