@@ -251,6 +251,25 @@ async fn sftp_failed_pipelined_write_does_not_publish_or_claim_later_acks() {
 }
 
 #[tokio::test]
+async fn sftp_lost_or_unknown_write_reply_keeps_effects_and_residue_uncertain() {
+    for (mode, reason) in [
+        ("lost-write", "disconnected"),
+        ("mismatched-file", "protocol"),
+    ] {
+        let h = Harness::new(Reply::Sftp(mode)).await;
+        let _resolve = h.resolve(h.credential(true)).await;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("unpublished");
+        let outcome = upload(&h, &path, &vec![42; 2 * 32768], false).await;
+        assert_eq!(outcome["failure_reason"], reason, "{mode}: {outcome}");
+        assert_eq!(outcome["bytes"], 0, "{mode}: {outcome}");
+        assert_eq!(outcome["effects"], "not_started");
+        assert!(Path::new(outcome["residue"].as_str().unwrap()).is_dir());
+        assert!(!path.exists());
+    }
+}
+
+#[tokio::test]
 async fn sftp_cancellation_with_pending_writes_preserves_private_residue() {
     let mut h = Harness::new(Reply::Sftp("hold-write")).await;
     let _resolve = h.resolve(h.credential(true)).await;

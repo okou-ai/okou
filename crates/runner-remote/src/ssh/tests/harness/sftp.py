@@ -139,7 +139,11 @@ while True:
                 file_status(request, 3)
             else:
                 assert os.pwrite(fd, value, offset) == len(value)
-                if mode != "hold-write":
+                if mode == "lost-write":
+                    break
+                if mode == "mismatched-file":
+                    file_status(request + 1000, 0)
+                elif mode != "hold-write":
                     file_status(request, 0)
         elif kind == 14:
             path = fields.string()
