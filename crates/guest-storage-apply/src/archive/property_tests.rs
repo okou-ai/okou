@@ -152,13 +152,13 @@ fn link_target(link: LinkTarget, root: &Path) -> String {
         LinkTarget::Plain => "plain.txt".into(),
         LinkTarget::NestedFile => "nested/file.txt".into(),
         LinkTarget::DotDotSiblingFile => "../outside.txt".into(),
-        LinkTarget::DotDotSiblingDirectoryFile => "../../outside/preserved.txt".into(),
+        LinkTarget::DotDotSiblingDirectoryFile => "../outside/preserved.txt".into(),
         LinkTarget::AbsoluteSibling => root.join("outside.txt").to_str().unwrap().into(),
         LinkTarget::AbsoluteInside => root.join("target/plain.txt").to_str().unwrap().into(),
         LinkTarget::Repeat => "repeat".into(),
         LinkTarget::Missing => "missing.txt".into(),
         LinkTarget::NewSiblingDirectoryChild => "../outside/new.txt".into(),
-        LinkTarget::NewSibling => "../../new-sibling.txt".into(),
+        LinkTarget::NewSibling => "../new-sibling.txt".into(),
     }
 }
 
