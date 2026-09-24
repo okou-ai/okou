@@ -728,6 +728,21 @@ export function createChatEventsFixture(context: TestContext) {
     return { actor, agentId: agent.agentId, runnerGroup, providerId };
   }
 
+  /**
+   * An entitled actor whose default model is Fable, which model policy keeps
+   * off Pi, for sends that must stay claimable by the native Runner.
+   */
+  async function entitledNativeChatActor(
+    options: ApiTestUserOptions = {},
+    tier: "pro" | "team" = "pro",
+  ): Promise<EntitledChatActor> {
+    const entitled = await entitledChatActor(options, tier);
+    await api.ensureOrgModelProvider(entitled.actor, {
+      model: "claude-fable-5-1",
+    });
+    return entitled;
+  }
+
   async function seedBuiltInModelKey(selectedModel: string): Promise<string> {
     const fixture = await seedBuiltInModelKeyState(context, selectedModel);
     return fixture.selectedModel;
@@ -1858,6 +1873,7 @@ export function createChatEventsFixture(context: TestContext) {
     routeMocks,
     runStateStore,
     entitledChatActor,
+    entitledNativeChatActor,
     seedBuiltInModelKey,
     configureBuiltInPiModel,
     configureApiKeyGptPiModel,
