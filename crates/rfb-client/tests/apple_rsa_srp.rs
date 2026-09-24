@@ -48,6 +48,9 @@ enum Scenario {
     CorruptProof,
     WrongPassword,
     InvalidGroup,
+    BadChallengeHeader,
+    OversizedChallenge,
+    TruncatedChallenge,
     BadKey,
     BadSpki,
     BadFinalFrame,
@@ -101,6 +104,13 @@ async fn peer(server: &mut DuplexStream, scenario: Scenario) {
     assert_eq!(&username[..8], &[0, 0, 0, 16, 0, 0, 0, 9]);
     assert_eq!(&username[8..17], b"test-user");
     assert_eq!(&username[17..], &[0, 0, 0]);
+    if matches!(scenario, Scenario::OversizedChallenge) {
+        server
+            .write_u32(u32::MAX)
+            .await
+            .expect("oversized challenge");
+        return;
+    }
 
     let mut n_bytes = group();
     let n = BoxedUint::from_be_slice(&n_bytes, 4096).expect("N");
@@ -145,9 +155,23 @@ async fn peer(server: &mut DuplexStream, scenario: Scenario) {
     challenge.extend_from_slice(&0u16.to_be_bytes());
     challenge.extend_from_slice(&1155u16.to_be_bytes());
     challenge.extend_from_slice(&fields);
+    if matches!(scenario, Scenario::BadChallengeHeader) {
+        challenge[8] ^= 1;
+    }
     server.write_u32(1165).await.expect("challenge outer");
+    if matches!(scenario, Scenario::TruncatedChallenge) {
+        server
+            .write_all(&challenge[..50])
+            .await
+            .expect("truncated challenge");
+        server.shutdown().await.expect("peer EOF");
+        return;
+    }
     server.write_all(&challenge).await.expect("challenge");
-    if matches!(scenario, Scenario::InvalidGroup) {
+    if matches!(
+        scenario,
+        Scenario::InvalidGroup | Scenario::BadChallengeHeader
+    ) {
         return;
     }
 
@@ -246,6 +270,9 @@ async fn invalid_key_group_proof_and_missing_final_fail_closed() {
         (Scenario::BadKey, "parameters"),
         (Scenario::BadSpki, "parameters"),
         (Scenario::InvalidGroup, "parameters"),
+        (Scenario::BadChallengeHeader, "parameters"),
+        (Scenario::OversizedChallenge, "parameters"),
+        (Scenario::TruncatedChallenge, "transport"),
         (Scenario::CorruptProof, "authentication"),
         (Scenario::BadFinalFrame, "authentication"),
         (Scenario::RejectedStatus, "authentication"),
@@ -538,6 +565,21 @@ async fn negotiate(server: &mut DuplexStream, offer: &[u8]) {
 }
 
 #[tokio::test]
+async fn a_non_apple_banner_is_rejected_without_reply() {
+    let (client, mut server) = duplex(64);
+    server
+        .write_all(b"RFB 003.008\n")
+        .await
+        .expect("non-Apple banner");
+    assert!(matches!(
+        authenticate_apple_rsa_srp(client, credentials(), deadline()).await,
+        Err(Error::UnsupportedRfbVersion)
+    ));
+    let mut byte = [0];
+    assert_eq!(server.read(&mut byte).await.expect("closed"), 0);
+}
+
+#[tokio::test]
 async fn unavailable_type_33_never_downgrades_or_sends_credentials() {
     let (client, mut server) = duplex(64);
     let peer = tokio::spawn(async move {
@@ -573,6 +615,26 @@ async fn oversized_key_reply_is_rejected_before_allocating_or_sending_username()
     assert!(matches!(
         authenticate_apple_rsa_srp(client, credentials(), deadline()).await,
         Err(Error::InvalidAppleRsaSrpParameters)
+    ));
+    peer.await.expect("peer task");
+}
+
+#[tokio::test]
+async fn truncated_key_reply_closes_without_sending_username() {
+    let (client, mut server) = duplex(64);
+    let peer = tokio::spawn(async move {
+        negotiate(&mut server, &[33]).await;
+        let mut request = [0; 15];
+        server.read_exact(&mut request).await.expect("RSA1 request");
+        server.write_u32(301).await.expect("key length");
+        server.write_all(&[0; 20]).await.expect("partial key");
+        server.shutdown().await.expect("peer EOF");
+        let mut byte = [0];
+        assert_eq!(server.read(&mut byte).await.expect("closed"), 0);
+    });
+    assert!(matches!(
+        authenticate_apple_rsa_srp(client, credentials(), deadline()).await,
+        Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::UnexpectedEof
     ));
     peer.await.expect("peer task");
 }
