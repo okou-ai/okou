@@ -538,7 +538,10 @@ export async function deleteCloudflareAccessConfig(args: {
 
 type ReferencingHost = Awaited<ReturnType<typeof lockReferencingHosts>>[number];
 
-function impactSnapshot(config: Metadata, hosts: readonly ReferencingHost[]) {
+function impactSnapshot(
+  config: Metadata,
+  hosts: readonly Pick<ReferencingHost, "id" | "userId" | "generation">[],
+) {
   return createHash("sha256")
     .update(
       JSON.stringify([

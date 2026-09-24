@@ -713,13 +713,17 @@ export function CloudflareAccessPromotionDialog() {
   const [saving, confirm] = useLoadableSet(confirmCloudflareAccessPromotion$);
   const signal = useGet(pageSignal$);
   const current = dialog.state === "hasData" ? dialog.data : null;
-  if (!current) return null;
+  if (!current) {
+    return null;
+  }
   const isSaving = saving.state === "loading";
   return (
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open && !isSaving) close();
+        if (!open && !isSaving) {
+          close();
+        }
       }}
     >
       <DialogContent key={current.configId} contentClassName="flex flex-col">
@@ -790,26 +794,115 @@ export function CloudflareAccessPromotionDialog() {
   );
 }
 
+function CloudflareAccessDeletionReview({
+  isSaving,
+  error,
+}: {
+  readonly isSaving: boolean;
+  readonly error: string | null;
+}) {
+  const { t } = useTranslation();
+  const preview = useLoadable(cloudflareAccessDeletionPreview$);
+  const impact = preview.state === "hasData" ? preview.data : null;
+  const acknowledged = useGet(cloudflareAccessDeletionAcknowledged$);
+  const acknowledge = useSet(acknowledgeCloudflareAccessDeletion$);
+  return (
+    <>
+      {preview.state === "loading" && (
+        <p role="status">
+          {t(($) => {
+            return $.cloudflareAccess.loading;
+          })}
+        </p>
+      )}
+      {preview.state === "hasError" && (
+        <p role="alert">
+          {t(($) => {
+            return $.cloudflareAccess.loadFailed;
+          })}
+        </p>
+      )}
+      {preview.state === "hasData" && !impact && (
+        <p role="alert">
+          {t(($) => {
+            return $.cloudflareAccess.missing;
+          })}
+        </p>
+      )}
+      {impact && impact.ownHostCount > 0 && (
+        <p role="alert">
+          {t(($) => {
+            return $.cloudflareAccess.inUseHelp;
+          })}
+        </p>
+      )}
+      {impact && impact.affectedOwners.length > 0 && (
+        <div className="grid gap-3 rounded-lg border p-4 text-sm">
+          <p role="alert">
+            {t(($) => {
+              return $.cloudflareAccess.deleteImpact;
+            })}
+          </p>
+          <ul className="list-inside list-disc">
+            {impact.affectedOwners.map(({ userId, displayName, hostCount }) => {
+              return (
+                <li key={userId}>
+                  {displayName ??
+                    t(($) => {
+                      return $.cloudflareAccess.formerMember;
+                    })}{" "}
+                  ({userId}):{" "}
+                  {t(
+                    ($) => {
+                      return $.cloudflareAccess.hostCount;
+                    },
+                    { count: hostCount },
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <label className="flex items-start gap-2">
+            <Checkbox
+              checked={acknowledged === impact.impactSnapshot}
+              disabled={isSaving || !!error || impact.ownHostCount > 0}
+              onCheckedChange={(checked) => {
+                return acknowledge(checked ? impact.impactSnapshot : null);
+              }}
+            />
+            {t(($) => {
+              return $.cloudflareAccess.deleteConfirm;
+            })}
+          </label>
+        </div>
+      )}
+    </>
+  );
+}
+
 export function CloudflareAccessDeletionDialog() {
   const { t } = useTranslation();
   const dialog = useLoadable(cloudflareAccessDeletionDialog$);
   const preview = useLoadable(cloudflareAccessDeletionPreview$);
   const acknowledged = useGet(cloudflareAccessDeletionAcknowledged$);
-  const acknowledge = useSet(acknowledgeCloudflareAccessDeletion$);
   const error = useGet(cloudflareAccessDeletionError$);
   const close = useSet(closeCloudflareAccessDeletion$);
   const review = useSet(reviewCloudflareAccessDeletion$);
   const [saving, confirm] = useLoadableSet(confirmCloudflareAccessDeletion$);
   const signal = useGet(pageSignal$);
   const current = dialog.state === "hasData" ? dialog.data : null;
-  if (!current) return null;
+  if (!current) {
+    return null;
+  }
   const isSaving = saving.state === "loading";
   const impact = preview.state === "hasData" ? preview.data : null;
   return (
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open && !isSaving) close();
+        if (!open && !isSaving) {
+          close();
+        }
       }}
     >
       <DialogContent contentClassName="flex flex-col">
@@ -827,78 +920,7 @@ export function CloudflareAccessDeletionDialog() {
         </DialogHeader>
         <DialogBody className="grid gap-4">
           <p className="font-medium">{current.name}</p>
-          {preview.state === "loading" && (
-            <p role="status">
-              {t(($) => {
-                return $.cloudflareAccess.loading;
-              })}
-            </p>
-          )}
-          {preview.state === "hasError" && (
-            <p role="alert">
-              {t(($) => {
-                return $.cloudflareAccess.loadFailed;
-              })}
-            </p>
-          )}
-          {preview.state === "hasData" && !impact && (
-            <p role="alert">
-              {t(($) => {
-                return $.cloudflareAccess.missing;
-              })}
-            </p>
-          )}
-          {impact && impact.ownHostCount > 0 && (
-            <p role="alert">
-              {t(($) => {
-                return $.cloudflareAccess.inUseHelp;
-              })}
-            </p>
-          )}
-          {impact && impact.affectedOwners.length > 0 && (
-            <div className="grid gap-3 rounded-lg border p-4 text-sm">
-              <p role="alert">
-                {t(($) => {
-                  return $.cloudflareAccess.deleteImpact;
-                })}
-              </p>
-              <ul className="list-inside list-disc">
-                {impact.affectedOwners.map(
-                  ({ userId, displayName, hostCount }) => {
-                    return (
-                      <li key={userId}>
-                        {displayName ??
-                          t(($) => {
-                            return $.cloudflareAccess.formerMember;
-                          })}{" "}
-                        ({userId}):{" "}
-                        {t(
-                          ($) => {
-                            return $.cloudflareAccess.hostCount;
-                          },
-                          {
-                            count: hostCount,
-                          },
-                        )}
-                      </li>
-                    );
-                  },
-                )}
-              </ul>
-              <label className="flex items-start gap-2">
-                <Checkbox
-                  checked={acknowledged === impact.impactSnapshot}
-                  disabled={isSaving || !!error || impact.ownHostCount > 0}
-                  onCheckedChange={(checked) => {
-                    return acknowledge(checked ? impact.impactSnapshot : null);
-                  }}
-                />
-                {t(($) => {
-                  return $.cloudflareAccess.deleteConfirm;
-                })}
-              </label>
-            </div>
-          )}
+          <CloudflareAccessDeletionReview isSaving={isSaving} error={error} />
           {error && (
             <p role="alert">
               {error === "uncertain"

@@ -614,7 +614,9 @@ export const openCloudflareAccessPromotion$ = command(
       get(isOrgAdmin$),
     ]);
     signal.throwIfAborted();
-    if (!identity || !admin || config.scope !== "personal") return;
+    if (!identity || !admin || config.scope !== "personal") {
+      return;
+    }
     set(promotionError$, null);
     set(promotionAcknowledged$, false);
     set(promotionDialog$, {
@@ -640,7 +642,9 @@ export const confirmCloudflareAccessPromotion$ = command(
     }
     const client = await get(cloudflareAccessClient$);
     signal.throwIfAborted();
-    if (client.identity !== dialog.identity) return;
+    if (client.identity !== dialog.identity) {
+      return;
+    }
     const [outcome] = await Promise.allSettled([
       accept(
         client.client.convertToOrganization({
@@ -653,7 +657,9 @@ export const confirmCloudflareAccessPromotion$ = command(
       ),
     ]);
     signal.throwIfAborted();
-    if (get(promotionDialog$) !== dialog) return;
+    if (get(promotionDialog$) !== dialog) {
+      return;
+    }
     set(invalidateCloudflareAccess$);
     if (outcome.status === "rejected") {
       set(promotionError$, "uncertain");
@@ -697,7 +703,9 @@ export const openCloudflareAccessDeletion$ = command(
       get(isOrgAdmin$),
     ]);
     signal.throwIfAborted();
-    if (!identity || !admin || config.scope !== "organization") return;
+    if (!identity || !admin || config.scope !== "organization") {
+      return;
+    }
     set(deletionError$, null);
     set(deletionAcknowledged$, null);
     set(deletionDialog$, {
@@ -724,9 +732,13 @@ export const reviewCloudflareAccessDeletion$ = command(({ set }) => {
 export const cloudflareAccessDeletionPreview$ = computed(async (get) => {
   get(deletionReload$);
   const dialog = await get(cloudflareAccessDeletionDialog$);
-  if (!dialog) return null;
+  if (!dialog) {
+    return null;
+  }
   const client = await get(cloudflareAccessClient$);
-  if (client.identity !== dialog.identity) return null;
+  if (client.identity !== dialog.identity) {
+    return null;
+  }
   const result = await accept(
     client.client.deletionPreview({ params: { configId: dialog.configId } }),
     [200, 403, 404],
@@ -751,11 +763,14 @@ export const confirmCloudflareAccessDeletion$ = command(
       preview.ownHostCount > 0 ||
       (preview.affectedOwners.length > 0 &&
         get(deletionAcknowledged$) !== preview.impactSnapshot)
-    )
+    ) {
       return;
+    }
     const client = await get(cloudflareAccessClient$);
     signal.throwIfAborted();
-    if (client.identity !== dialog.identity) return;
+    if (client.identity !== dialog.identity) {
+      return;
+    }
     const [outcome] = await Promise.allSettled([
       accept(
         client.client.delete({
@@ -772,7 +787,9 @@ export const confirmCloudflareAccessDeletion$ = command(
       ),
     ]);
     signal.throwIfAborted();
-    if (get(deletionDialog$) !== dialog) return;
+    if (get(deletionDialog$) !== dialog) {
+      return;
+    }
     set(invalidateCloudflareAccess$);
     if (outcome.status === "rejected") {
       set(deletionError$, "uncertain");
