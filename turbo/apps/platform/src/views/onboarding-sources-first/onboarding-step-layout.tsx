@@ -59,7 +59,10 @@ function OnboardingTrustPoints({
     <div className="mt-6 space-y-3">
       {points.map((point) => {
         return (
-          <p key={point} className="text-sm leading-6 text-muted-foreground">
+          <p
+            key={point}
+            className="text-base leading-[1.7] text-muted-foreground"
+          >
             {point}
           </p>
         );
@@ -92,7 +95,7 @@ function OnboardingStepExplanation({
       </p>
       <OnboardingTrustPoints points={trustPoints} />
       {footnote ? (
-        <p className="mt-4 text-xs leading-5 text-muted-foreground">
+        <p className="mt-4 text-base leading-[1.7] text-muted-foreground">
           {footnote}
         </p>
       ) : null}

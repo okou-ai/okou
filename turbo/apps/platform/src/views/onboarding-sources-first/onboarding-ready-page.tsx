@@ -34,6 +34,8 @@ import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 const STARTING_PROMPT_MAX_LENGTH = 1000;
 const CELEBRATION_URL =
   "https://static.okou.io/web/assets/onboarding/v3-ready-celebrate_640.png";
+const CELEBRATION_2X_URL =
+  "https://static.okou.io/web/assets/onboarding/v3-ready-celebrate_1280.png";
 
 function isOnboardingSourceSlug(slug: string): boolean {
   return ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS.some((sourceSlug) => {
@@ -248,8 +250,9 @@ export function OnboardingReadyPage() {
       <div className="mx-auto flex w-full max-w-[520px] flex-col">
         <img
           src={CELEBRATION_URL}
+          srcSet={`${CELEBRATION_2X_URL} 2x`}
           alt=""
-          className="mx-auto h-[104px] max-w-full object-contain"
+          className="mx-auto h-40 max-w-full object-contain"
         />
         <StartingPromptPanel
           isLoading={isLoading}
