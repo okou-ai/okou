@@ -40,8 +40,11 @@ export const chatAgentphoneContext = pgTable(
     toNumber: text("to_number"),
     userLinkId: uuid("user_link_id"),
     agentphoneAgentId: text("agentphone_agent_id"),
-    /** Product brand derived from the webhook hostname; null only for pre-rollout contexts. */
-    publicBrand: text("public_brand").$type<PublicBrand>(),
+    /**
+     * Retired: current APIs neither read nor write it and rely on the
+     * `okou` default; drop it after older API deployments drain.
+     */
+    publicBrand: text("public_brand").$type<PublicBrand>().default("okou"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => {

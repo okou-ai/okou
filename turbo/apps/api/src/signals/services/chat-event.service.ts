@@ -189,7 +189,6 @@ type ChatEventDisplayContext =
         readonly toNumber: string;
         readonly userLinkId: string;
         readonly agentphoneAgentId: string;
-        readonly publicBrand: PublicBrand;
       };
     }
   | {
@@ -527,7 +526,6 @@ type NewDisplayContext =
       readonly toNumber: string;
       readonly userLinkId: string;
       readonly agentphoneAgentId: string;
-      readonly publicBrand: PublicBrand;
     }
   | {
       readonly type: "automation";
@@ -669,7 +667,6 @@ function newDisplayContext(
       id: eventId,
       chatThreadId: values.chatThreadId,
       ...agentphoneContext,
-      publicBrand: PUBLIC_BRAND,
     };
   }
 
@@ -740,7 +737,6 @@ async function insertAgentphoneDisplayContext(
       toNumber: context.toNumber,
       userLinkId: context.userLinkId,
       agentphoneAgentId: context.agentphoneAgentId,
-      publicBrand: context.publicBrand,
       createdAt,
     })
     .onConflictDoNothing();
