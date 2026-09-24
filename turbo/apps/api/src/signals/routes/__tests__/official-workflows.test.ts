@@ -4091,20 +4091,8 @@ describe("Morning Brief default onboarding", () => {
     await flushWaitUntilForTest();
     for (const elapsed of [60_000, 120_000, 180_000]) {
       await withMockNowForTest(startedAt + elapsed, async () => {
-        context.mocks.ably.publish.mockClear();
         await tickBriefEnrollment(actor);
         await flushWaitUntilForTest();
-        if (elapsed === 60_000) {
-          expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-            "morningBriefChanged",
-            null,
-          );
-        } else {
-          expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
-            "morningBriefChanged",
-            null,
-          );
-        }
         expect(membershipReads).not.toHaveBeenCalled();
         expect((await readBriefPreference(actor)).body).toMatchObject({
           enabled: true,
@@ -4116,10 +4104,6 @@ describe("Morning Brief default onboarding", () => {
     await withMockNowForTest(startedAt + 240_000, async () => {
       await tickBriefEnrollment(actor);
       await flushWaitUntilForTest();
-      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-        "morningBriefChanged",
-        null,
-      );
       expect(membershipReads).toHaveBeenCalledTimes(1);
       expect((await readBriefPreference(actor)).body).toMatchObject({
         status: "enabled",
@@ -4220,13 +4204,8 @@ describe("Morning Brief default onboarding", () => {
     });
     await withMockNowForTest(startedAt + 300_000, async () => {
       await flushWaitUntilForTest();
-      context.mocks.ably.publish.mockClear();
       await tickBriefEnrollment(actor);
       await flushWaitUntilForTest();
-      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-        "morningBriefChanged",
-        null,
-      );
       expect(membershipReads).toHaveBeenCalledTimes(2);
       expect((await readBriefPreference(actor)).body).toMatchObject({
         enabled: true,
@@ -4237,13 +4216,8 @@ describe("Morning Brief default onboarding", () => {
       );
     });
     await withMockNowForTest(startedAt + 360_000, async () => {
-      context.mocks.ably.publish.mockClear();
       await tickBriefEnrollment(actor);
       await flushWaitUntilForTest();
-      expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
-        "morningBriefChanged",
-        null,
-      );
       expect(membershipReads).toHaveBeenCalledTimes(2);
       expect((await readBriefPreference(actor)).body).toMatchObject({
         enabled: true,

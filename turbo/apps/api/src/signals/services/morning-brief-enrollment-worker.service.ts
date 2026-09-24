@@ -5,7 +5,6 @@ import { and, asc, eq, inArray, isNotNull, isNull, lte } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { publishMorningBriefChangedSafely } from "../external/realtime";
 import { settle } from "../utils";
 import {
   loadMorningBriefEnrollment,
@@ -112,7 +111,6 @@ const executeMorningBriefEnrollmentScope$ = command(
         } else {
           log.info("Morning Brief enrollment changed", details);
         }
-        await publishMorningBriefChangedSafely(identity);
         signal.throwIfAborted();
       }
     }

@@ -17,7 +17,6 @@ import { z } from "zod";
 
 import { clerk$ } from "../external/clerk";
 import { settle } from "../utils";
-import { publishMorningBriefChangedSafely } from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import { calculateNextRun } from "./time-automation";
 import {
@@ -547,8 +546,6 @@ const installMorningBriefEnrollment$ = command(
         installed.workflowId,
       );
       signal.throwIfAborted();
-      await publishMorningBriefChangedSafely(identity);
-      signal.throwIfAborted();
       return { outcome: "installed", workflowId: installed.workflowId };
     }
 
@@ -1058,7 +1055,6 @@ export const updateMorningBriefPreference$ = command(
         return outcome;
       },
     );
-    await publishMorningBriefChangedSafely(morningBriefOwner(args));
     signal.throwIfAborted();
     // The same account the read path returns, so a caller sees one response
     // shape whether it just read the preference or just changed it.
@@ -1146,6 +1142,5 @@ export const synchronizeMorningBriefTimezone$ = command(
       await synchronizeTimezoneWhileLocked(db, identity);
       await refreshMorningBriefPreferenceProjection(db, identity, signal);
     });
-    await publishMorningBriefChangedSafely(identity);
   },
 );

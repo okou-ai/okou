@@ -2,10 +2,7 @@ import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { DEFAULT_USER_TIMEZONE, isValidTimeZone } from "@okouai/core/timezone";
 import { and, eq } from "drizzle-orm";
 import { writeDb$, type Db } from "../external/db";
-import {
-  publishMorningBriefChangedSafely,
-  publishUserPreferenceChangedForUserSafely,
-} from "../external/realtime";
+import { publishUserPreferenceChangedForUserSafely } from "../external/realtime";
 import { command, computed } from "ccstate";
 import {
   DEFAULT_USER_LOCALE,
@@ -280,7 +277,6 @@ const initializeUserPreferencesInner$ = command(
     } else {
       L.info("Morning Brief initialization outcome", details);
     }
-    await publishMorningBriefChangedSafely(identity);
     signal.throwIfAborted();
     const [stored] = await db
       .select({
