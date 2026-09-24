@@ -219,7 +219,7 @@ test("Remote access stays open while a changed chat host refreshes", async () =>
   const second = screen.getByRole("combobox", { name: "SSH SSH host 2" });
 
   delayDefaultsRefresh = true;
-  await userEvent.setup({ delay: null }).selectOptions(first, "on");
+  await chooseRemoteHost(first, "On");
   await refreshStarted.promise;
   expect(menu).toBeInTheDocument();
   expect(first).toBeInTheDocument();
@@ -230,7 +230,7 @@ test("Remote access stays open while a changed chat host refreshes", async () =>
   releaseDefaultsRefresh.resolve();
   releaseRefresh.resolve();
   await waitFor(() => {
-    expect(first).toHaveValue("on");
+    expect(first).toHaveTextContent("On");
     expect(menu).toBeInTheDocument();
     expect(remoteAccess.closest("button")).toHaveTextContent("1 enabled");
   });
