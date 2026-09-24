@@ -4,7 +4,7 @@
 
 The Discord foundation adds seven new relations, their ownership constraints,
 and an additional unique key on the already unique chat-thread ID plus owner.
-Old API code remains legal after migration and ignores these new relations.
+Existing non-erasure API reads and writes remain legal after migration.
 The chat-thread ownership key also makes existing KEY SHARE locks retain the
 thread user until commit. No production writer transfers a thread between users;
 ordinary title, draft and other non-key updates remain legal. Race tests now
@@ -13,6 +13,16 @@ New cleanup/export readers require the migration before API promotion, following
 the existing production release order. There are no historical Discord rows to
 backfill. `_discordIntegration` remains disabled for every organization by
 default, and no Gateway or OAuth onboarding is activated by this change.
+
+Old account-erasure workers do not ignore the new relations: their catalogue
+coverage guard rejects tables absent from their compiled ownership inventory,
+even while Discord is disabled. During the migration-to-compatible-API window,
+affected deletion jobs remain durable and retry after 60 seconds; they require
+workers with the Discord inventory to progress. Promote compatible API workers
+after the migration and keep them available to drain this backlog. Rolling back
+to an API with the old inventory stalls those jobs until compatible workers
+return. Do not weaken the catalogue guard or treat feature-off state as erasure
+compatibility.
 
 Status/preferences are new API contracts. No existing client or Runner protocol
 changes. Gateway version 1 carries only Discord event data; the API owns Okou
