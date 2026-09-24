@@ -26,8 +26,10 @@ import {
   type BrowserUserActionCreateResponse,
   useBrowser,
 } from "../../lib/api/domains/browser";
+import { ApiRequestError } from "../../lib/api/core/client-factory";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { captureBrowserInputTargets } from "./browser-user-action-capture";
+import { BrowserInputRequestError } from "./browser-input-request-error";
 
 const DEFAULT_AGENT_BROWSER_SESSION = "okou-browser";
 const BROWSER_INPUT_TARGET_MAX_LENGTH = 2048;
@@ -87,7 +89,7 @@ interface OutputOptions {
 
 interface InputRequestOptions extends OutputOptions {
   readonly agentSession?: string;
-  readonly callbackPrompt: string;
+  readonly callbackPrompt?: string;
   readonly field: readonly string[];
 }
 
@@ -119,24 +121,209 @@ function parseInputFields(
   values: readonly string[],
 ): readonly BrowserInputFieldOption[] {
   const decoded: unknown[] = [];
-  for (const value of values) {
+  for (const [index, value] of values.entries()) {
     try {
       decoded.push(JSON.parse(value));
     } catch {
-      throw new Error("A --field value must be valid JSON");
+      throw new BrowserInputRequestError(
+        "BROWSER_INPUT_INVALID_FIELD",
+        `--field ${index + 1} must be valid JSON`,
+        `Correct --field ${index + 1} and rerun input-request.`,
+      );
     }
   }
   const fields = browserInputFieldsOptionSchema.safeParse(decoded);
   if (!fields.success) {
-    throw new Error(
-      fields.error.issues[0]?.message ?? "Browser input fields are invalid",
+    const issue = fields.error.issues[0];
+    const index = issue?.path[0];
+    const property = issue?.path[1];
+    const position = typeof index === "number" ? index + 1 : null;
+    const location = position === null ? "--field" : `--field ${position}`;
+    const reason =
+      property === "key"
+        ? issue?.code === "custom"
+          ? "key must be unique"
+          : `key must be 1-${BROWSER_USER_ACTION_MAX_KEY_LENGTH} characters`
+        : property === "label"
+          ? `label must be 1-${BROWSER_USER_ACTION_MAX_LABEL_LENGTH} characters`
+          : property === "description"
+            ? `description must be at most ${BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH} characters`
+            : property === "fieldKind"
+              ? `fieldKind must be ${browserUserActionFieldKindSchema.options.join(", ")}`
+              : property === "required"
+                ? "required must be true or false"
+                : property === "target"
+                  ? `target must be 1-${BROWSER_INPUT_TARGET_MAX_LENGTH} characters`
+                  : `provide 1-${BROWSER_USER_ACTION_MAX_FIELDS} fields with only supported properties`;
+    throw new BrowserInputRequestError(
+      "BROWSER_INPUT_INVALID_FIELD",
+      `${location}: ${reason}`,
+      position === null
+        ? "Correct the --field options and rerun input-request."
+        : `Correct --field ${position} and rerun input-request.`,
     );
   }
   return fields.data;
 }
 
-function invalidRequest(message: string): Error {
-  return new Error(message);
+function invalidRequest(message: string): BrowserInputRequestError {
+  return new BrowserInputRequestError(
+    "BROWSER_INPUT_INVALID_REQUEST",
+    message,
+    "Correct the command options and rerun input-request.",
+  );
+}
+
+function apiInputRequestError(
+  error: ApiRequestError,
+): BrowserInputRequestError {
+  const code = /^[A-Z][A-Z0-9_]{0,79}$/u.test(error.code)
+    ? error.code
+    : "BROWSER_INPUT_API_ERROR";
+  if (code === "UNAUTHORIZED") {
+    return new BrowserInputRequestError(
+      code,
+      "The run token is missing, invalid, or expired",
+      "Start a current Okou chat run with a valid run token.",
+    );
+  }
+  if (code === "FORBIDDEN") {
+    return new BrowserInputRequestError(
+      code,
+      "Browser native input is not enabled or this run is not allowed to use it",
+      "Use direct Browser takeover or ask the team to enable native input for this account.",
+    );
+  }
+  if (code === "BROWSER_USER_ACTION_RUN_REQUIRED") {
+    return new BrowserInputRequestError(
+      code,
+      error.message,
+      "Create the request during an active chat agent run.",
+    );
+  }
+  if (code === "BAD_REQUEST") {
+    return new BrowserInputRequestError(
+      code,
+      "The Browser input request was rejected before creation",
+      "Use a current run token and check the command options.",
+    );
+  }
+  if (code === "BROWSER_USER_ACTION_NOT_FOUND") {
+    return new BrowserInputRequestError(
+      code,
+      "The active run or Browser changed before the request was saved",
+      "Inspect the current Browser in an active chat run and create a new request.",
+    );
+  }
+  if (code === "BROWSER_USER_ACTION_BROWSER_NOT_LIVE") {
+    return new BrowserInputRequestError(
+      code,
+      error.message,
+      "Run `okou browser use`, inspect the live page, then capture the controls again.",
+    );
+  }
+  if (
+    code === "BROWSER_USER_ACTION_PAGE_TARGET_NOT_FOUND" ||
+    code === "BROWSER_USER_ACTION_BACKEND_NODE_NOT_FOUND"
+  ) {
+    return new BrowserInputRequestError(
+      code,
+      error.message,
+      "Inspect the current Browser page and recapture the changed target.",
+    );
+  }
+  if (code === "BROWSER_USER_ACTION_UNSUPPORTED_PAGE") {
+    return new BrowserInputRequestError(
+      code,
+      error.message,
+      "Open an HTTP or HTTPS page in the Browser and recapture its controls, or hand the Browser to the user.",
+    );
+  }
+  if (code === "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL") {
+    return new BrowserInputRequestError(
+      code,
+      error.message,
+      "Choose a supported control and matching fieldKind, or hand the Browser to the user.",
+    );
+  }
+  if (code === "BROWSER_USE_TIMEOUT" || code === "BROWSER_USE_CAPACITY") {
+    return new BrowserInputRequestError(
+      code,
+      code === "BROWSER_USE_TIMEOUT"
+        ? "The managed Browser inspection timed out"
+        : "Managed Browser capacity is temporarily unavailable",
+      "Check that the Browser is live, then retry this request once.",
+      true,
+    );
+  }
+  if (code === "BROWSER_USE_AUTH_ERROR") {
+    return new BrowserInputRequestError(
+      code,
+      "Managed Browser provider authentication failed",
+      "Stop this request and ask the Okou team to check the Browser provider.",
+    );
+  }
+  if (code === "BROWSER_USE_NOT_CONFIGURED") {
+    return new BrowserInputRequestError(
+      code,
+      "Managed Browser access is not configured",
+      "Stop this request and ask the Okou team to configure managed Browser access.",
+    );
+  }
+  if (code === "BROWSER_USE_OUTPUT_TOO_LARGE") {
+    return new BrowserInputRequestError(
+      code,
+      "The managed Browser provider response exceeded the supported size",
+      "Stop this request and ask the Okou team to inspect the Browser provider response.",
+    );
+  }
+  if (
+    code === "BROWSER_USE_ERROR" ||
+    code === "BROWSER_USER_ACTION_PROVIDER_ERROR"
+  ) {
+    return new BrowserInputRequestError(
+      code,
+      "The managed Browser could not complete target validation",
+      "Check the Browser status; ask the Okou team for help if it remains unavailable.",
+    );
+  }
+  return new BrowserInputRequestError(
+    code,
+    `Browser input request failed (HTTP ${error.status})`,
+    "Inspect the error code and current Browser state before trying again.",
+  );
+}
+
+function renderInputRequestError(
+  error: unknown,
+  options: InputRequestOptions,
+): boolean {
+  const failure =
+    error instanceof BrowserInputRequestError
+      ? error
+      : error instanceof ApiRequestError
+        ? apiInputRequestError(error)
+        : new BrowserInputRequestError(
+            "BROWSER_INPUT_REQUEST_FAILED",
+            "Browser input request failed unexpectedly",
+            "Inspect the Browser state or ask the Okou team for help.",
+          );
+  if (options.json) {
+    console.error(
+      JSON.stringify({
+        error: {
+          code: failure.code,
+          message: failure.message,
+          nextAction: failure.nextAction,
+          retryable: failure.retryable,
+        },
+      }),
+    );
+  } else {
+    console.error(chalk.red(`✗ ${failure.code}: ${failure.message}`));
+    console.error(chalk.dim(`  Next: ${failure.nextAction}`));
+  }
+  return true;
 }
 
 function renderBrowserUserAction(
@@ -311,9 +498,9 @@ const inputRequestCommand = new Command()
   .description(
     "Create a native Okou form for exact controls in the attached Browser",
   )
-  .requiredOption(
+  .option(
     "--callback-prompt <text>",
-    "Message that starts the next agent round after values are applied",
+    "Required message that starts the next agent round after values are applied",
   )
   .option(
     "--field <json>",
@@ -322,21 +509,29 @@ const inputRequestCommand = new Command()
     [] as string[],
   )
   .addOption(
-    new Option(
-      "--agent-session <name>",
-      "Attached agent-browser session",
-    ).argParser(parseAgentSession),
+    new Option("--agent-session <name>", "Attached agent-browser session"),
   )
   .option("--json", "Print machine-readable output")
   .action(
     withErrorHandler(async (options: InputRequestOptions) => {
       const fields = parseInputFields(options.field);
       if (
-        options.callbackPrompt.trim().length === 0 ||
-        options.callbackPrompt.trim().length >
+        options.agentSession !== undefined &&
+        !/^[a-zA-Z0-9_-]{1,64}$/u.test(options.agentSession)
+      ) {
+        throw invalidRequest(
+          "--agent-session must contain 1-64 letters, numbers, underscores, or hyphens",
+        );
+      }
+      const callbackPrompt = options.callbackPrompt ?? "";
+      if (
+        callbackPrompt.trim().length === 0 ||
+        callbackPrompt.trim().length >
           BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH
       ) {
-        throw invalidRequest("callback prompt is invalid");
+        throw invalidRequest(
+          `--callback-prompt must be 1-${BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH} characters`,
+        );
       }
       const captured = await captureBrowserInputTargets(
         options.agentSession ?? DEFAULT_AGENT_BROWSER_SESSION,
@@ -346,7 +541,7 @@ const inputRequestCommand = new Command()
       );
       const request = browserUserActionCreateRequestSchema.safeParse({
         kind: "input",
-        callbackPrompt: options.callbackPrompt,
+        callbackPrompt,
         pageTargetId: captured.pageTargetId,
         fields: fields.map((field, index) => {
           const backendNodeId = captured.backendNodeIds[index];
@@ -366,13 +561,15 @@ const inputRequestCommand = new Command()
         }),
       });
       if (!request.success) {
-        throw invalidRequest("Browser input request metadata is invalid");
+        throw invalidRequest(
+          "Captured Browser input request metadata is invalid",
+        );
       }
       renderBrowserUserAction(
         await createBrowserUserAction(request.data),
         options,
       );
-    }),
+    }, renderInputRequestError),
   );
 
 export const browserCommand = new Command()
@@ -405,6 +602,8 @@ Notes:
   - Threads can run their browsers in parallel
   - Input selectors and refs are resolved locally and are never sent to the API
   - Resolving an @eN ref focuses it but never types, clicks, or submits the website form
+  - input-request failures identify a safe error code, affected --field position when known, and next action
+  - input-request --json errors are one JSON object on stderr and exit nonzero
   - After input-request succeeds, return its exact URL and run no later Browser command in this turn
   - To hand the Browser to the user, return the exact okou browser view URL, explain the step, ask for a chat reply when finished or blocked, and stop using the Browser in this turn`,
   );
