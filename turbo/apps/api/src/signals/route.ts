@@ -205,6 +205,7 @@ import { integrationsTelegramUploadCompleteRoutes } from "./routes/integrations-
 import { integrationsTelegramUploadInitRoutes } from "./routes/integrations-telegram-upload-init";
 import { skillImportRoutes } from "./routes/skill-import";
 import { slackChannelsRoutes } from "./routes/slack-channels";
+import { discordInteractionsRoutes } from "./routes/discord-interactions";
 import { slackCommandsRoutes } from "./routes/slack-commands";
 import { slackConnectRoutes } from "./routes/slack-connect";
 import { slackStatePreviewRoutes } from "./routes/slack-state-preview";
@@ -441,6 +442,7 @@ export const ROUTES: readonly RouteEntry[] = [
   // production indistinguishable from an unregistered endpoint.
   ...slackStatePreviewRoutes,
   ...slackOauthRoutes,
+  ...discordInteractionsRoutes,
   ...slackCommandsRoutes,
   ...slackEventsRoutes,
   ...slackInteractiveRoutes,

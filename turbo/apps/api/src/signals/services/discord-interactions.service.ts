@@ -1,0 +1,626 @@
+import { command } from "ccstate";
+import {
+  discordInteractionSchema,
+  type DiscordCommandInteraction,
+  type DiscordComponentInteraction,
+} from "@okouai/api-contracts/contracts/discord-interactions";
+import {
+  getBuiltInVisibleModels,
+  isSupportedRunModel,
+} from "@okouai/api-contracts/contracts/model-providers";
+
+import { env } from "../../lib/env";
+import {
+  parseDiscordPickerCustomId,
+  resolveDiscordInteractionActor,
+  verifyDiscordInteractionSignature,
+  type DiscordInteractionActor,
+  type DiscordPickerState,
+} from "../../lib/discord-interaction-protocol";
+import {
+  discordAccountMessage,
+  discordAccountPicker,
+  type DiscordAccountMessage,
+} from "../../lib/discord-interaction-messages";
+import { request$ } from "../context/hono";
+import { waitUntil } from "../context/wait-until";
+import {
+  createDiscordInteractionResponse,
+  editDiscordOriginalInteractionResponse,
+} from "../external/discord-client";
+import {
+  discordGuildUserBinding,
+  discordEffectiveAgent,
+  discordDmBinding,
+  discordSenderBindings,
+  disconnectDiscordBinding$,
+  selectDiscordDmBinding$,
+  setDiscordAgentPreference$,
+  type DiscordVerifiedBinding,
+} from "./discord-data.service";
+import { getDiscordAppConfig } from "./discord-config";
+import type { DiscordCommandName } from "../../lib/discord-command-definition";
+import { requireDiscordConversationAccess$ } from "./discord-access.service";
+import { agentList } from "./agent-data.service";
+import { listOrgModelPolicies$ } from "./model-policy.service";
+import { updateUserModelPreference$ } from "./user-data.service";
+import {
+  safeJsonParse,
+  safeSync,
+  settle,
+  settleIncludingAbort,
+} from "../utils";
+
+const SETUP_GUIDANCE =
+  "Discord account onboarding is not available yet. An administrator must configure a verified connection before you can use Okou. This command does not connect or verify an account.";
+const STALE_CONTROL =
+  "This control has expired or your access has changed. Run the command again.";
+const HELP = [
+  "**Okou in Discord**",
+  "Mention Okou in a server channel to start a conversation, or message the bot directly.",
+  "`/okou connect` — connection status and setup guidance",
+  "`/okou disconnect` — disconnect your account from this workspace",
+  "`/okou switch` — choose your agent for new conversations",
+  "`/okou model` — choose an allowed model for new conversations",
+  "`/okou org` — choose the workspace for bot DMs",
+  "Existing server threads keep their agent and model. Long task replies arrive from the bot.",
+].join("\n");
+
+type AccountInteraction =
+  | DiscordCommandInteraction
+  | DiscordComponentInteraction;
+
+const currentDiscordBinding$ = command(
+  async ({ get }, actor: DiscordInteractionActor, signal: AbortSignal) => {
+    if (actor.guildId) {
+      const binding = await get(
+        discordGuildUserBinding({
+          guildId: actor.guildId,
+          discordUserId: actor.discordUserId,
+        }),
+      );
+      signal.throwIfAborted();
+      return binding
+        ? { kind: "connected" as const, binding }
+        : { kind: "not-connected" as const };
+    }
+    const binding = await get(discordDmBinding(actor.discordUserId));
+    signal.throwIfAborted();
+    return binding;
+  },
+);
+
+const discordChannelFailure$ = command(
+  async (
+    { set },
+    binding: DiscordVerifiedBinding,
+    actor: DiscordInteractionActor,
+    signal: AbortSignal,
+  ): Promise<DiscordAccountMessage | null> => {
+    const access = await set(
+      requireDiscordConversationAccess$,
+      {
+        orgId: binding.orgId,
+        userId: binding.userId,
+        channelId: actor.channelId,
+        ...(actor.guildId ? { guildId: actor.guildId } : {}),
+        mode: "view",
+      },
+      signal,
+    );
+    if (access.kind === "denied") {
+      return discordAccountMessage(access.response.body.error.message);
+    }
+    return access.binding.connectionId === binding.connectionId
+      ? null
+      : discordAccountMessage(STALE_CONTROL);
+  },
+);
+
+const discordOrgPicker$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly actor: DiscordInteractionActor;
+      readonly botToken: string;
+      readonly page: number;
+      readonly selection?: string;
+    },
+    signal: AbortSignal,
+  ): Promise<DiscordAccountMessage> => {
+    if (args.actor.guildId) {
+      return discordAccountMessage(
+        "In a server, Okou uses that server's workspace. Use `/okou org` in a direct message to the bot to choose your DM workspace.",
+      );
+    }
+    const bindings = await get(discordSenderBindings(args.actor.discordUserId));
+    signal.throwIfAborted();
+    if (bindings.length === 0) {
+      return discordAccountMessage(SETUP_GUIDANCE);
+    }
+    if (args.selection !== undefined) {
+      const selected = bindings.find((binding) => {
+        return binding.connectionId === args.selection;
+      });
+      if (!selected) {
+        return discordAccountMessage(STALE_CONTROL);
+      }
+      const channelFailure = await set(
+        discordChannelFailure$,
+        selected,
+        args.actor,
+        signal,
+      );
+      if (channelFailure) {
+        return channelFailure;
+      }
+      const saved = await set(
+        selectDiscordDmBinding$,
+        {
+          discordUserId: args.actor.discordUserId,
+          connectionId: selected.connectionId,
+        },
+        signal,
+      );
+      return discordAccountMessage(
+        saved
+          ? "Workspace selected for bot DMs. Use `/okou switch` or `/okou model` to change your preferences."
+          : STALE_CONTROL,
+      );
+    }
+    const options = bindings
+      .toSorted((left, right) => {
+        return left.connectionId.localeCompare(right.connectionId);
+      })
+      .map((binding) => {
+        return {
+          label: binding.guildName ?? `Server ${binding.guildId}`,
+          description: `Workspace ${binding.orgId}`,
+          value: binding.connectionId,
+        };
+      });
+    return discordAccountPicker({
+      ...args,
+      action: "org",
+      connectionId: "-",
+      options,
+      content:
+        "Choose your workspace for bot DMs. Only your verified connections are listed.",
+    });
+  },
+);
+
+const discordAgentPicker$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly actor: DiscordInteractionActor;
+      readonly botToken: string;
+      readonly binding: DiscordVerifiedBinding;
+      readonly page: number;
+      readonly selection?: string;
+    },
+    signal: AbortSignal,
+  ): Promise<DiscordAccountMessage> => {
+    const available = await get(
+      agentList(args.binding.orgId, args.binding.userId),
+    );
+    signal.throwIfAborted();
+    const defaultAgent = available.find((agent) => {
+      return agent.isDefaultAgent;
+    });
+    const options = [
+      ...(defaultAgent
+        ? [
+            {
+              label: `Workspace default: ${defaultAgent.displayName}`,
+              value: "default",
+            },
+          ]
+        : []),
+      ...available
+        .filter((agent) => {
+          return !agent.isDefaultAgent;
+        })
+        .toSorted((left, right) => {
+          return left.agentId.localeCompare(right.agentId);
+        })
+        .map((agent) => {
+          return { label: agent.displayName, value: agent.agentId };
+        }),
+    ];
+    if (args.selection !== undefined) {
+      const option = options.find((candidate) => {
+        return candidate.value === args.selection;
+      });
+      if (!option) {
+        return discordAccountMessage(
+          "You no longer have access to that agent. Run `/okou switch` again.",
+        );
+      }
+      const saved = await set(
+        setDiscordAgentPreference$,
+        {
+          connectionId: args.binding.connectionId,
+          discordUserId: args.actor.discordUserId,
+          agentId: option.value === "default" ? null : option.value,
+        },
+        signal,
+      );
+      return discordAccountMessage(
+        saved
+          ? `Agent selected for new Discord conversations: ${option.label}. Existing server threads keep their agent.`
+          : STALE_CONTROL,
+      );
+    }
+    return discordAccountPicker({
+      ...args,
+      connectionId: args.binding.connectionId,
+      action: "agent",
+      options,
+      content:
+        "Choose an agent for new Discord conversations. Existing server threads keep their agent.",
+    });
+  },
+);
+
+const discordModelPicker$ = command(
+  async (
+    { set },
+    args: {
+      readonly actor: DiscordInteractionActor;
+      readonly botToken: string;
+      readonly binding: DiscordVerifiedBinding;
+      readonly page: number;
+      readonly selection?: string;
+    },
+    signal: AbortSignal,
+  ): Promise<DiscordAccountMessage> => {
+    const policies = await set(listOrgModelPolicies$, args.binding, signal);
+    const visible = new Set(getBuiltInVisibleModels());
+    const options = policies.policies.flatMap((policy) => {
+      if (
+        !isSupportedRunModel(policy.model) ||
+        !visible.has(policy.model) ||
+        policy.routeStatus !== "valid"
+      ) {
+        return [];
+      }
+      return [{ label: policy.modelLabel, value: policy.model }];
+    });
+    if (args.selection !== undefined) {
+      const option = options.find((candidate) => {
+        return candidate.value === args.selection;
+      });
+      if (!option) {
+        return discordAccountMessage(
+          "You no longer have access to that model. Run `/okou model` again.",
+        );
+      }
+      const current = await set(currentDiscordBinding$, args.actor, signal);
+      if (
+        current.kind !== "connected" ||
+        current.binding.connectionId !== args.binding.connectionId
+      ) {
+        return discordAccountMessage(STALE_CONTROL);
+      }
+      const channelFailure = await set(
+        discordChannelFailure$,
+        current.binding,
+        args.actor,
+        signal,
+      );
+      if (channelFailure) {
+        return channelFailure;
+      }
+      await set(
+        updateUserModelPreference$,
+        {
+          orgId: current.binding.orgId,
+          userId: current.binding.userId,
+          preference: { selectedModel: option.value, serviceTier: null },
+        },
+        signal,
+      );
+      return discordAccountMessage(
+        `Model selected for new conversations: ${option.label}. Existing server threads keep their model.`,
+      );
+    }
+    return discordAccountPicker({
+      ...args,
+      connectionId: args.binding.connectionId,
+      action: "model",
+      options,
+      content:
+        "Choose an allowed model for new conversations. This is your shared workspace model preference.",
+    });
+  },
+);
+
+const discordBoundAccountAction$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly action:
+        | DiscordCommandName
+        | DiscordPickerState["action"]
+        | undefined;
+      readonly binding: DiscordVerifiedBinding;
+      readonly actor: DiscordInteractionActor;
+      readonly botToken: string;
+      readonly page: number;
+      readonly selection?: string;
+    },
+    signal: AbortSignal,
+  ): Promise<DiscordAccountMessage> => {
+    if (args.action === "connect") {
+      const agent = await get(discordEffectiveAgent(args.binding));
+      signal.throwIfAborted();
+      const agentStatus = agent
+        ? `Current agent: ${agent.displayName ?? agent.name}.`
+        : "No accessible agent is configured. Use `/okou switch` to choose one.";
+      return discordAccountMessage(
+        `Your account already has a verified connection to this workspace. ${agentStatus} Mention Okou in a server channel or message the bot to start chatting.`,
+      );
+    }
+    if (args.action === "disconnect") {
+      const disconnected = await set(
+        disconnectDiscordBinding$,
+        {
+          connectionId: args.binding.connectionId,
+          discordUserId: args.actor.discordUserId,
+        },
+        signal,
+      );
+      return discordAccountMessage(
+        disconnected
+          ? "You have been disconnected from this workspace and your Discord agent access has been revoked. Other workspace connections are unchanged."
+          : STALE_CONTROL,
+      );
+    }
+    const pickerArgs = {
+      actor: args.actor,
+      botToken: args.botToken,
+      binding: args.binding,
+      page: args.page,
+      selection: args.selection,
+    };
+    if (args.action === "switch" || args.action === "agent") {
+      return set(discordAgentPicker$, pickerArgs, signal);
+    }
+    if (args.action === "model") {
+      return set(discordModelPicker$, pickerArgs, signal);
+    }
+    return discordAccountMessage(STALE_CONTROL);
+  },
+);
+
+const discordAccountAction$ = command(
+  async (
+    { set },
+    interaction: AccountInteraction,
+    actor: DiscordInteractionActor,
+    botToken: string,
+    signal: AbortSignal,
+  ): Promise<DiscordAccountMessage> => {
+    let control: DiscordPickerState | null = null;
+    let selection: string | undefined;
+    if (interaction.type === 3) {
+      control = parseDiscordPickerCustomId({
+        customId: interaction.data.custom_id,
+        actor,
+        botToken,
+      });
+      if (!control) {
+        return discordAccountMessage(STALE_CONTROL);
+      }
+      if (interaction.data.component_type === 3) {
+        selection = interaction.data.values[0];
+      }
+    }
+    const subcommand: DiscordCommandName | undefined =
+      interaction.type === 2 ? interaction.data.options[0].name : undefined;
+    const action = subcommand ?? control?.action;
+    if (action === "help") {
+      return discordAccountMessage(HELP);
+    }
+    if (action === "org") {
+      return set(
+        discordOrgPicker$,
+        { actor, botToken, page: control?.page ?? 0, selection },
+        signal,
+      );
+    }
+    const current = await set(currentDiscordBinding$, actor, signal);
+    if (current.kind === "selection-required") {
+      if (control) {
+        return discordAccountMessage(STALE_CONTROL);
+      }
+      return set(discordOrgPicker$, { actor, botToken, page: 0 }, signal);
+    }
+    if (current.kind !== "connected") {
+      return discordAccountMessage(SETUP_GUIDANCE);
+    }
+    if (control && control.connectionId !== current.binding.connectionId) {
+      return discordAccountMessage(STALE_CONTROL);
+    }
+    const channelFailure = await set(
+      discordChannelFailure$,
+      current.binding,
+      actor,
+      signal,
+    );
+    if (channelFailure) {
+      return channelFailure;
+    }
+    return set(
+      discordBoundAccountAction$,
+      {
+        action,
+        binding: current.binding,
+        actor,
+        botToken,
+        page: control?.page ?? 0,
+        selection,
+      },
+      signal,
+    );
+  },
+);
+
+const finishDiscordInteraction$ = command(
+  async (
+    { set },
+    interaction: AccountInteraction,
+    actor: DiscordInteractionActor,
+    botToken: string,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const outcome = await settle(
+      set(discordAccountAction$, interaction, actor, botToken, signal),
+      signal,
+    );
+    const message = outcome.ok
+      ? outcome.value
+      : discordAccountMessage(
+          "The account request could not be completed. Run the command again to check your current preferences.",
+        );
+    const response = await editDiscordOriginalInteractionResponse(
+      {
+        applicationId: interaction.application_id,
+        interactionToken: interaction.token,
+        ...message,
+      },
+      signal,
+    );
+    if (response.kind !== "ok") {
+      throw new Error("Discord private interaction response failed");
+    }
+    if (!outcome.ok) {
+      throw outcome.error;
+    }
+  },
+);
+
+export const handleDiscordInteractions$ = command(
+  async ({ get, set }, signal: AbortSignal): Promise<Response> => {
+    const request = get(request$).raw;
+    const publicKey = env("DISCORD_PUBLIC_KEY");
+    const applicationId = env("DISCORD_APPLICATION_ID");
+    if (!publicKey || !applicationId) {
+      return Response.json(
+        { error: "Discord interactions are not configured" },
+        { status: 503 },
+      );
+    }
+    const signature = request.headers.get("x-signature-ed25519");
+    const timestamp = request.headers.get("x-signature-timestamp");
+    if (!signature || !timestamp) {
+      return Response.json(
+        { error: "Missing Discord signature" },
+        { status: 401 },
+      );
+    }
+    const body = new Uint8Array(await request.arrayBuffer());
+    signal.throwIfAborted();
+    if (body.byteLength > 65_536) {
+      return Response.json(
+        { error: "Interaction payload is too large" },
+        { status: 400 },
+      );
+    }
+    if (
+      !verifyDiscordInteractionSignature({
+        publicKey,
+        signature,
+        timestamp,
+        body,
+      })
+    ) {
+      return Response.json(
+        { error: "Invalid or expired Discord signature" },
+        { status: 401 },
+      );
+    }
+    const decoded = safeSync(() => {
+      return new TextDecoder("utf-8", { fatal: true }).decode(body);
+    });
+    if ("error" in decoded) {
+      return Response.json(
+        { error: "Invalid Discord interaction" },
+        { status: 400 },
+      );
+    }
+    const parsed = discordInteractionSchema.safeParse(
+      safeJsonParse(decoded.ok),
+    );
+    if (!parsed.success) {
+      return Response.json(
+        { error: "Invalid Discord interaction" },
+        { status: 400 },
+      );
+    }
+    const interaction = parsed.data;
+    if (interaction.application_id !== applicationId) {
+      return Response.json(
+        { error: "Incorrect Discord application" },
+        { status: 401 },
+      );
+    }
+    if (interaction.type === 1) {
+      return Response.json({ type: 1 });
+    }
+    const actor = resolveDiscordInteractionActor(interaction);
+    if (!actor) {
+      return Response.json(
+        { error: "Invalid Discord sender" },
+        { status: 400 },
+      );
+    }
+    const config = getDiscordAppConfig();
+    if (!config) {
+      return Response.json(
+        { error: "Discord interactions are not configured" },
+        { status: 503 },
+      );
+    }
+    const { botToken } = config;
+    // Discord accepts one callback per interaction ID. Consume it before work,
+    // so concurrent delivery or a captured signed replay cannot apply changes.
+    const ackSignal = AbortSignal.any([signal, AbortSignal.timeout(2000)]);
+    const acknowledgement = await settleIncludingAbort(
+      createDiscordInteractionResponse(
+        {
+          interactionId: interaction.id,
+          interactionToken: interaction.token,
+          response: { type: 5, data: { flags: 64 } },
+        },
+        ackSignal,
+      ),
+    );
+    signal.throwIfAborted();
+    if (!acknowledgement.ok) {
+      return Response.json(
+        { error: "Discord could not acknowledge the interaction" },
+        { status: 503 },
+      );
+    }
+    const acknowledged = acknowledgement.value;
+    if (acknowledged.kind !== "ok") {
+      if (
+        acknowledged.kind === "discord-error" &&
+        acknowledged.code === 40_060
+      ) {
+        return Response.json(null, { status: 202 });
+      }
+      return Response.json(
+        { error: "Discord could not acknowledge the interaction" },
+        { status: 503 },
+      );
+    }
+    waitUntil(
+      set(finishDiscordInteraction$, interaction, actor, botToken, signal),
+    );
+    return Response.json(null, { status: 202 });
+  },
+);
