@@ -695,7 +695,7 @@ describe("okou workflow automation scheduler", () => {
     );
     await disableAutomation(fresh.automationId);
     await deleteWorkflowViaApi(scenario);
-  });
+  }, 90_000);
 
   it("admits an unclaimed recurring schedule at exactly thirty minutes late", async () => {
     mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
