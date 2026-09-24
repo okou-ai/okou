@@ -71,7 +71,10 @@ import {
 import { internalMorningBriefWorkerRoutes } from "../internal-morning-brief-worker";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  setHistoricalNativeMorningBriefForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
 import {
   seedSlackOrgConnection$,
   seedSlackOrgInstallation$,
@@ -218,10 +221,10 @@ async function fixture(
     context.signal,
   );
   const brief = await seedInstalledMorningBrief({ orgId, userId });
-  await updateFeatureSwitchesForUser(
+  await setHistoricalNativeMorningBriefForUser(
     context,
     { orgId, userId },
-    { [FeatureSwitchKey.NativeMorningBrief]: options.feature !== false },
+    options.feature !== false,
   );
   const installation = await store.set(
     seedSlackOrgInstallation$,

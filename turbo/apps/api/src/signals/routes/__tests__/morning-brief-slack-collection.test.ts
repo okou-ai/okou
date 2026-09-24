@@ -39,7 +39,7 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   seedRetainedNativeMorningBriefForUser,
-  updateFeatureSwitchesForUser,
+  setHistoricalNativeMorningBriefForUser,
 } from "./helpers/feature-switches";
 import {
   deleteSlackIntegrationFixture$,
@@ -166,10 +166,10 @@ async function fixture(
     agentVisibility: options.agentVisibility,
     agentOwner: options.agentOwner,
   });
-  await updateFeatureSwitchesForUser(
+  await setHistoricalNativeMorningBriefForUser(
     context,
     { orgId, userId },
-    { [FeatureSwitchKey.NativeMorningBrief]: options.feature !== false },
+    options.feature !== false,
   );
   const botToken = `xoxb-test-${randomUUID()}`;
   const installation =

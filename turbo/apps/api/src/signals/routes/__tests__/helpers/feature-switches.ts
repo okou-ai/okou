@@ -75,6 +75,20 @@ export async function seedRetainedNativeMorningBriefForUser(
   await seedRetainedNativeMorningBriefOverride(actor);
 }
 
+/** The old API could turn Native back on; the current API can only turn it off. */
+export async function setHistoricalNativeMorningBriefForUser(
+  context: TestContext,
+  actor: FeatureSwitchActor,
+  enabled: boolean,
+): Promise<void> {
+  const switches = { [FeatureSwitchKey.NativeMorningBrief]: enabled };
+  if (enabled) {
+    await seedRetainedNativeMorningBriefForUser(context, actor, switches);
+  } else {
+    await updateFeatureSwitchesForUser(context, actor, switches);
+  }
+}
+
 export async function deleteFeatureSwitchesForUser(
   context: TestContext,
   actor: FeatureSwitchActor,
