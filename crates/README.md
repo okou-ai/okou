@@ -15,7 +15,7 @@ control and RPC services, shared contracts, and developer/test support.
 | runner-provider          | API/local job discovery, claiming, completion, active input, cancellation and queue coordination      |
 | runner-remote            | Guest RPC, remote usage, SSH authority/sessions/files, and VNC sessions                               |
 | runner-storage           | Storage planning, archive delivery, host archive cache and R2 template cache                         |
-| runner-supervisor        | Start-loop idle replenishment and claimed-idle reservation/rollback, post-executor sandbox finalization, heartbeat, claimed-run completion settlement, ownership transitions, and orphan recovery above domain owners |
+| runner-supervisor        | Start-loop idle replenishment, claimed-idle reservation/rollback, finalizing-successor arbitration, claimed activation status and failure recovery, post-executor sandbox finalization, heartbeat, claimed-run completion settlement, ownership transitions, and orphan recovery above domain owners |
 | runner-types             | Shared Runner identifiers, API payloads, storage manifest types and validation                        |
 | sandbox                  | Provider-neutral sandbox interfaces and shared lifecycle/control types                                |
 | sandbox-firecracker      | Firecracker provider: VM lifecycle, networking, NBD COW and snapshot restore                          |

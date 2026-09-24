@@ -435,6 +435,7 @@ function buildStableAgentPrompt(args: {
   readonly bankingEnabled: boolean;
   readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
+  readonly discordEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
   readonly presentationConvertEnabled: boolean;
   readonly customConnectorMcpEnabled: boolean;
@@ -450,6 +451,7 @@ function buildStableAgentPrompt(args: {
       bankingEnabled: args.bankingEnabled,
       vncEnabled: args.vncEnabled,
       larkEnabled: args.larkEnabled,
+      discordEnabled: args.discordEnabled,
       deliveryFormatGuidanceEnabled: args.deliveryFormatGuidanceEnabled,
       presentationConvertEnabled: args.presentationConvertEnabled,
     }),
@@ -950,6 +952,10 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
     ),
     vncEnabled: isFeatureEnabled(
       FeatureSwitchKey.VncAccess,
+      args.featureSwitchContext,
+    ),
+    discordEnabled: isFeatureEnabled(
+      FeatureSwitchKey.DiscordIntegration,
       args.featureSwitchContext,
     ),
     larkEnabled: isFeatureEnabled(

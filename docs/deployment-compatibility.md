@@ -57,6 +57,21 @@ rollback to an API that cannot parse Discord source annotations is not supported
 once such events exist. The new feature has no existing production users and
 adds no compatibility fallback or historical backfill.
 
+## Runner claim first-body-chunk timing (2026-09-24)
+
+The Runner records two optional, successful-claim-only operation durations: time after
+response headers until the first non-empty application-visible body chunk, and
+from that chunk until the full body is collected. Their sum is the existing
+`runner_claim_response_body_read` duration; they do not represent a server
+flush or physical wire-byte measurement. The claim request and response,
+including context and auth, remain unchanged. An older Runner emits neither
+operation; the new Runner uses the existing generic operation stream, which an
+older API accepts without a claim-contract change. Missing observations during
+a staggered rollout are not zero-valued timings. Compare deployed cohorts by
+Runner/API version, size, host and time before interpreting a shifted total
+read distribution, because the new observation reads an initial chunk before
+collecting the rest.
+
 ## Morning Brief settings status and collection account retirement (2026-09-24)
 
 `GET`/`PUT /api/preferences/morning-brief` no longer return `nextRunAt`,
@@ -85,6 +100,42 @@ This API version still declares the column in Drizzle and uses full-row
 Two-release Contract": first remove the Drizzle declaration in its own release,
 then drop the column in a later migration once every API that declares it has
 drained.
+
+## Discord verified foundation (2026-09-24)
+
+The Discord foundation adds seven new relations, their ownership constraints,
+and an additional unique key on the already unique chat-thread ID plus owner.
+Existing non-erasure API reads and writes remain legal after migration.
+The chat-thread ownership key also makes existing KEY SHARE locks retain the
+thread user until commit. No production writer transfers a thread between users;
+ordinary title, draft and other non-key updates remain legal. Race tests now
+exercise owner changes before the initial pin and observed blocking after it.
+New cleanup/export readers require the migration before API promotion, following
+the existing production release order. There are no historical Discord rows to
+backfill. `_discordIntegration` remains disabled for every organization by
+default, and no Gateway or OAuth onboarding is activated by this change.
+
+Old account-erasure workers do not ignore the new relations: their catalogue
+coverage guard rejects tables absent from their compiled ownership inventory,
+even while Discord is disabled. During the migration-to-compatible-API window,
+affected deletion jobs remain durable and retry after 60 seconds; they require
+workers with the Discord inventory to progress. Promote compatible API workers
+after the migration and keep them available to drain this backlog. Rolling back
+to an API with the old inventory stalls those jobs until compatible workers
+return. Do not weaken the catalogue guard or treat feature-off state as erasure
+compatibility.
+
+Status/preferences are new API contracts. No existing client or Runner protocol
+changes. Gateway version 1 carries only Discord event data; the API owns Okou
+identity resolution. Gateway handler/relay implementations land in their own
+slices before activation.
+
+Account exports add a bounded Discord source phase only when owned Discord rows
+exist. Once an opted-in development/test account has a durable export checkpoint
+in that phase, an older API cannot resume it; finish or restart that export with
+the new API. This is a non-GA, default-off surface and introduces no compatibility
+reader or rollback fallback. Application credentials remain environment-owned
+and are never exported or revoked by guild removal.
 
 ## Chat search user keyword GIN index (2026-09-24)
 

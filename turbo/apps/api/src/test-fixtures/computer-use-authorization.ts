@@ -141,9 +141,10 @@ const waiterCountRowSchema = z.object({ waiterCount: z.number() });
 /**
  * Holds the exact run row so creation waits on its retained FOR SHARE pin. The
  * observation methods bind both waits to real PostgreSQL blocker edges: first
- * holder -> creation, then creation -> a non-key thread identity mutation. The
- * second edge proves creation acquired its local thread SHARE before it waited
- * for the run instead of relying on the shared helper's weaker KEY SHARE.
+ * holder -> creation, then creation -> a thread identity mutation. For the
+ * non-key Agent reference, the second edge proves creation acquired its local
+ * thread SHARE before it waited for the run. Owner changes also conflict with
+ * the shared helper's KEY SHARE because (id, user_id) is a referenced key.
  */
 export async function holdComputerUseAuthorizationCreationRunFixture(
   args: { readonly runId: string },
@@ -412,6 +413,20 @@ function isCreationRunLocator(queryArgs: unknown[], runId: string): boolean {
   );
 }
 
+/** The shared helper's first thread identity pin, before its retained lock. */
+function isCreationThreadKeyShare(
+  queryArgs: unknown[],
+  chatThreadId: string,
+): boolean {
+  const text = barrierQueryText(queryArgs);
+  return (
+    text.startsWith("select") &&
+    text.includes('from "chat_threads"') &&
+    text.includes("for key share") &&
+    barrierQueryBinds(queryArgs, chatThreadId)
+  );
+}
+
 /** The creation-only local thread upgrade, distinct from the shared helper's
  * earlier FOR KEY SHARE. Pausing before it exposes the exact stale-identity
  * window that its locked re-read closes. */
@@ -461,13 +476,15 @@ function tookCreationRunPin(transaction: SelectedTransaction): boolean {
 
 /**
  * Reliable creation boundaries. `locator`, `run-pin` and `insert` pause after
- * the real statement returned; `thread-share` pauses before dispatch so a
- * non-key thread identity mutation can commit under the shared helper's weaker
- * pin; `commit` is after the helper's final in-transaction abort check but
- * before the driver dispatches COMMIT.
+ * the real statement returned. `thread-key-share` pauses before the first thread
+ * pin, while ownership can still change; `thread-share` pauses before the local
+ * upgrade, while non-key Agent references can still change. `commit` is after
+ * the helper's final in-transaction abort check but before the driver dispatches
+ * COMMIT.
  */
 type ComputerUseAuthorizationCreateStop =
   | "locator"
+  | "thread-key-share"
   | "thread-share"
   | "run-pin"
   | "insert"
@@ -492,6 +509,9 @@ export async function withComputerUseAuthorizationCreateBarrierFixture<T>(
       stopAt: (queryArgs, selectingStatement, transaction) => {
         if (args.stopAt === "locator") {
           return selectingStatement;
+        }
+        if (args.stopAt === "thread-key-share") {
+          return isCreationThreadKeyShare(queryArgs, args.chatThreadId);
         }
         if (args.stopAt === "thread-share") {
           return isCreationThreadShare(queryArgs, args.chatThreadId);

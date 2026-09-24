@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { bigint, check, index, pgTable } from "drizzle-orm/pg-core";
+import { bigint, check, index, pgTable, unique } from "drizzle-orm/pg-core";
 import { chatThreadColumns } from "../columns/chat-thread";
 /**
  * Server-private origin classification for a whole chat thread.
@@ -26,6 +26,7 @@ export const chatThreads = pgTable(
   },
   (table) => {
     return [
+      unique("uq_chat_threads_id_user").on(table.id, table.userId),
       check(
         "chat_threads_computer_access_check",
         sql`NOT (${table.cloudBrowserEnabled} AND ${table.computerUseHostId} IS NOT NULL)`,
