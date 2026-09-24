@@ -17,8 +17,10 @@ import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createAuthDeviceApiActions } from "./helpers/api-bdd-auth-device";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
+  awsVerificationCode,
   createConnectorBddApi,
   manualHttpCustomConnectorCreateBody,
+  mockAwsExternalCodeProvider,
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
@@ -53,6 +55,7 @@ const store = createStore();
 interface ConnectedFixture {
   readonly actor: ApiTestUser;
   readonly connectorSlug:
+    | "aws"
     | "cloudflare"
     | "github"
     | "reap"
@@ -462,6 +465,59 @@ describe("POST /api/connectors/diagnostics/check", () => {
       outcome: "environment-not-used",
       connector: { connectorSlug: "aws" },
       environmentNames: ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
+    });
+  });
+
+  it("reports the allowed AWS permission when a different matching alias is denied", async () => {
+    const actor = bdd.user();
+    await seedAdminMembership(actor);
+    mockAwsExternalCodeProvider();
+    const session = await connectorsApi.startExternalCode(actor, "aws", "cli");
+    await connectorsApi.completeExternalCode(actor, "aws", {
+      sessionId: session.sessionId,
+      sessionToken: session.sessionToken,
+      code: awsVerificationCode(session.authorizationUrl),
+    });
+    await trackConnectedFixture(
+      Promise.resolve({ actor, connectorSlug: "aws" }),
+    );
+    const { runId, agentId } = await createOwnedRun(actor, {
+      builtinConnectorSlugs: ["aws"],
+    });
+    await runsApi.applyUserPermissionGrant(actor, {
+      agentId,
+      connectorSlug: "aws",
+      permission: "sts:get-caller-identity-alias",
+      action: "deny",
+    });
+    await runsApi.applyUserPermissionGrant(actor, {
+      agentId,
+      connectorSlug: "aws",
+      permission: "sts:get-caller-identity",
+      action: "allow",
+    });
+    const response = await checkWithToken(
+      okouToken(actor, runId, ["connector:read", "agent-run:read"]),
+      {
+        mode: "url",
+        method: "POST",
+        url: "https://sts.us-west-2.amazonaws.com/",
+        connectorSlug: "aws",
+        aws: { sigv4Service: "sts", action: "GetCallerIdentity" },
+      },
+    );
+    expect(response.body).toMatchObject({
+      outcome: "resolved",
+      connector: { connectorSlug: "aws" },
+      permission: {
+        kind: "matched",
+        permissions: [
+          {
+            name: "sts:get-caller-identity",
+            policy: { outcome: "allow", basis: "allow-list" },
+          },
+        ],
+      },
     });
   });
 

@@ -2,6 +2,8 @@
 
 from collections.abc import Iterable
 
+import pytest
+
 import matching
 from tests.aws_sigv4_helpers import (
     aws_sigv4_authorization,
@@ -45,6 +47,7 @@ def _match(
     body: bytes | None = None,
     allow: Iterable[str] = (),
     deny: Iterable[str] = (),
+    ask: Iterable[str] = (),
     unknown_policy: str = "ask",
     indexed: bool = True,
     aws_inspection_available: bool = True,
@@ -57,7 +60,7 @@ def _match(
         "aws": {
             "allow": list(allow),
             "deny": list(deny),
-            "ask": [],
+            "ask": list(ask),
             "unknownPolicy": unknown_policy,
         }
     }
@@ -374,12 +377,23 @@ def test_unavailable_aws_inspection_rejects_presigned_query_rule() -> None:
     _assert_unknown(result)
 
 
-def test_denied_duplicate_aws_semantic_identity_takes_priority() -> None:
-    rule = "POST / AWS sigv4=ec2 action=DescribeInstances"
-    permissions = [
-        firewall_permission("describe-primary", rule),
-        firewall_permission("describe-alias", rule),
-    ]
+@pytest.mark.parametrize("indexed", [True, False])
+@pytest.mark.parametrize("allowed_first", [True, False])
+@pytest.mark.parametrize(
+    "alias_rule",
+    [
+        "POST / AWS sigv4=ec2 action=DescribeInstances",
+        "POST / AWS action=DescribeInstances sigv4=ec2",
+    ],
+)
+def test_duplicate_aws_permissions_follow_allow_first(
+    indexed: bool, allowed_first: bool, alias_rule: str
+) -> None:
+    primary = firewall_permission(
+        "describe-primary", "POST / AWS sigv4=ec2 action=DescribeInstances"
+    )
+    alias = firewall_permission("describe-alias", alias_rule)
+    permissions = [primary, alias] if allowed_first else [alias, primary]
 
     result = _match(
         base="https://ec2.amazonaws.com",
@@ -389,14 +403,108 @@ def test_denied_duplicate_aws_semantic_identity_takes_priority() -> None:
         headers=_headers(host="ec2.amazonaws.com", service="ec2"),
         allow=("describe-primary",),
         deny=("describe-alias",),
+        indexed=indexed,
+    )
+
+    _assert_allowed(result, "describe-primary")
+
+
+@pytest.mark.parametrize("blocked_state", ["deny", "ask"])
+def test_same_aws_permission_in_allow_and_blocked_state_stays_blocked(
+    blocked_state: str,
+) -> None:
+    result = _match(
+        base="https://ec2.amazonaws.com",
+        permissions=[
+            firewall_permission(
+                "describe-instances", "POST / AWS sigv4=ec2 action=DescribeInstances"
+            )
+        ],
+        url="https://ec2.amazonaws.com/?Action=DescribeInstances",
+        method="POST",
+        headers=_headers(host="ec2.amazonaws.com", service="ec2"),
+        allow=("describe-instances",),
+        deny=("describe-instances",) if blocked_state == "deny" else (),
+        ask=("describe-instances",) if blocked_state == "ask" else (),
     )
 
     assert isinstance(result, matching.FirewallBlock)
     assert result.reason == "permission_denied"
-    assert result.permissions == ("describe-alias",)
+    assert result.permissions == ("describe-instances",)
 
 
-def test_aws_semantic_identity_preserves_rule_method() -> None:
+def test_different_aws_action_does_not_inherit_allowed_alias() -> None:
+    permissions = [
+        firewall_permission("describe-instances", "POST / AWS sigv4=ec2 action=DescribeInstances"),
+        firewall_permission("start-instances", "POST / AWS sigv4=ec2 action=StartInstances"),
+    ]
+    result = _match(
+        base="https://ec2.amazonaws.com",
+        permissions=permissions,
+        url="https://ec2.amazonaws.com/?Action=StartInstances",
+        method="POST",
+        headers=_headers(host="ec2.amazonaws.com", service="ec2"),
+        allow=("describe-instances",),
+        deny=("start-instances",),
+    )
+
+    assert isinstance(result, matching.FirewallBlock)
+    assert result.reason == "permission_denied"
+    assert result.permissions == ("start-instances",)
+
+
+def test_more_specific_aws_base_deny_blocks_broad_base_allow() -> None:
+    rule = "POST / AWS sigv4=ec2 action=DescribeInstances"
+    firewalls = wrap_firewalls(
+        [
+            firewall_api(
+                "https://{awsHost+}.amazonaws.com",
+                [firewall_permission("broad", rule)],
+                auth=_AWS_AUTH,
+            ),
+            firewall_api(
+                "https://ec2.amazonaws.com",
+                [firewall_permission("specific", rule)],
+                auth=_AWS_AUTH,
+            ),
+        ],
+        name="aws",
+    )
+    result = matching.match_compiled_firewall_request(
+        "https://ec2.amazonaws.com/?Action=DescribeInstances",
+        "POST",
+        matching.compile_firewalls(firewalls),
+        {"aws": {"allow": ["broad"], "deny": ["specific"], "unknownPolicy": "ask"}},
+        request_context=matching.FirewallRequestContext(
+            headers=_headers(host="ec2.amazonaws.com", service="ec2")
+        ),
+    )
+
+    assert isinstance(result, matching.FirewallBlock)
+    assert result.reason == "permission_denied"
+    assert result.permissions == ("specific",)
+
+
+def test_more_specific_aws_rule_deny_blocks_broad_rule_allow() -> None:
+    result = _match(
+        base="https://ec2.amazonaws.com",
+        permissions=[
+            firewall_permission("broad", "POST /{rest*} AWS sigv4=ec2 action=DescribeInstances"),
+            firewall_permission("specific", "POST / AWS sigv4=ec2 action=DescribeInstances"),
+        ],
+        url="https://ec2.amazonaws.com/?Action=DescribeInstances",
+        method="POST",
+        headers=_headers(host="ec2.amazonaws.com", service="ec2"),
+        allow=("broad",),
+        deny=("specific",),
+    )
+
+    assert isinstance(result, matching.FirewallBlock)
+    assert result.reason == "permission_denied"
+    assert result.permissions == ("specific",)
+
+
+def test_distinct_aws_rule_methods_keep_allowed_permission() -> None:
     permissions = [
         firewall_permission(
             "describe-primary",
