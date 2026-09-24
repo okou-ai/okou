@@ -151,6 +151,23 @@ def test_action_rule_also_requires_declared_url_query(indexed: bool) -> None:
     ):
         _assert_unknown(_match(**args, url=url))
 
+    body = b"Action=DescribeInstances"
+    form_args = {
+        **args,
+        "headers": _headers(
+            host="ec2.amazonaws.com",
+            service="ec2",
+            content_type="application/x-www-form-urlencoded",
+            extra=(("Content-Length", str(len(body))),),
+        ),
+        "body": body,
+    }
+    _assert_allowed(
+        _match(**form_args, url="https://ec2.amazonaws.com/?Version=2016-11-15"),
+        "describe-instances",
+    )
+    _assert_unknown(_match(**form_args, url="https://ec2.amazonaws.com/"))
+
 
 @pytest.mark.parametrize("indexed", [True, False])
 def test_target_rule_also_requires_declared_url_query(indexed: bool) -> None:
