@@ -31,8 +31,12 @@ import { seedOrgMembership$ } from "./helpers/org-membership";
 import { seedRun$ } from "./helpers/usage-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { inlineSshKey } from "./helpers/ssh-credential";
+import {
+  createVncRuntimeApi,
+  initializeVncRuntimeTest,
+  vncConnectionBody,
+} from "./helpers/vnc-runtime";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { chatThreadRenameRoutes } from "../chat-threads-rename";
@@ -46,6 +50,7 @@ const store = createStore();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const connectorApi = createConnectorBddApi(context);
+const vnc = createVncRuntimeApi(context);
 
 const WORKSPACE_DEFAULT_MODEL = "claude-sonnet-5";
 const OTHER_WORKSPACE_MODEL = "claude-opus-4-8";
@@ -230,13 +235,14 @@ async function readCreatedThreadEvent(threadId: string, token: string) {
 }
 
 describe("POST /api/chat-threads", () => {
-  it("creates initial host overrides before the chat can start a Run and preserves them on replay", async () => {
-    useSecretKmsProbe();
+  it("creates initial SSH and VNC overrides and preserves them on replay", async () => {
+    initializeVncRuntimeTest();
     const fixture = await seedAgent();
     await updateFeatureSwitchesForUser(context, fixture, {
       [FeatureSwitchKey.ThreadRemoteAccess]: true,
+      [FeatureSwitchKey.VncAccess]: true,
     });
-    createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
+    vnc.authenticate({ orgId: fixture.orgId, userId: fixture.userId });
     const headers = { authorization: "Bearer clerk-session" };
     const hostId = randomUUID();
     await accept(
@@ -251,13 +257,27 @@ describe("POST /api/chat-threads", () => {
       }),
       [201],
     );
+    await accept(
+      remoteAccessClient().updateHostDefault({
+        headers,
+        params: { protocol: "ssh", connectionId: hostId },
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const vncHost = await accept(
+      vnc.connections().create({ headers, body: vncConnectionBody() }),
+      [201],
+    );
+    const vncHostId = vncHost.body.id;
     const threadId = randomUUID();
     const body = {
       agentId: fixture.agentId,
       clientThreadId: threadId,
       model: WORKSPACE_DEFAULT_MODEL,
       initialRemoteAccessOverrides: [
-        { protocol: "ssh" as const, connectionId: hostId, enabled: true },
+        { protocol: "ssh" as const, connectionId: hostId, enabled: false },
+        { protocol: "vnc" as const, connectionId: vncHostId, enabled: true },
       ],
     };
     await accept(threadsClient().create({ headers, body }), [201]);
@@ -267,6 +287,12 @@ describe("POST /api/chat-threads", () => {
     );
     expect(selected.body.ssh[0]).toMatchObject({
       connectionId: hostId,
+      enabled: false,
+      overrideEnabled: false,
+      source: "override",
+    });
+    expect(selected.body.vnc[0]).toMatchObject({
+      connectionId: vncHostId,
       enabled: true,
       overrideEnabled: true,
       source: "override",
@@ -277,7 +303,8 @@ describe("POST /api/chat-threads", () => {
         body: {
           ...body,
           initialRemoteAccessOverrides: [
-            { protocol: "ssh", connectionId: hostId, enabled: false },
+            { protocol: "ssh", connectionId: hostId, enabled: true },
+            { protocol: "vnc", connectionId: vncHostId, enabled: false },
           ],
         },
       }),
@@ -287,7 +314,8 @@ describe("POST /api/chat-threads", () => {
       remoteAccessClient().listThreadAccess({ headers, params: { threadId } }),
       [200],
     );
-    expect(replayed.body.ssh[0]?.overrideEnabled).toBe(true);
+    expect(replayed.body.ssh[0]?.overrideEnabled).toBe(false);
+    expect(replayed.body.vnc[0]?.overrideEnabled).toBe(true);
 
     const invalidId = randomUUID();
     const invalidThreadId = randomUUID();
