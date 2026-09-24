@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import {
   integrationsDiscordDownloadFileContract,
   integrationsDiscordUploadCompleteContract,
@@ -24,11 +25,20 @@ import {
   removeErasureSubjectsFixture,
 } from "../../../test-fixtures/account-erasure-subject";
 import { signSandboxJwtForTests } from "../../auth/tokens";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settle } from "../../utils";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
+import {
+  discordChatThreads,
+  discordMessageForTest,
+  mockDiscordProvider,
+  postDiscordMessage,
+  setupConnectedDiscordActor,
+} from "./helpers/discord-fixture";
 import {
   discordApiOrigin,
   discordFileMessage,
@@ -1531,6 +1541,134 @@ describe("Canonical Discord file publication and delivery", () => {
 
     expect(artifacts.runs).toContainEqual({
       runId: sent.body.runId,
+      files: [
+        expect.objectContaining({
+          id: upload.operation.assetId,
+          filename: upload.body.filename,
+          url: upload.initialized.url,
+          assetRef: expect.objectContaining({
+            id: upload.operation.assetId,
+            classification: "published-output",
+            materialization: { status: "ready" },
+          }),
+        }),
+      ],
+    });
+  });
+
+  it("publishes a Discord-origin Run's output to its native thread and canonical artifact list", async () => {
+    const connected = await setupConnectedDiscordActor(context);
+    onTestFinished(async () => {
+      await flushWaitUntilForTest();
+      mockDiscordMemberships(context, [connected]);
+      await deleteDiscordFixture(context, connected.fixture);
+    });
+    runs.acceptTelemetryIngest();
+    const provider = mockDiscordProvider(connected);
+    const source = discordMessageForTest(connected, {
+      channelId: provider.guildChannelId,
+      content: `<@${connected.botUserId}> Publish this report to our thread`,
+    });
+    provider.messages.set(source.id, source);
+    const accepted = await postDiscordMessage(context, source);
+    expect(accepted.body.outcome).toBe("accepted");
+    await flushWaitUntilForTest();
+    const [thread] = await discordChatThreads(context, connected);
+    if (!thread) {
+      throw new Error("Expected Discord ingress to create a canonical chat");
+    }
+    const events = await readProjectedChatEvents(context, {
+      threadId: thread.id,
+      headers: { authorization: "Bearer clerk-session" },
+    });
+    const revokedIds = revokedChatEventIds(events);
+    const input = events.find((event) => {
+      return event.eventType === "input.prompt" && !revokedIds.has(event.id);
+    });
+    expect(input).toMatchObject({
+      eventType: "input.prompt",
+      runId: expect.any(String),
+    });
+    if (input?.eventType !== "input.prompt" || !input.runId) {
+      throw new Error("Expected a Run admitted from the Discord input");
+    }
+    expect(input.userMessage.parts).toContainEqual({
+      type: "source",
+      kind: "discord",
+      href: `https://discord.com/channels/${connected.guildId}/${provider.guildChannelId}/${source.id}`,
+    });
+    await runs.heartbeatRunner(connected.runnerGroup);
+    const claim = await runs.claimRunnerJob(input.runId);
+    const token = claim.platformEnvironment.OKOU_TOKEN;
+    if (!token) {
+      throw new Error("Expected the Runner claim to issue an Okou run token");
+    }
+    const headers = { authorization: `Bearer ${token}` };
+    const fixture: BoundFixture = {
+      ...connected,
+      actor: { ...connected.actor, orgId: connected.orgId },
+      binding: connected.fixture,
+      channelId: source.id,
+      headers,
+    };
+    const upload = await canonicalUpload(fixture);
+    const client = fileClients();
+    const materialized = await accept(
+      client.materialize({ headers, body: upload.operation }),
+      [200],
+    );
+    expect(materialized.body).toStrictEqual({
+      ...upload.operation,
+      url: upload.initialized.url,
+      delivery: { status: "pending" },
+    });
+    const deliveredMessageId = discordSnowflake();
+    const deliveredAttachmentId = discordSnowflake();
+    server.use(
+      http.post(
+        `${discordApiOrigin}/channels/${source.id}/messages`,
+        async ({ request }) => {
+          const nonce = await uploadedDiscordNonce(request, upload.bytes);
+          return HttpResponse.json(
+            discordFileMessage({
+              channelId: source.id,
+              messageId: deliveredMessageId,
+              authorId: connected.botUserId,
+              bot: true,
+              nonce,
+              attachment: {
+                id: deliveredAttachmentId,
+                filename: upload.body.filename,
+                size: upload.bytes.byteLength,
+                url: `https://cdn.discordapp.com/attachments/${source.id}/${deliveredAttachmentId}/report.csv`,
+                content_type: "text/csv",
+              },
+            }),
+          );
+        },
+      ),
+    );
+    const completed = await accept(
+      client.complete({ headers, body: upload.operation }),
+      [200],
+    );
+    expect(completed.body).toStrictEqual({
+      ...upload.operation,
+      url: upload.initialized.url,
+      delivery: {
+        status: "delivered",
+        channelId: source.id,
+        messageId: deliveredMessageId,
+        attachmentId: deliveredAttachmentId,
+        permalink: `https://discord.com/channels/${connected.guildId}/${source.id}/${deliveredMessageId}`,
+      },
+    });
+    const artifacts = await chatFiles.listThreadArtifacts(
+      connected.actor,
+      thread.id,
+    );
+    expect(artifacts.runs).toContainEqual({
+      runId: input.runId,
       files: [
         expect.objectContaining({
           id: upload.operation.assetId,
