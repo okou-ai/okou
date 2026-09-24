@@ -376,7 +376,7 @@ describe("voice input routing and reference context", () => {
         expect(body.generationConfig).toMatchObject({
           thinkingConfig: { thinkingLevel: "MINIMAL" },
           temperature: 0,
-          maxOutputTokens: 65_536,
+          maxOutputTokens: 8192,
           responseMimeType: "application/json",
           responseSchema: {
             required: ["transcript", "polishedText", "language"],
@@ -452,7 +452,7 @@ describe("voice input routing and reference context", () => {
       });
       expect(providerRequest).toMatchObject({
         generationConfig: {
-          maxOutputTokens: 65_536,
+          maxOutputTokens: 8192,
           thinkingConfig: { thinkingLevel: "MINIMAL" },
           temperature: 0,
           responseMimeType: "application/json",
@@ -1436,6 +1436,66 @@ describe("POST /api/voice-io/transcribe/segment", () => {
     },
   );
 
+  it.each([
+    {
+      label: "a partial segment transcript",
+      files: 1,
+      previous: "Saved speech.",
+      final: false,
+      response: { transcript: "Next part.", language: "en" },
+      tokens: 4096,
+    },
+    {
+      label: "a final segment and the complete recording",
+      files: 1,
+      previous: "Saved speech.",
+      final: true,
+      response: {
+        transcript: "Next part.",
+        polishedText: "Saved speech. Next part.",
+        language: "en",
+      },
+      tokens: 8192 + "Saved speech.".length,
+    },
+    {
+      label: "polish of a saved prefix without audio",
+      files: 0,
+      previous: "Saved speech.",
+      final: true,
+      response: { polishedText: "Saved speech.", language: "en" },
+      tokens: 4096 + "Saved speech.".length,
+    },
+    {
+      label: "a saved prefix beyond the model maximum",
+      files: 0,
+      previous: "x".repeat(70_000),
+      final: true,
+      response: { polishedText: "Saved speech.", language: "en" },
+      tokens: 65_536,
+    },
+  ])(
+    "caps output tokens for $label",
+    async ({ files, previous, final, response, tokens }) => {
+      await voiceActor();
+      const requested: number[] = [];
+      server.use(
+        http.post(VERTEX_VOICE_URL, async ({ request }) => {
+          const body = (await request.json()) as VertexVoiceRequest;
+          requested.push(body.generationConfig.maxOutputTokens);
+          return vertexVoiceResponse(JSON.stringify(response));
+        }),
+      );
+      await accept(
+        client().segment({
+          headers: { authorization: "Bearer clerk-session" },
+          body: segmentForm(files ? [audioFile(1)] : [], previous, final, 3600),
+        }),
+        [200],
+      );
+      expect(requested).toStrictEqual([tokens]);
+    },
+  );
+
   it("rejects an oversized segment before invoking the provider", async () => {
     await voiceActor();
     const result = await client().segment({
@@ -1791,6 +1851,60 @@ describe("voice provider capacity recovery", () => {
     const response = await accept(pending, [503]);
     expect(response.body.error.code).toBe("PROVIDER_UNAVAILABLE");
     expect(attempts).toBe(2);
+  });
+
+  it("returns provider unavailability when the segment deadline expires", async () => {
+    await voiceActor();
+    const deadline = new AbortController();
+    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
+      return milliseconds === 60_000 ? deadline.signal : undefined;
+    });
+    const output = context.mocks.console.log;
+    onTestFinished(context.mocks.console.capture());
+    const started = createDeferredPromise<void>(context.signal);
+    server.use(
+      http.post(VERTEX_VOICE_URL, async ({ request }) => {
+        const aborted = createDeferredPromise<void>(context.signal);
+        request.signal.addEventListener(
+          "abort",
+          () => {
+            return aborted.resolve();
+          },
+          { once: true },
+        );
+        started.resolve();
+        await aborted.promise;
+        return HttpResponse.error();
+      }),
+    );
+    const pending = client().segment({
+      headers: { authorization: "Bearer clerk-session" },
+      body: form([audioFile(1)]),
+    });
+    await started.promise;
+    deadline.abort(
+      new DOMException("Segment deadline reached", "TimeoutError"),
+    );
+    const response = await accept(pending, [503]);
+    expect(response.body.error).toStrictEqual({
+      code: "PROVIDER_UNAVAILABLE",
+      message: "Voice draft transcription is temporarily unavailable",
+    });
+    const records = output.mock.calls.flatMap(([, fields]) => {
+      return typeof fields === "object" &&
+        fields !== null &&
+        "type" in fields &&
+        fields.type === "voice_transcription_failure"
+        ? [fields]
+        : [];
+    });
+    expect(records).toStrictEqual([
+      expect.objectContaining({
+        stage: "finalization",
+        reason: "deadline_exceeded",
+        model: "google/gemini-3.1-flash-lite",
+      }),
+    ]);
   });
 
   it("keeps provider authentication errors non-retryable", async () => {

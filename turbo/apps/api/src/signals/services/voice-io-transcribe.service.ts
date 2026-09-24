@@ -17,7 +17,7 @@ import {
   transcribeVoice,
   finishIncrementalVoice,
 } from "../external/voice-completion";
-import { settle } from "../utils";
+import { onRejection, settle } from "../utils";
 import { GcpLlmAuthError, gcpLlmConfiguration } from "../external/gcp-llm-auth";
 import {
   VOICE_INPUT_MODEL,
@@ -34,6 +34,9 @@ const L = logger("VoiceSegment");
 // trigger the conservative upper bound for human speech.
 const VOICE_TRANSCRIPT_MAX_CHARACTERS_PER_SECOND = 25;
 const VOICE_TRANSCRIPT_MINIMUM_SUSPICIOUS_CHARACTERS = 100;
+// Provider work ends well before the 100-second edge timeout, so the client
+// receives a classified 503 instead of an edge 524 without CORS headers.
+const VOICE_SEGMENT_DEADLINE_MS = 60_000;
 
 type VoiceDraftTranscriptionInput = VoiceIoTranscribeContext &
   VoiceIoTranscribeSegmentOptions & {
@@ -142,8 +145,10 @@ function providerError(error: unknown) {
     );
   }
   if (
-    (error instanceof GcpLlmAuthError || error instanceof VertexVoiceError) &&
-    error.temporary
+    ((error instanceof GcpLlmAuthError || error instanceof VertexVoiceError) &&
+      error.temporary) ||
+    (error instanceof VoiceResponseError &&
+      error.reason === "deadline_exceeded")
   ) {
     return transcriptionError(
       503,
@@ -285,8 +290,21 @@ export const transcribeVoiceSegment$ = command(
       stage: "audio_read",
       modelCall: false,
     };
+    const deadline = AbortSignal.timeout(VOICE_SEGMENT_DEADLINE_MS);
     const generated = await settle(
-      transcribeIncrementalVoice(input, attempt, requestSignal),
+      onRejection(
+        transcribeIncrementalVoice(
+          input,
+          attempt,
+          AbortSignal.any([requestSignal, deadline]),
+        ),
+        () => {
+          requestSignal.throwIfAborted();
+          if (deadline.aborted) {
+            throw new VoiceResponseError("deadline_exceeded");
+          }
+        },
+      ),
       signal,
     );
     requestSignal.throwIfAborted();

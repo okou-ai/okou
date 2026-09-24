@@ -25,7 +25,6 @@ const MODELS = {
     generationConfig: {
       thinkingConfig: { thinkingLevel: "MINIMAL" },
       temperature: 0,
-      maxOutputTokens: 65_536,
     },
   },
   "google/gemini-3.8-flash": {
@@ -34,11 +33,13 @@ const MODELS = {
     host: "aiplatform.us.rep.googleapis.com",
     generationConfig: {
       thinkingConfig: { thinkingLevel: "LOW" },
-      maxOutputTokens: 65_536,
     },
   },
 } as const;
 type VertexVoiceModel = keyof typeof MODELS;
+
+/** The largest output either voice model accepts. */
+export const VERTEX_VOICE_MAX_OUTPUT_TOKENS = 65_536;
 
 /** Voice input is served only by Gemini 3.1 Flash-Lite on Vertex AI. */
 export const VOICE_INPUT_MODEL =
@@ -267,6 +268,8 @@ function parseVertexResponse<T>(
 export async function generateVertexVoice<T>(
   args: VoiceCompletionRequest & {
     readonly model: VertexVoiceModel;
+    /** Bounds generation time as well as size; a looping model runs to this cap. */
+    readonly maxOutputTokens: number;
     readonly diagnosticOwner?: VertexVoiceDiagnosticOwner;
   },
   parseResponse: (content: string) => T,
@@ -291,6 +294,7 @@ export async function generateVertexVoice<T>(
     contents: [{ role: "user", parts }],
     generationConfig: {
       ...model.generationConfig,
+      maxOutputTokens: args.maxOutputTokens,
       ...(schema && {
         responseMimeType: "application/json",
         responseSchema: {
