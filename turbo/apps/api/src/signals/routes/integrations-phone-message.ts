@@ -98,7 +98,6 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
     agentphoneMessageId: sent.id,
     conversationId: null,
     agentphoneAgentId,
-    publicBrand: userLink.publicBrand,
     userLinkId: userLink.id,
     phoneHandle,
     fromNumber: sent.fromNumber ?? "",

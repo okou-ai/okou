@@ -594,7 +594,6 @@ test("Linking the phone closes the Get started dialog and completes the quest", 
   });
   context.mocks.data.agentPhoneIntegration({
     linked: true,
-    publicBrand: "okou",
     phoneHandle: "+15555550123",
     agentPhoneNumber: "+19039853128",
     configured: true,
@@ -621,7 +620,6 @@ test("A phone linked before the quest existed reads as done, without credits", a
   configureQuestPage(context, "member", { imessage: true });
   context.mocks.data.agentPhoneIntegration({
     linked: true,
-    publicBrand: "okou",
     phoneHandle: "+15555550123",
     agentPhoneNumber: "+19039853128",
     configured: true,

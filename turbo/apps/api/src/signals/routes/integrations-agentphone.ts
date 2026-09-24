@@ -1,10 +1,7 @@
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { agentphoneVerificationSendCooldowns } from "@okouai/db/schema/agentphone-verification-send-cooldown";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
-import {
-  PUBLIC_BRAND_PRESENTATION,
-  PUBLIC_BRAND,
-} from "@okouai/core/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
 import { command, computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -220,15 +217,11 @@ async function sendAgentPhoneVerificationMessage(
 }
 
 // `startLink` only ever delivers via SMS, so we hard-code the channel for
-// signing. New Platform -> old API compatibility for the full retained rollback
-// lifetime, which has no fixed maximum evidenced, keeps the legacy signature
-// over Provider identity while new links add a brand-bound signature. Remove it
-// with #27750 after the old API is no longer serving or retained for rollback.
+// signing.
 const APPS_API_CONNECT_CHANNEL: AgentPhoneChannel = "sms";
 
 const getLinkStatus$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const requestPublicBrand = PUBLIC_BRAND;
 
   const config = getAgentPhoneConfig();
   const [link] = await get(db$)
@@ -250,7 +243,6 @@ const getLinkStatus$ = computed(async (get) => {
         phoneHandle: link.phoneHandle,
         agentPhoneNumber: config.agentPhoneNumber,
         configured: config.configured,
-        publicBrand: link.publicBrand,
       },
     };
   }
@@ -261,7 +253,6 @@ const getLinkStatus$ = computed(async (get) => {
       linked: false as const,
       agentPhoneNumber: config.agentPhoneNumber,
       configured: config.configured,
-      publicBrand: requestPublicBrand,
     },
   };
 });
@@ -292,7 +283,6 @@ const createLinkCode$ = command(async ({ get, set }, signal: AbortSignal) => {
   const code = await createAgentPhoneConnectionCode(set(writeDb$), {
     userId: auth.userId,
     orgId: auth.orgId,
-    publicBrand: PUBLIC_BRAND,
     secret: env("SECRETS_ENCRYPTION_KEY"),
   });
   signal.throwIfAborted();
@@ -630,7 +620,6 @@ const connectAgentPhone$ = command(
         channel,
         userId: auth.userId,
         orgId: auth.orgId,
-        publicBrand: PUBLIC_BRAND,
       });
     });
     signal.throwIfAborted();
@@ -1096,7 +1085,6 @@ async function handleAgentPhoneConnectionCode(
 
 const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
   const apiStartTime = now();
-  const publicBrand = PUBLIC_BRAND;
   const config = agentPhoneWebhookConfig();
   if (!config) {
     return textResponse("Not Found", 404);
@@ -1168,7 +1156,6 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
   const stored = await storeInboundAgentPhoneMessage(writeDb, {
     event: agentPhoneEventForStorage(event, userLink),
     userLinkId: userLink?.id ?? null,
-    publicBrand,
   });
   signal.throwIfAborted();
   if (!stored.inserted) {
@@ -1185,11 +1172,7 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   waitUntil(
     tapError(
-      set(
-        handleAgentPhoneMessage$,
-        { event, userLink, apiStartTime, publicBrand },
-        signal,
-      ),
+      set(handleAgentPhoneMessage$, { event, userLink, apiStartTime }, signal),
       (error) => {
         log.error("Error handling AgentPhone webhook", { error });
       },

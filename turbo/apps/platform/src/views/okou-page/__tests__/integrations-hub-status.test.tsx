@@ -22,7 +22,6 @@ const PHONE_HANDLE = "+15555550123";
 function publishPhoneLinked(): void {
   context.mocks.data.agentPhoneIntegration({
     linked: true,
-    publicBrand: "okou",
     phoneHandle: PHONE_HANDLE,
     agentPhoneNumber: "+19039853128",
     configured: true,
@@ -51,7 +50,6 @@ test("Integrations show current status and refresh after GitHub connects", async
   );
   context.mocks.data.agentPhoneIntegration({
     linked: true,
-    publicBrand: "okou",
     phoneHandle: "+15555551212",
     agentPhoneNumber: "+19039853128",
     configured: true,
@@ -236,7 +234,6 @@ test("A user connects AgentPhone with a prefilled one-time code", async () => {
   const messageHref = `sms:+19039853128?body=${code}`;
   context.mocks.data.agentPhoneIntegration({
     linked: false,
-    publicBrand: "okou",
     agentPhoneNumber: "+19039853128",
     configured: true,
   });
