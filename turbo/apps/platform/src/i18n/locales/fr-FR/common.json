@@ -2136,7 +2136,6 @@
       "on": "Activé",
       "requiresSsh": "Nécessite aussi l'accès à l'hôte SSH {{name}}.",
       "retry": "Réessayer",
-      "startChat": "Démarrez un chat pour modifier l'accès aux hôtes.",
       "title": "Accès à distance",
       "unavailableSsh": "hôte SSH indisponible",
       "useDefault": "Utiliser la valeur par défaut"
