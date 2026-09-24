@@ -26,6 +26,13 @@ export class DurationGuardReporter implements Reporter {
         process.env.GITHUB_WORKSPACE ?? process.cwd(),
         mod.moduleId,
       ).replaceAll("\\", "/");
+      if (file.endsWith("/official-workflows.test.ts")) {
+        const tests = [...mod.children.allTests()].map((test) => ({
+          name: test.fullName,
+          ms: test.diagnostic()?.duration ?? null,
+        }));
+        console.log(`OFFICIAL_WORKFLOWS_TEST_TIMING=${JSON.stringify(tests)}`);
+      }
       console.warn(
         `::warning file=${file},title=Slow Vitest file::${file} spent ${fmtMs(duration)} running tests (30s budget). Review fixed waits or split the file.`,
       );

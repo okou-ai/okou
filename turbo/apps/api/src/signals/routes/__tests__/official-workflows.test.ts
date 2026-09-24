@@ -57,7 +57,14 @@ import {
 import { HttpResponse, http } from "msw";
 import { Webhook } from "svix";
 import AdmZip from "adm-zip";
-import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import {
+  afterAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+} from "vitest";
 
 import { setupRawAppRequestWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -2216,6 +2223,8 @@ async function installStaleAdmissionScenario() {
   };
 }
 
+const officialFixtureTiming = { cases: 0, installMs: 0, cleanupMs: 0 };
+
 beforeEach(async () => {
   mockEnv("CRON_SECRET", CRON_SECRET);
   // testContext seeds the default source; this hook also seeds the source
@@ -2224,8 +2233,19 @@ beforeEach(async () => {
     "R2_USER_STORAGES_BUCKET_NAME",
     `official-workflow-installation-test-${randomUUID()}`,
   );
+  const installStartedAt = performance.now();
   await installApiTestConnectorCatalog();
+  officialFixtureTiming.installMs += performance.now() - installStartedAt;
+  const cleanupStartedAt = performance.now();
   await cleanupCatalog();
+  officialFixtureTiming.cleanupMs += performance.now() - cleanupStartedAt;
+  officialFixtureTiming.cases++;
+});
+
+afterAll(() => {
+  process.stdout.write(
+    `OFFICIAL_WORKFLOWS_FIXTURE_TIMING=${JSON.stringify(officialFixtureTiming)}\n`,
+  );
 });
 
 describe("Morning Brief preference", () => {
