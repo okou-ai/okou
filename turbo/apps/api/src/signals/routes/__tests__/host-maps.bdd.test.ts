@@ -943,6 +943,7 @@ describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () =
     });
     expect(mapsRequests).toBe(1);
 
+    api.captureHostedSitesS3();
     const bearer = { bearerToken: okouToken };
     const site = `bdd-run-artifact-${randomUUID().slice(0, 8)}`;
     const prepared = await api.prepareHostedSite(bearer, {

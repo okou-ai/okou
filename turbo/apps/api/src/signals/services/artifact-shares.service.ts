@@ -1,6 +1,6 @@
 import { hostedSiteDeliveryManifest } from "./hosted-site-dependencies.service";
 import { nowDate } from "../../lib/time";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { artifactFilenameExtension } from "@okouai/api-contracts/contracts/artifact-delivery";
 import { artifactShareReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import type { ArtifactDownloadResponse } from "@okouai/api-contracts/contracts/artifact-downloads";
@@ -22,6 +22,7 @@ import { settle } from "../utils";
 import { env } from "../../lib/env";
 import { artifactHash } from "../../lib/file-url";
 import { legacyPrivateHostedDeploymentVersion } from "../../lib/hosted-publication";
+import { badRequestMessage } from "../../lib/error";
 import { db$, writeDb$ } from "../external/db";
 import {
   clerk$,
@@ -32,7 +33,6 @@ import {
   copyArtifactShareObject,
   readArtifactSharePolicyObject,
   writeArtifactSharePolicyObject,
-  putHostedSitesS3Object,
 } from "../external/s3";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 import {
@@ -381,62 +381,32 @@ export const readArtifactShare$ = command(
   },
 );
 
-const snapshotTarget$ = command(
-  async ({ get }, candidate: ShareCandidate, signal: AbortSignal) => {
-    const target = candidate.target;
+const snapshotFileTarget$ = command(
+  async (
+    { get },
+    target: Extract<ShareCandidate["target"], { kind: "file" }>,
+    signal: AbortSignal,
+  ) => {
     const snapshotId = randomUUID();
-    if (target.kind === "file") {
-      const file = await get(privateArtifactRecord(target.id));
-      signal.throwIfAborted();
-      if (!file) {
-        throw new Error("Shared artifact disappeared");
-      }
-      const key = `private-artifacts/${target.id}/shares/${snapshotId}/${encodeURIComponent(target.filename)}`;
-      await get(
-        copyArtifactShareObject(
-          {
-            bucket: file.bucket,
-            sourceKey: target.key,
-            targetKey: key,
-            hosted: false,
-          },
-          signal,
-        ),
-      );
-      signal.throwIfAborted();
-      return { ...target, key };
+    const file = await get(privateArtifactRecord(target.id));
+    signal.throwIfAborted();
+    if (!file) {
+      throw new Error("Shared artifact disappeared");
     }
-    const prefix = `shared-artifacts/${candidate.publicBrand}/${snapshotId}/${target.id}`;
-    const files = Object.keys(target.manifest.files);
-    // Bound storage concurrency; publish no policy until every object is copied.
-    for (let start = 0; start < files.length; start += 10) {
-      await Promise.all(
-        files.slice(start, start + 10).map((path) => {
-          return get(
-            copyArtifactShareObject(
-              {
-                bucket: policyBucket(),
-                sourceKey: `private-sites/${candidate.publicBrand}/${target.id}${path}`,
-                targetKey: `${prefix}${path}`,
-                hosted: true,
-              },
-              signal,
-            ),
-          );
-        }),
-      );
-      signal.throwIfAborted();
-    }
+    const key = `private-artifacts/${target.id}/shares/${snapshotId}/${encodeURIComponent(target.filename)}`;
     await get(
-      putHostedSitesS3Object(
-        policyBucket(),
-        `${prefix}/manifest.json`,
-        JSON.stringify(target.manifest),
-        "application/json",
+      copyArtifactShareObject(
+        {
+          bucket: file.bucket,
+          sourceKey: target.key,
+          targetKey: key,
+          hosted: false,
+        },
+        signal,
       ),
     );
     signal.throwIfAborted();
-    return { ...target, snapshotId };
+    return { ...target, key };
   },
 );
 
@@ -451,6 +421,11 @@ export const updateArtifactShare$ = command(
     },
     signal: AbortSignal,
   ) => {
+    if (args.target.kind === "html" && args.audience !== "private") {
+      return badRequestMessage(
+        "Hosted sites are public. Publish a new deployment to update the site.",
+      );
+    }
     const candidate = await get(
       ownedShareTarget(args.target, args.userId, args.orgId),
     );
@@ -503,12 +478,19 @@ export const updateArtifactShare$ = command(
       if (args.audience === "private" && !previous) {
         return null;
       }
-      const target =
+      let target: ArtifactSharePolicy["target"];
+      if (
         previous &&
         (args.audience === "private" ||
           previous.target.id === candidate.target.id)
-          ? previous.target
-          : await set(snapshotTarget$, candidate, signal);
+      ) {
+        target = previous.target;
+      } else {
+        if (candidate.target.kind !== "file") {
+          throw new Error("HTML snapshot creation is no longer supported");
+        }
+        target = await set(snapshotFileTarget$, candidate.target, signal);
+      }
       const next = artifactSharePolicySchema.parse({
         version: 1,
         delivery: "artifact-registry-v1",
@@ -521,10 +503,7 @@ export const updateArtifactShare$ = command(
         status: args.audience === "private" ? "revoked" : "active",
         publicToken:
           args.audience === "public"
-            ? (previous?.publicToken ??
-              (target.kind === "file"
-                ? artifactHash(randomUUID())
-                : randomBytes(12).toString("hex")))
+            ? (previous?.publicToken ?? artifactHash(randomUUID()))
             : null,
         target,
       });

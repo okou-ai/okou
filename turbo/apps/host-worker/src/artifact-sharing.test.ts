@@ -167,7 +167,7 @@ function fixture(html = false, extension = "pdf", token = publicToken) {
       return registryCache;
     },
   });
-  return { env, objects, reads, policy, cache };
+  return { env, objects, reads, policy, cache, registryCache };
 }
 
 afterEach(() => {
@@ -545,6 +545,105 @@ test("named public site aliases retain snapshot delivery and revoked aliases nev
       )
     ).status,
   ).toBe(200);
+});
+
+test("named HTML migration ignores old registry caches and preserves the revocable token snapshot", async () => {
+  const f = fixture(true);
+  if (f.policy.target.kind !== "html") throw new Error("Expected HTML fixture");
+  const alias = "business-report";
+  const address = `https://${alias}.okou.app`;
+  const registryKey = artifactDeliveryKey("okou", "html", alias);
+  const snapshotRecord = {
+    version: 1,
+    kind: "publication",
+    publicBrand: "okou",
+    shareId: id,
+    publicToken,
+    targetKind: "html",
+  };
+  f.objects.set(registryKey, JSON.stringify(snapshotRecord));
+  expect(await (await fetchWorker(new Request(address), f.env)).text()).toBe(
+    "Content /index.html",
+  );
+
+  // Simulate the 24-hour entry written by the previously deployed Worker.
+  await f.registryCache.put(
+    new Request(
+      new URL(
+        `/__artifact-delivery/${encodeURIComponent(registryKey)}`,
+        address,
+      ),
+    ),
+    new Response(JSON.stringify(snapshotRecord), {
+      headers: { "Cache-Control": "public, max-age=86400" },
+    }),
+  );
+  const pointerKey = `sites/brands/okou/${alias}/active.json`;
+  const snapshotManifest = f.policy.target.manifest;
+  function activate(deploymentId: string, content: string) {
+    const prefix = `sites/orgs/org/${alias}/deployments/${deploymentId}`;
+    const manifestKey = `${prefix}/manifest.json`;
+    f.objects.set(
+      manifestKey,
+      JSON.stringify({
+        ...snapshotManifest,
+        access: undefined,
+        publicSlug: alias,
+        deploymentId,
+      }),
+    );
+    f.objects.set(`${prefix}/index.html`, content);
+    f.objects.set(
+      pointerKey,
+      JSON.stringify({
+        version: 1,
+        publicBrand: "okou",
+        publicSlug: alias,
+        siteId,
+        deploymentId,
+        prefix,
+        manifestKey,
+        spaFallback: false,
+        updatedAt: "2026-09-24T00:00:00Z",
+      }),
+    );
+  }
+  activate("00000000-0000-4000-8000-000000000021", "First public deployment");
+  f.objects.set(
+    registryKey,
+    JSON.stringify({
+      version: 1,
+      kind: "legacy-site",
+      publicBrand: "okou",
+      audience: "public",
+      pointerKey,
+    }),
+  );
+  const migrated = await fetchWorker(new Request(address), f.env);
+  expect(migrated.status).toBe(200);
+  expect(await migrated.text()).toBe("First public deployment");
+  expect(migrated.headers.get("Cache-Control")).toBe("no-store");
+
+  activate("00000000-0000-4000-8000-000000000022", "Newest public deployment");
+  expect(await (await fetchWorker(new Request(address), f.env)).text()).toBe(
+    "Newest public deployment",
+  );
+  expect(await (await fetchWorker(new Request(siteOrigin), f.env)).text()).toBe(
+    "Content /index.html",
+  );
+  f.objects.set(
+    policyKey,
+    JSON.stringify({
+      ...f.policy,
+      audience: "private",
+      status: "revoked",
+      publicToken: null,
+    }),
+  );
+  expect((await fetchWorker(new Request(siteOrigin), f.env)).status).toBe(404);
+  expect(await (await fetchWorker(new Request(address), f.env)).text()).toBe(
+    "Newest public deployment",
+  );
 });
 
 test("html snapshots protect every resource and navigation on an isolated origin", async () => {
