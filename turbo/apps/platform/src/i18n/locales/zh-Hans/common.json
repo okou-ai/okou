@@ -4218,6 +4218,23 @@
         "notNow": "暂不",
         "skip": "先跳过"
       },
+      "compliance": {
+        "frameworks": {
+          "ccpa": "CCPA / CPRA",
+          "gdpr": "GDPR",
+          "hipaa": "HIPAA",
+          "iso27001": "ISO/IEC 27001",
+          "soc2": "SOC 2 Type II"
+        },
+        "link": "安全详情",
+        "note": "合规工作仍在进行中，尚未取得 SOC 2 报告或 ISO 证书。",
+        "status": {
+          "aligned": "已对标",
+          "compliant": "已合规",
+          "inProgress": "进行中"
+        },
+        "title": "合规进展"
+      },
       "documentTitles": {
         "experience": "你的AI使用经验",
         "industry": "选择你的领域",
@@ -4284,6 +4301,10 @@
       "industry": {
         "copy": "选择你的工作领域，Okou 会据此推荐相关工具和适合你的第一项任务。",
         "title": "你主要做哪类工作？"
+      },
+      "intro": {
+        "copy": "它把零散的信息汇集起来，让信息真正派上用场，并在云端完成后续工作。",
+        "title": "Okou 是你和团队的工作助手。"
       },
       "profile": {
         "communicationStyle": "你的沟通方式",

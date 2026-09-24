@@ -4218,6 +4218,23 @@
         "notNow": "Nanti saja",
         "skip": "Lewati dulu"
       },
+      "compliance": {
+        "frameworks": {
+          "ccpa": "CCPA / CPRA",
+          "gdpr": "GDPR",
+          "hipaa": "HIPAA",
+          "iso27001": "ISO/IEC 27001",
+          "soc2": "SOC 2 Type II"
+        },
+        "link": "Detail keamanan",
+        "note": "Masih berlangsung. Belum ada laporan SOC 2 atau sertifikat ISO.",
+        "status": {
+          "aligned": "Selaras",
+          "compliant": "Patuh",
+          "inProgress": "Berlangsung"
+        },
+        "title": "Kemajuan kepatuhan"
+      },
       "documentTitles": {
         "experience": "Pengalaman AI Anda",
         "industry": "Pilih bidang Anda",
@@ -4284,6 +4301,10 @@
       "industry": {
         "copy": "Ini membantu Okou menampilkan alat yang relevan dan menyarankan tugas pertama yang sesuai dengan pekerjaan Anda.",
         "title": "Pekerjaan Anda seperti apa?"
+      },
+      "intro": {
+        "copy": "Okou menyatukan informasi yang tersebar, membuatnya berguna, dan menjalankan langkah berikutnya di cloud.",
+        "title": "Okou adalah asisten kerja untuk Anda dan tim Anda."
       },
       "profile": {
         "communicationStyle": "Cara Anda berkomunikasi",

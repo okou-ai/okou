@@ -4288,6 +4288,23 @@
         "notNow": "Pas maintenant",
         "skip": "Passer pour l'instant"
       },
+      "compliance": {
+        "frameworks": {
+          "ccpa": "CCPA / CPRA",
+          "gdpr": "GDPR",
+          "hipaa": "HIPAA",
+          "iso27001": "ISO/IEC 27001",
+          "soc2": "SOC 2 Type II"
+        },
+        "link": "Détails de sécurité",
+        "note": "Travail en cours. Pas encore de rapport SOC 2 ni de certificat ISO.",
+        "status": {
+          "aligned": "Aligné",
+          "compliant": "Conforme",
+          "inProgress": "En cours"
+        },
+        "title": "Avancement de la conformité"
+      },
       "documentTitles": {
         "experience": "Votre expérience de l'IA",
         "industry": "Choisir votre domaine",
@@ -4354,6 +4371,10 @@
       "industry": {
         "copy": "Okou pourra ainsi afficher les outils pertinents et proposer une première tâche adaptée à votre travail.",
         "title": "Quel type de travail faites-vous ?"
+      },
+      "intro": {
+        "copy": "Il rassemble les informations dispersées, les rend utiles et réalise les étapes suivantes dans le cloud.",
+        "title": "Okou est l’assistant de travail pour vous et votre équipe."
       },
       "profile": {
         "communicationStyle": "Votre façon de communiquer",

@@ -4218,6 +4218,23 @@
         "notNow": "後で",
         "skip": "今はスキップ"
       },
+      "compliance": {
+        "frameworks": {
+          "ccpa": "CCPA / CPRA",
+          "gdpr": "GDPR",
+          "hipaa": "HIPAA",
+          "iso27001": "ISO/IEC 27001",
+          "soc2": "SOC 2 Type II"
+        },
+        "link": "セキュリティの詳細",
+        "note": "取り組み中です。SOC 2 レポートと ISO 認証はまだ取得していません。",
+        "status": {
+          "aligned": "整合",
+          "compliant": "準拠",
+          "inProgress": "進行中"
+        },
+        "title": "コンプライアンスの進捗"
+      },
       "documentTitles": {
         "experience": "AI の利用経験",
         "industry": "分野を選ぶ",
@@ -4284,6 +4301,10 @@
       "industry": {
         "copy": "仕事内容に合うツールを表示し、最初のタスクを提案するために使います。",
         "title": "どんな仕事をしていますか？"
+      },
+      "intro": {
+        "copy": "散らばった情報をまとめて役立つ形にし、次のステップをクラウドで実行します。",
+        "title": "Okou は、あなたとチームのための仕事のアシスタントです。"
       },
       "profile": {
         "communicationStyle": "コミュニケーションのスタイル",
