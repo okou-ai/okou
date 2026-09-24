@@ -178,15 +178,15 @@ test("Send a large image with a fallback-enabled text model", async () => {
       }
     | undefined;
   installRunChat({
-    selectedModel: "deepseek-v4-pro",
+    selectedModel: "deepseek-v4-flash",
     onRunCreate(body) {
       sentMessage = { model: body.model, userMessage: body.userMessage };
     },
   });
   context.mocks.data.orgModelPolicies([
     buildModelPolicy({
-      model: "deepseek-v4-pro",
-      modelLabel: "DeepSeek V4 Pro",
+      model: "deepseek-v4-flash",
+      modelLabel: "DeepSeek V4 Flash",
       isDefault: true,
       defaultProviderType: "built-in",
       credentialScope: "org",
@@ -204,7 +204,9 @@ test("Send a large image with a fallback-enabled text model", async () => {
   await setupPage({ context, path: NEW_CHAT_PATH });
 
   await readyChat();
-  await expect(composerModelTrigger("DeepSeek V4 Pro")).resolves.toBeVisible();
+  await expect(
+    composerModelTrigger("DeepSeek V4 Flash"),
+  ).resolves.toBeVisible();
   await uploadFile(
     user,
     new File([new Uint8Array(12_000_000)], "launch-board.png", {

@@ -5,13 +5,13 @@ import { server } from "../../../mocks/server";
 import { switchCommand, modelCommand } from "../index";
 
 const MODEL_POLICIES_RESPONSE = {
-  workspaceDefaultModel: "claude-sonnet-4-6",
+  workspaceDefaultModel: "claude-sonnet-5",
   workspaceDefaultPolicyId: "00000000-0000-4000-8000-000000000001",
   policies: [
     {
       id: "00000000-0000-4000-8000-000000000001",
-      model: "claude-sonnet-4-6",
-      modelLabel: "Claude Sonnet 4.6",
+      model: "claude-sonnet-5",
+      modelLabel: "Claude Sonnet 5",
       isDefault: true,
       defaultProviderType: "built-in",
       credentialScope: "org",
@@ -74,7 +74,7 @@ describe("okou model command", () => {
 
     const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
     expect(logCalls).toContain("Allowed Models:");
-    expect(logCalls).toContain("Claude Sonnet 4.6");
+    expect(logCalls).toContain("Claude Sonnet 5");
     expect(logCalls).toContain("provider: built-in (Built-in model; built-in)");
     expect(logCalls).toContain("price tier: $$");
     expect(logCalls).toContain("GPT 5.6 Luna");

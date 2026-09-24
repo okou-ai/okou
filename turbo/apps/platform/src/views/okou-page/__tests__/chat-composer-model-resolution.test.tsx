@@ -105,7 +105,7 @@ async function chooseModel(
 test("Edit only the model for an existing thread", async () => {
   const user = userEvent.setup({ delay: null });
   installRunChat({ selectedModel: "claude-opus-5" });
-  configurePolicies(["claude-opus-5", "claude-sonnet-4-6"], "claude-opus-5");
+  configurePolicies(["claude-opus-5", "claude-sonnet-5"], "claude-opus-5");
 
   await setupPage({
     context,
@@ -118,9 +118,9 @@ test("Edit only the model for an existing thread", async () => {
   await readyChat();
   await expect(modelPicker("Claude Opus 5")).resolves.toBeVisible();
 
-  await chooseModel(user, "Claude Opus 5", /^Claude Sonnet 4\.6/iu);
+  await chooseModel(user, "Claude Opus 5", /^Claude Sonnet 5/iu);
 
-  await expect(modelPicker("Claude Sonnet 4.6")).resolves.toBeVisible();
+  await expect(modelPicker("Claude Sonnet 5")).resolves.toBeVisible();
   expect(
     screen.queryByRole("group", { name: "Model for this chat" }),
   ).not.toBeInTheDocument();
@@ -129,24 +129,24 @@ test("Edit only the model for an existing thread", async () => {
 test("Resolve the model shown for a chat", async () => {
   installRunChat({ selectedModel: "claude-fable-5-1" });
   configurePolicies(
-    ["claude-fable-5-1", "claude-opus-4-8"],
+    ["claude-fable-5-1", "claude-opus-5-5"],
     "claude-fable-5-1",
   );
-  preference("claude-opus-4-8");
+  preference("claude-opus-5-5");
 
   await setupPage({ context, path: NEW_CHAT_PATH });
 
   await readyComposer();
-  await expect(modelPicker("Claude Opus 4.8")).resolves.toBeVisible();
+  await expect(modelPicker("Claude Opus 5.5")).resolves.toBeVisible();
 });
 
 test("Keep an existing thread's explicit model", async () => {
   installRunChat({ selectedModel: "claude-opus-5" });
   configurePolicies(
-    ["claude-fable-5-1", "claude-opus-4-8", "claude-opus-5"],
+    ["claude-fable-5-1", "claude-opus-5-5", "claude-opus-5"],
     "claude-fable-5-1",
   );
-  preference("claude-opus-4-8");
+  preference("claude-opus-5-5");
 
   await setupPage({ context, path: RUN_PATH });
 

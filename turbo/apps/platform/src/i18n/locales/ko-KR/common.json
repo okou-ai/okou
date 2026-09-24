@@ -1182,7 +1182,7 @@
         "everythingInBuiltForTeams": "{{plan}}의 모든 기능을 팀 규모로",
         "included": "포함 사항",
         "liveBrowser": "에이전트의 라이브 브라우저를 보고 조작을 넘겨받기",
-        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4 Pro",
+        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4.1 Flash",
         "moreConnectorsChannels": "더 많은 커스텀 커넥터와 채널 연동",
         "supportEmail": "이메일 지원",
         "supportPriority": "우선 지원",

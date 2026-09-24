@@ -26,7 +26,7 @@ async function openTemplates() {
 }
 
 test("A signed-in workspace receives its enabled features", async () => {
-  mockOrgModelRoutes("claude-sonnet-4-6");
+  mockOrgModelRoutes("claude-sonnet-5");
   mockAgent();
 
   await setupPage({
@@ -51,7 +51,7 @@ async function setupEmailRolloutPage(args: {
   readonly fullName: string;
   readonly userId: string;
 }) {
-  mockOrgModelRoutes("claude-sonnet-4-6");
+  mockOrgModelRoutes("claude-sonnet-5");
   mockAgent();
   context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
     return respond(200, {

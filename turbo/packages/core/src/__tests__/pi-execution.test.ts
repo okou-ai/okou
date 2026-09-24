@@ -26,7 +26,7 @@ describe("DeepSeek Pi admission", () => {
     },
   );
 
-  it.each(["deepseek-v4-flash", "deepseek-v4-pro"] as const)(
+  it.each(["deepseek-v4-flash"] as const)(
     "preserves existing routes for %s",
     (selectedModel) => {
       for (const modelProviderType of [

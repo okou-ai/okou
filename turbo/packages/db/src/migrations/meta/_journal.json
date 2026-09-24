@@ -950,8 +950,15 @@
     {
       "idx": 1213,
       "version": "7",
-      "when": 1790254555274,
-      "tag": "1213_discord_integration_foundation",
+      "when": 1790254313135,
+      "tag": "1213_retire_sonnet_4_6_opus_4_8_deepseek_v4_pro",
+      "breakpoints": true
+    },
+    {
+      "idx": 1214,
+      "version": "7",
+      "when": 1790256499590,
+      "tag": "1214_discord_integration_foundation",
       "breakpoints": true
     }
   ]
