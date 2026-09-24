@@ -288,7 +288,7 @@ async def test_no_auth_mcp_skips_account_validation(
 
 
 @pytest.mark.parametrize("requestheaders_first", [False, True])
-async def test_authenticated_builtin_owner_removed_during_account_check_is_rejected(
+async def test_authenticated_builtin_owner_change_during_account_check_is_rejected(
     tmp_path, real_flow, mitm_ctx, requestheaders_first
 ):
     registry_path, cache_path = _write_account_mcp_state(tmp_path, credentialed=True)
@@ -344,8 +344,12 @@ async def test_authenticated_builtin_owner_removed_during_account_check_is_rejec
 
     assert endpoint.request_count == 1
     assert flow.response is not None
-    assert flow.response.status_code == 424
-    assert json.loads(flow.response.content)["error"] == "connector_not_configured_for_run"
+    assert flow.response.status_code == (424 if requestheaders_first else 409)
+    assert json.loads(flow.response.content)["error"] == (
+        "connector_not_configured_for_run"
+        if requestheaders_first
+        else "firewall_authorization_changed"
+    )
     assert "Authorization" not in flow.request.headers
 
 
@@ -357,7 +361,7 @@ async def test_authenticated_builtin_owner_removed_during_account_check_is_rejec
     ],
     ids=["unique-endpoint", "shared-endpoint"],
 )
-async def test_removed_connector_becomes_ordinary_request_without_auth(
+async def test_removed_connector_uses_remaining_owner_when_url_is_shared(
     tmp_path,
     real_flow,
     mitm_ctx,
@@ -417,11 +421,15 @@ async def test_removed_connector_becomes_ordinary_request_without_auth(
     assert [firewall["name"] for firewall in state.sandboxes[_CLIENT_IP]["firewalls"]] == [
         _RETAINED
     ]
-    auth_fetch.assert_awaited_once()
+    assert auth_fetch.await_count == (2 if include_intent else 1)
     assert removed_flow.response is None
     assert removed_flow.metadata[metadata_keys.FIREWALL_ACTION] == "ALLOW"
-    assert metadata_keys.FIREWALL_NAME not in removed_flow.metadata
-    assert "Authorization" not in removed_flow.request.headers
+    if include_intent:
+        assert removed_flow.metadata[metadata_keys.FIREWALL_NAME] == _RETAINED
+        assert removed_flow.request.headers["Authorization"] == "Bearer retained"
+    else:
+        assert metadata_keys.FIREWALL_NAME not in removed_flow.metadata
+        assert "Authorization" not in removed_flow.request.headers
     assert "X-Okou-Connector-Intent" not in removed_flow.request.headers
     assert retained_flow.response is None
     assert retained_flow.metadata[metadata_keys.FIREWALL_NAME] == _RETAINED
@@ -496,7 +504,7 @@ async def test_runtime_absence_overrides_stale_catalog_without_auth(
     assert retained_flow.request.headers["Authorization"] == "Bearer retained"
 
 
-async def test_custom_connector_id_selects_active_owner_and_does_not_fall_through_after_removal(
+async def test_custom_connector_id_selects_sole_remaining_owner_after_removal(
     tmp_path,
     real_flow,
     mitm_ctx,
@@ -614,14 +622,14 @@ async def test_custom_connector_id_selects_active_owner_and_does_not_fall_throug
 
     assert not isinstance(state, registry.RegistryUnavailable)
     assert state.omitted_custom_connector_ids == {_CLIENT_IP: frozenset({custom_connector_id})}
-    auth_fetch.assert_awaited_once()
+    assert auth_fetch.await_count == 2
     assert active_flow.response is None
     assert active_flow.metadata[metadata_keys.FIREWALL_NAME] == custom_name
     assert active_flow.request.headers["Authorization"] == "Bearer selected"
     assert removed_flow.response is None
     assert removed_flow.metadata[metadata_keys.FIREWALL_ACTION] == "ALLOW"
-    assert metadata_keys.FIREWALL_NAME not in removed_flow.metadata
-    assert "Authorization" not in removed_flow.request.headers
+    assert removed_flow.metadata[metadata_keys.FIREWALL_NAME] == sibling_name
+    assert removed_flow.request.headers["Authorization"] == "Bearer selected"
 
 
 @pytest.mark.parametrize("selected_kind", ["builtin", "custom", "unknown"])

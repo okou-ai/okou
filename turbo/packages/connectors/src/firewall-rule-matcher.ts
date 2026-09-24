@@ -2254,7 +2254,7 @@ function selectOwner(
 ): OwnerSelection {
   const [owner, ...otherOwners] = winningOwnerNames(collection);
   if (owner === undefined) return { kind: "selected", name: null };
-  if (otherOwners.length === 0 && intent.status === "absent") {
+  if (otherOwners.length === 0) {
     return { kind: "selected", name: owner };
   }
   const owners = [owner, ...otherOwners];

@@ -2616,7 +2616,7 @@
       }
     },
     {
-      "name": "irrelevant intent cannot bypass or inject credentials for a unique route owner",
+      "name": "irrelevant intent does not override the unique route owner",
       "firewalls": [
         {
           "name": "broad",
@@ -2655,11 +2655,50 @@
         "connectorIntent": { "status": "present", "value": "broad" }
       },
       "expected": {
-        "kind": "ambiguous",
+        "kind": "allow",
+        "firewallName": "specific",
+        "base": "https://api.example.com",
+        "relativePath": "/items/123",
+        "permission": "items-read",
+        "rule": "GET /items/{id}"
+      }
+    },
+    {
+      "name": "mismatched intent still enforces the sole owner's denied permission",
+      "firewalls": [
+        {
+          "name": "active",
+          "apis": [
+            {
+              "base": "https://api.example.com",
+              "auth": {},
+              "permissions": [
+                { "name": "items-read", "rules": ["GET /items/{id}"] }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "active": {
+          "allow": [],
+          "deny": ["items-read"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
         "method": "GET",
-        "path": "/items/123",
-        "candidates": ["specific"],
-        "reason": "connector_intent_not_candidate"
+        "url": "https://api.example.com/items/123",
+        "connectorIntent": { "status": "present", "value": "removed-owner" }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "active",
+        "base": "https://api.example.com",
+        "relativePath": "/items/123",
+        "reason": "permission_denied",
+        "permissions": ["items-read"]
       }
     },
     {
@@ -3126,7 +3165,7 @@
       }
     },
     {
-      "name": "missing builtin MCP intent cannot inject the sole custom owner's credentials",
+      "name": "sole custom MCP owner does not require matching intent",
       "firewalls": [
         {
           "name": "custom-service",
@@ -3154,15 +3193,14 @@
         "connectorIntent": { "status": "present", "value": "builtin-service" }
       },
       "expected": {
-        "kind": "ambiguous",
-        "method": "POST",
-        "path": "/api/mcp",
-        "candidates": ["custom-service"],
-        "reason": "connector_intent_not_candidate"
+        "kind": "allow",
+        "firewallName": "custom-service",
+        "base": "https://mcp.example.com/api/mcp",
+        "relativePath": "/"
       }
     },
     {
-      "name": "malformed MCP intent cannot inject the sole builtin owner's credentials",
+      "name": "sole builtin MCP owner ignores malformed intent",
       "firewalls": [
         {
           "name": "builtin-service",
@@ -3189,11 +3227,10 @@
         "connectorIntent": { "status": "malformed" }
       },
       "expected": {
-        "kind": "ambiguous",
-        "method": "POST",
-        "path": "/api/mcp",
-        "candidates": ["builtin-service"],
-        "reason": "malformed_connector_intent"
+        "kind": "allow",
+        "firewallName": "builtin-service",
+        "base": "https://mcp.example.com/api/mcp",
+        "relativePath": "/"
       }
     }
   ]
