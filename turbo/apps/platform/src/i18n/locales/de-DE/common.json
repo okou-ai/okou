@@ -4870,8 +4870,7 @@
       "preparedDescription": "{{assistantName}} bereitet aus Ihren Tools den nächsten Schritt vor.",
       "preparedTitle": "Workflow vorbereitet",
       "reviewDescription": "{{assistantName}} schließt den Workflow ab und gibt das Ergebnis zurück.",
-      "reviewTitle": "Bereit zur Überprüfung",
-      "source": "Quelle"
+      "reviewTitle": "Bereit zur Überprüfung"
     },
     "workflowPicker": {
       "categoryDescription": "Fertige Setups, die Sie an Ihre Tools und Ziele anpassen können.",

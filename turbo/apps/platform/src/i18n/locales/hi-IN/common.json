@@ -4870,8 +4870,7 @@
       "preparedDescription": "{{assistantName}} आपके टूल से अगला चरण तैयार करता है।",
       "preparedTitle": "वर्कफ़्लो तैयार किया गया",
       "reviewDescription": "{{assistantName}} वर्कफ़्लो पूरा करता है और परिणाम लौटाता है।",
-      "reviewTitle": "समीक्षा के लिए तैयार",
-      "source": "स्रोत"
+      "reviewTitle": "समीक्षा के लिए तैयार"
     },
     "workflowPicker": {
       "categoryDescription": "रेडी-टू-रन सेटअप को आप अपने टूल और लक्ष्यों के अनुसार अनुकूलित कर सकते हैं।",

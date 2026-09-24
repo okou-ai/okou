@@ -31,6 +31,7 @@ import {
 import {
   onboardingCompleteContract,
   onboardingStatusContract,
+  onboardingWorkflowConnectorsContract,
 } from "@okouai/api-contracts/contracts/onboarding";
 
 import {
@@ -146,9 +147,8 @@ function setupCustomWorkflowPage(
 /**
  * The catalog as the workflow pages read it. The connector list looks each of
  * its connectors up by slug: a listed entry is found, any other slug is not.
- * The workflow connector icons still read the full catalog status, which is
- * installed after the slug route so `/status` is not taken for a slug.
- * Returns the slugs looked up.
+ * The workflow marks and names come from the onboarding workflow connectors,
+ * which serve the same entries. Returns the slugs looked up.
  */
 function mockCatalogEntries(
   connectors: readonly PublicConnectorCatalogStatusItem[],
@@ -166,9 +166,16 @@ function mockCatalogEntries(
     }
     return respond(200, { connector });
   });
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [...connectors] });
-  });
+  context.mocks.api(
+    onboardingWorkflowConnectorsContract.list,
+    ({ respond }) => {
+      return respond(200, {
+        connectors: connectors.map(({ slug, label, icon }) => {
+          return { slug, label, icon };
+        }),
+      });
+    },
+  );
   return reads;
 }
 
@@ -502,13 +509,20 @@ test("Workflow drafts identify required and optional connectors clearly", async 
   const preview = await screen.findByRole("dialog", {
     name: "Audit Google Cloud IAM and services",
   });
-  expect(
-    within(preview).getByText((content) => {
-      return (
-        content === "Google Cloud" || content.startsWith("Google Cloud + ")
-      );
-    }),
-  ).toBeVisible();
+  // The diagram names and draws its connectors from the served entries.
+  const sourceNode = preview.querySelector(
+    '[data-slot="onboarding-diagram-source-node"]',
+  );
+  if (!(sourceNode instanceof HTMLElement)) {
+    throw new Error("Expected the diagram source node");
+  }
+  await expect(
+    within(sourceNode).findByText("Catalog Google Cloud"),
+  ).resolves.toBeVisible();
+  expect(sourceNode.querySelector("img")).toHaveAttribute(
+    "src",
+    "https://icons.example.test/onboarding-google-cloud.svg",
+  );
 });
 
 test("Built-in workflows can start without connector setup", async () => {

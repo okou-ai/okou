@@ -4926,8 +4926,7 @@
       "preparedDescription": "{{assistantName}} prepara il passaggio successivo con i tuoi strumenti.",
       "preparedTitle": "Flusso di lavoro preparato",
       "reviewDescription": "{{assistantName}} completa il flusso di lavoro e restituisce il risultato.",
-      "reviewTitle": "Pronto per la revisione",
-      "source": "Fonte"
+      "reviewTitle": "Pronto per la revisione"
     },
     "workflowPicker": {
       "categoryDescription": "Configurazioni pronte all'uso che puoi adattare ai tuoi strumenti e obiettivi.",
