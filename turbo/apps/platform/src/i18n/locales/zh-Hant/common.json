@@ -6894,7 +6894,6 @@
       "unused": "未被任何主機使用"
     },
     "credentialsHelp": "憑據只寫入不回顯，並且儲存在沙箱之外。請貼上完整的金鑰，空白字元會原樣保留。關閉此表單時各欄位會被清空。",
-    "credentialsTab": "憑據",
     "delete": "刪除主機",
     "deleteHelp": "確定刪除該主機？它的憑據會保留。智能體將不再在可用主機列表中看到它。",
     "description": "讓你的智能體在遠端機器上執行命令。",
@@ -6921,7 +6920,6 @@
     "fingerprint": "已記錄的主機金鑰",
     "host": "公網主機名或IP地址",
     "hostSection": "主機",
-    "hostsTab": "主機",
     "label": "SSH",
     "loadFailed": "無法載入SSH設定，請重試。",
     "loading": "正在載入SSH主機…",
@@ -6950,7 +6948,6 @@
     },
     "summary_one": "已配置{{count}}臺主機",
     "summary_other": "已配置{{count}}臺主機",
-    "title": "SSH遠端訪問",
     "unavailable": "該帳號無法使用SSH訪問。",
     "username": "SSH使用者名稱"
   },
@@ -7082,7 +7079,6 @@
       "usernamePasswordHint": "輸入該使用者名稱對應的密碼",
       "usernamePasswordMethod": "使用者名稱和密碼"
     },
-    "credentialsTab": "憑據",
     "delete": "刪除主機",
     "deleteHelp": "刪除這臺已儲存的主機？它使用的可複用憑據會保留。",
     "description": "讓你的智能體檢視和控制遠端桌面。",
@@ -7105,7 +7101,6 @@
     },
     "host": "主機名或IP地址",
     "hostHint": "例如：desktop.example.com",
-    "hostsTab": "主機",
     "label": "VNC",
     "loadFailed": "無法載入VNC配置。",
     "loading": "正在載入VNC配置…",
@@ -7140,7 +7135,6 @@
     },
     "summary_one": "已配置{{count}}臺主機",
     "summary_other": "已配置{{count}}臺主機",
-    "title": "VNC遠端訪問",
     "transport": {
       "appleDhDestinationHelp": "Apple DH 請填寫 127.0.0.1 或 ::1；這是透過所選 SSH 主機存取的 Mac 本機回環位址。",
       "destination": "RFB目標",

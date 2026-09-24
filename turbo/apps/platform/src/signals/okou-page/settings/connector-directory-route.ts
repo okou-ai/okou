@@ -53,6 +53,9 @@ export const setConnectorsScope$ = command(
     } else {
       params.set(CONNECTORS_SCOPE_PARAM, value);
     }
+    if (value === "remote-control" || value === "private-network") {
+      params.delete("tab");
+    }
     if (value !== "remote-control") {
       params.delete("type");
     }

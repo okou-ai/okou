@@ -1,5 +1,7 @@
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
+import { vncCredentialsContract } from "@okouai/api-contracts/contracts/vnc-credentials";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -188,6 +190,74 @@ test("Preserve old connection filters and Custom tabs with directory disabled", 
   expect(getConnectorAction("button", "New connector")).toBeVisible();
   expect(queryConnectorAction("button", "New custom connector")).toBeNull();
   expect(screen.queryByPlaceholderText("Find connectors")).toBeNull();
+});
+
+test("Legacy tabs open remote and private management with directory disabled", async () => {
+  installCustomDirectory();
+  context.mocks.api(vncConnectionsContract.list, () => {
+    throw new Error("VNC connections must stay disabled");
+  });
+  context.mocks.api(vncCredentialsContract.list, () => {
+    throw new Error("VNC credentials must stay disabled");
+  });
+  await setupPage({
+    context,
+    path: "/connectors?tab=custom",
+    featureSwitches: {
+      [FeatureSwitchKey.ConnectorDirectory]: false,
+      [FeatureSwitchKey.VncAccess]: false,
+    },
+  });
+  await screen.findByText("Acme Reports");
+
+  click(getConnectorAction("tab", "Remote control"));
+  await screen.findByRole("heading", { name: "SSH" });
+  expect(locationSearch()).toBe("?scope=remote-control");
+  expect(screen.queryByRole("heading", { name: "VNC" })).toBeNull();
+  expect(getConnectorAction("button", "Type: All")).toBeVisible();
+  click(getConnectorAction("button", "Type: All"));
+  const menu = await screen.findByRole("menu");
+  expect(queryConnectorAction("menuitem", "VNC", menu)).toBeNull();
+
+  click(getConnectorAction("tab", "Private network"));
+  await screen.findByRole("heading", { name: "Cloudflare Access" });
+  expect(locationSearch()).toBe("?scope=private-network");
+  expect(screen.queryByRole("heading", { name: "SSH" })).toBeNull();
+
+  click(getConnectorAction("tab", "Custom"));
+  await screen.findByText("Acme Reports");
+  expect(locationSearch()).toBe("?tab=custom");
+
+  click(getConnectorAction("tab", "Built-in"));
+  await screen.findByRole("heading", { name: "Remote access" });
+  expect(locationSearch()).toBe("");
+});
+
+test("Legacy Remote control tab includes VNC when its switch is enabled", async () => {
+  installCustomDirectory();
+  context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
+    return respond(200, { configuredCount: 0 });
+  });
+  context.mocks.api(vncConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [] });
+  });
+  context.mocks.api(vncCredentialsContract.list, ({ respond }) => {
+    return respond(200, { credentials: [] });
+  });
+  await setupPage({
+    context,
+    path: "/connectors",
+    featureSwitches: {
+      [FeatureSwitchKey.ConnectorDirectory]: false,
+      [FeatureSwitchKey.VncAccess]: true,
+    },
+  });
+
+  click(getConnectorAction("tab", "Remote control"));
+  await screen.findByRole("heading", { name: "VNC" });
+  click(getConnectorAction("button", "Type: All"));
+  const menu = await screen.findByRole("menu");
+  expect(getConnectorAction("menuitem", "VNC", menu)).toBeVisible();
 });
 
 test("Do not turn Custom loading failure into an empty search result", async () => {

@@ -6978,7 +6978,6 @@
       "unused": "Ningún host las utiliza"
     },
     "credentialsHelp": "Las credenciales son de solo escritura y permanecen fuera del sandbox. Pega la clave completa; se conservan los espacios. Los campos se borran al cerrar el formulario.",
-    "credentialsTab": "Credenciales",
     "delete": "Eliminar host",
     "deleteHelp": "¿Eliminar este host? Sus credenciales se conservarán. Los Agents dejarán de verlo en el inventario.",
     "description": "Configura hosts SSH para que tus agentes ejecuten comandos remotos.",
@@ -7005,7 +7004,6 @@
     "fingerprint": "Clave del host guardada",
     "host": "Nombre de host público o dirección IP",
     "hostSection": "Host",
-    "hostsTab": "Hosts",
     "label": "SSH",
     "loadFailed": "No se pudo cargar la configuración SSH. Inténtalo de nuevo.",
     "loading": "Cargando hosts SSH…",
@@ -7035,7 +7033,6 @@
     "summary_one": "{{count}} host configurado",
     "summary_many": "{{count}} hosts configurados",
     "summary_other": "{{count}} hosts configurados",
-    "title": "Hosts SSH",
     "unavailable": "El acceso SSH no está disponible para esta cuenta.",
     "username": "Nombre de usuario SSH"
   },
@@ -7172,7 +7169,6 @@
       "usernamePasswordHint": "Introduce la contraseña de este usuario",
       "usernamePasswordMethod": "Nombre de usuario y contraseña"
     },
-    "credentialsTab": "Credenciales",
     "delete": "Eliminar host",
     "deleteHelp": "¿Eliminar este host guardado? Sus credenciales reutilizables se conservarán.",
     "description": "Permite que tus agentes vean y controlen tus escritorios remotos.",
@@ -7195,7 +7191,6 @@
     },
     "host": "Nombre de host o dirección IP",
     "hostHint": "p. ej., desktop.example.com",
-    "hostsTab": "Hosts",
     "label": "VNC",
     "loadFailed": "No se pudo cargar la configuración de VNC.",
     "loading": "Cargando la configuración de VNC…",
@@ -7231,7 +7226,6 @@
     "summary_one": "{{count}} host configurado",
     "summary_many": "{{count}} hosts configurados",
     "summary_other": "{{count}} hosts configurados",
-    "title": "Acceso remoto VNC",
     "transport": {
       "appleDhDestinationHelp": "Para Apple DH, introduce 127.0.0.1 o ::1. Es la dirección de bucle local del Mac, accesible mediante el host SSH seleccionado.",
       "destination": "Destino RFB",
