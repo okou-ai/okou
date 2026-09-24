@@ -295,11 +295,11 @@ function requestRouteTemplate(context: Context): string | undefined {
     return undefined;
   }
   const { answered, matched } = result.ok;
-  if (answered && isTemplateRoute(answered)) {
+  if (isTemplateRoute(answered)) {
     return answered;
   }
   return matched.find((route) => {
-    return Boolean(route.path) && isTemplateRoute(route.path);
+    return isTemplateRoute(route.path);
   })?.path;
 }
 
