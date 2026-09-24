@@ -771,7 +771,7 @@ export function messageDocumentToEditorDoc(value: unknown): JSONContent | null {
   return parsed.success ? restoredEditorDoc(parsed.data) : null;
 }
 
-/** Restores only the persisted user message portion of a composer draft. */
+/** Restores editable draft content from a saved draft or copied message. */
 export function draftToEditorDoc(userMessage: unknown): JSONContent | null {
   const parsedUserMessage = userMessageDocumentSchema.safeParse(userMessage);
   if (!parsedUserMessage.success) {

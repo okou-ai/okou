@@ -1,5 +1,5 @@
 import { modelMenuOption } from "./chat-model-menu-test-helpers.ts";
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
@@ -231,3 +231,87 @@ test.each(RETIRED_TEMPLATES)(
     ).toBeFalsy();
   },
 );
+
+test("A copied video brief and avatar feedback can be edited and sent", async () => {
+  const submissions = installVideoSubmissionCapture();
+  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  const editor = await screen.findByRole("textbox", { name: "Message" });
+  const prompt = "Reuse the existing script.";
+  const quote = "The original opening scene";
+  const userMessage: UserMessageDocument = {
+    version: 1,
+    parts: [
+      { type: "text", text: prompt },
+      {
+        type: "template",
+        titleSnapshot: "Epic Grandeur",
+        template: {
+          type: "video",
+          selection: { stylePresetId: "video-template:epic-grandeur" },
+        },
+      },
+      {
+        type: "feedback",
+        quote,
+        note: [
+          { type: "text", text: "Keep the introduction." },
+          {
+            type: "template",
+            titleSnapshot: "Avatar presenter",
+            template: {
+              type: "video",
+              selection: { stylePresetId: "avatar-template:42" },
+            },
+          },
+          {
+            type: "template",
+            titleSnapshot: "Intro video",
+            template: { type: "intro-video", selection: {} },
+          },
+        ],
+      },
+    ],
+  };
+  const clipboard = new DataTransfer();
+  const payload = encodeURIComponent(
+    JSON.stringify({ text: prompt, attachments: [], userMessage }),
+  );
+  clipboard.setData(
+    "text/html",
+    `<div data-okou-chat-message="${payload}">${prompt}</div>`,
+  );
+  clipboard.setData("text/plain", prompt);
+  fireEvent.paste(editor, { clipboardData: clipboard });
+
+  const feedback = await screen.findByRole("textbox", {
+    name: "Ask or comment on this quote",
+  });
+  expect(feedback).toHaveTextContent("Keep the introduction.");
+  const user = userEvent.setup({ delay: null });
+  await user.type(feedback, " Add the product facts.");
+  await sendCurrent(editor, prompt);
+
+  await waitFor(() => {
+    expect(submissions).toHaveLength(1);
+  });
+  expect(submissions[0]?.userMessage?.parts).toStrictEqual(
+    expect.arrayContaining([
+      { type: "text", text: prompt },
+      {
+        type: "feedback",
+        quote,
+        note: [
+          {
+            type: "text",
+            text: "Keep the introduction. Add the product facts.",
+          },
+        ],
+      },
+    ]),
+  );
+  expect(
+    submissions[0]?.userMessage?.parts.some((part) => {
+      return part.type === "template";
+    }),
+  ).toBeFalsy();
+});
