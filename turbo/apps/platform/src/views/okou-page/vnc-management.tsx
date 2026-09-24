@@ -38,6 +38,11 @@ function VncProfileLabel({ profile }: { readonly profile: VncProfile }) {
         return $.vnc.security.appleDh;
       });
     }
+    case "apple_srp": {
+      return t(($) => {
+        return $.vnc.security.appleSrp;
+      });
+    }
   }
   void (profile satisfies never);
   return null;
@@ -63,6 +68,11 @@ function VncAuthenticationLabel({
     case "apple_dh_username_password": {
       return t(($) => {
         return $.vnc.credential.appleDhMethod;
+      });
+    }
+    case "apple_srp_username_password": {
+      return t(($) => {
+        return $.vnc.credential.appleSrpMethod;
       });
     }
   }
@@ -124,7 +134,8 @@ function VncHostCard({
         {": "}
         {destination}
       </p>
-      {connection.security.type === "apple_dh" ? null : (
+      {connection.security.type === "apple_dh" ||
+      connection.security.type === "apple_srp" ? null : (
         <p className="break-all text-sm">
           {t(($) => {
             return $.vnc.security.serverName;
@@ -142,7 +153,8 @@ function VncHostCard({
         <VncAuthenticationLabel
           method={vncAuthMethodForProfile(connection.security.type)}
         />
-        {connection.security.type === "apple_dh" ? null : (
+        {connection.security.type === "apple_dh" ||
+        connection.security.type === "apple_srp" ? null : (
           <>
             {" "}
             {" · "}{" "}
@@ -264,7 +276,8 @@ function VncCredentialCard({
         <VncAuthenticationLabel method={credential.authMethod} />
       </p>
       {(credential.authMethod === "username_password" ||
-        credential.authMethod === "apple_dh_username_password") && (
+        credential.authMethod === "apple_dh_username_password" ||
+        credential.authMethod === "apple_srp_username_password") && (
         <p className="break-all text-sm">{credential.username}</p>
       )}
       <VncCredentialImpact credential={credential} />

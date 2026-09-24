@@ -7183,6 +7183,7 @@
       "add": "Ajouter des identifiants",
       "appleDhFieldHelp": "Chaque champ doit contenir de 1 à 63 octets UTF-8. NUL est interdit.",
       "appleDhMethod": "Nom d’utilisateur et mot de passe Apple DH",
+      "appleSrpMethod": "Nom d’utilisateur et mot de passe Apple Direct SRP",
       "authentication": "Méthode d’authentification",
       "createNew": "Créer des identifiants",
       "delete": "Supprimer les identifiants",
@@ -7254,6 +7255,8 @@
     "security": {
       "appleDh": "Partage d’écran Mac (Apple DH)",
       "appleDhHelp": "Nécessite le partage d’écran macOS via une connexion SSH enregistrée. La destination RFB doit être 127.0.0.1 ou ::1 sur ce Mac. SSH protège toute la session VNC. Utilisez un hôte SSH Mac que vous contrôlez ; sa clé d’hôte n’exclut pas un relais en aval.",
+      "appleSrp": "Partage d’écran Mac (Apple Direct SRP)",
+      "appleSrpHelp": "Nécessite une connexion SSH enregistrée vers le Mac et 127.0.0.1 ou ::1 comme destination RFB. SRP vérifie le compte et la preuve du serveur ; SSH protège toute la session VNC. La clé d’hôte SSH identifie le point choisi, mais n’exclut pas un relais en aval.",
       "caBundle": "Certificats d’AC (PEM)",
       "caHelp": "Jusqu’à 8 certificats d’AC, pour un total de 64 KiB. Ne collez ni clé privée ni certificat de serveur.",
       "caHint": "Collez les certificats publics des AC ayant émis le certificat du serveur",
@@ -7274,6 +7277,7 @@
     "summary_other": "{{count}} hôtes configurés",
     "transport": {
       "appleDhDestinationHelp": "Pour Apple DH, saisissez 127.0.0.1 ou ::1. Il s’agit de l’adresse de bouclage du Mac, accessible via l’hôte SSH sélectionné.",
+      "appleSrpDestinationHelp": "Pour Apple Direct SRP, saisissez 127.0.0.1 ou ::1. Il s’agit de l’adresse de bouclage du Mac, accessible via l’hôte SSH sélectionné.",
       "destination": "Destination RFB",
       "destinationHelp": "Pour une route SSH, cet hôte et ce port sont joints depuis le serveur SSH sélectionné, et non directement depuis le Runner.",
       "direct": "Direct depuis le Runner",

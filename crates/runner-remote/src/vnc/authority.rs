@@ -5,7 +5,8 @@ use api_contracts::generated::{
 };
 use base64::Engine;
 use rfb_client::{
-    AppleDhCredentials, PlainCredentials, TrustRoots, VncPassword, X509Authentication,
+    AppleDhCredentials, AppleSrpCredentials, PlainCredentials, TrustRoots, VncPassword,
+    X509Authentication,
 };
 use rustls::pki_types::CertificateDer;
 use serde::{Serialize, de::DeserializeOwned};
@@ -46,6 +47,7 @@ pub(super) enum Authentication {
         roots: TrustRoots,
     },
     AppleDh(AppleDhCredentials),
+    AppleSrp(AppleSrpCredentials),
 }
 
 #[derive(Clone, Copy)]
@@ -114,6 +116,40 @@ fn apple_dh_credential(
         generation,
         transport,
         authentication: Authentication::AppleDh(credentials),
+    })
+}
+
+fn apple_srp_credential(
+    host: String,
+    port: u64,
+    generation: i64,
+    transport: ResolveResponseResolvedTransportTransport,
+    authentication: ResolveResponseResolvedAuthentication,
+    security: ResolveResponseResolvedSecurity,
+    supports_ssh: bool,
+) -> Result<Credential, Failure> {
+    let port = valid_port_and_generation(port, generation)?;
+    if !supports_ssh || !matches!(host.as_str(), "127.0.0.1" | "::1") {
+        return Err(Failure::Authority);
+    }
+    let transport = match parse_transport(transport, supports_ssh)? {
+        ssh @ Transport::Ssh { .. } => ssh,
+        Transport::Direct => return Err(Failure::Authority),
+    };
+    let credentials = match (authentication, security) {
+        (
+            ResolveResponseResolvedAuthentication::AppleSrpUsernamePassword { username, password },
+            ResolveResponseResolvedSecurity::AppleSrp,
+        ) => AppleSrpCredentials::new_zeroizing(username, password.into_zeroizing())
+            .map_err(|_| Failure::InvalidCredential)?,
+        _ => return Err(Failure::Authority),
+    };
+    Ok(Credential {
+        host,
+        port,
+        generation,
+        transport,
+        authentication: Authentication::AppleSrp(credentials),
     })
 }
 
@@ -201,6 +237,99 @@ mod apple_dh_tests {
             assert!(parse(invalid, true).is_err(), "accepted {pointer}");
         }
         for (field, value) in [("username", "x".repeat(64)), ("password", "x".repeat(64))] {
+            let mut invalid = response();
+            invalid["authentication"][field] = json!(value);
+            assert!(matches!(
+                parse(invalid, true),
+                Err(Failure::InvalidCredential)
+            ));
+        }
+    }
+}
+
+#[cfg(test)]
+mod apple_srp_tests {
+    use super::*;
+    use serde_json::{Value, json};
+
+    fn parse(value: Value, supports_ssh: bool) -> Result<Credential, Failure> {
+        let response: ResolveResponse = serde_json::from_value(value).unwrap();
+        let ResolveResponse::ResolvedAppleSrp {
+            host,
+            port,
+            generation,
+            transport,
+            authentication,
+            security,
+        } = response
+        else {
+            panic!("expected Apple SRP outcome");
+        };
+        apple_srp_credential(
+            host,
+            port,
+            generation,
+            transport,
+            authentication,
+            security,
+            supports_ssh,
+        )
+    }
+
+    fn response() -> Value {
+        json!({
+            "outcome": "resolved_apple_srp",
+            "host": "127.0.0.1",
+            "port": 5900,
+            "generation": 3,
+            "transport": {
+                "type": "ssh",
+                "connectionId": "00000000-0000-4000-8000-000000000001",
+                "generation": 4
+            },
+            "authentication": {
+                "method": "apple_srp_username_password",
+                "username": "operator",
+                "password": "secret"
+            },
+            "security": { "type": "apple_srp" }
+        })
+    }
+
+    #[test]
+    fn accepts_only_exact_ssh_loopback_apple_srp_tuple() {
+        let valid = parse(response(), true).unwrap();
+        assert!(matches!(
+            valid.transport,
+            Transport::Ssh { generation: 4, .. }
+        ));
+        assert!(matches!(valid.authentication, Authentication::AppleSrp(_)));
+        let mut ipv6 = response();
+        ipv6["host"] = json!("::1");
+        assert!(parse(ipv6, true).is_ok());
+        assert!(matches!(parse(response(), false), Err(Failure::Authority)));
+
+        for (pointer, value) in [
+            ("/host", json!("localhost")),
+            ("/host", json!("mac.example.com")),
+            ("/port", json!(0)),
+            ("/generation", json!(0)),
+            ("/transport", json!({ "type": "direct" })),
+            ("/transport/generation", json!(0)),
+            (
+                "/authentication",
+                json!({ "method": "apple_dh_username_password", "username": "operator", "password": "secret" }),
+            ),
+            ("/security", json!({ "type": "apple_dh" })),
+        ] {
+            let mut invalid = response();
+            *invalid.pointer_mut(pointer).unwrap() = value;
+            assert!(parse(invalid, true).is_err(), "accepted {pointer}");
+        }
+        for (field, value) in [
+            ("username", "x".repeat(256)),
+            ("password", "x".repeat(1024)),
+        ] {
             let mut invalid = response();
             invalid["authentication"][field] = json!(value);
             assert!(matches!(
@@ -300,6 +429,11 @@ impl Authority {
                     security_type: ResolveRequestSupportedProfileSecurityType::AppleDh,
                     transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
                 },
+                ResolveRequestSupportedProfile {
+                    auth_method: ResolveRequestSupportedProfileAuthMethod::AppleSrpUsernamePassword,
+                    security_type: ResolveRequestSupportedProfileSecurityType::AppleSrp,
+                    transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
+                },
             ]);
         }
         let request = ResolveRequest {
@@ -332,6 +466,24 @@ impl Authority {
                     security,
                 } => {
                     return apple_dh_credential(
+                        host,
+                        port,
+                        generation,
+                        transport,
+                        authentication,
+                        security,
+                        supports_ssh,
+                    );
+                }
+                ResolveResponse::ResolvedAppleSrp {
+                    host,
+                    port,
+                    generation,
+                    transport,
+                    authentication,
+                    security,
+                } => {
+                    return apple_srp_credential(
                         host,
                         port,
                         generation,

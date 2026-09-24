@@ -230,6 +230,10 @@ impl Run {
                     Authentication::AppleDh(credentials) => {
                         rfb_client::authenticate_apple_dh(stream, credentials, scope.deadline).await
                     }
+                    Authentication::AppleSrp(credentials) => {
+                        rfb_client::authenticate_apple_srp(stream, credentials, scope.deadline)
+                            .await
+                    }
                 }
             })
             .await?

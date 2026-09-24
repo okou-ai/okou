@@ -59,10 +59,22 @@ export const vncAppleDhAuthenticationSchema = z
   })
   .strict();
 
+export const vncAppleSrpAuthenticationSchema = z
+  .object({
+    method: z.literal("apple_srp_username_password"),
+    username: boundedUtf8String(VNC_USERNAME_MAX_BYTES, "Apple SRP username"),
+    password: boundedUtf8String(
+      VNC_USERNAME_PASSWORD_MAX_BYTES,
+      "Apple SRP password",
+    ),
+  })
+  .strict();
+
 export const vncAuthenticationSchema = z.discriminatedUnion("method", [
   vncPasswordAuthenticationVariantSchema,
   vncUsernamePasswordAuthenticationSchema,
   vncAppleDhAuthenticationSchema,
+  vncAppleSrpAuthenticationSchema,
 ]);
 const revisionSchema = z.int().positive().max(2_147_483_647);
 
@@ -120,6 +132,13 @@ export const vncCredentialResponseSchema = z.discriminatedUnion("authMethod", [
         APPLE_DH_FIELD_MAX_BYTES,
         "Apple DH username",
       ),
+    })
+    .strict(),
+  z
+    .object({
+      ...vncCredentialResponseBase,
+      authMethod: z.literal("apple_srp_username_password"),
+      username: boundedUtf8String(VNC_USERNAME_MAX_BYTES, "Apple SRP username"),
     })
     .strict(),
 ]);
