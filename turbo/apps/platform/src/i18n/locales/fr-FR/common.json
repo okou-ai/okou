@@ -6718,17 +6718,11 @@
         "title": "Langue"
       },
       "morningBrief": {
-        "chatAndEmail": "Chat + e-mail",
-        "chatOnly": "Chat uniquement",
-        "checkEmailSubscription": "Consultez l’abonnement aux e-mails ci-dessus pour connaître l’état de la livraison.",
         "conflict": "Morning Brief est temporairement indisponible, car l'état de son installation est incohérent. Réessayez une fois la réconciliation terminée.",
         "description": "Vos priorités quotidiennes à 7 h dans votre fuseau horaire.",
-        "lastDelivered": "Dernière livraison : {{date}}",
         "loading": "Chargement des paramètres de Morning Brief...",
         "missingDefaultAgent": "Choisissez un Agent par défaut utilisable avant d'activer Morning Brief.",
         "missingTimezone": "Définissez un fuseau horaire valide avant d'activer Morning Brief.",
-        "nextBrief": "Prochaine synthèse {{date}}",
-        "paused": "En pause",
         "preparationFailed": "La configuration sera réessayée automatiquement. Vous pouvez aussi réessayer maintenant.",
         "preparing": "Préparation de votre premier briefing matinal. Vous pouvez le désactiver à tout moment.",
         "retry": "Réessayer",
