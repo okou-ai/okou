@@ -9,10 +9,9 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isValidTimeZone } from "@okouai/core/timezone";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
-import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { delay } from "signal-timers";
 import { z } from "zod";
 
@@ -185,10 +184,11 @@ async function loadPendingPreference(
   enrollment: Awaited<ReturnType<typeof loadMorningBriefEnrollment>>,
   installationAgentId?: string,
 ): Promise<MorningBriefPreferenceResult> {
-  const [timezone, unavailableReason] = await Promise.all([
-    loadOfficialWorkflowUserTimezone(db, morningBriefOwner(args)),
-    loadUnavailableReason(db, args, installationAgentId),
-  ]);
+  const unavailableReason = await loadUnavailableReason(
+    db,
+    args,
+    installationAgentId,
+  );
   return {
     kind: "ok",
     preference: {
@@ -200,8 +200,6 @@ async function loadPendingPreference(
             ? "error"
             : "preparing"
           : "paused",
-      nextRunAt: null,
-      timezone,
       unavailableReason,
     },
   };
@@ -246,8 +244,6 @@ async function projectInstalledPreference(
     preference: {
       enabled: state.automation.enabled,
       status: state.automation.enabled ? "enabled" : "paused",
-      nextRunAt: state.automation.nextRunAt?.toISOString() ?? null,
-      timezone: state.automation.timezone,
       unavailableReason: null,
     },
   };
@@ -275,8 +271,6 @@ function projectNativePreference(
     preference: {
       enabled: row.enabled,
       status: row.enabled ? "enabled" : "paused",
-      nextRunAt: row.nextRunAt?.toISOString() ?? null,
-      timezone: row.timezone,
       unavailableReason: null,
     },
   };
@@ -368,37 +362,13 @@ function projectLastRun(
   };
 }
 
-/** A settled occurrence is not necessarily a delivery. Read the receipt. */
-async function readLastDeliveredAt(
-  db: Pick<ReadonlyDb, "select">,
-  owner: MorningBriefMemberIdentity,
-): Promise<string | null> {
-  const [delivery] = await db
-    .select({ deliveredAt: morningBriefDeliveries.deliveredAt })
-    .from(morningBriefDeliveries)
-    .where(
-      and(
-        eq(morningBriefDeliveries.orgId, owner.orgId),
-        eq(morningBriefDeliveries.userId, owner.userId),
-        eq(morningBriefDeliveries.executionPurpose, "production"),
-      ),
-    )
-    .orderBy(desc(morningBriefDeliveries.deliveredAt))
-    .limit(1);
-  return delivery?.deliveredAt.toISOString() ?? null;
-}
-
 /** Attach the account without changing the existing preference projection. */
-function withLastRunAndDelivery(
+function withLastRun(
   result: MorningBriefPreferenceResult & { readonly workflowId?: string },
   lastRun: MorningBriefLastRun | null,
-  lastDeliveredAt: string | null,
 ): MorningBriefPreferenceResult & { readonly workflowId?: string } {
   return result.kind === "ok"
-    ? {
-        ...result,
-        preference: { ...result.preference, lastRun, lastDeliveredAt },
-      }
+    ? { ...result, preference: { ...result.preference, lastRun } }
     : result;
 }
 
@@ -413,25 +383,21 @@ export const morningBriefPreference$ = command(
     const owner = morningBriefOwner(args);
     const native = await readMorningBriefNativeSchedule(db, owner);
     signal.throwIfAborted();
-    const [latestOccurrence, lastDeliveredAt] = await Promise.all([
-      readLatestMorningBriefNativeOccurrence(db, owner),
-      readLastDeliveredAt(db, owner),
-    ]);
+    const latestOccurrence = await readLatestMorningBriefNativeOccurrence(
+      db,
+      owner,
+    );
     signal.throwIfAborted();
     const lastRun = projectLastRun(latestOccurrence);
     if (native !== undefined && native.phase !== "legacy") {
-      return withLastRunAndDelivery(
-        projectNativePreference(native),
-        lastRun,
-        lastDeliveredAt,
-      );
+      return withLastRun(projectNativePreference(native), lastRun);
     }
     const state = await loadMorningBriefMigrationState(db, owner);
     signal.throwIfAborted();
     const legacy = await projectInstalledPreference(db, args, state);
     signal.throwIfAborted();
     if (state.kind !== "installed" || legacy.kind !== "ok") {
-      return withLastRunAndDelivery(legacy, lastRun, lastDeliveredAt);
+      return withLastRun(legacy, lastRun);
     }
     const featureSwitchContext = await loadUserFeatureSwitchContext(
       db,
@@ -445,14 +411,13 @@ export const morningBriefPreference$ = command(
         featureSwitchContext,
       )
     ) {
-      return withLastRunAndDelivery(legacy, lastRun, lastDeliveredAt);
+      return withLastRun(legacy, lastRun);
     }
     const projected = await readMorningBriefPreferenceProjection(db, state);
     signal.throwIfAborted();
-    return withLastRunAndDelivery(
+    return withLastRun(
       projected === null ? legacy : { kind: "ok", preference: projected },
       lastRun,
-      lastDeliveredAt,
     );
   },
 );
@@ -1098,13 +1063,13 @@ export const updateMorningBriefPreference$ = command(
     // The same account the read path returns, so a caller sees one response
     // shape whether it just read the preference or just changed it.
     const owner = morningBriefOwner(args);
-    const [latestOccurrence, lastDeliveredAt] = await Promise.all([
-      readLatestMorningBriefNativeOccurrence(db, owner),
-      readLastDeliveredAt(db, owner),
-    ]);
+    const latestOccurrence = await readLatestMorningBriefNativeOccurrence(
+      db,
+      owner,
+    );
     signal.throwIfAborted();
     const lastRun = projectLastRun(latestOccurrence);
-    return withLastRunAndDelivery(result, lastRun, lastDeliveredAt);
+    return withLastRun(result, lastRun);
   },
 );
 

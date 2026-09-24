@@ -6623,17 +6623,11 @@
         "title": "語言"
       },
       "morningBrief": {
-        "chatAndEmail": "聊天+郵件",
-        "chatOnly": "僅聊天",
-        "checkEmailSubscription": "投遞狀態請檢視上方的郵件訂閱。",
         "conflict": "晨報的安裝狀態不一致，暫時無法使用。請在狀態同步完成後重試。",
         "description": "每天早上 7:00（按你的時區）接收當日重點。",
-        "lastDelivered": "上次投遞：{{date}}",
         "loading": "正在載入晨報設定…",
         "missingDefaultAgent": "啟用晨報前，請先選擇一個可用的預設智能體。",
         "missingTimezone": "啟用晨報前，請先設定有效的時區。",
-        "nextBrief": "下一份晨報 {{date}}",
-        "paused": "已暫停",
         "preparationFailed": "晨報設定會自動重試，你也可以現在就重試。",
         "preparing": "正在準備你的第一份晨報，你可以隨時關閉。",
         "retry": "重試",

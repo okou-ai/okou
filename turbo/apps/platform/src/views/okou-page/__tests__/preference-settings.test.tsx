@@ -85,8 +85,6 @@ describe("unified preference settings", () => {
       return respond(200, {
         enabled: false,
         status: "paused",
-        nextRunAt: null,
-        timezone: "Asia/Shanghai",
         unavailableReason: null,
       });
     });
@@ -111,8 +109,6 @@ describe("unified preference settings", () => {
     let preference: MorningBriefPreferenceResponse = {
       enabled: false,
       status: "paused",
-      nextRunAt: null,
-      timezone: "Asia/Shanghai",
       unavailableReason: null,
     };
     let conflicted = false;
@@ -143,8 +139,6 @@ describe("unified preference settings", () => {
         preference = {
           enabled: true,
           status: "enabled",
-          nextRunAt: "2030-01-02T23:00:00.000Z",
-          timezone: "Asia/Shanghai",
           unavailableReason: null,
         };
         return respond(200, preference);
@@ -186,8 +180,6 @@ test("shows pending Morning Brief enrollment, accepts cancellation, and receives
   let preference: MorningBriefPreferenceResponse = {
     enabled: true,
     status: "preparing",
-    nextRunAt: null,
-    timezone: "Asia/Shanghai",
     unavailableReason: null,
   };
   context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
@@ -226,11 +218,7 @@ test("shows pending Morning Brief enrollment, accepts cancellation, and receives
       within(card).getByRole("switch", { name: "Morning brief" }),
     ).toBeChecked();
   });
-  preference = {
-    ...preference,
-    status: "enabled",
-    nextRunAt: "2030-01-02T23:00:00.000Z",
-  };
+  preference = { ...preference, status: "enabled" };
   await waitFor(() => {
     expect(
       context.mocks.ably.hasSubscription("morningBriefChanged"),
@@ -238,21 +226,18 @@ test("shows pending Morning Brief enrollment, accepts cancellation, and receives
   });
   context.mocks.ably.trigger("morningBriefChanged");
   await waitFor(() => {
-    expect(within(card).getByText(/Next /u)).toBeVisible();
+    expect(
+      within(card).queryByText(
+        "Preparing your first Morning Brief. You can turn it off at any time.",
+      ),
+    ).toBeNull();
   });
-  expect(
-    within(card).queryByText(
-      "Preparing your first Morning Brief. You can turn it off at any time.",
-    ),
-  ).toBeNull();
 });
 
 test("keeps the Morning Brief toggle disabled while an unavailable reason is reported", async () => {
   let preference: MorningBriefPreferenceResponse = {
     enabled: false,
     status: "paused",
-    nextRunAt: null,
-    timezone: "Asia/Shanghai",
     unavailableReason: "missing-default-agent",
   };
   context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {

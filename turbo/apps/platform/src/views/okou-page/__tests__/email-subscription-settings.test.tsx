@@ -48,8 +48,6 @@ describe("email subscription settings", () => {
       return respond(200, {
         enabled: briefEnabled,
         status: briefEnabled ? "enabled" : "paused",
-        nextRunAt: briefEnabled ? "2030-01-02T23:00:00.000Z" : null,
-        timezone: "Asia/Shanghai",
         unavailableReason: null,
       });
     });
@@ -60,15 +58,18 @@ describe("email subscription settings", () => {
         return respond(200, {
           enabled: briefEnabled,
           status: briefEnabled ? "enabled" : "paused",
-          nextRunAt: null,
-          timezone: "Asia/Shanghai",
           unavailableReason: null,
         });
       },
     );
 
     const region = await openPreferences();
-    await expect(within(region).findByText("Chat only")).resolves.toBeVisible();
+    const brief = await within(region).findByRole("switch", {
+      name: "Morning brief",
+    });
+    await waitFor(() => {
+      expect(brief).toBeChecked();
+    });
     expect(
       within(region).queryByText(
         "Email is off. Your brief will still appear in Chat.",
@@ -82,20 +83,18 @@ describe("email subscription settings", () => {
     const emails = within(region).getByRole("switch", {
       name: "Email updates",
     });
-    const brief = within(region).getByRole("switch", { name: "Morning brief" });
     expect(emails).not.toBeChecked();
-    expect(brief).toBeChecked();
 
     click(emails);
-    await expect(
-      within(region).findByText("Chat + email"),
-    ).resolves.toBeVisible();
-    expect(emails).toBeChecked();
+    await waitFor(() => {
+      expect(emails).toBeChecked();
+    });
     expect(brief).toBeChecked();
 
     click(brief);
-    await expect(within(region).findByText("Paused")).resolves.toBeVisible();
-    expect(brief).not.toBeChecked();
+    await waitFor(() => {
+      expect(brief).not.toBeChecked();
+    });
     expect(emails).toBeChecked();
 
     click(emails);
@@ -103,12 +102,13 @@ describe("email subscription settings", () => {
       expect(emails).not.toBeChecked();
     });
     click(brief);
-    await expect(within(region).findByText("Chat only")).resolves.toBeVisible();
+    await waitFor(() => {
+      expect(brief).toBeChecked();
+    });
     expect(emails).not.toBeChecked();
-    expect(brief).toBeChecked();
   });
 
-  it("explains missing email delivery without promising an email", async () => {
+  it("explains missing email delivery", async () => {
     context.mocks.api(emailSubscriptionContract.get, ({ respond }) => {
       return respond(200, {
         ...emailPreference,
@@ -120,8 +120,6 @@ describe("email subscription settings", () => {
       return respond(200, {
         enabled: true,
         status: "enabled",
-        nextRunAt: "2030-01-02T07:00:00.000Z",
-        timezone: "UTC",
         unavailableReason: null,
       });
     });
@@ -129,12 +127,10 @@ describe("email subscription settings", () => {
     await expect(
       within(region).findByText("Email unavailable"),
     ).resolves.toBeVisible();
-    await expect(within(region).findByText("Chat only")).resolves.toBeVisible();
     expect(
       within(region).getByRole("switch", {
         name: "Email updates",
       }),
     ).toBeChecked();
-    expect(within(region).queryByText("Chat + email")).not.toBeInTheDocument();
   });
 });

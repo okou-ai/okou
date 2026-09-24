@@ -628,9 +628,6 @@ describe("native Morning Brief collection account", () => {
       // And the account says what it had to work with, through the member's
       // own Settings endpoint rather than through a trace.
       const preference = await readPreference(f);
-      expect(preference.lastDeliveredAt).toBe(
-        deliveries[0]?.deliveredAt.toISOString(),
-      );
       const lastRun = preference.lastRun;
       expect(lastRun?.state).toBe("settled");
       expect(lastRun?.outcome).toBe("delivered");
@@ -664,7 +661,6 @@ describe("native Morning Brief collection account", () => {
       expect(occurrences[0]?.outcome).toBe("empty-skip");
 
       const preference = await readPreference(f);
-      expect(preference.lastDeliveredAt).toBeNull();
       const lastRun = preference.lastRun;
       expect(lastRun?.outcome).toBe("empty-skip");
       expect(lastRun?.reason).toBeNull();
@@ -695,7 +691,6 @@ describe("native Morning Brief collection account", () => {
       expect(occurrences[0]?.outcome).toBe("collection-failed");
 
       const preference = await readPreference(f);
-      expect(preference.lastDeliveredAt).toBeNull();
       const lastRun = preference.lastRun;
       expect(lastRun?.outcome).toBe("collection-failed");
       // The three settlements are distinguishable: this one names the sources

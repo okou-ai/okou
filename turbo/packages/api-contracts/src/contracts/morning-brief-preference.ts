@@ -60,8 +60,6 @@ export type MorningBriefLastRun = z.infer<typeof morningBriefLastRunSchema>;
 export const morningBriefPreferenceResponseSchema = z.object({
   status: z.enum(["preparing", "enabled", "paused", "error"]),
   enabled: z.boolean(),
-  nextRunAt: z.string().datetime().nullable(),
-  timezone: z.string().nullable(),
   unavailableReason: morningBriefUnavailableReasonSchema.nullable(),
   /**
    * The caller's most recent native occurrence, or null before the first one.
@@ -70,8 +68,6 @@ export const morningBriefPreferenceResponseSchema = z.object({
    * rollout; a client that does not know the field ignores it.
    */
   lastRun: morningBriefLastRunSchema.nullable().optional(),
-  /** Most recent completed production delivery; null before the first delivery. */
-  lastDeliveredAt: z.string().datetime().nullable().optional(),
 });
 
 export type MorningBriefPreferenceResponse = z.infer<

@@ -6705,17 +6705,11 @@
         "title": "Idioma"
       },
       "morningBrief": {
-        "chatAndEmail": "Chat + e-mail",
-        "chatOnly": "Somente Chat",
-        "checkEmailSubscription": "Confira a assinatura de e-mail acima para ver o status de entrega.",
         "conflict": "O Morning Brief está temporariamente indisponível porque o estado da instalação está inconsistente. Tente novamente quando a reconciliação terminar.",
         "description": "Prioridades diárias às 7h no seu fuso horário.",
-        "lastDelivered": "Última entrega: {{date}}",
         "loading": "Carregando as configurações do Morning Brief...",
         "missingDefaultAgent": "Escolha um Agent padrão utilizável antes de ativar o Morning Brief.",
         "missingTimezone": "Defina um fuso horário válido antes de ativar o Morning Brief.",
-        "nextBrief": "Próximo resumo {{date}}",
-        "paused": "Pausado",
         "preparationFailed": "A configuração será tentada novamente automaticamente. Você também pode tentar agora.",
         "preparing": "Preparando seu primeiro resumo matinal. Você pode desativá-lo a qualquer momento.",
         "retry": "Tentar novamente",

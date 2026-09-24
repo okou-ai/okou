@@ -567,6 +567,35 @@ async function readBriefPreference(actor: ApiTestUser) {
   );
 }
 
+/**
+ * The member's Settings state joined with the authoritative schedule it runs
+ * on: the native row once it has left the legacy phase, otherwise the legacy
+ * workflow automation. The preference response no longer carries either.
+ */
+async function readBriefState(brief: {
+  readonly actor: ApiTestUser;
+  readonly automationId: string;
+}) {
+  const { actor } = brief;
+  if (!actor.orgId) {
+    throw new Error("Expected an organization-scoped Morning Brief owner");
+  }
+  const preference = await readBriefPreference(actor);
+  const native = await readNativeSchedule({
+    orgId: actor.orgId,
+    userId: actor.userId,
+  });
+  const schedule =
+    native !== undefined && native.phase !== "legacy"
+      ? native
+      : await readLegacyAutomation(brief.automationId);
+  return {
+    ...preference.body,
+    nextRunAt: schedule?.nextRunAt?.toISOString() ?? null,
+    timezone: schedule?.timezone ?? null,
+  };
+}
+
 async function tickNativeMorningBrief(actor: ApiTestUser) {
   if (!actor.orgId) {
     throw new Error("Expected an organization-scoped Morning Brief owner");
@@ -658,8 +687,7 @@ describe("Morning Brief legacy schedule claim journal", () => {
     if (!automation) {
       throw new Error("Expected the Morning Brief automation");
     }
-    const preference = await readBriefPreference(actor);
-    if (!preference.body.nextRunAt) {
+    if (!automation.nextRunAt) {
       throw new Error("Expected an enabled Morning Brief schedule");
     }
     // Configured last so installation setup cannot replace the runner group
@@ -672,7 +700,7 @@ describe("Morning Brief legacy schedule claim journal", () => {
       runnerGroup,
       workflowId: installation.id,
       automationId: automation.id,
-      anchor: Date.parse(preference.body.nextRunAt),
+      anchor: Date.parse(automation.nextRunAt),
     };
   }
 
@@ -770,15 +798,13 @@ describe("Morning Brief legacy schedule claim journal", () => {
     await expect(
       readWorkflowScheduleSkipsFixture(brief.automationId),
     ).resolves.toMatchObject([{ scheduledAnchorAt: new Date(brief.anchor) }]);
-    const preference = await readBriefPreference(brief.actor);
-    expect(preference.body.nextRunAt).toStrictEqual(expect.any(String));
-    const next = Date.parse(preference.body.nextRunAt ?? "");
-    expect(next).toBeGreaterThan(at);
     const [automation] = await readMorningBriefAutomations(
       brief.actor,
       brief.workflowId,
     );
-    expect(automation?.nextRunAt).toBe(preference.body.nextRunAt);
+    expect(automation?.nextRunAt).toStrictEqual(expect.any(String));
+    const next = Date.parse(automation?.nextRunAt ?? "");
+    expect(next).toBeGreaterThan(at);
     expect(automation?.lastRunAt).toBeNull();
     expect(automation?.chatThreadId).toBeNull();
   });
@@ -801,15 +827,11 @@ describe("Morning Brief legacy schedule claim journal", () => {
     await expect(
       readMorningBriefScheduleClaimsFixture(brief.automationId),
     ).resolves.toHaveLength(0);
-    const preference = await readBriefPreference(brief.actor);
-    expect(preference.body.nextRunAt).toBe(
-      new Date(brief.anchor).toISOString(),
-    );
     const [automation] = await readMorningBriefAutomations(
       brief.actor,
       brief.workflowId,
     );
-    expect(automation?.nextRunAt).toBe(preference.body.nextRunAt);
+    expect(automation?.nextRunAt).toBe(new Date(brief.anchor).toISOString());
     expect(automation?.lastRunAt).toBeNull();
     expect(automation?.chatThreadId).toBeNull();
   });
@@ -858,11 +880,11 @@ describe("Morning Brief legacy schedule claim journal", () => {
     }
     await deliverBriefCallback(firstRunId);
 
-    const advanced = await readBriefPreference(brief.actor);
-    if (!advanced.body.nextRunAt) {
+    const advanced = await readBriefState(brief);
+    if (!advanced.nextRunAt) {
       throw new Error("Expected the completion to publish the next occurrence");
     }
-    const secondAnchor = Date.parse(advanced.body.nextRunAt);
+    const secondAnchor = Date.parse(advanced.nextRunAt);
 
     // Both ticks reach the shared thread admission lock before either can
     // consume the schedule, so the race is observed rather than assumed.
@@ -983,8 +1005,8 @@ describe("Morning Brief legacy schedule claim journal", () => {
     expect(delivery.callbackResults).toBeGreaterThan(1);
     expect(delivery.successfulCallbacks).toBeGreaterThan(1);
 
-    const settled = await readBriefPreference(brief.actor);
-    const successor = settled.body.nextRunAt;
+    const settled = await readBriefState(brief);
+    const successor = settled.nextRunAt;
     expect(successor).toStrictEqual(expect.any(String));
     const claims = await readMorningBriefScheduleClaimsFixture(
       brief.automationId,
@@ -1023,20 +1045,20 @@ describe("Morning Brief legacy schedule claim journal", () => {
       }),
       [200],
     );
-    const duringClaim = await readBriefPreference(brief.actor);
-    expect(duringClaim.body).toMatchObject({
+    const duringClaim = await readBriefState(brief);
+    expect(duringClaim).toMatchObject({
       timezone: "America/New_York",
       nextRunAt: null,
     });
 
     await deliverBriefCallback(runId);
-    const settled = await readBriefPreference(brief.actor);
-    expect(settled.body.timezone).toBe("America/New_York");
-    if (!settled.body.nextRunAt) {
+    const settled = await readBriefState(brief);
+    expect(settled.timezone).toBe("America/New_York");
+    if (!settled.nextRunAt) {
       throw new Error("Expected the completion to publish the next occurrence");
     }
     expect(
-      new Date(settled.body.nextRunAt).toLocaleString("en-US", {
+      new Date(settled.nextRunAt).toLocaleString("en-US", {
         timeZone: "America/New_York",
         hour: "2-digit",
         hour12: false,
@@ -1199,11 +1221,11 @@ describe("Morning Brief legacy schedule claim journal", () => {
     expect(untouched).toHaveLength(1);
     expect(untouched[0]?.settlement).toBe("unsettled");
     expect(untouched[0]?.ownerUserId).toBe(kept.actor.userId);
-    const scheduleBefore = await readBriefPreference(departing.actor);
+    const scheduleBefore = await readBriefState(departing);
     const delivery = await deliverBriefCallback(departingRunId);
     expect(delivery.callbackResults).toBeGreaterThan(0);
-    await expect(readBriefPreference(departing.actor)).resolves.toMatchObject({
-      body: { nextRunAt: scheduleBefore.body.nextRunAt },
+    await expect(readBriefState(departing)).resolves.toMatchObject({
+      nextRunAt: scheduleBefore.nextRunAt,
     });
     const afterCallback = await readMorningBriefScheduleClaimsFixture(
       departing.automationId,
@@ -1224,7 +1246,7 @@ describe("Morning Brief legacy schedule claim journal", () => {
     }
     await deliverBriefCallback(runId);
     const secondAnchor = Date.parse(
-      (await readBriefPreference(brief.actor)).body.nextRunAt ?? "",
+      (await readBriefState(brief)).nextRunAt ?? "",
     );
     const eventsBefore = await briefAutomationEventCount(threadId);
 
@@ -1265,13 +1287,13 @@ describe("Morning Brief legacy schedule claim journal", () => {
     await expect(briefAutomationEventCount(threadId)).resolves.toBe(
       eventsBefore,
     );
-    const recoveredSchedule = await readBriefPreference(brief.actor);
-    if (!recoveredSchedule.body.nextRunAt) {
+    const recoveredSchedule = await readBriefState(brief);
+    if (!recoveredSchedule.nextRunAt) {
       throw new Error("Expected the failed claim to leave a usable schedule");
     }
-    const recoveredAnchor = Date.parse(recoveredSchedule.body.nextRunAt);
+    const recoveredAnchor = Date.parse(recoveredSchedule.nextRunAt);
     expect(recoveredAnchor).toBeGreaterThan(secondAnchor);
-    expect(recoveredSchedule.body.enabled).toBeTruthy();
+    expect(recoveredSchedule.enabled).toBeTruthy();
 
     // The real cron then records the recovered occurrence on its next tick.
     await pollAt(brief.automationId, recoveredAnchor + 60_000);
@@ -1307,8 +1329,9 @@ describe("Morning Brief legacy schedule claim journal", () => {
     // this empty public projection proves that the Run and its earlier journal
     // binding rolled back with the launch transaction.
     await expect(briefRunIds(threadId)).resolves.toHaveLength(0);
-    await expect(readBriefPreference(brief.actor)).resolves.toMatchObject({
-      body: { enabled: true, nextRunAt: expect.any(String) },
+    await expect(readBriefState(brief)).resolves.toMatchObject({
+      enabled: true,
+      nextRunAt: expect.any(String),
     });
   });
 
@@ -1411,8 +1434,7 @@ describe("Morning Brief legacy schedule claim journal", () => {
     expect(settled).toHaveLength(1);
     expect(["failed", "pre_run_failure"]).toContain(settled[0]?.settlement);
     expect(settled[0]?.settledAt).not.toBeNull();
-    const preference = await readBriefPreference(brief.actor);
-    expect(preference.body).toMatchObject({
+    await expect(readBriefState(brief)).resolves.toMatchObject({
       enabled: true,
       nextRunAt: expect.any(String),
     });
@@ -1436,18 +1458,18 @@ describe("Morning Brief legacy schedule claim journal", () => {
       await runs.requestCancelRun(brief.actor, runId, [200]);
       await flushWaitUntilForTest();
 
-      const preference = await readBriefPreference(brief.actor);
+      const state = await readBriefState(brief);
       if (failure < 3) {
-        expect(preference.body).toMatchObject({
+        expect(state).toMatchObject({
           enabled: true,
           nextRunAt: expect.any(String),
         });
-        if (!preference.body.nextRunAt) {
+        if (!state.nextRunAt) {
           throw new Error("Expected a successor before the disable threshold");
         }
-        anchor = Date.parse(preference.body.nextRunAt);
+        anchor = Date.parse(state.nextRunAt);
       } else {
-        expect(preference.body).toMatchObject({
+        expect(state).toMatchObject({
           enabled: false,
           nextRunAt: null,
         });
