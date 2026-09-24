@@ -5,7 +5,6 @@ import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, eq } from "drizzle-orm";
 import { writeDb$, type Db } from "../external/db";
 import type { Tx } from "../../lib/db-types";
-import { testOverride } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
@@ -42,31 +41,6 @@ type WorkflowAutomationPayload =
 interface HandleWorkflowAutomationInternalCallbackInput {
   readonly kind: WorkflowAutomationInternalRunCallbackKind;
   readonly callback: InternalRunCallbackEnvelope;
-}
-
-interface UnjournaledCallbackLineageReadSnapshot {
-  readonly automationId: string;
-  readonly lineageKind: "morning-brief" | "ordinary-or-absent";
-}
-
-type UnjournaledCallbackLineageReadHook = (
-  snapshot: UnjournaledCallbackLineageReadSnapshot,
-) => Promise<void>;
-
-const unjournaledCallbackLineageReadHook = testOverride<
-  UnjournaledCallbackLineageReadHook | undefined
->(() => {
-  return undefined;
-});
-
-export function setUnjournaledCallbackLineageReadHookForTest(
-  hook: UnjournaledCallbackLineageReadHook,
-): void {
-  unjournaledCallbackLineageReadHook.set(hook);
-}
-
-export function clearUnjournaledCallbackLineageReadHookForTest(): void {
-  unjournaledCallbackLineageReadHook.clear();
 }
 
 function parseWorkflowAutomationPayload(
@@ -398,10 +372,6 @@ export async function handleWorkflowAutomationInternalCallback(
     db,
     payload.data.automationId,
   );
-  await unjournaledCallbackLineageReadHook.get()?.({
-    automationId: payload.data.automationId,
-    lineageKind: lineage === undefined ? "ordinary-or-absent" : "morning-brief",
-  });
   signal?.throwIfAborted();
   return await settleUnjournaledWorkflowAutomationCallback(
     db,
