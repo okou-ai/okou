@@ -102,6 +102,40 @@ function futureAfterSkip(current: Automation, at: Date): Date | null {
   return null;
 }
 
+function successorAfterExpiry(
+  current: Automation,
+  authority: Authority,
+  args: { readonly anchor: Date; readonly at: Date },
+): { readonly nextRunAt: Date | null; readonly mirrorNative: boolean } | null {
+  if (authority.kind === "selected" && authority.row.phase === "legacy") {
+    const durable = authority.row.nextRunAt;
+    if (
+      !authority.row.enabled ||
+      authority.row.scheduleOwner !== "legacy" ||
+      durable === null
+    ) {
+      return null;
+    }
+    if (durable.getTime() !== args.anchor.getTime()) {
+      // A claimed or differently overdue durable slot needs reconciliation.
+      if (durable.getTime() <= args.at.getTime()) {
+        return null;
+      }
+      // The due legacy row is a stale mirror. Preserve the durable future slot
+      // instead of overwriting it with a successor computed from stale config.
+      return { nextRunAt: durable, mirrorNative: false };
+    }
+  }
+  const nextRunAt = futureAfterSkip(current, args.at);
+  if (
+    current.scheduleType !== "once" &&
+    (nextRunAt === null || nextRunAt.getTime() <= args.at.getTime())
+  ) {
+    return null;
+  }
+  return { nextRunAt, mirrorNative: true };
+}
+
 /**
  * Settle only the old, unclaimed occurrence. No Run, failure or queue event is
  * created; the next recurring obligation is strictly in the future. Lock the
@@ -159,23 +193,24 @@ export async function skipExpiredWorkflowSchedule(
       return "held";
     }
 
-    const nextRunAt = futureAfterSkip(current, args.at);
-    if (
-      current.scheduleType !== "once" &&
-      (nextRunAt === null || nextRunAt.getTime() <= args.at.getTime())
-    ) {
+    const successor = successorAfterExpiry(current, authority, args);
+    if (!successor) {
       return "held";
     }
     const nextLegacyRunAt =
       authority.kind === "selected" && authority.row.phase !== "legacy"
         ? null
-        : nextRunAt;
-    if (authority.kind === "selected" && authority.row.phase === "legacy") {
+        : successor.nextRunAt;
+    if (
+      successor.mirrorNative &&
+      authority.kind === "selected" &&
+      authority.row.phase === "legacy"
+    ) {
       await settleSelectedLegacyMorningBriefObligation(tx, lineage, authority, {
         enabled: current.scheduleType !== "once",
         cronExpression: current.cronExpression,
         timezone: current.timezone,
-        nextRunAt,
+        nextRunAt: successor.nextRunAt,
         at: args.at,
       });
     }
