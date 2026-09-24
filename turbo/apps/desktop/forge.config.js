@@ -62,10 +62,12 @@ async function signPackagedDarwinApps(_forgeConfig, packageResult) {
     return;
   }
 
-  const { sign } = await import("@electron/osx-sign");
-  const notarizeModule = osxNotarize
-    ? await import("@electron/notarize")
-    : undefined;
+  const signModule =
+    process.env.OKOU_DESKTOP_SKIP_SIGNING === "true"
+      ? null
+      : await import("@electron/osx-sign");
+  const notarizeModule =
+    signModule && osxNotarize ? await import("@electron/notarize") : undefined;
 
   for (const outputPath of packageResult.outputPaths) {
     const appPath = path.join(outputPath, `${desktopIdentity.displayName}.app`);
@@ -82,9 +84,9 @@ async function signPackagedDarwinApps(_forgeConfig, packageResult) {
       path.join(appPath, "Contents", "MacOS", "clerk-auth-helper"),
     );
 
-    if (process.env.OKOU_DESKTOP_SKIP_SIGNING === "true") continue;
+    if (!signModule) continue;
 
-    await sign({
+    await signModule.sign({
       app: appPath,
       batchCodesignCalls: true,
       identity: codeSigningIdentity,
