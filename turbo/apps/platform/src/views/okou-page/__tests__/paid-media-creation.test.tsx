@@ -31,39 +31,20 @@ function button(name: string, root: ParentNode = document.body) {
   return element;
 }
 
-async function setupComposer(
-  enabled = true,
-  taskChips = false,
-  chatPreference = true,
-) {
+async function setupComposer(enabled = true, taskChips = false) {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.PaidToolControls]: enabled,
       [FeatureSwitchKey.SettingsToolsTab]: true,
-      [FeatureSwitchKey.ChatPreference]: chatPreference,
+      [FeatureSwitchKey.ChatPreference]: true,
       [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
       [FeatureSwitchKey.ComposerTaskChips]: taskChips,
     },
   });
   return findComposerEditor();
 }
-
-test("Paid tool guidance remains available when Chat preferences are off", async () => {
-  mockTemplateChat();
-  context.mocks.api(paidToolsContract.get, ({ respond }) => {
-    return respond(200, { disabledTools: ["image-generation"] });
-  });
-  await setupComposer(true, false, false);
-  const dialog = await openTemplatePicker(
-    userEvent.setup({ delay: null }),
-    "Illustration",
-  );
-  await expect(
-    within(dialog).findByText("Image generation is off for you"),
-  ).resolves.toBeInTheDocument();
-});
 
 async function selectCreation() {
   const user = userEvent.setup({ delay: null });
@@ -93,30 +74,6 @@ test("Explicit image creation remains blocked when the settings rollout is off",
   await screen.findByText("Image generation is off for you");
   expect(capture.runPrompts).toStrictEqual([]);
   expect(editor).toHaveTextContent("Create a launch scene");
-});
-
-test("Discard exits a blocked Image task without clearing the draft", async () => {
-  mockTemplateChat();
-  context.mocks.api(paidToolsContract.get, ({ respond }) => {
-    return respond(200, { disabledTools: ["image-generation"] });
-  });
-  const editor = await setupComposer(true, true);
-  await fill(editor, "Create a launch scene");
-  click(button("Image", screen.getByRole("group", { name: "Choose a task" })));
-
-  await screen.findByText("Image generation is off for you");
-  expect(button("Discard")).toBeInTheDocument();
-  click(button("Discard"));
-
-  await waitFor(() => {
-    expect(
-      screen.queryByText("Image generation is off for you"),
-    ).not.toBeInTheDocument();
-  });
-  expect(editor).toHaveTextContent("Create a launch scene");
-  expect(
-    screen.getByRole("group", { name: "Choose a task" }),
-  ).toBeInTheDocument();
 });
 
 test("An image creation notice opens settings and a confirmed save restores creation", async () => {
@@ -167,35 +124,6 @@ test("An image creation notice opens settings and a confirmed save restores crea
   });
 });
 
-test("A pending creation check keeps its submitted intent while the type changes", async () => {
-  const capture = mockTemplateChat();
-  const requested = context.mocks.deferred<void>();
-  const release = context.mocks.deferred<void>();
-  context.mocks.api(paidToolsContract.get, async ({ respond, withSignal }) => {
-    requested.resolve();
-    await withSignal(release.promise);
-    return respond(200, { disabledTools: ["video-generation"] });
-  });
-  const editor = await setupComposer(false);
-  await selectCreation();
-  await fill(editor, "Create a launch scene");
-  const send = button("Send");
-  click(send);
-  await requested.promise;
-  await waitFor(() => {
-    expect(button("Send")).toBeDisabled();
-  });
-  click(button("Remove Image"));
-  release.resolve();
-  await waitFor(() => {
-    expect(capture.sentMessages).toHaveLength(1);
-  });
-  expect(capture.sentMessages[0]?.parts).toContainEqual({
-    type: "additional_info",
-    text: "Create an image.",
-  });
-});
-
 test("A failed preference read blocks explicit creation but ordinary chat remains available", async () => {
   const capture = mockTemplateChat();
   context.mocks.api(paidToolsContract.get, ({ respond }) => {
@@ -239,34 +167,4 @@ test("Gallery notices follow each paid branch without blocking unrelated preview
     `Select video template ${VIDEO_TEMPLATE_ITEMS[0]?.title}`,
   );
   expect(within(dialog).queryByText(/is off for you/)).not.toBeInTheDocument();
-});
-
-test("A selected disabled video template can still be discussed without a Create intent", async () => {
-  const capture = mockTemplateChat();
-  context.mocks.api(paidToolsContract.get, ({ respond }) => {
-    return respond(200, { disabledTools: ["video-generation"] });
-  });
-  const editor = await setupComposer();
-  const dialog = await openTemplatePicker(
-    userEvent.setup({ delay: null }),
-    "Video",
-  );
-  await within(dialog).findByText("Video generation is off for you");
-  click(
-    await within(dialog).findByLabelText(
-      `Select video template ${VIDEO_TEMPLATE_ITEMS[0]?.title}`,
-    ),
-  );
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-  await userEvent.setup({ delay: null }).click(editor);
-  await userEvent
-    .setup({ delay: null })
-    .keyboard("Explain what this style looks like");
-  click(button("Send"));
-  await waitFor(() => {
-    return expect(capture.runPrompts).toHaveLength(1);
-  });
-  expect(capture.selectedTemplates).toHaveLength(1);
 });

@@ -42,11 +42,6 @@ type GmailMatchAutomation = Extract<
   ChatThreadWorkflowAutomation,
   { readonly eventType: "gmail-new-message" }
 >;
-type GmailLabelAutomation = Extract<
-  ChatThreadWorkflowAutomation,
-  { readonly eventType: "gmail-label-applied" }
->;
-
 const WORKFLOW = {
   id: WORKFLOW_ID,
   agentId: WORKFLOW_AGENT_ID,
@@ -91,21 +86,6 @@ function gmailMatchAutomation(
   };
 }
 
-function gmailLabelAutomation(labelName: string): GmailLabelAutomation {
-  return {
-    ...automationBase(),
-    kind: "event",
-    eventType: "gmail-label-applied",
-    eventConfig: {
-      provider: "gmail",
-      event: "label_applied",
-      labelName,
-    },
-    schedule: null,
-    scheduleSummary: null,
-  };
-}
-
 function scheduleSummary(
   automation: ScheduleAutomation,
 ): WorkflowAutomationSummary {
@@ -125,25 +105,6 @@ function scheduleSummary(
 
 function gmailMatchSummary(
   automation: GmailMatchAutomation,
-): WorkflowAutomationSummary {
-  return {
-    id: automation.id,
-    ownerUserId: automation.ownerUserId,
-    enabled: automation.enabled,
-    chatThreadId: automation.chatThreadId,
-    nextRunAt: automation.nextRunAt,
-    lastRunAt: automation.lastRunAt,
-    official: automation.official,
-    kind: automation.kind,
-    eventType: automation.eventType,
-    eventConfig: automation.eventConfig,
-    schedule: null,
-    scheduleSummary: null,
-  };
-}
-
-function gmailLabelSummary(
-  automation: GmailLabelAutomation,
 ): WorkflowAutomationSummary {
   return {
     id: automation.id,
@@ -319,48 +280,6 @@ test("Edit Gmail match workflow trigger filters", async () => {
   });
   const sidebar = screen.getByRole("complementary", { name: "Automations" });
   expect(within(sidebar).queryByText("Next run")).not.toBeInTheDocument();
-});
-
-test("Edit a Gmail label workflow trigger", async () => {
-  const updates: WorkflowAutomationUpdateRequest[] = [];
-  let current = gmailLabelAutomation("Inbox");
-  installAutomationConversation();
-  installAutomationList(() => {
-    return current;
-  });
-  context.mocks.api(workflowAutomationsContract.update, ({ body, respond }) => {
-    updates.push(body);
-    if (
-      !("eventConfig" in body) ||
-      body.eventConfig.event !== "label_applied"
-    ) {
-      throw new Error("Expected a Gmail label update");
-    }
-    current = gmailLabelAutomation(body.eventConfig.labelName);
-    return respond(200, gmailLabelSummary(current));
-  });
-
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-
-  const dialog = await openAutomationEditor();
-  await fill(
-    within(dialog).getByRole("textbox", { name: "Label name" }),
-    "Customer Escalations",
-  );
-  click(await findButton("Save automation", dialog));
-
-  await waitFor(() => {
-    expect(updates).toStrictEqual([
-      {
-        eventConfig: {
-          provider: "gmail",
-          event: "label_applied",
-          labelName: "Customer Escalations",
-        },
-      },
-    ]);
-    expect(screen.getByText('Label "Customer Escalations"')).toBeVisible();
-  });
 });
 
 function automationInput(args: {

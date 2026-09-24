@@ -57,7 +57,7 @@ export const directedAuthorizeAgentName$ = computed(async (get) => {
 export const agentEnabledConnectorSlugs$ = computed(async (get) => {
   const agentId = get(directedAuthorizeAgentId$);
   if (!agentId) {
-    return { agentId: null, enabledConnectorSlugs: [] };
+    return { agentId: null, enabledConnectorSlugs: [], agentMissing: false };
   }
   const authorizations = await get(
     agentConnectorAuthorizations({ agentId, missing: "null" }),
@@ -65,6 +65,7 @@ export const agentEnabledConnectorSlugs$ = computed(async (get) => {
   return {
     agentId,
     enabledConnectorSlugs: [...(authorizations?.enabledConnectorSlugs ?? [])],
+    agentMissing: authorizations === null,
   };
 });
 

@@ -15,7 +15,6 @@ import {
   agentsByIdContract,
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
-import { avatarComposerUrl } from "@okouai/core/agent-avatar";
 import {
   click,
   setupPage,
@@ -23,19 +22,6 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import type { ChatThreadEventQueryResult } from "../../../shared-database/data-key.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-
-// The composer editor is mounted on first paint and mounted again once page
-// bootstrap settles, so an element captured too early is detached before a test
-// can drive it. Keyboard events on a detached editor are silently dropped.
-export function mountedComposer(): HTMLElement {
-  const composer = document.querySelector(
-    '[data-slot="chat-composer-card"] [contenteditable="true"]',
-  );
-  if (!(composer instanceof HTMLElement)) {
-    throw new Error("Composer editor is not mounted");
-  }
-  return composer;
-}
 
 export const context = testContext();
 
@@ -47,14 +33,6 @@ export const INCIDENT_THREAD_ID = "b0000000-0000-4000-a000-000000000002";
 export const AUTOMATION_THREAD_ID = "b0000000-0000-4000-a000-000000000003";
 export const ARCHIVED_THREAD_ID = "b0000000-0000-4000-a000-000000000004";
 export const RESEARCH_THREAD_ID = "b0000000-0000-4000-a000-000000000005";
-export const LAYERED_AVATAR_URL = avatarComposerUrl({
-  face: "round",
-  hair: "curly-cap",
-  expression: "calm",
-  skin: "light",
-  hairColor: "blue",
-  sweater: "lime",
-});
 
 export interface SidebarThread {
   readonly id: string;
@@ -343,19 +321,6 @@ export function buttonByText(
   });
   if (!button) {
     throw new Error(`${text} button not found`);
-  }
-  return button;
-}
-
-export function buttonByLabel(
-  label: string,
-  container: ParentNode = document.body,
-): HTMLElement {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
-    return candidate.getAttribute("aria-label") === label;
-  });
-  if (!button) {
-    throw new Error(`${label} button not found`);
   }
   return button;
 }
@@ -672,15 +637,6 @@ export function openThreadMenu(title: string): void {
 
 export function openChatListMenu(): void {
   click(within(sidebar()).getByLabelText("Open chat list menu"));
-}
-
-export function chatListNewChatButton(): HTMLElement {
-  const menuButton = within(sidebar()).getByLabelText("Open chat list menu");
-  const actions = menuButton.parentElement;
-  if (!actions) {
-    throw new Error("Chat list actions not found");
-  }
-  return within(actions).getByLabelText("New chat");
 }
 
 export function mockSidebarViewport(

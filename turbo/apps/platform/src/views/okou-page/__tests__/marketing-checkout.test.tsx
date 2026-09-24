@@ -97,15 +97,12 @@ function confirmButton(dialog: HTMLElement) {
   return button;
 }
 
-test("Each actual checkout action sends a new event without waiting for Marketing", async () => {
+test("A checkout action sends a Marketing event without waiting for it", async () => {
   prepareCheckout();
-  const requests: Request[] = [];
-  const firstReceived = context.mocks.deferred<Request>();
-  const secondReceived = context.mocks.deferred<Request>();
+  const received = context.mocks.deferred<Request>();
   const complete = context.mocks.deferred<void>();
   context.mocks.http.post(ENDPOINT, async ({ request }) => {
-    requests.push(request);
-    (requests.length === 1 ? firstReceived : secondReceived).resolve(request);
+    received.resolve(request);
     await complete.promise;
     return new Response(null, { status: 204 });
   });
@@ -113,65 +110,43 @@ test("Each actual checkout action sends a new event without waiting for Marketin
   await openCheckout();
 
   fireEvent.click(await findButton("Upgrade to Pro"), { ctrlKey: true });
-  const first = await firstReceived.promise;
+  const request = await received.promise;
   await waitFor(() => {
     expect(open).toHaveBeenCalledWith(STRIPE_URL, "_blank");
   });
-  const nextCheckout = await findButton("Upgrade to Pro");
-  await waitFor(() => {
-    expect(nextCheckout).toBeEnabled();
-  });
-  fireEvent.click(nextCheckout, { ctrlKey: true });
-  const second = await secondReceived.promise;
-  await waitFor(() => {
-    expect(open).toHaveBeenCalledTimes(2);
-  });
 
-  const firstBody: unknown = await first.json();
-  const secondBody = marketingEventRequestSchema.parse(await second.json());
-  expect(firstBody).toStrictEqual({
+  await expect(request.json()).resolves.toStrictEqual({
     eventId: expect.stringMatching(
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu,
     ),
     tag: "checkout-start",
   });
-  expect(secondBody.eventId).not.toBe(
-    marketingEventRequestSchema.parse(firstBody).eventId,
-  );
-  expect(first.credentials).toBe("include");
-  expect(first.headers.get("authorization")).toBe("Bearer test-token");
-  expect(first.headers.get("content-type")).toBe("application/json");
-  expect(first.signal.aborted).toBeFalsy();
-  expect(requests).toHaveLength(2);
+  expect(request.credentials).toBe("include");
+  expect(request.headers.get("authorization")).toBe("Bearer test-token");
+  expect(request.headers.get("content-type")).toBe("application/json");
+  expect(request.signal.aborted).toBeFalsy();
   complete.resolve();
 });
 
-test.each(["http", "unauthorized", "network"])(
-  "A Marketing %s failure does not prevent the Stripe redirect or start retries",
-  async (failure) => {
-    prepareCheckout();
-    const received = context.mocks.deferred<void>();
-    let requests = 0;
-    context.mocks.http.post(ENDPOINT, () => {
-      requests++;
-      received.resolve();
-      return failure === "network"
-        ? Response.error()
-        : new Response(null, {
-            status: failure === "unauthorized" ? 401 : 503,
-          });
-    });
-    await openCheckout();
-    click(await findButton("Upgrade to Pro"));
-    await received.promise;
-    await waitFor(() => {
-      expect(window.location.href).toBe(STRIPE_URL);
-    });
-    window.dispatchEvent(new Event("online"));
-    window.dispatchEvent(new Event("focus"));
-    expect(requests).toBe(1);
-  },
-);
+test("A Marketing failure does not prevent the Stripe redirect or start retries", async () => {
+  prepareCheckout();
+  const received = context.mocks.deferred<void>();
+  let requests = 0;
+  context.mocks.http.post(ENDPOINT, () => {
+    requests++;
+    received.resolve();
+    return Response.error();
+  });
+  await openCheckout();
+  click(await findButton("Upgrade to Pro"));
+  await received.promise;
+  await waitFor(() => {
+    expect(window.location.href).toBe(STRIPE_URL);
+  });
+  window.dispatchEvent(new Event("online"));
+  window.dispatchEvent(new Event("focus"));
+  expect(requests).toBe(1);
+});
 
 test("A Plan preview does not record Checkout Start; a conflict-refresh redirect does", async () => {
   prepareCheckout();

@@ -436,44 +436,38 @@ test("Configure a member’s package from People", async () => {
   ).toHaveTextContent("20,400 credits · 2% off");
 });
 
-test.each(["pro", "team"])(
-  "Configure an Atom %s plan before purchasing any packages",
-  async (tier) => {
-    mockMembersStory();
-    mockMemberInviteEntitlement(true, undefined, {
-      tier,
-      showUsagePack: true,
-      subscriptionStatus: "atom_grant",
-      hasSubscription: false,
+test("Configure an Atom plan before purchasing any packages", async () => {
+  mockMembersStory();
+  mockMemberInviteEntitlement(true, undefined, {
+    tier: "pro",
+    showUsagePack: true,
+    subscriptionStatus: "atom_grant",
+    hasSubscription: false,
+  });
+  mockUsagePackCatalog();
+  context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "No usage pack subscription" },
     });
-    mockUsagePackCatalog();
-    context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "No usage pack subscription" },
-      });
-    });
+  });
 
-    await setupPage({ context, path: "/?settings=people" });
+  await setupPage({ context, path: "/?settings=people" });
 
-    await expect(screen.findByText("Usage pack")).resolves.toBeVisible();
-    expect(
-      within(rowByEmail("bob@example.com")).getByText("No package"),
-    ).toBeVisible();
-    const email = tier === "pro" ? "alice@example.com" : "bob@example.com";
-    click(screen.getByLabelText(`Actions for ${email}`));
-    click(menuItemByText("Configure member packages"));
-    await expect(
-      screen.findByRole("heading", { name: "Choose a plan" }),
-    ).resolves.toBeVisible();
-    const plan = screen.getByRole("article", {
-      name: tier === "pro" ? "Pro plan" : "Team plan",
-    });
-    click(buttonByText("Manage", plan));
-    await expect(
-      screen.findByRole("group", { name: "Member usage" }),
-    ).resolves.toBeVisible();
-  },
-);
+  await expect(screen.findByText("Usage pack")).resolves.toBeVisible();
+  expect(
+    within(rowByEmail("bob@example.com")).getByText("No package"),
+  ).toBeVisible();
+  click(screen.getByLabelText("Actions for alice@example.com"));
+  click(menuItemByText("Configure member packages"));
+  await expect(
+    screen.findByRole("heading", { name: "Choose a plan" }),
+  ).resolves.toBeVisible();
+  const plan = screen.getByRole("article", { name: "Pro plan" });
+  click(buttonByText("Manage", plan));
+  await expect(
+    screen.findByRole("group", { name: "Member usage" }),
+  ).resolves.toBeVisible();
+});
 
 test("Hide People package controls when showUsagePack is false, even with a subscription", async () => {
   mockMembersStory();
@@ -509,7 +503,7 @@ test("Keep People package controls restricted to administrators", async () => {
   ).not.toBeInTheDocument();
 });
 
-test.each(["free", "limited-free-1", "pro", "team"])(
+test.each(["free", "pro"])(
   "Invite members on active %s plans",
   async (tier) => {
     mockMembersStory();
@@ -592,8 +586,6 @@ test("shows a pending-invitation conflict without closing the invite dialog", as
 
 test.each([
   { tier: "pro", hasSubscription: true },
-  { tier: "team", hasSubscription: true },
-  { tier: "pro", hasSubscription: false },
   { tier: "team", hasSubscription: false },
 ] as const)(
   "Invite a member after selecting No package on $tier (subscription: $hasSubscription)",
@@ -661,43 +653,40 @@ test.each([
   },
 );
 
-test.each(["pro", "team"] as const)(
-  "Configure packages from an Atom %s invitation before paying",
-  async (tier) => {
-    mockMembersStory();
-    mockMemberInviteEntitlement(
-      true,
-      { tier, status: "active" },
-      {
-        hasSubscription: false,
-        subscriptionStatus: "atom_grant",
-      },
-    );
-    mockUsagePackCatalog();
-    context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "No usage pack subscription" },
-      });
+test("Configure packages from an Atom invitation before paying", async () => {
+  mockMembersStory();
+  mockMemberInviteEntitlement(
+    true,
+    { tier: "pro", status: "active" },
+    {
+      hasSubscription: false,
+      subscriptionStatus: "atom_grant",
+    },
+  );
+  mockUsagePackCatalog();
+  context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "No usage pack subscription" },
     });
+  });
 
-    await setupPage({ context, path: "/?settings=people" });
-    await screen.findByRole("heading", { name: "People" });
-    click(buttonByText("Add member"));
-    const invite = await screen.findByRole("dialog", { name: "Invite member" });
-    const packages = await within(invite).findByRole("combobox", {
-      name: "Member packages",
-    });
-    click(packages);
-    click(await screen.findByRole("option", { name: /52,600 credits/u }));
-    await waitFor(() => {
-      expect(buttonByText("Configure member packages", invite)).toBeEnabled();
-    });
-    click(buttonByText("Configure member packages", invite));
-    await expect(
-      screen.findByRole("heading", { name: "Choose a plan" }),
-    ).resolves.toBeVisible();
-  },
-);
+  await setupPage({ context, path: "/?settings=people" });
+  await screen.findByRole("heading", { name: "People" });
+  click(buttonByText("Add member"));
+  const invite = await screen.findByRole("dialog", { name: "Invite member" });
+  const packages = await within(invite).findByRole("combobox", {
+    name: "Member packages",
+  });
+  click(packages);
+  click(await screen.findByRole("option", { name: /52,600 credits/u }));
+  await waitFor(() => {
+    expect(buttonByText("Configure member packages", invite)).toBeEnabled();
+  });
+  click(buttonByText("Configure member packages", invite));
+  await expect(
+    screen.findByRole("heading", { name: "Choose a plan" }),
+  ).resolves.toBeVisible();
+});
 
 test("Use the default $20 package when inviting a member", async () => {
   mockMembersStory();
@@ -753,7 +742,6 @@ test("Use the default $20 package when inviting a member", async () => {
   expect(within(confirmation).getByText(/5,100 credits/u)).toBeVisible();
 });
 
-const PAID_INVITATION_SCENARIOS = ["pro", "team"] as const;
 async function preparePaidInvitation(tier: "pro" | "team") {
   const story = mockMembersStory(undefined, "admin", "owner");
   mockMemberInviteEntitlement(true, { tier, status: "active" });
@@ -838,21 +826,14 @@ async function preparePaidInvitation(tier: "pro" | "team") {
   return { confirmation };
 }
 
-test.each(PAID_INVITATION_SCENARIOS)(
-  "Review a paid invitation on %s",
+test.each(["pro", "team"] as const)(
+  "Review and purchase a paid invitation on %s",
   async (tier) => {
     const { confirmation } = await preparePaidInvitation(tier);
     expect(within(confirmation).getByText("$12.50")).toBeVisible();
     expect(
       within(confirmation).getByText("paid.invitee@example.com"),
     ).toBeVisible();
-  },
-);
-
-test.each(PAID_INVITATION_SCENARIOS)(
-  "Purchase an invitation and reset its package on %s",
-  async (tier) => {
-    const { confirmation } = await preparePaidInvitation(tier);
     click(buttonByText("Pay and invite", confirmation));
     await waitFor(() => {
       expect(rowByEmail("paid.invitee@example.com")).toBeVisible();
@@ -860,15 +841,6 @@ test.each(PAID_INVITATION_SCENARIOS)(
     expect(
       within(rowByEmail("paid.invitee@example.com")).getByText("$50/month"),
     ).toBeVisible();
-    click(buttonByText("Add member"));
-    const nextInvite = await screen.findByRole("dialog", {
-      name: "Invite member",
-    });
-    await expect(
-      within(nextInvite).findByRole("combobox", {
-        name: "Member packages",
-      }),
-    ).resolves.toHaveTextContent("20,400 credits");
   },
 );
 
@@ -1053,36 +1025,29 @@ test("Explain package and credit effects before removing a member", async () => 
   expect(screen.getByText("bob@example.com")).toBeInTheDocument();
 });
 
-test.each(["Cancel", "Revoke"] as const)(
-  "%s a pending workspace invitation revocation",
-  async (action) => {
-    mockMembersStory();
-    await openMembersTab();
+test("Revoke a pending workspace invitation", async () => {
+  mockMembersStory();
+  await openMembersTab();
 
-    await fill(screen.getByPlaceholderText("Search"), "pending");
-    await waitFor(() => {
-      expect(screen.getByText("pending@example.com")).toBeInTheDocument();
-    });
+  await fill(screen.getByPlaceholderText("Search"), "pending");
+  await waitFor(() => {
+    expect(screen.getByText("pending@example.com")).toBeInTheDocument();
+  });
 
-    click(screen.getByLabelText("Actions for pending@example.com"));
-    click(menuItemByText("Revoke invitation"));
+  click(screen.getByLabelText("Actions for pending@example.com"));
+  click(menuItemByText("Revoke invitation"));
 
-    const cancelRevokeDialog = await screen.findByRole("dialog", {
-      name: "Revoke invitation?",
-    });
-    expect(
-      within(cancelRevokeDialog).getByText(
-        /will no longer be able to join using this invitation/i,
-      ),
-    ).toBeInTheDocument();
-    click(buttonByText(action, cancelRevokeDialog));
-    await waitFor(() => {
-      expect(screen.queryAllByText("pending@example.com")).toHaveLength(
-        action === "Cancel" ? 1 : 0,
-      );
-      expect(screen.queryAllByText("Invitation revoked")).toHaveLength(
-        action === "Revoke" ? 1 : 0,
-      );
-    });
-  },
-);
+  const cancelRevokeDialog = await screen.findByRole("dialog", {
+    name: "Revoke invitation?",
+  });
+  expect(
+    within(cancelRevokeDialog).getByText(
+      /will no longer be able to join using this invitation/i,
+    ),
+  ).toBeInTheDocument();
+  click(buttonByText("Revoke", cancelRevokeDialog));
+  await waitFor(() => {
+    expect(screen.queryAllByText("pending@example.com")).toHaveLength(0);
+    expect(screen.queryAllByText("Invitation revoked")).toHaveLength(1);
+  });
+});

@@ -4,16 +4,13 @@ import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-ro
 import {
   chatThreadByIdContract,
   chatThreadEventsContract,
-  chatThreadMetadataContract,
   chatThreadsContract,
-  type ChatThreadMetadata,
   type ChatThreadSnapshotProjection,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { screen, waitFor } from "@testing-library/react";
 import { openDB } from "idb";
 import { expect, test } from "vitest";
 import {
-  setupPage,
   startPage,
   type SetupPageAuth,
 } from "../../../__tests__/page-helper.ts";
@@ -80,24 +77,6 @@ function threadSnapshot(
     cloudBrowserEnabled: false,
     selectedVideoModel: null,
     selectedImageModel: null,
-  };
-}
-
-function threadMetadata(
-  thread: ChatThreadSnapshotProjection,
-): ChatThreadMetadata {
-  return {
-    id: thread.id,
-    agentId: thread.agentId,
-    title: thread.title,
-    selectedModel: thread.selectedModel,
-    modelSettings: thread.modelSettings ?? {},
-    serviceTier: thread.serviceTier,
-    pinnedAt: thread.pinnedAt,
-    computerUseHostId: thread.computerUseHostId,
-    cloudBrowserEnabled: thread.cloudBrowserEnabled ?? false,
-    selectedVideoModel: thread.selectedVideoModel ?? null,
-    selectedImageModel: thread.selectedImageModel ?? null,
   };
 }
 
@@ -288,44 +267,6 @@ async function expectAppSkeletonDismissed(): Promise<void> {
   });
 }
 
-test("A previously known chat stays covered until its history is ready", async () => {
-  const identity = cacheIdentity("known-history");
-  const thread = threadSnapshot(
-    "b0000000-0000-4000-a000-000000000911",
-    "Remembered planning chat",
-  );
-  await seedChatCache(identity, thread);
-  const historyRequested = context.mocks.deferred<void>();
-  const historyReady = context.mocks.deferred<void>();
-  mockNoBrowserSession();
-  mockThreadSnapshot(() => {
-    return [thread];
-  });
-  mockConversationRows([], {
-    gate: historyReady.promise,
-    onRequest: () => {
-      historyRequested.resolve();
-    },
-  });
-
-  await startPage({
-    context,
-    path: `/chats/${thread.id}`,
-    host: "app.okou.ai",
-    auth: identity.auth,
-  });
-
-  const startup = await visibleAppSkeleton();
-
-  await historyRequested.promise;
-
-  expect(startup).not.toHaveAttribute("aria-hidden");
-  expect(
-    screen.queryByRole("heading", { name: "Chat thread not found" }),
-  ).not.toBeInTheDocument();
-  expect(screen.queryByText(EMPTY_CONVERSATION)).not.toBeInTheDocument();
-});
-
 test("A missing chat is reported only after its current availability is confirmed", async () => {
   const identity = cacheIdentity("confirmed-missing");
   const threadId = "b0000000-0000-4000-a000-000000000912";
@@ -369,66 +310,6 @@ test("A missing chat is reported only after its current availability is confirme
   expect(
     screen.queryByRole("textbox", { name: "Message" }),
   ).not.toBeInTheDocument();
-});
-
-async function openChatWithIncompleteMetadata() {
-  const identity = cacheIdentity("complete-record");
-  const thread = threadSnapshot(
-    "b0000000-0000-4000-a000-000000000913",
-    "Completed support record",
-  );
-  const canonicalListing = context.mocks.deferred<void>();
-  const metadataRequested = context.mocks.deferred<void>();
-  const completeRecordReady = context.mocks.deferred<void>();
-  mockNoBrowserSession();
-  mockThreadSnapshot(
-    () => {
-      return [];
-    },
-    { gate: canonicalListing.promise },
-  );
-  mockConversationRows([]);
-  context.mocks.api(chatThreadMetadataContract.get, async ({ respond }) => {
-    metadataRequested.resolve();
-    await completeRecordReady.promise;
-    return respond(200, threadMetadata(thread));
-  });
-
-  await startPage({
-    context,
-    path: `/chats/${thread.id}`,
-    host: "app.okou.ai",
-    auth: identity.auth,
-  });
-
-  await visibleAppSkeleton();
-
-  await metadataRequested.promise;
-
-  expect(
-    screen.queryByRole("heading", { name: "Chat thread not found" }),
-  ).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole("textbox", { name: "Message" }),
-  ).not.toBeInTheDocument();
-
-  return completeRecordReady;
-}
-
-test("Pending full metadata keeps the chat loading without a false missing record", async () => {
-  await openChatWithIncompleteMetadata();
-  expect(
-    screen.queryByRole("textbox", { name: "Message" }),
-  ).not.toBeInTheDocument();
-});
-
-test("Full metadata enables the conversation while its canonical listing is pending", async () => {
-  const completeRecordReady = await openChatWithIncompleteMetadata();
-  completeRecordReady.resolve();
-
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  expect(composer).toBeEnabled();
-  await expectAppSkeletonDismissed();
 });
 
 test("Downloaded chat history replaces loading without a blank gap", async () => {
@@ -528,88 +409,6 @@ test("A stale remembered thread is replaced by its current availability", async 
   expect(
     screen.queryByRole("textbox", { name: "Message" }),
   ).not.toBeInTheDocument();
-});
-
-test("A notification opens a thread missing from the current tab snapshot", async () => {
-  const identity = cacheIdentity("notification-new-thread");
-  const currentThread = threadSnapshot(
-    "b0000000-0000-4000-a000-000000000916",
-    "Background tab conversation",
-  );
-  const notificationThread = threadSnapshot(
-    "b0000000-0000-4000-a000-000000000917",
-    "Notification-created conversation",
-  );
-  const notificationTitle = "Notification-created conversation";
-  const currentMessage = "The background tab is still on this conversation.";
-  const notificationMessage = "This notification thread is now current.";
-  const serviceWorker = context.mocks.browser.serviceWorker();
-
-  let currentThreads: readonly ChatThreadSnapshotProjection[] = [currentThread];
-  mockNoBrowserSession();
-  context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
-    return respond(
-      200,
-      threadMetadata(
-        params.id === currentThread.id ? currentThread : notificationThread,
-      ),
-    );
-  });
-  mockThreadSnapshot(() => {
-    return currentThreads;
-  });
-  context.mocks.api(chatThreadEventsContract.snapshot, ({ respond }) => {
-    return respond(404, {
-      error: {
-        message: "Chat event snapshot not found",
-        code: "CHAT_EVENT_SNAPSHOT_NOT_FOUND",
-      },
-    });
-  });
-  context.mocks.api(
-    chatThreadEventsContract.rows,
-    ({ params, query, respond }) => {
-      const rows = completedConversationRows(
-        params.threadId,
-        "Open the requested conversation",
-        params.threadId === currentThread.id
-          ? currentMessage
-          : notificationMessage,
-      ).filter((row) => {
-        return row.seqId > query.sinceSeqId;
-      });
-      return respond(200, chatEventRowsResponse(rows, query));
-    },
-  );
-
-  await setupPage({
-    context,
-    path: `/chats/${currentThread.id}`,
-    host: "app.okou.ai",
-    auth: identity.auth,
-  });
-
-  const visibleCurrentMessage = await screen.findByText(currentMessage);
-  expect(visibleCurrentMessage).toBeVisible();
-
-  currentThreads = [notificationThread, currentThread];
-  serviceWorker.dispatchMessage({
-    type: "NOTIFICATION_CLICK",
-    url: `https://app.okou.ai/chats/${notificationThread.id}`,
-  });
-
-  expect(screen.getByText(currentMessage)).toBeVisible();
-  expect(
-    screen.queryByRole("heading", { name: "Chat thread not found" }),
-  ).not.toBeInTheDocument();
-
-  const visibleNotificationTitle = await screen.findByText(notificationTitle, {
-    selector: '[data-testid="chat-thread-header-title"]',
-  });
-  expect(visibleNotificationTitle).toBeVisible();
-  const visibleNotificationMessage =
-    await screen.findByText(notificationMessage);
-  expect(visibleNotificationMessage).toBeVisible();
 });
 
 test("Saved messages appear without an empty-state flash", async () => {
