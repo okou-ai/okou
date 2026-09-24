@@ -65,7 +65,13 @@ pub(super) fn resolve(
     }
     // Okou names Claude's extended level `extra`; Claude Code 2.1.266 calls
     // that flag value `xhigh`. Keep ultracode intact as a separate CLI mode.
-    Ok(Some(if effort == "extra" { "xhigh" } else { effort }))
+    // Luna tops out at `xhigh`; an older API may still send its former `max`.
+    let is_luna = matches!(model, "gpt-6-luna" | "gpt-5.6-luna");
+    Ok(Some(match effort.as_str() {
+        "extra" => "xhigh",
+        "max" if is_luna => "xhigh",
+        _ => effort,
+    }))
 }
 
 #[cfg(test)]
@@ -126,5 +132,21 @@ mod tests {
             ]);
             assert!(resolve(framework, &env).is_err(), "{model}: {effort}");
         }
+    }
+
+    #[test]
+    fn translates_legacy_luna_max_to_xhigh() {
+        for model in ["gpt-6-luna", "openai/gpt-6-luna", "gpt-5.6-luna"] {
+            let env = HashMap::from([
+                ("OPENAI_MODEL".to_string(), model.to_string()),
+                ("OKOU_REASONING_EFFORT".to_string(), "max".to_string()),
+            ]);
+            assert_eq!(resolve(Framework::Codex, &env).unwrap(), Some("xhigh"));
+        }
+        let env = HashMap::from([
+            ("OPENAI_MODEL".to_string(), "gpt-6-sol".to_string()),
+            ("OKOU_REASONING_EFFORT".to_string(), "max".to_string()),
+        ]);
+        assert_eq!(resolve(Framework::Codex, &env).unwrap(), Some("max"));
     }
 }

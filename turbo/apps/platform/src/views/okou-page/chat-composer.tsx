@@ -273,6 +273,7 @@ import {
   type ModelProviderSelection,
 } from "./components/model-provider-picker.tsx";
 import { ChatEffortTrigger } from "./components/chat-effort-trigger.tsx";
+import { formatChatEffort } from "./components/chat-effort-controls.tsx";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { ConnectorCard } from "./components/settings/connector-card.tsx";
 import { CustomConnectorIcon } from "./components/settings/custom-connector-icon.tsx";
@@ -9735,9 +9736,7 @@ function ComposerTemporaryModelNotice({
   const scopedModelLabel = [
     modelName,
     serviceTierChanged ? runSpeedLabel : undefined,
-    effortChanged && effort
-      ? effort.charAt(0).toUpperCase() + effort.slice(1)
-      : undefined,
+    effortChanged && effort ? formatChatEffort(effort) : undefined,
   ]
     .filter(Boolean)
     .join(" · ");

@@ -36,8 +36,36 @@ const modelSettingSchema = z
   })
   .strict();
 
+const LUNA_MODELS = ["gpt-6-luna", "gpt-5.6-luna"] as const;
+
+type SavedModelSettings = Partial<
+  Record<
+    z.infer<typeof supportedRunModelSchema>,
+    z.infer<typeof modelSettingSchema>
+  >
+>;
+
+/**
+ * Luna once advertised `max`, but its highest level is `xhigh`. Saved settings
+ * from that period read as `xhigh` so they keep parsing and keep asking for
+ * the deepest reasoning Luna actually offers.
+ */
+function normalizeLegacyLunaEffort(
+  settings: SavedModelSettings,
+): SavedModelSettings {
+  let normalized = settings;
+  for (const model of LUNA_MODELS) {
+    const setting = settings[model];
+    if (setting?.effort === "max") {
+      normalized = { ...normalized, [model]: { ...setting, effort: "xhigh" } };
+    }
+  }
+  return normalized;
+}
+
 export const modelSettingsSchema = z
   .partialRecord(supportedRunModelSchema, modelSettingSchema)
+  .overwrite(normalizeLegacyLunaEffort)
   .superRefine((settings, context) => {
     for (const model of supportedRunModelSchema.options) {
       const effort = settings[model]?.effort;
@@ -77,7 +105,6 @@ export function getModelReasoningEfforts(
       return CODEX_REASONING_EFFORTS;
     case "gpt-6-luna":
     case "gpt-5.6-luna":
-      return ["low", "medium", "high", "xhigh", "max"];
     case "gpt-5.5":
       return ["low", "medium", "high", "xhigh"];
     case "claude-fable-5-1":
@@ -116,12 +143,12 @@ export function defaultModelReasoningEffort(
   switch (normalizeBuiltInModelId(bareModel ?? "")) {
     case "gpt-6-astra":
     case "gpt-6-sol":
-    case "gpt-6-luna":
     case "gpt-5.6-sol":
     case "gpt-5.6-terra":
-    case "gpt-5.6-luna":
     case "claude-fable-5-1":
       return "max";
+    case "gpt-6-luna":
+    case "gpt-5.6-luna":
     case "gpt-5.5":
       return "xhigh";
     case "claude-opus-5-5":

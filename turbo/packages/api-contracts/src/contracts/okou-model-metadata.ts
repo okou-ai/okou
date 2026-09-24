@@ -52,7 +52,7 @@ type OkouModelMetadata = {
   readonly displayName: string;
   readonly backingModel: OkouBackingModel;
   readonly presetModel: string;
-  readonly reasoningEffort: "low" | "high" | "max";
+  readonly reasoningEffort: "low" | "high" | "xhigh";
   readonly inputModalities: typeof OKOU_INPUT_MODALITIES;
   readonly pi: PiRuntimeLimits;
   readonly codex: CodexRuntimeLimits & { readonly priority: number };
@@ -63,7 +63,7 @@ type OkouModelDefinition = {
   readonly displayName: string;
   readonly backingModel: OkouBackingModel;
   readonly presetModel: string;
-  readonly reasoningEffort: "low" | "high" | "max";
+  readonly reasoningEffort: "low" | "high" | "xhigh";
   readonly codexPriority: number;
 };
 
@@ -102,7 +102,7 @@ export const OKOU_MODEL_METADATA = {
     displayName: "Okou 1.0",
     backingModel: "gpt-6-luna",
     presetModel: "@preset/okou-1-0",
-    reasoningEffort: "max",
+    reasoningEffort: "xhigh",
     codexPriority: 3,
   }),
   "okou-1.0-pro": defineOkouModel({
@@ -124,7 +124,7 @@ export const OKOU_MODEL_METADATA = {
 const CODEX_REASONING_DESCRIPTIONS = {
   low: "Fast responses with lighter reasoning",
   high: "Greater reasoning depth for complex problems",
-  max: "Maximum reasoning depth for the hardest problems",
+  xhigh: "Maximum reasoning depth for the hardest problems",
 } as const;
 
 const CODEX_MODEL_DEFAULTS = {

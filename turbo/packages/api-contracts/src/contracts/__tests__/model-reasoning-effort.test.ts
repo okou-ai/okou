@@ -53,9 +53,8 @@ describe("chat reasoning effort capabilities", () => {
       "medium",
       "high",
       "xhigh",
-      "max",
     ]);
-    expect(defaultModelReasoningEffort("gpt-6-luna")).toBe("max");
+    expect(defaultModelReasoningEffort("gpt-6-luna")).toBe("xhigh");
     expect(defaultModelReasoningEffort("gpt-5.6-sol")).toBe("max");
     expect(defaultModelReasoningEffort("gpt-6-sol")).toBe("max");
     expect(defaultModelReasoningEffort("claude-opus-5-5")).toBe("medium");
@@ -96,6 +95,25 @@ describe("chat reasoning effort capabilities", () => {
       modelSettingsSchema.safeParse({
         "gpt-5.6-sol": { effort: null },
       }).success,
+    ).toBe(false);
+  });
+
+  it("reads Luna's former max as its highest level, xhigh", () => {
+    expect(
+      modelSettingsSchema.parse({
+        "gpt-6-luna": { effort: "max" },
+        "gpt-5.6-luna": { effort: "max" },
+        "gpt-6-sol": { effort: "max" },
+      }),
+    ).toStrictEqual({
+      "gpt-6-luna": { effort: "xhigh" },
+      "gpt-5.6-luna": { effort: "xhigh" },
+      "gpt-6-sol": { effort: "max" },
+    });
+    expect(isModelReasoningEffortSupported("gpt-6-luna", "max")).toBe(false);
+    expect(
+      modelSettingsSchema.safeParse({ "gpt-6-luna": { effort: "ultra" } })
+        .success,
     ).toBe(false);
   });
 

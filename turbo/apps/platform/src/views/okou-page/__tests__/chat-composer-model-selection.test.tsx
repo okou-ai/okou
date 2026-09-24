@@ -550,7 +550,7 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
   await waitFor(() => {
     expect(slider).toHaveAttribute("aria-valuetext", "Low");
   });
-  for (const effort of ["Medium", "High", "Xhigh", "Max", "Ultra"]) {
+  for (const effort of ["Medium", "High", "xHigh", "Max", "Ultra"]) {
     await user.keyboard("{ArrowRight}");
     await waitFor(() => {
       expect(slider).toHaveAttribute("aria-valuetext", effort);
@@ -604,7 +604,7 @@ test("Select the default effort on an existing thread without changing Fast", as
   slider.focus();
   await user.keyboard("{ArrowRight}");
   await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "Xhigh");
+    expect(slider).toHaveAttribute("aria-valuetext", "xHigh");
   });
   await user.keyboard("{ArrowRight}");
   await waitFor(() => {
@@ -695,11 +695,11 @@ test("Keep independent effort selections when changing models", async () => {
   );
   await openEffortPanel();
   slider = await screen.findByRole("slider", { name: "Effort" });
-  expect(slider).toHaveAttribute("aria-valuetext", "Max");
+  expect(slider).toHaveAttribute("aria-valuetext", "xHigh");
   slider.focus();
   await user.keyboard("{End}");
   await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "Max");
+    expect(slider).toHaveAttribute("aria-valuetext", "xHigh");
   });
   await user.keyboard("{Escape}");
   click(await findButton("GPT 5.6 Luna"));
@@ -875,7 +875,7 @@ test.each([
     model: "deepseek-v4-flash",
     providerType: "openrouter-codex",
     first: "High",
-    last: "Xhigh",
+    last: "xHigh",
   },
 ] as const)(
   "Offer $model efforts for $providerType with Pi enabled",

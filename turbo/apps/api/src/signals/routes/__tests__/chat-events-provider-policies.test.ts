@@ -1862,7 +1862,7 @@ describe("CHAT-02: model-first provider policies", () => {
       displayName: "Okou 1.0",
       sourceModel: "GPT-6 Luna",
       sourceModelId: "openai/gpt-6-luna",
-      reasoningEffort: "max",
+      reasoningEffort: "xhigh",
     },
     {
       model: "okou-1.0-pro",

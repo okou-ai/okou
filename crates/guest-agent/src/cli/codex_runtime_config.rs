@@ -21,10 +21,10 @@ pub(super) fn default_reasoning_effort_for_model(model: &str) -> Option<&'static
     match bare {
         "gpt-6-astra" => Some("max"),
         "gpt-6-sol" => Some("max"),
-        "gpt-6-luna" => Some("max"),
+        "gpt-6-luna" => Some("xhigh"),
         "gpt-5.6-sol" => Some("max"),
         "gpt-5.6-terra" => Some("max"),
-        "gpt-5.6-luna" => Some("max"),
+        "gpt-5.6-luna" => Some("xhigh"),
         "gpt-5.5" => Some("xhigh"),
         _ => None,
     }
@@ -208,16 +208,16 @@ mod tests {
             ("openai/gpt-6-astra", "max"),
             ("gpt-6-sol", "max"),
             ("openai/gpt-6-sol", "max"),
-            ("gpt-6-luna", "max"),
-            ("openai/gpt-6-luna", "max"),
+            ("gpt-6-luna", "xhigh"),
+            ("openai/gpt-6-luna", "xhigh"),
             ("gpt-5.5", "xhigh"),
             ("openai/gpt-5.5", "xhigh"),
             ("gpt-5.6-sol", "max"),
             ("openai/gpt-5.6-sol", "max"),
             ("gpt-5.6-terra", "max"),
             ("openai/gpt-5.6-terra", "max"),
-            ("gpt-5.6-luna", "max"),
-            ("openai/gpt-5.6-luna", "max"),
+            ("gpt-5.6-luna", "xhigh"),
+            ("openai/gpt-5.6-luna", "xhigh"),
         ] {
             assert_eq!(default_reasoning_effort_for_model(model), Some(effort));
         }

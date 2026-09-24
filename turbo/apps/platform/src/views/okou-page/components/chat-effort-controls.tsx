@@ -40,9 +40,13 @@ export function useChatEffort(
  * `ultra`, Claude runs `low`/`medium`/`high`/`extra`/`max`/`ultracode`.
  * Renaming them to a house scale would tell a user something their model does
  * not say. The only thing this changes is the case: a level is a label in the
- * interface, not the raw enum it happens to be on the wire.
+ * interface, not the raw enum it happens to be on the wire. The one
+ * exception is `xhigh`, whose product spelling is `xHigh`.
  */
 export function formatChatEffort(effort: string) {
+  if (effort === "xhigh") {
+    return "xHigh";
+  }
   return effort.charAt(0).toUpperCase() + effort.slice(1);
 }
 
