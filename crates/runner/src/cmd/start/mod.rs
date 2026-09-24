@@ -8,10 +8,9 @@
 //! The sibling modules keep focused responsibilities out of this orchestration
 //! file:
 //! - `factory_lifecycle`: sandbox factory creation and shutdown.
-//! - `runner-supervisor`: idle-pool, heartbeat, ownership, and orphan-recovery policy.
+//! - `runner-supervisor`: idle-pool, heartbeat, ownership, completion settlement, and orphan-recovery policy.
 //! - `identity`: persistent runner id storage.
 //! - `job_discovery`: discovery branch handling and idle-reuse admission.
-//! - `job_lifecycle`: cleanup, budget, and completion ownership state.
 //! - `job_spawn`: claimed job task spawning, completion, and panic cleanup.
 //! - `job_terminal_log`: terminal outcome tracing and diagnostic projection.
 //! - `mitm_restart`: mitmproxy crash restart and backoff.
@@ -94,7 +93,6 @@ mod finalizing_claim;
 mod heartbeat;
 mod identity;
 mod job_discovery;
-mod job_lifecycle;
 mod job_spawn;
 mod job_terminal_log;
 mod mitm_restart;
