@@ -21,6 +21,7 @@ import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collectio
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
 import { eraseVncOwner } from "./vnc-owner-lifecycle.service";
+import { deleteDiscordOrgMemberData } from "./discord-owner-cleanup.service";
 
 import type { Db } from "../external/db";
 
@@ -34,6 +35,8 @@ export async function cleanupOrgMemberResources(
   signal: AbortSignal,
 ): Promise<void> {
   await revokeOrgMemberRunAuthority(db, args, signal);
+  signal.throwIfAborted();
+  await deleteDiscordOrgMemberData(db, args);
   signal.throwIfAborted();
   const currentTime = nowDate();
   // Automations execute as their owner. Only the schedule poller gates on

@@ -1045,7 +1045,7 @@ describe("account erasure fences Computer Use authorization request creation", (
   );
 
   it(
-    "retries the whole transaction when the thread user changes under the shared KEY SHARE",
+    "denies a thread user change before the shared KEY SHARE pin",
     { timeout: CASE_TIMEOUT_MS },
     async () => {
       const fixture = await createAuthorizationRunFixture();
@@ -1055,13 +1055,13 @@ describe("account erasure fences Computer Use authorization request creation", (
         {
           chatThreadId: fixture.threadId,
           runId: fixture.runId,
-          stopAt: "thread-share",
+          stopAt: "thread-key-share",
           work: async (barrier) => {
             const creating = requestAuthorizationCreation(fixture, [404]);
             await barrier.entered;
-            // The shared helper's KEY SHARE permits this non-key update. The
-            // creation-only SHARE re-read must detect it and restart before the
-            // run is locked or any request is inserted.
+            // The owner is part of the Discord route's referenced unique key.
+            // Move it after identity resolution but before KEY SHARE can pin it;
+            // the retained re-read must restart and deny the stale caller.
             await setChatThreadUserFixture({
               chatThreadId: fixture.threadId,
               userId: `user_${randomUUID()}`,

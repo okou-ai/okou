@@ -105,6 +105,10 @@ import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-cl
 import { deleteStoragesWithPiMemoryCandidates } from "./pi-memory-stage1-candidate.service";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 import { eraseVncOwnerData } from "./vnc-owner-lifecycle.service";
+import {
+  deleteDiscordOrgData,
+  deleteDiscordUserData,
+} from "./discord-owner-cleanup.service";
 
 const L = logger("WebhookClerkCleanup");
 const CLERK_ORG_MEMBERSHIP_PAGE_SIZE = 100;
@@ -796,6 +800,8 @@ async function deleteOrgData(
   signal: AbortSignal,
 ): Promise<void> {
   await cancelOrgRuns(db, orgId);
+  await deleteDiscordOrgData(db, orgId);
+  signal.throwIfAborted();
 
   const installations = await db
     .select({ slackWorkspaceId: slackOrgInstallations.slackWorkspaceId })
@@ -911,6 +917,8 @@ async function deleteUserData(
   signal: AbortSignal,
 ): Promise<void> {
   await cancelUserRuns(db, userId);
+  await deleteDiscordUserData(db, userId);
+  signal.throwIfAborted();
 
   await db.transaction(async (tx) => {
     await tx.execute(
