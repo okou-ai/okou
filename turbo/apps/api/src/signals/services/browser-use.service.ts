@@ -657,6 +657,19 @@ function boundedOptionalNumberConstraint(value: unknown): boolean {
   );
 }
 
+function boundedOptionalControlMetadata(
+  candidate: Readonly<Record<string, unknown>>,
+): boolean {
+  return (
+    boundedOptionalControlLength(candidate.minLength) &&
+    boundedOptionalControlLength(candidate.maxLength) &&
+    boundedOptionalControlPattern(candidate.pattern) &&
+    boundedOptionalNumberConstraint(candidate.min) &&
+    boundedOptionalNumberConstraint(candidate.max) &&
+    boundedOptionalNumberConstraint(candidate.step)
+  );
+}
+
 function safeControlInspection(
   value: unknown,
 ): BrowserUseControlInspection | null {
@@ -674,12 +687,7 @@ function safeControlInspection(
     typeof candidate.writable !== "boolean" ||
     typeof candidate.siteRequired !== "boolean" ||
     typeof candidate.multiple !== "boolean" ||
-    !boundedOptionalControlLength(candidate.minLength) ||
-    !boundedOptionalControlLength(candidate.maxLength) ||
-    !boundedOptionalControlPattern(candidate.pattern) ||
-    !boundedOptionalNumberConstraint(candidate.min) ||
-    !boundedOptionalNumberConstraint(candidate.max) ||
-    !boundedOptionalNumberConstraint(candidate.step)
+    !boundedOptionalControlMetadata(candidate)
   ) {
     return null;
   }

@@ -209,17 +209,38 @@ function nativePasswordRequest(callbackPrompt: string) {
   };
 }
 
+interface NativeNumberConstraints {
+  readonly min: string;
+  readonly max: string;
+  readonly step: string;
+}
+
+function validNumberValue(
+  value: unknown,
+  { min, max, step }: NativeNumberConstraints,
+): boolean {
+  if (value === null || value === "") {
+    return true;
+  }
+  if (typeof value !== "string") {
+    return false;
+  }
+  const numeric = Number(value);
+  return (
+    Number.isFinite(numeric) &&
+    numeric >= Number(min) &&
+    numeric <= Number(max) &&
+    (step === "any" || Number.isInteger((numeric - Number(min)) / Number(step)))
+  );
+}
+
 function mockNativeNumberTarget(args: {
-  readonly constraints: () => {
-    readonly min: string;
-    readonly max: string;
-    readonly step: string;
-  };
+  readonly constraints: () => NativeNumberConstraints;
   readonly verificationMatches: () => boolean;
 }): void {
   context.mocks.browserUseCdp.command.mockImplementation((command) => {
     switch (command.method) {
-      case "Target.getTargets":
+      case "Target.getTargets": {
         return {
           targetInfos: [
             {
@@ -229,11 +250,14 @@ function mockNativeNumberTarget(args: {
             },
           ],
         };
-      case "Target.attachToTarget":
+      }
+      case "Target.attachToTarget": {
         return { sessionId: "native-number-session" };
-      case "Browser.getWindowForTarget":
+      }
+      case "Browser.getWindowForTarget": {
         return { windowId: 7 };
-      case "Page.getFrameTree":
+      }
+      case "Page.getFrameTree": {
         return {
           frameTree: {
             frame: {
@@ -243,9 +267,11 @@ function mockNativeNumberTarget(args: {
             },
           },
         };
-      case "DOM.resolveNode":
+      }
+      case "DOM.resolveNode": {
         return { object: { objectId: "native-number-object" } };
-      case "Page.getLayoutMetrics":
+      }
+      case "Page.getLayoutMetrics": {
         return {
           cssVisualViewport: {
             pageX: 0,
@@ -254,8 +280,10 @@ function mockNativeNumberTarget(args: {
             clientHeight: 900,
           },
         };
-      case "Page.captureScreenshot":
+      }
+      case "Page.captureScreenshot": {
         return { data: Buffer.from("screenshot").toString("base64") };
+      }
       case "Runtime.callFunctionOn": {
         const declaration = String(command.params.functionDeclaration);
         if (declaration.includes("expectedValues")) {
@@ -269,20 +297,9 @@ function mockNativeNumberTarget(args: {
             typeof first === "object" && first !== null && "value" in first
               ? first.value
               : undefined;
-          const { min, max, step } = args.constraints();
-          const numeric = typeof value === "string" ? Number(value) : NaN;
-          const valid =
-            value === null ||
-            (typeof value === "string" &&
-              (value === "" ||
-                (Number.isFinite(numeric) &&
-                  numeric >= Number(min) &&
-                  numeric <= Number(max) &&
-                  (step === "any" ||
-                    Number.isInteger(
-                      (numeric - Number(min)) / Number(step),
-                    )))));
-          return { result: { value: valid } };
+          return {
+            result: { value: validNumberValue(value, args.constraints()) },
+          };
         }
         if (declaration.includes("nextValue")) {
           return { result: { value: true } };
@@ -304,8 +321,9 @@ function mockNativeNumberTarget(args: {
           },
         };
       }
-      default:
+      default: {
         return {};
+      }
     }
   });
 }
