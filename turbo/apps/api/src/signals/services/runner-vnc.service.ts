@@ -259,6 +259,63 @@ async function decryptRunnerAuthentication(
   return authentication.data;
 }
 
+function resolvedRunnerResponse(
+  row: CurrentVncAuthority,
+  transport: TransportSnapshot,
+  legacyDirect: boolean,
+  security: ReturnType<typeof storedRunnerSecurity>,
+  authentication: Awaited<ReturnType<typeof decryptRunnerAuthentication>>,
+): RunnerVncResolveResponse {
+  const resolved = {
+    host: row.host,
+    port: row.port,
+    generation: row.generation,
+    security,
+    authentication,
+  };
+  if (row.securityType === "apple_dh") {
+    if (
+      transport.type !== "ssh" ||
+      security.type !== "apple_dh" ||
+      authentication.method !== "apple_dh_username_password"
+    ) {
+      throw new Error("VNC Apple DH handoff has an invalid stored profile");
+    }
+    return {
+      outcome: "resolved_apple_dh",
+      ...resolved,
+      security,
+      authentication,
+      transport,
+    };
+  }
+  if (row.securityType === "apple_srp") {
+    if (
+      transport.type !== "ssh" ||
+      security.type !== "apple_srp" ||
+      authentication.method !== "apple_srp_username_password"
+    ) {
+      throw new Error("VNC Apple SRP handoff has an invalid stored profile");
+    }
+    return {
+      outcome: "resolved_apple_srp",
+      ...resolved,
+      security,
+      authentication,
+      transport,
+    };
+  }
+  if (legacyDirect) {
+    return { outcome: "resolved", ...resolved };
+  }
+  return {
+    outcome: "resolved_transport",
+    ...resolved,
+    serverName: row.x509ServerName ?? row.host,
+    transport,
+  };
+}
+
 export async function resolveRunnerVnc(
   db: Db,
   clerk: ClerkClient,
@@ -335,52 +392,11 @@ export async function resolveRunnerVnc(
   if (!admitted) {
     return { outcome: "unavailable" };
   }
-  const resolved = {
-    host: row.host,
-    port: row.port,
-    generation: row.generation,
+  return resolvedRunnerResponse(
+    row,
+    transport,
+    capability.transportType === undefined,
     security,
     authentication,
-  };
-  if (row.securityType === "apple_dh") {
-    if (
-      transport.type !== "ssh" ||
-      security.type !== "apple_dh" ||
-      authentication.method !== "apple_dh_username_password"
-    ) {
-      throw new Error("VNC Apple DH handoff has an invalid stored profile");
-    }
-    return {
-      outcome: "resolved_apple_dh",
-      ...resolved,
-      security,
-      authentication,
-      transport,
-    };
-  }
-  if (row.securityType === "apple_srp") {
-    if (
-      transport.type !== "ssh" ||
-      security.type !== "apple_srp" ||
-      authentication.method !== "apple_srp_username_password"
-    ) {
-      throw new Error("VNC Apple SRP handoff has an invalid stored profile");
-    }
-    return {
-      outcome: "resolved_apple_srp",
-      ...resolved,
-      security,
-      authentication,
-      transport,
-    };
-  }
-  if (capability.transportType === undefined) {
-    return { outcome: "resolved", ...resolved };
-  }
-  return {
-    outcome: "resolved_transport",
-    ...resolved,
-    serverName: row.x509ServerName ?? row.host,
-    transport,
-  };
+  );
 }
