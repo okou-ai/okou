@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import {
   runnerVncContract,
   type RunnerVncCheckRequest,
@@ -10,6 +11,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { createDeferredPromise } from "../../utils";
 import { runnerVncRoutes } from "../runner-vnc";
+import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -54,6 +56,112 @@ function check(
 }
 
 describe("private Runner VNC authority", () => {
+  it("uses current chat VNC and exact SSH dependency access during an active Run", async () => {
+    const f = await api.fixture({
+      grant: false,
+      runtime: { chat: true, access: false },
+    });
+    if (!f.threadId) {
+      throw new Error("Missing fixture chat thread");
+    }
+    const threadId = f.threadId;
+    await updateFeatureSwitchesForUser(context, f, {
+      [FeatureSwitchKey.VncAccess]: true,
+      [FeatureSwitchKey.ThreadRemoteAccess]: true,
+    });
+    api.authenticate(f);
+    const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
+      chatRemoteAccessContract,
+    );
+    const vncHost = { protocol: "vnc" as const, connectionId: f.connectionId };
+    await expect(api.resolve(f)).resolves.toStrictEqual({
+      outcome: "unavailable",
+    });
+    await accept(
+      remote.updateHostDefault({
+        headers: vncSessionHeaders,
+        params: vncHost,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    await expect(api.resolve(f)).resolves.toMatchObject({
+      outcome: "resolved",
+    });
+    expect((await check(f, 1)).body).toStrictEqual({ outcome: "valid" });
+    await accept(
+      remote.setThreadOverride({
+        headers: vncSessionHeaders,
+        params: { threadId, ...vncHost },
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    await expect(api.resolve(f)).resolves.toStrictEqual({
+      outcome: "unavailable",
+    });
+    expect((await check(f, 1)).body).toStrictEqual({ outcome: "unavailable" });
+    await accept(
+      remote.clearThreadOverride({
+        headers: vncSessionHeaders,
+        params: { threadId, ...vncHost },
+      }),
+      [200],
+    );
+    const ssh = await accept(
+      setupApp({ context, routes: sshConnectionsRoutes })(
+        sshConnectionsContract,
+      ).create({
+        headers: vncSessionHeaders,
+        body: {
+          id: randomUUID(),
+          displayName: "VNC gateway",
+          host: "gateway.example.com",
+          credential: inlineSshKey("deploy", "private-key"),
+        },
+      }),
+      [201],
+    );
+    await accept(
+      api.connections().update({
+        headers: vncSessionHeaders,
+        params: { connectionId: f.connectionId },
+        body: {
+          expectedGeneration: 1,
+          transport: { type: "ssh", connectionId: ssh.body.id },
+          security: { ...vncSecurity, serverName: "desktop.internal" },
+        },
+      }),
+      [200],
+    );
+    await expect(
+      api.resolve(f, { supportedProfiles: [...vncTransportProfiles] }),
+    ).resolves.toStrictEqual({ outcome: "unavailable" });
+    await accept(
+      remote.updateHostDefault({
+        headers: vncSessionHeaders,
+        params: { protocol: "ssh", connectionId: ssh.body.id },
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    await expect(
+      api.resolve(f, { supportedProfiles: [...vncTransportProfiles] }),
+    ).resolves.toMatchObject({ outcome: "resolved_transport" });
+    await accept(
+      remote.setThreadOverride({
+        headers: vncSessionHeaders,
+        params: { threadId, protocol: "ssh", connectionId: ssh.body.id },
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    await expect(
+      api.resolve(f, { supportedProfiles: [...vncTransportProfiles] }),
+    ).resolves.toStrictEqual({ outcome: "unavailable" });
+    expect((await check(f, 2)).body).toStrictEqual({ outcome: "unavailable" });
+  });
+
   it("requires an explicit VNC grant and preserves the exact secret only in the no-store handoff", async () => {
     const f = await api.fixture({ grant: false });
     const kms = useSecretKmsProbe();

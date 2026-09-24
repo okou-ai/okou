@@ -1,8 +1,11 @@
 import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { act, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
@@ -14,12 +17,484 @@ import {
   installComposerConnectorFixture,
   builtinConnector,
   SCOUT_AGENT_ID,
+  SCOUT_THREAD_ID,
+  OTHER_THREAD_ID,
   OTHER_AGENT_ID,
 } from "./chat-composer-connectors-test-helpers.ts";
 
 const github = connectorSlugSchema.parse("github");
 const slack = connectorSlugSchema.parse("slack");
 const gmail = connectorSlugSchema.parse("gmail");
+
+test("A chat can override multiple SSH hosts and return to each host default", async () => {
+  const hostIds = [
+    "b0000000-0000-4000-8000-000000000001",
+    "b0000000-0000-4000-8000-000000000002",
+  ];
+  installComposerConnectorFixture({ threadId: SCOUT_THREAD_ID });
+  const overrides = new Map<string, boolean>();
+  const host = (connectionId: string, index: number) => {
+    const overrideEnabled = overrides.get(connectionId) ?? null;
+    const defaultEnabled = index === 0;
+    return {
+      connectionId,
+      displayName: `SSH host ${index + 1}`,
+      defaultEnabled,
+      overrideEnabled,
+      enabled: overrideEnabled ?? defaultEnabled,
+      source:
+        overrideEnabled === null ? ("default" as const) : ("override" as const),
+    };
+  };
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: hostIds.map((connectionId, index) => {
+          const { displayName, defaultEnabled } = host(connectionId, index);
+          return { connectionId, displayName, defaultEnabled };
+        }),
+        vnc: [],
+      });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.listThreadAccess,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: hostIds.map(host),
+        vnc: [],
+      });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.setThreadOverride,
+    ({ params, body, respond }) => {
+      overrides.set(params.connectionId, body.enabled);
+      return respond(
+        200,
+        host(params.connectionId, hostIds.indexOf(params.connectionId)),
+      );
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.clearThreadOverride,
+    ({ params, respond }) => {
+      overrides.delete(params.connectionId);
+      return respond(
+        200,
+        host(params.connectionId, hostIds.indexOf(params.connectionId)),
+      );
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${SCOUT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+  });
+  click(await findFastControl("button", "Connectors"));
+  const remoteAccess = await screen.findByText("Remote access");
+  const cloudBrowser = screen.getByText("Cloud browser");
+  const yourComputer = screen.getByText("Your computer");
+  expect(
+    cloudBrowser.compareDocumentPosition(remoteAccess) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    remoteAccess.compareDocumentPosition(yourComputer) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  const remoteTrigger = () => {
+    return [...document.querySelectorAll("button")].find((button) => {
+      return button.textContent?.startsWith("Remote access");
+    });
+  };
+  expect(remoteTrigger()).toHaveTextContent("1 enabled");
+  expect(screen.queryByRole("combobox", { name: "SSH SSH host 1" })).toBeNull();
+  click(remoteAccess);
+  const first = await screen.findByRole("combobox", { name: "SSH SSH host 1" });
+  const second = screen.getByRole("combobox", { name: "SSH SSH host 2" });
+  expect(first).toHaveValue("default");
+  expect(second).toHaveValue("default");
+  const user = userEvent.setup({ delay: null });
+  await user.selectOptions(first, "off");
+  await waitFor(() => {
+    expect(overrides.get(hostIds[0]!)).toBeFalsy();
+    expect(second).not.toBeDisabled();
+    expect(remoteTrigger()).toHaveTextContent("0 enabled");
+  });
+  await user.selectOptions(
+    screen.getByRole("combobox", { name: "SSH SSH host 2" }),
+    "on",
+  );
+  await waitFor(() => {
+    expect(overrides.get(hostIds[0]!)).toBeFalsy();
+    expect(overrides.get(hostIds[1]!)).toBeTruthy();
+    expect(remoteTrigger()).toHaveTextContent("1 enabled");
+  });
+  await user.selectOptions(
+    screen.getByRole("combobox", { name: "SSH SSH host 1" }),
+    "default",
+  );
+  await waitFor(() => {
+    expect(overrides.has(hostIds[0]!)).toBeFalsy();
+    expect(remoteTrigger()).toHaveTextContent("2 enabled");
+  });
+});
+
+test("A chat can enable multiple VNC hosts independently", async () => {
+  const hostIds = [
+    "b0000000-0000-4000-8000-000000000011",
+    "b0000000-0000-4000-8000-000000000012",
+  ];
+  installComposerConnectorFixture({ threadId: SCOUT_THREAD_ID });
+  const overrides = new Map<string, boolean>();
+  const host = (connectionId: string, index: number) => {
+    const overrideEnabled = overrides.get(connectionId) ?? null;
+    return {
+      connectionId,
+      displayName: `VNC host ${index + 1}`,
+      defaultEnabled: false,
+      overrideEnabled,
+      enabled: overrideEnabled ?? false,
+      source:
+        overrideEnabled === null ? ("default" as const) : ("override" as const),
+    };
+  };
+  context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
+    return respond(200, { configuredCount: hostIds.length });
+  });
+  context.mocks.api(vncConnectionsContract.list, ({ respond }) => {
+    return respond(200, {
+      connections: hostIds.map((id, index) => {
+        return {
+          id,
+          displayName: `VNC host ${index + 1}`,
+          host: `vnc-${index + 1}.example.com`,
+          port: 5900,
+          credentialId: "b0000000-0000-4000-8000-000000000013",
+          credentialName: "VNC login",
+          security: {
+            type: "x509_vnc" as const,
+            trust: { mode: "system" as const },
+          },
+          generation: 1,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        };
+      }),
+    });
+  });
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: [],
+        vnc: hostIds.map((connectionId, index) => {
+          const { displayName, defaultEnabled } = host(connectionId, index);
+          return { connectionId, displayName, defaultEnabled };
+        }),
+      });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.listThreadAccess,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: [],
+        vnc: hostIds.map(host),
+      });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.setThreadOverride,
+    ({ params, body, respond }) => {
+      overrides.set(params.connectionId, body.enabled);
+      return respond(
+        200,
+        host(params.connectionId, hostIds.indexOf(params.connectionId)),
+      );
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${SCOUT_THREAD_ID}`,
+    featureSwitches: {
+      [FeatureSwitchKey.ThreadRemoteAccess]: true,
+      [FeatureSwitchKey.VncAccess]: true,
+    },
+  });
+  click(await findFastControl("button", "Connectors"));
+  const remoteAccess = await screen.findByText("Remote access");
+  expect(remoteAccess.closest("button")).toHaveTextContent("0 enabled");
+  click(remoteAccess);
+  const first = await screen.findByRole("combobox", { name: "VNC VNC host 1" });
+  const user = userEvent.setup({ delay: null });
+  await user.selectOptions(first, "on");
+  await screen.findByText("1 enabled");
+  expect(screen.getByRole("combobox", { name: "VNC VNC host 2" })).toHaveValue(
+    "default",
+  );
+  await user.selectOptions(
+    screen.getByRole("combobox", { name: "VNC VNC host 2" }),
+    "on",
+  );
+  await screen.findByText("2 enabled");
+});
+
+test("Remote access is absent when no SSH or VNC hosts are configured", async () => {
+  installComposerConnectorFixture({ threadId: SCOUT_THREAD_ID });
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, { ssh: [], vnc: [] });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.listThreadAccess,
+    ({ respond }) => {
+      return respond(200, { ssh: [], vnc: [] });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${SCOUT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+  });
+  click(await findFastControl("button", "Connectors"));
+  await screen.findByText("Cloud browser");
+  expect(screen.queryByText("Remote access")).toBeNull();
+});
+
+test("Remote access remains visible and can retry when host discovery fails", async () => {
+  installComposerConnectorFixture();
+  let failed = true;
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return failed
+        ? respond(500, {
+            error: { code: "INTERNAL_ERROR", message: "private host error" },
+          })
+        : respond(200, {
+            ssh: [
+              {
+                connectionId: "b0000000-0000-4000-8000-000000000001",
+                displayName: "SSH host",
+                defaultEnabled: true,
+              },
+            ],
+            vnc: [],
+          });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+  });
+  click(await findFastControl("button", "Connectors"));
+  const remoteAccess = await screen.findByText("Remote access");
+  expect(remoteAccess.closest("button")).toHaveTextContent(
+    "Couldn't load remote access.",
+  );
+  click(remoteAccess);
+  const retry = await findFastControl("button", "Retry");
+  expect(retry.closest('[role="alert"]')).toHaveTextContent(
+    "Couldn't load remote access.",
+  );
+  expect(document.body.textContent).not.toContain("private host error");
+  failed = false;
+  click(retry);
+  await screen.findByText("1 enabled");
+});
+
+test("Remote access can retry a failed chat permission read", async () => {
+  installComposerConnectorFixture({ threadId: SCOUT_THREAD_ID });
+  const host = {
+    connectionId: "b0000000-0000-4000-8000-000000000001",
+    displayName: "SSH host",
+    defaultEnabled: true,
+  };
+  let failed = true;
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, { ssh: [host], vnc: [] });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.listThreadAccess,
+    ({ respond }) => {
+      return failed
+        ? respond(500, {
+            error: { code: "INTERNAL_ERROR", message: "private chat error" },
+          })
+        : respond(200, {
+            ssh: [
+              {
+                ...host,
+                overrideEnabled: null,
+                enabled: true,
+                source: "default",
+              },
+            ],
+            vnc: [],
+          });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${SCOUT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+  });
+  click(await findFastControl("button", "Connectors"));
+  const remoteAccess = await screen.findByText("Remote access");
+  expect(remoteAccess.closest("button")).toHaveTextContent(
+    "Couldn't load remote access.",
+  );
+  click(remoteAccess);
+  const retry = await findFastControl("button", "Retry");
+  expect(retry.closest('[role="alert"]')).toHaveTextContent(
+    "Couldn't load remote access.",
+  );
+  expect(document.body.textContent).not.toContain("private chat error");
+  failed = false;
+  click(retry);
+  await screen.findByText("1 enabled");
+});
+
+test("A new chat summarizes enabled host defaults before a thread exists", async () => {
+  installComposerConnectorFixture();
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: [
+          {
+            connectionId: "b0000000-0000-4000-8000-000000000001",
+            displayName: "SSH host 1",
+            defaultEnabled: true,
+          },
+          {
+            connectionId: "b0000000-0000-4000-8000-000000000002",
+            displayName: "SSH host 2",
+            defaultEnabled: false,
+          },
+        ],
+        vnc: [],
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+  });
+  click(await findFastControl("button", "Connectors"));
+  const remoteAccess = await screen.findByText("Remote access");
+  expect(remoteAccess.closest("button")).toHaveTextContent("1 enabled");
+  click(remoteAccess);
+  await screen.findByText("Start a chat to change host access.");
+  expect(screen.queryByRole("combobox", { name: /SSH host/u })).toBeNull();
+});
+
+test("Remote access in two chat panes reads and updates each pane's thread", async () => {
+  const connectionId = "b0000000-0000-4000-8000-000000000001";
+  const overrides = new Map([[SCOUT_THREAD_ID, true]]);
+  const updates: { threadId: string; enabled: boolean }[] = [];
+  installComposerConnectorFixture({
+    threadId: SCOUT_THREAD_ID,
+    threads: [
+      { id: SCOUT_THREAD_ID, title: "Scout chat", agentId: SCOUT_AGENT_ID },
+      { id: OTHER_THREAD_ID, title: "Other chat", agentId: OTHER_AGENT_ID },
+    ],
+  });
+  const host = (threadId: string) => {
+    const overrideEnabled = overrides.get(threadId) ?? null;
+    return {
+      connectionId,
+      displayName: "Shared SSH host",
+      defaultEnabled: false,
+      overrideEnabled,
+      enabled: overrideEnabled ?? false,
+      source:
+        overrideEnabled === null ? ("default" as const) : ("override" as const),
+    };
+  };
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: [
+          {
+            connectionId,
+            displayName: "Shared SSH host",
+            defaultEnabled: false,
+          },
+        ],
+        vnc: [],
+      });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.listThreadAccess,
+    ({ params, respond }) => {
+      return respond(200, { ssh: [host(params.threadId)], vnc: [] });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.setThreadOverride,
+    ({ params, body, respond }) => {
+      overrides.set(params.threadId, body.enabled);
+      updates.push({ threadId: params.threadId, enabled: body.enabled });
+      return respond(200, host(params.threadId));
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${SCOUT_THREAD_ID}?sidebar=${OTHER_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+  });
+  await waitFor(() => {
+    expect(
+      document.querySelectorAll("[data-chat-thread-container-id]"),
+    ).toHaveLength(2);
+  });
+  const pane = (threadId: string) => {
+    const element = document.querySelector<HTMLElement>(
+      `[data-chat-thread-container-id="${threadId}"]`,
+    );
+    if (!element) {
+      throw new Error(`Missing chat pane ${threadId}`);
+    }
+    return element;
+  };
+  const user = userEvent.setup({ delay: null });
+  click(await findFastControl("button", "Connectors", pane(SCOUT_THREAD_ID)));
+  click(await screen.findByText("Remote access"));
+  await expect(
+    screen.findByRole("combobox", { name: "SSH Shared SSH host" }),
+  ).resolves.toHaveValue("on");
+  await user.keyboard("{Escape}");
+
+  click(await findFastControl("button", "Connectors", pane(OTHER_THREAD_ID)));
+  click(await screen.findByText("Remote access"));
+  const otherHost = await screen.findByRole("combobox", {
+    name: "SSH Shared SSH host",
+  });
+  expect(otherHost).toHaveValue("default");
+  await user.selectOptions(otherHost, "on");
+  await waitFor(() => {
+    expect(updates).toStrictEqual([
+      { threadId: OTHER_THREAD_ID, enabled: true },
+    ]);
+    expect(
+      screen.getByRole("combobox", { name: "SSH Shared SSH host" }),
+    ).toHaveValue("on");
+  });
+  expect(overrides.get(SCOUT_THREAD_ID)).toBeTruthy();
+});
 
 async function loadSshAccess(trigger: HTMLElement): Promise<void> {
   click(trigger);

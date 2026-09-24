@@ -2077,6 +2077,20 @@
       "removeQueuedMessage": "キューに入れられたメッセージを削除する",
       "skipAutomationEvent": "オートメーションイベントをスキップする"
     },
+    "remoteAccess": {
+      "defaultEnabled": "チャットで既定で有効",
+      "enabledCount_other": "{{count}} 件有効",
+      "loadFailed": "リモートアクセスを読み込めませんでした。",
+      "loading": "リモートアクセスを読み込み中…",
+      "off": "オフ",
+      "on": "オン",
+      "requiresSsh": "SSH ホスト {{name}} へのアクセスも必要です。",
+      "retry": "再試行",
+      "startChat": "ホストのアクセスを変更するにはチャットを開始してください。",
+      "title": "リモートアクセス",
+      "unavailableSsh": "利用できない SSH ホスト",
+      "useDefault": "既定を使用"
+    },
     "replaceDraft": {
       "description": "続行すると、現在のコンポーザーの下書きが消去され、ワークフローのプロンプトが開始されます。",
       "title": "コンポーザーの下書きを置き換えますか？"

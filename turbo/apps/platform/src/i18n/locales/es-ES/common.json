@@ -2125,6 +2125,22 @@
       "removeQueuedMessage": "Eliminar mensaje en cola",
       "skipAutomationEvent": "Omitir evento de automatización"
     },
+    "remoteAccess": {
+      "defaultEnabled": "Habilitado de forma predeterminada para chats",
+      "enabledCount_one": "{{count}} activo",
+      "enabledCount_many": "{{count}} activos",
+      "enabledCount_other": "{{count}} activos",
+      "loadFailed": "No se pudo cargar el acceso remoto.",
+      "loading": "Cargando acceso remoto…",
+      "off": "Desactivado",
+      "on": "Activado",
+      "requiresSsh": "También requiere acceso al host SSH {{name}}.",
+      "retry": "Reintentar",
+      "startChat": "Inicia un chat para cambiar el acceso a los hosts.",
+      "title": "Acceso remoto",
+      "unavailableSsh": "host SSH no disponible",
+      "useDefault": "Usar valor predeterminado"
+    },
     "replaceDraft": {
       "description": "Si continúas, se borrará el borrador actual del editor y se abrirá un prompt de flujo de trabajo.",
       "title": "¿Reemplazar el borrador del editor?"

@@ -25,6 +25,7 @@ import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { apiClient$ } from "./api-client.ts";
 import { reloadAgents$, reloadAgentById$ } from "./agent.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
+import { invalidateRemoteAccess$ } from "./remote-access-refresh.ts";
 import { onRef, resetSignal, settle, waitForOperation } from "./utils.ts";
 
 export const vncIdentity$ = computed(async (get) => {
@@ -75,6 +76,7 @@ export const invalidateVnc$ = command(({ set }) => {
   set(reload$, (value) => {
     return value + 1;
   });
+  set(invalidateRemoteAccess$);
 });
 
 export const retryVnc$ = command(({ set }) => {

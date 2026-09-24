@@ -2125,6 +2125,22 @@
       "removeQueuedMessage": "Rimuovi il messaggio in coda",
       "skipAutomationEvent": "Salta evento di automazione"
     },
+    "remoteAccess": {
+      "defaultEnabled": "Abilitato per impostazione predefinita nelle chat",
+      "enabledCount_one": "{{count}} attivo",
+      "enabledCount_many": "{{count}} attivi",
+      "enabledCount_other": "{{count}} attivi",
+      "loadFailed": "Impossibile caricare l'accesso remoto.",
+      "loading": "Caricamento accesso remoto…",
+      "off": "Disattivo",
+      "on": "Attivo",
+      "requiresSsh": "Richiede anche l'accesso all'host SSH {{name}}.",
+      "retry": "Riprova",
+      "startChat": "Avvia una chat per modificare l'accesso agli host.",
+      "title": "Accesso remoto",
+      "unavailableSsh": "host SSH non disponibile",
+      "useDefault": "Usa impostazione predefinita"
+    },
     "replaceDraft": {
       "description": "Continuando, la bozza corrente nell'editor verrà cancellata e verrà avviato un prompt del workflow.",
       "title": "Sostituire la bozza nell'editor?"

@@ -6,6 +6,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agentSshAccess } from "@okouai/db/schema/agent-ssh-access";
 import { agentVncAccess } from "@okouai/db/schema/agent-vnc-access";
+import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 import { and, asc, eq, isNotNull, or } from "drizzle-orm";
@@ -14,6 +15,12 @@ import type { Db, ReadonlyDb } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { enterVncWrite, type VncOwner } from "./vnc-owner-lifecycle.service";
+import {
+  runThreadExists,
+  runThreadSshAccess,
+  runThreadVncAccess,
+  runUsesThreadRemoteAccess,
+} from "./run-thread-remote-access.service";
 
 interface AgentAccessScope extends VncOwner {
   readonly agentId: string;
@@ -89,10 +96,13 @@ export async function listRunVncHosts(
   owner: VncOwner & { readonly runId: string },
   signal: AbortSignal,
 ) {
+  const threadMode = await runUsesThreadRemoteAccess(db, owner.runId, signal);
   // The left joins preserve an authorized empty inventory in the same snapshot.
   const rows = await db
     .select({
       id: vncConnections.id,
+      transportType: vncConnections.transportType,
+      sshAllowed: runThreadSshAccess(db),
       displayName: vncConnections.displayName,
       host: vncConnections.host,
       port: vncConnections.port,
@@ -116,7 +126,7 @@ export async function listRunVncHosts(
         visibleJoinedAgentCondition(owner.userId),
       ),
     )
-    .innerJoin(
+    .leftJoin(
       agentVncAccess,
       and(
         eq(agentVncAccess.agentId, agents.id),
@@ -137,10 +147,20 @@ export async function listRunVncHosts(
       and(
         eq(vncConnections.orgId, agentRuns.orgId),
         eq(vncConnections.userId, agentRuns.userId),
-        or(
-          eq(vncConnections.transportType, "direct"),
-          isNotNull(agentSshAccess.agentId),
-        ),
+        threadMode
+          ? runThreadVncAccess(db)
+          : or(
+              eq(vncConnections.transportType, "direct"),
+              isNotNull(agentSshAccess.agentId),
+            ),
+      ),
+    )
+    .leftJoin(
+      sshConnections,
+      and(
+        eq(sshConnections.id, vncConnections.sshConnectionId),
+        eq(sshConnections.orgId, agentRuns.orgId),
+        eq(sshConnections.userId, agentRuns.userId),
       ),
     )
     .leftJoin(
@@ -157,6 +177,7 @@ export async function listRunVncHosts(
         eq(agentRuns.orgId, owner.orgId),
         eq(agentRuns.userId, owner.userId),
         eq(agentRuns.status, "running"),
+        threadMode ? runThreadExists(db) : isNotNull(agentVncAccess.agentId),
       ),
     )
     .orderBy(asc(vncConnections.displayName), asc(vncConnections.id));
@@ -166,7 +187,19 @@ export async function listRunVncHosts(
   }
   return {
     hosts: rows.flatMap((row) => {
-      return row.id === null ? [] : [vncHostSchema.parse(row)];
+      return row.id === null ||
+        (threadMode && row.transportType === "ssh" && !row.sshAllowed)
+        ? []
+        : [
+            vncHostSchema.parse({
+              id: row.id,
+              displayName: row.displayName,
+              host: row.host,
+              port: row.port,
+              authMethod: row.authMethod,
+              securityType: row.securityType,
+            }),
+          ];
     }),
   };
 }

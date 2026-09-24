@@ -2077,6 +2077,20 @@
       "removeQueuedMessage": "Hapus pesan dalam antrean",
       "skipAutomationEvent": "Lewati peristiwa otomatisasi"
     },
+    "remoteAccess": {
+      "defaultEnabled": "Aktif secara default untuk chat",
+      "enabledCount_other": "{{count}} aktif",
+      "loadFailed": "Gagal memuat akses jarak jauh.",
+      "loading": "Memuat akses jarak jauh…",
+      "off": "Nonaktif",
+      "on": "Aktif",
+      "requiresSsh": "Juga memerlukan akses ke host SSH {{name}}.",
+      "retry": "Coba lagi",
+      "startChat": "Mulai chat untuk mengubah akses host.",
+      "title": "Akses jarak jauh",
+      "unavailableSsh": "host SSH tidak tersedia",
+      "useDefault": "Gunakan default"
+    },
     "replaceDraft": {
       "description": "Melanjutkan akan menghapus draf composer saat ini dan memulai prompt alur kerja.",
       "title": "Ganti draf composer?"

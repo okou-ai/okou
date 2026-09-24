@@ -2084,6 +2084,21 @@
       "removeQueuedMessage": "पंक्तिबद्ध संदेश हटाएँ",
       "skipAutomationEvent": "ऑटोमेशन ईवेंट छोड़ें"
     },
+    "remoteAccess": {
+      "defaultEnabled": "चैट के लिए डिफ़ॉल्ट रूप से सक्षम",
+      "enabledCount_one": "{{count}} सक्षम",
+      "enabledCount_other": "{{count}} सक्षम",
+      "loadFailed": "रिमोट एक्सेस लोड नहीं हो सका।",
+      "loading": "रिमोट एक्सेस लोड हो रहा है…",
+      "off": "बंद",
+      "on": "चालू",
+      "requiresSsh": "SSH होस्ट {{name}} का एक्सेस भी आवश्यक है।",
+      "retry": "फिर से कोशिश करें",
+      "startChat": "होस्ट एक्सेस बदलने के लिए चैट शुरू करें।",
+      "title": "रिमोट एक्सेस",
+      "unavailableSsh": "अनुपलब्ध SSH होस्ट",
+      "useDefault": "डिफ़ॉल्ट उपयोग करें"
+    },
     "replaceDraft": {
       "description": "जारी रखने से आपका वर्तमान कंपोज़र ड्राफ्ट साफ़ हो जाएगा और वर्कफ़्लो प्रॉम्प्ट प्रारंभ हो जाएगा।",
       "title": "कंपोज़र ड्राफ्ट बदलें?"
