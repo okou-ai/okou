@@ -83,8 +83,8 @@ lease before reading current Clerk membership. Failed attempts retry after 1,
 workers. Skipped requests do not extend an existing deadline. Explicit preference changes keep
 their own immediate behavior. Membership qualification preserves its lease;
 a new membership event or explicit choice invalidates an older retry writer.
-Worker notifications follow enrollment state or error changes; unchanged local
-deferrals do not repeatedly invalidate the preference shown in Settings.
+Settings reads the preference on load; enrollment progress is not pushed to an
+open page.
 
 Deletion records the departed membership generation even when enrollment has
 not started or an earlier live lookup already marked the member departed.

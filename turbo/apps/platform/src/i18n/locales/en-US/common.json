@@ -6644,17 +6644,11 @@
         "title": "Language"
       },
       "morningBrief": {
-        "chatAndEmail": "Chat + email",
-        "chatOnly": "Chat only",
-        "checkEmailSubscription": "Check your email subscription above for delivery status.",
         "conflict": "Morning Brief is temporarily unavailable because its installation state is inconsistent. Retry when reconciliation finishes.",
         "description": "Daily priorities at 7:00 AM in your time zone.",
-        "lastDelivered": "Last delivered {{date}}",
         "loading": "Loading Morning Brief settings...",
         "missingDefaultAgent": "Choose a usable default Agent before enabling Morning Brief.",
         "missingTimezone": "Set a valid time zone before enabling Morning Brief.",
-        "nextBrief": "Next {{date}}",
-        "paused": "Paused",
         "preparationFailed": "Morning Brief setup will retry automatically. You can also retry now.",
         "preparing": "Preparing your first Morning Brief. You can turn it off at any time.",
         "retry": "Retry",

@@ -6,7 +6,6 @@ import {
   type MorningBriefPreferenceResponse,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
 
-import { setAblyPayloadLoop$ } from "../../realtime.ts";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { searchParams$ } from "../../route.ts";
@@ -88,46 +87,4 @@ export const morningBriefPreferenceCardRef$ = onRef(
     element.scrollIntoView({ block: "center" });
     element.focus({ preventScroll: true });
   }),
-);
-
-const reloadMorningBriefFromPush$ = command(({ set }) => {
-  set(retryMorningBriefPreference$);
-  return false;
-});
-const retryMorningBriefAfterConnectorChange$ = command(
-  ({ set }, _payload: unknown, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    set(retryMorningBriefPreference$);
-    return false;
-  },
-);
-export const setupMorningBriefRealtime$ = command(
-  ({ set }, signal: AbortSignal): void => {
-    set(
-      setAblyPayloadLoop$,
-      {
-        scope: "credential",
-        topic: "morningBriefChanged",
-        loopCommand$: reloadMorningBriefFromPush$,
-        initializeCommand$: reloadMorningBriefFromPush$,
-      },
-      signal,
-    );
-    set(
-      setAblyPayloadLoop$,
-      {
-        topic: "connector:changed",
-        loopCommand$: retryMorningBriefAfterConnectorChange$,
-      },
-      signal,
-    );
-    set(
-      setAblyPayloadLoop$,
-      {
-        topic: "slack:changed",
-        loopCommand$: retryMorningBriefAfterConnectorChange$,
-      },
-      signal,
-    );
-  },
 );

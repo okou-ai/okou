@@ -1,5 +1,4 @@
 import type { CronExecuteMorningBriefsResponse } from "@okouai/api-contracts/contracts/cron";
-import type { MorningBriefOccurrenceCollectionFacts } from "@okouai/db/jsonb-contracts/morning-brief-native-occurrence";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
@@ -180,7 +179,7 @@ const advanceMemberTransition$ = command(
  * outside any transaction; only the reservation, the accepted result and the
  * settlement are transactional.
  */
-export type NativeSlotExecution = (
+export type NativeSlotExecution =
   | { readonly kind: "empty-skip" }
   | { readonly kind: "model-skip" }
   | { readonly kind: "delivered"; readonly generationAttemptId: string }
@@ -191,16 +190,7 @@ export type NativeSlotExecution = (
       readonly generationAttemptId: string;
     }
   | { readonly kind: "defer"; readonly reason: string }
-  | { readonly kind: "revoked" }
-) & {
-  /**
-   * What this attempt collected, recorded with the settlement or deferral.
-   *
-   * Absent only for a slot the tick closed without running an execution at
-   * all, which the executor already describes through its own outcome.
-   */
-  readonly collection?: MorningBriefOccurrenceCollectionFacts;
-};
+  | { readonly kind: "revoked" };
 
 /**
  * The per-slot execution the tick runs.
@@ -588,7 +578,6 @@ const runOneSlot$ = command(
         return await deferMorningBriefNativeOccurrence(tx, owner, {
           scheduledFor: claim.occurrence.scheduledFor,
           reason: execution.reason,
-          collectionFacts: execution.collection ?? null,
           expectedEpoch,
           leaseToken,
           at: nowDate(),
@@ -614,7 +603,6 @@ const runOneSlot$ = command(
         scheduledFor: claim.occurrence.scheduledFor,
         outcome,
         deliveryPending,
-        collectionFacts: execution.collection ?? null,
         generationAttemptId:
           "generationAttemptId" in execution
             ? execution.generationAttemptId
