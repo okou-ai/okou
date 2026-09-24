@@ -1250,6 +1250,7 @@ mod tests {
     use tracing_test_support::{CapturedEvent, CapturedEvents};
 
     use super::super::job_lifecycle::{ActiveBudgetLease, RunCleanupDisposition, RunCleanupState};
+    use crate::executor::SandboxReuseRejection;
     use crate::idle_pool::{
         IdleParkRequest, IdleParkRequestParts, IdlePool, IdlePoolConfig, ParkResult, ParkingGate,
         RestoreReservedIdleResult, test_support::ParkedIdleCandidateBuilder,
@@ -1705,6 +1706,35 @@ mod tests {
                 .await,
             "parked sandbox must not retain the previous run's network-log attribution",
         );
+    }
+
+    #[tokio::test]
+    async fn finalizer_destroys_sandbox_after_codex_state_backfill_timeout() {
+        let (_budget, lease) = test_budget_lease();
+        let fixture = FinalizeTestFixture::new().await;
+        let run_id = RunId::new_v4();
+        let sandbox_id = SandboxId::new_v4();
+        let overrides = Arc::new(MockSandboxOverrides::new());
+        let (factory, sandbox) = sandbox_with_overrides(sandbox_id, Arc::clone(&overrides)).await;
+        let mut context = fixture.finalize_context(
+            run_id,
+            sandbox_id,
+            "codex-backfill-timeout",
+            fixture.network_log_session().await,
+            RunCancellationHandle::new(),
+        );
+        context.factory = factory;
+        context.exit_code = 1;
+        context.sandbox_reuse_disposition =
+            SandboxReuseDisposition::Ineligible(SandboxReuseRejection::CodexStateBackfillTimeout);
+
+        let _finalization_ready =
+            finalize_sandbox_for_completion(Some(sandbox), ActiveBudgetLease::new(lease), context)
+                .await;
+
+        assert_eq!(overrides.park_call_count(), 0);
+        assert_eq!(overrides.destroy_call_count(), 1);
+        assert_eq!(fixture.idle_pool.lock().await.len(), 0);
     }
 
     #[tokio::test]
