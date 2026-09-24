@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt, inArray } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
 import { z } from "zod";
 
@@ -400,24 +400,39 @@ async function inventory(
     after = parsed.data;
   }
   const rows = await readPage(db, subject.subjectId, after);
-  for (const row of rows) {
-    if (row.connectorId === null) {
-      return unresolved("ownership_unknown");
-    }
-    const [account] = await db
-      .select({ id: connectors.id })
-      .from(connectors)
-      .where(
-        and(
-          eq(connectors.id, row.connectorId),
-          eq(connectors.userId, subject.subjectId),
-          eq(connectors.orgId, row.orgId),
-        ),
-      )
-      .limit(1);
-    if (!account) {
-      return unresolved("ownership_unknown");
-    }
+  const connectorIds = [
+    ...new Set(
+      rows.flatMap((row) => {
+        return row.connectorId === null ? [] : [row.connectorId];
+      }),
+    ),
+  ];
+  const owned =
+    connectorIds.length === 0
+      ? []
+      : await db
+          .select({ id: connectors.id, orgId: connectors.orgId })
+          .from(connectors)
+          .where(
+            and(
+              eq(connectors.userId, subject.subjectId),
+              inArray(connectors.id, connectorIds),
+            ),
+          );
+  const ownedOrgById = new Map(
+    owned.map((account) => {
+      return [account.id, account.orgId];
+    }),
+  );
+  if (
+    rows.some((row) => {
+      return (
+        row.connectorId === null ||
+        ownedOrgById.get(row.connectorId) !== row.orgId
+      );
+    })
+  ) {
+    return unresolved("ownership_unknown");
   }
   const items = await Promise.all(
     rows.map(async (row) => {
