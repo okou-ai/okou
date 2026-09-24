@@ -618,7 +618,7 @@ function scheduleModeFilter(mode: DueMode, at: Date) {
   );
 }
 
-export async function dueWorkflowAutomationRows(
+async function dueWorkflowAutomationRows(
   db: Db,
   args: DueSelection,
   signal: AbortSignal,
@@ -739,6 +739,7 @@ async function dueWorkflowAutomationIsFireable(
 type WorkflowPollerArgs = {
   readonly db: Db;
   readonly automationId?: string;
+  readonly workflowId?: string;
   readonly startRun: (
     input: RunWorkflowAutomationNowArgs,
     signal: AbortSignal,
@@ -752,6 +753,7 @@ async function loadDueWorkflowRows(
   args: {
     readonly currentTime: Date;
     readonly automationId?: string;
+    readonly workflowId?: string;
     readonly expiryEnabled: boolean;
   },
   signal: AbortSignal,
@@ -759,6 +761,7 @@ async function loadDueWorkflowRows(
   const common = {
     at: args.currentTime,
     automationId: args.automationId,
+    workflowId: args.workflowId,
   };
   if (!args.expiryEnabled) {
     return await dueWorkflowAutomationRows(db, common, signal);
@@ -880,6 +883,7 @@ async function executeDueWorkflowAutomations(
     {
       currentTime,
       automationId: args.automationId,
+      workflowId: args.workflowId,
       expiryEnabled,
     },
     signal,
@@ -1005,6 +1009,23 @@ export const executeDueWorkflowAutomations$ = command(
     return await executeDueWorkflowAutomations(
       {
         db: set(writeDb$),
+        startRun: (input, childSignal) => {
+          return set(runWorkflowAutomationNow$, input, childSignal);
+        },
+      },
+      signal,
+    );
+  },
+);
+
+// The test-only route exercises the same poller lanes without scanning another
+// suite's concurrently due automations. Production ticks remain unscoped.
+export const executeDueWorkflowAutomationsForWorkflow$ = command(
+  async ({ set }, workflowId: string, signal: AbortSignal) => {
+    return await executeDueWorkflowAutomations(
+      {
+        db: set(writeDb$),
+        workflowId,
         startRun: (input, childSignal) => {
           return set(runWorkflowAutomationNow$, input, childSignal);
         },

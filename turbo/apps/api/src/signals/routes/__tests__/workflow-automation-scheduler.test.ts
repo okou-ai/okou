@@ -25,11 +25,7 @@ import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { makeCodexAuthJson, makeCodexJwt } from "./helpers/api-bdd-auth-device";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
-import {
-  readDueScheduleCandidateIdsFixture,
-  readWorkflowScheduleSkipsFixture,
-  seedExpiredSchedulesFixture,
-} from "../../../test-fixtures/workflow-schedule-expiry";
+import { readWorkflowScheduleSkipsFixture } from "../../../test-fixtures/workflow-schedule-expiry";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -662,29 +658,34 @@ describe("okou workflow automation scheduler", () => {
     ]);
   });
 
-  it("selects a fresh due schedule behind more than two hundred expired anchors", async () => {
+  it("fires fresh work in a workflow-scoped poll behind 201 expired anchors", async () => {
     mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
     const scenario = await setup();
-    await seedExpiredSchedulesFixture({
-      orgId: scenario.orgId,
-      ownerUserId: scenario.userId,
-      workflowId: scenario.workflowId,
-      at: new Date(now() - 60 * 60_000),
-      count: 201,
-    });
+    // Create historical due slots through the production API rather than
+    // writing scheduler rows or asserting directly on its candidate query.
+    for (let created = 0; created < 201; created += 10) {
+      await Promise.all(
+        Array.from({ length: Math.min(10, 201 - created) }, async () => {
+          await createDueLoopAutomation(scenario, 900);
+        }),
+      );
+    }
+    mockNow(now() + 60 * 60_000);
     const fresh = await createDueLoopAutomation(scenario, 900);
-    const candidates = await readDueScheduleCandidateIdsFixture(
-      {
-        workflowId: scenario.workflowId,
-        at: new Date(now()),
-      },
-      context.signal,
+    const tick = await accept(
+      workflowAutomationExecutionClient().executeForWorkflow({
+        body: { workflow_id: scenario.workflowId },
+      }),
+      [200],
     );
-    expect(candidates.expired).toHaveLength(35);
-    expect(candidates.fresh).toContain(fresh.automationId);
-    const threadId = await executeDueWorkflowAutomations(fresh.automationId);
-    await expect(workflowRunMessages(threadId)).resolves.toHaveLength(1);
-    await disableAutomation(fresh.automationId);
+    expect(tick.body).toMatchObject({ executed: 1, skipped: 35 });
+    const after = await wf.readAutomation(fresh.automationId);
+    if (!after.chatThreadId) {
+      throw new Error("Fresh automation did not start");
+    }
+    await expect(workflowRunMessages(after.chatThreadId)).resolves.toHaveLength(
+      1,
+    );
     await deleteWorkflowViaApi(scenario);
   });
 
