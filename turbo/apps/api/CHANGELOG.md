@@ -8,6 +8,29 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.672.0](https://github.com/okou-ai/okou/compare/api-v1.671.1...api-v1.672.0) (2026-09-24)
+
+
+### Features
+
+* **browser:** guide agents to request only user-owned native input ([#36726](https://github.com/okou-ai/okou/issues/36726)) ([d3d8c0c](https://github.com/okou-ai/okou/commit/d3d8c0c03c417ba046eb00bfdc2db1d863c0f9ed))
+* **platform:** add the get started imessage quest and unify the phone connect dialog ([#36655](https://github.com/okou-ai/okou/issues/36655)) ([fc14031](https://github.com/okou-ai/okou/commit/fc140318a21f6ae3ea2c350abf9482e67a089482))
+
+
+### Refactoring
+
+* **api:** decouple chat event writes behind a two-release bridge ([#36614](https://github.com/okou-ai/okou/issues/36614)) ([63ad2ee](https://github.com/okou-ai/okou/commit/63ad2eed786e3f36eb9341f4db436b95a1eac6e3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.506.0
+    * @okouai/core bumped to 8.709.0
+    * @okouai/db bumped to 1.296.0
+    * @okouai/pi-agent-runtime bumped to 1.40.11
+
 ## [1.671.1](https://github.com/okou-ai/okou/compare/api-v1.671.0...api-v1.671.1) (2026-09-24)
 
 

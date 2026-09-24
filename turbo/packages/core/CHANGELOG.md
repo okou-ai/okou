@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.709.0](https://github.com/okou-ai/okou/compare/core-v8.708.4...core-v8.709.0) (2026-09-24)
+
+
+### Features
+
+* **core:** enable thread remote access for staff ([#36714](https://github.com/okou-ai/okou/issues/36714)) ([0433898](https://github.com/okou-ai/okou/commit/04338980409d5c6d6a72cc1074d8ad0f3e8d0bea))
+
+
+### Refactoring
+
+* **api:** decouple chat event writes behind a two-release bridge ([#36614](https://github.com/okou-ai/okou/issues/36614)) ([63ad2ee](https://github.com/okou-ai/okou/commit/63ad2eed786e3f36eb9341f4db436b95a1eac6e3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.506.0
+
 ## [8.708.4](https://github.com/okou-ai/okou/compare/core-v8.708.3...core-v8.708.4) (2026-09-24)
 
 
