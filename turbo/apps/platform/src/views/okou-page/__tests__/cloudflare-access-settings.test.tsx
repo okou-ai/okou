@@ -164,6 +164,14 @@ test("An admin can edit and delete a shared configuration through scoped mutatio
       return respond(200, renamed);
     },
   );
+  context.mocks.api(cloudflareAccessContract.deletionPreview, ({ respond }) => {
+    return respond(200, {
+      expectedRevision: 2,
+      ownHostCount: 0,
+      affectedOwners: [],
+      impactSnapshot: "a".repeat(64),
+    });
+  });
   context.mocks.api(
     cloudflareAccessContract.delete,
     ({ body, query, respond }) => {
@@ -199,6 +207,11 @@ test("An admin can edit and delete a shared configuration through scoped mutatio
     ),
   );
   const deletion = await screen.findByRole("dialog");
+  await waitFor(() => {
+    expect(
+      getAction("button", "Delete Cloudflare Access", deletion),
+    ).toBeEnabled();
+  });
   click(getAction("button", "Delete Cloudflare Access", deletion));
   await screen.findByText("0 Cloudflare Access configured");
   expect(
@@ -207,7 +220,10 @@ test("An admin can edit and delete a shared configuration through scoped mutatio
     ),
   ).toBeInTheDocument();
   expect(deletes).toStrictEqual([
-    { query: { view: "scoped" }, body: { expectedRevision: 2 } },
+    {
+      query: { view: "scoped" },
+      body: { expectedRevision: 2, impactSnapshot: "a".repeat(64) },
+    },
   ]);
 });
 
@@ -668,7 +684,7 @@ test("changed conversion impact requires a fresh warning and confirmation", asyn
   });
   await userEvent.click(acknowledge);
   click(getAction("button", "Make personal", dialog));
-  await within(dialog).findByText(/affected by this conversion changed/u);
+  await within(dialog).findByText(/affected hosts changed/u);
   expect(requests).toStrictEqual([
     { expectedRevision: 1, impactSnapshot: "a".repeat(64) },
   ]);
@@ -726,4 +742,117 @@ test("uncertain conversion result requires a new impact review", async () => {
     expect(getAction("button", "Make personal", dialog)).toBeDisabled();
   });
   expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
+});
+
+test("only an admin can promote their Personal configuration with explicit audience confirmation", async () => {
+  let configs: ScopedCloudflareAccessConfig[] = [config];
+  const bodies: unknown[] = [];
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs });
+  });
+  context.mocks.api(
+    cloudflareAccessContract.convertToOrganization,
+    ({ body, respond }) => {
+      bodies.push(body);
+      const promoted = {
+        ...config,
+        scope: "organization" as const,
+        revision: 2,
+      };
+      configs = [promoted];
+      return respond(200, promoted);
+    },
+  );
+  await page(undefined, "admin");
+  const personal = await screen.findByRole("region", { name: "Personal" });
+  click(getAction("button", "Make organization", personal));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Make organization",
+  });
+  expect(dialog).toHaveTextContent(
+    "Service Token and your SSH host bindings stay unchanged",
+  );
+  expect(getAction("button", "Make organization", dialog)).toBeDisabled();
+  await userEvent.click(within(dialog).getByRole("checkbox"));
+  click(getAction("button", "Make organization", dialog));
+  await waitFor(() => {
+    return expect(bodies).toStrictEqual([{ expectedRevision: 1 }]);
+  });
+  await within(screen.getByRole("region", { name: "Organization" })).findByText(
+    config.name,
+  );
+});
+
+test("a member cannot see the Personal promotion action", async () => {
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [config] });
+  });
+  await page();
+  const personal = await screen.findByRole("region", { name: "Personal" });
+  await within(personal).findByText(config.name);
+  expect(queryAction("button", "Make organization", personal)).toBeNull();
+});
+
+test("reviewed shared deletion names affected owners and requires re-review when the host set changes", async () => {
+  const shared = {
+    ...config,
+    scope: "organization" as const,
+    name: "Shared gateway",
+  };
+  let impact = "a".repeat(64);
+  const bodies: unknown[] = [];
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [shared] });
+  });
+  context.mocks.api(cloudflareAccessContract.deletionPreview, ({ respond }) => {
+    return respond(200, {
+      expectedRevision: 1,
+      ownHostCount: 0,
+      impactSnapshot: impact,
+      affectedOwners: [
+        { userId: "user-member-1", displayName: "Member One", hostCount: 2 },
+        {
+          userId: "user-former-2",
+          displayName: null,
+          hostCount: impact.startsWith("a") ? 1 : 2,
+        },
+      ],
+    });
+  });
+  context.mocks.api(cloudflareAccessContract.delete, ({ body, respond }) => {
+    bodies.push(body);
+    impact = "b".repeat(64);
+    return respond(409, {
+      error: {
+        code: "CLOUDFLARE_ACCESS_IMPACT_CONFLICT",
+        message: "Impact changed",
+      },
+    });
+  });
+  await page(undefined, "admin");
+  const organization = await screen.findByRole("region", {
+    name: "Organization",
+  });
+  click(getAction("button", "Delete Cloudflare Access", organization));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Delete Cloudflare Access",
+  });
+  await within(dialog).findByText(/Member One.*2 SSH hosts/u);
+  expect(dialog).toHaveTextContent(
+    "Former member (name unavailable) (user-former-2): 1 SSH host",
+  );
+  expect(
+    getAction("button", "Delete Cloudflare Access", dialog),
+  ).toBeDisabled();
+  await userEvent.click(within(dialog).getByRole("checkbox"));
+  click(getAction("button", "Delete Cloudflare Access", dialog));
+  await within(dialog).findByText(/affected hosts changed/u);
+  expect(bodies).toStrictEqual([
+    { expectedRevision: 1, impactSnapshot: "a".repeat(64) },
+  ]);
+  click(getAction("button", "Review latest impact", dialog));
+  await within(dialog).findByText(/user-former-2.*2 SSH hosts/u);
+  expect(
+    getAction("button", "Delete Cloudflare Access", dialog),
+  ).toBeDisabled();
 });

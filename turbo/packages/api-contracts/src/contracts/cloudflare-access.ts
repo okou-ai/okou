@@ -70,8 +70,29 @@ const updateBody = z
     },
     { message: "At least one Cloudflare Access field must be updated" },
   );
-const deleteBody = z.object({ expectedRevision: revision }).strict();
 const impactSnapshot = z.string().regex(/^[a-f0-9]{64}$/u);
+const deleteBody = z
+  .object({
+    expectedRevision: revision,
+    impactSnapshot: impactSnapshot.optional(),
+  })
+  .strict();
+const deletionPreviewSchema = z
+  .object({
+    expectedRevision: revision,
+    ownHostCount: z.int().nonnegative(),
+    affectedOwners: z.array(
+      z
+        .object({
+          userId: z.string().min(1),
+          displayName: z.string().nullable(),
+          hostCount: z.int().positive(),
+        })
+        .strict(),
+    ),
+    impactSnapshot,
+  })
+  .strict();
 const conversionPreviewSchema = z
   .object({
     expectedRevision: revision,
@@ -123,6 +144,21 @@ export const cloudflareAccessContract = c.router({
     body: deleteBody,
     responses: { 204: c.noBody(), ...errors },
   },
+  deletionPreview: {
+    method: "GET",
+    path: "/api/cloudflare-access/configs/:configId/deletion-preview",
+    headers: authHeadersSchema,
+    pathParams,
+    responses: { 200: deletionPreviewSchema, ...errors },
+  },
+  convertToOrganization: {
+    method: "POST",
+    path: "/api/cloudflare-access/configs/:configId/convert-to-organization",
+    headers: authHeadersSchema,
+    pathParams,
+    body: z.object({ expectedRevision: revision }).strict(),
+    responses: { 200: configResponseSchema, ...errors },
+  },
   conversionPreview: {
     method: "GET",
     path: "/api/cloudflare-access/configs/:configId/conversion-preview",
@@ -154,3 +190,7 @@ export type CloudflareAccessConversionPreview = z.infer<
   typeof conversionPreviewSchema
 >;
 export type ConvertCloudflareAccessRequest = z.infer<typeof conversionBody>;
+export type CloudflareAccessDeletionPreview = z.infer<
+  typeof deletionPreviewSchema
+>;
+export type DeleteCloudflareAccessRequest = z.infer<typeof deleteBody>;
