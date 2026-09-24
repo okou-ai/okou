@@ -1,5 +1,4 @@
 import { i18n } from "../../i18n/index.ts";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 
 interface AgentPhoneConnectParams {
   phoneHandle: string;
@@ -7,8 +6,6 @@ interface AgentPhoneConnectParams {
   timestamp: number;
   signature: string;
   channel?: string;
-  publicBrand: PublicBrand;
-  publicBrandSignature: string;
 }
 
 interface AgentPhoneConnectParamError {
@@ -61,8 +58,6 @@ function encodeReturnPath(
   if (effectiveChannel) {
     search.set("channel", effectiveChannel);
   }
-  search.set("publicBrand", params.publicBrand);
-  search.set("brandSig", params.publicBrandSignature);
   return `/agentphone/connect?${search.toString()}`;
 }
 
@@ -83,10 +78,6 @@ function invalidParams(
   };
 }
 
-function isPublicBrand(value: string | undefined): value is PublicBrand {
-  return value === "vm0" || value === "okou";
-}
-
 function isValidSignature(value: string): boolean {
   return /^[0-9a-f]{64}$/i.test(value);
 }
@@ -101,25 +92,6 @@ function parseTimestamp(value: string): number | undefined {
     : undefined;
 }
 
-interface ParsedBrandState {
-  publicBrand: PublicBrand;
-  publicBrandSignature: string;
-}
-
-function parseBrandState(
-  publicBrand: string | undefined,
-  publicBrandSignature: string | undefined,
-): ParsedBrandState | undefined {
-  if (
-    !isPublicBrand(publicBrand) ||
-    publicBrandSignature === undefined ||
-    !isValidSignature(publicBrandSignature)
-  ) {
-    return undefined;
-  }
-  return { publicBrand, publicBrandSignature };
-}
-
 export function parseAgentPhoneConnectParams(
   searchParams: SearchParams,
 ): ParsedAgentPhoneConnectParams {
@@ -128,8 +100,6 @@ export function parseAgentPhoneConnectParams(
   const tsRaw = firstParam(searchParams, "ts")?.trim();
   const signature = firstParam(searchParams, "sig")?.trim();
   const channel = firstParam(searchParams, "channel")?.trim().toLowerCase();
-  const publicBrandRaw = firstParam(searchParams, "publicBrand")?.trim();
-  const publicBrandSignature = firstParam(searchParams, "brandSig")?.trim();
 
   if (!phoneHandle || !agentphoneAgentId || !tsRaw || !signature) {
     return {
@@ -166,24 +136,12 @@ export function parseAgentPhoneConnectParams(
     );
   }
 
-  const brandState = parseBrandState(publicBrandRaw, publicBrandSignature);
-  if (brandState === undefined) {
-    return invalidParams(
-      "invalid_signature",
-      i18n.t(($) => {
-        return $.connectors.providerConnect.agentphone.invalidSignature;
-      }),
-    );
-  }
-
   const params: AgentPhoneConnectParams = {
     phoneHandle,
     agentphoneAgentId,
     timestamp,
     signature,
     ...(channel ? { channel } : {}),
-    publicBrand: brandState.publicBrand,
-    publicBrandSignature: brandState.publicBrandSignature,
   };
 
   return {

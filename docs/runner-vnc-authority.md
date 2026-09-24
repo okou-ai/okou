@@ -49,7 +49,8 @@ Unavailable authority returns the opaque `unavailable` outcome. Invalid input is
 
 `resolve` requires `connectionId` and `supportedProfiles`, a bounded list of
 exact authentication/security/transport tuples. Current Runners advertise the
-two supported pairs separately for `direct` and `ssh`. A pre-transport Runner
+X509Vnc and X509Plain pairs separately for `direct` and `ssh`, plus the Apple
+DH and Apple Direct SRP pairs only for `ssh`. A pre-transport Runner
 omits `transportType`; omission means direct-only. An empty list or a saved
 tuple absent from the list returns `unsupported_profile` only after VNC
 authorization and before KMS. An SSH row is also checked for its SSH grant

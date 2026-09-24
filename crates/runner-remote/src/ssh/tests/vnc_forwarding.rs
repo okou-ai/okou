@@ -26,11 +26,12 @@ fn password_credential(harness: &Harness) -> serde_json::Value {
 
 #[tokio::test]
 async fn vnc_uses_the_shared_generation_bound_ssh_transport_for_all_supported_profiles() {
-    for (password, plain, server_name, succeeds) in [
-        (false, false, "vnc.example.test", true),
-        (true, false, "vnc.example.test", true),
-        (false, true, "vnc.example.test", true),
-        (false, false, "wrong.example.test", false),
+    for (password, plain, server_name, succeeds, pinned) in [
+        (false, false, "vnc.example.test", true, true),
+        (true, false, "vnc.example.test", true, true),
+        (false, true, "vnc.example.test", true, true),
+        (false, false, "wrong.example.test", false, true),
+        (false, false, "vnc.example.test", true, false),
     ] {
         let mut harness = Harness::new(Reply::default()).await;
         let peer = if plain {
@@ -51,9 +52,25 @@ async fn vnc_uses_the_shared_generation_bound_ssh_transport_for_all_supported_pr
         let ssh_credential = if password {
             password_credential(&harness)
         } else {
-            harness.credential(true)
+            harness.credential(pinned)
         };
         let ssh_resolve = harness.resolve_for_run(harness.run, ssh_credential).await;
+        let ssh_pin = if pinned {
+            None
+        } else {
+            Some(
+                harness
+                    .api
+                    .mock_async(|when, then| {
+                        when.method("POST")
+                            .path(format!("/api/runners/runs/{}/ssh/pin", harness.run))
+                            .json_body_includes(json!({"expectedGeneration": 7}).to_string());
+                        then.status(200)
+                            .json_body(json!({"outcome":"pinned","generation":8}));
+                    })
+                    .await,
+            )
+        };
         let authentication = if plain {
             json!({
                 "method": "username_password",
@@ -94,7 +111,8 @@ async fn vnc_uses_the_shared_generation_bound_ssh_transport_for_all_supported_pr
                             {"authMethod":"username_password","securityType":"x509_plain","transportType":"direct"},
                             {"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"ssh"},
                             {"authMethod":"username_password","securityType":"x509_plain","transportType":"ssh"},
-                            {"authMethod":"apple_dh_username_password","securityType":"apple_dh","transportType":"ssh"}
+                            {"authMethod":"apple_dh_username_password","securityType":"apple_dh","transportType":"ssh"},
+                            {"authMethod":"apple_srp_username_password","securityType":"apple_srp","transportType":"ssh"}
                         ]
                     }));
                 then.status(200).json_body(json!({
@@ -129,7 +147,7 @@ async fn vnc_uses_the_shared_generation_bound_ssh_transport_for_all_supported_pr
                         "expectedTransport": {
                             "type": "ssh",
                             "connectionId": CONNECTION,
-                            "generation": 7
+                            "generation": if pinned { 7 } else { 8 }
                         }
                     }));
                 then.status(200).json_body(json!({"outcome": "valid"}));
@@ -229,6 +247,9 @@ async fn vnc_uses_the_shared_generation_bound_ssh_transport_for_all_supported_pr
             .unwrap();
 
         ssh_resolve.assert_calls_async(1).await;
+        if let Some(pin) = ssh_pin {
+            pin.assert_calls_async(1).await;
+        }
         vnc_resolve.assert_calls_async(1).await;
         vnc_check.assert_calls_async(2).await;
         harness.shutdown().await;

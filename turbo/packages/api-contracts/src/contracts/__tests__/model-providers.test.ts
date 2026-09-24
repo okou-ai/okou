@@ -994,6 +994,11 @@ describe("model-first canonical catalog", () => {
           web_search_tool_type: "text_and_image",
           supports_search_tool: true,
           tool_mode: "code_mode_only",
+          model_messages: expect.objectContaining({
+            instructions_template: expect.stringContaining(
+              "You are Codex, an agent based on GPT-6.",
+            ),
+          }),
         }),
       ]);
     },

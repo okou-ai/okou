@@ -603,7 +603,7 @@ test("Linking the phone closes the Get started dialog and completes the quest", 
   context.mocks.ably.trigger(GET_STARTED_REWARDS_CHANGED_EVENT);
 
   await expect(
-    screen.findByText("AgentPhone connected"),
+    screen.findByText("Phone number connected"),
   ).resolves.toBeInTheDocument();
   await waitFor(() => {
     expect(
