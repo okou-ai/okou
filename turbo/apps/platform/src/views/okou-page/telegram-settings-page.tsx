@@ -1033,7 +1033,7 @@ function AddTelegramBotDialogFrame({
           <Button
             type="button"
             size="sm"
-            variant={secondary ? "outline" : "default"}
+            variant={secondary ? "neutral" : "default"}
             disabled={disabled}
           >
             <Plus size={16} />
