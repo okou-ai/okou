@@ -208,7 +208,7 @@ for ios_input in ios/Okou/App/OkouApp.swift .github/workflows/ios.yml .github/sc
   : >"$GH_LOG"
   ios_output=""
   ios_output=$(MOCK_ADDITIONAL_CHANGED_FILE="$ios_input" run_gates "$VALID_HEAD" 2>&1)
-  grep -Fq "workflow run ios.yml --repo vm0-ai/vm0 --ref release-valid" "$GH_LOG" ||
+  grep -Fq "workflow run ios.yml --repo okou-ai/okou --ref release-valid" "$GH_LOG" ||
     fail "changed iOS inputs must dispatch real iOS validation"
   if grep -Eq 'name=ci-gate-ios .*conclusion=success' "$GH_LOG"; then
     fail "changed iOS inputs received an unearned successful iOS gate"
@@ -227,7 +227,7 @@ long_changed_files_path="${TEST_ROOT}/long-changed-files.txt"
 : >"$GH_LOG"
 ios_output=""
 ios_output=$(MOCK_ADDITIONAL_CHANGED_FILES_PATH="$long_changed_files_path" run_gates "$VALID_HEAD" 2>&1)
-grep -Fq "workflow run ios.yml --repo vm0-ai/vm0 --ref release-valid" "$GH_LOG" ||
+grep -Fq "workflow run ios.yml --repo okou-ai/okou --ref release-valid" "$GH_LOG" ||
   fail "a large diff containing iOS changes must dispatch iOS validation"
 if grep -Eq 'name=ci-gate-ios .*conclusion=success' "$GH_LOG"; then
   fail "a large diff containing iOS changes received an unearned successful iOS gate"
