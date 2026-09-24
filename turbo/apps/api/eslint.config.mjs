@@ -721,6 +721,10 @@ export default [
       // SSH remote B1 needs sealed encrypted selectors, a vanished owner row
       // and persisted 503 replay. No public route exposes that worker state.
       "src/signals/services/__tests__/account-erasure-ssh-remote-collector.test.ts",
+      // Connector credentials and watches must survive catalog removal in
+      // encrypted B1 pages; no endpoint exposes the sealed lease or a forged
+      // cross-owner watch relationship.
+      "src/signals/services/__tests__/account-erasure-connector-remote-collector.test.ts",
       // No endpoint can seal direct VNC B1, remove its catalog rows and
       // observe restart/retry against captured remote session locators.
       "src/signals/services/__tests__/account-erasure-vnc-direct-collector.test.ts",
@@ -970,6 +974,7 @@ export default [
       "src/signals/services/__tests__/account-erasure-chat-snapshot-writer-fence.test.ts",
       "src/signals/services/__tests__/account-erasure-computer-use-collector.test.ts",
       "src/signals/services/__tests__/account-erasure-ssh-remote-collector.test.ts",
+      "src/signals/services/__tests__/account-erasure-connector-remote-collector.test.ts",
       "src/signals/services/__tests__/account-erasure-vnc-direct-collector.test.ts",
       // Immutable Feishu ownership must be measured across admission,
       // disconnect and rebind commits, which HTTP cannot interleave.

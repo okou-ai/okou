@@ -134,6 +134,27 @@ const selectorSchema = z.discriminatedUnion("kind", [
   }),
   z.strictObject({
     version: z.literal(1),
+    kind: z.literal("connector_remote"),
+    userId: z.string().min(1).max(192),
+    orgId: z.string().min(1).max(192),
+    resourceType: z.enum([
+      "connector",
+      "secret",
+      "gmail_watch",
+      "calendar_watch",
+      "forms_watch",
+      "meet_subscription",
+    ]),
+    resourceId: z.uuid(),
+    connectorId: z.uuid().nullable(),
+    locator: z.string().min(1).max(2048).nullable(),
+    credentialDigest: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/u)
+      .nullable(),
+  }),
+  z.strictObject({
+    version: z.literal(1),
     kind: z.literal("provider"),
     accountRef: z.uuid(),
     subjectId: z.string().min(1).max(192),
