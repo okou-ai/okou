@@ -6244,6 +6244,11 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       },
     ]);
 
+    // Admission, not provider execution, is under test. Keep the Pi turn
+    // claimable in the sandbox so it cannot race cancellation with an
+    // unhandled DeepSeek request.
+    await preparePiSandboxClaim(actor, agentId);
+
     const sent = await chat.requestSendEvent(
       actor,
       {
