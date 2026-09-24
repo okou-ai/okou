@@ -55,7 +55,6 @@ import {
   sql,
 } from "drizzle-orm";
 
-import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";
 import { now, nowDate } from "../../lib/time";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
@@ -254,20 +253,8 @@ const ACTIVE_RUN_STATUSES = ["queued", "pending", "running"] as const;
 const INDICATOR_AGENT_LIMIT = 128;
 const INDICATOR_ACTIVE_LIMIT = 50;
 const INDICATOR_UNREAD_LIMIT = 50;
+const INDICATOR_UNREAD_CANDIDATE_LIMIT = 128;
 const INDICATOR_UNREAD_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
-
-/** One indexed lookup for the newest Run terminal marker in each thread. */
-function latestRunTerminalAt() {
-  return sql`(
-    SELECT ${sql`${chatEvents.createdAt}`}
-    FROM ${chatEvents}
-    WHERE ${sql`${chatEvents.chatThreadId}`} = ${sql`${chatThreads.id}`}
-      AND ${chatEventTerminalPredicate(chatEvents.eventType)}
-    ORDER BY ${sql`${chatEvents.createdAt}`} DESC NULLS LAST,
-      ${sql`${chatEvents.id}`} DESC
-    LIMIT 1
-  )`.mapWith(nullableDriverValueDecoder(chatEvents.createdAt));
-}
 
 function noActiveRunsForCurrentThreadCondition(db: Pick<Db, "select">): SQL {
   return notExists(
@@ -376,7 +363,7 @@ type IndicatorThreadRow = {
   readonly agentId: string | null;
 };
 type UnreadIndicatorRow = IndicatorThreadRow & {
-  readonly unreadAt: Date | null;
+  readonly unreadAt: Date;
 };
 
 async function loadIndicatorAgentIds(
@@ -456,47 +443,101 @@ async function loadUnreadIndicatorRows(
   agentIds: readonly string[],
   unreadCutoff: Date,
 ): Promise<readonly UnreadIndicatorRow[]> {
-  const commonConditions = and(
-    eq(chatThreads.userId, args.userId),
-    inArray(chatThreads.agentId, agentIds),
-    gte(chatThreads.lastMessageAt, unreadCutoff),
-    or(
-      isNull(chatThreads.lastReadAt),
-      gt(chatThreads.lastMessageAt, chatThreads.lastReadAt),
-    ),
-    noActiveRunsForCurrentThreadCondition(db),
-  );
-  const latestRunAt = latestRunTerminalAt();
-  return await db
+  // The newest threads with messages after their read watermark are the only
+  // candidates, so the per-thread reads below have a fixed upper bound.
+  const candidates = await db
     .select({
       threadId: chatThreads.id,
       agentId: chatThreads.agentId,
-      unreadAt: latestRunAt,
+      lastReadAt: chatThreads.lastReadAt,
     })
     .from(chatThreads)
     .where(
       and(
-        commonConditions,
-        exists(
-          db
-            .select({ id: chatEvents.id })
-            .from(chatEvents)
-            .where(
-              and(
-                eq(chatEvents.chatThreadId, chatThreads.id),
-                chatEventTerminalPredicate(chatEvents.eventType),
-                gte(chatEvents.createdAt, unreadCutoff),
-                or(
-                  isNull(chatThreads.lastReadAt),
-                  gt(chatEvents.createdAt, chatThreads.lastReadAt),
-                ),
-              ),
-            ),
+        eq(chatThreads.userId, args.userId),
+        inArray(chatThreads.agentId, agentIds),
+        gte(chatThreads.lastMessageAt, unreadCutoff),
+        or(
+          isNull(chatThreads.lastReadAt),
+          gt(chatThreads.lastMessageAt, chatThreads.lastReadAt),
         ),
       ),
     )
-    .orderBy(desc(latestRunAt), desc(chatThreads.id))
-    .limit(INDICATOR_UNREAD_LIMIT);
+    .orderBy(desc(chatThreads.lastMessageAt), desc(chatThreads.id))
+    .limit(INDICATOR_UNREAD_CANDIDATE_LIMIT);
+  if (candidates.length === 0) {
+    return [];
+  }
+  const candidateIds = candidates.map((row) => {
+    return row.threadId;
+  });
+
+  const [terminalRows, activeRows] = await Promise.all([
+    db
+      .selectDistinctOn([chatEvents.chatThreadId], {
+        threadId: chatEvents.chatThreadId,
+        createdAt: chatEvents.createdAt,
+      })
+      .from(chatEvents)
+      .where(
+        and(
+          inArray(chatEvents.chatThreadId, candidateIds),
+          chatEventTerminalPredicate(chatEvents.eventType),
+          gte(chatEvents.createdAt, unreadCutoff),
+        ),
+      )
+      .orderBy(
+        chatEvents.chatThreadId,
+        desc(chatEvents.createdAt),
+        desc(chatEvents.id),
+      ),
+    db
+      .selectDistinct({ threadId: agentRuns.chatThreadId })
+      .from(agentRuns)
+      .where(
+        and(
+          inArray(agentRuns.chatThreadId, candidateIds),
+          inArray(agentRuns.status, [...ACTIVE_RUN_STATUSES]),
+          isNotNull(agentRuns.triggerSource),
+        ),
+      ),
+  ]);
+
+  const latestTerminalAt = new Map<string, Date>();
+  for (const row of terminalRows) {
+    latestTerminalAt.set(row.threadId, row.createdAt);
+  }
+  const activeIds = new Set(
+    activeRows.map((row) => {
+      return row.threadId;
+    }),
+  );
+
+  const unreadRows: UnreadIndicatorRow[] = [];
+  for (const candidate of candidates) {
+    const unreadAt = latestTerminalAt.get(candidate.threadId);
+    if (
+      unreadAt === undefined ||
+      activeIds.has(candidate.threadId) ||
+      (candidate.lastReadAt !== null &&
+        unreadAt.getTime() <= candidate.lastReadAt.getTime())
+    ) {
+      continue;
+    }
+    unreadRows.push({
+      threadId: candidate.threadId,
+      agentId: candidate.agentId,
+      unreadAt,
+    });
+  }
+  unreadRows.sort((left, right) => {
+    const byTime = right.unreadAt.getTime() - left.unreadAt.getTime();
+    if (byTime !== 0) {
+      return byTime;
+    }
+    return right.threadId < left.threadId ? -1 : 1;
+  });
+  return unreadRows.slice(0, INDICATOR_UNREAD_LIMIT);
 }
 
 /**
@@ -504,7 +545,8 @@ async function loadUnreadIndicatorRows(
  * organization. Agent IDs are loaded first and passed to the bounded thread
  * reads, so those reads do not join against or correlate to the agents table.
  * Each indicator source returns at most 50 rows. Only Run terminal markers
- * contribute unread indicators. Unread agent state takes precedence over
+ * contribute unread indicators; they are resolved for at most 128 candidate
+ * threads with uncorrelated reads. Unread agent state takes precedence over
  * active state.
  */
 export function chatIndicators(args: {
@@ -533,9 +575,6 @@ export function chatIndicators(args: {
       }
     }
     for (const row of unreadRows) {
-      if (row.unreadAt === null) {
-        throw new Error("Unread indicator is missing its read watermark");
-      }
       if (threads[row.threadId] === "active") {
         continue;
       }
