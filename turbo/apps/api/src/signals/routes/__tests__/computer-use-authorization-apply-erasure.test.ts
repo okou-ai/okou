@@ -214,7 +214,17 @@ async function createAuthorizationRunFixture(options?: {
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  const { providerId } = await runs.ensureOrgModelProvider(actor);
+  // These Apply fixtures assert native-harness event and sequence boundaries.
+  await runs.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   const agent = await bdd.createAgent(owner, {
     displayName: `Computer Use Apply ${randomUUID().slice(0, 8)}`,
     visibility: "public",

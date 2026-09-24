@@ -1,8 +1,6 @@
 import { computed, state } from "ccstate";
 import { waitFor } from "@testing-library/react";
 import { beforeEach, expect, test } from "vitest";
-import { getAllFeatureStates } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { sessionOutputChannelName } from "@okouai/api-contracts/contracts/realtime";
 
 import { installMockedClerkBootstrap } from "../../../__tests__/mock-auth.ts";
@@ -11,7 +9,6 @@ import { setApiClientRuntime$ } from "../../api-client-runtime.ts";
 import { clerk$, setupClerk$ } from "../../auth.ts";
 import { setAuthenticatedIdentity$ } from "../../auth-context.ts";
 import { readClerkToken } from "../../clerk-token.ts";
-import { setFeatureSwitchState$ } from "../../external/feature-switch-state.ts";
 import { setupRealtime$ } from "../../realtime.ts";
 import { setRootSignal$ } from "../../root-signal.ts";
 import { resetSignal } from "../../utils.ts";
@@ -65,10 +62,6 @@ async function setupStreamingViewer(): Promise<void> {
   );
   await context.store.set(setupClerk$, context.signal);
   await context.store.set(setupRealtime$, context.signal);
-  context.store.set(setFeatureSwitchState$, {
-    ...getAllFeatureStates(),
-    [FeatureSwitchKey.PiLoop]: true,
-  });
 }
 
 function promptEvent(runId: string, seqId: number): ChatEvent {

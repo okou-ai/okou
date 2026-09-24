@@ -97,11 +97,18 @@ function authHeaders(actor: ApiTestUser) {
   return { authorization: "Bearer clerk-session" };
 }
 
-async function selectBuiltInDefaultModel(actor: ApiTestUser): Promise<void> {
-  await seedBuiltInModelKey(context, "claude-sonnet-5");
+// Fable is excluded from Pi, so the brief's legacy Run keeps the native
+// Runner lifecycle; Sonnet 5 exercises the Pi launch path.
+type BriefDefaultModel = "claude-fable-5-1" | "claude-sonnet-5";
+
+async function selectBuiltInDefaultModel(
+  actor: ApiTestUser,
+  model: BriefDefaultModel,
+): Promise<void> {
+  await seedBuiltInModelKey(context, model);
   await runs.updateOrgModelPolicies(actor, [
     {
-      model: "claude-sonnet-5",
+      model,
       isDefault: true,
       defaultProviderType: "built-in",
       credentialScope: "org",
@@ -622,11 +629,12 @@ describe("Morning Brief legacy schedule claim journal", () => {
 
   async function installJournaledBrief(
     timezone = "Asia/Shanghai",
+    model: BriefDefaultModel = "claude-fable-5-1",
   ): Promise<JournaledBrief> {
     // A subscribed org, so the legacy Run and its credit checks stay real.
     const { actor } = await workflowBdd.setupWorkflowOrg({ tier: "pro" });
     await prepareBriefMember({ actor });
-    await selectBuiltInDefaultModel(actor);
+    await selectBuiltInDefaultModel(actor, model);
     await initializeBriefMember(actor, timezone);
     await accept(
       morningBriefPreferenceClient().update({
@@ -858,15 +866,13 @@ describe("Morning Brief legacy schedule claim journal", () => {
       "CLI_PKG_URL",
       `https://static.okou.io/okou-cli/${commit}/package.tgz`,
     );
-    const brief = await installJournaledBrief();
+    const brief = await installJournaledBrief(
+      "Asia/Shanghai",
+      "claude-sonnet-5",
+    );
     if (!brief.actor.orgId) {
       throw new Error("Expected an organization-scoped brief owner");
     }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...brief.actor, orgId: brief.actor.orgId },
-      { [FeatureSwitchKey.PiLoop]: true },
-    );
     const gate = holdAgentRunPiExecutionSnapshotFixture({
       userId: brief.actor.userId,
       orgId: brief.actor.orgId,

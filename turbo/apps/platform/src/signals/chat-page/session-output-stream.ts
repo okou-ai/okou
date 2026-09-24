@@ -2,11 +2,6 @@ import { command, computed, type Computed } from "ccstate";
 import { foldChatRunStates } from "@okouai/api-contracts/contracts/chat-events";
 import type { ChatEvent as PersistedChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { sessionOutputDeltaSchema } from "@okouai/api-contracts/contracts/realtime";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  featureSwitchState$,
-  registerFeatureSwitchListener$,
-} from "../external/feature-switch-state.ts";
 import { setAblyPayloadLoop$ } from "../realtime.ts";
 import { logger } from "../log.ts";
 import { createActiveRunSubscription } from "./active-run-subscription.ts";
@@ -22,9 +17,6 @@ function createActiveRunId$(
   chatEvents$: Computed<ChatEvent[]>,
 ): Computed<string | null> {
   return computed((get) => {
-    if (!get(featureSwitchState$)[FeatureSwitchKey.PiLoop]) {
-      return null;
-    }
     const events = get(chatEvents$);
     const states = foldChatRunStates(events);
     return (
@@ -92,9 +84,7 @@ export function createSessionOutputStreamSignals(
   );
   const subscribe$ = command(({ set }, signal: AbortSignal): void => {
     signal.throwIfAborted();
-    const reconcile = set(stream.subscribe$, signal);
-    // A switch change moves the demand without producing a chat event.
-    set(registerFeatureSwitchListener$, reconcile, signal);
+    set(stream.subscribe$, signal);
   });
   return { subscribe$ };
 }

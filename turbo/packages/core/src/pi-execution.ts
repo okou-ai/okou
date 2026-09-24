@@ -401,11 +401,6 @@ export function isPiExecutionRoute(args: {
   readonly modelProviderType: string | null | undefined;
   readonly runtimeProviderType: string | null | undefined;
   readonly codexServiceTier: "fast" | undefined;
-  readonly piEnabled: boolean;
 }): boolean {
-  return (
-    args.piEnabled &&
-    isPiPolicyAdmittedRoute(args) &&
-    isPiRouteRuntimeCapable(args)
-  );
+  return isPiPolicyAdmittedRoute(args) && isPiRouteRuntimeCapable(args);
 }

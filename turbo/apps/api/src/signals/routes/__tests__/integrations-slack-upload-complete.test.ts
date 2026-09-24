@@ -285,7 +285,17 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
     await runsApi.grantProEntitlement(actor);
-    await runsApi.ensureOrgModelProvider(actor);
+    const { providerId } = await runsApi.ensureOrgModelProvider(actor);
+    // Upload completion is exercised against a claimable native Runner run.
+    await runsApi.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-fable-5-1",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
     const runnerGroup = runsApi.configureRunnerGroup();
     await runsApi.heartbeatRunner(runnerGroup);
     const agent = await bdd.createAgent(actor, {
@@ -296,6 +306,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       {
         agentId: agent.agentId,
         prompt: "Create a run for Slack upload completion",
+        model: "claude-fable-5-1",
       },
       [201],
     );

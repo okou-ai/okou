@@ -24,7 +24,6 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.RealAgentInPreview).toBe("_realAgentInPreview");
     expect(FeatureSwitchKey.LangfuseTrace).toBe("_langfuseTrace");
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
-    expect(FeatureSwitchKey.PiLoop).toBe("piLoop");
     expect(FeatureSwitchKey.PiMemory).toBe("piMemory");
     expect(FeatureSwitchKey.OkouModels).toBe("okouModels");
     expect(FeatureSwitchKey.ChatThreadArchiving).toBe("chatThreadArchiving");
@@ -99,38 +98,12 @@ describe("isFeatureEnabled", () => {
         overrides: { [FeatureSwitchKey.PiMemory]: false },
       }),
     ).toBe(false);
-    // PiLoop selects the runtime and stays independent of PiMemory.
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.PiLoop, {
-        orgId: staffOrgId,
-        overrides: { [FeatureSwitchKey.PiMemory]: false },
-      }),
-    ).toBe(true);
     expect(getFeatureSwitchMetadata()[FeatureSwitchKey.PiMemory]).toEqual({
       maintainer: "lancy@okou.ai",
       description:
         "Extract, consolidate, and recall memory for Pi threads in the staff organization.",
       rolloutStage: "beta",
     });
-  });
-
-  it("enables Pi loop by default for every organization and honors explicit overrides", () => {
-    for (const context of [
-      {},
-      { orgId: "org_nonexistent" },
-      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
-    ]) {
-      expect(isFeatureEnabled(FeatureSwitchKey.PiLoop, context)).toBe(true);
-      expect(
-        isFeatureEnabled(FeatureSwitchKey.PiLoop, {
-          ...context,
-          overrides: { [FeatureSwitchKey.PiLoop]: false },
-        }),
-      ).toBe(false);
-    }
-    expect(
-      getFeatureSwitchMetadata()[FeatureSwitchKey.PiLoop]?.rolloutStage,
-    ).toBe("released");
   });
 
   it("enables chat thread archiving for staff and honors explicit overrides", () => {
@@ -536,7 +509,6 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.SocialDataJobs]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.OkouDebug]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.Banking]).toBe(false);
-    expect(staffOrgStates[FeatureSwitchKey.PiLoop]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PiMemory]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatPreference]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PaidToolControls]).toBe(true);
@@ -561,7 +533,6 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.UserMessageLinks]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.OkouDebug]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.Banking]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.PiLoop]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.ChatPreference]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PaidToolControls]).toBe(false);
@@ -586,14 +557,12 @@ describe("getAllFeatureStates", () => {
       userId: "pi-memory-tester",
     });
     expect(testerStates[FeatureSwitchKey.PiMemory]).toBe(true);
-    expect(testerStates[FeatureSwitchKey.PiLoop]).toBe(true);
 
     const colleagueStates = getAllFeatureStates({
       orgId: staffOrgId,
       userId: "pi-memory-colleague",
     });
     expect(colleagueStates[FeatureSwitchKey.PiMemory]).toBe(true);
-    expect(colleagueStates[FeatureSwitchKey.PiLoop]).toBe(true);
 
     const optedOutStates = getAllFeatureStates({
       orgId: staffOrgId,

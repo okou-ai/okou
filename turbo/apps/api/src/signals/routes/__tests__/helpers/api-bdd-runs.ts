@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 
 import type StripeSDK from "stripe";
 import type { z } from "zod";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   cliAuthApproveContract,
   cliAuthDeviceContract,
@@ -90,7 +89,6 @@ import { runFixtureContract, runFixtureRoutes } from "../../test-run-fixture";
 import { testBillingReconciliationStateRoutes } from "../../test-billing-reconciliation-state";
 import { userPermissionGrantsRoutes } from "../../user-permission-grants";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
-import { updateFeatureSwitchesForUser } from "./feature-switches";
 import { createRouteMocks } from "./route-test";
 
 type AuthHeaders = { readonly authorization?: string };
@@ -124,6 +122,7 @@ type RunnerActiveInputDeliveryStatus = 200 | 400 | 401 | 403 | 500;
 type OrgModelPolicyRequest = z.infer<
   (typeof modelPoliciesMainContract.update)["body"]
 >;
+export type OrgPolicyModel = OrgModelPolicyRequest["policies"][number]["model"];
 type OrgModelProviderUpsertRequest = z.infer<
   (typeof modelProvidersMainContract.upsert)["body"]
 >;
@@ -381,7 +380,6 @@ export function createRunsApi(
         readonly periodEndUnix?: number;
         readonly subscriptionMetadata?: Record<string, string>;
         readonly cancelAtUnix?: number | null;
-        readonly preservePiLoopDefault?: boolean;
       } = {},
     ): Promise<{
       readonly customerId: string;
@@ -489,24 +487,6 @@ export function createRunsApi(
       if (completed.status !== 200) {
         throw new Error(
           `Expected paid onboarding completion, got ${completed.status}`,
-        );
-      }
-
-      // Most run fixtures exercise the legacy Runner protocol. Opt those
-      // users out through the public switch API; Pi fixtures can retain the
-      // global default or explicitly turn Pi back on for their route tests.
-      if (!options.preservePiLoopDefault) {
-        if (!actor.orgId) {
-          throw new Error("Expected an organization-scoped run fixture actor");
-        }
-        await updateFeatureSwitchesForUser(
-          context,
-          {
-            userId: actor.userId,
-            orgId: actor.orgId,
-            ...(actor.orgRole ? { orgRole: actor.orgRole } : {}),
-          },
-          { [FeatureSwitchKey.PiLoop]: false },
         );
       }
 
@@ -1081,8 +1061,16 @@ export function createRunsApi(
       );
     },
 
+    /**
+     * Configures an org Anthropic key as the default model route. Fixtures
+     * that drive the native Runner claim protocol pass `claude-fable-5-1`,
+     * which model policy keeps off Pi; Sonnet 5 runs through Pi.
+     */
     async ensureOrgModelProvider(
       actor: ApiTestUser,
+      options: {
+        readonly model?: OrgPolicyModel;
+      } = {},
     ): Promise<{ readonly providerId: string }> {
       const providerResponse = await accept(
         runApp(context)(modelProvidersMainContract).upsert({
@@ -1098,7 +1086,7 @@ export function createRunsApi(
       const providerId = providerResponse.body.provider.id;
       const policies: OrgModelPolicyRequest["policies"] = [
         {
-          model: "claude-sonnet-5",
+          model: options.model ?? "claude-sonnet-5",
           isDefault: true,
           defaultProviderType: "anthropic-api-key",
           credentialScope: "org",

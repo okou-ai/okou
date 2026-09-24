@@ -4,8 +4,10 @@
 
 load '../../helpers/setup'
 load '../../helpers/runner-chat'
+load '../../helpers/runner-api'
 
 setup_file() {
+    runner_e2e_use_native_codex_account
     require_runner_api_credentials
 
     export RUNNER_AGENT_ID
@@ -16,7 +18,12 @@ setup_file() {
         "Codex smoke test instructions."
 }
 
+setup() {
+    runner_e2e_use_native_codex_account
+}
+
 teardown_file() {
+    runner_e2e_use_native_codex_account
     if [[ -n "${RUNNER_AGENT_ID:-}" ]]; then
         delete_runner_agent_for_stage0_teardown "$RUNNER_AGENT_ID"
     fi

@@ -25,7 +25,7 @@ policy_payload=$(jq -c '
       revision,
       policies: (
         [.policies[] |
-          select(.model != "claude-sonnet-4-6") |
+          select(.model != "claude-sonnet-4-6" and .model != "gpt-6-astra") |
           {
             model,
             isDefault,
@@ -40,6 +40,13 @@ policy_payload=$(jq -c '
             defaultProviderType: "claude-code-oauth-token",
             credentialScope: "member",
             modelProviderId: null
+          },
+          {
+            model: "gpt-6-astra",
+            isDefault: false,
+            defaultProviderType: "built-in",
+            credentialScope: "org",
+            modelProviderId: null
           }
         ]
       )
@@ -53,7 +60,7 @@ curl -fsS "${headers[@]}" \
 
 curl -fsS "${headers[@]}" \
     -X POST \
-    -d '{"switches":{"_realAgentInPreview":false,"piLoop":false}}' \
+    -d '{"switches":{"_realAgentInPreview":false}}' \
     "${api_url}/api/feature-switches" \
-    | jq -e '.effectiveSwitches._realAgentInPreview == false and .effectiveSwitches.piLoop == false' \
+    | jq -e '.effectiveSwitches._realAgentInPreview == false' \
     >/dev/null
