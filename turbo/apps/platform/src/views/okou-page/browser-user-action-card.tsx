@@ -3,7 +3,14 @@ import {
   type BrowserUserActionResponse,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { cn } from "@okouai/ui";
-import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
+import { Button } from "@okouai/ui/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@okouai/ui/components/ui/dialog";
 import { Input } from "@okouai/ui/components/ui/input";
 import { Textarea } from "@okouai/ui/components/ui/textarea";
 import { useGet, useLoadable, useSet, type Loadable } from "ccstate-react";
@@ -15,7 +22,7 @@ import {
   Loader2,
   XCircle,
 } from "lucide-react";
-import type { FormEvent, ReactNode, Ref } from "react";
+import { useState, type FormEvent, type ReactNode, type Ref } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
@@ -782,23 +789,45 @@ function PendingInlineAction({
   readonly request: PendingBrowserInputRequest;
 }) {
   const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const pageSignal = useGet(pageSignal$);
+  const beginEntry = useSet(signals.beginEntry$);
+  const title = t(($) => {
+    return $.chat.browserInput.title;
+  });
   return (
     <div className="flex h-full w-full flex-col justify-center gap-2 @[520px]:flex-row @[520px]:items-center @[520px]:justify-between @[520px]:gap-3">
       <PendingFormHeader siteOrigin={request.action.siteOrigin} compact />
       <div className="shrink-0 self-start pl-[26px] @[520px]:ml-auto @[520px]:self-auto @[520px]:pl-0">
-        <a
-          href={signals.originalUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={cn(
-            buttonVariants({ variant: "outline", size: "sm" }),
-            "shrink-0",
-          )}
+        <Dialog
+          open={open}
+          onOpenChange={(nextOpen) => {
+            if (nextOpen) {
+              detach(beginEntry(pageSignal), Reason.DomCallback);
+            }
+            setOpen(nextOpen);
+          }}
         >
-          {t(($) => {
-            return $.chat.browserInput.open;
-          })}
-        </a>
+          <DialogTrigger
+            render={
+              <Button type="button" variant="outline" size="sm">
+                {t(($) => {
+                  return $.chat.browserInput.open;
+                })}
+              </Button>
+            }
+          />
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{title}</DialogTitle>
+            </DialogHeader>
+            <PendingFormGate
+              signals={signals}
+              request={request}
+              showTitle={false}
+            />
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

@@ -6,6 +6,7 @@ import {
   browserUserActionsContract,
   type BrowserUserActionResponse,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { compile } from "tailwindcss";
@@ -13,6 +14,7 @@ import { expect, test } from "vitest";
 
 import {
   click,
+  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -504,14 +506,24 @@ test("Recognize trusted assistant actions without trusting lookalikes", async ()
   expect(window.location.hostname).toBe("app.okou.ai");
 });
 
-test("A pending Browser input card opens the exact standalone form URL", async () => {
+test("A Browser input card opens a preflighted dialog and completes without navigation", async () => {
+  let preflights = 0;
+  let state: BrowserUserActionResponse["state"] = "pending";
+  let sentPrompt = "";
   installCapabilityChat({
     events: completedConversation(`[Enter details](${browserInputUrl()})`),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, {
-      ...browserInputAction("pending"),
+      ...browserInputAction(state),
       fields: [
+        {
+          key: "notes",
+          label: "Notes",
+          fieldKind: "text",
+          required: false,
+          control: { tagName: "INPUT", inputType: "text" },
+        },
         {
           key: "quantity",
           label: "Quantity",
@@ -520,6 +532,52 @@ test("A pending Browser input card opens the exact standalone form URL", async (
           control: { tagName: "INPUT", inputType: "number" },
         },
       ],
+    });
+  });
+  context.mocks.api(
+    browserUserActionsContract.preflight,
+    ({ params, body, respond }) => {
+      preflights += 1;
+      expect(params.requestToken).toBe(BROWSER_INPUT_TOKEN);
+      expect(body).toStrictEqual({});
+      return respond(200, {
+        ...browserInputAction("pending"),
+        fields: [
+          {
+            key: "notes",
+            label: "Notes",
+            fieldKind: "text",
+            required: false,
+            control: { tagName: "TEXTAREA", inputType: "textarea" },
+          },
+          {
+            key: "quantity",
+            label: "Quantity",
+            fieldKind: "number",
+            required: false,
+            control: {
+              tagName: "INPUT",
+              inputType: "number",
+              min: "1",
+              max: "9",
+            },
+          },
+        ],
+      });
+    },
+  );
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([{ key: "notes", value: "Ready" }]);
+    state = "succeeded";
+    return respond(200, browserInputAction(state));
+  });
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    sentPrompt = body.prompt ?? "";
+    expect(body.clientEventId).toBe(BROWSER_INPUT_SUCCESS_CLIENT_ID);
+    expect(body.chatThreadSortEventId).toBe(BROWSER_INPUT_SUCCESS_SORT_ID);
+    return respond(201, {
+      runId: crypto.randomUUID(),
+      threadId: RUN_THREAD_ID,
     });
   });
 
@@ -531,15 +589,57 @@ test("A pending Browser input card opens the exact standalone form URL", async (
   });
   await readyChat();
 
-  const link = await waitFor(() => {
-    return linkByName("Enter information");
-  });
-  expect(link).toHaveAttribute("href", browserInputUrl());
-  expect(link).toHaveAttribute("target", "_blank");
-  expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  const openButton = await findButton("Enter information");
+  const currentUrl = window.location.href;
+  expect(preflights).toBe(0);
   expect(
     screen.queryByRole("dialog", { name: "Enter information in browser" }),
   ).toBeNull();
+
+  click(openButton);
+  const dialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
+  });
+  await expect(
+    within(dialog).findByRole("textbox", { name: "Notes" }),
+  ).resolves.toHaveProperty("tagName", "TEXTAREA");
+  expect(within(dialog).getByLabelText("Quantity")).toHaveAttribute(
+    "type",
+    "number",
+  );
+  expect(window.location.href).toBe(currentUrl);
+  expect(preflights).toBe(1);
+
+  const closeButton = buttonsByName("Close", dialog)[0];
+  if (!closeButton) {
+    throw new Error("Browser input dialog close button was not visible");
+  }
+  click(closeButton);
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Enter information in browser" }),
+    ).toBeNull();
+  });
+  expect(await findButton("Enter information")).toBeVisible();
+  click(openButton);
+  await expect(
+    screen.findByRole("textbox", { name: "Notes" }),
+  ).resolves.toBeVisible();
+  expect(preflights).toBe(2);
+
+  const reopenedDialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
+  });
+  await fill(within(reopenedDialog).getByLabelText("Notes"), "Ready");
+  const submitButton = buttonsByName("Add to browser", reopenedDialog)[0];
+  if (!submitButton) {
+    throw new Error("Browser input submit button was not visible");
+  }
+  click(submitButton);
+
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  expect(sentPrompt).toBe(BROWSER_INPUT_CALLBACK);
+  expect(buttonsByName("Enter information")).toHaveLength(0);
 });
 
 test("A pending transcript card becomes consumed when the standalone form completes", async () => {
@@ -561,15 +661,13 @@ test("A pending transcript card becomes consumed when the standalone form comple
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await readyChat();
-  await waitFor(() => {
-    return linkByName("Enter information");
-  });
+  await findButton("Enter information");
 
   state = "succeeded";
   window.dispatchEvent(new Event("focus"));
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(linksByName("Enter information")).toHaveLength(0);
+  expect(buttonsByName("Enter information")).toHaveLength(0);
 });
 
 test("A freshly mounted transcript card reads accepted Browser callback delivery", async () => {
@@ -593,7 +691,7 @@ test("A freshly mounted transcript card reads accepted Browser callback delivery
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   expect(buttonsByName("Notify agent")).toHaveLength(0);
-  expect(linksByName("Enter information")).toHaveLength(0);
+  expect(buttonsByName("Enter information")).toHaveLength(0);
 });
 
 test("A mounted transcript card rechecks callback delivery on page return", async () => {
@@ -624,7 +722,7 @@ test("A mounted transcript card rechecks callback delivery on page return", asyn
   expect(buttonsByName("Notify agent")).toHaveLength(0);
 });
 
-test("Absolute and relative Browser input URLs open the same standalone form", async () => {
+test("Absolute and relative Browser input URLs both render dialog cards", async () => {
   installCapabilityChat({
     events: completedConversation(
       [
@@ -646,11 +744,9 @@ test("Absolute and relative Browser input URLs open the same standalone form", a
   await readyChat();
 
   await waitFor(() => {
-    expect(linksByName("Enter information")).toHaveLength(2);
+    expect(buttonsByName("Enter information")).toHaveLength(2);
   });
-  for (const link of linksByName("Enter information")) {
-    expect((link as HTMLAnchorElement).href).toBe(browserInputUrl());
-  }
+  expect(linksByName("Enter information")).toHaveLength(0);
 });
 
 test("Keep feature-disabled and foreign Browser actions inert without hiding the ordinary Browser card", async () => {
