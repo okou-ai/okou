@@ -438,6 +438,21 @@ export function VncTransportFields({
   );
 }
 
+function isAppleProfile(profile: VncProfile): boolean {
+  return (
+    profile === "apple_dh" ||
+    profile === "apple_srp" ||
+    profile === "apple_rsa_srp"
+  );
+}
+
+function x509Security(connection: VncConnectionResponse | null) {
+  const security = connection?.security;
+  return security?.type === "x509_vnc" || security?.type === "x509_plain"
+    ? security
+    : undefined;
+}
+
 export function VncSecurityFields({
   connection,
   disabled,
@@ -448,12 +463,8 @@ export function VncSecurityFields({
   const { t } = useTranslation();
   const editor = useGet(vncEditor$);
   const choose = useSet(chooseVncTrust$);
-  const savedTrust =
-    connection?.security.type === "apple_dh" ||
-    connection?.security.type === "apple_srp" ||
-    connection?.security.type === "apple_rsa_srp"
-      ? undefined
-      : connection?.security.trust;
+  const savedSecurity = x509Security(connection);
+  const savedTrust = savedSecurity?.trust;
   const trustItems = [
     {
       value: "system",
@@ -471,9 +482,7 @@ export function VncSecurityFields({
   return (
     <div className="grid gap-3">
       <VncSecurityProfileField profile={editor.profile} disabled={disabled} />
-      {editor.profile === "apple_dh" ||
-      editor.profile === "apple_srp" ||
-      editor.profile === "apple_rsa_srp" ? null : (
+      {isAppleProfile(editor.profile) ? null : (
         <>
           <label htmlFor="vnc-server-name" className="text-sm">
             {t(($) => {
@@ -484,13 +493,7 @@ export function VncSecurityFields({
             id="vnc-server-name"
             name="serverName"
             maxLength={VNC_HOST_MAX_LENGTH}
-            defaultValue={
-              connection?.security.type === "apple_dh" ||
-              connection?.security.type === "apple_srp" ||
-              connection?.security.type === "apple_rsa_srp"
-                ? ""
-                : (connection?.security.serverName ?? "")
-            }
+            defaultValue={savedSecurity?.serverName ?? ""}
             placeholder={t(($) => {
               return $.vnc.security.serverNameHint;
             })}
@@ -732,10 +735,7 @@ function VncAuthenticationInputs({
   const mountSecret = useSet(mountVncSecret$);
   return (
     <div key={method} className="grid gap-4">
-      {(method === "username_password" ||
-        method === "apple_dh_username_password" ||
-        method === "apple_srp_username_password" ||
-        method === "apple_rsa_srp_username_password") && (
+      {method !== "vnc_password" && (
         <div className="grid gap-2 text-sm">
           <label htmlFor="vnc-username">
             {t(($) => {
@@ -754,10 +754,7 @@ function VncAuthenticationInputs({
                   : VNC_USERNAME_MAX_BYTES
             }
             defaultValue={
-              credential?.authMethod === "username_password" ||
-              credential?.authMethod === "apple_dh_username_password" ||
-              credential?.authMethod === "apple_srp_username_password" ||
-              credential?.authMethod === "apple_rsa_srp_username_password"
+              credential && credential.authMethod !== "vnc_password"
                 ? credential.username
                 : ""
             }

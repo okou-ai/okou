@@ -588,20 +588,26 @@ test.each([
     profile: "apple_dh" as const,
     method: "apple_dh_username_password" as const,
     label: "Mac Screen Sharing (Apple DH)",
+    usernameMaxLength: 63,
+    usernameHelp: /1–63 UTF-8 bytes/u,
   },
   {
     profile: "apple_srp" as const,
     method: "apple_srp_username_password" as const,
     label: "Mac Screen Sharing (Apple Direct SRP)",
+    usernameMaxLength: 255,
+    usernameHelp: /1–255 UTF-8 bytes/u,
   },
   {
     profile: "apple_rsa_srp" as const,
     method: "apple_rsa_srp_username_password" as const,
     label: "Mac Screen Sharing (Apple RSA/SRP)",
+    usernameMaxLength: 234,
+    usernameHelp: /1–234 UTF-8 bytes/u,
   },
 ])(
   "$label host editor requires SSH loopback and omits X509 trust",
-  async ({ profile, method, label }) => {
+  async ({ profile, method, label, usernameMaxLength, usernameHelp }) => {
     mockSettings({
       connections: [],
       credentials: [],
@@ -653,10 +659,15 @@ test.each([
     await choose(dialog, "Credential", "Create new credential");
     await fill(within(dialog).getByLabelText("Credential name"), "Mac login");
     const usernameField = within(dialog).getByLabelText("Username");
-    if (profile === "apple_rsa_srp") {
-      expect(usernameField).toHaveAttribute("maxLength", "234");
-      expect(within(dialog).getByText(/1–234 UTF-8 bytes/u)).toBeInTheDocument();
-    }
+    expect(usernameField).toHaveAttribute(
+      "maxLength",
+      String(usernameMaxLength),
+    );
+    expect(
+      within(dialog).getByText(usernameHelp, {
+        selector: "#vnc-username-help",
+      }),
+    ).toBeInTheDocument();
     await fill(usernameField, "operator");
     await fill(within(dialog).getByLabelText("Password"), "secret");
     click(getAction("button", "Save", dialog));
