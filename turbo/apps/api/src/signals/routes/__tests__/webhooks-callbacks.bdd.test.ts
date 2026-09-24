@@ -7311,18 +7311,25 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         (await connectors.startOauth(fixture.doomed, "slack", "oauth"))
           .authorizationUrl,
       );
-      const callback = connectors.completeOauthCallbackResult("slack", {
-        code: "late-provider-exchange",
-        state,
-      });
+      // Attach rejection handling before the competing webhook starts: the
+      // callback may fail while the test awaits the provider barrier.
+      const callback = settle(
+        connectors.completeOauthCallbackResult("slack", {
+          code: "late-provider-exchange",
+          state,
+        }),
+      );
       await exchangeStarted.promise;
       await startUserDeletion(fixture);
       await flushWaitUntilForTest();
       releaseExchange.resolve(undefined);
       await expect(callback).resolves.toMatchObject({
-        body: {
-          status: "error",
-          message: "OAuth authorization failed. Please try again.",
+        ok: true,
+        value: {
+          body: {
+            status: "error",
+            message: "OAuth authorization failed. Please try again.",
+          },
         },
       });
       // The provider responded, but the now-closed account gained no local
