@@ -231,7 +231,10 @@ proptest! {
                     }
                 }
                 Ok(None) => prop_assert!(false, "first response frame returned EOF"),
-                Err(_) => (),
+                Err(error) => {
+                    prop_assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+                    prop_assert!(runtime().block_on(reader.next()).is_err());
+                }
             }
         }
     }
