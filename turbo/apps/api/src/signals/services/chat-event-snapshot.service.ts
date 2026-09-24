@@ -4,11 +4,12 @@ import {
   type ChatEventCursor,
 } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { command, computed, type Computed } from "ccstate";
-import { and, asc, eq, gt, inArray, or } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, or, sql } from "drizzle-orm";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
 import { env } from "../../lib/env";
 import { db$, type ReadonlyDb } from "../external/db";
@@ -329,9 +330,16 @@ export function catchUpChatThreadEvents(args: {
     const ownedRows = await db
       .select({
         threadId: chatThreads.id,
-        lastChatEventSeqId: chatThreads.lastChatEventSeqId,
+        lastChatEventSeqId:
+          sql`COALESCE(${chatEventSequences.lastSeqId}, 0)`.mapWith(
+            chatEventSequences.lastSeqId,
+          ),
       })
       .from(chatThreads)
+      .leftJoin(
+        chatEventSequences,
+        eq(chatEventSequences.chatThreadId, chatThreads.id),
+      )
       .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(
         and(

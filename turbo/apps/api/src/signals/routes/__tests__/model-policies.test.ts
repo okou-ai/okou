@@ -43,6 +43,7 @@ import {
 } from "./helpers/api-bdd-auth-org";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { makeCodexAuthJson } from "./helpers/api-bdd-auth-device";
 import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -471,6 +472,9 @@ describe("GET/PUT /api/model-policies", () => {
   it.each([
     ["claude-fable-5", "claude-fable-5-1"],
     ["gpt-5.5", "gpt-5.6-luna"],
+    ["claude-sonnet-4-6", "claude-sonnet-5"],
+    ["claude-opus-4-8", "claude-opus-5"],
+    ["deepseek-v4-pro", "deepseek-v4.1-flash"],
   ] as const)(
     "rejects retired %s policy and preference writes while keeping %s usable",
     async (retiredModel, activeModel) => {
@@ -768,7 +772,6 @@ describe("GET/PUT /api/model-policies", () => {
 
   it.each([
     "deepseek-v4.1-flash",
-    "deepseek-v4-pro",
     "deepseek-v4-flash",
     "gpt-5.6-luna",
   ] as const)(
@@ -902,6 +905,42 @@ describe("GET/PUT /api/model-policies", () => {
     expect(secondPolicy?.isDefault).toBeTruthy();
     expect(response.body.workspaceDefaultModel).toBe(
       DEFAULT_ORG_MODEL_POLICY_MODELS[1],
+    );
+  });
+
+  it("does not keep a deleted organization's workspace policy", async () => {
+    const fixture = await seedFixture();
+    useSession(fixture);
+    const client = apiClient();
+    const listed = await accept(client.list({ headers: authHeaders() }), [200]);
+    const custom = toUpdate(listed.body).map((policy, index) => {
+      return { ...policy, isDefault: index === 1 };
+    });
+    const updated = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: { revision: await currentPolicyRevision(), policies: custom },
+      }),
+      [200],
+    );
+    expect(updated.body.workspaceDefaultModel).toBe(
+      DEFAULT_ORG_MODEL_POLICY_MODELS[1],
+    );
+
+    // An empty organization left by a deleted account uses the same cleanup.
+    context.mocks.s3.send.mockResolvedValue({});
+    const webhooks = createWebhookCallbackApi(context);
+    webhooks.configureClerkWebhookSecret();
+    webhooks.verifyNextClerkWebhook({
+      type: "organization.deleted",
+      data: { id: fixture.orgId },
+    });
+    await webhooks.requestClerkWebhook("{}", {}, [200]);
+    await flushWaitUntilForTest();
+
+    const after = await accept(client.list({ headers: authHeaders() }), [200]);
+    expect(after.body.workspaceDefaultModel).toBe(
+      DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
     );
   });
 
@@ -1316,36 +1355,6 @@ describe("GET/PUT /api/model-policies", () => {
         return policy.model;
       }),
     ).not.toContain("gpt-5.6-sol");
-  });
-
-  it("keeps Claude Sonnet 4.6 selectable", async () => {
-    const fixture = await seedFixture();
-    useSession(fixture);
-    const client = apiClient();
-    const listResponse = await accept(
-      client.list({ headers: authHeaders() }),
-      [200],
-    );
-
-    const response = await accept(
-      client.update({
-        headers: authHeaders(),
-        body: {
-          revision: await currentPolicyRevision(),
-          policies: [
-            ...toUpdate(listResponse.body),
-            makeBuiltInPolicy("claude-sonnet-4-6"),
-          ],
-        },
-      }),
-      [200],
-    );
-
-    expect(response.body.policies).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ model: "claude-sonnet-4-6" }),
-      ]),
-    );
   });
 
   it("allows compatible GPT 5.6 OpenAI org provider routes", async () => {
@@ -2143,11 +2152,11 @@ describe("GET/PUT /api/model-policies", () => {
     );
     const updates = [
       ...toUpdate(listResponse.body).filter((policy) => {
-        return policy.model !== "deepseek-v4-pro";
+        return policy.model !== "deepseek-v4-flash";
       }),
-      makeBuiltInPolicy("deepseek-v4-pro"),
+      makeBuiltInPolicy("deepseek-v4-flash"),
     ].map((policy) => {
-      if (policy.model !== "deepseek-v4-pro") {
+      if (policy.model !== "deepseek-v4-flash") {
         return policy;
       }
       return {
@@ -2344,7 +2353,7 @@ test.each([
   },
   { type: "aws-bedrock", selectedModel: undefined },
   { type: "aws-bedrock", selectedModel: "anthropic.claude-opus-5-v1:0" },
-  { type: "aws-bedrock", selectedModel: "deepseek-v4-pro" },
+  { type: "aws-bedrock", selectedModel: "deepseek-v4-flash" },
 ] as const)(
   "rejects an unmapped cloud $type $selectedModel through the public policy API",
   async ({ type, selectedModel }) => {
@@ -2372,7 +2381,7 @@ test.each([
           revision: await currentPolicyRevision(),
           policies: [
             {
-              model: "claude-sonnet-4-6",
+              model: "claude-sonnet-5",
               isDefault: true,
               defaultProviderType: type,
               credentialScope: "org",
@@ -2515,7 +2524,7 @@ describe("conditional organization model policy writes", () => {
       api: "openai-api-key",
     },
     {
-      model: "claude-opus-4-8",
+      model: "claude-opus-5",
       addedModel: "claude-sonnet-5",
       subscription: "claude-code-oauth-token",
       api: "anthropic-api-key",
@@ -2749,7 +2758,7 @@ describe("conditional policy writes and persisted repair boundaries", () => {
     useSession(fixture);
     const providerId = await createOrgProvider(fixture, "anthropic-api-key");
     const retainedPolicy: UpdateOrgModelPolicy = {
-      model: "claude-opus-4-8",
+      model: "claude-opus-5",
       isDefault: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",

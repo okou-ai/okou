@@ -15,7 +15,7 @@ import {
   DEFAULT_VIDEO_MODEL,
   type VideoModel,
 } from "@okouai/core/video-model-catalog";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { and, eq } from "drizzle-orm";
 

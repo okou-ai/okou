@@ -17,6 +17,16 @@ separate nontransactional migration. Attach a `UNIQUE` constraint with
 existing context and billing checks with `NOT VALID`, then validate them in
 a later transaction so scans do not hold the expansion's exclusive table locks.
 
+Discord thread creation uses the preparation API runtime mapping, so its implicit
+INSERT remains legal after the separately authorized legacy allocator contraction.
+The physical table keeps the column for DDL and the existing bridge. Discord
+input claims, required per-message context, canonical events and durable ingress
+completion stay atomic; the active mode moves weak thread activity updates after
+commit. Terminal callback replay repairs missing Discord outbox registration.
+The existing bounded late-content sweep also includes Discord context through its
+retained thread ownership. These paths use the existing global write control and
+do not activate split writes or contract any production schema.
+
 Discord's private context snapshot is stored separately from the immutable
 user-message document. Public event and snapshot projections carry only
 `{type:"source",kind:"discord",href?}`; binding IDs, authorization material and
@@ -37,6 +47,45 @@ compatible public ChatEvent readers and a reviewed activation/rollback plan; a
 rollback to an API that cannot parse Discord source annotations is not supported
 once such events exist. The new feature has no existing production users and
 adds no compatibility fallback or historical backfill.
+
+## Chat search user keyword GIN index (2026-09-24)
+
+Migration `1214_chat_search_user_tsv_gin` installs `btree_gin` and builds
+`chat_event_search_messages_user_tsv_gin_idx` on `(user_id, tsv)` with
+`CREATE INDEX CONCURRENTLY`. It does not block chat search reads or projector
+writes. The build waits for older transactions database-wide, so the migration
+raises `lock_timeout` to 10 minutes and disables `statement_timeout` for its
+own session, then resets both. A failed build is retried from the start: the
+migration drops any INVALID index concurrently before rebuilding it.
+
+The new index keeps `fastupdate`, like `chat_event_search_messages_tsv_idx`.
+The search projector's GIN maintenance now drains both indexes from one shared
+30-second tick budget, so a foreground 4 MiB pending-list flush does not land
+inside a projection transaction. The API role must own the new index for
+`gin_clean_pending_list`, as it does the existing one.
+
+Old API/new DB remains compatible: the old projector does not maintain the new
+index, but the old API only serves until promotion. New API/old DB is not a
+serving combination, because maintenance resolves the new index by name. The
+release must complete the migration before API promotion. Rollback keeps the
+extension and index and rolls back only the API. The search query and its
+responses are unchanged; the planner chooses the new index. The existing
+`chat_event_search_messages_tsv_idx` stays until production plans confirm it
+is unused.
+
+## AgentPhone connect link brand signature (2026-09-24)
+
+The API verifies only the provider-identity `sig` on an AgentPhone connect
+request. The App no longer reads `publicBrand` / `brandSig` from the link and
+no longer posts them. Production promotes the API before the App, so the new
+API still emits both link fields for older App bundles and accepts, then
+ignores, the optional body fields those bundles send. Links expire after ten
+minutes, so no long-lived link depends on either field.
+
+A new App served by an API older than this change posts no brand fields, which
+that API rejects. An API rollback below this change therefore also requires
+rolling back the App. Removing the emitted link fields and optional body fields is tracked
+by #36650.
 
 ## Voice input model selection retirement (2026-09-24)
 
@@ -65,6 +114,14 @@ Deploy the API before the Runner to retain the new samples. Mixed-version
 production comparisons must report field coverage and Runner version mix;
 missing timing is never a zero duration. The Guest protocol and storage apply
 behavior are unchanged.
+
+## Chat event split-write preparation
+
+See [the two-release chat event rollout](chat-event-split-write-rollout.md) for
+the temporary allocation bridge, inactive global control, reader/writer drain,
+activation prerequisites, late-content maintenance, and postactivation rollback
+floor. This release retains the legacy column and bridge. Migration and API
+promotion do not authorize or perform activation; contraction is a later PR.
 
 ## Codex 0.156.1 OAuth workspace routing
 

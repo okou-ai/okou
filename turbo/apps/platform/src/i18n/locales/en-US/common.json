@@ -347,7 +347,7 @@
     },
     "sources": {
       "agent": "Agent",
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "automationEvent": "Automation event",
       "automationSchedule": "Automation schedule",
       "discord": "Discord",
@@ -1184,7 +1184,7 @@
         "everythingInBuiltForTeams": "Everything in {{plan}}, built for teams",
         "included": "Included",
         "liveBrowser": "Watch an agent's live browser and take the wheel",
-        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4 Pro",
+        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4.1 Flash",
         "moreConnectorsChannels": "More custom connectors & channel integration",
         "supportEmail": "Email support",
         "supportPriority": "Priority support",
@@ -1438,6 +1438,11 @@
         },
         "earned": "{{amount}} earned",
         "howRewardsWork": "How rewards work",
+        "imessage": {
+          "action": "Add",
+          "description": "Text {{assistantName}} from your iPhone",
+          "name": "Add to iMessage"
+        },
         "inReview": "In review",
         "intro": {
           "checkin": {
@@ -3467,7 +3472,7 @@
         "invalidSignature": "The signature on this link is not valid.",
         "invalidTimestamp": "The timestamp on this link is not valid.",
         "invalidTitle": "Connect link is invalid",
-        "risk": "SMS and MMS replies may not be delivered reliably. For the most reliable experience, use iMessage with this AgentPhone number.",
+        "risk": "SMS and MMS replies may not be delivered reliably. For the most reliable experience, use iMessage with this number.",
         "successDescription": "{{phone}} is connected. Send a text message to start chatting with {{assistantName}}.",
         "successTitle": "Phone number connected"
       },
@@ -3589,9 +3594,10 @@
       "agentphone": {
         "authorizedSender": "Authorized sender",
         "codeExpiry": "Expires in 10 minutes",
+        "codeLabel": "Code",
         "connectAria": "Connect phone",
-        "connectDescription": "Scan the code or open Messages, then send the prefilled code.",
-        "connectTitle": "Connect phone",
+        "connectDescription": "Scan with your camera, then send the prefilled code.",
+        "connectTitle": "Text {{assistantName}} from your iPhone",
         "copyAria": "Copy {{phone}}",
         "copyCodeAria": "Copy connection code {{code}}",
         "copyCodeError": "Failed to copy connection code",
@@ -3602,13 +3608,12 @@
         "creatingCode": "Creating connection code…",
         "description": "Text-message access to {{assistantName}}",
         "destination": "iMessage or SMS to",
-        "manualSend": "or send",
-        "manualSendTo": "to",
         "openMessages": "Open Messages",
         "options": "Phone options",
         "phoneLabel": "Phone",
         "qrTitle": "Scan to open Messages with the connection code ready",
         "risk": "Use iMessage when possible. SMS and MMS replies may not arrive reliably.",
+        "sendToLabel": "Send to",
         "tryAgain": "Try again"
       },
       "catalogDiagnostics": {
@@ -4018,8 +4023,8 @@
         "uninstallTitle": "Uninstall Telegram bot?"
       },
       "toasts": {
-        "agentphoneConnected": "AgentPhone connected",
-        "agentphoneDisconnected": "AgentPhone disconnected",
+        "agentphoneConnected": "Phone number connected",
+        "agentphoneDisconnected": "Phone number disconnected",
         "slackConnected": "Slack connected successfully",
         "slackDisconnected": "Disconnected from Slack",
         "slackInstalled": "Slack installed successfully",
@@ -4274,7 +4279,6 @@
       "documentTitles": {
         "experience": "Your AI experience",
         "industry": "Choose your field",
-        "profile": "Your profile",
         "ready": "Okou is ready",
         "skills": "Import your skills",
         "slack": "Add Okou to Slack",
@@ -4337,17 +4341,6 @@
       "industry": {
         "copy": "Okou is the work assistant for you and your team. It turns scattered information into finished work, in the cloud. Pick your field for a first task that fits.",
         "title": "What kind of work do you do?"
-      },
-      "profile": {
-        "communicationStyle": "How you communicate",
-        "copy": "A first look at your work, based on the accounts you connected.",
-        "failed": "We couldn't create your profile right now. Try again or continue.",
-        "heading": "Your profile",
-        "loading": "Creating your profile from your connected work…",
-        "priorities": "Likely priorities",
-        "professionalIdentity": "Your work",
-        "retry": "Try again",
-        "title": "Here's what we've learned about you"
       },
       "skills": {
         "copied": "Copied",
@@ -4747,7 +4740,7 @@
         "unconfirmedNote": "We couldn’t check your {{provider}} connection. You can try again, or continue and connect it later."
       },
       "team": {
-        "copy": "Invite a team member to run shared workflows with you.",
+        "copy": "Invite a team member to share your workflows, while each of you connects your own tools.",
         "invite": "Send invite",
         "invited": "Invited",
         "label": "Team member’s email",
@@ -4761,12 +4754,10 @@
           "workspace": "They join your workspace."
         },
         "sending": "Sending…",
-        "title": "Make Okou useful to your whole team",
-        "trust": "Everyone uses the same workflows and connects their own tools."
+        "title": "Make Okou useful to your whole team"
       },
       "welcome": {
         "copy": "Review a suggested task for your work, adjust it to your goal, and let Okou get started.",
-        "offerTitle": "First hour of consulting is on us, plus up to 100 credits —",
         "promptLabel": "Your starting prompt",
         "start": "Start with Okou",
         "title": "Start with a task that matters"
@@ -6620,9 +6611,6 @@
       "emailSubscription": {
         "description": "Receive briefs, reminders, and other workspace updates by email.",
         "descriptionWithEmail": "Receive briefs, reminders, and other workspace updates at {{email}}.",
-        "loading": "Checking email subscription…",
-        "retryMessage": "Could not save or load your email subscription. Try again.",
-        "saving": "Saving…",
         "sectionTitle": "Email subscriptions",
         "title": "Email updates",
         "unavailable": "Email unavailable",
@@ -7106,6 +7094,7 @@
       "add": "Add credential",
       "appleDhFieldHelp": "1–63 UTF-8 bytes per field. NUL is not allowed.",
       "appleDhMethod": "Apple DH username and password",
+      "appleSrpMethod": "Apple Direct SRP username and password",
       "authentication": "Authentication method",
       "createNew": "Create new credential",
       "delete": "Delete credential",
@@ -7175,6 +7164,8 @@
     "security": {
       "appleDh": "Mac Screen Sharing (Apple DH)",
       "appleDhHelp": "Requires macOS Screen Sharing over a saved SSH connection. The RFB destination must be 127.0.0.1 or ::1 on that Mac. SSH protects the full VNC session. Use a Mac SSH host you control; its host key cannot rule out an onward proxy.",
+      "appleSrp": "Mac Screen Sharing (Apple Direct SRP)",
+      "appleSrpHelp": "Requires a saved SSH connection to the Mac and an RFB destination of 127.0.0.1 or ::1. SRP verifies the account and server proof; SSH protects the full VNC session. The SSH host key identifies the selected endpoint, but cannot rule out an onward proxy.",
       "caBundle": "CA certificates (PEM)",
       "caHelp": "Up to 8 CA certificates, 64 KiB total. Do not paste a private key or a server certificate.",
       "caHint": "Paste the public CA certificates that issued the server certificate",
@@ -7194,6 +7185,7 @@
     "summary_other": "{{count}} hosts configured",
     "transport": {
       "appleDhDestinationHelp": "For Apple DH, enter 127.0.0.1 or ::1. This is the Mac's own loopback address reached through the selected SSH host.",
+      "appleSrpDestinationHelp": "For Apple Direct SRP, enter 127.0.0.1 or ::1. This is the Mac's own loopback address reached through the selected SSH host.",
       "destination": "RFB destination",
       "destinationHelp": "For SSH routes, this host and port are reached from the selected SSH server, not directly from the Runner.",
       "direct": "Direct from Runner",

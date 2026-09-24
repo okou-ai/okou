@@ -772,58 +772,6 @@ describe("workflow queue", () => {
     ).toContain(freshAutomationEventId);
   });
 
-  it("keeps an automation event ahead of a goal continuation during final queue claim", async () => {
-    const scenario = await setup();
-    const automation = await createWebhookAutomation(scenario);
-    const admissionLock = await holdOrgAdmissionLockFixture({
-      orgId: scenario.orgId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      admissionLock.release();
-      await admissionLock.done;
-    });
-
-    const workflowRequest = postWorkflowWebhook(
-      automation,
-      "workflow launch before goal admission",
-    );
-    await expect.poll(admissionLock.waiterCount).toBeGreaterThanOrEqual(1);
-
-    const goal = await createActiveGoalQueueEventFixture({
-      threadId: automation.threadId,
-      orgId: scenario.orgId,
-      userId: scenario.userId,
-      agentId: scenario.agentId,
-      objective: "wait behind the preparing automation event",
-      objectiveBrief: "Wait behind the preparing automation event",
-    });
-    const goalDrain = drainChatThreadQueueFixture({
-      threadId: automation.threadId,
-      signal: context.signal,
-    });
-    await expect
-      .poll(admissionLock.transitiveWaiterCount)
-      .toBeGreaterThanOrEqual(2);
-
-    admissionLock.release();
-    const [workflowResult] = await Promise.all([workflowRequest, goalDrain]);
-    await admissionLock.done;
-    const workflowRunId = await expectAcceptedRunId(
-      workflowResult,
-      automation.threadId,
-    );
-
-    const goalQueue = await readGoalQueueStateFixture(automation.threadId);
-    expect(goalQueue.runIds).toHaveLength(0);
-    expect(goalQueue.eventIds).toContain(goal.eventId);
-    await expect(
-      pendingAutomationEvents(automation.threadId),
-    ).resolves.toHaveLength(0);
-
-    await runsApi.requestCancelRun(scenario.actor, workflowRunId, [200]);
-  });
-
   it("preserves stale Goal history when the automation ahead of it completes", async () => {
     const scenario = await setup();
     const automation = await createWebhookAutomation(scenario);

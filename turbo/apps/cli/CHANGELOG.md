@@ -1,5 +1,48 @@
 # Changelog
 
+## [9.359.4](https://github.com/okou-ai/okou/compare/cli-v9.359.3...cli-v9.359.4) (2026-09-24)
+
+
+### Bug Fixes
+
+* retire claude sonnet 4.6, claude opus 4.8, and deepseek v4 pro ([#36698](https://github.com/okou-ai/okou/issues/36698)) ([66a5341](https://github.com/okou-ai/okou/commit/66a534132b49aee893bcbae2cb94b150f19396c8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.505.1
+    * @okouai/core bumped to 8.708.4
+    * @okouai/pi-agent-runtime bumped to 1.40.10
+
+## [9.359.3](https://github.com/okou-ai/okou/compare/cli-v9.359.2...cli-v9.359.3) (2026-09-24)
+
+
+### Bug Fixes
+
+* **agentphone:** remove vendor name and brand signature from phone surfaces ([#36651](https://github.com/okou-ai/okou/issues/36651)) ([bc12388](https://github.com/okou-ai/okou/commit/bc12388e72374f8ffa7d06a401a0b3235e08a015))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.505.0
+    * @okouai/core bumped to 8.708.3
+    * @okouai/pi-agent-runtime bumped to 1.40.9
+
+## [9.359.2](https://github.com/okou-ai/okou/compare/cli-v9.359.1...cli-v9.359.2) (2026-09-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.504.0
+    * @okouai/core bumped to 8.708.2
+    * @okouai/pi-agent-runtime bumped to 1.40.8
+
 ## [9.359.1](https://github.com/okou-ai/okou/compare/cli-v9.359.0...cli-v9.359.1) (2026-09-24)
 
 

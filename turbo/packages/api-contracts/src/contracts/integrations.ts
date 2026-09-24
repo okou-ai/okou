@@ -456,10 +456,7 @@ export type IntegrationsTeamsMessageContract =
  * Requires `phone:write` capability (via OKOU_TOKEN).
  */
 const sendPhoneMessageBodySchema = z.object({
-  agentphoneAgentId: z
-    .string()
-    .min(1, "AgentPhone agent ID is required")
-    .optional(),
+  agentphoneAgentId: z.string().min(1, "Phone agent ID is required").optional(),
   toNumber: z.string().min(1, "Phone number is required"),
   text: z.string().min(1, "Message text is required"),
 });
@@ -491,7 +488,7 @@ export const integrationsPhoneMessageContract = c.router({
       404: apiErrorSchema,
       502: apiErrorSchema,
     },
-    summary: "Send an AgentPhone message",
+    summary: "Send a phone message",
   },
 });
 
@@ -517,7 +514,7 @@ export const integrationsPhoneDownloadFileContract = c.router({
       413: apiErrorSchema,
       502: apiErrorSchema,
     },
-    summary: "Download an AgentPhone media attachment",
+    summary: "Download a phone media attachment",
   },
 });
 
@@ -1182,7 +1179,7 @@ export const integrationsPhoneUploadInitContract = c.router({
       401: apiErrorSchema,
       403: apiErrorSchema,
     },
-    summary: "Get a pre-signed upload URL for AgentPhone file delivery",
+    summary: "Get a pre-signed upload URL for phone file delivery",
   },
 });
 
@@ -1195,10 +1192,7 @@ export const integrationsPhoneUploadInitContract = c.router({
  */
 const phoneUploadCompleteBodySchema = z.object({
   uploadId: z.string().uuid("Upload ID must be a UUID"),
-  agentphoneAgentId: z
-    .string()
-    .min(1, "AgentPhone agent ID is required")
-    .optional(),
+  agentphoneAgentId: z.string().min(1, "Phone agent ID is required").optional(),
   toNumber: z.string().min(1, "Phone number is required"),
   contentType: z.string().min(1).max(200).optional(),
   caption: z.string().max(1024).optional(),
@@ -1236,7 +1230,7 @@ export const integrationsPhoneUploadCompleteContract = c.router({
       404: apiErrorSchema,
       502: apiErrorSchema,
     },
-    summary: "Finalize AgentPhone file upload and send it to a phone handle",
+    summary: "Finalize phone file upload and send it to a phone handle",
   },
 });
 

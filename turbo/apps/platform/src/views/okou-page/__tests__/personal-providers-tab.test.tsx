@@ -300,7 +300,7 @@ test("Review personal subscription identity and usage", async () => {
   expect(within(rowA).getByText("account-a@example.com")).toBeInTheDocument();
   expect(within(rowB).getByText("account-b@example.com")).toBeInTheDocument();
   expect(within(rowA).getByText("2 resets left")).toBeVisible();
-  expect(within(rowB).getByText("0 resets left")).toBeVisible();
+  expect(within(rowB).queryByText(/resets? left/u)).not.toBeInTheDocument();
   expect(within(rowC).getByText("Resets —")).toBeVisible();
   expect(
     within(rowC).getByLabelText("Resets left unavailable"),

@@ -5230,7 +5230,12 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
 });
 
 describe("RUN-01: admission boundaries beyond request validation", () => {
-  it.each(["claude-fable-5", "anthropic/claude-fable-5"])(
+  it.each([
+    "claude-fable-5",
+    "anthropic/claude-fable-5",
+    "claude-sonnet-4-6",
+    "anthropic/claude-opus-4.8",
+  ])(
     "fails a pre-deployment queued %s selection when capacity becomes available",
     async (selectedModel) => {
       // Two admitted runs keep the next one queued, independent of the plan.
@@ -6244,6 +6249,11 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       },
     ]);
 
+    // Admission, not provider execution, is under test. Keep the Pi turn
+    // claimable in the sandbox so it cannot race cancellation with an
+    // unhandled DeepSeek request.
+    await preparePiSandboxClaim(actor, agentId);
+
     const sent = await chat.requestSendEvent(
       actor,
       {
@@ -6261,12 +6271,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.requestCancelRun(actor, sent.body.runId, [200]);
   });
 
-  it.each([
-    undefined,
-    "deepseek-flash",
-    "deepseek-v4-flash",
-    "deepseek-v4-pro",
-  ] as const)(
+  it.each([undefined, "deepseek-flash", "deepseek-v4-flash"] as const)(
     "claims native DeepSeek with saved selection %s or the provider default",
     async (selectedModel) => {
       const api = createRunsApi(context);
@@ -6314,10 +6319,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
           models: expect.arrayContaining([
             expect.objectContaining({
               slug: runtimeModel,
-              input_modalities:
-                runtimeModel === "deepseek-v4-pro"
-                  ? ["text"]
-                  : ["text", "image"],
+              input_modalities: ["text", "image"],
             }),
           ]),
         },
@@ -6338,11 +6340,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     },
   );
 
-  it.each([
-    "deepseek-v4-flash",
-    "deepseek-v4-pro",
-    "deepseek-v4.1-flash",
-  ] as const)(
+  it.each(["deepseek-v4-flash", "deepseek-v4.1-flash"] as const)(
     "claims built-in %s chat runs through the Pi Responses route",
     async (selectedModel) => {
       const api = createRunsApi(context);
@@ -6403,14 +6401,12 @@ describe("RUN-02: model provider selection and built-in admission", () => {
           "Expected the built-in DeepSeek run to expose OKOU_TOKEN",
         );
       }
-      expect(
-        (claim.appendSystemPrompt ?? "").includes("okou image-recognition"),
-      ).toBe(selectedModel === "deepseek-v4-pro");
-      expect(
-        verifyOkouToken(token)?.capabilities.includes(
-          "image-recognition:write",
-        ),
-      ).toBe(selectedModel === "deepseek-v4-pro");
+      expect(claim.appendSystemPrompt ?? "").not.toContain(
+        "okou image-recognition",
+      );
+      expect(verifyOkouToken(token)?.capabilities).not.toContain(
+        "image-recognition:write",
+      );
 
       await api.requestCancelRun(actor, sent.body.runId, [200]);
     },
@@ -6484,20 +6480,18 @@ describe("RUN-02: model provider selection and built-in admission", () => {
   it("offers image recognition only for image-unsupported models", async () => {
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
-    const unsupportedModel = "deepseek-v4-pro";
-    const nativeFlashModel = "deepseek-v4-flash";
+    // Native DeepSeek serves V4.1 with images; OpenRouter V4 Flash is text-only.
+    const unsupportedModel = "deepseek-v4-flash";
     const supportedModel = "claude-sonnet-5";
     const unknownModel = "gpt-5.6-sol";
     const { actor, agentId, runnerGroup } = await entitledRunActor();
     const { providerId: anthropicProviderId } =
       await api.ensureOrgModelProvider(actor);
-    const { providerId: deepseekProviderId } = await api.createOrgModelProvider(
-      actor,
-      {
-        type: "deepseek",
-        secret: "recognition-deepseek-key",
-      },
-    );
+    const { providerId: openrouterProviderId } =
+      await api.createOrgModelProvider(actor, {
+        type: "openrouter-codex",
+        secret: "recognition-openrouter-key",
+      });
     const { providerId: openaiProviderId } = await api.createOrgModelProvider(
       actor,
       {
@@ -6510,16 +6504,9 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       {
         model: unsupportedModel,
         isDefault: true,
-        defaultProviderType: "deepseek",
+        defaultProviderType: "openrouter-codex",
         credentialScope: "org",
-        modelProviderId: deepseekProviderId,
-      },
-      {
-        model: nativeFlashModel,
-        isDefault: false,
-        defaultProviderType: "deepseek",
-        credentialScope: "org",
-        modelProviderId: deepseekProviderId,
+        modelProviderId: openrouterProviderId,
       },
       {
         model: supportedModel,
@@ -6574,20 +6561,6 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       "image-recognition:write",
     );
     await api.requestCancelRun(actor, unsupported.runId, [200]);
-
-    const nativeFlash = await claimModel(nativeFlashModel);
-    const nativeFlashToken = nativeFlash.claim.platformEnvironment.OKOU_TOKEN;
-    if (!nativeFlashToken) {
-      throw new Error("Expected the native Flash run to expose OKOU_TOKEN");
-    }
-    expect(nativeFlash.claim.appendSystemPrompt ?? "").not.toContain(
-      "okou image-recognition",
-    );
-    expect(verifyOkouToken(nativeFlashToken)?.capabilities).not.toContain(
-      "image-recognition:write",
-    );
-    expect(nativeFlash.claim.modelUsageProvider).toBe(nativeFlashModel);
-    await api.requestCancelRun(actor, nativeFlash.runId, [200]);
 
     const supported = await claimModel(supportedModel);
     const supportedToken = supported.claim.platformEnvironment.OKOU_TOKEN;
@@ -15120,8 +15093,61 @@ describe("HOOK-01/RUN-03: terminal run callbacks dispatch on cancellation", () =
     const { actor, agentId } = await entitledRunActor();
     mockOptionalEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "bdd-bypass");
 
+    const firstProviderEntered = createDeferredPromise<void>(context.signal);
+    let releaseProvider = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      if (!releaseProvider.settled()) {
+        releaseProvider.resolve(undefined);
+      }
+    });
     let routeRequests = 0;
     server.use(
+      http.post("https://api.anthropic.com/v1/messages", async () => {
+        const release = releaseProvider;
+        if (!firstProviderEntered.settled()) {
+          firstProviderEntered.resolve(undefined);
+        }
+        await release.promise;
+        const events = [
+          {
+            type: "message_start",
+            message: {
+              id: randomUUID(),
+              type: "message",
+              role: "assistant",
+              model: "claude-sonnet-5",
+              content: [],
+              stop_reason: null,
+              usage: { input_tokens: 1, output_tokens: 0 },
+            },
+          },
+          {
+            type: "content_block_start",
+            index: 0,
+            content_block: { type: "text", text: "" },
+          },
+          {
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "text_delta", text: "late provider answer" },
+          },
+          { type: "content_block_stop", index: 0 },
+          {
+            type: "message_delta",
+            delta: { stop_reason: "end_turn" },
+            usage: { output_tokens: 3 },
+          },
+          { type: "message_stop" },
+        ];
+        return new HttpResponse(
+          events
+            .map((event) => {
+              return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+            })
+            .join(""),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      }),
       http.post(CHAT_CALLBACK_URL, () => {
         routeRequests += 1;
         return HttpResponse.json({ error: "boom" }, { status: 500 });
@@ -15132,7 +15158,9 @@ describe("HOOK-01/RUN-03: terminal run callbacks dispatch on cancellation", () =
       agentId,
       prompt: "first cancellable chat run",
     });
+    await firstProviderEntered.promise;
     await api.requestCancelRun(actor, first.runId, [200]);
+    releaseProvider.resolve(undefined);
     // Cancellation delivers its chat callback from the route's `waitUntil`
     // work, so drain that work instead of polling for the appended event.
     await flushWaitUntilForTest();
@@ -15149,12 +15177,14 @@ describe("HOOK-01/RUN-03: terminal run callbacks dispatch on cancellation", () =
     );
     expect(routeRequests).toBe(0);
 
+    releaseProvider = createDeferredPromise<void>(context.signal);
     const second = await sendChatRunMessage(actor, {
       agentId,
       threadId: first.threadId,
       prompt: "second cancellable chat run",
     });
     await api.requestCancelRun(actor, second.runId, [200]);
+    releaseProvider.resolve(undefined);
     await flushWaitUntilForTest();
 
     const secondCancelled = await api.readRun(actor, second.runId);
@@ -15169,12 +15199,14 @@ describe("HOOK-01/RUN-03: terminal run callbacks dispatch on cancellation", () =
     );
     expect(routeRequests).toBe(0);
 
+    releaseProvider = createDeferredPromise<void>(context.signal);
     const third = await sendChatRunMessage(actor, {
       agentId,
       threadId: first.threadId,
       prompt: "third cancellable chat run",
     });
     await api.requestCancelRun(actor, third.runId, [200]);
+    releaseProvider.resolve(undefined);
     await flushWaitUntilForTest();
 
     const thirdCancelled = await api.readRun(actor, third.runId);

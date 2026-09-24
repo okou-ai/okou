@@ -1,7 +1,7 @@
 import { command, computed } from "ccstate";
 import { and, asc, count, eq, gt, inArray, sql, type SQL } from "drizzle-orm";
 import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { storages } from "@okouai/db/schema/storage";
 import { workflows } from "@okouai/db/schema/workflow";
 import { userExportEntries } from "@okouai/db/schema/user-export-entry";

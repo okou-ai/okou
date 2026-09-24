@@ -2,7 +2,7 @@ import { command } from "ccstate";
 import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { chatThreadMarkAgentReadContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 
 import { organizationAuthContext$ } from "../auth/auth-context";

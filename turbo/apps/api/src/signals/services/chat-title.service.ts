@@ -9,7 +9,7 @@ import {
   chatEvents,
   type ChatEventUserMessage,
 } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   and,
   desc,

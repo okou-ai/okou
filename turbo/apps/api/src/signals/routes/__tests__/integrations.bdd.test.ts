@@ -2567,7 +2567,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
   });
 
   it.each([false, true])(
-    "deduplicates canonical Slack retries (private=%s)",
+    "deduplicates canonical Slack retries and preserves same-name mention identities (private=%s)",
     async (privateFiles) => {
       const actor = bdd.user();
       runs.acceptStorageDownloads();
@@ -2578,6 +2578,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
       const slackUserId = uniqueSlackUserId();
       const mentionedSlackUserId = uniqueSlackUserId();
+      const secondMentionedSlackUserId = uniqueSlackUserId();
       const { teamId, botUserId } = await integrations.installSlackWorkspace(
         actor,
         {
@@ -2597,6 +2598,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
       const eventId = `EvBDD${randomUUID().replace(/-/g, "")}`;
       const fileUrl = "https://files.slack.com/F_CANONICAL_INPUT";
       const fileBody = "canonical Slack attachment";
+      const originalMessageText = `<@${botUserId}> admit this event once with <@${mentionedSlackUserId}> and <@${secondMentionedSlackUserId}>`;
+      const visibleMessageText =
+        "@Slack User admit this event once with @Slack User and @Slack User";
       context.mocks.slack.fetchFile.mockResolvedValue(
         new Response(fileBody, {
           headers: { "Content-Type": "text/plain" },
@@ -2605,7 +2609,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       const event = {
         type: "app_mention",
         user: slackUserId,
-        text: `<@${botUserId}> admit this event once with <@${mentionedSlackUserId}>`,
+        text: originalMessageText,
         ts: threadTs,
         channel: channelId,
         channel_type: "channel",
@@ -2732,7 +2736,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       });
       const canonicalInputMessage = slackInputMessageByText(
         visibleMessages,
-        "@Slack User admit this event once with @Slack User",
+        visibleMessageText,
       );
       if (!canonicalInputMessage) {
         throw new Error("Expected the canonical Slack input message");
@@ -2745,7 +2749,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       ).resolves.toMatchObject({
         slackBotUserId: botUserId,
         slackPublicBrand: "okou",
-        slackMessageText: `<@${botUserId}> admit this event once with <@${mentionedSlackUserId}>`,
+        slackMessageText: originalMessageText,
         slackMessageAssets: [
           {
             assetId: canonicalInputAssetId,
@@ -2757,6 +2761,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
         ],
         slackMentionDisplayNames: {
           [mentionedSlackUserId]: "Slack User",
+          [secondMentionedSlackUserId]: "Slack User",
         },
       });
       expect(visibleMessages).toStrictEqual(
@@ -2775,7 +2780,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
                 },
                 {
                   type: "text",
-                  text: "@Slack User admit this event once with @Slack User",
+                  text: visibleMessageText,
                 },
                 {
                   type: "source",
@@ -2805,7 +2810,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       );
       const canonicalInputRun = await runs.readRun(actor, run1Id);
       expect(canonicalInputRun.prompt).toBe(
-        `@Slack User (${botUserId}) admit this event once with @Slack User (${mentionedSlackUserId})\n\n[Web file] source-notes.txt (text/plain)\n   [ID] ${canonicalInputAssetId}`,
+        `@Slack User (${botUserId}) admit this event once with @Slack User (${mentionedSlackUserId}) and @Slack User (${secondMentionedSlackUserId})\n\n[Web file] source-notes.txt (text/plain)\n   [ID] ${canonicalInputAssetId}`,
       );
       // The Slack delivery rules follow the integration block as their own
       // section rather than sitting in `# Agent Tools`.
@@ -5697,7 +5702,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await runs.grantProEntitlement(actor);
     await integrations.configureSlackRunModelPolicies(actor);
     await bdd.readOnboardingStatus(actor);
-    await integrations.enableAuditLinkSwitch(actor);
+    await integrations.enableOkouDebug(actor);
     const slackUser1 = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUser1,
@@ -6684,7 +6689,7 @@ describe("INT-02: Telegram integration", () => {
     runs.acceptTelemetryIngest();
     const runnerGroup = runs.configureRunnerGroup();
     const actor = integrations.user();
-    await integrations.enableAuditLinkSwitch(actor);
+    await integrations.enableOkouDebug(actor);
     await configureFastCodexPreference(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD Telegram Fast agent",
@@ -6807,12 +6812,11 @@ describe("INT-02: Telegram integration", () => {
       codexAgentMessageText: "telegram fast reply",
     });
     await flushWaitUntilAndAssert(() => {
-      const providerOutput = JSON.stringify(sentMessages);
-      expect(providerOutput).toContain("telegram fast reply");
-      expect(providerOutput).toContain("GPT 6 Astra Fast");
-      expect(providerOutput).toContain(
-        `https://app.okou.ai/activities/${runId}`,
-      );
+      expect(sentMessages).toStrictEqual([
+        expect.objectContaining({
+          text: "telegram fast reply\n\n<i>GPT 6 Astra Fast</i>",
+        }),
+      ]);
     });
   });
 
@@ -7590,7 +7594,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     );
     expect(notConfigured.body).toStrictEqual({
       error: {
-        message: "AgentPhone is not configured",
+        message: "Phone messaging is not configured",
         code: "NOT_CONFIGURED",
       },
     });
@@ -7645,12 +7649,16 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       timestamp,
       signature: connectParams.get("sig") ?? "",
       channel: connectParams.get("channel") ?? undefined,
-      publicBrand:
-        connectParams.get("publicBrand") === "okou"
-          ? ("okou" as const)
-          : undefined,
-      publicBrandSignature: connectParams.get("brandSig") ?? undefined,
     };
+    const forgedConnect = await integrations.requestConnectAgentPhone(
+      actor,
+      { ...connectBody, signature: "0".repeat(64) },
+      [400],
+    );
+    expect(forgedConnect.body).toMatchObject({
+      error: { code: "BAD_REQUEST" },
+    });
+
     const connected = await integrations.requestConnectAgentPhone(
       actor,
       connectBody,
@@ -7677,7 +7685,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     );
     expect(missingAgentMessage.body).toStrictEqual({
       error: {
-        message: "AgentPhone agent not found",
+        message: "Phone agent not found",
         code: "NOT_FOUND",
       },
     });
@@ -7712,28 +7720,19 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       error: { code: "AGENTPHONE_ERROR" },
     });
 
+    // An older App bundle still posts the ignored brand fields; the link
+    // signature is verified and the request reaches the ownership conflict.
     const duplicateConnect = await integrations.requestConnectAgentPhone(
       integrations.user(),
-      connectBody,
+      {
+        ...connectBody,
+        publicBrand: "okou",
+        publicBrandSignature: connectParams.get("brandSig") ?? "",
+      },
       [409],
     );
     expect(duplicateConnect.body).toMatchObject({
       error: { code: "CONFLICT" },
-    });
-
-    const strippedNewConnect = await integrations.requestConnectAgentPhone(
-      integrations.user(),
-      {
-        phoneHandle: connectBody.phoneHandle,
-        agentphoneAgentId: connectBody.agentphoneAgentId,
-        timestamp: connectBody.timestamp,
-        signature: connectBody.signature,
-        channel: connectBody.channel,
-      },
-      [400],
-    );
-    expect(strippedNewConnect.body).toMatchObject({
-      error: { code: "BAD_REQUEST" },
     });
 
     const alreadyLinkedStart = await integrations.requestStartAgentPhoneLink(
@@ -7774,7 +7773,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     );
     expect(unavailable.body).toStrictEqual({
       error: {
-        message: "AgentPhone verification text could not be sent",
+        message: "Verification text could not be sent",
         code: "PROVIDER_UNAVAILABLE",
       },
     });

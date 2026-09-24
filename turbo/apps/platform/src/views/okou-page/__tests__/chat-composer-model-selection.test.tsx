@@ -222,10 +222,10 @@ function limitedFreeBillingStatus(): BillingStatusResponse {
 test("Make a new-chat model choice the default immediately", async () => {
   const user = userEvent.setup({ delay: null });
   let update: UpdateUserModelPreferenceRequest | undefined;
-  installNewChat(["claude-fable-5-1", "claude-sonnet-4-6"], "claude-fable-5-1");
+  installNewChat(["claude-fable-5-1", "claude-sonnet-5"], "claude-fable-5-1");
   context.mocks.api(userModelPreferenceContract.update, ({ body, respond }) => {
     update = body;
-    const nextPreference = preference("claude-sonnet-4-6");
+    const nextPreference = preference("claude-sonnet-5");
     context.mocks.data.userModelPreference(nextPreference);
     return respond(200, nextPreference);
   });
@@ -239,14 +239,14 @@ test("Make a new-chat model choice the default immediately", async () => {
   });
 
   await readyComposer();
-  await chooseModel(user, "Claude Fable 5.1", /^Claude Sonnet 4\.6/iu);
+  await chooseModel(user, "Claude Fable 5.1", /^Claude Sonnet 5/iu);
   await waitFor(() => {
     expect(update).toStrictEqual({
-      selectedModel: "claude-sonnet-4-6",
+      selectedModel: "claude-sonnet-5",
       serviceTier: null,
     });
   });
-  await expect(modelPicker("Claude Sonnet 4.6")).resolves.toBeVisible();
+  await expect(modelPicker("Claude Sonnet 5")).resolves.toBeVisible();
   expect(
     screen.queryByRole("group", { name: "Model for this chat" }),
   ).not.toBeInTheDocument();
@@ -257,13 +257,13 @@ test("Temporarily choose a model for a new chat", async () => {
   const updateGate = createDeferredPromise<void>(context.signal);
   const responsePrepared = createDeferredPromise<void>(context.signal);
   let update: UpdateUserModelPreferenceRequest | undefined;
-  installNewChat(["claude-fable-5-1", "claude-sonnet-4-6"], "claude-fable-5-1");
+  installNewChat(["claude-fable-5-1", "claude-sonnet-5"], "claude-fable-5-1");
   context.mocks.api(
     userModelPreferenceContract.update,
     async ({ body, respond }) => {
       update = body;
       await updateGate.promise;
-      const nextPreference = preference("claude-sonnet-4-6");
+      const nextPreference = preference("claude-sonnet-5");
       context.mocks.data.userModelPreference(nextPreference);
       responsePrepared.resolve(undefined);
       return respond(200, nextPreference);
@@ -279,22 +279,20 @@ test("Temporarily choose a model for a new chat", async () => {
   });
 
   await readyComposer();
-  await chooseModel(user, "Claude Fable 5.1", /^Claude Sonnet 4\.6/iu);
+  await chooseModel(user, "Claude Fable 5.1", /^Claude Sonnet 5/iu);
   expect(update).toBeUndefined();
   const scopeCard = await screen.findByRole("group", {
     name: "Model for this chat",
   });
-  expect(scopeCard).toHaveTextContent(
-    "Temporarily switch to Claude Sonnet 4.6",
-  );
+  expect(scopeCard).toHaveTextContent("Temporarily switch to Claude Sonnet 5");
   const futureChats = buttonNamed("Use this for future chats", scopeCard);
 
   click(futureChats);
   await waitFor(() => {
     expect(update).toStrictEqual({
-      selectedModel: "claude-sonnet-4-6",
+      selectedModel: "claude-sonnet-5",
       serviceTier: null,
-      modelSettingsPatch: { model: "claude-sonnet-4-6", effort: "high" },
+      modelSettingsPatch: { model: "claude-sonnet-5", effort: "high" },
     });
     expect(futureChats).toHaveAttribute("aria-busy", "true");
   });
@@ -307,11 +305,11 @@ test("Temporarily choose a model for a new chat", async () => {
       screen.queryByRole("group", { name: "Model for this chat" }),
     ).not.toBeInTheDocument();
   });
-  await expect(modelPicker("Claude Sonnet 4.6")).resolves.toBeVisible();
+  await expect(modelPicker("Claude Sonnet 5")).resolves.toBeVisible();
 });
 
 test("Follow model preference changes made in another session", async () => {
-  installNewChat(["claude-fable-5-1", "claude-opus-4-8"], "claude-fable-5-1");
+  installNewChat(["claude-fable-5-1", "claude-opus-5-5"], "claude-fable-5-1");
 
   await setupPage({ context, path: NEW_CHAT_PATH });
 
@@ -319,14 +317,14 @@ test("Follow model preference changes made in another session", async () => {
   await expect(modelPicker("Claude Fable 5.1")).resolves.toBeVisible();
 
   context.mocks.data.userModelPreference({
-    ...preference("claude-opus-4-8"),
+    ...preference("claude-opus-5-5"),
     selectedImageModel: "gpt-image-1",
   });
   triggerAblyEvent("userPreferenceChanged", {
     kinds: ["defaultModel", "defaultImageModel", "futurePreferenceKind"],
   });
 
-  await expect(modelPicker("Claude Opus 4.8")).resolves.toBeVisible();
+  await expect(modelPicker("Claude Opus 5.5")).resolves.toBeVisible();
 });
 
 test("Explain model availability by plan and provider", async () => {
@@ -339,7 +337,7 @@ test("Explain model availability by plan and provider", async () => {
     modelPolicy("gpt-5.6-sol", 3),
     modelPolicy("claude-fable-5-1", 4),
     modelPolicy("gpt-6-astra", 5),
-    modelPolicy("claude-sonnet-4-6", 6, {
+    modelPolicy("claude-sonnet-5", 6, {
       providerType: "anthropic-api-key",
       credentialScope: "member",
     }),
@@ -365,15 +363,15 @@ test("Explain model availability by plan and provider", async () => {
   expect(screen.getAllByText("Pro")).toHaveLength(3);
   expect(screen.getByText("BYOK")).toBeVisible();
 
-  const byokOption = modelMenuOption(/^Claude Sonnet 4\.6/iu);
+  const byokOption = modelMenuOption(/^Claude Sonnet 5/iu);
   expect(within(byokOption).queryByText("Pro")).toBeNull();
   await user.click(byokOption);
-  await expect(modelPicker("Claude Sonnet 4.6")).resolves.toBeVisible();
+  await expect(modelPicker("Claude Sonnet 5")).resolves.toBeVisible();
   expect(
     screen.queryByRole("dialog", { name: "Choose a plan" }),
   ).not.toBeInTheDocument();
 
-  await user.click(await modelPicker("Claude Sonnet 4.6"));
+  await user.click(await modelPicker("Claude Sonnet 5"));
   await user.click(modelMenuOption(/^Claude Fable 5\.1/iu));
   const planDialog = await screen.findByRole("dialog", {
     name: "Choose a plan",
@@ -390,7 +388,7 @@ test("Explain model availability by plan and provider", async () => {
   expect(
     screen.queryByRole("dialog", { name: "Settings" }),
   ).not.toBeInTheDocument();
-  await expect(modelPicker("Claude Sonnet 4.6")).resolves.toBeVisible();
+  await expect(modelPicker("Claude Sonnet 5")).resolves.toBeVisible();
 });
 
 test("Switch chat models immediately and adjust Fast from settings", async () => {
@@ -857,9 +855,9 @@ test.each([
     last: "Ultra",
   },
   {
-    model: "deepseek-v4-pro",
+    model: "deepseek-v4-flash",
     providerType: "deepseek",
-    first: "High",
+    first: "Low",
     last: "Max",
   },
   {

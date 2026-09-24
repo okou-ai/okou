@@ -17,37 +17,35 @@ use sandbox::{
 };
 use tracing::{info, warn};
 
-use super::job_lifecycle::{
+use crate::idle_lifecycle::{
+    SharedIdlePool, destroy_idle_jobs_and_wait, destroy_idle_payload_and_wait,
+};
+use crate::job_lifecycle::{
     ActiveBudgetLease, BudgetOwnership, FinalizationReady, RunCleanupState,
 };
-use super::ownership::OwnershipTransitions;
-#[cfg(test)]
-use super::{OuterJobPanicPoint, StartLoopTestObserver, maybe_panic_outer_job};
-use crate::executor::{SandboxReuseDisposition, SandboxReuseTerminal};
-use crate::guest_timezone::GuestTimezoneIntent;
-use crate::idle_pool::{
+use crate::ownership::OwnershipTransitions;
+use runner_executor::executor::{SandboxReuseDisposition, SandboxReuseTerminal};
+use runner_executor::telemetry::JobTelemetry;
+use runner_lifecycle::active_runs::{ActiveRunHandoffDeliveryResult, ActiveRunReusePublisher};
+use runner_lifecycle::guest_timezone::GuestTimezoneIntent;
+use runner_lifecycle::idle_pool::{
     DestroyOutcome, IdleDestroyPayload, IdleParkActiveParts, IdleParkCandidate,
     IdleParkFailureParts, IdleParkRequest, IdleParkRequestParts, ParkResult, ParkedIdleCandidate,
     ParkingGate,
 };
-use crate::network_log_drain::NetworkLogDrainCoordinator;
-use crate::network_log_manager::NetworkLogSession;
-use crate::resource_budget::BudgetLease;
-use crate::restored_session_identity::RestoredSessionIdentity;
-use crate::status::StatusTracker;
-use crate::storage_fingerprints::StorageFingerprints;
-use crate::telemetry::JobTelemetry;
-use crate::workspace_image_cache::{
+use runner_lifecycle::resource_budget::BudgetLease;
+use runner_lifecycle::restored_session_identity::RestoredSessionIdentity;
+use runner_lifecycle::status::StatusTracker;
+use runner_lifecycle::workspace_image_cache::snapshot::WorkspaceCacheStateSnapshot;
+use runner_lifecycle::workspace_image_cache::{
     WorkspaceCacheTerminalStatus, WorkspaceImageLease, WorkspaceImagePromotionContext,
     WorkspaceImagePromotionRequest,
 };
-use crate::workspace_promotion::prepare_workspace_image_from_active_sandbox;
-use runner_lifecycle::active_runs::{ActiveRunHandoffDeliveryResult, ActiveRunReusePublisher};
-use runner_lifecycle::workspace_image_cache::snapshot::WorkspaceCacheStateSnapshot;
+use runner_lifecycle::workspace_promotion::prepare_workspace_image_from_active_sandbox;
+use runner_network::network_log_drain::NetworkLogDrainCoordinator;
+use runner_network::network_log_manager::NetworkLogSession;
 use runner_provider::RunCancellationHandle;
-use runner_supervisor::idle_lifecycle::{
-    SharedIdlePool, destroy_idle_jobs_and_wait, destroy_idle_payload_and_wait,
-};
+use runner_storage::storage_fingerprints::StorageFingerprints;
 use runner_types::ids::RunId;
 use runner_types::types::reuse_key_kind;
 use runner_types::types::{
@@ -257,39 +255,62 @@ fn mark_workspace_cache_snapshot_promoted(
     promoted
 }
 
-pub(super) struct FinalizeContext {
-    pub(super) run_id: RunId,
-    pub(super) sandbox_id: SandboxId,
-    pub(super) runner_id: String,
-    pub(super) reuse_result: SandboxReuseResult,
-    pub(super) profile_name: String,
-    pub(super) reuse_key: Option<String>,
-    pub(super) cli_agent_session_id: Option<String>,
-    pub(super) discovered_cli_agent_session_id: Option<String>,
-    pub(super) restored_session_identity: Option<RestoredSessionIdentity>,
-    pub(super) source_ip: String,
-    pub(super) network_log_session: Option<NetworkLogSession>,
-    pub(super) workspace_image: Option<WorkspaceImageLease>,
-    pub(super) workspace_image_size_bytes: u64,
-    pub(super) storage_fingerprints: StorageFingerprints,
-    pub(super) device_rate_limits: Option<sandbox::DeviceRateLimits>,
-    pub(super) guest_timezone_intent: GuestTimezoneIntent,
-    pub(super) factory: Arc<Box<dyn SandboxFactory>>,
-    pub(super) idle_pool: SharedIdlePool,
-    pub(super) status: Arc<StatusTracker>,
-    pub(super) reuse_state_notify: Arc<tokio::sync::Notify>,
-    pub(super) active_run_reuse: ActiveRunReusePublisher,
-    pub(super) workspace_cache_snapshot: WorkspaceCacheStateSnapshot,
-    pub(super) parking_gate: ParkingGate,
-    pub(super) network_log_drain: NetworkLogDrainCoordinator,
-    pub(super) exit_code: i32,
-    pub(super) sandbox_reuse_disposition: SandboxReuseDisposition,
-    pub(super) cancel: RunCancellationHandle,
-    pub(super) cleanup_state: RunCleanupState,
-    #[cfg(test)]
-    pub(super) outer_job_panic: Option<OuterJobPanicPoint>,
-    #[cfg(test)]
-    pub(super) test_observer: StartLoopTestObserver,
+pub struct FinalizeContext {
+    pub run_id: RunId,
+    pub sandbox_id: SandboxId,
+    pub runner_id: String,
+    pub reuse_result: SandboxReuseResult,
+    pub profile_name: String,
+    pub reuse_key: Option<String>,
+    pub cli_agent_session_id: Option<String>,
+    pub discovered_cli_agent_session_id: Option<String>,
+    pub restored_session_identity: Option<RestoredSessionIdentity>,
+    pub source_ip: String,
+    pub network_log_session: Option<NetworkLogSession>,
+    pub workspace_image: Option<WorkspaceImageLease>,
+    pub workspace_image_size_bytes: u64,
+    pub storage_fingerprints: StorageFingerprints,
+    pub device_rate_limits: Option<sandbox::DeviceRateLimits>,
+    pub guest_timezone_intent: GuestTimezoneIntent,
+    pub factory: Arc<Box<dyn SandboxFactory>>,
+    pub idle_pool: SharedIdlePool,
+    pub status: Arc<StatusTracker>,
+    pub reuse_state_notify: Arc<tokio::sync::Notify>,
+    pub active_run_reuse: ActiveRunReusePublisher,
+    pub workspace_cache_snapshot: WorkspaceCacheStateSnapshot,
+    pub parking_gate: ParkingGate,
+    pub network_log_drain: NetworkLogDrainCoordinator,
+    pub exit_code: i32,
+    pub sandbox_reuse_disposition: SandboxReuseDisposition,
+    pub cancel: RunCancellationHandle,
+    pub cleanup_state: RunCleanupState,
+}
+
+/// Synchronous lifecycle checkpoints for tests of finalization and its caller.
+/// Not present in the default production build.
+#[cfg(any(test, feature = "test-support"))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FinalizationTestEvent {
+    BeforeIdlePoolOwnershipTransfer { run_id: RunId },
+    SandboxParkedForReuse { run_id: RunId, reuse_key: String },
+    HandoffOwned { run_id: RunId },
+    IdlePoolOwned { run_id: RunId },
+    DestroyCompleted { run_id: RunId },
+}
+
+#[cfg(any(test, feature = "test-support"))]
+#[derive(Clone, Default)]
+pub struct FinalizationTestHooks {
+    pub on_event: Option<Arc<dyn Fn(FinalizationTestEvent) + Send + Sync>>,
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl FinalizationTestHooks {
+    fn emit(&self, event: FinalizationTestEvent) {
+        if let Some(callback) = &self.on_event {
+            callback(event);
+        }
+    }
 }
 
 /// Finalizes ownership of a sandbox returned by the executor.
@@ -299,7 +320,7 @@ pub(super) struct FinalizeContext {
 /// cancellation is not active, the parking gate is open, and a reuse key is
 /// available. Otherwise, or if hard cancellation wins before ownership
 /// transfer or parking cannot complete, the sandbox is stopped and destroyed.
-pub(super) async fn finalize_sandbox_for_completion_with_telemetry(
+pub async fn finalize_sandbox_for_completion_with_telemetry(
     sandbox: Option<Box<dyn Sandbox>>,
     active_lease: ActiveBudgetLease,
     telemetry: &mut JobTelemetry,
@@ -310,6 +331,28 @@ pub(super) async fn finalize_sandbox_for_completion_with_telemetry(
         active_lease,
         FinalizationTelemetry::new(telemetry),
         ctx,
+        #[cfg(any(test, feature = "test-support"))]
+        FinalizationTestHooks::default(),
+    )
+    .await
+}
+
+/// Test-only entrypoint that observes finalization without exposing hooks to
+/// the production context or changing its call signature.
+#[cfg(feature = "test-support")]
+pub async fn finalize_sandbox_for_completion_with_test_hooks(
+    sandbox: Option<Box<dyn Sandbox>>,
+    active_lease: ActiveBudgetLease,
+    telemetry: &mut JobTelemetry,
+    ctx: FinalizeContext,
+    test_hooks: FinalizationTestHooks,
+) -> FinalizationReady {
+    finalize_sandbox_for_completion_inner(
+        sandbox,
+        active_lease,
+        FinalizationTelemetry::new(telemetry),
+        ctx,
+        test_hooks,
     )
     .await
 }
@@ -325,6 +368,24 @@ async fn finalize_sandbox_for_completion(
         active_lease,
         FinalizationTelemetry::disabled(),
         ctx,
+        FinalizationTestHooks::default(),
+    )
+    .await
+}
+
+#[cfg(test)]
+async fn finalize_sandbox_for_completion_observed(
+    sandbox: Option<Box<dyn Sandbox>>,
+    active_lease: ActiveBudgetLease,
+    ctx: FinalizeContext,
+    test_hooks: FinalizationTestHooks,
+) -> FinalizationReady {
+    finalize_sandbox_for_completion_inner(
+        sandbox,
+        active_lease,
+        FinalizationTelemetry::disabled(),
+        ctx,
+        test_hooks,
     )
     .await
 }
@@ -334,6 +395,7 @@ async fn finalize_sandbox_for_completion_inner(
     active_lease: ActiveBudgetLease,
     mut telemetry: FinalizationTelemetry<'_>,
     ctx: FinalizeContext,
+    #[cfg(any(test, feature = "test-support"))] test_hooks: FinalizationTestHooks,
 ) -> FinalizationReady {
     let Some(sandbox) = sandbox else {
         return FinalizationReady::new(BudgetOwnership::active(active_lease));
@@ -368,18 +430,14 @@ async fn finalize_sandbox_for_completion_inner(
         sandbox_reuse_disposition,
         cancel,
         cleanup_state,
-        #[cfg(test)]
-        outer_job_panic,
-        #[cfg(test)]
-        test_observer,
     } = ctx;
 
     let destroy_bookkeeping = DestroyBookkeepingContext {
         cleanup_state: &cleanup_state,
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         run_id,
-        #[cfg(test)]
-        outer_job_panic,
+        #[cfg(any(test, feature = "test-support"))]
+        test_hooks: &test_hooks,
     };
     let cancelled = cancel.is_cancelled();
     let hard_cancelled = cancel.is_hard_cancelled();
@@ -747,12 +805,8 @@ async fn finalize_sandbox_for_completion_inner(
                 match deliver_exact_handoff(&active_run_reuse, candidate, run_id) {
                     ExactHandoffAttempt::Delivered { handoff_point } => {
                         cleanup_state.mark_handoff_owned();
-                        #[cfg(test)]
-                        maybe_panic_outer_job(
-                            outer_job_panic,
-                            OuterJobPanicPoint::HandoffOwned,
-                            run_id,
-                        );
+                        #[cfg(any(test, feature = "test-support"))]
+                        test_hooks.emit(FinalizationTestEvent::HandoffOwned { run_id });
                         drop(transfer_guard);
                         let handoff_path = match handoff_point {
                             Some(SandboxFinalExecParkHandoffPoint::BeforeBalloon) => {
@@ -833,8 +887,8 @@ async fn finalize_sandbox_for_completion_inner(
                     );
                 }
             };
-            #[cfg(test)]
-            test_observer.notify_before_idle_pool_ownership_transfer(run_id);
+            #[cfg(any(test, feature = "test-support"))]
+            test_hooks.emit(FinalizationTestEvent::BeforeIdlePoolOwnershipTransfer { run_id });
             loop {
                 let mut pool = idle_pool.lock().await;
                 // Let hard cancellation win while finalization is still waiting
@@ -916,15 +970,14 @@ async fn finalize_sandbox_for_completion_inner(
                             reuse_key_kind = reuse_kind,
                             "sandbox parked for reuse"
                         );
-                        #[cfg(test)]
-                        test_observer.notify_sandbox_parked_for_reuse(run_id, reuse_key.clone());
-                        cleanup_state.mark_idle_pool_owned();
-                        #[cfg(test)]
-                        maybe_panic_outer_job(
-                            outer_job_panic,
-                            OuterJobPanicPoint::IdlePoolOwned,
+                        #[cfg(any(test, feature = "test-support"))]
+                        test_hooks.emit(FinalizationTestEvent::SandboxParkedForReuse {
                             run_id,
-                        );
+                            reuse_key: reuse_key.clone(),
+                        });
+                        cleanup_state.mark_idle_pool_owned();
+                        #[cfg(any(test, feature = "test-support"))]
+                        test_hooks.emit(FinalizationTestEvent::IdlePoolOwned { run_id });
                         // Push fresh idle state to status.json BEFORE
                         // conditional active-run removal (below) clears the run_id
                         // from active_runs. Without this, doctor would
@@ -954,12 +1007,8 @@ async fn finalize_sandbox_for_completion_inner(
                             "sandbox parked, evicting previous"
                         );
                         cleanup_state.mark_idle_pool_owned();
-                        #[cfg(test)]
-                        maybe_panic_outer_job(
-                            outer_job_panic,
-                            OuterJobPanicPoint::IdlePoolOwned,
-                            run_id,
-                        );
+                        #[cfg(any(test, feature = "test-support"))]
+                        test_hooks.emit(FinalizationTestEvent::IdlePoolOwned { run_id });
                         let snapshot = pool.status_snapshot();
                         drop(transfer_guard);
                         drop(pool);
@@ -1055,10 +1104,10 @@ async fn finalize_sandbox_for_completion_inner(
 #[derive(Clone, Copy)]
 struct DestroyBookkeepingContext<'a> {
     cleanup_state: &'a RunCleanupState,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     run_id: RunId,
-    #[cfg(test)]
-    outer_job_panic: Option<OuterJobPanicPoint>,
+    #[cfg(any(test, feature = "test-support"))]
+    test_hooks: &'a FinalizationTestHooks,
 }
 
 struct ActiveOwnedIdleDestroyResult {
@@ -1075,12 +1124,12 @@ fn record_destroy_result(outcome: DestroyOutcome, context: DestroyBookkeepingCon
     if outcome == DestroyOutcome::Completed {
         context.cleanup_state.mark_destroy_completed();
     }
-    #[cfg(test)]
-    maybe_panic_outer_job(
-        context.outer_job_panic,
-        OuterJobPanicPoint::DestroyCompleted,
-        context.run_id,
-    );
+    #[cfg(any(test, feature = "test-support"))]
+    context
+        .test_hooks
+        .emit(FinalizationTestEvent::DestroyCompleted {
+            run_id: context.run_id,
+        });
 }
 
 async fn destroy_active_owned_idle_payload(
@@ -1249,33 +1298,67 @@ mod tests {
     use tracing_subscriber::prelude::*;
     use tracing_test_support::{CapturedEvent, CapturedEvents};
 
-    use super::super::job_lifecycle::{ActiveBudgetLease, RunCleanupDisposition, RunCleanupState};
-    use crate::idle_pool::{
+    use crate::idle_lifecycle::SharedIdlePool;
+    use crate::job_lifecycle::{ActiveBudgetLease, RunCleanupDisposition, RunCleanupState};
+    use runner_host::paths::RunnerPaths;
+    use runner_lifecycle::active_runs::ActiveRuns;
+    use runner_lifecycle::idle_pool::{
         IdleParkRequest, IdleParkRequestParts, IdlePool, IdlePoolConfig, ParkResult, ParkingGate,
         RestoreReservedIdleResult, test_support::ParkedIdleCandidateBuilder,
     };
-    use crate::idle_reuse_preparation::{
+    use runner_lifecycle::idle_reuse_preparation::{
         add_healthy_reuse_preparation_matcher, mock_sandbox_ready_for_idle_reuse,
     };
-    use crate::network_log_drain::NetworkLogDrainCoordinator;
-    use crate::network_log_manager::NetworkLogManager;
-    use crate::resource_budget::{BudgetLease, ResourceBudget};
-    use crate::restored_session_identity::RestoredSessionIdentity;
-    use crate::status::StatusTracker;
-    use crate::storage_fingerprints::StorageFingerprint;
-    use crate::storage_plan::build_storage_plan;
-    use crate::workspace_image_cache::{
+    use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
+    use runner_lifecycle::restored_session_identity::RestoredSessionIdentity;
+    use runner_lifecycle::status::StatusTracker;
+    use runner_lifecycle::workspace_image_cache::{
         WorkspaceImageCache, WorkspaceImageLeaseIdentity, WorkspaceImagePrepareRequest,
         WorkspaceImagePromotionContext, WorkspaceImagePromotionIdentityRequest,
         WorkspaceImagePromotionOutcome, WorkspaceImagePromotionRequest,
         WorkspaceSessionHistorySidecarRepresentation,
     };
-    use runner_host::paths::RunnerPaths;
-    use runner_lifecycle::active_runs::ActiveRuns;
-    use runner_supervisor::idle_lifecycle::SharedIdlePool;
+    use runner_network::network_log_drain::NetworkLogDrainCoordinator;
+    use runner_network::network_log_manager::NetworkLogManager;
+    use runner_storage::storage_fingerprints::StorageFingerprint;
+    use runner_storage::storage_plan::build_storage_plan;
     use runner_types::ids::RunId;
     use runner_types::storage_manifest::{ArtifactEntry, StorageEntry, StorageManifest};
     use runner_types::types::SandboxReuseResult;
+
+    fn observe_finalization_events() -> (
+        FinalizationTestHooks,
+        tokio::sync::mpsc::UnboundedReceiver<FinalizationTestEvent>,
+    ) {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let hooks = FinalizationTestHooks {
+            on_event: Some(Arc::new(move |event| {
+                tx.send(event)
+                    .expect("finalization observer should remain active");
+            })),
+        };
+        (hooks, rx)
+    }
+
+    async fn wait_for_finalization_event(
+        events: &mut tokio::sync::mpsc::UnboundedReceiver<FinalizationTestEvent>,
+        expected: impl Fn(&FinalizationTestEvent) -> bool,
+        timeout: Duration,
+    ) -> FinalizationTestEvent {
+        tokio::time::timeout(timeout, async {
+            loop {
+                let event = events
+                    .recv()
+                    .await
+                    .expect("finalization event channel closed");
+                if expected(&event) {
+                    return event;
+                }
+            }
+        })
+        .await
+        .expect("finalization event did not arrive")
+    }
 
     fn test_active_runs() -> ActiveRuns {
         ActiveRuns::new(Arc::new(tokio::sync::Notify::new()))
@@ -1443,7 +1526,8 @@ mod tests {
                 network_log_session: Some(network_log_session),
                 workspace_image: None,
                 workspace_image_size_bytes: 0,
-                storage_fingerprints: crate::storage_fingerprints::StorageFingerprints::default(),
+                storage_fingerprints:
+                    runner_storage::storage_fingerprints::StorageFingerprints::default(),
                 device_rate_limits: None,
                 guest_timezone_intent: GuestTimezoneIntent::Unknown,
                 factory: Arc::new(Box::new(MockSandboxFactory::new()) as Box<dyn SandboxFactory>),
@@ -1460,8 +1544,6 @@ mod tests {
                 ),
                 cancel,
                 cleanup_state: RunCleanupState::new(),
-                outer_job_panic: None,
-                test_observer: StartLoopTestObserver::default(),
             }
         }
     }
@@ -1621,7 +1703,7 @@ mod tests {
         run_id: RunId,
         sandbox_id: SandboxId,
         terminal_status: WorkspaceCacheTerminalStatus,
-        storage_fingerprints: crate::storage_fingerprints::StorageFingerprints,
+        storage_fingerprints: runner_storage::storage_fingerprints::StorageFingerprints,
     ) -> WorkspaceImagePromotionContext {
         lease
             .into_promotion_context(WorkspaceImagePromotionRequest {
@@ -1921,29 +2003,36 @@ mod tests {
         let run_id = RunId::new_v4();
         let sandbox_id = SandboxId::new_v4();
         let reuse_key = "thread:finalizer-17975";
-        let observer = StartLoopTestObserver::default();
-        let mut context = fixture.finalize_context(
+        let (hooks, mut events) = observe_finalization_events();
+        let context = fixture.finalize_context(
             run_id,
             sandbox_id,
             reuse_key,
             network_log_session,
             RunCancellationHandle::new(),
         );
-        context.test_observer = observer.clone();
-
-        let _finalization_ready = finalize_sandbox_for_completion(
+        let _finalization_ready = finalize_sandbox_for_completion_observed(
             Some(Box::new(mock_sandbox_ready_for_idle_reuse(
                 "finalizer-redaction",
             ))),
             ActiveBudgetLease::new(lease),
             context,
+            hooks,
         )
         .await;
-        let observed_reuse_key = observer
-            .wait_sandbox_parked_for_reuse(run_id, Duration::from_secs(1))
-            .await;
-
-        assert_eq!(observed_reuse_key, reuse_key);
+        let event = wait_for_finalization_event(
+            &mut events,
+            |event| matches!(event, FinalizationTestEvent::SandboxParkedForReuse { run_id: observed, .. } if *observed == run_id),
+            Duration::from_secs(1),
+        )
+        .await;
+        assert_eq!(
+            event,
+            FinalizationTestEvent::SandboxParkedForReuse {
+                run_id,
+                reuse_key: reuse_key.into(),
+            }
+        );
     }
 
     #[tokio::test]
@@ -2009,7 +2098,7 @@ mod tests {
             run_id,
             sandbox_id,
             WorkspaceCacheTerminalStatus::Success,
-            crate::storage_fingerprints::StorageFingerprints::default(),
+            runner_storage::storage_fingerprints::StorageFingerprints::default(),
         );
 
         let promoted = prepare_and_publish_workspace_image(&sandbox, promotion).await;
@@ -2230,7 +2319,7 @@ mod tests {
             run_id,
             sandbox_id,
             WorkspaceCacheTerminalStatus::Success,
-            crate::storage_fingerprints::StorageFingerprints::default(),
+            runner_storage::storage_fingerprints::StorageFingerprints::default(),
         );
 
         let prepared =
@@ -2419,7 +2508,7 @@ mod tests {
             .await;
         assert_eq!(
             workspace_image.result(),
-            crate::workspace_image_cache::WorkspaceCacheCheckoutResult::Hit
+            runner_lifecycle::workspace_image_cache::WorkspaceCacheCheckoutResult::Hit
         );
         let sidecar_body_path = workspace_image
             .probe_session_history_sidecar(&previous_identity)
@@ -2572,7 +2661,7 @@ mod tests {
             .await;
         assert_eq!(
             workspace_image.result(),
-            crate::workspace_image_cache::WorkspaceCacheCheckoutResult::Hit
+            runner_lifecycle::workspace_image_cache::WorkspaceCacheCheckoutResult::Hit
         );
         let previous_body_path = workspace_image
             .probe_session_history_sidecar(&previous_identity)
@@ -2763,7 +2852,7 @@ mod tests {
             .await;
         assert_eq!(
             workspace_image.result(),
-            crate::workspace_image_cache::WorkspaceCacheCheckoutResult::Miss
+            runner_lifecycle::workspace_image_cache::WorkspaceCacheCheckoutResult::Miss
         );
         tokio::fs::create_dir_all(paths.workspace_dir(&sandbox_id))
             .await
@@ -2978,7 +3067,7 @@ mod tests {
             old_run_id,
             old_sandbox_id,
             WorkspaceCacheTerminalStatus::Success,
-            crate::storage_fingerprints::StorageFingerprints::default(),
+            runner_storage::storage_fingerprints::StorageFingerprints::default(),
         );
         let destroy_gate = MockLifecycleGate::new();
         let existing_overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
@@ -3011,7 +3100,8 @@ mod tests {
             profile_name: "vm0/default".into(),
             device_rate_limits: None,
             budget_lease: existing_lease,
-            storage_fingerprints: crate::storage_fingerprints::StorageFingerprints::default(),
+            storage_fingerprints:
+                runner_storage::storage_fingerprints::StorageFingerprints::default(),
             restored_session_identity: None,
             history_generation_run_id: None,
             guest_timezone_intent: GuestTimezoneIntent::Unknown,
@@ -3158,7 +3248,7 @@ mod tests {
             .await
             .take(session_id)
             .expect("late-cancelled successful sandbox should be parked");
-        let crate::idle_pool::IdleUnparkResult::Reused { sandbox, .. } =
+        let runner_lifecycle::idle_pool::IdleUnparkResult::Reused { sandbox, .. } =
             entry.try_unpark_for_run(RunId::new_v4()).await
         else {
             panic!("late-cancelled successful sandbox should unpark");
@@ -3246,7 +3336,7 @@ mod tests {
         let sandbox_id = SandboxId::new_v4();
         let cancel = RunCancellationHandle::new();
         let cleanup_state = RunCleanupState::new();
-        let observer = StartLoopTestObserver::default();
+        let (hooks, mut events) = observe_finalization_events();
         let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
         add_healthy_reuse_preparation_matcher(&overrides);
         let destroy_gate = MockLifecycleGate::new();
@@ -3261,20 +3351,23 @@ mod tests {
         );
         context.factory = factory;
         context.cleanup_state = cleanup_state.clone();
-        context.test_observer = observer.clone();
         // Hold the pool lock so cancellation lands after the observer event but
         // before ownership can transfer into the idle pool.
         let pool_guard = fixture.idle_pool.lock().await;
 
-        let finalize_task = tokio::spawn(finalize_sandbox_for_completion(
+        let finalize_task = tokio::spawn(finalize_sandbox_for_completion_observed(
             Some(sandbox),
             ActiveBudgetLease::new(lease),
             context,
+            hooks,
         ));
 
-        observer
-            .wait_before_idle_pool_ownership_transfer(run_id, Duration::from_secs(5))
-            .await;
+        wait_for_finalization_event(
+            &mut events,
+            |event| matches!(event, FinalizationTestEvent::BeforeIdlePoolOwnershipTransfer { run_id: observed } if *observed == run_id),
+            Duration::from_secs(5),
+        )
+        .await;
         cancel.request_hard_cancellation().await;
         assert!(
             !fixture

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { discordGatewayReceipts } from "@okouai/db/schema/discord-gateway-receipt";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";

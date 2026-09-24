@@ -1177,13 +1177,9 @@ describe("Teams chat callbacks", () => {
             tenant: { id: teams.fixture.teamsTenantId },
           },
         });
-        expect(teamsApi.postedActivities[0]?.text).toContain(
-          "Task completed successfully.",
+        expect(teamsApi.postedActivities[0]?.text).toBe(
+          "Task completed successfully.\n\n_Claude Fable 5.1_",
         );
-        expect(teamsApi.postedActivities[0]?.text).toContain(
-          `[Audit](https://app.okou.ai/activities/${runId})`,
-        );
-        expect(teamsApi.postedActivities[0]?.text).not.toContain("Reply to");
         expect(teamsApi.reactionRequests).toStrictEqual([
           {
             method: "DELETE",

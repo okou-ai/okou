@@ -35,7 +35,7 @@ test("Conversation lifecycle events produce the current list", async () => {
       chatListEvent(5, 3, "sort_touched", oldThread.id),
       chatListEvent(5, 4, "created", newThreadId, {
         title: "Current conversation",
-        selectedModel: "claude-sonnet-4-6",
+        selectedModel: "claude-sonnet-5",
       }),
       chatListEvent(5, 5, "deleted", oldThread.id),
     ],

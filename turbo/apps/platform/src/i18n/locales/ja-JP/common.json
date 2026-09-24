@@ -347,7 +347,7 @@
     },
     "sources": {
       "agent": "エージェント",
-      "agentphone": "エージェントフォン",
+      "agentphone": "iMessage",
       "automationEvent": "オートメーションイベント",
       "automationSchedule": "オートメーションスケジュール",
       "discord": "Discord",
@@ -1183,7 +1183,7 @@
         "everythingInBuiltForTeams": "{{plan}} の全機能をチーム向けに",
         "included": "含まれるもの",
         "liveBrowser": "エージェントのライブブラウザを見て操作を奪う",
-        "models": "Claude Opus 5、GPT 5.6 Sol、DeepSeek V4 Pro",
+        "models": "Claude Opus 5、GPT 5.6 Sol、DeepSeek V4.1 Flash",
         "moreConnectorsChannels": "カスタムコネクターとチャネル連携をより多く",
         "supportEmail": "メールサポート",
         "supportPriority": "優先サポート",
@@ -1437,6 +1437,11 @@
         },
         "earned": "{{amount}} 獲得",
         "howRewardsWork": "報酬の仕組み",
+        "imessage": {
+          "action": "追加",
+          "description": "iPhone から {{assistantName}} にメッセージ",
+          "name": "iMessage に追加"
+        },
         "inReview": "確認中",
         "intro": {
           "checkin": {
@@ -3459,7 +3464,7 @@
         "invalidSignature": "このリンクの署名は無効です。",
         "invalidTimestamp": "このリンクのタイムスタンプは無効です。",
         "invalidTitle": "接続リンクが無効です",
-        "risk": "SMS および MMS の返信は確実に配信されない可能性があります。最も信頼性の高いエクスペリエンスを得るには、この AgentPhone 番号で iMessage を使用してください。",
+        "risk": "SMS および MMS の返信は確実に配信されない可能性があります。最も信頼性の高いエクスペリエンスを得るには、この番号で iMessage を使用してください。",
         "successDescription": "{{phone}} が接続されています。テキスト メッセージを送信して、{{assistantName}} とのチャットを開始します。",
         "successTitle": "接続された電話番号"
       },
@@ -3581,9 +3586,10 @@
       "agentphone": {
         "authorizedSender": "承認された送信者",
         "codeExpiry": "10分後に期限切れになります",
+        "codeLabel": "コード",
         "connectAria": "電話を接続する",
-        "connectDescription": "コードをスキャンするか「メッセージ」を開き、入力済みのコードを送信してください。",
-        "connectTitle": "電話を接続する",
+        "connectDescription": "カメラでスキャンし、入力済みのコードを送信してください。",
+        "connectTitle": "iPhone から {{assistantName}} にメッセージ",
         "copyAria": "{{phone}} をコピーします",
         "copyCodeAria": "接続コード {{code}} をコピー",
         "copyCodeError": "接続コードをコピーできませんでした",
@@ -3594,13 +3600,12 @@
         "creatingCode": "接続コードを作成中…",
         "description": "{{assistantName}} へのテキスト メッセージ アクセス",
         "destination": "iMessage または SMS で",
-        "manualSend": "または",
-        "manualSendTo": "を次の番号に送信：",
         "openMessages": "メッセージを開く",
         "options": "電話オプション",
         "phoneLabel": "電話",
         "qrTitle": "スキャンして、接続コードが入力された「メッセージ」を開く",
         "risk": "可能な場合は iMessage を使用してください。SMS および MMS の返信は確実に届かないことがあります。",
+        "sendToLabel": "送信先",
         "tryAgain": "もう一度試す"
       },
       "catalogDiagnostics": {
@@ -4010,8 +4015,8 @@
         "uninstallTitle": "Telegram ボットをアンインストールしますか?"
       },
       "toasts": {
-        "agentphoneConnected": "エージェントフォンが接続されました",
-        "agentphoneDisconnected": "AgentPhone が切断されました",
+        "agentphoneConnected": "電話番号が接続されました",
+        "agentphoneDisconnected": "電話番号の接続が解除されました",
         "slackConnected": "Slack は正常に接続されました",
         "slackDisconnected": "Slack から切断されました",
         "slackInstalled": "Slack は正常にインストールされました",
@@ -4266,7 +4271,6 @@
       "documentTitles": {
         "experience": "AI の利用経験",
         "industry": "分野を選ぶ",
-        "profile": "あなたのプロフィール",
         "ready": "Okou の準備ができました",
         "skills": "スキルをインポート",
         "slack": "Okou を Slack に追加",
@@ -4329,17 +4333,6 @@
       "industry": {
         "copy": "Okou は、あなたとチームのための仕事のアシスタントです。散らばった情報を、クラウドで完了した仕事に変えます。分野を選ぶと、合った最初のタスクを提案します。",
         "title": "どんな仕事をしていますか？"
-      },
-      "profile": {
-        "communicationStyle": "コミュニケーションのスタイル",
-        "copy": "接続したアカウントをもとに、あなたの仕事を初めて整理しました。",
-        "failed": "今はプロフィールを作成できません。再試行するか、次に進んでください。",
-        "heading": "あなたのプロフィール",
-        "loading": "接続した仕事からプロフィールを作成しています…",
-        "priorities": "考えられる優先事項",
-        "professionalIdentity": "あなたの仕事",
-        "retry": "再試行",
-        "title": "あなたについてわかったこと"
       },
       "skills": {
         "copied": "コピーしました",
@@ -4739,7 +4732,7 @@
         "unconfirmedNote": "{{provider}} の接続を確認できませんでした。もう一度試すか、あとでつなげます。"
       },
       "team": {
-        "copy": "チームメンバーを招待して、共有ワークフローを一緒に使いましょう。",
+        "copy": "チームメンバーを招待してワークフローを共有しましょう。ツールはそれぞれが自分で接続します。",
         "invite": "招待を送る",
         "invited": "招待済み",
         "label": "チームメンバーのメールアドレス",
@@ -4753,12 +4746,10 @@
           "workspace": "あなたのワークスペースに参加します。"
         },
         "sending": "送信中…",
-        "title": "チーム全員で Okou を活用しましょう",
-        "trust": "全員が同じワークフローを使い、それぞれ自分のツールを接続します。"
+        "title": "チーム全員で Okou を活用しましょう"
       },
       "welcome": {
         "copy": "仕事に合わせた提案を確認し、目的に合わせて調整してから Okou に任せましょう。",
-        "offerTitle": "最初の 1 時間のコンサルティングは無料、さらに最大 100 クレジット —",
         "promptLabel": "最初のプロンプト",
         "start": "Okou を使い始める",
         "title": "意味のあるタスクから始めましょう"
@@ -6611,9 +6602,6 @@
       "emailSubscription": {
         "description": "ブリーフ、リマインダー、その他のワークスペース更新をメールで受け取ります。",
         "descriptionWithEmail": "{{email}} でブリーフ、リマインダー、その他のワークスペース更新を受け取ります。",
-        "loading": "メール配信設定を確認中…",
-        "retryMessage": "メール配信設定を保存または読み込めませんでした。もう一度お試しください。",
-        "saving": "保存中…",
         "sectionTitle": "メール配信設定",
         "title": "メール通知",
         "unavailable": "メールを利用できません",
@@ -7094,6 +7082,7 @@
       "add": "認証情報を追加",
       "appleDhFieldHelp": "各項目は UTF-8 で 1～63 バイトです。NUL は使用できません。",
       "appleDhMethod": "Apple DH のユーザー名とパスワード",
+      "appleSrpMethod": "Apple Direct SRP のユーザー名とパスワード",
       "authentication": "認証方式",
       "createNew": "新しい認証情報を作成",
       "delete": "認証情報を削除",
@@ -7162,6 +7151,8 @@
     "security": {
       "appleDh": "Mac の画面共有 (Apple DH)",
       "appleDhHelp": "保存済みの SSH 接続経由で macOS の画面共有を使用します。RFB の接続先はその Mac の 127.0.0.1 または ::1 に限られます。SSH が VNC セッション全体を保護します。管理下の Mac SSH ホストを使用してください。ホスト鍵だけでは先へのプロキシ転送を否定できません。",
+      "appleSrp": "Mac の画面共有 (Apple Direct SRP)",
+      "appleSrpHelp": "保存済みの Mac への SSH 接続と、RFB 接続先 127.0.0.1 または ::1 が必要です。SRP はアカウントとサーバーの証明を検証し、SSH は VNC セッション全体を保護します。SSH ホスト鍵は選択した接続先を識別しますが、先へのプロキシ転送は否定できません。",
       "caBundle": "CA 証明書（PEM）",
       "caHelp": "CA 証明書は最大 8 件、合計 64 KiB です。秘密鍵やサーバー証明書は貼り付けないでください。",
       "caHint": "サーバー証明書を発行した公開 CA 証明書を貼り付けてください",
@@ -7181,6 +7172,7 @@
     "summary_other": "設定済みホスト {{count}} 台",
     "transport": {
       "appleDhDestinationHelp": "Apple DH には 127.0.0.1 または ::1 を入力してください。選択した SSH ホスト経由で到達する Mac 自身のループバックアドレスです。",
+      "appleSrpDestinationHelp": "Apple Direct SRP には 127.0.0.1 または ::1 を入力してください。選択した SSH ホスト経由で到達する Mac 自身のループバックアドレスです。",
       "destination": "RFB接続先",
       "destinationHelp": "SSHルートでは、このホストとポートへRunnerから直接ではなく、選択したSSHサーバーから接続します。",
       "direct": "Runnerから直接",

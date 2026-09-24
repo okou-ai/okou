@@ -1,4 +1,5 @@
 import {
+  index,
   check,
   integer,
   pgTable,
@@ -46,6 +47,7 @@ export const chatGithubContext = pgTable(
   },
   (table) => {
     return [
+      index("chat_github_context_thread_idx").on(table.chatThreadId),
       check(
         "chat_github_context_subject_kind_check",
         sql`${table.subjectKind} IN ('issue', 'pull_request')`,

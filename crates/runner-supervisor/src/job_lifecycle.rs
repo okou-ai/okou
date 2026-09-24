@@ -6,16 +6,16 @@ use api_contracts::generated::types::webhooks::agent::complete::RequestFailureRe
 use chrono::{DateTime, Utc};
 use sandbox::SandboxId;
 
-use crate::resource_budget::BudgetLease;
+use runner_lifecycle::resource_budget::BudgetLease;
 use runner_provider::{CompletionAuth, JobProvider};
 use runner_types::ids::RunId;
 use runner_types::types::{CompleteRequest, SandboxReuseResult, WorkspaceReuseResult};
 
-use super::ownership::{OwnershipTransitions, RunSandbox};
+use crate::ownership::{OwnershipTransitions, RunSandbox};
 
 /// Ownership facts known by the outer runner task for panic cleanup.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum RunCleanupDisposition {
+pub enum RunCleanupDisposition {
     /// The sandbox may still be active, or ownership is otherwise uncertain.
     ActiveOrUnknown,
     /// The sandbox has been accepted by the idle pool.
@@ -30,8 +30,14 @@ pub(super) enum RunCleanupDisposition {
 
 /// Shared monotonic cleanup state for a claimed run.
 #[derive(Clone, Debug)]
-pub(super) struct RunCleanupState {
+pub struct RunCleanupState {
     state: Arc<AtomicU8>,
+}
+
+impl Default for RunCleanupState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RunCleanupState {
@@ -41,13 +47,13 @@ impl RunCleanupState {
     const HANDOFF_OWNED: u8 = 3;
     const STATUS_REMOVED: u8 = 4;
 
-    pub(super) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             state: Arc::new(AtomicU8::new(Self::ACTIVE_OR_UNKNOWN)),
         }
     }
 
-    pub(super) fn disposition(&self) -> RunCleanupDisposition {
+    pub fn disposition(&self) -> RunCleanupDisposition {
         match self.state.load(Ordering::Acquire) {
             Self::STATUS_REMOVED => RunCleanupDisposition::StatusRemoved,
             Self::IDLE_POOL_OWNED => RunCleanupDisposition::IdlePoolOwned,
@@ -57,19 +63,19 @@ impl RunCleanupState {
         }
     }
 
-    pub(super) fn mark_idle_pool_owned(&self) {
+    pub fn mark_idle_pool_owned(&self) {
         self.mark_at_least(Self::IDLE_POOL_OWNED);
     }
 
-    pub(super) fn mark_destroy_completed(&self) {
+    pub fn mark_destroy_completed(&self) {
         self.mark_at_least(Self::DESTROY_COMPLETED);
     }
 
-    pub(super) fn mark_handoff_owned(&self) {
+    pub fn mark_handoff_owned(&self) {
         self.mark_at_least(Self::HANDOFF_OWNED);
     }
 
-    pub(super) fn mark_status_removed(&self) {
+    pub fn mark_status_removed(&self) {
         self.mark_at_least(Self::STATUS_REMOVED);
     }
 
@@ -83,18 +89,18 @@ impl RunCleanupState {
 }
 
 /// Budget ownership while a claimed job is active in the outer task.
-pub(super) struct ActiveBudgetLease(BudgetLease);
+pub struct ActiveBudgetLease(BudgetLease);
 
 impl ActiveBudgetLease {
-    pub(super) fn new(lease: BudgetLease) -> Self {
+    pub fn new(lease: BudgetLease) -> Self {
         Self(lease)
     }
 
-    pub(super) fn into_idle_park_lease(self) -> BudgetLease {
+    pub fn into_idle_park_lease(self) -> BudgetLease {
         self.0
     }
 
-    pub(super) fn from_idle_park_lease(lease: BudgetLease) -> Self {
+    pub fn from_idle_park_lease(lease: BudgetLease) -> Self {
         Self(lease)
     }
 }
@@ -104,7 +110,7 @@ impl ActiveBudgetLease {
 /// This distinguishes a lease that settlement must release from one already
 /// transferred to an accepted idle-pool entry.
 #[must_use]
-pub(super) enum BudgetOwnership {
+pub enum BudgetOwnership {
     /// The active job retains the lease until provider completion and active-status
     /// settlement have both finished, after which settlement releases it.
     Active(ActiveBudgetLease),
@@ -116,15 +122,15 @@ pub(super) enum BudgetOwnership {
 }
 
 impl BudgetOwnership {
-    pub(super) fn active(lease: ActiveBudgetLease) -> Self {
+    pub fn active(lease: ActiveBudgetLease) -> Self {
         Self::Active(lease)
     }
 
-    pub(super) fn idle_owned() -> Self {
+    pub fn idle_owned() -> Self {
         Self::IdleOwned
     }
 
-    pub(super) fn handoff_owned() -> Self {
+    pub fn handoff_owned() -> Self {
         Self::HandoffOwned
     }
 
@@ -137,7 +143,7 @@ impl BudgetOwnership {
 }
 
 /// Data required for the provider completion call.
-pub(super) struct CompletionPayload {
+pub struct CompletionPayload {
     run_id: RunId,
     exit_code: i32,
     failure_reason: Option<RequestFailureReason>,
@@ -150,13 +156,13 @@ pub(super) struct CompletionPayload {
 }
 
 #[must_use]
-pub(super) struct CompletionReportObservation {
+pub struct CompletionReportObservation {
     duration: Duration,
     completed_at: DateTime<Utc>,
 }
 
 impl CompletionReportObservation {
-    pub(super) fn record(self, telemetry: &mut crate::telemetry::JobTelemetry) {
+    pub fn record(self, telemetry: &mut runner_executor::telemetry::JobTelemetry) {
         telemetry.record_at(
             "runner_host_completion_fallback",
             self.duration,
@@ -168,7 +174,7 @@ impl CompletionReportObservation {
 }
 
 impl CompletionPayload {
-    pub(super) fn new(
+    pub fn new(
         run_id: RunId,
         exit_code: i32,
         failure_reason: Option<RequestFailureReason>,
@@ -190,7 +196,7 @@ impl CompletionPayload {
         }
     }
 
-    pub(super) fn with_workspace_reuse_result(
+    pub fn with_workspace_reuse_result(
         mut self,
         workspace_reuse_result: Option<WorkspaceReuseResult>,
     ) -> Self {
@@ -198,7 +204,7 @@ impl CompletionPayload {
         self
     }
 
-    pub(super) fn with_active_input_delivery_ids(
+    pub fn with_active_input_delivery_ids(
         mut self,
         active_input_delivery_ids: Vec<String>,
     ) -> Self {
@@ -206,7 +212,7 @@ impl CompletionPayload {
         self
     }
 
-    pub(super) async fn report(self, provider: &dyn JobProvider) -> CompletionReportObservation {
+    pub async fn report(self, provider: &dyn JobProvider) -> CompletionReportObservation {
         let Self {
             run_id,
             exit_code,
@@ -243,29 +249,29 @@ impl CompletionPayload {
 
 /// Sandbox finalization has resolved resource ownership.
 #[must_use]
-pub(super) struct FinalizationReady {
+pub struct FinalizationReady {
     budget: BudgetOwnership,
     reuse_state_changed: bool,
 }
 
 impl FinalizationReady {
-    pub(super) fn new(budget: BudgetOwnership) -> Self {
+    pub fn new(budget: BudgetOwnership) -> Self {
         Self {
             budget,
             reuse_state_changed: false,
         }
     }
 
-    pub(super) fn with_reuse_state_changed(mut self) -> Self {
+    pub fn with_reuse_state_changed(mut self) -> Self {
         self.reuse_state_changed = true;
         self
     }
 
-    pub(super) fn reuse_state_changed(&self) -> bool {
+    pub fn reuse_state_changed(&self) -> bool {
         self.reuse_state_changed
     }
 
-    pub(super) async fn settle(
+    pub async fn settle(
         self,
         completed_run: RunSandbox,
         ownership: &OwnershipTransitions<'_>,
@@ -286,13 +292,13 @@ mod tests {
     use async_trait::async_trait;
     use sandbox::SandboxId;
 
-    use crate::resource_budget::{BudgetLease, ResourceBudget};
-    use crate::status::StatusTracker;
+    use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
+    use runner_lifecycle::status::StatusTracker;
     use runner_provider::{ClaimedJob, JobCandidate, JobProvider};
     use runner_types::ids::RunId;
     use runner_types::types::{HeartbeatState, SandboxReuseResult};
 
-    use super::super::ownership::OwnershipTransitions;
+    use crate::ownership::OwnershipTransitions;
 
     fn test_budget_lease() -> (Arc<ResourceBudget>, BudgetLease) {
         let budget = Arc::new(ResourceBudget::new(8, 32768, 1.0, 0));

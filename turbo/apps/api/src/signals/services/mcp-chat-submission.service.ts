@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { eq } from "drizzle-orm";
 import { now } from "../../lib/time";
 import type { Db } from "../external/db";

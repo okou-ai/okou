@@ -1,8 +1,7 @@
+import { reserveFixtureChatEventSequence } from "./chat-event-sequences";
 import { randomUUID } from "node:crypto";
 import { db } from "../lib/db";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { eq, sql } from "drizzle-orm";
 import { Client } from "pg";
 import { env } from "../lib/env";
 import { visiblePiMemoryCitationText } from "@okouai/api-contracts/contracts/pi-memory-citations";
@@ -105,10 +104,12 @@ export async function seedMalformedGoalArchiveFixture(
     ]);
     const rows = await client.query<Record<string, unknown>>(
       `WITH reservation AS (
-        UPDATE chat_threads SET last_chat_event_seq_id = last_chat_event_seq_id + 1
-        RETURNING id, last_chat_event_seq_id
+        INSERT INTO chat_event_sequences (chat_thread_id, last_seq_id)
+        SELECT id, 1 FROM chat_threads ORDER BY id
+        ON CONFLICT (chat_thread_id) DO UPDATE SET last_seq_id = chat_event_sequences.last_seq_id + 1
+        RETURNING chat_thread_id AS id, last_seq_id
       ) INSERT INTO chat_events (chat_thread_id, event_type, seq_id, payload)
-      SELECT id, 'output.message', last_chat_event_seq_id, $1 FROM reservation RETURNING id`,
+      SELECT id, 'output.message', last_seq_id, $1 FROM reservation RETURNING id`,
       [JSON.stringify(payload)],
     );
     if (typeof rows.rows[0]?.id !== "string") {
@@ -135,11 +136,9 @@ export async function seedLiteralGoalArchive(
       : "The recorded status is preserved; retirement does not mark the objective complete."
   }\n\nFull original objective:\n${objective}`;
   await db().transaction(async (tx) => {
-    const [thread] = await tx
-      .update(chatThreads)
-      .set({ lastChatEventSeqId: sql`${chatThreads.lastChatEventSeqId} + 2` })
-      .where(eq(chatThreads.id, threadId))
-      .returning({ seqId: chatThreads.lastChatEventSeqId });
+    const thread = {
+      seqId: await reserveFixtureChatEventSequence(tx, threadId, 2),
+    };
     if (!thread) {
       throw new Error("Expected an owned history fixture thread");
     }

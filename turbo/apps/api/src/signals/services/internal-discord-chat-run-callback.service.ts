@@ -32,7 +32,6 @@ import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import type { DiscordDeliveryTarget } from "./discord-chat-callback-payload";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { resolveIntegrationAgentResponsePresentation } from "./integration-agent-response-presentation.service";
 
 const L = logger("DiscordChatDelivery");
@@ -339,54 +338,42 @@ async function renderDeliveryParts(
       throw new Error("Discord delivery canonical event is unavailable");
     }
     if (event.runId !== null && event.agentId !== null) {
-      const [featureContext, [mentionerCount]] = await Promise.all([
-        loadUserFeatureSwitchContext(db, delivery.orgId, delivery.userId),
-        db
-          .select({ count: countDistinct(discordChatThreadRoutes.userId) })
-          .from(discordChatThreadRoutes)
-          .innerJoin(
-            discordOrgConnections,
-            eq(discordOrgConnections.id, discordChatThreadRoutes.connectionId),
-          )
-          .where(
-            and(
-              eq(discordOrgConnections.guildId, binding.guildId),
-              eq(
-                discordChatThreadRoutes.destinationChannelId,
-                delivery.channelId,
-              ),
+      const [mentionerCount] = await db
+        .select({ count: countDistinct(discordChatThreadRoutes.userId) })
+        .from(discordChatThreadRoutes)
+        .innerJoin(
+          discordOrgConnections,
+          eq(discordOrgConnections.id, discordChatThreadRoutes.connectionId),
+        )
+        .where(
+          and(
+            eq(discordOrgConnections.guildId, binding.guildId),
+            eq(
+              discordChatThreadRoutes.destinationChannelId,
+              delivery.channelId,
             ),
           ),
-      ]);
+        );
       signal.throwIfAborted();
       if (!mentionerCount) {
         throw new Error("Discord delivery mentioner count is unavailable");
-      }
-      const featureOverrides = featureContext.overrides;
-      if (featureOverrides === undefined) {
-        throw new Error("Discord delivery feature overrides are unavailable");
       }
       const presentation = await resolveIntegrationAgentResponsePresentation(
         {
           db,
           orgId: delivery.orgId,
-          userId: delivery.userId,
           runId: event.runId,
           agentId: event.agentId,
           replyToMention:
             mentionerCount.count > 1
               ? `<@${binding.discordUserId}>`
               : undefined,
-          getFeatureOverrides: () => {
-            return Promise.resolve(featureOverrides);
-          },
         },
         signal,
       );
       signal.throwIfAborted();
       content = [
         content,
-        presentation.logsUrl ? `[Audit](${presentation.logsUrl})` : undefined,
         presentation.footerText ? `_${presentation.footerText}_` : undefined,
       ]
         .filter((part) => {

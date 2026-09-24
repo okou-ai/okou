@@ -25,7 +25,8 @@ import {
   chatEventSearchMessageWatermarks,
 } from "@okouai/db/schema/chat-event-search";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatSearchIndexText } from "../../lib/chat-search-bigram";
 import type { Tx } from "../../lib/db-types";
 import { optionalEnv } from "../../lib/env";
@@ -126,12 +127,12 @@ interface SearchProjectionWriteStats {
 
 interface ChatEventSearchProjectionOptions {
   readonly chatThreadIds?: readonly string[];
-  readonly ginIndexName?: string;
+  readonly ginIndexNames?: readonly string[];
 }
 
 interface ChatEventSearchTestProjectionOptions {
   readonly chatThreadIds: readonly string[];
-  readonly ginIndexName?: string;
+  readonly ginIndexNames?: readonly string[];
 }
 
 type SearchableRole = "user" | "assistant";
@@ -315,9 +316,16 @@ async function loadProjectionThread(
       agentId: agents.id,
       agentOwner: agents.owner,
       orgId: agents.orgId,
-      lastChatEventSeqId: chatThreads.lastChatEventSeqId,
+      lastChatEventSeqId:
+        sql`COALESCE(${chatEventSequences.lastSeqId}, 0)`.mapWith(
+          chatEventSequences.lastSeqId,
+        ),
     })
     .from(chatThreads)
+    .leftJoin(
+      chatEventSequences,
+      eq(chatEventSequences.chatThreadId, chatThreads.id),
+    )
     .innerJoin(agents, eq(chatThreads.agentId, agents.id))
     .where(eq(chatThreads.id, chatThreadId))
     .limit(1);
@@ -774,6 +782,10 @@ async function loadCandidateThreads(
   const candidates = await db
     .select({ chatThreadId: chatThreads.id })
     .from(chatThreads)
+    .leftJoin(
+      chatEventSequences,
+      eq(chatEventSequences.chatThreadId, chatThreads.id),
+    )
     .innerJoin(agents, eq(chatThreads.agentId, agents.id))
     .leftJoin(
       chatEventSearchMessageWatermarks,
@@ -783,7 +795,7 @@ async function loadCandidateThreads(
       and(
         threadScope,
         gt(
-          chatThreads.lastChatEventSeqId,
+          chatEventSequences.lastSeqId,
           sql`COALESCE(${chatEventSearchMessageWatermarks.indexedSeqId}, 0)`,
         ),
         openProjectionSubjectsCondition(db),
@@ -809,7 +821,7 @@ async function projectionConvergence(
 ): Promise<ChatEventSearchProjectionConvergence> {
   const eligibleScope = and(
     projectionThreadScope(options.chatThreadIds),
-    gt(chatThreads.lastChatEventSeqId, 0),
+    gt(chatEventSequences.lastSeqId, 0),
     openProjectionSubjectsCondition(db),
   );
   const [stats] = await db
@@ -820,6 +832,10 @@ async function projectionConvergence(
       ),
     })
     .from(chatThreads)
+    .leftJoin(
+      chatEventSequences,
+      eq(chatEventSequences.chatThreadId, chatThreads.id),
+    )
     .leftJoin(agents, eq(chatThreads.agentId, agents.id))
     .leftJoin(
       chatEventSearchMessageWatermarks,
@@ -827,7 +843,7 @@ async function projectionConvergence(
         eq(chatEventSearchMessageWatermarks.chatThreadId, chatThreads.id),
         gte(
           chatEventSearchMessageWatermarks.indexedSeqId,
-          chatThreads.lastChatEventSeqId,
+          chatEventSequences.lastSeqId,
         ),
       ),
     )
@@ -836,6 +852,41 @@ async function projectionConvergence(
     throw new Error("Chat search projection convergence query returned no row");
   }
   return stats;
+}
+
+async function maintainChatSearchGinIndexes(
+  db: Db,
+  indexNames: readonly string[],
+  budgetMs: number,
+  signal: AbortSignal,
+): Promise<{
+  readonly remainingBudgetMs: number;
+  readonly deferRemaining: boolean;
+}> {
+  let remainingBudgetMs = budgetMs;
+  for (const indexName of indexNames) {
+    if (remainingBudgetMs <= 0) {
+      return { remainingBudgetMs, deferRemaining: true };
+    }
+    const started = performance.now();
+    const maintained = await settle(
+      maintainChatSearchGin(db, indexName, remainingBudgetMs, signal),
+    );
+    signal.throwIfAborted();
+    remainingBudgetMs -= performance.now() - started;
+    if (!maintained.ok) {
+      if (
+        !isLockNotAvailable(maintained.error) &&
+        !isStatementTimeout(maintained.error)
+      ) {
+        throw maintained.error;
+      }
+      // Avoid repeatedly charging a failed cleanup to every candidate. The
+      // untouched threads and their watermarks remain eligible next tick.
+      return { remainingBudgetMs, deferRemaining: true };
+    }
+  }
+  return { remainingBudgetMs, deferRemaining: remainingBudgetMs <= 0 };
 }
 
 async function projectChatEventSearch(
@@ -857,37 +908,18 @@ async function projectChatEventSearch(
   let attemptedThreads = 0;
   for (const chatThreadId of candidateThreads) {
     signal.throwIfAborted();
-    if (options.ginIndexName !== undefined) {
-      // One shared budget for the whole tick, not 30 seconds per thread. A
-      // large pre-existing backlog may need a separate operational drain.
-      if (maintenanceBudgetMs <= 0) {
-        deferredThreads += candidateThreads.length - attemptedThreads;
-        break;
-      }
-      const started = performance.now();
-      const maintained = await settle(
-        maintainChatSearchGin(
-          db,
-          options.ginIndexName,
-          maintenanceBudgetMs,
-          signal,
-        ),
+    if (options.ginIndexNames !== undefined) {
+      // One shared budget for the whole tick and every index, not 30 seconds
+      // per thread or index. A large pre-existing backlog may need a separate
+      // operational drain.
+      const maintained = await maintainChatSearchGinIndexes(
+        db,
+        options.ginIndexNames,
+        maintenanceBudgetMs,
+        signal,
       );
-      signal.throwIfAborted();
-      maintenanceBudgetMs -= performance.now() - started;
-      if (!maintained.ok) {
-        if (
-          !isLockNotAvailable(maintained.error) &&
-          !isStatementTimeout(maintained.error)
-        ) {
-          throw maintained.error;
-        }
-        // Avoid repeatedly charging a failed cleanup to every candidate. The
-        // untouched threads and their watermarks remain eligible next tick.
-        deferredThreads += candidateThreads.length - attemptedThreads;
-        break;
-      }
-      if (maintenanceBudgetMs <= 0) {
+      maintenanceBudgetMs = maintained.remainingBudgetMs;
+      if (maintained.deferRemaining) {
         deferredThreads += candidateThreads.length - attemptedThreads;
         break;
       }
@@ -927,7 +959,12 @@ export const projectChatEventSearch$ = command(
     return await projectChatEventSearch(
       db,
       {
-        ginIndexName: "public.chat_event_search_messages_tsv_idx",
+        // Every GIN index on the projection keeps fastupdate; drain each one
+        // before its pending list reaches the foreground flush threshold.
+        ginIndexNames: [
+          "public.chat_event_search_messages_tsv_idx",
+          "public.chat_event_search_messages_user_tsv_gin_idx",
+        ],
       },
       signal,
     );
@@ -947,7 +984,7 @@ export const projectChatEventSearchTestScope$ = command(
         chatThreadIds: options.chatThreadIds,
         // Scoped route tests must never drain another test's shared index. GIN
         // maintenance tests supply their own disposable index explicitly.
-        ginIndexName: options.ginIndexName,
+        ginIndexNames: options.ginIndexNames,
       },
       signal,
     );

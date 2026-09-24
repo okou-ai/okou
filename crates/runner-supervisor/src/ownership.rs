@@ -8,50 +8,50 @@
 use sandbox::SandboxId;
 use tracing::warn;
 
-use super::orphan_reap::OrphanedActiveRuns;
-use crate::idle_pool::IdlePoolSnapshot;
-use crate::status::StatusTracker;
-use runner_supervisor::idle_lifecycle::set_idle_status_snapshot;
+use crate::idle_lifecycle::set_idle_status_snapshot;
+use crate::orphan_reap::OrphanedActiveRuns;
+use runner_lifecycle::idle_pool::IdlePoolSnapshot;
+use runner_lifecycle::status::StatusTracker;
 use runner_types::ids::RunId;
 
 /// Identity proving which sandbox a run cleanup path is allowed to affect.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct RunSandbox {
+pub struct RunSandbox {
     run_id: RunId,
     sandbox_id: SandboxId,
 }
 
 impl RunSandbox {
-    pub(super) fn new(run_id: RunId, sandbox_id: SandboxId) -> Self {
+    pub fn new(run_id: RunId, sandbox_id: SandboxId) -> Self {
         Self { run_id, sandbox_id }
     }
 
-    pub(super) fn run_id(self) -> RunId {
+    pub(crate) fn run_id(self) -> RunId {
         self.run_id
     }
 
-    pub(super) fn sandbox_id(self) -> SandboxId {
+    pub(crate) fn sandbox_id(self) -> SandboxId {
         self.sandbox_id
     }
 }
 
 /// Narrow facade for the ownership transitions that touch multiple structures.
-pub(super) struct OwnershipTransitions<'a> {
+pub struct OwnershipTransitions<'a> {
     status: &'a StatusTracker,
 }
 
 impl<'a> OwnershipTransitions<'a> {
-    pub(super) fn new(status: &'a StatusTracker) -> Self {
+    pub fn new(status: &'a StatusTracker) -> Self {
         Self { status }
     }
 
     /// Normal provider completion has been reported; remove matching active status.
-    pub(super) async fn active_completed(&self, run: RunSandbox) -> bool {
+    pub async fn active_completed(&self, run: RunSandbox) -> bool {
         self.remove_matching_active(run).await
     }
 
     /// Active sandbox destruction completed; remove matching active status.
-    pub(super) async fn active_destroy_completed(&self, run: RunSandbox) -> bool {
+    pub async fn active_destroy_completed(&self, run: RunSandbox) -> bool {
         self.remove_matching_active(run).await
     }
 
@@ -59,15 +59,12 @@ impl<'a> OwnershipTransitions<'a> {
     ///
     /// This intentionally does not remove active status; normal completion does
     /// that after `provider.complete`.
-    pub(super) async fn publish_idle_status_after_pool_transfer(
-        &self,
-        idle_snapshot: IdlePoolSnapshot,
-    ) {
+    pub async fn publish_idle_status_after_pool_transfer(&self, idle_snapshot: IdlePoolSnapshot) {
         set_idle_status_snapshot(self.status, idle_snapshot).await;
     }
 
     /// Idle pool owns this sandbox; publish idle status before removing active status.
-    pub(super) async fn active_idle_pool_owned(
+    pub async fn active_idle_pool_owned(
         &self,
         run: RunSandbox,
         idle_snapshot: IdlePoolSnapshot,
@@ -77,7 +74,7 @@ impl<'a> OwnershipTransitions<'a> {
     }
 
     /// Ownership is uncertain after panic; keep active status visible and track as orphan.
-    pub(super) fn active_ownership_unknown(
+    pub fn active_ownership_unknown(
         &self,
         orphaned_active_runs: &OrphanedActiveRuns,
         run: RunSandbox,
@@ -90,7 +87,7 @@ impl<'a> OwnershipTransitions<'a> {
     /// Only runs present in `idle_snapshot` are eligible. The idle snapshot is
     /// published once, before the first matching active removal. Stale orphan
     /// records are skipped by `(run_id, sandbox_id)`.
-    pub(super) async fn orphan_reconciled_idle_owned(
+    pub(crate) async fn orphan_reconciled_idle_owned(
         &self,
         orphaned_active_runs: &OrphanedActiveRuns,
         runs: impl IntoIterator<Item = RunSandbox>,
@@ -120,7 +117,7 @@ impl<'a> OwnershipTransitions<'a> {
     /// Returns whether matching active status was also removed. A stale orphan
     /// can still be cleared when active status is already gone or points at a
     /// different sandbox.
-    pub(super) async fn orphan_confirmed_absent(
+    pub(crate) async fn orphan_confirmed_absent(
         &self,
         orphaned_active_runs: &OrphanedActiveRuns,
         run: RunSandbox,
@@ -168,7 +165,7 @@ fn idle_snapshot_contains_sandbox_id(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::status::{BlankSandbox, IdleSandbox};
+    use runner_lifecycle::status::{BlankSandbox, IdleSandbox};
 
     async fn status_idle_reuse_keys_and_active_runs(
         status_path: &std::path::Path,

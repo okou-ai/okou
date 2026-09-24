@@ -173,6 +173,9 @@ describe("canonical Discord terminal replies", () => {
       channel_id: started.channelId,
       content: expect.stringContaining("The Discord task is complete."),
     });
+    expect(started.provider.sentMessages[0]?.content).toContain(
+      "Claude Fable 5.1",
+    );
     await recoverReplies(started.actor);
     expect(started.provider.sentMessages).toHaveLength(1);
     const events = await readProjectedChatEvents(context, {

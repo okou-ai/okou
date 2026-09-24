@@ -56,7 +56,7 @@ function cronClient() {
 
 async function projectOwnedChatEventSearch(
   chatThreadIds: readonly string[],
-  ginIndexName?: string,
+  ginIndexNames?: readonly string[],
 ) {
   const client = setupApp({
     context,
@@ -67,7 +67,7 @@ async function projectOwnedChatEventSearch(
     client.project({
       body: {
         chat_thread_ids: [...chatThreadIds],
-        gin_index_name: ginIndexName,
+        gin_index_names: ginIndexNames ? [...ginIndexNames] : undefined,
       },
     }),
     [200],
@@ -456,7 +456,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
     expect(small).toBeGreaterThan(0);
     expect(small).toBeLessThan(64);
     await expect(
-      projectOwnedChatEventSearch([threadId], gin.indexName),
+      projectOwnedChatEventSearch([threadId], [gin.indexName]),
     ).resolves.toMatchObject({ threads: 1, deferredThreads: 0 });
     await expect(gin.pendingPages()).resolves.toBe(small);
 
@@ -467,13 +467,33 @@ describe("GET /api/cron/project-chat-event-search", () => {
       text: `largegin ${randomUUID()}`,
     });
     await expect(
-      projectOwnedChatEventSearch([threadId], gin.indexName),
+      projectOwnedChatEventSearch([threadId], [gin.indexName]),
     ).resolves.toMatchObject({
       threads: 1,
       indexedEvents: 1,
       deferredThreads: 0,
     });
     await expect(gin.pendingPages()).resolves.toBe(0);
+  });
+
+  it("drains the backlog of every configured GIN index in one tick", async () => {
+    const tsvGin = await createChatSearchGinFixture();
+    const userTsvGin = await createChatSearchGinFixture();
+    await tsvGin.insert(600);
+    await userTsvGin.insert(600);
+    await expect(tsvGin.pendingPages()).resolves.toBeGreaterThanOrEqual(64);
+    await expect(userTsvGin.pendingPages()).resolves.toBeGreaterThanOrEqual(64);
+    const { threadId } = await createProjectionFixture();
+    await seedProjectionContent(threadId, `everygin ${randomUUID()}`);
+
+    await expect(
+      projectOwnedChatEventSearch(
+        [threadId],
+        [tsvGin.indexName, userTsvGin.indexName],
+      ),
+    ).resolves.toMatchObject({ threads: 1, deferredThreads: 0 });
+    await expect(tsvGin.pendingPages()).resolves.toBe(0);
+    await expect(userTsvGin.pendingPages()).resolves.toBe(0);
   });
 
   it("checks the pending list again between thread transactions", async () => {
@@ -497,7 +517,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
         work: async ({ entered, release }) => {
           const tick = projectOwnedChatEventSearch(
             [first.threadId, second.threadId],
-            gin.indexName,
+            [gin.indexName],
           );
           await entered;
           await gin.insert(600);
@@ -525,7 +545,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
     await seedProjectionContent(threadId, `busymaintainer ${randomUUID()}`);
     const release = await gin.hold("maintenance", context.signal);
     await expect(
-      projectOwnedChatEventSearch([threadId], gin.indexName),
+      projectOwnedChatEventSearch([threadId], [gin.indexName]),
     ).resolves.toMatchObject({ threads: 1, deferredThreads: 0 });
     await expect(gin.pendingPages()).resolves.toBe(pending);
     await release();
@@ -533,7 +553,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
       chatThreadId: threadId,
       text: `released ${randomUUID()}`,
     });
-    await projectOwnedChatEventSearch([threadId], gin.indexName);
+    await projectOwnedChatEventSearch([threadId], [gin.indexName]);
     await expect(gin.pendingPages()).resolves.toBe(0);
   });
 
@@ -546,7 +566,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
     const release = await gin.hold("index", context.signal);
     const deferred = await projectOwnedChatEventSearch(
       [first.threadId, second.threadId],
-      gin.indexName,
+      [gin.indexName],
     );
     expect(deferred).toMatchObject({
       threads: 0,
@@ -560,7 +580,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
     await expect(
       projectOwnedChatEventSearch(
         [first.threadId, second.threadId],
-        gin.indexName,
+        [gin.indexName],
       ),
     ).resolves.toMatchObject({
       threads: 2,

@@ -44,6 +44,7 @@ import { validatePermanentSlackPublicBrandState } from "./test-slack-public-bran
 import { validatePermanentDiscordChat } from "./test-discord-chat-permanent";
 import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitlement-permanent";
 import { validateGpt55Retirement } from "./test-gpt-55-retirement";
+import { validateSonnet46Opus48DeepSeekV4ProRetirement } from "./test-sonnet-46-opus-48-deepseek-v4-pro-retirement";
 import { validateXResourceUsageSchema } from "./test-x-resource-usage";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -309,10 +310,9 @@ async function validateCanonicalChatMessageStorage(
 ): Promise<void> {
   const sequenceReservation = await client.query<{ lastSeqId: string }>(
     `
-      UPDATE "chat_threads"
-      SET "last_chat_event_seq_id" = "last_chat_event_seq_id" + 2
-      WHERE "id" = $1
-      RETURNING "last_chat_event_seq_id" AS "lastSeqId"
+      INSERT INTO "chat_event_sequences" ("chat_thread_id", "last_seq_id") VALUES ($1, 2)
+      ON CONFLICT ("chat_thread_id") DO UPDATE SET "last_seq_id" = "chat_event_sequences"."last_seq_id" + 2
+      RETURNING "last_seq_id" AS "lastSeqId"
     `,
     [threadId],
   );
@@ -390,9 +390,9 @@ async function validateCanonicalChatMessageStorage(
 
   const sequenceState = await client.query<{ lastSeqId: string }>(
     `
-      SELECT "last_chat_event_seq_id" AS "lastSeqId"
-      FROM "chat_threads"
-      WHERE "id" = $1
+      SELECT "last_seq_id" AS "lastSeqId"
+      FROM "chat_event_sequences"
+      WHERE "chat_thread_id" = $1
     `,
     [threadId],
   );
@@ -599,18 +599,21 @@ async function validateChatEventContextPointerConstraints(
           "id",
           "user_id",
           "agent_id",
-          "last_chat_event_seq_id",
           "title"
         )
         VALUES (
           $1,
           'context-pointer-test-user',
           $2,
-          2,
           'context pointer test'
         )
       `,
       [threadId, agentId],
+    );
+
+    await client.query(
+      "INSERT INTO chat_event_sequences(chat_thread_id, last_seq_id) VALUES($1, 2)",
+      [threadId],
     );
 
     const accepted = await client.query<{
@@ -804,7 +807,38 @@ async function restoreMigrations(): Promise<void> {
   await fs.rm(BACKUP_DIR, { recursive: true, force: true });
 }
 
-async function addPgVectorExtensionPreludeToGeneratedMigrations(): Promise<void> {
+type ExtensionPrelude = {
+  readonly extension: string;
+  readonly label: string;
+  readonly usesExtension: (sql: string) => boolean;
+};
+
+// drizzle-kit does not emit CREATE EXTENSION, so a freshly generated chain
+// needs the extensions that shipped migrations create explicitly.
+const GENERATED_MIGRATION_EXTENSION_PRELUDES: readonly ExtensionPrelude[] = [
+  {
+    extension: "vector",
+    label: "pgvector",
+    usesExtension: (sql) => {
+      return (
+        /\bvector\s*\(/i.test(sql) ||
+        /\bvector_cosine_ops\b/i.test(sql) ||
+        /\bUSING\s+hnsw\b/i.test(sql)
+      );
+    },
+  },
+  {
+    extension: "btree_gin",
+    label: "btree_gin",
+    // Multi-column GIN indexes over scalar columns need btree_gin operator
+    // classes.
+    usesExtension: (sql) => {
+      return /\bUSING\s+gin\s*\(\s*"[^"]+"\s*,/i.test(sql);
+    },
+  },
+];
+
+async function addExtensionPreludesToGeneratedMigrations(): Promise<void> {
   const sqlFiles = (await fs.readdir(MIGRATIONS_DIR))
     .filter((file) => {
       return file.endsWith(".sql");
@@ -820,43 +854,34 @@ async function addPgVectorExtensionPreludeToGeneratedMigrations(): Promise<void>
     }),
   );
 
-  const usesPgVector = sqlByFile.some(({ sql }) => {
-    return (
-      /\bvector\s*\(/i.test(sql) ||
-      /\bvector_cosine_ops\b/i.test(sql) ||
-      /\bUSING\s+hnsw\b/i.test(sql)
+  for (const prelude of GENERATED_MIGRATION_EXTENSION_PRELUDES) {
+    const createExtension = new RegExp(
+      `CREATE\\s+EXTENSION\\s+(IF\\s+NOT\\s+EXISTS\\s+)?"?${prelude.extension}"?`,
+      "i",
     );
-  });
-  if (!usesPgVector) {
-    return;
-  }
+    const hasExtension = sqlByFile.some(({ sql }) => {
+      return createExtension.test(sql);
+    });
+    if (hasExtension) {
+      continue;
+    }
 
-  const hasPgVectorExtension = sqlByFile.some(({ sql }) => {
-    return /CREATE\s+EXTENSION\s+(IF\s+NOT\s+EXISTS\s+)?"?vector"?/i.test(sql);
-  });
-  if (hasPgVectorExtension) {
-    return;
-  }
+    const firstMigration = sqlByFile.find(({ sql }) => {
+      return prelude.usesExtension(sql);
+    });
+    if (!firstMigration) {
+      continue;
+    }
 
-  const firstPgVectorMigration = sqlByFile.find(({ sql }) => {
-    return (
-      /\bvector\s*\(/i.test(sql) ||
-      /\bvector_cosine_ops\b/i.test(sql) ||
-      /\bUSING\s+hnsw\b/i.test(sql)
+    firstMigration.sql = `CREATE EXTENSION IF NOT EXISTS ${prelude.extension};--> statement-breakpoint\n${firstMigration.sql}`;
+    await fs.writeFile(
+      path.join(MIGRATIONS_DIR, firstMigration.file),
+      firstMigration.sql,
     );
-  });
-  if (!firstPgVectorMigration) {
-    return;
+    console.log(
+      `   Added ${prelude.label} extension prelude to generated migration ${firstMigration.file}`,
+    );
   }
-
-  const migrationPath = path.join(MIGRATIONS_DIR, firstPgVectorMigration.file);
-  await fs.writeFile(
-    migrationPath,
-    `CREATE EXTENSION IF NOT EXISTS vector;--> statement-breakpoint\n${firstPgVectorMigration.sql}`,
-  );
-  console.log(
-    `   Added pgvector extension prelude to generated migration ${firstPgVectorMigration.file}`,
-  );
 }
 
 async function generateFreshMigrations(): Promise<void> {
@@ -868,7 +893,7 @@ async function generateFreshMigrations(): Promise<void> {
 
   // Generate new migrations (non-interactive)
   execCommand("pnpm drizzle-kit generate", { cwd: PACKAGE_DIR });
-  await addPgVectorExtensionPreludeToGeneratedMigrations();
+  await addExtensionPreludesToGeneratedMigrations();
 }
 
 async function validateSnapshotFiles(): Promise<void> {
@@ -1340,6 +1365,20 @@ type PermanentFunction = {
 const EXPECTED_PERMANENT_TRIGGERS = [
   {
     definition:
+      "CREATE TRIGGER bridge_chat_event_sequence_allocation BEFORE UPDATE OF last_chat_event_seq_id ON public.chat_threads FOR EACH ROW EXECUTE FUNCTION bridge_chat_event_sequence_allocation()",
+    schemaName: "public",
+    tableName: "chat_threads",
+    triggerName: "bridge_chat_event_sequence_allocation",
+  },
+  {
+    definition:
+      "CREATE TRIGGER preserve_chat_event_write_activation BEFORE DELETE OR UPDATE ON public.chat_event_write_control FOR EACH ROW EXECUTE FUNCTION preserve_chat_event_write_activation()",
+    schemaName: "public",
+    tableName: "chat_event_write_control",
+    triggerName: "preserve_chat_event_write_activation",
+  },
+  {
+    definition:
       "CREATE TRIGGER capture_billing_run_attribution BEFORE INSERT ON public.agent_runs FOR EACH ROW EXECUTE FUNCTION capture_billing_run_attribution()",
     schemaName: "public",
     tableName: "agent_runs",
@@ -1404,6 +1443,20 @@ const EXPECTED_PERMANENT_TRIGGERS = [
 ] as const satisfies readonly PermanentTrigger[];
 
 const EXPECTED_PERMANENT_FUNCTIONS = [
+  {
+    bodyHash: "1fa222f5cedf2d5f5899fcbd5605e860",
+    functionName: "bridge_chat_event_sequence_allocation",
+    identityArguments: "",
+    kind: "f",
+    schemaName: "public",
+  },
+  {
+    bodyHash: "0d37e98a01767d7416f0ae9e69f1311b",
+    functionName: "preserve_chat_event_write_activation",
+    identityArguments: "",
+    kind: "f",
+    schemaName: "public",
+  },
   {
     bodyHash: "31c9604bf9c9306578d884bc8aa9e5ce",
     functionName: "billing_usage_source",
@@ -3201,6 +3254,7 @@ async function main(): Promise<void> {
     await validatePermanentDiscordChat(dbUrl1);
     await validatePermanentOrgPlanEntitlementState(dbUrl1);
     await validateGpt55Retirement(dbUrl1);
+    await validateSonnet46Opus48DeepSeekV4ProRetirement(dbUrl1);
     await validateXResourceUsageSchema(dbUrl1);
     await validateAgentRunLaunchSnapshotSchema(dbUrl1);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl1);

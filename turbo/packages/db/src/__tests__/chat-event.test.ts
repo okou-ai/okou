@@ -21,10 +21,39 @@ describe("chatAgentRunContext schema", () => {
         ["id", true],
         ["source_chat_thread_id", true],
         ["source_agent_id", true],
+        ["source_user_id", false],
+        ["source_org_id", false],
         ["created_at", true],
       ]),
     );
     expect(config.foreignKeys).toHaveLength(0);
+  });
+
+  it("indexes copied ownership for cleanup while preserving unattributed historical rows", () => {
+    const config = getTableConfig(chatAgentRunContext);
+
+    expect(chatAgentRunContext.sourceUserId.hasDefault).toBe(false);
+    expect(chatAgentRunContext.sourceOrgId.hasDefault).toBe(false);
+    expect(
+      config.indexes.map((index) => {
+        return {
+          name: index.config.name,
+          unique: index.config.unique,
+          columns: index.config.columns,
+        };
+      }),
+    ).toEqual([
+      {
+        name: "chat_agent_run_context_source_user_idx",
+        unique: false,
+        columns: [expect.objectContaining({ name: "source_user_id" })],
+      },
+      {
+        name: "chat_agent_run_context_source_org_idx",
+        unique: false,
+        columns: [expect.objectContaining({ name: "source_org_id" })],
+      },
+    ]);
   });
 });
 

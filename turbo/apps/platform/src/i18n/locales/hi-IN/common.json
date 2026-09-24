@@ -347,7 +347,7 @@
     },
     "sources": {
       "agent": "एजेंट",
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "automationEvent": "ऑटोमेशन घटना",
       "automationSchedule": "ऑटोमेशन शेड्यूल",
       "discord": "Discord",
@@ -1184,7 +1184,7 @@
         "everythingInBuiltForTeams": "{{plan}} की हर सुविधा, टीमों के लिए तैयार",
         "included": "शामिल",
         "liveBrowser": "एजेंट का लाइव ब्राउज़र देखें और कमान लें",
-        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4 Pro",
+        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4.1 Flash",
         "moreConnectorsChannels": "ज़्यादा कस्टम कनेक्टर और चैनल इंटीग्रेशन",
         "supportEmail": "ईमेल सहायता",
         "supportPriority": "प्राथमिकता सहायता",
@@ -1438,6 +1438,11 @@
         },
         "earned": "{{amount}} अर्जित",
         "howRewardsWork": "इनाम कैसे काम करते हैं",
+        "imessage": {
+          "action": "जोड़ें",
+          "description": "अपने iPhone से {{assistantName}} को मैसेज करें",
+          "name": "iMessage में जोड़ें"
+        },
         "inReview": "समीक्षा में",
         "intro": {
           "checkin": {
@@ -3475,7 +3480,7 @@
         "invalidSignature": "इस लिंक पर हस्ताक्षर मान्य नहीं है.",
         "invalidTimestamp": "इस लिंक पर टाइमस्टैम्प मान्य नहीं है.",
         "invalidTitle": "कनेक्ट लिंक अमान्य है",
-        "risk": "SMS और MMS उत्तर विश्वसनीय रूप से वितरित नहीं किए जा सकते हैं। सबसे विश्वसनीय अनुभव के लिए, इस AgentPhone नंबर के साथ iMessage का उपयोग करें।",
+        "risk": "SMS और MMS उत्तर विश्वसनीय रूप से वितरित नहीं किए जा सकते हैं। सबसे विश्वसनीय अनुभव के लिए, इस नंबर के साथ iMessage का उपयोग करें।",
         "successDescription": "{{phone}} जुड़ा हुआ है. {{assistantName}} के साथ चैट शुरू करने के लिए एक टेक्स्ट संदेश भेजें।",
         "successTitle": "फ़ोन नंबर कनेक्ट हो गया"
       },
@@ -3597,9 +3602,10 @@
       "agentphone": {
         "authorizedSender": "अधिकृत प्रेषक",
         "codeExpiry": "10 मिनट में समाप्त होगा",
+        "codeLabel": "कोड",
         "connectAria": "फ़ोन कनेक्ट करें",
-        "connectDescription": "कोड स्कैन करें या Messages खोलें, फिर पहले से भरा हुआ कोड भेजें।",
-        "connectTitle": "फ़ोन कनेक्ट करें",
+        "connectDescription": "अपने कैमरे से स्कैन करें, फिर पहले से भरा हुआ कोड भेजें।",
+        "connectTitle": "अपने iPhone से {{assistantName}} को मैसेज करें",
         "copyAria": "{{phone}} कॉपी करें",
         "copyCodeAria": "कनेक्शन कोड {{code}} कॉपी करें",
         "copyCodeError": "कनेक्शन कोड कॉपी नहीं हो सका",
@@ -3610,13 +3616,12 @@
         "creatingCode": "कनेक्शन कोड बनाया जा रहा है…",
         "description": "{{assistantName}} तक टेक्स्ट-संदेश पहुंच",
         "destination": "iMessage या SMS को",
-        "manualSend": "या भेजें",
-        "manualSendTo": "इस नंबर पर",
         "openMessages": "मैसेज खोलें",
         "options": "फ़ोन विकल्प",
         "phoneLabel": "फ़ोन",
         "qrTitle": "कनेक्शन कोड पहले से भरे हुए Messages को खोलने के लिए स्कैन करें",
         "risk": "जहाँ संभव हो iMessage का उपयोग करें। SMS और MMS के जवाब भरोसेमंद तरीके से नहीं पहुँच सकते हैं।",
+        "sendToLabel": "इस नंबर पर भेजें",
         "tryAgain": "फिर से कोशिश करें"
       },
       "catalogDiagnostics": {
@@ -4026,8 +4031,8 @@
         "uninstallTitle": "Telegram बॉट अनइंस्टॉल करें?"
       },
       "toasts": {
-        "agentphoneConnected": "AgentPhone जुड़ा",
-        "agentphoneDisconnected": "AgentPhone डिस्कनेक्ट हो गया",
+        "agentphoneConnected": "फ़ोन नंबर कनेक्ट हो गया",
+        "agentphoneDisconnected": "फ़ोन नंबर डिस्कनेक्ट हो गया",
         "slackConnected": "Slack सफलतापूर्वक कनेक्ट हुआ",
         "slackDisconnected": "Slack से डिस्कनेक्ट हो गया",
         "slackInstalled": "Slack सफलतापूर्वक स्थापित हुआ",
@@ -4282,7 +4287,6 @@
       "documentTitles": {
         "experience": "आपका AI अनुभव",
         "industry": "अपना क्षेत्र चुनें",
-        "profile": "आपकी प्रोफ़ाइल",
         "ready": "Okou तैयार है",
         "skills": "अपनी skills इम्पोर्ट करें",
         "slack": "Slack में Okou जोड़ें",
@@ -4345,17 +4349,6 @@
       "industry": {
         "copy": "Okou आपके और आपकी टीम के लिए काम का सहायक है। यह बिखरी जानकारी को क्लाउड में पूरे हुए काम में बदलता है। अपने लिए सही पहला टास्क पाने के लिए अपना क्षेत्र चुनें।",
         "title": "आप किस तरह का काम करते हैं?"
-      },
-      "profile": {
-        "communicationStyle": "आप कैसे संवाद करते हैं",
-        "copy": "आपके जुड़े हुए खातों के आधार पर आपके काम की पहली झलक।",
-        "failed": "अभी आपकी प्रोफ़ाइल नहीं बन सकी। फिर कोशिश करें या आगे बढ़ें।",
-        "heading": "आपकी प्रोफ़ाइल",
-        "loading": "जुड़े हुए काम से आपकी प्रोफ़ाइल बनाई जा रही है…",
-        "priorities": "संभावित प्राथमिकताएँ",
-        "professionalIdentity": "आपका काम",
-        "retry": "फिर कोशिश करें",
-        "title": "हमें आपके बारे में यह पता चला"
       },
       "skills": {
         "copied": "कॉपी हो गया",
@@ -4755,7 +4748,7 @@
         "unconfirmedNote": "हम आपका {{provider}} कनेक्शन जाँच नहीं सके। दोबारा कोशिश करें या बाद में जोड़ें।"
       },
       "team": {
-        "copy": "साझा वर्कफ़्लो साथ में चलाने के लिए टीम सदस्य को आमंत्रित करें।",
+        "copy": "अपने वर्कफ़्लो साझा करने के लिए टीम सदस्य को आमंत्रित करें, जबकि हर कोई अपने टूल खुद जोड़ता है।",
         "invite": "न्योता भेजें",
         "invited": "न्योता भेजा गया",
         "label": "टीम सदस्य का ईमेल",
@@ -4769,12 +4762,10 @@
           "workspace": "आपके वर्कस्पेस से जुड़ते हैं।"
         },
         "sending": "भेजा जा रहा है…",
-        "title": "पूरी टीम के लिए Okou को उपयोगी बनाएँ",
-        "trust": "सभी एक ही वर्कफ़्लो इस्तेमाल करते हैं और अपने टूल खुद जोड़ते हैं।"
+        "title": "पूरी टीम के लिए Okou को उपयोगी बनाएँ"
       },
       "welcome": {
         "copy": "अपने काम के लिए सुझाया गया पहला काम देखें, लक्ष्य के अनुसार बदलें और Okou को शुरू करने दें।",
-        "offerTitle": "पहला घंटा कंसल्टिंग हमारी ओर से, साथ में 100 क्रेडिट तक —",
         "promptLabel": "आपका शुरुआती प्रॉम्प्ट",
         "start": "Okou से शुरू करें",
         "title": "ऐसे काम से शुरू करें जो मायने रखता है"
@@ -6628,9 +6619,6 @@
       "emailSubscription": {
         "description": "ईमेल से ब्रीफ़, रिमाइंडर और अन्य कार्यस्थान अपडेट प्राप्त करें।",
         "descriptionWithEmail": "{{email}} पर ब्रीफ़, रिमाइंडर और अन्य कार्यस्थान अपडेट प्राप्त करें।",
-        "loading": "ईमेल सदस्यता जाँची जा रही है…",
-        "retryMessage": "आपकी ईमेल सदस्यता सहेजी या लोड नहीं की जा सकी। फिर से कोशिश करें।",
-        "saving": "सहेजा जा रहा है…",
         "sectionTitle": "ईमेल सदस्यताएँ",
         "title": "ईमेल अपडेट",
         "unavailable": "ईमेल उपलब्ध नहीं है",
@@ -7114,6 +7102,7 @@
       "add": "क्रेडेंशियल जोड़ें",
       "appleDhFieldHelp": "हर फ़ील्ड 1–63 UTF-8 बाइट का होना चाहिए। NUL की अनुमति नहीं है।",
       "appleDhMethod": "Apple DH उपयोगकर्ता नाम और पासवर्ड",
+      "appleSrpMethod": "Apple Direct SRP उपयोगकर्ता नाम और पासवर्ड",
       "authentication": "प्रमाणीकरण विधि",
       "createNew": "नया क्रेडेंशियल बनाएं",
       "delete": "क्रेडेंशियल हटाएं",
@@ -7183,6 +7172,8 @@
     "security": {
       "appleDh": "Mac स्क्रीन शेयरिंग (Apple DH)",
       "appleDhHelp": "इसके लिए सहेजे गए SSH कनेक्शन से macOS स्क्रीन शेयरिंग चाहिए। RFB गंतव्य उसी Mac पर 127.0.0.1 या ::1 होना चाहिए। SSH पूरे VNC सत्र की सुरक्षा करता है। अपने नियंत्रण वाले Mac SSH होस्ट का उपयोग करें; होस्ट कुंजी आगे के प्रॉक्सी को नकार नहीं सकती।",
+      "appleSrp": "Mac स्क्रीन शेयरिंग (Apple Direct SRP)",
+      "appleSrpHelp": "इसके लिए Mac से सहेजा गया SSH कनेक्शन और RFB गंतव्य 127.0.0.1 या ::1 चाहिए। SRP खाते और सर्वर प्रमाण को सत्यापित करता है; SSH पूरे VNC सत्र की सुरक्षा करता है। SSH होस्ट कुंजी चुने गए एंडपॉइंट की पहचान करती है, लेकिन आगे के प्रॉक्सी को नकार नहीं सकती।",
       "caBundle": "CA प्रमाणपत्र (PEM)",
       "caHelp": "अधिकतम 8 CA प्रमाणपत्र, कुल 64 KiB। निजी कुंजी या सर्वर प्रमाणपत्र न चिपकाएँ।",
       "caHint": "सर्वर प्रमाणपत्र जारी करने वाले सार्वजनिक CA प्रमाणपत्र चिपकाएँ",
@@ -7202,6 +7193,7 @@
     "summary_other": "{{count}} कॉन्फ़िगर किए गए होस्ट",
     "transport": {
       "appleDhDestinationHelp": "Apple DH के लिए 127.0.0.1 या ::1 दर्ज करें। यह चुने गए SSH होस्ट से पहुँचा जाने वाला Mac का अपना लूपबैक पता है।",
+      "appleSrpDestinationHelp": "Apple Direct SRP के लिए 127.0.0.1 या ::1 दर्ज करें। यह चुने गए SSH होस्ट से पहुँचा जाने वाला Mac का अपना लूपबैक पता है।",
       "destination": "RFB गंतव्य",
       "destinationHelp": "SSH रूट के लिए इस होस्ट और पोर्ट तक चुने गए SSH सर्वर से पहुँचा जाता है, Runner से सीधे नहीं।",
       "direct": "Runner से सीधे",

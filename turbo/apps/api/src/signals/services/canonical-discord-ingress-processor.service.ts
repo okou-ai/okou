@@ -20,6 +20,7 @@ import {
 import { DiscordIngressFailure } from "../../lib/discord-ingress-failure";
 import { discordMessageUrl } from "../../lib/discord-message";
 import { nowDate } from "../../lib/time";
+import { safeSqlStateCode } from "../../lib/pg-errors";
 import type { Tx } from "../../lib/db-types";
 import { writeDb$, type Db } from "../external/db";
 import {
@@ -45,7 +46,12 @@ import {
   type CanonicalInputAsset,
 } from "./canonical-asset.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
-import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
+import {
+  touchChatThreadLastMessageAt,
+  touchChatThreadLastMessageAtIndependently,
+} from "./chat-event-shared.service";
+import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
+import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import {
   insertChatEvent,
   type DiscordChatEventContext,
@@ -340,7 +346,7 @@ const requireIngressAccess$ = command(
   },
 );
 
-function persistMessage(
+async function persistMessage(
   db: Db,
   args: {
     readonly ingress: ClaimedIngress;
@@ -352,7 +358,10 @@ function persistMessage(
   },
   signal: AbortSignal,
 ): Promise<boolean> {
-  return db.transaction(async (tx) => {
+  const splitWrites = await isSplitChatEventWriteEnabled(db);
+  signal.throwIfAborted();
+  // Claim ownership and acknowledgement remain atomic with the accepted input.
+  const persisted = await db.transaction(async (tx) => {
     const [claimed] = await tx
       .select({ id: discordChatIngress.id })
       .from(discordChatIngress)
@@ -388,9 +397,10 @@ function persistMessage(
         createdAt: args.ingress.createdAt,
       },
       "id",
+      { splitWrites },
     );
     signal.throwIfAborted();
-    if (inserted) {
+    if (inserted && !splitWrites) {
       await touchChatThreadLastMessageAt(
         tx,
         args.ingress.chatThreadId,
@@ -415,6 +425,24 @@ function persistMessage(
     signal.throwIfAborted();
     return true;
   });
+  signal.throwIfAborted();
+  if (persisted && splitWrites) {
+    await attemptChatEventSideEffect(
+      "thread_touch",
+      args.ingress.chatThreadId,
+      () => {
+        return touchChatThreadLastMessageAtIndependently(
+          db,
+          args.ingress.chatThreadId,
+          args.ingress.createdAt,
+          args.ingress.id,
+          { userId: args.ingress.userId, orgId: args.orgId },
+        );
+      },
+    );
+    signal.throwIfAborted();
+  }
+  return persisted;
 }
 
 type IngressAccess = Pick<
@@ -838,7 +866,9 @@ function ingressFailure(error: unknown) {
       "Discord attachment import failed",
     );
   }
-  const code = error instanceof Error && "code" in error ? error.code : null;
+  const code =
+    safeSqlStateCode(error) ??
+    (error instanceof Error && "code" in error ? error.code : null);
   const retryable =
     typeof code === "string" &&
     (code.startsWith("08") ||

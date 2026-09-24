@@ -53,7 +53,7 @@
 //!    reporting, and the post-executor park-or-destroy decision. If cleanup proves destruction or
 //!    an idle-pool transfer, matching active status can be removed. If destruction is uncertain,
 //!    active status remains visible and `(run_id, sandbox_id)` is recorded for orphan reconciliation
-//!    by `ownership.rs` and `orphan_reap.rs`.
+//!    by `runner-supervisor`'s ownership and orphan-reaper modules.
 //!
 //! ## Local admission ownership
 //!
@@ -90,7 +90,7 @@
 //! ownership transition is proved; exact speculation uses its persisted idle snapshot until its
 //! commit point. The representative admission, cancellation, panic, status-recovery, telemetry,
 //! and orphan tests are in `tests/main_loop/admission.rs`, `tests/main_loop/telemetry.rs`,
-//! `tests/failure_recovery/outer_panic.rs`, `ownership.rs`, and `orphan_reap.rs`.
+//! `tests/failure_recovery/outer_panic.rs` and the supervisor's ownership and orphan-reaper tests.
 
 use std::collections::BTreeMap;
 use std::mem::ManuallyDrop;
@@ -108,7 +108,6 @@ use tracing::{info, warn};
 use super::factory_lifecycle::SharedFactory;
 use super::finalizing_claim::{FinalizingClaimRequest, spawn_finalizing_claim};
 use super::job_spawn::{JobProfile, SpawnContext, SpawnJobRequest, spawn_job};
-use super::ownership::{OwnershipTransitions, RunSandbox};
 #[cfg(test)]
 use super::{OuterJobPanicPoint, maybe_panic_outer_job};
 use crate::config::ProfileConfig;
@@ -144,6 +143,7 @@ use runner_supervisor::idle_lifecycle::{
     add_running_run_with_idle_status_snapshot, destroy_idle_jobs_and_wait,
     select_idle_entries_for_pressure, set_idle_status_snapshot, spawn_idle_destroy_job,
 };
+use runner_supervisor::ownership::{OwnershipTransitions, RunSandbox};
 use runner_types::ids::RunId;
 use runner_types::types::{
     CompleteRequest, ExecutionContext, HeldWorkspaceState, SandboxReuseResult,
@@ -774,7 +774,7 @@ struct ActivationRecoveryContext {
     provider: Arc<dyn JobProvider>,
     exec_config: Arc<crate::executor::ExecutorConfig>,
     status: Arc<StatusTracker>,
-    orphaned_active_runs: super::orphan_reap::OrphanedActiveRuns,
+    orphaned_active_runs: runner_supervisor::orphan_reap::OrphanedActiveRuns,
     reuse_state_notify: Arc<tokio::sync::Notify>,
 }
 
@@ -2538,7 +2538,7 @@ async fn remove_failed_activation_status(
 
 fn retain_uncertain_activation_ownership(
     status: &StatusTracker,
-    orphaned_active_runs: &super::orphan_reap::OrphanedActiveRuns,
+    orphaned_active_runs: &runner_supervisor::orphan_reap::OrphanedActiveRuns,
     run_id: RunId,
     sandbox_id: SandboxId,
     reason: &'static str,

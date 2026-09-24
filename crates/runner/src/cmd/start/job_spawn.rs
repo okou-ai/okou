@@ -16,17 +16,11 @@ use tokio::task::JoinSet;
 use tracing::{error, warn};
 
 use super::factory_lifecycle::SharedFactory;
-use super::job_lifecycle::{
-    ActiveBudgetLease, CompletionPayload, FinalizationReady, RunCleanupDisposition, RunCleanupState,
-};
 use super::job_terminal_log::log_terminal_job_outcome;
-use super::orphan_reap::OrphanedActiveRuns;
-use super::ownership::{OwnershipTransitions, RunSandbox};
-use super::sandbox_finalization::{
-    FinalizeContext, finalize_sandbox_for_completion_with_telemetry,
-};
 #[cfg(test)]
-use super::{OuterJobPanicPoint, StartLoopTestObserver, maybe_panic_outer_job};
+use super::{
+    OuterJobPanicPoint, StartLoopTestObserver, finalization_test_hooks, maybe_panic_outer_job,
+};
 use crate::executor::{
     self, ExecutorConfig, RunnerPreSpawnConcurrency, RunnerPreSpawnPhase, RunnerPreSpawnTiming,
     SessionHistoryRestorePlan,
@@ -45,6 +39,16 @@ use runner_provider::{ClaimedJob, CompletionReportTiming, JobProvider};
 use runner_provider::{RunCancellationHandle, RunCancellationRegistration, RunCancellationSignals};
 use runner_supervisor::blank_pool::BlankPoolDiagnostics;
 use runner_supervisor::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool};
+use runner_supervisor::job_lifecycle::{
+    ActiveBudgetLease, CompletionPayload, FinalizationReady, RunCleanupDisposition, RunCleanupState,
+};
+use runner_supervisor::orphan_reap::OrphanedActiveRuns;
+use runner_supervisor::ownership::{OwnershipTransitions, RunSandbox};
+use runner_supervisor::sandbox_finalization::FinalizeContext;
+#[cfg(not(test))]
+use runner_supervisor::sandbox_finalization::finalize_sandbox_for_completion_with_telemetry;
+#[cfg(test)]
+use runner_supervisor::sandbox_finalization::finalize_sandbox_for_completion_with_test_hooks;
 use runner_types::ids::RunId;
 use runner_types::types::{ExecutionContext, SandboxReuseResult};
 
@@ -382,44 +386,51 @@ impl FinalizationPhase {
             true,
             None,
         );
+        let finalization_context = FinalizeContext {
+            run_id,
+            sandbox_id,
+            runner_id,
+            reuse_result,
+            profile_name,
+            reuse_key,
+            cli_agent_session_id,
+            discovered_cli_agent_session_id,
+            restored_session_identity,
+            source_ip,
+            network_log_session,
+            workspace_image,
+            workspace_image_size_bytes: u64::from(workspace_disk_mb) * 1024 * 1024,
+            storage_fingerprints,
+            device_rate_limits,
+            guest_timezone_intent,
+            factory,
+            idle_pool,
+            status,
+            reuse_state_notify: Arc::clone(&reuse_state_notify),
+            active_run_reuse: active_run_reuse.clone(),
+            workspace_cache_snapshot,
+            parking_gate,
+            network_log_drain,
+            exit_code,
+            sandbox_reuse_disposition,
+            cancel,
+            cleanup_state,
+        };
+        #[cfg(not(test))]
         let finalization_ready = finalize_sandbox_for_completion_with_telemetry(
             sandbox,
             ActiveBudgetLease::new(active_lease),
             &mut telemetry,
-            FinalizeContext {
-                run_id,
-                sandbox_id,
-                runner_id,
-                reuse_result,
-                profile_name,
-                reuse_key,
-                cli_agent_session_id,
-                discovered_cli_agent_session_id,
-                restored_session_identity,
-                source_ip,
-                network_log_session,
-                workspace_image,
-                workspace_image_size_bytes: u64::from(workspace_disk_mb) * 1024 * 1024,
-                storage_fingerprints,
-                device_rate_limits,
-                guest_timezone_intent,
-                factory,
-                idle_pool,
-                status,
-                reuse_state_notify: Arc::clone(&reuse_state_notify),
-                active_run_reuse: active_run_reuse.clone(),
-                workspace_cache_snapshot,
-                parking_gate,
-                network_log_drain,
-                exit_code,
-                sandbox_reuse_disposition,
-                cancel,
-                cleanup_state,
-                #[cfg(test)]
-                outer_job_panic,
-                #[cfg(test)]
-                test_observer,
-            },
+            finalization_context,
+        )
+        .await;
+        #[cfg(test)]
+        let finalization_ready = finalize_sandbox_for_completion_with_test_hooks(
+            sandbox,
+            ActiveBudgetLease::new(active_lease),
+            &mut telemetry,
+            finalization_context,
+            finalization_test_hooks(outer_job_panic, test_observer),
         )
         .await;
         if has_reuse_key && active_run_reuse.publish_no_exact_sandbox() {
@@ -594,7 +605,7 @@ impl DeferredUploadPhase {
 /// idle-pool transfer, or pool rejection falls back to destruction.
 ///
 /// The ownership state returned by finalization carries
-/// [`BudgetOwnership`](super::job_lifecycle::BudgetOwnership). Non-accepted paths
+/// [`BudgetOwnership`](runner_supervisor::job_lifecycle::BudgetOwnership). Non-accepted paths
 /// keep the active lease until provider completion and active-status settlement
 /// have both finished, then release it. An accepted idle entry owns and retains
 /// the lease until reuse or destruction.
@@ -924,8 +935,6 @@ mod tests {
 
     use sandbox::SandboxId;
 
-    use super::super::job_lifecycle::RunCleanupState;
-    use super::super::orphan_reap::OrphanedActiveRuns;
     use crate::http::{HttpClient, HttpClientConfig};
     use crate::idle_pool::{
         IdlePool, IdlePoolConfig, IdleUnparkResult, ParkResult,
@@ -938,6 +947,8 @@ mod tests {
     use runner_lifecycle::active_runs::ActiveRuns;
     use runner_provider::RunCancellationRegistry;
     use runner_supervisor::idle_lifecycle::SharedIdlePool;
+    use runner_supervisor::job_lifecycle::RunCleanupState;
+    use runner_supervisor::orphan_reap::OrphanedActiveRuns;
     use runner_types::ids::RunId;
 
     fn test_http_client() -> HttpClient {

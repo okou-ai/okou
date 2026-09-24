@@ -67,9 +67,7 @@ export const PI_MODEL_POLICY = {
   },
   "claude-opus-5-5": { pi: true, route: "claude-native" },
   "claude-opus-5": { pi: true, route: "claude-native" },
-  "claude-opus-4-8": { pi: true, route: "claude-native" },
   "claude-sonnet-5": { pi: true, route: "claude-native" },
-  "claude-sonnet-4-6": { pi: true, route: "claude-native" },
   "gpt-6-astra": {
     pi: false,
     exception: "frontier-vendor-harness",
@@ -81,7 +79,6 @@ export const PI_MODEL_POLICY = {
   "gpt-5.6-terra": { pi: true, route: "gpt-codex" },
   "gpt-5.6-luna": { pi: true, route: "gpt-codex" },
   "deepseek-v4.1-flash": { pi: true, route: "deepseek" },
-  "deepseek-v4-pro": { pi: true, route: "deepseek" },
   "deepseek-v4-flash": { pi: true, route: "deepseek" },
 } as const satisfies Record<ActiveRunModel, PiModelPolicy>;
 

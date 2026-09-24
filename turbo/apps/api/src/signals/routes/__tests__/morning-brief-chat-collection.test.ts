@@ -53,7 +53,7 @@ import { agentsRoutes } from "../agents";
 import { morningBriefChatCollectionPreviewRoutes } from "../morning-brief-chat-collection-preview";
 import { onRejection } from "../../utils";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { seedRetainedNativeMorningBriefForUser } from "./helpers/feature-switches";
 import {
   deleteOrgMembership$,
   seedOrgMembership$,
@@ -94,7 +94,7 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
     readonly orgId: string;
     readonly userId: string;
   }) {
-    await updateFeatureSwitchesForUser(context, member, {
+    await seedRetainedNativeMorningBriefForUser(context, member, {
       [FeatureSwitchKey.NativeMorningBrief]: true,
     });
   }

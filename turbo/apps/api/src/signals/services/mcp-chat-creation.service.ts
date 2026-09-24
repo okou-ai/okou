@@ -12,7 +12,7 @@ import {
   setErasureFenceDeadlines,
 } from "@okouai/db/operations/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";

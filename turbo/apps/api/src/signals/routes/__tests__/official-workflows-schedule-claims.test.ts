@@ -57,11 +57,18 @@ import {
 } from "../../../test-fixtures/morning-brief-schedule-claim";
 import { holdAgentRunPiExecutionSnapshotFixture } from "../../../test-fixtures/thread-bound-run-admission";
 import { holdWorkflowAutomationRowFixture } from "../../../test-fixtures/workflow-queue";
+import {
+  readWorkflowScheduleSkipsFixture,
+  skewLegacyMorningBriefAnchorFixture,
+} from "../../../test-fixtures/workflow-schedule-expiry";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  setHistoricalNativeMorningBriefForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
 import { seedBuiltInModelKey } from "./helpers/runtime-state";
 import { createRouteMocks } from "./helpers/route-test";
 import {
@@ -440,10 +447,10 @@ async function setNativeMorningBriefEnabled(
   if (!actor.orgId) {
     throw new Error("Expected organization-scoped actor");
   }
-  await updateFeatureSwitchesForUser(
+  await setHistoricalNativeMorningBriefForUser(
     context,
     { orgId: actor.orgId, userId: actor.userId },
-    { [FeatureSwitchKey.NativeMorningBrief]: enabled },
+    enabled,
   );
 }
 
@@ -753,6 +760,62 @@ describe("Morning Brief legacy schedule claim journal", () => {
       return event.eventType === "input.automation";
     }).length;
   }
+
+  it("skips an expired unclaimed legacy brief without inventing a Run or leaving the native anchor behind", async () => {
+    mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
+    const brief = await installJournaledBrief();
+    const at = brief.anchor + 30 * 60_000 + 1;
+    await pollAt(brief.automationId, at);
+
+    await expect(
+      readMorningBriefScheduleClaimsFixture(brief.automationId),
+    ).resolves.toHaveLength(0);
+    await expect(
+      readWorkflowScheduleSkipsFixture(brief.automationId),
+    ).resolves.toMatchObject([{ scheduledAnchorAt: new Date(brief.anchor) }]);
+    const preference = await readBriefPreference(brief.actor);
+    expect(preference.body.nextRunAt).toStrictEqual(expect.any(String));
+    const next = Date.parse(preference.body.nextRunAt ?? "");
+    expect(next).toBeGreaterThan(at);
+    const [automation] = await readMorningBriefAutomations(
+      brief.actor,
+      brief.workflowId,
+    );
+    expect(automation?.nextRunAt).toBe(preference.body.nextRunAt);
+    expect(automation?.lastRunAt).toBeNull();
+    expect(automation?.chatThreadId).toBeNull();
+  });
+
+  it("audits a stale expired legacy mirror without replacing the durable future brief", async () => {
+    mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
+    const brief = await installJournaledBrief();
+    const staleAnchor = new Date(brief.anchor - 60 * 60_000);
+    const at = brief.anchor - 20 * 60_000;
+    await skewLegacyMorningBriefAnchorFixture({
+      automationId: brief.automationId,
+      expectedAnchor: new Date(brief.anchor),
+      staleAnchor,
+    });
+
+    await pollAt(brief.automationId, at);
+    await expect(
+      readWorkflowScheduleSkipsFixture(brief.automationId),
+    ).resolves.toMatchObject([{ scheduledAnchorAt: staleAnchor }]);
+    await expect(
+      readMorningBriefScheduleClaimsFixture(brief.automationId),
+    ).resolves.toHaveLength(0);
+    const preference = await readBriefPreference(brief.actor);
+    expect(preference.body.nextRunAt).toBe(
+      new Date(brief.anchor).toISOString(),
+    );
+    const [automation] = await readMorningBriefAutomations(
+      brief.actor,
+      brief.workflowId,
+    );
+    expect(automation?.nextRunAt).toBe(preference.body.nextRunAt);
+    expect(automation?.lastRunAt).toBeNull();
+    expect(automation?.chatThreadId).toBeNull();
+  });
 
   it("records the original due instant when the poll is late and keeps one occurrence across a retried tick", async () => {
     const brief = await installJournaledBrief();

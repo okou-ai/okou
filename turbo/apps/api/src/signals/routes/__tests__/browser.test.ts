@@ -115,6 +115,24 @@ function browserUserActionObjectId(backendNodeId: unknown): string {
   return backendNodeId === 44 ? "native-code-object" : "native-password-object";
 }
 
+function browserValidationNodeResult(args: {
+  readonly backendNodeId: unknown;
+  readonly available: boolean;
+  readonly missingBackendNodeId: number | null;
+  readonly malformed: boolean;
+  readonly failure: string | null;
+}): unknown {
+  if (args.failure) {
+    return new Error(args.failure);
+  }
+  if (args.malformed) {
+    return {};
+  }
+  return args.available && args.backendNodeId !== args.missingBackendNodeId
+    ? { object: { objectId: browserUserActionObjectId(args.backendNodeId) } }
+    : new Error("No node with given id found");
+}
+
 function mockNativeInputTarget(): void {
   context.mocks.browserUseCdp.command.mockImplementation((command) => {
     switch (command.method) {
@@ -689,6 +707,8 @@ describe("Browser user-action route", () => {
     const controlMinLength = 3;
     let disconnectAfterNextWrite = false;
     let resolveNodeAvailable = true;
+    let missingBackendNodeId: number | null = null;
+    let nodeResolutionFailure: string | null = null;
     let malformedNodeResponse = false;
     let verificationMatches = true;
     let failNextProviderRead = false;
@@ -730,18 +750,13 @@ describe("Browser user-action route", () => {
         };
       }
       if (command.method === "DOM.resolveNode") {
-        if (malformedNodeResponse) {
-          return {};
-        }
-        return resolveNodeAvailable
-          ? {
-              object: {
-                objectId: browserUserActionObjectId(
-                  command.params.backendNodeId,
-                ),
-              },
-            }
-          : new Error("No node with given id found");
+        return browserValidationNodeResult({
+          backendNodeId: command.params.backendNodeId,
+          available: resolveNodeAvailable,
+          missingBackendNodeId,
+          malformed: malformedNodeResponse,
+          failure: nodeResolutionFailure,
+        });
       }
       if (command.method === "Runtime.callFunctionOn") {
         const declaration =
@@ -898,7 +913,13 @@ describe("Browser user-action route", () => {
     });
     expect(unsupported).toMatchObject({
       status: 409,
-      body: { error: { code: "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL" } },
+      body: {
+        error: {
+          code: "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL",
+          message:
+            "--field 1: the selected Browser control is not a writable top-level input or textarea",
+        },
+      },
     });
     controlWritable = true;
     context.mocks.browserUseCdp.connect.mockClear();
@@ -924,7 +945,13 @@ describe("Browser user-action route", () => {
     });
     expect(mismatchedKind).toMatchObject({
       status: 409,
-      body: { error: { code: "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL" } },
+      body: {
+        error: {
+          code: "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL",
+          message:
+            "--field 1: fieldKind 'password' does not match the observed input type 'email'; use text or username",
+        },
+      },
     });
     context.mocks.browserUseCdp.connect.mockClear();
     context.mocks.browserUseCdp.command.mockClear();
@@ -950,9 +977,131 @@ describe("Browser user-action route", () => {
     });
     expect(missingBackendNode).toMatchObject({
       status: 409,
-      body: { error: { code: "BROWSER_USER_ACTION_BACKEND_NODE_NOT_FOUND" } },
+      body: {
+        error: {
+          code: "BROWSER_USER_ACTION_BACKEND_NODE_NOT_FOUND",
+          message:
+            "--field 1: the selected Browser control no longer exists; inspect the page and recapture it",
+        },
+      },
     });
+    expect(JSON.stringify(missingBackendNode.body)).not.toContain(
+      "https://example.com/login",
+    );
     resolveNodeAvailable = true;
+    context.mocks.browserUseCdp.connect.mockClear();
+    context.mocks.browserUseCdp.command.mockClear();
+    providerReadCount = 0;
+
+    missingBackendNodeId = 42;
+    const secondFieldMissing = await userActionClient().create({
+      headers: current.claim.browserHeaders,
+      body: {
+        kind: "input",
+        callbackPrompt: "Continue after input",
+        pageTargetId: "native-input-target",
+        fields: [
+          {
+            key: "username",
+            label: "Email",
+            fieldKind: "username",
+            required: true,
+            backendNodeId: 43,
+          },
+          {
+            key: "password",
+            label: "Password",
+            fieldKind: "password",
+            required: true,
+            backendNodeId: 42,
+          },
+        ],
+      },
+    });
+    expect(secondFieldMissing).toMatchObject({
+      status: 409,
+      body: {
+        error: {
+          code: "BROWSER_USER_ACTION_BACKEND_NODE_NOT_FOUND",
+          message:
+            "--field 2: the selected Browser control no longer exists; inspect the page and recapture it",
+        },
+      },
+    });
+    missingBackendNodeId = null;
+
+    const nodeInspectionRequest = {
+      headers: current.claim.browserHeaders,
+      body: {
+        kind: "input" as const,
+        callbackPrompt: "Continue after input",
+        pageTargetId: "native-input-target",
+        fields: [
+          {
+            key: "password",
+            label: "Password",
+            fieldKind: "password" as const,
+            required: true,
+            backendNodeId: 42,
+          },
+        ],
+      },
+    };
+    nodeResolutionFailure = "Target session closed";
+    const failedNodeInspection = await userActionClient().create(
+      nodeInspectionRequest,
+    );
+    expect(failedNodeInspection).toMatchObject({
+      status: 502,
+      body: {
+        error: {
+          code: "BROWSER_USER_ACTION_PROVIDER_ERROR",
+          message: "Managed Browser operation failed",
+        },
+      },
+    });
+    expect(JSON.stringify(failedNodeInspection.body)).not.toContain(
+      "Target session closed",
+    );
+    nodeResolutionFailure = null;
+
+    malformedNodeResponse = true;
+    const malformedNodeInspection = await userActionClient().create(
+      nodeInspectionRequest,
+    );
+    expect(malformedNodeInspection).toMatchObject({
+      status: 502,
+      body: { error: { code: "BROWSER_USER_ACTION_PROVIDER_ERROR" } },
+    });
+    malformedNodeResponse = false;
+
+    const missingPage = await userActionClient().create({
+      headers: current.claim.browserHeaders,
+      body: {
+        kind: "input",
+        callbackPrompt: "Continue after input",
+        pageTargetId: "missing-target",
+        fields: [
+          {
+            key: "password",
+            label: "Password",
+            fieldKind: "password",
+            required: true,
+            backendNodeId: 42,
+          },
+        ],
+      },
+    });
+    expect(missingPage).toMatchObject({
+      status: 409,
+      body: {
+        error: {
+          code: "BROWSER_USER_ACTION_PAGE_TARGET_NOT_FOUND",
+          message:
+            "The selected Browser page no longer exists; inspect the active tab and recapture the controls",
+        },
+      },
+    });
     context.mocks.browserUseCdp.connect.mockClear();
     context.mocks.browserUseCdp.command.mockClear();
     providerReadCount = 0;
@@ -2693,6 +2842,9 @@ describe("okou browser route", () => {
     expect(claim.appendSystemPrompt ?? "").toContain(
       "Okou Browser is currently off for this chat thread",
     );
+    expect(claim.appendSystemPrompt ?? "").not.toContain(
+      "Browser form input: use `okou browser input-request`",
+    );
     const browserToken = runs.okouTokenForRunWithCapabilities(
       actor,
       sent.body.runId,
@@ -2733,6 +2885,15 @@ describe("okou browser route", () => {
     );
     expect(appendSystemPrompt).toContain(
       "Okou Browser lifetime: `okou browser use` and `okou browser lease` each extend the session's idle lease by a fixed 10 minutes",
+    );
+    expect(appendSystemPrompt).toContain(
+      "use `okou browser input-request` only when the user must personally enter supported form values",
+    );
+    expect(appendSystemPrompt).toContain(
+      "It opens a dedicated input form (not other Browser interactions); entered values are not included in the action URL or callback.",
+    );
+    expect(appendSystemPrompt).toContain(
+      "Fill ordinary forms with `agent-browser` instead.",
     );
     expect(appendSystemPrompt).not.toContain(
       "Okou Browser is currently off for this chat thread",

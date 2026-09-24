@@ -42,17 +42,15 @@ async function seedChatThread(title: string): Promise<ChatThreadFixture> {
   const { providerId } = await api.ensureOrgModelProvider(actor);
   await api.updateOrgModelPolicies(
     actor,
-    (["claude-sonnet-5", "claude-sonnet-4-6", "claude-opus-4-8"] as const).map(
-      (model) => {
-        return {
-          model,
-          isDefault: model === "claude-sonnet-5",
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: providerId,
-        };
-      },
-    ),
+    (["claude-sonnet-5", "claude-opus-5"] as const).map((model) => {
+      return {
+        model,
+        isDefault: model === "claude-sonnet-5",
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      };
+    }),
   );
   const agent = await bdd.createAgent(actor, {
     displayName: "Chat thread model selection agent",
@@ -117,7 +115,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
   it("rejects unsupported effort levels and persists supported ones", async () => {
     const fixture = await seedChatThread("Effort validation");
     for (const [model, reasoningEffort] of [
-      ["claude-sonnet-4-6", "extra"],
+      ["claude-opus-5", "xhigh"],
       ["claude-sonnet-5", "xhigh"],
     ] as const) {
       const unsupported = await chat.requestUpdateThreadModelSelection(
@@ -159,18 +157,18 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
     await chat.updateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-opus-4-8",
+      "claude-opus-5",
     );
     await expect(
       chat.readThreadMetadata(fixture.actor, fixture.threadId),
     ).resolves.toMatchObject({
-      selectedModel: "claude-opus-4-8",
+      selectedModel: "claude-opus-5",
       modelSettings: { "claude-sonnet-5": { effort: "high" } },
     });
     await chat.updateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-opus-4-8",
+      "claude-opus-5",
       { reasoningEffort: "extra" },
     );
     await expect(
@@ -178,7 +176,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
     ).resolves.toMatchObject({
       modelSettings: {
         "claude-sonnet-5": { effort: "high" },
-        "claude-opus-4-8": { effort: "extra" },
+        "claude-opus-5": { effort: "extra" },
       },
     });
     const events = await chat.requestThreadEvents(fixture.actor, {}, [200]);
@@ -198,7 +196,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       expect.objectContaining({
         kind: "model_selection_updated",
         modelSettingsPatch: {
-          model: "claude-opus-4-8",
+          model: "claude-opus-5",
           effort: "extra",
         },
       }),
@@ -216,43 +214,51 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
     await chat.updateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-sonnet-4-6",
+      "claude-opus-5",
     );
     const metadata = await chat.readThreadMetadata(
       fixture.actor,
       fixture.threadId,
     );
     expect(metadata).toMatchObject({
-      selectedModel: "claude-sonnet-4-6",
+      selectedModel: "claude-opus-5",
       modelSettings: { "claude-sonnet-5": { effort: "extra" } },
     });
   });
 
-  it("preserves the thread selection when an old client requests a retired model", async () => {
-    const fixture = await seedChatThread("Model retirement");
-    const token = okouToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-      capabilities: ["chat-thread:read", "chat-thread:write"],
-    });
-    const headers = { authorization: `Bearer ${token}` };
-    const rejected = await accept(
-      modelSelectionClient().update({
-        headers,
-        params: { id: fixture.threadId },
-        body: { model: "claude-fable-5" },
-      }),
-      [400],
-    );
-    expect(rejected.body.error.message).toBe(
-      "This model has been retired. Select another available model.",
-    );
-    const thread = await accept(
-      metadataClient().get({ headers, params: { id: fixture.threadId } }),
-      [200],
-    );
-    expect(thread.body.selectedModel).toBe("claude-sonnet-5");
-  });
+  it.each([
+    "claude-fable-5",
+    "claude-sonnet-4-6",
+    "claude-opus-4-8",
+    "deepseek-v4-pro",
+  ] as const)(
+    "preserves the thread selection when an old client requests retired %s",
+    async (retiredModel) => {
+      const fixture = await seedChatThread("Model retirement");
+      const token = okouToken({
+        userId: fixture.userId,
+        orgId: fixture.orgId,
+        capabilities: ["chat-thread:read", "chat-thread:write"],
+      });
+      const headers = { authorization: `Bearer ${token}` };
+      const rejected = await accept(
+        modelSelectionClient().update({
+          headers,
+          params: { id: fixture.threadId },
+          body: { model: retiredModel },
+        }),
+        [400],
+      );
+      expect(rejected.body.error.message).toBe(
+        "This model has been retired. Select another available model.",
+      );
+      const thread = await accept(
+        metadataClient().get({ headers, params: { id: fixture.threadId } }),
+        [200],
+      );
+      expect(thread.body.selectedModel).toBe("claude-sonnet-5");
+    },
+  );
 
   it("updates thread model selection with an Okou run token carrying chat-thread:write", async () => {
     const fixture = await seedChatThread("Launch plan");

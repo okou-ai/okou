@@ -1,3 +1,7 @@
+import { withNativeChatEventThreadTouch } from "./native-chat-event-write.service";
+import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
+import type { Tx } from "../../lib/db-types";
+import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { command } from "ccstate";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
@@ -20,6 +24,7 @@ import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneUserAgentPreferences } from "@okouai/db/schema/agentphone-user-agent-preference";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { chatEvents } from "@okouai/db/schema/chat-event";
+import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { and, desc, eq, isNull, like, notExists, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { env } from "../../lib/env";
@@ -32,6 +37,7 @@ import { now } from "../../lib/time";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChanged,
+  publishThreadListChangedSafely,
   publishUserSignal,
 } from "../external/realtime";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
@@ -53,6 +59,7 @@ import {
   type AgentPhoneChannel,
   type AgentPhoneUserLink,
 } from "./agentphone-shared.service";
+import { awardCompletedGetStartedQuest } from "./get-started-rewards.service";
 import { ensureAgentPhoneChatThreadRoute } from "./agentphone-chat-ingress.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import {
@@ -62,7 +69,6 @@ import {
 import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
-import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
 import { insertChatEvent } from "./chat-event.service";
 import {
   chatEventTypeIn,
@@ -87,11 +93,11 @@ const MAX_WEBHOOK_AGE_SECONDS = 300;
 const SIGNATURE_PREFIX = "sha256=";
 const MAX_CONTEXT_MESSAGES = 10;
 const AGENTPHONE_SMS_MMS_SLASH_COMMAND_RISK_MESSAGE =
-  "Note: SMS and MMS replies may not be delivered reliably. For the most reliable experience, use iMessage with this AgentPhone number.";
+  "Note: SMS and MMS replies may not be delivered reliably. For the most reliable experience, use iMessage with this number.";
 const AGENTPHONE_GROUP_CONNECT_IN_DM_MESSAGE =
   "To connect this phone number, message this number directly in a 1:1 iMessage conversation.";
 const AGENTPHONE_GROUP_ACCOUNT_COMMAND_MESSAGE =
-  "Only the linked sender can use AgentPhone account commands in a group. Message this number directly to connect or manage your link.";
+  "Only the linked sender can use account commands in a group. Message this number directly to connect or manage your link.";
 const AGENTPHONE_CHAT_MESSAGE_ID_NAMESPACE =
   "3208d609-59a7-4b0e-9c3b-3db20e9c924f";
 const agentPhoneQueueEventRevoker = alias(
@@ -255,8 +261,6 @@ export function verifyAgentPhoneConnectSignature(params: {
   readonly timestamp: number;
   readonly channel: AgentPhoneChannel;
   readonly signature: string;
-  readonly publicBrand: PublicBrand;
-  readonly publicBrandSignature: string;
   readonly secret: string;
 }): boolean {
   const nowSeconds = Math.floor(now() / 1000);
@@ -264,27 +268,15 @@ export function verifyAgentPhoneConnectSignature(params: {
     return false;
   }
 
-  const expected = signAgentPhoneConnectParams({
-    phoneHandle: params.phoneHandle,
-    agentphoneAgentId: params.agentphoneAgentId,
-    timestamp: params.timestamp,
-    channel: params.channel,
-    secret: params.secret,
-  });
-  if (!safeHexSignatureEqual(expected, params.signature)) {
-    return false;
-  }
-
   return safeHexSignatureEqual(
-    signAgentPhoneConnectBrand({
+    signAgentPhoneConnectParams({
       phoneHandle: params.phoneHandle,
       agentphoneAgentId: params.agentphoneAgentId,
       timestamp: params.timestamp,
       channel: params.channel,
-      publicBrand: params.publicBrand,
       secret: params.secret,
     }),
-    params.publicBrandSignature,
+    params.signature,
   );
 }
 
@@ -336,11 +328,6 @@ export function buildAgentPhoneConnectUrl(params: {
     handle: phoneHandle,
     agent: params.agentphoneAgentId,
     ts: String(timestamp),
-    // New Platform -> old API rollback compatibility for the full retained
-    // rollback lifetime, which has no fixed maximum evidenced. The old API
-    // validates this Provider-identity signature and ignores the additive brand
-    // fields. Remove with #27750 after that API is no longer serving or retained
-    // for rollback.
     sig: signAgentPhoneConnectParams({
       phoneHandle,
       agentphoneAgentId: params.agentphoneAgentId,
@@ -349,6 +336,9 @@ export function buildAgentPhoneConnectUrl(params: {
       secret: params.secret,
     }),
     channel: params.channel,
+    // Older App bundles still require these fields on the connect page. The
+    // API no longer verifies them. Remove with #36650 after those bundles
+    // drain.
     publicBrand,
     brandSig: signAgentPhoneConnectBrand({
       phoneHandle,
@@ -362,8 +352,19 @@ export function buildAgentPhoneConnectUrl(params: {
   return `${env("APP_URL")}/agentphone/connect?${query.toString()}`;
 }
 
+/**
+ * Link a phone to the member, in the caller's transaction.
+ *
+ * Creating the link is what the Get started iMessage quest rewards, so the
+ * award commits or rolls back with the row. Only a new row earns it: the
+ * branches that find the member's existing link merely touch it, which keeps
+ * phones linked before the quest shipped from being credited retroactively.
+ * The source key is fixed rather than the phone or organization, so the member
+ * has a single claim however often they unlink and link again, and the quest's
+ * one reward slot is what holds the limit.
+ */
 export async function linkAgentPhoneUser(
-  db: Db,
+  tx: Tx,
   params: {
     readonly phoneHandle: string;
     readonly channel: AgentPhoneChannel;
@@ -376,7 +377,7 @@ export async function linkAgentPhoneUser(
     params.phoneHandle,
     params.channel,
   );
-  const [existingPhoneLink] = await db
+  const [existingPhoneLink] = await tx
     .select()
     .from(agentphoneUserLinks)
     .where(eq(agentphoneUserLinks.phoneHandle, phoneHandle))
@@ -390,7 +391,7 @@ export async function linkAgentPhoneUser(
       return {
         ok: true,
         userLink: await touchAgentPhoneUserLink(
-          db,
+          tx,
           existingPhoneLink,
           phoneHandle,
           params.channel,
@@ -406,7 +407,7 @@ export async function linkAgentPhoneUser(
     };
   }
 
-  const [existingUserOrgLink] = await db
+  const [existingUserOrgLink] = await tx
     .select()
     .from(agentphoneUserLinks)
     .where(
@@ -422,7 +423,7 @@ export async function linkAgentPhoneUser(
       return {
         ok: true,
         userLink: await touchAgentPhoneUserLink(
-          db,
+          tx,
           existingUserOrgLink,
           phoneHandle,
           params.channel,
@@ -438,7 +439,7 @@ export async function linkAgentPhoneUser(
     };
   }
 
-  const [inserted] = await db
+  const [inserted] = await tx
     .insert(agentphoneUserLinks)
     .values({
       phoneHandle,
@@ -450,6 +451,12 @@ export async function linkAgentPhoneUser(
     .returning();
 
   if (inserted) {
+    await awardCompletedGetStartedQuest(tx, {
+      orgId: params.orgId,
+      userId: params.userId,
+      questKey: "imessage",
+      sourceKey: "agentphone-link",
+    });
     return { ok: true, userLink: inserted };
   }
   return { ok: false, reason: "conflict" };
@@ -745,13 +752,10 @@ function formatAgentPhoneFileForContext(params: {
   readonly messageId: string;
   readonly mediaUrl: string;
 }): string {
-  const name = agentPhoneFilenameFromMediaUrl(
-    params.mediaUrl,
-    "agentphone-media",
-  );
+  const name = agentPhoneFilenameFromMediaUrl(params.mediaUrl, "phone-media");
   const mimetype = inferMimetype(name);
   return [
-    `[AgentPhone file] ${name} (${mimetype})`,
+    `[Phone file] ${name} (${mimetype})`,
     `   [ID] ${params.messageId}`,
   ].join("\n");
 }
@@ -928,11 +932,11 @@ function buildAgentPhoneContextBlock(
   isGroup: boolean,
 ): string {
   return [
-    "# AgentPhone Message Context",
+    "# Phone Message Context",
     "",
     isGroup
-      ? "The messages below are from an iMessage group conversation with the shared AgentPhone number. Messages closer to RELATIVE_INDEX 0 are more recent."
-      : "The messages below are from the user's text message conversation with the shared AgentPhone number. Messages closer to RELATIVE_INDEX 0 are more recent.",
+      ? "The messages below are from an iMessage group conversation with the shared phone number. Messages closer to RELATIVE_INDEX 0 are more recent."
+      : "The messages below are from the user's text message conversation with the shared phone number. Messages closer to RELATIVE_INDEX 0 are more recent.",
     "",
     formattedMessages.join("\n\n"),
     "",
@@ -1053,8 +1057,6 @@ function formatConnectPrompt(event: AgentPhoneMessageEvent): string {
   });
 
   return [
-    `This shared AgentPhone number connects you to ${brandName}.`,
-    "",
     "You can text me like a teammate and I'll actually do the work: research something, draft and send emails, summarize long documents, update spreadsheets, triage tickets, post to Slack, dig through your GitHub or Notion, and a lot more.",
     "",
     "I'm most useful once I'm connected to the tools you already use — GitHub, Gmail, Notion, Google Drive / Sheets / Docs / Calendar, Slack, Sentry, X, and 100+ others.",
@@ -1559,7 +1561,7 @@ function agentPhoneInputFiles(
             if (safeUrlParse(mediaUrl)?.protocol !== "https:") {
               throw new InputFileImportError(
                 "invalid-url",
-                "AgentPhone media URL must use HTTPS",
+                "Phone media URL must use HTTPS",
               );
             }
             return fetch(mediaUrl, { signal: downloadSignal });
@@ -1568,6 +1570,15 @@ function agentPhoneInputFiles(
       ]
     : [];
 }
+
+type PersistedAgentPhoneChatMessage =
+  | {
+      readonly inserted: true;
+      readonly splitWrites: boolean;
+      readonly chatThreadId: string;
+      readonly chatEventId: string;
+    }
+  | { readonly inserted: false };
 
 const persistAgentPhoneChatMessage$ = command(
   async (
@@ -1585,14 +1596,7 @@ const persistAgentPhoneChatMessage$ = command(
       readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
-  ): Promise<
-    | {
-        readonly inserted: true;
-        readonly chatThreadId: string;
-        readonly chatEventId: string;
-      }
-    | { readonly inserted: false }
-  > => {
+  ): Promise<PersistedAgentPhoneChatMessage> => {
     const currentTime = new Date(args.apiStartTime);
     const route = await ensureAgentPhoneChatThreadRoute(args.db, {
       agentphoneUserLinkId: args.userLink.id,
@@ -1632,7 +1636,9 @@ const persistAgentPhoneChatMessage$ = command(
           .filter(Boolean)
           .join("\n\n")
       : args.prompt;
-    const inserted = await args.db.transaction(async (tx) => {
+    const splitWrites = await isSplitChatEventWriteEnabled(args.db);
+    signal.throwIfAborted();
+    const persist = async (tx: Db | Tx, touchThread: () => Promise<void>) => {
       const event = await insertChatEvent(
         tx,
         {
@@ -1668,23 +1674,30 @@ const persistAgentPhoneChatMessage$ = command(
           createdAt: currentTime,
         },
         "id",
+        { splitWrites },
       );
       signal.throwIfAborted();
       if (!event) {
         return false;
       }
-      await touchChatThreadLastMessageAt(
-        tx,
-        route.chatThreadId,
-        currentTime,
-        chatEventId,
-      );
+      await touchThread();
       return true;
-    });
+    };
+    const inserted = await withNativeChatEventThreadTouch(
+      args.db,
+      {
+        splitWrites,
+        chatThreadId: route.chatThreadId,
+        createdAt: currentTime,
+        eventId: chatEventId,
+      },
+      persist,
+    );
     signal.throwIfAborted();
     return inserted
       ? {
           inserted: true,
+          splitWrites,
           chatThreadId: route.chatThreadId,
           chatEventId,
         }
@@ -1779,7 +1792,11 @@ const runAgentForAgentPhone$ = command(
       threadId: persisted.chatThreadId,
     });
     signal.throwIfAborted();
-    await publishThreadListChanged({
+    await (
+      persisted.splitWrites
+        ? publishThreadListChangedSafely
+        : publishThreadListChanged
+    )({
       userId: args.userLink.userId,
       orgId: args.userLink.orgId,
     });
@@ -1884,15 +1901,26 @@ export const handleAgentPhoneMessage$ = command(
           selectedModel: modelRoute?.selectedModel ?? null,
           serviceTier: modelRoute?.serviceTier ?? null,
         });
-    const { executionContext } = await fetchAgentPhoneContext(db, {
-      userLinkId: params.userLink.id,
-      phoneHandle: params.event.fromNumber,
-      channel: params.event.channel,
-      conversationId: params.event.conversationId,
-      isGroup,
-      recentHistory: params.event.recentHistory,
-      currentMessageId: params.event.messageId,
-    });
+    const userLinkId = params.userLink.id;
+    const { executionContext } = await loadOptionalChatEnrichment(
+      db,
+      "agentphone",
+      () => {
+        return fetchAgentPhoneContext(db, {
+          userLinkId,
+          phoneHandle: params.event.fromNumber,
+          channel: params.event.channel,
+          conversationId: params.event.conversationId,
+          isGroup,
+          recentHistory: params.event.recentHistory,
+          currentMessageId: params.event.messageId,
+        });
+      },
+      () => {
+        return { executionContext: "" };
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     const prompt = enrichAgentPhonePrompt({
@@ -1926,4 +1954,12 @@ export async function publishAgentPhoneUserChanged(
   userId: string,
 ): Promise<void> {
   await publishUserSignal([userId], "agentphone:changed");
+}
+
+/** A new link may also have completed the Get started iMessage quest. */
+export async function publishAgentPhoneUserLinked(
+  userId: string,
+): Promise<void> {
+  await publishAgentPhoneUserChanged(userId);
+  await publishUserSignal([userId], GET_STARTED_REWARDS_CHANGED_EVENT);
 }

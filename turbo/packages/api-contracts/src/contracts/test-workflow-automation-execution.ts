@@ -13,6 +13,10 @@ export const testWorkflowAutomationAgentExecutionRequestSchema = z.object({
   agent_id: z.string().uuid(),
 });
 
+export const testWorkflowAutomationWorkflowExecutionRequestSchema = z.object({
+  workflow_id: z.string().uuid(),
+});
+
 export const testWorkflowAutomationExecutionResponseSchema = z.object({
   success: z.literal(true),
   executed: z.number().int().nonnegative(),
@@ -114,6 +118,16 @@ export const testWorkflowAutomationExecutionContract = c.router({
       404: z.string(),
     },
     summary: "Execute visible workflow automations for one agent in API tests",
+  },
+  executeForWorkflow: {
+    method: "POST",
+    path: "/api/test/workflow-automation-execution/execute-for-workflow",
+    body: testWorkflowAutomationWorkflowExecutionRequestSchema,
+    responses: {
+      200: testWorkflowAutomationExecutionResponseSchema,
+      404: z.string(),
+    },
+    summary: "Exercise the scheduler batch for one test-owned workflow",
   },
   dispatchCallbacks: {
     method: "POST",

@@ -6,10 +6,10 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use sandbox::SandboxId;
 use tracing::{info, warn};
 
-use super::ownership::{OwnershipTransitions, RunSandbox};
-use crate::status::StatusTracker;
+use crate::idle_lifecycle::SharedIdlePool;
+use crate::ownership::{OwnershipTransitions, RunSandbox};
 use runner_host::process;
-use runner_supervisor::idle_lifecycle::SharedIdlePool;
+use runner_lifecycle::status::StatusTracker;
 use runner_types::ids::RunId;
 
 const ORPHANED_ACTIVE_RUN_ABSENT_SCANS_BEFORE_REMOVE: u8 = 2;
@@ -27,23 +27,21 @@ struct OrphanedActiveRunState {
 }
 
 /// Claimed runs whose outer task is gone but whose sandbox ownership is uncertain.
-#[derive(Clone)]
-pub(super) struct OrphanedActiveRuns {
+#[derive(Clone, Default)]
+pub struct OrphanedActiveRuns {
     inner: Arc<Mutex<BTreeMap<RunId, OrphanedActiveRunState>>>,
 }
 
 impl OrphanedActiveRuns {
-    pub(super) fn new() -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(BTreeMap::new())),
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    pub(super) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.lock().is_empty()
     }
 
-    pub(super) fn insert(&self, run_id: RunId, sandbox_id: SandboxId) {
+    pub(crate) fn insert(&self, run_id: RunId, sandbox_id: SandboxId) {
         let state = OrphanedActiveRunState {
             sandbox_id,
             absent_scans: 0,
@@ -51,7 +49,7 @@ impl OrphanedActiveRuns {
         self.lock().insert(run_id, state);
     }
 
-    pub(super) fn remove_if_matching(&self, run_id: RunId, sandbox_id: SandboxId) -> bool {
+    pub(crate) fn remove_if_matching(&self, run_id: RunId, sandbox_id: SandboxId) -> bool {
         let mut runs = self.lock();
         let removed =
             matches!(runs.get(&run_id), Some(current) if current.sandbox_id == sandbox_id);
@@ -90,8 +88,8 @@ impl OrphanedActiveRuns {
             .collect()
     }
 
-    #[cfg(test)]
-    pub(super) fn len(&self) -> usize {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn len(&self) -> usize {
         self.lock().len()
     }
 
@@ -102,15 +100,26 @@ impl OrphanedActiveRuns {
     }
 }
 
-#[derive(Clone)]
-pub(super) struct OrphanReapProcessDiscovery {
-    pub(super) firecrackers: Arc<Vec<process::FirecrackerProcessInfo>>,
-    pub(super) proc_scan_complete: bool,
-    pub(super) incomplete_for_current_runner: bool,
+mod process_discovery {
+    use std::sync::Arc;
+
+    use runner_host::process;
+
+    #[derive(Clone)]
+    pub struct OrphanReapProcessDiscovery {
+        pub firecrackers: Arc<Vec<process::FirecrackerProcessInfo>>,
+        pub proc_scan_complete: bool,
+        pub incomplete_for_current_runner: bool,
+    }
 }
 
+#[cfg(not(any(test, feature = "test-support")))]
+use process_discovery::OrphanReapProcessDiscovery;
+#[cfg(any(test, feature = "test-support"))]
+pub use process_discovery::OrphanReapProcessDiscovery;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum OrphanReapMode {
+pub enum OrphanReapMode {
     /// Fast path after a job task is reaped. Only reconciles ownership that is
     /// already proven by in-memory runner state.
     Immediate,
@@ -121,7 +130,35 @@ pub(super) enum OrphanReapMode {
     ShutdownFinal,
 }
 
-pub(super) async fn reap_orphaned_active_runs(
+pub async fn reap_orphaned_active_runs(
+    orphaned_active_runs: &OrphanedActiveRuns,
+    idle_pool: &SharedIdlePool,
+    status: &StatusTracker,
+    mode: OrphanReapMode,
+) {
+    reap_orphaned_active_runs_inner(orphaned_active_runs, idle_pool, status, mode, None).await;
+}
+
+/// Deterministic process-discovery seam for cross-crate recovery tests.
+#[cfg(any(test, feature = "test-support"))]
+pub async fn reap_orphaned_active_runs_with_discovery(
+    orphaned_active_runs: &OrphanedActiveRuns,
+    idle_pool: &SharedIdlePool,
+    status: &StatusTracker,
+    mode: OrphanReapMode,
+    process_discovery_override: Option<&OrphanReapProcessDiscovery>,
+) {
+    reap_orphaned_active_runs_inner(
+        orphaned_active_runs,
+        idle_pool,
+        status,
+        mode,
+        process_discovery_override,
+    )
+    .await;
+}
+
+async fn reap_orphaned_active_runs_inner(
     orphaned_active_runs: &OrphanedActiveRuns,
     idle_pool: &SharedIdlePool,
     status: &StatusTracker,
@@ -321,10 +358,10 @@ async fn reap_orphaned_active_runs_with_firecrackers(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::idle_pool::{
+    use runner_lifecycle::idle_pool::{
         IdlePool, IdlePoolConfig, ParkResult, test_support::ParkedIdleCandidateBuilder,
     };
-    use crate::resource_budget::ResourceBudget;
+    use runner_lifecycle::resource_budget::ResourceBudget;
     struct OrphanReapFixture {
         _dir: tempfile::TempDir,
         status_path: std::path::PathBuf,
@@ -400,8 +437,7 @@ mod tests {
         }
 
         async fn reap(&self, mode: OrphanReapMode) {
-            reap_orphaned_active_runs(&self.orphans, &self.idle_pool, &self.status, mode, None)
-                .await;
+            reap_orphaned_active_runs(&self.orphans, &self.idle_pool, &self.status, mode).await;
         }
 
         async fn reap_with_discovery(
@@ -409,7 +445,7 @@ mod tests {
             mode: OrphanReapMode,
             discovery: &OrphanReapProcessDiscovery,
         ) {
-            reap_orphaned_active_runs(
+            reap_orphaned_active_runs_with_discovery(
                 &self.orphans,
                 &self.idle_pool,
                 &self.status,

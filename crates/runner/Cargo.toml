@@ -1,6 +1,6 @@
 [package]
 name = "runner"
-version = "0.213.11"
+version = "0.213.13"
 edition.workspace = true
 
 [dependencies]
@@ -61,6 +61,7 @@ runner-executor = { workspace = true, features = ["test-support"] }
 runner-lifecycle = { workspace = true, features = ["test-support"] }
 runner-network = { workspace = true, features = ["test-support"] }
 runner-storage = { workspace = true, features = ["test-support"] }
+runner-supervisor = { workspace = true, features = ["test-support"] }
 guest-control-client = { workspace = true }
 log = { workspace = true }
 # `test-util` feature exposes `with_test_defaults_v2()` on `aws_sdk_s3::Config`,

@@ -247,12 +247,6 @@ test("Answering new to this keeps skipping the skills step", async () => {
 
   click(getButtonByName("Continue"));
 
-  await screen.findByRole("heading", {
-    name: "Here's what we've learned about you",
-  });
-  expect(pathname()).toBe(ROUTES.onboardingProfile);
-  click(getButtonByName("Continue"));
-
   await expect(
     screen.findByRole("heading", { name: SLACK_QUESTION }),
   ).resolves.toBeInTheDocument();

@@ -361,7 +361,7 @@
     },
     "sources": {
       "agent": "Agent",
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "automationEvent": "Événement d'automatisation",
       "automationSchedule": "Planification d'automatisation",
       "discord": "Discord",
@@ -1207,7 +1207,7 @@
         "everythingInBuiltForTeams": "Tout {{plan}}, conçu pour les équipes",
         "included": "Inclus",
         "liveBrowser": "Suivez le navigateur d'un agent et prenez la main",
-        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4 Pro",
+        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4.1 Flash",
         "moreConnectorsChannels": "Plus de connecteurs personnalisés et d'intégrations de canaux",
         "supportEmail": "Assistance par e-mail",
         "supportPriority": "Assistance prioritaire",
@@ -1462,6 +1462,11 @@
         },
         "earned": "{{amount}} obtenus",
         "howRewardsWork": "Comment fonctionnent les récompenses",
+        "imessage": {
+          "action": "Ajouter",
+          "description": "Écrivez à {{assistantName}} depuis votre iPhone",
+          "name": "Ajouter à iMessage"
+        },
         "inReview": "En cours d'examen",
         "intro": {
           "checkin": {
@@ -3533,7 +3538,7 @@
         "invalidSignature": "La signature de ce lien n'est pas valide.",
         "invalidTimestamp": "L'horodatage de ce lien n'est pas valide.",
         "invalidTitle": "Le lien de connexion est invalide",
-        "risk": "Les réponses SMS et MMS peuvent ne pas être livrées de manière fiable. Pour une expérience la plus fiable, utilisez iMessage avec ce numéro AgentPhone.",
+        "risk": "Les réponses SMS et MMS peuvent ne pas être livrées de manière fiable. Pour une expérience la plus fiable, utilisez iMessage avec ce numéro.",
         "successDescription": "{{phone}} est connecté. Envoyez un message texte pour commencer à discuter avec {{assistantName}}.",
         "successTitle": "Numéro de téléphone connecté"
       },
@@ -3655,9 +3660,10 @@
       "agentphone": {
         "authorizedSender": "Expéditeur autorisé",
         "codeExpiry": "Expire dans 10 minutes",
+        "codeLabel": "Code",
         "connectAria": "Connecter le téléphone",
-        "connectDescription": "Scannez le code ou ouvrez Messages, puis envoyez le code prérempli.",
-        "connectTitle": "Connecter le téléphone",
+        "connectDescription": "Scannez avec votre appareil photo, puis envoyez le code prérempli.",
+        "connectTitle": "Écrivez à {{assistantName}} depuis votre iPhone",
         "copyAria": "Copier {{phone}}",
         "copyCodeAria": "Copier le code de connexion {{code}}",
         "copyCodeError": "Impossible de copier le code de connexion",
@@ -3668,13 +3674,12 @@
         "creatingCode": "Création du code de connexion…",
         "description": "Accès aux messages texte pour {{assistantName}}",
         "destination": "iMessage ou SMS à",
-        "manualSend": "ou envoyez",
-        "manualSendTo": "au",
         "openMessages": "Ouvrir Messages",
         "options": "Options de téléphone",
         "phoneLabel": "Téléphone",
         "qrTitle": "Scannez pour ouvrir Messages avec le code de connexion prérempli",
         "risk": "Utilisez iMessage lorsque c’est possible. Les réponses par SMS et MMS peuvent ne pas arriver de manière fiable.",
+        "sendToLabel": "Envoyer à",
         "tryAgain": "Réessayer"
       },
       "catalogDiagnostics": {
@@ -4084,8 +4089,8 @@
         "uninstallTitle": "Désinstaller le bot Telegram ?"
       },
       "toasts": {
-        "agentphoneConnected": "AgentPhone connecté",
-        "agentphoneDisconnected": "AgentPhone déconnecté",
+        "agentphoneConnected": "Numéro de téléphone connecté",
+        "agentphoneDisconnected": "Numéro de téléphone déconnecté",
         "slackConnected": "Slack connecté avec succès",
         "slackDisconnected": "Déconnecté de Slack",
         "slackInstalled": "Slack installé avec succès",
@@ -4340,7 +4345,6 @@
       "documentTitles": {
         "experience": "Votre expérience de l'IA",
         "industry": "Choisir votre domaine",
-        "profile": "Votre profil",
         "ready": "Okou est prêt",
         "skills": "Importer vos skills",
         "slack": "Ajouter Okou à Slack",
@@ -4403,17 +4407,6 @@
       "industry": {
         "copy": "Okou est l’assistant de travail pour vous et votre équipe. Il transforme les informations dispersées en travail accompli, dans le cloud. Choisissez votre domaine pour une première tâche adaptée.",
         "title": "Quel type de travail faites-vous ?"
-      },
-      "profile": {
-        "communicationStyle": "Votre façon de communiquer",
-        "copy": "Un premier aperçu de votre travail à partir des comptes connectés.",
-        "failed": "Nous ne pouvons pas créer votre profil pour le moment. Réessayez ou continuez.",
-        "heading": "Votre profil",
-        "loading": "Création de votre profil à partir de vos comptes connectés…",
-        "priorities": "Priorités possibles",
-        "professionalIdentity": "Votre travail",
-        "retry": "Réessayer",
-        "title": "Voici ce que nous avons appris sur vous"
       },
       "skills": {
         "copied": "Copié",
@@ -4813,7 +4806,7 @@
         "unconfirmedNote": "Nous n'avons pas pu vérifier votre connexion à {{provider}}. Vous pouvez réessayer ou le connecter plus tard."
       },
       "team": {
-        "copy": "Invitez un membre de l’équipe à utiliser avec vous les workflows partagés.",
+        "copy": "Invitez un membre de l’équipe à partager vos workflows, chacun connectant ses propres outils.",
         "invite": "Envoyer l'invitation",
         "invited": "Invité",
         "label": "E-mail du membre de l’équipe",
@@ -4827,12 +4820,10 @@
           "workspace": "Rejoint votre espace de travail."
         },
         "sending": "Envoi…",
-        "title": "Rendez Okou utile à toute votre équipe",
-        "trust": "Tout le monde utilise les mêmes workflows et connecte ses propres outils."
+        "title": "Rendez Okou utile à toute votre équipe"
       },
       "welcome": {
         "copy": "Examinez une tâche suggérée pour votre travail, adaptez-la à votre objectif, puis laissez Okou commencer.",
-        "offerTitle": "La première heure de conseil est offerte, plus jusqu'à 100 crédits —",
         "promptLabel": "Votre prompt de départ",
         "start": "Commencer avec Okou",
         "title": "Commencez par une tâche qui compte"
@@ -6693,9 +6684,6 @@
       "emailSubscription": {
         "description": "Recevez les synthèses, rappels et autres actualités de l’espace de travail par e-mail.",
         "descriptionWithEmail": "Recevez les synthèses, rappels et autres actualités de l’espace de travail à l’adresse {{email}}.",
-        "loading": "Vérification de l’abonnement aux e-mails…",
-        "retryMessage": "Impossible d’enregistrer ou de charger votre abonnement aux e-mails. Réessayez.",
-        "saving": "Enregistrement…",
         "sectionTitle": "Abonnements aux e-mails",
         "title": "Mises à jour par e-mail",
         "unavailable": "E-mail indisponible",
@@ -7185,6 +7173,7 @@
       "add": "Ajouter des identifiants",
       "appleDhFieldHelp": "Chaque champ doit contenir de 1 à 63 octets UTF-8. NUL est interdit.",
       "appleDhMethod": "Nom d’utilisateur et mot de passe Apple DH",
+      "appleSrpMethod": "Nom d’utilisateur et mot de passe Apple Direct SRP",
       "authentication": "Méthode d’authentification",
       "createNew": "Créer des identifiants",
       "delete": "Supprimer les identifiants",
@@ -7256,6 +7245,8 @@
     "security": {
       "appleDh": "Partage d’écran Mac (Apple DH)",
       "appleDhHelp": "Nécessite le partage d’écran macOS via une connexion SSH enregistrée. La destination RFB doit être 127.0.0.1 ou ::1 sur ce Mac. SSH protège toute la session VNC. Utilisez un hôte SSH Mac que vous contrôlez ; sa clé d’hôte n’exclut pas un relais en aval.",
+      "appleSrp": "Partage d’écran Mac (Apple Direct SRP)",
+      "appleSrpHelp": "Nécessite une connexion SSH enregistrée vers le Mac et 127.0.0.1 ou ::1 comme destination RFB. SRP vérifie le compte et la preuve du serveur ; SSH protège toute la session VNC. La clé d’hôte SSH identifie le point choisi, mais n’exclut pas un relais en aval.",
       "caBundle": "Certificats d’AC (PEM)",
       "caHelp": "Jusqu’à 8 certificats d’AC, pour un total de 64 KiB. Ne collez ni clé privée ni certificat de serveur.",
       "caHint": "Collez les certificats publics des AC ayant émis le certificat du serveur",
@@ -7276,6 +7267,7 @@
     "summary_other": "{{count}} hôtes configurés",
     "transport": {
       "appleDhDestinationHelp": "Pour Apple DH, saisissez 127.0.0.1 ou ::1. Il s’agit de l’adresse de bouclage du Mac, accessible via l’hôte SSH sélectionné.",
+      "appleSrpDestinationHelp": "Pour Apple Direct SRP, saisissez 127.0.0.1 ou ::1. Il s’agit de l’adresse de bouclage du Mac, accessible via l’hôte SSH sélectionné.",
       "destination": "Destination RFB",
       "destinationHelp": "Pour une route SSH, cet hôte et ce port sont joints depuis le serveur SSH sélectionné, et non directement depuis le Runner.",
       "direct": "Direct depuis le Runner",

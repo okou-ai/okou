@@ -1,3 +1,4 @@
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { randomUUID } from "node:crypto";
 
 import type {
@@ -6,7 +7,7 @@ import type {
 } from "@okouai/db/jsonb-contracts/chat-thread";
 import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
@@ -231,8 +232,16 @@ export async function readChatThreadEventSequenceFixture(
   chatThreadId: string,
 ): Promise<number> {
   const [thread] = await db()
-    .select({ seqId: chatThreads.lastChatEventSeqId })
+    .select({
+      seqId: sql`COALESCE(${chatEventSequences.lastSeqId}, 0)`.mapWith(
+        chatEventSequences.lastSeqId,
+      ),
+    })
     .from(chatThreads)
+    .leftJoin(
+      chatEventSequences,
+      eq(chatEventSequences.chatThreadId, chatThreads.id),
+    )
     .where(eq(chatThreads.id, chatThreadId))
     .limit(1);
   if (!thread) {

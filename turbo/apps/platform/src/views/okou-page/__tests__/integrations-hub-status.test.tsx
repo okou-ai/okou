@@ -1,9 +1,11 @@
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { integrationsGithubContract } from "@okouai/api-contracts/contracts/integrations-github";
-import { screen, waitFor, within } from "@testing-library/react";
+import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
-import { click } from "../../../__tests__/page-helper.ts";
+import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { pathname } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   getAction,
@@ -129,8 +131,54 @@ test("A workspace member is directed to an admin for GitHub installation", async
   expect(queryAction("button", "Connect", githubCard)).toBeNull();
 });
 
-test("Open Telegram settings from Integrations", async () => {
+test("Authorize the official Telegram bot directly in a new tab from Integrations", async () => {
   mockSlack(context, { isConnected: true, isInstalled: true, isAdmin: true });
+  context.mocks.data.telegramIntegration({
+    statuses: [
+      {
+        id: "official",
+        kind: "official",
+        username: "okou_bot",
+        avatarUrl: null,
+        agent: null,
+        isOwner: false,
+        isConnected: false,
+        tokenStatus: "valid",
+        domainConfigured: true,
+        environment: {
+          requiredSecrets: [],
+          requiredVars: [],
+          missingSecrets: [],
+          missingVars: [],
+        },
+        official: {
+          configured: true,
+          usesDefaultAgent: true,
+          linkedTelegramUserId: null,
+        },
+      },
+    ],
+  });
+  context.mocks.api(
+    integrationsTelegramContract.getLinkStatus,
+    ({ respond }) => {
+      return respond(200, {
+        linked: false,
+        installation: {
+          id: "official",
+          botUsername: "okou_bot",
+          loginBotId: "987654321",
+          domainConfigured: true,
+        },
+      });
+    },
+  );
+  const authorizationWindow = context.mocks.browser.authWindow();
+  Object.defineProperty(authorizationWindow, "location", {
+    configurable: true,
+    value: { href: "" },
+  });
+  const opened = context.mocks.browser.open(authorizationWindow);
 
   await setupIntegrationsPage(context);
 
@@ -142,6 +190,44 @@ test("Open Telegram settings from Integrations", async () => {
       return getAction("link", "Back to integrations");
     }),
   ).resolves.toBeInTheDocument();
+
+  const connect = await waitFor(() => {
+    return getAction("button", "Connect");
+  });
+  expect(connect).toBeEnabled();
+  click(connect);
+
+  expect(opened.calls).toStrictEqual([
+    { url: "about:blank", target: "_blank", features: null },
+  ]);
+  const authUrl = await waitFor(() => {
+    const url = new URL(authorizationWindow.location.href);
+    expect(url.origin + url.pathname).toBe("https://oauth.telegram.org/auth");
+    expect(url.searchParams.get("bot_id")).toBe("987654321");
+    return url;
+  });
+  const callbackUrl = new URL(authUrl.searchParams.get("return_to") ?? "");
+  act(() => {
+    context.mocks.browser.message(
+      {
+        type: "telegram-auth",
+        data: {
+          id: "99001",
+          first_name: "Alice",
+          username: "alice",
+          auth_date: "1700000000",
+          hash: "b".repeat(64),
+        },
+      },
+      { source: authorizationWindow, origin: callbackUrl.origin },
+    );
+  });
+
+  await expect(
+    screen.findByText("Connected (@alice)"),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe("/settings/telegram");
+  expect(getAction("link", "Back to integrations")).toBeInTheDocument();
 });
 
 test("A user connects AgentPhone with a prefilled one-time code", async () => {
@@ -172,26 +258,42 @@ test("A user connects AgentPhone with a prefilled one-time code", async () => {
   expect(phoneCard).toHaveTextContent("iMessage or SMS to+1 (903) 985-3128");
   click(getAction("button", "Connect phone", phoneCard));
 
-  const dialog = await screen.findByRole("dialog", { name: "Connect phone" });
+  const dialog = await screen.findByRole("dialog", {
+    name: "Text Okou from your iPhone",
+  });
   expect(dialog).toHaveAccessibleDescription(
-    "Scan the code or open Messages, then send the prefilled code.",
+    "Scan with your camera, then send the prefilled code.",
   );
   expect(
     within(dialog).getByText(
       "Use iMessage when possible. SMS and MMS replies may not arrive reliably.",
     ),
   ).toBeVisible();
-  expect(within(dialog).getByText("or send")).toBeVisible();
-  expect(within(dialog).getByText("to")).toBeVisible();
+  expect(within(dialog).getByText("Code")).toBeVisible();
+  expect(within(dialog).getByText("Send to")).toBeVisible();
   expect(within(dialog).getByText("Expires in 10 minutes")).toBeVisible();
   expect(within(dialog).getByTestId("agentphone-link-qr")).toHaveAttribute(
     "data-sms-href",
     messageHref,
   );
-  expect(getAction("link", "Open Messages", dialog)).toHaveAttribute(
-    "href",
-    messageHref,
-  );
+  // The link completes on the phone, so the dialog offers no footer actions:
+  // its only buttons copy what is sent, plus the dialog's own close.
+  expect(
+    queryAllByRoleFast("button", dialog).map((button) => {
+      return button.getAttribute("aria-label") ?? button.textContent;
+    }),
+  ).toStrictEqual([
+    `Copy connection code ${code}`,
+    "Copy +1 (903) 985-3128",
+    "Close",
+  ]);
+  // Where the QR cannot be scanned -- the phone itself -- a button opens
+  // Messages with the same prefilled code in its place.
+  expect(
+    within(dialog).getByTestId("agentphone-open-messages"),
+  ).toHaveAttribute("href", messageHref);
+  // Rewards are off for this workspace, so the dialog promises none.
+  expect(within(dialog).queryByText("+1,000")).not.toBeInTheDocument();
 
   click(getAction("button", `Copy connection code ${code}`, dialog));
   await expect(
@@ -208,7 +310,7 @@ test("A user connects AgentPhone with a prefilled one-time code", async () => {
   await waitFor(() => {
     expect(getIntegrationCard("Phone")).toHaveTextContent(PHONE_HANDLE);
     expect(
-      screen.queryByRole("dialog", { name: "Connect phone" }),
+      screen.queryByRole("dialog", { name: "Text Okou from your iPhone" }),
     ).not.toBeInTheDocument();
   });
 });

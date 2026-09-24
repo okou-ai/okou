@@ -3,7 +3,7 @@ import { command } from "ccstate";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { browserAuthorizationRequests } from "@okouai/db/schema/browser-session";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { env } from "../../lib/env";
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";

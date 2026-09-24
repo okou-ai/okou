@@ -11,6 +11,83 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.959.0](https://github.com/okou-ai/okou/compare/app-v0.958.0...app-v0.959.0) (2026-09-24)
+
+
+### Features
+
+* **platform:** drop the profile step from source-first onboarding ([#36708](https://github.com/okou-ai/okou/issues/36708)) ([5287ecb](https://github.com/okou-ai/okou/commit/5287ecb8e4602353b78bed2cfe71533f98a886ea))
+
+
+### Bug Fixes
+
+* retire claude sonnet 4.6, claude opus 4.8, and deepseek v4 pro ([#36698](https://github.com/okou-ai/okou/issues/36698)) ([66a5341](https://github.com/okou-ai/okou/commit/66a534132b49aee893bcbae2cb94b150f19396c8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.505.1
+    * @okouai/core bumped to 8.708.4
+
+## [0.958.0](https://github.com/okou-ai/okou/compare/app-v0.957.0...app-v0.958.0) (2026-09-24)
+
+
+### Features
+
+* **vnc:** admit apple direct srp over mac ssh loopback ([#36556](https://github.com/okou-ai/okou/issues/36556)) ([737563c](https://github.com/okou-ai/okou/commit/737563c6c3d95b13cf53480ddb8f34ce9709cae9))
+
+
+### Bug Fixes
+
+* **agentphone:** remove vendor name and brand signature from phone surfaces ([#36651](https://github.com/okou-ai/okou/issues/36651)) ([bc12388](https://github.com/okou-ai/okou/commit/bc12388e72374f8ffa7d06a401a0b3235e08a015))
+* **chat:** match remote access host choices to app styling ([#36667](https://github.com/okou-ai/okou/issues/36667)) ([7db7a1e](https://github.com/okou-ai/okou/commit/7db7a1ee21558115ebdf63f67e61f94401cdb8e0))
+* **platform:** hide zero reset credits in personal account rows ([#36688](https://github.com/okou-ai/okou/issues/36688)) ([c044414](https://github.com/okou-ai/okou/commit/c044414b9c4ab5449ed24bf8a59b32f781e9ffd0))
+* **platform:** open telegram oauth directly in new tabs ([#36624](https://github.com/okou-ai/okou/issues/36624)) ([ffe493c](https://github.com/okou-ai/okou/commit/ffe493cd9f71d22119d5c44487ebc2352d1dd37b))
+* **platform:** polish source-first onboarding left column and new-user illustration ([#36610](https://github.com/okou-ai/okou/issues/36610)) ([04ffebe](https://github.com/okou-ai/okou/commit/04ffebea4005953d594713f31940b62f586476f8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.505.0
+    * @okouai/core bumped to 8.708.3
+
+## [0.957.0](https://github.com/okou-ai/okou/compare/app-v0.956.0...app-v0.957.0) (2026-09-24)
+
+
+### Features
+
+* **access:** enable guarded organization conversion ([#36623](https://github.com/okou-ai/okou/issues/36623)) ([5d1ba8b](https://github.com/okou-ai/okou/commit/5d1ba8b930cd414c3e3700996e25d79ba99a4ce6))
+* **platform:** add mod+shift+x shortcut to archive chat ([#36619](https://github.com/okou-ai/okou/issues/36619)) ([b86549d](https://github.com/okou-ai/okou/commit/b86549d4004c71724a5d390d43b32b5b7421f1dc))
+
+
+### Bug Fixes
+
+* align chat automation run now actions to the right ([#36639](https://github.com/okou-ai/okou/issues/36639)) ([0d1797c](https://github.com/okou-ai/okou/commit/0d1797c831dd4725525e9c390da1867ea03dfb79))
+* **app:** resume onboarding progress and clear completed drafts ([#36632](https://github.com/okou-ai/okou/issues/36632)) ([c1533f0](https://github.com/okou-ai/okou/commit/c1533f076962d8a4879106fc987fb18f83cbb7dd))
+* **browser:** keep input available during preflight ([#36608](https://github.com/okou-ai/okou/issues/36608)) ([eaeb850](https://github.com/okou-ai/okou/commit/eaeb85079a04b3e4bc14906c01251e4fba370784))
+* **chat:** configure remote access before chat creation ([#36599](https://github.com/okou-ai/okou/issues/36599)) ([f2f9e40](https://github.com/okou-ai/okou/commit/f2f9e40971439d1510ea1df5194a05b8216249c5))
+* **chat:** keep remote access menu mounted during refresh ([#36654](https://github.com/okou-ai/okou/issues/36654)) ([2067e33](https://github.com/okou-ai/okou/commit/2067e33171a2b18e63eaf305cddfd70279b0b80b))
+* **platform:** make telegram connect the primary action ([#36620](https://github.com/okou-ai/okou/issues/36620)) ([9a3b164](https://github.com/okou-ai/okou/commit/9a3b164cbbf7a57bb79d9dfeae364bd59dea32f8))
+* **platform:** match account menu subscription divider to menu separator ([#36635](https://github.com/okou-ai/okou/issues/36635)) ([3ad8eec](https://github.com/okou-ai/okou/commit/3ad8eec85c17e22e4211d139390e6f7d21539272))
+* **platform:** show actions on agent-bound message bubbles ([#36607](https://github.com/okou-ai/okou/issues/36607)) ([cfb46d6](https://github.com/okou-ai/okou/commit/cfb46d67e940ddd88912d2ef821379476860daec))
+
+
+### Refactoring
+
+* remove piloop feature switch ([#36382](https://github.com/okou-ai/okou/issues/36382)) ([878bc6d](https://github.com/okou-ai/okou/commit/878bc6d48524830c3da02f9622f7d056c7905a79))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.504.0
+    * @okouai/core bumped to 8.708.2
+
 ## [0.956.0](https://github.com/okou-ai/okou/compare/app-v0.955.0...app-v0.956.0) (2026-09-24)
 
 

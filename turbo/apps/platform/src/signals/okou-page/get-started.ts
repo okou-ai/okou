@@ -1,4 +1,5 @@
 import { command, computed, state } from "ccstate";
+import type { AgentPhoneLinkStatusResponse } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import {
   GET_STARTED_REWARDS_CHANGED_EVENT,
   getStartedContract,
@@ -13,6 +14,7 @@ import { accept } from "../../lib/accept.ts";
 import { detach, Reason, resetSignal, waitForOperation } from "../utils.ts";
 import { reloadAccountMenuCreditBalances$ } from "./billing.ts";
 import { setAblyLoop$ } from "../realtime.ts";
+import { agentPhoneLinkStatus$ } from "./agentphone.ts";
 
 export type GetStartedQuestStatus = "todo" | "inReview" | "done" | "rejected";
 export interface GetStartedQuest {
@@ -80,13 +82,42 @@ export const shareClaim$ = computed(async (get) => {
   return data?.shareClaim ?? null;
 });
 
+/**
+ * The iMessage quest, reconciled with the phone link itself.
+ *
+ * The reward is only granted when a link is created, so a member whose phone
+ * was linked before the quest existed holds no claim for it -- but they have
+ * done the step, and a row asking them to do it again would be wrong. Their
+ * row reads as finished instead, without the credits. A workspace with no
+ * AgentPhone number has nothing to text, so the row is not offered at all.
+ */
+function reconcileImessageQuest(
+  quests: readonly GetStartedQuest[],
+  imessage: GetStartedQuest,
+  link: AgentPhoneLinkStatusResponse,
+): readonly GetStartedQuest[] {
+  if (link.linked) {
+    return quests.map((quest): GetStartedQuest => {
+      return quest === imessage
+        ? { ...quest, status: "done", canEarnMore: false }
+        : quest;
+    });
+  }
+  if (link.agentPhoneNumber === null) {
+    return quests.filter((quest) => {
+      return quest !== imessage;
+    });
+  }
+  return quests;
+}
+
 export const getStartedQuests$ = computed(
   async (get): Promise<readonly GetStartedQuest[]> => {
     const data = await get(getStartedStatus$);
     if (!data) {
       return [];
     }
-    return data.quests.map((quest) => {
+    const quests = data.quests.map((quest): GetStartedQuest => {
       let status: GetStartedQuestStatus = (
         quest.key === "checkin" ? data.claimedToday : quest.claimedCount > 0
       )
@@ -122,6 +153,31 @@ export const getStartedQuests$ = computed(
       }
       return { ...quest, status, rejectedReason };
     });
+    const imessage = quests.find((quest) => {
+      return quest.key === "imessage";
+    });
+    // Only a quest that can still be earned depends on the link.
+    if (!imessage?.canEarnMore) {
+      return quests;
+    }
+    return reconcileImessageQuest(
+      quests,
+      imessage,
+      await get(agentPhoneLinkStatus$),
+    );
+  },
+);
+
+/**
+ * What linking a phone still pays, or null once it pays nothing -- already
+ * earned, already linked, or not offered in this workspace.
+ */
+export const imessageQuestReward$ = computed(
+  async (get): Promise<number | null> => {
+    const quest = (await get(getStartedQuests$)).find((candidate) => {
+      return candidate.key === "imessage";
+    });
+    return quest?.canEarnMore ? quest.rewardAmount : null;
   },
 );
 export interface GetStartedSummary {

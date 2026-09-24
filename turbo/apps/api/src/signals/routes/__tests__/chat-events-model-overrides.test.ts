@@ -43,6 +43,7 @@ const {
   authDevice,
   authDeviceSupport,
   entitledChatActor,
+  entitledNativeChatActor,
   configureOrganizationGptModel,
   configureSubscriptionPiModel,
   seedBuiltInModelKey,
@@ -139,7 +140,9 @@ function settledSubscriptionToolHistory(h1: string): string {
 
 describe("CHAT-02: run-level model overrides", () => {
   it("describes raw chat history sync by default", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    // This checks the appended prompt, not API-first model execution. Keep the
+    // run claimable by the native Runner until the test cancels it.
+    const { actor, agentId } = await entitledNativeChatActor();
 
     const run = await sendChatRun(actor, {
       agentId,
@@ -175,7 +178,7 @@ describe("CHAT-02: run-level model overrides", () => {
     );
     await chatCallbacks.updateOrgModelPolicies(actor, [
       {
-        model: "claude-opus-4-8",
+        model: "claude-opus-5",
         isDefault: true,
         defaultProviderType: "claude-code-oauth-token",
         credentialScope: "member",
@@ -194,11 +197,11 @@ describe("CHAT-02: run-level model overrides", () => {
     const first = await sendChatRun(actor, {
       agentId,
       prompt: firstPrompt,
-      model: "claude-opus-4-8",
+      model: "claude-opus-5",
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
     expect(claimEnvironment(firstClaim.claim).ANTHROPIC_MODEL).toBe(
-      "claude-opus-4-8",
+      "claude-opus-5",
     );
     chatCallbacks.mockChatOutputEvents([assistantEvent(0, "opus answer")]);
     await completeChatRunOk(first.runId, firstClaim.sandboxHeaders, {
@@ -210,11 +213,7 @@ describe("CHAT-02: run-level model overrides", () => {
         return message.content === "opus answer";
       });
     });
-    await expectThreadCreatedModelEvent(
-      actor,
-      first.threadId,
-      "claude-opus-4-8",
-    );
+    await expectThreadCreatedModelEvent(actor, first.threadId, "claude-opus-5");
     expect(
       (await api.readRun(actor, first.runId)).result?.agentSessionId,
     ).toMatch(/[0-9a-f-]{36}/);
@@ -264,7 +263,7 @@ describe("CHAT-02: run-level model overrides", () => {
       `bdd-cli-${second.runId}`,
     );
     expect(claimEnvironment(thirdClaim.claim).ANTHROPIC_MODEL).toBe(
-      "claude-opus-4-8",
+      "claude-opus-5",
     );
     await cancelChatRun(actor, third.runId);
   }, 90_000);

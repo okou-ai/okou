@@ -1,3 +1,4 @@
+import * as chatContentErasureSubjectSchema from "./schema/chat-content-erasure-subject";
 import * as getStartedClaimSchema from "./schema/get-started-claim";
 import * as accountErasureBridgeSchema from "./schema/account-erasure-bridge";
 import * as accountErasureSchema from "./schema/account-erasure";
@@ -30,6 +31,7 @@ import * as chatFeishuContextSchema from "./schema/chat-feishu-context";
 import * as chatGithubContextSchema from "./schema/chat-github-context";
 import * as chatSlackContextSchema from "./schema/chat-slack-context";
 import * as discordChatDeliverySchema from "./schema/discord-chat-delivery";
+import * as discordGatewayReceiptSchema from "./schema/discord-gateway-receipt";
 import * as chatTeamsContextSchema from "./schema/chat-teams-context";
 import * as chatTelegramContextSchema from "./schema/chat-telegram-context";
 import * as secretSchema from "./schema/secret";
@@ -107,12 +109,15 @@ import * as runUploadedFileSchema from "./schema/run-uploaded-file";
 import * as builtInModelKeySchema from "./schema/built-in-model-key";
 import * as builtInModelCooldownSchema from "./schema/built-in-model-cooldown";
 import * as workflowSchema from "./schema/workflow";
+import * as workflowScheduleSkipSchema from "./schema/workflow-schedule-skip";
 import * as computerUseHostSchema from "./schema/computer-use-host";
 import * as userFeatureSwitchesSchema from "./schema/user-feature-switches";
 import * as userDisabledPaidToolsSchema from "./schema/user-disabled-paid-tools";
 import * as userBehaviorCountSchema from "./schema/user-behavior-count";
 import * as activeInputDeliverySchema from "./schema/active-input-delivery";
 import * as chatThreadSchema from "./schema/chat-thread";
+import * as chatEventSequenceSchema from "./schema/chat-event-sequence";
+import * as chatEventWriteControlSchema from "./schema/chat-event-write-control";
 import * as chatEventSchema from "./schema/chat-event";
 import * as chatEventSearchSchema from "./schema/chat-event-search";
 import * as chatEventSnapshotSchema from "./schema/chat-event-snapshot";
@@ -163,6 +168,7 @@ import * as agentSshAccessSchema from "./schema/agent-ssh-access";
 import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config";
 
 export const schema = {
+  ...chatContentErasureSubjectSchema,
   ...getStartedClaimSchema,
   ...accountErasureSchema,
   ...accountErasureBridgeSchema,
@@ -195,6 +201,7 @@ export const schema = {
   ...chatSlackContextSchema,
   ...chatTeamsContextSchema,
   ...discordChatDeliverySchema,
+  ...discordGatewayReceiptSchema,
   ...chatTelegramContextSchema,
   ...secretSchema,
   ...modelProviderSchema,
@@ -272,6 +279,7 @@ export const schema = {
   ...builtInModelKeySchema,
   ...builtInModelCooldownSchema,
   ...workflowSchema,
+  ...workflowScheduleSkipSchema,
   ...computerUseHostSchema,
   ...userFeatureSwitchesSchema,
   ...userDisabledPaidToolsSchema,
@@ -279,6 +287,8 @@ export const schema = {
   ...activeInputDeliverySchema,
   ...chatThreadSchema,
   ...chatEventSchema,
+  ...chatEventSequenceSchema,
+  ...chatEventWriteControlSchema,
   ...chatEventSearchSchema,
   ...chatEventSnapshotSchema,
   ...chatThreadEventSchema,

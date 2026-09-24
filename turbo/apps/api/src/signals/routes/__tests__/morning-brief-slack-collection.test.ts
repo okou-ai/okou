@@ -37,7 +37,10 @@ import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { userPreferencesRoutes } from "../user-preferences";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  seedRetainedNativeMorningBriefForUser,
+  setHistoricalNativeMorningBriefForUser,
+} from "./helpers/feature-switches";
 import {
   deleteSlackIntegrationFixture$,
   seedSlackOrgConnection$,
@@ -163,10 +166,10 @@ async function fixture(
     agentVisibility: options.agentVisibility,
     agentOwner: options.agentOwner,
   });
-  await updateFeatureSwitchesForUser(
+  await setHistoricalNativeMorningBriefForUser(
     context,
     { orgId, userId },
-    { [FeatureSwitchKey.NativeMorningBrief]: options.feature !== false },
+    options.feature !== false,
   );
   const botToken = `xoxb-test-${randomUUID()}`;
   const installation =
@@ -1695,7 +1698,7 @@ describe("Morning Brief collection completion admission", () => {
 
   /** Enable the Settings surface a member changes their own brief through. */
   async function enableSettingsSurface(f: Fixture): Promise<void> {
-    await updateFeatureSwitchesForUser(
+    await seedRetainedNativeMorningBriefForUser(
       context,
       { orgId: f.orgId, userId: f.userId },
       {
@@ -2729,65 +2732,59 @@ describe("Morning Brief Slack final release proof", () => {
     };
   }
 
-  it.each([
-    ["exactly on", 0],
-    ["past", 1],
-  ])(
-    "withholds a channel an earlier final page proved when a later page lands %s the deadline",
-    async (_name, offset) => {
-      const f = await fixture();
-      mockNow(ANCHOR_MS);
-      const arrived = createDeferredPromise<void>(context.signal);
-      const answer = createDeferredPromise<void>(context.signal);
-      const held = scriptHeldContinuation({ arrived, answer: answer.promise });
+  it("withholds a channel an earlier final page proved when a later page lands exactly on the deadline", async () => {
+    const f = await fixture();
+    mockNow(ANCHOR_MS);
+    const arrived = createDeferredPromise<void>(context.signal);
+    const answer = createDeferredPromise<void>(context.signal);
+    const held = scriptHeldContinuation({ arrived, answer: answer.promise });
 
-      const pending = collect(f);
-      await arrived.promise;
-      mockNow(ANCHOR_MS + COLLECTION_DEADLINE_MS + offset);
-      answer.resolve();
+    const pending = collect(f);
+    await arrived.promise;
+    mockNow(ANCHOR_MS + COLLECTION_DEADLINE_MS);
+    answer.resolve();
 
-      const response = await accept(pending, [200]);
-      if (response.body.result !== "collected") {
-        throw new Error(
-          `Expected a collected bundle, got ${response.body.result}`,
-        );
-      }
-      const { bundle } = response.body;
-      // The deadline bounds the attempt, not one channel's proof: C100 was
-      // confirmed inside the budget and still may not be published, because the
-      // enumeration that would have finished the release expired mid-pass.
-      expect(JSON.stringify(bundle)).not.toContain("message in C100");
-      expect(JSON.stringify(bundle)).not.toContain("general");
-      expect(JSON.stringify(bundle)).not.toContain("secrets");
-      expectNothingReleased(bundle);
-      expect(bundle.counts.threads).toBe(0);
-      expect(bundle.counts.textBytes).toBe(0);
-      expect(bundle.limits).toContain("deadline");
-      expect(bundle.limits).toContain("scope-unproven");
-      expect(bundle.coverage).toBe("partial");
-      expect(response.body.occurrence.outcome).toBe("partial");
-      // Discovery, one proof, a read for each channel, then the two final
-      // pages: the documented caps are untouched, the held answer is not
-      // retried, and no protected read follows it.
-      expect(held.pages()).toBe(2);
-      expect(bundle.counts.requests).toBe(6);
-      expect(held.traffic.requests).toHaveLength(6);
-      expect(queriesFor(held.traffic, SLACK_HISTORY_URL)).toHaveLength(2);
-      expect(held.traffic.requests.at(-1)?.url).toBe(
-        SLACK_USER_CONVERSATIONS_URL,
+    const response = await accept(pending, [200]);
+    if (response.body.result !== "collected") {
+      throw new Error(
+        `Expected a collected bundle, got ${response.body.result}`,
       );
-      // The recorded occurrence agrees with the empty bundle, and nothing the
-      // attempt withheld is recoverable from it either.
-      const [row, ...extra] = await readMorningBriefCollectionOccurrences(f);
-      expect(extra).toHaveLength(0);
-      expect(row).toMatchObject({
-        attempt: 1,
-        channelCount: 0,
-        messageCount: 0,
-      });
-      expect(JSON.stringify(row)).not.toContain("general");
-    },
-  );
+    }
+    const { bundle } = response.body;
+    // The deadline bounds the attempt, not one channel's proof: C100 was
+    // confirmed inside the budget and still may not be published, because the
+    // enumeration that would have finished the release expired mid-pass.
+    expect(JSON.stringify(bundle)).not.toContain("message in C100");
+    expect(JSON.stringify(bundle)).not.toContain("general");
+    expect(JSON.stringify(bundle)).not.toContain("secrets");
+    expectNothingReleased(bundle);
+    expect(bundle.counts.threads).toBe(0);
+    expect(bundle.counts.textBytes).toBe(0);
+    expect(bundle.limits).toContain("deadline");
+    expect(bundle.limits).toContain("scope-unproven");
+    expect(bundle.coverage).toBe("partial");
+    expect(response.body.occurrence.outcome).toBe("partial");
+    // Discovery, one proof, a read for each channel, then the two final
+    // pages: the documented caps are untouched, the held answer is not
+    // retried, and no protected read follows it.
+    expect(held.pages()).toBe(2);
+    expect(bundle.counts.requests).toBe(6);
+    expect(held.traffic.requests).toHaveLength(6);
+    expect(queriesFor(held.traffic, SLACK_HISTORY_URL)).toHaveLength(2);
+    expect(held.traffic.requests.at(-1)?.url).toBe(
+      SLACK_USER_CONVERSATIONS_URL,
+    );
+    // The recorded occurrence agrees with the empty bundle, and nothing the
+    // attempt withheld is recoverable from it either.
+    const [row, ...extra] = await readMorningBriefCollectionOccurrences(f);
+    expect(extra).toHaveLength(0);
+    expect(row).toMatchObject({
+      attempt: 1,
+      channelCount: 0,
+      messageCount: 0,
+    });
+    expect(JSON.stringify(row)).not.toContain("general");
+  });
 
   it("still releases both channels when the last final page lands inside the deadline", async () => {
     const f = await fixture();

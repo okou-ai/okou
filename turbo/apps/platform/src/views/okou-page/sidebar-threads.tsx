@@ -975,8 +975,10 @@ function useMarkAllReadMenuAction(showMarkAllRead: boolean) {
   );
   const pageSignal = useGet(pageSignal$);
   const markingRead = markReadLoadable.state === "loading";
-  const visible =
-    showMarkAllRead &&
+  const visible = showMarkAllRead && currentChatAgentId !== null;
+  // Keep the item mounted and toggle availability so the menu layout does
+  // not jump when the unread state changes.
+  const hasUnread =
     currentChatAgentId !== null &&
     (unreadAgentIds?.has(currentChatAgentId) ?? false);
 
@@ -991,7 +993,7 @@ function useMarkAllReadMenuAction(showMarkAllRead: boolean) {
     );
   }
 
-  return { disabled: markingRead, onSelect, visible };
+  return { disabled: markingRead || !hasUnread, onSelect, visible };
 }
 
 function MarkAllReadMenuItem({

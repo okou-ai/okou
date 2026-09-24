@@ -61,7 +61,7 @@ const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
 
-  const text = buildTelegramResponse(body.text, undefined, footerText);
+  const text = buildTelegramResponse(body.text, footerText);
 
   const result = await sendMessage(botToken, body.chatId, text, {
     replyToMessageId: body.replyToMessageId,
