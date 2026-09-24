@@ -994,9 +994,7 @@ mod tests {
             CANONICAL_WORKING_DIR,
             1024 * 1024,
         );
-        let metadata = paths
-            .base_dir()
-            .join("workspace-image-cache")
+        let metadata = runner_lifecycle::test_fixtures::runner_workspace_image_cache_dir(&paths)
             .join(cache_key)
             .join("metadata.json");
         tokio::fs::remove_file(metadata).await.unwrap();

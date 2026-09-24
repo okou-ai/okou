@@ -33,7 +33,7 @@ mod duration {
 }
 
 #[cfg(any(test, feature = "test-support"))]
-mod test_fixtures {
+pub mod test_fixtures {
     #[cfg(test)]
     pub use runner_host::test_fixtures::ignored_child;
 
