@@ -512,6 +512,7 @@
       "newAgentAlt": "新建智能体",
       "responsibilityLabel": "你想要这个智能体帮你做什么？",
       "responsibilityPlaceholder": "例如：每周一汇总 HubSpot 上周的销售管道，并标出需要跟进的商机。",
+      "setupFailed": "智能体设置未完成。请先检查智能体列表，再决定是否重试。",
       "success": "{{agentName}}创建成功",
       "title": "创建新智能体",
       "visibility": {

@@ -476,6 +476,48 @@ test("Creating an agent with setup pins it and sends its setup prompt in a new t
   );
 });
 
+test("A failed setup request after creation leaves the Agent visible without a retryable dialog", async () => {
+  const createResponse = context.mocks.deferred<void>();
+  configureCatalog(
+    [agent(CORE_AGENT_ID, { displayName: "Core Agent", visibility: "public" })],
+    { createResponse: createResponse.promise },
+  );
+  context.mocks.api(agentSetupPromptsContract.create, ({ respond }) => {
+    return respond(403, {
+      error: { code: "FORBIDDEN", message: "Setup temporarily unavailable" },
+    });
+  });
+  await setupPage({
+    context,
+    path: "/agents",
+    featureSwitches: { [FeatureSwitchKey.AgentResponsibilitySetup]: true },
+  });
+  const dialog = await openCreateDialog("Private");
+  await fill(within(dialog).getByLabelText("Name"), "Pipeline Analyst");
+  await fill(
+    within(dialog).getByLabelText(RESPONSIBILITY_LABEL),
+    "Summarize our pipeline every Monday.",
+  );
+
+  click(buttonByText("Create", dialog));
+  createResponse.resolve(undefined);
+
+  const createdCard = await waitForAgentCard(CREATED_AGENT_ID);
+  expect(createdCard).toHaveTextContent("Pipeline Analyst");
+  await expect(
+    screen.findByText(
+      "Agent setup did not finish. Check the agent list before trying again.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(dialog).not.toBeInTheDocument();
+  expect(pathname()).toBe("/agents");
+  expect(
+    queryAllByRoleFast("link", screen.getByRole("main")).filter((link) => {
+      return /^\/agents\/[^/]+$/u.test(link.getAttribute("href") ?? "");
+    }),
+  ).toHaveLength(1);
+});
+
 test("Open an agent's management page from its card", async () => {
   configureCatalog([
     agent(RESEARCH_AGENT_ID, {

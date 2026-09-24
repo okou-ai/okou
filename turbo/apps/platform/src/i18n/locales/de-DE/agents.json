@@ -512,6 +512,7 @@
       "newAgentAlt": "Neuer Agent",
       "responsibilityLabel": "Wobei soll Ihnen dieser Agent helfen?",
       "responsibilityPlaceholder": "z. B. jeden Montag die Pipeline der letzten Woche aus HubSpot zusammenfassen und Deals markieren, die Aufmerksamkeit brauchen.",
+      "setupFailed": "Die Agent-Einrichtung wurde nicht abgeschlossen. Prüfen Sie die Agentenliste, bevor Sie es erneut versuchen.",
       "success": "{{agentName}} erfolgreich erstellt",
       "title": "Neuen Agenten erstellen",
       "visibility": {

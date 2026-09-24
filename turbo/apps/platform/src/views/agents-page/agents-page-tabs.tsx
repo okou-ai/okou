@@ -45,7 +45,7 @@ import {
 import { unreadAgentIds$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { onDomEventFn } from "../../signals/utils.ts";
+import { onDomEventFn, onRejection } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
 import { AgentAvatarImg, AvatarFromUrl } from "../okou-page/sidebar-shared.tsx";
 import {
@@ -70,6 +70,18 @@ import { platformEmptyPrivateAgentsImg } from "../../lib/static-assets.ts";
 const MAX_PUBLIC_AGENTS = 7;
 
 type Visibility = "public" | "private";
+
+async function createWithErrorToast(
+  creation: Promise<void>,
+  message: string,
+  signal: AbortSignal,
+): Promise<void> {
+  await onRejection(creation, () => {
+    if (!signal.aborted) {
+      toast.error(message);
+    }
+  });
+}
 
 export function AgentsPageTabs() {
   const { t } = useTranslation("agents");
@@ -122,19 +134,23 @@ export function AgentsPageTabs() {
     if (!canCreate) {
       return;
     }
-    if (responsibilitySetupEnabled) {
-      await createSubagentWithSetupThreadFn(
-        {
-          displayName: trimmedName,
-          avatarUrl,
-          visibility,
-          responsibility: trimmedResponsibility,
-        },
-        pageSignal,
-      );
-    } else {
-      await createSubagentFn(trimmedName, avatarUrl, visibility, pageSignal);
-    }
+    await createWithErrorToast(
+      responsibilitySetupEnabled
+        ? createSubagentWithSetupThreadFn(
+            {
+              displayName: trimmedName,
+              avatarUrl,
+              visibility,
+              responsibility: trimmedResponsibility,
+            },
+            pageSignal,
+          )
+        : createSubagentFn(trimmedName, avatarUrl, visibility, pageSignal),
+      t(($) => {
+        return $.list.create.setupFailed;
+      }),
+      pageSignal,
+    );
     setDialogOpen(false);
     toast.success(
       t(

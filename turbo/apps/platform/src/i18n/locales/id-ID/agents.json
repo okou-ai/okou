@@ -512,6 +512,7 @@
       "newAgentAlt": "Agen baru",
       "responsibilityLabel": "Apa yang ingin Anda kerjakan dengan bantuan agen ini?",
       "responsibilityPlaceholder": "mis. setiap Senin, rangkum pipeline minggu lalu dari HubSpot dan tandai deal yang perlu ditindaklanjuti.",
+      "setupFailed": "Penyiapan agen belum selesai. Periksa daftar agen sebelum mencoba lagi.",
       "success": "{{agentName}} berhasil dibuat",
       "title": "Buat agen baru",
       "visibility": {

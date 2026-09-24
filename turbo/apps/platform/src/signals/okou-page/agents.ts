@@ -7,7 +7,33 @@ import { sendNewThread$ } from "../chat-page/optimistic-chat-thread-page.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { createDraftSignals } from "./chat-draft.ts";
 import { createAgent } from "./create-agent.ts";
+import { setJobsDialogOpen$ } from "./jobs-page.ts";
 import { setAgentPinned$ } from "./pinned-agents.ts";
+
+const sendAgentSetupThread$ = command(
+  async (
+    { set },
+    agentId: string,
+    prompt: string,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const sent = await set(
+      sendNewThread$,
+      {
+        agentId,
+        draft: createDraftSignals(),
+        prompt,
+        generationTemplate: undefined,
+        preserveAgentDraft: true,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!sent) {
+      throw new Error("Unable to start the Agent setup thread");
+    }
+  },
+);
 
 /**
  * Create a sub-agent by composing via the agents API.
@@ -57,8 +83,9 @@ export const createSubagentWithSetupThread$ = command(
   ): Promise<void> => {
     const createClient = get(apiClient$);
 
-    // Draft the setup prompt while the agent is created to hide its latency.
-    const [agent, setupPrompt] = await Promise.all([
+    // Both requests start together, but a failed prompt must not discard an
+    // Agent that creation already committed and leave the dialog retryable.
+    const [created, setupPrompt] = await Promise.allSettled([
       createAgent(
         createClient,
         {
@@ -80,24 +107,28 @@ export const createSubagentWithSetupThread$ = command(
       ),
     ]);
     signal.throwIfAborted();
-
+    if (created.status === "rejected") {
+      throw created.reason;
+    }
+    const agent = created.value;
     set(reloadAgents$);
+    set(setJobsDialogOpen$, false);
+    if (setupPrompt.status === "rejected") {
+      throw setupPrompt.reason;
+    }
+
     await set(
       setAgentPinned$,
       { agentId: agent.agentId, pinned: true },
       signal,
     );
+    signal.throwIfAborted();
 
     // Navigation aborts the page signal; the root-owned send must finish.
     await set(
-      sendNewThread$,
-      {
-        agentId: agent.agentId,
-        draft: createDraftSignals(),
-        prompt: setupPrompt.body.prompt,
-        generationTemplate: undefined,
-        preserveAgentDraft: true,
-      },
+      sendAgentSetupThread$,
+      agent.agentId,
+      setupPrompt.value.body.prompt,
       get(rootSignal$),
     );
   },
