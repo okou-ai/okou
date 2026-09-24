@@ -318,7 +318,6 @@ jobs:
       crates-changed: ${{ steps.detect.outputs.crates-changed }}
       ci-changed: ${{ steps.detect.outputs.ci-changed }}
       e2e-changed: ${{ steps.detect.outputs.e2e-changed }}
-      codex-oauth-e2e-needed: ${{ steps.codex-oauth-e2e.outputs.needed }}
       turbo-runner-consumer-needed: ${{ steps.runner-e2e.outputs.turbo-runner-consumer-needed }}
       playwright-runner-consumer-needed: ${{ steps.playwright-runner.outputs.playwright-runner-consumer-needed }}
       base-ref: ${{ steps.detect.outputs.base-ref }}
@@ -412,17 +411,6 @@ jobs:
           CI_CHANGED: ${{ steps.detect.outputs.ci-changed }}
           E2E_CHANGED: ${{ steps.detect.outputs.e2e-changed }}
         run: .github/scripts/runner-image-context.sh turbo-consumer
-
-      - name: Select Codex OAuth E2E
-        id: codex-oauth-e2e
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        shell: bash
-        env:
-          BASE_REF: ${{ steps.detect.outputs.base-ref }}
-        run: |
-          set -euo pipefail
-          needed="$(bash .github/scripts/codex-oauth-e2e-needed.sh "$BASE_REF")"
-          echo "needed=$needed" >> "$GITHUB_OUTPUT"
 
       - name: Select Playwright runner consumer
         id: playwright-runner
@@ -3004,10 +2992,8 @@ jobs:
       - cli-e2e-03-runner
     if: |
       always() &&
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
       needs.prepare.outputs.job-ref != '' &&
-      needs.prepare.outputs.codex-oauth-e2e-needed == 'true' &&
+      needs.prepare.outputs.turbo-runner-consumer-needed == 'true' &&
       needs.deploy-api.result == 'success' &&
       needs.deploy-runner-start.result == 'success' &&
       needs.cli-e2e-03-runner-prepare.result == 'success' &&
@@ -3071,7 +3057,6 @@ jobs:
         env:
           PREPARE_RESULT: ${{ needs.cli-e2e-03-runner-prepare.result }}
           RUNNER_RESULT: ${{ needs.cli-e2e-03-runner.result }}
-          CODEX_OAUTH_NEEDED: ${{ needs.prepare.outputs.codex-oauth-e2e-needed }}
           CODEX_OAUTH_RESULT: ${{ needs.cli-e2e-03-runner-codex-oauth.result }}
         run: |
           set -euo pipefail
@@ -3079,8 +3064,7 @@ jobs:
             scope="none"
           elif [[ "$PREPARE_RESULT" != "success" ]]; then
             scope="generation"
-          elif [[ "$RUNNER_RESULT" == "success" && \
-            ( "$CODEX_OAUTH_NEEDED" != "true" || "$CODEX_OAUTH_RESULT" == "success" ) ]]; then
+          elif [[ "$RUNNER_RESULT" == "success" && "$CODEX_OAUTH_RESULT" == "success" ]]; then
             scope="run"
           else
             scope="retain"
@@ -3304,12 +3288,6 @@ jobs:
           if [ "${{ needs.prepare.outputs.turbo-runner-consumer-needed }}" = "true" ]; then
             RUNNER_E2E_SKIP_ALLOWED=""
           fi
-          CODEX_OAUTH_E2E_SKIP_ALLOWED="true"
-          if [ "$EVENT_NAME" = "pull_request" ] &&
-            [ "${{ github.event.pull_request.head.repo.full_name == github.repository }}" = "true" ] &&
-            [ "${{ needs.prepare.outputs.codex-oauth-e2e-needed }}" = "true" ]; then
-            CODEX_OAUTH_E2E_SKIP_ALLOWED=""
-          fi
           CF_APP_SKIP_ALLOWED=""
           if [ "${{ needs.detect-turbo-ts-checks.outputs.ios-only }}" = "true" ]; then
             CF_APP_SKIP_ALLOWED="true"
@@ -3374,7 +3352,7 @@ jobs:
           check_result "cli-e2e-03-runner-prepare" "${{ needs.cli-e2e-03-runner-prepare.result }}" "$RUNNER_E2E_SKIP_ALLOWED"
           check_result "cli-e2e-03-runner-bootstrap" "${{ needs.cli-e2e-03-runner-bootstrap.result }}" "$RUNNER_E2E_SKIP_ALLOWED"
           check_result "cli-e2e-03-runner" "${{ needs.cli-e2e-03-runner.result }}" "$RUNNER_E2E_SKIP_ALLOWED"
-          check_result "cli-e2e-03-runner-codex-oauth" "${{ needs.cli-e2e-03-runner-codex-oauth.result }}" "$CODEX_OAUTH_E2E_SKIP_ALLOWED"
+          check_result "cli-e2e-03-runner-codex-oauth" "${{ needs.cli-e2e-03-runner-codex-oauth.result }}" "$RUNNER_E2E_SKIP_ALLOWED"
           check_result "deploy-runner-prepare" "${{ needs.deploy-runner-prepare.result }}" "$RUNNER_DEPLOY_SKIP_ALLOWED"
           check_result "deploy-runner-start" "${{ needs.deploy-runner-start.result }}" "$RUNNER_DEPLOY_SKIP_ALLOWED"
 

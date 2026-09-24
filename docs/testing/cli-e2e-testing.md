@@ -95,40 +95,38 @@ and validate this suite. Do not treat a local `./e2e/run.sh` invocation as
 validation for `03-runner`; running the script without file arguments also
 selects the CI-only runner tests.
 
-### Codex OAuth upgrade smoke test
+### Codex OAuth runner smoke test
 
 `e2e/tests/03-runner-oauth/codex-oauth.bats` is deliberately outside the ordinary
-runner shard directory. On same-repository pull requests, the separate
-`cli-e2e-03-runner-codex-oauth` job runs only when the effective
-`CODEX_CLI_VERSION` pin changes or the dedicated OAuth test/detector/job code
-changes. It does not run for merge queue, push, reusable-workflow callers,
-forks, or unrelated PR edits. The job waits for the ordinary runner E2E matrix,
-uses the immutable PR-head preview, and has a repository-wide non-canceling
-concurrency group so only one PR at a time uses the test ChatGPT
-account. By default, GitHub retains only one pending job in that group; a newer
-pending job replaces the older one.
+runner shard directory. The separate `cli-e2e-03-runner-codex-oauth` job follows
+the ordinary runner E2E selection, including merge queue runs, and waits for
+the runner shard matrix before starting. It uses the same deployed revision as
+the other E2E jobs and has a repository-wide non-canceling concurrency group so
+only one workflow run at a time uses the test ChatGPT account. By default,
+GitHub retains only one pending job in that group; a newer pending job replaces
+the older one.
 
 Create a repository-level GitHub Actions Secret named
 `CODEX_OAUTH_E2E_AUTH_JSON`. Its value is the complete JSON content of the
 dedicated paid ChatGPT test account's Codex `auth.json`, including its tokens;
 do not substitute an API key or a refresh token alone. Eligible same-repository
-PRs run automatically without a human approval gate. Anyone who can push an
-eligible branch can modify PR-controlled workflow or test code that reads the
-repository Secret; restrict write access and use a dedicated test account. The
-job does not use the `production` environment and, as written, never uploads
-the OAuth Secret as an artifact.
+PRs and merge queue entries run automatically without a human approval gate.
+Anyone who can push an eligible branch can modify PR-controlled workflow or
+test code that reads the repository Secret; restrict write access and use a
+dedicated test account. The job does not use the `production` environment and,
+as written, never uploads the OAuth Secret as an artifact.
 
 The test connects a personal `codex-oauth-token` provider through the public
 API, selects member-scoped `gpt-5.6-luna`, and requires both user-visible
 assistant output and a completed run attributed to that provider. Connection
 failure points to a missing, malformed, or stale test credential; a failure
 after connection needs investigation of both token freshness and candidate
-Codex behavior. The preview API may rotate the refresh token during a run,
-while this infrequent test does not write the rotated value back to GitHub.
-Before the next upgrade test, manually refresh/reseed the repository Secret
+runner behavior. The preview API may rotate the refresh token during a run,
+but the test does not write the rotated value back to GitHub. Serial execution
+does not prevent the repository Secret from becoming stale; refresh/reseed it
 from the dedicated account when needed. A missing or invalid Secret is a red
-check, not a skipped test; do not merge an eligible upgrade PR until its
-real OAuth run passes.
+check, not a skipped test; do not merge an eligible PR until its real OAuth run
+passes.
 
 ## Adding runner BATS tests
 

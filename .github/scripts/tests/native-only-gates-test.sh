@@ -38,7 +38,6 @@ def context(ios=True, ts=False, event='pull_request', release=False):
         'needs.detect-native-only.outputs.ios-only': str(ios).lower(),
         'needs.prepare.outputs.turbo-runner-consumer-needed': 'false',
         'needs.prepare.outputs.playwright-runner-consumer-needed': 'false',
-        'needs.prepare.outputs.codex-oauth-e2e-needed': 'false',
     }
     for job in set(turbo) | set(security):
         values[f'needs.{job}.result'] = 'success'

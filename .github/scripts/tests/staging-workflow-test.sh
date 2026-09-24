@@ -59,7 +59,6 @@ def context(event='push', run_id='100'):
         'needs.prepare.outputs.job-ref': 'staging' if event == 'push' else 'pr-42',
         'needs.prepare.outputs.turbo-runner-consumer-needed': 'false' if event == 'push' else 'true',
         'needs.prepare.outputs.playwright-runner-consumer-needed': 'true',
-        'needs.prepare.outputs.codex-oauth-e2e-needed': 'false',
     }
     for changed in ['api', 'cli', 'platform', 'migration', 'crates', 'ci', 'e2e']:
         values[f'needs.prepare.outputs.{changed}-changed'] = 'true'
