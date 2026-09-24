@@ -339,7 +339,7 @@ async function renderDeliveryParts(
       throw new Error("Discord delivery canonical event is unavailable");
     }
     if (event.runId !== null && event.agentId !== null) {
-      const [featureContext, mentioners] = await Promise.all([
+      const [featureContext, [mentionerCount]] = await Promise.all([
         loadUserFeatureSwitchContext(db, delivery.orgId, delivery.userId),
         db
           .select({ count: countDistinct(discordChatThreadRoutes.userId) })
@@ -359,6 +359,13 @@ async function renderDeliveryParts(
           ),
       ]);
       signal.throwIfAborted();
+      if (!mentionerCount) {
+        throw new Error("Discord delivery mentioner count is unavailable");
+      }
+      const featureOverrides = featureContext.overrides;
+      if (featureOverrides === undefined) {
+        throw new Error("Discord delivery feature overrides are unavailable");
+      }
       const presentation = await resolveIntegrationAgentResponsePresentation(
         {
           db,
@@ -367,11 +374,11 @@ async function renderDeliveryParts(
           runId: event.runId,
           agentId: event.agentId,
           replyToMention:
-            (mentioners[0]?.count ?? 0) > 1
+            mentionerCount.count > 1
               ? `<@${binding.discordUserId}>`
               : undefined,
           getFeatureOverrides: () => {
-            return Promise.resolve(featureContext.overrides ?? {});
+            return Promise.resolve(featureOverrides);
           },
         },
         signal,
@@ -469,7 +476,7 @@ async function reconcileAttemptedPart(
     }
     const lastMessage = result.data.at(-1);
     if (!lastMessage) {
-      break;
+      throw new Error("Discord reconciliation page has no last message");
     }
     before = lastMessage.id;
   }
