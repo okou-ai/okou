@@ -1570,41 +1570,13 @@ impl ApiClient {
             return Ok(None);
         }
 
-        let mut resp = check_api_status(resp, "claim").await?;
+        let resp = check_api_status(resp, "claim").await?;
         let content_encoding = resp
             .headers()
             .get(reqwest::header::CONTENT_ENCODING)
             .cloned();
-        let response_body_read_started_at = Instant::now();
-        // The first non-empty chunk is application-visible, not a physical wire byte.
-        // Collect the rest on the same response; the common one-chunk case stays zero-copy.
-        let first_chunk = loop {
-            match resp
-                .chunk()
-                .await
-                .map_err(|error| ClaimApiError::ResponseRead(error.to_string()))?
-            {
-                Some(chunk) if !chunk.is_empty() => break chunk,
-                Some(_) => continue,
-                None => break Bytes::new(),
-            }
-        };
-        let response_first_body_chunk_wait_elapsed = response_body_read_started_at.elapsed();
-        let remaining = resp
-            .bytes()
-            .await
-            .map_err(|error| ClaimApiError::ResponseRead(error.to_string()))?;
-        let body = if first_chunk.is_empty() {
-            remaining
-        } else if remaining.is_empty() {
-            first_chunk
-        } else {
-            let mut combined = Vec::with_capacity(first_chunk.len() + remaining.len());
-            combined.extend_from_slice(&first_chunk);
-            combined.extend_from_slice(&remaining);
-            Bytes::from(combined)
-        };
-        let response_body_read_elapsed = response_body_read_started_at.elapsed();
+        let (body, response_first_body_chunk_wait_elapsed, response_body_read_elapsed) =
+            read_claim_response_body(resp, || {}).await?;
         let response_decode_started_at = Instant::now();
         let context = decode_api_json_bytes(&body).map_err(ClaimApiError::ResponseDecode)?;
         let response_decode_elapsed = response_decode_started_at.elapsed();
@@ -1801,6 +1773,52 @@ impl ApiClient {
             .timeout(BUILTIN_FIREWALL_CATALOG_RESOLVE_TIMEOUT)
             .json(&serde_json::json!({}))
     }
+}
+
+// The callback is a no-op in production and lets raw-HTTP tests acknowledge the
+// actual first application-visible chunk before releasing the response tail.
+async fn read_claim_response_body(
+    mut resp: Response,
+    first_chunk_observed: impl FnOnce(),
+) -> Result<(Bytes, Duration, Duration), ClaimApiError> {
+    let response_body_read_started_at = Instant::now();
+    // This is not a physical wire-byte or server-flush boundary.
+    let first_chunk = loop {
+        match resp
+            .chunk()
+            .await
+            .map_err(|error| ClaimApiError::ResponseRead(error.to_string()))?
+        {
+            Some(chunk) if !chunk.is_empty() => break chunk,
+            Some(_) => continue,
+            None => break Bytes::new(),
+        }
+    };
+    let response_first_body_chunk_wait_elapsed = response_body_read_started_at.elapsed();
+    if !first_chunk.is_empty() {
+        first_chunk_observed();
+    }
+    let remaining = resp
+        .bytes()
+        .await
+        .map_err(|error| ClaimApiError::ResponseRead(error.to_string()))?;
+    // The common one-chunk case stays zero-copy; a split needs one concatenation.
+    let body = if first_chunk.is_empty() {
+        remaining
+    } else if remaining.is_empty() {
+        first_chunk
+    } else {
+        let mut combined = Vec::with_capacity(first_chunk.len() + remaining.len());
+        combined.extend_from_slice(&first_chunk);
+        combined.extend_from_slice(&remaining);
+        Bytes::from(combined)
+    };
+    let response_body_read_elapsed = response_body_read_started_at.elapsed();
+    Ok((
+        body,
+        response_first_body_chunk_wait_elapsed,
+        response_body_read_elapsed,
+    ))
 }
 
 fn claim_request_body<'a>(
@@ -5832,6 +5850,63 @@ mod tests {
             claimed.response_first_body_chunk_wait_elapsed < claimed.response_body_read_elapsed
         );
         join_raw_http_task(server_task, "split claim response server").await;
+    }
+
+    #[tokio::test]
+    async fn claim_body_reader_observes_first_chunk_before_collecting_tail() {
+        let body = b"synthetic first chunk and delayed tail";
+        let first_len = 16;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let (headers_sent_tx, headers_sent_rx) = oneshot::channel();
+        let (release_first_tx, release_first_rx) = oneshot::channel();
+        let (release_tail_tx, release_tail_rx) = oneshot::channel();
+        let server_task = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            read_http_request(&mut socket).await.unwrap();
+            socket
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+            headers_sent_tx.send(()).unwrap();
+            release_first_rx.await.unwrap();
+            socket.write_all(&body[..first_len]).await.unwrap();
+            release_tail_rx.await.unwrap();
+            socket.write_all(&body[first_len..]).await.unwrap();
+        });
+        let resp = reqwest::Client::new().get(url).send().await.unwrap();
+        headers_sent_rx.await.unwrap();
+        let (first_observed_tx, first_observed_rx) = oneshot::channel();
+        let read_task = tokio::spawn(async move {
+            read_claim_response_body(resp, move || {
+                first_observed_tx.send(()).unwrap();
+            })
+            .await
+        });
+        assert!(
+            !read_task.is_finished(),
+            "the reader must wait for the first chunk"
+        );
+        release_first_tx.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), first_observed_rx)
+            .await
+            .expect("first chunk observation should not stall")
+            .unwrap();
+        assert!(
+            !read_task.is_finished(),
+            "the reader must still wait for the tail after observing the first chunk"
+        );
+        release_tail_tx.send(()).unwrap();
+        let (collected, first_wait, total_read) = read_task.await.unwrap().unwrap();
+        assert_eq!(collected.as_ref(), body);
+        assert!(first_wait < total_read);
+        join_raw_http_task(server_task, "first chunk and tail server").await;
     }
 
     #[tokio::test]
