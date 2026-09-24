@@ -1,4 +1,4 @@
-import { useState, type ClipboardEvent } from "react";
+import type { ClipboardEvent } from "react";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -27,10 +27,12 @@ import {
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import {
   acceptCloudflareAccessConflictReview$,
+  acknowledgeCloudflareAccessConversion$,
   chooseCloudflareAccessScope$,
   closeCloudflareAccessDialog$,
   closeCloudflareAccessConversion$,
   cloudflareAccessConfigs$,
+  cloudflareAccessConversionAcknowledgedSnapshot$,
   cloudflareAccessConversionDialog$,
   cloudflareAccessConversionError$,
   cloudflareAccessConversionPreview$,
@@ -639,7 +641,11 @@ function CloudflareAccessConversionDecision({
   readonly onConfirm: () => void;
 }) {
   const { t } = useTranslation();
-  const [confirmed, setConfirmed] = useState(false);
+  const acknowledgedSnapshot = useGet(
+    cloudflareAccessConversionAcknowledgedSnapshot$,
+  );
+  const acknowledge = useSet(acknowledgeCloudflareAccessConversion$);
+  const confirmed = acknowledgedSnapshot === preview.impactSnapshot;
   const requiresConfirmation = preview.otherHostCount > 0;
   return (
     <>
@@ -657,7 +663,9 @@ function CloudflareAccessConversionDecision({
             <Checkbox
               checked={confirmed}
               disabled={isSaving}
-              onCheckedChange={setConfirmed}
+              onCheckedChange={(checked) => {
+                acknowledge(checked ? preview.impactSnapshot : null);
+              }}
             />
             {t(($) => {
               return $.cloudflareAccess.convertConfirm;
@@ -775,7 +783,6 @@ export function CloudflareAccessConversionDialog() {
           )}
           {impact && !error && (
             <CloudflareAccessConversionDecision
-              key={`${impact.expectedRevision}:${impact.impactSnapshot}`}
               preview={impact}
               isSaving={isSaving}
               onConfirm={() => {

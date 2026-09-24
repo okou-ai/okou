@@ -493,6 +493,19 @@ interface ConversionDialog {
 const conversionDialog$ = state<ConversionDialog | null>(null);
 const conversionPreviewReload$ = state(0);
 const conversionError$ = state<string | null>(null);
+const conversionAcknowledgedSnapshot$ = state<string | null>(null);
+
+export const cloudflareAccessConversionAcknowledgedSnapshot$ = computed(
+  (get) => {
+    return get(conversionAcknowledgedSnapshot$);
+  },
+);
+
+export const acknowledgeCloudflareAccessConversion$ = command(
+  ({ set }, snapshot: string | null) => {
+    set(conversionAcknowledgedSnapshot$, snapshot);
+  },
+);
 
 export const cloudflareAccessConversionDialog$ = computed(async (get) => {
   const dialog = get(conversionDialog$);
@@ -520,6 +533,7 @@ export const openCloudflareAccessConversion$ = command(
       return;
     }
     set(conversionError$, null);
+    set(conversionAcknowledgedSnapshot$, null);
     set(conversionDialog$, {
       identity,
       configId: config.id,
@@ -531,10 +545,12 @@ export const openCloudflareAccessConversion$ = command(
 export const closeCloudflareAccessConversion$ = command(({ set }) => {
   set(conversionDialog$, null);
   set(conversionError$, null);
+  set(conversionAcknowledgedSnapshot$, null);
 });
 
 export const reviewCloudflareAccessConversion$ = command(({ set }) => {
   set(conversionError$, null);
+  set(conversionAcknowledgedSnapshot$, null);
   set(conversionPreviewReload$, (value) => {
     return value + 1;
   });
@@ -577,9 +593,8 @@ export const confirmCloudflareAccessConversion$ = command(
     if (client.identity !== dialog.identity) {
       return;
     }
-    let result;
-    try {
-      result = await accept(
+    const [outcome] = await Promise.allSettled([
+      accept(
         client.client.convertToPersonal({
           params: { configId: dialog.configId },
           body: {
@@ -590,20 +605,21 @@ export const confirmCloudflareAccessConversion$ = command(
         }),
         [200, 403, 404, 409],
         signal,
-      );
-    } catch {
-      signal.throwIfAborted();
+      ),
+    ]);
+    signal.throwIfAborted();
+    if (outcome.status === "rejected") {
       if (dialog === get(conversionDialog$)) {
         set(conversionError$, "uncertain");
         set(invalidateCloudflareAccess$);
       }
       return;
     }
-    signal.throwIfAborted();
     if (dialog !== get(conversionDialog$)) {
       return;
     }
     set(invalidateCloudflareAccess$);
+    const result = outcome.value;
     if (result.status === 200) {
       set(closeCloudflareAccessConversion$);
       return;

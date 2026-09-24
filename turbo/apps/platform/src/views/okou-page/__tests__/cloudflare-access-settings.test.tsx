@@ -615,10 +615,11 @@ test("zero-impact conversion needs no other-user warning", async () => {
   await within(organization).findByText(shared.name);
   click(getAction("button", "Make personal", organization));
   const dialog = await screen.findByRole("dialog", { name: "Make personal" });
-  await within(dialog).findByRole("button", { name: "Make personal" });
+  await waitFor(() => {
+    expect(getAction("button", "Make personal", dialog)).toBeEnabled();
+  });
   expect(within(dialog).queryByRole("alert")).toBeNull();
   expect(within(dialog).queryByRole("checkbox")).toBeNull();
-  expect(getAction("button", "Make personal", dialog)).toBeEnabled();
 });
 
 test("changed conversion impact requires a fresh warning and confirmation", async () => {
@@ -675,5 +676,54 @@ test("changed conversion impact requires a fresh warning and confirmation", asyn
   click(getAction("button", "Review latest impact", dialog));
   await within(dialog).findByText(/SSH hosts affected: 2/u);
   expect(getAction("button", "Make personal", dialog)).toBeDisabled();
+  expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
+});
+
+test("uncertain conversion result requires a new impact review", async () => {
+  const shared: ScopedCloudflareAccessConfig = {
+    ...config,
+    scope: "organization",
+  };
+  let previewCount = 0;
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [shared] });
+  });
+  context.mocks.api(
+    cloudflareAccessContract.conversionPreview,
+    ({ respond }) => {
+      previewCount += 1;
+      return respond(200, {
+        expectedRevision: 1,
+        otherHostCount: 1,
+        impactSnapshot: (previewCount === 1 ? "a" : "b").repeat(64),
+      });
+    },
+  );
+  context.mocks.api(
+    cloudflareAccessContract.convertToPersonal,
+    ({ respond }) => {
+      return respond(500, {
+        error: { code: "INTERNAL_ERROR", message: "private provider detail" },
+      });
+    },
+  );
+  await page(undefined, "admin");
+  const organization = await screen.findByRole("region", {
+    name: "Organization",
+  });
+  await within(organization).findByText(shared.name);
+  click(getAction("button", "Make personal", organization));
+  const dialog = await screen.findByRole("dialog", { name: "Make personal" });
+  await within(dialog).findByText(/SSH hosts affected: 1/u);
+  await userEvent.click(within(dialog).getByRole("checkbox"));
+  click(getAction("button", "Make personal", dialog));
+  await within(dialog).findByText(/could not confirm the conversion/u);
+  expect(queryAction("button", "Make personal", dialog)).toBeNull();
+  expect(dialog.textContent).not.toContain("private provider detail");
+  click(getAction("button", "Review latest impact", dialog));
+  await waitFor(() => {
+    expect(previewCount).toBe(2);
+    expect(getAction("button", "Make personal", dialog)).toBeDisabled();
+  });
   expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
 });
