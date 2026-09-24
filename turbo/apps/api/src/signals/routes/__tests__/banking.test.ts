@@ -33,8 +33,6 @@ const context = testContext();
 const UNATTENDED_TRIGGER_SOURCES = [
   "automation-schedule",
   "automation-event",
-  "automation-schedule",
-  "automation-event",
   "goal",
 ] as const satisfies readonly TriggerSource[];
 
