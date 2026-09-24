@@ -226,9 +226,9 @@ test("A retained protected host requires explicit shared Access selection before
     });
   });
   await page();
-  expect(
-    await screen.findByText(/needs a new Cloudflare Access configuration/u),
-  ).toHaveAttribute("role", "alert");
+  await expect(
+    screen.findByText(/needs a new Cloudflare Access configuration/u),
+  ).resolves.toHaveAttribute("role", "alert");
   click(getAction("button", "Edit host"));
   const dialog = await screen.findByRole("dialog");
   expect(within(dialog).getByRole("alert")).toHaveTextContent(
