@@ -25,7 +25,7 @@ import {
   readNativeSchedule,
   seedRecipientAddress,
 } from "../../../test-fixtures/morning-brief-native-schedule";
-import { createScopedMorningBriefCronRoutesForTest } from "../cron-execute-morning-briefs";
+import { createScopedInlineMorningBriefCronRoutesForTest } from "../cron-execute-morning-briefs";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
@@ -133,7 +133,7 @@ interface Fixture {
 function cronClient(owner: Fixture) {
   return setupApp({
     context,
-    routes: createScopedMorningBriefCronRoutesForTest(owner),
+    routes: createScopedInlineMorningBriefCronRoutesForTest(owner),
   })(cronExecuteMorningBriefsContract);
 }
 

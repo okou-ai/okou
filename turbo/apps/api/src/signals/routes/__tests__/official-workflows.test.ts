@@ -134,7 +134,7 @@ import {
 } from "../cron-official-workflow-catalog";
 import { officialWorkflowRoutes } from "../official-workflows";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
-import { createScopedMorningBriefCronRoutesForTest } from "../cron-execute-morning-briefs";
+import { createScopedInlineMorningBriefCronRoutesForTest } from "../cron-execute-morning-briefs";
 import { testOfficialWorkflowCatalogStateRoutes } from "../test-official-workflow-catalog-state";
 import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
@@ -3788,7 +3788,7 @@ async function tickNativeMorningBrief(actor: ApiTestUser) {
   return await accept(
     setupApp({
       context,
-      routes: createScopedMorningBriefCronRoutesForTest({
+      routes: createScopedInlineMorningBriefCronRoutesForTest({
         orgId: actor.orgId,
         userId: actor.userId,
       }),
