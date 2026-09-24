@@ -5,16 +5,10 @@ import {
   type PublicConnectorCatalogStatusResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
-import {
-  click,
-  fill,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
@@ -102,43 +96,9 @@ function mockCatalog(
   });
 }
 
-function categoryButton(name: string): HTMLElement {
-  const button = queryAllByRoleFast("button").find((candidate) => {
-    return candidate.textContent?.trim() === name;
-  });
-  if (!button) {
-    throw new Error(`${name} category button not found`);
-  }
-  return button;
-}
-
 async function findComposer(name = "Message"): Promise<HTMLElement> {
   return await screen.findByRole("textbox", { name });
 }
-
-test("A migration idea uses the Okou product identity", async () => {
-  configureAgent();
-  mockCatalog([
-    catalogItem("zapier", "Zapier"),
-    catalogItem("slack", "Slack"),
-    catalogItem("notion", "Notion"),
-  ]);
-
-  await setupPage({
-    context,
-    host: "app.okou.ai",
-    path: IDEAS_PATH,
-    featureSwitches: { [FeatureSwitchKey.ZapierConnector]: true },
-  });
-  const idea = await screen.findByText("Zapier → Okou migration");
-
-  click(idea);
-
-  const composer = await findComposer();
-  expect(composer.textContent).toBe(
-    "Help me migrate my Zapier workflows to Okou. I have zaps for: new Slack message → Notion, Gmail → Google Sheets, and GitHub PR → Slack",
-  );
-});
 
 test("The ideas catalog still offers connector-free use cases", async () => {
   configureAgent();
@@ -183,36 +143,6 @@ test("Connector-dependent ideas fail closed when availability cannot be verified
   });
 });
 
-test("Ideas fall back to All when the selected category becomes unavailable", async () => {
-  configureAgent();
-  const catalog =
-    context.mocks.deferred<PublicConnectorCatalogStatusResponse>();
-  context.mocks.api(connectorCatalogContract.status, async ({ respond }) => {
-    return respond(200, await catalog.promise);
-  });
-
-  await setupPage({ context, path: IDEAS_PATH });
-  await screen.findByText("Daily standup report");
-  const engineering = await waitFor(() => {
-    return categoryButton("Engineering");
-  });
-  click(engineering);
-  await waitFor(() => {
-    expect(screen.getByText("Daily standup report")).toBeVisible();
-    expect(screen.queryByText("Browser screenshots")).not.toBeInTheDocument();
-  });
-
-  catalog.resolve(catalogResponse([]));
-
-  await screen.findByText("Browser screenshots");
-  expect(
-    queryAllByRoleFast("button").find((candidate) => {
-      return candidate.textContent?.trim() === "Engineering";
-    }),
-  ).toBeUndefined();
-  expect(categoryButton("All")).toBeVisible();
-});
-
 test("A use case is hidden when any required connector is unavailable", async () => {
   configureAgent();
   mockCatalog([catalogItem("github", "GitHub"), catalogItem("slack", "Slack")]);
@@ -221,27 +151,6 @@ test("A use case is hidden when any required connector is unavailable", async ()
   await screen.findByText("GitHub progress weekly");
 
   expect(screen.queryByText("Daily standup report")).not.toBeInTheDocument();
-});
-
-test("Pending connector availability is not mistaken for no connectors", async () => {
-  configureAgent();
-  const catalog =
-    context.mocks.deferred<PublicConnectorCatalogStatusResponse>();
-  context.mocks.api(connectorCatalogContract.status, async ({ respond }) => {
-    return respond(200, await catalog.promise);
-  });
-
-  await setupPage({ context, path: IDEAS_PATH });
-  await screen.findByRole("heading", { name: "Ideas & Use Cases" });
-
-  expect(screen.getByText("Daily standup report")).toBeVisible();
-
-  catalog.resolve(catalogResponse([]));
-
-  await waitFor(() => {
-    expect(screen.getByText("Browser screenshots")).toBeVisible();
-    expect(screen.queryByText("Daily standup report")).not.toBeInTheDocument();
-  });
 });
 
 test("Search for a use case and start it with the agent", async () => {

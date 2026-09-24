@@ -1252,13 +1252,7 @@ export type BillingInvoicesContract = typeof billingInvoicesContract;
 // Downgrade
 // ---------------------------------------------------------------------------
 
-const downgradeTargetTierSchema = z
-  .enum(["limited-free-1", "pro-suspend", "pro"])
-  .transform((tier): "limited-free-1" | "pro" => {
-    // Previous App builds used pro-suspend as the cancellation request value.
-    // It is a wire-only alias and must never become persisted plan state again.
-    return tier === "pro-suspend" ? "limited-free-1" : tier;
-  });
+const downgradeTargetTierSchema = z.enum(["limited-free-1", "pro"]);
 
 const downgradeRequestSchema = z.object({
   targetTier: downgradeTargetTierSchema,

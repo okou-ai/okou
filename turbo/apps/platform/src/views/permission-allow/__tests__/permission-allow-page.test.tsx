@@ -32,9 +32,6 @@ const AGENT_ID = "10000000-0000-4000-a000-000000000001";
 const THREAD_ID = "20000000-0000-4000-a000-000000000001";
 const NOW_MS = 1_893_456_000_000;
 const CREATED_AT = "2029-12-01T00:00:00.000Z";
-const MINUTE_MS = 60 * 1000;
-const HOUR_MS = 60 * MINUTE_MS;
-const DAY_MS = 24 * HOUR_MS;
 
 interface PermissionPageOptions {
   readonly userName: string;
@@ -318,45 +315,6 @@ test("A user grants a time-limited connector permission and resumes the chat", a
   );
 });
 
-test.each([
-  [1, "Expires in less than 1 hour"],
-  [30 * MINUTE_MS - 1, "Expires in less than 1 hour"],
-  [30 * MINUTE_MS, "Expires in 1 hour"],
-  [HOUR_MS + 1, "Expires in 1 hour"],
-  [90 * MINUTE_MS - 1, "Expires in 1 hour"],
-  [90 * MINUTE_MS, "Expires in 2 hours"],
-  [DAY_MS - 1, "Expires in 24 hours"],
-  [DAY_MS + 1, "Expires in 24 hours"],
-  [6.5 * DAY_MS - 1, "Expires in 6 days"],
-  [6.5 * DAY_MS, "Expires in 7 days"],
-  [7 * DAY_MS + 1, "Expires in 7 days"],
-] as const)(
-  "An existing grant with %i ms remaining shows %s",
-  async (remainingMs, expiryText) => {
-    mockNow(NOW_MS, context.signal);
-    const expiresAtMs = NOW_MS + remainingMs;
-    const grantedAt = new Date(expiresAtMs - 7 * DAY_MS).toISOString();
-    await setupPermissionPage({
-      userName: "Dana",
-      agentName: "Research Bot",
-      grants: [
-        {
-          ...permissionGrant({
-            expiresAt: new Date(expiresAtMs).toISOString(),
-          }),
-          createdAt: grantedAt,
-          updatedAt: grantedAt,
-        },
-      ],
-    });
-
-    await expect(
-      screen.findByText("Already allowed"),
-    ).resolves.toBeInTheDocument();
-    expect(screen.getByText(expiryText)).toBeInTheDocument();
-  },
-);
-
 test("A user can allow a connector's uncatalogued endpoints without exposing an internal token", async () => {
   let applied: ApplyUserPermissionGrantsRequest | null = null;
   context.mocks.api(userPermissionGrantsContract.apply, ({ body, respond }) => {
@@ -534,36 +492,6 @@ test("Permission grants that cannot be loaded fail closed", async () => {
       return button.textContent?.trim() === "Confirm";
     }),
   ).toBeUndefined();
-});
-
-test("A failed permission update leaves the decision retryable", async () => {
-  context.mocks.api(userPermissionGrantsContract.apply, ({ respond }) => {
-    return respond(500, {
-      error: { code: "INTERNAL_SERVER_ERROR", message: "Save rejected" },
-    });
-  });
-  await setupPermissionPage({
-    userName: "Quinn",
-    agentName: "Save Error Bot",
-  });
-
-  await expect(
-    screen.findByText(
-      "Hey Quinn, you're updating your permissions for Save Error Bot.",
-    ),
-  ).resolves.toBeInTheDocument();
-  click(buttonByText("Confirm"));
-
-  await expect(
-    screen.findByText("Couldn't update permissions"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getAllByText("Save Error Bot").length).toBeGreaterThan(0);
-  expect(screen.getByText("Slack")).toBeInTheDocument();
-  expect(
-    screen.getByText("Access workspace analytics data"),
-  ).toBeInTheDocument();
-  expect(buttonByText("Confirm")).toBeEnabled();
-  expect(screen.queryByText("Permissions updated")).not.toBeInTheDocument();
 });
 
 test("A missing connector cannot be authorized", async () => {

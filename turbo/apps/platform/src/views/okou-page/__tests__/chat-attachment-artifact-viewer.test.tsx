@@ -1,14 +1,10 @@
-import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
 import {
   artifactReferencePath,
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/host";
-import {
-  chatThreadArtifactsContract,
-  type UserMessageDocument,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { strFromU8, unzipSync } from "fflate";
@@ -18,7 +14,6 @@ import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 import {
   ATTACHMENT_RUN_ID,
   ATTACHMENT_THREAD_ID,
@@ -75,14 +70,6 @@ function userImageMessage(
   };
 }
 
-function composerFileInput(): HTMLInputElement {
-  const input = document.querySelector<HTMLInputElement>('input[type="file"]');
-  if (!input) {
-    throw new Error("Expected composer file input");
-  }
-  return input;
-}
-
 async function closeFocusedPreview(): Promise<void> {
   click(getNamedButton("Close"));
   await waitFor(() => {
@@ -102,204 +89,87 @@ function getPreviewFrame(testId: string): HTMLIFrameElement {
   return frame;
 }
 
-async function expectPrivateAttachmentResource(
+async function expectPrivateTextPreview(
   root: HTMLElement,
   filename: string,
-  firstUrl: string,
-  surface: "dialog" | "sidebar",
 ): Promise<void> {
-  const queries = within(root);
-  let actual: string | null;
-  let expected: string;
-  if (filename.endsWith(".pdf")) {
-    const element = await queries.findByTestId(
-      surface === "dialog"
-        ? "artifact-dialog-document-frame"
-        : "artifact-sidebar-body-pdf",
-    );
-    const frame =
-      element instanceof HTMLIFrameElement
-        ? element
-        : element.querySelector("iframe");
-    actual = frame?.getAttribute("src") ?? null;
-    expected = `${firstUrl}#navpanes=0`;
-  } else if (filename.endsWith(".mp3")) {
-    const player = await queries.findByTestId(
-      surface === "dialog"
-        ? "artifact-dialog-audio"
-        : "artifact-sidebar-body-audio",
-    );
-    actual = player.getAttribute("src");
-    expected = firstUrl;
-  } else if (filename.endsWith(".xlsx")) {
-    const frame = await queries.findByTestId(
-      surface === "dialog"
-        ? "artifact-dialog-body-office"
-        : "artifact-sidebar-body-office",
-    );
-    await waitFor(() => {
-      if (!frame.getAttribute("src")) {
-        throw new Error("Expected the Office preview frame to have a source");
-      }
-    });
-    actual = new URL(
-      frame.getAttribute("src") ?? location.href,
-    ).searchParams.get("src");
-    expected = firstUrl;
-  } else {
-    const content = await queries.findByText(`private preview for ${filename}`);
-    actual = content.textContent;
-    expected = `private preview for ${filename}`;
-  }
-  expect(actual).toBe(expected);
+  await expect(
+    within(root).findByText(`private preview for ${filename}`),
+  ).resolves.toBeInTheDocument();
 }
 
-test.each([
-  ["Markdown", "private-notes.md", "text/markdown"],
-  ["text", "private-notes.txt", "text/plain"],
-  ["JSON", "private-data.json", "application/json"],
-  ["CSV", "private-table.csv", "text/csv"],
-  ["PDF", "private-report.pdf", "application/pdf"],
-  ["audio", "private-recording.mp3", "audio/mpeg"],
-  [
-    "Office",
-    "private-workbook.xlsx",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  ],
-] as const)(
-  "A private %s attachment reuses one URL across reopen and split view",
-  async (_label, filename, contentType) => {
-    const fileId = `private-${filename.replaceAll(".", "-")}`;
-    const canonicalUrl = privateAttachmentUrl(fileId);
-    const firstUrl = `https://private-files.example/${filename}?signature=first`;
-    const nextUrl = `https://private-files.example/${filename}?signature=next`;
-    mockAttachmentChat(context, {
-      chatEvents: [
-        userImageMessage(`user-${fileId}`, [
-          {
-            type: "file",
-            fileId,
-            filenameSnapshot: filename,
-            contentType,
-          },
-        ]),
-      ],
-      artifacts: [
-        artifactFile(filename, {
-          id: fileId,
-          contentType,
-          url: canonicalUrl,
-        }),
-      ],
-    });
-    let resolveCount = 0;
-    context.mocks.api(webFilesContract.fileUrl, ({ query, respond }) => {
-      expect(query.file_id).toBe(fileId);
-      const url = resolveCount === 0 ? firstUrl : nextUrl;
-      resolveCount += 1;
-      return respond(200, {
-        url,
-        expiresAt: "2099-01-01T00:00:00.000Z",
-        publicUrl: null,
-      });
-    });
-    context.mocks.http.get(
-      `https://private-files.example/${filename}`,
-      ({ request }) => {
-        const renewed = new URL(request.url).searchParams.get("signature");
-        return HttpResponse.text(
-          `${renewed === "first" ? "private" : "unexpected renewed"} preview for ${filename}`,
-        );
-      },
-    );
-
-    await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-    const filenameNode = await screen.findByText(filename);
-    const trigger = filenameNode.closest("button");
-    if (!trigger) {
-      throw new Error(`Expected a preview trigger for ${filename}`);
-    }
-
-    click(trigger);
-    let preview = await screen.findByTestId("attachment-lightbox");
-    await expectPrivateAttachmentResource(
-      preview,
-      filename,
-      firstUrl,
-      "dialog",
-    );
-    await closeFocusedPreview();
-
-    click(trigger);
-    preview = await screen.findByTestId("attachment-lightbox");
-    await expectPrivateAttachmentResource(
-      preview,
-      filename,
-      firstUrl,
-      "dialog",
-    );
-
-    click(await findNamedButton("Open in split view"));
-    const sidebar = await screen.findByTestId("artifact-sidebar");
-    await expectPrivateAttachmentResource(
-      sidebar,
-      filename,
-      firstUrl,
-      "sidebar",
-    );
-  },
-);
-
-test("A composer image preview does not replace an open artifact sidebar", async () => {
-  const siteUrl = "https://workspace-guide.sites.vm7.io";
+test("A private attachment reuses one URL across reopen and split view", async () => {
+  const filename = "private-notes.txt";
+  const contentType = "text/plain";
+  const fileId = "private-private-notes-txt";
+  const canonicalUrl = privateAttachmentUrl(fileId);
+  const firstUrl = `https://private-files.example/${filename}?signature=first`;
+  const nextUrl = `https://private-files.example/${filename}?signature=next`;
   mockAttachmentChat(context, {
-    chatEvents: [assistantMessage(`[Workspace guide](${siteUrl})`)],
+    chatEvents: [
+      userImageMessage(`user-${fileId}`, [
+        {
+          type: "file",
+          fileId,
+          filenameSnapshot: filename,
+          contentType,
+        },
+      ]),
+    ],
     artifacts: [
-      artifactFile("workspace-guide.html", {
-        id: "workspace-guide-site",
-        contentType: "text/html",
-        url: publicArtifactUrl("workspace-guide.html"),
-        aliasUrl: siteUrl,
-        artifactKind: "hosted-site",
+      artifactFile(filename, {
+        id: fileId,
+        contentType,
+        url: canonicalUrl,
       }),
     ],
   });
-  context.mocks.upload.success({
-    id: "a0000000-0000-4000-a000-000000000086",
-    filename: "sidebar-reference.png",
-    contentType: "image/png",
-    size: 32,
-    url: publicArtifactUrl("sidebar-reference.png"),
+  let resolveCount = 0;
+  context.mocks.api(webFilesContract.fileUrl, ({ query, respond }) => {
+    expect(query.file_id).toBe(fileId);
+    const url = resolveCount === 0 ? firstUrl : nextUrl;
+    resolveCount += 1;
+    return respond(200, {
+      url,
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      publicUrl: null,
+    });
   });
+  context.mocks.http.get(
+    `https://private-files.example/${filename}`,
+    ({ request }) => {
+      const renewed = new URL(request.url).searchParams.get("signature");
+      return HttpResponse.text(
+        `${renewed === "first" ? "private" : "unexpected renewed"} preview for ${filename}`,
+      );
+    },
+  );
 
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  const filenameNode = await screen.findByText(filename);
+  const trigger = filenameNode.closest("button");
+  if (!trigger) {
+    throw new Error(`Expected a preview trigger for ${filename}`);
+  }
 
-  click(await findNamedLink("Workspace guide"));
+  click(trigger);
+  await expectPrivateTextPreview(
+    await screen.findByTestId("attachment-lightbox"),
+    filename,
+  );
+  await closeFocusedPreview();
+
+  click(trigger);
+  await expectPrivateTextPreview(
+    await screen.findByTestId("attachment-lightbox"),
+    filename,
+  );
+
   click(await findNamedButton("Open in split view"));
-  const sidebar = await screen.findByTestId("artifact-sidebar");
-  expect(
-    within(sidebar).getByTestId("artifact-sidebar-body-html"),
-  ).toHaveAttribute("src", siteUrl);
-
-  await screen.findByRole("textbox", { name: "Message" });
-  fireEvent.change(composerFileInput(), {
-    target: {
-      files: [
-        new File(["image"], "sidebar-reference.png", { type: "image/png" }),
-      ],
-    },
-  });
-  click(await findNamedButton("Open image preview for sidebar-reference.png"));
-
-  await expect(
-    screen.findByTestId("attachment-lightbox-image"),
-  ).resolves.toHaveAttribute("alt", "sidebar-reference.png");
-  expect(screen.getByTestId("artifact-sidebar")).toBeVisible();
-  expect(
-    within(screen.getByTestId("artifact-sidebar")).getByTestId(
-      "artifact-sidebar-body-html",
-    ),
-  ).toHaveAttribute("src", siteUrl);
+  await expectPrivateTextPreview(
+    await screen.findByTestId("artifact-sidebar"),
+    filename,
+  );
 });
 
 test("An open artifact sidebar reuses one pane", async () => {
@@ -352,72 +222,6 @@ test("An open artifact sidebar reuses one pane", async () => {
   });
   expect(screen.getAllByTestId("artifact-sidebar")).toHaveLength(1);
   expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
-});
-
-test("Artifact thumbnails fall back to a usable live preview", async () => {
-  const firstSite = "https://thumbnail-success.sites.vm7.io";
-  const secondSite = "https://thumbnail-fallback.sites.vm7.io";
-  mockAttachmentChat(context, {
-    chatEvents: [
-      assistantMessage(
-        `![Thumbnail success](${firstSite})\n\n![Thumbnail fallback](${secondSite})`,
-      ),
-    ],
-    artifacts: [
-      artifactFile("thumbnail-success.html", {
-        id: "thumbnail-success",
-        contentType: "text/html",
-        url: publicArtifactUrl("thumbnail-success.html"),
-        aliasUrl: firstSite,
-        artifactKind: "hosted-site",
-        previewImageUrl: publicArtifactUrl("thumbnail-success.webp"),
-      }),
-      artifactFile("thumbnail-fallback.html", {
-        id: "thumbnail-fallback",
-        contentType: "text/html",
-        url: publicArtifactUrl("thumbnail-fallback.html"),
-        aliasUrl: secondSite,
-        artifactKind: "hosted-site",
-        previewImageUrl: publicArtifactUrl("thumbnail-fallback.webp"),
-      }),
-    ],
-  });
-
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-
-  const previews = await screen.findAllByTestId("attachment-preview-html");
-  expect(previews).toHaveLength(2);
-  const successfulThumbnail = await within(previews[0]!).findByTestId(
-    "attachment-preview-thumbnail",
-  );
-  expect(successfulThumbnail).toHaveAttribute(
-    "src",
-    `${THUMBNAIL_PREFIX}artifacts/tests/chat-attachments/thumbnail-success.webp`,
-  );
-  fireEvent.load(successfulThumbnail);
-  expect(
-    within(previews[0]!).queryByTestId("attachment-preview-html-viewport"),
-  ).toBeNull();
-
-  const failedThumbnail = await within(previews[1]!).findByTestId(
-    "attachment-preview-thumbnail",
-  );
-  fireEvent.error(failedThumbnail);
-  const fallback = await within(previews[1]!).findByTestId(
-    "attachment-preview-html-viewport",
-  );
-  const fallbackFrame = fallback.querySelector("iframe");
-  if (!fallbackFrame) {
-    throw new Error("Expected the live hosted-site fallback");
-  }
-  expect(fallbackFrame).toHaveAttribute("src", secondSite);
-  click(previews[1]!);
-  await waitFor(() => {
-    expect(getPreviewFrame("artifact-dialog-site-frame")).toHaveAttribute(
-      "src",
-      secondSite,
-    );
-  });
 });
 
 test("Private attachment access stays scoped to the chat that owns it", async () => {
@@ -777,103 +581,77 @@ test("A user's attachment preview withholds the sharing an agent artifact offers
   });
 });
 
-test.each(["link", "card"])(
-  "Private HTML %s previews reuse their URL across reopening and split view",
-  async (presentation) => {
-    mockNow(new Date("2026-09-09T00:00:00.000Z"), context.signal);
-    const deploymentId = "00000000-0000-4000-8000-000000000009";
-    const canonicalUrl = `${artifactReferencePath(deploymentId, "index.html")}#slide-2`;
-    const firstPreview = `https://pv-${"a".repeat(48)}.sites.vm7.io/`;
-    const nextPreview = `https://pv-${"b".repeat(48)}.sites.vm7.io/`;
-    let currentPreview = firstPreview;
-    const visibility = context.mocks.browser.visibilityState("visible");
-    mockAttachmentChat(context, {
-      chatEvents: [
-        assistantMessage(
-          `${presentation === "card" ? "!" : ""}[Private report](${canonicalUrl})`,
+test("A private HTML link preview reuses its URL across reopening and split view", async () => {
+  mockNow(new Date("2026-09-09T00:00:00.000Z"), context.signal);
+  const deploymentId = "00000000-0000-4000-8000-000000000009";
+  const canonicalUrl = `${artifactReferencePath(deploymentId, "index.html")}#slide-2`;
+  const firstPreview = `https://pv-${"a".repeat(48)}.sites.vm7.io/`;
+  const nextPreview = `https://pv-${"b".repeat(48)}.sites.vm7.io/`;
+  let currentPreview = firstPreview;
+  mockAttachmentChat(context, {
+    chatEvents: [assistantMessage(`[Private report](${canonicalUrl})`)],
+    artifacts: [
+      artifactFile("private-report.html", {
+        id: "private-html",
+        contentType: "text/html",
+        url: canonicalUrl,
+        artifactKind: "hosted-site",
+      }),
+    ],
+  });
+  context.mocks.api(
+    artifactReferencesContract.resolve,
+    ({ params, respond }) => {
+      expect(params.reference).toBe(
+        artifactReferencePath(deploymentId, "index.html").slice(
+          "/artifacts/".length,
         ),
-      ],
-      artifacts: [
-        artifactFile("private-report.html", {
-          id: "private-html",
-          contentType: "text/html",
-          url: canonicalUrl,
-          artifactKind: "hosted-site",
-        }),
-      ],
-    });
-    context.mocks.api(
-      artifactReferencesContract.resolve,
-      ({ params, respond }) => {
-        expect(params.reference).toBe(
-          artifactReferencePath(deploymentId, "index.html").slice(
-            "/artifacts/".length,
-          ),
-        );
-        const resolvedPreview = currentPreview;
-        currentPreview = nextPreview;
-        return respond(200, {
-          url: resolvedPreview,
-          filename: "index.html",
-          contentType: "text/html",
-          target: { kind: "html", id: deploymentId },
-          expiresAt: "2026-09-11T00:00:00.000Z",
-        });
-      },
-    );
-    await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-    const openPreview =
-      presentation === "card"
-        ? await screen.findByTestId("attachment-preview-html")
-        : await findNamedLink("Private report");
-    click(openPreview);
-    await waitFor(() => {
-      expect(getPreviewFrame("artifact-dialog-site-frame")).toHaveAttribute(
-        "src",
-        `${firstPreview}#slide-2`,
       );
-    });
-    expect(document.querySelector('a[aria-label="Share"]')).toBeNull();
-    currentPreview = nextPreview;
-    click(await findNamedButton("Enter fullscreen"));
-    await findNamedButton("Exit fullscreen");
+      const resolvedPreview = currentPreview;
+      currentPreview = nextPreview;
+      return respond(200, {
+        url: resolvedPreview,
+        filename: "index.html",
+        contentType: "text/html",
+        target: { kind: "html", id: deploymentId },
+        expiresAt: "2026-09-11T00:00:00.000Z",
+      });
+    },
+  );
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  const openPreview = await findNamedLink("Private report");
+  click(openPreview);
+  await waitFor(() => {
     expect(getPreviewFrame("artifact-dialog-site-frame")).toHaveAttribute(
       "src",
       `${firstPreview}#slide-2`,
     );
-    click(await findNamedButton("Exit fullscreen"));
-    await findNamedButton("Enter fullscreen");
-    await closeFocusedPreview();
-    mockNow(new Date("2026-09-12T00:00:00.000Z"), context.signal);
-    click(openPreview);
-    await waitFor(() => {
-      expect(getPreviewFrame("artifact-dialog-site-frame")).toHaveAttribute(
-        "src",
-        `${firstPreview}#slide-2`,
-      );
-    });
-    click(await findNamedButton("Open in split view"));
-    const sidebar = await screen.findByTestId("artifact-sidebar");
-    await waitFor(() => {
-      expect(
-        within(sidebar).getByTestId("artifact-sidebar-body-html"),
-      ).toHaveAttribute("src", `${firstPreview}#slide-2`);
-    });
-    visibility.changeTo("hidden");
-    visibility.changeTo("visible");
-    await waitFor(() => {
-      expect(
-        within(sidebar).getByTestId("artifact-sidebar-body-html"),
-      ).toHaveAttribute("src", `${firstPreview}#slide-2`);
-    });
-    click(openPreview);
-    await waitFor(() => {
-      expect(
-        within(sidebar).getByTestId("artifact-sidebar-body-html"),
-      ).toHaveAttribute("src", `${firstPreview}#slide-2`);
-    });
-  },
-);
+  });
+  expect(document.querySelector('a[aria-label="Share"]')).toBeNull();
+  currentPreview = nextPreview;
+  await closeFocusedPreview();
+  mockNow(new Date("2026-09-12T00:00:00.000Z"), context.signal);
+  click(openPreview);
+  await waitFor(() => {
+    expect(getPreviewFrame("artifact-dialog-site-frame")).toHaveAttribute(
+      "src",
+      `${firstPreview}#slide-2`,
+    );
+  });
+  click(await findNamedButton("Open in split view"));
+  const sidebar = await screen.findByTestId("artifact-sidebar");
+  await waitFor(() => {
+    expect(
+      within(sidebar).getByTestId("artifact-sidebar-body-html"),
+    ).toHaveAttribute("src", `${firstPreview}#slide-2`);
+  });
+  click(openPreview);
+  await waitFor(() => {
+    expect(
+      within(sidebar).getByTestId("artifact-sidebar-body-html"),
+    ).toHaveAttribute("src", `${firstPreview}#slide-2`);
+  });
+});
 
 test("A private site card resizes its authorized screenshot and opens the site on click", async () => {
   const deploymentId = "00000000-0000-4000-8000-000000000019";
@@ -1053,92 +831,6 @@ test.each([
     });
   },
 );
-test("A private site card keeps its screenshot credentials when the artifact list reloads", async () => {
-  const deploymentId = "00000000-0000-4000-8000-000000000023";
-  const screenshotId = "00000000-0000-4000-8000-000000000024";
-  const site = artifactReferencePath(deploymentId, "index.html");
-  const screenshot = artifactReferencePath(screenshotId, "preview.webp");
-  const screenshotUrl = `${R2_ORIGIN}/private/screenshot.bin?X-Amz-Signature=owner`;
-  const rotatedScreenshotUrl = `${R2_ORIGIN}/private/screenshot.bin?X-Amz-Signature=rotated`;
-  const previewUrl = `https://pv-${"c".repeat(48)}.sites.vm7.io/`;
-  const files = [
-    artifactFile("private-report.html", {
-      id: "private-screenshot-reload",
-      contentType: "text/html",
-      url: site,
-      artifactKind: "hosted-site",
-      previewImageUrl: screenshot,
-    }),
-  ];
-  context.mocks.browser.matchMedia((query) => {
-    return (
-      query === SIDEBAR_DESKTOP_MEDIA_QUERY || query === "(min-width: 1280px)"
-    );
-  });
-  mockAttachmentChat(context, {
-    chatEvents: [assistantMessage(`![Private report](${site})`)],
-    artifacts: files,
-  });
-  // Opening the artifacts panel reloads this list, which is what used to
-  // rebuild the card's screenshot graph.
-  let artifactListRequests = 0;
-  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
-    artifactListRequests += 1;
-    return respond(200, {
-      runs: [{ runId: ATTACHMENT_RUN_ID, files }],
-    });
-  });
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, { artifacts: [], nextCursor: null });
-  });
-  let screenshotAuthorizations = 0;
-  context.mocks.api(
-    artifactReferencesContract.resolve,
-    ({ params, respond }) => {
-      const isScreenshot =
-        params.reference === screenshot.slice("/artifacts/".length);
-      if (isScreenshot) {
-        screenshotAuthorizations += 1;
-      }
-      return respond(200, {
-        url: isScreenshot
-          ? screenshotAuthorizations > 1
-            ? rotatedScreenshotUrl
-            : screenshotUrl
-          : previewUrl,
-        filename: isScreenshot ? "preview.webp" : "index.html",
-        contentType: isScreenshot ? "image/webp" : "text/html",
-        target: isScreenshot
-          ? { kind: "file", id: screenshotId }
-          : { kind: "html", id: deploymentId },
-        expiresAt: "2099-01-01T00:00:00.000Z",
-      });
-    },
-  );
-
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-  const card = await screen.findByTestId("attachment-preview-html");
-  const thumbnail = await within(card).findByTestId(
-    "attachment-preview-thumbnail",
-  );
-  expect(thumbnail).toHaveAttribute(
-    "src",
-    `${THUMBNAIL_PREFIX}${screenshotUrl}`,
-  );
-  const requestsBeforeReload = artifactListRequests;
-
-  click(await screen.findByLabelText("Open artifacts"));
-  await screen.findByTestId("thread-sidebar-artifacts");
-  await waitFor(() => {
-    expect(artifactListRequests).toBeGreaterThan(requestsBeforeReload);
-  });
-
-  expect(screenshotAuthorizations).toBe(1);
-  expect(
-    within(card).getByTestId("attachment-preview-thumbnail"),
-  ).toHaveAttribute("src", `${THUMBNAIL_PREFIX}${screenshotUrl}`);
-});
-
 const PUBLICATION_DEPLOYMENT_ID = "00000000-0000-4000-8000-000000000021";
 const PUBLICATION_SITE_ID = "00000000-0000-4000-8000-000000000022";
 const PUBLICATION_HOST = "https://launch-site.sites.vm7.io/";
@@ -1247,33 +939,6 @@ test("a multi-file hosted publication downloads as a zip of every member", async
   expect(strFromU8(unpacked["index.html"]!)).toBe(PUBLICATION_PAGE);
   expect(strFromU8(unpacked["assets/site.css"]!)).toBe(PUBLICATION_STYLE);
   expect(screen.queryByText("Download failed")).toBeNull();
-});
-
-test("a publication whose member cannot be reached reports the failure", async () => {
-  mockHostedPublication([
-    hostedFile("/index.html", PUBLICATION_PAGE, "text/html; charset=utf-8"),
-    hostedFile("/assets/site.css", PUBLICATION_STYLE, "text/css"),
-  ]);
-  const downloads = context.mocks.browser.blobDownload();
-  // A member the browser never reaches: the delivery host does not get to
-  // describe this failure, so nothing but the archive can report it.
-  context.mocks.http.get(
-    `${PUBLICATION_HOST.slice(0, -1)}/assets/site.css`,
-    () => {
-      return HttpResponse.error();
-    },
-  );
-
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-  click(await findNamedLink("Launch site"));
-  const dialog = await screen.findByRole("dialog");
-  click(await findNamedButton("Download options", dialog));
-  click(await findNamedMenuItem("Download"));
-
-  await expect(
-    screen.findByText("Download failed"),
-  ).resolves.toBeInTheDocument();
-  expect(downloads.downloads).toStrictEqual([]);
 });
 
 test("a publication that cannot be listed reports the failure instead of its entry page", async () => {

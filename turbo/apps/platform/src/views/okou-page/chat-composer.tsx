@@ -10194,7 +10194,11 @@ function ComposerConnectorDialogsSlot({
   const { t } = useTranslation();
   const connectorDirectoryEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ConnectorDirectory] === true;
-  const connectorData = useLastResolved(signals.connector.data$);
+  const lastConnectorData = useLastResolved(signals.connector.data$);
+  const connectorData =
+    lastConnectorData?.authorization.agentId === signals.agentId
+      ? lastConnectorData
+      : undefined;
   const addDialogCatalog = useLastResolved(signals.connector.addDialogCatalog$);
   const addDialogBrowseCatalog = useLastResolved(
     signals.connector.addDialogBrowseCatalog$,

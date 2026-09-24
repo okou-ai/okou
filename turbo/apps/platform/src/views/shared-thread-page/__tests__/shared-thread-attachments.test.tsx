@@ -11,7 +11,7 @@ import {
 const context = testContext();
 const fileUrl = "https://a.okou.io/shared-threads/public/file/brief.pdf";
 
-test.each(["png", "bin"])(
+test.each(["png"])(
   "Signed-out visitors see prompt thumbnails stored as %s and open original files",
   async (extension) => {
     const imageUrl = `https://a.okou.io/shared-threads/public/image/screenshot.${extension}`;

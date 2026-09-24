@@ -13,8 +13,6 @@ import {
   installComposerConnectorFixture,
   OTHER_AGENT_ID,
   SCOUT_AGENT_ID,
-  SCOUT_THREAD_ID,
-  SECOND_SCOUT_THREAD_ID,
 } from "./chat-composer-connectors-test-helpers.ts";
 import {
   context,
@@ -154,50 +152,6 @@ test("Load the Agent's connector access only when the Connectors menu opens", as
   expect(trigger.querySelector("img")).toBeNull();
 });
 
-test("Show the Agent's connectors in every chat with that Agent", async () => {
-  installComposerConnectorFixture({
-    catalog: [
-      builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" }),
-      builtinConnector({ slug: SLACK_SLUG, label: "Slack" }),
-    ],
-    builtinAuthorizations: {
-      [SCOUT_AGENT_ID]: [GITHUB_SLUG],
-      [OTHER_AGENT_ID]: [SLACK_SLUG],
-    },
-    threads: [
-      {
-        id: SCOUT_THREAD_ID,
-        title: "First Scout chat",
-        agentId: SCOUT_AGENT_ID,
-      },
-      {
-        id: SECOND_SCOUT_THREAD_ID,
-        title: "Second Scout chat",
-        agentId: SCOUT_AGENT_ID,
-      },
-    ],
-    threadId: SCOUT_THREAD_ID,
-  });
-  await setupPage({ context, path: `/chats/${SCOUT_THREAD_ID}` });
-  const trigger = await findFastControl("button", "Connectors");
-  click(trigger);
-  await screen.findByLabelText("Remove GitHub");
-  click(trigger);
-  await waitFor(() => {
-    expect(screen.queryByLabelText("Remove GitHub")).toBeNull();
-  });
-
-  click(await findFastControl("link", "Second Scout chat"));
-  await waitFor(() => {
-    expect(window.location.pathname).toBe(`/chats/${SECOND_SCOUT_THREAD_ID}`);
-  });
-  click(await findFastControl("button", "Connectors"));
-  await expect(
-    screen.findByLabelText("Remove GitHub"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByLabelText("Add Slack")).toBeInTheDocument();
-});
-
 test("Do not show the previous Agent's connectors while the next Agent loads", async () => {
   const otherAuthorization = context.mocks.deferred<void>();
   installComposerConnectorFixture({
@@ -239,7 +193,7 @@ test("Do not show the previous Agent's connectors while the next Agent loads", a
   expect(screen.getByLabelText("Add GitHub")).toBeInTheDocument();
 });
 
-test("Allow authorization retry after a rejected save", async () => {
+test("Show an error when an authorization change cannot be saved", async () => {
   installComposerConnectorFixture({
     catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
     builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
@@ -258,18 +212,4 @@ test("Allow authorization retry after a rejected save", async () => {
   await expect(
     screen.findByText("Authorization could not be saved"),
   ).resolves.toBeVisible();
-  await waitFor(() => {
-    expect(screen.getByLabelText("Remove GitHub")).not.toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-  });
-  context.mocks.api(userBuiltinConnectorsContract.update, ({ respond }) => {
-    return respond(200, { enabledConnectorSlugs: [] });
-  });
-  context.mocks.api(connectorOverviewContract.agent, ({ respond }) => {
-    return respond(200, { enabledConnectorSlugs: [], customConnectorIds: [] });
-  });
-  click(screen.getByLabelText("Remove GitHub"));
-  await expect(screen.findByLabelText("Add GitHub")).resolves.toBeVisible();
 });

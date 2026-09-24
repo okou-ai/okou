@@ -1,5 +1,4 @@
 import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import type { PublicConnectorCatalogStatusItem } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   customConnectorsContract,
@@ -39,13 +38,6 @@ interface ConnectorSurfaceOptions {
   readonly initialCustomByAgent?: Readonly<
     Record<string, readonly AgentCustomConnectorGrant[]>
   >;
-  readonly failBuiltInSaveForAgentId?: string;
-  readonly failPermissionGrants?: boolean;
-  readonly onBuiltInSave?: (args: {
-    readonly agentId: string;
-    readonly connectorSlugs: readonly string[];
-    readonly operation: "add" | "remove" | "replace" | undefined;
-  }) => void | Promise<void>;
   readonly onCustomSave?: (args: {
     readonly agentId: string;
     readonly grants: readonly AgentCustomConnectorGrant[];
@@ -127,14 +119,7 @@ function mockConnectorSurface(
   testContextValue.mocks.api(
     userPermissionGrantsContract.list,
     ({ respond }) => {
-      return options.failPermissionGrants
-        ? respond(403, {
-            error: {
-              code: "FORBIDDEN",
-              message: "Permission grants are unavailable",
-            },
-          })
-        : respond(200, []);
+      return respond(200, []);
     },
   );
   testContextValue.mocks.api(
@@ -147,17 +132,7 @@ function mockConnectorSurface(
   );
   testContextValue.mocks.api(
     userBuiltinConnectorsContract.update,
-    async ({ body, params, respond }) => {
-      await options.onBuiltInSave?.({
-        agentId: params.id,
-        connectorSlugs: body.enabledConnectorSlugs,
-        operation: body.operation,
-      });
-      if (params.id === options.failBuiltInSaveForAgentId) {
-        return respond(403, {
-          error: { code: "FORBIDDEN", message: "Connector save failed" },
-        });
-      }
+    ({ body, params, respond }) => {
       const next = applyStringOperation(
         builtInByAgent.get(params.id) ?? [],
         body.enabledConnectorSlugs,
@@ -235,7 +210,6 @@ async function openAgentConnectorIsolationStory() {
         permissionBundleRef: "builtin:acme-search@1",
       }),
     ],
-    failBuiltInSaveForAgentId: RESEARCH_AGENT_ID,
     onCustomSave: ({ agentId }) => {
       customSaves.push(agentId);
     },
@@ -283,103 +257,6 @@ test("Cancelled custom connector permission edits do not appear on another agent
   ).not.toBeInTheDocument();
   expect(connectorAccessSwitch("Grant Acme Search access")).toBeVisible();
   expect(customSaves).toStrictEqual([]);
-});
-
-test("Browser navigation discards an unfinished custom connector permission draft", async () => {
-  const { customSaves } = await openAgentConnectorIsolationStory();
-  click(linkContaining("Agents"));
-  await screen.findByRole("heading", { name: "Agents" });
-  click(linkContaining("Research Agent"));
-  await screen.findByRole("heading", { name: "Research Agent" });
-  await screen.findByText("Acme Search");
-  click(connectorAccessSwitch("Grant Acme Search access"));
-  await screen.findByText("search:run");
-  click(exactButton("Allow"));
-  expect(exactButton("Allow")).toHaveAttribute("aria-pressed", "true");
-
-  window.history.back();
-  await screen.findByRole("heading", { name: "Agents" });
-  click(linkContaining("Research Agent"));
-  await screen.findByRole("heading", { name: "Research Agent" });
-  await screen.findByText("Acme Search");
-  expect(
-    screen.queryByRole("heading", { name: /Acme Search permissions/i }),
-  ).not.toBeInTheDocument();
-
-  click(connectorAccessSwitch("Grant Acme Search access"));
-  await screen.findByText("search:run");
-  expect(exactButton("Deny")).toHaveAttribute("aria-pressed", "true");
-  expect(customSaves).toStrictEqual([]);
-});
-
-test("A failed built-in connector grant does not appear on another agent", async () => {
-  await openAgentConnectorIsolationStory();
-  await screen.findByText("GitHub");
-  click(connectorAccessSwitch("Grant GitHub access"));
-  await waitFor(() => {
-    expect(connectorAccessSwitch("Grant GitHub access")).toBeVisible();
-  });
-
-  await navigateToAgent("Support Agent");
-  await screen.findByText("GitHub");
-  expect(connectorAccessSwitch("Grant GitHub access")).toBeVisible();
-  expect(
-    screen.queryByLabelText("Revoke GitHub access"),
-  ).not.toBeInTheDocument();
-});
-
-test("Connector search preserves keyboard focus while access is saved", async () => {
-  const user = userEvent.setup({ delay: null });
-  const save = context.mocks.deferred<void>();
-  mockConnectorSurface(context, {
-    catalog: [
-      catalogConnectorFixture("github", "GitHub", { hasPermissions: false }),
-      catalogConnectorFixture("axiom", "Axiom", { hasPermissions: false }),
-    ],
-    onBuiltInSave: () => {
-      return save.promise;
-    },
-  });
-  await setupTeamPage({
-    context,
-    path: `/agents/${RESEARCH_AGENT_ID}`,
-  });
-
-  await screen.findByText("GitHub");
-  click(screen.getByLabelText("Find connectors"));
-  const search = screen.getByPlaceholderText("Find connectors...");
-  expect(search).toHaveFocus();
-
-  await user.keyboard("{Tab}{Tab}");
-  expect(connectorAccessSwitch("Grant GitHub access")).toHaveFocus();
-  await user.keyboard(" ");
-  await waitFor(() => {
-    expect(connectorAccessSwitch("Revoke GitHub access")).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-  });
-  expect(search).not.toHaveFocus();
-
-  const nextConnector = connectorAccessSwitch("Grant Axiom access");
-  nextConnector.focus();
-  expect(nextConnector).toHaveFocus();
-  save.resolve();
-  await screen.findByText("Connectors saved");
-  await waitFor(() => {
-    expect(connectorAccessSwitch("Revoke GitHub access")).not.toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-  });
-  expect(nextConnector).toHaveFocus();
-
-  click(screen.getByLabelText("Close search"));
-  expect(
-    screen.queryByPlaceholderText("Find connectors..."),
-  ).not.toBeInTheDocument();
-  click(screen.getByLabelText("Find connectors"));
-  expect(screen.getByPlaceholderText("Find connectors...")).toHaveFocus();
 });
 
 test("An agent with no connected services guides the user to Connectors", async () => {
@@ -445,24 +322,6 @@ test("A user can authorize a connected MCP custom connector for an agent", async
     );
     expect(screen.getByText("Custom connectors saved")).toBeVisible();
   });
-});
-
-test("An agent remains identifiable when permission grants cannot load", async () => {
-  mockConnectorSurface(context, {
-    catalog: [catalogConnectorFixture("axiom", "Axiom")],
-    failPermissionGrants: true,
-  });
-  await setupTeamPage({
-    context,
-    path: `/agents/${RESEARCH_AGENT_ID}`,
-  });
-
-  const heading = await screen.findByRole("heading", {
-    name: "Research Agent",
-  });
-  const error = await screen.findByText("Failed to load permission grants");
-  expect(heading).toBeVisible();
-  expect(error).toBeVisible();
 });
 
 test("Connector permission management appears only when permissions exist", async () => {

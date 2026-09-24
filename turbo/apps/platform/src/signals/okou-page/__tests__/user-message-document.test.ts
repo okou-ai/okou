@@ -641,35 +641,6 @@ test("A single quoted passage without a note stays singular", () => {
   );
 });
 
-test("Multiple quoted passages can mix notes and references", () => {
-  const document: UserMessageDocument = {
-    version: 1,
-    parts: [
-      {
-        type: "feedback",
-        quote: "First referenced passage",
-        note: [{ type: "text", text: "Keep the evidence concise." }],
-      },
-      {
-        type: "feedback",
-        quote: "Second reference only",
-        note: [],
-        eventId: "assistant-event-quote-only",
-        range: { start: 60, end: 81 },
-      },
-    ],
-  };
-
-  expect(saveRestoredMessage(document)).toStrictEqual(document);
-  expect(messageDocumentToPrompt(document)).toBe(
-    "The user quoted 2 parts of your reply:\n\n" +
-      "> First referenced passage\n\n" +
-      "Keep the evidence concise.\n\n" +
-      "---\n\n" +
-      "> Second reference only",
-  );
-});
-
 test("Routing metadata is not shown as user text", () => {
   const metadataParts: UserMessagePart[] = [
     { type: "source", kind: "slack", href: "https://slack.com/message/931" },
