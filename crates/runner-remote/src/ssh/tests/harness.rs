@@ -986,7 +986,7 @@ impl server::Handler for Peer {
             session.data(channel, b"output during blocked input".to_vec())?;
         }
         if let Some(process) = &self.process {
-            process.input(process::Input::Data(bytes.to_vec()))?;
+            process.input(process::Input::Data(bytes.to_vec())).await?;
         }
         Ok(())
     }
@@ -997,7 +997,7 @@ impl server::Handler for Peer {
         _session: &mut server::Session,
     ) -> Result<(), Self::Error> {
         if let Some(process) = &self.process {
-            process.input(process::Input::Eof)?;
+            process.input(process::Input::Eof).await?;
         }
         Ok(())
     }

@@ -125,9 +125,10 @@ impl Process {
         Self { input, task, pid }
     }
 
-    pub(super) fn input(&self, input: Input) -> Result<(), russh::Error> {
+    pub(super) async fn input(&self, input: Input) -> Result<(), russh::Error> {
         self.input
-            .try_send(input)
+            .send(input)
+            .await
             .map_err(|_| russh::Error::Disconnect)
     }
 
