@@ -188,24 +188,30 @@ export async function listRunVncHosts(
   }
   return {
     hosts: rows.flatMap((row) => {
-      return row.id === null ||
-        (row.transportType === "ssh" && row.sshNeedsRebind === null) ||
-        (threadMode && row.transportType === "ssh" && !row.sshAllowed)
-        ? []
-        : [
-            vncHostSchema.parse({
-              id: row.id,
-              displayName: row.displayName,
-              host: row.host,
-              port: row.port,
-              authMethod: row.authMethod,
-              securityType: row.securityType,
-              availability:
-                row.transportType === "ssh" && row.sshNeedsRebind
-                  ? { status: "blocked", reason: "needs_rebind" }
-                  : { status: "ready" },
-            }),
-          ];
+      if (row.id === null) {
+        return [];
+      }
+      if (threadMode && row.transportType === "ssh" && !row.sshAllowed) {
+        return [];
+      }
+      // The owner-scoped FK and transport check require this join to exist.
+      if (row.transportType === "ssh" && row.sshNeedsRebind === null) {
+        throw new Error("VNC SSH connection reference is missing");
+      }
+      return [
+        vncHostSchema.parse({
+          id: row.id,
+          displayName: row.displayName,
+          host: row.host,
+          port: row.port,
+          authMethod: row.authMethod,
+          securityType: row.securityType,
+          availability:
+            row.transportType === "ssh" && row.sshNeedsRebind
+              ? { status: "blocked", reason: "needs_rebind" }
+              : { status: "ready" },
+        }),
+      ];
     }),
   };
 }

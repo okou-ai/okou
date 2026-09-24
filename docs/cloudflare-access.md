@@ -77,7 +77,8 @@ configuration or Direct. A saved VNC connection using such an SSH host remains
 visible to its owner with a rebind warning; authorized fresh VNC Run inventories
 show it as `availability: { status: "blocked", reason: "needs_rebind" }` for
 diagnosis, matching SSH. Only ready VNC host IDs should be used for new sessions.
-Fresh VNC Runner resolve/check calls return unavailable before releasing VNC
-credentials. The VNC route is never switched
-to Direct automatically. Already-running Runs may retain previously cached SSH
+Fresh VNC Runner checks return unavailable; a resolve advertising the saved
+SSH profile also returns unavailable before releasing VNC credentials. Profile
+mismatches remain unsupported. The VNC route is never switched to Direct
+automatically. Already-running Runs may retain previously cached SSH
 authority until completion as described above.

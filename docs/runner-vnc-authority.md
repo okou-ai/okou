@@ -24,8 +24,12 @@ grant incarnation.
 Agent tokens receive `vnc:read` and `vnc:write` only when the feature is enabled.
 These capabilities do not replace a current grant. GET `/api/vnc/hosts` requires
 `vnc:read`, the exact running Run, same-owner session, visible Agent and owner's
-grant. Inventory contains only id, displayName, host, port, authMethod and
-securityType. It never includes credentials or trust bundles. An authorized
+grant. Inventory contains only id, displayName, host, port, authMethod,
+securityType, and availability. Availability is `ready` for configured hosts or
+`blocked: needs_rebind` for an SSH-backed host whose underlying SSH binding
+needs repair. The host stays visible for diagnosis, but fresh Runner authority
+rejects it until its owner explicitly rebinds SSH or chooses Direct. Inventory
+never includes credentials, SSH references, or trust bundles. An authorized
 owner with no hosts receives an empty list. Every request checks the current
 feature and Clerk membership; cached token claims cannot bypass them.
 

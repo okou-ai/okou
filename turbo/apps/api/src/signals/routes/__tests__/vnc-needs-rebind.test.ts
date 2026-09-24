@@ -242,6 +242,7 @@ describe("VNC depends on current SSH binding", () => {
           )
         ).body.connections,
       ).toContainEqual(expect.objectContaining({ id: target.connectionId }));
+      const kms = useSecretKmsProbe();
       await expect(listIds()).resolves.toStrictEqual(
         [f.connectionId, target.connectionId].sort(),
       );
@@ -257,7 +258,6 @@ describe("VNC depends on current SSH binding", () => {
           availability: { status: "ready" },
         }),
       );
-      const kms = useSecretKmsProbe();
       await expect(
         api.resolve(target, { supportedProfiles: [...vncTransportProfiles] }),
       ).resolves.toStrictEqual({ outcome: "unavailable" });
