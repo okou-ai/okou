@@ -229,6 +229,7 @@ import { userPermissionGrantsRoutes } from "./routes/user-permission-grants";
 import { userModelPreferenceRoutes } from "./routes/user-model-preference";
 import { avatarVideoRoutes } from "./routes/avatar-video";
 import { voiceIoQuotaRoutes } from "./routes/voice-io-quota";
+import { agentSetupPromptRoutes } from "./routes/agent-setup-prompts";
 import { voiceIoPolishRoutes } from "./routes/voice-io-polish";
 import { voiceIoSpeechRoutes } from "./routes/voice-io-speech";
 import { voiceIoSttRoutes } from "./routes/voice-io-stt";
@@ -387,6 +388,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...meModelProvidersUpsertRoutes,
   ...voiceIoQuotaRoutes,
   ...voiceIoPolishRoutes,
+  ...agentSetupPromptRoutes,
   ...voiceIoSpeechRoutes,
   ...voiceIoSttRoutes,
   ...voiceIoTranscribeRoutes,

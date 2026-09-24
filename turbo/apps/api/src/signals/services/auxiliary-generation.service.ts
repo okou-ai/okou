@@ -23,7 +23,8 @@ type AuxiliaryFeature =
   | "run_summary"
   | "recommended_followups"
   | "home_task_recommendations"
-  | "notification_summary";
+  | "notification_summary"
+  | "agent_setup_prompt";
 type Outcome = "success" | "degraded" | "cancelled" | "error" | "skipped";
 type Reason =
   | OpenRouterFailureReason
