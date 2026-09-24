@@ -22,7 +22,7 @@ import {
 } from "../../routes/__tests__/helpers/api-bdd-connectors";
 import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
 import { createWorkflowsBddApi } from "../../routes/__tests__/helpers/api-bdd-workflows";
-import { updateFeatureSwitchesForUser } from "../../routes/__tests__/helpers/feature-switches";
+import { seedRetainedNativeMorningBriefForUser } from "../../routes/__tests__/helpers/feature-switches";
 import { seedOrgMembership$ } from "../../routes/__tests__/helpers/org-membership";
 import {
   createDeferredPromise,
@@ -253,7 +253,7 @@ async function setupOwner(): Promise<Fixture> {
     { orgId: actor.orgId, userId: actor.userId },
     { agentId },
   );
-  await updateFeatureSwitchesForUser(
+  await seedRetainedNativeMorningBriefForUser(
     context,
     { orgId: actor.orgId, userId: actor.userId },
     { [FeatureSwitchKey.NativeMorningBrief]: true },

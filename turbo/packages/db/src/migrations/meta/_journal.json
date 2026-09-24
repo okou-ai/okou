@@ -964,8 +964,15 @@
     {
       "idx": 1215,
       "version": "7",
-      "when": 1790258161237,
-      "tag": "1215_discord_integration_foundation",
+      "when": 1790257560119,
+      "tag": "1215_retire_native_morning_brief_admission",
+      "breakpoints": true
+    },
+    {
+      "idx": 1216,
+      "version": "7",
+      "when": 1790259200621,
+      "tag": "1216_discord_integration_foundation",
       "breakpoints": true
     }
   ]
