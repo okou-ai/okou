@@ -95,12 +95,16 @@
 //! bytes describe the task's download. The task total is emitted first, followed
 //! by the remote rows. Every remote row inherits the task success value. Only
 //! the task total carries failure detail. `file://` tasks do not allocate remote
-//! metrics and never emit remote-attribution rows.
+//! metrics and never emit remote-attribution rows. Once a local file opens, they
+//! emit `*_file_body_read` and `*_file_extract_outside_body_read`, splitting
+//! extraction wall time into compressed-file reads and remaining work. The
+//! rows inherit task success and carry no paths or URLs. An open failure emits
+//! only the task total because extraction never started.
 //!
 //! # Compatibility boundary
 //!
 //! `complete_action_schema_is_exact_and_unique` constructs the complete list of
-//! 91 action names, checks its order, and checks uniqueness. The binary
+//! 95 action names, checks its order, and checks uniqueness. The binary
 //! attribution tests in
 //! `tests/integration/binary_logging/attribution.rs` cover action ordering,
 //! successful and failed downloads, local-versus-remote emission,
@@ -149,6 +153,10 @@ impl DownloadTaskTelemetry {
         matches!(self.url_kind, DownloadUrlKind::Remote).then(RemoteArchiveTaskMetrics::default)
     }
 
+    pub(crate) fn local_metrics(self) -> Option<LocalArchiveTaskMetrics> {
+        matches!(self.url_kind, DownloadUrlKind::File).then(LocalArchiveTaskMetrics::default)
+    }
+
     pub(crate) fn record_result(
         self,
         duration: Duration,
@@ -156,6 +164,7 @@ impl DownloadTaskTelemetry {
         error: Option<&str>,
         opened_file_compressed_bytes: Option<u64>,
         remote_metrics: Option<&RemoteArchiveTaskMetrics>,
+        local_metrics: Option<&LocalArchiveTaskMetrics>,
     ) {
         record_sandbox_op_with_dimensions(
             self.archive_kind.total_action(),
@@ -172,6 +181,9 @@ impl DownloadTaskTelemetry {
         );
         if let Some(metrics) = remote_metrics {
             record_remote_archive_attribution(self.archive_kind, metrics, success);
+        }
+        if let Some(metrics) = local_metrics.filter(|metrics| metrics.extraction_started) {
+            record_local_archive_attribution(self.archive_kind, metrics, success);
         }
     }
 }
@@ -284,6 +296,21 @@ pub(crate) struct RemoteArchiveTaskMetrics {
     compressed_bytes_consumed: u64,
 }
 
+#[derive(Default)]
+pub(crate) struct LocalArchiveTaskMetrics {
+    body_read: Duration,
+    extract_outside_body_read: Duration,
+    extraction_started: bool,
+}
+
+impl LocalArchiveTaskMetrics {
+    pub(crate) fn record_extraction(&mut self, body_read: Duration, extract_wall: Duration) {
+        self.body_read = body_read.min(extract_wall);
+        self.extract_outside_body_read = extract_wall.saturating_sub(self.body_read);
+        self.extraction_started = true;
+    }
+}
+
 impl RemoteArchiveTaskMetrics {
     pub(crate) fn record_attempt(
         &mut self,
@@ -335,6 +362,20 @@ impl ArchiveKind {
         match self {
             Self::Storage => "storage_download_remote_extract_outside_body_read",
             Self::Artifact => "artifact_download_remote_extract_outside_body_read",
+        }
+    }
+
+    fn file_body_read_action(self) -> &'static str {
+        match self {
+            Self::Storage => "storage_download_file_body_read",
+            Self::Artifact => "artifact_download_file_body_read",
+        }
+    }
+
+    fn file_extract_outside_body_read_action(self) -> &'static str {
+        match self {
+            Self::Storage => "storage_download_file_extract_outside_body_read",
+            Self::Artifact => "artifact_download_file_extract_outside_body_read",
         }
     }
 
@@ -778,6 +819,25 @@ fn record_remote_archive_attribution(
     );
 }
 
+fn record_local_archive_attribution(
+    archive_kind: ArchiveKind,
+    metrics: &LocalArchiveTaskMetrics,
+    success: bool,
+) {
+    record_sandbox_op(
+        archive_kind.file_body_read_action(),
+        metrics.body_read,
+        success,
+        None,
+    );
+    record_sandbox_op(
+        archive_kind.file_extract_outside_body_read_action(),
+        metrics.extract_outside_body_read,
+        success,
+        None,
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -799,7 +859,7 @@ mod tests {
     const COMPRESSED_BYTE_REPRESENTATIVES: [u64; 8] = [
         0, 1, 65_536, 262_144, 1_048_576, 4_194_304, 16_777_216, 67_108_864,
     ];
-    const EXPECTED_ACTION_SCHEMA: [&str; 91] = [
+    const EXPECTED_ACTION_SCHEMA: [&str; 95] = [
         "guest_storage_apply_task_count_0",
         "guest_storage_apply_task_count_1",
         "guest_storage_apply_task_count_2",
@@ -878,6 +938,8 @@ mod tests {
         "storage_download_remote_compressed_bytes_consumed_16_mib_to_64_mib",
         "storage_download_remote_compressed_bytes_consumed_64_mib_plus",
         "storage_download_remote_attempt_count_1",
+        "storage_download_file_body_read",
+        "storage_download_file_extract_outside_body_read",
         "artifact_download",
         "artifact_download_remote_request_to_response_headers",
         "artifact_download_remote_body_read",
@@ -891,6 +953,8 @@ mod tests {
         "artifact_download_remote_compressed_bytes_consumed_16_mib_to_64_mib",
         "artifact_download_remote_compressed_bytes_consumed_64_mib_plus",
         "artifact_download_remote_attempt_count_1",
+        "artifact_download_file_body_read",
+        "artifact_download_file_extract_outside_body_read",
     ];
 
     fn action_schema() -> Vec<&'static str> {
@@ -914,6 +978,10 @@ mod tests {
                     .map(|bytes| archive_kind.compressed_bytes_consumed_action(bytes)),
             );
             actions.push(archive_kind.attempt_count_action());
+            actions.extend([
+                archive_kind.file_body_read_action(),
+                archive_kind.file_extract_outside_body_read_action(),
+            ]);
         }
         actions
     }
@@ -1072,10 +1140,24 @@ mod tests {
     }
 
     #[test]
+    fn local_extraction_attribution_is_bounded_by_extraction_wall_time() {
+        let mut metrics = LocalArchiveTaskMetrics::default();
+        assert!(!metrics.extraction_started);
+        metrics.record_extraction(Duration::from_millis(12), Duration::from_millis(30));
+        assert!(metrics.extraction_started);
+        assert_eq!(metrics.body_read, Duration::from_millis(12));
+        assert_eq!(metrics.extract_outside_body_read, Duration::from_millis(18));
+
+        metrics.record_extraction(Duration::from_millis(31), Duration::from_millis(30));
+        assert_eq!(metrics.body_read, Duration::from_millis(30));
+        assert_eq!(metrics.extract_outside_body_read, Duration::ZERO);
+    }
+
+    #[test]
     fn complete_action_schema_is_exact_and_unique() {
         let actions = action_schema();
 
         assert_eq!(actions.as_slice(), EXPECTED_ACTION_SCHEMA.as_slice());
-        assert_eq!(actions.iter().copied().collect::<HashSet<_>>().len(), 91);
+        assert_eq!(actions.iter().copied().collect::<HashSet<_>>().len(), 95);
     }
 }

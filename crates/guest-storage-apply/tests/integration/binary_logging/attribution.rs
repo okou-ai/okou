@@ -130,6 +130,8 @@ fn binary_records_download_scheduler_attribution() {
             "storage_download_remote_compressed_bytes_consumed_lt_64_kib",
             "storage_download_remote_attempt_count_1",
             "artifact_download",
+            "artifact_download_file_body_read",
+            "artifact_download_file_extract_outside_body_read",
             "guest_storage_apply_archive_scheduler",
             "guest_storage_apply_instruction_normalize",
             "download_total",
@@ -143,6 +145,16 @@ fn binary_records_download_scheduler_attribution() {
         operation_with_dimensions(&ops, "artifact_download", "file_lt_64_kib", "other").unwrap();
     assert_eq!(artifact_total["success"], true);
     assert!(artifact_total.get("error").is_none());
+    for action in [
+        "artifact_download_file_body_read",
+        "artifact_download_file_extract_outside_body_read",
+    ] {
+        let entry = operation(&ops, action).unwrap();
+        assert_eq!(entry["success"], true);
+        assert!(entry.get("error").is_none());
+        assert!(entry.get("outcome").is_none());
+        assert!(entry.get("reason").is_none());
+    }
     for phase in [
         "guest_storage_apply_plan_build",
         "guest_storage_apply_cleanup",
@@ -209,6 +221,22 @@ fn binary_records_download_scheduler_attribution() {
         action_precedes(
             &actions,
             "artifact_download",
+            "artifact_download_file_body_read"
+        ),
+        "expected local task total before local attribution in {actions:?}"
+    );
+    assert!(
+        action_precedes(
+            &actions,
+            "artifact_download_file_body_read",
+            "artifact_download_file_extract_outside_body_read"
+        ),
+        "expected local read attribution before extraction attribution in {actions:?}"
+    );
+    assert!(
+        action_precedes(
+            &actions,
+            "artifact_download_file_extract_outside_body_read",
             "guest_storage_apply_mount_conflict_deferral_count_1"
         ),
         "expected task attribution before conflict totals in {actions:?}"
@@ -593,6 +621,18 @@ fn binary_records_opened_file_size_around_bucket_boundary() {
             "unexpected task entry: {task:?}"
         );
     }
+    for action in [
+        "storage_download_file_body_read",
+        "storage_download_file_extract_outside_body_read",
+    ] {
+        let entries = ops
+            .iter()
+            .filter(|entry| entry["action_type"] == action)
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 2, "unexpected {action} entries: {ops:?}");
+        assert!(entries.iter().all(|entry| entry["success"] == false));
+        assert!(entries.iter().all(|entry| entry.get("error").is_none()));
+    }
     assert_eq!(
         ops.iter()
             .filter(|entry| entry["action_type"] == "storage_download")
@@ -605,6 +645,35 @@ fn binary_records_opened_file_size_around_bucket_boundary() {
         false
     );
     assert_eq!(operation(&ops, "download_total").unwrap()["success"], false);
+}
+
+#[test]
+fn binary_omits_local_extraction_attribution_when_file_open_fails() {
+    let fixture = BinaryLoggingFixture::new("local-open-failure").unwrap();
+    let missing_archive = fixture.dir.path().join("private-missing-archive.tar.gz");
+    let mount = fixture.dir.path().join("mount");
+    let url = format!("file://{}", missing_archive.display());
+    let manifest =
+        write_manifest(&fixture.dir, &[(mount.to_str().unwrap(), Some(&url))], None).unwrap();
+
+    let output = fixture.run_manifest_path(&manifest).unwrap();
+
+    assert!(!output.status.success());
+    let ops_log = fixture.read_ops_log().unwrap();
+    assert!(!ops_log.contains(missing_archive.to_str().unwrap()));
+    let ops = fixture.ops_entries().unwrap();
+    let total =
+        operation_with_dimensions(&ops, "storage_download", "file_unknown", "other").unwrap();
+    assert_eq!(total["success"], false);
+    for action in [
+        "storage_download_file_body_read",
+        "storage_download_file_extract_outside_body_read",
+    ] {
+        assert!(
+            operation(&ops, action).is_none(),
+            "unexpected {action}: {ops:?}"
+        );
+    }
 }
 
 #[test]
