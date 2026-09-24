@@ -66,7 +66,10 @@ import {
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { morningBriefDeliveryPreviewRoutes } from "../morning-brief-delivery-preview";
 import { morningBriefGenerationPreviewRoutes } from "../morning-brief-generation-preview";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  setHistoricalNativeMorningBriefForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
@@ -172,10 +175,10 @@ async function fixture(
     context.signal,
   );
   const brief = await seedInstalledMorningBrief({ orgId, userId });
-  await updateFeatureSwitchesForUser(
+  await setHistoricalNativeMorningBriefForUser(
     context,
     { orgId, userId },
-    { [FeatureSwitchKey.NativeMorningBrief]: options.feature !== false },
+    options.feature !== false,
   );
   const installation = await store.set(
     seedSlackOrgInstallation$,

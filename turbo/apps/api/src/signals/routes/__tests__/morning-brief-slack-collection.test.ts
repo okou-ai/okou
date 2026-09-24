@@ -37,7 +37,10 @@ import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { userPreferencesRoutes } from "../user-preferences";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  seedRetainedNativeMorningBriefForUser,
+  setHistoricalNativeMorningBriefForUser,
+} from "./helpers/feature-switches";
 import {
   deleteSlackIntegrationFixture$,
   seedSlackOrgConnection$,
@@ -163,10 +166,10 @@ async function fixture(
     agentVisibility: options.agentVisibility,
     agentOwner: options.agentOwner,
   });
-  await updateFeatureSwitchesForUser(
+  await setHistoricalNativeMorningBriefForUser(
     context,
     { orgId, userId },
-    { [FeatureSwitchKey.NativeMorningBrief]: options.feature !== false },
+    options.feature !== false,
   );
   const botToken = `xoxb-test-${randomUUID()}`;
   const installation =
@@ -1695,7 +1698,7 @@ describe("Morning Brief collection completion admission", () => {
 
   /** Enable the Settings surface a member changes their own brief through. */
   async function enableSettingsSurface(f: Fixture): Promise<void> {
-    await updateFeatureSwitchesForUser(
+    await seedRetainedNativeMorningBriefForUser(
       context,
       { orgId: f.orgId, userId: f.userId },
       {
