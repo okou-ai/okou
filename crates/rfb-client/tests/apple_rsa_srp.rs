@@ -534,11 +534,10 @@ async fn exact_mac_rsa_srp_accepts_and_rejects_credentials() {
     stream
         .set_nodelay(true)
         .expect("disable Nagle for RSA1 request");
-    assert!(
-        authenticate_apple_rsa_srp(stream, bad, Instant::now() + Duration::from_secs(30))
-            .await
-            .is_err()
-    );
+    assert!(matches!(
+        authenticate_apple_rsa_srp(stream, bad, Instant::now() + Duration::from_secs(30)).await,
+        Err(Error::AuthenticationFailed)
+    ));
 }
 
 #[tokio::test]
