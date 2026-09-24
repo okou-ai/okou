@@ -82,16 +82,22 @@ export async function withSplitChatEventDatabase(
  */
 export async function installTerminalCallbackFailureFixture(
   runId: string,
-  boundary: "delivery-registration" | "source-acknowledgement",
+  boundary:
+    | "delivery-registration"
+    | "automation-admission"
+    | "source-acknowledgement",
 ): Promise<() => Promise<void>> {
   const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
   const sequenceName = `callback_fault_attempts_${suffix}`;
   const functionName = `fail_callback_once_${suffix}`;
   const triggerName = `callback_fault_${suffix}_${runId.replaceAll("-", "")}`;
-  const predicate =
-    boundary === "delivery-registration"
-      ? sql`NEW.internal_kind = 'slack:chat'`
-      : sql`NEW.internal_kind = 'chat' AND NEW.status = 'delivered'`;
+  const predicate = {
+    "delivery-registration": sql`NEW.internal_kind = 'slack:chat'`,
+    // The admission receipt commits in the same transaction as the queued
+    // automation input, so failing it rolls back the whole admission.
+    "automation-admission": sql`NEW.internal_kind = 'chat' AND NEW.payload -> 'chatRunFinishedAutomationIds' IS NOT NULL`,
+    "source-acknowledgement": sql`NEW.internal_kind = 'chat' AND NEW.status = 'delivered'`,
+  }[boundary];
   await db().execute(sql`CREATE SEQUENCE ${sql.identifier(sequenceName)}`);
   await db().execute(sql`
     CREATE FUNCTION ${sql.identifier(functionName)}()

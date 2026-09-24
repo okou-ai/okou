@@ -1603,12 +1603,12 @@ async function insertAssistantErrorEvent(
     return { outcome: "duplicate" };
   }
 
-  if (inserted.markerInserted) {
-    if (splitWrites) {
-      await touchChatThreadLastMessageAtIndependently(args.db, args.threadId);
-    }
-    await publishAssistantErrorEventSignals(args);
+  // Replays repeat the monotonic split-mode touch and publishes because an
+  // earlier attempt may have failed after its marker committed.
+  if (splitWrites) {
+    await touchChatThreadLastMessageAtIndependently(args.db, args.threadId);
   }
+  await publishAssistantErrorEventSignals(args);
   return {
     displayErrorMessage,
     outcome: inserted.markerInserted ? "written" : "replayed",
@@ -2004,11 +2004,10 @@ async function insertRunLifecycleMarker(
   if (!inserted) {
     return { outcome: "duplicate" };
   }
-  if (!inserted.markerInserted) {
-    // The marker is only one committed projection. Its source callback still
-    // owns completion work until registration and automation admission succeed.
-    return { ...inserted, outcome: "replayed" };
-  }
+  // The marker is only one committed projection. Its source callback still
+  // owns completion work until registration and automation admission succeed,
+  // so a replay repeats the monotonic touch and publishes an earlier attempt
+  // may have lost after the marker committed.
   if (splitWrites) {
     await touchChatThreadLastMessageAtIndependently(
       args.db,
@@ -2026,7 +2025,7 @@ async function insertRunLifecycleMarker(
     orgId: args.orgId,
   });
   return {
-    outcome: "written",
+    outcome: inserted.markerInserted ? "written" : "replayed",
     slackDeliveryCallbackId: inserted.slackDeliveryCallbackId,
     feishuDeliveryCallbackId: inserted.feishuDeliveryCallbackId,
     teamsDeliveryCallbackId: inserted.teamsDeliveryCallbackId,
@@ -4890,8 +4889,16 @@ async function finishTerminalChatCallbackAfterProjection(
   await args.work.retryableSideEffects?.(signal);
   signal.throwIfAborted();
 
+  // Scheduling is the last step, so a replay after an earlier attempt threw
+  // must schedule it. The source callback has no attempt claim: a replay can
+  // also follow an attempt that reached this point but failed its final
+  // acknowledgement, or overlap a concurrent redrive. That residual is
+  // at-least-once for summary, follow-up generation and push.
   const deferredSideEffects = args.work.deferredSideEffects;
-  if (deferredSideEffects && args.work.outcome === "written") {
+  if (
+    deferredSideEffects &&
+    (args.work.outcome === "written" || args.work.outcome === "replayed")
+  ) {
     const backgroundSignal = new AbortController().signal;
     waitUntil(
       runTerminalChatCallbackSideEffects({

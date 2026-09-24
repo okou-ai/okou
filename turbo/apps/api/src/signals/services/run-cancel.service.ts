@@ -18,6 +18,7 @@ import {
   chatCallbackIdForRun,
   dispatchFailedRunCallbacks,
   dispatchRunCallbacks$,
+  undeliveredChatCallbackIdForRun,
 } from "./agent-run-callback.service";
 import { drainChatThreadQueueForRun$ } from "./chat-thread-queue-drain.service";
 import { processOrgUsageEvents$ } from "./credit-usage.service";
@@ -229,6 +230,37 @@ export function shouldDispatchCancelSideEffects(
   );
 }
 
+/**
+ * An undelivered source callback still owns its post-marker work: split-mode
+ * delivery registration and chat-run-finished automation admission commit
+ * after the lifecycle marker. Its replay is idempotent, so the redrive is
+ * restricted to that callback while it remains undelivered. An acknowledged
+ * callback is replayed only while its lifecycle marker is missing, which
+ * covers lost detached legacy processing.
+ */
+async function recoveryChatCallbackRedrive(
+  db: Db,
+  runId: string,
+  chatCallbackId: string | undefined,
+): Promise<
+  { readonly callbackId: string; readonly undeliveredOnly: boolean } | undefined
+> {
+  const undeliveredCallbackId = await undeliveredChatCallbackIdForRun(
+    db,
+    runId,
+  );
+  if (undeliveredCallbackId !== undefined) {
+    return { callbackId: undeliveredCallbackId, undeliveredOnly: true };
+  }
+  if (
+    chatCallbackId === undefined ||
+    (await cancellationLifecyclePublished(db, runId))
+  ) {
+    return undefined;
+  }
+  return { callbackId: chatCallbackId, undeliveredOnly: false };
+}
+
 async function cancellationLifecyclePublished(
   db: Db,
   runId: string,
@@ -338,17 +370,12 @@ export const dispatchCancelSideEffects$ = command(
 
     const chatCallbackId = await chatCallbackIdForRun(db, result.runId);
     signal.throwIfAborted();
-    // Once the callback's durable lifecycle marker exists, replay would only
-    // repeat its pre-marker work. The direct scheduler redrive below is enough.
-    const redriveChatCallbackId =
-      recoveryRedrive &&
-      chatCallbackId !== undefined &&
-      !(await cancellationLifecyclePublished(db, result.runId))
-        ? chatCallbackId
-        : undefined;
+    const redrive = recoveryRedrive
+      ? await recoveryChatCallbackRedrive(db, result.runId, chatCallbackId)
+      : undefined;
     signal.throwIfAborted();
     const callbackResults =
-      recoveryRedrive && redriveChatCallbackId === undefined
+      recoveryRedrive && redrive === undefined
         ? []
         : await tapError(
             set(
@@ -358,8 +385,13 @@ export const dispatchCancelSideEffects$ = command(
                 runId: result.runId,
                 status: "failed",
                 error: "Run cancelled",
-                ...(redriveChatCallbackId !== undefined
-                  ? { redriveChatCallbackId }
+                ...(redrive !== undefined
+                  ? {
+                      redriveChatCallbackId: redrive.callbackId,
+                      ...(redrive.undeliveredOnly
+                        ? { redriveUndeliveredChatCallbackOnly: true as const }
+                        : {}),
+                    }
                   : {}),
               },
               signal,

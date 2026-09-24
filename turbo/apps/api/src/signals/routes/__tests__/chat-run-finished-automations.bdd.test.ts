@@ -417,161 +417,257 @@ async function archiveAutomationThreadForRetry(
   await removeSnapshottedRunEvents(threadId);
 }
 
+type SplitTerminalStatus = "completed" | "failed" | "cancelled";
+
+interface SplitSlackWatchedRun {
+  readonly fixture: ChatAutomationFixture;
+  readonly runId: string;
+  readonly threadId: string;
+  readonly headers: { readonly authorization: string };
+  readonly automationId: string;
+  readonly channelId: string;
+  readonly threadTs: string;
+  readonly nextInputId: string;
+}
+
+/**
+ * Starts a claimed Slack-originated run whose thread is watched for `status`,
+ * with a queued follow-up input and a registered push subscription.
+ */
+async function startSplitSlackWatchedRun(
+  status: SplitTerminalStatus,
+): Promise<SplitSlackWatchedRun> {
+  const fixture = await setupChatAutomationFixture();
+  integrations.configureSlackAppMocks();
+  const slackUserId = `U_${randomUUID().replaceAll("-", "")}`;
+  const { teamId, botUserId } = await integrations.installSlackWorkspace(
+    fixture.actor,
+    { installerSlackUserId: slackUserId },
+  );
+  const channelId = `C_${randomUUID().replaceAll("-", "")}`;
+  const threadTs = "3000.000100";
+  await integrations.postSlackEvent(teamId, {
+    type: "app_mention",
+    user: slackUserId,
+    text: `<@${botUserId}> exercise ${status} retry`,
+    channel: channelId,
+    ts: threadTs,
+  });
+  await api.heartbeatRunner(fixture.runnerGroup);
+  let watchedRunId: string | undefined;
+  await expect
+    .poll(async () => {
+      watchedRunId = (await api.pollRunner(fixture.runnerGroup)).body.job
+        ?.runId;
+      return watchedRunId;
+    })
+    .toBeTruthy();
+  if (!watchedRunId) {
+    throw new Error("Expected the Slack run to be admitted");
+  }
+  const runId = watchedRunId;
+  const claim = await api.claimRunnerJob(runId);
+  const headers = { authorization: `Bearer ${claim.sandboxToken}` };
+  const threadId = claim.platformEnvironment.OKOU_CHAT_THREAD_ID;
+  if (!threadId) {
+    throw new Error("Expected the runner's canonical chat thread identity");
+  }
+  const automationId = await createChatRunFinishedAutomation(fixture, {
+    chatThreadId: threadId,
+    runStatuses: [status],
+  });
+  const watchedThread = await chat.readThreadMetadata(fixture.actor, threadId);
+  const nextInputId = randomUUID();
+  const queued = await chat.requestSendEvent(
+    fixture.actor,
+    {
+      agentId: watchedThread.agentId,
+      threadId,
+      prompt: "Continue after the retried callback",
+      clientEventId: nextInputId,
+    },
+    [201],
+  );
+  if (queued.status !== 201) {
+    throw new Error("Expected the follow-up input to be accepted");
+  }
+  expect(queued.body.runId).toBeNull();
+  await chatCallbacks.registerPushSubscription(fixture.actor);
+  chatCallbacks.enableVapid();
+  return {
+    fixture,
+    runId,
+    threadId,
+    headers,
+    automationId,
+    channelId,
+    threadTs,
+    nextInputId,
+  };
+}
+
+async function splitTerminalCompletion(
+  run: SplitSlackWatchedRun,
+  status: SplitTerminalStatus,
+) {
+  if (status !== "completed") {
+    return {
+      runId: run.runId,
+      exitCode: 1,
+      error:
+        status === "cancelled" ? "Run cancelled" : "Synthetic runner failure",
+    };
+  }
+  await webhooks.requestAgentEvents(
+    {
+      runId: run.runId,
+      events: [
+        {
+          type: "assistant",
+          sequenceNumber: 0,
+          message: {
+            id: `msg_${run.runId}`,
+            content: [{ type: "text", text: "The watched task is complete." }],
+          },
+        },
+      ],
+    },
+    run.headers,
+    [200],
+  );
+  return {
+    runId: run.runId,
+    exitCode: 0,
+    lastEventSequence: 0,
+    checkpoint: {
+      cliAgentType: "claude-code" as const,
+      cliAgentSessionId: `bdd-cli-${run.runId}`,
+      cliAgentSessionHistoryHash: createHash("sha256")
+        .update(`bdd chat session history ${run.runId}`)
+        .digest("hex"),
+    },
+  };
+}
+
+/** Runs `work` while one forced persistence failure is armed for the run. */
+async function withTerminalCallbackFault(
+  runId: string,
+  boundary: Parameters<typeof installTerminalCallbackFailureFixture>[1],
+  work: () => Promise<void>,
+): Promise<void> {
+  const removeFault = await installTerminalCallbackFailureFixture(
+    runId,
+    boundary,
+  );
+  const attempt = await settleIncludingAbort(work());
+  const cleanup = await settleIncludingAbort(removeFault());
+  if (!attempt.ok) {
+    throw attempt.error;
+  }
+  if (!cleanup.ok) {
+    throw cleanup.error;
+  }
+}
+
+async function lifecycleMarkerCount(
+  run: SplitSlackWatchedRun,
+  status: SplitTerminalStatus,
+): Promise<number> {
+  const events = await chat.listThreadEvents(run.fixture.actor, run.threadId);
+  return events.events.filter((event) => {
+    return event.eventType === `run.${status}` && event.runId === run.runId;
+  }).length;
+}
+
+function slackThreadDeliveryCount(run: SplitSlackWatchedRun): number {
+  return context.mocks.slack.chat.postMessage.mock.calls.filter(([message]) => {
+    const delivered = z
+      .object({ channel: z.string(), thread_ts: z.string().optional() })
+      .parse(message);
+    return (
+      delivered.channel === run.channelId &&
+      delivered.thread_ts === run.threadTs
+    );
+  }).length;
+}
+
+/** Terminal push notifications are post-marker deferred completion work. */
+function threadPushNotificationCount(run: SplitSlackWatchedRun): number {
+  return context.mocks.webpush.sendNotification.mock.calls.filter((call) => {
+    const payload = z
+      .object({ url: z.url() })
+      .parse(JSON.parse(z.string().parse(call[1])));
+    return new URL(payload.url).pathname === `/chats/${run.threadId}`;
+  }).length;
+}
+
+async function automationInputsForSourceRun(run: SplitSlackWatchedRun) {
+  const automation = await accept(
+    automationsClient().get({
+      headers: authHeaders(),
+      params: { id: run.automationId },
+    }),
+    [200],
+  );
+  const automationThreadId = automation.body.chatThreadId;
+  if (!automationThreadId) {
+    throw new Error("Expected the admitted automation thread");
+  }
+  const automationEvents = await chat.listThreadEvents(
+    run.fixture.actor,
+    automationThreadId,
+  );
+  return {
+    automationThreadId,
+    events: automationEvents.events,
+    inputs: automationEvents.events.filter((event) => {
+      return (
+        event.eventType === "input.prompt" &&
+        event.userMessage.parts.some((part) => {
+          return (
+            part.type === "source" &&
+            part.kind === "agent" &&
+            part.runId === run.runId
+          );
+        })
+      );
+    }),
+  };
+}
+
 describe("chat-run-finished workflow automations", () => {
   it.each(["completed", "failed", "cancelled"] as const)(
     "retries a split %s callback through delivery and watched automation admission once",
     { timeout: 120_000 },
     async (status) => {
       await withSplitChatEventDatabase(async () => {
-        const fixture = await setupChatAutomationFixture();
-        integrations.configureSlackAppMocks();
-        const slackUserId = `U_${randomUUID().replaceAll("-", "")}`;
-        const { teamId, botUserId } = await integrations.installSlackWorkspace(
-          fixture.actor,
-          { installerSlackUserId: slackUserId },
-        );
-        const channelId = `C_${randomUUID().replaceAll("-", "")}`;
-        const threadTs = "3000.000100";
-        await integrations.postSlackEvent(teamId, {
-          type: "app_mention",
-          user: slackUserId,
-          text: `<@${botUserId}> exercise ${status} retry`,
-          channel: channelId,
-          ts: threadTs,
-        });
-        await api.heartbeatRunner(fixture.runnerGroup);
-        let watchedRunId: string | undefined;
-        await expect
-          .poll(async () => {
-            watchedRunId = (await api.pollRunner(fixture.runnerGroup)).body.job
-              ?.runId;
-            return watchedRunId;
-          })
-          .toBeTruthy();
-        if (!watchedRunId) {
-          throw new Error("Expected the Slack run to be admitted");
-        }
-        const runId = watchedRunId;
-        const claim = await api.claimRunnerJob(runId);
-        const headers = { authorization: `Bearer ${claim.sandboxToken}` };
-        const threadId = claim.platformEnvironment.OKOU_CHAT_THREAD_ID;
-        if (!threadId) {
-          throw new Error(
-            "Expected the runner's canonical chat thread identity",
-          );
-        }
-        const automationId = await createChatRunFinishedAutomation(fixture, {
-          chatThreadId: threadId,
-          runStatuses: [status],
-        });
-        const watchedThread = await chat.readThreadMetadata(
-          fixture.actor,
-          threadId,
-        );
-        const nextInputId = randomUUID();
-        const queued = await chat.requestSendEvent(
-          fixture.actor,
-          {
-            agentId: watchedThread.agentId,
-            threadId,
-            prompt: "Continue after the retried callback",
-            clientEventId: nextInputId,
-          },
-          [201],
-        );
-        if (queued.status !== 201) {
-          throw new Error("Expected the follow-up input to be accepted");
-        }
-        expect(queued.body.runId).toBeNull();
-        if (status === "completed") {
-          await webhooks.requestAgentEvents(
-            {
-              runId,
-              events: [
-                {
-                  type: "assistant",
-                  sequenceNumber: 0,
-                  message: {
-                    id: `msg_${runId}`,
-                    content: [
-                      { type: "text", text: "The watched task is complete." },
-                    ],
-                  },
-                },
-              ],
-            },
-            headers,
-            [200],
-          );
-        }
-        const completion =
-          status === "completed"
-            ? {
-                runId,
-                exitCode: 0,
-                lastEventSequence: 0,
-                checkpoint: {
-                  cliAgentType: "claude-code" as const,
-                  cliAgentSessionId: `bdd-cli-${runId}`,
-                  cliAgentSessionHistoryHash: createHash("sha256")
-                    .update(`bdd chat session history ${runId}`)
-                    .digest("hex"),
-                },
-              }
-            : {
-                runId,
-                exitCode: 1,
-                error:
-                  status === "cancelled"
-                    ? "Run cancelled"
-                    : "Synthetic runner failure",
-              };
-        const removeRegistrationFault =
-          await installTerminalCallbackFailureFixture(
-            runId,
-            "delivery-registration",
-          );
-        const registrationAttempt = await settleIncludingAbort(
-          (async () => {
+        const run = await startSplitSlackWatchedRun(status);
+        const { fixture, runId, threadId, headers, automationId } = run;
+        const completion = await splitTerminalCompletion(run, status);
+        await withTerminalCallbackFault(
+          runId,
+          "delivery-registration",
+          async () => {
             const failedCompletion = await webhooks.requestAgentComplete(
               completion,
               headers,
               [200, 500],
             );
             expect(failedCompletion.status).toBe(500);
-            const afterFailure = await chat.listThreadEvents(
-              fixture.actor,
-              threadId,
-            );
-            expect(
-              afterFailure.events.filter((event) => {
-                return (
-                  event.eventType === `run.${status}` && event.runId === runId
-                );
-              }),
-            ).toHaveLength(1);
+            await expect(lifecycleMarkerCount(run, status)).resolves.toBe(1);
             await expect(automationLastRunAt(automationId)).resolves.toBeNull();
-          })(),
+            await flushWaitUntilForTest();
+            expect(threadPushNotificationCount(run)).toBe(0);
+          },
         );
-        const registrationCleanup = await settleIncludingAbort(
-          removeRegistrationFault(),
-        );
-        if (!registrationAttempt.ok) {
-          throw registrationAttempt.error;
-        }
-        if (!registrationCleanup.ok) {
-          throw registrationCleanup.error;
-        }
 
-        // The next attempt admits the automation but loses its final callback
-        // acknowledgement. Retrying that same source must not admit a second run.
-        const removeAcknowledgementFault =
-          await installTerminalCallbackFailureFixture(
-            runId,
-            "source-acknowledgement",
-          );
-        const acknowledgementAttempt = await settleIncludingAbort(
-          (async () => {
+        // The next attempt replays the committed marker, admits the automation
+        // and finishes its deferred completion work, but loses its final
+        // callback acknowledgement. Retrying that source must not admit again.
+        await withTerminalCallbackFault(
+          runId,
+          "source-acknowledgement",
+          async () => {
             const failedAcknowledgement = await webhooks.requestAgentComplete(
               completion,
               headers,
@@ -579,58 +675,25 @@ describe("chat-run-finished workflow automations", () => {
             );
             expect(failedAcknowledgement.status).toBe(500);
             await expectAutomationFired(automationId);
-          })(),
+            await flushWaitUntilForTest();
+            expect(threadPushNotificationCount(run)).toBe(1);
+          },
         );
-        const acknowledgementCleanup = await settleIncludingAbort(
-          removeAcknowledgementFault(),
-        );
-        if (!acknowledgementAttempt.ok) {
-          throw acknowledgementAttempt.error;
-        }
-        if (!acknowledgementCleanup.ok) {
-          throw acknowledgementCleanup.error;
-        }
-        const admittedAutomation = await accept(
-          automationsClient().get({
-            headers: authHeaders(),
-            params: { id: automationId },
-          }),
-          [200],
-        );
-        const automationThreadId = admittedAutomation.body.chatThreadId;
-        if (!automationThreadId) {
-          throw new Error("Expected the admitted automation thread");
-        }
-        const automationEvents = await chat.listThreadEvents(
-          fixture.actor,
-          automationThreadId,
-        );
-        const automationInputs = automationEvents.events.filter((event) => {
-          return (
-            event.eventType === "input.prompt" &&
-            event.userMessage.parts.some((part) => {
-              return (
-                part.type === "source" &&
-                part.kind === "agent" &&
-                part.runId === runId
-              );
-            })
-          );
-        });
-        expect(automationInputs).toHaveLength(1);
-        const [automationInput] = automationInputs;
-        const cursor = automationEvents.events.at(-1);
+        const admitted = await automationInputsForSourceRun(run);
+        expect(admitted.inputs).toHaveLength(1);
+        const [automationInput] = admitted.inputs;
+        const cursor = admitted.events.at(-1);
         if (!automationInput?.runId || !cursor) {
           throw new Error(
             "Expected the triggered automation to own a run and cursor",
           );
         }
-        await archiveAutomationThreadForRetry(automationThreadId);
+        await archiveAutomationThreadForRetry(admitted.automationThreadId);
         await webhooks.requestAgentComplete(completion, headers, [200]);
         await webhooks.requestAgentComplete(completion, headers, [200]);
         const afterRetry = await chat.listThreadEvents(
           fixture.actor,
-          automationThreadId,
+          admitted.automationThreadId,
           {
             sinceSeqId: cursor.seqId,
             sinceEventId: cursor.id,
@@ -654,38 +717,108 @@ describe("chat-run-finished workflow automations", () => {
               events.events.find((event) => {
                 return (
                   event.eventType === "input.prompt" &&
-                  event.revokesEventId === nextInputId
+                  event.revokesEventId === run.nextInputId
                 );
               })?.runId ?? undefined;
             return nextRunId;
           })
           .toBeTruthy();
         expect(nextRunId).not.toBe(runId);
-        const finalEvents = await chat.listThreadEvents(
-          fixture.actor,
-          threadId,
+        await expect(lifecycleMarkerCount(run, status)).resolves.toBe(1);
+        expect(slackThreadDeliveryCount(run)).toBe(1);
+      });
+    },
+  );
+
+  it(
+    "finishes deferred completion work when a split callback retries failed automation admission",
+    { timeout: 120_000 },
+    async () => {
+      await withSplitChatEventDatabase(async () => {
+        const run = await startSplitSlackWatchedRun("completed");
+        const completion = await splitTerminalCompletion(run, "completed");
+        await withTerminalCallbackFault(
+          run.runId,
+          "automation-admission",
+          async () => {
+            const failedAdmission = await webhooks.requestAgentComplete(
+              completion,
+              run.headers,
+              [200, 500],
+            );
+            expect(failedAdmission.status).toBe(500);
+            await flushWaitUntilForTest();
+            await expect(lifecycleMarkerCount(run, "completed")).resolves.toBe(
+              1,
+            );
+            await expect(
+              automationLastRunAt(run.automationId),
+            ).resolves.toBeNull();
+            expect(slackThreadDeliveryCount(run)).toBe(1);
+            expect(threadPushNotificationCount(run)).toBe(0);
+          },
         );
-        expect(
-          finalEvents.events.filter((event) => {
-            return event.eventType === `run.${status}` && event.runId === runId;
-          }),
-        ).toHaveLength(1);
-        expect(
-          context.mocks.slack.chat.postMessage.mock.calls.filter(
-            ([message]) => {
-              const delivered = z
-                .object({
-                  channel: z.string(),
-                  thread_ts: z.string().optional(),
-                })
-                .parse(message);
-              return (
-                delivered.channel === channelId &&
-                delivered.thread_ts === threadTs
-              );
-            },
-          ),
-        ).toHaveLength(1);
+
+        await webhooks.requestAgentComplete(completion, run.headers, [200]);
+        await expectAutomationFired(run.automationId);
+        await flushWaitUntilForTest();
+        expect(threadPushNotificationCount(run)).toBe(1);
+
+        await webhooks.requestAgentComplete(completion, run.headers, [200]);
+        await flushWaitUntilForTest();
+        await expect(automationInputsForSourceRun(run)).resolves.toMatchObject({
+          inputs: [expect.anything()],
+        });
+        await expect(lifecycleMarkerCount(run, "completed")).resolves.toBe(1);
+        expect(slackThreadDeliveryCount(run)).toBe(1);
+        expect(threadPushNotificationCount(run)).toBe(1);
+      });
+    },
+  );
+
+  it(
+    "redrives an unfinished split cancellation callback from the cancel route once",
+    { timeout: 120_000 },
+    async () => {
+      await withSplitChatEventDatabase(async () => {
+        const run = await startSplitSlackWatchedRun("cancelled");
+        await withTerminalCallbackFault(
+          run.runId,
+          "delivery-registration",
+          async () => {
+            await api.requestCancelRun(run.fixture.actor, run.runId, [200]);
+            await flushWaitUntilForTest();
+            await expect(lifecycleMarkerCount(run, "cancelled")).resolves.toBe(
+              1,
+            );
+            await expect(
+              automationLastRunAt(run.automationId),
+            ).resolves.toBeNull();
+            expect(slackThreadDeliveryCount(run)).toBe(0);
+            expect(threadPushNotificationCount(run)).toBe(0);
+          },
+        );
+        const cancelledThread = await chat.readThread(
+          run.fixture.actor,
+          run.threadId,
+        );
+        expect(cancelledThread.cancellationRecoveryPending).toBeTruthy();
+
+        // Repeating the cancel request is the recovery redrive owner. The
+        // marker already exists, but its source callback is still undelivered.
+        await api.requestCancelRun(run.fixture.actor, run.runId, [200]);
+        await flushWaitUntilForTest();
+        await expectAutomationFired(run.automationId);
+        expect(slackThreadDeliveryCount(run)).toBe(1);
+        expect(threadPushNotificationCount(run)).toBe(1);
+
+        await api.requestCancelRun(run.fixture.actor, run.runId, [200]);
+        await flushWaitUntilForTest();
+        const admitted = await automationInputsForSourceRun(run);
+        expect(admitted.inputs).toHaveLength(1);
+        await expect(lifecycleMarkerCount(run, "cancelled")).resolves.toBe(1);
+        expect(slackThreadDeliveryCount(run)).toBe(1);
+        expect(threadPushNotificationCount(run)).toBe(1);
       });
     },
   );
