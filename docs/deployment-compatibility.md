@@ -1,5 +1,20 @@
 # Deployment Compatibility
 
+## Runner claim first-body-chunk timing (2026-09-24)
+
+The Runner records two optional, successful-claim-only operation durations: time after
+response headers until the first non-empty application-visible body chunk, and
+from that chunk until the full body is collected. Their sum is the existing
+`runner_claim_response_body_read` duration; they do not represent a server
+flush or physical wire-byte measurement. The claim request and response,
+including context and auth, remain unchanged. An older Runner emits neither
+operation; the new Runner uses the existing generic operation stream, which an
+older API accepts without a claim-contract change. Missing observations during
+a staggered rollout are not zero-valued timings. Compare deployed cohorts by
+Runner/API version, size, host and time before interpreting a shifted total
+read distribution, because the new observation reads an initial chunk before
+collecting the rest.
+
 ## Morning Brief settings status and collection account retirement (2026-09-24)
 
 `GET`/`PUT /api/preferences/morning-brief` no longer return `nextRunAt`,
