@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
 
 import {
   cronExecuteMorningBriefsContract,
@@ -76,6 +76,8 @@ import {
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
+
+const TEST_WORKER_SECRET = randomBytes(32).toString("hex");
 
 /**
  * The native Morning Brief cron, exercised through its registered route.
@@ -167,10 +169,7 @@ function signedWorkerTask(owner: Fixture, scheduledFor: Date) {
     scheduledFor: scheduledFor.toISOString(),
   };
   const timestamp = String(now());
-  const digest = createHmac(
-    "sha256",
-    "native-worker-secret-must-be-at-least-32-characters",
-  )
+  const digest = createHmac("sha256", TEST_WORKER_SECRET)
     .update(
       `POST\n/api/internal/morning-brief-worker\n${timestamp}\n${JSON.stringify(body)}`,
     )
@@ -380,10 +379,7 @@ async function tickUntilNative(f: Fixture): Promise<void> {
 describe("native Morning Brief cron", () => {
   it("rejects unsigned worker requests without reading Morning Brief state", async () => {
     mockEnv("MORNING_BRIEF_HTTP_FANOUT", "true");
-    mockEnv(
-      "MORNING_BRIEF_WORKER_SECRET",
-      "native-worker-secret-must-be-at-least-32-characters",
-    );
+    mockEnv("MORNING_BRIEF_WORKER_SECRET", TEST_WORKER_SECRET);
     const body = {
       orgId: `org_${randomUUID()}`,
       userId: `user_${randomUUID()}`,
@@ -403,10 +399,7 @@ describe("native Morning Brief cron", () => {
       [401],
     );
     const expired = String(now() - 120_000);
-    const signed = createHmac(
-      "sha256",
-      "native-worker-secret-must-be-at-least-32-characters",
-    )
+    const signed = createHmac("sha256", TEST_WORKER_SECRET)
       .update(
         `POST\n/api/internal/morning-brief-worker\n${expired}\n${JSON.stringify(body)}`,
       )
@@ -430,10 +423,7 @@ describe("native Morning Brief cron", () => {
     await tickUntilNative(f);
     const due = await makeNativeOccurrenceDue(f);
     mockEnv("MORNING_BRIEF_HTTP_FANOUT", "true");
-    mockEnv(
-      "MORNING_BRIEF_WORKER_SECRET",
-      "native-worker-secret-must-be-at-least-32-characters",
-    );
+    mockEnv("MORNING_BRIEF_WORKER_SECRET", TEST_WORKER_SECRET);
 
     let dispatch:
       | {
@@ -535,10 +525,7 @@ describe("native Morning Brief cron", () => {
     const firstAnchor = await makeNativeOccurrenceDue(first);
     const secondAnchor = await makeNativeOccurrenceDue(second);
     mockEnv("MORNING_BRIEF_HTTP_FANOUT", "true");
-    mockEnv(
-      "MORNING_BRIEF_WORKER_SECRET",
-      "native-worker-secret-must-be-at-least-32-characters",
-    );
+    mockEnv("MORNING_BRIEF_WORKER_SECRET", TEST_WORKER_SECRET);
 
     const [firstAccepted, secondAccepted] = await Promise.all([
       accept(
