@@ -1,4 +1,7 @@
-import type { ChatSlackMessageFile } from "@okouai/db/jsonb-contracts/chat-slack-context";
+import type {
+  ChatSlackMessageAssets,
+  ChatSlackMessageFile,
+} from "@okouai/db/jsonb-contracts/chat-slack-context";
 import { CONVERSATION_GUIDANCE } from "./conversation-guidance";
 
 import {
@@ -233,13 +236,18 @@ function formatAttachmentImage(
 export function resolveUserMentions(
   text: string,
   userInfoMap?: Map<string, SlackUserInfo>,
+  includeSlackUserId = true,
 ): string {
   if (!userInfoMap || userInfoMap.size === 0) {
     return text;
   }
   return text.replace(/<@(\w+)>/g, (_match, userId: string) => {
     const info = userInfoMap.get(userId);
-    return info?.name ? `@${info.name} (${userId})` : `<@${userId}>`;
+    return info?.name
+      ? includeSlackUserId
+        ? `@${info.name} (${userId})`
+        : `@${info.name}`
+      : `<@${userId}>`;
   });
 }
 
@@ -353,6 +361,43 @@ function formatContextForAgent(
 
 function formatCurrentMessageFiles(files: readonly SlackFile[]): string {
   return files.map(formatFileInfo).join("\n");
+}
+
+function canonicalSlackFilesPrompt(
+  files: readonly SlackFile[] | undefined,
+  assets: ChatSlackMessageAssets,
+): string {
+  if (!files || files.length === 0) {
+    return "";
+  }
+  const assetBySlackFileId = new Map(
+    assets.map((asset) => {
+      return [asset.slackFileId, asset] as const;
+    }),
+  );
+  return files
+    .flatMap((file) => {
+      const asset =
+        file.id === undefined ? undefined : assetBySlackFileId.get(file.id);
+      if (asset?.status === "ready") {
+        return [
+          `[Web file] ${asset.filename} (${asset.contentType})\n   [ID] ${asset.assetId}`,
+        ];
+      }
+      return [formatCurrentMessageFiles([file])];
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function canonicalSlackAgentPrompt(
+  messagePrompt: string,
+  files: readonly SlackFile[] | undefined,
+  assets: ChatSlackMessageAssets,
+): string {
+  return [messagePrompt, canonicalSlackFilesPrompt(files, assets)]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export function buildSlackSystemPrompt(args: {
@@ -533,6 +578,7 @@ export async function enrichMessageContent(opts: {
   readonly userInfoResolver?: SlackUserInfoResolver;
 }): Promise<{
   readonly prompt: string;
+  readonly displayContent: string;
   readonly userInfoExtras: {
     readonly slackDisplayName?: string;
     readonly slackUserId?: string;
@@ -540,8 +586,19 @@ export async function enrichMessageContent(opts: {
   readonly mentionDisplayNames: Readonly<Record<string, string>>;
 }> {
   let prompt = opts.messageContent;
+  let displayContent = opts.messageContent;
   if (opts.files && opts.files.length > 0) {
     prompt = `${prompt}\n\n${formatCurrentMessageFiles(opts.files)}`;
+    displayContent = [
+      displayContent,
+      ...opts.files.map((file) => {
+        const name = file.name || file.title || "Untitled";
+        const type = file.pretty_type || file.mimetype || "file";
+        return `[Slack file] ${name} (${type})`;
+      }),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
   }
 
   const mentionedIds = extractMentionedUserIds([{ text: opts.messageContent }]);
@@ -550,10 +607,12 @@ export async function enrichMessageContent(opts: {
     opts.userInfoResolver,
   );
   prompt = resolveUserMentions(prompt, userInfoMap);
+  displayContent = resolveUserMentions(displayContent, userInfoMap, false);
 
   const currentUser = userInfoMap.get(opts.userId);
   return {
     prompt,
+    displayContent,
     userInfoExtras: currentUser
       ? {
           slackDisplayName: currentUser.name,

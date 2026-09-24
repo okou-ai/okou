@@ -242,7 +242,7 @@ async function attemptWorkflowQueueAdmission(
   } as const;
   const prepared = prepareChatEvent(event);
   if (splitWrites) {
-    await persistPreparedChatEventContext(db, prepared, true);
+    await persistPreparedChatEventContext(db, prepared);
   }
   return await db.transaction(async (tx) => {
     await chatEventQueueAdmissionLock(tx, args.chatThreadId);

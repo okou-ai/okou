@@ -2360,7 +2360,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   });
 
   it(
-    "delivers a first split Telegram topic input after optional context storage fails",
+    "rejects a split Telegram topic input whose context cannot be stored and accepts its redelivery",
     { timeout: 120_000 },
     async () => {
       await withSplitChatEventDatabase(async () => {
@@ -2392,153 +2392,104 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
             },
           ),
         );
+        const update = {
+          update_id: 901,
+          message: {
+            message_id: 9001,
+            message_thread_id: messageThreadId,
+            chat: { id: chatId, type: "supergroup" },
+            from: {
+              id: Number(fixture.telegramUserId),
+              first_name: "Alice",
+            },
+            caption: firstPrompt,
+            caption_entities: [mentionEntity(botUsername)],
+            document: {
+              file_id: "split-telegram-file",
+              file_unique_id: "split-telegram-unique-file",
+              file_name: "topic-note.txt",
+              mime_type: "text/plain",
+            },
+          },
+        };
         const removeFault = await installTelegramContextFailureFixture(chatId);
-        const result = await settleIncludingAbort(
+        const rejected = await settleIncludingAbort(
           (async () => {
             expect(
               (
                 await postWebhook({
                   telegramBotId: fixture.telegramBotId,
                   secret: fixture.webhookSecret,
-                  body: {
-                    update_id: 901,
-                    message: {
-                      message_id: 9001,
-                      message_thread_id: messageThreadId,
-                      chat: { id: chatId, type: "supergroup" },
-                      from: {
-                        id: Number(fixture.telegramUserId),
-                        first_name: "Alice",
-                      },
-                      caption: firstPrompt,
-                      caption_entities: [mentionEntity(botUsername)],
-                      document: {
-                        file_id: "split-telegram-file",
-                        file_unique_id: "split-telegram-unique-file",
-                        file_name: "topic-note.txt",
-                        mime_type: "text/plain",
-                      },
-                    },
-                  },
+                  body: update,
                 })
               ).status,
             ).toBe(200);
             await flushWaitUntilForTest();
-            const firstState = await telegramPostRunState(fixture);
-            if (!firstState.run) {
-              throw new Error(
-                "Expected the first Telegram topic run despite context failure",
-              );
-            }
-            const claim = await claimTelegramRun(
-              firstState.run.id,
-              runnerGroup,
-            );
-            expect(claim.prompt).toContain(firstPrompt);
-            expect(claim.prompt).toContain(
-              "[Web file] topic-note.txt (text/plain)",
-            );
-            const fileId = claim.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
-            if (!fileId) {
-              throw new Error(
-                "Expected the original canonical Telegram topic file",
-              );
-            }
-            await expectIntegrationInputPreview(context, {
-              actor,
-              fileId,
-              bytes,
-              contentType: "text/plain",
-              uploads,
-              okouToken: claim.platformEnvironment.OKOU_TOKEN,
-            });
-            const threadId = claim.platformEnvironment.OKOU_CHAT_THREAD_ID;
-            if (!threadId) {
-              throw new Error("Expected the original Telegram topic thread");
-            }
-            await chatApi.requestReadThread(
-              { ...actor, userId: `other-topic-user-${randomUUID()}` },
-              threadId,
-              [404],
-            );
-            const sessionId = await completeCanonicalChatRun({
-              runId: firstState.run.id,
-              sandboxToken: claim.sandboxToken,
-            });
-            expect(telegramMocks.sentMessages).toHaveLength(1);
-            expect(telegramMocks.sentMessages[0]).toMatchObject({
-              chat_id: String(chatId),
-              message_thread_id: messageThreadId,
-              reply_parameters: { message_id: 9001 },
-            });
-
-            const followUpPrompt =
-              "continue the same topic after context failure";
-            expect(
-              (
-                await postWebhook({
-                  telegramBotId: fixture.telegramBotId,
-                  secret: fixture.webhookSecret,
-                  body: {
-                    update_id: 902,
-                    message: {
-                      message_id: 9002,
-                      message_thread_id: messageThreadId,
-                      chat: { id: chatId, type: "supergroup" },
-                      from: {
-                        id: Number(fixture.telegramUserId),
-                        first_name: "Alice",
-                      },
-                      text: followUpPrompt,
-                      reply_to_message: {
-                        message_id: 700,
-                        chat: { id: chatId, type: "supergroup" },
-                        from: {
-                          id: Number(fixture.telegramBotId),
-                          is_bot: true,
-                        },
-                        text: "Task completed successfully.",
-                      },
-                    },
-                  },
-                })
-              ).status,
-            ).toBe(200);
-            await flushWaitUntilForTest();
-            const followUpState = await telegramPostRunState(fixture);
-            if (!followUpState.run) {
-              throw new Error(
-                "Expected the same Telegram topic reply-chain run",
-              );
-            }
-            const followUp = await claimTelegramRun(
-              followUpState.run.id,
-              runnerGroup,
-            );
-            expect(followUp.prompt).toContain(followUpPrompt);
-            expect(followUp.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(
-              threadId,
-            );
-            expect(followUp.resumeSession?.sessionId).toBe(sessionId);
-            await completeCanonicalChatRun({
-              runId: followUpState.run.id,
-              sandboxToken: followUp.sandboxToken,
-            });
-            expect(telegramMocks.sentMessages).toHaveLength(2);
-            expect(telegramMocks.sentMessages[1]).toMatchObject({
-              chat_id: String(chatId),
-              message_thread_id: messageThreadId,
-              reply_parameters: { message_id: 9002 },
-            });
           })(),
         );
         const removed = await settleIncludingAbort(removeFault());
-        if (!result.ok) {
-          throw result.error;
+        if (!rejected.ok) {
+          throw rejected.error;
         }
         if (!removed.ok) {
           throw removed.error;
         }
+        expect((await telegramPostRunState(fixture)).run).toBeNull();
+        expect(
+          (await runsApi.listAgentRuns(actor, { limit: 20 })).runs,
+        ).toStrictEqual([]);
+        expect(telegramMocks.sentMessages).toHaveLength(0);
+
+        expect(
+          (
+            await postWebhook({
+              telegramBotId: fixture.telegramBotId,
+              secret: fixture.webhookSecret,
+              body: update,
+            })
+          ).status,
+        ).toBe(200);
+        await flushWaitUntilForTest();
+        const acceptedState = await telegramPostRunState(fixture);
+        if (!acceptedState.run) {
+          throw new Error("Expected the redelivered Telegram topic run");
+        }
+        const claim = await claimTelegramRun(acceptedState.run.id, runnerGroup);
+        expect(claim.prompt).toContain(firstPrompt);
+        expect(claim.prompt).toContain("topic-note.txt");
+        const fileId = claim.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
+        if (!fileId) {
+          throw new Error(
+            "Expected the original canonical Telegram topic file",
+          );
+        }
+        await expectIntegrationInputPreview(context, {
+          actor,
+          fileId,
+          bytes,
+          contentType: "text/plain",
+          uploads,
+          okouToken: claim.platformEnvironment.OKOU_TOKEN,
+        });
+        expectExactSystemPromptFragment(
+          acceptedState.run.appendSystemPrompt,
+          [
+            `Chat ID: ${chatId}`,
+            "Chat type: supergroup",
+            "Message ID: 9001",
+            `Message thread ID: ${messageThreadId}`,
+          ].join("\n"),
+        );
+        await completeCanonicalChatRun({
+          runId: acceptedState.run.id,
+          sandboxToken: claim.sandboxToken,
+        });
+        expect(telegramMocks.sentMessages).toHaveLength(1);
+        expect(telegramMocks.sentMessages[0]).toMatchObject({
+          chat_id: String(chatId),
+          message_thread_id: messageThreadId,
+          reply_parameters: { message_id: 9001 },
+        });
       });
     },
   );
@@ -3494,10 +3445,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         throw new Error("Expected Telegram retry run");
       }
       const claim = await claimTelegramRun(run.id, runnerGroup);
-      expect(claim.prompt).toContain(
-        `[Web file] retry.pdf (application/pdf)\n   [ID] ${fileId}`,
-      );
-      expect(claim.prompt).toContain("[FILE_ID] retry-file");
+      expect(claim.prompt).not.toContain("[Web file]");
       await postFile(5802);
       await expect(
         listIntegrationInputFileParts(context, actor),
@@ -3525,10 +3473,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           okouToken: claim.platformEnvironment.OKOU_TOKEN,
         });
       } else {
-        expect(delivery.prompt).toContain(
-          `[Web file] retry.pdf (application/pdf)\n   [ID] ${fileId}`,
-        );
-        expect(delivery.prompt).toContain("[FILE_ID] retry-file");
+        expect(delivery.prompt).not.toContain("[Web file]");
       }
     },
   );
@@ -3594,18 +3539,16 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       const claim = await claimTelegramRun(run.id, runnerGroup);
       expect(claim.prompt).toContain("[Telegram file]");
       expect(claim.prompt).toContain("[FILE_ID] oversized-file");
-      expect(claim.prompt).toContain("inspect this large report");
+      expect(claim.prompt).not.toContain("[Web file]");
       expect(uploads).toHaveLength(0);
-      const files = await listIntegrationInputFileParts(context, actor);
-      expect(files).toStrictEqual([
+      await expect(
+        listIntegrationInputFileParts(context, actor),
+      ).resolves.toStrictEqual([
         expect.objectContaining({
           fileId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
           filenameSnapshot: "large.pdf",
         }),
       ]);
-      expect(claim.prompt).toContain(
-        `[Web file] large.pdf (application/pdf)\n   [ID] ${files[0]?.fileId}`,
-      );
       if (failure === "declared size") {
         expect(context.mocks.telegram.getFile).not.toHaveBeenCalled();
       }

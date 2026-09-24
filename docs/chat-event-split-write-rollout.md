@@ -30,12 +30,13 @@ rows, preserving the pre-release Web writer's thread-before-sequence order.
 After activation:
 
 - Event payload preparation and context persistence occur before the append.
-  Original text and file references come from canonical `userMessage`. Missing
-  optional history, display names, and supplemental prompt emit structured
-  warnings without prompt content. Scope, installations/connections, required
-  destination data, and automation input/identity remain mandatory. Telegram
-  topics and AgentPhone groups are persisted on existing routes; no missing
-  enrichment can silently redirect a reply.
+  The per-message context row is the single authoritative source of required
+  destination, identity and automation input. A failed context write rejects
+  the input exactly as a failed event insert does, so the channel's normal
+  redelivery retries it; no event is appended without its context and launch
+  never reconstructs a destination from thread routes. Only optional ingress
+  lookups (history and display names) may be omitted after activation; they
+  emit structured warnings without prompt content.
 - An acknowledged Web event survives draft, last-message timestamp, sort-event,
   and invalidation failures. Each weak side effect is awaited independently.
   Both existing draft copies are cleared; retained null rows remain, and a
@@ -97,9 +98,6 @@ weak side effect is an accepted observable outcome, not an event-write failure.
 3. Promote Release 1 and verify all API instances, cron workers, retries and
    in-flight readers using pre-Release-1 code have drained. Exercise native
    replies, Web sends, output, cancellation/queue admission and callback replay.
-   Check routing preparation for pending native inputs: required topic/group and
-   delivery identities must be recoverable from routes or original context;
-   missing required identity is a real routing error, not optional enrichment.
 4. Record the actual serving release and supported rollback artifact. Expansion
    alone does not raise the chat-event rollback floor: preactivation rollback to
    a previously otherwise-compatible API remains valid.
@@ -194,28 +192,16 @@ The named follow-up is the separate post-rollout PR2; opening it is outside this
 implementation task. Its removal checklist must verify each gate below, rather
 than treating promotion as proof that retained work has drained.
 
-| Behavior                                                                                                                                                 | Surface and exposure window                                                                           | Removal condition and follow-up                                                                                                                                                                                                    |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Legacy allocator and Web/native/output branches, including `loadOptionalChatEnrichment`'s preactivation failure path and migration 1212's bridge         | Old API against expanded DB, rolling API fleet, captured legacy operations and preactivation rollback | PR2 after activation, all legacy operations/entry points drain, production acceptance and a compatible rollback floor.                                                                                                             |
-| `insertChatDeliveryCallback` recognizes historical random IDs                                                                                            | Persisted callback delivery/retry records written by old APIs                                         | PR2 only after historical pending retries and retained delivery records no longer require recognition and no supported API can write them. Do not equate deployment completion with record retirement.                             |
-| `ensureUserErasureJob` and `createRelationalErasureCollector` replay the preceding captured version                                                      | Durable erasure captures and their original provider obligations outlive API deployment               | PR2 must inventory preceding-version captures; remove together only once every capture is completed or retired without losing obligations. Retain and explicitly carry this follow-up if that gate remains open.                   |
-| Rollback resolver accepts an absent control table                                                                                                        | Main's workflow may run before the first expansion release                                            | PR2 after the completed expansion is permanently within the supported schema floor. A present table with no singleton always fails.                                                                                                |
-| `resolveTelegramInputThread` retains legacy first-group-message creation; `persistTelegramReplyChainRoute` recognizes callbacks without an initial route | Rolling APIs and retained null-root callbacks                                                         | PR2 after legacy operations, old callback payloads and incompatible rollback targets drain. Active mode creates a private `input:` route anchor before accepting context-independent input and advances it on the first bot reply. |
-| `preserveSlackMentionIdentities` recovers exact mentions in historical display-only input from scoped original text                                      | Retained queued input written by old APIs                                                             | PR2 only after old writers/rollback targets and all affected queued inputs drain; activation alone does not satisfy this gate. New canonical text already retains IDs.                                                             |
+| Behavior                                                                                                                                         | Surface and exposure window                                                                           | Removal condition and follow-up                                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Legacy allocator and Web/native/output branches, including `loadOptionalChatEnrichment`'s preactivation failure path and migration 1212's bridge | Old API against expanded DB, rolling API fleet, captured legacy operations and preactivation rollback | PR2 after activation, all legacy operations/entry points drain, production acceptance and a compatible rollback floor.                                                                                           |
+| `insertChatDeliveryCallback` recognizes historical random IDs                                                                                    | Persisted callback delivery/retry records written by old APIs                                         | PR2 only after historical pending retries and retained delivery records no longer require recognition and no supported API can write them. Do not equate deployment completion with record retirement.           |
+| `ensureUserErasureJob` and `createRelationalErasureCollector` replay the preceding captured version                                              | Durable erasure captures and their original provider obligations outlive API deployment               | PR2 must inventory preceding-version captures; remove together only once every capture is completed or retired without losing obligations. Retain and explicitly carry this follow-up if that gate remains open. |
+| Rollback resolver accepts an absent control table                                                                                                | Main's workflow may run before the first expansion release                                            | PR2 after the completed expansion is permanently within the supported schema floor. A present table with no singleton always fails.                                                                              |
 
 The following are permanent accepted data states, not rollout shims to remove in
 PR2:
 
-- The six native `load*RouteLaunchMaterial` readers and nullable
-  `required*LaunchContext` projections recover only authorized routing when
-  optional enrichment is absent. Canonical text/files, ordinary scope checks,
-  and stable topic/group destinations remain required. Missing history or names
-  cannot grant identity or change a destination.
-- Teams resolves a nullable route `serviceUrl` from the same scoped installation;
-  Feishu resolves a nullable ingress `publicBrand` from the same scoped
-  installation. Legitimate writers and retained nullable rows keep these states
-  reachable. Removal would require changing those owning contracts and draining
-  their rows, independently of this sequence migration.
 - A missing sequence row means zero only for a new empty thread; the first
   allocator creates it atomically. Existing nonzero legacy watermarks are
   covered by the mandatory backfill. Retained event maxima are never a fallback.
@@ -225,9 +211,10 @@ PR2:
 The migration-consistency pipeline includes PostgreSQL acceptance for mixed
 allocation, concurrent batches/replacement, first writes, gaps, rollback,
 interrupted backfill/retry, retention, FK/control locks and contraction. Separate
-suites inject real SQL failures into context/draft/timestamp/sort/materialization,
-exercise six native loaders and callback replay, and collect late records after
-a local deletion job is gone. Activity replay has focused unit coverage.
+suites inject real SQL failures into required context (the input is rejected
+in both modes and its redelivery is accepted) and into weak
+draft/timestamp/sort/materialization side effects, exercise callback replay,
+and collect late records after a local deletion job is gone. Activity replay has focused unit coverage.
 
 Append telemetry reports statement duration plus database allocation/lock-wait
 and insertion phases for returned rows. Empty-conflict appends still report

@@ -1,4 +1,3 @@
-import { isIntegrationDmSessionKey } from "../../lib/integration-dm-session";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
@@ -12,12 +11,9 @@ import {
   teamsDeliveryTargetSchema,
   type TeamsDeliveryTarget,
 } from "./teams-chat-callback-payload";
-import {
-  type QueuedLaunchContextArgs,
-  warnMissingQueuedLaunchEnrichment,
-} from "./queued-launch-enrichment.service";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
-import { buildTeamsPrompt } from "./teams-prompt";
+import { appendTeamsFilesToPrompt, buildTeamsPrompt } from "./teams-prompt";
 
 export interface TeamsQueuedLaunchMaterial {
   readonly prompt: string;
@@ -63,23 +59,22 @@ function requiredTeamsLaunchContext(row: TeamsLaunchContextRow | undefined) {
     row.threadId === null ||
     row.serviceUrl === null ||
     row.senderUserId === null ||
-    row.connectionId === null
+    row.connectionId === null ||
+    row.threadContext === null ||
+    row.messageText === null ||
+    row.messageFiles === null
   ) {
     return null;
   }
   return {
     ...row,
-    enrichmentMissing:
-      row.threadContext === null ||
-      row.messageText === null ||
-      row.messageFiles === null,
     threadId: row.threadId,
     serviceUrl: row.serviceUrl,
     senderUserId: row.senderUserId,
     connectionId: row.connectionId,
-    threadContext: row.threadContext ?? "",
-    messageText: row.messageText ?? "",
-    messageFiles: row.messageFiles ?? [],
+    threadContext: row.threadContext,
+    messageText: row.messageText,
+    messageFiles: row.messageFiles,
   };
 }
 
@@ -163,6 +158,18 @@ async function loadTeamsLaunchContext(
   return requiredTeamsLaunchContext(row);
 }
 
+function promptFiles(context: {
+  readonly messageFiles: NonNullable<
+    typeof chatTeamsContext.$inferSelect.messageFiles
+  >;
+}) {
+  // messageFiles also retains fetched context files for delivery. Only the
+  // current message's files belong to the agent prompt.
+  return context.messageFiles.filter((file) => {
+    return file.inCurrentMessage;
+  });
+}
+
 function promptThreadId(context: {
   readonly conversationType: string | null;
   readonly threadId: string;
@@ -178,119 +185,43 @@ function promptThreadId(context: {
   return context.threadId;
 }
 
-async function loadTeamsRouteLaunchMaterial(
-  db: Db,
-  args: QueuedLaunchContextArgs,
-): Promise<TeamsQueuedLaunchMaterial | null> {
-  const [route] = await db
-    .select({
-      tenantId: teamsOrgInstallations.teamsTenantId,
-      tenantName: teamsOrgInstallations.teamsTenantName,
-      teamId: teamsOrgInstallations.teamsTeamId,
-      teamName: teamsOrgInstallations.teamsTeamName,
-      channelId: teamsChatThreadRoutes.channelId,
-      conversationId: teamsChatThreadRoutes.conversationId,
-      conversationType: teamsChatThreadRoutes.conversationType,
-      threadId: teamsChatThreadRoutes.threadId,
-      serviceUrl: teamsChatThreadRoutes.serviceUrl,
-      installationServiceUrl: teamsOrgInstallations.serviceUrl,
-      connectionId: teamsOrgConnections.id,
-      teamsUserId: teamsOrgConnections.teamsUserId,
-      teamsUserDisplayName: teamsOrgConnections.teamsUserDisplayName,
-      teamsUserPrincipalName: teamsOrgConnections.teamsUserPrincipalName,
-      botId: teamsOrgInstallations.botId,
-      botName: teamsOrgInstallations.botName,
-      publicBrand: teamsOrgInstallations.publicBrand,
-    })
-    .from(chatEvents)
-    .innerJoin(
-      teamsChatThreadRoutes,
-      and(
-        eq(teamsChatThreadRoutes.chatThreadId, chatEvents.chatThreadId),
-        eq(teamsChatThreadRoutes.userId, args.userId),
-      ),
-    )
-    .innerJoin(
-      teamsOrgConnections,
-      and(
-        eq(teamsOrgConnections.id, teamsChatThreadRoutes.connectionId),
-        eq(teamsOrgConnections.userId, args.userId),
-      ),
-    )
-    .innerJoin(
-      teamsOrgInstallations,
-      and(
-        eq(
-          teamsOrgInstallations.teamsTenantId,
-          teamsOrgConnections.teamsTenantId,
-        ),
-        eq(teamsOrgInstallations.orgId, args.orgId),
-      ),
-    )
-    .where(
-      and(
-        eq(chatEvents.id, args.eventId),
-        eq(chatEvents.chatThreadId, args.chatThreadId),
-        eq(chatEvents.contextType, "teams"),
-      ),
-    )
-    .limit(1);
-  const serviceUrl = route?.serviceUrl ?? route?.installationServiceUrl;
-  if (!route?.teamsUserId || !serviceUrl) {
-    return null;
-  }
-  warnMissingQueuedLaunchEnrichment("teams", args);
-  return {
-    prompt: args.userMessageProjection.agentPrompt,
-    appendSystemPrompt: "",
-    publicBrand: route.publicBrand,
-    teamsDelivery: teamsDeliveryTargetSchema.parse({
-      ...route,
-      serviceUrl,
-      activityId: isIntegrationDmSessionKey(route.threadId)
-        ? null
-        : route.threadId,
-    }),
-    userInfoExtras: { teamsUserId: route.teamsUserId },
-  };
-}
-
 export async function loadTeamsQueuedLaunchMaterial(
   db: Db,
-  args: QueuedLaunchContextArgs,
+  args: {
+    readonly eventId: string;
+    readonly chatThreadId: string;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly featureSwitchContext: FeatureSwitchContext;
+  },
 ): Promise<TeamsQueuedLaunchMaterial | null> {
   const context = await loadTeamsLaunchContext(db, args);
   if (!context) {
-    return loadTeamsRouteLaunchMaterial(db, args);
-  }
-  if (context.enrichmentMissing) {
-    warnMissingQueuedLaunchEnrichment("teams", args);
+    return null;
   }
   const botId = context.installationBotId;
   const botName = context.installationBotName;
   return {
-    prompt: args.userMessageProjection.agentPrompt,
-    appendSystemPrompt: context.enrichmentMissing
-      ? ""
-      : buildTeamsPrompt({
-          tenantId: context.tenantId,
-          tenantName: context.tenantName,
-          teamId: context.teamId,
-          teamName: context.teamName,
-          channelId: context.channelId,
-          conversationId: context.conversationId,
-          conversationType: context.conversationType,
-          threadId: promptThreadId(context),
-          activityId: context.activityId,
-          teamsAppId: context.teamsAppId,
-          botId,
-          botName,
-          integrationNote: resolveIntegrationNotePrompt({
-            triggerSource: "teams",
-            featureSwitchContext: args.featureSwitchContext,
-          }),
-          threadContext: context.threadContext,
-        }),
+    prompt: appendTeamsFilesToPrompt(context.messageText, promptFiles(context)),
+    appendSystemPrompt: buildTeamsPrompt({
+      tenantId: context.tenantId,
+      tenantName: context.tenantName,
+      teamId: context.teamId,
+      teamName: context.teamName,
+      channelId: context.channelId,
+      conversationId: context.conversationId,
+      conversationType: context.conversationType,
+      threadId: promptThreadId(context),
+      activityId: context.activityId,
+      teamsAppId: context.teamsAppId,
+      botId,
+      botName,
+      integrationNote: resolveIntegrationNotePrompt({
+        triggerSource: "teams",
+        featureSwitchContext: args.featureSwitchContext,
+      }),
+      threadContext: context.threadContext,
+    }),
     publicBrand: context.publicBrand,
     teamsDelivery: teamsDeliveryTargetSchema.parse({
       tenantId: context.tenantId,

@@ -87,7 +87,8 @@ import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
 import {
   bindTelegramReplyMessageRoute,
-  resolveTelegramInputThread,
+  createTelegramChatThread,
+  ensureTelegramChatThreadRoute,
   type TelegramOwnerLink,
 } from "./telegram-chat-ingress.service";
 import { insertChatEvent } from "./chat-event.service";
@@ -1888,34 +1889,6 @@ function telegramInputFiles(
     : [];
 }
 
-function resolveTelegramChatMessageThread(
-  args: {
-    readonly source: TelegramAgentMessageArgs;
-    readonly chatId: string;
-    readonly rootMessageId: string | undefined;
-    readonly modelRoute: ModelRoutePin | undefined;
-  },
-  currentTime: Date,
-  splitWrites: boolean,
-) {
-  return resolveTelegramInputThread(args.source.db, {
-    userId: args.source.userLink.userId,
-    orgId: args.source.orgId,
-    agentId: args.source.composeId,
-    selectedModel: args.modelRoute?.selectedModel ?? null,
-    serviceTier: args.modelRoute?.serviceTier ?? null,
-    currentTime,
-    preserveThreadSettings: args.source.isDM,
-    ownerLink: telegramOwnerLink(args.source),
-    chatId: args.chatId,
-    rootMessageId: args.rootMessageId,
-    messageId: String(args.source.message.message_id),
-    messageThreadId: args.source.message.message_thread_id ?? null,
-    chatType: args.source.message.chat.type,
-    splitWrites,
-  });
-}
-
 type PersistedTelegramChatMessage =
   | {
       readonly inserted: true;
@@ -1952,11 +1925,24 @@ const persistTelegramChatMessage$ = command(
     }
     const splitWrites = await isSplitChatEventWriteEnabled(args.source.db);
     signal.throwIfAborted();
-    const binding = await resolveTelegramChatMessageThread(
-      args,
+    const threadArgs = {
+      userId: args.source.userLink.userId,
+      orgId: args.source.orgId,
+      agentId: args.source.composeId,
+      selectedModel: args.modelRoute?.selectedModel ?? null,
+      serviceTier: args.modelRoute?.serviceTier ?? null,
       currentTime,
-      splitWrites,
-    );
+    };
+    const binding =
+      args.rootMessageId === undefined
+        ? await createTelegramChatThread(args.source.db, threadArgs)
+        : await ensureTelegramChatThreadRoute(args.source.db, {
+            ...threadArgs,
+            preserveThreadSettings: args.source.isDM,
+            ownerLink: telegramOwnerLink(args.source),
+            chatId: args.chatId,
+            rootMessageId: args.rootMessageId,
+          });
     signal.throwIfAborted();
 
     const file = extractTelegramFileForContext(args.source.message);

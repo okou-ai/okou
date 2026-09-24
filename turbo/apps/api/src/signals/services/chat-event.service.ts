@@ -31,7 +31,6 @@ import type {
 } from "./workflow-automation-context.service";
 import type { ApiDb, Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
-import { throwIfAbort } from "../utils";
 import {
   appendCanonicalChatEvents,
   type PreparedChatEventRow,
@@ -40,7 +39,6 @@ import {
   isSplitChatEventWriteEnabled,
   type ChatEventWriteOptions,
 } from "./chat-event-write-mode.service";
-import { persistChatEventDeliveryRouting } from "./chat-event-delivery-routing.service";
 
 const log = logger("chat-event-context");
 
@@ -410,7 +408,7 @@ export interface LoadedChatEventReplacementTarget extends StoredChatEventContext
   readonly eventType: NonNullable<CanonicalChatEventInsert["eventType"]>;
 }
 
-export type NewDisplayContext =
+type NewDisplayContext =
   | {
       readonly type: "agent_run";
       readonly id: string;
@@ -1054,58 +1052,20 @@ export function prepareChatEvent(values: AppendChatEvent): PreparedChatEvent {
   };
 }
 
-/** Required routing/identity is separate from optional prompt enrichment. */
+/**
+ * Context is required event data. Split mode writes it before the append so a
+ * failure rejects the input; legacy mode writes it after the append inside the
+ * caller's transaction.
+ */
 export async function persistPreparedChatEventContext(
   db: ChatEventWriteTransaction,
   prepared: PreparedChatEvent,
-  splitWrites: boolean,
 ): Promise<void> {
   const context = prepared.displayContext;
   if (!context) {
     return;
   }
-  await persistChatEventDeliveryRouting(db, context);
-  if (!splitWrites) {
-    await insertDisplayContext(db, context, prepared.row.createdAt);
-    return;
-  }
-  if (context.type === "automation") {
-    await db
-      .insert(chatAutomationContext)
-      .values({
-        id: context.id,
-        chatThreadId: context.chatThreadId,
-        automationId: context.automationId,
-        connectorSourceId: context.connectorSourceId,
-        publicBrand: context.publicBrand,
-        workflowName: context.workflowName,
-        eventType: context.workflowAutomationEventType,
-        eventPayload: context.workflowAutomationEventPayload,
-        createdAt: prepared.row.createdAt,
-      })
-      .onConflictDoNothing();
-  }
-  const [enrichment] = await Promise.allSettled([
-    context.type === "automation"
-      ? db
-          .update(chatAutomationContext)
-          .set({ triggerBrief: context.triggerBrief })
-          .where(eq(chatAutomationContext.id, context.id))
-      : insertDisplayContext(db, context, prepared.row.createdAt),
-  ]);
-  if (enrichment.status === "rejected") {
-    throwIfAbort(enrichment.reason);
-    // Do not log optional prompt text or database errors containing its values.
-    log.warn("Optional chat event context could not be persisted", {
-      eventId: prepared.row.id,
-      chatThreadId: prepared.row.chatThreadId,
-      contextType: context.type,
-      errorName:
-        enrichment.reason instanceof Error
-          ? enrichment.reason.name
-          : "UnknownError",
-    });
-  }
+  await insertDisplayContext(db, context, prepared.row.createdAt);
 }
 
 /** Slow-path telemetry separates allocation/lock wait from event insertion. */
@@ -1163,13 +1123,13 @@ export async function insertChatEvent(
   const splitWrites =
     options?.splitWrites ?? (await isSplitChatEventWriteEnabled(db));
   if (splitWrites) {
-    await persistPreparedChatEventContext(db, prepared, true);
+    await persistPreparedChatEventContext(db, prepared);
   }
   const inserted = await appendPreparedChatEvent(db, prepared, conflict, {
     splitWrites,
   });
   if (inserted && !splitWrites) {
-    await persistPreparedChatEventContext(db, prepared, false);
+    await persistPreparedChatEventContext(db, prepared);
   }
   return inserted;
 }
@@ -1188,7 +1148,7 @@ export async function insertChatEvents(
     options?.splitWrites ?? (await isSplitChatEventWriteEnabled(db));
   if (splitWrites) {
     for (const event of prepared) {
-      await persistPreparedChatEventContext(db, event, true);
+      await persistPreparedChatEventContext(db, event);
     }
   }
   const startedAt = performance.now();
@@ -1216,7 +1176,7 @@ export async function insertChatEvents(
     );
     for (const event of prepared) {
       if (insertedIds.has(event.row.id)) {
-        await persistPreparedChatEventContext(db, event, false);
+        await persistPreparedChatEventContext(db, event);
       }
     }
   }
@@ -1296,13 +1256,13 @@ export async function replaceLoadedChatEvent(
   };
   const splitWrites = await isSplitChatEventWriteEnabled(tx);
   if (splitWrites) {
-    await persistPreparedChatEventContext(tx, prepared, true);
+    await persistPreparedChatEventContext(tx, prepared);
   }
   const inserted = await appendPreparedChatEvent(tx, prepared, "any", {
     splitWrites,
   });
   if (inserted && !splitWrites) {
-    await persistPreparedChatEventContext(tx, prepared, false);
+    await persistPreparedChatEventContext(tx, prepared);
   }
   return inserted;
 }

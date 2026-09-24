@@ -1961,27 +1961,17 @@ describe("POST /api/webhooks/teams/bot", () => {
     }
     await runsApi.heartbeatRunner(runnerGroup);
     const claim = await runsApi.claimRunnerJob(run.id);
-    const fileId = claim.prompt.match(
-      /\[Teams file\] personal\.png \(image\/png\)\n(?: {3}\[Teams attachment ID\] [^\n]+\n)? {3}\[ID\] ([^\n]+)/u,
-    )?.[1];
+    const fileId = claim.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
     expect(fileId).toMatch(/^teams_file_[A-Za-z0-9_-]{22}$/u);
     expect(fileId?.length).toBeLessThan(64);
-    const files = await listIntegrationInputFileParts(context, actor);
-    expect(files).toStrictEqual([
+    await expect(
+      listIntegrationInputFileParts(context, actor),
+    ).resolves.toStrictEqual([
       expect.objectContaining({
         fileId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
         filenameSnapshot: "personal.png",
       }),
     ]);
-    const [canonicalFile] = files;
-    if (!canonicalFile) {
-      throw new Error("Expected canonical Teams attachment file part");
-    }
-    expect(claim.prompt).toContain(
-      `[Web file] personal.png (image/png)\n   [ID] ${canonicalFile.fileId}`,
-    );
-    expect(claim.prompt).toContain("inspect this personal attachment");
-    expect(canonicalFile.fileId).not.toBe(fileId);
 
     importPending = false;
     const app = createAppWithRoutes({

@@ -5,8 +5,9 @@ import { db } from "../lib/db";
 
 /**
  * Infrastructure exception: a Telegram webhook cannot request a storage fault.
- * Fail the real optional context INSERT for only this test's chat; setup,
- * launch, file access, and delivery assertions still use production APIs.
+ * Fail the real required context INSERT for only this test's chat; setup,
+ * admission, launch, file access, and delivery assertions still use production
+ * APIs.
  */
 export async function installTelegramContextFailureFixture(
   chatId: number,
@@ -19,7 +20,7 @@ export async function installTelegramContextFailureFixture(
     RETURNS trigger LANGUAGE plpgsql AS $function$
     BEGIN
       IF NEW.chat_id = split_part(TG_NAME, '_', 4) THEN
-        RAISE EXCEPTION 'forced optional Telegram context storage failure';
+        RAISE EXCEPTION 'forced Telegram context storage failure';
       END IF;
       RETURN NEW;
     END;

@@ -1,11 +1,10 @@
-import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { agents } from "@okouai/db/schema/agent";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { optionalEnv } from "../../lib/env";
 import type { Db } from "../external/db";
@@ -14,10 +13,7 @@ import {
   type AgentPhoneDeliveryTarget,
 } from "./agentphone-chat-callback-payload";
 import { buildAgentPhonePrompt } from "./agentphone-prompt";
-import {
-  type QueuedLaunchContextArgs,
-  warnMissingQueuedLaunchEnrichment,
-} from "./queued-launch-enrichment.service";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 
 export interface AgentPhoneQueuedLaunchMaterial {
@@ -55,6 +51,8 @@ function requiredAgentPhoneLaunchContext(
 ) {
   if (
     !row ||
+    row.messageText === null ||
+    row.threadContext === null ||
     row.messageId === null ||
     row.rootMessageId === null ||
     row.channel === null ||
@@ -70,9 +68,8 @@ function requiredAgentPhoneLaunchContext(
   }
   return {
     ...row,
-    enrichmentMissing: row.messageText === null || row.threadContext === null,
-    messageText: row.messageText ?? "",
-    threadContext: row.threadContext ?? "",
+    messageText: row.messageText,
+    threadContext: row.threadContext,
     messageId: row.messageId,
     rootMessageId: row.rootMessageId,
     channel: row.channel,
@@ -148,110 +145,38 @@ async function loadAgentPhoneLaunchContext(
   return requiredAgentPhoneLaunchContext(row);
 }
 
-async function loadAgentPhoneRouteLaunchMaterial(
-  db: Db,
-  args: QueuedLaunchContextArgs,
-): Promise<AgentPhoneQueuedLaunchMaterial | null> {
-  const [route] = await db
-    .select({
-      messageId: agentphoneChatThreadRoutes.deliveryMessageId,
-      rootMessageId: agentphoneChatThreadRoutes.rootMessageId,
-      conversationId: agentphoneChatThreadRoutes.conversationId,
-      groupId: agentphoneChatThreadRoutes.groupId,
-      isGroup: agentphoneChatThreadRoutes.isGroup,
-      channel: agentphoneChatThreadRoutes.channel,
-      fromNumber: agentphoneChatThreadRoutes.fromNumber,
-      toNumber: agentphoneChatThreadRoutes.toNumber,
-      agentphoneAgentId: agentphoneChatThreadRoutes.agentphoneAgentId,
-      phoneHandle: agentphoneUserLinks.phoneHandle,
-      userLinkId: agentphoneUserLinks.id,
-      publicBrand: agentphoneUserLinks.publicBrand,
-      agentId: agents.id,
-    })
-    .from(chatEvents)
-    .innerJoin(
-      agentphoneChatThreadRoutes,
-      eq(agentphoneChatThreadRoutes.chatThreadId, chatEvents.chatThreadId),
-    )
-    .innerJoin(
-      agentphoneUserLinks,
-      and(
-        eq(
-          agentphoneUserLinks.id,
-          agentphoneChatThreadRoutes.agentphoneUserLinkId,
-        ),
-        eq(agentphoneUserLinks.userId, args.userId),
-        eq(agentphoneUserLinks.orgId, args.orgId),
-      ),
-    )
-    .innerJoin(
-      chatThreads,
-      and(
-        eq(chatThreads.id, chatEvents.chatThreadId),
-        eq(chatThreads.userId, args.userId),
-      ),
-    )
-    .innerJoin(
-      agents,
-      and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
-    )
-    .where(
-      and(
-        eq(chatEvents.id, args.eventId),
-        eq(chatEvents.chatThreadId, args.chatThreadId),
-        eq(chatEvents.contextType, "agentphone"),
-        isNotNull(agentphoneChatThreadRoutes.deliveryMessageId),
-      ),
-    )
-    .limit(1);
-  if (!route || route.isGroup === null || (route.isGroup && !route.groupId)) {
-    return null;
-  }
-  const delivery = agentphoneDeliveryTargetSchema.safeParse(route);
-  if (!delivery.success) {
-    return null;
-  }
-  warnMissingQueuedLaunchEnrichment("agentphone", args);
-  return {
-    prompt: args.userMessageProjection.agentPrompt,
-    appendSystemPrompt: "",
-    publicBrand: route.publicBrand,
-    agentphoneDelivery: delivery.data,
-    userInfoExtras: { agentphoneHandle: route.phoneHandle },
-  };
-}
-
 export async function loadAgentPhoneQueuedLaunchMaterial(
   db: Db,
-  args: QueuedLaunchContextArgs,
+  args: {
+    readonly eventId: string;
+    readonly chatThreadId: string;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly featureSwitchContext: FeatureSwitchContext;
+  },
 ): Promise<AgentPhoneQueuedLaunchMaterial | null> {
   const context = await loadAgentPhoneLaunchContext(db, args);
   if (!context) {
-    return loadAgentPhoneRouteLaunchMaterial(db, args);
-  }
-  if (context.enrichmentMissing) {
-    warnMissingQueuedLaunchEnrichment("agentphone", args);
+    return null;
   }
   return {
-    prompt: args.userMessageProjection.agentPrompt,
-    appendSystemPrompt: context.enrichmentMissing
-      ? ""
-      : buildAgentPhonePrompt(
-          {
-            sharedNumber: optionalEnv("AGENTPHONE_PHONE_NUMBER") ?? "",
-            phoneHandle: context.phoneHandle,
-            conversationId: context.conversationId,
-            channel: context.channel,
-            isGroup: context.isGroup,
-            messageId: context.messageId,
-            agentphoneAgentId: context.agentphoneAgentId,
-          },
-          resolveIntegrationNotePrompt({
-            triggerSource: "agentphone",
-            featureSwitchContext: args.featureSwitchContext,
-          }),
-          context.threadContext,
-        ),
+    prompt: context.messageText,
+    appendSystemPrompt: buildAgentPhonePrompt(
+      {
+        sharedNumber: optionalEnv("AGENTPHONE_PHONE_NUMBER") ?? "",
+        phoneHandle: context.phoneHandle,
+        conversationId: context.conversationId,
+        channel: context.channel,
+        isGroup: context.isGroup,
+        messageId: context.messageId,
+        agentphoneAgentId: context.agentphoneAgentId,
+      },
+      resolveIntegrationNotePrompt({
+        triggerSource: "agentphone",
+        featureSwitchContext: args.featureSwitchContext,
+      }),
+      context.threadContext,
+    ),
     publicBrand: context.publicBrand,
     agentphoneDelivery: agentphoneDeliveryTargetSchema.parse({
       messageId: context.messageId,

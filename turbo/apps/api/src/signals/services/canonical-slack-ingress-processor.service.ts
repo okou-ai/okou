@@ -476,7 +476,7 @@ async function persistCanonicalSlackMessage(
   args: {
     readonly ingress: ClaimedCanonicalSlackIngress;
     readonly chatThreadId: string;
-    readonly messageContent: string;
+    readonly displayContent: string;
     readonly slackContext: CanonicalSlackLaunchContext;
     readonly messagePermalink: string | null;
     readonly canonicalAssets: readonly CanonicalSlackInputAsset[];
@@ -493,7 +493,7 @@ async function persistCanonicalSlackMessage(
         chatThreadId: args.chatThreadId,
         eventType: "input.prompt",
         userMessage: createUserMessageDocument({
-          text: args.messageContent,
+          text: args.displayContent,
           files: canonicalInputMessageFiles(args.canonicalAssets),
           nonContentPart: createChatEventSourcePart({
             kind: "slack",
@@ -602,6 +602,7 @@ async function loadCanonicalSlackEnrichment(
       () => {
         return {
           prompt: messageContent,
+          displayContent: messageContent,
           userInfoExtras: { slackUserId: event.user },
           mentionDisplayNames: {},
         };
@@ -701,9 +702,7 @@ const persistClaimedCanonicalSlackIngress$ = command(
       {
         ingress,
         chatThreadId,
-        // Canonical input must retain mention IDs even without optional context.
-        // This enrichment contains only current-message text, not file markup.
-        messageContent: enriched.prompt,
+        displayContent: enriched.displayContent,
         messagePermalink,
         slackContext: canonicalSlackLaunchContext({
           event,
