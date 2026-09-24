@@ -270,12 +270,12 @@ function HostChoiceSelect({
       >
         <SelectTrigger
           variant="neutral"
-          className="h-8 w-36 shrink-0 py-1 text-xs"
+          className="h-8 w-40 shrink-0 py-1 text-sm"
           aria-label={`${protocol.toUpperCase()} ${host.displayName}`}
         >
           <SelectValue />
         </SelectTrigger>
-        <SelectContent align="start">
+        <SelectContent align="start" className="w-(--anchor-width)">
           {items.map((item) => {
             return (
               <SelectItem key={item.value} value={item.value}>
