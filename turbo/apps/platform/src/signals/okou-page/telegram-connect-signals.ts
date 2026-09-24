@@ -5,15 +5,13 @@ import {
 } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { oauthBaseForNavigation$ } from "../fetch.ts";
 import { searchParams$ } from "../route.ts";
-import { createDeferredPromise, setLoop } from "../utils.ts";
-import {
-  parseTelegramPostMessage,
-  type TelegramAuthResult,
-} from "./telegram-auth-parser.ts";
+import { setLoop } from "../utils.ts";
 import { parseTelegramConnectParams } from "./telegram-connect-params.ts";
-import { openTelegramLoginPopup } from "./telegram-login-popup.ts";
+import {
+  authorizeTelegramBot$,
+  linkTelegramAccount$,
+} from "./telegram-authorization.ts";
 
 const internalTelegramConnectLinkStatusReload$ = state(0);
 
@@ -77,78 +75,31 @@ export const pollTelegramConnectDomainStatus$ = command(
   },
 );
 
-function requestTelegramAuth(
-  telegramBotId: string,
-  apiBase: string,
-  signal: AbortSignal,
-): Promise<TelegramAuthResult> {
-  signal.throwIfAborted();
-  openTelegramLoginPopup(telegramBotId, apiBase);
-
-  const deferred = createDeferredPromise<TelegramAuthResult>(signal);
-  const cleanup = () => {
-    window.removeEventListener("message", handleMessage);
-    signal.removeEventListener("abort", cleanup);
-  };
-  const handleMessage = (event: MessageEvent) => {
-    const auth = parseTelegramPostMessage(event.data);
-    if (!auth || deferred.settled()) {
-      return;
-    }
-    cleanup();
-    deferred.resolve(auth);
-  };
-
-  window.addEventListener("message", handleMessage, { signal });
-  signal.addEventListener("abort", cleanup, { once: true });
-  return deferred.promise;
-}
-
 export const connectTelegramAccount$ = command(
-  async ({ get }, signal: AbortSignal) => {
+  async ({ get, set }, signal: AbortSignal) => {
     const parsed = parseTelegramConnectParams(get(searchParams$));
     if (!parsed.ok) {
       return null;
     }
     const { params } = parsed;
-    const client = get(apiClient$)(integrationsTelegramContract);
-    const linkCredential = params.connectSignature
-      ? { connectSignature: params.connectSignature }
-      : await (async () => {
-          const linkStatus = await get(telegramConnectLinkStatus$);
-          signal.throwIfAborted();
-          const telegramLoginBotId =
-            linkStatus?.linked === false
-              ? linkStatus.installation?.loginBotId
-              : undefined;
-          const oauthBase = await get(oauthBaseForNavigation$);
-          signal.throwIfAborted();
-          const telegramAuth = await requestTelegramAuth(
-            telegramLoginBotId ?? params.telegramBotId,
-            oauthBase,
-            signal,
-          );
-          signal.throwIfAborted();
-          return { telegramAuth };
-        })();
-
-    const result = await accept(
-      client.link({
-        headers: {},
-        fetchOptions: { signal },
-        body: {
-          telegramBotId: params.telegramBotId,
-          ...linkCredential,
-        },
-      }),
-      [200],
-    );
-    signal.throwIfAborted();
+    const result = params.connectSignature
+      ? await set(
+          linkTelegramAccount$,
+          {
+            telegramBotId: params.telegramBotId,
+            connectSignature: params.connectSignature,
+          },
+          signal,
+        )
+      : await set(authorizeTelegramBot$, params.telegramBotId, signal);
+    if (!result) {
+      return null;
+    }
 
     window.location.assign(
-      `tg://resolve?domain=${result.body.botUsername.replace(/^@/, "")}`,
+      `tg://resolve?domain=${result.botUsername.replace(/^@/, "")}`,
     );
 
-    return result.body;
+    return result;
   },
 );
