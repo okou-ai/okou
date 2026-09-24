@@ -28,7 +28,7 @@ import { holdChatEventQueueAdmissionLockFixture } from "../../../test-fixtures/c
 import { admitWorkflowAutomationEventFixture } from "../../../test-fixtures/workflow-queue";
 import { writeDb$ } from "../../external/db";
 import { settle } from "../../utils";
-import { updateFeatureSwitchesForUser } from "../../routes/__tests__/helpers/feature-switches";
+import { seedRetainedNativeMorningBriefForUser } from "../../routes/__tests__/helpers/feature-switches";
 import { seedOrgMembership$ } from "../../routes/__tests__/helpers/org-membership";
 import { collectMorningBriefChat$ } from "../morning-brief-chat-collection.service";
 import { ensureWorkflowUserAutomationThread } from "../workflow-user-automation-thread.service";
@@ -78,7 +78,7 @@ describe("Morning Brief unread Chat collection boundaries", () => {
       { orgId: member.orgId, userId: member.userId },
       context.signal,
     );
-    await updateFeatureSwitchesForUser(context, member, {
+    await seedRetainedNativeMorningBriefForUser(context, member, {
       [FeatureSwitchKey.NativeMorningBrief]: true,
     });
     const threadId = await store.set(

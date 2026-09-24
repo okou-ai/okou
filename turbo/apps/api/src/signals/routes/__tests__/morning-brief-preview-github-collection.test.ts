@@ -5,7 +5,6 @@ import {
   morningBriefGithubCollectionContract,
   type MorningBriefGithubBundle,
 } from "@okouai/api-contracts/contracts/morning-brief-github-collection";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
@@ -33,7 +32,7 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { setHistoricalNativeMorningBriefForUser } from "./helpers/feature-switches";
 
 const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
@@ -209,10 +208,10 @@ async function fixture(
         : await seedMorningBriefAgent({ orgId, userId });
     await connectGithubAccount(actor, "primary", grantedAgentId);
   }
-  await updateFeatureSwitchesForUser(
+  await setHistoricalNativeMorningBriefForUser(
     context,
     { orgId, userId },
-    { [FeatureSwitchKey.NativeMorningBrief]: options.feature !== false },
+    options.feature !== false,
   );
   mockClerkMembership(orgId, userId);
   return {
