@@ -13921,6 +13921,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       "`okou browser use` creates, reuses, or resumes a remote browser",
     );
     expect(appendSystemPrompt).not.toContain(
+      "Okou Browser native input: use `okou browser input-request`",
+    );
+    expect(appendSystemPrompt).not.toContain(
       "Okou Browser is currently off for this chat thread",
     );
     for (const otherIntegrationHint of [
