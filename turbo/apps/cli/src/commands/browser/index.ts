@@ -232,10 +232,14 @@ function apiInputRequestError(
       "Inspect the current Browser page and recapture the changed target.",
     );
   }
-  if (
-    code === "BROWSER_USER_ACTION_UNSUPPORTED_PAGE" ||
-    code === "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL"
-  ) {
+  if (code === "BROWSER_USER_ACTION_UNSUPPORTED_PAGE") {
+    return new BrowserInputRequestError(
+      code,
+      error.message,
+      "Open an HTTP or HTTPS page in the Browser and recapture its controls, or hand the Browser to the user.",
+    );
+  }
+  if (code === "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL") {
     return new BrowserInputRequestError(
       code,
       error.message,

@@ -1093,6 +1093,46 @@ describe("okou browser user-action commands", () => {
     expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(ACTION_URL);
   });
 
+  it("gives page-specific guidance for an unsupported Browser page", async () => {
+    installCdp();
+    server.use(
+      http.post("http://localhost:3000/api/browser/user-actions", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "BROWSER_USER_ACTION_UNSUPPORTED_PAGE",
+              message: "The selected Browser page is not an HTTP or HTTPS page",
+            },
+          },
+          { status: 409 },
+        );
+      }),
+    );
+
+    await expect(
+      browserCommand.parseAsync([
+        "node",
+        "okou",
+        "input-request",
+        "--field",
+        JSON.stringify({
+          key: "username",
+          label: "Email",
+          fieldKind: "username",
+          required: true,
+          target: "@e1",
+        }),
+        "--callback-prompt",
+        "Continue",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    const output = consoleError.mock.calls.flat().join("\n");
+    expect(output).toContain("BROWSER_USER_ACTION_UNSUPPORTED_PAGE");
+    expect(output).toContain("Open an HTTP or HTTPS page");
+    expect(output).not.toContain(ACTION_URL);
+  });
+
   it("emits a single structured retryable error under --json", async () => {
     installCdp();
     server.use(
