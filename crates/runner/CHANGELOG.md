@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.213.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.7...runner-rs-v0.213.8) (2026-09-24)
+
+
+### Bug Fixes
+
+* **firewall:** enforce aws query requirements with action and target ([#36528](https://github.com/okou-ai/okou/issues/36528)) ([4e9d00e](https://github.com/okou-ai/okou/commit/4e9d00e79192bdd6468b3767e74e32e36855ee52))
+
+
+### Refactoring
+
+* **runner:** move host control and prefetch to owner crates ([#36501](https://github.com/okou-ai/okou/issues/36501)) ([f7428ab](https://github.com/okou-ai/okou/commit/f7428aba43e5c5025458c923696c4c5ae6d9b540))
+
 ## [0.213.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.6...runner-rs-v0.213.7) (2026-09-24)
 
 

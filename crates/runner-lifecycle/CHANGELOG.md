@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.1.3...runner-lifecycle-v0.1.4) (2026-09-24)
+
+
+### Refactoring
+
+* **runner:** move host control and prefetch to owner crates ([#36501](https://github.com/okou-ai/okou/issues/36501)) ([f7428ab](https://github.com/okou-ai/okou/commit/f7428aba43e5c5025458c923696c4c5ae6d9b540))
+
 ## [0.1.3](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.1.2...runner-lifecycle-v0.1.3) (2026-09-23)
 
 ## [0.1.2](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.1.1...runner-lifecycle-v0.1.2) (2026-09-23)

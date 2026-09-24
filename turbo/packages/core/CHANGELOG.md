@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.707.0](https://github.com/okou-ai/okou/compare/core-v8.706.0...core-v8.707.0) (2026-09-24)
+
+
+### Features
+
+* require an agent responsibility and open a setup thread on create ([#36385](https://github.com/okou-ai/okou/issues/36385)) ([2129fd9](https://github.com/okou-ai/okou/commit/2129fd9d4c5d83bd217d5575f0879bbfcfec3238))
+
+
+### Refactoring
+
+* remove agent phone entry feature switch ([#36505](https://github.com/okou-ai/okou/issues/36505)) ([f5f289f](https://github.com/okou-ai/okou/commit/f5f289f49cd5df32c7547dd13e6dfd73adb4724b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.501.0
+
 ## [8.706.0](https://github.com/okou-ai/okou/compare/core-v8.705.0...core-v8.706.0) (2026-09-24)
 
 
