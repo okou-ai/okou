@@ -841,7 +841,7 @@ function AgentPhoneChannelTile() {
   );
 }
 
-/** Connect the official bot without detouring through bot settings. */
+/** Keep onboarding open while the official bot connects in another tab. */
 function TelegramTile({ onOpen }: { readonly onOpen: () => void }) {
   const { t } = useTranslation();
 
@@ -851,6 +851,8 @@ function TelegramTile({ onOpen }: { readonly onOpen: () => void }) {
       options={{
         searchParams: new URLSearchParams({ bot: OFFICIAL_TELEGRAM_BOT_ID }),
       }}
+      target="_blank"
+      rel="noopener noreferrer"
       onClick={onOpen}
       className={cn(
         buttonVariants({ variant: "outline" }),

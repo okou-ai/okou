@@ -1603,6 +1603,8 @@ function TelegramConnectAction({
       options={{
         searchParams: new URLSearchParams({ bot: bot.id }),
       }}
+      target="_blank"
+      rel="noopener noreferrer"
       className={cn(
         buttonVariants({ variant: "outline", size: "sm" }),
         "h-9 justify-center",

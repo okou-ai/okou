@@ -1,9 +1,11 @@
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { integrationsGithubContract } from "@okouai/api-contracts/contracts/integrations-github";
+import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { click } from "../../../__tests__/page-helper.ts";
+import { pathname } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   getAction,
@@ -129,8 +131,29 @@ test("A workspace member is directed to an admin for GitHub installation", async
   expect(queryAction("button", "Connect", githubCard)).toBeNull();
 });
 
-test("Open Telegram settings from Integrations", async () => {
+test("Open the official Telegram bot's connect page in a new tab from Integrations", async () => {
   mockSlack(context, { isConnected: true, isInstalled: true, isAdmin: true });
+  context.mocks.api(integrationsTelegramContract.list, ({ respond }) => {
+    return respond(200, {
+      bots: [
+        {
+          id: "official",
+          kind: "official",
+          username: "okou_bot",
+          avatarUrl: null,
+          agent: null,
+          isOwner: false,
+          isConnected: false,
+          tokenStatus: "valid",
+          official: {
+            configured: true,
+            usesDefaultAgent: true,
+            linkedTelegramUserId: null,
+          },
+        },
+      ],
+    });
+  });
 
   await setupIntegrationsPage(context);
 
@@ -142,6 +165,17 @@ test("Open Telegram settings from Integrations", async () => {
       return getAction("link", "Back to integrations");
     }),
   ).resolves.toBeInTheDocument();
+
+  const connect = await waitFor(() => {
+    return getAction("link", "Connect");
+  });
+  expect(connect).toHaveAttribute("href", "/telegram/connect?bot=official");
+  expect(connect).toHaveAttribute("target", "_blank");
+  expect(connect).toHaveAttribute("rel", "noopener noreferrer");
+  click(connect);
+
+  expect(pathname()).toBe("/settings/telegram");
+  expect(getAction("link", "Back to integrations")).toBeInTheDocument();
 });
 
 test("A user connects AgentPhone with a prefilled one-time code", async () => {

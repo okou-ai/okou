@@ -16,7 +16,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../__tests__/time.ts";
-import { pathname, search } from "../../../signals/location.ts";
+import { pathname } from "../../../signals/location.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -284,7 +284,7 @@ test("A workspace this user cannot add to names who can, instead of a dead butto
   expect(getChannelTile("Teams")).toBeDisabled();
 });
 
-test("Telegram opens the official bot's connect page directly", async () => {
+test("Telegram opens the official bot's connect page in a new tab and keeps onboarding open", async () => {
   mockOnboardingNeeded();
   mockConnectedSource();
   mockSlack({
@@ -309,12 +309,12 @@ test("Telegram opens the official bot's connect page directly", async () => {
 
   const telegram = getChannelTile("Telegram");
   expect(telegram).toHaveAttribute("href", "/telegram/connect?bot=official");
+  expect(telegram).toHaveAttribute("target", "_blank");
+  expect(telegram).toHaveAttribute("rel", "noopener noreferrer");
   click(telegram);
 
-  await expect(
-    screen.findByRole("heading", { name: "Connect to Telegram" }),
-  ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe(ROUTES.telegramConnect);
-  expect(new URLSearchParams(search()).get("bot")).toBe("official");
-  expect(getButtonByName("Continue with Telegram")).toBeEnabled();
+  expect(pathname()).toBe(ROUTES.onboardingSlack);
+  expect(
+    screen.getByRole("heading", { name: SLACK_TITLE }),
+  ).toBeInTheDocument();
 });
