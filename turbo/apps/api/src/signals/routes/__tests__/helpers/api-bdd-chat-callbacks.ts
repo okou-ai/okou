@@ -158,6 +158,9 @@ function storedS3ObjectResponse(
     Metadata: object?.metadata,
     Body: body
       ? {
+          transformToString(): Promise<string> {
+            return Promise.resolve(Buffer.from(body).toString("utf8"));
+          },
           async *[Symbol.asyncIterator](): AsyncGenerator<Uint8Array> {
             yield body;
           },
