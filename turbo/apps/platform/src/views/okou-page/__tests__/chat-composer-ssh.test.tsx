@@ -17,6 +17,7 @@ import {
   builtinConnector,
   SCOUT_AGENT_ID,
   SCOUT_THREAD_ID,
+  OTHER_THREAD_ID,
   OTHER_AGENT_ID,
 } from "./chat-composer-connectors-test-helpers.ts";
 
@@ -116,6 +117,88 @@ test("A chat can override multiple SSH hosts and return to each host default", a
   await waitFor(() => {
     expect(overrides.has(hostIds[0]!)).toBeFalsy();
   });
+});
+
+test("Remote access in two chat panes reads and updates each pane's thread", async () => {
+  const connectionId = "b0000000-0000-4000-8000-000000000001";
+  const overrides = new Map([[SCOUT_THREAD_ID, true]]);
+  const updates: { threadId: string; enabled: boolean }[] = [];
+  installComposerConnectorFixture({
+    threadId: SCOUT_THREAD_ID,
+    threads: [
+      { id: SCOUT_THREAD_ID, title: "Scout chat", agentId: SCOUT_AGENT_ID },
+      { id: OTHER_THREAD_ID, title: "Other chat", agentId: OTHER_AGENT_ID },
+    ],
+  });
+  const host = (threadId: string) => {
+    const overrideEnabled = overrides.get(threadId) ?? null;
+    return {
+      connectionId,
+      displayName: "Shared SSH host",
+      defaultEnabled: false,
+      overrideEnabled,
+      enabled: overrideEnabled ?? false,
+      source:
+        overrideEnabled === null ? ("default" as const) : ("override" as const),
+    };
+  };
+  context.mocks.api(
+    chatRemoteAccessContract.listThreadAccess,
+    ({ params, respond }) => {
+      return respond(200, { ssh: [host(params.threadId)], vnc: [] });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.setThreadOverride,
+    ({ params, body, respond }) => {
+      overrides.set(params.threadId, body.enabled);
+      updates.push({ threadId: params.threadId, enabled: body.enabled });
+      return respond(200, host(params.threadId));
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${SCOUT_THREAD_ID}?sidebar=${OTHER_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+  });
+  await waitFor(() => {
+    expect(
+      document.querySelectorAll("[data-chat-thread-container-id]"),
+    ).toHaveLength(2);
+  });
+  const pane = (threadId: string) => {
+    const element = document.querySelector<HTMLElement>(
+      `[data-chat-thread-container-id="${threadId}"]`,
+    );
+    if (!element) {
+      throw new Error(`Missing chat pane ${threadId}`);
+    }
+    return element;
+  };
+  const user = userEvent.setup({ delay: null });
+  click(await findFastControl("button", "Connectors", pane(SCOUT_THREAD_ID)));
+  click(await screen.findByText("Remote access"));
+  expect(
+    await screen.findByRole("combobox", { name: "SSH Shared SSH host" }),
+  ).toHaveValue("on");
+  await user.keyboard("{Escape}");
+
+  click(await findFastControl("button", "Connectors", pane(OTHER_THREAD_ID)));
+  click(await screen.findByText("Remote access"));
+  const otherHost = await screen.findByRole("combobox", {
+    name: "SSH Shared SSH host",
+  });
+  expect(otherHost).toHaveValue("default");
+  await user.selectOptions(otherHost, "on");
+  await waitFor(() => {
+    expect(updates).toStrictEqual([
+      { threadId: OTHER_THREAD_ID, enabled: true },
+    ]);
+    expect(
+      screen.getByRole("combobox", { name: "SSH Shared SSH host" }),
+    ).toHaveValue("on");
+  });
+  expect(overrides.get(SCOUT_THREAD_ID)).toBe(true);
 });
 
 async function loadSshAccess(trigger: HTMLElement): Promise<void> {
