@@ -640,23 +640,8 @@
       "all": "Todos",
       "avatar": "Avatar",
       "avatarWithId": "Avatar {{id}}",
-      "backToAvatars": "Volver a los avatares",
       "categories": "Categorías de plantilla",
       "category": "Categoría de plantilla",
-      "chooseVoice": "Elige una voz para {{title}}",
-      "filters": {
-        "age": "Edad",
-        "all": "Todos",
-        "aspectRatio": "Relación de aspecto",
-        "clear": "Limpiar",
-        "ethnicity": "Etnia",
-        "gender": "Género",
-        "language": "Idioma",
-        "scene": "Escena",
-        "style": "Estilo",
-        "title": "Filtros",
-        "useCase": "Caso de uso"
-      },
       "fullPreview": "Vista previa completa del sitio web {{title}}",
       "htmlPreview": "Vista previa HTML de {{title}}",
       "illustration": "Ilustración",
@@ -668,25 +653,18 @@
       "importedSlides_other": "{{count}} diapositivas",
       "importFile": "Importar plantilla",
       "multiAccent": "Multiacentos",
-      "needPro": "Necesitas Pro",
       "nextSlide": "Vista previa de la diapositiva siguiente",
       "noMatches": "Sin coincidencias",
       "placeholder": "Vista previa del sitio web {{title}}",
-      "playVideo": "Reproduce la vista previa de la plantilla de vídeo {{title}}",
-      "previewAvatarVideo": "Ver vídeo del avatar {{title}}",
       "previewCurrentSlide": "Vista previa de {{title}} en la diapositiva actual",
       "previewSlide": "Vista previa de la diapositiva {{slideNumber}}",
-      "previewVoice": "Escuchar la voz {{title}}",
       "previewWebsite": "Vista previa de la plantilla de sitio web {{title}}",
       "previousSlide": "Vista previa de la diapositiva anterior",
-      "recommended": "Recomendado",
       "renameImportedTemplate": "Cambiar nombre de la plantilla",
       "searchConnector": "Buscar plantillas",
       "searchConnectors": "Buscar plantillas",
       "selectStyle": "Selecciona el estilo {{style}}",
       "selectTemplate": "Seleccionar plantilla {{title}}",
-      "selectVideo": "Seleccionar plantilla de vídeo {{title}}",
-      "selectVoice": "Seleccionar la voz {{title}}",
       "selectWebsite": "Seleccionar plantilla web {{title}}",
       "selectWorkflow": "Seleccionar plantilla de flujo de trabajo {{title}}",
       "showVariant": "Mostrar variante {{variantNumber}}",
@@ -719,7 +697,6 @@
       "tryDifferentSearch": "Prueba con otra búsqueda.",
       "use": "Usar",
       "useThisTemplate": "Usa esta plantilla",
-      "viewVideoPlans": "Ver planes para la plantilla de vídeo {{title}}",
       "visibility": {
         "change": "Cambiar",
         "changeLabel": "Cambiar la visibilidad de la plantilla",
@@ -1210,7 +1187,6 @@
         "moreConnectorsChannels": "Más conectores personalizados e integraciones de canal",
         "supportEmail": "Soporte por correo",
         "supportPriority": "Soporte prioritario",
-        "videoGeneration": "Generación de vídeo y avatares",
         "voiceInput": "Entrada de voz: {{requests}} solicitudes y {{minutes}} minutos al día",
         "webhookAutomations": "Lanza una ejecución desde cualquier sistema con un webhook"
       },
@@ -1823,7 +1799,6 @@
         "addTemplate": "Añadir plantilla",
         "imagePlaceholder": "Describe la imagen que quieres crear…",
         "presentationPlaceholder": "¿De qué trata tu presentación?",
-        "settingsAdjusted": "Se han ajustado algunas opciones de vídeo para este modelo",
         "slideCount": "Número de diapositivas",
         "slideCountAuto": "Automático",
         "slideCountRange": "{{range}} diapositivas"
@@ -2910,16 +2885,7 @@
       "removeVideo": "Eliminar la plantilla de vídeo {{title}}",
       "removeWebsite": "Eliminar la plantilla de sitio web {{title}}",
       "removeWorkflow": "Eliminar la plantilla de flujo de trabajo {{title}}",
-      "retry": "Reintentar",
-      "videoOptions": "Opciones de vídeo",
-      "videoOptionsAudio": "Generar audio",
-      "videoOptionsAudioOff": "Audio desactivado",
-      "videoOptionsAudioOn": "Audio activado",
-      "videoOptionsDuration": "Duración",
-      "videoOptionsLabel": "Opciones de vídeo {{spec}}",
-      "videoOptionsModel": "Modelo",
-      "videoOptionsRatio": "Proporción",
-      "videoOptionsResolution": "Resolución"
+      "retry": "Reintentar"
     },
     "thread": {
       "ariaLabel": "Hilo de chat",
@@ -4249,12 +4215,10 @@
     "documentTitles": {
       "chooseImage": "Elige un estilo de imagen",
       "choosePresentation": "Elige una plantilla de presentación",
-      "chooseVideo": "Elige un estilo de vídeo",
       "chooseWorkflow": "Elige un flujo de trabajo",
       "make": "Te damos la bienvenida a {{brandName}}",
       "runImage": "Crea tu primera imagen",
       "runPresentation": "Crea tu primera presentación",
-      "runVideo": "Crea tu primer vídeo",
       "runWorkflow": "Ejecuta tu primer flujo de trabajo"
     },
     "make": {
@@ -4296,9 +4260,7 @@
       "title": "¿Qué quieres crear primero?"
     },
     "runAction": {
-      "checkingPlan": "Comprobando el plan",
-      "runNow": "Ejecutar ahora",
-      "upgradePro": "Actualizar a Pro para ejecutar"
+      "runNow": "Ejecutar ahora"
     },
     "sourcesFirst": {
       "common": {
@@ -4822,11 +4784,6 @@
         "slideAlt": "Diapositiva {{slide}} de {{title}}",
         "title": "Elige una plantilla de presentación desde la cual empezar",
         "viewTemplate": "Ver la presentación {{title}}"
-      },
-      "video": {
-        "description": "Úsalo como referencia para el vídeo que quieres crear.",
-        "selectTemplate": "Seleccionar la plantilla de vídeo {{title}}",
-        "title": "Elige una plantilla de vídeo para empezar"
       }
     },
     "templateRun": {
@@ -4841,12 +4798,6 @@
         "notePlaceholder": "Añade el contenido y las instrucciones de tu presentación",
         "previewLabel": "Vista previa de la plantilla de presentación",
         "title": "Completa tu presentación"
-      },
-      "video": {
-        "noteLabel": "Prompt de vídeo personalizado",
-        "notePlaceholder": "Añade tu prompt personalizado para remezclar con tu propio vídeo",
-        "previewLabel": "Vista previa de plantilla de vídeo",
-        "title": "Personaliza tu vídeo"
       }
     },
     "templates": {

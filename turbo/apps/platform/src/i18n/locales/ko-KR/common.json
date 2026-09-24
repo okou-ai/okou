@@ -621,23 +621,8 @@
       "all": "전체",
       "avatar": "아바타",
       "avatarWithId": "아바타 {{id}}",
-      "backToAvatars": "아바타로 돌아가기",
       "categories": "템플릿 카테고리",
       "category": "템플릿 카테고리",
-      "chooseVoice": "{{title}}의 음성 선택",
-      "filters": {
-        "age": "연령",
-        "all": "전체",
-        "aspectRatio": "화면 비율",
-        "clear": "지우기",
-        "ethnicity": "인종",
-        "gender": "성별",
-        "language": "언어",
-        "scene": "장면",
-        "style": "스타일",
-        "title": "필터",
-        "useCase": "사용 사례"
-      },
       "fullPreview": "{{title}} 웹사이트 전체 미리보기",
       "htmlPreview": "{{title}} HTML 미리보기",
       "illustration": "일러스트레이션",
@@ -648,25 +633,18 @@
       "importedSlides_other": "{{count}}장",
       "importFile": "템플릿 가져오기",
       "multiAccent": "다중 악센트",
-      "needPro": "Pro 필요",
       "nextSlide": "다음 슬라이드 미리보기",
       "noMatches": "일치하는 항목 없음",
       "placeholder": "{{title}} 웹사이트 미리보기 자리 표시자",
-      "playVideo": "비디오 템플릿 미리보기 재생 {{title}}",
-      "previewAvatarVideo": "아바타 동영상 {{title}} 미리보기",
       "previewCurrentSlide": "현재 슬라이드에서 {{title}} 미리보기",
       "previewSlide": "슬라이드 {{slideNumber}} 미리보기",
-      "previewVoice": "음성 {{title}} 미리 듣기",
       "previewWebsite": "웹사이트 템플릿 {{title}} 미리보기",
       "previousSlide": "이전 슬라이드 미리보기",
-      "recommended": "추천",
       "renameImportedTemplate": "템플릿 이름 바꾸기",
       "searchConnector": "템플릿 검색",
       "searchConnectors": "템플릿 검색",
       "selectStyle": "스타일 선택 {{style}}",
       "selectTemplate": "템플릿 선택 {{title}}",
-      "selectVideo": "비디오 템플릿 선택 {{title}}",
-      "selectVoice": "음성 {{title}} 선택",
       "selectWebsite": "웹사이트 템플릿 선택 {{title}}",
       "selectWorkflow": "워크플로 템플릿 선택 {{title}}",
       "showVariant": "변형 보기 {{variantNumber}}",
@@ -699,7 +677,6 @@
       "tryDifferentSearch": "다른 검색어를 시도해 보세요.",
       "use": "사용",
       "useThisTemplate": "이 템플릿 사용",
-      "viewVideoPlans": "동영상 템플릿 {{title}}의 요금제 보기",
       "visibility": {
         "change": "변경",
         "changeLabel": "템플릿 공개 범위 변경",
@@ -1186,7 +1163,6 @@
         "moreConnectorsChannels": "더 많은 커스텀 커넥터와 채널 연동",
         "supportEmail": "이메일 지원",
         "supportPriority": "우선 지원",
-        "videoGeneration": "영상 및 아바타 생성",
         "voiceInput": "음성 입력, 하루 {{requests}}회 · {{minutes}}분",
         "webhookAutomations": "웹훅 하나로 어떤 시스템에서든 실행 시작"
       },
@@ -1791,7 +1767,6 @@
         "addTemplate": "템플릿 추가",
         "imagePlaceholder": "만들고 싶은 이미지를 설명하세요…",
         "presentationPlaceholder": "프레젠테이션의 주제는 무엇인가요?",
-        "settingsAdjusted": "이 모델에 맞게 일부 동영상 설정을 조정했습니다",
         "slideCount": "슬라이드 수",
         "slideCountAuto": "자동",
         "slideCountRange": "{{range}}장"
@@ -2856,16 +2831,7 @@
       "removeVideo": "비디오 템플릿 삭제 {{title}}",
       "removeWebsite": "웹사이트 템플릿 삭제 {{title}}",
       "removeWorkflow": "워크플로 템플릿 삭제 {{title}}",
-      "retry": "다시 시도",
-      "videoOptions": "동영상 옵션",
-      "videoOptionsAudio": "오디오 생성",
-      "videoOptionsAudioOff": "오디오 꺼짐",
-      "videoOptionsAudioOn": "오디오 켜짐",
-      "videoOptionsDuration": "길이",
-      "videoOptionsLabel": "동영상 옵션 {{spec}}",
-      "videoOptionsModel": "모델",
-      "videoOptionsRatio": "비율",
-      "videoOptionsResolution": "해상도"
+      "retry": "다시 시도"
     },
     "thread": {
       "ariaLabel": "채팅 스레드",
@@ -4179,12 +4145,10 @@
     "documentTitles": {
       "chooseImage": "이미지 스타일 선택",
       "choosePresentation": "프레젠테이션 템플릿 선택",
-      "chooseVideo": "비디오 스타일 선택",
       "chooseWorkflow": "워크플로 선택",
       "make": "{{brandName}}에 오신 것을 환영합니다",
       "runImage": "첫 이미지 만들기",
       "runPresentation": "첫 프레젠테이션 만들기",
-      "runVideo": "첫 비디오 만들기",
       "runWorkflow": "첫 워크플로 실행"
     },
     "make": {
@@ -4226,9 +4190,7 @@
       "title": "먼저 무엇을 만들고 싶으신가요?"
     },
     "runAction": {
-      "checkingPlan": "플랜 확인 중",
-      "runNow": "지금 실행",
-      "upgradePro": "실행하려면 Pro로 업그레이드하세요"
+      "runNow": "지금 실행"
     },
     "sourcesFirst": {
       "common": {
@@ -4752,11 +4714,6 @@
         "slideAlt": "{{title}} 슬라이드 {{slide}}",
         "title": "시작할 프레젠테이션 템플릿 선택",
         "viewTemplate": "{{title}} 프레젠테이션 보기"
-      },
-      "video": {
-        "description": "만들고자 하는 비디오의 참고용으로 사용하세요.",
-        "selectTemplate": "{{title}} 비디오 템플릿 선택",
-        "title": "시작할 비디오 템플릿 선택"
       }
     },
     "templateRun": {
@@ -4771,12 +4728,6 @@
         "notePlaceholder": "프레젠테이션 내용과 지침 추가",
         "previewLabel": "프레젠테이션 템플릿 미리보기",
         "title": "프레젠테이션 완성하기"
-      },
-      "video": {
-        "noteLabel": "사용자 지정 비디오 프롬프트",
-        "notePlaceholder": "나만의 비디오로 리믹스할 사용자 지정 프롬프트 추가",
-        "previewLabel": "비디오 템플릿 미리보기",
-        "title": "비디오 맞춤 설정"
       }
     },
     "templates": {

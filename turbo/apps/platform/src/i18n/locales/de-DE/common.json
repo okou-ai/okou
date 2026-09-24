@@ -622,23 +622,8 @@
       "all": "Alle",
       "avatar": "Avatar",
       "avatarWithId": "Avatar {{id}}",
-      "backToAvatars": "Zurück zu den Avataren",
       "categories": "Vorlagenkategorien",
       "category": "Vorlagenkategorie",
-      "chooseVoice": "Stimme für {{title}} auswählen",
-      "filters": {
-        "age": "Alter",
-        "all": "Alle",
-        "aspectRatio": "Seitenverhältnis",
-        "clear": "Zurücksetzen",
-        "ethnicity": "Ethnische Zugehörigkeit",
-        "gender": "Geschlecht",
-        "language": "Sprache",
-        "scene": "Szene",
-        "style": "Stil",
-        "title": "Filter",
-        "useCase": "Anwendungsfall"
-      },
       "fullPreview": "Vollständige Vorschau der Website {{title}}",
       "htmlPreview": "{{title}} HTML-Vorschau",
       "illustration": "Illustration",
@@ -649,25 +634,18 @@
       "importedSlides_other": "{{count}} Folien",
       "importFile": "Vorlage importieren",
       "multiAccent": "Multi-Akzent",
-      "needPro": "Pro erforderlich",
       "nextSlide": "Vorschau der nächsten Folie",
       "noMatches": "Keine Übereinstimmungen",
       "placeholder": "{{title}} Platzhalter für die Website-Vorschau",
-      "playVideo": "Vorschau der Videovorlage abspielen {{title}}",
-      "previewAvatarVideo": "Avatar-Video {{title}} ansehen",
       "previewCurrentSlide": "Vorschau von {{title}} auf der aktuellen Folie",
       "previewSlide": "Vorschaufolie {{slideNumber}}",
-      "previewVoice": "Stimme {{title}} anhören",
       "previewWebsite": "Vorschau der Website-Vorlage {{title}}",
       "previousSlide": "Vorschau der vorherigen Folie",
-      "recommended": "Empfohlen",
       "renameImportedTemplate": "Vorlage umbenennen",
       "searchConnector": "Vorlagen suchen",
       "searchConnectors": "Vorlagen suchen",
       "selectStyle": "Stil auswählen {{style}}",
       "selectTemplate": "Wählen Sie die Vorlage {{title}} aus.",
-      "selectVideo": "Wählen Sie die Videovorlage {{title}} aus.",
-      "selectVoice": "Stimme {{title}} auswählen",
       "selectWebsite": "Wählen Sie die Website-Vorlage {{title}} aus.",
       "selectWorkflow": "Wählen Sie die Workflow-Vorlage {{title}} aus.",
       "showVariant": "Variante {{variantNumber}} anzeigen",
@@ -700,7 +678,6 @@
       "tryDifferentSearch": "Versuchen Sie es mit einer anderen Suche.",
       "use": "Verwenden",
       "useThisTemplate": "Verwenden Sie diese Vorlage",
-      "viewVideoPlans": "Tarife für die Videovorlage {{title}} anzeigen",
       "visibility": {
         "change": "Ändern",
         "changeLabel": "Sichtbarkeit der Vorlage ändern",
@@ -1187,7 +1164,6 @@
         "moreConnectorsChannels": "Mehr Custom Connectors & Kanal-Integrationen",
         "supportEmail": "E-Mail-Support",
         "supportPriority": "Priorisierter Support",
-        "videoGeneration": "Video- und Avatar-Generierung",
         "voiceInput": "Spracheingabe: {{requests}} Anfragen und {{minutes}} Minuten pro Tag",
         "webhookAutomations": "Einen Run aus jedem System per Webhook starten"
       },
@@ -1794,7 +1770,6 @@
         "addTemplate": "Vorlage hinzufügen",
         "imagePlaceholder": "Beschreibe das gewünschte Bild…",
         "presentationPlaceholder": "Worum geht es in deiner Präsentation?",
-        "settingsAdjusted": "Einige Videoeinstellungen wurden an dieses Modell angepasst",
         "slideCount": "Folienanzahl",
         "slideCountAuto": "Automatisch",
         "slideCountRange": "{{range}} Folien"
@@ -2864,16 +2839,7 @@
       "removeVideo": "Videovorlage {{title}} entfernen",
       "removeWebsite": "Website-Vorlage {{title}} entfernen",
       "removeWorkflow": "Workflow-Vorlage {{title}} entfernen",
-      "retry": "Erneut versuchen",
-      "videoOptions": "Videooptionen",
-      "videoOptionsAudio": "Audio erzeugen",
-      "videoOptionsAudioOff": "Audio aus",
-      "videoOptionsAudioOn": "Audio an",
-      "videoOptionsDuration": "Dauer",
-      "videoOptionsLabel": "Videooptionen {{spec}}",
-      "videoOptionsModel": "Modell",
-      "videoOptionsRatio": "Seitenverhältnis",
-      "videoOptionsResolution": "Auflösung"
+      "retry": "Erneut versuchen"
     },
     "thread": {
       "ariaLabel": "Chat-Thread",
@@ -4193,12 +4159,10 @@
     "documentTitles": {
       "chooseImage": "Wählen Sie einen Bildstil",
       "choosePresentation": "Wählen Sie eine Präsentationsvorlage",
-      "chooseVideo": "Wählen Sie einen Videostil",
       "chooseWorkflow": "Wählen Sie einen Workflow",
       "make": "Willkommen bei {{brandName}}",
       "runImage": "Erstellen Sie Ihr erstes Bild",
       "runPresentation": "Erstellen Sie Ihre erste Präsentation",
-      "runVideo": "Erstellen Sie Ihr erstes Video",
       "runWorkflow": "Führen Sie Ihren ersten Workflow aus"
     },
     "make": {
@@ -4240,9 +4204,7 @@
       "title": "Was möchten Sie zuerst machen?"
     },
     "runAction": {
-      "checkingPlan": "Prüfplan",
-      "runNow": "Jetzt ausführen",
-      "upgradePro": "Aktualisieren Sie Pro, um es auszuführen"
+      "runNow": "Jetzt ausführen"
     },
     "sourcesFirst": {
       "common": {
@@ -4766,11 +4728,6 @@
         "slideAlt": "{{title}} Folie {{slide}}",
         "title": "Wählen Sie eine Präsentationsvorlage als Ausgangspunkt",
         "viewTemplate": "Präsentation {{title}} ansehen"
-      },
-      "video": {
-        "description": "Verwenden Sie es als Referenz für das Video, das Sie erstellen möchten.",
-        "selectTemplate": "Wählen Sie die Videovorlage {{title}} aus",
-        "title": "Wählen Sie eine Videovorlage als Ausgangspunkt aus"
       }
     },
     "templateRun": {
@@ -4785,12 +4742,6 @@
         "notePlaceholder": "Fügen Sie den Inhalt und die Anweisungen Ihrer Präsentation hinzu",
         "previewLabel": "Vorschau der Präsentationsvorlage",
         "title": "Erfüllen Sie Ihre Präsentation"
-      },
-      "video": {
-        "noteLabel": "Benutzerdefinierte Videoaufforderung",
-        "notePlaceholder": "Fügen Sie Ihre benutzerdefinierte Aufforderung zum Remixen mit Ihrem eigenen Video hinzu",
-        "previewLabel": "Vorschau der Videovorlage",
-        "title": "Passen Sie Ihr Video an"
       }
     },
     "templates": {
