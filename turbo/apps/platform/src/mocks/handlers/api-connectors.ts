@@ -440,7 +440,6 @@ export const apiConnectorsHandlers = [
         return {
           slug: connector.slug,
           label: connector.label,
-          description: connector.description,
           icon: connector.icon,
           hasPermissions: connector.permissionSummary.hasPermissions,
         };

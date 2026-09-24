@@ -39,7 +39,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { agents$ } from "../agent.ts";
 import { currentChatAgentRecordId$ } from "../agent-chat.ts";
-import { onRef, resetSignal } from "../utils.ts";
+import { detach, onRef, Reason, resetSignal } from "../utils.ts";
 import type { DraftInputSyncTarget, DraftSignals } from "./chat-draft.ts";
 import {
   createComposerFeedbackModel,
@@ -107,6 +107,14 @@ type WorkflowNamesSyncCommand = Command<
 >;
 type AgentMentionAvatarsSyncCommand = Command<Promise<void>, [AbortSignal]>;
 
+interface ComposerWorkflowNames {
+  readonly sync$: WorkflowNamesSyncCommand;
+  /** Latches the workflow list once the draft has any text. */
+  readonly request$: Command<boolean, []>;
+  /** Requests the list for the draft and syncs its names when newly latched. */
+  readonly syncForInput$: Command<void, [AbortSignal]>;
+}
+
 interface MountedWorkflowNamesSync {
   readonly command$: WorkflowNamesSyncCommand;
   readonly mountSignal: AbortSignal;
@@ -137,6 +145,20 @@ const unregisterMountedWorkflowNamesSync$ = command(
     const next = new Set(current);
     next.delete(mountedWorkflowNamesSync);
     set(mountedWorkflowNamesSyncs$, next);
+  },
+);
+
+const mountWorkflowNamesSync$ = command(
+  (
+    { set },
+    command$: WorkflowNamesSyncCommand,
+    mountSignal: AbortSignal,
+  ): void => {
+    const mountedWorkflowNamesSync = { command$, mountSignal };
+    set(registerMountedWorkflowNamesSync$, mountedWorkflowNamesSync);
+    mountSignal.addEventListener("abort", () => {
+      set(unregisterMountedWorkflowNamesSync$, mountedWorkflowNamesSync);
+    });
   },
 );
 
@@ -208,7 +230,8 @@ export interface WorkflowComposerSignals {
     Promise<ComposerChatThreadSuggestionResult>
   >;
   readonly agentId$: Computed<Promise<string | null>>;
-  readonly workflows$: Computed<Promise<readonly ComposerWorkflow[]>>;
+  /** Null until the draft first has text. */
+  readonly workflows$: Computed<Promise<readonly ComposerWorkflow[]> | null>;
   readonly reloadWorkflows$: Command<Promise<void>, [AbortSignal]>;
   readonly selectedSuggestionIndex$: Computed<number>;
   readonly setSelectedSuggestionIndex$: Command<void, [number]>;
@@ -273,12 +296,46 @@ export interface ComposerTemplateAttachment {
 }
 
 function createComposerAgentResources<T extends AgentIdValue>(
+  editor: Editor,
   agentIdSource$: Computed<T>,
 ) {
   const agentId$ = computed(async (get): Promise<string | null> => {
     return await get(agentIdSource$);
   });
-  return { agentId$, workflows$: createComposerWorkflows(agentId$) };
+  const allWorkflows$ = createComposerWorkflows(agentId$);
+  // The workflow list is only needed for `/` tokens. An untouched composer
+  // does not request it; the first keystroke does, so the list is usually
+  // ready by the time a `/` opens the menu.
+  const workflowsRequested$ = state(false);
+  const workflows$ = computed((get) => {
+    return get(workflowsRequested$) ? get(allWorkflows$) : null;
+  });
+  const sync$ = createSyncWorkflowNamesCommand(editor, agentId$, workflows$);
+  const request$ = command(({ get, set }): boolean => {
+    if (
+      get(workflowsRequested$) ||
+      workflowComposerDocToString(editor).trim() === ""
+    ) {
+      return false;
+    }
+    set(workflowsRequested$, true);
+    return true;
+  });
+  const syncForInput$ = command(({ set }, mountSignal: AbortSignal): void => {
+    if (set(request$)) {
+      detach(
+        set(sync$, mountSignal, mountSignal),
+        Reason.Daemon,
+        "composer workflow names",
+      );
+    }
+  });
+  const workflowNames: ComposerWorkflowNames = {
+    sync$,
+    request$,
+    syncForInput$,
+  };
+  return { agentId$, workflows$, workflowNames };
 }
 
 function connectComposerFeedback(
@@ -1926,7 +1983,9 @@ function applyWorkflowNames(editor: Editor, names: readonly string[]): void {
     return;
   }
   storage.workflowNames = names;
-  if (editor.isInitialized) {
+  // `isInitialized` only turns true a tick after `mount()`; a mounted view
+  // must redraw even inside that tick, or a restored draft stays unhighlighted.
+  if (!editor.isDestroyed) {
     editor.view.dispatch(editor.state.tr);
   }
 }
@@ -1934,7 +1993,7 @@ function applyWorkflowNames(editor: Editor, names: readonly string[]): void {
 function createSyncWorkflowNamesCommand(
   editor: Editor,
   agentId$: Computed<Promise<string | null>>,
-  workflows$: Computed<Promise<readonly ComposerWorkflow[]>>,
+  workflows$: Computed<Promise<readonly ComposerWorkflow[]> | null>,
 ): WorkflowNamesSyncCommand {
   const resetWorkflowNamesSyncSignal$ = resetSignal();
   return command(
@@ -1957,7 +2016,7 @@ function createSyncWorkflowNamesCommand(
         get(workflows$),
       ]);
       signal.throwIfAborted();
-      if (syncSignal.aborted) {
+      if (syncSignal.aborted || workflows === null) {
         return;
       }
       const workflowNames = buildComposerSlashWorkflows({
@@ -2080,7 +2139,7 @@ interface MountEditorOptions {
   previewSuggestionIndexState$: State<number | null>;
   feedback: ComposerFeedbackModel;
   compositionGate: CompositionGate;
-  syncWorkflowNames$: WorkflowNamesSyncCommand;
+  workflowNames: ComposerWorkflowNames;
   syncAgentMentionAvatars$: AgentMentionAvatarsSyncCommand;
   autoFocus: boolean;
 }
@@ -2180,7 +2239,7 @@ function createMountEditorCommand({
   previewSuggestionIndexState$,
   feedback,
   compositionGate,
-  syncWorkflowNames$,
+  workflowNames,
   syncAgentMentionAvatars$,
   autoFocus,
 }: MountEditorOptions) {
@@ -2196,6 +2255,7 @@ function createMountEditorCommand({
           feedbackItemsFromWorkflowComposer(updatedEditor),
         );
         set(draft.setInput$, workflowComposerDocToString(updatedEditor));
+        set(workflowNames.syncForInput$, signal);
         set(
           draft.setEditorDocument$,
           createEditorDocumentSnapshot(updatedEditor.state.doc),
@@ -2258,6 +2318,7 @@ function createMountEditorCommand({
       );
       set(legacyTemplateAttachment.sync$);
       set(templateSelection.sync$);
+      set(workflowNames.request$);
       editor.mount(element);
       mountLocalizationListener(editor, runtime, signal);
       mountCompositionListeners(editor, compositionGate, signal);
@@ -2270,20 +2331,16 @@ function createMountEditorCommand({
             set(draft.setEditorDocument$, snapshot);
             set(legacyTemplateAttachment.sync$);
             set(templateSelection.sync$);
+            set(workflowNames.syncForInput$, signal);
           },
         }),
       );
       // Keep workflow decoration sync scoped to real editor mounts.
-      const mountedWorkflowNamesSync = {
-        command$: syncWorkflowNames$,
-        mountSignal: signal,
-      };
-      set(registerMountedWorkflowNamesSync$, mountedWorkflowNamesSync);
+      set(mountWorkflowNamesSync$, workflowNames.sync$, signal);
       if (autoFocus && !isMobileTextInputDevice()) {
         focusMountedEditorAtEnd(editor);
       }
       signal.addEventListener("abort", () => {
-        set(unregisterMountedWorkflowNamesSync$, mountedWorkflowNamesSync);
         compositionGate.cancel(signal.reason);
         resetMountedWorkflowRuntime(runtime);
         set(legacyTemplateAttachment.reset$);
@@ -2293,7 +2350,7 @@ function createMountEditorCommand({
         editor.unmount();
       });
       await Promise.all([
-        set(syncWorkflowNames$, signal, signal),
+        set(workflowNames.sync$, signal, signal),
         set(syncAgentMentionAvatars$, signal),
       ]);
     }),
@@ -2941,14 +2998,11 @@ export function createWorkflowComposerSignals<
   const agentMentionAvatarRuntime = createAgentMentionAvatarRuntime();
   const templatePreview = createTemplatePreviewRuntime();
   const compositionGate = createCompositionGate();
-  const { agentId$, workflows$ } = createComposerAgentResources(agentIdSource$);
-
   const editor = createWorkflowEditor(runtime, agentMentionAvatarRuntime);
   connectComposerFeedback(feedback, editor);
-  const syncWorkflowNames$ = createSyncWorkflowNamesCommand(
+  const { agentId$, workflows$, workflowNames } = createComposerAgentResources(
     editor,
-    agentId$,
-    workflows$,
+    agentIdSource$,
   );
   const syncAgentMentionAvatars$ = createSyncAgentMentionAvatarsCommand(
     agentMentionAvatarRuntime,
@@ -3006,7 +3060,7 @@ export function createWorkflowComposerSignals<
     previewSuggestionIndexState$,
     feedback,
     compositionGate,
-    syncWorkflowNames$,
+    workflowNames,
     syncAgentMentionAvatars$,
     autoFocus: options.autoFocus ?? false,
   });

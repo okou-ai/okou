@@ -639,11 +639,40 @@ test("Distinguish workflow tokens from text inside URLs", async () => {
   const editor = await findComposerEditor();
   const url = "https://www.okou.ai/en/use-cases/pr-review";
   await user.click(editor);
+  await user.keyboard("/pr-review ");
+  await waitFor(() => {
+    expect(workflowHighlights(editor)).toHaveLength(1);
+  });
   await user.keyboard(url);
 
   await waitFor(() => {
     expect(editor).toHaveTextContent(url);
-    expect(workflowHighlights(editor)).toHaveLength(0);
+    expect(workflowHighlights(editor)).toHaveLength(1);
     expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   });
+});
+
+test("Highlight a workflow in a restored draft", async () => {
+  mockAgent();
+  mockThread();
+  installWorkflows(() => {
+    return [workflow("pr-review")];
+  });
+  context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
+    return respond(200, {
+      draftUserMessage: {
+        version: 1,
+        parts: [{ type: "text" as const, text: "Please run /pr-review" }],
+      },
+      draftAttachments: null,
+    });
+  });
+
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+
+  const editor = await findComposerEditor();
+  await waitFor(() => {
+    expect(workflowHighlights(editor)).toHaveLength(1);
+  });
+  expect(workflowHighlights(editor)[0]).toHaveTextContent("/pr-review");
 });

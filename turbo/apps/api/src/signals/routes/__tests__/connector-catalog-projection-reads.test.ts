@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
 import {
   onboardingSourcesContract,
   onboardingWorkflowConnectorsContract,
@@ -16,6 +18,8 @@ import {
 } from "../../../test-fixtures/connector-catalog";
 import { createRouteMocks } from "./helpers/route-test";
 import { connectorCatalogRoutes } from "../connector-catalog";
+import { connectorOverviewRoutes } from "../connector-overview";
+import { builtinConnectorsRoutes } from "../connectors";
 import { onboardingSourcesRoutes } from "../onboarding-sources";
 import { onboardingWorkflowConnectorsRoutes } from "../onboarding-workflow-connectors";
 
@@ -108,6 +112,47 @@ describe("connector catalog reads from the runtime projection", () => {
       [200],
     );
     expect(after.body).toStrictEqual(before.body);
+  });
+
+  it("summarizes the user's connector accounts from their projection rows", async () => {
+    await projectionOnlyCatalog();
+    const client = setupApp({
+      context,
+      // The overview path would otherwise match `/api/connectors/:connectorSlug`.
+      routes: [...connectorOverviewRoutes, ...builtinConnectorsRoutes],
+    });
+    const account = await accept(
+      client(builtinConnectorManualGrantContract).connect({
+        headers,
+        params: { connectorSlug: "gitlab" },
+        body: {
+          authMethod: "api-token",
+          account: { intent: "add" },
+          values: {
+            accessToken: "gl-test-token",
+            host: "gitlab.example.com",
+          },
+        },
+      }),
+      [200],
+    );
+
+    await corruptApiTestConnectorCatalogActiveSnapshotPayload();
+
+    const overview = await accept(
+      client(connectorOverviewContract).overview({ headers }),
+      [200],
+    );
+    expect(overview.body.accountSummaries).toStrictEqual([
+      expect.objectContaining({
+        target: { kind: "builtin", connectorSlug: "gitlab" },
+        accountCount: 1,
+        defaultConnection: expect.objectContaining({
+          id: account.body.id,
+          connectionStatus: "connected",
+        }),
+      }),
+    ]);
   });
 
   it("lists the onboarding workflow connectors from the projection", async () => {
