@@ -473,12 +473,16 @@ function discordDescription(data: DiscordOrgStatus): string {
   });
 }
 
-function DiscordDmSelection({ data }: { data: DiscordOrgStatus }) {
+function DiscordDmSelection({
+  data,
+  saving,
+  onSelect,
+}: {
+  data: DiscordOrgStatus;
+  saving: boolean;
+  onSelect: (connectionId: string) => void;
+}) {
   const { t } = useTranslation();
-  const [selectionState, selectBinding] = useLoadableSet(
-    selectDiscordDmBinding$,
-  );
-  const pageSignal = useGet(pageSignal$);
   const items = data.dmBindings.map((binding) => {
     return {
       value: binding.connectionId,
@@ -498,7 +502,7 @@ function DiscordDmSelection({ data }: { data: DiscordOrgStatus }) {
       <Select
         items={items}
         value={data.dmSelectionConnectionId}
-        disabled={selectionState.state === "loading"}
+        disabled={saving}
         onValueChange={(connectionId, details) => {
           if (
             connectionId === null ||
@@ -510,7 +514,7 @@ function DiscordDmSelection({ data }: { data: DiscordOrgStatus }) {
             return;
           }
           if (connectionId !== data.dmSelectionConnectionId) {
-            detach(selectBinding(connectionId, pageSignal), Reason.DomCallback);
+            onSelect(connectionId);
           }
         }}
       >
@@ -537,9 +541,12 @@ function DiscordDmSelection({ data }: { data: DiscordOrgStatus }) {
 
 function DiscordCard() {
   const { t } = useTranslation();
-  const status = useLoadable(discordOrgData$);
+  const status = useLastLoadable(discordOrgData$);
   const [disconnectState, disconnect] = useLoadableSet(disconnectDiscordOrg$);
   const [uninstallState, uninstall] = useLoadableSet(uninstallDiscordOrg$);
+  const [selectionState, selectBinding] = useLoadableSet(
+    selectDiscordDmBinding$,
+  );
   const reload = useSet(reloadDiscordOrg$);
   const showUninstallDialog = useGet(showDiscordUninstallDialog$);
   const setShowUninstallDialog = useSet(setShowDiscordUninstallDialog$);
@@ -633,7 +640,16 @@ function DiscordCard() {
           </p>
         ) : null}
         {data?.isConnected && data.dmBindings.length > 1 ? (
-          <DiscordDmSelection data={data} />
+          <DiscordDmSelection
+            data={data}
+            saving={selectionState.state === "loading"}
+            onSelect={(connectionId) => {
+              detach(
+                selectBinding(connectionId, pageSignal),
+                Reason.DomCallback,
+              );
+            }}
+          />
         ) : null}
       </section>
       <UninstallConfirmDialog

@@ -379,3 +379,105 @@ test("Direct messages require an explicit server choice and a failed save keeps 
     ).toHaveTextContent("Design team");
   });
 });
+
+test.each(["successful refresh", "failed refresh and retry"])(
+  "A pending DM choice remains disabled through a %s",
+  async (refresh) => {
+    const first = "e0000000-0000-4000-a000-000000000001";
+    const second = "e0000000-0000-4000-a000-000000000002";
+    const saveStarted = context.mocks.deferred<void>();
+    const saveReady = context.mocks.deferred<void>();
+    const refreshStarted = context.mocks.deferred<void>();
+    const refreshReady = context.mocks.deferred<void>();
+    const submitted: string[] = [];
+    let current = status({
+      dmSelectionConnectionId: first,
+      dmBindings: [
+        {
+          connectionId: first,
+          guildId: "123456789012345678",
+          guildName: "Design team",
+        },
+        {
+          connectionId: second,
+          guildId: "345678901234567890",
+          guildName: "Operations",
+        },
+      ],
+    });
+    let denyRefresh = false;
+    let refreshing = false;
+    context.mocks.api(
+      integrationsDiscordContract.getStatus,
+      async ({ respond, withSignal }) => {
+        if (refreshing) {
+          refreshStarted.resolve();
+          await withSignal(refreshReady.promise);
+        }
+        if (denyRefresh) {
+          return respond(403, {
+            error: { code: "FORBIDDEN", message: "Discord refresh denied" },
+          });
+        }
+        return respond(200, current);
+      },
+    );
+    context.mocks.api(
+      integrationsDiscordContract.setDmSelection,
+      async ({ body, respond, withSignal }) => {
+        submitted.push(body.connectionId);
+        saveStarted.resolve();
+        await withSignal(saveReady.promise);
+        current = { ...current, dmSelectionConnectionId: body.connectionId };
+        return respond(200, { ok: true });
+      },
+    );
+    await setupDiscordPage();
+    click(
+      await screen.findByRole("combobox", {
+        name: "Default server for direct messages",
+      }),
+    );
+    click(await screen.findByRole("option", { name: "Operations" }));
+    await saveStarted.promise;
+
+    current = { ...current, guildName: "Updated team" };
+    refreshing = true;
+    denyRefresh = refresh === "failed refresh and retry";
+    context.mocks.ably.trigger("discord:changed");
+    await refreshStarted.promise;
+    expect(
+      screen.getByRole("combobox", {
+        name: "Default server for direct messages",
+      }),
+    ).toBeDisabled();
+    refreshReady.resolve();
+    if (denyRefresh) {
+      await expect(
+        screen.findByText("Unable to load Discord status."),
+      ).resolves.toBeInTheDocument();
+      denyRefresh = false;
+      click(getAction("button", "Retry", getIntegrationCard("Discord")));
+    }
+    await expect(
+      screen.findByText("Server: Updated team"),
+    ).resolves.toBeInTheDocument();
+    const select = screen.getByRole("combobox", {
+      name: "Default server for direct messages",
+    });
+    expect(select).toBeDisabled();
+    expect(select).toHaveTextContent("Design team");
+    click(select);
+    expect(screen.queryByRole("option", { name: "Design team" })).toBeNull();
+    expect(submitted).toStrictEqual([second]);
+
+    saveReady.resolve();
+    await waitFor(() => {
+      const saved = screen.getByRole("combobox", {
+        name: "Default server for direct messages",
+      });
+      expect(saved).toBeEnabled();
+      expect(saved).toHaveTextContent("Operations");
+    });
+  },
+);
