@@ -72,6 +72,11 @@ responses keep the diagnostic status and metadata but have no body or
 ``Content-Encoding``, ``Content-Length``, and ``Transfer-Encoding`` headers and
 discards trailers before applying JSON framing.
 
+A separate HTTP ``409`` ``connector_auth_owner_conflict`` response blocks
+confirmed request authentication on a unique inactive route before active
+base-only owner credentials are fetched. It is not a connector availability
+diagnostic and does not depend on connector intent.
+
 Authentication inspection has per-invocation header and query work budgets.
 An exhausted budget leaves authentication indeterminate and suppresses the
 optional diagnostic, preserving ordinary request and response handling. Confirmed
@@ -91,7 +96,6 @@ from typing import Literal
 from mitmproxy import http
 
 import builtin_connector_diagnostics
-import connector_intent
 import flow_metadata
 import flow_metadata_keys as metadata_keys
 import http_local_responses
@@ -129,7 +133,6 @@ _CONNECTOR_DIAGNOSTIC_RESPONSE_STREAM_CALLBACK = "_connector_diagnostic_response
 _CONNECTOR_DIAGNOSTIC_PROXY_ENTRY_LOGGED = "_connector_diagnostic_proxy_entry_logged"
 _CONNECTOR_DIAGNOSTIC_OWNERSHIP_REASON = "_connector_diagnostic_ownership_reason"
 _CONNECTOR_DIAGNOSTIC_OWNERSHIP_CANDIDATES = "_connector_diagnostic_ownership_candidates"
-_CONNECTOR_DIAGNOSTIC_OWNERSHIP_HINT_STATUS = "_connector_diagnostic_ownership_hint_status"
 
 _EMPTY_RESPONSE_STREAM_CHUNKS: tuple[bytes, ...] = ()
 _GENERIC_AUTH_HEADER_NAMES = frozenset(
@@ -208,7 +211,7 @@ def record_allow_context(
 
 def maybe_make_connector_owner_local_response(
     flow: http.HTTPFlow,
-    classification: request_classification.FirewallAllow | request_classification.FirewallAmbiguous,
+    classification: request_classification.FirewallAllow,
     *,
     commit: bool,
 ) -> bool:
@@ -230,27 +233,20 @@ def maybe_make_connector_owner_local_response(
     diagnostic. The provisional path pins only when it actually builds the
     local response.
 
-    Return ``True`` only after installing and logging the pre-upstream mode of
-    the module's connector availability response contract: a local HTTP 424
-    response with ``upstreamStatus`` set to ``0`` and the selected candidate
-    and ownership metadata. HEAD keeps the same diagnostic status and metadata
-    without response content. The caller must stop normal request dispatch on
-    ``True``.
+    Return ``True`` after a local HTTP 424 availability diagnostic or a local
+    HTTP 409 authentication conflict. The diagnostic records ``upstreamStatus``
+    as ``0`` and the selected candidate and ownership metadata. HEAD keeps its
+    status and metadata without response content. The caller must stop normal
+    request dispatch on ``True``.
     """
     if _is_browser_diagnostic_skip(flow):
         return False
 
     sandbox_info = classification.sandbox_info
-    if classification.kind == "firewall_ambiguous":
-        ambiguous = classification.firewall_ambiguous
-        if ambiguous.reason != "connector_intent_not_candidate" or len(ambiguous.candidates) != 1:
-            return False
-        matched_firewall_name = ambiguous.candidates[0]
-    else:
-        allow = classification.firewall_allow
-        if not _firewall_allow_is_unknown_endpoint(allow):
-            return False
-        matched_firewall_name = allow.name
+    allow = classification.firewall_allow
+    if not _firewall_allow_is_unknown_endpoint(allow):
+        return False
+    matched_firewall_name = allow.name
 
     original_url = flow_metadata.original_url(flow.metadata)
     if not original_url:
@@ -265,7 +261,6 @@ def maybe_make_connector_owner_local_response(
         flow.request.method,
         active_firewall_names=_active_firewall_names(sandbox_info),
         matched_firewall_name=matched_firewall_name,
-        connector_intent=_present_connector_intent_from_flow(flow),
     )
     if resolution is None or resolution.candidate is None:
         return False
@@ -273,7 +268,7 @@ def maybe_make_connector_owner_local_response(
     candidate = resolution.candidate
     auth_status = _request_auth_material_status(flow, candidate, original_url)
     if auth_status != "absent":
-        if resolution.reason == "route_owner" and auth_status == "present":
+        if auth_status == "present":
             flow_metadata.start_request_timing(flow.metadata)
             http_local_responses.block_connector_auth_owner_conflict(
                 flow,
@@ -288,7 +283,6 @@ def maybe_make_connector_owner_local_response(
     _set_failure_metadata(flow, candidate)
     flow.metadata[_CONNECTOR_DIAGNOSTIC_OWNERSHIP_REASON] = resolution.reason
     flow.metadata[_CONNECTOR_DIAGNOSTIC_OWNERSHIP_CANDIDATES] = resolution.candidate_connector_slugs
-    flow.metadata[_CONNECTOR_DIAGNOSTIC_OWNERSHIP_HINT_STATUS] = resolution.hint_status
     flow_metadata.set_firewall_decision(flow.metadata, "ALLOW")
     flow.response = _make_local_response(
         flow,
@@ -468,7 +462,6 @@ def release_flow_state(flow: http.HTTPFlow) -> None:
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_AUTH_QUERY_PARAM_NAMES, None)
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_OWNERSHIP_REASON, None)
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_OWNERSHIP_CANDIDATES, None)
-    flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_OWNERSHIP_HINT_STATUS, None)
     stream_callback = flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_RESPONSE_STREAM_CALLBACK, None)
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_RESPONSE_BODY, None)
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_RESPONSE_STREAM_BODY_SENT, None)
@@ -476,11 +469,6 @@ def release_flow_state(flow: http.HTTPFlow) -> None:
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_PROXY_ENTRY_LOGGED, None)
     if stream_callback is not None and flow.response and flow.response.stream is stream_callback:
         flow.response.stream = False
-
-
-def _present_connector_intent_from_flow(flow: http.HTTPFlow) -> str | None:
-    intent = connector_intent.from_flow(flow)
-    return intent.value if intent.status == "present" else None
 
 
 def _active_firewall_names(sandbox_info: dict) -> set[str]:
@@ -885,9 +873,6 @@ def _log_proxy_entry(
         isinstance(candidate, str) for candidate in ownership_candidates
     ):
         extra["ownership_candidates"] = list(ownership_candidates)
-    ownership_hint_status = flow.metadata.get(_CONNECTOR_DIAGNOSTIC_OWNERSHIP_HINT_STATUS)
-    if isinstance(ownership_hint_status, str) and ownership_hint_status:
-        extra["ownership_hint_status"] = ownership_hint_status
     extra.update(url_projection.truncation_fields())
     log_proxy_entry(
         flow_metadata.proxy_log_path(flow.metadata),

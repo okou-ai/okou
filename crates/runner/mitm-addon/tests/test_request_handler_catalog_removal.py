@@ -288,7 +288,7 @@ async def test_no_auth_mcp_skips_account_validation(
 
 
 @pytest.mark.parametrize("requestheaders_first", [False, True])
-async def test_authenticated_builtin_owner_change_during_account_check_is_rejected(
+async def test_authenticated_builtin_owner_change_during_account_check_revalidates(
     tmp_path, real_flow, mitm_ctx, requestheaders_first
 ):
     registry_path, cache_path = _write_account_mcp_state(tmp_path, credentialed=True)
@@ -297,6 +297,9 @@ async def test_authenticated_builtin_owner_change_during_account_check_is_reject
     endpoint.queue_json_response(
         firewall_auth_success_response({"Authorization": "Bearer selected-account"}),
         release_event=release_auth,
+    )
+    endpoint.queue_json_response(
+        firewall_auth_success_response({"Authorization": "Bearer retained-account"})
     )
     flow = real_flow(
         with_response=False,
@@ -342,15 +345,17 @@ async def test_authenticated_builtin_owner_change_during_account_check_is_reject
             assert flow.request.stream is False
             await mitm_addon.request(flow)
 
-    assert endpoint.request_count == 1
-    assert flow.response is not None
-    assert flow.response.status_code == (424 if requestheaders_first else 409)
-    assert json.loads(flow.response.content)["error"] == (
-        "connector_not_configured_for_run"
-        if requestheaders_first
-        else "firewall_authorization_changed"
-    )
-    assert "Authorization" not in flow.request.headers
+    if requestheaders_first:
+        assert endpoint.request_count == 2
+        assert flow.response is None
+        assert flow.metadata[metadata_keys.FIREWALL_NAME] == _RETAINED
+        assert flow.request.headers["Authorization"] == "Bearer retained-account"
+    else:
+        assert endpoint.request_count == 1
+        assert flow.response is not None
+        assert flow.response.status_code == 409
+        assert json.loads(flow.response.content)["error"] == "firewall_authorization_changed"
+        assert "Authorization" not in flow.request.headers
 
 
 @pytest.mark.parametrize(

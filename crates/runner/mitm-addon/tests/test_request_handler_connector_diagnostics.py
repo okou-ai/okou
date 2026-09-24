@@ -106,7 +106,6 @@ async def test_shared_base_unknown_endpoint_diagnoses_inactive_sibling_before_au
     assert proxy_log_entry["type"] == "connector_diagnostic"
     assert proxy_log_entry["ownership_reason"] == "route_owner"
     assert proxy_log_entry["ownership_candidates"] == ["active-shared", "inactive-shared"]
-    assert proxy_log_entry["ownership_hint_status"] == "ignored"
 
 
 async def test_shared_base_head_diagnostic_is_bodyless(
@@ -155,7 +154,7 @@ async def test_shared_base_head_diagnostic_is_bodyless(
     assert http_error_entry["type"] == "http_error"
 
 
-async def test_shared_base_connector_intent_diagnoses_inside_candidate_set_before_auth(
+async def test_shared_base_inactive_intent_does_not_override_sole_active_owner(
     tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers
 ):
     write_shared_base_diagnostic_catalog(tmp_path)
@@ -177,16 +176,12 @@ async def test_shared_base_connector_intent_diagnoses_inside_candidate_set_befor
     ):
         await mitm_addon.request(flow)
 
-    auth_fetch.assert_not_called()
-    _assert_shared_base_inactive_diagnostic(flow)
-    assert "Authorization" not in flow.request.headers
+    auth_fetch.assert_awaited_once()
+    assert flow.response is None
+    assert flow.request.headers["Authorization"] == "Bearer active"
     assert "X-Okou-Connector-Intent" not in flow.request.headers
-    assert upstream_destination_binding.binding_snapshot_for_tests() == {}
-    [proxy_log_entry] = read_jsonl_entries_after_flush(tmp_path / "proxy.jsonl")
-    assert proxy_log_entry["type"] == "connector_diagnostic"
-    assert proxy_log_entry["ownership_reason"] == "hint_owner"
-    assert proxy_log_entry["ownership_candidates"] == ["active-shared", "inactive-shared"]
-    assert proxy_log_entry["ownership_hint_status"] == "used"
+    assert flow.metadata[metadata_keys.FIREWALL_NAME] == "active-shared"
+    assert metadata_keys.CONNECTOR_DIAGNOSTIC_SLUG not in flow.metadata
 
 
 async def test_shared_base_active_connector_intent_keeps_active_auth_path(

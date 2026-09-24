@@ -235,7 +235,7 @@ def block_connector_auth_owner_conflict(
     inactive_owner: str,
 ) -> None:
     """Keep authentication for an inactive route separate from active credentials."""
-    message = "Request blocked: authentication belongs to another connector route"
+    message = "Request blocked: authentication conflicts with an inactive connector route"
     log_proxy_entry(
         flow_metadata.proxy_log_path(flow.metadata),
         "warn",
