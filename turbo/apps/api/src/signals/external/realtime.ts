@@ -17,7 +17,7 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { singleton } from "../../lib/singleton";
 import { waitUntil } from "../context/wait-until";
-import { bestEffort, tapError } from "../utils";
+import { awaitWithSignal, bestEffort, settle, tapError } from "../utils";
 
 const L = logger("Realtime");
 
@@ -58,10 +58,15 @@ async function createPlatformUserRealtimeToken(
   return tokenRequest;
 }
 
+// Exchanging the token here saves the browser its own requestToken round trip
+// before the WebSocket can open. Past this budget the browser exchanges it.
+const PLATFORM_REALTIME_TOKEN_EXCHANGE_TIMEOUT_MS = 1000;
+
 export async function createPlatformRealtimeToken(
   userId: string,
   orgId: string | undefined,
-): Promise<Ably.TokenRequest> {
+  signal: AbortSignal,
+): Promise<Ably.TokenDetails | Ably.TokenRequest> {
   const capability: Record<string, CapabilityOp[]> = {
     [getUserChannelName(userId)]: ["subscribe"],
   };
@@ -70,14 +75,36 @@ export async function createPlatformRealtimeToken(
     capability[getUserOrgChannelName(userId, orgId)] = ["subscribe"];
     capability[sessionOutputChannelName(userId, orgId, "*")] = ["subscribe"];
   }
-  const tokenRequest = await ablyClient().auth.createTokenRequest({
+  const tokenParams = {
     capability,
     ttl: 60 * 60 * 1000,
     clientId: userId,
-  });
-  L.debug(
-    `Generated platform realtime token for user:${userId}${orgId === undefined ? "" : `/org:${orgId}`}`,
+  };
+  const scope = `user:${userId}${orgId === undefined ? "" : `/org:${orgId}`}`;
+  const exchanged = await settle(
+    awaitWithSignal(
+      ablyClient().auth.requestToken(tokenParams),
+      AbortSignal.any([
+        signal,
+        AbortSignal.timeout(PLATFORM_REALTIME_TOKEN_EXCHANGE_TIMEOUT_MS),
+      ]),
+    ),
+    signal,
   );
+  if (exchanged.ok) {
+    L.debug(`Exchanged platform realtime token for ${scope}`);
+    return exchanged.value;
+  }
+
+  L.warn("Platform realtime token exchange failed; returning a token request", {
+    scope,
+    error:
+      exchanged.error instanceof Error
+        ? exchanged.error.message
+        : String(exchanged.error),
+  });
+  const tokenRequest = await ablyClient().auth.createTokenRequest(tokenParams);
+  L.debug(`Generated platform realtime token request for ${scope}`);
   return tokenRequest;
 }
 

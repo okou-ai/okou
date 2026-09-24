@@ -1012,8 +1012,8 @@ const connectRealtimeClient$ = command(
     const createClient = get(apiClient$);
     const client = createClient(platformRealtimeTokenContract);
     const ably = createAblyRealtime({
-      // Ably TokenRequest is single-use — see lib/ably-auth.ts for why
-      // every invocation must fetch a freshly-signed request.
+      // See lib/ably-auth.ts for why every invocation must fetch a fresh
+      // token.
       authCallback: createAblyAuthCallback(client, signal),
       autoConnect: true,
       disconnectedRetryTimeout: 5000,

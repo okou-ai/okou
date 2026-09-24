@@ -1,5 +1,8 @@
 import { command } from "ccstate";
 import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
+import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
+import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import {
   billingRedeemCodeContract,
   billingUsagePackCheckoutContract,
@@ -7,8 +10,11 @@ import {
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { reloadAgents$ } from "../agent.ts";
+import { discardApiBootstrapResponse } from "../api-client-base.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { invalidateOrgModelPolicies$ } from "../external/org-model-policies.ts";
+import { reloadUserModelPreference$ } from "../external/user-model-preference.ts";
+import { refreshOrg$ } from "../org.ts";
 import { ROUTES } from "../route-paths.ts";
 import { billingStatusAsync$ } from "../okou-page/billing.ts";
 import { reloadOnboardingStatus$ } from "../okou-page/onboarding.ts";
@@ -66,9 +72,18 @@ export const completeOnboarding$ = command(
       [200],
     );
     signal.throwIfAborted();
-    if (provider !== null) {
-      set(invalidateOrgModelPolicies$);
+    // Completion provisions org defaults such as model policies. Snapshots
+    // prefetched into the onboarding page's HTML predate them.
+    for (const route of [
+      orgContract.get,
+      modelPoliciesMainContract.list,
+      userModelPreferenceContract.get,
+    ]) {
+      discardApiBootstrapResponse(route.method, route.path);
     }
+    set(refreshOrg$);
+    set(invalidateOrgModelPolicies$);
+    set(reloadUserModelPreference$);
     set(clearSourcesFirstDraft$);
     if (role) {
       set(capturePaidOnboardingRoleConfirmed$, role);
