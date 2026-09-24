@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.98.5](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.4...guest-agent-v0.98.5) (2026-09-24)
+
+
+### Bug Fixes
+
+* **guest-agent:** classify claude personal spend limit ([#36484](https://github.com/okou-ai/okou/issues/36484)) ([7687b34](https://github.com/okou-ai/okou/commit/7687b3416fee007d23a772ec7e9251bf7ab6b924))
+
 ## [0.98.4](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.3...guest-agent-v0.98.4) (2026-09-23)
 
 
