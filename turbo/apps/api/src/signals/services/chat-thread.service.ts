@@ -60,7 +60,6 @@ import {
 import type { Tx } from "../../lib/db-types";
 import { now, nowDate } from "../../lib/time";
 import { isLockNotAvailable } from "../../lib/pg-errors";
-import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { inferMimetype } from "./chat-event-shared.service";
@@ -977,26 +976,12 @@ interface DeleteChatThreadArgs {
   readonly eventId?: string;
 }
 
-async function lockChatThreadForDeletion(
-  tx: Tx,
-  args: DeleteChatThreadArgs,
-  splitWrites: boolean,
-) {
+async function lockChatThreadForDeletion(tx: Tx, args: DeleteChatThreadArgs) {
   const ownedThreadCondition = and(
     eq(chatThreads.id, args.threadId),
     eq(chatThreads.userId, args.userId),
     chatThreadOrganizationCondition(tx, args.orgId),
   );
-  if (!splitWrites) {
-    // Preactivation writers still enter through the legacy thread UPDATE.
-    // Preserve their thread-first ordering and wait semantics until activation.
-    const [ownedThread] = await tx
-      .select({ id: chatThreads.id, agentId: chatThreads.agentId })
-      .from(chatThreads)
-      .where(ownedThreadCondition)
-      .for("update");
-    return ownedThread;
-  }
   const [authorizedThread] = await tx
     .select({ id: chatThreads.id })
     .from(chatThreads)
@@ -1049,7 +1034,6 @@ async function lockChatThreadForDeletion(
 async function deleteChatThreadInTransaction(
   tx: Tx,
   args: DeleteChatThreadArgs,
-  splitWrites: boolean,
 ) {
   // Native authority is always fenced before the destination row. A
   // delivery that already owns the schedule lock therefore commits first;
@@ -1064,7 +1048,7 @@ async function deleteChatThreadInTransaction(
     nowDate(),
   );
 
-  const ownedThread = await lockChatThreadForDeletion(tx, args, splitWrites);
+  const ownedThread = await lockChatThreadForDeletion(tx, args);
   if (!ownedThread?.agentId) {
     return {
       deleted: false,
@@ -1153,12 +1137,11 @@ export async function deleteChatThreadContent(
   args: DeleteChatThreadArgs,
   signal: AbortSignal,
 ) {
-  const splitWrites = await isSplitChatEventWriteEnabled(db);
   for (let attempt = 0; ; attempt++) {
     signal.throwIfAborted();
     const result = await settle(
       db.transaction(async (tx) => {
-        return await deleteChatThreadInTransaction(tx, args, splitWrites);
+        return await deleteChatThreadInTransaction(tx, args);
       }),
     );
     signal.throwIfAborted();
@@ -1167,7 +1150,7 @@ export async function deleteChatThreadContent(
     }
     // A failed NOWAIT also rolls back native authority revocation. Retry only
     // this bounded control transaction, never an allocator or external effect.
-    if (!splitWrites || !isLockNotAvailable(result.error) || attempt >= 2) {
+    if (!isLockNotAvailable(result.error) || attempt >= 2) {
       throw result.error;
     }
   }

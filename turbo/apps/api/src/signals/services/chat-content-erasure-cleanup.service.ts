@@ -21,7 +21,6 @@ import { runOutputMemoryCitations } from "@okouai/db/schema/run-output-memory-ci
 import { settle } from "../utils";
 import { logger } from "../../lib/log";
 import { writeDb$, type Db } from "../external/db";
-import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 
 const L = logger("ChatContentErasureCleanup");
 const SUBJECT_LIMIT = 5;
@@ -213,9 +212,6 @@ export async function sweepLateChatContent(db: Db, signal: AbortSignal) {
         SET completed_at = COALESCE(chat_content_erasure_subjects.completed_at, EXCLUDED.completed_at)
     `);
   signal.throwIfAborted();
-  if (!(await isSplitChatEventWriteEnabled(db))) {
-    return { processed: 0, deleted: 0 };
-  }
   const subjects = await db
     .select()
     .from(chatContentErasureSubjects)

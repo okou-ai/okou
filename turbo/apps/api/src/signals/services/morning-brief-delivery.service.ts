@@ -25,11 +25,7 @@ import { writeDb$, type Db } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import { safeSync, settle } from "../utils";
 import { insertChatEvent } from "./chat-event.service";
-import {
-  touchChatThreadLastMessageAt,
-  touchChatThreadLastMessageAtIndependently,
-} from "./chat-event-shared.service";
-import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
+import { touchChatThreadLastMessageAtIndependently } from "./chat-event-shared.service";
 import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import {
   buildFromAddress,
@@ -81,8 +77,8 @@ const log = logger("MorningBriefDelivery");
  * The transaction is the contract: the sticky thread exclusion, the canonical
  * run-less assistant message, the delivery identity and the email intent all
  * commit together or not at all. The subscription and result deadline remain
- * admission requirements. After split writes activate, thread activity and
- * realtime notification follow independently; a failed auxiliary write must
+ * admission requirements. Thread activity and realtime notification follow
+ * independently after commit; a failed auxiliary write must
  * never replay a committed delivery.
  */
 
@@ -950,7 +946,6 @@ async function deliverInTransaction(
     readonly purpose: MorningBriefDeliveryPurpose;
     readonly anchor: ResultAnchor;
     readonly current: MorningBriefCollectionAdmission;
-    readonly splitWrites: boolean;
   },
   signal: AbortSignal,
 ): Promise<CommittedDelivery> {
@@ -1031,24 +1026,16 @@ async function deliverInTransaction(
       createdAt: acceptedAt,
     },
     "none",
-    { splitWrites: args.splitWrites },
   );
   if (!appended) {
     throw new Error("Morning Brief delivery event was not appended");
   }
 
-  // The receipt/subscription boundary remains atomic. After activation its
-  // sequence lock no longer waits for the independently committed sidebar.
-  if (!args.splitWrites) {
-    await touchChatThreadLastMessageAt(
-      tx,
-      chatThreadId,
-      acceptedAt,
-      appended.id,
-    );
-  }
+  // The receipt/subscription boundary remains atomic. The thread touch commits
+  // independently after this transaction, so the sequence lock never waits on
+  // the sidebar.
   throwIfCancelled(signal);
-  // Recheck after the content allocation wait in both modes.
+  // Recheck after the content allocation wait.
   await loadDeliverableResult(tx, {
     ...owner,
     resultAttemptId: request.resultAttemptId,
@@ -1151,8 +1138,6 @@ export const deliverMorningBriefResult$ = command(
     // A rejection after the destination was prepared unwinds the whole
     // transaction, so nothing partial is committed for a delivery that did not
     // happen.
-    const splitWrites = await isSplitChatEventWriteEnabled(db);
-    signal.throwIfAborted();
     const settled = await settle(
       db.transaction(async (tx) => {
         return await deliverInTransaction(
@@ -1162,7 +1147,6 @@ export const deliverMorningBriefResult$ = command(
             purpose,
             anchor,
             current: authority.admission,
-            splitWrites,
           },
           signal,
         );
@@ -1183,21 +1167,20 @@ export const deliverMorningBriefResult$ = command(
     signal.throwIfAborted();
 
     if (committed.kind === "delivered") {
-      if (splitWrites) {
-        await attemptChatEventSideEffect(
-          "thread_touch",
-          committed.chatThreadId,
-          () => {
-            return touchChatThreadLastMessageAtIndependently(
-              db,
-              committed.chatThreadId,
-              committed.deliveredAt,
-              committed.chatEventId,
-              owner,
-            );
-          },
-        );
-      }
+      await attemptChatEventSideEffect(
+        "thread_touch",
+        committed.chatThreadId,
+        () => {
+          return touchChatThreadLastMessageAtIndependently(
+            db,
+            committed.chatThreadId,
+            committed.deliveredAt,
+            committed.chatEventId,
+            owner,
+          );
+        },
+      );
+      signal.throwIfAborted();
       // Best effort, and deliberately outside the transaction: a failed
       // publish leaves a committed delivery that the next canonical read
       // returns, and must never replay the write.

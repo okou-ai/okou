@@ -1,6 +1,5 @@
 import {
   readRunContentOwnership,
-  withRunContentWrite,
   validateRunContentIdentity,
   type RunContentOwnership,
 } from "./run-content-erasure-admission.service";
@@ -9,7 +8,6 @@ import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.servi
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { randomBytes } from "node:crypto";
 import { v5 as uuidv5 } from "uuid";
-import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 
 import { command, createStore } from "ccstate";
 import {
@@ -137,7 +135,6 @@ import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
 import {
   insertAssistantEvents,
   insertAssistantEvents$,
-  touchChatThreadLastMessageAt,
   touchChatThreadLastMessageAtIndependently,
   type InsertAssistantEventsInput,
   visibleChatEventCondition,
@@ -1216,7 +1213,7 @@ async function requireSourceChatCallback(args: {
 async function insertChatDeliveryCallback(args: {
   readonly db: ChatCallbackTransaction;
   readonly runId: string;
-  readonly sourceCallbackId?: string;
+  readonly sourceCallbackId: string;
   readonly internalKind: ChatDeliveryKind;
   readonly chatEventId: string;
   readonly payload: NonNullable<
@@ -1225,8 +1222,10 @@ async function insertChatDeliveryCallback(args: {
 }): Promise<string> {
   const source = await requireSourceChatCallback(args);
 
-  // Pre-PR1 callbacks had random IDs. Reuse their delivery identity until the
-  // callback retention window drains in PR2; never resend a delivered legacy row.
+  // Delivery rows written before the split-write release carry random (v4) IDs.
+  // Callback rows live as long as their run, and an undelivered source callback
+  // can still replay terminal registration, so reuse any existing row for this
+  // event rather than inserting a deterministic twin that would resend it.
   const [existing] = await args.db
     .select({ id: agentRunCallbacks.id })
     .from(agentRunCallbacks)
@@ -1262,7 +1261,7 @@ async function insertChatDeliveryCallback(args: {
 async function insertSlackChatDeliveryCallback(args: {
   readonly db: ChatCallbackTransaction;
   readonly runId: string;
-  readonly sourceCallbackId?: string;
+  readonly sourceCallbackId: string;
   readonly target: SlackDeliveryTarget;
   readonly chatEventId: string;
   readonly publicBrand: PublicBrand;
@@ -1284,7 +1283,7 @@ async function insertSlackChatDeliveryCallback(args: {
 async function insertFeishuChatDeliveryCallback(args: {
   readonly db: ChatCallbackTransaction;
   readonly runId: string;
-  readonly sourceCallbackId?: string;
+  readonly sourceCallbackId: string;
   readonly target: FeishuDeliveryTarget;
   readonly chatEventId: string;
   readonly publicBrand: PublicBrand;
@@ -1306,7 +1305,7 @@ async function insertFeishuChatDeliveryCallback(args: {
 async function insertTeamsChatDeliveryCallback(args: {
   readonly db: ChatCallbackTransaction;
   readonly runId: string;
-  readonly sourceCallbackId?: string;
+  readonly sourceCallbackId: string;
   readonly target: TeamsDeliveryTarget;
   readonly chatEventId: string;
 }): Promise<string> {
@@ -1326,7 +1325,7 @@ async function insertTeamsChatDeliveryCallback(args: {
 async function insertTelegramChatDeliveryCallback(args: {
   readonly db: ChatCallbackTransaction;
   readonly runId: string;
-  readonly sourceCallbackId?: string;
+  readonly sourceCallbackId: string;
   readonly target: TelegramDeliveryTarget;
   readonly chatEventId: string;
   readonly publicBrand: PublicBrand;
@@ -1348,7 +1347,7 @@ async function insertTelegramChatDeliveryCallback(args: {
 async function insertAgentPhoneChatDeliveryCallback(args: {
   readonly db: ChatCallbackTransaction;
   readonly runId: string;
-  readonly sourceCallbackId?: string;
+  readonly sourceCallbackId: string;
   readonly target: AgentPhoneDeliveryTarget;
   readonly chatEventId: string;
   readonly publicBrand: PublicBrand;
@@ -1370,7 +1369,7 @@ async function insertAgentPhoneChatDeliveryCallback(args: {
 async function insertGitHubChatDeliveryCallback(args: {
   readonly db: ChatCallbackTransaction;
   readonly runId: string;
-  readonly sourceCallbackId?: string;
+  readonly sourceCallbackId: string;
   readonly target: GitHubDeliveryTarget;
   readonly chatEventId: string;
   readonly publicBrand: PublicBrand;
@@ -1430,7 +1429,7 @@ interface AssistantErrorEventArgs {
   readonly telegramDelivery?: TelegramDeliveryTarget;
   readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
   readonly githubDelivery?: GitHubDeliveryTarget;
-  readonly sourceCallbackId?: string;
+  readonly sourceCallbackId: string;
   readonly publicBrand: PublicBrand;
 }
 
@@ -1439,7 +1438,6 @@ async function insertAssistantErrorEventTransaction(
   input: AssistantErrorEventArgs,
   displayErrorMessage: string,
   goalId: string | undefined,
-  splitWrites: boolean,
 ): Promise<
   (RunLifecycleDeliveryCallbacks & { readonly markerInserted: boolean }) | null
 > {
@@ -1458,11 +1456,7 @@ async function insertAssistantErrorEventTransaction(
         : {}),
     },
     "run-lifecycle",
-    { splitWrites },
   );
-  if (!insertedEvent && !splitWrites) {
-    return null;
-  }
   const event =
     insertedEvent ??
     (await loadRunLifecycleMarker(
@@ -1554,60 +1548,32 @@ async function insertAssistantErrorEvent(
     undefined,
     signal,
   );
-  const splitWrites = await isSplitChatEventWriteEnabled(args.db);
-  const identity = {
-    runId: args.runId,
-    ownership: args.ownership,
-    destination: {
-      threadId: args.threadId,
-      userId: args.userId,
-      orgId: args.orgId,
+  await validateRunContentIdentity(
+    args.db,
+    {
+      runId: args.runId,
+      ownership: args.ownership,
+      destination: {
+        threadId: args.threadId,
+        userId: args.userId,
+        orgId: args.orgId,
+      },
     },
-  };
-  const projection = splitWrites
-    ? {
-        outcome: "written" as const,
-        ownership: (await validateRunContentIdentity(args.db, identity, signal))
-          .ownership,
-        value: await insertAssistantErrorEventTransaction(
-          args.db,
-          args,
-          displayErrorMessage,
-          goalId,
-          splitWrites,
-        ),
-      }
-    : await withRunContentWrite(
-        args.db,
-        identity,
-        async (tx) => {
-          const inserted = await insertAssistantErrorEventTransaction(
-            tx,
-            args,
-            displayErrorMessage,
-            goalId,
-            splitWrites,
-          );
-          if (inserted) {
-            await touchChatThreadLastMessageAt(tx, args.threadId);
-          }
-          return inserted;
-        },
-        signal,
-      );
-  if (projection.outcome === "closed") {
-    return await closedTerminalProjectionOutcome(args.db, args.runId, signal);
-  }
-  const inserted = projection.value;
+    signal,
+  );
+  const inserted = await insertAssistantErrorEventTransaction(
+    args.db,
+    args,
+    displayErrorMessage,
+    goalId,
+  );
   if (!inserted) {
     return { outcome: "duplicate" };
   }
 
-  // Replays repeat the monotonic split-mode touch and publishes because an
-  // earlier attempt may have failed after its marker committed.
-  if (splitWrites) {
-    await touchChatThreadLastMessageAtIndependently(args.db, args.threadId);
-  }
+  // Replays repeat the monotonic touch and publishes because an earlier
+  // attempt may have failed after its marker committed.
+  await touchChatThreadLastMessageAtIndependently(args.db, args.threadId);
   await publishAssistantErrorEventSignals(args);
   return {
     displayErrorMessage,
@@ -1625,18 +1591,6 @@ type ChatCallbackTransaction = Db | Tx;
 
 interface CanonicalDeliveryEvent {
   readonly id: string;
-}
-
-async function closedTerminalProjectionOutcome(
-  db: Db,
-  runId: string,
-  signal: AbortSignal,
-): Promise<{ readonly outcome: "duplicate" | "closed" }> {
-  // Closure grants no write capability. A previously committed marker still
-  // owns the wakeup, so its replay retains the existing no-redrive rule.
-  const duplicate = await runLifecycleMarkerExists(db, runId);
-  signal.throwIfAborted();
-  return { outcome: duplicate ? "duplicate" : "closed" };
 }
 
 async function loadRunLifecycleMarker(
@@ -1701,7 +1655,6 @@ async function insertIntegrationCompletionFallback(args: {
   readonly threadId: string;
   readonly goalId: string | null | undefined;
   readonly createdAt: Date;
-  readonly splitWrites: boolean;
 }): Promise<CanonicalDeliveryEvent> {
   const eventId = integrationCompletionFallbackEventIdForRun(args.runId);
   const inserted = await insertChatEvent(
@@ -1716,7 +1669,6 @@ async function insertIntegrationCompletionFallback(args: {
       createdAt: args.createdAt,
     },
     "id",
-    { splitWrites: args.splitWrites },
   );
   if (inserted) {
     return { id: inserted.id };
@@ -1746,7 +1698,7 @@ interface RunLifecycleMarkerArgs {
   readonly telegramDelivery?: TelegramDeliveryTarget;
   readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
   readonly githubDelivery?: GitHubDeliveryTarget;
-  readonly sourceCallbackId?: string;
+  readonly sourceCallbackId: string;
   readonly publicBrand: PublicBrand;
 }
 
@@ -1871,18 +1823,10 @@ export async function insertRunLifecycleMarkerProjection(args: {
   readonly input: Omit<RunLifecycleMarkerArgs, "ownership">;
   readonly markerCreatedAt: Date;
   readonly goalId: string | undefined;
-  readonly splitWrites: boolean;
 }): Promise<
   (RunLifecycleDeliveryCallbacks & { readonly markerInserted: boolean }) | null
 > {
   const { input } = args;
-  if (
-    !args.splitWrites &&
-    input.teamsDelivery &&
-    (await runLifecycleMarkerExists(args.tx, input.runId))
-  ) {
-    return null;
-  }
   let deliveryEvent = await loadCanonicalDeliveryEvent(
     args.tx,
     input.runId,
@@ -1895,7 +1839,6 @@ export async function insertRunLifecycleMarkerProjection(args: {
       threadId: input.threadId,
       goalId: args.goalId,
       createdAt: args.markerCreatedAt,
-      splitWrites: args.splitWrites,
     });
   }
   const marker = await insertChatEvent(
@@ -1910,11 +1853,7 @@ export async function insertRunLifecycleMarkerProjection(args: {
       createdAt: args.markerCreatedAt,
     },
     "run-lifecycle",
-    { splitWrites: args.splitWrites },
   );
-  if (!marker && !args.splitWrites) {
-    return null;
-  }
   if (
     !marker &&
     !(await loadRunLifecycleMarker(
@@ -1952,55 +1891,25 @@ async function insertRunLifecycleMarker(
     undefined,
     signal,
   );
-  const splitWrites = await isSplitChatEventWriteEnabled(args.db);
-  const identity = {
-    runId: args.runId,
-    ownership: args.ownership,
-    destination: {
-      threadId: args.threadId,
-      userId: args.userId,
-      orgId: args.orgId,
+  await validateRunContentIdentity(
+    args.db,
+    {
+      runId: args.runId,
+      ownership: args.ownership,
+      destination: {
+        threadId: args.threadId,
+        userId: args.userId,
+        orgId: args.orgId,
+      },
     },
-  };
-  const projection = splitWrites
-    ? {
-        outcome: "written" as const,
-        ownership: (await validateRunContentIdentity(args.db, identity, signal))
-          .ownership,
-        value: await insertRunLifecycleMarkerProjection({
-          tx: args.db,
-          input: args,
-          markerCreatedAt,
-          goalId,
-          splitWrites,
-        }),
-      }
-    : await withRunContentWrite(
-        args.db,
-        identity,
-        async (tx) => {
-          const inserted = await insertRunLifecycleMarkerProjection({
-            tx,
-            input: args,
-            markerCreatedAt,
-            goalId,
-            splitWrites,
-          });
-          if (inserted) {
-            await touchChatThreadLastMessageAt(
-              tx,
-              args.threadId,
-              markerCreatedAt,
-            );
-          }
-          return inserted;
-        },
-        signal,
-      );
-  if (projection.outcome === "closed") {
-    return await closedTerminalProjectionOutcome(args.db, args.runId, signal);
-  }
-  const inserted = projection.value;
+    signal,
+  );
+  const inserted = await insertRunLifecycleMarkerProjection({
+    tx: args.db,
+    input: args,
+    markerCreatedAt,
+    goalId,
+  });
   if (!inserted) {
     return { outcome: "duplicate" };
   }
@@ -2008,13 +1917,11 @@ async function insertRunLifecycleMarker(
   // owns completion work until registration and automation admission succeed,
   // so a replay repeats the monotonic touch and publishes an earlier attempt
   // may have lost after the marker committed.
-  if (splitWrites) {
-    await touchChatThreadLastMessageAtIndependently(
-      args.db,
-      args.threadId,
-      markerCreatedAt,
-    );
-  }
+  await touchChatThreadLastMessageAtIndependently(
+    args.db,
+    args.threadId,
+    markerCreatedAt,
+  );
   await publishChatThreadMessageCreatedSafely({
     userId: args.userId,
     orgId: args.orgId,
@@ -2177,7 +2084,7 @@ async function handleCompletedChatCallback(
     readonly telegramDelivery?: TelegramDeliveryTarget;
     readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
     readonly githubDelivery?: GitHubDeliveryTarget;
-    readonly sourceCallbackId?: string;
+    readonly sourceCallbackId: string;
     readonly publicBrand: PublicBrand;
     readonly insertAssistantItems: (
       items: readonly AssistantEventItem[],
@@ -2290,25 +2197,12 @@ async function runCompletedChatCallbackSideEffects(
     readonly lastResultText: string | null;
     readonly followupContext: readonly ChatCompletionContextMessage[];
     readonly saveRunSummary: (resultText: string) => Promise<void>;
-    readonly dispatchChatRunFinishedAutomations?: ChatCallbackDependencies["dispatchChatRunFinishedAutomations"];
   },
   signal: AbortSignal,
 ): Promise<void> {
   // The post-processing steps are mutually independent. Run them after queued
   // auto-send so LLM/push latency does not delay the next run.
   const saveSummaryStep = args.saveRunSummary(args.lastResultText ?? "");
-
-  const chatRunFinishedStep = args.dispatchChatRunFinishedAutomations?.(
-    {
-      chatThreadId: args.chatThread.chatThreadId,
-      runId: args.runId,
-      runStatus: "completed",
-      lastResultText: args.lastResultText,
-      sourceAgentId: args.chatThread.agentId,
-      sourceThreadTitle: args.chatThread.title,
-    },
-    signal,
-  );
 
   const followupsStep = (async () => {
     signal.throwIfAborted();
@@ -2358,7 +2252,6 @@ async function runCompletedChatCallbackSideEffects(
 
   const results = await Promise.allSettled([
     saveSummaryStep,
-    chatRunFinishedStep,
     followupsStep,
     pushStep,
   ]);
@@ -2393,7 +2286,7 @@ async function handleFailedChatCallback(
     readonly telegramDelivery?: TelegramDeliveryTarget;
     readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
     readonly githubDelivery?: GitHubDeliveryTarget;
-    readonly sourceCallbackId?: string;
+    readonly sourceCallbackId: string;
     readonly publicBrand: PublicBrand;
   },
   signal: AbortSignal,
@@ -2427,33 +2320,12 @@ async function handleFailedChatCallback(
   );
 }
 
-async function runFailedChatCallbackSideEffects(
-  args: {
-    readonly db: Db;
-    readonly runId: string;
-    readonly run: ChatRunInfo;
-    readonly chatThread: ChatThreadForRunRow;
-    readonly displayErrorMessage: string;
-    readonly runStatus: "failed" | "cancelled";
-    readonly dispatchChatRunFinishedAutomations?: ChatCallbackDependencies["dispatchChatRunFinishedAutomations"];
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const chatRunFinishedStep = args.dispatchChatRunFinishedAutomations?.(
-    {
-      chatThreadId: args.chatThread.chatThreadId,
-      runId: args.runId,
-      runStatus: args.runStatus,
-      // Failed runs surface their error separately; patterns only ever match
-      // assistant output, so terminal errors dispatch with no matchable text.
-      lastResultText: null,
-      sourceAgentId: args.chatThread.agentId,
-      sourceThreadTitle: args.chatThread.title,
-    },
-    signal,
-  );
-
-  await chatRunFinishedStep;
+async function runFailedChatCallbackSideEffects(args: {
+  readonly db: Db;
+  readonly run: ChatRunInfo;
+  readonly chatThread: ChatThreadForRunRow;
+  readonly displayErrorMessage: string;
+}): Promise<void> {
   await sendUserPushNotifications({
     db: args.db,
     userId: args.chatThread.userId,
@@ -4222,7 +4094,6 @@ async function loadTerminalChatCallback(
 async function prepareCompletedTerminalChatCallbackWork(
   args: {
     readonly db: Db;
-    readonly splitWrites: boolean;
     readonly ownership: RunContentOwnership;
     readonly runId: string;
     readonly run: ChatRunInfo;
@@ -4235,7 +4106,7 @@ async function prepareCompletedTerminalChatCallbackWork(
     readonly telegramDelivery?: TelegramDeliveryTarget;
     readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
     readonly githubDelivery?: GitHubDeliveryTarget;
-    readonly sourceCallbackId?: string;
+    readonly sourceCallbackId: string;
     readonly publicBrand: PublicBrand;
   },
   signal: AbortSignal,
@@ -4293,22 +4164,20 @@ async function prepareCompletedTerminalChatCallbackWork(
     telegramDeliveryCallbackId: completed.telegramDeliveryCallbackId,
     agentphoneDeliveryCallbackId: completed.agentphoneDeliveryCallbackId,
     githubDeliveryCallbackId: completed.githubDeliveryCallbackId,
-    retryableSideEffects: args.splitWrites
-      ? (retrySignal) => {
-          return args.dependencies.dispatchChatRunFinishedAutomations(
-            {
-              chatThreadId: args.chatThread.chatThreadId,
-              runId: args.runId,
-              sourceCallbackId: args.sourceCallbackId,
-              runStatus: "completed",
-              lastResultText: completed.lastResultText,
-              sourceAgentId: args.chatThread.agentId,
-              sourceThreadTitle: args.chatThread.title,
-            },
-            retrySignal,
-          );
-        }
-      : undefined,
+    retryableSideEffects: (retrySignal) => {
+      return args.dependencies.dispatchChatRunFinishedAutomations(
+        {
+          chatThreadId: args.chatThread.chatThreadId,
+          runId: args.runId,
+          sourceCallbackId: args.sourceCallbackId,
+          runStatus: "completed",
+          lastResultText: completed.lastResultText,
+          sourceAgentId: args.chatThread.agentId,
+          sourceThreadTitle: args.chatThread.title,
+        },
+        retrySignal,
+      );
+    },
     deferredSideEffects: (deferredSignal) => {
       return runCompletedChatCallbackSideEffects(
         {
@@ -4326,9 +4195,6 @@ async function prepareCompletedTerminalChatCallbackWork(
               deferredSignal,
             );
           },
-          dispatchChatRunFinishedAutomations: args.splitWrites
-            ? undefined
-            : args.dependencies.dispatchChatRunFinishedAutomations,
         },
         deferredSignal,
       );
@@ -4339,7 +4205,6 @@ async function prepareCompletedTerminalChatCallbackWork(
 async function prepareFailedTerminalChatCallbackWork(
   args: {
     readonly db: Db;
-    readonly splitWrites: boolean;
     readonly ownership: RunContentOwnership;
     readonly runId: string;
     readonly run: ChatRunInfo;
@@ -4354,7 +4219,7 @@ async function prepareFailedTerminalChatCallbackWork(
     readonly telegramDelivery?: TelegramDeliveryTarget;
     readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
     readonly githubDelivery?: GitHubDeliveryTarget;
-    readonly sourceCallbackId?: string;
+    readonly sourceCallbackId: string;
   },
   signal: AbortSignal,
 ): Promise<TerminalChatCallbackWork> {
@@ -4412,43 +4277,32 @@ async function prepareFailedTerminalChatCallbackWork(
     telegramDeliveryCallbackId: failed.telegramDeliveryCallbackId,
     agentphoneDeliveryCallbackId: failed.agentphoneDeliveryCallbackId,
     githubDeliveryCallbackId: failed.githubDeliveryCallbackId,
-    retryableSideEffects: args.splitWrites
-      ? (retrySignal) => {
-          return args.dependencies.dispatchChatRunFinishedAutomations(
-            {
-              chatThreadId: args.chatThread.chatThreadId,
-              runId: args.runId,
-              sourceCallbackId: args.sourceCallbackId,
-              runStatus:
-                args.errorMessage.trim().toLowerCase() === "run cancelled"
-                  ? "cancelled"
-                  : "failed",
-              lastResultText: null,
-              sourceAgentId: args.chatThread.agentId,
-              sourceThreadTitle: args.chatThread.title,
-            },
-            retrySignal,
-          );
-        }
-      : undefined,
-    deferredSideEffects: (deferredSignal) => {
-      return runFailedChatCallbackSideEffects(
+    retryableSideEffects: (retrySignal) => {
+      return args.dependencies.dispatchChatRunFinishedAutomations(
         {
-          db: args.db,
+          chatThreadId: args.chatThread.chatThreadId,
           runId: args.runId,
-          run: args.run,
-          chatThread: args.chatThread,
-          displayErrorMessage: failed.displayErrorMessage,
+          sourceCallbackId: args.sourceCallbackId,
           runStatus:
             args.errorMessage.trim().toLowerCase() === "run cancelled"
               ? "cancelled"
               : "failed",
-          dispatchChatRunFinishedAutomations: args.splitWrites
-            ? undefined
-            : args.dependencies.dispatchChatRunFinishedAutomations,
+          // Failed runs surface their error separately; patterns only ever
+          // match assistant output, so terminal errors carry no matchable text.
+          lastResultText: null,
+          sourceAgentId: args.chatThread.agentId,
+          sourceThreadTitle: args.chatThread.title,
         },
-        deferredSignal,
+        retrySignal,
       );
+    },
+    deferredSideEffects: () => {
+      return runFailedChatCallbackSideEffects({
+        db: args.db,
+        run: args.run,
+        chatThread: args.chatThread,
+        displayErrorMessage: failed.displayErrorMessage,
+      });
     },
   };
 }
@@ -4914,14 +4768,10 @@ async function finishTerminalChatCallbackAfterProjection(
 
 async function terminalChatCallbackSourceId(
   args: TerminalChatCallbackArgs,
-  splitWrites: boolean,
-): Promise<string | undefined> {
-  if (!splitWrites) {
-    return args.callback.callbackId;
-  }
+): Promise<string> {
   // Queue launch failure callbacks carry the run identity before they have
   // an envelope callback ID. Resolve their existing persisted owner exactly
-  // as delivery registration does; active work must never lose its receipt.
+  // as delivery registration does; terminal work must never lose its receipt.
   return (
     await requireSourceChatCallback({
       db: args.db,
@@ -4934,10 +4784,6 @@ async function terminalChatCallbackSourceId(
 async function processTerminalChatCallback(
   args: TerminalChatCallbackArgs,
   signal: AbortSignal,
-  options?: {
-    readonly deferPostProjection?: boolean;
-    readonly splitWrites?: boolean;
-  },
 ): Promise<void> {
   const { runId, status: callbackStatus } = args.callback;
   if (callbackStatus === "progress") {
@@ -4977,12 +4823,7 @@ async function processTerminalChatCallback(
         return null;
       }
       const { run, chatThread, ownership } = loaded;
-      const splitWrites =
-        options?.splitWrites ?? (await isSplitChatEventWriteEnabled(args.db));
-      const sourceCallbackId = await terminalChatCallbackSourceId(
-        args,
-        splitWrites,
-      );
+      const sourceCallbackId = await terminalChatCallbackSourceId(args);
       signal.throwIfAborted();
       const preparation = {
         db: args.db,
@@ -4993,7 +4834,6 @@ async function processTerminalChatCallback(
         dependencies: args.dependencies,
         timing,
         publicBrand: args.payload.publicBrand ?? "vm0",
-        splitWrites,
         ...terminalIntegrationDeliveries(args.payload),
         sourceCallbackId,
       };
@@ -5038,30 +4878,6 @@ async function processTerminalChatCallback(
     chatThread,
     timing,
   };
-
-  if (options?.deferPostProjection) {
-    // Queue wakeups and external delivery keep their existing detached retry
-    // ownership. The completion ACK only owns canonical terminal projection.
-    const backgroundSignal = new AbortController().signal;
-    waitUntil(
-      tapError(
-        finishTerminalChatCallbackAfterProjection(
-          postProjectionInput,
-          backgroundSignal,
-        ),
-        (error) => {
-          log.error(
-            "Failed to process terminal chat callback after projection",
-            {
-              runId,
-              error,
-            },
-          );
-        },
-      ),
-    );
-    return;
-  }
 
   await finishTerminalChatCallbackAfterProjection(postProjectionInput, signal);
 }
@@ -5248,7 +5064,6 @@ async function handleChatInternalCallback(
     readonly db: Db;
     readonly callback: InternalRunCallbackEnvelope;
     readonly dependencies: ChatCallbackDependencies;
-    readonly awaitTerminalProjection?: boolean;
   },
   signal: AbortSignal,
 ): Promise<
@@ -5300,32 +5115,9 @@ async function handleChatInternalCallback(
     payload: payload.data,
     dependencies: args.dependencies,
   };
-  const splitWrites = await isSplitChatEventWriteEnabled(args.db);
-  signal.throwIfAborted();
-  if (splitWrites) {
-    // Keep required terminal work within the persisted source callback's retry
-    // lifetime. Each event, delivery registration and automation commits alone.
-    await processTerminalChatCallback(processingInput, signal, { splitWrites });
-  } else if (args.awaitTerminalProjection) {
-    // The completion endpoint may only ACK after canonical lifecycle projection
-    // succeeds. Queue wakeups keep their established detached recovery owner.
-    await processTerminalChatCallback(processingInput, signal, {
-      deferPostProjection: true,
-    });
-  } else {
-    const backgroundSignal = new AbortController().signal;
-    waitUntil(
-      tapError(
-        processTerminalChatCallback(processingInput, backgroundSignal),
-        (error) => {
-          log.error("Failed to process terminal chat callback", {
-            runId: args.callback.runId,
-            error,
-          });
-        },
-      ),
-    );
-  }
+  // Keep required terminal work within the persisted source callback's retry
+  // lifetime. Each event, delivery registration and automation commits alone.
+  await processTerminalChatCallback(processingInput, signal);
 
   return { success: true };
 }
@@ -5437,7 +5229,6 @@ export async function handleChatInternalCallbackWithoutCcstate(
   db: Db,
   callback: InternalRunCallbackEnvelope,
   signal = new AbortController().signal,
-  options?: { readonly awaitTerminalProjection?: boolean },
 ): Promise<
   | { readonly success: true }
   | { readonly success: false; readonly error: string }
@@ -5446,7 +5237,6 @@ export async function handleChatInternalCallbackWithoutCcstate(
     {
       db,
       callback,
-      awaitTerminalProjection: options?.awaitTerminalProjection,
       dependencies: {
         releaseBrowsersForRun: (args, inputSignal) => {
           return createStore().set(
@@ -5685,7 +5475,6 @@ export const handleChatInternalCallback$ = command(
     input: {
       readonly callback: InternalRunCallbackEnvelope;
       readonly drainThreadQueue?: ChatCallbackDependencies["drainThreadQueue"];
-      readonly awaitTerminalProjection?: boolean;
     },
     signal: AbortSignal,
   ): Promise<
@@ -5702,7 +5491,6 @@ export const handleChatInternalCallback$ = command(
         db,
         callback: input.callback,
         dependencies,
-        awaitTerminalProjection: input.awaitTerminalProjection,
       },
       signal,
     );

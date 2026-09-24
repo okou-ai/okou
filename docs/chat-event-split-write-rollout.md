@@ -1,13 +1,18 @@
 # Chat event split writes: two-release rollout
 
-This preparation release expands the schema and installs a legacy allocation
-bridge. It does **not** activate split writes. The only switch is the singleton
-`chat_event_write_control` row: `activated_at IS NULL` means legacy mode. No
-per-user override, cache, or environment default may activate it.
-The bridge migration seeds that row before API promotion. An absent singleton
-is an invariant failure, not legacy mode. The rollback workflow alone accepts an
-absent control **table**, because workflow code on main can run before the
-expansion has been released; a present table with no singleton still fails.
+Release 1 expanded the schema, installed a legacy allocation bridge and shipped
+both write modes behind the singleton `chat_event_write_control` row. Release 2
+(the `contract_chat_event_sequence_bridge` migration) removes the legacy mode:
+the API only writes through `chat_event_sequences`, the bridge trigger/function
+and `chat_threads.last_chat_event_seq_id` are dropped, and no runtime path reads
+the write mode. The control row and its irreversible activation trigger remain
+the durable record used by the rollback resolver.
+
+The contraction migration fails closed (SQLSTATE `55000`) unless the row is
+activated. A database without any chat thread has no legacy allocation or
+operation to drain and is activated by that migration; every other database,
+including shared preview parents and local development databases with data,
+must be activated with the control write below before it can migrate.
 
 ## Storage and consistency
 
@@ -18,8 +23,9 @@ revocation, and terminal-marker uniqueness remains authoritative. An intentional
 conflict can consume a sequence position; a SQL error rolls the statement back.
 `chat_event_snapshots.last_seq_id` continues to mean archive coverage.
 
-During deployment the `BEFORE UPDATE OF last_chat_event_seq_id` bridge reserves
-from the new table and replaces the legacy update's returned watermark. For
+During the Release 1 deployment the `BEFORE UPDATE OF last_chat_event_seq_id`
+bridge reserved from the new table and replaced the legacy update's returned
+watermark. For
 example, legacy 100 / canonical 110 plus one returns 111, including to an old API.
 It is not a mirror. The bounded backfill copies the legacy watermark using
 `GREATEST`; retained hot events cannot reconstruct archived positions or gaps.
@@ -177,34 +183,27 @@ Monitor `ChatContentErasureCleanup` warnings for collected late rows and errors
 for failed batches, plus due-subject backlog/oldest `next_sweep_at`. The registry
 must outlive local job retention and must not be purged with account content.
 
-## Release 2 boundary
+## Release 2
 
-Only after production acceptance and a verified legacy-entry drain may a separate
-cleanup PR remove legacy code, the allocation bridge/function and
-`chat_threads.last_chat_event_seq_id`. Keep the irreversible active control row
-and its rollback protection. The preparation API's runtime table mapping omits
-the legacy column from implicit INSERT/SELECT/RETURNING lists, and acceptance
-runs its direct writer against the contracted shape. Since migration precedes
-API promotion, Release 1 is a valid rollback target after contraction **only in
-its verified, fixed active mode**. Never reactivate the compatibility branch.
+Release 2 ([#36696](https://github.com/okou-ai/okou/issues/36696)) may only be
+promoted after production acceptance of the activated Release 1 and a verified
+drain of every legacy-mode operation. Since migration precedes API promotion,
+Release 1 remains a valid rollback target after contraction **only in its
+verified, fixed active mode**; the rollback resolver requires an activated
+control row and a target that contains the split reader. Never reactivate the
+compatibility branch.
 
-### Compatibility inventory and follow-up
+### Compatibility inventory
 
-The named follow-up is the separate post-rollout PR2, tracked by
-[#36696](https://github.com/okou-ai/okou/issues/36696); opening the PR is outside
-this implementation task. Its removal checklist must verify each gate below,
-rather than treating promotion as proof that retained work has drained.
+| Behavior                                                                                                                                                                 | Release 2 outcome                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Legacy branch of every `isSplitChatEventWriteEnabled` caller, `loadOptionalChatEnrichment`'s preactivation path and the `chat_event_sequence_bridge` migration's trigger | Removed. Activation is enforced by the contraction migration.                                                                                                                                                                                                 |
+| Rollback resolver accepts an absent control table                                                                                                                        | Removed. The resolver requires an activated row.                                                                                                                                                                                                              |
+| `ensureUserErasureJob` / `createRelationalErasureCollector` replay of the preceding captured collector                                                                   | Removed. Merge requires zero incomplete preceding-version captures.                                                                                                                                                                                           |
+| `insertChatDeliveryCallback` recognizes historical random-ID registrations                                                                                               | Retained. Callback rows have no retention bound and failed source callbacks retry without a cap; dropping recognition could resend delivered replies.                                                                                                         |
+| Source-thread reach for `chat_agent_run_context` rows with null `source_user_id`/`source_org_id`                                                                         | Retained. Pre-Release-1 writers kept writing unattributed rows after the `prepare_chat_event_routing_and_cleanup` backfill; a re-run backfill cannot attribute rows whose thread or agent no longer matches, so dropping the reach loses erasure obligations. |
 
-| Behavior                                                                                                                                                                                                                                                                       | Surface and exposure window                                                                           | Removal condition and follow-up                                                                                                                                                                                  |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Legacy branch of every `isSplitChatEventWriteEnabled` caller (allocator, Web/native/output, terminal callbacks, queue admission, deletion locks), including `loadOptionalChatEnrichment`'s preactivation failure path and the `chat_event_sequence_bridge` migration's trigger | Old API against expanded DB, rolling API fleet, captured legacy operations and preactivation rollback | PR2 after activation, all legacy operations/entry points drain, production acceptance and a compatible rollback floor.                                                                                           |
-| `insertChatDeliveryCallback` recognizes historical random IDs                                                                                                                                                                                                                  | Persisted callback delivery/retry records written by old APIs                                         | PR2 only after historical pending retries and retained delivery records no longer require recognition and no supported API can write them. Do not equate deployment completion with record retirement.           |
-| `ensureUserErasureJob` and `createRelationalErasureCollector` replay the preceding captured version                                                                                                                                                                            | Durable erasure captures and their original provider obligations outlive API deployment               | PR2 must inventory preceding-version captures; remove together only once every capture is completed or retired without losing obligations. Retain and explicitly carry this follow-up if that gate remains open. |
-| Rollback resolver accepts an absent control table                                                                                                                                                                                                                              | Main's workflow may run before the first expansion release                                            | PR2 after the completed expansion is permanently within the supported schema floor. A present table with no singleton always fails.                                                                              |
-| `account-erasure-ownership-inventory.ts` keeps a source-thread reach for `chat_agent_run_context` rows with null `source_user_id`/`source_org_id`                                                                                                                              | Old APIs keep writing rows without copied ownership until they drain                                  | PR2 after old writers drain and the ownership backfill is re-verified; then make the columns NOT NULL or drop the thread reach.                                                                                  |
-
-The following are permanent accepted data states, not rollout shims to remove in
-PR2:
+The following are permanent accepted data states:
 
 - A missing sequence row means zero only for a new empty thread; the first
   allocator creates it atomically. Existing nonzero legacy watermarks are

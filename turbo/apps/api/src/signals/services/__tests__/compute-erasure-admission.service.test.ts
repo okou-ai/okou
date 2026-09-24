@@ -3424,7 +3424,6 @@ describe("actual compute transactions versus the B1 projector", () => {
         f: OutputFixture,
         kind: TerminalKind,
         options: {
-          awaitTerminalProjection?: boolean;
           mode?: "plain" | "ccstate";
           payload?: Record<string, unknown>;
           sourceCallbackId?: string;
@@ -3457,9 +3456,6 @@ describe("actual compute transactions versus the B1 projector", () => {
                 db,
                 callback,
                 context.signal,
-                {
-                  awaitTerminalProjection: options.awaitTerminalProjection,
-                },
               );
         expect(result).toStrictEqual({ success: true });
       }
@@ -4883,9 +4879,7 @@ describe("actual compute transactions versus the B1 projector", () => {
             .for("key share");
         });
 
-        await invokeTerminal(f, "failed", {
-          awaitTerminalProjection: true,
-        });
+        await invokeTerminal(f, "failed");
         expect(
           (await terminalState(f)).events.filter((event) => {
             return event.eventType === "run.failed";
@@ -4904,9 +4898,7 @@ describe("actual compute transactions versus the B1 projector", () => {
             .where(eq(chatThreads.id, f.threadId))
             .for("no key update");
         });
-        const writing = settle(
-          invokeTerminal(f, "failed", { awaitTerminalProjection: true }),
-        );
+        const writing = settle(invokeTerminal(f, "failed"));
         await waitForBlockedBy(held.pid);
         const failure = await writing;
         expect(failure.ok).toBeFalsy();

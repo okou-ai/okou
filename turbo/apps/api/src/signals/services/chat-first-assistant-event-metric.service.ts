@@ -3,8 +3,6 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
-import { waitUntil } from "../context/wait-until";
-import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import type { Db } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
@@ -13,7 +11,6 @@ import { tapError } from "../utils";
 import { writeRunMetadataInTransaction } from "./agent-run-metadata-write.service";
 
 import {
-  withRunContentWrite,
   validateRunContentIdentity,
   type RunContentOwnership,
 } from "./run-content-erasure-admission.service";
@@ -39,7 +36,6 @@ async function recordFirstAssistantEventAcknowledgement(args: {
   readonly ownership: RunContentOwnership;
   readonly runId: string;
   readonly acknowledgedAt: number;
-  readonly splitWrites: boolean;
 }): Promise<void> {
   const firstAssistantClaimWhere = and(
     eq(agentRuns.id, args.runId),
@@ -49,42 +45,17 @@ async function recordFirstAssistantEventAcknowledgement(args: {
   if (!firstAssistantClaimWhere) {
     throw new Error("First assistant acknowledgement predicate is empty");
   }
-  const splitWrites = args.splitWrites;
-  const identity = { runId: args.runId, ownership: args.ownership };
-  const admitted = splitWrites
-    ? {
-        outcome: "written" as const,
-        ownership: (
-          await validateRunContentIdentity(
-            args.db,
-            identity,
-            AbortSignal.timeout(20_000),
-          )
-        ).ownership,
-        value: await writeRunMetadataInTransaction(args.db, {
-          patch: {
-            firstAssistantEventAcknowledgedAt: new Date(args.acknowledgedAt),
-          },
-          where: firstAssistantClaimWhere,
-        }),
-      }
-    : await withRunContentWrite(
-        args.db,
-        identity,
-        async (tx) => {
-          return await writeRunMetadataInTransaction(tx, {
-            patch: {
-              firstAssistantEventAcknowledgedAt: new Date(args.acknowledgedAt),
-            },
-            where: firstAssistantClaimWhere,
-          });
-        },
-        AbortSignal.timeout(20_000),
-      );
-  if (admitted.outcome === "closed") {
-    return;
-  }
-  const [claimed] = admitted.value;
+  await validateRunContentIdentity(
+    args.db,
+    { runId: args.runId, ownership: args.ownership },
+    AbortSignal.timeout(20_000),
+  );
+  const [claimed] = await writeRunMetadataInTransaction(args.db, {
+    patch: {
+      firstAssistantEventAcknowledgedAt: new Date(args.acknowledgedAt),
+    },
+    where: firstAssistantClaimWhere,
+  });
   if (!claimed?.apiStartedAt) {
     return;
   }
@@ -119,14 +90,6 @@ export function recordFirstAssistantEventAcknowledgementMetric(args: {
   });
 }
 
-export async function publishFirstAssistantEventCreatedSignalSafely(args: {
-  readonly orgId: string;
-  readonly threadId: string;
-  readonly userId: string;
-}): Promise<void> {
-  await publishChatThreadMessageCreatedSafely(args);
-}
-
 async function publishFirstAssistantEventCreated(args: {
   readonly db: Db;
   readonly ownership: RunContentOwnership;
@@ -137,14 +100,12 @@ async function publishFirstAssistantEventCreated(args: {
 }): Promise<void> {
   await publishChatThreadMessageCreatedSafely(args);
   const acknowledgedAt = now();
-  const splitWrites = await isSplitChatEventWriteEnabled(args.db);
-  const recording = tapError(
+  await tapError(
     recordFirstAssistantEventAcknowledgement({
       db: args.db,
       ownership: args.ownership,
       runId: args.runId,
       acknowledgedAt,
-      splitWrites,
     }),
     (error) => {
       L.warn("Failed to record first assistant message acknowledgement", {
@@ -153,11 +114,6 @@ async function publishFirstAssistantEventCreated(args: {
       });
     },
   );
-  if (splitWrites) {
-    await recording;
-  } else {
-    waitUntil(recording);
-  }
 }
 
 export async function publishFirstAssistantEventCreatedSafely(args: {

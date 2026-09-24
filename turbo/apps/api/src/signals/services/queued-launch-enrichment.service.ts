@@ -1,17 +1,14 @@
-import type { Db } from "../external/db";
 import { settle } from "../utils";
-import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { logger } from "../../lib/log";
 
 const L = logger("QueuedLaunchEnrichment");
 
 /**
- * Optional history/name lookups cannot block an accepted input after activation.
- * PR2 removes the legacy failure branch after old operations and rollback APIs
- * drain; omitting unavailable optional enrichment is the permanent contract.
+ * Optional history/name lookups cannot block an accepted input: unavailable
+ * optional enrichment is omitted with a warning and the fallback is used.
+ * Cancellation still propagates.
  */
 export async function loadOptionalChatEnrichment<T>(
-  db: Db,
   channel: string,
   load: () => Promise<T>,
   fallback: () => T,
@@ -20,11 +17,6 @@ export async function loadOptionalChatEnrichment<T>(
   const result = await settle(load(), signal);
   if (result.ok) {
     return result.value;
-  }
-  const splitWrites = await isSplitChatEventWriteEnabled(db);
-  signal.throwIfAborted();
-  if (!splitWrites) {
-    throw result.error;
   }
   L.warn("Optional chat input enrichment could not be loaded", {
     channel,

@@ -1,5 +1,4 @@
 import { command } from "ccstate";
-import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { logger } from "../../lib/log";
 import { safeSqlStateCode } from "../../lib/pg-errors";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
@@ -22,14 +21,10 @@ import {
   insertAssistantEventsInTransaction,
   type InsertAssistantEventsInput,
 } from "./chat-event-shared.service";
-import {
-  publishFirstAssistantEventCreatedSignalSafely,
-  recordFirstAssistantEventAcknowledgementMetric,
-} from "./chat-first-assistant-event-metric.service";
+import { recordFirstAssistantEventAcknowledgementMetric } from "./chat-first-assistant-event-metric.service";
 import { writeRunMetadataInTransaction } from "./agent-run-metadata-write.service";
 import { historicalRunGroupId } from "./run-event-provenance.service";
 import {
-  withRunContentWrite,
   withRunOutputWrite,
   RunContentOwnershipChangedError,
   prepareRunOutputOwnership,
@@ -55,11 +50,7 @@ export interface MaterializedChatProjection {
     readonly orgId: string;
   };
   readonly insertedRowCount: number;
-  readonly eventPublished?: boolean;
-  readonly firstAssistantAcknowledgement: {
-    readonly apiStartedAt: number;
-    readonly acknowledgedAt: number;
-  } | null;
+  readonly eventPublished: boolean;
 }
 
 type RunOutputMaterializationResult =
@@ -69,7 +60,7 @@ type RunOutputMaterializationResult =
       readonly payload: EventConsumerPayload;
       readonly ownership: RunContentOwnership;
     }
-  | { readonly outcome: "ignored-timeout" | "ignored-closure" };
+  | { readonly outcome: "ignored-timeout" };
 
 interface RunOutputEventAdmission {
   readonly diagnostics: RunOutputDiagnostics;
@@ -250,18 +241,10 @@ async function insertRunOutputChatEvents(
   thread: MaterializedChatProjection["thread"],
   runContext: {
     readonly runGroupId: string | undefined;
-    readonly modelProvider: string | null;
-    readonly splitWrites?: boolean;
-    readonly items?: InsertAssistantEventsInput["items"];
+    readonly items: InsertAssistantEventsInput["items"];
   },
   signal: AbortSignal,
 ): Promise<AssistantEventInsertion> {
-  const assistantItems =
-    runContext.items ??
-    assistantEventItems({
-      events: payload.events,
-      modelProvider: runContext.modelProvider,
-    });
   return await insertAssistantEventsInTransaction(
     tx,
     {
@@ -269,9 +252,8 @@ async function insertRunOutputChatEvents(
       threadId: thread.chatThreadId,
       userId: thread.userId,
       orgId: thread.orgId,
-      items: assistantItems,
+      items: runContext.items,
       runGroupId: runContext.runGroupId,
-      splitWrites: runContext.splitWrites,
     },
     signal,
   );
@@ -320,19 +302,16 @@ function preparedRunOutputProjection(
 }
 
 interface AdmittedRunOutputArgs {
-  readonly tx: Db | Tx;
+  readonly db: Db;
   readonly ownership: RunContentOwnership;
   readonly payload: EventConsumerPayload;
   readonly thread: MaterializedChatProjection["thread"] | null;
   readonly latestResult: OutputCandidate | null;
   readonly latestOutput: OutputCandidate | null;
   readonly citations: readonly EventCitation[];
-  readonly runGroupId: string | undefined;
-  readonly modelProvider: string | null;
-  readonly splitWrites?: boolean;
-  readonly diagnostics?: RunOutputDiagnostics;
-  readonly insertion?: AssistantEventInsertion;
-  readonly eventPublished?: boolean;
+  readonly diagnostics: RunOutputDiagnostics;
+  readonly insertion: AssistantEventInsertion | undefined;
+  readonly eventPublished: boolean;
 }
 
 function createRunOutputAuxiliaryWriter(
@@ -347,10 +326,7 @@ function createRunOutputAuxiliaryWriter(
       | "first_assistant_metric",
     write: () => Promise<T>,
   ): Promise<T | undefined> => {
-    args.diagnostics?.enter(phase);
-    if (!args.splitWrites) {
-      return await write();
-    }
+    args.diagnostics.enter(phase);
     const startedAt = performance.now();
     const result = await settleIncludingAbort(write());
     recordSandboxOperation({
@@ -374,7 +350,7 @@ function createRunOutputAuxiliaryWriter(
     // Each projection gets its own attempt after the event commit. Required
     // materializations retry with the existing input receipt; event IDs dedupe.
     if (failures.length === 0) {
-      args.diagnostics?.recordFailure(result.error);
+      args.diagnostics.recordFailure(result.error);
     }
     failures.push(result.error);
     signal.throwIfAborted();
@@ -385,10 +361,10 @@ function createRunOutputAuxiliaryWriter(
 async function upsertRunOutputMaterialization(
   args: AdmittedRunOutputArgs,
 ): Promise<void> {
-  const { tx, payload, latestResult, latestOutput } = args;
+  const { db, payload, latestResult, latestOutput } = args;
   if (latestResult !== null || latestOutput !== null) {
     const updatedAt = nowDate();
-    await tx
+    await db
       .insert(runOutputMaterializations)
       .values({
         runId: payload.runId,
@@ -442,7 +418,7 @@ async function claimFirstAssistantAcknowledgement(
   }
   const [firstAssistantClaim] =
     (await auxiliary("first_assistant_metric", () => {
-      return writeRunMetadataInTransaction(args.tx, {
+      return writeRunMetadataInTransaction(args.db, {
         patch: { firstAssistantEventAcknowledgedAt: acknowledgedAt },
         where: firstAssistantClaimWhere,
       });
@@ -459,35 +435,16 @@ async function materializeAdmittedRunOutputEvents(
   args: AdmittedRunOutputArgs,
   signal: AbortSignal,
 ): Promise<RunOutputMaterializationResult> {
-  const { tx, payload, thread, citations } = args;
+  const { db, payload, thread, citations } = args;
   const failures: unknown[] = [];
   const auxiliary = createRunOutputAuxiliaryWriter(args, failures, signal);
-  let insertedRowCount = args.insertion?.insertedRowCount ?? 0;
-  let shouldAttemptFirstAssistantEventClaim =
-    args.insertion?.shouldAttemptFirstAssistantEventClaim ?? false;
-  if (thread && !args.insertion) {
-    args.diagnostics?.enter("chat_event_append");
-    const insertion = await insertRunOutputChatEvents(
-      tx,
-      payload,
-      thread,
-      {
-        runGroupId: args.runGroupId,
-        modelProvider: args.modelProvider,
-        splitWrites: args.splitWrites,
-      },
-      signal,
-    );
-    insertedRowCount = insertion.insertedRowCount;
-    shouldAttemptFirstAssistantEventClaim =
-      insertion.shouldAttemptFirstAssistantEventClaim;
-  }
+  const insertedRowCount = args.insertion?.insertedRowCount ?? 0;
 
   await auxiliary("run_materialization", () => {
     return upsertRunOutputMaterialization(args);
   });
   await auxiliary("memory_citations", () => {
-    return insertMemoryCitations(tx, payload.runId, citations);
+    return insertMemoryCitations(db, payload.runId, citations);
   });
   signal.throwIfAborted();
 
@@ -506,11 +463,10 @@ async function materializeAdmittedRunOutputEvents(
   const firstAssistantAcknowledgement =
     await claimFirstAssistantAcknowledgement(
       args,
-      shouldAttemptFirstAssistantEventClaim &&
-        (insertedRowCount > 0 || args.splitWrites === true),
+      args.insertion?.shouldAttemptFirstAssistantEventClaim ?? false,
       auxiliary,
     );
-  if (args.splitWrites && firstAssistantAcknowledgement) {
+  if (firstAssistantAcknowledgement) {
     recordFirstAssistantEventAcknowledgementMetric({
       runId: payload.runId,
       ...firstAssistantAcknowledgement,
@@ -529,14 +485,11 @@ async function materializeAdmittedRunOutputEvents(
       thread,
       insertedRowCount,
       eventPublished: args.eventPublished,
-      firstAssistantAcknowledgement: args.splitWrites
-        ? null
-        : firstAssistantAcknowledgement,
     },
   };
 }
 
-async function materializeSplitRunOutputEvents(
+async function materializePreparedRunOutputEvents(
   writeDb: Db,
   args: {
     readonly prepared: ReturnType<typeof preparedRunOutputProjection>;
@@ -551,7 +504,6 @@ async function materializeSplitRunOutputEvents(
   const { prepared, preparedOwnership, runGroupId, diagnostics } = args;
   const { ownership } = preparedOwnership;
   const { payload } = prepared;
-  const splitWrites = true;
   const items = assistantEventItems({
     events: prepared.payload.events,
     modelProvider: preparedOwnership.modelProvider,
@@ -585,8 +537,6 @@ async function materializeSplitRunOutputEvents(
             thread,
             {
               runGroupId,
-              modelProvider: current.modelProvider,
-              splitWrites,
               items,
             },
             signal,
@@ -613,18 +563,15 @@ async function materializeSplitRunOutputEvents(
   }
   return await materializeAdmittedRunOutputEvents(
     {
-      tx: writeDb,
+      db: writeDb,
       ownership: projection.ownership,
       payload: prepared.payload,
       thread: projection.thread,
       latestResult: prepared.latestResult,
       latestOutput: prepared.latestOutput,
       citations: prepared.citations,
-      runGroupId,
-      modelProvider: projection.modelProvider,
       insertion: projection.insertion,
       eventPublished,
-      splitWrites,
       diagnostics,
     },
     signal,
@@ -661,51 +608,11 @@ export async function materializeRunOutputEvents(
     })
       ? await historicalRunGroupId(writeDb, payload.runId, undefined, signal)
       : undefined;
-  const splitWrites = await isSplitChatEventWriteEnabled(writeDb);
-  if (splitWrites) {
-    return await materializeSplitRunOutputEvents(
-      writeDb,
-      { prepared, preparedOwnership, runGroupId, diagnostics },
-      signal,
-    );
-  }
-  const result = await withRunContentWrite(
+  return await materializePreparedRunOutputEvents(
     writeDb,
-    { runId: payload.runId, runOwner: payload.context, ownership, diagnostics },
-    async (
-      tx,
-      ownership,
-      status,
-      modelProvider,
-    ): Promise<RunOutputMaterializationResult> => {
-      if (status === "timeout") {
-        return { outcome: "ignored-timeout" };
-      }
-      const thread =
-        ownership.triggerSource !== null && ownership.thread
-          ? { ...ownership.thread, orgId: ownership.orgId }
-          : null;
-      return await materializeAdmittedRunOutputEvents(
-        {
-          tx,
-          ownership,
-          payload: prepared.payload,
-          thread,
-          latestResult: prepared.latestResult,
-          latestOutput: prepared.latestOutput,
-          citations: prepared.citations,
-          runGroupId,
-          modelProvider,
-          splitWrites,
-        },
-        signal,
-      );
-    },
+    { prepared, preparedOwnership, runGroupId, diagnostics },
     signal,
   );
-  return result.outcome === "closed"
-    ? { outcome: "ignored-closure" }
-    : result.value;
 }
 
 export const materializeRunOutputEvents$ = command(
@@ -734,27 +641,13 @@ export async function publishMaterializedChatProjection(
   projection: MaterializedChatProjection,
   signal: AbortSignal,
 ): Promise<void> {
-  if (projection.firstAssistantAcknowledgement) {
-    recordFirstAssistantEventAcknowledgementMetric({
-      runId: payload.runId,
-      ...projection.firstAssistantAcknowledgement,
-    });
-  }
   if (projection.insertedRowCount === 0 || projection.eventPublished) {
     return;
   }
-  if (projection.firstAssistantAcknowledgement) {
-    await publishFirstAssistantEventCreatedSignalSafely({
-      userId: projection.thread.userId,
-      orgId: projection.thread.orgId,
-      threadId: projection.thread.chatThreadId,
-    });
-  } else {
-    await publishChatThreadMessageCreatedSafely({
-      userId: projection.thread.userId,
-      orgId: projection.thread.orgId,
-      threadId: projection.thread.chatThreadId,
-    });
-  }
+  await publishChatThreadMessageCreatedSafely({
+    userId: projection.thread.userId,
+    orgId: projection.thread.orgId,
+    threadId: projection.thread.chatThreadId,
+  });
   signal.throwIfAborted();
 }
