@@ -551,7 +551,6 @@ What would you like to start with?`;
 const connectAgentPhone$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const publicBrand = PUBLIC_BRAND;
     const bodyResult = await get(connectBody$);
     signal.throwIfAborted();
     if (!bodyResult.ok) {
@@ -564,15 +563,12 @@ const connectAgentPhone$ = command(
     const phoneHandle = normalizeAgentPhoneHandle(body.phoneHandle, channel);
     if (
       !phoneHandle ||
-      body.publicBrand !== publicBrand ||
       !verifyAgentPhoneConnectSignature({
         phoneHandle,
         agentphoneAgentId: body.agentphoneAgentId,
         timestamp: body.timestamp,
         channel,
         signature: body.signature,
-        publicBrand: body.publicBrand,
-        publicBrandSignature: body.publicBrandSignature,
         secret: env("SECRETS_ENCRYPTION_KEY"),
       })
     ) {
@@ -587,7 +583,7 @@ const connectAgentPhone$ = command(
       channel,
       userId: auth.userId,
       orgId: auth.orgId,
-      publicBrand,
+      publicBrand: PUBLIC_BRAND,
     });
     signal.throwIfAborted();
 

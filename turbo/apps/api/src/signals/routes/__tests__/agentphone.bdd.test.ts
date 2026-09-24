@@ -1413,8 +1413,9 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
 
     const plainPromptUnlinked = await commandReply("hello again");
     expect(plainPromptUnlinked).toContain(
-      "This shared AgentPhone number connects you to Okou.",
+      "Click the link below to start using Okou.",
     );
+    expect(plainPromptUnlinked).not.toContain("AgentPhone");
     expect(plainPromptUnlinked).toContain("/agentphone/connect?");
     expect(plainPromptUnlinked).not.toContain(SMS_RISK_WARNING);
   });

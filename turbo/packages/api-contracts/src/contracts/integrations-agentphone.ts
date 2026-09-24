@@ -11,8 +11,10 @@ const agentPhoneConnectBodySchema = z.object({
   timestamp: z.number(),
   signature: z.string().min(1),
   channel: z.string().min(1).optional(),
-  publicBrand: publicBrandSchema,
-  publicBrandSignature: z.string().min(1),
+  // Sent by older App bundles and ignored by the API. Remove with #36650
+  // after those bundles drain.
+  publicBrand: publicBrandSchema.optional(),
+  publicBrandSignature: z.string().min(1).optional(),
 });
 
 const agentPhoneConnectResponseSchema = z.object({

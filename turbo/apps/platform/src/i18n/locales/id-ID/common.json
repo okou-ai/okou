@@ -347,7 +347,7 @@
     },
     "sources": {
       "agent": "Agen",
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "automationEvent": "Peristiwa otomatisasi",
       "automationSchedule": "Jadwal otomatisasi",
       "email": "Email",
@@ -3450,7 +3450,7 @@
         "invalidSignature": "Tanda tangan pada tautan ini tidak valid.",
         "invalidTimestamp": "Stempel waktu pada tautan ini tidak valid.",
         "invalidTitle": "Tautan koneksi tidak valid",
-        "risk": "Balasan SMS dan MMS mungkin tidak terkirim dengan andal. Untuk pengalaman paling andal, gunakan iMessage dengan nomor AgentPhone ini.",
+        "risk": "Balasan SMS dan MMS mungkin tidak terkirim dengan andal. Untuk pengalaman paling andal, gunakan iMessage dengan nomor ini.",
         "successDescription": "{{phone}} terhubung. Kirim pesan teks untuk mulai mengobrol dengan {{assistantName}}.",
         "successTitle": "Nomor telepon terhubung"
       },
@@ -4001,8 +4001,8 @@
         "uninstallTitle": "Uninstall bot Telegram?"
       },
       "toasts": {
-        "agentphoneConnected": "AgentPhone terhubung",
-        "agentphoneDisconnected": "AgentPhone terputus",
+        "agentphoneConnected": "Nomor telepon terhubung",
+        "agentphoneDisconnected": "Nomor telepon terputus",
         "slackConnected": "Slack berhasil terhubung",
         "slackDisconnected": "Terputus dari Slack",
         "slackInstalled": "Slack berhasil diinstal",

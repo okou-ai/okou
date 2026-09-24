@@ -7648,11 +7648,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       timestamp,
       signature: connectParams.get("sig") ?? "",
       channel: connectParams.get("channel") ?? undefined,
-      publicBrand:
-        connectParams.get("publicBrand") === "okou"
-          ? ("okou" as const)
-          : undefined,
-      publicBrandSignature: connectParams.get("brandSig") ?? undefined,
     };
     const connected = await integrations.requestConnectAgentPhone(
       actor,
@@ -7715,28 +7710,19 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       error: { code: "AGENTPHONE_ERROR" },
     });
 
+    // An older App bundle still posts the ignored brand fields; the link
+    // signature is verified and the request reaches the ownership conflict.
     const duplicateConnect = await integrations.requestConnectAgentPhone(
       integrations.user(),
-      connectBody,
+      {
+        ...connectBody,
+        publicBrand: "okou",
+        publicBrandSignature: connectParams.get("brandSig") ?? "",
+      },
       [409],
     );
     expect(duplicateConnect.body).toMatchObject({
       error: { code: "CONFLICT" },
-    });
-
-    const strippedNewConnect = await integrations.requestConnectAgentPhone(
-      integrations.user(),
-      {
-        phoneHandle: connectBody.phoneHandle,
-        agentphoneAgentId: connectBody.agentphoneAgentId,
-        timestamp: connectBody.timestamp,
-        signature: connectBody.signature,
-        channel: connectBody.channel,
-      },
-      [400],
-    );
-    expect(strippedNewConnect.body).toMatchObject({
-      error: { code: "BAD_REQUEST" },
     });
 
     const alreadyLinkedStart = await integrations.requestStartAgentPhoneLink(

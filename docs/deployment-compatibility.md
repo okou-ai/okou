@@ -1,5 +1,19 @@
 # Deployment Compatibility
 
+## AgentPhone connect link brand signature (2026-09-24)
+
+The API verifies only the provider-identity `sig` on an AgentPhone connect
+request. The App no longer reads `publicBrand` / `brandSig` from the link and
+no longer posts them. Production promotes the API before the App, so the new
+API still emits both link fields for older App bundles and accepts, then
+ignores, the optional body fields those bundles send. Links expire after ten
+minutes, so no long-lived link depends on either field.
+
+A new App served by an API older than this change posts no brand fields, which
+that API rejects. An API rollback below this change therefore also requires
+rolling back the App. Removing the emitted link fields and optional body fields is tracked
+by #36650.
+
 ## Voice input model selection retirement (2026-09-24)
 
 Voice input always uses Gemini 3.1 Flash-Lite on Vertex AI. The Debug

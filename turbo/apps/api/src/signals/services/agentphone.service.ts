@@ -87,11 +87,11 @@ const MAX_WEBHOOK_AGE_SECONDS = 300;
 const SIGNATURE_PREFIX = "sha256=";
 const MAX_CONTEXT_MESSAGES = 10;
 const AGENTPHONE_SMS_MMS_SLASH_COMMAND_RISK_MESSAGE =
-  "Note: SMS and MMS replies may not be delivered reliably. For the most reliable experience, use iMessage with this AgentPhone number.";
+  "Note: SMS and MMS replies may not be delivered reliably. For the most reliable experience, use iMessage with this number.";
 const AGENTPHONE_GROUP_CONNECT_IN_DM_MESSAGE =
   "To connect this phone number, message this number directly in a 1:1 iMessage conversation.";
 const AGENTPHONE_GROUP_ACCOUNT_COMMAND_MESSAGE =
-  "Only the linked sender can use AgentPhone account commands in a group. Message this number directly to connect or manage your link.";
+  "Only the linked sender can use account commands in a group. Message this number directly to connect or manage your link.";
 const AGENTPHONE_CHAT_MESSAGE_ID_NAMESPACE =
   "3208d609-59a7-4b0e-9c3b-3db20e9c924f";
 const agentPhoneQueueEventRevoker = alias(
@@ -255,8 +255,6 @@ export function verifyAgentPhoneConnectSignature(params: {
   readonly timestamp: number;
   readonly channel: AgentPhoneChannel;
   readonly signature: string;
-  readonly publicBrand: PublicBrand;
-  readonly publicBrandSignature: string;
   readonly secret: string;
 }): boolean {
   const nowSeconds = Math.floor(now() / 1000);
@@ -264,27 +262,15 @@ export function verifyAgentPhoneConnectSignature(params: {
     return false;
   }
 
-  const expected = signAgentPhoneConnectParams({
-    phoneHandle: params.phoneHandle,
-    agentphoneAgentId: params.agentphoneAgentId,
-    timestamp: params.timestamp,
-    channel: params.channel,
-    secret: params.secret,
-  });
-  if (!safeHexSignatureEqual(expected, params.signature)) {
-    return false;
-  }
-
   return safeHexSignatureEqual(
-    signAgentPhoneConnectBrand({
+    signAgentPhoneConnectParams({
       phoneHandle: params.phoneHandle,
       agentphoneAgentId: params.agentphoneAgentId,
       timestamp: params.timestamp,
       channel: params.channel,
-      publicBrand: params.publicBrand,
       secret: params.secret,
     }),
-    params.publicBrandSignature,
+    params.signature,
   );
 }
 
@@ -336,11 +322,6 @@ export function buildAgentPhoneConnectUrl(params: {
     handle: phoneHandle,
     agent: params.agentphoneAgentId,
     ts: String(timestamp),
-    // New Platform -> old API rollback compatibility for the full retained
-    // rollback lifetime, which has no fixed maximum evidenced. The old API
-    // validates this Provider-identity signature and ignores the additive brand
-    // fields. Remove with #27750 after that API is no longer serving or retained
-    // for rollback.
     sig: signAgentPhoneConnectParams({
       phoneHandle,
       agentphoneAgentId: params.agentphoneAgentId,
@@ -349,6 +330,9 @@ export function buildAgentPhoneConnectUrl(params: {
       secret: params.secret,
     }),
     channel: params.channel,
+    // Older App bundles still require these fields on the connect page. The
+    // API no longer verifies them. Remove with #36650 after those bundles
+    // drain.
     publicBrand,
     brandSig: signAgentPhoneConnectBrand({
       phoneHandle,
@@ -1053,8 +1037,6 @@ function formatConnectPrompt(event: AgentPhoneMessageEvent): string {
   });
 
   return [
-    `This shared AgentPhone number connects you to ${brandName}.`,
-    "",
     "You can text me like a teammate and I'll actually do the work: research something, draft and send emails, summarize long documents, update spreadsheets, triage tickets, post to Slack, dig through your GitHub or Notion, and a lot more.",
     "",
     "I'm most useful once I'm connected to the tools you already use — GitHub, Gmail, Notion, Google Drive / Sheets / Docs / Calendar, Slack, Sentry, X, and 100+ others.",
