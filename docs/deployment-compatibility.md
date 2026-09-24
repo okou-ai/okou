@@ -2849,6 +2849,39 @@ Roll forward with compatible readers instead of interpreting such a host as
 Direct or deleting it. The API promotes before the App in the normal release;
 the prior production App verification makes that order safe for this writer.
 
+### Personal-to-organization Access promotion and reviewed deletion (#36707)
+
+Migration `1213` extends the database scope-change guard to allow the narrow
+Personal/owner -> Organization/no owner transition within the same
+organization, without moving the row, decrypting its Service Token or
+replacing existing SSH bindings. Deploy this migration **before** enabling the
+new API route. A current admin may promote only their own Personal row after
+reviewing its expanded audience; existing owner-host generations advance.
+Existing zero-reference DELETE and name/token PATCH request shapes remain
+compatible with scope-aware clients. Older API binaries remain compatible with
+the expanded trigger until new state is written; they do not offer the new
+promotion or reviewed delete operations.
+
+A current admin can preview Organization deletion impact with owner identity
+and per-owner host counts. The optional opaque snapshot is required only when
+other owners' hosts are affected. DELETE rechecks the exact revision and host
+set under the Access-before-host lock, blocks any actor-owned reference, and
+atomically detaches only other owners' references into `needs_rebind` before
+deleting the config (the same-org FK remains restrictive). Profiles missing
+from the member directory are shown by stable owner ID; their hosts still
+count. Any changed host set requires a fresh review. No affected-member
+message, new SSH/Runner cache invalidation or active-Run cancellation is
+added by this delete path. Fresh reads and SSH resolutions treat retained hosts
+as protected and unusable until explicitly rebound. An already-running Run
+may retain cached capability until completion; this is an accepted bounded
+Run-lifetime window, not immediate revocation.
+
+The already-shipped rebind-capable App and shared-aware Runner are prerequisites.
+After a member binds a promoted row or a reviewed deletion writes
+`needs_rebind`, rollback to pre-foundation API/Runner or pre-rebind App is
+unsafe; roll forward with compatible readers. The API-before-App release order
+is safe once migration `1213` and those prerequisites are verified.
+
 ## Feishu and Lark integration identity
 
 New runs use `triggerSource=feishu` or `triggerSource=lark` from the verified

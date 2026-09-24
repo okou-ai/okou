@@ -3,6 +3,7 @@ import {
   type CreateCloudflareAccessConfigRequest,
   type UpdateCloudflareAccessRequest,
   type ConvertCloudflareAccessRequest,
+  type DeleteCloudflareAccessRequest,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { command } from "ccstate";
 import { cloudflareAccessErrorResponse } from "../../lib/cloudflare-access-error";
@@ -11,16 +12,20 @@ import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
+import { clerk$, createClerkReadContext } from "../external/clerk";
 import type { RouteEntry } from "../route-entry";
 import {
   createCloudflareAccessConfig,
   convertCloudflareAccessToPersonal,
+  convertCloudflareAccessToOrganization,
   deleteCloudflareAccessConfig,
   listCloudflareAccessConfigs,
   previewCloudflareAccessConversion,
+  previewCloudflareAccessDeletion,
   updateCloudflareAccessConfig,
 } from "../services/cloudflare-access.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
+import { loadUserDisplayNames } from "../services/user-profile-directory.service";
 
 const ownerAuth = {
   requireOrganization: true,
@@ -89,14 +94,14 @@ const deleteConfig$ = command(
   async (
     { get, set },
     configId: string,
-    expectedRevision: number,
+    body: DeleteCloudflareAccessRequest,
     signal: AbortSignal,
   ) => {
     const result = await deleteCloudflareAccessConfig({
       db: set(writeDb$),
       owner: get(organizationAuthContext$),
       configId,
-      expectedRevision,
+      body,
     });
     signal.throwIfAborted();
     return result;
@@ -159,14 +164,84 @@ const delete$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const { configId } = get(pathParamsOf(cloudflareAccessContract.delete));
-  const result = await set(
-    deleteConfig$,
-    configId,
-    body.data.expectedRevision,
-    signal,
-  );
+  const result = await set(deleteConfig$, configId, body.data, signal);
   return result.ok
     ? { status: 204 as const, body: undefined }
+    : cloudflareAccessErrorResponse(
+        result.kind === "not_found"
+          ? 404
+          : result.kind === "forbidden"
+            ? 403
+            : 409,
+        result.code,
+        result.message,
+      );
+});
+
+const deletionPreview$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  const { configId } = get(
+    pathParamsOf(cloudflareAccessContract.deletionPreview),
+  );
+  const result = await previewCloudflareAccessDeletion({
+    db: get(db$),
+    owner: get(organizationAuthContext$),
+    configId,
+  });
+  signal.throwIfAborted();
+  if (!result.ok) {
+    return cloudflareAccessErrorResponse(
+      result.kind === "not_found" ? 404 : 403,
+      result.code,
+      result.message,
+    );
+  }
+  const { value } = result;
+  const names = await loadUserDisplayNames(
+    set(writeDb$),
+    get(clerk$),
+    value.affectedOwners.map(({ userId }) => {
+      return userId;
+    }),
+    createClerkReadContext(),
+    signal,
+  );
+  signal.throwIfAborted();
+  return {
+    status: 200 as const,
+    body: {
+      ...value,
+      affectedOwners: value.affectedOwners.map((entry) => {
+        return {
+          ...entry,
+          displayName: names.get(entry.userId) ?? null,
+        };
+      }),
+    },
+  };
+});
+
+const promote$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  const body = await get(
+    bodyResultOf(cloudflareAccessContract.convertToOrganization),
+  );
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const { configId } = get(
+    pathParamsOf(cloudflareAccessContract.convertToOrganization),
+  );
+  const result = await convertCloudflareAccessToOrganization({
+    db: set(writeDb$),
+    owner: get(organizationAuthContext$),
+    configId,
+    expectedRevision: body.data.expectedRevision,
+  });
+  signal.throwIfAborted();
+  return result.ok
+    ? { status: 200 as const, body: result.value }
     : cloudflareAccessErrorResponse(
         result.kind === "not_found"
           ? 404
@@ -260,6 +335,14 @@ export const cloudflareAccessRoutes: readonly RouteEntry[] = [
   {
     route: cloudflareAccessContract.delete,
     handler: authRoute(ownerAuth, delete$),
+  },
+  {
+    route: cloudflareAccessContract.deletionPreview,
+    handler: authRoute(ownerAuth, deletionPreview$),
+  },
+  {
+    route: cloudflareAccessContract.convertToOrganization,
+    handler: authRoute(ownerAuth, promote$),
   },
   {
     route: cloudflareAccessContract.conversionPreview,

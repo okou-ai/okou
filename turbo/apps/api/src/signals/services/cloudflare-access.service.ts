@@ -6,6 +6,7 @@ import type {
   CreateCloudflareAccessRequest,
   UpdateCloudflareAccessRequest,
   ConvertCloudflareAccessRequest,
+  DeleteCloudflareAccessRequest,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/cloudflare-access-errors";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
@@ -460,7 +461,7 @@ export async function deleteCloudflareAccessConfig(args: {
   readonly db: Db;
   readonly owner: Actor;
   readonly configId: string;
-  readonly expectedRevision: number;
+  readonly body: DeleteCloudflareAccessRequest;
 }) {
   const result = await args.db.transaction(async (tx) => {
     const [config] = await tx
@@ -481,11 +482,48 @@ export async function deleteCloudflareAccessConfig(args: {
       args.configId,
       config.scope,
     );
-    if (config.revision !== args.expectedRevision) {
+    if (config.revision !== args.body.expectedRevision) {
       return cloudflareAccessFailure("conflict");
     }
-    if (hosts.length > 0) {
+    if (
+      hosts.some((host) => {
+        return host.userId === args.owner.userId;
+      })
+    ) {
       return cloudflareAccessFailure("inUse");
+    }
+    if (
+      (args.body.impactSnapshot !== undefined &&
+        args.body.impactSnapshot !== impactSnapshot(config, hosts)) ||
+      (hosts.length > 0 &&
+        (config.scope !== "organization" ||
+          args.body.impactSnapshot === undefined))
+    ) {
+      return cloudflareAccessFailure("impactConflict");
+    }
+    if (
+      hosts.some((host) => {
+        return host.generation === 2_147_483_647;
+      })
+    ) {
+      return cloudflareAccessFailure("exhausted");
+    }
+    if (hosts.length > 0) {
+      await tx
+        .update(sshConnections)
+        .set({
+          cloudflareAccessId: null,
+          needsRebind: true,
+          generation: sql`${sshConnections.generation} + 1`,
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(sshConnections.orgId, args.owner.orgId),
+            eq(sshConnections.cloudflareAccessId, args.configId),
+            ne(sshConnections.userId, args.owner.userId),
+          ),
+        );
     }
     await tx
       .delete(cloudflareAccessConfigs)
@@ -512,6 +550,151 @@ function impactSnapshot(config: Metadata, hosts: readonly ReferencingHost[]) {
       ]),
     )
     .digest("hex");
+}
+
+export async function previewCloudflareAccessDeletion(args: {
+  readonly db: ReadonlyDb;
+  readonly owner: Actor;
+  readonly configId: string;
+}) {
+  if (args.owner.orgRole !== "admin") {
+    return cloudflareAccessFailure("forbidden");
+  }
+  const [config] = await args.db
+    .select(metadata)
+    .from(cloudflareAccessConfigs)
+    .where(organizationConfig(args.owner, args.configId));
+  if (!config) {
+    return cloudflareAccessFailure("notFound");
+  }
+  const hosts = await args.db
+    .select({
+      id: sshConnections.id,
+      userId: sshConnections.userId,
+      generation: sshConnections.generation,
+    })
+    .from(sshConnections)
+    .where(
+      and(
+        eq(sshConnections.orgId, args.owner.orgId),
+        eq(sshConnections.cloudflareAccessId, args.configId),
+      ),
+    )
+    .orderBy(asc(sshConnections.id));
+  const counts = new Map<string, number>();
+  for (const host of hosts) {
+    if (host.userId !== args.owner.userId) {
+      counts.set(host.userId, (counts.get(host.userId) ?? 0) + 1);
+    }
+  }
+  return {
+    ok: true as const,
+    value: {
+      expectedRevision: config.revision,
+      ownHostCount: hosts.filter((host) => {
+        return host.userId === args.owner.userId;
+      }).length,
+      affectedOwners: [...counts]
+        .sort(([a], [b]) => {
+          return a.localeCompare(b);
+        })
+        .map(([userId, hostCount]) => {
+          return {
+            userId,
+            displayName: null as string | null,
+            hostCount,
+          };
+        }),
+      impactSnapshot: impactSnapshot(config, hosts),
+    },
+  };
+}
+
+export async function convertCloudflareAccessToOrganization(args: {
+  readonly db: Db;
+  readonly owner: Actor;
+  readonly configId: string;
+  readonly expectedRevision: number;
+}) {
+  if (args.owner.orgRole !== "admin") {
+    return cloudflareAccessFailure("forbidden");
+  }
+  const result = await args.db.transaction(async (tx) => {
+    const [config] = await tx
+      .select(metadata)
+      .from(cloudflareAccessConfigs)
+      .where(ownedConfig(args.owner, args.configId))
+      .for("update");
+    if (!config) {
+      return cloudflareAccessFailure("notFound");
+    }
+    const hosts = await lockReferencingHosts(
+      tx,
+      args.owner,
+      args.configId,
+      "personal",
+    );
+    if (config.revision !== args.expectedRevision) {
+      return cloudflareAccessFailure("conflict");
+    }
+    if (
+      config.revision === 2_147_483_647 ||
+      config.generation === 2_147_483_647 ||
+      hosts.some((host) => {
+        return host.generation === 2_147_483_647;
+      })
+    ) {
+      return cloudflareAccessFailure("exhausted");
+    }
+    const [converted] = await tx
+      .update(cloudflareAccessConfigs)
+      .set({
+        scope: "organization",
+        userId: null,
+        revision: config.revision + 1,
+        generation: config.generation + 1,
+        updatedAt: nowDate(),
+      })
+      .where(ownedConfig(args.owner, args.configId))
+      .returning(metadata);
+    if (!converted) {
+      throw new Error("Cloudflare Access promotion returned no row");
+    }
+    if (hosts.length > 0) {
+      await tx
+        .update(sshConnections)
+        .set({
+          generation: sql`${sshConnections.generation} + 1`,
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(sshConnections.orgId, args.owner.orgId),
+            eq(sshConnections.cloudflareAccessId, args.configId),
+            eq(sshConnections.userId, args.owner.userId),
+          ),
+        );
+    }
+    return {
+      ok: true as const,
+      value: response(
+        converted,
+        hosts.map(({ id, displayName }) => {
+          return { id, displayName };
+        }),
+      ),
+      affectedHosts: hosts,
+    };
+  });
+  if (result.ok) {
+    await publishUpdateInvalidation(
+      args.db,
+      args.owner,
+      "organization",
+      result.affectedHosts,
+    );
+  }
+  return result;
 }
 
 export async function previewCloudflareAccessConversion(args: {

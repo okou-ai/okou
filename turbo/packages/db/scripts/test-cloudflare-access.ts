@@ -352,6 +352,52 @@ try {
     "UPDATE cloudflare_access_configs SET user_id='foreign' WHERE id='00000000-0000-4000-8000-000000000006'",
     { code: "23514", constraint: "cloudflare_access_scope_change_guard" },
   );
+  await migrate("1213_cloudflare_access_personal_promotion");
+  await rejects(
+    "UPDATE cloudflare_access_configs SET user_id='foreign' WHERE id='00000000-0000-4000-8000-000000000004'",
+    { code: "23514", constraint: "cloudflare_access_scope_change_guard" },
+  );
+  await rejects(
+    "UPDATE cloudflare_access_configs SET scope='organization',user_id=NULL,org_id='other' WHERE id='00000000-0000-4000-8000-000000000004'",
+    { code: "23514", constraint: "cloudflare_access_scope_change_guard" },
+  );
+  await client.query(
+    "UPDATE cloudflare_access_configs SET scope='organization',user_id=NULL WHERE id='00000000-0000-4000-8000-000000000011'",
+  );
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT scope,user_id,encrypted_client_id,encrypted_client_secret FROM cloudflare_access_configs WHERE id='00000000-0000-4000-8000-000000000011'",
+      )
+    ).rows,
+    [
+      {
+        scope: "organization",
+        user_id: null,
+        encrypted_client_id: "encrypted-id",
+        encrypted_client_secret: "encrypted-secret",
+      },
+    ],
+  );
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT cloudflare_access_id,needs_rebind,credential_id,learned_host_key_algorithm FROM ssh_connections WHERE id='00000000-0000-4000-8000-000000000010'",
+      )
+    ).rows,
+    [
+      {
+        cloudflare_access_id: "00000000-0000-4000-8000-000000000011",
+        needs_rebind: false,
+        credential_id: "00000000-0000-4000-8000-000000000002",
+        learned_host_key_algorithm: null,
+      },
+    ],
+  );
+  await rejects(
+    "UPDATE cloudflare_access_configs SET scope='personal',user_id='foreign' WHERE id='00000000-0000-4000-8000-000000000011'",
+    { code: "23514", constraint: "cloudflare_access_scope_change_guard" },
+  );
   await client.query("ROLLBACK");
   console.log("Cloudflare Access migrations and scoped constraints passed");
 } finally {

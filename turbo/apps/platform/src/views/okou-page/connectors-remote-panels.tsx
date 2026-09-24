@@ -30,6 +30,8 @@ import {
   CloudflareAccessConfigs,
   CloudflareAccessDialog,
   CloudflareAccessConversionDialog,
+  CloudflareAccessDeletionDialog,
+  CloudflareAccessPromotionDialog,
 } from "./cloudflare-access.tsx";
 
 function ConnectionTypeFilter({
@@ -235,6 +237,8 @@ export function PrivateNetworkPanel() {
       <CloudflareAccessConfigs />
       <CloudflareAccessDialog />
       <CloudflareAccessConversionDialog />
+      <CloudflareAccessDeletionDialog />
+      <CloudflareAccessPromotionDialog />
     </section>
   );
 }
