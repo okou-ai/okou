@@ -5697,7 +5697,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await runs.grantProEntitlement(actor);
     await integrations.configureSlackRunModelPolicies(actor);
     await bdd.readOnboardingStatus(actor);
-    await integrations.enableAuditLinkSwitch(actor);
+    await integrations.enableOkouDebug(actor);
     const slackUser1 = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUser1,
@@ -6684,7 +6684,7 @@ describe("INT-02: Telegram integration", () => {
     runs.acceptTelemetryIngest();
     const runnerGroup = runs.configureRunnerGroup();
     const actor = integrations.user();
-    await integrations.enableAuditLinkSwitch(actor);
+    await integrations.enableOkouDebug(actor);
     await configureFastCodexPreference(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD Telegram Fast agent",
@@ -6807,12 +6807,11 @@ describe("INT-02: Telegram integration", () => {
       codexAgentMessageText: "telegram fast reply",
     });
     await flushWaitUntilAndAssert(() => {
-      const providerOutput = JSON.stringify(sentMessages);
-      expect(providerOutput).toContain("telegram fast reply");
-      expect(providerOutput).toContain("GPT 6 Astra Fast");
-      expect(providerOutput).toContain(
-        `https://app.okou.ai/activities/${runId}`,
-      );
+      expect(sentMessages).toStrictEqual([
+        expect.objectContaining({
+          text: "telegram fast reply\n\n<i>GPT 6 Astra Fast</i>",
+        }),
+      ]);
     });
   });
 

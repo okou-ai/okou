@@ -7,11 +7,8 @@ import { telegramChatThreadRoutes } from "@okouai/db/schema/telegram-chat-thread
 import { telegramInstallations } from "@okouai/db/schema/telegram-installation";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
 import { telegramUserLinks } from "@okouai/db/schema/telegram-user-link";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { delay } from "signal-timers";
-import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { buildTelegramResponse, splitMessage } from "../../lib/telegram-format";
 import type { Db } from "../external/db";
@@ -418,37 +415,6 @@ async function sendTelegramCompletionMessages(
   return { kind: "ok", messageIds };
 }
 
-async function resolveTelegramPresentation(
-  args: {
-    readonly db: Db;
-    readonly run: TelegramChatRunContext;
-    readonly runId: string;
-    readonly installationId: string;
-  },
-  signal: AbortSignal,
-): Promise<{
-  readonly logsUrl: string | undefined;
-  readonly footerText: string | undefined;
-}> {
-  const [featureContext, footerText] = await Promise.all([
-    loadUserFeatureSwitchContext(args.db, args.run.orgId, args.run.userId),
-    resolveTelegramAgentReplyFooterText({
-      db: args.db,
-      orgId: args.run.orgId,
-      runId: args.runId,
-      installationId: args.installationId,
-      agentId: args.run.agentId,
-    }),
-  ]);
-  signal.throwIfAborted();
-  return {
-    logsUrl: isFeatureEnabled(FeatureSwitchKey.OkouDebug, featureContext)
-      ? `${env("APP_URL")}/activities/${encodeURIComponent(args.runId)}`
-      : undefined,
-    footerText,
-  };
-}
-
 async function deleteThinkingMessageIfPresent(args: {
   readonly botToken: string;
   readonly target: TelegramDeliveryTarget;
@@ -536,25 +502,20 @@ async function deliverClaimedTelegramChatCallback(
     sendChatAction(binding.botToken, payload.chatId, "typing"),
     signal,
   );
-  const presentation = await resolveTelegramPresentation(
-    {
-      db: args.db,
-      run,
-      runId: args.callback.runId,
-      installationId: payload.installationId,
-    },
-    signal,
-  );
+  const footerText = await resolveTelegramAgentReplyFooterText({
+    db: args.db,
+    orgId: run.orgId,
+    runId: args.callback.runId,
+    installationId: payload.installationId,
+    agentId: run.agentId,
+  });
+  signal.throwIfAborted();
   const responseText = args.status === "completed" ? messageContent : undefined;
   const sent = await sendTelegramCompletionMessages(
     {
       botToken: binding.botToken,
       target: payload,
-      htmlOutput: buildTelegramResponse(
-        messageContent,
-        presentation.logsUrl,
-        presentation.footerText,
-      ),
+      htmlOutput: buildTelegramResponse(messageContent, footerText),
     },
     signal,
   );
