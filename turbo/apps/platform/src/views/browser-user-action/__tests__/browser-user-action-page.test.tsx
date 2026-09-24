@@ -15,6 +15,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 
 const context = testContext();
 const REQUEST_TOKEN = `vm0_browser_user_action_${"b".repeat(43)}`;
@@ -176,6 +177,102 @@ test("The standalone route reuses the native browser input form", async () => {
   expect(document.title).toContain("Browser action");
 });
 
+test("The standalone form accepts input and submission while its background check is pending", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  let applied = false;
+  const checkStarted = createDeferredPromise<void>(context.signal);
+  const releaseCheck = createDeferredPromise<void>(context.signal);
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, action(state));
+  });
+  context.mocks.api(
+    browserUserActionsContract.preflight,
+    async ({ respond }) => {
+      checkStarted.resolve(undefined);
+      await releaseCheck.promise;
+      return respond(200, action("pending"));
+    },
+  );
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    applied = true;
+    expect(body.values).toStrictEqual([
+      { key: "email", value: "owner@example.test" },
+    ]);
+    state = "succeeded";
+    return respond(200, action(state));
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  await checkStarted.promise;
+  expect(screen.getByText("Checking this request…")).toBeVisible();
+  expect(button("Add to browser")).toBeEnabled();
+  await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
+  click(button("Add to browser"));
+  await waitFor(() => {
+    expect(applied).toBeTruthy();
+  });
+  releaseCheck.resolve(undefined);
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
+test("A failed background check blocks submission and retains the draft for retry", async () => {
+  let checks = 0;
+  let applied = false;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, action("pending"));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    checks += 1;
+    return checks === 1
+      ? respond(503, {
+          error: {
+            code: "BROWSER_USE_TIMEOUT",
+            message: "Browser check timed out",
+          },
+        })
+      : respond(200, action("pending"));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ respond }) => {
+    applied = true;
+    return respond(200, action("succeeded"));
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const email = within(form).getByLabelText(/Email/u);
+  await fill(email, "owner@example.test");
+  await expect(
+    screen.findByText(/Couldn't check the browser/u),
+  ).resolves.toBeVisible();
+  expect(button("Add to browser")).toBeDisabled();
+  expect(email).toHaveValue("owner@example.test");
+  expect(applied).toBeFalsy();
+  click(button("Retry"));
+  await waitFor(() => {
+    expect(checks).toBe(2);
+    expect(button("Add to browser")).toBeEnabled();
+  });
+  expect(email).toHaveValue("owner@example.test");
+});
+
 test("The standalone form uses preflight's observed multiline and email controls", async () => {
   let state: BrowserUserActionResponse["state"] = "pending";
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
@@ -222,6 +319,11 @@ test("The standalone form uses preflight's observed multiline and email controls
   });
   const form = await screen.findByRole("form", {
     name: "Enter information in browser",
+  });
+  await waitFor(() => {
+    expect(within(form).getByLabelText(/Remembered answer/u).tagName).toBe(
+      "TEXTAREA",
+    );
   });
   const email = within(form).getByLabelText(/Email/u);
   const multiline = within(form).getByLabelText(/Remembered answer/u);
@@ -502,7 +604,7 @@ test("Standalone preflight makes a confirmed changed target stale before showing
   ).toBeVisible();
 });
 
-test("A transient standalone preflight failure offers retry without showing fields", async () => {
+test("A transient standalone preflight failure keeps fields visible but blocks submission", async () => {
   let attempts = 0;
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, action("pending"));
@@ -530,10 +632,15 @@ test("A transient standalone preflight failure offers retry without showing fiel
     expect(button("Retry")).toBeVisible();
   });
   expect(attempts).toBe(1);
-  expect(screen.queryByRole("form")).toBeNull();
+  expect(
+    screen.getByRole("form", { name: "Enter information in browser" }),
+  ).toBeVisible();
+  expect(button("Add to browser")).toBeDisabled();
   click(button("Retry"));
-  await screen.findByRole("form", { name: "Enter information in browser" });
-  expect(attempts).toBe(2);
+  await waitFor(() => {
+    expect(attempts).toBe(2);
+    expect(button("Add to browser")).toBeEnabled();
+  });
 });
 
 test("Retry after a failed standalone request also runs preflight", async () => {

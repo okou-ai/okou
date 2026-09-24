@@ -1766,6 +1766,7 @@
       "cancelFailed": "Não foi possível cancelar a solicitação. Tente novamente.",
       "cancelled": "Solicitação cancelada",
       "cancelling": "Cancelando…",
+      "checkFailed": "Não foi possível verificar o navegador. Suas informações foram mantidas; tente novamente antes de enviar.",
       "clearValue": "Limpar o valor no site",
       "completed": "Informações adicionadas",
       "continue": "Avisar o agente",

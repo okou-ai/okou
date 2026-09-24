@@ -1766,6 +1766,7 @@
       "cancelFailed": "Impossibile annullare la richiesta. Riprova.",
       "cancelled": "Richiesta annullata",
       "cancelling": "Annullamento…",
+      "checkFailed": "Impossibile verificare il browser. I dati inseriti sono conservati; riprova prima di inviarli.",
       "clearValue": "Cancella il valore sul sito",
       "completed": "Informazioni aggiunte",
       "continue": "Avvisa l’agente",

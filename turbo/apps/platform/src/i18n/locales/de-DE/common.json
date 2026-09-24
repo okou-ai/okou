@@ -1737,6 +1737,7 @@
       "cancelFailed": "Die Anfrage konnte nicht abgebrochen werden. Versuchen Sie es erneut.",
       "cancelled": "Anfrage abgebrochen",
       "cancelling": "Wird abgebrochen…",
+      "checkFailed": "Der Browser konnte nicht überprüft werden. Ihre Eingaben bleiben erhalten; versuchen Sie es vor dem Senden erneut.",
       "clearValue": "Wert auf der Website löschen",
       "completed": "Informationen hinzugefügt",
       "continue": "Agent benachrichtigen",
