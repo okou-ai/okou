@@ -24,7 +24,6 @@ function preferences(
     theme: "system",
     colorTheme: "blue-horizon",
     captureNetworkBodiesRemaining: 0,
-    voiceInputModel: null,
   };
 }
 

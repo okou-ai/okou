@@ -22,47 +22,6 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 
-test("Debug preferences restore and change the voice input model", async () => {
-  const updates = mockPreferences({
-    voiceInputModel: "google/gemini-3.6-flash",
-  });
-  await setupPage({
-    context,
-    path: "/?settings=debug",
-    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
-  });
-  const picker = await screen.findByLabelText("Voice input model");
-  await waitFor(() => {
-    return expect(picker).toHaveTextContent("Gemini 3.6 Flash");
-  });
-  click(picker);
-  const option = await waitFor(() => {
-    const element = getFastRole("option", "ElevenLabs Scribe v2");
-    expect(element).toBeVisible();
-    return element;
-  });
-  click(option);
-  await waitFor(() => {
-    return expect(picker).toHaveTextContent("ElevenLabs Scribe v2");
-  });
-  expect(updates).toContainEqual({
-    voiceInputModel: "fal-ai/elevenlabs/speech-to-text/scribe-v2",
-  });
-});
-
-test("Voice model selection is hidden while Debug is disabled", async () => {
-  mockPreferences({ voiceInputModel: "google/gemini-3.8-flash" });
-  await setupPage({
-    context,
-    path: "/?settings=preference",
-    featureSwitches: { [FeatureSwitchKey.OkouDebug]: false },
-  });
-  await screen.findByRole("dialog");
-  expect(
-    screen.queryByRole("combobox", { name: "Voice input model" }),
-  ).not.toBeInTheDocument();
-});
-
 function defaultPreferences(): UserPreferencesResponse {
   return {
     timezone: "Etc/UTC",
@@ -74,7 +33,6 @@ function defaultPreferences(): UserPreferencesResponse {
     theme: "system",
     colorTheme: "blue-horizon",
     captureNetworkBodiesRemaining: 0,
-    voiceInputModel: null,
   };
 }
 

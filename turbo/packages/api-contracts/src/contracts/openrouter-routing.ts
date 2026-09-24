@@ -13,16 +13,11 @@ const US_MODELS: Readonly<Record<OpenRouterApi, readonly string[]>> = {
     "openai/gpt-5.6-terra",
     "openai/gpt-5.6-luna",
   ],
-  // Gemini voice uses Google Cloud; remaining platform Chat models lack US support.
+  // Remaining platform Chat Completions models lack verified US support.
   "chat/completions": [],
-  "audio/transcriptions": [],
 };
 
-export type OpenRouterApi =
-  | "messages"
-  | "responses"
-  | "chat/completions"
-  | "audio/transcriptions";
+export type OpenRouterApi = "messages" | "responses" | "chat/completions";
 
 export interface OpenRouterRoutingContext {
   readonly credentialOwner: "builtin" | "organization" | "member";

@@ -6607,12 +6607,6 @@
           "trigger": "Morning Brief अभी चलाएँ",
           "triggering": "कतार में डाला जा रहा है…"
         },
-        "voiceInput": {
-          "default": "डिफ़ॉल्ट ({{model}})",
-          "description": "वॉइस इनपुट v2 के लिए मॉडल चुनें। स्पीच-टू-टेक्स्ट मॉडल टेक्स्ट सुधारने के लिए {{model}} का उपयोग करते हैं।",
-          "title": "वॉइस इनपुट मॉडल",
-          "unavailable": "मॉडल उपलब्ध नहीं है ({{model}})"
-        },
         "welcomeThread": {
           "create": "स्वागत चैट बनाएँ",
           "creating": "बनाई जा रही है…",

@@ -2,12 +2,10 @@
 
 Gemini-backed voice operations and the built-in Maps search use native Google
 `generateContent`, authenticated with the API deployment's Vercel workload
-identity. Voice covers partial/final audio transcription, ASR overlap
-reconciliation, text finalization, and `/api/voice-io/polish`. Maps exposes only
-`POST /api/maps/search` / `okou maps search`, using Gemini 2.5 Flash with native
-Google Maps Grounding. GPT Audio recognition stays on OpenRouter, dedicated ASR
-stays on its selected OpenRouter/fal provider, and generic chat/image/LLM
-consumers retain their routing.
+identity. Voice covers partial/final audio transcription, text finalization,
+and `/api/voice-io/polish`. Maps exposes only `POST /api/maps/search` /
+`okou maps search`, using Gemini 2.5 Flash with native Google Maps Grounding.
+Generic chat/image/LLM consumers retain their routing.
 
 ## Configuration
 
@@ -15,9 +13,9 @@ Voice input and Google Cloud routing are fully rolled out. Both voice API routes
 and Maps search require a signed-in user with an active organization; their
 existing quota, credit, and request limits continue to apply. All Gemini voice
 steps, including independent text polish, use Google Cloud without a routing
-override. Maps search likewise has no provider fallback. GPT Audio recognition
-and dedicated ASR retain their selected providers. Failures never change the
-selected provider.
+override. Voice input always uses Gemini 3.1 Flash-Lite and has no member model
+selection. Maps search likewise has no provider fallback. Failures never switch
+to another model or provider.
 
 The active billed project is `vm0-ai-488909` (number `662642595011`). The separate
 project `vm0-ai` is deprecated. These values are GitHub Actions **Variables**:
@@ -36,8 +34,8 @@ to API deployments through the existing Vercel build/runtime environment path.
 There are no `_DEV`/`_PROD` source keys or new GCP Secrets. Do not supply static
 Google credentials, a Gemini API key, or a Vercel OIDC token through this action.
 All three settings are validated together when a Google LLM operation is needed;
-incomplete configuration returns `NOT_CONFIGURED` before starting an ASR step
-whose finalization needs Gemini or before Maps calls Google.
+incomplete configuration returns `NOT_CONFIGURED` before a voice operation or
+Maps calls Google.
 
 Vercel project `vm0-api` (`prj_6mw0CgYjECVrJV57VJ47VN03B4UR`) belongs to team
 `okou` (`team_WRqI0kCoX5KcRInRWgZ1nBF0`), with OIDC enabled and team issuer mode.
@@ -116,19 +114,24 @@ the project's live Maps Grounding entitlement are verified.
 
 ## Oregon preference and request settings
 
-| Public model                   | Native model            | Location / hostname                               | Thinking | Output tokens |
-| ------------------------------ | ----------------------- | ------------------------------------------------- | -------- | ------------- |
-| `google/gemini-2.5-flash-lite` | `gemini-2.5-flash-lite` | `us-west1` / `us-west1-aiplatform.googleapis.com` | budget 0 | 65,535        |
-| `google/gemini-3.1-flash-lite` | `gemini-3.1-flash-lite` | `us` / `aiplatform.us.rep.googleapis.com`         | MINIMAL  | 65,536        |
-| `google/gemini-3.6-flash`      | `gemini-3.6-flash`      | `us` / `aiplatform.us.rep.googleapis.com`         | MINIMAL  | 65,536        |
-| `google/gemini-3.8-flash`      | `gemini-3.8-flash`      | `us` / `aiplatform.us.rep.googleapis.com`         | LOW      | 65,536        |
+| Use                                | Native model            | Location / hostname                       | Thinking | Output tokens |
+| ---------------------------------- | ----------------------- | ----------------------------------------- | -------- | ------------- |
+| Voice input segments               | `gemini-3.1-flash-lite` | `us` / `aiplatform.us.rep.googleapis.com` | MINIMAL  | see below     |
+| Independent `/api/voice-io/polish` | `gemini-3.8-flash`      | `us` / `aiplatform.us.rep.googleapis.com` | LOW      | 65,536        |
 
-The three newer model cards currently list US/EU multi-region and global, with
-no Oregon region. US multi-region is an explicit exception and does not guarantee
-Oregon processing. Never use `us-aiplatform.googleapis.com`. 2.5 and 3.1 retain
-temperature 0; 3.6 and 3.8 omit unsupported sampling controls. 3.8 does not accept
-MINIMAL. Independent text polish uses 3.8 LOW without changing generic
-`FAST_PATH_MODEL` consumers.
+Voice input output caps bound generation time as well as size: a model that
+loops instead of stopping generates until the cap. A partial segment transcript
+gets 4,096 tokens. Polish rewrites saved text at no more than one token per
+character, so the final segment gets 8,192 tokens plus the saved transcript
+length and a text-only final polish gets 4,096 plus that length, both capped at
+the model maximum of 65,536.
+
+Both model cards currently list US/EU multi-region and global, with no Oregon
+region. US multi-region is an explicit exception and does not guarantee Oregon
+processing. Never use `us-aiplatform.googleapis.com`. Voice input retains
+temperature 0. 3.8 omits unsupported sampling controls and does not accept
+MINIMAL. Independent text polish does not change generic `FAST_PATH_MODEL`
+consumers.
 
 STS uses `https://sts.us-west1.rep.googleapis.com/v1/token`. WIF pool/provider
 resources remain `locations/global`, their only supported location. Project,
@@ -136,7 +139,7 @@ service accounts, and IAM policies have no region field. Impersonation uses
 `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/{email}:generateAccessToken`.
 No Oregon IAM Credentials endpoint is documented.
 
-Audio stays inline WAV; prompts, references, model selections, strict local Zod
+Audio stays inline WAV; prompts, references, strict local Zod
 validation, no-speech handling, and quality safeguards are preserved. Structured
 operations send the supported Google schema fields; local validation still owns
 strict fields and length bounds. Only normal STOP candidates with usable text
@@ -160,14 +163,13 @@ refresh. Tokens are never persisted or logged.
 Inference reuses the existing voice recovery helper: HTTP 429/500/502/503/504,
 three attempts maximum, 1s/2s backoff respecting Retry-After, and a 15-second
 recovery budget starting after the first failed response. Healthy initial
-inference has no new 15-second limit. Retries retain their model/location and
-remaining cancellation deadline, including credential refresh. Successful ASR
-is not replayed when its later Gemini step retries. Auth is not retried, and a
-401/403 never triggers automatic refresh/replay or another provider.
-The retained GPT Audio route also preserves OpenRouter's classified completion-body
-capacity recovery from #33403 within the same attempt/time budget. Native Google
-responses use Google's own response contract; OpenRouter error shapes are not
-interpreted as successful Google output.
+inference has no new 15-second limit. All provider work for one voice segment,
+including recovery, shares a 60-second deadline so the client receives a
+classified 503 / `PROVIDER_UNAVAILABLE` before the 100-second edge timeout; the
+segment diagnostic records it as `deadline_exceeded`. Retries retain their
+model/location and remaining cancellation deadline, including credential
+refresh. Auth is not retried, and a 401/403 never triggers automatic
+refresh/replay or another provider. Native Google responses use Google's own response contract.
 
 Capacity exhaustion, transient auth unavailability, and recognized Google
 fetch/body network or timeout failures use public 503 / `PROVIDER_UNAVAILABLE`.
@@ -195,23 +197,22 @@ terminal-error warnings.
 The segment service emits `VoiceSegment` / `voice_transcription_failure` for
 terminal failures that it owns. Vertex calls through the segment completion
 path explicitly select this owner, while standalone `/api/voice-io/polish`
-retains `VertexVoice`. Existing Google authentication, permanent OpenRouter and
-ASR rejection, and exhausted recovery retain their diagnostic owners. Each
+retains `VertexVoice`. Existing Google authentication and exhausted recovery
+retain their diagnostic owners. Each
 failure has one owner and one terminal record. Accepted no-speech and caller
 cancellation do not add a failure record.
 
-`stage` identifies audio reading, transcription, combined finalization, overlap
-reconciliation, stitching, standalone polish, or output validation. `reason`
-is a fixed category: malformed/oversized response, missing choices, truncated
-or non-stop completion, empty/invalid output, missing configuration, stitched
-transcript overflow, excessive transcription/polish rate, discarded speech, or
-`unknown`. The unknown category never serializes the thrown value.
+`stage` identifies audio reading, transcription, combined finalization,
+standalone polish of a saved prefix, or output validation. `reason` is a fixed
+category: transport failure, HTTP rejection, blocked output,
+malformed/oversized response, truncated or non-stop output, empty/invalid
+output, missing configuration, segment deadline exceeded, excessive
+transcription/polish rate, discarded speech, or `unknown`. The unknown category never serializes the thrown value.
 
-Records include the selected `input_model`, the effective `model`/`provider`
-when applicable, final/audio flags, audio/recording durations, and available
-saved/transcribed/polished character counts. Transcript validation retains the
-transcript-producing model even when a different model subsequently polishes
-it. Stitching and audio-reading failures do not invent a provider attribution.
+Records include `model`/`provider` when the failed stage called Vertex,
+final/audio flags, audio/recording durations, and available
+saved/transcribed/polished character counts. Audio-reading failures do not
+include a provider attribution.
 Available correlation is limited to a valid active trace ID, a UUID-shaped
 `x_client_request_id`, and a 40-hex `deployment_commit_sha`. Raw request headers,
 credentials, audio, transcripts, reference context, and provider bodies are
@@ -253,8 +254,8 @@ conclusion. Count requests, client sessions, and Sentry users separately.
 
 For [#34193](https://github.com/vm0-ai/vm0/issues/34193), inspect a bounded
 metadata-only interval on the deployed commit. Correlate the new categories
-with exact segment POSTs, segment-owned Vertex failures, and the retained auth,
-OpenRouter, ASR, and exhausted-recovery owners. Count requests, client sessions,
+with exact segment POSTs, segment-owned Vertex failures, and the retained auth
+and exhausted-recovery owners. Count requests, client sessions,
 and Sentry events separately; OPTIONS 204 is not evidence of accepted no-speech.
 These diagnostics cannot reconstruct the historical provider output or prove
 that a saved recording survived or was recovered. Keep the incident open until
@@ -290,8 +291,7 @@ insufficient evidence or use one bounded follow-up of at most 24 hours. Keep the
 issue open until the live acceptance criteria are satisfied. Neither merge nor
 one successful model call proves reduced capacity failures.
 
-Rollback uses the normal approved API deployment rollback/revert path. Retain
-OpenRouter credentials for GPT Audio and dedicated ASR providers that use it.
+Rollback uses the normal approved API deployment rollback/revert path.
 Browser drafts/checkpoints remain compatible; there is no automatic runtime fallback.
 Keep the shared identities/configuration until an explicit cleanup is reviewed.
 

@@ -6671,12 +6671,6 @@
           "trigger": "Executar Morning Brief agora",
           "triggering": "Enfileirando…"
         },
-        "voiceInput": {
-          "default": "Padrão ({{model}})",
-          "description": "Escolha o modelo para entrada de voz v2. Os modelos de transcrição usam {{model}} para refinar o texto.",
-          "title": "Modelo de entrada de voz",
-          "unavailable": "Modelo indisponível ({{model}})"
-        },
         "welcomeThread": {
           "create": "Criar conversa de boas-vindas",
           "creating": "Criando…",

@@ -78,7 +78,6 @@ function createPreferences(
     theme: "system",
     colorTheme: "blue-horizon",
     captureNetworkBodiesRemaining: 0,
-    voiceInputModel: null,
   };
 }
 

@@ -1,5 +1,20 @@
 # Deployment Compatibility
 
+## Voice input model selection retirement (2026-09-24)
+
+Voice input always uses Gemini 3.1 Flash-Lite on Vertex AI. The Debug
+preferences picker and the OpenRouter and fal transcription paths are removed;
+`POST /api/voice-io/transcribe/segment` no longer reads a member preference.
+
+`voiceInputModel` is removed from the user preferences contract without a
+compatibility window. Its only producer and consumer was the Debug picker behind
+the staff-only `_debug` switch, and the App does not validate API responses. An
+older bundle therefore only shows the default in that staff picker, and a staff
+update that carries nothing but this field is rejected as empty. The
+`org_members_metadata.voice_input_model` column is left in place: the new API
+neither reads nor writes it while an older API may still do so. Drop it in a
+separate migration after older API deployments drain.
+
 ## Codex 0.156.1 OAuth workspace routing
 
 The API supplies the selected workspace ID as `CODEX_OAUTH_ACCOUNT_ID` for

@@ -20,7 +20,6 @@ import { WorkerConnectionDiagnosticsBlock } from "../worker-connection-diagnosti
 import { BuiltInModelCooldownDiagnosticsBlock } from "../built-in-model-cooldown-diagnostics-block.tsx";
 import { IndexedDbDiagnosticsBlock } from "../indexeddb-diagnostics-block.tsx";
 import { MorningBriefTriggerCard } from "../morning-brief-trigger-card.tsx";
-import { VoiceInputModelSettings } from "../voice-input-model-settings.tsx";
 import { WelcomeThreadCard } from "../welcome-thread-card.tsx";
 
 const CAPTURE_RUN_COUNT = 3;
@@ -95,7 +94,6 @@ export function DebugSection() {
         features[FeatureSwitchKey.NativeMorningBrief] && (
           <MorningBriefTriggerCard />
         )}
-      <VoiceInputModelSettings />
       <ConnectionDiagnosticsBlock />
       <WorkerConnectionDiagnosticsBlock />
       <IndexedDbDiagnosticsBlock />
