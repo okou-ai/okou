@@ -2145,6 +2145,7 @@
       "linkCopied": "Link kopiert",
       "messageShareFailed": "Der geteilte Link konnte nicht erstellt werden. Versuche es erneut.",
       "publicDescription": "Ausgewählte Nachrichten und ihre Anhänge werden öffentlich.",
+      "selectAll": "Alles auswählen",
       "selectedCount_one": "{{count}} ausgewählt",
       "selectedCount_other": "{{count}} ausgewählt",
       "selectGroup": "Nachrichtengruppe auswählen",
