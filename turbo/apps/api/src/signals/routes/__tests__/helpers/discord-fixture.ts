@@ -92,7 +92,10 @@ export async function setupConnectedDiscordActor(
     await authOrgApi.updateAgentMetadata(actor, onboarding.defaultAgentId, {
       visibility: "public",
     });
-    await runsApi.ensureOrgModelProvider(actor);
+    // These lifecycle fixtures exercise the native Runner claim protocol.
+    await runsApi.ensureOrgModelProvider(actor, {
+      model: "claude-fable-5-1",
+    });
   }
   mockDiscordMemberships(context, [{ userId, orgId, orgRole: "org:admin" }]);
   await updateFeatureSwitchesForUser(

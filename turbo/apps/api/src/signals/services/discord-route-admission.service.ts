@@ -222,7 +222,7 @@ const resolveDiscordAdmissionSource$ = command(
         throw new DiscordIngressFailure(
           "discord_access",
           true,
-          0,
+          (sourceAccess.response.body.error.retryAfterSeconds ?? 0) * 1000,
           "Discord access could not be verified",
         );
       }
@@ -457,7 +457,7 @@ const resolveDiscordAdmissionDestination$ = command(
           throw new DiscordIngressFailure(
             "thread_creation_unavailable",
             createAccess.response.status >= 429,
-            0,
+            (createAccess.response.body.error.retryAfterSeconds ?? 0) * 1000,
             "Discord thread creation is unavailable",
           );
         }
@@ -495,7 +495,7 @@ const resolveDiscordAdmissionDestination$ = command(
       throw new DiscordIngressFailure(
         "destination_unavailable",
         destinationAccess.response.status >= 429,
-        0,
+        (destinationAccess.response.body.error.retryAfterSeconds ?? 0) * 1000,
         "Discord destination is unavailable",
       );
     }
