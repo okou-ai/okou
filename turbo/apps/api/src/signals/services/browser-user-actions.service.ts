@@ -576,14 +576,18 @@ function browserCreationValidationMessage(
 ): string {
   const field = error.fieldPosition ? `--field ${error.fieldPosition}: ` : "";
   switch (error.code) {
-    case "page_target_not_found":
+    case "page_target_not_found": {
       return "The selected Browser page no longer exists; inspect the active tab and recapture the controls";
-    case "unsupported_page":
+    }
+    case "unsupported_page": {
       return "The selected Browser page is not an HTTP or HTTPS page";
-    case "backend_node_not_found":
+    }
+    case "backend_node_not_found": {
       return `${field}the selected Browser control no longer exists; inspect the page and recapture it`;
-    case "unsupported_control":
+    }
+    case "unsupported_control": {
       return `${field}the selected Browser control is not a writable top-level input or textarea`;
+    }
   }
 }
 
