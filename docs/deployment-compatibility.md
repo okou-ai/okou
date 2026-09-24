@@ -10,6 +10,15 @@ Every existing source remains legal for an older API after migration. New
 Discord writers require the provider tables and these expanded constraints, so
 the normal migration-before-promotion order applies.
 
+The new `discord_chat_deliveries` and `discord_gateway_receipts` tables also
+require the C ownership inventory. Older erasure workers, including workers with
+only the Discord foundation inventory, reject these unknown catalogue tables
+even when the feature is disabled. During the migration-to-compatible-API window,
+affected deletion jobs remain durable and retry after 60 seconds. Promote workers
+with the complete C inventory after migration and keep them available to drain
+the backlog. An API rollback below that inventory stalls those jobs until
+compatible workers return; do not weaken the catalogue guard.
+
 The delivery outbox binds an event to its canonical thread with a composite
 foreign key. Build its supporting `chat_events` unique index concurrently in a
 separate nontransactional migration. Attach a `UNIQUE` constraint with
