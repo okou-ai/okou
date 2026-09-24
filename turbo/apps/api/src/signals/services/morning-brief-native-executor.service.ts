@@ -993,6 +993,30 @@ export const executeNativeMorningBriefTick$ = command(
         continue;
       }
 
+      // The inline path (and signed worker invocations) must leave the same
+      // audited skip as fanout. A claim-time fence alone would leave an
+      // expired next_run_at stuck on every later tick.
+      if (
+        schedule.nextRunAt !== null &&
+        scheduleExpiryEnabled() &&
+        scheduleExpired(schedule.nextRunAt, nowDate())
+      ) {
+        const anchor = schedule.nextRunAt;
+        const outcome = await db.transaction(async (tx) => {
+          return await skipExpiredNativeMorningBriefSchedule(tx, owner, {
+            anchor,
+            at: nowDate(),
+          });
+        });
+        signal.throwIfAborted();
+        if (outcome === "skipped") {
+          log.warn("Expired unclaimed native Morning Brief schedule anchor", {
+            expired: 1,
+          });
+        }
+        continue;
+      }
+
       // Fresh membership generation, read at the admission boundary.
       const membershipId = await set(currentMembershipId$, owner, deadline);
       signal.throwIfAborted();
