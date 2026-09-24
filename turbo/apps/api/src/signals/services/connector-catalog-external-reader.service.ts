@@ -1382,7 +1382,6 @@ export function connectorBriefsFromSource(
     return {
       slug: entry.connector.slug,
       label: entry.connector.label,
-      description: entry.connector.description,
       icon: iconForCatalog(entry.connector),
       hasPermissions: permissionSummaryForCatalog(entry.connector)
         .hasPermissions,

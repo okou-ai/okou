@@ -138,6 +138,11 @@ export function findActiveSlashWorkflowRange(
   return { start, end: caretIndex, query };
 }
 
+/** Whether the input has a `/` that could start a workflow token. */
+export function hasWorkflowTokenCandidate(value: string): boolean {
+  return /(?:^|\s)\//.test(value);
+}
+
 export function workflowTokenPattern(
   workflowNames: readonly string[],
 ): RegExp | null {

@@ -639,11 +639,42 @@ test("Distinguish workflow tokens from text inside URLs", async () => {
   const editor = await findComposerEditor();
   const url = "https://www.okou.ai/en/use-cases/pr-review";
   await user.click(editor);
+  await user.keyboard("/pr-review ");
+  await waitFor(() => {
+    expect(workflowHighlights(editor)).toHaveLength(1);
+  });
   await user.keyboard(url);
 
   await waitFor(() => {
     expect(editor).toHaveTextContent(url);
-    expect(workflowHighlights(editor)).toHaveLength(0);
+    expect(workflowHighlights(editor)).toHaveLength(1);
     expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   });
+});
+
+test("Load workflows once the draft references a slash token", async () => {
+  mockAgent();
+  mockThread();
+  const draftsAtRequest: (string | null)[] = [];
+  context.mocks.api(workflowsCollectionContract.list, ({ respond }) => {
+    draftsAtRequest.push(
+      document.querySelector(
+        '[data-slot="chat-composer-card"] [contenteditable="true"]',
+      )?.textContent ?? null,
+    );
+    return respond(200, [workflow("pr-review")]);
+  });
+
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+
+  const user = userEvent.setup();
+  const editor = await findComposerEditor();
+  await user.click(editor);
+  await user.keyboard("Review /pr-review");
+
+  await waitFor(() => {
+    expect(workflowHighlights(editor)).toHaveLength(1);
+  });
+  expect(draftsAtRequest).toHaveLength(1);
+  expect(draftsAtRequest[0]).toContain("Review /");
 });

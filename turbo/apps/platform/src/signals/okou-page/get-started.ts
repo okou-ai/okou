@@ -307,7 +307,6 @@ export const setupGetStartedRewards$ = command(
           {
             topic: GET_STARTED_REWARDS_CHANGED_EVENT,
             loopCommand$: refreshGetStartedFromRealtime$,
-            options: { runOnSubscribe: true },
           },
           ownerSignal,
         );

@@ -779,7 +779,6 @@ function connectedPermissionConnectors(
     return {
       slug: connector.slug,
       label: connector.label,
-      description: connector.description,
       icon: connector.icon,
       hasPermissions: connector.hasPermissions,
       externalUsername: externalUsernames.get(connector.slug) ?? null,
