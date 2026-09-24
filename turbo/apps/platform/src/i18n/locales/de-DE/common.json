@@ -6612,9 +6612,6 @@
       "emailSubscription": {
         "description": "Erhalte Briefings, Erinnerungen und andere Workspace-Updates per E-Mail.",
         "descriptionWithEmail": "Erhalte Briefings, Erinnerungen und andere Workspace-Updates an {{email}}.",
-        "loading": "E-Mail-Abonnement wird geprüft…",
-        "retryMessage": "Dein E-Mail-Abonnement konnte nicht gespeichert oder geladen werden. Versuche es erneut.",
-        "saving": "Wird gespeichert…",
         "sectionTitle": "E-Mail-Abonnements",
         "title": "E-Mail-Updates",
         "unavailable": "E-Mail nicht verfügbar",

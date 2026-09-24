@@ -6677,9 +6677,6 @@
       "emailSubscription": {
         "description": "Recevez les synthèses, rappels et autres actualités de l’espace de travail par e-mail.",
         "descriptionWithEmail": "Recevez les synthèses, rappels et autres actualités de l’espace de travail à l’adresse {{email}}.",
-        "loading": "Vérification de l’abonnement aux e-mails…",
-        "retryMessage": "Impossible d’enregistrer ou de charger votre abonnement aux e-mails. Réessayez.",
-        "saving": "Enregistrement…",
         "sectionTitle": "Abonnements aux e-mails",
         "title": "Mises à jour par e-mail",
         "unavailable": "E-mail indisponible",
