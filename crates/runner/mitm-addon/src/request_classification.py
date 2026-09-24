@@ -653,6 +653,8 @@ def _classify_request(
     if platform_connector_api_fallback is not None:
         return platform_connector_api_fallback
 
+    # No firewall owner was selected. Keep ordinary network fallback separate
+    # from the connector credential-resolution path.
     return Allow(
         sandbox_info=sandbox_info,
         builtin_firewall_catalog_snapshot=registry_state.builtin_firewall_catalog_snapshot,
