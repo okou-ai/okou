@@ -86,7 +86,7 @@ test("An existing credential can be reused without entering or reading its secre
     requests.push(body);
     return respond(201, base);
   });
-  await page("/connectors/ssh?add=1");
+  await page("/connectors?scope=remote-control&type=ssh&add=1");
   const dialog = await screen.findByRole("dialog");
   const hostFields = within(dialog).getByRole("group", { name: "Host" });
   const credentialFields = within(dialog).getByRole("group", {
@@ -391,7 +391,7 @@ test("Invalid host errors preserve credentials so the host can be corrected and 
       },
     });
   });
-  await page("/connectors/ssh?add=1");
+  await page("/connectors?scope=remote-control&type=ssh&add=1");
   const dialog = await screen.findByRole("dialog");
   await selectNewCredential(dialog);
   await fill(within(dialog).getByLabelText("Display name"), "Deployment");
@@ -427,26 +427,31 @@ test("Invalid host errors preserve credentials so the host can be corrected and 
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
-async function page(path = "/connectors/ssh") {
+async function page(path = "/connectors?scope=remote-control&type=ssh") {
+  const add = path.includes("&add=1");
   await setupPage({
     context,
-    path,
+    path: path.replace("&add=1", ""),
     auth,
   });
+  if (add) {
+    click(
+      await waitFor(() => {
+        return getAction("button", "Add host");
+      }),
+    );
+  }
 }
 
-test("SSH is a Connectors detail page with a working return breadcrumb", async () => {
+test("SSH is managed in Connectors Remote control", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, { connections: [] });
   });
   await page();
   await screen.findByText("0 hosts configured");
-  expect(pathname()).toBe("/connectors/ssh");
-  const breadcrumb = screen.getByRole("navigation", { name: "Breadcrumb" });
-  expect(within(breadcrumb).getByText("SSH")).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
+  expect(pathname()).toBe("/connectors");
+  expect(window.location.search).toBe("?scope=remote-control&type=ssh");
+  expect(screen.getByRole("heading", { name: "SSH" })).toBeInTheDocument();
   expect(
     getAction(
       "link",
@@ -454,7 +459,13 @@ test("SSH is a Connectors detail page with a working return breadcrumb", async (
       screen.getByRole("navigation", { name: "Sidebar" }),
     ),
   ).toHaveAttribute("aria-current", "page");
-  click(getAction("link", "Connectors", breadcrumb));
+  click(
+    getAction(
+      "link",
+      "Connectors",
+      screen.getByRole("navigation", { name: "Sidebar" }),
+    ),
+  );
   await screen.findByPlaceholderText("Find connectors");
   expect(pathname()).toBe("/connectors");
 });
@@ -801,7 +812,7 @@ test("An ordinary owner can manage SSH without feature overrides", async () => {
   });
   await setupPage({
     context,
-    path: "/connectors/ssh",
+    path: "/connectors?scope=remote-control&type=ssh",
   });
   await screen.findByText("deploy@ssh.example.com:22");
   expect(getAction("button", "Add host")).toBeEnabled();

@@ -32,10 +32,11 @@ beforeEach(() => {
   });
 });
 
-async function page(path = "/connectors/cloudflare-access") {
+async function page(path = "/connectors?scope=private-network") {
+  const add = path.includes("&add=1");
   await setupPage({
     context,
-    path,
+    path: path.replace("&add=1", ""),
     auth: {
       user: { id: "access-owner", fullName: "Access Owner" },
       organization: {
@@ -44,6 +45,13 @@ async function page(path = "/connectors/cloudflare-access") {
       },
     },
   });
+  if (add) {
+    click(
+      await waitFor(() => {
+        return getAction("button", "Add Cloudflare Access");
+      }),
+    );
+  }
 }
 
 async function tokenFields(dialog: HTMLElement, name = config.name) {
@@ -68,7 +76,7 @@ async function pasteTokenHeaders(
   await user.paste(clipboard);
 }
 
-test("Cloudflare Access has a standalone connector detail page", async () => {
+test("Cloudflare Access is managed in Connectors Private network", async () => {
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [config] });
   });
@@ -76,19 +84,11 @@ test("Cloudflare Access has a standalone connector detail page", async () => {
   await expect(
     screen.findByRole("heading", { name: "Cloudflare Access" }),
   ).resolves.toBeInTheDocument();
-  expect(
-    screen.getByText(
-      "Access protected applications with Cloudflare Access Service Tokens.",
-    ),
-  ).toBeInTheDocument();
-  expect(getAction("link", "Connectors")).toHaveAttribute(
-    "href",
-    "/connectors",
-  );
+  expect(window.location.search).toBe("?scope=private-network");
   expect(screen.getByText(config.name)).toBeInTheDocument();
   expect(screen.queryByText("Direct")).toBeNull();
   expect(screen.queryByText("Add access")).toBeNull();
-  expect(document.title).toContain("Cloudflare Access");
+  expect(document.title).toContain("Connectors");
 });
 
 test("The directory add intent is consumed and creates through the canonical API", async () => {
@@ -101,11 +101,11 @@ test("The directory add intent is consumed and creates through the canonical API
     configs = [created];
     return respond(201, created);
   });
-  await page("/connectors/cloudflare-access?add=1");
+  await page("/connectors?scope=private-network&add=1");
   const dialog = await screen.findByRole("dialog", {
     name: "Add Cloudflare Access",
   });
-  expect(window.location.search).toBe("");
+  expect(window.location.search).toBe("?scope=private-network");
   await fill(within(dialog).getByLabelText("Name"), config.name);
   await fill(
     within(dialog).getByLabelText("Service Token Client ID"),
@@ -120,14 +120,14 @@ test("The directory add intent is consumed and creates through the canonical API
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
-test("The standalone page refreshes from the neutral realtime event", async () => {
+test("The private network panel refreshes from the neutral realtime event", async () => {
   let configs: CloudflareAccessConfig[] = [config];
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs });
   });
   await setupPage({
     context,
-    path: "/connectors/cloudflare-access",
+    path: "/connectors?scope=private-network",
     auth: {
       user: { id: "access-owner", fullName: "Access Owner" },
       organization: {
@@ -163,7 +163,7 @@ test("The new Access configuration form masks tokens without prefilling them", a
   }
 });
 
-test("Standalone Cloudflare Access CRUD uses the canonical API", async () => {
+test("Cloudflare Access CRUD uses the canonical API", async () => {
   let configs: CloudflareAccessConfig[] = [];
   const createRequests: unknown[] = [];
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {

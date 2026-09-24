@@ -1643,17 +1643,20 @@ function ConnectorsPagePanels({
   readonly remoteControlPanel: ReactNode;
   readonly privateNetworkPanel: ReactNode;
 }) {
-  if (!shelfEnabled) {
-    return activeTab === "custom" ? <CustomConnectorsPanel /> : builtinPanel;
-  }
-  if (scope === "connected") {
-    return connectedPanel;
+  if (!shelfEnabled && activeTab === "custom") {
+    return <CustomConnectorsPanel />;
   }
   if (scope === "remote-control") {
     return remoteControlPanel;
   }
   if (scope === "private-network") {
     return privateNetworkPanel;
+  }
+  if (!shelfEnabled) {
+    return builtinPanel;
+  }
+  if (scope === "connected") {
+    return connectedPanel;
   }
   return directoryPanel;
 }
@@ -2505,6 +2508,12 @@ export function ConnectorsPage() {
                 <Tabs
                   value={activeTab}
                   onValueChange={(v) => {
+                    if (
+                      scope === "remote-control" ||
+                      scope === "private-network"
+                    ) {
+                      setScope("discover");
+                    }
                     return setActiveTab(v === "custom" ? "custom" : "builtin");
                   }}
                 >

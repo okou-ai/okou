@@ -538,7 +538,10 @@ test("Keep remote access results outside connector action navigation", async () 
   const manageSsh = queryAllByRoleFast("link", dialog).find((link) => {
     return link.getAttribute("aria-label") === "Manage SSH hosts";
   });
-  expect(manageSsh).toHaveAttribute("href", "/connectors/ssh?add=1");
+  expect(manageSsh).toHaveAttribute(
+    "href",
+    "/connectors?scope=remote-control&type=ssh",
+  );
   expect(within(dialog).queryByRole("toolbar")).not.toBeInTheDocument();
   expect(
     within(dialog).queryByText(/No connector matches/u),
