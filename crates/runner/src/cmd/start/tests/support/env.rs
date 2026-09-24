@@ -263,6 +263,7 @@ fn build_mock_run_config_with_runtime(
                 api_url: api_url.to_string(),
                 vercel_bypass: None,
                 client_session_id: "runner-session-test".to_string(),
+                runner_version: env!("CARGO_PKG_VERSION"),
             })
             .unwrap(),
             log_paths: runner_host::paths::LogPaths::new(log_dir),

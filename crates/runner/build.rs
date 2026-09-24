@@ -26,11 +26,12 @@ fn main() {
 
     // Rebuild when embedded files change (include_str! tracks deps for rustc,
     // but CI artifact caches may not — explicit rerun-if-changed ensures correctness).
-    println!("cargo::rerun-if-changed=scripts/agent-abnormal-exit-diagnostics.sh");
-    println!("cargo::rerun-if-changed=scripts/rootfs-usage.py");
+    println!(
+        "cargo::rerun-if-changed=../runner-executor/scripts/agent-abnormal-exit-diagnostics.sh"
+    );
+    println!("cargo::rerun-if-changed=../runner-executor/scripts/rootfs-usage.py");
     println!("cargo::rerun-if-changed=scripts/build-template.sh");
     println!("cargo::rerun-if-changed=scripts/customize-rootfs.sh");
-    println!("cargo::rerun-if-changed=scripts/freeze-workspace-drive.sh");
     println!("cargo::rerun-if-changed=scripts/verify-rootfs.sh");
     println!("cargo::rerun-if-changed={GUEST_BINARIES_FILE}");
 

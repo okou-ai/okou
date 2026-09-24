@@ -6,6 +6,7 @@ import {
   OnboardingSlackPage,
 } from "../../views/onboarding-sources-first/onboarding-import-pages.tsx";
 import { OnboardingReadyPage } from "../../views/onboarding-sources-first/onboarding-ready-page.tsx";
+import { OnboardingProfilePage } from "../../views/onboarding-sources-first/onboarding-profile-page.tsx";
 import {
   OnboardingExperiencePage,
   OnboardingIndustryPage,
@@ -18,7 +19,7 @@ import { authenticatedIdentity$ } from "../auth.ts";
 import { captureSourceOnboardingStepViewed$ } from "../bootstrap/source-onboarding-telemetry.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
-import { connectorCatalogStatus$ } from "../external/connectors.ts";
+import { builtinConnectors$ } from "../external/connectors.ts";
 import { sendEvent$ } from "../marketing/events.ts";
 import {
   setAgentPhoneConnectDialogOpen$,
@@ -144,12 +145,16 @@ function createSourcesFirstPageSetup(
     set(setSourcesFirstFlow$, flow);
 
     const draft = get(sourcesFirstDraft$);
+    if (config.step === "profile" && draft.industry === null) {
+      set(redirectTo$, ROUTES.onboarding);
+      return;
+    }
     if (config.step !== "industry" && config.step !== "sources") {
-      const { connectors } = await get(connectorCatalogStatus$);
+      // The user's own connections, reloaded on connect, decide whether any
+      // source is there yet; the catalog is not needed for that.
+      const { connectors } = await get(builtinConnectors$);
       signal.throwIfAborted();
-      const hasSource = connectors.some((connector) => {
-        return connector.connected;
-      });
+      const hasSource = connectors.length > 0;
       if (!hasSource) {
         set(redirectTo$, ROUTES.onboarding);
         return;
@@ -246,6 +251,16 @@ export const setupOnboardingSkillsPage$ = createSourcesFirstPageSetup({
   },
   Page: OnboardingSkillsPage,
   enter: enterSkillImport$,
+});
+
+export const setupOnboardingProfilePage$ = createSourcesFirstPageSetup({
+  step: "profile",
+  title: () => {
+    return i18n.t(($) => {
+      return $.onboarding.sourcesFirst.documentTitles.profile;
+    });
+  },
+  Page: OnboardingProfilePage,
 });
 
 /**

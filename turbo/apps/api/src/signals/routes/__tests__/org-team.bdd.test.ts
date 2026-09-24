@@ -200,6 +200,27 @@ describe("ORG-01: org logo lifecycle through the Clerk boundary", () => {
         type: file.type,
       }),
     });
+    const webpFile = new File([new Uint8Array([1, 2])], "logo.webp", {
+      type: "image/webp",
+    });
+    const uploadedWebp = await api.requestUploadOrgLogo(
+      admin,
+      logoForm(webpFile),
+      [200],
+    );
+    expect(uploadedWebp.body).toStrictEqual({
+      logoUrl: "https://img.clerk.test/new-logo.png",
+      hasImage: true,
+    });
+    expect(
+      context.mocks.clerk.organizations.updateOrganizationLogo,
+    ).toHaveBeenCalledWith(orgId, {
+      file: expect.objectContaining({
+        name: webpFile.name,
+        size: webpFile.size,
+        type: "image/webp",
+      }),
+    });
     api.mockClerkOrgLogo("upload", { imageUrl: "", hasImage: false });
     const uploadedCleared = await api.requestUploadOrgLogo(
       admin,

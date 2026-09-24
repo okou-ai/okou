@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { initContract, authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
+import { publicConnectorCatalogConnectListResponseSchema } from "./connector-catalog";
 import { userLocaleSchema } from "./user-preferences";
 
 const c = initContract();
@@ -97,12 +98,25 @@ export type OnboardingRecommendationConnectorSlug = z.infer<
   typeof onboardingRecommendationConnectorSlugSchema
 >;
 
+/** A short, evidence-based portrait from the same sources as the first task. */
+export const onboardingUserProfileSchema = z
+  .object({
+    overview: z.string().trim().min(1).max(240),
+    professionalIdentity: z.array(z.string().trim().min(1).max(180)).max(3),
+    communicationStyle: z.array(z.string().trim().min(1).max(180)).max(3),
+    priorities: z.array(z.string().trim().min(1).max(180)).max(3),
+  })
+  .strict();
+
+export type OnboardingUserProfile = z.infer<typeof onboardingUserProfileSchema>;
+
 export const onboardingRecommendationSchema = z
   .object({
     kind: z.enum(["task", "workflow"]),
     title: z.string().trim().min(1).max(120),
     outcome: z.string().trim().min(1).max(240),
     prompt: z.string().trim().min(1).max(1000),
+    profile: onboardingUserProfileSchema,
   })
   .strict();
 
@@ -147,6 +161,25 @@ export const onboardingStatusContract = c.router({
       401: apiErrorSchema,
     },
     summary: "Get onboarding status for current user",
+  },
+});
+
+/**
+ * The onboarding sources, `ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS`, each with
+ * what its card draws and what connecting it from one click needs.
+ */
+export const onboardingSourcesContract = c.router({
+  list: {
+    method: "GET",
+    path: "/api/onboarding/sources",
+    headers: authHeadersSchema,
+    responses: {
+      200: publicConnectorCatalogConnectListResponseSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      503: apiErrorSchema,
+    },
+    summary: "List onboarding source connectors with connection status",
   },
 });
 

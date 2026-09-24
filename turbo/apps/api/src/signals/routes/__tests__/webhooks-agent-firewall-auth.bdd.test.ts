@@ -157,6 +157,30 @@ async function exactSecretConnectorSources(
   };
 }
 
+async function gmailRefreshFixture() {
+  const fw = createFirewallApi(context);
+  const { actor, headers } = await firewallRun();
+  mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", "google-client-id");
+  mockOptionalEnv("GOOGLE_OAUTH_CLIENT_SECRET", "google-client-secret");
+  await fw.seedTestConnector(actor, {
+    connectorSlug: "gmail",
+    authMethod: "oauth",
+    accessToken: "stale-gmail-access",
+    refreshToken: "synthetic-gmail-refresh-secret",
+    expiresIn: -60,
+  });
+  const body = {
+    encryptedSecrets: fw.encryptedSecretsBody({
+      GMAIL_TOKEN: "stale-gmail-access",
+    }),
+    authHeaders: {
+      Authorization: `Bearer ${secretTemplate("GMAIL_TOKEN")}`,
+    },
+    ...(await exactSecretConnectorSources(actor, { GMAIL_TOKEN: "gmail" })),
+  };
+  return { fw, headers, body };
+}
+
 function gateFirstStoredSecretDecrypt(): {
   readonly started: Promise<void>;
   readonly release: () => void;
@@ -249,7 +273,7 @@ describe("FW-1: firewall auth boundaries", () => {
 });
 
 describe("FW-2: template resolution without connector refresh", () => {
-  it("resolves secret, var, and basic templates across headers, base, and query", async () => {
+  it("resolves secret-backed auth headers", async () => {
     const fw = createFirewallApi(context);
     const { headers } = await firewallRun();
 
@@ -258,27 +282,12 @@ describe("FW-2: template resolution without connector refresh", () => {
       {
         encryptedSecrets: fw.encryptedSecretsBody({
           API_KEY: "secret-value",
-          BASIC_USER: "alice",
-          BASE_SECRET: "base-secret",
-          QUERY_SECRET: "query-secret",
           SCRAPENINJA_TOKEN: "rapidapi-secret",
-          SHARED: "secret-shared",
         }),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("API_KEY")}`,
           "X-RapidAPI-Host": "scrapeninja.p.rapidapi.com",
           "X-RapidAPI-Key": secretTemplate("SCRAPENINJA_TOKEN"),
-          "X-Tenant": varTemplate("TENANT"),
-          "X-Basic": basicTemplate("secrets.BASIC_USER", "vars.BASIC_PASS"),
-          "X-Literal-Basic": basicTemplate('"alice"', '"literal-pass"'),
-          "X-Shared": `${secretTemplate("SHARED")}:${varTemplate("SHARED")}`,
-        },
-        authBase: `https://api.example.test/${secretTemplate("BASE_SECRET")}`,
-        authQuery: { token: secretTemplate("QUERY_SECRET") },
-        vars: {
-          TENANT: "tenant-1",
-          BASIC_PASS: "var-pass",
-          SHARED: "var-shared",
         },
       },
       [200],
@@ -291,6 +300,40 @@ describe("FW-2: template resolution without connector refresh", () => {
       "scrapeninja.p.rapidapi.com",
     );
     expect(resolved.body.headers["X-RapidAPI-Key"]).toBe("rapidapi-secret");
+    expect(resolved.body.refreshedConnectors).toStrictEqual([]);
+    expect(resolved.body.refreshedSecrets).toStrictEqual([]);
+    expect(resolved.body.resolvedSecrets).toContain("API_KEY");
+    expect(resolved.body.resolvedSecrets).toContain("SCRAPENINJA_TOKEN");
+  });
+
+  it("resolves variable and basic auth header templates", async () => {
+    const fw = createFirewallApi(context);
+    const { headers } = await firewallRun();
+
+    const resolved = await fw.requestFirewallAuth(
+      headers,
+      {
+        encryptedSecrets: fw.encryptedSecretsBody({
+          BASIC_USER: "alice",
+          SHARED: "secret-shared",
+        }),
+        authHeaders: {
+          "X-Tenant": varTemplate("TENANT"),
+          "X-Basic": basicTemplate("secrets.BASIC_USER", "vars.BASIC_PASS"),
+          "X-Literal-Basic": basicTemplate('"alice"', '"literal-pass"'),
+          "X-Shared": `${secretTemplate("SHARED")}:${varTemplate("SHARED")}`,
+        },
+        vars: {
+          TENANT: "tenant-1",
+          BASIC_PASS: "var-pass",
+          SHARED: "var-shared",
+        },
+      },
+      [200],
+    );
+    if (resolved.status !== 200) {
+      throw new Error("Expected firewall auth resolution to succeed");
+    }
     expect(resolved.body.headers["X-Tenant"]).toBe("tenant-1");
     expect(resolved.body.headers["X-Basic"]).toBe(
       `Basic ${Buffer.from("alice:var-pass").toString("base64")}`,
@@ -299,6 +342,30 @@ describe("FW-2: template resolution without connector refresh", () => {
       `Basic ${Buffer.from("alice:literal-pass").toString("base64")}`,
     );
     expect(resolved.body.headers["X-Shared"]).toBe("secret-shared:var-shared");
+    expect(resolved.body.refreshedConnectors).toStrictEqual([]);
+    expect(resolved.body.refreshedSecrets).toStrictEqual([]);
+  });
+
+  it("resolves secret templates in the base URL and query", async () => {
+    const fw = createFirewallApi(context);
+    const { headers } = await firewallRun();
+
+    const resolved = await fw.requestFirewallAuth(
+      headers,
+      {
+        encryptedSecrets: fw.encryptedSecretsBody({
+          BASE_SECRET: "base-secret",
+          QUERY_SECRET: "query-secret",
+        }),
+        authHeaders: {},
+        authBase: `https://api.example.test/${secretTemplate("BASE_SECRET")}`,
+        authQuery: { token: secretTemplate("QUERY_SECRET") },
+      },
+      [200],
+    );
+    if (resolved.status !== 200) {
+      throw new Error("Expected firewall auth resolution to succeed");
+    }
     expect(resolved.body.base).toBe("https://api.example.test/base-secret");
     expect(resolved.body.query).toStrictEqual({ token: "query-secret" });
     expect(resolved.body.expiresAt).toBeNull();
@@ -309,7 +376,6 @@ describe("FW-2: template resolution without connector refresh", () => {
     );
     expect(resolved.body.resolvedSecrets).toContain("BASE_SECRET");
     expect(resolved.body.resolvedSecrets).toContain("QUERY_SECRET");
-    expect(resolved.body.resolvedSecrets).toContain("SCRAPENINJA_TOKEN");
   });
 
   it("reports unresolvable template references as connector-not-configured", async () => {
@@ -1615,6 +1681,136 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       throw new Error("Expected refresh after outage to succeed");
     }
     expect(recovered.body.headers.Authorization).toBe("Bearer after-outage");
+  });
+
+  it("recovers a temporary Gmail OAuth response within the same refresh", async () => {
+    const { fw, headers, body } = await gmailRefreshFixture();
+    let attempts = 0;
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        attempts += 1;
+        return attempts === 1
+          ? HttpResponse.json(
+              {
+                error: "temporarily_unavailable",
+                error_description: "synthetic-provider-private-text",
+              },
+              { status: 400 },
+            )
+          : HttpResponse.json({
+              access_token: "recovered-gmail-access",
+              expires_in: 3600,
+            });
+      }),
+    );
+
+    const refreshed = await fw.requestFirewallAuth(headers, body, [200]);
+    if (refreshed.status !== 200) {
+      throw new Error("Expected Gmail refresh to recover after one retry");
+    }
+    expect(attempts).toBe(2);
+    expect(refreshed.body.headers.Authorization).toBe(
+      "Bearer recovered-gmail-access",
+    );
+  });
+
+  it("preserves the Gmail grant after an exhausted temporary retry", async () => {
+    const { fw, headers, body } = await gmailRefreshFixture();
+    let attempts = 0;
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        attempts += 1;
+        return HttpResponse.json(
+          {
+            error: "server_error",
+            error_description: "synthetic-provider-private-text",
+          },
+          { status: 503 },
+        );
+      }),
+    );
+
+    const failed = await fw.requestFirewallAuth(headers, body, [502]);
+    if (failed.status !== 502) {
+      throw new Error("Expected exhausted Gmail refresh to fail");
+    }
+    expect(attempts).toBe(2);
+    expect(failed.body.error.failureReason).toBe("upstream_provider");
+    expect(JSON.stringify(failed.body)).not.toContain(
+      "synthetic-provider-private-text",
+    );
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        return HttpResponse.json({
+          access_token: "later-gmail-access",
+          expires_in: 3600,
+        });
+      }),
+    );
+    const recovered = await fw.requestFirewallAuth(headers, body, [200]);
+    if (recovered.status !== 200) {
+      throw new Error("Expected Gmail grant to recover on a later request");
+    }
+    expect(recovered.body.headers.Authorization).toBe(
+      "Bearer later-gmail-access",
+    );
+  });
+
+  it("does not retry a Gmail invalid_grant response", async () => {
+    const { fw, headers, body } = await gmailRefreshFixture();
+    let attempts = 0;
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        attempts += 1;
+        return HttpResponse.json({ error: "invalid_grant" }, { status: 400 });
+      }),
+    );
+
+    const failed = await fw.requestFirewallAuth(headers, body, [502]);
+    if (failed.status !== 502) {
+      throw new Error("Expected revoked Gmail grant to fail");
+    }
+    expect(attempts).toBe(1);
+    expect(failed.body.error.failureReason).toBe("reconnect_required");
+  });
+
+  it("does not retry a rate-limited Gmail refresh without Retry-After handling", async () => {
+    const { fw, headers, body } = await gmailRefreshFixture();
+    let attempts = 0;
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        attempts += 1;
+        return HttpResponse.json(
+          { error: "temporarily_unavailable" },
+          { status: 429 },
+        );
+      }),
+    );
+
+    const failed = await fw.requestFirewallAuth(headers, body, [502]);
+    if (failed.status !== 502) {
+      throw new Error("Expected Gmail rate limit to fail this request");
+    }
+    expect(attempts).toBe(1);
+    expect(failed.body.error.failureReason).toBe("upstream_provider");
+  });
+
+  it("does not replay a Gmail refresh after an ambiguous network failure", async () => {
+    const { fw, headers, body } = await gmailRefreshFixture();
+    let attempts = 0;
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        attempts += 1;
+        return HttpResponse.error();
+      }),
+    );
+
+    const failed = await fw.requestFirewallAuth(headers, body, [502]);
+    if (failed.status !== 502) {
+      throw new Error("Expected Gmail network refresh failure");
+    }
+    expect(attempts).toBe(1);
+    expect(failed.body.error.failureReason).toBe("upstream_provider");
   });
 
   it("treats refresh responses without an access token as upstream failures", async () => {

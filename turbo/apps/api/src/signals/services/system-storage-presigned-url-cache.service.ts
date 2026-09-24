@@ -76,6 +76,8 @@ export const PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT = 512;
 // Leave time for clients and asynchronous providers to fetch a returned URL.
 const PRIVATE_ARTIFACT_PREVIEW_MIN_REMAINING_MS = 60 * 60 * 1000;
 const STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS = 51;
+// Bound cache-key construction before deduplication; the SQL pair limit stays at 51.
+const STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_REQUESTS = 128;
 const deletedCacheRowSchema = z.object({ cacheKey: z.string() });
 
 type StoragePresignedUrlCacheStatus = "hit" | "miss";
@@ -181,6 +183,7 @@ type StorageManifestPrefetchCountBucket =
 type StorageManifestPrefetchDecision =
   | "insufficient_groups"
   | "over_request_limit"
+  | "over_object_key_lower_bound"
   | "no_pairs"
   | "over_unique_pair_limit"
   | "mixed_lookup_selected";
@@ -710,6 +713,10 @@ export interface StorageManifestPresignedUrlCacheSnapshot {
     StorageManifestPresignedUrlCacheScope,
     ReadonlyMap<string, SelectedStoragePresignedUrlCacheRow>
   >;
+  readonly cacheKeysByRequest: WeakMap<
+    object,
+    StorageManifestPresignedUrlCacheLookupPair
+  >;
 }
 
 export interface StorageManifestPresignedUrlCachePrefetchInput {
@@ -724,15 +731,22 @@ interface StoragePresignedUrlFreshRequest {
   readonly request: StoragePresignedUrlRequest;
 }
 
-function prepareStoragePresignedUrlRequests<TRequest>(args: {
+function prepareStoragePresignedUrlRequests<TRequest extends object>(args: {
   readonly requests: readonly TRequest[];
+  readonly scope: StoragePresignedUrlCacheScope;
   readonly cacheKey: (request: TRequest) => string;
   readonly normalize: (request: TRequest) => StoragePresignedUrlRequest;
   readonly stats: StorageManifestCacheObservationStats;
+  readonly prefetchedRows: StorageManifestPresignedUrlCacheSnapshot | undefined;
 }): ReadonlyMap<string, StoragePresignedUrlRequest> {
   const requestsByCacheKey = new Map<string, StoragePresignedUrlRequest>();
   for (const request of args.requests) {
-    requestsByCacheKey.set(args.cacheKey(request), args.normalize(request));
+    const prefetched = args.prefetchedRows?.cacheKeysByRequest.get(request);
+    const cacheKey =
+      prefetched?.scope === args.scope
+        ? prefetched.cacheKey
+        : args.cacheKey(request);
+    requestsByCacheKey.set(cacheKey, args.normalize(request));
     args.stats.uniqueKeyCount = requestsByCacheKey.size;
   }
   return requestsByCacheKey;
@@ -779,32 +793,88 @@ function recordStorageManifestPrefetchDecision(args: {
 
 function storageManifestPresignedUrlCacheLookupPairs(
   input: StorageManifestPresignedUrlCachePrefetchInput,
-): readonly StorageManifestPresignedUrlCacheLookupPair[] {
+  memoizeByValue: boolean,
+): {
+  readonly pairs: readonly StorageManifestPresignedUrlCacheLookupPair[];
+  readonly cacheKeysByRequest: StorageManifestPresignedUrlCacheSnapshot["cacheKeysByRequest"];
+} {
   const cacheKeysByScope = new Map<
     StorageManifestPresignedUrlCacheScope,
     Set<string>
   >();
+  const cacheKeysByRequest: StorageManifestPresignedUrlCacheSnapshot["cacheKeysByRequest"] =
+    new WeakMap();
+  const cacheKeysByValue = memoizeByValue
+    ? new Map<string, string>()
+    : undefined;
+  const lookupCacheKey = <TRequest extends SystemStoragePresignedUrlRequest>(
+    scope: StorageManifestPresignedUrlCacheScope,
+    request: TRequest,
+    calculate: (value: TRequest) => string,
+  ): string => {
+    if (!cacheKeysByValue) {
+      return calculate(request);
+    }
+    const signature = JSON.stringify([
+      scope,
+      request.bucket,
+      request.objectKey,
+      request.storageVersionId,
+      "resolvedOrgId" in request ? request.resolvedOrgId : null,
+      request.publicEndpoint,
+    ]);
+    const cached = cacheKeysByValue.get(signature);
+    if (cached) {
+      return cached;
+    }
+    const cacheKey = calculate(request);
+    cacheKeysByValue.set(signature, cacheKey);
+    return cacheKey;
+  };
   const add = (
     scope: StorageManifestPresignedUrlCacheScope,
+    request: object,
     cacheKey: string,
   ) => {
     const cacheKeys = cacheKeysByScope.get(scope) ?? new Set<string>();
     cacheKeys.add(cacheKey);
     cacheKeysByScope.set(scope, cacheKeys);
+    cacheKeysByRequest.set(request, { scope, cacheKey });
   };
   for (const request of input.systemRequests) {
-    add("system_storage", systemStoragePresignedUrlCacheKey(request));
+    add(
+      "system_storage",
+      request,
+      lookupCacheKey(
+        "system_storage",
+        request,
+        systemStoragePresignedUrlCacheKey,
+      ),
+    );
   }
   for (const request of input.workflowSkillRequests) {
     add(
       "workflow_skill_storage",
-      workflowSkillStoragePresignedUrlCacheKey(request),
+      request,
+      lookupCacheKey(
+        "workflow_skill_storage",
+        request,
+        workflowSkillStoragePresignedUrlCacheKey,
+      ),
     );
   }
   for (const request of input.readOnlyRequests) {
-    add("readonly_storage", readOnlyStoragePresignedUrlCacheKey(request));
+    add(
+      "readonly_storage",
+      request,
+      lookupCacheKey(
+        "readonly_storage",
+        request,
+        readOnlyStoragePresignedUrlCacheKey,
+      ),
+    );
   }
-  return [...cacheKeysByScope]
+  const pairs = [...cacheKeysByScope]
     .flatMap(([scope, cacheKeys]) => {
       return [...cacheKeys].map((cacheKey) => {
         return { scope, cacheKey };
@@ -816,6 +886,60 @@ function storageManifestPresignedUrlCacheLookupPairs(
         left.cacheKey.localeCompare(right.cacheKey)
       );
     });
+  return { pairs, cacheKeysByRequest };
+}
+
+function storageManifestExceedsObjectKeyLowerBound(
+  input: StorageManifestPresignedUrlCachePrefetchInput,
+): boolean {
+  // Distinct object keys cannot map to the same cache key, so this can reject
+  // oversized batches before computing every SHA-256 cache key.
+  const objectKeys = new Set<string>();
+  for (const requests of [
+    input.systemRequests,
+    input.workflowSkillRequests,
+    input.readOnlyRequests,
+  ]) {
+    for (const request of requests) {
+      objectKeys.add(request.objectKey);
+      if (
+        objectKeys.size > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+async function lookupMixedStorageManifestPresignedUrlCacheRows(
+  db: Db,
+  pairs: readonly StorageManifestPresignedUrlCacheLookupPair[],
+) {
+  const scopes = pairs.map((pair) => {
+    return pair.scope;
+  });
+  const cacheKeys = pairs.map((pair) => {
+    return pair.cacheKey;
+  });
+  return await db
+    .select({
+      scope: systemStoragePresignedUrlCache.scope,
+      cacheKey: systemStoragePresignedUrlCache.cacheKey,
+      presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
+      expiresAt: systemStoragePresignedUrlCache.expiresAt,
+    })
+    .from(systemStoragePresignedUrlCache)
+    .innerJoin(
+      sql`unnest(
+        ${sql.param(scopes)}::varchar(64)[],
+        ${sql.param(cacheKeys)}::varchar(64)[]
+      ) AS requested(scope, cache_key)`,
+      and(
+        eq(systemStoragePresignedUrlCache.scope, sql`requested.scope`),
+        eq(systemStoragePresignedUrlCache.cacheKey, sql`requested.cache_key`),
+      ),
+    );
 }
 
 export function prefetchStorageManifestPresignedUrlCacheRows(args: {
@@ -838,7 +962,7 @@ export function prefetchStorageManifestPresignedUrlCacheRows(args: {
       return undefined;
     }
     if (
-      requestedCount > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS
+      requestedCount > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_REQUESTS
     ) {
       recordStorageManifestPrefetchDecision({
         observation: args.observation,
@@ -848,7 +972,23 @@ export function prefetchStorageManifestPresignedUrlCacheRows(args: {
       });
       return undefined;
     }
-    const pairs = storageManifestPresignedUrlCacheLookupPairs(args.input);
+    if (
+      requestedCount > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS &&
+      storageManifestExceedsObjectKeyLowerBound(args.input)
+    ) {
+      recordStorageManifestPrefetchDecision({
+        observation: args.observation,
+        decision: "over_object_key_lower_bound",
+        requestedCount,
+        logicalLookupCount: args.input.logicalLookupCount,
+      });
+      return undefined;
+    }
+    const { pairs, cacheKeysByRequest } =
+      storageManifestPresignedUrlCacheLookupPairs(
+        args.input,
+        requestedCount > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS,
+      );
     if (pairs.length === 0) {
       recordStorageManifestPrefetchDecision({
         observation: args.observation,
@@ -878,40 +1018,16 @@ export function prefetchStorageManifestPresignedUrlCacheRows(args: {
       uniquePairCount: pairs.length,
     });
 
-    const scopes = pairs.map((pair) => {
-      return pair.scope;
-    });
-    const cacheKeys = pairs.map((pair) => {
-      return pair.cacheKey;
-    });
-    const lookup = async () => {
-      return await args.db
-        .select({
-          scope: systemStoragePresignedUrlCache.scope,
-          cacheKey: systemStoragePresignedUrlCache.cacheKey,
-          presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
-          expiresAt: systemStoragePresignedUrlCache.expiresAt,
-        })
-        .from(systemStoragePresignedUrlCache)
-        .innerJoin(
-          sql`unnest(
-            ${sql.param(scopes)}::varchar(64)[],
-            ${sql.param(cacheKeys)}::varchar(64)[]
-          ) AS requested(scope, cache_key)`,
-          and(
-            eq(systemStoragePresignedUrlCache.scope, sql`requested.scope`),
-            eq(
-              systemStoragePresignedUrlCache.cacheKey,
-              sql`requested.cache_key`,
-            ),
-          ),
-        );
-    };
     const rows = await measureApiDispatchTiming(
       args.observation?.timing,
       "api_dispatch_prepare_storage_manifest_cache_mixed_lookup",
       "nested",
-      lookup,
+      async () => {
+        return await lookupMixedStorageManifestPresignedUrlCacheRows(
+          args.db,
+          pairs,
+        );
+      },
       {
         storage_manifest_branch: args.observation?.branch ?? "unobserved",
         storage_manifest_cache_requested_count_bucket:
@@ -939,7 +1055,7 @@ export function prefetchStorageManifestPresignedUrlCacheRows(args: {
       });
       rowsByScope.set(scope, rowsByCacheKey);
     }
-    return { rowsByScope };
+    return { rowsByScope, cacheKeysByRequest };
   });
 }
 
@@ -1055,7 +1171,7 @@ function appendFreshStoragePresignedUrlResults(args: {
   }
 }
 
-function resolveStoragePresignedUrls<TRequest>(args: {
+function resolveStoragePresignedUrls<TRequest extends object>(args: {
   readonly db: Db;
   readonly scope: StoragePresignedUrlCacheScope;
   readonly requests: readonly TRequest[];
@@ -1091,9 +1207,11 @@ function resolveStoragePresignedUrls<TRequest>(args: {
       const prepareRequests = () => {
         return prepareStoragePresignedUrlRequests({
           requests: args.requests,
+          scope: args.scope,
           cacheKey: args.cacheKey,
           normalize: args.normalize,
           stats,
+          prefetchedRows: args.prefetchedRows,
         });
       };
       const requestsByCacheKey = timing

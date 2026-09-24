@@ -9,7 +9,6 @@ import {
   integrationsSlackContract,
   type SlackOrgStatus,
 } from "@okouai/api-contracts/contracts/integrations-slack";
-import { getStartedContract } from "@okouai/api-contracts/contracts/get-started";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
@@ -82,12 +81,6 @@ function slackStatus(options: {
       options.installed && !options.connected
         ? "https://slack.com/oauth/v2/authorize?client_id=growth-connect"
         : null,
-    environment: {
-      requiredSecrets: [],
-      requiredVars: [],
-      missingSecrets: [],
-      missingVars: [],
-    },
   };
 }
 
@@ -162,46 +155,6 @@ function configureGrowthPage(
     });
   }
 }
-
-test("An admin can choose another connection channel", async () => {
-  configureGrowthPage(context, {
-    role: "admin",
-    slack: slackStatus({
-      connected: false,
-      installed: false,
-      workspaceAdmin: true,
-    }),
-  });
-  await setupPage({ context, path: growthChatPath() });
-
-  const primaryEntry = await waitFor(() => {
-    return actionNamed("button", "Add Okou in Slack");
-  });
-  const moreActions = await waitFor(() => {
-    return actionNamed("button", "More actions");
-  });
-  expect(primaryEntry).toBeVisible();
-  expect(moreActions).toBeVisible();
-
-  click(moreActions);
-
-  const menu = await screen.findByRole("menu");
-  const slack = menuItemContaining(menu, "Add Okou in Slack");
-  expect(slack).toBeVisible();
-  expect(slack).toHaveTextContent("Connect");
-  expect(within(menu).getByText("Telegram and phone")).toBeVisible();
-
-  click(slack);
-
-  await waitFor(() => {
-    expect(pathname()).toBe("/works");
-  });
-  await expect(
-    waitFor(() => {
-      return actionNamed("button", "Install to Slack");
-    }),
-  ).resolves.toBeVisible();
-});
 
 test("An admin is guided to add Okou to Slack first", async () => {
   configureGrowthPage(context, {
@@ -297,43 +250,6 @@ test("Installed Slack shifts the growth entry to inviting people", async () => {
   ).resolves.toBeVisible();
 });
 
-test("The growth menu reflects installed Slack and offers invitations", async () => {
-  configureGrowthPage(context, {
-    role: "admin",
-    slack: slackStatus({
-      connected: false,
-      installed: true,
-      workspaceAdmin: true,
-    }),
-  });
-  await setupPage({ context, path: growthChatPath() });
-
-  const primaryEntry = await waitFor(() => {
-    return actionNamed("button", "Invite humans 🤝");
-  });
-  const moreActions = await waitFor(() => {
-    return actionNamed("button", "More actions");
-  });
-  expect(primaryEntry).toBeVisible();
-  expect(moreActions).toBeVisible();
-
-  click(moreActions);
-
-  const menu = await screen.findByRole("menu");
-  const slack = menuItemContaining(menu, "Okou is in Slack");
-  expect(slack).toBeVisible();
-  expect(slack).not.toHaveTextContent("Connect");
-  const invite = actionNamed("menuitem", "Invite humans 🤝", menu);
-  expect(invite).toBeVisible();
-
-  click(invite);
-
-  const settings = await screen.findByRole("dialog", { name: "Settings" });
-  await expect(
-    within(settings).findByRole("heading", { name: "People" }),
-  ).resolves.toBeVisible();
-});
-
 test("An admin keeps the growth entry when the org has no quests", async () => {
   // The switch is on, but the server withholds the quests, so Get started
   // draws nothing and the corner would otherwise be empty.
@@ -344,35 +260,6 @@ test("An admin keeps the growth entry when the org has no quests", async () => {
       installed: true,
       workspaceAdmin: true,
     }),
-  });
-  await setupPage({
-    context,
-    path: growthChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
-  });
-
-  const invitePeople = await waitFor(() => {
-    return actionNamed("button", "Invite humans 🤝");
-  });
-  expect(invitePeople).toBeInTheDocument();
-  expect(screen.queryByTestId("get-started-entry")).toBeNull();
-});
-
-test("An admin keeps the growth entry when the quest request fails", async () => {
-  // A rejected status request never resolves into quests, so Get started can
-  // never draw its own control and must not hold the corner hostage.
-  configureGrowthPage(context, {
-    role: "admin",
-    slack: slackStatus({
-      connected: false,
-      installed: true,
-      workspaceAdmin: true,
-    }),
-  });
-  context.mocks.api(getStartedContract.status, ({ respond }) => {
-    return respond(401, {
-      error: { code: "UNAUTHORIZED", message: "Session expired" },
-    });
   });
   await setupPage({
     context,

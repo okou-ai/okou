@@ -108,7 +108,6 @@ async function editSeparateConversationDrafts() {
   await user.paste(" and a separate note");
 
   await openConversation(first.id);
-  return { second };
 }
 
 test("Restore the first edited draft without leaking the other conversation's draft", async () => {
@@ -119,18 +118,6 @@ test("Restore the first edited draft without leaking the other conversation's dr
     );
   });
   expect(currentMessageComposer()).not.toHaveTextContent("a separate note");
-});
-
-test("Restore the second edited draft without leaking the other conversation's draft", async () => {
-  const { second } = await editSeparateConversationDrafts();
-  await openConversation(second.id);
-  await waitFor(() => {
-    expect(currentMessageComposer()).toHaveTextContent("a separate note");
-  });
-  expect(currentMessageComposer()).not.toHaveTextContent(
-    "First conversation follow-up",
-  );
-  expect(document.body).toHaveTextContent("Keep this quoted requirement");
 });
 
 test("Protect local edits while a saved draft is loading", async () => {

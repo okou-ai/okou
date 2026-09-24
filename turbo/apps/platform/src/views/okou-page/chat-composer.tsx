@@ -58,7 +58,7 @@ import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
 import { CustomTemplatePickerPane } from "./custom-template-picker-pane.tsx";
 import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
 import {
-  customTemplateCatalog$,
+  loadCustomTemplateCatalog$,
   resetCustomTemplatePicker$,
   resetCustomTemplatePickerView$,
 } from "../../signals/okou-page/custom-template-library.ts";
@@ -290,6 +290,7 @@ import {
   type ConnectorConnectSuccess,
 } from "../../signals/okou-page/settings/connectors.ts";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
+import type { ComposerConnectorData } from "../../signals/okou-page/connectors.ts";
 import { ConnectorDirectoryDialog } from "./connector-directory-dialog.tsx";
 import { resetCustomConnectorConnectInput$ } from "../../signals/okou-page/settings/custom-connectors.ts";
 import {
@@ -934,11 +935,15 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
     <div
       data-video-template-preview=""
       className="group/video-template-preview relative h-full w-full overflow-hidden bg-muted"
-      onMouseEnter={(event) => {
-        startVideoPreview(event.currentTarget.querySelector("video"));
+      onPointerEnter={(event) => {
+        if (event.pointerType !== "touch") {
+          startVideoPreview(event.currentTarget.querySelector("video"));
+        }
       }}
-      onMouseLeave={(event) => {
-        resetVideoPreview(event.currentTarget.querySelector("video"));
+      onPointerLeave={(event) => {
+        if (event.pointerType !== "touch") {
+          resetVideoPreview(event.currentTarget.querySelector("video"));
+        }
       }}
     >
       <video
@@ -973,6 +978,7 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
       />
       <IconTooltipButton
         type="button"
+        data-template-preview-id={`video:${item.id}`}
         aria-label={t(
           ($) => {
             return $.artifacts.templates.playVideo;
@@ -983,8 +989,6 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
         )}
         className="absolute inset-0 flex cursor-pointer items-center justify-center bg-black/0 text-white opacity-100 transition-colors duration-200 hover:bg-black/25 focus-visible:bg-black/25 focus-visible:outline-none peer-data-[preview-playing=true]:pointer-events-none peer-data-[preview-playing=true]:!opacity-0"
         onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
           startVideoPreview(
             event.currentTarget.parentElement?.querySelector("video") ?? null,
           );
@@ -1018,6 +1022,7 @@ function VideoTemplateCard({
       <div
         className={cn(
           TEMPLATE_TILE_SELECTION_FRAME,
+          TEMPLATE_TILE_PREVIEW_FOCUS,
           selected && TEMPLATE_TILE_SELECTED,
         )}
       >
@@ -5213,20 +5218,6 @@ function ImportedPresentationTemplateLibraryStatus({
   );
 }
 
-/** The catalog behind a `custom` selection's chip. Empty until it loads. */
-function useCustomTemplateCatalog(): readonly UserTemplateCatalogEntry[] {
-  const loadable = useLoadable(customTemplateCatalog$);
-  return loadable.state === "hasData" ? loadable.data : [];
-}
-
-function useImportedPresentationTemplates(
-  signals: ComposerSignals,
-): readonly PresentationTemplateSummary[] {
-  return useImportedPresentationTemplatePickerItems(signals).map((item) => {
-    return item.template;
-  });
-}
-
 function ComposerPresentationSuggestion({
   title,
   children,
@@ -6387,114 +6378,6 @@ function ComposerWorkflowPromptSlot({ signals }: { signals: ComposerSignals }) {
   );
 }
 
-function ConnectorTriggerIcons({
-  connectors,
-  customConnectors,
-  hasComputerUse,
-  hasCloudBrowser,
-  hasSsh,
-  hasVnc,
-}: {
-  connectors: ComposerConnectorItem[];
-  customConnectors: ComposerCustomConnectorItem[];
-  hasComputerUse: boolean;
-  hasCloudBrowser: boolean;
-  hasSsh: boolean;
-  hasVnc: boolean;
-}) {
-  const { t } = useTranslation();
-  const enabledConnectors = connectors.filter((connector) => {
-    return connector.authorized;
-  });
-  const enabledCustomConnectors = customConnectors.filter((connector) => {
-    return connector.authorized;
-  });
-  const connectorIconLimit =
-    3 - Number(hasComputerUse) - Number(hasCloudBrowser);
-  const enabled = [
-    ...enabledConnectors.map((connector) => {
-      return { kind: "builtin" as const, connector };
-    }),
-    ...(hasSsh ? [{ kind: "ssh" as const }] : []),
-    ...(hasVnc ? [{ kind: "vnc" as const }] : []),
-    ...enabledCustomConnectors.map((connector) => {
-      return { kind: "custom" as const, connector };
-    }),
-  ].slice(0, connectorIconLimit);
-  const hasComputerAccess = hasComputerUse || hasCloudBrowser;
-  if (enabled.length === 0 && !hasComputerAccess) {
-    return <Plug size={18} />;
-  }
-  return (
-    <span className="flex items-center composer-wide:-space-x-1.5">
-      {enabled.map((item, index) => {
-        const key =
-          item.kind === "ssh" || item.kind === "vnc"
-            ? item.kind
-            : item.kind === "builtin"
-              ? item.connector.slug
-              : item.connector.id;
-        return (
-          <span
-            key={key}
-            className={cn(
-              "relative shrink-0",
-              (index > 0 || hasComputerAccess) && "hidden composer-wide:block",
-            )}
-          >
-            <span
-              className={cn(
-                "flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border border-gray-400 bg-background composer-wide:h-7 composer-wide:w-7",
-                item.kind === "ssh" && "text-brand-text",
-              )}
-            >
-              {item.kind === "ssh" ? (
-                <Terminal
-                  size={16}
-                  role="img"
-                  aria-label={t(($) => {
-                    return $.ssh.label;
-                  })}
-                />
-              ) : item.kind === "vnc" ? (
-                <Monitor
-                  size={16}
-                  role="img"
-                  aria-label={t(($) => {
-                    return $.vnc.label;
-                  })}
-                />
-              ) : item.kind === "builtin" ? (
-                <ConnectorIcon icon={item.connector.icon} size={16} />
-              ) : (
-                <CustomConnectorIcon
-                  id={item.connector.id}
-                  displayName={item.connector.displayName}
-                  size={16}
-                />
-              )}
-            </span>
-          </span>
-        );
-      })}
-      {hasComputerUse && (
-        <span className="relative shrink-0">
-          <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border border-gray-400 bg-background text-brand-text composer-wide:h-7 composer-wide:w-7">
-            <Monitor size={16} />
-          </span>
-        </span>
-      )}
-      {hasCloudBrowser && (
-        <span className="relative shrink-0">
-          <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border border-gray-400 bg-background text-brand-text composer-wide:h-7 composer-wide:w-7">
-            <Globe size={16} />
-          </span>
-        </span>
-      )}
-    </span>
-  );
-}
-
 function matchesCustomConnectorSearch(
   search: string,
   connector: CustomConnectorResponse,
@@ -7517,8 +7400,6 @@ function deriveComposerConnectorPopoverState(args: {
   readonly sortOrder: readonly string[] | null;
   readonly search: string;
   readonly showSearch: boolean;
-  readonly permissionConnectorSlug: ConnectorSlug | null;
-  readonly agentConnectors: readonly ComposerConnectorItem[];
 }) {
   const sorted = args.sortOrder
     ? [...args.connectorItems].sort((a, b) => {
@@ -7547,12 +7428,7 @@ function deriveComposerConnectorPopoverState(args: {
           return matchesComposerPopoverConnectorSearch(args.search, item);
         })
       : sorted;
-  const permissionConnector = args.permissionConnectorSlug
-    ? args.agentConnectors.find((connector) => {
-        return connector.slug === args.permissionConnectorSlug;
-      })
-    : undefined;
-  return { visibleConnectors, permissionConnector };
+  return visibleConnectors;
 }
 
 function ComposerConnectorAccountAction({
@@ -7599,31 +7475,6 @@ function ComposerConnectorAccountAction({
         return connection.id === selection?.connectionId;
       })}
       defaultConnection={summary.defaultConnection}
-    />
-  );
-}
-
-function ComposerConnectorTriggerIcons({
-  connectors,
-  customConnectors,
-  computerUse,
-  sshAccess,
-  vncAccess,
-}: {
-  readonly connectors: ComposerConnectorItem[];
-  readonly customConnectors: ComposerCustomConnectorItem[];
-  readonly computerUse: ComposerComputerUse | undefined;
-  readonly sshAccess: { readonly enabled: boolean } | undefined;
-  readonly vncAccess: { readonly enabled: boolean } | undefined;
-}) {
-  return (
-    <ConnectorTriggerIcons
-      connectors={connectors}
-      customConnectors={customConnectors}
-      hasComputerUse={Boolean(computerUse?.selectedHostId)}
-      hasCloudBrowser={Boolean(computerUse?.cloudBrowserEnabled)}
-      hasSsh={sshAccess?.enabled ?? false}
-      hasVnc={vncAccess?.enabled ?? false}
     />
   );
 }
@@ -7699,90 +7550,83 @@ function matchingComposerAccess(
   return access;
 }
 
+function resolveComposerAgentConnectors(
+  connectorData: ComposerConnectorData | undefined,
+): {
+  readonly agentConnectors: ComposerConnectorItem[];
+  readonly agentCustomConnectors: ComposerCustomConnectorItem[];
+} {
+  const authorizedSet = new Set(
+    connectorData?.authorization.enabledConnectorSlugs ?? [],
+  );
+  const authorizedCustomSet = new Set(
+    connectorData?.authorization.customConnectorIds ?? [],
+  );
+  return {
+    agentConnectors: (connectorData?.overview.builtinConnectors ?? []).map(
+      (connector) => {
+        return {
+          ...connector,
+          authorized: authorizedSet.has(connector.slug),
+        };
+      },
+    ),
+    agentCustomConnectors: (connectorData?.overview.customConnectors ?? []).map(
+      (connector) => {
+        return {
+          ...connector,
+          authorized: authorizedCustomSet.has(connector.id),
+        };
+      },
+    ),
+  };
+}
+
+/**
+ * The composer's connector entry. The trigger is a static mark so the composer
+ * needs neither the connector overview nor the agent's connector access until
+ * the popover opens and mounts its body.
+ */
 function ConnectorsPopoverButton({
   signals,
-  agentId,
-  agentDisplayName,
-  agentConnectors,
-  agentCustomConnectors,
-  connectorsLoading,
   actions,
   computerUse,
   onOpenAddDialog,
-  onToggle,
-  onToggleCustom,
 }: {
   signals: ComposerSignals;
-  agentId: string | null;
-  agentDisplayName: string;
-  agentConnectors: ComposerConnectorItem[];
-  agentCustomConnectors: ComposerCustomConnectorItem[];
-  connectorsLoading: boolean;
   actions: ComposerConnectorActions;
   computerUse: ComposerComputerUse | undefined;
   onOpenAddDialog: () => void;
-  onToggle: (
-    connectorSlug: ConnectorSlug,
-    checked: boolean,
-  ) => void | Promise<void>;
-  onToggleCustom: (
-    connectorId: string,
-    checked: boolean,
-  ) => void | Promise<void>;
 }) {
   const { t } = useTranslation();
-  const connectorUi = useGet(signals.connector.connectorUiState$);
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
   const accountMenuOpen = useGet(signals.connector.accounts.menuOpen$);
   const closeAccountMenu = useSet(signals.connector.accounts.closeMenu$);
-  const search = connectorUi.popoverSearch;
-  const sortOrder = connectorUi.popoverSortOrder;
   const downloadDialogOpen = useGet(
     signals.computer.computerUseDownloadDialogOpen$,
   );
   const setDownloadDialogOpen = useSet(
     signals.computer.setComputerUseDownloadDialogOpen$,
   );
-  const permissionConnectorSlug = connectorUi.permissionConnectorSlug;
-  const sshRows = useLoadable(signals.connector.sshAccess$);
+  // SSH and VNC rows keep their last state while a refresh is pending, so the
+  // retained value lives here rather than in the body that remounts on every
+  // open. Both reads stay null until the popover first opens.
   const sshIdentity = useLoadable(sshIdentity$);
   const lastSshAccess = useLastResolved(signals.connector.sshAccess$);
-  const sshAccess = matchingComposerAccess(sshIdentity, lastSshAccess, agentId);
-  const [sshSaving, updateSshAccess] = useLoadableSet(updateAgentSshAccess$);
-  const vncRows = useLoadable(signals.connector.vncAccess$);
+  const sshAccess = matchingComposerAccess(
+    sshIdentity,
+    lastSshAccess,
+    signals.agentId,
+  );
   const vncIdentity = useLoadable(vncIdentity$);
   const lastVncAccess = useLastResolved(signals.connector.vncAccess$);
-  const vncAccess = matchingComposerAccess(vncIdentity, lastVncAccess, agentId);
-  const [vncSaving, updateVncAccess] = useLoadableSet(updateAgentVncAccess$);
-  const pageSignal = useGet(pageSignal$);
-  const waitingForConnectors = connectorsLoading && !sshAccess && !vncAccess;
-  const connectorItems = composerPopoverItems({
-    agentConnectors,
-    agentCustomConnectors,
-    sshAccess: sshAccess ?? undefined,
-    vncAccess: vncAccess ?? undefined,
-    sshLabel: t(($) => {
-      return $.ssh.label;
-    }),
-    vncLabel: t(($) => {
-      return $.vnc.label;
-    }),
-  });
-  const showSearch = connectorItems.length > 20;
-  const { visibleConnectors, permissionConnector } =
-    deriveComposerConnectorPopoverState({
-      connectorItems,
-      sortOrder,
-      search,
-      showSearch,
-      permissionConnectorSlug,
-      agentConnectors,
-    });
+  const vncAccess = matchingComposerAccess(
+    vncIdentity,
+    lastVncAccess,
+    signals.agentId,
+  );
   const handleOpenChange = (open: boolean) => {
     if (open) {
-      // Snapshot the sort order when popover opens
-      const freshSort = connectorItems.map(composerPopoverConnectorId);
-      updateConnectorUi({ popoverSortOrder: freshSort });
       updateConnectorUi({ popoverOpen: true, popoverHasOpened: true });
     } else {
       updateConnectorUi({
@@ -7825,15 +7669,7 @@ function ConnectorsPopoverButton({
                       return $.chat.connectors.title;
                     })}
                   >
-                    {!waitingForConnectors && (
-                      <ComposerConnectorTriggerIcons
-                        connectors={agentConnectors}
-                        customConnectors={agentCustomConnectors}
-                        computerUse={computerUse}
-                        sshAccess={sshAccess ?? undefined}
-                        vncAccess={vncAccess ?? undefined}
-                      />
-                    )}
+                    <Plug size={18} />
                   </button>
                 }
               />
@@ -7853,229 +7689,265 @@ function ConnectorsPopoverButton({
           return $.chat.connectors.title;
         })}
         collisionAvoidance={{ fallbackAxisSide: "none" }}
-        className={cn(
-          "flex max-h-[var(--available-height)] w-72 flex-col overflow-hidden p-0",
-          // Keep the search field and actions stationary as results change.
-          showSearch && "h-100",
-        )}
+        className="flex max-h-[var(--available-height)] w-72 flex-col overflow-hidden p-0"
       >
-        {(connectorItems.length > 0 || connectorsLoading) && (
-          <div className="flex min-h-0 flex-1 flex-col py-1">
-            {showSearch && (
-              <div className="shrink-0 px-3 py-1 border-b border-border/50">
-                <input
-                  type="text"
-                  placeholder={t(($) => {
-                    return $.chat.connectors.find;
-                  })}
-                  value={search}
-                  onChange={(e) => {
-                    return updateConnectorUi({
-                      popoverSearch: e.target.value,
-                    });
-                  }}
-                  className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
-                />
-              </div>
-            )}
-            {waitingForConnectors ? (
-              <div className="flex flex-col animate-pulse">
-                {Array.from({ length: 3 }, (_, i) => {
-                  return (
-                    <div key={i} className="flex items-center gap-2 px-3 py-2">
-                      <span className="h-4 w-4 shrink-0 rounded bg-muted/50" />
-                      <span className="h-3.5 w-20 rounded bg-muted/50 flex-1" />
-                      <span className="h-3 w-6 rounded-full bg-muted/50" />
-                    </div>
-                  );
+        <ComposerConnectorsPopoverBody
+          signals={signals}
+          actions={actions}
+          sshAccess={sshAccess}
+          vncAccess={vncAccess}
+          computerUse={computerUse}
+          onOpenAddDialog={onOpenAddDialog}
+          onOpenDownloadDialog={() => {
+            setDownloadDialogOpen(true);
+          }}
+        />
+      </PopoverContent>
+      <OptionalComputerUseDownloadDialog
+        computerUse={computerUse}
+        open={downloadDialogOpen}
+        onOpenChange={setDownloadDialogOpen}
+      />
+    </Popover>
+  );
+}
+
+/**
+ * The open popover. Mounted only while the popover is open, so it is the
+ * component that asks for the agent's connectors and their access.
+ */
+function ComposerConnectorsPopoverBody({
+  signals,
+  actions,
+  sshAccess,
+  vncAccess,
+  computerUse,
+  onOpenAddDialog,
+  onOpenDownloadDialog,
+}: {
+  signals: ComposerSignals;
+  actions: ComposerConnectorActions;
+  sshAccess: ReturnType<typeof matchingComposerAccess>;
+  vncAccess: ReturnType<typeof matchingComposerAccess>;
+  computerUse: ComposerComputerUse | undefined;
+  onOpenAddDialog: () => void;
+  onOpenDownloadDialog: () => void;
+}) {
+  const { t } = useTranslation();
+  const agentId = signals.agentId;
+  const connectorData = useLastResolved(signals.connector.data$);
+  const connectorsLoading = connectorData === undefined;
+  const { agentConnectors, agentCustomConnectors } =
+    resolveComposerAgentConnectors(connectorData);
+  const connectorUi = useGet(signals.connector.connectorUiState$);
+  const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
+  const search = connectorUi.popoverSearch;
+  const sortOrder = connectorUi.popoverSortOrder;
+  const sshRows = useLoadable(signals.connector.sshAccess$);
+  const [sshSaving, updateSshAccess] = useLoadableSet(updateAgentSshAccess$);
+  const vncRows = useLoadable(signals.connector.vncAccess$);
+  const [vncSaving, updateVncAccess] = useLoadableSet(updateAgentVncAccess$);
+  const pageSignal = useGet(pageSignal$);
+  const waitingForConnectors = connectorsLoading && !sshAccess && !vncAccess;
+  const connectorItems = composerPopoverItems({
+    agentConnectors,
+    agentCustomConnectors,
+    sshAccess: sshAccess ?? undefined,
+    vncAccess: vncAccess ?? undefined,
+    sshLabel: t(($) => {
+      return $.ssh.label;
+    }),
+    vncLabel: t(($) => {
+      return $.vnc.label;
+    }),
+  });
+  const showSearch = connectorItems.length > 20;
+  const visibleConnectors = deriveComposerConnectorPopoverState({
+    connectorItems,
+    sortOrder,
+    search,
+    showSearch,
+  });
+  // The rows are loaded after the popover opens, so their order is pinned when
+  // the first toggle could otherwise move them rather than at open time.
+  const pinSortOrder = () => {
+    if (sortOrder === null) {
+      updateConnectorUi({
+        popoverSortOrder: connectorItems.map(composerPopoverConnectorId),
+      });
+    }
+  };
+  const handleToggle = async (
+    connectorSlug: ConnectorSlug,
+    checked: boolean,
+  ) => {
+    pinSortOrder();
+    await actions.setAuthorization(
+      { kind: "builtin", connectorSlug },
+      checked,
+      pageSignal,
+    );
+  };
+  const handleCustomToggle = async (connectorId: string, checked: boolean) => {
+    pinSortOrder();
+    const connector = agentCustomConnectors.find((candidate) => {
+      return candidate.id === connectorId;
+    });
+    if (checked && connector?.permissionBundleRef) {
+      return;
+    }
+    await actions.setAuthorization(
+      {
+        kind: "custom",
+        connectorId,
+        permissionBundleRef: connector?.permissionBundleRef ?? null,
+      },
+      checked,
+      pageSignal,
+    );
+  };
+
+  return (
+    <div className={cn("flex min-h-0 flex-col", showSearch && "h-100")}>
+      {(connectorItems.length > 0 || connectorsLoading) && (
+        <div className="flex min-h-0 flex-1 flex-col py-1">
+          {showSearch && (
+            <div className="shrink-0 px-3 py-1 border-b border-border/50">
+              <input
+                type="text"
+                placeholder={t(($) => {
+                  return $.chat.connectors.find;
                 })}
-              </div>
-            ) : (
-              <div
-                role="list"
-                aria-label={t(($) => {
-                  return $.chat.connectors.title;
-                })}
-                className="flex max-h-64 min-h-0 flex-1 flex-col overflow-y-auto"
-              >
-                {visibleConnectors.map((item) => {
-                  if (item.kind === "ssh") {
-                    return (
-                      <ComposerConnectorAccessRow
-                        key={item.connector.id}
-                        icon={<Terminal size={16} />}
-                        connectorLabel={item.connector.label}
-                        checked={item.connector.authorized}
-                        loading={
-                          sshSaving.state === "loading" ||
-                          sshRows.state === "loading"
-                        }
-                        onCheckedChange={onDomEventFn(async (checked) => {
-                          if (agentId) {
-                            await updateSshAccess(agentId, checked, pageSignal);
-                          }
-                        })}
-                        ariaLabel={
-                          item.connector.authorized
-                            ? t(
-                                ($) => {
-                                  return $.chat.connectors.remove;
-                                },
-                                {
-                                  connectorName: item.connector.label,
-                                },
-                              )
-                            : t(
-                                ($) => {
-                                  return $.chat.connectors.add;
-                                },
-                                {
-                                  connectorName: item.connector.label,
-                                },
-                              )
-                        }
-                      />
-                    );
-                  }
-                  if (item.kind === "vnc") {
-                    return (
-                      <ComposerConnectorAccessRow
-                        key={item.connector.id}
-                        icon={<Monitor size={16} />}
-                        connectorLabel={item.connector.label}
-                        checked={item.connector.authorized}
-                        loading={
-                          vncSaving.state === "loading" ||
-                          vncRows.state === "loading"
-                        }
-                        onCheckedChange={onDomEventFn(async (checked) => {
-                          if (agentId) {
-                            await updateVncAccess(agentId, checked, pageSignal);
-                          }
-                        })}
-                        ariaLabel={
-                          item.connector.authorized
-                            ? t(
-                                ($) => {
-                                  return $.chat.connectors.remove;
-                                },
-                                {
-                                  connectorName: item.connector.label,
-                                },
-                              )
-                            : t(
-                                ($) => {
-                                  return $.chat.connectors.add;
-                                },
-                                {
-                                  connectorName: item.connector.label,
-                                },
-                              )
-                        }
-                      />
-                    );
-                  }
-                  if (item.kind === "custom") {
-                    const connector = item.connector;
-                    return (
-                      <ComposerConnectorAccessRow
-                        key={connector.id}
-                        icon={
-                          <CustomConnectorIcon
-                            id={connector.id}
-                            displayName={connector.displayName}
-                            size={16}
-                          />
-                        }
-                        connectorLabel={connector.displayName}
-                        actions={
-                          <ComposerConnectorAccountAction
-                            signals={signals}
-                            actions={actions}
-                            item={item}
-                          />
-                        }
-                        checked={connector.authorized}
-                        onCheckedChange={onDomEventFn(async (checked) => {
-                          await onToggleCustom(connector.id, checked);
-                        })}
-                        loading={actions.savingAuthorization}
-                        ariaLabel={
-                          connector.authorized
-                            ? t(
-                                ($) => {
-                                  return $.chat.connectors.remove;
-                                },
-                                {
-                                  connectorName: connector.displayName,
-                                },
-                              )
-                            : t(
-                                ($) => {
-                                  return $.chat.connectors.add;
-                                },
-                                {
-                                  connectorName: connector.displayName,
-                                },
-                              )
-                        }
-                      />
-                    );
-                  }
-                  const connector = item.connector;
-                  const accountAction = connector.authorized ? (
-                    <ComposerConnectorAccountAction
-                      signals={signals}
-                      actions={actions}
-                      item={item}
-                    />
-                  ) : null;
-                  const showPermissionAction =
-                    Boolean(agentId) &&
-                    connector.authorized &&
-                    connector.hasPermissions;
+                value={search}
+                onChange={(e) => {
+                  return updateConnectorUi({
+                    popoverSearch: e.target.value,
+                  });
+                }}
+                className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
+              />
+            </div>
+          )}
+          {waitingForConnectors ? (
+            <div className="flex flex-col animate-pulse">
+              {Array.from({ length: 3 }, (_, i) => {
+                return (
+                  <div key={i} className="flex items-center gap-2 px-3 py-2">
+                    <span className="h-4 w-4 shrink-0 rounded bg-muted/50" />
+                    <span className="h-3.5 w-20 rounded bg-muted/50 flex-1" />
+                    <span className="h-3 w-6 rounded-full bg-muted/50" />
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div
+              role="list"
+              aria-label={t(($) => {
+                return $.chat.connectors.title;
+              })}
+              className="flex max-h-64 min-h-0 flex-1 flex-col overflow-y-auto"
+            >
+              {visibleConnectors.map((item) => {
+                if (item.kind === "ssh") {
                   return (
                     <ComposerConnectorAccessRow
-                      key={connector.slug}
-                      icon={<ConnectorIcon icon={connector.icon} size={16} />}
-                      connectorLabel={connector.label}
+                      key={item.connector.id}
+                      icon={<Terminal size={16} />}
+                      connectorLabel={item.connector.label}
+                      checked={item.connector.authorized}
+                      loading={
+                        sshSaving.state === "loading" ||
+                        sshRows.state === "loading"
+                      }
+                      onCheckedChange={onDomEventFn(async (checked) => {
+                        if (agentId) {
+                          await updateSshAccess(agentId, checked, pageSignal);
+                        }
+                      })}
+                      ariaLabel={
+                        item.connector.authorized
+                          ? t(
+                              ($) => {
+                                return $.chat.connectors.remove;
+                              },
+                              {
+                                connectorName: item.connector.label,
+                              },
+                            )
+                          : t(
+                              ($) => {
+                                return $.chat.connectors.add;
+                              },
+                              {
+                                connectorName: item.connector.label,
+                              },
+                            )
+                      }
+                    />
+                  );
+                }
+                if (item.kind === "vnc") {
+                  return (
+                    <ComposerConnectorAccessRow
+                      key={item.connector.id}
+                      icon={<Monitor size={16} />}
+                      connectorLabel={item.connector.label}
+                      checked={item.connector.authorized}
+                      loading={
+                        vncSaving.state === "loading" ||
+                        vncRows.state === "loading"
+                      }
+                      onCheckedChange={onDomEventFn(async (checked) => {
+                        if (agentId) {
+                          await updateVncAccess(agentId, checked, pageSignal);
+                        }
+                      })}
+                      ariaLabel={
+                        item.connector.authorized
+                          ? t(
+                              ($) => {
+                                return $.chat.connectors.remove;
+                              },
+                              {
+                                connectorName: item.connector.label,
+                              },
+                            )
+                          : t(
+                              ($) => {
+                                return $.chat.connectors.add;
+                              },
+                              {
+                                connectorName: item.connector.label,
+                              },
+                            )
+                      }
+                    />
+                  );
+                }
+                if (item.kind === "custom") {
+                  const connector = item.connector;
+                  return (
+                    <ComposerConnectorAccessRow
+                      key={connector.id}
+                      icon={
+                        <CustomConnectorIcon
+                          id={connector.id}
+                          displayName={connector.displayName}
+                          size={16}
+                        />
+                      }
+                      connectorLabel={connector.displayName}
                       actions={
-                        showPermissionAction || accountAction ? (
-                          <>
-                            {accountAction}
-                            {showPermissionAction ? (
-                              <PopoverClose
-                                render={
-                                  <Button
-                                    showTooltip
-                                    type="button"
-                                    onClick={() => {
-                                      updateConnectorUi({
-                                        permissionConnectorSlug: connector.slug,
-                                      });
-                                    }}
-                                    aria-label={t(
-                                      ($) => {
-                                        return $.chat.connectors
-                                          .configurePermissions;
-                                      },
-                                      { connectorName: connector.label },
-                                    )}
-                                    variant="quiet"
-                                    size="icon-2xs"
-                                    className="shrink-0"
-                                  >
-                                    <SlidersHorizontal size={15} />
-                                  </Button>
-                                }
-                              />
-                            ) : null}
-                          </>
-                        ) : null
+                        <ComposerConnectorAccountAction
+                          signals={signals}
+                          actions={actions}
+                          item={item}
+                        />
                       }
                       checked={connector.authorized}
                       onCheckedChange={onDomEventFn(async (checked) => {
-                        await onToggle(connector.slug, checked);
+                        await handleCustomToggle(connector.id, checked);
                       })}
                       loading={actions.savingAuthorization}
                       ariaLabel={
@@ -8085,7 +7957,7 @@ function ConnectorsPopoverButton({
                                 return $.chat.connectors.remove;
                               },
                               {
-                                connectorName: connector.label,
+                                connectorName: connector.displayName,
                               },
                             )
                           : t(
@@ -8093,76 +7965,176 @@ function ConnectorsPopoverButton({
                                 return $.chat.connectors.add;
                               },
                               {
-                                connectorName: connector.label,
+                                connectorName: connector.displayName,
                               },
                             )
                       }
                     />
                   );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-        {vncRows.state === "hasError" && (
-          <div className="px-3 py-2">
-            <VncLoadError />
-          </div>
-        )}
-        {sshRows.state === "hasError" && (
-          <div className="px-3 py-2">
-            <SshLoadError />
-          </div>
-        )}
-        <div className="flex shrink-0 flex-col p-1">
-          {(connectorItems.length > 0 || connectorsLoading) && (
-            <div className="mx-2 mb-1 border-t border-border/50" />
+                }
+                const connector = item.connector;
+                const accountAction = connector.authorized ? (
+                  <ComposerConnectorAccountAction
+                    signals={signals}
+                    actions={actions}
+                    item={item}
+                  />
+                ) : null;
+                const showPermissionAction =
+                  Boolean(agentId) &&
+                  connector.authorized &&
+                  connector.hasPermissions;
+                return (
+                  <ComposerConnectorAccessRow
+                    key={connector.slug}
+                    icon={<ConnectorIcon icon={connector.icon} size={16} />}
+                    connectorLabel={connector.label}
+                    actions={
+                      showPermissionAction || accountAction ? (
+                        <>
+                          {accountAction}
+                          {showPermissionAction ? (
+                            <PopoverClose
+                              render={
+                                <Button
+                                  showTooltip
+                                  type="button"
+                                  onClick={() => {
+                                    updateConnectorUi({
+                                      permissionConnectorSlug: connector.slug,
+                                    });
+                                  }}
+                                  aria-label={t(
+                                    ($) => {
+                                      return $.chat.connectors
+                                        .configurePermissions;
+                                    },
+                                    { connectorName: connector.label },
+                                  )}
+                                  variant="quiet"
+                                  size="icon-2xs"
+                                  className="shrink-0"
+                                >
+                                  <SlidersHorizontal size={15} />
+                                </Button>
+                              }
+                            />
+                          ) : null}
+                        </>
+                      ) : null
+                    }
+                    checked={connector.authorized}
+                    onCheckedChange={onDomEventFn(async (checked) => {
+                      await handleToggle(connector.slug, checked);
+                    })}
+                    loading={actions.savingAuthorization}
+                    ariaLabel={
+                      connector.authorized
+                        ? t(
+                            ($) => {
+                              return $.chat.connectors.remove;
+                            },
+                            {
+                              connectorName: connector.label,
+                            },
+                          )
+                        : t(
+                            ($) => {
+                              return $.chat.connectors.add;
+                            },
+                            {
+                              connectorName: connector.label,
+                            },
+                          )
+                    }
+                  />
+                );
+              })}
+            </div>
           )}
-          <PopoverClose
-            render={
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 px-2 py-1.5 rounded-md text-sm text-foreground hover:bg-state-hover transition-colors"
-                onClick={() => {
-                  return onOpenAddDialog();
-                }}
-              >
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-border/60 text-muted-foreground">
-                  <Plus size={13} />
-                </span>
-                {t(($) => {
-                  return $.chat.connectors.addConnectors;
-                })}
-              </button>
-            }
-          />
         </div>
-        {computerUse && (
-          <ComputerUseConnectorMenuSection
-            computerUse={computerUse}
-            onOpenDownloadDialog={() => {
-              setDownloadDialogOpen(true);
-            }}
-          />
+      )}
+      {vncRows.state === "hasError" && (
+        <div className="px-3 py-2">
+          <VncLoadError />
+        </div>
+      )}
+      {sshRows.state === "hasError" && (
+        <div className="px-3 py-2">
+          <SshLoadError />
+        </div>
+      )}
+      <div className="flex shrink-0 flex-col p-1">
+        {(connectorItems.length > 0 || connectorsLoading) && (
+          <div className="mx-2 mb-1 border-t border-border/50" />
         )}
-      </PopoverContent>
-      <OptionalComputerUseDownloadDialog
-        computerUse={computerUse}
-        open={downloadDialogOpen}
-        onOpenChange={setDownloadDialogOpen}
-      />
-      {agentId && permissionConnector && (
-        <ComposerConnectorPermissionDialog
-          signals={signals}
-          agentId={agentId}
-          agentDisplayName={agentDisplayName}
-          connector={permissionConnector}
-          onClose={() => {
-            updateConnectorUi({ permissionConnectorSlug: null });
+        <PopoverClose
+          render={
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-2 py-1.5 rounded-md text-sm text-foreground hover:bg-state-hover transition-colors"
+              onClick={() => {
+                return onOpenAddDialog();
+              }}
+            >
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-border/60 text-muted-foreground">
+                <Plus size={13} />
+              </span>
+              {t(($) => {
+                return $.chat.connectors.addConnectors;
+              })}
+            </button>
+          }
+        />
+      </div>
+      {computerUse && (
+        <ComputerUseConnectorMenuSection
+          computerUse={computerUse}
+          onOpenDownloadDialog={() => {
+            onOpenDownloadDialog();
           }}
         />
       )}
-    </Popover>
+    </div>
+  );
+}
+
+/**
+ * The permission dialog a connector row opens. It outlives the popover that
+ * opened it, so it reads the agent's connectors itself.
+ */
+function ComposerConnectorPermissionDialogSlot({
+  signals,
+  connectorSlug,
+}: {
+  signals: ComposerSignals;
+  connectorSlug: ConnectorSlug;
+}) {
+  const agentId = signals.agentId;
+  const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
+  const connectorData = useLastResolved(signals.connector.data$);
+  const agents = useLastResolved(agents$) ?? [];
+  const { agentConnectors } = resolveComposerAgentConnectors(connectorData);
+  const permissionConnector = agentConnectors.find((connector) => {
+    return connector.slug === connectorSlug;
+  });
+  if (!permissionConnector) {
+    return null;
+  }
+  return (
+    <ComposerConnectorPermissionDialog
+      signals={signals}
+      agentId={agentId}
+      agentDisplayName={
+        agents.find((agent) => {
+          return agent.agentId === agentId;
+        })?.displayName ?? ""
+      }
+      connector={permissionConnector}
+      onClose={() => {
+        updateConnectorUi({ permissionConnectorSlug: null });
+      }}
+    />
   );
 }
 
@@ -8774,24 +8746,54 @@ function useComposerTemplatePicker(
   signals: ComposerSignals,
 ): ComposerTemplatePicker {
   const insertTemplate = useSet(signals.template.insertTemplate$);
-  const importedTemplates = useImportedPresentationTemplates(signals);
-  const customTemplates = useCustomTemplateCatalog();
+  const loadImportedTemplates = useSet(
+    signals.template.loadImportedPresentationTemplates$,
+  );
+  const loadCustomTemplates = useSet(loadCustomTemplateCatalog$);
   const notifyDraftChanged = useComposerDraftChange(signals);
+  const pageSignal = useGet(pageSignal$);
+  const insert = (
+    value: GenerationTemplateRequest,
+    attachment: ComposerTemplateAttachment | undefined,
+  ) => {
+    if (!attachment) {
+      return;
+    }
+    insertTemplate(value, attachment);
+    notifyDraftChanged();
+  };
   return {
     onChange(value) {
       if (!value) {
         return;
       }
-      const attachment = selectedComposerTemplateAttachment(
-        value,
-        importedTemplates,
-        customTemplates,
-      );
-      if (!attachment) {
+      // Built-in templates resolve without a catalog. Uploaded and custom ones
+      // read theirs only now, so rendering the composer never requests them.
+      const builtIn = selectedComposerTemplateAttachment(value);
+      if (
+        builtIn ||
+        (value.type !== "custom" && value.type !== "presentation")
+      ) {
+        insert(value, builtIn);
         return;
       }
-      insertTemplate(value, attachment);
-      notifyDraftChanged();
+      detach(
+        (async () => {
+          const attachment =
+            value.type === "custom"
+              ? selectedComposerTemplateAttachment(
+                  value,
+                  [],
+                  await loadCustomTemplates(pageSignal),
+                )
+              : selectedComposerTemplateAttachment(
+                  value,
+                  await loadImportedTemplates(pageSignal),
+                );
+          insert(value, attachment);
+        })(),
+        Reason.DomCallback,
+      );
     },
   };
 }
@@ -9924,32 +9926,23 @@ interface ResolvedComposerConnectorCollections {
   >;
   readonly unconnectedConnectors: PlatformConnectorCatalogStatusItem[];
   readonly unconnectedCustomConnectors: CustomConnectorResponse[];
-  readonly agentConnectors: ComposerConnectorItem[];
-  readonly agentCustomConnectors: ComposerCustomConnectorItem[];
   readonly directoryConnected: PlatformConnectorCatalogStatusItem[];
   readonly directoryConnectedCustom: CustomConnectorResponse[];
   readonly selectedCustomConnector: CustomConnectorResponse | undefined;
 }
 
 function resolveComposerConnectorCollections({
-  connectedBuiltins,
-  connectedCustom,
   addDialogCatalogItems,
   addDialogCustomConnectors,
   authorizedConnectorSlugs,
-  customConnectorIds,
   selectedCustomConnectorId,
 }: {
-  connectedBuiltins: readonly BuiltinConnectorBrief[];
-  connectedCustom: readonly CustomConnectorBrief[];
   addDialogCatalogItems: readonly PlatformConnectorCatalogStatusItem[];
   addDialogCustomConnectors: readonly CustomConnectorResponse[];
   authorizedConnectorSlugs: readonly ConnectorSlug[] | null;
-  customConnectorIds: readonly string[] | null;
   selectedCustomConnectorId: string | null;
 }): ResolvedComposerConnectorCollections {
   const authorizedSet = new Set(authorizedConnectorSlugs ?? []);
-  const authorizedCustomSet = new Set(customConnectorIds ?? []);
   const connectorMap = new Map(
     addDialogCatalogItems.map((connector) => {
       return [connector.slug, connector];
@@ -9965,18 +9958,6 @@ function resolveComposerConnectorCollections({
       );
     },
   );
-  const agentConnectors = connectedBuiltins.map((connector) => {
-    return {
-      ...connector,
-      authorized: authorizedSet.has(connector.slug),
-    };
-  });
-  const agentCustomConnectors = connectedCustom.map((connector) => {
-    return {
-      ...connector,
-      authorized: authorizedCustomSet.has(connector.id),
-    };
-  });
   const directoryConnected = addDialogCatalogItems.filter((connector) => {
     return connector.connected;
   });
@@ -9995,8 +9976,6 @@ function resolveComposerConnectorCollections({
     connectorMap,
     unconnectedConnectors,
     unconnectedCustomConnectors,
-    agentConnectors,
-    agentCustomConnectors,
     directoryConnected,
     directoryConnectedCustom,
     selectedCustomConnector,
@@ -10172,10 +10151,54 @@ function ComposerConnectorsSlot({
   actions: ComposerConnectorActions;
 }) {
   const computerUse = useComposerComputerUse(signals);
+  const connectorUi = useGet(signals.connector.connectorUiState$);
+  const openAddConnectorsDialog = useSet(
+    signals.connector.openAddConnectorsDialog$,
+  );
+  const dialogsOpen =
+    connectorUi.showAddDialog ||
+    connectorUi.selectedConnector !== null ||
+    connectorUi.selectedCustomConnectorId !== null;
+  return (
+    <>
+      <ConnectorsPopoverButton
+        signals={signals}
+        actions={actions}
+        computerUse={computerUse}
+        onOpenAddDialog={openAddConnectorsDialog}
+      />
+      {connectorUi.permissionConnectorSlug !== null && (
+        <ComposerConnectorPermissionDialogSlot
+          signals={signals}
+          connectorSlug={connectorUi.permissionConnectorSlug}
+        />
+      )}
+      {dialogsOpen && (
+        <ComposerConnectorDialogsSlot signals={signals} actions={actions} />
+      )}
+    </>
+  );
+}
+
+/**
+ * The add, directory and connect dialogs. Mounted only while one is open,
+ * because they are what needs the connector catalog and the agent's access.
+ */
+function ComposerConnectorDialogsSlot({
+  signals,
+  actions,
+}: {
+  signals: ComposerSignals;
+  actions: ComposerConnectorActions;
+}) {
   const { t } = useTranslation();
   const connectorDirectoryEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ConnectorDirectory] === true;
-  const connectorData = useLastResolved(signals.connector.data$);
+  const lastConnectorData = useLastResolved(signals.connector.data$);
+  const connectorData =
+    lastConnectorData?.authorization.agentId === signals.agentId
+      ? lastConnectorData
+      : undefined;
   const addDialogCatalog = useLastResolved(signals.connector.addDialogCatalog$);
   const addDialogBrowseCatalog = useLastResolved(
     signals.connector.addDialogBrowseCatalog$,
@@ -10191,9 +10214,6 @@ function ComposerConnectorsSlot({
   const agents = useLastResolved(agents$) ?? [];
   const connectorUi = useGet(signals.connector.connectorUiState$);
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
-  const openAddConnectorsDialog = useSet(
-    signals.connector.openAddConnectorsDialog$,
-  );
   const invalidateConnectorOverview = useSet(invalidateConnectorOverview$);
   const invalidateAgentConnectors = useSet(invalidateAgentConnectorAccess$);
 
@@ -10212,19 +10232,14 @@ function ComposerConnectorsSlot({
     connectorMap,
     unconnectedConnectors,
     unconnectedCustomConnectors,
-    agentConnectors,
-    agentCustomConnectors,
     directoryConnected,
     directoryConnectedCustom,
     selectedCustomConnector,
   } = resolveComposerConnectorCollections({
-    connectedBuiltins: connectorData?.overview.builtinConnectors ?? [],
-    connectedCustom: connectorData?.overview.customConnectors ?? [],
     addDialogCatalogItems,
     addDialogCustomConnectors,
     authorizedConnectorSlugs:
       connectorData?.authorization.enabledConnectorSlugs ?? null,
-    customConnectorIds: connectorData?.authorization.customConnectorIds ?? null,
     selectedCustomConnectorId,
   });
   const selectedConnector = connectorUi.selectedConnector ?? undefined;
@@ -10342,50 +10357,8 @@ function ComposerConnectorsSlot({
     };
   };
 
-  const handleToggle = async (
-    connectorSlug: ConnectorSlug,
-    checked: boolean,
-  ) => {
-    await setConnectorAuthorization(
-      { kind: "builtin", connectorSlug },
-      checked,
-      pageSignal,
-    );
-  };
-
-  const handleCustomToggle = async (connectorId: string, checked: boolean) => {
-    const connector = agentCustomConnectors.find((candidate) => {
-      return candidate.id === connectorId;
-    });
-    if (checked && connector?.permissionBundleRef) {
-      return;
-    }
-    await setConnectorAuthorization(
-      {
-        kind: "custom",
-        connectorId,
-        permissionBundleRef: connector?.permissionBundleRef ?? null,
-      },
-      checked,
-      pageSignal,
-    );
-  };
-
   return (
     <>
-      <ConnectorsPopoverButton
-        signals={signals}
-        agentId={agentRecordId}
-        agentDisplayName={displayName}
-        agentConnectors={agentConnectors}
-        agentCustomConnectors={agentCustomConnectors}
-        connectorsLoading={connectorData === undefined}
-        actions={actions}
-        computerUse={computerUse}
-        onOpenAddDialog={openAddConnectorsDialog}
-        onToggle={handleToggle}
-        onToggleCustom={handleCustomToggle}
-      />
       <ComposerConnectorConnectDialogs
         selectedConnector={selectedConnector}
         selectedConnectorAccountOptions={selectedConnectorAccountOptions}

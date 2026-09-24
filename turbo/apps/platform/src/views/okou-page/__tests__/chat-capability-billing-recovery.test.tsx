@@ -228,14 +228,16 @@ test("Let a paid workspace admin buy more credits", async () => {
     screen.findByText("You're out of credits"),
   ).resolves.toBeVisible();
   const frame = screen.getByTestId("assistant-error-card-shell");
-  expect(queryButton("$100", frame)).not.toBeInTheDocument();
-  click(button("Add credits", frame));
-  await screen.findByRole("dialog", { name: "You're out of credits" });
   for (const amount of ["$100", "$200", "$300"]) {
-    expect(button(amount)).toBeVisible();
+    expect(button(amount, frame)).toBeVisible();
   }
+  expect(button("Custom", frame)).toBeVisible();
+  expect(queryButton("Add credits", frame)).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("dialog", { name: "You're out of credits" }),
+  ).not.toBeInTheDocument();
 
-  click(button("$100"));
+  click(button("$100", frame));
 
   let review = await screen.findByRole("dialog", {
     name: "Review credit purchase",
@@ -247,13 +249,11 @@ test("Let a paid workspace admin buy more credits", async () => {
   });
   click(button("Cancel", review));
 
-  click(button("Custom"));
-  const creditOptions = screen.getByRole("dialog", {
-    name: "You're out of credits",
-  });
-  const customAmount = within(creditOptions).getByRole("textbox", {
+  click(button("Custom", frame));
+  const customAmount = within(frame).getByRole("textbox", {
     name: "Custom dollar amount",
   });
+  expect(customAmount).toBeVisible();
   await fill(customAmount, "250");
   click(button("Buy"));
 
@@ -281,6 +281,18 @@ test("Let a paid workspace admin buy more credits", async () => {
     0,
   );
   expect(checkoutRequests).toHaveLength(2);
+
+  await fill(customAmount, "275");
+  await user.type(customAmount, "{enter}");
+  review = await screen.findByRole("dialog", {
+    name: "Review credit purchase",
+  });
+  expect(within(review).getByText("$275.00")).toBeVisible();
+  expect(checkoutRequests[2]).toMatchObject({
+    credits: 275_000,
+    customAmount: true,
+  });
+  expect(window.location.search).not.toContain("customUsd");
 });
 
 test("Offer a plan upgrade when a limited workspace cannot buy top-ups", async () => {

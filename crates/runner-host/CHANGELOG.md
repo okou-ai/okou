@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.5](https://github.com/okou-ai/okou/compare/runner-host-v0.1.4...runner-host-v0.1.5) (2026-09-23)
+
+## [0.1.4](https://github.com/okou-ai/okou/compare/runner-host-v0.1.3...runner-host-v0.1.4) (2026-09-23)
+
+
+### Bug Fixes
+
+* **runner-host:** reserve shared runner home roots ([#36306](https://github.com/okou-ai/okou/issues/36306)) ([ad300ea](https://github.com/okou-ai/okou/commit/ad300ead839e56d8fd4455c541776b6b62c57817))
+
+
+### Refactoring
+
+* **runner:** extract runner-lifecycle crate ([#36367](https://github.com/okou-ai/okou/issues/36367)) ([8723701](https://github.com/okou-ai/okou/commit/8723701a50a0b0c17b4486412cbecf89b914dda1))
+
 ## [0.1.3](https://github.com/okou-ai/okou/compare/runner-host-v0.1.2...runner-host-v0.1.3) (2026-09-23)
 
 ## [0.1.2](https://github.com/okou-ai/okou/compare/runner-host-v0.1.1...runner-host-v0.1.2) (2026-09-22)

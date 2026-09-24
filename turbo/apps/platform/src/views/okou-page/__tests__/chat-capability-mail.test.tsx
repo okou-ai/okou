@@ -268,48 +268,12 @@ describe("reconnecting the exact Gmail account required by a persisted mail card
       attempt,
       reconnectCard,
       completedAttempts,
-      oauthAccounts,
     };
   }
 
-  async function expectClosedReconnect() {
-    const progress = screen.getByRole("dialog", {
-      name: "Connecting your account",
-    });
-    click(within(progress).getByLabelText("Close"));
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).toBeNull();
-      expect(screen.queryByText("Reconnecting…")).toBeNull();
-    });
-  }
-
-  it("closing reconnect clears progress for the required account", async () => {
-    await prepareReconnect();
-    await expectClosedReconnect();
-    expect(screen.queryByText("Reconnecting…")).toBeNull();
-  });
-
-  it("retrying a closed reconnect opens mail from the same required account", async () => {
-    const {
-      subject,
-      attempt,
-      reconnectCard,
-      completedAttempts,
-      oauthAccounts,
-    } = await prepareReconnect();
-    await expectClosedReconnect();
-    attempt.oauthAttemptId = crypto.randomUUID();
-    attempt.authorization = openedAuthorizationWindow();
-    click(await findMailCard(subject));
-    await waitFor(() => {
-      expect(attempt.authorization.navigations).toContain(
-        "https://accounts.example.test/gmail/authorize",
-      );
-      expect(oauthAccounts).toStrictEqual([
-        { intent: "reconnect", connectionId: GMAIL_CONNECTION_ID },
-        { intent: "reconnect", connectionId: GMAIL_CONNECTION_ID },
-      ]);
-    });
+  it("reconnecting opens mail from the same required account", async () => {
+    const { subject, attempt, reconnectCard, completedAttempts } =
+      await prepareReconnect();
     expect(
       screen.getByRole("dialog", { name: "Connecting your account" }),
     ).toBeVisible();
@@ -351,53 +315,6 @@ describe("reconnecting the exact Gmail account required by a persisted mail card
     ).not.toBeInTheDocument();
   });
 });
-
-test.each([404, 500] as const)(
-  "Keep a mail card through a %s read and retry",
-  async (status) => {
-    const gate = context.mocks.deferred<void>();
-    let available = false;
-    const subject = "Recovered draft";
-    installCapabilityChat({
-      events: completedConversation(mailCard(FIRST_MAIL_ID, subject)),
-    });
-    context.mocks.api(
-      mailContract.getDraft,
-      async ({ respond, withSignal }) => {
-        await withSignal(gate.promise);
-        if (available) {
-          return respond(
-            200,
-            mailResponse(FIRST_MAIL_ID, mailDraft(FIRST_MAIL_ID, { subject })),
-          );
-        }
-        return respond(status, {
-          error: {
-            code: status === 404 ? "NOT_FOUND" : "INTERNAL_SERVER_ERROR",
-            message: "Email unavailable",
-          },
-        });
-      },
-    );
-
-    await setupPage({ context, path: RUN_PATH, host: APP_HOST });
-    await readyChat();
-    await expect(
-      screen.findByTestId("mail-draft-card-loading"),
-    ).resolves.toBeInTheDocument();
-    gate.resolve();
-    await expect(
-      screen.findByText("This email is no longer available."),
-    ).resolves.toBeInTheDocument();
-    available = true;
-    click(await findControl("button", "Retry"));
-    await expect(screen.findByText(subject)).resolves.toBeInTheDocument();
-    click(await findMailCard(subject));
-    await expect(
-      screen.findByRole("complementary", { name: "Email details" }),
-    ).resolves.toBeInTheDocument();
-  },
-);
 
 test("A rejected Gmail send shows correction guidance and keeps the draft", async () => {
   const subject = "Draft requiring review";

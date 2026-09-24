@@ -45,6 +45,11 @@ function VncProfileLabel({ profile }: { readonly profile: VncProfile }) {
         return $.vnc.security.x509Plain;
       });
     }
+    case "apple_dh": {
+      return t(($) => {
+        return $.vnc.security.appleDh;
+      });
+    }
   }
   void (profile satisfies never);
   return null;
@@ -65,6 +70,11 @@ function VncAuthenticationLabel({
     case "username_password": {
       return t(($) => {
         return $.vnc.credential.usernamePasswordMethod;
+      });
+    }
+    case "apple_dh_username_password": {
+      return t(($) => {
+        return $.vnc.credential.appleDhMethod;
       });
     }
   }
@@ -126,13 +136,15 @@ function VncHostCard({
         {": "}
         {destination}
       </p>
-      <p className="break-all text-sm">
-        {t(($) => {
-          return $.vnc.security.serverName;
-        })}
-        {": "}
-        {connection.security.serverName ?? connection.host}
-      </p>
+      {connection.security.type === "apple_dh" ? null : (
+        <p className="break-all text-sm">
+          {t(($) => {
+            return $.vnc.security.serverName;
+          })}
+          {": "}
+          {connection.security.serverName ?? connection.host}
+        </p>
+      )}
       <p className="break-all text-sm text-muted-foreground">
         {connection.credentialName}
       </p>
@@ -142,14 +154,19 @@ function VncHostCard({
         <VncAuthenticationLabel
           method={vncAuthMethodForProfile(connection.security.type)}
         />
-        {" · "}
-        {connection.security.trust.mode === "system"
-          ? t(($) => {
-              return $.vnc.security.system;
-            })
-          : t(($) => {
-              return $.vnc.security.custom;
-            })}
+        {connection.security.type === "apple_dh" ? null : (
+          <>
+            {" "}
+            {" · "}{" "}
+            {connection.security.trust.mode === "system"
+              ? t(($) => {
+                  return $.vnc.security.system;
+                })
+              : t(($) => {
+                  return $.vnc.security.custom;
+                })}
+          </>
+        )}
       </p>
       <div className="flex flex-wrap gap-2">
         <Button
@@ -257,7 +274,8 @@ function VncCredentialCard({
         {" · "}
         <VncAuthenticationLabel method={credential.authMethod} />
       </p>
-      {credential.authMethod === "username_password" && (
+      {(credential.authMethod === "username_password" ||
+        credential.authMethod === "apple_dh_username_password") && (
         <p className="break-all text-sm">{credential.username}</p>
       )}
       <VncCredentialImpact credential={credential} />

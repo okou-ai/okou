@@ -95,6 +95,7 @@ export function OnboardingStepLayout({
   onBack,
   trustPoints,
   footnote,
+  contentAlign = "center",
   children,
 }: {
   readonly currentStep: number;
@@ -111,6 +112,7 @@ export function OnboardingStepLayout({
   readonly trustPoints?: readonly string[];
   /** A line under the action, for a step that carries an offer or a note. */
   readonly footnote?: ReactNode;
+  readonly contentAlign?: "center" | "start";
   readonly children: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -152,7 +154,9 @@ export function OnboardingStepLayout({
           <div className="min-h-0 flex-1 overflow-y-auto p-6 lg:p-8">
             {/* Centred while it fits, scrolled from the top when it does
                 not. */}
-            <div className="flex min-h-full flex-col justify-center">
+            <div
+              className={`flex min-h-full flex-col ${contentAlign === "start" ? "justify-start" : "justify-center"}`}
+            >
               {children}
             </div>
           </div>

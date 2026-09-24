@@ -182,7 +182,7 @@ Do not rewrite 1093/1094, hot events, snapshots, or append another archive.
 | Chat and public-share pages              | Identified runless archives use a text tree with preserved whitespace, without HTML/Markdown interpretation, generated closing tags, or action cards. Copy/export retain the original source. |
 
 The remaining SQL content callers are run-scoped callback/session/incomplete-context
-readers, run-bound initial-thinking readers, or input/control/followup validation.
+readers or input/control/followup validation.
 Their selections and text/null/regex predicates retain the previous behavior.
 Title/followup context selection uses the provenance-aware projection because its
 thread-wide query can include runless historical output. No callback, queue,

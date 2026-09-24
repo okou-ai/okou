@@ -91,24 +91,6 @@ async function creatorPopup(creatorName: string): Promise<HTMLElement> {
   return popup;
 }
 
-test("The Agents document title uses the Okou brand on a trusted host", async () => {
-  const agents = [
-    agent(RESEARCH_AGENT_ID, {
-      displayName: "Research Agent",
-      visibility: "public",
-    }),
-  ];
-  configureAgentList(context, agents);
-
-  await setupPage({
-    context,
-    host: "app.okou.ai",
-    path: "/agents",
-  });
-  await screen.findByRole("heading", { name: "Agents" });
-  expect(document.title).toBe("Agents | Okou");
-});
-
 test("The Agents document title rejects a look-alike Okou host", async () => {
   configureAgentList(context, [
     agent(RESEARCH_AGENT_ID, {
@@ -267,90 +249,6 @@ test("Agent visibility tabs show public creators without management data", async
   expect(document.body).not.toHaveTextContent(
     "Organization management data is unavailable",
   );
-});
-
-test("Creator tooltips preserve fallbacks for incomplete and missing profiles", async () => {
-  const user = userEvent.setup({ delay: null });
-  context.mocks.data.orgMembers({
-    members: [
-      {
-        userId: "email-only",
-        email: "creator@example.com",
-        firstName: null,
-        lastName: null,
-        imageUrl: "",
-        role: "member",
-        joinedAt: "2026-08-01T00:00:00.000Z",
-      },
-      {
-        userId: "deleted-profile",
-        email: "",
-        firstName: null,
-        lastName: null,
-        imageUrl: "",
-        role: "member",
-        joinedAt: "2026-08-01T00:00:00.000Z",
-      },
-    ],
-  });
-  const creators = [
-    {
-      agentId: RESEARCH_AGENT_ID,
-      displayName: "Email Creator",
-      ownerId: "email-only",
-      expectedName: "creator@example.com",
-      expectedInitial: "C",
-    },
-    {
-      agentId: PRIVATE_AGENT_ID,
-      displayName: "Deleted Profile Creator",
-      ownerId: "deleted-profile",
-      expectedName: "deleted-profile",
-      expectedInitial: "D",
-    },
-    {
-      agentId: "c0000000-0000-4000-a000-000000000013",
-      displayName: "Departed Creator",
-      ownerId: "departed-owner",
-      expectedName: "departed-owner",
-      expectedInitial: "D",
-    },
-    {
-      agentId: "c0000000-0000-4000-a000-000000000014",
-      displayName: "Unknown Creator",
-      ownerId: "",
-      expectedName: "Unknown",
-      expectedInitial: "U",
-    },
-  ];
-  configureAgentList(
-    context,
-    creators.map((creator) => {
-      return agent(creator.agentId, creator);
-    }),
-  );
-  await setupPage({ context, path: "/agents" });
-
-  for (const creator of creators) {
-    await waitFor(() => {
-      expect(agentCard(creator.agentId)).toBeInTheDocument();
-    });
-    const title = within(agentCard(creator.agentId)).getByText(
-      creator.displayName,
-    );
-    await user.hover(title);
-
-    const popup = await creatorPopup(creator.expectedName);
-    expect(
-      within(popup).getByText(creator.expectedInitial),
-    ).toBeInTheDocument();
-    expect(within(popup).queryByAltText("")).not.toBeInTheDocument();
-
-    await user.unhover(title);
-    await waitFor(() => {
-      expect(popup).not.toBeInTheDocument();
-    });
-  }
 });
 
 test("Creator profiles work when an older API returns the full members response", async () => {

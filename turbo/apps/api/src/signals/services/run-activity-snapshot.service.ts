@@ -1,4 +1,3 @@
-import { FeatureSwitchKey, isFeatureEnabled } from "@okouai/core";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { runActivitySnapshots } from "@okouai/db/schema/run-activity-snapshot";
@@ -15,7 +14,6 @@ import { activityRevision, mergeActivity } from "../../lib/run-activity";
 import { writeDb$, type Db } from "../external/db";
 import { settleIncludingAbort } from "../utils";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
   AgentEventRunNotFoundError,
   RunContentOwnershipChangedError,
@@ -40,17 +38,6 @@ async function activityTransaction<T>(
     await tx.execute(sql`SET LOCAL statement_timeout = '3s'`);
     return await work(tx);
   });
-}
-
-export async function activityEnabled(
-  db: Pick<Db, "select">,
-  orgId: string,
-  userId: string,
-): Promise<boolean> {
-  return isFeatureEnabled(
-    FeatureSwitchKey.ThreadActivitySummary,
-    await loadUserFeatureSwitchContext(db, orgId, userId),
-  );
 }
 
 export interface ActivityRunIdentity {
@@ -175,9 +162,6 @@ export const captureRunActivity$ = command(
         identity,
         ownership,
         async (tx) => {
-          if (!(await activityEnabled(tx, identity.orgId, identity.userId))) {
-            return;
-          }
           signal.throwIfAborted();
           const row = await lockActivitySnapshot(tx, payload.runId);
           const expired = row.expiresAt <= row.clock;
@@ -232,7 +216,7 @@ export const captureRunActivity$ = command(
   },
 );
 
-/** Indexed, one-batch maintenance; disabled accounts still get expiry cleanup. */
+/** Indexed, one-batch maintenance for expired snapshots. */
 export const cleanupExpiredRunActivity$ = command(
   async ({ set }, runIds: readonly string[] | null, signal: AbortSignal) => {
     const db = set(writeDb$);

@@ -2069,6 +2069,57 @@ fn cli_failure_reason_classifies_claude_monthly_spend_limit() {
 }
 
 #[test]
+fn cli_failure_reason_classifies_claude_personal_monthly_spend_limit_result() {
+    let message = "You've hit your monthly spend limit. Switch to another model to continue.";
+    let diagnostic = FailureDiagnostic::new(
+        FailureClass::CliNonzero,
+        AgentFramework::ClaudeCode,
+        PromptMetadata::from_prompt("plain prompt"),
+    )
+    .with_cli_exit_code(1)
+    .with_failure_detail_source(FailureDetailSource::ClaudeResult);
+    let failure_message =
+        selected_failure_message(message, FailureDetailSource::ClaudeResult, None);
+
+    let classified = with_cli_failure_reason(diagnostic, &failure_message);
+
+    assert_eq!(classified.failure_class, FailureClass::CliNonzero);
+    assert_eq!(classified.failure_reason, Some(FailureReason::UsageLimit));
+    assert_eq!(
+        classified.failure_detail_source,
+        Some(FailureDetailSource::ClaudeResult)
+    );
+}
+
+#[test]
+fn cli_failure_reason_keeps_other_personal_spend_limit_text_unclassified() {
+    let exact_message = "You've hit your monthly spend limit. Switch to another model to continue.";
+    for (framework, source, message) in [
+        (
+            AgentFramework::Codex,
+            FailureDetailSource::CodexJsonl,
+            exact_message,
+        ),
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::Stderr,
+            exact_message,
+        ),
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::ClaudeResult,
+            "You've hit your monthly spend limit while loading a local file.",
+        ),
+    ] {
+        assert_eq!(
+            super::classify_cli_failure_reason(framework, source, message),
+            None,
+            "framework={framework:?}, source={source:?}, message={message}"
+        );
+    }
+}
+
+#[test]
 fn cli_failure_reason_ignores_codex_monthly_spend_limit_text() {
     let reason = classify_cli_failure_reason(
         AgentFramework::Codex,

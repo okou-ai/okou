@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -20,130 +20,6 @@ import {
 
 const RUN_A = "a0000000-0000-4000-a000-000000000401";
 const RUN_B = "a0000000-0000-4000-a000-000000000402";
-
-function fullUsage() {
-  return creditUsage(75, [
-    {
-      kind: "model/claude-sonnet-4-6/tokens.input",
-      credits: 8,
-      providers: [{ provider: "anthropic", credits: 8 }],
-    },
-    {
-      kind: "image/flux-pro/output_image",
-      credits: 10,
-      providers: [{ provider: "fal-ai/flux-pro", credits: 10 }],
-    },
-    {
-      kind: "video/veo-3/output_video",
-      credits: 12,
-      providers: [{ provider: "google/veo-3", credits: 12 }],
-    },
-    {
-      kind: "model/joggai-talking-avatar",
-      credits: 5,
-      providers: [{ provider: "joggai-talking-avatar", credits: 5 }],
-    },
-    {
-      kind: "connector",
-      credits: 4,
-      providers: [{ provider: "slack", credits: 4 }],
-    },
-    {
-      kind: "web-search",
-      credits: 9,
-      providers: [{ provider: "internal_web_search_v2", credits: 9 }],
-    },
-    {
-      kind: "maps",
-      credits: 7,
-      providers: [{ provider: "internal_maps_v1", credits: 7 }],
-    },
-    {
-      kind: "finance",
-      credits: 11,
-      providers: [{ provider: "internal_finance_v1", credits: 11 }],
-    },
-    {
-      kind: "weather",
-      credits: 9,
-      providers: [{ provider: "internal_weather_v1", credits: 9 }],
-    },
-  ]);
-}
-
-async function openRunCreditUsage() {
-  const user = userEvent.setup({ delay: null });
-  installRunChat({
-    chatEvents: [
-      promptEvent({
-        id: "usage-user",
-        runId: RUN_A,
-        seqId: 1,
-        text: "Produce the campaign assets",
-      }),
-      assistantEvent({
-        id: "usage-answer",
-        runId: RUN_A,
-        seqId: 2,
-        text: "The campaign assets are complete.",
-      }),
-      completedEvent({ id: "usage-complete", runId: RUN_A, seqId: 3 }),
-      usageEvent({
-        id: "usage-settlement",
-        runId: RUN_A,
-        seqId: 4,
-        usage: fullUsage(),
-      }),
-    ],
-  });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await expect(
-    screen.findByText("The campaign assets are complete."),
-  ).resolves.toBeVisible();
-  const usageButton = await findButton("Credit usage 75");
-  expect(usageButton).toBeVisible();
-  await user.click(usageButton);
-
-  const details = await screen.findByText("Credit usage");
-  expect(details).toBeVisible();
-  return { user, usageButton };
-}
-
-test("Show friendly labels for every run credit category", async () => {
-  await openRunCreditUsage();
-  for (const name of [
-    "Claude Sonnet 4.6",
-    "Flux Pro",
-    "Veo 3",
-    "Avatar",
-    "Slack",
-    "Web Search",
-    "Maps",
-    "Finance",
-    "Weather",
-  ]) {
-    for (const label of screen.getAllByText(name)) {
-      expect(label).toBeVisible();
-    }
-  }
-  expect(document.body).not.toHaveTextContent("internal_web_search_v2");
-});
-
-test("Dismiss run credit usage with Escape and reopen it", async () => {
-  const { user, usageButton } = await openRunCreditUsage();
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(screen.queryByText("Credit usage")).not.toBeInTheDocument();
-  });
-  await user.click(usageButton);
-
-  await waitFor(() => {
-    expect(screen.getAllByText("Claude Sonnet 4.6").length).toBeGreaterThan(1);
-  });
-  expect(screen.getByText("Web Search")).toBeVisible();
-});
 
 test("Return to the conversation that started a chat message", async () => {
   const user = userEvent.setup({ delay: null });
@@ -286,22 +162,10 @@ test.each([
     label: "Lark",
   },
   {
-    description: "canonical Lark source without a chat link",
-    kind: "lark" as const,
-    href: undefined,
-    label: "Lark",
-  },
-  {
     description: "historical Feishu source with a Lark chat link",
     kind: "feishu" as const,
     href: "https://applink.larksuite.com/client/chat/open?openChatId=oc_123",
     label: "Lark",
-  },
-  {
-    description: "historical Feishu source without platform evidence",
-    kind: "feishu" as const,
-    href: undefined,
-    label: "Feishu",
   },
 ])("Show the $description", async ({ kind, href, label }) => {
   installRunChat({

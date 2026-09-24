@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use super::{
     Failure, Scope, VncRuntime,
-    authority::Transport,
+    authority::{Authentication, Transport},
     network,
     protocol::{Info, Start},
 };
@@ -211,13 +211,27 @@ impl Run {
             }
         };
         let authenticated = scope
-            .wait_deadline_aware(rfb_client::authenticate(
-                stream,
-                &credential.server_name,
-                credential.authentication,
-                credential.roots,
-                scope.deadline,
-            ))
+            .wait_deadline_aware(async {
+                match credential.authentication {
+                    Authentication::X509 {
+                        server_name,
+                        authentication,
+                        roots,
+                    } => {
+                        rfb_client::authenticate(
+                            stream,
+                            &server_name,
+                            authentication,
+                            roots,
+                            scope.deadline,
+                        )
+                        .await
+                    }
+                    Authentication::AppleDh(credentials) => {
+                        rfb_client::authenticate_apple_dh(stream, credentials, scope.deadline).await
+                    }
+                }
+            })
             .await?
             .map_err(|error| {
                 if let rfb_client::Error::AuthenticationDeadlineExceeded { stage } = &error {

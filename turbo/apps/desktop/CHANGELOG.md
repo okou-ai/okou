@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.48.138](https://github.com/okou-ai/okou/compare/desktop-v0.48.137...desktop-v0.48.138) (2026-09-24)
+
+
+### Bug Fixes
+
+* **desktop:** renew verified sessions without restarting computer use ([#36431](https://github.com/okou-ai/okou/issues/36431)) ([c788e68](https://github.com/okou-ai/okou/commit/c788e68fdd564eb427e3c857eca4720bef4bcddb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.500.0
+
+## [0.48.137](https://github.com/okou-ai/okou/compare/desktop-v0.48.136...desktop-v0.48.137) (2026-09-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.499.0
+
+## [0.48.136](https://github.com/okou-ai/okou/compare/desktop-v0.48.135...desktop-v0.48.136) (2026-09-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.498.1
+
+## [0.48.135](https://github.com/okou-ai/okou/compare/desktop-v0.48.134...desktop-v0.48.135) (2026-09-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.498.0
+
+## [0.48.134](https://github.com/okou-ai/okou/compare/desktop-v0.48.133...desktop-v0.48.134) (2026-09-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.497.1
+
 ## [0.48.133](https://github.com/okou-ai/okou/compare/desktop-v0.48.132...desktop-v0.48.133) (2026-09-23)
 
 

@@ -1,5 +1,98 @@
 # Changelog
 
+## [9.357.3](https://github.com/okou-ai/okou/compare/cli-v9.357.2...cli-v9.357.3) (2026-09-24)
+
+
+### Bug Fixes
+
+* **cli:** streamline website publish instructions ([#36452](https://github.com/okou-ai/okou/issues/36452)) ([eadcdc9](https://github.com/okou-ai/okou/commit/eadcdc9167ea2387f5a3a28efc6005fcf911c1d5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.500.0
+    * @okouai/connectors bumped to 3.15.3
+    * @okouai/core bumped to 8.706.0
+    * @okouai/pi-agent-runtime bumped to 1.40.3
+
+## [9.357.2](https://github.com/okou-ai/okou/compare/cli-v9.357.1...cli-v9.357.2) (2026-09-23)
+
+
+### Performance Improvements
+
+* load connector catalog data only where it renders ([#36391](https://github.com/okou-ai/okou/issues/36391)) ([0a61ba4](https://github.com/okou-ai/okou/commit/0a61ba404f2bfb5a4b9b4883d63db6d73b094eb2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.499.0
+    * @okouai/core bumped to 8.705.0
+    * @okouai/pi-agent-runtime bumped to 1.40.2
+
+## [9.357.1](https://github.com/okou-ai/okou/compare/cli-v9.357.0...cli-v9.357.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **connector-check:** support aws firewall diagnostics ([#36324](https://github.com/okou-ai/okou/issues/36324)) ([f7149e3](https://github.com/okou-ai/okou/commit/f7149e311fe55bc099268a108c207d18a8a39e47))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.498.1
+    * @okouai/connectors bumped to 3.15.2
+    * @okouai/core bumped to 8.704.1
+    * @okouai/pi-agent-runtime bumped to 1.40.1
+
+## [9.357.0](https://github.com/okou-ai/okou/compare/cli-v9.356.2...cli-v9.357.0) (2026-09-23)
+
+
+### Features
+
+* move chat thread snapshots to r2 ([#36320](https://github.com/okou-ai/okou/issues/36320)) ([f5f5d6a](https://github.com/okou-ai/okou/commit/f5f5d6aec5358f740258c478dda7215485bc26b9))
+* **pi:** upgrade to 0.87.1 and admit new models ([#36239](https://github.com/okou-ai/okou/issues/36239)) ([4a51b9b](https://github.com/okou-ai/okou/commit/4a51b9be36b393c55a9339250fd1d9d692f14a7d))
+
+
+### Bug Fixes
+
+* **social:** respect socialkit collection outcomes ([#36338](https://github.com/okou-ai/okou/issues/36338)) ([b670935](https://github.com/okou-ai/okou/commit/b670935e0c5985b320e17b71284707f44c70d84d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.498.0
+    * @okouai/core bumped to 8.704.0
+    * @okouai/pi-agent-runtime bumped to 1.40.0
+
+## [9.356.2](https://github.com/okou-ai/okou/compare/cli-v9.356.1...cli-v9.356.2) (2026-09-23)
+
+
+### Bug Fixes
+
+* prefer installed okou cli in agent instructions ([#36298](https://github.com/okou-ai/okou/issues/36298)) ([39f8244](https://github.com/okou-ai/okou/commit/39f8244b068c71322bf4803b3af23e50012ba348))
+
+
+### Refactoring
+
+* retire chat thread unreads get endpoint ([#36271](https://github.com/okou-ai/okou/issues/36271)) ([125f010](https://github.com/okou-ai/okou/commit/125f010e0c056b8051f04a5be40049dd5cafc2c6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.497.1
+    * @okouai/core bumped to 8.703.1
+    * @okouai/pi-agent-runtime bumped to 1.39.3
+
 ## [9.356.1](https://github.com/okou-ai/okou/compare/cli-v9.356.0...cli-v9.356.1) (2026-09-23)
 
 

@@ -153,6 +153,7 @@
      keyframes stay below in this stylesheet. */
   --animate-thinking-in: okou-thinking-in 0.3s ease-out;
   --animate-chat-skeleton-reveal: okou-chat-skeleton-reveal 0s 100ms forwards;
+  --animate-app-skeleton-bounce: okou-app-skeleton-bounce 1.2s infinite;
 
   /* Shimmer sweep for the thinking label, on the same contract. */
   --animate-shimmer: okou-shimmer 3.5s linear infinite;
@@ -648,6 +649,30 @@ body {
   }
 }
 
+/* Match the inline first-paint keyframes in index.html. */
+@keyframes okou-app-skeleton-bounce {
+  0% {
+    transform: none;
+    animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+  }
+  11% {
+    transform: translateY(-14px) scale(0.93, 1.07);
+    animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0);
+  }
+  22% {
+    transform: translateY(0) scale(1.08, 0.9);
+    animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+  }
+  30% {
+    transform: translateY(-4px) scale(0.98, 1.02);
+    animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0);
+  }
+  38%,
+  100% {
+    transform: none;
+  }
+}
+
 @keyframes okou-chat-skeleton-reveal {
   to {
     opacity: 1;
@@ -780,7 +805,7 @@ body {
   --okou-card-radius: 1.25rem;
   /* Cards rendered inside a chat message sit one level in from the page, so
      they take one step down the radius scale. */
-  --okou-chat-card-radius: 0.75rem;
+  --okou-chat-card-radius: 1rem;
   --okou-card-shadow:
     0 2px 12px hsl(30 6% 45% / 0.05), 0 0 0 0.5px hsl(30 6% 45% / 0.025);
   /* A card inside a message is not elevated off the page the way a page-level

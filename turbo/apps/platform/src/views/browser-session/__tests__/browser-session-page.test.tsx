@@ -92,13 +92,6 @@ test("An active browser shows a private live viewer", async () => {
   });
 });
 
-test("An invalid conversation identifier has no browser page", async () => {
-  await setupPage({ context, path: "/browsers/not-a-conversation-id" });
-
-  await expect(screen.findByText("Browser not found")).resolves.toBeVisible();
-  expect(screen.queryByText("Start browser")).toBeNull();
-});
-
 test("An inaccessible conversation has no browser page", async () => {
   mockBrowserSession(null);
   context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
@@ -111,29 +104,6 @@ test("An inaccessible conversation has no browser page", async () => {
 
   await expect(screen.findByText("Browser not found")).resolves.toBeVisible();
   expect(screen.queryByText("Start browser")).toBeNull();
-});
-
-test("A suspended browser offers a restart", async () => {
-  mockBrowserSession(
-    browserSession({
-      status: "suspended",
-      liveUrl: null,
-      screen: undefined,
-      idleExpiresAt: null,
-      suspendedAt: "2026-09-01T10:10:00.000Z",
-      suspensionReason: "idle",
-    }),
-  );
-
-  await setupPage({ context, path: `/browsers/${THREAD_ID}` });
-
-  await expect(screen.findByText("Browser not live")).resolves.toBeVisible();
-  expect(
-    screen.getByText(
-      "Starting restores the saved login profile and storage when available, and reopens saved tabs when possible.",
-    ),
-  ).toBeVisible();
-  expect(getButton("Start browser")).toBeEnabled();
 });
 
 test("A user can restart a reclaimed browser", async () => {

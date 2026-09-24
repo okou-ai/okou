@@ -1,4 +1,5 @@
 import {
+  CHAT_THREAD_SNAPSHOT_R2_HEADER,
   CLIENT_REQUEST_ID_HEADER,
   CLIENT_SESSION_ID_HEADER,
   CLIENT_TYPE_APP,
@@ -13,6 +14,7 @@ function createClientHeaders(clientVersion: string): Record<string, string> {
     [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
     [CLIENT_SESSION_ID_HEADER]: clientSessionId,
     [CLIENT_REQUEST_ID_HEADER]: crypto.randomUUID(),
+    [CHAT_THREAD_SNAPSHOT_R2_HEADER]: "1",
   };
 }
 

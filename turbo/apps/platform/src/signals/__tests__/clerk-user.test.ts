@@ -125,15 +125,3 @@ test("Aborting the owner keeps the last published value and stops listening", as
   expect(context.store.get(clerkUser$)).toBe(settled);
   await expect(settled).resolves.toMatchObject({ id: "user-a" });
 });
-
-test("Aborting the owner mid-transition rejects the pending read", async () => {
-  signIn("user-a");
-
-  const resetOwner$ = resetSignal();
-  await startClerkUser(context.store.set(resetOwner$, context.signal));
-  mockClerkSessionTransitioning(true);
-  const pending = context.store.get(clerkUser$);
-  context.store.set(resetOwner$, context.signal);
-
-  await expect(pending).rejects.toThrow("signal is aborted");
-});

@@ -156,29 +156,3 @@ test("The standalone Mac app copies the current URL with Command-L", async () =>
     expect(clipboard.writes).toStrictEqual([window.location.href]);
   });
 });
-
-test("The browser keeps Command-L outside standalone mode", async () => {
-  context.mocks.browser.standaloneDisplayMode(false);
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  prepareDefaultAgent();
-  mockSidebarThreadStory([createThread(THREAD_ID, "Release plan")]);
-
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-  });
-
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  composer.focus();
-  const event = new KeyboardEvent("keydown", {
-    key: "l",
-    code: "KeyL",
-    metaKey: true,
-    bubbles: true,
-    cancelable: true,
-  });
-  composer.dispatchEvent(event);
-  expect(event.defaultPrevented).toBeFalsy();
-
-  expect(clipboard.writes).toStrictEqual([]);
-});

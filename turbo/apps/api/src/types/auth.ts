@@ -6,12 +6,14 @@ type SessionAuthContext =
   | {
       readonly tokenType: "session";
       readonly userId: string;
+      readonly sessionId?: string;
       readonly orgId: string;
       readonly orgRole: ApiOrgRole;
     }
   | {
       readonly tokenType: "session";
       readonly userId: string;
+      readonly sessionId?: string;
       readonly orgId?: undefined;
       readonly orgRole?: undefined;
     };

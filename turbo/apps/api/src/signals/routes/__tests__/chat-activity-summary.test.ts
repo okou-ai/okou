@@ -2,7 +2,6 @@ import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/con
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { randomUUID } from "node:crypto";
-import { FeatureSwitchKey } from "@okouai/core";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -15,7 +14,6 @@ import {
   advanceRunActivityClockFixture,
   holdRunActivityFixture,
   holdRunActivityParentFixture,
-  expireRunActivityRetentionFixture,
   deleteRunActivitySnapshotFixture,
   cancelRunActivityWaiterFixture,
   readRunActivityBookkeepingFixture,
@@ -32,7 +30,6 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -84,17 +81,7 @@ function request(
 async function summarize(actor: ApiTestUser, run: TestRun) {
   return (await accept(request(actor, run), [200])).body;
 }
-async function enable(actor: ApiTestUser, enabled = true) {
-  if (!actor.orgId) {
-    throw new Error("Expected organization");
-  }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    { [FeatureSwitchKey.ThreadActivitySummary]: enabled },
-  );
-}
-async function fixture(enabled = true, prompt = "Prepare a launch checklist") {
+async function fixture(prompt = "Prepare a launch checklist") {
   const actor = bdd.user();
   callbacks.acceptChatObjectStorage();
   callbacks.disableVapid();
@@ -111,7 +98,6 @@ async function fixture(enabled = true, prompt = "Prepare a launch checklist") {
       visibility: "private",
     }),
   ]);
-  await enable(actor, enabled);
   const sent = await chat.requestSendEvent(
     actor,
     {
@@ -241,32 +227,19 @@ function brokenBody(error: Error) {
   );
 }
 describe("thread activity summary", () => {
-  it("enforces feature availability and ownership before cache or model exposure", async () => {
-    const f = await fixture(false);
+  it("enforces run ownership before cache or model exposure", async () => {
+    const f = await fixture();
     const inputs = provider();
-    await deliver(f, [tool(0, "must not be captured")]);
-    await accept(request(f.actor, f.run), [403]);
-    expect(inputs).toHaveLength(0);
-    await enable(f.actor);
-    const first = await summarize(f.actor, f.run);
-    expect(first).toMatchObject({
-      status: "available",
-      messages: [
-        {
-          id: "Preparing the launch checklist",
-          text: "Preparing the launch checklist",
-        },
-      ],
-    });
-    expect(inputs[0]!.activity).toStrictEqual([]);
     await accept(request(bdd.user({ orgId: f.actor.orgId }), f.run), [404]);
     await accept(
       request({ ...f.actor, orgId: `org_${randomUUID()}` }, f.run),
       [404],
     );
     await accept(request(f.actor, { ...f.run, runId: randomUUID() }), [404]);
-    await enable(f.actor, false);
-    await accept(request(f.actor, f.run), [403]);
+    expect(inputs).toHaveLength(0);
+    await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
+      status: "available",
+    });
     expect(inputs).toHaveLength(1);
   });
 
@@ -428,7 +401,6 @@ describe("thread activity summary", () => {
     expect(JSON.stringify(inputs)).toContain("launch checklist");
     expect(JSON.stringify(inputs)).toContain("search");
     expect(JSON.stringify(inputs)).not.toContain("PRIVATE_");
-    expect(JSON.stringify(inputs)).not.toContain("thinking:initial");
     await expect(summarize(f.actor, f.run)).resolves.toStrictEqual(first);
     const after = await chat.listThreadEvents(f.actor, f.run.threadId);
     expect(after.events).toStrictEqual(before.events);
@@ -592,49 +564,6 @@ describe("thread activity summary", () => {
     expect(inputs).toHaveLength(1);
   });
 
-  it("uses refreshed expiry to reset and claim expired evidence", async () => {
-    const f = await fixture();
-    await deliver(f, [tool(0, "expired tool evidence")]);
-    const inputs = provider((_input, index) => {
-      return `Reviewing launch task ${index}`;
-    });
-    await summarize(f.actor, f.run);
-    await advanceRunActivityClockFixture(f.run.runId, 24 * 60 * 60 * 1000 + 1);
-    const expired = await readRunActivityBookkeepingFixture(f.run.runId);
-    // The feature can be disabled while visible messages continue to arrive.
-    // This leaves the expired snapshot for the summary claim itself to reset.
-    await enable(f.actor, false);
-    await deliver(f, [
-      {
-        type: "assistant",
-        sequenceNumber: 1,
-        message: {
-          content: [{ type: "text", text: "Reviewing the new launch request" }],
-        },
-      },
-    ]);
-    await enable(f.actor);
-    const refreshed = await summarize(f.actor, f.run);
-    expect(refreshed).toMatchObject({
-      status: "available",
-      messages: [{ text: "Reviewing launch task 2" }],
-    });
-    expect(inputs[1]!.activity).toStrictEqual([]);
-    expect(inputs[1]!.messages).toContainEqual({
-      role: "assistant",
-      content: "Reviewing the new launch request",
-    });
-    const stored = await readRunActivityBookkeepingFixture(f.run.runId);
-    expect(stored!.expiresAt.getTime()).toBeGreaterThan(
-      expired!.expiresAt.getTime(),
-    );
-    expect(stored!.messageCursor).toBeGreaterThan(expired!.messageCursor);
-    expect(stored!.summaryRevision).not.toBe(expired!.summaryRevision);
-    expect(stored!.claimId).toBeNull();
-    await expect(summarize(f.actor, f.run)).resolves.toStrictEqual(refreshed);
-    expect(inputs).toHaveLength(2);
-  });
-
   it("leaves no new claim when unchanged retention cannot cover the attempt interval", async () => {
     const f = await fixture();
     const inputs = provider(() => {
@@ -658,67 +587,6 @@ describe("thread activity summary", () => {
     ).resolves.toStrictEqual(before);
     expect(inputs).toHaveLength(1);
   });
-
-  it.each(["cooldown", "live claim", "expired cooldown"] as const)(
-    "persists refresh-only context without replacing a %s",
-    async (state) => {
-      const f = await fixture();
-      const entered = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<string>(context.signal);
-      const inputs = provider(async () => {
-        entered.resolve(undefined);
-        return state === "live claim" ? await release.promise : "";
-      });
-      const first = settleIncludingAbort(summarize(f.actor, f.run));
-      onTestFinished(async () => {
-        if (!release.settled()) {
-          release.resolve("Preparing the launch checklist");
-        }
-        await first;
-      });
-      await entered.promise;
-      if (state === "cooldown") {
-        await first;
-      }
-      if (state === "expired cooldown") {
-        await first;
-        await expireRunActivityRetentionFixture(f.run.runId);
-      }
-      const before = await readRunActivityBookkeepingFixture(f.run.runId);
-      await enable(f.actor, false);
-      await deliver(f, [
-        {
-          type: "assistant",
-          sequenceNumber: 0,
-          message: {
-            content: [
-              { type: "text", text: "Inspecting the new launch requirements" },
-            ],
-          },
-        },
-      ]);
-      await enable(f.actor);
-      await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
-        status: "available",
-        messages: [],
-      });
-      const after = await readRunActivityBookkeepingFixture(f.run.runId);
-      expect(after!.messageCursor).toBeGreaterThan(before!.messageCursor);
-      expect(after!.expiresAt.getTime()).toBeGreaterThan(
-        before!.expiresAt.getTime(),
-      );
-      expect(after).toMatchObject({
-        nextAttemptAt: before!.nextAttemptAt,
-        claimId: before!.claimId,
-        claimRevision: before!.claimRevision,
-        claimExpiresAt: before!.claimExpiresAt,
-        summaryRevision: before!.summaryRevision,
-      });
-      expect(inputs).toHaveLength(1);
-      release.resolve("Preparing the launch checklist");
-      await first;
-    },
-  );
 
   it("propagates request abort while its new snapshot is blocked", async () => {
     const f = await fixture();
@@ -1277,7 +1145,7 @@ describe("thread activity summary", () => {
 
   it("keeps eight bounded visible messages including the current task", async () => {
     const prompt = "current task ".repeat(100);
-    const f = await fixture(true, prompt);
+    const f = await fixture(prompt);
     const inputs = provider();
     await deliver(
       f,
@@ -1531,7 +1399,7 @@ describe("thread activity summary", () => {
     });
     expect(inputs).toHaveLength(1);
   });
-  it("cleans expired snapshots through scoped maintenance even while disabled", async () => {
+  it("cleans expired snapshots through scoped maintenance", async () => {
     const f = await fixture();
     const inputs = provider();
     await deliver(f, [tool(0, "old evidence")]);
@@ -1542,7 +1410,6 @@ describe("thread activity summary", () => {
       status: "unavailable",
       messages: [],
     });
-    await enable(f.actor, false);
     await accept(
       setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
         testCronCleanupSandboxesStateContract,
@@ -1556,7 +1423,6 @@ describe("thread activity summary", () => {
       }),
       [200],
     );
-    await enable(f.actor);
     await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
       status: "available",
     });

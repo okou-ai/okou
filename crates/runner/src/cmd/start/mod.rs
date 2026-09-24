@@ -227,7 +227,7 @@ type WorkspaceCacheChangeFuture = BoxFuture<
 fn workspace_cache_change_future(mut watcher: WorkspaceCacheWatcher) -> WorkspaceCacheChangeFuture {
     Box::pin(async move {
         let result = watcher.next_change().await;
-        (watcher, result)
+        (watcher, result.map_err(Into::into))
     })
 }
 
@@ -719,6 +719,7 @@ async fn run_start_with_home(
         api_url: server.url.clone(),
         vercel_bypass: std::env::var("VERCEL_AUTOMATION_BYPASS_SECRET").ok(),
         client_session_id: runner_client_session_id.clone(),
+        runner_version: env!("CARGO_PKG_VERSION"),
     })?;
     let background_fill = crate::storage_cache::StorageCacheBackgroundFillCoordinator::new()?;
     let hostname = runner_config.hostname;
@@ -961,7 +962,7 @@ async fn run_start_with_home(
         let group_name = group.clone();
         let profiles: Vec<String> = runner_config.profiles.keys().cloned().collect();
         let provider = ApiProvider::new(
-            runner_provider::ProviderHttpClient::new(http.clone()),
+            http.clone(),
             server.token,
             ApiProviderConfig {
                 ably_side_message_handler: ssh
@@ -2239,7 +2240,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
             capacity
                 .budget
                 .can_afford(capacity.min_vcpu, capacity.min_memory_mb)
-                || shared.idle_pool.lock().await.len() > 0
+                || !shared.idle_pool.lock().await.is_empty()
                 || active_runs.has_reusable_run()
         } else {
             false
@@ -2335,7 +2336,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                     if !capacity
                         .budget
                         .can_afford(capacity.min_vcpu, capacity.min_memory_mb)
-                        && shared.idle_pool.lock().await.len() == 0
+                        && shared.idle_pool.lock().await.is_empty()
                     {
                         break;
                     }

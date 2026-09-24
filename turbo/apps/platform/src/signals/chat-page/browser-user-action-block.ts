@@ -70,7 +70,8 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly busy$: Computed<boolean>;
   readonly entryState$: Computed<"idle" | "checking" | "ready" | "unavailable">;
   readonly beginEntry$: Command<Promise<void>, [AbortSignal]>;
-  readonly endEntry$: Command<void, []>;
+  readonly startStandaloneEntry$: Command<Promise<void>, [AbortSignal]>;
+  readonly retryStandaloneRequest$: Command<Promise<void>, [AbortSignal]>;
   readonly refresh$: Command<void, []>;
   readonly updateDraft$: Command<void, [string, string]>;
   readonly clearDraft$: Command<void, []>;
@@ -95,7 +96,7 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
 function createEntrySignals(
   descriptor: BrowserUserActionDescriptor,
   refresh$: BrowserUserActionSignals["refresh$"],
-): Pick<BrowserUserActionSignals, "entryState$" | "beginEntry$" | "endEntry$"> {
+): Pick<BrowserUserActionSignals, "entryState$" | "beginEntry$"> {
   const internalState$ = state<"idle" | "checking" | "ready" | "unavailable">(
     "idle",
   );
@@ -136,17 +137,45 @@ function createEntrySignals(
       set(refresh$);
     }
   });
-  const endEntry$ = command(({ set }) => {
-    set(resetEntrySignal$);
-    set(internalState$, "idle");
-  });
   return {
     entryState$: computed((get) => {
       return get(internalState$);
     }),
     beginEntry$,
-    endEntry$,
   };
+}
+
+function createStandaloneEntrySignals(
+  request$: BrowserUserActionSignals["request$"],
+  refresh$: BrowserUserActionSignals["refresh$"],
+  beginEntry$: BrowserUserActionSignals["beginEntry$"],
+): Pick<
+  BrowserUserActionSignals,
+  "startStandaloneEntry$" | "retryStandaloneRequest$"
+> {
+  const startStandaloneEntry$ = command(
+    async ({ get, set }, signal: AbortSignal) => {
+      const loaded = await settle(get(request$), signal);
+      if (!loaded.ok) {
+        return;
+      }
+      const request = loaded.value;
+      if (
+        request.kind === "action" &&
+        request.action.kind === "input" &&
+        request.action.state === "pending"
+      ) {
+        await set(beginEntry$, signal);
+      }
+    },
+  );
+  const retryStandaloneRequest$ = command(
+    async ({ set }, signal: AbortSignal) => {
+      set(refresh$);
+      await set(startStandaloneEntry$, signal);
+    },
+  );
+  return { startStandaloneEntry$, retryStandaloneRequest$ };
 }
 
 type BrowserUserActionCardSignalsRegistry = CardSignalsRegistry<
@@ -752,6 +781,11 @@ export function createBrowserUserActionSignals(
     }),
   );
   const entrySignals = createEntrySignals(descriptor, requestSignals.refresh$);
+  const standaloneEntrySignals = createStandaloneEntrySignals(
+    requestSignals.request$,
+    requestSignals.refresh$,
+    entrySignals.beginEntry$,
+  );
   const draftSignals = createDraftSignals();
   const mutationSignals = createMutationSignals(
     descriptor,
@@ -765,6 +799,7 @@ export function createBrowserUserActionSignals(
     ...requestSignals,
     resumeRef$,
     ...entrySignals,
+    ...standaloneEntrySignals,
     ...draftSignals,
     ...mutationSignals,
   };

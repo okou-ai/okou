@@ -715,7 +715,31 @@ const connectors = [
             sessionToken: secretTemplate("AWS_SESSION_TOKEN"),
           },
         },
-        permissions: [],
+        permissions: [
+          {
+            name: "sts:get-caller-identity",
+            rules: ["POST / AWS sigv4=sts action=GetCallerIdentity"],
+          },
+          {
+            name: "sts:get-caller-identity-alias",
+            rules: ["POST / AWS action=GetCallerIdentity sigv4=sts"],
+          },
+        ],
+      },
+      {
+        base: "https://{awsHost+}.amazonaws.com",
+        auth: {
+          awsSigv4: {
+            accessKeyId: secretTemplate("AWS_ACCESS_KEY_ID"),
+            secretAccessKey: secretTemplate("AWS_SECRET_ACCESS_KEY"),
+          },
+        },
+        permissions: [
+          {
+            name: "sts:get-session-token",
+            rules: ["POST / AWS sigv4=sts action=GetSessionToken"],
+          },
+        ],
       },
     ]),
   }),

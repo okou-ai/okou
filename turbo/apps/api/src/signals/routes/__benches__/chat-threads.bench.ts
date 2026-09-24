@@ -635,6 +635,7 @@ async function seedSideEffectFreeGetData(
     orgId: fixture.orgId,
     userId: fixture.userId,
     timezone: "America/Los_Angeles",
+    locale: "en-US",
     pinnedAgentIds: [fixture.agentId],
     sendMode: "cmd-enter",
     captureNetworkBodiesRemaining: 3,

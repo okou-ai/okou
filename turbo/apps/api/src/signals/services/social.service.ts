@@ -3,11 +3,13 @@ import {
   MANAGED_SOCIALKIT_BILLING_CATEGORY,
   projectPublicSocialResponse,
   SOCIALKIT_MAX_INPUT_VALUE_CHARS,
+  socialKitInstagramCommentsOutcomeSchema,
   type ManagedSocialKitPagination,
   type ManagedSocialKitReportedTotalField,
   type ManagedSocialKitTool,
   type SocialErrorReason,
   type SocialKitCollectionProviderLimitedReason,
+  type SocialKitInstagramCommentsOutcome,
   type SocialKitRequest,
   type SocialKitResponse,
   socialKitResponseSchema,
@@ -412,6 +414,7 @@ function validatedReportedTotal(
   result: Record<string, unknown>,
   field: ManagedSocialKitReportedTotalField | undefined,
   itemsReturned: number,
+  advisory = false,
 ): ReportedTotalValidation {
   if (
     field === undefined ||
@@ -420,9 +423,13 @@ function validatedReportedTotal(
     return { ok: true };
   }
   const value = result[field];
+  if (advisory && value === null) {
+    return { ok: true };
+  }
   return typeof value === "number" &&
     Number.isSafeInteger(value) &&
-    value >= itemsReturned
+    value >= 0 &&
+    (advisory || value >= itemsReturned)
     ? { ok: true, reportedTotal: value }
     : { ok: false };
 }
@@ -479,6 +486,85 @@ function validatedCursorPagination(
         ...reportedTotalFields(reportedTotal),
         nextInput: { cursor },
       };
+}
+
+function validatedInstagramCommentsOutcome(
+  result: Record<string, unknown>,
+): SocialKitInstagramCommentsOutcome | undefined {
+  const collectionStatus = result.collectionStatus;
+  const stopReason = result.stopReason;
+  if (collectionStatus === undefined && stopReason === undefined) {
+    // Older SocialKit workers omitted outcome evidence. Remove after SocialKit
+    // guarantees both fields on every successful response and they drain (#36339).
+    return { collectionStatus: "unknown", stopReason: "unknown" };
+  }
+  const parsed = socialKitInstagramCommentsOutcomeSchema.safeParse({
+    collectionStatus,
+    stopReason,
+  });
+  if (!parsed.success) {
+    return undefined;
+  }
+  const outcome = parsed.data;
+  const validPair =
+    (outcome.collectionStatus === "partial" &&
+      outcome.stopReason !== "upstream_exhausted" &&
+      outcome.stopReason !== "unknown") ||
+    (outcome.collectionStatus === "exhausted" &&
+      outcome.stopReason === "upstream_exhausted") ||
+    (outcome.collectionStatus === "unknown" &&
+      outcome.stopReason === "unknown");
+  return validPair ? outcome : undefined;
+}
+
+function validatedInstagramCommentsPagination(
+  result: Record<string, unknown>,
+  itemsReturned: number,
+  reportedTotal?: number,
+): ValidatedCollection | undefined {
+  const providerOutcome = validatedInstagramCommentsOutcome(result);
+  if (!providerOutcome || typeof result.hasMore !== "boolean") {
+    return undefined;
+  }
+  if (result.hasMore) {
+    if (
+      providerOutcome.collectionStatus === "exhausted" ||
+      (providerOutcome.collectionStatus === "partial" &&
+        providerOutcome.stopReason !== "requested_limit")
+    ) {
+      return undefined;
+    }
+    const cursor = paginationCursorValue(result.cursor);
+    return cursor === undefined
+      ? undefined
+      : {
+          state: "more",
+          itemsReturned,
+          ...reportedTotalFields(reportedTotal),
+          nextInput: { cursor },
+          providerOutcome,
+        };
+  }
+  if (providerOutcome.collectionStatus !== "exhausted") {
+    return {
+      ...providerLimitedCollection(
+        itemsReturned,
+        providerOutcome.collectionStatus === "partial"
+          ? "provider_partial"
+          : "provider_outcome_unknown",
+        reportedTotal,
+      ),
+      providerOutcome,
+    };
+  }
+  // The post total can include comments outside Instagram's available pages.
+  // Exhausted describes those pages, not a comparison with this one page.
+  return {
+    state: "complete",
+    itemsReturned,
+    ...reportedTotalFields(reportedTotal),
+    providerOutcome,
+  };
 }
 
 function validatedNextCursorPagination(
@@ -621,6 +707,7 @@ function validatedCollection(
     result,
     collection.reportedTotalField,
     items.length,
+    tool.name === "instagram_comments",
   );
   if (!reportedTotal.ok) {
     return undefined;
@@ -632,6 +719,13 @@ function validatedCollection(
       reason: "provider_ceiling",
       sourceLimit: collection.sourceLimit,
     };
+  }
+  if (tool.name === "instagram_comments") {
+    return validatedInstagramCommentsPagination(
+      result,
+      items.length,
+      reportedTotal.reportedTotal,
+    );
   }
   return validatedPagination(
     result,

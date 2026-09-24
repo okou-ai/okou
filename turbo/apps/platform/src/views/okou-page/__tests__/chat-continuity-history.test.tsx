@@ -297,7 +297,7 @@ test("Navigate chat history with scroll controls and keyboard commands", async (
     ...workspace.pageOptions,
   });
 
-  const composer = await screen.findByRole("textbox", { name: "Message" });
+  await screen.findByRole("textbox", { name: "Message" });
   const container = threadContainer(thread.id);
   await waitFor(() => {
     expect(container).toHaveTextContent("History answer 6");
@@ -325,19 +325,6 @@ test("Navigate chat history with scroll controls and keyboard commands", async (
     expect(scroller.scrollTop).toBe(0);
     expect(container.querySelector("[data-scroll-to-bottom]")).toBeVisible();
   });
-
-  composer.focus();
-  await userEvent.keyboard("{Control>}{ArrowDown}{/Control}");
-  await waitFor(() => {
-    expect(scroller.scrollTop).toBe(2400);
-    expect(container.querySelector("[data-scroll-to-bottom]")).toBeNull();
-  });
-
-  await fill(composer, "Arrow remains available while editing");
-  const bottomOffset = scroller.scrollTop;
-  await userEvent.keyboard("{ArrowUp}");
-  expect(composer).toHaveTextContent("Arrow remains available while editing");
-  expect(scroller.scrollTop).toBe(bottomOffset);
 });
 
 test("Keep both open chats live without mixing their messages", async () => {

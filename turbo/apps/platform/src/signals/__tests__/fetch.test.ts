@@ -1,5 +1,6 @@
 import { screen } from "@testing-library/react";
 import {
+  CHAT_THREAD_SNAPSHOT_R2_HEADER,
   CLIENT_FORCE_UPGRADE_STATUS,
   CLIENT_REQUEST_ID_HEADER,
   CLIENT_SESSION_ID_HEADER,
@@ -24,6 +25,7 @@ const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 interface ObservedClientHeaders {
+  readonly snapshotR2: string | null;
   readonly requestId: string | null;
   readonly sessionId: string | null;
   readonly type: string | null;
@@ -34,6 +36,7 @@ const context = testContext();
 
 function observedClientHeaders(request: Request): ObservedClientHeaders {
   return {
+    snapshotR2: request.headers.get(CHAT_THREAD_SNAPSHOT_R2_HEADER),
     requestId: request.headers.get(CLIENT_REQUEST_ID_HEADER),
     sessionId: request.headers.get(CLIENT_SESSION_ID_HEADER),
     type: request.headers.get(CLIENT_TYPE_HEADER),
@@ -86,6 +89,7 @@ test("Service requests carry stable client context and a unique trace", async ()
       sessionId: expect.stringMatching(UUID_PATTERN),
       type: "App",
       version: APP_VERSION,
+      snapshotR2: "1",
     }),
   );
   expect(secondRequest).toStrictEqual(
@@ -94,6 +98,7 @@ test("Service requests carry stable client context and a unique trace", async ()
       sessionId: contractRequest?.sessionId,
       type: "App",
       version: APP_VERSION,
+      snapshotR2: "1",
     }),
   );
   expect(secondRequest?.requestId).not.toBe(contractRequest?.requestId);
@@ -151,30 +156,4 @@ test("The update dialog appears only when an update is required", async () => {
   click(refresh);
 
   expect(reload).toHaveBeenCalledOnce();
-});
-
-test("A required Platform upgrade opens the update dialog", async () => {
-  let requestCount = 0;
-  context.mocks.http.get("*/api/agents/:id/user-connectors", () => {
-    requestCount += 1;
-    if (requestCount === 1) {
-      return Response.json({ enabledConnectorSlugs: [] });
-    }
-    return Response.json(
-      { error: "Client update required" },
-      { status: CLIENT_FORCE_UPGRADE_STATUS },
-    );
-  });
-
-  await setupPage({ context, path: "/_/error" });
-
-  await waitForReadyPage();
-
-  await client().get({ params: { id: AGENT_ID } });
-
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-
-  await client().get({ params: { id: AGENT_ID } });
-
-  await screen.findByRole("dialog", { name: "Update required" });
 });

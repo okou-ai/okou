@@ -38,8 +38,8 @@ import type { PlatformConnectorAccountMutationIntent } from "../../signals/conne
 import { downloadAttachment$ } from "../../signals/attachment-download.ts";
 import { apiClient$ } from "../../signals/api-client.ts";
 import {
-  connectorCatalogStatusBySlug$,
   builtinConnectors$,
+  connectorCatalogItemBySlug,
 } from "../../signals/external/connectors.ts";
 import { convertsToGoogleSlides } from "@okouai/core/google-slides-conversion";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -58,6 +58,10 @@ import { copyAttachmentLinkToClipboard } from "./attachment-url.ts";
 import type { ZoomableImageControls } from "./zoomable-image-canvas.tsx";
 
 const GOOGLE_DRIVE_CONNECTOR_SLUG = "google-drive";
+// The Drive action needs one catalog entry, not the full catalog status.
+const googleDriveCatalogItem$ = connectorCatalogItemBySlug(
+  GOOGLE_DRIVE_CONNECTOR_SLUG,
+);
 
 function siteSlugFromUrl(value: string): string | null {
   if (!URL.canParse(value)) {
@@ -229,19 +233,19 @@ function useGoogleDriveAvailability(
 ) {
   const connectorListLoadable = useLoadable(builtinConnectors$);
   const lastConnectorList = useLastResolved(builtinConnectors$);
-  const catalogBySlugLoadable = useLoadable(connectorCatalogStatusBySlug$);
-  const lastCatalogBySlug = useLastResolved(connectorCatalogStatusBySlug$);
+  const catalogItemLoadable = useLoadable(googleDriveCatalogItem$);
+  const lastCatalogItem = useLastResolved(googleDriveCatalogItem$);
   const builtinConnectorList =
     connectorListLoadable.state === "hasData"
       ? connectorListLoadable.data
       : connectorListLoadable.state === "loading"
         ? lastConnectorList
         : undefined;
-  const catalogBySlug =
-    catalogBySlugLoadable.state === "hasData"
-      ? catalogBySlugLoadable.data
-      : catalogBySlugLoadable.state === "loading"
-        ? lastCatalogBySlug
+  const catalogItem =
+    catalogItemLoadable.state === "hasData"
+      ? catalogItemLoadable.data
+      : catalogItemLoadable.state === "loading"
+        ? lastCatalogItem
         : undefined;
   const googleDriveConnected =
     builtinConnectorList?.connectors.some((connector) => {
@@ -250,8 +254,7 @@ function useGoogleDriveAvailability(
         connector.connectionStatus === "connected"
       );
     }) ?? false;
-  const googleDriveConnector =
-    catalogBySlug?.get(GOOGLE_DRIVE_CONNECTOR_SLUG) ?? null;
+  const googleDriveConnector = catalogItem ?? null;
   const googleDriveAuthMethod =
     googleDriveConnector === null
       ? null
@@ -262,7 +265,7 @@ function useGoogleDriveAvailability(
     connectorListLoaded:
       accountReady ||
       (builtinConnectorList !== undefined &&
-        (googleDriveConnected || catalogBySlug !== undefined)),
+        (googleDriveConnected || catalogItem !== undefined)),
     googleDriveAuthMethod,
     googleDriveConnected,
     googleDriveConnector,
@@ -679,7 +682,7 @@ export function ArtifactImageNavigationControls({
           data-testid={`${testIdPrefix}-previous-image`}
           variant="quiet"
           size="icon-lg"
-          className="absolute left-4 top-1/2 z-20 -translate-y-1/2 rounded-full border border-border/60 bg-background/90 text-foreground shadow-lg backdrop-blur-sm [&_svg]:size-[22px]"
+          className="absolute left-4 top-1/2 z-10 -translate-y-1/2 rounded-full border border-border/60 bg-background/90 text-foreground shadow-lg backdrop-blur-sm [&_svg]:size-[22px]"
         >
           <ChevronLeft size={22} />
         </Button>
@@ -696,7 +699,7 @@ export function ArtifactImageNavigationControls({
           data-testid={`${testIdPrefix}-next-image`}
           variant="quiet"
           size="icon-lg"
-          className="absolute right-4 top-1/2 z-20 -translate-y-1/2 rounded-full border border-border/60 bg-background/90 text-foreground shadow-lg backdrop-blur-sm [&_svg]:size-[22px]"
+          className="absolute right-4 top-1/2 z-10 -translate-y-1/2 rounded-full border border-border/60 bg-background/90 text-foreground shadow-lg backdrop-blur-sm [&_svg]:size-[22px]"
         >
           <ChevronRight size={22} />
         </Button>

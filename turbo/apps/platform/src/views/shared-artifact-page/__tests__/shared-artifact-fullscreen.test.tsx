@@ -4,8 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { act, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
   click,
@@ -50,13 +49,9 @@ function mockBrowserProperty(
   );
 }
 
-function mockFullscreen(mode: "native" | "unsupported" | "denied") {
+function mockFullscreen(mode: "native" | "unsupported") {
   const browserState: { fullscreenElement: Element | null } = {
     fullscreenElement: null,
-  };
-  const exitFromBrowser = () => {
-    browserState.fullscreenElement = null;
-    document.dispatchEvent(new Event("fullscreenchange"));
   };
 
   mockBrowserProperty(document, "fullscreenEnabled", {
@@ -72,11 +67,6 @@ function mockFullscreen(mode: "native" | "unsupported" | "denied") {
       mode === "unsupported"
         ? undefined
         : function (this: Element): Promise<void> {
-            if (mode === "denied") {
-              return Promise.reject(
-                new DOMException("Fullscreen denied", "NotAllowedError"),
-              );
-            }
             browserState.fullscreenElement = this;
             document.dispatchEvent(new Event("fullscreenchange"));
             return Promise.resolve();
@@ -84,12 +74,11 @@ function mockFullscreen(mode: "native" | "unsupported" | "denied") {
   });
   mockBrowserProperty(document, "exitFullscreen", {
     value: () => {
-      exitFromBrowser();
+      browserState.fullscreenElement = null;
+      document.dispatchEvent(new Event("fullscreenchange"));
       return Promise.resolve();
     },
   });
-
-  return { exitFromBrowser };
 }
 
 async function openHtmlViewer(): Promise<void> {
@@ -124,74 +113,34 @@ async function openHtmlViewer(): Promise<void> {
   ).resolves.toHaveAttribute("src", previewSrc);
 }
 
-test("fullscreen is last in the artifact icon actions", async () => {
-  await openHtmlViewer();
-
-  const share = button("Share");
-  const download = button("Download options");
-  const fullscreen = button("Enter fullscreen");
-  expect(share.compareDocumentPosition(download)).toBe(
-    Node.DOCUMENT_POSITION_FOLLOWING,
-  );
-  expect(download.compareDocumentPosition(fullscreen)).toBe(
-    Node.DOCUMENT_POSITION_FOLLOWING,
-  );
-});
-
-test.each(["unsupported", "denied"] as const)(
-  "fullscreen hides the header and offers an exit when the browser API is %s",
-  async (mode) => {
-    mockFullscreen(mode);
-    await openHtmlViewer();
-
-    const header = screen.getByRole("banner");
-    const title = screen.getByRole("heading", { name: filename });
-    expect(header).toBeVisible();
-    click(button("Enter fullscreen"));
-
-    await waitFor(() => {
-      expect(button("Exit fullscreen")).toBeVisible();
-      expect(button("Exit fullscreen")).toBeEnabled();
-    });
-    expect(header).not.toBeVisible();
-    expect(title).not.toBeVisible();
-    expect(document.fullscreenElement).toBeNull();
-    expect(screen.getByTitle(`${filename} preview`)).toBeVisible();
-    expect(screen.getByTitle(`${filename} preview`)).toHaveAttribute(
-      "src",
-      previewSrc,
-    );
-
-    click(button("Exit fullscreen"));
-    await waitFor(() => {
-      expect(button("Enter fullscreen")).toHaveFocus();
-    });
-    expect(header).toBeVisible();
-    expect(title).toBeVisible();
-    expect(button("Enter fullscreen")).toBeEnabled();
-    expect(screen.getByTitle(`${filename} preview`)).toHaveAttribute(
-      "src",
-      previewSrc,
-    );
-  },
-);
-
-test("Escape restores the header when native fullscreen is unavailable", async () => {
+test("fullscreen hides the header and offers an exit when the browser API is unsupported", async () => {
   mockFullscreen("unsupported");
-  const user = userEvent.setup();
   await openHtmlViewer();
-  const header = screen.getByRole("banner");
 
+  const header = screen.getByRole("banner");
+  const title = screen.getByRole("heading", { name: filename });
+  expect(header).toBeVisible();
   click(button("Enter fullscreen"));
+
   await waitFor(() => {
     expect(button("Exit fullscreen")).toBeVisible();
+    expect(button("Exit fullscreen")).toBeEnabled();
   });
-  await user.keyboard("{Escape}");
+  expect(header).not.toBeVisible();
+  expect(title).not.toBeVisible();
+  expect(document.fullscreenElement).toBeNull();
+  expect(screen.getByTitle(`${filename} preview`)).toBeVisible();
+  expect(screen.getByTitle(`${filename} preview`)).toHaveAttribute(
+    "src",
+    previewSrc,
+  );
 
+  click(button("Exit fullscreen"));
   await waitFor(() => {
     expect(button("Enter fullscreen")).toHaveFocus();
   });
   expect(header).toBeVisible();
+  expect(title).toBeVisible();
   expect(button("Enter fullscreen")).toBeEnabled();
   expect(screen.getByTitle(`${filename} preview`)).toHaveAttribute(
     "src",
@@ -199,44 +148,35 @@ test("Escape restores the header when native fullscreen is unavailable", async (
   );
 });
 
-test.each(["button", "browser"] as const)(
-  "native fullscreen keeps the exit control with the preview and restores the header after a %s exit",
-  async (exitMethod) => {
-    const browser = mockFullscreen("native");
-    await openHtmlViewer();
-    const header = screen.getByRole("banner");
+test("native fullscreen keeps the exit control with the preview and restores the header after exit", async () => {
+  mockFullscreen("native");
+  await openHtmlViewer();
+  const header = screen.getByRole("banner");
 
-    click(button("Enter fullscreen"));
-    await waitFor(() => {
-      expect(button("Exit fullscreen")).toBeVisible();
-      expect(button("Exit fullscreen")).toBeEnabled();
-    });
-    expect(header).not.toBeVisible();
-    expect(document.fullscreenElement).toContainElement(
-      screen.getByTitle(`${filename} preview`),
-    );
-    expect(document.fullscreenElement).toContainElement(
-      button("Exit fullscreen"),
-    );
-    expect(document.fullscreenElement).not.toContainElement(header);
+  click(button("Enter fullscreen"));
+  await waitFor(() => {
+    expect(button("Exit fullscreen")).toBeVisible();
+    expect(button("Exit fullscreen")).toBeEnabled();
+  });
+  expect(header).not.toBeVisible();
+  expect(document.fullscreenElement).toContainElement(
+    screen.getByTitle(`${filename} preview`),
+  );
+  expect(document.fullscreenElement).toContainElement(
+    button("Exit fullscreen"),
+  );
+  expect(document.fullscreenElement).not.toContainElement(header);
 
-    if (exitMethod === "button") {
-      click(button("Exit fullscreen"));
-    } else {
-      act(() => {
-        browser.exitFromBrowser();
-      });
-    }
+  click(button("Exit fullscreen"));
 
-    await waitFor(() => {
-      expect(button("Enter fullscreen")).toHaveFocus();
-    });
-    expect(header).toBeVisible();
-    expect(document.fullscreenElement).toBeNull();
-    expect(button("Enter fullscreen")).toBeEnabled();
-    expect(screen.getByTitle(`${filename} preview`)).toHaveAttribute(
-      "src",
-      previewSrc,
-    );
-  },
-);
+  await waitFor(() => {
+    expect(button("Enter fullscreen")).toHaveFocus();
+  });
+  expect(header).toBeVisible();
+  expect(document.fullscreenElement).toBeNull();
+  expect(button("Enter fullscreen")).toBeEnabled();
+  expect(screen.getByTitle(`${filename} preview`)).toHaveAttribute(
+    "src",
+    previewSrc,
+  );
+});

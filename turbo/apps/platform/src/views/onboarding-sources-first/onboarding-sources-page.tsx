@@ -7,8 +7,8 @@ import {
   captureSourceOnboardingConnected$,
   captureSourceOnboardingConnectStarted$,
 } from "../../signals/bootstrap/source-onboarding-telemetry.ts";
-import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
+import type { PlatformConnectorCatalogConnectItem } from "../../signals/connector-domain.ts";
+import { onboardingSourceConnectors$ } from "../../signals/onboarding/onboarding-sources-first-catalog.ts";
 import { justConnectedBuiltinSlugs$ } from "../../signals/okou-page/settings/connectors.ts";
 import { startOnboardingRecommendation$ } from "../../signals/onboarding/onboarding-recommendation.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
@@ -52,7 +52,7 @@ function isOnboardingSourceSlug(slug: string): boolean {
 }
 
 function connectedOnboardingSlugs(
-  connectors: readonly PlatformConnectorCatalogStatusItem[],
+  connectors: readonly PlatformConnectorCatalogConnectItem[],
   justConnected: ReadonlySet<ConnectorSlug>,
 ): readonly ConnectorSlug[] {
   return connectors.flatMap((connector) => {
@@ -70,11 +70,11 @@ export function OnboardingSourcesPage() {
   const flow = useSourcesFirstFlow("sources");
   const rootSignal = useGet(rootSignal$);
   const startRecommendation = useSet(startOnboardingRecommendation$);
-  const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
+  const catalogLoadable = useLastLoadable(onboardingSourceConnectors$);
   const justConnected = useGet(justConnectedBuiltinSlugs$);
   const connectedSlugs =
     catalogLoadable.state === "hasData"
-      ? connectedOnboardingSlugs(catalogLoadable.data.connectors, justConnected)
+      ? connectedOnboardingSlugs(catalogLoadable.data, justConnected)
       : [];
   // Keep previously connected sources visible even when they are not featured
   // for the selected field, so Continue reflects a source shown on this step.

@@ -5,6 +5,8 @@ import {
   matchFirewallPathPrefix,
   matchFirewallBaseUrl,
   findMatchingPermissions,
+  matchFirewallRequestDecision,
+  type FirewallAwsDiagnosticContext,
 } from "../firewall-rule-matcher";
 import type { FirewallConfig } from "../firewall-types";
 
@@ -1797,6 +1799,624 @@ describe("findMatchingPermissions", () => {
     };
 
     expect(findMatchingPermissions("POST", "/", awsConfig)).toEqual([]);
+  });
+
+  it("keeps AWS rules fail-closed for default callers and supports opt-in diagnostics", () => {
+    const firewalls = [
+      {
+        name: "aws",
+        apis: [
+          {
+            base: "https://ec2.amazonaws.com",
+            auth: {},
+            awsSigv4Capability: true,
+            permissions: [
+              {
+                name: "describe-instances",
+                rules: ["POST / AWS sigv4=ec2 action=DescribeInstances"],
+              },
+            ],
+          },
+        ],
+      },
+    ];
+
+    expect(
+      matchFirewallRequestDecision(
+        firewalls,
+        "POST",
+        "https://ec2.amazonaws.com/",
+      ),
+    ).toMatchObject({
+      kind: "block",
+      reason: "malformed_firewall_config",
+    });
+    expect(
+      matchFirewallRequestDecision(
+        firewalls,
+        "POST",
+        "https://ec2.amazonaws.com/",
+        { aws: { unknownPolicy: "ask" } },
+        { status: "absent" },
+        { awsDiagnostic: {} },
+      ),
+    ).toMatchObject({
+      kind: "block",
+      reason: "unknown_endpoint",
+    });
+    expect(
+      matchFirewallRequestDecision(
+        firewalls,
+        "POST",
+        "https://ec2.amazonaws.com/",
+        { aws: { unknownPolicy: "ask" } },
+        { status: "absent" },
+        {
+          awsDiagnostic: {
+            context: {
+              sigv4Service: "ec2",
+              action: "DescribeInstances",
+              query: [],
+              headerNames: [],
+            },
+          },
+        },
+      ),
+    ).toMatchObject({
+      kind: "allow",
+      permission: "describe-instances",
+    });
+    expect(
+      matchFirewallRequestDecision(
+        firewalls,
+        "POST",
+        "https://ec2.amazonaws.com/",
+        { aws: { unknownPolicy: "ask" } },
+        { status: "absent" },
+        {
+          awsDiagnostic: {
+            context: {
+              sigv4Service: "ec2",
+              query: [{ key: "Action", value: "DescribeInstances" }],
+              headerNames: [],
+            },
+          },
+        },
+      ),
+    ).toMatchObject({
+      kind: "allow",
+      permission: "describe-instances",
+    });
+    expect(
+      matchFirewallRequestDecision(
+        firewalls,
+        "POST",
+        "https://ec2.amazonaws.com/",
+        { aws: { unknownPolicy: "ask" } },
+        { status: "absent" },
+        {
+          awsDiagnostic: {
+            context: {
+              sigv4Service: "ec2",
+              action: "StartInstances",
+              query: [],
+              headerNames: [],
+            },
+          },
+        },
+      ),
+    ).toMatchObject({
+      kind: "block",
+      reason: "unknown_endpoint",
+    });
+  });
+
+  it.each([
+    {
+      name: "Query action",
+      rule: "POST / AWS sigv4=ec2 action=DescribeInstances",
+      method: "POST",
+      url: "https://aws.example.com/",
+      partial: { sigv4Service: "ec2", query: [], headerNames: [] },
+      contrary: {
+        sigv4Service: "ec2",
+        action: "StartInstances",
+        query: [],
+        headerNames: [],
+      },
+    },
+    {
+      name: "JSON target",
+      rule: "POST / AWS sigv4=dynamodb target=DynamoDB_20120810.GetItem",
+      method: "POST",
+      url: "https://aws.example.com/",
+      partial: { sigv4Service: "dynamodb", query: [], headerNames: [] },
+      contrary: {
+        sigv4Service: "dynamodb",
+        target: "DynamoDB_20120810.PutItem",
+        query: [],
+        headerNames: [],
+      },
+    },
+    {
+      name: "S3 subresource",
+      rule: "GET /{Bucket}/{Key+}?acl AWS sigv4=s3",
+      method: "GET",
+      url: "https://aws.example.com/bucket/key",
+      partial: { sigv4Service: "s3", query: [], headerNames: [] },
+      contrary: {
+        sigv4Service: "s3",
+        query: [{ key: "versionId", value: "v1" }],
+        headerNames: [],
+      },
+    },
+  ])(
+    "distinguishes missing $name selectors from an explicit AWS miss",
+    ({ rule, method, url, partial, contrary }) => {
+      const firewalls = [
+        {
+          name: "aws",
+          apis: [
+            {
+              base: "https://aws.example.com",
+              auth: {},
+              awsSigv4Capability: true,
+              permissions: [{ name: "operation", rules: [rule] }],
+            },
+          ],
+        },
+      ];
+      const policy = { aws: { unknownPolicy: "ask" } };
+      const match = (context?: FirewallAwsDiagnosticContext) => {
+        return matchFirewallRequestDecision(
+          firewalls,
+          method,
+          url,
+          policy,
+          { status: "absent" },
+          { awsDiagnostic: context === undefined ? {} : { context } },
+        );
+      };
+
+      expect(match()).toMatchObject({
+        kind: "block",
+        reason: "unknown_endpoint",
+        awsContextIncomplete: true,
+      });
+      expect(match(partial)).toMatchObject({
+        kind: "block",
+        reason: "unknown_endpoint",
+        awsContextIncomplete: true,
+      });
+      const completeMiss = match(contrary);
+      expect(completeMiss).toMatchObject({
+        kind: "block",
+        reason: "unknown_endpoint",
+      });
+      expect(completeMiss).not.toHaveProperty("awsContextIncomplete");
+    },
+  );
+
+  it("keeps incomplete context on an allow-policy unknown without changing its outcome", () => {
+    const result = matchFirewallRequestDecision(
+      [
+        {
+          name: "aws",
+          apis: [
+            {
+              base: "https://aws.example.com",
+              auth: {},
+              awsSigv4Capability: true,
+              permissions: [
+                {
+                  name: "describe",
+                  rules: ["POST / AWS sigv4=ec2 action=DescribeInstances"],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      "POST",
+      "https://aws.example.com/",
+      { aws: { unknownPolicy: "allow" } },
+      { status: "absent" },
+      { awsDiagnostic: {} },
+    );
+    expect(result).toMatchObject({
+      kind: "allow",
+      awsContextIncomplete: true,
+    });
+  });
+
+  it("does not label an AWS service or S3 header contradiction as missing context", () => {
+    const firewalls = [
+      {
+        name: "aws",
+        apis: [
+          {
+            base: "https://aws.example.com",
+            auth: {},
+            awsSigv4Capability: true,
+            permissions: [
+              {
+                name: "get-acl",
+                rules: ["GET /{Bucket}/{Key+}?acl AWS sigv4=s3"],
+              },
+            ],
+          },
+        ],
+      },
+    ];
+    for (const context of [
+      { sigv4Service: "ec2", query: [], headerNames: [] },
+      {
+        sigv4Service: "s3",
+        query: [],
+        headerNames: ["x-amz-copy-source"],
+      },
+    ]) {
+      const result = matchFirewallRequestDecision(
+        firewalls,
+        "GET",
+        "https://aws.example.com/bucket/key",
+        { aws: { unknownPolicy: "ask" } },
+        { status: "absent" },
+        { awsDiagnostic: { context } },
+      );
+      expect(result).toMatchObject({
+        kind: "block",
+        reason: "unknown_endpoint",
+      });
+      expect(result).not.toHaveProperty("awsContextIncomplete");
+    }
+  });
+
+  it("does not mark unrelated non-AWS rules as incomplete AWS context", () => {
+    const result = matchFirewallRequestDecision(
+      [
+        {
+          name: "ordinary",
+          apis: [
+            {
+              base: "https://api.example.com",
+              auth: {},
+              permissions: [{ name: "read", rules: ["GET /items"] }],
+            },
+          ],
+        },
+      ],
+      "GET",
+      "https://api.example.com/other",
+      { ordinary: { unknownPolicy: "ask" } },
+      { status: "absent" },
+      { awsDiagnostic: {} },
+    );
+    expect(result).toMatchObject({ kind: "block", reason: "unknown_endpoint" });
+    expect(result).not.toHaveProperty("awsContextIncomplete");
+  });
+
+  it("does not use a less-specific AWS base or a host-only base as incomplete context", () => {
+    const result = matchFirewallRequestDecision(
+      [
+        {
+          name: "aws",
+          apis: [
+            {
+              base: "https://{awsHost+}.example.com",
+              auth: {},
+              awsSigv4Capability: true,
+              permissions: [
+                {
+                  name: "describe",
+                  rules: ["POST / AWS sigv4=ec2 action=DescribeInstances"],
+                },
+              ],
+            },
+            {
+              base: "https://ec2.example.com",
+              auth: {},
+              awsSigv4Capability: true,
+              permissions: [],
+            },
+          ],
+        },
+      ],
+      "POST",
+      "https://ec2.example.com/",
+      { aws: { unknownPolicy: "ask" } },
+      { status: "absent" },
+      { awsDiagnostic: {} },
+    );
+    expect(result).toMatchObject({ kind: "block", reason: "unknown_endpoint" });
+    expect(result).not.toHaveProperty("awsContextIncomplete");
+  });
+
+  it.each([
+    "POST / AWS sigv4=ec2 action=DescribeInstances",
+    "POST / AWS action=DescribeInstances sigv4=ec2",
+  ])(
+    "allows a different AWS permission despite denied alias %s",
+    (aliasRule) => {
+      const primary = {
+        name: "describe-primary",
+        rules: ["POST / AWS sigv4=ec2 action=DescribeInstances"],
+      };
+      const alias = { name: "describe-alias", rules: [aliasRule] };
+      const policy = {
+        aws: {
+          allow: ["describe-primary"],
+          deny: ["describe-alias"],
+          unknownPolicy: "ask",
+        },
+      };
+      const options = {
+        awsDiagnostic: {
+          context: {
+            sigv4Service: "ec2",
+            action: "DescribeInstances",
+            query: [],
+            headerNames: [],
+          },
+        },
+      };
+
+      for (const permissions of [
+        [alias, primary],
+        [primary, alias],
+      ]) {
+        const firewalls = [
+          {
+            name: "aws",
+            apis: [
+              {
+                base: "https://ec2.amazonaws.com",
+                auth: {},
+                awsSigv4Capability: true,
+                permissions,
+              },
+            ],
+          },
+        ];
+        expect(
+          matchFirewallRequestDecision(
+            firewalls,
+            "POST",
+            "https://ec2.amazonaws.com/",
+            policy,
+            { status: "absent" },
+            options,
+          ),
+        ).toMatchObject({ kind: "allow", permission: "describe-primary" });
+        expect(
+          matchFirewallRequestDecision(
+            firewalls,
+            "POST",
+            "https://ec2.amazonaws.com/",
+            policy,
+            { status: "absent" },
+            { awsDiagnostic: {} },
+          ),
+        ).toMatchObject({ kind: "block", reason: "unknown_endpoint" });
+      }
+    },
+  );
+
+  it.each(["deny", "ask"])(
+    "blocks one AWS permission listed in allow and %s",
+    (blockedState) => {
+      const firewalls = [
+        {
+          name: "aws",
+          apis: [
+            {
+              base: "https://ec2.amazonaws.com",
+              auth: {},
+              awsSigv4Capability: true,
+              permissions: [
+                {
+                  name: "describe-instances",
+                  rules: ["POST / AWS sigv4=ec2 action=DescribeInstances"],
+                },
+              ],
+            },
+          ],
+        },
+      ];
+      const policy = {
+        aws: {
+          allow: ["describe-instances"],
+          deny: blockedState === "deny" ? ["describe-instances"] : [],
+          ask: blockedState === "ask" ? ["describe-instances"] : [],
+          unknownPolicy: "ask",
+        },
+      };
+      expect(
+        matchFirewallRequestDecision(
+          firewalls,
+          "POST",
+          "https://ec2.amazonaws.com/",
+          policy,
+          { status: "absent" },
+          {
+            awsDiagnostic: {
+              context: {
+                sigv4Service: "ec2",
+                action: "DescribeInstances",
+                query: [],
+                headerNames: [],
+              },
+            },
+          },
+        ),
+      ).toMatchObject({
+        kind: "block",
+        reason: "permission_denied",
+        permissions: ["describe-instances"],
+      });
+    },
+  );
+
+  it("matches bounded AWS target and S3 query/header selectors", () => {
+    const firewalls = [
+      {
+        name: "aws",
+        apis: [
+          {
+            base: "https://dynamodb.example.com",
+            auth: {},
+            awsSigv4Capability: true,
+            permissions: [
+              {
+                name: "get-item",
+                rules: [
+                  "POST / AWS sigv4=dynamodb target=DynamoDB_20120810.GetItem",
+                ],
+              },
+            ],
+          },
+          {
+            base: "https://s3.example.com",
+            auth: {},
+            awsSigv4Capability: true,
+            permissions: [
+              {
+                name: "get-acl",
+                rules: ["GET /{Bucket}/{Key+}?acl AWS sigv4=s3"],
+              },
+            ],
+          },
+        ],
+      },
+    ];
+
+    expect(
+      matchFirewallRequestDecision(
+        firewalls,
+        "POST",
+        "https://dynamodb.example.com/",
+        undefined,
+        { status: "present", value: "aws" },
+        {
+          awsDiagnostic: {
+            context: {
+              sigv4Service: "dynamodb",
+              target: "DynamoDB_20120810.GetItem",
+              query: [],
+              headerNames: [],
+            },
+          },
+        },
+      ),
+    ).toMatchObject({ kind: "allow", permission: "get-item" });
+    expect(
+      matchFirewallRequestDecision(
+        firewalls,
+        "POST",
+        "https://dynamodb.example.com/",
+        { aws: { unknownPolicy: "ask" } },
+        { status: "present", value: "aws" },
+        {
+          awsDiagnostic: {
+            context: {
+              sigv4Service: "dynamodb",
+              target: "DynamoDB_20120810.GetItem",
+              query: [{ key: "Action", value: "OtherOperation" }],
+              headerNames: [],
+            },
+          },
+        },
+      ),
+    ).toMatchObject({ kind: "block", reason: "unknown_endpoint" });
+    expect(
+      matchFirewallRequestDecision(
+        firewalls,
+        "GET",
+        "https://s3.example.com/bucket/key",
+        { aws: { unknownPolicy: "ask" } },
+        { status: "present", value: "aws" },
+        {
+          awsDiagnostic: {
+            context: {
+              sigv4Service: "s3",
+              query: [{ key: "acl" }],
+              headerNames: ["x-amz-acl"],
+            },
+          },
+        },
+      ),
+    ).toMatchObject({ kind: "allow", permission: "get-acl" });
+    expect(
+      matchFirewallRequestDecision(
+        firewalls,
+        "GET",
+        "https://s3.example.com/bucket/key",
+        { aws: { unknownPolicy: "ask" } },
+        { status: "present", value: "aws" },
+        {
+          awsDiagnostic: {
+            context: {
+              sigv4Service: "s3",
+              query: [
+                { key: "acl" },
+                { key: "X-Amz-Signature", value: "private-signature" },
+              ],
+              headerNames: [],
+            },
+          },
+        },
+      ),
+    ).toMatchObject({ kind: "block", reason: "unknown_endpoint" });
+    expect(
+      matchFirewallRequestDecision(
+        firewalls,
+        "GET",
+        "https://s3.example.com/bucket/key",
+        { aws: { unknownPolicy: "ask" } },
+        { status: "present", value: "aws" },
+        {
+          awsDiagnostic: {
+            context: {
+              sigv4Service: "s3",
+              query: [{ key: "acl" }],
+              headerNames: ["x-amz-copy-source"],
+            },
+          },
+        },
+      ),
+    ).toMatchObject({ kind: "block", reason: "unknown_endpoint" });
+  });
+
+  it("treats malformed AWS diagnostic selectors as unknown endpoints", () => {
+    const firewalls = [
+      {
+        name: "aws",
+        apis: [
+          {
+            base: "https://ec2.amazonaws.com",
+            auth: {},
+            awsSigv4Capability: true,
+            permissions: [
+              {
+                name: "describe-instances",
+                rules: ["POST / AWS sigv4=ec2 action=DescribeInstances"],
+              },
+            ],
+          },
+        ],
+      },
+    ];
+
+    expect(
+      matchFirewallRequestDecision(
+        firewalls,
+        "POST",
+        "https://ec2.amazonaws.com/",
+        { aws: { unknownPolicy: "ask" } },
+        { status: "absent" },
+        { awsDiagnostic: { context: null as never } },
+      ),
+    ).toMatchObject({ kind: "block", reason: "unknown_endpoint" });
   });
 
   it("deduplicates permissions across multiple api entries", () => {

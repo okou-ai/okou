@@ -18,7 +18,7 @@ import {
   agentEnabledConnectorSlugs,
   agentExists,
 } from "../services/agent-data.service";
-import { connectorActionResolver } from "../services/connector-action-resolver.service";
+import { executableConnectorSlugs } from "../services/connector-action-resolver.service";
 import { listConnectorAccountSummaries } from "../services/connector-account-lifecycle.service";
 import {
   isConnectorCatalogUnavailableError,
@@ -144,19 +144,7 @@ const agent$ = computed(async (get) => {
     get(agentEnabledConnectorSlugs(owner)),
     get(agentCustomConnectorGrants(owner)),
   ]);
-  const enabledConnectorSlugs = [];
-  if (slugs.length > 0) {
-    const resolver = await get(connectorActionResolver());
-    for (const connectorSlug of slugs) {
-      const resolved = await resolver.resolveSlug({
-        connectorSlug,
-        requireExecutable: true,
-      });
-      if (resolved.ok) {
-        enabledConnectorSlugs.push(connectorSlug);
-      }
-    }
-  }
+  const enabledConnectorSlugs = await get(executableConnectorSlugs(slugs));
   return {
     status: 200 as const,
     body: {

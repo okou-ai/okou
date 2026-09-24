@@ -611,3 +611,50 @@ describe("optional shared-thread titles", () => {
     await expectNoShare(fixture);
   });
 });
+
+describe("client-generated shared-thread IDs", () => {
+  it("publishes the share under the ID the client already copied", async () => {
+    const fixture = await prepareShare();
+    const id = randomUUID();
+    const created = await accept(
+      client().create({
+        ...requestBody(fixture),
+        body: { eventIds: [fixture.eventId], id },
+      }),
+      [201],
+    );
+    expect(created.body.id).toBe(id);
+    await flushWaitUntilForTest();
+    await expectSharedSnapshot(fixture, id, "Shared conversation");
+  });
+
+  it("rejects an ID that already names another user's share without touching it", async () => {
+    const owner = await prepareShare();
+    const existing = await accept(client().create(requestBody(owner)), [201]);
+    await flushWaitUntilForTest();
+    const intruder = await prepareShare("Intruder content");
+    const response = await accept(
+      client().create({
+        ...requestBody(intruder),
+        body: { eventIds: [intruder.eventId], id: existing.body.id },
+      }),
+      [409],
+    );
+    expect(response.body.error.code).toBe("CONFLICT");
+    await expectSharedSnapshot(owner, existing.body.id, "Shared conversation");
+    await expectNoShare(intruder);
+  });
+
+  it("rejects a malformed ID", async () => {
+    const fixture = await prepareShare();
+    const response = await accept(
+      client().create({
+        ...requestBody(fixture),
+        body: { eventIds: [fixture.eventId], id: "not-a-uuid" },
+      }),
+      [400],
+    );
+    expect(response.body.error.code).toBe("BAD_REQUEST");
+    await expectNoShare(fixture);
+  });
+});

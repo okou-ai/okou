@@ -1,6 +1,6 @@
 {
   "name": "api",
-  "version": "1.663.0",
+  "version": "1.666.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -75,7 +75,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "0.86.1",
+    "@earendil-works/pi-coding-agent": "0.87.1",
     "@hono/node-server-v1": "npm:@hono/node-server@1.19.14",
     "@hono/vite-build": "^1.11.1",
     "@opentelemetry/context-async-hooks": "2.11.0",

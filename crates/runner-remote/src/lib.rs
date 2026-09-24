@@ -5,10 +5,6 @@ pub mod run_usage;
 pub mod ssh;
 pub mod vnc;
 
-mod http;
-
-pub use http::{RemoteApiRequestFactory, RemoteRequestError};
-
 /// Initialization failure confined to remote authority clients.
 #[derive(Debug, thiserror::Error)]
 pub enum RemoteInitError {

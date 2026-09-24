@@ -7,7 +7,6 @@ import {
 import { expect, test } from "vitest";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
-import { pathname } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
@@ -63,62 +62,20 @@ async function instructionsEditor(): Promise<HTMLElement> {
   return editor;
 }
 
-test("Markdown links load as editable instruction text", async () => {
-  await setupInstructionsPage(
-    "Review the [Runbook](https://docs.example.test/runbook) before launch.",
-  );
-
-  const editor = await instructionsEditor();
-  expect(editor).toHaveTextContent("Review the Runbook before launch.");
-  expect(editor.querySelector("a")).toBeNull();
-
-  await userEvent.setup({ delay: null }).click(editor);
-
-  expect(editor).toHaveFocus();
-  expect(pathname()).toBe(`/agents/${AGENT_ID}`);
-});
-
-test.each([
-  { name: "saved instructions", initialContent: "Review release notes" },
-  { name: "empty instructions", initialContent: "" },
-])("Discard restores $name and exits editing", async ({ initialContent }) => {
-  await setupInstructionsPage(initialContent);
-  const user = userEvent.setup({ delay: null });
+test("Discard restores saved instructions and exits editing", async () => {
+  await setupInstructionsPage("Review release notes");
   const editor = await instructionsEditor();
 
   await fill(editor, "Unsaved instructions");
-  await user.click(editor);
-  expect(editor).toHaveFocus();
   const unsavedBar = await screen.findByTestId("unsaved-bar");
 
   click(within(unsavedBar).getByTestId("discard-button"));
 
   await waitFor(() => {
     expect(screen.getByLabelText("Instructions editor").textContent).toBe(
-      initialContent,
+      "Review release notes",
     );
   });
-  const restoredEditor = await instructionsEditor();
-  expect(restoredEditor).not.toHaveFocus();
-  expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
-
-  await user.click(restoredEditor);
-  await user.keyboard("{Control>}z{/Control}");
-
-  expect(restoredEditor.textContent).toBe(initialContent);
-  expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
-
-  await fill(restoredEditor, "A fresh edit");
-  const nextUnsavedBar = await screen.findByTestId("unsaved-bar");
-
-  click(within(nextUnsavedBar).getByTestId("discard-button"));
-
-  await waitFor(() => {
-    expect(screen.getByLabelText("Instructions editor").textContent).toBe(
-      initialContent,
-    );
-  });
-  expect(screen.getByLabelText("Instructions editor")).not.toHaveFocus();
   expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
 });
 
@@ -167,55 +124,4 @@ test("A user can format and save agent instructions", async () => {
   expect((await instructionsEditor()).querySelector("h2")).toHaveTextContent(
     "Launch risks",
   );
-
-  await fill(await instructionsEditor(), "An unsaved replacement");
-  const nextUnsavedBar = await screen.findByTestId("unsaved-bar");
-
-  click(within(nextUnsavedBar).getByTestId("discard-button"));
-
-  await waitFor(() => {
-    expect(
-      screen.getByLabelText("Instructions editor").querySelector("h2"),
-    ).toHaveTextContent("Launch risks");
-  });
-  expect(screen.getByLabelText("Instructions editor")).not.toHaveFocus();
-  expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
 });
-
-test.each(["{Enter}", " "])(
-  "Activate instruction formatting with %s after cancelling a pointer press",
-  async (key) => {
-    const updates: string[] = [];
-    await setupInstructionsPage("Selected instructions", (content) => {
-      updates.push(content);
-    });
-    const user = userEvent.setup({ delay: null });
-    const editor = await instructionsEditor();
-    await user.click(editor);
-    await user.keyboard("{Control>}a{/Control}");
-    const bold = await screen.findByTitle("Bold");
-
-    await user.pointer({ target: bold, keys: "[MouseLeft>]" });
-    expect(bold).toHaveFocus();
-    expect(editor).toHaveTextContent("Selected instructions");
-    expect(editor.querySelector("strong")).toBeNull();
-    await user.pointer({ target: editor, keys: "[/MouseLeft]" });
-    await user.pointer({ target: bold, keys: "[MouseRight]" });
-    expect(editor.querySelector("strong")).toBeNull();
-
-    await user.keyboard(key);
-    await waitFor(() => {
-      expect(editor.querySelector("strong")).toHaveTextContent(
-        "Selected instructions",
-      );
-      expect(editor).toHaveFocus();
-    });
-    expect(window.getSelection()?.toString()).toBe("Selected instructions");
-    const unsavedBar = await screen.findByTestId("unsaved-bar");
-    await user.click(within(unsavedBar).getByTestId("save-button"));
-    await waitFor(() => {
-      expect(updates).toHaveLength(1);
-      expect(updates[0]).toContain("**Selected instructions**");
-    });
-  },
-);

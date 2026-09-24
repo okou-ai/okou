@@ -1,4 +1,29 @@
 import type { DesktopAuthCallback } from "./desktop-auth";
+import type { DesktopAuthState } from "./desktop-bridge";
+import { isComputerUseSetupRequired } from "./computer-use-startup-gate";
+import {
+  hasRequiredComputerUsePermissions,
+  type ComputerUsePermissionState,
+} from "./computer-use-types";
+
+export async function isLaunchComputerUseSetupRequired(options: {
+  readonly getAuthState: () => Promise<DesktopAuthState>;
+  readonly waitForAuthCleanup: () => Promise<void>;
+  readonly refreshPermissions: () => Promise<ComputerUsePermissionState>;
+  readonly canRecoverSession: () => boolean;
+}): Promise<boolean> {
+  // Restoration changes the permission revision; probe only after it settles.
+  const authState = await options.getAuthState();
+  await options.waitForAuthCleanup();
+  const permissions = await options.refreshPermissions();
+  if (!hasRequiredComputerUsePermissions(permissions)) return true;
+  // An indeterminate hidden restore should enter paced auth recovery rather
+  // than open setup and leave the host permanently offline. A confirmed
+  // sign-out still requires the user to sign in.
+  if (authState.status === "signed_out" && options.canRecoverSession())
+    return false;
+  return isComputerUseSetupRequired({ authState, permissions });
+}
 
 interface DesktopLaunchComputerUseOptions {
   readonly pendingCallback: DesktopAuthCallback | null;

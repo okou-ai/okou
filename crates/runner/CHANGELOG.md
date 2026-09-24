@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.213.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.6...runner-rs-v0.213.7) (2026-09-24)
+
+
+### Bug Fixes
+
+* **firewall:** align aws permission overlap with ordinary rules ([#36442](https://github.com/okou-ai/okou/issues/36442)) ([ebedb8d](https://github.com/okou-ai/okou/commit/ebedb8db0d4680df5fc84fad02bcf33ca7d99da9))
+
+
+### Refactoring
+
+* **runner:** consolidate shared API transport in provider ([#36447](https://github.com/okou-ai/okou/issues/36447)) ([193d460](https://github.com/okou-ai/okou/commit/193d460a94a242db4958f4a90631800cd9eed3e4))
+
+## [0.213.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.5...runner-rs-v0.213.6) (2026-09-23)
+
+
+### Refactoring
+
+* **runner:** extract runner-executor crate ([#36407](https://github.com/okou-ai/okou/issues/36407)) ([c7f9671](https://github.com/okou-ai/okou/commit/c7f967101042e43b12b244cc1e5de5a15402dad3))
+
+## [0.213.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.4...runner-rs-v0.213.5) (2026-09-23)
+
+## [0.213.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.3...runner-rs-v0.213.4) (2026-09-23)
+
+
+### Bug Fixes
+
+* **model-provider:** authorize codex oauth across chatgpt backend api ([#36344](https://github.com/okou-ai/okou/issues/36344)) ([300433e](https://github.com/okou-ai/okou/commit/300433e7d394945f21005ab74edcb960257587d2))
+* **runner:** roll back codex cli to 0.155.1 ([#36381](https://github.com/okou-ai/okou/issues/36381)) ([dec5cc8](https://github.com/okou-ai/okou/commit/dec5cc80c5cc4e1b6abe56b829defe1e02f4e4f5))
+
+
+### Refactoring
+
+* **runner:** extract runner-lifecycle crate ([#36367](https://github.com/okou-ai/okou/issues/36367)) ([8723701](https://github.com/okou-ai/okou/commit/8723701a50a0b0c17b4486412cbecf89b914dda1))
+
+## [0.213.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.2...runner-rs-v0.213.3) (2026-09-23)
+
+
+### Bug Fixes
+
+* **model-provider:** authenticate codex workspace discovery ([#36335](https://github.com/okou-ai/okou/issues/36335)) ([0ce8d6b](https://github.com/okou-ai/okou/commit/0ce8d6b881ccbb57476eabe29fe013702ea1aa90))
+
+
+### Refactoring
+
+* **runner:** extract runner-remote domain crate ([#36288](https://github.com/okou-ai/okou/issues/36288)) ([595eed0](https://github.com/okou-ai/okou/commit/595eed02a81829a89d997b6a27a1d8e0db2ab3ab))
+
 ## [0.213.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.1...runner-rs-v0.213.2) (2026-09-23)
 
 

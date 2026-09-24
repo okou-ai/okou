@@ -172,6 +172,14 @@ export {
   type UpdateSshConnectionRequest,
 } from "./ssh-connections";
 export {
+  chatRemoteAccessContract,
+  remoteHostDefaultSchema,
+  threadRemoteHostAccessSchema,
+  type RemoteAccessProtocol,
+  type RemoteHostDefault,
+  type ThreadRemoteHostAccess,
+} from "./chat-remote-access";
+export {
   createModelProviderConnectionRequestSchema,
   getModelProviderTypeForSurfaceProtocol,
   modelProviderConnectionResponseSchema,
@@ -903,6 +911,7 @@ export {
   onboardingRecommendationLocaleSchema,
   onboardingRecommendationSchema,
   onboardingRecommendationStatusSchema,
+  onboardingUserProfileSchema,
   onboardingStatusContract,
   onboardingStatusResponseSchema,
   type OnboardingCompleteContract,
@@ -910,6 +919,7 @@ export {
   type OnboardingRecommendationConnectorSlug,
   type OnboardingRecommendationContract,
   type OnboardingRecommendationStatus,
+  type OnboardingUserProfile,
   type OnboardingStatusContract,
   type OnboardingStatusResponse,
 } from "./onboarding";

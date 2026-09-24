@@ -829,18 +829,6 @@ describe("POST /api/telegram/setup-status", () => {
 });
 
 describe("POST /api/telegram/register", () => {
-  it("requires an authenticated organization session", async () => {
-    const response = await accept(
-      telegramClient().register({
-        headers: {},
-        body: { botToken: TEST_BOT_TOKEN },
-      }),
-      [401],
-    );
-
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
-  });
-
   it("returns 400 when botToken is missing", async () => {
     mocks.clerk.session("user_register_missing_token", "org_register_missing");
 

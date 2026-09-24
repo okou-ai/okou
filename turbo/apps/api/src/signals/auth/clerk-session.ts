@@ -8,12 +8,14 @@ type ClerkSessionAuthContext =
   | {
       readonly tokenType: "session";
       readonly userId: string;
+      readonly sessionId?: string;
       readonly orgId: string;
       readonly orgRole: ApiOrgRole;
     }
   | {
       readonly tokenType: "session";
       readonly userId: string;
+      readonly sessionId?: string;
       readonly orgId?: undefined;
       readonly orgRole?: undefined;
     };
@@ -41,11 +43,13 @@ export const clerkSessionAuth$: Computed<
   }
 
   const orgRole = mapClerkOrgRole(identity.orgRole);
+  const session = identity.sessionId ? { sessionId: identity.sessionId } : {};
 
   if (identity.orgId && orgRole) {
     return {
       tokenType: "session",
       userId: identity.userId,
+      ...session,
       orgId: identity.orgId,
       orgRole,
     };
@@ -54,5 +58,6 @@ export const clerkSessionAuth$: Computed<
   return {
     tokenType: "session",
     userId: identity.userId,
+    ...session,
   };
 });

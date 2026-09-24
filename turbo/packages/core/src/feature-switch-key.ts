@@ -5,8 +5,6 @@
  */
 export enum FeatureSwitchKey {
   SocialDataJobs = "socialDataJobs",
-  WelcomeThread = "welcomeThread",
-  ThreadActivitySummary = "threadActivitySummary",
   Dummy = "_dummy",
   AhrefsConnector = "ahrefsConnector",
   BillConnector = "billConnector",
@@ -58,6 +56,7 @@ export enum FeatureSwitchKey {
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "_larkIntegration",
   VncAccess = "vncAccess",
+  ThreadRemoteAccess = "threadRemoteAccess",
   PiLoop = "piLoop",
   PiMemory = "piMemory",
   OpenRouterUsRouting = "openRouterUsRouting",
@@ -72,6 +71,7 @@ export enum FeatureSwitchKey {
   AvatarTexture = "avatarTexture",
   ConnectorDirectory = "connectorDirectory",
   ChatThreadHeaderActions = "chatThreadHeaderActions",
+  ChatMessageShare = "chatMessageShare",
   ChatThreadArchiving = "chatThreadArchiving",
   ComposerTemplateChipCover = "composerTemplateChipCover",
   ComposerSlashTemplatePanel = "composerSlashTemplatePanel",

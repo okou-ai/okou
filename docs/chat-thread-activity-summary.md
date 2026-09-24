@@ -1,13 +1,9 @@
 # Thread activity summaries
 
-`threadActivitySummary` is generally available (`enabled: true`). Its registry
-default now enables every account, so the switch no longer carries a
-`STAFF_ORG_ID_HASHES` cohort. Explicit database overrides still take
-precedence: a `false` override opts an individual account out. Both
-accepted-event capture and direct summary requests resolve the canonical
-owner's organization/user database overrides. The same switch hands off the
-initial-thinking producer to demand from the visible main thread. Opted-out
-accounts retain the existing producer, display and historical behavior.
+Activity summaries are available for every account. Accepted events feed a
+bounded snapshot, and the visible main thread requests summary copy on demand.
+The initial-thinking producer has been retired; no summary work starts solely
+because a run was created.
 
 ## API contract
 
@@ -31,8 +27,8 @@ still pending. `ineligible` is an owned run that is queued, terminal, or not the
 thread's admitted run. `unavailable` means the evidence expired.
 
 Authentication/validation errors use the existing 400/401/403 error contract.
-Disabled accounts receive 403. Missing, inaccessible, or mismatched thread/run
-identities receive 404 without cache exposure. An owned but ineligible run
+Missing, inaccessible, or mismatched thread/run identities receive 404
+without cache exposure. An owned but ineligible run
 receives 200 with `status: ineligible`, no messages, and no generation. A storage
 failure is this service's own defect and reaches the caller as a plain 500
 without exposing the snapshot.
@@ -83,7 +79,7 @@ credential-shaped argument keys are additionally redacted.
 - Relevant capture or visible messages retain evidence for at most 24 hours
   from activity; first observing an old message does not restart its retention. Expired evidence is never returned. An expiry index supports
   one cleanup batch of at most 500 rows with `FOR UPDATE SKIP LOCKED`, attached
-  to existing sandbox maintenance and available with the switch off.
+  to existing sandbox maintenance.
 
 ## Production diagnostics
 
@@ -117,13 +113,13 @@ verification remains controller-owned after release.
 
 The committed main-thread container owns summary demand through its local
 callback-ref AbortSignal and page lifecycle. Sidebar panels and unmounted routes
-do not request summaries. A visible, enabled viewer requests immediately for the
+do not request summaries. A visible viewer requests immediately for the
 latest eligible live run from the canonical event fold; the API independently
 verifies the admitted-run pointer and authorization. Subsequent requests use a
 15-second interval. Each viewer serializes requests, including an aborted
 transport still settling after a ref change.
 
-Hiding, navigating away, unmounting, switching off, losing thread access, queuing,
+Hiding, navigating away, unmounting, losing thread access, queuing,
 ending or replacing a run cancels demand and rejects late responses. An
 `ineligible`, 401, 403 or 404 response clears dynamic copy for that run identity.
 An `unavailable`, malformed or failed response keeps the current run's last
@@ -134,41 +130,14 @@ after commentary or a completed animation. Run status remains the existing
 programmatic projection. All dynamic copy stays in transient page state, outside
 chat events, browser persistence, history and model context.
 
-Normal-send preparation suppresses automatic initial thinking for enabled
-owners through the shared gate used by both retained scheduling branches. The
-producer rechecks canonical overrides before starting a model request, covering
-work scheduled before activation. Already-started provider calls cannot be
-recalled. Thread-title generation and the main model are independent and remain
-unchanged. Current normal sends all enter queue-first; the retained
-associated-message scheduling branch has no reachable normal-send caller.
+Normal sends do not schedule initial-thinking generation. Thread-title
+generation and the main model are independent and remain unchanged.
 
-## Deployment and rollout
+## Deployment and compatibility
 
-The migration only creates an empty table and index; it changes no existing
-persisted contract and backfills no historical rows. Existing API/Runner/App
-versions continue their current paths. Apply the additive migration before
-activating readers/writers; normal API production promotion already enforces
-that ordering. The general-availability configuration adds no migration,
-backfill or production override mutation.
-
-The general-availability default takes effect only after a subsequent release
-containing this registry change is deployed. Merging the configuration does not
-establish production activation. No user, email or organization exception is
-added, the shared staff identity list is unchanged, and stored overrides are
-untouched.
-
-New App against an older API without this endpoint receives 404 and retains the
-generic indicator without repeated requests. Older Apps against a new API retain
-their generic indicator for enabled runs because opening-copy generation is
-suppressed. Switch rollback restores the legacy path for subsequent runs; it
-does not backfill opening copy into an already-created run. An explicit `false`
-override provides an individual opt-out. Setting `enabled` back to `false` in
-this registry entry restores the previous default without changing stored
-overrides.
-
-The Epic #32819 controller owns independent acceptance of the merged change,
-subsequent release coordination, and production behavior and billing
-verification. Visible/hidden/never-viewed demand, the shared 15-second attempt
-bound, provider cooldown/fallback/recovery, and measured model-call traffic and
-costs remain pending production acceptance. The Epic also owns removal of the
-mixed-version fallback once older API rollback targets are retired.
+The existing migration created the disposable table and index without
+backfilling historical rows. A new App against an older API without this
+endpoint receives 404 and retains the generic indicator. Older Apps against a
+new API also retain their generic indicator; new runs no longer generate
+opening copy. Historical `thinking:initial` events remain readable as chat
+history, but no new ones are written.

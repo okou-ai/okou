@@ -48,7 +48,7 @@ use crate::error::{
     ApiBodyReadError, ApiFailureKind, ApiStatusError, ApiTransportCause, ApiTransportError,
     ProviderError, ProviderResult,
 };
-use crate::http::{ProviderHttpClient, ProviderHttpRequestBuilder};
+use crate::http::{ApiRequestBuilder, HttpClient};
 use crate::run_cancellation::RunCancellationRegistry;
 use guest_contracts::okou_cli::{InstalledOkouCli, OkouCliVersions};
 #[cfg(test)]
@@ -403,7 +403,7 @@ pub struct ApiProviderConfig {
 impl ApiProvider {
     /// Create a new API-backed provider.
     pub fn new(
-        http: ProviderHttpClient,
+        http: HttpClient,
         token: String,
         config: ApiProviderConfig,
         builtin_firewall_catalog_cache_paths: BuiltinFirewallCatalogCachePaths,
@@ -1148,11 +1148,14 @@ fn eligible_poll_transport_error(error: &ProviderError) -> Option<&ApiTransportE
     let ProviderError::ApiTransport(api_error) = error else {
         return None;
     };
-    matches!(
+    let retryable = matches!(
         api_error.failure_kind,
         ApiFailureKind::Timeout | ApiFailureKind::Connect
-    )
-    .then_some(api_error)
+    ) || matches!(
+        (api_error.failure_kind, api_error.failure_cause),
+        (ApiFailureKind::Request, ApiTransportCause::ConnectionReset)
+    );
+    retryable.then_some(api_error)
 }
 
 fn log_retryable_poll_failure(
@@ -1165,7 +1168,7 @@ fn log_retryable_poll_failure(
     let failure_elapsed_ms = duration_ms(observation.failure_elapsed);
 
     if observation.emit_degradation {
-        warn!(
+        error!(
             endpoint = request.endpoint_label,
             method = %request.method,
             host = %request.host,
@@ -1409,7 +1412,7 @@ fn log_heartbeat_recovery(state: &HeartbeatState, recovery: DegradationRecovery)
 /// Low-level HTTP client for the runner API endpoints.
 #[derive(Clone)]
 pub struct ApiClient {
-    http: ProviderHttpClient,
+    http: HttpClient,
     token: String,
 }
 
@@ -1417,7 +1420,7 @@ pub struct ApiClient {
 struct EmptyRequest {}
 
 impl ApiClient {
-    pub fn new(http: ProviderHttpClient, token: String) -> Self {
+    pub fn new(http: HttpClient, token: String) -> Self {
         Self { http, token }
     }
 
@@ -1653,7 +1656,7 @@ impl ApiClient {
         &self,
         run_id: &str,
         targets: &[ConnectorRuntimeTargetRegistration],
-    ) -> ProviderHttpRequestBuilder {
+    ) -> ApiRequestBuilder {
         self.http
             .request_resolved_route(
                 routes::runners::runs::by_run_id::connector_runtime::sync::route(
@@ -1750,7 +1753,7 @@ impl ApiClient {
         Ok(catalog)
     }
 
-    fn builtin_firewall_catalog_resolve_request(&self) -> ProviderHttpRequestBuilder {
+    fn builtin_firewall_catalog_resolve_request(&self) -> ApiRequestBuilder {
         self.http
             .request_route(
                 routes::runners::builtin_firewalls::resolve::RESOLVE,
@@ -1867,10 +1870,7 @@ fn poll_reason_value(reason: PollReason) -> &'static str {
     }
 }
 
-async fn send_api(
-    req: ProviderHttpRequestBuilder,
-    label: &'static str,
-) -> ProviderResult<Response> {
+async fn send_api(req: ApiRequestBuilder, label: &'static str) -> ProviderResult<Response> {
     match req.send(label).await {
         Ok(resp) => Ok(resp),
         Err(ProviderError::Api(message)) => Err(ProviderError::Api(format!("{label}: {message}"))),
@@ -2089,10 +2089,7 @@ mod tests {
     use uuid::Uuid;
 
     use crate::axiom_layer::{init_with_base_url, with_ingest_filter};
-    use crate::http::{
-        HttpClient, HttpClientConfig, PreparedProviderHttpRequest, ProviderHttpRequest,
-        ProviderHttpTransport,
-    };
+    use crate::http::{HttpClient, HttpClientConfig};
     use crate::provider::{
         ActiveRunnerPreference, RunnerNoPreferenceReason, RunnerPreference,
         RunnerPreferenceRemovalReason, RunnerPreferenceTier,
@@ -2112,10 +2109,11 @@ mod tests {
 
     fn api_client_for_url(api_url: String) -> ApiClient {
         ApiClient::new(
-            HttpClient::create(HttpClientConfig {
+            HttpClient::new(HttpClientConfig {
                 api_url,
                 vercel_bypass: None,
                 client_session_id: "runner-session-test".to_string(),
+                runner_version: env!("CARGO_PKG_VERSION"),
             })
             .unwrap(),
             "runner-token".to_string(),
@@ -2132,31 +2130,6 @@ mod tests {
         serde_json::to_value(claim_request_body(candidate, &runner_identity, None, None)).unwrap()
     }
 
-    struct BuiltinFirewallRequestAssertion;
-
-    impl ProviderHttpTransport for BuiltinFirewallRequestAssertion {
-        fn prepare(
-            &self,
-            request: ProviderHttpRequest,
-            endpoint_label: &'static str,
-        ) -> ProviderResult<PreparedProviderHttpRequest> {
-            assert_eq!(endpoint_label, "builtin firewall catalog resolve");
-            assert_eq!(request.method(), api_contracts::Method::Post);
-            assert_eq!(
-                request.path(),
-                routes::runners::builtin_firewalls::resolve::RESOLVE.path
-            );
-            assert_eq!(
-                request.timeout(),
-                Some(BUILTIN_FIREWALL_CATALOG_RESOLVE_TIMEOUT)
-            );
-            assert_eq!(request.json_body(), Some(br#"{}"#.as_slice()));
-            Err(ProviderError::Internal(
-                "request assertions completed".to_string(),
-            ))
-        }
-    }
-
     #[test]
     fn active_input_source_requires_a_thread_run() {
         assert!(supports_thread_active_input(Some("thread:chat-id")));
@@ -2167,18 +2140,34 @@ mod tests {
     #[test]
     fn builtin_firewall_catalog_resolve_request_uses_bounded_timeout_and_empty_body() {
         let api = ApiClient::new(
-            ProviderHttpClient::new(BuiltinFirewallRequestAssertion),
+            HttpClient::new(HttpClientConfig {
+                api_url: "https://api.vm0.dev".to_string(),
+                vercel_bypass: None,
+                client_session_id: "runner-session-test".to_string(),
+                runner_version: env!("CARGO_PKG_VERSION"),
+            })
+            .unwrap(),
             "runner-token".to_string(),
         );
 
-        let result = api
+        let request = api
             .builtin_firewall_catalog_resolve_request()
-            .prepare("builtin firewall catalog resolve");
+            .build()
+            .unwrap();
 
-        assert!(matches!(
-            result,
-            Err(ProviderError::Internal(message)) if message == "request assertions completed"
-        ));
+        assert_eq!(request.method(), reqwest::Method::POST);
+        assert_eq!(
+            request.url().path(),
+            routes::runners::builtin_firewalls::resolve::RESOLVE.path
+        );
+        assert_eq!(
+            request.timeout(),
+            Some(&BUILTIN_FIREWALL_CATALOG_RESOLVE_TIMEOUT)
+        );
+        assert_eq!(
+            request.body().and_then(reqwest::Body::as_bytes),
+            Some(br#"{}"#.as_slice())
+        );
     }
 
     fn api_client_for_server(server: &MockServer) -> ApiClient {
@@ -2497,10 +2486,11 @@ mod tests {
         claim_cooldown_capacity: usize,
     ) -> Arc<ApiProvider> {
         let api = ApiClient::new(
-            HttpClient::create(HttpClientConfig {
+            HttpClient::new(HttpClientConfig {
                 api_url,
                 vercel_bypass: None,
                 client_session_id: "runner-session-test".to_string(),
+                runner_version: env!("CARGO_PKG_VERSION"),
             })
             .unwrap(),
             "runner-token".to_string(),
@@ -2614,7 +2604,10 @@ mod tests {
         }
     }
 
-    fn poll_transport_error(failure_kind: ApiFailureKind) -> ProviderError {
+    fn poll_transport_error_with_cause(
+        failure_kind: ApiFailureKind,
+        failure_cause: ApiTransportCause,
+    ) -> ProviderError {
         ProviderError::ApiTransport(Box::new(ApiTransportError {
             request: crate::error::ApiRequestContext {
                 endpoint_label: "poll",
@@ -2626,9 +2619,13 @@ mod tests {
                 client_version: env!("CARGO_PKG_VERSION").to_string(),
             },
             failure_kind,
-            failure_cause: synthetic_transport_cause(failure_kind),
+            failure_cause,
             summary: format!("synthetic {} failure", failure_kind.as_str()),
         }))
+    }
+
+    fn poll_transport_error(failure_kind: ApiFailureKind) -> ProviderError {
+        poll_transport_error_with_cause(failure_kind, synthetic_transport_cause(failure_kind))
     }
 
     fn heartbeat_transport_error_with_cause(
@@ -2683,6 +2680,13 @@ mod tests {
             }
         }
 
+        fn degraded_level(self) -> Level {
+            match self {
+                Self::Poll => Level::ERROR,
+                Self::Heartbeat => Level::WARN,
+            }
+        }
+
         fn recovery_message(self) -> &'static str {
             match self {
                 Self::Poll => "poll fallback recovered",
@@ -2692,7 +2696,10 @@ mod tests {
 
         fn transport_error(self) -> ProviderError {
             match self {
-                Self::Poll => poll_transport_error(ApiFailureKind::Timeout),
+                Self::Poll => poll_transport_error_with_cause(
+                    ApiFailureKind::Request,
+                    ApiTransportCause::ConnectionReset,
+                ),
                 Self::Heartbeat => heartbeat_transport_error(ApiFailureKind::Timeout),
             }
         }
@@ -2948,7 +2955,7 @@ mod tests {
             assert_eq!(path_events.len(), 4, "path={path:?}; events={events:#?}");
             assert_eq!(path_events[0].level, Level::INFO, "path={path:?}");
             assert_eq!(path_events[1].level, Level::INFO, "path={path:?}");
-            assert_eq!(path_events[2].level, Level::WARN, "path={path:?}");
+            assert_eq!(path_events[2].level, path.degraded_level(), "path={path:?}");
             assert_eq!(path_events[3].level, Level::INFO, "path={path:?}");
             for (event, expected_count) in path_events.iter().zip(1_u64..=4) {
                 assert_eq!(
@@ -2978,7 +2985,7 @@ mod tests {
             assert_eq!(
                 path_events
                     .iter()
-                    .filter(|event| event.level == Level::WARN)
+                    .filter(|event| event.level == path.degraded_level())
                     .count(),
                 1,
                 "path={path:?}"
@@ -3028,7 +3035,7 @@ mod tests {
                 later_events
                     .iter()
                     .filter(|event| {
-                        event.level == Level::WARN
+                        event.level == path.degraded_level()
                             && event
                                 .fields
                                 .get("message")
@@ -3250,10 +3257,17 @@ mod tests {
             (PollReason::Fast, "fast"),
         ];
 
-        for failure_kind in [ApiFailureKind::Timeout, ApiFailureKind::Connect] {
+        for (failure_kind, failure_cause) in [
+            (ApiFailureKind::Timeout, ApiTransportCause::Timeout),
+            (
+                ApiFailureKind::Connect,
+                ApiTransportCause::ConnectionRefused,
+            ),
+            (ApiFailureKind::Request, ApiTransportCause::ConnectionReset),
+        ] {
             for (reason, expected_reason) in reasons {
                 let provider = idle_api_provider_for_test();
-                let error = poll_transport_error(failure_kind);
+                let error = poll_transport_error_with_cause(failure_kind, failure_cause);
                 let (_, events) = capture_api_provider_events(provider.record_poll_failure_at(
                     reason,
                     &error,
@@ -3276,10 +3290,7 @@ mod tests {
                     env!("CARGO_PKG_VERSION")
                 );
                 assert_eq!(event_field(event, "failure_kind"), failure_kind.as_str());
-                assert_eq!(
-                    event_field(event, "failure_cause"),
-                    synthetic_transport_cause(failure_kind).as_str()
-                );
+                assert_eq!(event_field(event, "failure_cause"), failure_cause.as_str());
                 assert_eq!(event_field(event, "poll_reason"), expected_reason);
                 assert_eq!(event_field(event, "consecutive_failures"), "1");
                 assert_eq!(event_field(event, "failure_elapsed_ms"), "0");
@@ -3311,6 +3322,10 @@ mod tests {
             .await;
         let unsupported_errors = [
             poll_transport_error(ApiFailureKind::Request),
+            poll_transport_error_with_cause(
+                ApiFailureKind::Body,
+                ApiTransportCause::ConnectionReset,
+            ),
             poll_transport_error(ApiFailureKind::Body),
             poll_transport_error(ApiFailureKind::Unknown),
             ProviderError::ApiStatus(Box::new(ApiStatusError {
@@ -3386,7 +3401,7 @@ mod tests {
         ))
         .await;
         let transition = captured_event(&transition_events, "poll fallback degraded");
-        assert_eq!(transition.level, Level::WARN);
+        assert_eq!(transition.level, Level::ERROR);
         assert_eq!(event_field(transition, "consecutive_failures"), "2");
     }
 
@@ -3920,7 +3935,10 @@ mod tests {
         provider
             .record_poll_failure_at(
                 PollReason::Immediate,
-                &poll_transport_error(ApiFailureKind::Timeout),
+                &poll_transport_error_with_cause(
+                    ApiFailureKind::Request,
+                    ApiTransportCause::ConnectionReset,
+                ),
                 started_at,
             )
             .await;

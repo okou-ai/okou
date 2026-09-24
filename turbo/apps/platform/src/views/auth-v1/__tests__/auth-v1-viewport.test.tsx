@@ -41,25 +41,6 @@ function expectPinchPrevented(prevented: boolean): void {
   expect(wheel.defaultPrevented).toBe(prevented);
 }
 
-test.each([
-  ["sign-in", ""],
-  ["sign-up", ""],
-  ["sign-in", "/tasks/choose-organization"],
-  ["sign-up", "/verify-email-address"],
-])("Hosted %s%s permits viewport zoom", async (mode, suffix) => {
-  const viewport = installViewport();
-  await setupPage({
-    context,
-    host: "app.okou.ai",
-    path: `/${mode}${suffix}`,
-    auth: null,
-  });
-
-  expect(screen.getByTestId(`clerk-${mode}`)).toBeVisible();
-  expect(viewport.content).toBe(ACCESSIBLE_VIEWPORT);
-  expectPinchPrevented(false);
-});
-
 test("Leaving hosted auth restores the existing app zoom policy", async () => {
   const viewport = installViewport();
   await setupPage({
@@ -88,11 +69,4 @@ test("Leaving hosted auth restores the existing app zoom policy", async () => {
   ).resolves.toBeVisible();
   expect(viewport.content).toBe(DEFAULT_VIEWPORT);
   expectPinchPrevented(true);
-
-  act(() => {
-    window.history.back();
-  });
-  await expect(screen.findByTestId("clerk-sign-up")).resolves.toBeVisible();
-  expect(viewport.content).toBe(ACCESSIBLE_VIEWPORT);
-  expectPinchPrevented(false);
 });

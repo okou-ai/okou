@@ -1,6 +1,6 @@
 {
   "name": "@okouai/cli",
-  "version": "9.356.1",
+  "version": "9.357.3",
   "private": true,
   "description": "Okou command-line interface",
   "repository": {
@@ -29,7 +29,7 @@
     "check-types": "pnpm --filter @okouai/pi-agent-runtime run build && tsc --noEmit"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "0.86.1",
+    "@earendil-works/pi-coding-agent": "0.87.1",
     "@modelcontextprotocol/client": "^2.0.0",
     "@sentry/node": "^10.73.0",
     "@types/node": "^24.3.0",

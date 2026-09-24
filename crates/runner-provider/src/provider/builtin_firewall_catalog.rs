@@ -695,10 +695,11 @@ mod tests {
             let cache_path = dir.path().join("builtin-firewall-catalog-cache.json");
             let lock_path = dir.path().join("builtin-firewall-catalog-cache.json.lock");
             let api = ApiClient::new(
-                HttpClient::create(HttpClientConfig {
+                HttpClient::new(HttpClientConfig {
                     api_url: server.url(),
                     vercel_bypass: None,
                     client_session_id: "catalog-refresh-test".to_string(),
+                    runner_version: env!("CARGO_PKG_VERSION"),
                 })
                 .unwrap(),
                 "private-runner-token".to_string(),
@@ -1215,10 +1216,11 @@ mod tests {
         let cache_path = dir.path().join("builtin-firewall-catalog-cache.json");
         let lock_path = dir.path().join("builtin-firewall-catalog-cache.json.lock");
         let api = ApiClient::new(
-            HttpClient::create(HttpClientConfig {
+            HttpClient::new(HttpClientConfig {
                 api_url: server.url(),
                 vercel_bypass: None,
                 client_session_id: "aws-catalog-refresh-test".to_string(),
+                runner_version: env!("CARGO_PKG_VERSION"),
             })
             .unwrap(),
             "private-runner-token".to_string(),

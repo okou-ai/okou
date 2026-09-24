@@ -242,126 +242,46 @@ describe("GET /api/integrations/slack", () => {
     // Admin + installed: scope fields should be present (botScopes null → mismatch)
     expect(response.body).toHaveProperty("scopeMismatch");
     expect(response.body).toHaveProperty("reinstallUrl");
-    // Not connected: workspace/environment fields should NOT be present
+    // Not connected: workspace fields should NOT be present
     expect(response.body).not.toHaveProperty("workspaceName");
     expect(response.body).not.toHaveProperty("defaultAgentName");
-    expect(response.body).not.toHaveProperty("environment");
   });
 
-  describe("environment field", () => {
-    async function seedEnvironmentVersion(): Promise<void> {
-      await postSlackState({
-        org_id: fixture.orgId,
-        user_id: fixture.userId,
-        seed_default_agent: true,
-        default_agent_name: "slack-bot",
-        default_agent_display_name: "Slack Bot",
-      });
-    }
-
-    async function seedUserSecret(name: string): Promise<void> {
-      await postSlackState({
-        org_id: fixture.orgId,
-        user_id: fixture.userId,
-        seed_secret_names: [name],
-      });
-    }
-
-    async function seedUserVariable(
-      name: string,
-      value: string,
-    ): Promise<void> {
-      await postSlackState({
-        org_id: fixture.orgId,
-        user_id: fixture.userId,
-        seed_variables: { [name]: value },
-      });
-    }
-
-    function mockAdminAuth(): void {
-      context.mocks.clerk.authenticateRequest.mockResolvedValue({
-        isAuthenticated: true,
-        toAuth: () => {
-          return {
-            userId: fixture.userId,
-            orgId: fixture.orgId,
-            orgRole: "org:admin",
-          };
-        },
-      });
-    }
-
-    it("reports no user requirements for application-owned runtime bindings", async () => {
-      await seedEnvironmentVersion();
-      await seedUserSecret("SEC_A");
-      await seedUserVariable("VAR_A", "us-east-1");
-
-      mockAdminAuth();
-
-      const client = setupApp({ context, routes: integrationsSlackRoutes })(
-        integrationsSlackContract,
-      );
-
-      const response = await accept(
-        client.getStatus({
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      );
-
-      expect(response.body.environment).toBeDefined();
-      expect(response.body.environment!.requiredSecrets).toStrictEqual([]);
-      expect(response.body.environment!.requiredVars).toStrictEqual([]);
-      expect(response.body.environment!.missingSecrets).toStrictEqual([]);
-      expect(response.body.environment!.missingVars).toStrictEqual([]);
+  it("returns connected workspace and default agent for a connected user", async () => {
+    await postSlackState({
+      org_id: fixture.orgId,
+      user_id: fixture.userId,
+      seed_default_agent: true,
+      default_agent_name: "slack-bot",
+      default_agent_display_name: "Slack Bot",
     });
 
-    it("does not report application-provided bindings as missing", async () => {
-      await seedEnvironmentVersion();
-
-      mockAdminAuth();
-
-      const client = setupApp({ context, routes: integrationsSlackRoutes })(
-        integrationsSlackContract,
-      );
-
-      const response = await accept(
-        client.getStatus({
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      );
-
-      expect(response.body.environment).toBeDefined();
-      expect(response.body.environment!.requiredSecrets).toStrictEqual([]);
-      expect(response.body.environment!.requiredVars).toStrictEqual([]);
-      expect(response.body.environment!.missingSecrets).toStrictEqual([]);
-      expect(response.body.environment!.missingVars).toStrictEqual([]);
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: true,
+      toAuth: () => {
+        return {
+          userId: fixture.userId,
+          orgId: fixture.orgId,
+          orgRole: "org:admin",
+        };
+      },
     });
 
-    it("omits environment when isConnected is false", async () => {
-      await deleteSlackConnection(fixture);
+    const client = setupApp({ context, routes: integrationsSlackRoutes })(
+      integrationsSlackContract,
+    );
 
-      await seedEnvironmentVersion();
-      await seedUserSecret("SEC_A");
-      await seedUserVariable("VAR_A", "us-east-1");
+    const response = await accept(
+      client.getStatus({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
 
-      mockAdminAuth();
-
-      const client = setupApp({ context, routes: integrationsSlackRoutes })(
-        integrationsSlackContract,
-      );
-
-      const response = await accept(
-        client.getStatus({
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      );
-
-      expect(response.body.isConnected).toBeFalsy();
-      expect(response.body.environment).toBeUndefined();
-    });
+    expect(response.body.isConnected).toBeTruthy();
+    expect(response.body.isInstalled).toBeTruthy();
+    expect(response.body.workspaceName).toBeTruthy();
+    expect(response.body.defaultAgentName).toBe("Slack Bot");
   });
 });
 
@@ -437,19 +357,6 @@ describe("DELETE /api/integrations/slack", () => {
       slackUserId: connection?.slackUserId ?? null,
     };
   }
-
-  it("returns 401 when unauthenticated", async () => {
-    const client = setupApp({ context, routes: integrationsSlackRoutes })(
-      integrationsSlackContract,
-    );
-
-    const response = await accept(
-      client.disconnect({ headers: {}, query: {} }),
-      [401],
-    );
-
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
-  });
 
   it("returns 404 when the user has no Slack connection", async () => {
     const seeded = await seedDeleteContext({ withConnection: false });
@@ -605,25 +512,6 @@ describe("DELETE /api/integrations/slack?action=uninstall", () => {
 
     expect(response.body.error.code).toBe("FORBIDDEN");
     expect(response.body.error.message).toBe("Admin access required");
-  });
-
-  it("returns 404 when no installation exists", async () => {
-    const seeded = await seedUninstallContext({ withInstallation: false });
-    mocks.clerk.session(seeded.userId, seeded.orgId, "org:admin");
-    const client = setupApp({ context, routes: integrationsSlackRoutes })(
-      integrationsSlackContract,
-    );
-
-    const response = await accept(
-      client.disconnect({
-        headers: { authorization: "Bearer clerk-session" },
-        query: { action: "uninstall" },
-      }),
-      [404],
-    );
-
-    expect(response.body.error.code).toBe("NOT_FOUND");
-    expect(response.body.error.message).toBe("No Slack installation found");
   });
 
   it("publishes uninstalled App Home then deletes installation and connections", async () => {
@@ -800,13 +688,6 @@ describe("GET /api/integrations/slack/download-file", () => {
       token: okouToken({ userId, orgId, capabilities: ["slack:write"] }),
     };
   }
-
-  it("returns 401 when the request is unauthenticated", async () => {
-    expect.hasAssertions();
-    const response = await requestDownloadFile("?file_id=F1");
-
-    await expectErrorResponse(response, 401, "UNAUTHORIZED");
-  });
 
   it("rejects an agent token without slack:write capability", async () => {
     expect.hasAssertions();

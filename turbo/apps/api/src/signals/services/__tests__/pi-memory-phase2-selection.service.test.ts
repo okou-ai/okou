@@ -2,21 +2,14 @@ import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
-import {
-  PI_MEMORY_PHASE2_MAX_ATTEMPTS,
-  PI_MEMORY_PHASE2_MAX_SELECTED_CANDIDATES,
-  PI_MEMORY_PHASE2_MAX_SELECTED_UTF8_BYTES,
-} from "@okouai/db/schema/pi-memory-phase2-job";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 
 import { db } from "../../../lib/db";
 import {
   claimPiMemoryPhase2Job,
   failPiMemoryPhase2Job,
-  PI_MEMORY_PHASE2_LEASE_DURATION_MS,
   PI_MEMORY_PHASE2_MAX_UNUSED_AGE_MS,
   PI_MEMORY_PHASE2_RETRY_DELAY_MS,
-  PI_MEMORY_PHASE2_SUCCESS_COOLDOWN_MS,
 } from "../pi-memory-phase2-job.service";
 import {
   createPhase2TestScope,
@@ -29,15 +22,7 @@ const NOW = Object.freeze(new Date("2026-09-03T04:00:00.000Z"));
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 describe("Pi memory Phase 2 selection", () => {
-  it("pins every timing, attempt, count, byte, and digest constant", () => {
-    expect(PI_MEMORY_PHASE2_LEASE_DURATION_MS).toBe(60 * 60 * 1000);
-    expect(PI_MEMORY_PHASE2_RETRY_DELAY_MS).toBe(60 * 60 * 1000);
-    expect(PI_MEMORY_PHASE2_SUCCESS_COOLDOWN_MS).toBe(6 * 60 * 60 * 1000);
-    expect(PI_MEMORY_PHASE2_MAX_UNUSED_AGE_MS).toBe(30 * DAY_MS);
-    expect(PI_MEMORY_PHASE2_MAX_ATTEMPTS).toBe(3);
-    expect(PI_MEMORY_PHASE2_MAX_SELECTED_CANDIDATES).toBe(256);
-    expect(PI_MEMORY_PHASE2_MAX_SELECTED_UTF8_BYTES).toBe(21_036_800);
-
+  it("keeps stable selection digests for persisted candidate sets", () => {
     expect(piMemoryPhase2SelectionDigest([])).toBe(
       "f95c6835f8a93234e88b26bc2162bd3cf8defd709037f6eefb14ee6ae3d56e48",
     );

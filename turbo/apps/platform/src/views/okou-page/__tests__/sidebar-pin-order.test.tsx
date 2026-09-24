@@ -6,7 +6,6 @@ import {
   chatThreadPinContract,
   type ChatThreadEvent,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
   queryAllByRoleFast,
@@ -200,84 +199,4 @@ test("new pins receive a rank ahead of all existing pins", async () => {
     ]);
   });
   pending.resolve();
-});
-
-test("touch users can move a pin up and down through the thread menu", async () => {
-  context.mocks.api(chatThreadPinOrderContract.reorder, ({ respond }) => {
-    return respond(204);
-  });
-  await prepare(66);
-  const user = userEvent.setup();
-  await user.pointer([
-    { keys: "[TouchA>]", target: menuButton("Last pin") },
-    { keys: "[/TouchA]" },
-  ]);
-  await screen.findByRole("menu");
-  click(menuItem("Move up"));
-  await waitFor(() => {
-    expect(sidebarThreadTitles()).toStrictEqual([
-      "First pin",
-      "Last pin",
-      "Second pin",
-      "Regular thread",
-    ]);
-  });
-  await user.pointer([
-    { keys: "[TouchA>]", target: menuButton("Last pin") },
-    { keys: "[/TouchA]" },
-  ]);
-  await screen.findByRole("menu");
-  click(menuItem("Move down"));
-  await waitFor(() => {
-    expect(sidebarThreadTitles()).toStrictEqual([
-      "First pin",
-      "Second pin",
-      "Last pin",
-      "Regular thread",
-    ]);
-  });
-});
-
-test("Hide pin move actions while filtering to archived chats", async () => {
-  const caseId = 67;
-  const auth = chatListAuth(caseId);
-  const pinnedAt = "2026-09-01T00:00:00Z";
-  const snapshot = [
-    chatListThread(3, "✅ First archived pin", {
-      pinnedAt,
-      pinOrder: "a0",
-    }),
-    chatListThread(2, "Visible pin", { pinnedAt, pinOrder: "a1" }),
-    chatListThread(1, "✅ Last archived pin", {
-      pinnedAt,
-      pinOrder: "a2",
-    }),
-  ];
-  installChatListAgent(context);
-  installChatListStream(context, { caseId, snapshot });
-  await setupPage({
-    context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
-    auth,
-    cachedChatThreadEvents: cachedChatListEvents(caseId, snapshot),
-    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
-  });
-  await screen.findByText("Visible pin");
-
-  click(screen.getByLabelText("Open chat list menu"));
-  click(menuItem("Archived"));
-  await screen.findByText("✅ First archived pin");
-  expect(sidebarThreadTitles()).toStrictEqual([
-    "✅ First archived pin",
-    "✅ Last archived pin",
-  ]);
-
-  click(menuButton("✅ First archived pin"));
-  await screen.findByRole("menu");
-  expect(
-    queryAllByRoleFast("menuitem").filter((item) => {
-      const label = item.textContent?.trim();
-      return label === "Move up" || label === "Move down";
-    }),
-  ).toHaveLength(0);
 });

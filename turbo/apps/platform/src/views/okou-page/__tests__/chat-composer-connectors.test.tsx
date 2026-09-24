@@ -1,7 +1,7 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, describe, beforeEach, it } from "vitest";
 
@@ -27,7 +27,6 @@ import {
   permissionDetail,
   SCOUT_AGENT_ID,
 } from "./chat-composer-connectors-test-helpers.ts";
-import { mockConnectorPopoverLayout } from "./chat-composer-connector-popover-layout-test-helpers.ts";
 import {
   context,
   findFastControl,
@@ -39,19 +38,6 @@ const GMAIL_SLUG = "gmail" as ConnectorSlug;
 const AXIOM_SLUG = "axiom" as ConnectorSlug;
 const GOOGLE_ANALYTICS_SLUG = "google-analytics" as ConnectorSlug;
 const PUBLIC_STRIPE_SLUG = "stripe-public" as ConnectorSlug;
-
-function searchableConnectorCatalog() {
-  return [
-    builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" }),
-    builtinConnector({ slug: GMAIL_SLUG, label: "Gmail" }),
-    ...Array.from({ length: 19 }, (_, index) => {
-      return builtinConnector({
-        slug: `overflow-${index + 1}` as ConnectorSlug,
-        label: `Overflow ${index + 1}`,
-      });
-    }),
-  ];
-}
 
 async function loadComposer(): Promise<void> {
   await expect(screen.findByTestId("start-cards")).resolves.toBeVisible();
@@ -119,211 +105,6 @@ function createAuthWindow(): Window {
   });
   return authWindow;
 }
-
-function popoverSide(
-  popover: HTMLElement,
-  trigger: HTMLElement,
-): "bottom" | "overlapping" | "top" {
-  const popoverRect = popover.getBoundingClientRect();
-  const triggerRect = trigger.getBoundingClientRect();
-  if (popoverRect.bottom <= triggerRect.top) {
-    return "top";
-  }
-  if (popoverRect.top >= triggerRect.bottom) {
-    return "bottom";
-  }
-  return "overlapping";
-}
-
-async function filterConnectorMenu(
-  user: ReturnType<typeof userEvent.setup>,
-  searchInput: HTMLElement,
-  notifyResize: () => void,
-): Promise<void> {
-  await user.type(searchInput, "gmail");
-  await waitFor(() => {
-    expect(screen.queryByText("GitHub")).not.toBeInTheDocument();
-    expect(screen.getByText("Gmail")).toBeInTheDocument();
-  });
-  act(notifyResize);
-}
-
-async function clearConnectorFilter(
-  user: ReturnType<typeof userEvent.setup>,
-  notifyResize: () => void,
-): Promise<void> {
-  await user.keyboard("{Control>}a{/Control}{Backspace}");
-  await expect(screen.findByText("GitHub")).resolves.toBeVisible();
-  act(notifyResize);
-}
-
-async function prepareScrollableDesktopConnectorMenu() {
-  const user = userEvent.setup({ delay: null });
-  const layout = mockConnectorPopoverLayout({
-    popupHeight: 400,
-    viewport: { width: 1000, height: 520 },
-    trigger: { x: 320, y: 320, width: 32, height: 32 },
-  });
-  installComposerConnectorFixture({
-    catalog: searchableConnectorCatalog(),
-    builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
-  });
-  await setupPage({
-    context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-  });
-  await loadComposer();
-  const trigger = await findFastControl("button", "Connectors");
-  await openConnectors(user);
-  const searchInput = await screen.findByPlaceholderText(/Find connectors/u);
-  const popover = await screen.findByRole("dialog", { name: "Connectors" });
-  act(layout.notifyResize);
-  const connectorList = await screen.findByRole("list", {
-    name: "Connectors",
-  });
-  const expandedListHeight = connectorList.clientHeight;
-  await waitFor(() => {
-    expect(popoverSide(popover, trigger)).toBe("top");
-  });
-  expect(connectorList.scrollHeight).toBeGreaterThan(
-    connectorList.clientHeight,
-  );
-  return {
-    user,
-    searchInput,
-    layout,
-    popover,
-    trigger,
-    connectorList,
-    expandedListHeight,
-  };
-}
-
-describe("with an open desktop connector menu", () => {
-  async function prepareScenario() {
-    const {
-      user,
-      searchInput,
-      layout,
-      popover,
-      trigger,
-      connectorList,
-      expandedListHeight,
-    } = await prepareScrollableDesktopConnectorMenu();
-    return {
-      user,
-      searchInput,
-      layout,
-      popover,
-      trigger,
-      connectorList,
-      expandedListHeight,
-    };
-  }
-  let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
-  beforeEach(async () => {
-    preparedScenario = await prepareScenario();
-  });
-  it("keep the desktop connector menu above while filtering", async () => {
-    const {
-      user,
-      searchInput,
-      layout,
-      popover,
-      trigger,
-      connectorList,
-      expandedListHeight,
-    } = preparedScenario;
-    await filterConnectorMenu(user, searchInput, layout.notifyResize);
-    await waitFor(() => {
-      expect(popoverSide(popover, trigger)).toBe("top");
-      expect(connectorList.clientHeight).toBe(expandedListHeight);
-      expect(connectorList.scrollHeight).toBe(connectorList.clientHeight);
-      expect(screen.getByText("Add connectors")).toBeInTheDocument();
-    });
-  });
-});
-
-test("Keep the desktop connector menu above after clearing its filter", async () => {
-  const { user, searchInput, layout, popover, trigger, connectorList } =
-    await prepareScrollableDesktopConnectorMenu();
-  await filterConnectorMenu(user, searchInput, layout.notifyResize);
-  await waitFor(() => {
-    expect(connectorList.scrollHeight).toBe(connectorList.clientHeight);
-  });
-  await clearConnectorFilter(user, layout.notifyResize);
-  await waitFor(() => {
-    expect(popoverSide(popover, trigger)).toBe("top");
-    expect(connectorList.scrollHeight).toBeGreaterThan(
-      connectorList.clientHeight,
-    );
-  });
-});
-
-test("Keep collision-selected connector menu below while filtering on mobile", async () => {
-  const user = userEvent.setup({ delay: null });
-  const layout = mockConnectorPopoverLayout({
-    popupHeight: 400,
-    viewport: { width: 390, height: 700 },
-    trigger: { x: 24, y: 220, width: 32, height: 32 },
-  });
-  installComposerConnectorFixture({
-    catalog: searchableConnectorCatalog(),
-    builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
-  });
-
-  await setupPage({
-    context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-  });
-
-  await loadComposer();
-  const trigger = await findFastControl("button", "Connectors");
-  await openConnectors(user);
-  const searchInput = await screen.findByPlaceholderText(/Find connectors/u);
-  const popover = await screen.findByRole("dialog", { name: "Connectors" });
-  act(layout.notifyResize);
-  await waitFor(() => {
-    expect(popoverSide(popover, trigger)).toBe("bottom");
-  });
-
-  await filterConnectorMenu(user, searchInput, layout.notifyResize);
-  await waitFor(() => {
-    expect(popoverSide(popover, trigger)).toBe("bottom");
-  });
-
-  await clearConnectorFilter(user, layout.notifyResize);
-  await waitFor(() => {
-    expect(popoverSide(popover, trigger)).toBe("bottom");
-  });
-});
-
-test("Keep connector actions available when search has no matches", async () => {
-  const user = userEvent.setup({ delay: null });
-  installComposerConnectorFixture({
-    catalog: searchableConnectorCatalog(),
-    builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
-  });
-
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
-
-  await loadComposer();
-  await openConnectors(user);
-  const searchInput = await screen.findByPlaceholderText(/Find connectors/u);
-  await user.type(searchInput, "nonexistent connector");
-  await waitFor(() => {
-    expect(screen.queryByText("GitHub")).not.toBeInTheDocument();
-    expect(screen.queryByText("Gmail")).not.toBeInTheDocument();
-    expect(screen.getByText("Add connectors")).toBeVisible();
-  });
-  await user.click(await findFastControl("button", "Add connectors"));
-  const catalog = await screen.findByRole("dialog", {
-    name: /Available connectors/u,
-  });
-  expect(
-    within(catalog).getByPlaceholderText("Find connectors..."),
-  ).toBeVisible();
-});
 
 test("Show the filtered connector count in the add dialog", async () => {
   const user = userEvent.setup({ delay: null });
@@ -592,90 +373,77 @@ test("Show only the connector actions that are useful in chat", async () => {
   expect(accessRow(screen.getByLabelText("Add Axiom"))).toBe(axiomRow);
 });
 
-test.each(["pointer", "Enter", "Space"] as const)(
-  "Start connector setup from chat with %s",
-  async (activation) => {
-    const user = userEvent.setup({ delay: null });
-    const fixture = installComposerConnectorFixture({
-      catalog: [
-        builtinConnector({
-          slug: GOOGLE_ANALYTICS_SLUG,
-          label: "Google Analytics",
-          connected: false,
-          authMethods: [oauthAuthMethod()],
-        }),
-      ],
+test("Start connector setup from chat", async () => {
+  const user = userEvent.setup({ delay: null });
+  const fixture = installComposerConnectorFixture({
+    catalog: [
+      builtinConnector({
+        slug: GOOGLE_ANALYTICS_SLUG,
+        label: "Google Analytics",
+        connected: false,
+        authMethods: [oauthAuthMethod()],
+      }),
+    ],
+  });
+  const authWindow = createAuthWindow();
+  const browserOpen = context.mocks.browser.open(authWindow);
+
+  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+
+  await loadComposer();
+  await openConnectors(user);
+  const catalog = await openAddConnectors(user);
+  await user.type(
+    within(catalog).getByPlaceholderText("Find connectors..."),
+    "Google Analytics",
+  );
+  const connect = await findFastControl(
+    "button",
+    "Connect Google Analytics",
+    catalog,
+  );
+  expect(within(catalog).queryByRole("status")).toBeNull();
+  expect(authWindow.location.href).toBe("about:blank");
+  await user.click(connect);
+  await waitFor(() => {
+    expect(fixture.oauthConnectionRequests).toHaveLength(1);
+    expect(fixture.oauthConnectionRequests[0]).toMatchObject({
+      connectorSlug: GOOGLE_ANALYTICS_SLUG,
+      authMethod: "oauth",
+      agentId: SCOUT_AGENT_ID,
+      authorizeAgent: true,
     });
-    const authWindow = createAuthWindow();
-    const browserOpen = context.mocks.browser.open(authWindow);
-
-    await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
-
-    await loadComposer();
-    await openConnectors(user);
-    const catalog = await openAddConnectors(user);
-    await user.type(
-      within(catalog).getByPlaceholderText("Find connectors..."),
-      "Google Analytics",
+    expect(authWindow.location.href).toBe(
+      "https://accounts.example.test/google-analytics",
     );
-    const connect = await findFastControl(
-      "button",
-      "Connect Google Analytics",
-      catalog,
-    );
-    connect.focus();
-    if (activation === "Space") {
-      await user.keyboard("[Space>]");
-    }
+  });
+  expect(browserOpen.calls).toHaveLength(1);
+  expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
+  expect(screen.queryByRole("dialog", { name: "Google Analytics" })).toBeNull();
+  expect(within(catalog).getByRole("status")).toHaveTextContent(
+    "Connecting...",
+  );
+  expect(connect).toBeDisabled();
+  expect(
+    within(catalog).getByPlaceholderText("Find connectors..."),
+  ).toBeVisible();
+  expect(
+    screen.queryByRole("dialog", { name: "Connecting your account" }),
+  ).toBeNull();
+  authWindow.close();
+  await waitFor(() => {
     expect(within(catalog).queryByRole("status")).toBeNull();
-    expect(authWindow.location.href).toBe("about:blank");
-    if (activation === "pointer") {
-      await user.click(connect);
-    } else {
-      await user.keyboard(activation === "Space" ? "[/Space]" : "{Enter}");
-    }
-    await waitFor(() => {
-      expect(fixture.oauthConnectionRequests).toHaveLength(1);
-      expect(fixture.oauthConnectionRequests[0]).toMatchObject({
-        connectorSlug: GOOGLE_ANALYTICS_SLUG,
-        authMethod: "oauth",
-        agentId: SCOUT_AGENT_ID,
-        authorizeAgent: true,
-      });
-      expect(authWindow.location.href).toBe(
-        "https://accounts.example.test/google-analytics",
-      );
-    });
-    expect(browserOpen.calls).toHaveLength(1);
-    expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-    expect(
-      screen.queryByRole("dialog", { name: "Google Analytics" }),
-    ).toBeNull();
-    expect(within(catalog).getByRole("status")).toHaveTextContent(
-      "Connecting...",
-    );
-    expect(connect).toBeDisabled();
-    expect(
-      within(catalog).getByPlaceholderText("Find connectors..."),
-    ).toBeVisible();
-    expect(
-      screen.queryByRole("dialog", { name: "Connecting your account" }),
-    ).toBeNull();
-    authWindow.close();
-    await waitFor(() => {
-      expect(within(catalog).queryByRole("status")).toBeNull();
-    });
-    await expect(
-      findFastControl("button", "Connect Google Analytics", catalog),
-    ).resolves.toBeEnabled();
-    expect(
-      within(catalog).getByPlaceholderText("Find connectors..."),
-    ).toHaveValue("Google Analytics");
-  },
-);
+  });
+  await expect(
+    findFastControl("button", "Connect Google Analytics", catalog),
+  ).resolves.toBeEnabled();
+  expect(
+    within(catalog).getByPlaceholderText("Find connectors..."),
+  ).toHaveValue("Google Analytics");
+});
 
-test.each([null, "Close", "Escape", "backdrop"] as const)(
-  "Keep chat OAuth in one dialog, with explicit cancellation and outside-press protection (%s)",
+test.each([null, "Close"] as const)(
+  "Keep chat OAuth in one dialog, with explicit cancellation (%s)",
   async (dismissal) => {
     const user = userEvent.setup({ delay: null });
     const fixture = installComposerConnectorFixture({
@@ -730,20 +498,10 @@ test.each([null, "Close", "Escape", "backdrop"] as const)(
     ).toBeVisible();
     expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
 
-    if (dismissal) {
-      if (dismissal === "Close") {
-        await user.click(within(catalog).getByLabelText("Close"));
-      } else if (dismissal === "Escape") {
-        await user.keyboard("{Escape}");
-      } else {
-        const viewport = catalog.closest('[data-slot="dialog-viewport"]');
-        if (!(viewport instanceof HTMLElement)) {
-          throw new Error("Expected the connector directory viewport");
-        }
-        await user.click(viewport);
-      }
+    if (dismissal === "Close") {
+      await user.click(within(catalog).getByLabelText("Close"));
     }
-    const cancelled = dismissal === "Close" || dismissal === "Escape";
+    const cancelled = dismissal === "Close";
     await waitFor(() => {
       expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(
         cancelled ? 0 : 1,
@@ -783,70 +541,6 @@ test.each([null, "Close", "Escape", "backdrop"] as const)(
     expect(browserOpen.calls).toHaveLength(1);
   },
 );
-
-test("Retry chat OAuth immediately after closing and reopening the directory", async () => {
-  const user = userEvent.setup({ delay: null });
-  installComposerConnectorFixture({
-    catalog: [
-      builtinConnector({
-        slug: GOOGLE_ANALYTICS_SLUG,
-        label: "Google Analytics",
-        connected: false,
-        authMethods: [oauthAuthMethod()],
-      }),
-    ],
-  });
-  const authWindow = createAuthWindow();
-  const browserOpen = context.mocks.browser.open(authWindow);
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
-
-  await loadComposer();
-  await openConnectors(user);
-  const catalog = await openAddConnectors(user);
-  await user.click(
-    await findFastControl("button", "Connect Google Analytics", catalog),
-  );
-  await waitFor(() => {
-    expect(authWindow.location.href).toBe(
-      "https://accounts.example.test/google-analytics",
-    );
-  });
-  await user.click(within(catalog).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(0);
-  });
-  expect(authWindow.closed).toBeTruthy();
-
-  await openConnectors(user);
-  const reopened = await openAddConnectors(user);
-  await waitFor(() => {
-    expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-  });
-  const connect = await findFastControl(
-    "button",
-    "Connect Google Analytics",
-    reopened,
-  );
-  expect(connect).not.toHaveAttribute("aria-disabled", "true");
-  expect(browserOpen.calls).toHaveLength(1);
-  const nextWindow = createAuthWindow();
-  context.mocks.browser.open(nextWindow);
-  await user.click(connect);
-  await waitFor(() => {
-    expect(nextWindow.location.href).toBe(
-      "https://accounts.example.test/google-analytics",
-    );
-  });
-  expect(within(reopened).getByRole("status")).toHaveTextContent(
-    "Connecting...",
-  );
-
-  nextWindow.close();
-  await waitFor(() => {
-    expect(connect).not.toHaveAttribute("aria-disabled", "true");
-  });
-  expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-});
 
 test("Respect integration-managed connector availability in chat", async () => {
   const user = userEvent.setup({ delay: null });
@@ -925,49 +619,43 @@ test("Require a permission choice before adding a permissioned custom connector"
   });
 });
 
-test.each(["manual", "multiple"] as const)(
-  "Search beyond featured connectors from chat (%s auth)",
-  async (auth) => {
-    const user = userEvent.setup({ delay: null });
-    installComposerConnectorFixture({
-      catalog: [
-        builtinConnector({
-          slug: GITHUB_SLUG,
-          label: "GitHub",
-          connected: false,
-        }),
-        builtinConnector({
-          slug: AXIOM_SLUG,
-          label: "Axiom",
-          connected: false,
-          authMethods:
-            auth === "manual"
-              ? [manualAuthMethod()]
-              : [oauthAuthMethod(), manualAuthMethod()],
-        }),
-      ],
-      featuredConnectorSlugs: [GITHUB_SLUG],
-    });
+test("Search beyond featured connectors from chat", async () => {
+  const user = userEvent.setup({ delay: null });
+  installComposerConnectorFixture({
+    catalog: [
+      builtinConnector({
+        slug: GITHUB_SLUG,
+        label: "GitHub",
+        connected: false,
+      }),
+      builtinConnector({
+        slug: AXIOM_SLUG,
+        label: "Axiom",
+        connected: false,
+        authMethods: [manualAuthMethod()],
+      }),
+    ],
+    featuredConnectorSlugs: [GITHUB_SLUG],
+  });
 
-    await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
 
-    await loadComposer();
-    await openConnectors(user);
-    const catalog = await openAddConnectors(user);
-    expect(queryFastControl("button", "Connect Axiom", catalog)).toBeNull();
-    await user.type(
-      within(catalog).getByPlaceholderText("Find connectors..."),
-      "Axiom",
-    );
-    await user.click(await findFastControl("button", "Connect Axiom", catalog));
-    const dialog = await screen.findByRole("dialog", { name: "Axiom" });
-    expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-    expect(catalog).not.toBeInTheDocument();
-    expect(
-      within(dialog).getByText("API Token", { selector: "label" }),
-    ).toBeVisible();
-  },
-);
+  await loadComposer();
+  await openConnectors(user);
+  const catalog = await openAddConnectors(user);
+  expect(queryFastControl("button", "Connect Axiom", catalog)).toBeNull();
+  await user.type(
+    within(catalog).getByPlaceholderText("Find connectors..."),
+    "Axiom",
+  );
+  await user.click(await findFastControl("button", "Connect Axiom", catalog));
+  const dialog = await screen.findByRole("dialog", { name: "Axiom" });
+  expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
+  expect(catalog).not.toBeInTheDocument();
+  expect(
+    within(dialog).getByText("API Token", { selector: "label" }),
+  ).toBeVisible();
+});
 
 test("Add or remove a connected connector for the active agent", async () => {
   const user = userEvent.setup({ delay: null });

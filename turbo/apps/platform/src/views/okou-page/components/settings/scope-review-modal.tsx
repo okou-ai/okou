@@ -10,9 +10,9 @@ import { useTranslation } from "react-i18next";
 import { ConnectorIcon } from "./connector-icons.tsx";
 import {
   builtinConnectorScopeDiff$,
+  builtinConnectorScopeReviewCatalogItem$,
   type BuiltinConnectorScopeReviewSelection,
 } from "../../../../signals/okou-page/settings/connectors.ts";
-import { connectorCatalogStatus$ } from "../../../../signals/external/connectors.ts";
 
 interface ScopeReviewModalProps {
   selection: BuiltinConnectorScopeReviewSelection;
@@ -121,14 +121,13 @@ export function ScopeReviewModal({
 }: ScopeReviewModalProps) {
   const { t } = useTranslation();
   const scopeDiffLoadable = useLoadable(builtinConnectorScopeDiff$);
-  const connectorCatalog = useLastResolved(connectorCatalogStatus$);
+  const catalogItem = useLastResolved(builtinConnectorScopeReviewCatalogItem$);
   const loading = scopeDiffLoadable.state === "loading";
   const scopeDiff =
     scopeDiffLoadable.state === "hasData" ? scopeDiffLoadable.data : null;
 
-  const connector = connectorCatalog?.connectors.find((candidate) => {
-    return candidate.slug === selection.connectorSlug;
-  });
+  const connector =
+    catalogItem?.slug === selection.connectorSlug ? catalogItem : undefined;
   const connectorLabel = connector?.label ?? selection.connectorSlug;
 
   return (

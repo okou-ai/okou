@@ -1,0 +1,44 @@
+[package]
+name = "runner-lifecycle"
+version = "0.1.3"
+edition.workspace = true
+description = "Runner idle sandbox, status, and workspace image lifecycle"
+
+[features]
+test-support = ["dep:sandbox-mock", "dep:tempfile", "runner-host/test-support"]
+
+[dependencies]
+api-contracts.workspace = true
+guest-contracts.workspace = true
+runner-host.workspace = true
+runner-storage.workspace = true
+runner-types.workspace = true
+sandbox.workspace = true
+sandbox-mock = { workspace = true, optional = true }
+shell-quote.workspace = true
+tempfile = { workspace = true, features = ["getrandom"], optional = true }
+chrono = { workspace = true, features = ["now", "serde"] }
+futures-util = { workspace = true, features = ["async-await", "std"] }
+hex = { workspace = true, features = ["std"] }
+libc = { workspace = true, features = ["std"] }
+nix = { workspace = true, features = ["fs", "inotify", "process", "signal", "user"] }
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
+sha2 = { workspace = true, features = ["alloc", "oid"] }
+thiserror = { workspace = true, features = ["std"] }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-util = { workspace = true, features = ["io", "io-util", "rt"] }
+tracing = { workspace = true, features = ["attributes", "std"] }
+uuid = { workspace = true, features = ["serde", "std", "v4"] }
+
+[dev-dependencies]
+async-trait.workspace = true
+runner-host = { workspace = true, features = ["test-support"] }
+sandbox-mock.workspace = true
+tempfile = { workspace = true, features = ["getrandom"] }
+tokio = { workspace = true, features = ["process", "test-util"] }
+tracing-subscriber = { workspace = true, features = ["std"] }
+tracing-test-support.workspace = true
+
+[lints]
+workspace = true
