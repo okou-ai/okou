@@ -679,8 +679,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         conversationId,
       ]);
 
-      // Completion converts markdown output to iMessage plain text and binds
-      // the delayed audit link to the configured Okou app origin.
+      // Completion converts markdown output to iMessage plain text and never
+      // appends an audit link, even with the Okou debug switch enabled.
       const beforeCompletion = sends.messages.length;
       await completeSandboxRun(run1.sandboxToken, run1.runId, 0, {
         resultText: MARKDOWN_RUN_OUTPUT,
@@ -691,9 +691,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       expect(completionReply.conversationId).toBeUndefined();
       expect(completionReply.replyToMessageId).toBe(messageId1);
       expect(completionReply.body).toContain(EXPECTED_PLAIN_RUN_OUTPUT);
-      expect(completionReply.body).toContain(
-        `Audit: https://app.okou.ai/activities/${run1.runId}`,
-      );
+      expect(completionReply.body).not.toContain("Audit:");
+      expect(completionReply.body).not.toContain("/activities/");
       expect(completionReply.body).not.toContain("Responded by");
     },
   );
@@ -1105,41 +1104,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(drained.body.job).toBeNull();
   });
 
-  it("uses the configured Okou audit URL when a queued AgentPhone launch fails", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    const ap = createAgentPhoneBddApi(context);
-    const integrations = createBddIntegrationApi(context);
-    const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
-    await integrations.enableAuditLinkSwitch(actor);
-
-    await ap.postAgentPhoneInboundMessage({
-      channel: "sms",
-      from: phone,
-      body: "finish before the queued launch",
-    });
-    const activeRun = await claimDispatchedRun(runnerGroup);
-
-    await ap.postAgentPhoneInboundMessage({
-      channel: "sms",
-      from: phone,
-      body: "fail this queued Okou launch",
-    });
-
-    mockEnv("SECRETS_KMS_KEY_ID", undefined);
-    const beforeCompletion = sends.messages.length;
-    await completeSandboxRun(activeRun.sandboxToken, activeRun.runId, 0);
-    await waitForSendCount(sends, beforeCompletion + 2);
-
-    const completionBodies = sends.messages
-      .slice(beforeCompletion)
-      .map((send) => {
-        return send.body ?? "";
-      });
-    expect(completionBodies).toContainEqual(
-      expect.stringContaining("https://app.okou.ai/activities/"),
-    );
-  });
-
   it("deduplicates repeated provider messages and completion callbacks", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const runs = createRunsApi(context);
@@ -1171,9 +1135,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const sendsBeforeCompletion = sends.messages.length;
     await completeSandboxRun(run.sandboxToken, run.runId, 0);
     await waitForSendCount(sends, sendsBeforeCompletion + 1);
-    expect(lastSend(sends).body).toContain(
-      `Audit: https://app.okou.ai/activities/${run.runId}`,
-    );
+    expect(lastSend(sends).body).not.toContain("Audit:");
     const sendsAfterCompletion = sends.messages.length;
 
     await webhooks.requestAgentComplete(
