@@ -740,10 +740,16 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
         return Err("parallel Bash tools entered the same cgroup".to_string());
     }
 
+    let offender_path = Path::new("/sys/fs/cgroup").join(offender_relative.trim_start_matches('/'));
     if mode == ToolOomMode::GuestInjected {
         // The disposable Guest runs the kernel's global OOM victim selection
         // after both tools have reached their readiness markers.
         write_cgroup_value_as_root(Path::new("/proc/sysrq-trigger"), "f")?;
+    } else if mode == ToolOomMode::GuestPressure {
+        eprintln!(
+            "real Guest-wide OOM pressure started: {}",
+            guest_pressure_diagnostics(workload_path, &offender_path)
+        );
     }
 
     let offender_status = wait_for_child_exit(
@@ -753,14 +759,23 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
             .ok_or_else(|| "offender process is missing".to_string())?,
         TOOL_OOM_CONVERGENCE_TIMEOUT,
         "offender Bash tool",
-    )?;
+    )
+    .map_err(|error| {
+        if mode == ToolOomMode::GuestPressure {
+            format!(
+                "{error}; {}",
+                guest_pressure_diagnostics(workload_path, &offender_path)
+            )
+        } else {
+            error
+        }
+    })?;
     fixture.offender = None;
     if offender_status.signal() != Some(libc::SIGKILL) {
         return Err(format!(
             "offender Bash tool was not killed as a group: {offender_status}"
         ));
     }
-    let offender_path = Path::new("/sys/fs/cgroup").join(offender_relative.trim_start_matches('/'));
     let deadline = Instant::now() + TOOL_COMPLETION_TIMEOUT;
     while read_cgroup_events(&offender_path.join("cgroup.events"))?.get("populated") != Some(&0) {
         if Instant::now() >= deadline {
@@ -1053,6 +1068,19 @@ fn read_cgroup_events(path: &Path) -> Result<BTreeMap<String, u64>, String> {
             Ok((name.to_string(), value))
         })
         .collect()
+}
+
+fn guest_pressure_diagnostics(workload: &Path, offender: &Path) -> String {
+    let read = |path: &Path| read_trimmed(path).unwrap_or_else(|error| format!("<{error}>"));
+    let events = read_cgroup_events(&workload.join("memory.events"))
+        .map(|events| format!("{events:?}"))
+        .unwrap_or_else(|error| format!("<{error}>"));
+    format!(
+        "workload_current={} workload_peak={} offender_current={} workload_events={events}",
+        read(&workload.join("memory.current")),
+        read(&workload.join("memory.peak")),
+        read(&offender.join("memory.current")),
+    )
 }
 
 fn event_delta(
