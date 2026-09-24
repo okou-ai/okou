@@ -15120,8 +15120,61 @@ describe("HOOK-01/RUN-03: terminal run callbacks dispatch on cancellation", () =
     const { actor, agentId } = await entitledRunActor();
     mockOptionalEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "bdd-bypass");
 
+    const firstProviderEntered = createDeferredPromise<void>(context.signal);
+    let releaseProvider = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      if (!releaseProvider.settled()) {
+        releaseProvider.resolve(undefined);
+      }
+    });
     let routeRequests = 0;
     server.use(
+      http.post("https://api.anthropic.com/v1/messages", async () => {
+        const release = releaseProvider;
+        if (!firstProviderEntered.settled()) {
+          firstProviderEntered.resolve(undefined);
+        }
+        await release.promise;
+        const events = [
+          {
+            type: "message_start",
+            message: {
+              id: randomUUID(),
+              type: "message",
+              role: "assistant",
+              model: "claude-sonnet-5",
+              content: [],
+              stop_reason: null,
+              usage: { input_tokens: 1, output_tokens: 0 },
+            },
+          },
+          {
+            type: "content_block_start",
+            index: 0,
+            content_block: { type: "text", text: "" },
+          },
+          {
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "text_delta", text: "late provider answer" },
+          },
+          { type: "content_block_stop", index: 0 },
+          {
+            type: "message_delta",
+            delta: { stop_reason: "end_turn" },
+            usage: { output_tokens: 3 },
+          },
+          { type: "message_stop" },
+        ];
+        return new HttpResponse(
+          events
+            .map((event) => {
+              return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+            })
+            .join(""),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      }),
       http.post(CHAT_CALLBACK_URL, () => {
         routeRequests += 1;
         return HttpResponse.json({ error: "boom" }, { status: 500 });
@@ -15132,7 +15185,9 @@ describe("HOOK-01/RUN-03: terminal run callbacks dispatch on cancellation", () =
       agentId,
       prompt: "first cancellable chat run",
     });
+    await firstProviderEntered.promise;
     await api.requestCancelRun(actor, first.runId, [200]);
+    releaseProvider.resolve(undefined);
     // Cancellation delivers its chat callback from the route's `waitUntil`
     // work, so drain that work instead of polling for the appended event.
     await flushWaitUntilForTest();
@@ -15149,12 +15204,14 @@ describe("HOOK-01/RUN-03: terminal run callbacks dispatch on cancellation", () =
     );
     expect(routeRequests).toBe(0);
 
+    releaseProvider = createDeferredPromise<void>(context.signal);
     const second = await sendChatRunMessage(actor, {
       agentId,
       threadId: first.threadId,
       prompt: "second cancellable chat run",
     });
     await api.requestCancelRun(actor, second.runId, [200]);
+    releaseProvider.resolve(undefined);
     await flushWaitUntilForTest();
 
     const secondCancelled = await api.readRun(actor, second.runId);
@@ -15169,12 +15226,14 @@ describe("HOOK-01/RUN-03: terminal run callbacks dispatch on cancellation", () =
     );
     expect(routeRequests).toBe(0);
 
+    releaseProvider = createDeferredPromise<void>(context.signal);
     const third = await sendChatRunMessage(actor, {
       agentId,
       threadId: first.threadId,
       prompt: "third cancellable chat run",
     });
     await api.requestCancelRun(actor, third.runId, [200]);
+    releaseProvider.resolve(undefined);
     await flushWaitUntilForTest();
 
     const thirdCancelled = await api.readRun(actor, third.runId);
