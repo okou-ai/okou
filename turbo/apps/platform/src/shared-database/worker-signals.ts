@@ -381,10 +381,9 @@ const runSharedDatabaseWorkerDaemons$ = command(
         scope: "credential",
         topic: "threadListChanged",
         loopCommand$: reloadWorkerChatIndicatorsFromRealtime$,
-        options: {
-          onError,
-          runOnSubscribe: true,
-        },
+        // Indicators load lazily on the first tab read, so subscribing must not
+        // fetch them again. Continuity gaps still reload through onResync.
+        options: { onError },
       },
       signal,
     );
