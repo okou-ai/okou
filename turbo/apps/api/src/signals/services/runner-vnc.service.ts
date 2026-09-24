@@ -65,7 +65,9 @@ function hasValidAppleRoute(
   transport: TransportSnapshot,
 ) {
   return (
-    (row.securityType !== "apple_dh" && row.securityType !== "apple_srp") ||
+    (row.securityType !== "apple_dh" &&
+      row.securityType !== "apple_srp" &&
+      row.securityType !== "apple_rsa_srp") ||
     (row.trustMode === "none" &&
       row.caBundle === null &&
       row.x509ServerName === null &&
@@ -202,6 +204,7 @@ function storedRunnerSecurity(
     !hasValidAppleRoute(row, transport) ||
     (row.securityType !== "apple_dh" &&
       row.securityType !== "apple_srp" &&
+      row.securityType !== "apple_rsa_srp" &&
       ((row.trustMode === "system" && row.caBundle !== null) ||
         (row.trustMode === "custom_ca" && row.caBundle === null) ||
         row.trustMode === "none"))
@@ -210,7 +213,9 @@ function storedRunnerSecurity(
   }
   const security = runnerVncSecuritySchema.safeParse({
     type: row.securityType,
-    ...(row.securityType === "apple_dh" || row.securityType === "apple_srp"
+    ...(row.securityType === "apple_dh" ||
+    row.securityType === "apple_srp" ||
+    row.securityType === "apple_rsa_srp"
       ? {}
       : {
           trust:
@@ -243,7 +248,8 @@ async function decryptRunnerAuthentication(
   const authentication = vncAuthenticationSchema.safeParse(
     row.authMethod === "username_password" ||
       row.authMethod === "apple_dh_username_password" ||
-      row.authMethod === "apple_srp_username_password"
+      row.authMethod === "apple_srp_username_password" ||
+      row.authMethod === "apple_rsa_srp_username_password"
       ? {
           method: row.authMethod,
           username: row.username,
@@ -299,6 +305,24 @@ function resolvedRunnerResponse(
     }
     return {
       outcome: "resolved_apple_srp",
+      ...resolved,
+      security,
+      authentication,
+      transport,
+    };
+  }
+  if (row.securityType === "apple_rsa_srp") {
+    if (
+      transport.type !== "ssh" ||
+      security.type !== "apple_rsa_srp" ||
+      authentication.method !== "apple_rsa_srp_username_password"
+    ) {
+      throw new Error(
+        "VNC Apple RSA/SRP handoff has an invalid stored profile",
+      );
+    }
+    return {
+      outcome: "resolved_apple_rsa_srp",
       ...resolved,
       security,
       authentication,

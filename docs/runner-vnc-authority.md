@@ -50,14 +50,20 @@ Unavailable authority returns the opaque `unavailable` outcome. Invalid input is
 `resolve` requires `connectionId` and `supportedProfiles`, a bounded list of
 exact authentication/security/transport tuples. Current Runners advertise the
 X509Vnc and X509Plain pairs separately for `direct` and `ssh`, plus the Apple
-DH and Apple Direct SRP pairs only for `ssh`. A pre-transport Runner
+DH, Apple Direct SRP and Apple RSA/SRP pairs only for `ssh`. A pre-transport Runner
 omits `transportType`; omission means direct-only. An empty list or a saved
 tuple absent from the list returns `unsupported_profile` only after VNC
 authorization and before KMS. An SSH row is also checked for its SSH grant
 before any credential handoff.
 Unknown methods, profiles and cross-paired combinations are rejected. Future
 engine support must add a new exact pair instead of broadening a saved policy or
-creating an implicit downgrade path.
+creating an implicit downgrade path. For Apple RSA/SRP (RFB type 33), the
+RFB-provided RSA key is not an independent host identity and SRP proof does not
+encrypt the subsequent desktop stream. The saved SSH host must be verified,
+terminate on a Mac controlled by the owner, and connect to literal `127.0.0.1`
+or `::1` on that Mac. The exact `apple_rsa_srp_username_password` /
+`apple_rsa_srp` / `ssh` tuple is checked before KMS; neither an arbitrary
+onward proxy nor a fallback to Apple DH or Direct SRP is admitted.
 
 Saved owner configuration also has an outer direct/SSH transport discriminator.
 For a capable Runner, authority returns either an explicit direct snapshot or

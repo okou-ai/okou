@@ -7098,6 +7098,8 @@
       "add": "Add credential",
       "appleDhFieldHelp": "1–63 UTF-8 bytes per field. NUL is not allowed.",
       "appleDhMethod": "Apple DH username and password",
+      "appleRsaSrpMethod": "Apple RSA/SRP username and password",
+      "appleRsaSrpUsernameHelp": "1–234 UTF-8 bytes for the RSA/SRP username. NUL is not allowed.",
       "appleSrpMethod": "Apple Direct SRP username and password",
       "authentication": "Authentication method",
       "createNew": "Create new credential",
@@ -7168,6 +7170,8 @@
     "security": {
       "appleDh": "Mac Screen Sharing (Apple DH)",
       "appleDhHelp": "Requires macOS Screen Sharing over a saved SSH connection. The RFB destination must be 127.0.0.1 or ::1 on that Mac. SSH protects the full VNC session. Use a Mac SSH host you control; its host key cannot rule out an onward proxy.",
+      "appleRsaSrp": "Mac Screen Sharing (Apple RSA/SRP)",
+      "appleRsaSrpHelp": "Requires saved SSH to the Mac and an RFB destination of 127.0.0.1 or ::1. The RFB-issued RSA key is not a trusted host identity; SRP verifies the account and server proof, while SSH protects the full VNC session. The SSH host key identifies the selected endpoint but cannot rule out an onward proxy.",
       "appleSrp": "Mac Screen Sharing (Apple Direct SRP)",
       "appleSrpHelp": "Requires a saved SSH connection to the Mac and an RFB destination of 127.0.0.1 or ::1. SRP verifies the account and server proof; SSH protects the full VNC session. The SSH host key identifies the selected endpoint, but cannot rule out an onward proxy.",
       "caBundle": "CA certificates (PEM)",
@@ -7189,6 +7193,7 @@
     "summary_other": "{{count}} hosts configured",
     "transport": {
       "appleDhDestinationHelp": "For Apple DH, enter 127.0.0.1 or ::1. This is the Mac's own loopback address reached through the selected SSH host.",
+      "appleRsaSrpDestinationHelp": "For Apple RSA/SRP, enter 127.0.0.1 or ::1 on the Mac reached through the selected SSH host.",
       "appleSrpDestinationHelp": "For Apple Direct SRP, enter 127.0.0.1 or ::1. This is the Mac's own loopback address reached through the selected SSH host.",
       "destination": "RFB destination",
       "destinationHelp": "For SSH routes, this host and port are reached from the selected SSH server, not directly from the Runner.",

@@ -594,6 +594,11 @@ test.each([
     method: "apple_srp_username_password" as const,
     label: "Mac Screen Sharing (Apple Direct SRP)",
   },
+  {
+    profile: "apple_rsa_srp" as const,
+    method: "apple_rsa_srp_username_password" as const,
+    label: "Mac Screen Sharing (Apple RSA/SRP)",
+  },
 ])(
   "$label host editor requires SSH loopback and omits X509 trust",
   async ({ profile, method, label }) => {
@@ -640,13 +645,19 @@ test.each([
       within(dialog).getByLabelText("Display name"),
       "Mac Screen Sharing",
     );
-    await fill(
-      within(dialog).getByLabelText("RFB destination host"),
-      "127.0.0.1",
-    );
+    const destination = within(dialog).getByLabelText("RFB destination host");
+    await fill(destination, "localhost");
+    expect(destination).toBeInvalid();
+    await fill(destination, "127.0.0.1");
+    expect(destination).toBeValid();
     await choose(dialog, "Credential", "Create new credential");
     await fill(within(dialog).getByLabelText("Credential name"), "Mac login");
-    await fill(within(dialog).getByLabelText("Username"), "operator");
+    const usernameField = within(dialog).getByLabelText("Username");
+    if (profile === "apple_rsa_srp") {
+      expect(usernameField).toHaveAttribute("maxLength", "234");
+      expect(within(dialog).getByText(/1–234 UTF-8 bytes/u)).toBeInTheDocument();
+    }
+    await fill(usernameField, "operator");
     await fill(within(dialog).getByLabelText("Password"), "secret");
     click(getAction("button", "Save", dialog));
     await waitFor(() => {

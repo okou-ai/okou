@@ -22,6 +22,7 @@ import {
   VNC_USERNAME_MAX_BYTES,
   VNC_USERNAME_PASSWORD_MAX_BYTES,
   APPLE_DH_FIELD_MAX_BYTES,
+  APPLE_RSA_SRP_USERNAME_MAX_BYTES,
   type VncCredentialResponse,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
 import {
@@ -77,7 +78,9 @@ export function VncEndpointFields({
           required
           maxLength={VNC_HOST_MAX_LENGTH}
           pattern={
-            editor.profile === "apple_dh" || editor.profile === "apple_srp"
+            editor.profile === "apple_dh" ||
+            editor.profile === "apple_srp" ||
+            editor.profile === "apple_rsa_srp"
               ? String.raw`(127\.0\.0\.1|::1)`
               : undefined
           }
@@ -113,9 +116,13 @@ export function VncEndpointFields({
             ? t(($) => {
                 return $.vnc.transport.appleSrpDestinationHelp;
               })
-            : t(($) => {
-                return $.vnc.transport.destinationHelp;
-              })}
+            : editor.profile === "apple_rsa_srp"
+              ? t(($) => {
+                  return $.vnc.transport.appleRsaSrpDestinationHelp;
+                })
+              : t(($) => {
+                  return $.vnc.transport.destinationHelp;
+                })}
       </p>
     </div>
   );
@@ -155,6 +162,12 @@ function VncSecurityProfileField({
         return $.vnc.security.appleSrp;
       }),
     },
+    {
+      value: "apple_rsa_srp",
+      label: t(($) => {
+        return $.vnc.security.appleRsaSrp;
+      }),
+    },
   ];
   return (
     <>
@@ -171,7 +184,8 @@ function VncSecurityProfileField({
             value !== "x509_vnc" &&
             value !== "x509_plain" &&
             value !== "apple_dh" &&
-            value !== "apple_srp"
+            value !== "apple_srp" &&
+            value !== "apple_rsa_srp"
           ) {
             details.cancel();
             return;
@@ -202,13 +216,17 @@ function VncSecurityProfileField({
             ? t(($) => {
                 return $.vnc.security.appleSrpHelp;
               })
-            : profile === "x509_vnc"
+            : profile === "apple_rsa_srp"
               ? t(($) => {
-                  return $.vnc.security.x509VncHelp;
+                  return $.vnc.security.appleRsaSrpHelp;
                 })
-              : t(($) => {
-                  return $.vnc.security.x509PlainHelp;
-                })}
+              : profile === "x509_vnc"
+                ? t(($) => {
+                    return $.vnc.security.x509VncHelp;
+                  })
+                : t(($) => {
+                    return $.vnc.security.x509PlainHelp;
+                  })}
       </p>
     </>
   );
@@ -364,7 +382,9 @@ export function VncTransportFields({
     },
   ].filter((item) => {
     return (
-      (editor.profile !== "apple_dh" && editor.profile !== "apple_srp") ||
+      (editor.profile !== "apple_dh" &&
+        editor.profile !== "apple_srp" &&
+        editor.profile !== "apple_rsa_srp") ||
       item.value === "ssh"
     );
   });
@@ -382,7 +402,8 @@ export function VncTransportFields({
           if (
             (value !== "direct" && value !== "ssh") ||
             ((editor.profile === "apple_dh" ||
-              editor.profile === "apple_srp") &&
+              editor.profile === "apple_srp" ||
+              editor.profile === "apple_rsa_srp") &&
               value !== "ssh")
           ) {
             details.cancel();
@@ -429,7 +450,8 @@ export function VncSecurityFields({
   const choose = useSet(chooseVncTrust$);
   const savedTrust =
     connection?.security.type === "apple_dh" ||
-    connection?.security.type === "apple_srp"
+    connection?.security.type === "apple_srp" ||
+    connection?.security.type === "apple_rsa_srp"
       ? undefined
       : connection?.security.trust;
   const trustItems = [
@@ -450,7 +472,8 @@ export function VncSecurityFields({
     <div className="grid gap-3">
       <VncSecurityProfileField profile={editor.profile} disabled={disabled} />
       {editor.profile === "apple_dh" ||
-      editor.profile === "apple_srp" ? null : (
+      editor.profile === "apple_srp" ||
+      editor.profile === "apple_rsa_srp" ? null : (
         <>
           <label htmlFor="vnc-server-name" className="text-sm">
             {t(($) => {
@@ -463,7 +486,8 @@ export function VncSecurityFields({
             maxLength={VNC_HOST_MAX_LENGTH}
             defaultValue={
               connection?.security.type === "apple_dh" ||
-              connection?.security.type === "apple_srp"
+              connection?.security.type === "apple_srp" ||
+              connection?.security.type === "apple_rsa_srp"
                 ? ""
                 : (connection?.security.serverName ?? "")
             }
@@ -578,6 +602,12 @@ function VncAuthenticationMethodSelector({
         return $.vnc.credential.appleSrpMethod;
       }),
     },
+    {
+      value: "apple_rsa_srp",
+      label: t(($) => {
+        return $.vnc.credential.appleRsaSrpMethod;
+      }),
+    },
   ];
   return (
     <div className="grid gap-2 text-sm">
@@ -594,7 +624,8 @@ function VncAuthenticationMethodSelector({
             value !== "x509_vnc" &&
             value !== "x509_plain" &&
             value !== "apple_dh" &&
-            value !== "apple_srp"
+            value !== "apple_srp" &&
+            value !== "apple_rsa_srp"
           ) {
             details.cancel();
             return;
@@ -646,9 +677,13 @@ function VncAuthenticationMethod({
               ? t(($) => {
                   return $.vnc.credential.appleSrpMethod;
                 })
-              : t(($) => {
-                  return $.vnc.credential.usernamePasswordMethod;
-                })}
+              : method === "apple_rsa_srp_username_password"
+                ? t(($) => {
+                    return $.vnc.credential.appleRsaSrpMethod;
+                  })
+                : t(($) => {
+                    return $.vnc.credential.usernamePasswordMethod;
+                  })}
       </span>
     </div>
   );
@@ -699,7 +734,8 @@ function VncAuthenticationInputs({
     <div key={method} className="grid gap-4">
       {(method === "username_password" ||
         method === "apple_dh_username_password" ||
-        method === "apple_srp_username_password") && (
+        method === "apple_srp_username_password" ||
+        method === "apple_rsa_srp_username_password") && (
         <div className="grid gap-2 text-sm">
           <label htmlFor="vnc-username">
             {t(($) => {
@@ -713,12 +749,15 @@ function VncAuthenticationInputs({
             maxLength={
               method === "apple_dh_username_password"
                 ? APPLE_DH_FIELD_MAX_BYTES
-                : VNC_USERNAME_MAX_BYTES
+                : method === "apple_rsa_srp_username_password"
+                  ? APPLE_RSA_SRP_USERNAME_MAX_BYTES
+                  : VNC_USERNAME_MAX_BYTES
             }
             defaultValue={
               credential?.authMethod === "username_password" ||
               credential?.authMethod === "apple_dh_username_password" ||
-              credential?.authMethod === "apple_srp_username_password"
+              credential?.authMethod === "apple_srp_username_password" ||
+              credential?.authMethod === "apple_rsa_srp_username_password"
                 ? credential.username
                 : ""
             }
@@ -732,9 +771,13 @@ function VncAuthenticationInputs({
               ? t(($) => {
                   return $.vnc.credential.appleDhFieldHelp;
                 })
-              : t(($) => {
-                  return $.vnc.credential.usernameHelp;
-                })}
+              : method === "apple_rsa_srp_username_password"
+                ? t(($) => {
+                    return $.vnc.credential.appleRsaSrpUsernameHelp;
+                  })
+                : t(($) => {
+                    return $.vnc.credential.usernameHelp;
+                  })}
           </p>
         </div>
       )}
