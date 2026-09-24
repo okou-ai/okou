@@ -130,25 +130,30 @@ async function createArchiveFixture(label: string): Promise<ArchiveFixture> {
 async function archiveAndRetain(
   threadId: string,
   eventIds: readonly string[],
+  mark?: (stage: string) => void,
 ): Promise<void> {
   await accept(
     searchClient().project({ body: { chat_thread_ids: [threadId] } }),
     [200],
   );
+  mark?.("projected");
   await accept(
     snapshotClient().snapshot({
       body: { chat_thread_ids: [threadId], r2_object_keys: [] },
     }),
     [200],
   );
+  mark?.("snapshotted");
   const retained = await accept(
     retentionClient().retain({ body: { chat_thread_ids: [threadId] } }),
     [200],
   );
+  mark?.("retained");
   expect(retained.body.deleted).toBe(eventIds.length);
   await expect(
     store.set(readRetentionEvents$, eventIds, context.signal),
   ).resolves.toHaveLength(0);
+  mark?.("verified-deletion");
 }
 
 function installAgentStorage(): void {
@@ -428,7 +433,13 @@ describe("archived chat event consumers", () => {
   });
 
   it("exports snapshot history plus the PostgreSQL tail after archived source rows are gone", async () => {
+    const startedAt = performance.now();
+    const stages: Record<string, number> = {};
+    const mark = (stage: string): void => {
+      stages[stage] = Math.round(performance.now() - startedAt);
+    };
     const fixture = await createArchiveFixture("export");
+    mark("fixture");
     const archivedVisible = `archived-export-${randomUUID()} \`${escapedOpen}\` suffix`;
     // Each message stays within PostgreSQL's indexed document limit while
     // their combined compressed snapshot crosses the export range boundary.
@@ -438,6 +449,7 @@ describe("archived chat event consumers", () => {
         randomBytes(256 * 1024).toString("base64")
       );
     });
+    mark("archived-payloads");
     // Only a historical retention fixture can create expired source rows;
     // keep every write scoped to this test-owned thread.
     const archivedEventIds = await store.set(
@@ -450,13 +462,15 @@ describe("archived chat event consumers", () => {
       },
       context.signal,
     );
-    await archiveAndRetain(fixture.threadId, archivedEventIds);
+    mark("archived-batch");
+    await archiveAndRetain(fixture.threadId, archivedEventIds, mark);
     const tailVisible = `hot-tail-${randomUUID()} \`${escapedOpen}\` suffix`;
     // Each 64 KiB payload counts twice toward the 2 MiB export page bound;
     // 20 rows still cross a page without writing 100 large rows.
     const tailTexts = Array.from({ length: 20 }, (_, index) => {
       return `${withHiddenCitation(tailVisible)} ${index} ${"x".repeat(64 * 1024)}`;
     });
+    mark("tail-payloads");
     const tailEventIds = await store.set(
       seedRetentionOutputEvents$,
       {
@@ -467,11 +481,14 @@ describe("archived chat event consumers", () => {
       context.signal,
     );
 
+    mark("tail-batch");
     const exportApi = createOpsLogsApi(context);
     const storage = installDurableUserExportStorage(context);
     const started = await exportApi.requestPostUserExport(fixture.actor, [202]);
     registerExportJobCleanup(fixture.actor, started.body.jobId);
+    mark("export-request");
     await flushWaitUntilForTest();
+    mark("background-work");
     await accept(
       setupApp({ context, routes: testUserExportWorkRoutes })(
         testUserExportWorkContract,
@@ -485,7 +502,9 @@ describe("archived chat event consumers", () => {
       }),
       [200],
     );
+    mark("explicit-worker");
     const status = await exportApi.requestGetUserExport(fixture.actor, [200]);
+    mark("export-status");
     expect(status.body.job).toMatchObject({
       id: started.body.jobId,
       status: "completed",
@@ -500,6 +519,7 @@ describe("archived chat event consumers", () => {
       archiveBytes,
       fixture.threadId,
     );
+    mark("restore");
     expectExportMessageBytes(messages, {
       ids: archivedEventIds,
       texts: archivedTexts,
@@ -521,6 +541,8 @@ describe("archived chat event consumers", () => {
     ).toBeGreaterThan(1);
     expect(messages).toHaveLength(archivedTexts.length + tailTexts.length);
     expect(messages[0]?.seqId).toBeLessThan(messages.at(-1)?.seqId ?? 0);
+    mark("asserted");
+    process.stdout.write(`ARCHIVE_EXPORT_PROFILE ${JSON.stringify(stages)}\n`);
   }, 60_000);
 
   it.each(["within-bound", "overtake-with-revocation"] as const)(
