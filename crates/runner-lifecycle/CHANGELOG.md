@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.7](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.1.6...runner-lifecycle-v0.1.7) (2026-09-24)
+
+
+### Documentation
+
+* **runner:** clarify status timeout publication ([#36583](https://github.com/okou-ai/okou/issues/36583)) ([b0270b2](https://github.com/okou-ai/okou/commit/b0270b2f5e139a7339d7324a0c0330f0bb3bffd9))
+
 ## [0.1.6](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.1.5...runner-lifecycle-v0.1.6) (2026-09-24)
 
 

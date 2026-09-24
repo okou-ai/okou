@@ -8,6 +8,29 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.669.1](https://github.com/okou-ai/okou/compare/api-v1.669.0...api-v1.669.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* **api:** derive morning brief worker signing key ([#36544](https://github.com/okou-ai/okou/issues/36544)) ([c385f0c](https://github.com/okou-ai/okou/commit/c385f0cba94bf508f06f35019dc6e3638b689b14))
+
+
+### Performance Improvements
+
+* **runner:** attribute claim response size on both sides ([#36582](https://github.com/okou-ai/okou/issues/36582)) ([954136f](https://github.com/okou-ai/okou/commit/954136fe0a41a917ac49cdb76095075ee6b4f3a4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.503.1
+    * @okouai/connectors bumped to 3.15.5
+    * @okouai/core bumped to 8.708.1
+    * @okouai/db bumped to 1.293.1
+    * @okouai/pi-agent-runtime bumped to 1.40.7
+
 ## [1.669.0](https://github.com/okou-ai/okou/compare/api-v1.668.0...api-v1.669.0) (2026-09-24)
 
 
