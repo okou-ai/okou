@@ -1,7 +1,12 @@
 import { lookup as dnsLookup } from "node:dns";
 import type { LookupFunction } from "node:net";
 
-import { context, SpanStatusCode, type Tracer } from "@opentelemetry/api";
+import {
+  context,
+  ProxyTracerProvider,
+  SpanStatusCode,
+  type Tracer,
+} from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import {
   BasicTracerProvider,
@@ -273,6 +278,7 @@ describe("instrumentPgPool", () => {
     stream: PgStreamFactory = () => {
       return createInstrumentedPgStream();
     },
+    queryTracer: Tracer = tracer,
   ): Pool {
     const pool = instrumentPgPool(
       new Pool({
@@ -283,7 +289,7 @@ describe("instrumentPgPool", () => {
         ...config,
         stream,
       }),
-      tracer,
+      queryTracer,
     );
     pools.push(pool);
     return pool;
@@ -422,6 +428,29 @@ describe("instrumentPgPool", () => {
       expect(Number.isFinite(acquisition.durationMs)).toBeTruthy();
       expect(acquisition.durationMs).toBeGreaterThanOrEqual(0);
     }
+  });
+
+  it("captures pool acquisition without a recording query span", async () => {
+    // A production API request cannot choose the process tracer; exercise this
+    // infrastructure boundary with a real pool and a non-recording tracer.
+    const pool = createPool(
+      {},
+      undefined,
+      new ProxyTracerProvider().getTracer("db-instrumentation-noop-test"),
+    );
+    const capture = {
+      acquisitions: [] as { durationMs: number; path: AcquirePath }[],
+    };
+
+    const result = await withPgPoolAcquisitionCapture(capture, async () => {
+      return await pool.query("SELECT 405 AS captured_without_span");
+    });
+
+    expect(result.rowCount).toBe(1);
+    expect(capture.acquisitions).toStrictEqual([
+      { durationMs: expect.any(Number), path: "new" },
+    ]);
+    expect(exporter.getFinishedSpans()).toHaveLength(0);
   });
 
   it("keeps a fast lookup on the single primary path", async () => {
