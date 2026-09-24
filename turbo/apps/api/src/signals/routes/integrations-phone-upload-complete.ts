@@ -52,7 +52,7 @@ function agentPhoneRouteError(error: unknown) {
   }
   return routeError(
     error.status >= 500 ? 502 : 400,
-    `AgentPhone API error: ${error.body || `HTTP ${error.status}`}`,
+    `Phone provider error: ${error.body || `HTTP ${error.status}`}`,
     "AGENTPHONE_ERROR",
   );
 }
@@ -125,7 +125,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   });
   signal.throwIfAborted();
   if (!agentphoneAgentId) {
-    return routeError(404, "AgentPhone agent not found", "NOT_FOUND");
+    return routeError(404, "Phone agent not found", "NOT_FOUND");
   }
 
   const mimetype = body.contentType ?? object.contentType;

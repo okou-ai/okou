@@ -30,7 +30,7 @@ import {
   setThreadRemoteAccess$,
 } from "../../signals/remote-access.ts";
 import { invalidateRemoteAccess$ } from "../../signals/remote-access-refresh.ts";
-import { onDomEventFn } from "../../signals/utils.ts";
+import { detach, onDomEventFn, Reason } from "../../signals/utils.ts";
 import { LoadingSwitch } from "../components/loading-switch.tsx";
 import { Button } from "@okouai/ui/components/ui/button";
 import {
@@ -38,6 +38,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@okouai/ui/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@okouai/ui/components/ui/select";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import { vncConnections$, vncSshConnectionId } from "../../signals/vnc.ts";
 import { sshIdentity$ } from "../../signals/ssh.ts";
@@ -225,8 +232,36 @@ function HostChoiceSelect({
   onChange: (enabled: boolean | null) => void | Promise<void>;
 }) {
   const { t } = useTranslation();
+  const items = [
+    {
+      value: "default",
+      label: `${t(($) => {
+        return $.chat.remoteAccess.useDefault;
+      })} (${
+        host.defaultEnabled
+          ? t(($) => {
+              return $.chat.remoteAccess.on;
+            })
+          : t(($) => {
+              return $.chat.remoteAccess.off;
+            })
+      })`,
+    },
+    {
+      value: "on",
+      label: t(($) => {
+        return $.chat.remoteAccess.on;
+      }),
+    },
+    {
+      value: "off",
+      label: t(($) => {
+        return $.chat.remoteAccess.off;
+      }),
+    },
+  ];
   return (
-    <label className="flex items-center gap-2 px-2 py-1.5 text-sm">
+    <div className="flex items-center gap-2 px-2 py-1.5 text-sm">
       {protocol === "ssh" ? (
         <Terminal size={15} className="shrink-0 text-muted-foreground" />
       ) : (
@@ -235,42 +270,39 @@ function HostChoiceSelect({
       <span className="min-w-0 flex-1 truncate" title={host.displayName}>
         {host.displayName}
       </span>
-      <select
-        className="w-36 shrink-0 rounded-md border border-border bg-background px-1.5 py-1 text-xs"
-        aria-label={`${protocol.toUpperCase()} ${host.displayName}`}
+      <Select
+        items={items}
         value={value}
         disabled={disabled}
-        onChange={onDomEventFn((event) => {
-          const next = event.target.value;
-          return onChange(next === "default" ? null : next === "on");
-        })}
+        onValueChange={(next, details) => {
+          if (next !== "default" && next !== "on" && next !== "off") {
+            details.cancel();
+            return;
+          }
+          detach(
+            onChange(next === "default" ? null : next === "on"),
+            Reason.DomCallback,
+          );
+        }}
       >
-        <option value="default">
-          {t(($) => {
-            return $.chat.remoteAccess.useDefault;
-          })}{" "}
-          (
-          {host.defaultEnabled
-            ? t(($) => {
-                return $.chat.remoteAccess.on;
-              })
-            : t(($) => {
-                return $.chat.remoteAccess.off;
-              })}
-          )
-        </option>
-        <option value="on">
-          {t(($) => {
-            return $.chat.remoteAccess.on;
+        <SelectTrigger
+          variant="neutral"
+          className="h-8 w-40 shrink-0 py-1 text-sm"
+          aria-label={`${protocol.toUpperCase()} ${host.displayName}`}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent align="start" className="w-(--anchor-width)">
+          {items.map((item) => {
+            return (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            );
           })}
-        </option>
-        <option value="off">
-          {t(($) => {
-            return $.chat.remoteAccess.off;
-          })}
-        </option>
-      </select>
-    </label>
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 

@@ -15,7 +15,10 @@ import { executeMorningBriefEnrollmentForMember$ } from "../services/morning-bri
 import { executeMorningBriefGenerationRetentionWork$ } from "../services/morning-brief-generation-retention-worker.service";
 import { executeDueNotionAutomationEventsForAutomation$ } from "../services/notion-automation-event.service";
 import { executeDueStripeAutomationEventsForAutomation$ } from "../services/stripe-automation-event.service";
-import { executeDueWorkflowAutomationsForAutomation$ } from "../services/workflow-automation-poller.service";
+import {
+  executeDueWorkflowAutomationsForAutomation$,
+  executeDueWorkflowAutomationsForWorkflow$,
+} from "../services/workflow-automation-poller.service";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -24,6 +27,9 @@ import {
 const body$ = bodyResultOf(testWorkflowAutomationExecutionContract.execute);
 const agentBody$ = bodyResultOf(
   testWorkflowAutomationExecutionContract.executeForAgent,
+);
+const workflowBody$ = bodyResultOf(
+  testWorkflowAutomationExecutionContract.executeForWorkflow,
 );
 const dispatchBody$ = bodyResultOf(
   testWorkflowAutomationExecutionContract.dispatchCallbacks,
@@ -77,6 +83,29 @@ const executeTestWorkflowAutomation$ = command(
           stripe.failed +
           stripe.retried,
       },
+    };
+  },
+);
+
+const executeTestWorkflowAutomationsForWorkflow$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    if (!isTestEndpointAllowed(get(request$))) {
+      return testEndpointNotFoundResponse();
+    }
+    const bodyResult = await get(workflowBody$);
+    signal.throwIfAborted();
+    if (!bodyResult.ok) {
+      return bodyResult.response;
+    }
+    const result = await set(
+      executeDueWorkflowAutomationsForWorkflow$,
+      bodyResult.data.workflow_id,
+      signal,
+    );
+    signal.throwIfAborted();
+    return {
+      status: 200 as const,
+      body: { success: true as const, ...result },
     };
   },
 );
@@ -291,6 +320,10 @@ export const testWorkflowAutomationExecutionRoutes: readonly RouteEntry[] = [
   {
     route: testWorkflowAutomationExecutionContract.executeForAgent,
     handler: executeTestWorkflowAutomationsForAgent$,
+  },
+  {
+    route: testWorkflowAutomationExecutionContract.executeForWorkflow,
+    handler: executeTestWorkflowAutomationsForWorkflow$,
   },
   {
     route: testWorkflowAutomationExecutionContract.dispatchCallbacks,

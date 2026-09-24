@@ -347,7 +347,7 @@
     },
     "sources": {
       "agent": "智能体",
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "automationEvent": "自动化事件",
       "automationSchedule": "自动化定时任务",
       "email": "邮件",
@@ -3457,7 +3457,7 @@
         "invalidSignature": "此链接的签名无效。",
         "invalidTimestamp": "此链接的时间戳无效。",
         "invalidTitle": "连接链接无效",
-        "risk": "短信和彩信回复可能无法稳定送达。为获得最可靠的体验，请用iMessage与这个AgentPhone号码通信。",
+        "risk": "短信和彩信回复可能无法稳定送达。为获得最可靠的体验，请用iMessage与这个号码通信。",
         "successDescription": "{{phone}}已连接。发送一条短信，即可开始与{{assistantName}}对话。",
         "successTitle": "电话号码已连接"
       },
@@ -4008,8 +4008,8 @@
         "uninstallTitle": "卸载Telegram机器人？"
       },
       "toasts": {
-        "agentphoneConnected": "AgentPhone已连接",
-        "agentphoneDisconnected": "AgentPhone已断开连接",
+        "agentphoneConnected": "电话号码已连接",
+        "agentphoneDisconnected": "电话号码已断开连接",
         "slackConnected": "Slack连接成功",
         "slackDisconnected": "已断开与Slack的连接",
         "slackInstalled": "Slack安装成功",

@@ -347,7 +347,7 @@
     },
     "sources": {
       "agent": "एजेंट",
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "automationEvent": "ऑटोमेशन घटना",
       "automationSchedule": "ऑटोमेशन शेड्यूल",
       "email": "ईमेल",
@@ -3473,7 +3473,7 @@
         "invalidSignature": "इस लिंक पर हस्ताक्षर मान्य नहीं है.",
         "invalidTimestamp": "इस लिंक पर टाइमस्टैम्प मान्य नहीं है.",
         "invalidTitle": "कनेक्ट लिंक अमान्य है",
-        "risk": "SMS और MMS उत्तर विश्वसनीय रूप से वितरित नहीं किए जा सकते हैं। सबसे विश्वसनीय अनुभव के लिए, इस AgentPhone नंबर के साथ iMessage का उपयोग करें।",
+        "risk": "SMS और MMS उत्तर विश्वसनीय रूप से वितरित नहीं किए जा सकते हैं। सबसे विश्वसनीय अनुभव के लिए, इस नंबर के साथ iMessage का उपयोग करें।",
         "successDescription": "{{phone}} जुड़ा हुआ है. {{assistantName}} के साथ चैट शुरू करने के लिए एक टेक्स्ट संदेश भेजें।",
         "successTitle": "फ़ोन नंबर कनेक्ट हो गया"
       },
@@ -4024,8 +4024,8 @@
         "uninstallTitle": "Telegram बॉट अनइंस्टॉल करें?"
       },
       "toasts": {
-        "agentphoneConnected": "AgentPhone जुड़ा",
-        "agentphoneDisconnected": "AgentPhone डिस्कनेक्ट हो गया",
+        "agentphoneConnected": "फ़ोन नंबर कनेक्ट हो गया",
+        "agentphoneDisconnected": "फ़ोन नंबर डिस्कनेक्ट हो गया",
         "slackConnected": "Slack सफलतापूर्वक कनेक्ट हुआ",
         "slackDisconnected": "Slack से डिस्कनेक्ट हो गया",
         "slackInstalled": "Slack सफलतापूर्वक स्थापित हुआ",

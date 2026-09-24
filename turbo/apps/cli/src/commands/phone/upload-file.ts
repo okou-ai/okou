@@ -31,10 +31,10 @@ function inferContentType(localPath: string): string {
 
 export const uploadFileCommand = new Command()
   .name("upload-file")
-  .description("Upload a local file to an AgentPhone conversation")
+  .description("Upload a local file to a phone conversation")
   .requiredOption("-f, --file <path>", "Local file path to upload")
   .requiredOption("--to <phone>", "Connected phone handle to message")
-  .option("--agent-id <id>", "AgentPhone agent ID (inferred when omitted)")
+  .option("--agent-id <id>", "Phone agent ID (inferred when omitted)")
   .option("--caption <text>", "Caption to accompany the file")
   .option("--content-type <mime>", "Override inferred content type")
   .addHelpText(

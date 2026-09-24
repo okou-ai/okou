@@ -347,7 +347,7 @@
     },
     "sources": {
       "agent": "エージェント",
-      "agentphone": "エージェントフォン",
+      "agentphone": "iMessage",
       "automationEvent": "オートメーションイベント",
       "automationSchedule": "オートメーションスケジュール",
       "email": "メール",
@@ -3457,7 +3457,7 @@
         "invalidSignature": "このリンクの署名は無効です。",
         "invalidTimestamp": "このリンクのタイムスタンプは無効です。",
         "invalidTitle": "接続リンクが無効です",
-        "risk": "SMS および MMS の返信は確実に配信されない可能性があります。最も信頼性の高いエクスペリエンスを得るには、この AgentPhone 番号で iMessage を使用してください。",
+        "risk": "SMS および MMS の返信は確実に配信されない可能性があります。最も信頼性の高いエクスペリエンスを得るには、この番号で iMessage を使用してください。",
         "successDescription": "{{phone}} が接続されています。テキスト メッセージを送信して、{{assistantName}} とのチャットを開始します。",
         "successTitle": "接続された電話番号"
       },
@@ -4008,8 +4008,8 @@
         "uninstallTitle": "Telegram ボットをアンインストールしますか?"
       },
       "toasts": {
-        "agentphoneConnected": "エージェントフォンが接続されました",
-        "agentphoneDisconnected": "AgentPhone が切断されました",
+        "agentphoneConnected": "電話番号が接続されました",
+        "agentphoneDisconnected": "電話番号の接続が解除されました",
         "slackConnected": "Slack は正常に接続されました",
         "slackDisconnected": "Slack から切断されました",
         "slackInstalled": "Slack は正常にインストールされました",

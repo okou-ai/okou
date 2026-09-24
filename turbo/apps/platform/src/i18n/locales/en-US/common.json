@@ -347,7 +347,7 @@
     },
     "sources": {
       "agent": "Agent",
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "automationEvent": "Automation event",
       "automationSchedule": "Automation schedule",
       "email": "Email",
@@ -3465,7 +3465,7 @@
         "invalidSignature": "The signature on this link is not valid.",
         "invalidTimestamp": "The timestamp on this link is not valid.",
         "invalidTitle": "Connect link is invalid",
-        "risk": "SMS and MMS replies may not be delivered reliably. For the most reliable experience, use iMessage with this AgentPhone number.",
+        "risk": "SMS and MMS replies may not be delivered reliably. For the most reliable experience, use iMessage with this number.",
         "successDescription": "{{phone}} is connected. Send a text message to start chatting with {{assistantName}}.",
         "successTitle": "Phone number connected"
       },
@@ -4016,8 +4016,8 @@
         "uninstallTitle": "Uninstall Telegram bot?"
       },
       "toasts": {
-        "agentphoneConnected": "AgentPhone connected",
-        "agentphoneDisconnected": "AgentPhone disconnected",
+        "agentphoneConnected": "Phone number connected",
+        "agentphoneDisconnected": "Phone number disconnected",
         "slackConnected": "Slack connected successfully",
         "slackDisconnected": "Disconnected from Slack",
         "slackInstalled": "Slack installed successfully",

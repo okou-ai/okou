@@ -26,6 +26,12 @@ const github = connectorSlugSchema.parse("github");
 const slack = connectorSlugSchema.parse("slack");
 const gmail = connectorSlugSchema.parse("gmail");
 
+async function chooseRemoteHost(trigger: HTMLElement, optionName: string) {
+  const user = userEvent.setup({ delay: null });
+  await user.click(trigger);
+  await user.click(await screen.findByRole("option", { name: optionName }));
+}
+
 test("A chat can override multiple SSH hosts and return to each host default", async () => {
   const hostIds = [
     "b0000000-0000-4000-8000-000000000001",
@@ -114,27 +120,26 @@ test("A chat can override multiple SSH hosts and return to each host default", a
   click(remoteAccess);
   const first = await screen.findByRole("combobox", { name: "SSH SSH host 1" });
   const second = screen.getByRole("combobox", { name: "SSH SSH host 2" });
-  expect(first).toHaveValue("default");
-  expect(second).toHaveValue("default");
-  const user = userEvent.setup({ delay: null });
-  await user.selectOptions(first, "off");
+  expect(first).toHaveTextContent("Use default (On)");
+  expect(second).toHaveTextContent("Use default (Off)");
+  await chooseRemoteHost(first, "Off");
   await waitFor(() => {
     expect(overrides.get(hostIds[0]!)).toBeFalsy();
     expect(second).not.toBeDisabled();
     expect(remoteTrigger()).toHaveTextContent("0 enabled");
   });
-  await user.selectOptions(
+  await chooseRemoteHost(
     screen.getByRole("combobox", { name: "SSH SSH host 2" }),
-    "on",
+    "On",
   );
   await waitFor(() => {
     expect(overrides.get(hostIds[0]!)).toBeFalsy();
     expect(overrides.get(hostIds[1]!)).toBeTruthy();
     expect(remoteTrigger()).toHaveTextContent("1 enabled");
   });
-  await user.selectOptions(
+  await chooseRemoteHost(
     screen.getByRole("combobox", { name: "SSH SSH host 1" }),
-    "default",
+    "Use default (On)",
   );
   await waitFor(() => {
     expect(overrides.has(hostIds[0]!)).toBeFalsy();
@@ -214,7 +219,7 @@ test("Remote access stays open while a changed chat host refreshes", async () =>
   const second = screen.getByRole("combobox", { name: "SSH SSH host 2" });
 
   delayDefaultsRefresh = true;
-  await userEvent.setup({ delay: null }).selectOptions(first, "on");
+  await chooseRemoteHost(first, "On");
   await refreshStarted.promise;
   expect(menu).toBeInTheDocument();
   expect(first).toBeInTheDocument();
@@ -225,7 +230,7 @@ test("Remote access stays open while a changed chat host refreshes", async () =>
   releaseDefaultsRefresh.resolve();
   releaseRefresh.resolve();
   await waitFor(() => {
-    expect(first).toHaveValue("on");
+    expect(first).toHaveTextContent("On");
     expect(menu).toBeInTheDocument();
     expect(remoteAccess.closest("button")).toHaveTextContent("1 enabled");
   });
@@ -318,15 +323,14 @@ test("A chat can enable multiple VNC hosts independently", async () => {
   expect(remoteAccess.closest("button")).toHaveTextContent("0 enabled");
   click(remoteAccess);
   const first = await screen.findByRole("combobox", { name: "VNC VNC host 1" });
-  const user = userEvent.setup({ delay: null });
-  await user.selectOptions(first, "on");
+  await chooseRemoteHost(first, "On");
   await screen.findByText("1 enabled");
-  expect(screen.getByRole("combobox", { name: "VNC VNC host 2" })).toHaveValue(
-    "default",
-  );
-  await user.selectOptions(
+  expect(
     screen.getByRole("combobox", { name: "VNC VNC host 2" }),
-    "on",
+  ).toHaveTextContent("Use default (Off)");
+  await chooseRemoteHost(
+    screen.getByRole("combobox", { name: "VNC VNC host 2" }),
+    "On",
   );
   await screen.findByText("2 enabled");
 });
@@ -541,15 +545,25 @@ test("A new chat applies draft host choices to the thread it creates", async () 
     name: "SSH SSH host 1",
   });
   const second = screen.getByRole("combobox", { name: "SSH SSH host 2" });
-  expect(first).toHaveValue("default");
-  expect(second).toHaveValue("default");
+  expect(first).toHaveTextContent("Use default (On)");
+  expect(second).toHaveTextContent("Use default (Off)");
   const user = userEvent.setup({ delay: null });
-  await user.selectOptions(first, "off");
+  first.focus();
+  await user.keyboard("{Enter}");
+  await screen.findByRole("option", {
+    name: "Use default (On)",
+    selected: true,
+  });
+  await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+  expect(first).toHaveTextContent("Off");
+  expect(
+    screen.getByRole("dialog", { name: "Remote access" }),
+  ).toBeInTheDocument();
   expect(remoteAccess.closest("button")).toHaveTextContent("0 enabled");
-  await user.selectOptions(first, "default");
+  await chooseRemoteHost(first, "Use default (On)");
   expect(remoteAccess.closest("button")).toHaveTextContent("1 enabled");
-  await user.selectOptions(first, "off");
-  await user.selectOptions(second, "on");
+  await chooseRemoteHost(first, "Off");
+  await chooseRemoteHost(second, "On");
   expect(remoteAccess.closest("button")).toHaveTextContent("1 enabled");
   const composer = await screen.findByRole("textbox", { name: "Message" });
   await fill(composer, "Inspect both hosts");
@@ -652,7 +666,7 @@ test("Remote access in two chat panes reads and updates each pane's thread", asy
   click(await screen.findByText("Remote access"));
   await expect(
     screen.findByRole("combobox", { name: "SSH Shared SSH host" }),
-  ).resolves.toHaveValue("on");
+  ).resolves.toHaveTextContent("On");
   await user.keyboard("{Escape}");
 
   click(await findFastControl("button", "Connectors", pane(OTHER_THREAD_ID)));
@@ -660,15 +674,15 @@ test("Remote access in two chat panes reads and updates each pane's thread", asy
   const otherHost = await screen.findByRole("combobox", {
     name: "SSH Shared SSH host",
   });
-  expect(otherHost).toHaveValue("default");
-  await user.selectOptions(otherHost, "on");
+  expect(otherHost).toHaveTextContent("Use default (Off)");
+  await chooseRemoteHost(otherHost, "On");
   await waitFor(() => {
     expect(updates).toStrictEqual([
       { threadId: OTHER_THREAD_ID, enabled: true },
     ]);
     expect(
       screen.getByRole("combobox", { name: "SSH Shared SSH host" }),
-    ).toHaveValue("on");
+    ).toHaveTextContent("On");
   });
   expect(overrides.get(SCOUT_THREAD_ID)).toBeTruthy();
 });

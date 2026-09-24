@@ -347,7 +347,7 @@
     },
     "sources": {
       "agent": "에이전트",
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "automationEvent": "자동화 이벤트",
       "automationSchedule": "자동화 일정",
       "email": "이메일",
@@ -3457,7 +3457,7 @@
         "invalidSignature": "이 링크의 서명이 유효하지 않습니다.",
         "invalidTimestamp": "이 링크의 타임스탬프가 유효하지 않습니다.",
         "invalidTitle": "연결 링크가 유효하지 않습니다",
-        "risk": "SMS 및 MMS 회신이 안정적으로 전달되지 않을 수 있습니다. 가장 안정적인 경험을 위해 이 AgentPhone 번호로 iMessage를 사용하세요.",
+        "risk": "SMS 및 MMS 회신이 안정적으로 전달되지 않을 수 있습니다. 가장 안정적인 경험을 위해 이 번호로 iMessage를 사용하세요.",
         "successDescription": "{{phone}}가 연결되었습니다. 문자 메시지를 보내 {{assistantName}}와 대화를 시작하세요.",
         "successTitle": "전화번호가 연결되었습니다"
       },
@@ -4008,8 +4008,8 @@
         "uninstallTitle": "Telegram 봇을 제거하시겠습니까?"
       },
       "toasts": {
-        "agentphoneConnected": "AgentPhone 연결됨",
-        "agentphoneDisconnected": "AgentPhone 연결 해제됨",
+        "agentphoneConnected": "전화번호가 연결되었습니다",
+        "agentphoneDisconnected": "전화번호 연결이 해제되었습니다",
         "slackConnected": "Slack이 성공적으로 연결되었습니다",
         "slackDisconnected": "Slack 연결 해제됨",
         "slackInstalled": "Slack이 성공적으로 설치되었습니다",

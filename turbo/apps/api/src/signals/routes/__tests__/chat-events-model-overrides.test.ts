@@ -43,6 +43,7 @@ const {
   authDevice,
   authDeviceSupport,
   entitledChatActor,
+  entitledNativeChatActor,
   configureOrganizationGptModel,
   configureSubscriptionPiModel,
   seedBuiltInModelKey,
@@ -139,7 +140,9 @@ function settledSubscriptionToolHistory(h1: string): string {
 
 describe("CHAT-02: run-level model overrides", () => {
   it("describes raw chat history sync by default", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    // This checks the appended prompt, not API-first model execution. Keep the
+    // run claimable by the native Runner until the test cancels it.
+    const { actor, agentId } = await entitledNativeChatActor();
 
     const run = await sendChatRun(actor, {
       agentId,

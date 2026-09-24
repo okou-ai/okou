@@ -943,8 +943,15 @@
     {
       "idx": 1212,
       "version": "7",
-      "when": 1790252272309,
-      "tag": "1212_retire_sonnet_4_6_opus_4_8_deepseek_v4_pro",
+      "when": 1790252500070,
+      "tag": "1212_jazzy_magma",
+      "breakpoints": true
+    },
+    {
+      "idx": 1213,
+      "version": "7",
+      "when": 1790254313135,
+      "tag": "1213_retire_sonnet_4_6_opus_4_8_deepseek_v4_pro",
       "breakpoints": true
     }
   ]
