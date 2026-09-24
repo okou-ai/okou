@@ -34,6 +34,49 @@
         };
       })();
     </script>
+    <script data-okou-shared-database-worker-bootstrap="">
+      (function () {
+        // The app worker calls start() from the response body with the Clerk
+        // identity it verified at the edge, so the SharedWorker script loads
+        // alongside Clerk and the app bundle. The bridge claims it later.
+        var bootstrap = {
+          start: function (userId, orgId) {
+            var meta = document.querySelector(
+              'meta[name="okou-shared-database-worker"]',
+            );
+            if (
+              bootstrap.preloaded ||
+              !meta ||
+              typeof SharedWorker !== "function"
+            ) {
+              return;
+            }
+            var url = new URL(meta.content, location.origin);
+            url.search +=
+              (url.search ? "&" : "?") +
+              new URLSearchParams({ userId: userId, orgId: orgId }).toString();
+            var name = "okou_" + userId + "_" + orgId;
+            var preloaded = {
+              url: url.href,
+              name: name,
+              worker: new SharedWorker(url, { name: name, type: "module" }),
+              error: null,
+            };
+            // The bridge reports an error that happens before it listens.
+            preloaded.worker.addEventListener(
+              "error",
+              function (event) {
+                event.preventDefault();
+                preloaded.error = event;
+              },
+              { once: true },
+            );
+            bootstrap.preloaded = preloaded;
+          },
+        };
+        window.__okouSharedDatabaseWorkerBootstrap = bootstrap;
+      })();
+    </script>
     <title>AI Teammate for Real Work — More Done, Same Team | Okou</title>
     <meta charset="UTF-8" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />

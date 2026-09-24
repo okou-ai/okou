@@ -315,6 +315,10 @@ function appApiPrefetchResponse(response, prefetchState) {
   });
 }
 
+function sharedDatabaseWorkerPreloadScript(userId, orgId) {
+  return `<script>window.__okouSharedDatabaseWorkerBootstrap?.start(${serializeJsonForScript(userId)}, ${serializeJsonForScript(orgId)});</script>`;
+}
+
 function clerkEdgeSessionAuthorizedParty(requestUrl, env) {
   if (requestUrl.protocol !== "https:") {
     return null;
@@ -488,6 +492,15 @@ function rewriteAppPage(
           return;
         }
         if (edgeAuth.orgId !== null) {
+          // Ahead of the prefetch marker, which holds the body until the API
+          // prefetch settles, so the SharedWorker starts loading immediately.
+          element.append(
+            sharedDatabaseWorkerPreloadScript(
+              edgeAuth.session.userId,
+              edgeAuth.orgId,
+            ),
+            { html: true },
+          );
           prefetchState.stream = appApiPrefetchStream(
             request,
             requestUrl,

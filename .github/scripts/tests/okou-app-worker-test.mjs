@@ -436,6 +436,19 @@ function clerkEdgeSessionJson(html) {
   return JSON.parse(matches[0][1]);
 }
 
+const SHARED_DATABASE_WORKER_PRELOAD_PATTERN =
+  /<script>window\.__okouSharedDatabaseWorkerBootstrap\?\.start\(([\s\S]*?)\);<\/script>/u;
+
+function sharedDatabaseWorkerPreloadArguments(html) {
+  const matches = [
+    ...html.matchAll(
+      new RegExp(SHARED_DATABASE_WORKER_PRELOAD_PATTERN.source, "gu"),
+    ),
+  ];
+  assert.equal(matches.length, 1);
+  return JSON.parse(`[${matches[0][1]}]`);
+}
+
 function prefetchedApiJson(html, path) {
   for (const match of html.matchAll(
     /<script\b[^>]*data-okou-api-bootstrap=""[^>]*>([\s\S]*?)<\/script>/giu,
@@ -485,7 +498,6 @@ function assertNoClerkSecrets(snapshot) {
     "sk_test_secret-must-not-render",
     "sk_live_secret-must-not-render",
     "session-token-must-not-render",
-    "org_must-not-render",
     "claim-must-not-render",
     "handshake-cookie-must-not-render",
     "refreshed-cookie-must-not-render",
@@ -755,6 +767,10 @@ const edgePreviewBaseline = await responseSnapshot(
   edgePreviewEnvironment,
 );
 assert.doesNotMatch(edgePreviewBaseline.body, /okou-clerk-edge-session/u);
+assert.doesNotMatch(
+  edgePreviewBaseline.body,
+  SHARED_DATABASE_WORKER_PRELOAD_PATTERN,
+);
 assertNoClerkSecrets(edgePreviewBaseline);
 assert.equal(failingClerkClientFactoryCalls, 1);
 
@@ -925,7 +941,7 @@ const authenticatedWorker = workerModule.createWorker(
           token: "session-token-must-not-render",
           toAuth() {
             return {
-              orgId: "org_must-not-render",
+              orgId: "org_current",
               sessionClaims: { private: "claim-must-not-render" },
               sessionId: currentSessionId,
               userId: currentUserId,
@@ -959,6 +975,10 @@ assert.deepEqual(clerkEdgeSessionJson(authenticated.body), {
 assert.deepEqual(Object.keys(clerkEdgeSessionJson(authenticated.body)).sort(), [
   "sessionId",
   "userId",
+]);
+assert.deepEqual(sharedDatabaseWorkerPreloadArguments(authenticated.body), [
+  currentUserId,
+  "org_current",
 ]);
 assertNoClerkSecrets(authenticated);
 
@@ -1066,6 +1086,10 @@ assert.deepEqual(clerkEdgeSessionJson(authenticatedWithoutOrganization.body), {
   sessionId: "sess_without_organization",
 });
 assert.equal(apiFetchCallsWithoutOrganization, 0);
+assert.doesNotMatch(
+  authenticatedWithoutOrganization.body,
+  SHARED_DATABASE_WORKER_PRELOAD_PATTERN,
+);
 assertNoClerkSecrets(authenticatedWithoutOrganization);
 
 const prefetchPagePath =
@@ -1155,6 +1179,11 @@ const prefixHtml =
 assert.match(prefixHtml, /id="root"/u);
 assert.match(prefixHtml, /id="app-bootstrap-skeleton"/u);
 assert.doesNotMatch(prefixHtml, /data-okou-api-bootstrap/u);
+// The Worker preload must not wait for the API prefetch budget.
+assert.deepEqual(sharedDatabaseWorkerPreloadArguments(prefixHtml), [
+  "user_prefetch",
+  "org_prefetch",
+]);
 assert.doesNotMatch(prefixHtml, /<\/body>/u);
 
 agentBody.resolve([{ agentId: "agent-prefetched" }]);
