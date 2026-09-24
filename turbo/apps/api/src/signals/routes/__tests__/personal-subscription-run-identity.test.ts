@@ -3192,8 +3192,40 @@ describe("personal priority connection boundaries", () => {
         Authorization: `Bearer ${f.connected.token}`,
       });
       await support.deletePersonalModelProvider(f.actor, type, [204]);
+      // The organization Claude API starts a Pi API first turn as soon as the
+      // run is admitted. Keep its provider response in flight until we have
+      // read the route and cancelled the run; an unhandled provider request
+      // could otherwise fail the run before the cancellation assertion.
+      const apiFirstTurn =
+        type === "claude-code-oauth-token"
+          ? {
+              entered: createDeferredPromise<void>(context.signal),
+              release: createDeferredPromise<void>(context.signal),
+            }
+          : null;
+      if (apiFirstTurn) {
+        onTestFinished(async () => {
+          if (!apiFirstTurn.release.settled()) {
+            apiFirstTurn.release.resolve(undefined);
+          }
+          await flushWaitUntilForTest();
+        });
+        server.use(
+          http.post("https://api.anthropic.com/v1/messages", async () => {
+            apiFirstTurn.entered.resolve(undefined);
+            await apiFirstTurn.release.promise;
+            return HttpResponse.json({}, { status: 503 });
+          }),
+        );
+      }
       // No new mirror is true absence even though A's parent is retained.
       const absent = await f.start();
+      if (apiFirstTurn) {
+        await apiFirstTurn.entered.promise;
+      }
+      await expect(runs.readRun(f.actor, absent)).resolves.toMatchObject({
+        status: "pending",
+      });
       await expect(readRunModelSourceFixture(absent)).resolves.toMatchObject({
         modelProvider:
           type === "codex-oauth-token" ? "openai-api-key" : "anthropic-api-key",
@@ -3201,6 +3233,13 @@ describe("personal priority connection boundaries", () => {
         selectedModel: f.model,
       });
       await runs.requestCancelRun(f.actor, absent, [200]);
+      if (apiFirstTurn) {
+        apiFirstTurn.release.resolve(undefined);
+        await flushWaitUntilForTest();
+      }
+      await expect(runs.readRun(f.actor, absent)).resolves.toMatchObject({
+        status: "cancelled",
+      });
       const b = await writeHistoricalSubscription(
         f.actor,
         type,
