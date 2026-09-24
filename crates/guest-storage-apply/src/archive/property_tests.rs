@@ -312,6 +312,32 @@ proptest! {
 }
 
 #[test]
+fn outside_tree_is_unchanged_after_late_unpack_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let target = root.join("target");
+    fs::create_dir(&target).unwrap();
+    fs::write(root.join("outside.txt"), b"outside sentinel").unwrap();
+    let before = snapshot_outside(&root, &target);
+    let members = [
+        Member::file(CONTROL, CONTROL_CONTENT),
+        Member::file("repeat", b"first"),
+        Member::file("repeat", b"second"),
+        Member::file("repeat/child", b"cannot unpack beneath a file"),
+    ];
+
+    let result = extract_tar_gz(
+        ArchiveSource::local(Cursor::new(tar_gz(&members)), None),
+        &target,
+    );
+
+    assert!(result.is_err());
+    assert_eq!(fs::read(target.join(CONTROL)).unwrap(), CONTROL_CONTENT);
+    assert_eq!(fs::read(target.join("repeat")).unwrap(), b"second");
+    assert_eq!(snapshot_outside(&root, &target), before);
+}
+
+#[test]
 fn valid_mixed_entries_are_extracted() {
     let dir = tempfile::tempdir().unwrap();
     let target = dir.path().join("target");
