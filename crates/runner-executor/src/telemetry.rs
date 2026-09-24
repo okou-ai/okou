@@ -1823,14 +1823,15 @@ mod tests {
             "flush returned before the held auto-flush response completed"
         );
 
-        // API cold starts can exceed the previous five-second request deadline.
-        tokio::select! {
-            biased;
-            () = flush.as_mut() => {
-                panic!("flush timed out before the delayed API response was released");
-            }
-            () = tokio::time::sleep(Duration::from_secs(6)) => {}
-        }
+        // Advance past the previous five-second request deadline without a
+        // wall-clock wait. The held response must still own the pending flush.
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(6)).await;
+        assert!(
+            flush.as_mut().now_or_never().is_none(),
+            "flush timed out before the delayed API response was released"
+        );
+        tokio::time::resume();
 
         release_tx.send(()).unwrap();
         tokio::time::timeout(Duration::from_secs(1), flush)
