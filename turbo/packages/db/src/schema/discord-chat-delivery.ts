@@ -24,19 +24,44 @@ export const discordChatDeliveries = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     connectionId: uuid("connection_id")
       .notNull()
-      .references(() => discordOrgConnections.id, { onDelete: "cascade" }),
-    ingressId: uuid("ingress_id").references(() => discordChatIngress.id, {
-      onDelete: "cascade",
-    }),
-    chatEventId: uuid("chat_event_id").references(() => chatEvents.id, {
-      onDelete: "cascade",
-    }),
-    chatThreadId: uuid("chat_thread_id").references(() => chatThreads.id, {
-      onDelete: "cascade",
-    }),
-    routeId: uuid("route_id").references(() => discordChatThreadRoutes.id, {
-      onDelete: "cascade",
-    }),
+      .references(
+        () => {
+          return discordOrgConnections.id;
+        },
+        { onDelete: "cascade" },
+      ),
+    ingressId: uuid("ingress_id").references(
+      () => {
+        return discordChatIngress.id;
+      },
+      {
+        onDelete: "cascade",
+      },
+    ),
+    chatEventId: uuid("chat_event_id").references(
+      () => {
+        return chatEvents.id;
+      },
+      {
+        onDelete: "cascade",
+      },
+    ),
+    chatThreadId: uuid("chat_thread_id").references(
+      () => {
+        return chatThreads.id;
+      },
+      {
+        onDelete: "cascade",
+      },
+    ),
+    routeId: uuid("route_id").references(
+      () => {
+        return discordChatThreadRoutes.id;
+      },
+      {
+        onDelete: "cascade",
+      },
+    ),
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
     channelId: text("channel_id").notNull(),
@@ -53,48 +78,56 @@ export const discordChatDeliveries = pgTable(
     lastError: text("last_error"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (table) => [
-    uniqueIndex("idx_discord_chat_deliveries_event").on(table.chatEventId),
-    uniqueIndex("idx_discord_chat_deliveries_ingress").on(table.ingressId),
-    index("idx_discord_chat_deliveries_pending").on(
-      table.status,
-      table.lastAttemptAt,
-    ),
-    index("idx_discord_chat_deliveries_owner").on(table.orgId, table.userId),
-    index("idx_discord_chat_deliveries_connection").on(table.connectionId),
-    index("idx_discord_chat_deliveries_thread").on(table.chatThreadId),
-    index("idx_discord_chat_deliveries_route").on(table.routeId),
-    foreignKey({
-      name: "discord_chat_deliveries_event_thread_fk",
-      columns: [table.chatEventId, table.chatThreadId],
-      foreignColumns: [chatEvents.id, chatEvents.chatThreadId],
-    }).onDelete("cascade"),
-    foreignKey({
-      name: "discord_chat_deliveries_connection_owner_fk",
-      columns: [table.connectionId, table.userId],
-      foreignColumns: [discordOrgConnections.id, discordOrgConnections.userId],
-    }).onDelete("cascade"),
-    foreignKey({
-      name: "discord_chat_deliveries_route_owner_fk",
-      columns: [table.routeId, table.connectionId, table.chatThreadId],
-      foreignColumns: [
-        discordChatThreadRoutes.id,
-        discordChatThreadRoutes.connectionId,
-        discordChatThreadRoutes.chatThreadId,
-      ],
-    }).onDelete("cascade"),
-    foreignKey({
-      name: "discord_chat_deliveries_ingress_owner_fk",
-      columns: [table.ingressId, table.connectionId],
-      foreignColumns: [discordChatIngress.id, discordChatIngress.connectionId],
-    }).onDelete("cascade"),
-    check(
-      "discord_chat_deliveries_source_check",
-      sql`(${table.chatEventId} IS NOT NULL AND ${table.ingressId} IS NULL AND ${table.chatThreadId} IS NOT NULL AND ${table.routeId} IS NOT NULL) OR (${table.chatEventId} IS NULL AND ${table.ingressId} IS NOT NULL AND ${table.chatThreadId} IS NULL AND ${table.routeId} IS NULL)`,
-    ),
-    check(
-      "discord_chat_deliveries_status_check",
-      sql`${table.status} IN ('pending', 'delivered', 'failed', 'suppressed')`,
-    ),
-  ],
+  (table) => {
+    return [
+      uniqueIndex("idx_discord_chat_deliveries_event").on(table.chatEventId),
+      uniqueIndex("idx_discord_chat_deliveries_ingress").on(table.ingressId),
+      index("idx_discord_chat_deliveries_pending").on(
+        table.status,
+        table.lastAttemptAt,
+      ),
+      index("idx_discord_chat_deliveries_owner").on(table.orgId, table.userId),
+      index("idx_discord_chat_deliveries_connection").on(table.connectionId),
+      index("idx_discord_chat_deliveries_thread").on(table.chatThreadId),
+      index("idx_discord_chat_deliveries_route").on(table.routeId),
+      foreignKey({
+        name: "discord_chat_deliveries_event_thread_fk",
+        columns: [table.chatEventId, table.chatThreadId],
+        foreignColumns: [chatEvents.id, chatEvents.chatThreadId],
+      }).onDelete("cascade"),
+      foreignKey({
+        name: "discord_chat_deliveries_connection_owner_fk",
+        columns: [table.connectionId, table.userId],
+        foreignColumns: [
+          discordOrgConnections.id,
+          discordOrgConnections.userId,
+        ],
+      }).onDelete("cascade"),
+      foreignKey({
+        name: "discord_chat_deliveries_route_owner_fk",
+        columns: [table.routeId, table.connectionId, table.chatThreadId],
+        foreignColumns: [
+          discordChatThreadRoutes.id,
+          discordChatThreadRoutes.connectionId,
+          discordChatThreadRoutes.chatThreadId,
+        ],
+      }).onDelete("cascade"),
+      foreignKey({
+        name: "discord_chat_deliveries_ingress_owner_fk",
+        columns: [table.ingressId, table.connectionId],
+        foreignColumns: [
+          discordChatIngress.id,
+          discordChatIngress.connectionId,
+        ],
+      }).onDelete("cascade"),
+      check(
+        "discord_chat_deliveries_source_check",
+        sql`(${table.chatEventId} IS NOT NULL AND ${table.ingressId} IS NULL AND ${table.chatThreadId} IS NOT NULL AND ${table.routeId} IS NOT NULL) OR (${table.chatEventId} IS NULL AND ${table.ingressId} IS NOT NULL AND ${table.chatThreadId} IS NULL AND ${table.routeId} IS NULL)`,
+      ),
+      check(
+        "discord_chat_deliveries_status_check",
+        sql`${table.status} IN ('pending', 'delivered', 'failed', 'suppressed')`,
+      ),
+    ];
+  },
 );

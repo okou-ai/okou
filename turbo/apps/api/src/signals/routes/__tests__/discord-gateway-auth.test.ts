@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import {
   DISCORD_GATEWAY_AUTH_TEST_VECTORS,
   DISCORD_GATEWAY_SIGNATURE_HEADER,
@@ -14,7 +14,7 @@ import { discordGatewayRoutes } from "../discord-gateway";
 
 const context = testContext();
 const APPLICATION_ID = "111111111111111111";
-const SECRET = "discord-gateway-test-secret-at-least-32-characters";
+const SECRET = randomBytes(32).toString("hex");
 
 function configureGateway(secret = SECRET): void {
   mockEnv("DISCORD_APPLICATION_ID", APPLICATION_ID);

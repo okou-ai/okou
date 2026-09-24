@@ -69,6 +69,18 @@ const STALE_AFTER_MS = 5 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
 const SWEEP_LIMIT = 20;
 
+/** Preserve a provider cooldown while the canonical importer records its failure. */
+class DiscordAttachmentImportError extends InputFileImportError {
+  constructor(
+    message: string,
+    statusCode: number,
+    readonly retryAfterMs: number,
+  ) {
+    super("download-failed", message, statusCode);
+    this.name = "DiscordAttachmentImportError";
+  }
+}
+
 async function downloadInputAttachment(
   args: {
     readonly connectionId: string;
@@ -110,10 +122,10 @@ async function downloadInputAttachment(
     signal,
   );
   if (access.kind === "denied") {
-    throw new InputFileImportError(
-      "download-failed",
+    throw new DiscordAttachmentImportError(
       "Discord file access could not be verified",
       access.response.status,
+      (access.response.body.error.retryAfterSeconds ?? 0) * 1000,
     );
   }
   if (
@@ -135,10 +147,10 @@ async function downloadInputAttachment(
     signal,
   );
   if (refreshed.kind !== "ok") {
-    throw new InputFileImportError(
-      "download-failed",
+    throw new DiscordAttachmentImportError(
       "Discord attachment metadata is unavailable",
       refreshed.status,
+      refreshed.kind === "discord-error" ? (refreshed.retryAfterMs ?? 0) : 0,
     );
   }
   if (
@@ -477,6 +489,7 @@ const materializeIngressAttachment$ = command(
     signal: AbortSignal,
   ): Promise<DiscordInputAsset> => {
     const { accessArgs, message, attachment, chatThreadId } = args;
+    let retryAfterMs = 0;
     const asset = await set(
       materializeCanonicalInputFile$,
       {
@@ -498,27 +511,38 @@ const materializeIngressAttachment$ = command(
         filename: attachment.filename,
         contentType: canonicalInputContentType(
           attachment.filename,
-          attachment.content_type,
+          attachment.content_type ?? "application/octet-stream",
         ),
         size: attachment.size,
         maxBytes: MAX_DISCORD_FILE_SIZE_BYTES,
-        download: (downloadSignal) => {
-          return downloadInputAttachment(
-            {
-              ...accessArgs,
-              discordUserId: message.author.id,
-              messageId: message.id,
-              attachment: {
-                channelId: message.channel_id,
-                attachmentId: attachment.id,
-                filename: attachment.filename,
-                size: attachment.size,
-                contentType: attachment.content_type,
-                url: attachment.url,
+        download: async (downloadSignal) => {
+          const downloaded = await settle(
+            downloadInputAttachment(
+              {
+                ...accessArgs,
+                discordUserId: message.author.id,
+                messageId: message.id,
+                attachment: {
+                  channelId: message.channel_id,
+                  attachmentId: attachment.id,
+                  filename: attachment.filename,
+                  size: attachment.size,
+                  contentType: attachment.content_type,
+                  url: attachment.url,
+                },
               },
-            },
+              downloadSignal,
+            ),
             downloadSignal,
           );
+          if (!downloaded.ok) {
+            if (downloaded.error instanceof DiscordAttachmentImportError) {
+              retryAfterMs = downloaded.error.retryAfterMs;
+            }
+            // The canonical importer must still persist the original failure.
+            throw downloaded.error;
+          }
+          return downloaded.value;
         },
       },
       signal,
@@ -527,7 +551,7 @@ const materializeIngressAttachment$ = command(
       throw new DiscordIngressFailure(
         `attachment:${asset.error.code}`,
         true,
-        0,
+        retryAfterMs,
         "Discord attachment import is temporarily unavailable",
       );
     }

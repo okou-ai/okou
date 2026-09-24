@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import {
   discordGatewayContract,
   type DiscordGatewayEnvelope,
@@ -38,8 +38,7 @@ import { updateFeatureSwitchesForUser } from "./feature-switches";
 import { createRouteMocks } from "./route-test";
 
 export const DISCORD_TEST_APPLICATION_ID = "900000000000000001";
-export const DISCORD_TEST_GATEWAY_SECRET =
-  "discord-test-gateway-secret-at-least-32-characters";
+export const DISCORD_TEST_GATEWAY_SECRET = randomBytes(32).toString("hex");
 
 export interface ConnectedDiscordActor {
   readonly actor: ApiTestUser;

@@ -216,37 +216,73 @@ describe("canonical Discord ingress", () => {
     expect(run.appendSystemPrompt).toContain("MESSAGE_CONTENT is unavailable");
   });
 
-  it("requires the sender to create public threads even when the bot can", async () => {
-    const actor = await connected();
-    const provider = mockDiscordProvider(actor);
-    // Discord wire bits VIEW_CHANNEL | SEND_MESSAGES | READ_MESSAGE_HISTORY.
-    // Only the bot has its separate administrator role, which can create threads.
-    provider.state.everyonePermissions = "68608";
-    const message = discordMessageForTest(actor, {
-      channelId: provider.guildChannelId,
-      content: `<@${actor.botUserId}> do not create a thread on my behalf`,
-    });
-    provider.messages.set(message.id, message);
-    expect((await postDiscordMessage(context, message)).body.outcome).toBe(
-      "accepted",
-    );
-    await flushWaitUntilForTest();
-    expect([...provider.channels.keys()]).toStrictEqual([
-      provider.guildChannelId,
-      provider.dmChannelId,
-    ]);
-    for (const thread of await discordChatThreads(context, actor)) {
-      await expect(events(actor, thread.id)).resolves.toHaveLength(0);
-    }
-    expect(provider.sentMessages).toHaveLength(1);
-    expect(provider.sentMessages[0]).toMatchObject({
-      channel_id: provider.guildChannelId,
-      content: "I couldn't process this Discord message. Please send it again.",
-    });
-    await postDiscordMessage(context, message, `denied-replay:${message.id}`);
-    await flushWaitUntilForTest();
-    expect(provider.sentMessages).toHaveLength(1);
-  });
+  it.each(["sender", "bot"] as const)(
+    "requires %s public-thread creation permission even when the other party is an administrator",
+    async (deniedParty) => {
+      const actor = await connected();
+      const provider = mockDiscordProvider(actor);
+      // Discord wire bits VIEW_CHANNEL | SEND_MESSAGES | READ_MESSAGE_HISTORY
+      // allow both parties to converse, but omit CREATE_PUBLIC_THREADS.
+      const administratorRoleId = uniqueDiscordSnowflake();
+      const administratorUserId =
+        deniedParty === "sender" ? actor.botUserId : actor.discordUserId;
+      server.use(
+        http.get(
+          `https://discord.com/api/v10/guilds/${actor.guildId}/roles`,
+          () => {
+            return HttpResponse.json([
+              { id: actor.guildId, name: "@everyone", permissions: "68608" },
+              {
+                id: administratorRoleId,
+                name: "Administrator",
+                permissions: "8",
+              },
+            ]);
+          },
+        ),
+        http.get(
+          `https://discord.com/api/v10/guilds/${actor.guildId}/members/:userId`,
+          ({ params }) => {
+            const userId = String(params.userId);
+            return HttpResponse.json({
+              user: {
+                id: userId,
+                username: "member",
+                bot: userId === actor.botUserId,
+              },
+              roles:
+                userId === administratorUserId ? [administratorRoleId] : [],
+            });
+          },
+        ),
+      );
+      const message = discordMessageForTest(actor, {
+        channelId: provider.guildChannelId,
+        content: `<@${actor.botUserId}> do not create a thread on my behalf`,
+      });
+      provider.messages.set(message.id, message);
+      expect((await postDiscordMessage(context, message)).body.outcome).toBe(
+        "accepted",
+      );
+      await flushWaitUntilForTest();
+      expect([...provider.channels.keys()]).toStrictEqual([
+        provider.guildChannelId,
+        provider.dmChannelId,
+      ]);
+      for (const thread of await discordChatThreads(context, actor)) {
+        await expect(events(actor, thread.id)).resolves.toHaveLength(0);
+      }
+      expect(provider.sentMessages).toHaveLength(1);
+      expect(provider.sentMessages[0]).toMatchObject({
+        channel_id: provider.guildChannelId,
+        content:
+          "I couldn't process this Discord message. Please send it again.",
+      });
+      await postDiscordMessage(context, message, `denied-replay:${message.id}`);
+      await flushWaitUntilForTest();
+      expect(provider.sentMessages).toHaveLength(1);
+    },
+  );
 
   it("recovers a lost thread-create response without creating another physical thread", async () => {
     const actor = await connected();
@@ -481,10 +517,12 @@ describe("canonical Discord ingress", () => {
     if (!guildThread) {
       throw new Error("Expected guild thread");
     }
-    const { providerId } = await runsApi.ensureOrgModelProvider(actor.actor);
+    const { providerId } = await runsApi.ensureOrgModelProvider(actor.actor, {
+      model: "claude-fable-5-1",
+    });
     await runsApi.updateOrgModelPolicies(actor.actor, [
       {
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         isDefault: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
@@ -546,7 +584,7 @@ describe("canonical Discord ingress", () => {
     await accept(
       preferences.update({
         headers: { authorization: "Bearer clerk-session" },
-        body: { selectedModel: "claude-sonnet-5", serviceTier: null },
+        body: { selectedModel: "claude-fable-5-1", serviceTier: null },
       }),
       [200],
     );
@@ -570,7 +608,7 @@ describe("canonical Discord ingress", () => {
           return thread.selectedModel;
         })
         .sort(),
-    ).toStrictEqual(["claude-opus-5", "claude-sonnet-5"]);
+    ).toStrictEqual(["claude-fable-5-1", "claude-opus-5"]);
   });
 
   it("requires explicit DM org choice and keeps a replay bound to its original org", async () => {
@@ -931,6 +969,128 @@ describe("canonical Discord ingress", () => {
     await recover(actor);
     expect(currentInputs(await events(actor, thread.id))).toHaveLength(1);
   });
+
+  it.each(["access", "metadata"] as const)(
+    "preserves Retry-After from expired attachment %s refresh through canonical import",
+    async (limitedRefresh) => {
+      const actor = await connected();
+      const provider = mockDiscordProvider(actor);
+      const channel = provider.channels.get(provider.dmChannelId);
+      if (!channel) {
+        throw new Error("Expected the DM channel fixture");
+      }
+      const attachmentId = uniqueDiscordSnowflake();
+      const attachmentPath = `https://cdn.discordapp.com/attachments/${provider.dmChannelId}/${attachmentId}/refresh.txt`;
+      const originalUrl = `${attachmentPath}?ex=expired`;
+      const refreshedUrl = `${attachmentPath}?ex=fresh`;
+      const message = discordMessageForTest(actor, {
+        channelId: provider.dmChannelId,
+        guild: false,
+        content: "wait for the expired attachment refresh cooldown",
+        attachments: [
+          {
+            id: attachmentId,
+            filename: "refresh.txt",
+            size: 5,
+            url: originalUrl,
+          },
+        ],
+      });
+      provider.messages.set(message.id, message);
+      let expiredUrlFetched = false;
+      let rateLimited = true;
+      const attempts = { access: 0, metadata: 0, download: 0 };
+      server.use(
+        http.get(
+          `https://discord.com/api/v10/channels/${provider.dmChannelId}`,
+          () => {
+            attempts.access++;
+            if (
+              expiredUrlFetched &&
+              rateLimited &&
+              limitedRefresh === "access"
+            ) {
+              return HttpResponse.json(
+                { message: "Rate limited", retry_after: 300, global: false },
+                { status: 429, headers: { "Retry-After": "300" } },
+              );
+            }
+            return HttpResponse.json(channel);
+          },
+        ),
+        http.get(
+          `https://discord.com/api/v10/channels/${provider.dmChannelId}/messages/${message.id}`,
+          () => {
+            attempts.metadata++;
+            if (
+              expiredUrlFetched &&
+              rateLimited &&
+              limitedRefresh === "metadata"
+            ) {
+              return HttpResponse.json(
+                { message: "Rate limited", retry_after: 300, global: false },
+                { status: 429, headers: { "Retry-After": "300" } },
+              );
+            }
+            return HttpResponse.json({
+              ...message,
+              attachments: message.attachments.map((attachment) => {
+                return {
+                  ...attachment,
+                  url: expiredUrlFetched ? refreshedUrl : originalUrl,
+                };
+              }),
+            });
+          },
+        ),
+        http.get(attachmentPath, ({ request }) => {
+          attempts.download++;
+          if (new URL(request.url).searchParams.get("ex") === "expired") {
+            expiredUrlFetched = true;
+            return new HttpResponse(null, { status: 403 });
+          }
+          // Missing metadata MIME must preserve the validated CDN header,
+          // even when it differs from the type suggested by the filename.
+          return new HttpResponse("a,b\n1", {
+            headers: { "content-type": "text/csv", "content-length": "5" },
+          });
+        }),
+      );
+      mockNow(now());
+      await postDiscordMessage(context, message);
+      await flushWaitUntilForTest();
+      expect(attempts.download).toBe(1);
+      expect(attempts.metadata).toBe(limitedRefresh === "metadata" ? 2 : 1);
+      const [thread] = await discordChatThreads(context, actor);
+      if (!thread) {
+        throw new Error(
+          "Expected a retained route while attachment refresh waits",
+        );
+      }
+      await expect(events(actor, thread.id)).resolves.toHaveLength(0);
+      const initialAttempts = { ...attempts };
+
+      rateLimited = false;
+      mockNow(now() + 299_000);
+      await recover(actor);
+      expect(attempts).toStrictEqual(initialAttempts);
+      await expect(events(actor, thread.id)).resolves.toHaveLength(0);
+
+      mockNow(now() + 2000);
+      await recover(actor);
+      expect(attempts.download).toBe(2);
+      const inputs = currentInputs(await events(actor, thread.id));
+      expect(inputs).toHaveLength(1);
+      expect(inputs[0]?.userMessage.parts).toContainEqual(
+        expect.objectContaining({
+          type: "file",
+          filenameSnapshot: "refresh.txt",
+          contentType: "text/csv",
+        }),
+      );
+      expect(inputs[0]?.runId).toStrictEqual(expect.any(String));
+    },
+  );
 
   it("records one canonical admission error when the finite retry budget is exhausted", async () => {
     const actor = await connected();
