@@ -58,6 +58,7 @@ export function buildAgentToolsPrompt(args: {
   readonly bankingEnabled: boolean;
   readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
+  readonly discordEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
   readonly presentationConvertEnabled: boolean;
 }): string {
@@ -114,6 +115,12 @@ export function buildAgentToolsPrompt(args: {
     "- Slack messages: when the task explicitly asks to send or post to Slack, use `okou slack message send --help` for channels, DMs, and thread replies.",
     "- Slack channel discovery and history: use `okou slack channel list --help` to find channels shared by the connected user and bot, then `okou slack message history --help` to read shared channel or bot DM history.",
     "- Feishu messages: when the task explicitly asks to send or post to Feishu, use `okou feishu message send --help` for chats, DMs, and replies.",
+    ...(args.discordEnabled
+      ? [
+          "- Discord: use `okou discord channel list --help` and `okou discord message history --help` for conversations shared by the connected user and Okou. `message replies` reads a native thread; a Discord reply reference is not itself a thread. Read one bounded page at a time and continue with `nextBefore`; do not infer unread messages are absent. Ordinary context can be limited by the bot MESSAGE_CONTENT intent.",
+          "- When explicitly asked to send to Discord, use `okou discord message send --help` with the destination channel or native thread ID. Only your own bot DM is accessible. Mentions never notify users or roles. Long text is split without truncation; report partial delivery and already-delivered message links instead of blindly retrying the entire send. OAuth onboarding is deferred; these commands require an existing verified binding.",
+        ]
+      : []),
     ...(args.larkEnabled
       ? [
           "- Lark messages: when the task explicitly asks to send or post to Lark, use `okou lark message send --help` for chats, DMs, and replies.",

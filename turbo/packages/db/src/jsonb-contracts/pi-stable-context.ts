@@ -57,6 +57,7 @@ export interface PiStableContextPromptInputs {
   readonly bankingEnabled: boolean;
   readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
+  readonly discordEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
   readonly presentationConvertEnabled: boolean;
   readonly customConnectorMcpEnabled: boolean;
