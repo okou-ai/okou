@@ -2,7 +2,7 @@
 
 ## Chat search user keyword GIN index (2026-09-24)
 
-Migration `1212_chat_search_user_tsv_gin` installs `btree_gin` and builds
+Migration `1213_chat_search_user_tsv_gin` installs `btree_gin` and builds
 `chat_event_search_messages_user_tsv_gin_idx` on `(user_id, tsv)` with
 `CREATE INDEX CONCURRENTLY`. It does not block chat search reads or projector
 writes. The build waits for older transactions database-wide, so the migration

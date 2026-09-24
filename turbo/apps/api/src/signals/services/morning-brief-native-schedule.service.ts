@@ -7,6 +7,7 @@ import {
   type MorningBriefNativeOutcome,
 } from "@okouai/db/schema/morning-brief-native-schedule";
 import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
+import { morningBriefNativeScheduleSkips } from "@okouai/db/schema/workflow-schedule-skip";
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import {
@@ -35,6 +36,10 @@ import {
   type MorningBriefStateReader,
 } from "./morning-brief-migration-state.service";
 import { calculateNextRun } from "./time-automation";
+import {
+  scheduleExpired,
+  scheduleExpiryEnabled,
+} from "./schedule-expiry-policy";
 
 /**
  * The durable Morning Brief choice, execution ownership and schedule.
@@ -1662,6 +1667,12 @@ export async function claimMorningBriefNativeOccurrence(
     return { kind: "not-due" };
   }
   if (
+    scheduleExpiryEnabled() &&
+    scheduleExpired(schedule.nextRunAt, args.now)
+  ) {
+    return { kind: "inadmissible", reason: "expired" };
+  }
+  if (
     args.expectedScheduledFor !== undefined &&
     !(await nativeWorkerHasCapacity(tx))
   ) {
@@ -1733,6 +1744,75 @@ export async function claimMorningBriefNativeOccurrence(
     return { kind: "inadmissible", reason: "schedule-moved" };
   }
   return { kind: "claimed", occurrence, schedule: held };
+}
+
+/** Never create a native occurrence for an unclaimed, expired obligation. */
+export async function skipExpiredNativeMorningBriefSchedule(
+  tx: MorningBriefNativeWriter,
+  owner: MorningBriefMemberIdentity,
+  args: { readonly anchor: Date; readonly at: Date },
+): Promise<"skipped" | "moved" | "held"> {
+  const schedule = await lockMorningBriefNativeSchedule(tx, owner);
+  if (
+    !schedule ||
+    !schedule.enabled ||
+    schedule.phase !== "native" ||
+    schedule.scheduleOwner !== "native" ||
+    schedule.nextRunAt?.getTime() !== args.anchor.getTime() ||
+    !scheduleExpired(args.anchor, args.at)
+  ) {
+    return "moved";
+  }
+  const [previousClaim] = await tx
+    .select({ scheduledFor: morningBriefNativeOccurrences.scheduledFor })
+    .from(morningBriefNativeOccurrences)
+    .where(
+      and(
+        eq(morningBriefNativeOccurrences.orgId, owner.orgId),
+        eq(morningBriefNativeOccurrences.userId, owner.userId),
+        eq(morningBriefNativeOccurrences.scheduledFor, args.anchor),
+      ),
+    )
+    .limit(1);
+  if (previousClaim) {
+    return "held";
+  }
+
+  const nextRunAt = computeNativeNextRunAt({
+    enabled: schedule.enabled,
+    cronExpression: schedule.cronExpression,
+    timezone: schedule.timezone,
+    from: args.at,
+  });
+  if (!nextRunAt || nextRunAt.getTime() <= args.at.getTime()) {
+    return "held";
+  }
+  const [updated] = await tx
+    .update(morningBriefNativeSchedules)
+    .set({ nextRunAt, scheduleOwner: "native", updatedAt: args.at })
+    .where(
+      and(
+        scheduleWhere(owner),
+        eq(morningBriefNativeSchedules.ownerEpoch, schedule.ownerEpoch),
+        eq(morningBriefNativeSchedules.phase, "native"),
+        eq(morningBriefNativeSchedules.nextRunAt, args.anchor),
+      ),
+    )
+    .returning({ ownerEpoch: morningBriefNativeSchedules.ownerEpoch });
+  if (!updated) {
+    throw new Error("Native schedule moved while locked");
+  }
+  await tx
+    .insert(morningBriefNativeScheduleSkips)
+    .values({
+      orgId: owner.orgId,
+      userId: owner.userId,
+      ownerEpoch: schedule.ownerEpoch,
+      scheduledAnchorAt: args.anchor,
+      skippedAt: args.at,
+    })
+    .onConflictDoNothing();
+  return "skipped";
 }
 
 /**

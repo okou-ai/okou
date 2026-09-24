@@ -19,6 +19,10 @@ import {
 } from "./morning-brief-migration-state.service";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
 import {
+  scheduleExpired,
+  scheduleExpiryEnabled,
+} from "./schedule-expiry-policy";
+import {
   consumeSelectedLegacyMorningBriefObligation,
   lockMorningBriefLegacyWriterAuthority,
   settleSelectedLegacyMorningBriefObligation,
@@ -157,7 +161,9 @@ export async function claimMorningBriefSchedule(
     locked.orgId !== args.owner.orgId ||
     locked.ownerUserId !== args.owner.ownerUserId ||
     locked.workflowId !== args.owner.workflowId ||
-    locked.nextRunAt?.getTime() !== args.scheduledAnchorAt.getTime()
+    locked.nextRunAt?.getTime() !== args.scheduledAnchorAt.getTime() ||
+    (scheduleExpiryEnabled() &&
+      scheduleExpired(args.scheduledAnchorAt, nowDate()))
   ) {
     return { kind: "unavailable" };
   }

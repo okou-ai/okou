@@ -1,6 +1,6 @@
 {
-  "id": "a513d484-81a8-4105-835f-367ff4a60746",
-  "prevId": "a8fbdfe6-e77e-4b46-84ad-40ae80a99065",
+  "id": "a1b1bf18-29fc-4f4a-abd3-32d8cb29693c",
+  "prevId": "a513d484-81a8-4105-835f-367ff4a60746",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -7635,6 +7635,27 @@
         "chat_event_search_messages_tsv_idx": {
           "name": "chat_event_search_messages_tsv_idx",
           "columns": [
+            {
+              "expression": "tsv",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        },
+        "chat_event_search_messages_user_tsv_gin_idx": {
+          "name": "chat_event_search_messages_user_tsv_gin_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
             {
               "expression": "tsv",
               "isExpression": false,
