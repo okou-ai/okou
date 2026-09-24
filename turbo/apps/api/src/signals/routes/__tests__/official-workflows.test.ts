@@ -3730,7 +3730,7 @@ async function initializeBriefMember(actor: ApiTestUser, timezone: string) {
       userPreferencesContract,
     ).initialize({
       headers: authHeaders(actor),
-      body: { timezone },
+      body: { timezone, locale: "en-US" },
     }),
     [200],
   );
@@ -4161,7 +4161,7 @@ describe("Morning Brief default onboarding", () => {
           rethrowErrors: true,
         })(userPreferencesContract).initialize({
           headers: authHeaders(actor),
-          body: { timezone },
+          body: { timezone, locale: "en-US" },
         }),
       ).rejects.toBe(interrupted);
       expect(membershipReads).toHaveBeenCalledTimes(1);
@@ -4408,7 +4408,7 @@ describe("Morning Brief default onboarding", () => {
       userPreferencesContract,
     ).initialize({
       headers: authHeaders(actor),
-      body: { timezone: "Invalid/Timezone" },
+      body: { timezone: "Invalid/Timezone", locale: "en-US" },
     });
     expect(invalid.status).toBe(400);
     await bdd.updateUserTimezone(actor, "Asia/Tokyo");
