@@ -347,7 +347,7 @@
     },
     "sources": {
       "agent": "Agen",
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "automationEvent": "Peristiwa otomatisasi",
       "automationSchedule": "Jadwal otomatisasi",
       "email": "Email",
@@ -3457,7 +3457,7 @@
         "invalidSignature": "Tanda tangan pada tautan ini tidak valid.",
         "invalidTimestamp": "Stempel waktu pada tautan ini tidak valid.",
         "invalidTitle": "Tautan koneksi tidak valid",
-        "risk": "Balasan SMS dan MMS mungkin tidak terkirim dengan andal. Untuk pengalaman paling andal, gunakan iMessage dengan nomor AgentPhone ini.",
+        "risk": "Balasan SMS dan MMS mungkin tidak terkirim dengan andal. Untuk pengalaman paling andal, gunakan iMessage dengan nomor ini.",
         "successDescription": "{{phone}} terhubung. Kirim pesan teks untuk mulai mengobrol dengan {{assistantName}}.",
         "successTitle": "Nomor telepon terhubung"
       },
@@ -4008,8 +4008,8 @@
         "uninstallTitle": "Uninstall bot Telegram?"
       },
       "toasts": {
-        "agentphoneConnected": "AgentPhone terhubung",
-        "agentphoneDisconnected": "AgentPhone terputus",
+        "agentphoneConnected": "Nomor telepon terhubung",
+        "agentphoneDisconnected": "Nomor telepon terputus",
         "slackConnected": "Slack berhasil terhubung",
         "slackDisconnected": "Terputus dari Slack",
         "slackInstalled": "Slack berhasil diinstal",
@@ -7090,6 +7090,7 @@
       "add": "Tambah kredensial",
       "appleDhFieldHelp": "Setiap kolom harus berisi 1–63 byte UTF-8. NUL tidak diizinkan.",
       "appleDhMethod": "Nama pengguna dan kata sandi Apple DH",
+      "appleSrpMethod": "Nama pengguna dan kata sandi Apple Direct SRP",
       "authentication": "Metode autentikasi",
       "createNew": "Buat kredensial baru",
       "delete": "Hapus kredensial",
@@ -7158,6 +7159,8 @@
     "security": {
       "appleDh": "Berbagi Layar Mac (Apple DH)",
       "appleDhHelp": "Memerlukan Berbagi Layar macOS melalui koneksi SSH yang tersimpan. Tujuan RFB harus 127.0.0.1 atau ::1 pada Mac tersebut. SSH melindungi seluruh sesi VNC. Gunakan host SSH Mac yang Anda kendalikan; kunci host tidak dapat memastikan tidak ada proksi lanjutan.",
+      "appleSrp": "Berbagi Layar Mac (Apple Direct SRP)",
+      "appleSrpHelp": "Memerlukan koneksi SSH tersimpan ke Mac dan tujuan RFB 127.0.0.1 atau ::1. SRP memverifikasi akun dan bukti server; SSH melindungi seluruh sesi VNC. Kunci host SSH mengenali endpoint yang dipilih, tetapi tidak dapat meniadakan proksi lanjutan.",
       "caBundle": "Sertifikat CA (PEM)",
       "caHelp": "Maksimal 8 sertifikat CA, total 64 KiB. Jangan tempel kunci privat atau sertifikat server.",
       "caHint": "Tempel sertifikat CA publik yang menerbitkan sertifikat server",
@@ -7177,6 +7180,7 @@
     "summary_other": "{{count}} host terkonfigurasi",
     "transport": {
       "appleDhDestinationHelp": "Untuk Apple DH, masukkan 127.0.0.1 atau ::1. Ini adalah alamat loopback Mac yang dijangkau melalui host SSH pilihan.",
+      "appleSrpDestinationHelp": "Untuk Apple Direct SRP, masukkan 127.0.0.1 atau ::1. Ini adalah alamat loopback Mac yang dijangkau melalui host SSH pilihan.",
       "destination": "Tujuan RFB",
       "destinationHelp": "Untuk rute SSH, host dan port ini dijangkau dari server SSH yang dipilih, bukan langsung dari Runner.",
       "direct": "Langsung dari Runner",

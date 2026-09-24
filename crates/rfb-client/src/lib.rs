@@ -315,7 +315,8 @@ where
 /// stream. The server is authenticated by its SRP proof before the stream is
 /// returned, but post-authentication RFB traffic is not encrypted. The caller
 /// must provide a verified protective transport across untrusted networks.
-/// This engine is not yet admitted by any product profile.
+/// Product callers must enforce the saved SSH-to-Mac-loopback route and
+/// independent VNC and SSH authorization before using this entry point.
 pub async fn authenticate_apple_srp<S>(
     stream: S,
     credentials: AppleSrpCredentials,

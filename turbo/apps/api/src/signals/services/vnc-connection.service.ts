@@ -69,11 +69,12 @@ function ownedConnection(owner: VncOwner, connectionId: string) {
 
 function validateStoredTrust(row: Metadata): void {
   if (
-    (row.securityType === "apple_dh" &&
+    ((row.securityType === "apple_dh" || row.securityType === "apple_srp") &&
       (row.trustMode !== "none" ||
         row.caBundle !== null ||
         row.x509ServerName !== null)) ||
     (row.securityType !== "apple_dh" &&
+      row.securityType !== "apple_srp" &&
       ((row.trustMode === "system" && row.caBundle !== null) ||
         (row.trustMode === "custom_ca" && row.caBundle === null) ||
         row.trustMode === "none"))
@@ -87,8 +88,8 @@ function responseSecurity(row: Metadata): VncConnectionResponse["security"] {
     row.trustMode === "custom_ca" && row.caBundle !== null
       ? ({ mode: "custom_ca", caBundle: row.caBundle } as const)
       : ({ mode: "system" } as const);
-  if (row.securityType === "apple_dh") {
-    return { type: "apple_dh" };
+  if (row.securityType === "apple_dh" || row.securityType === "apple_srp") {
+    return { type: row.securityType };
   }
   return {
     type: row.securityType,

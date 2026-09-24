@@ -171,7 +171,8 @@ impl Run {
             ))
             .await??;
         let session_cancel = self.cancel.child_token();
-        let stream = match credential.transport {
+        let mut transport = credential.transport;
+        let stream = match transport {
             Transport::Direct => {
                 let resolver_capacity = Arc::clone(&capacity);
                 let network = Arc::clone(&self.runtime.network);
@@ -207,6 +208,10 @@ impl Run {
                     ))
                     .await?
                     .map_err(Failure::from)?;
+                transport = Transport::Ssh {
+                    connection,
+                    generation: stream.generation(),
+                };
                 DirectOrSshStream::Ssh(Box::new(stream))
             }
         };
@@ -229,6 +234,10 @@ impl Run {
                     }
                     Authentication::AppleDh(credentials) => {
                         rfb_client::authenticate_apple_dh(stream, credentials, scope.deadline).await
+                    }
+                    Authentication::AppleSrp(credentials) => {
+                        rfb_client::authenticate_apple_srp(stream, credentials, scope.deadline)
+                            .await
                     }
                 }
             })
@@ -253,7 +262,7 @@ impl Run {
                 self.id,
                 request.connection_id,
                 credential.generation,
-                credential.transport,
+                transport,
             ))
             .await??;
         scope.check()?;
@@ -267,7 +276,7 @@ impl Run {
                 mode: request.mode,
             },
             generation: credential.generation,
-            transport: credential.transport,
+            transport,
             cancel: session_cancel,
             closed: CancellationToken::new(),
             engine: tokio::sync::Mutex::new(engine),

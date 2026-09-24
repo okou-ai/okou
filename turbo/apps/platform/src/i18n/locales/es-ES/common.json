@@ -361,7 +361,7 @@
     },
     "sources": {
       "agent": "Agente",
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "automationEvent": "Evento de automatización",
       "automationSchedule": "Programación de automatización",
       "email": "Correo electrónico",
@@ -3531,7 +3531,7 @@
         "invalidSignature": "La firma en este enlace no es válida.",
         "invalidTimestamp": "La marca de tiempo de este enlace no es válida.",
         "invalidTitle": "El enlace de conexión es inválido",
-        "risk": "Las respuestas SMS y MMS pueden no entregarse de forma fiable. Para una experiencia fiable, utiliza iMessage con este número de AgentPhone.",
+        "risk": "Las respuestas SMS y MMS pueden no entregarse de forma fiable. Para una experiencia fiable, utiliza iMessage con este número.",
         "successDescription": "{{phone}} está conectado. Envía un mensaje de texto para empezar a chatear con {{assistantName}}.",
         "successTitle": "Número de teléfono conectado"
       },
@@ -4082,8 +4082,8 @@
         "uninstallTitle": "¿Desinstalar el bot de Telegram?"
       },
       "toasts": {
-        "agentphoneConnected": "AgentPhone conectado",
-        "agentphoneDisconnected": "AgentPhone desconectado",
+        "agentphoneConnected": "Número de teléfono conectado",
+        "agentphoneDisconnected": "Número de teléfono desconectado",
         "slackConnected": "Slack conectado con éxito",
         "slackDisconnected": "Desconectado de Slack",
         "slackInstalled": "Slack instalado con éxito",
@@ -7181,6 +7181,7 @@
       "add": "Añadir credenciales",
       "appleDhFieldHelp": "Cada campo admite de 1 a 63 bytes UTF-8. No se permite NUL.",
       "appleDhMethod": "Nombre de usuario y contraseña de Apple DH",
+      "appleSrpMethod": "Nombre de usuario y contraseña de Apple Direct SRP",
       "authentication": "Método de autenticación",
       "createNew": "Crear credenciales",
       "delete": "Eliminar credenciales",
@@ -7252,6 +7253,8 @@
     "security": {
       "appleDh": "Compartir pantalla de Mac (Apple DH)",
       "appleDhHelp": "Requiere Compartir pantalla de macOS mediante una conexión SSH guardada. El destino RFB debe ser 127.0.0.1 o ::1 en ese Mac. SSH protege toda la sesión VNC. Usa un host SSH de Mac que controles; su clave de host no descarta un proxy posterior.",
+      "appleSrp": "Compartir pantalla de Mac (Apple Direct SRP)",
+      "appleSrpHelp": "Requiere una conexión SSH guardada al Mac y 127.0.0.1 o ::1 como destino RFB. SRP verifica la cuenta y la prueba del servidor; SSH protege toda la sesión VNC. La clave SSH identifica el extremo elegido, pero no descarta un proxy posterior.",
       "caBundle": "Certificados de CA (PEM)",
       "caHelp": "Hasta 8 certificados de CA, 64 KiB en total. No pegues una clave privada ni un certificado de servidor.",
       "caHint": "Pega los certificados públicos de CA que emitieron el certificado del servidor",
@@ -7272,6 +7275,7 @@
     "summary_other": "{{count}} hosts configurados",
     "transport": {
       "appleDhDestinationHelp": "Para Apple DH, introduce 127.0.0.1 o ::1. Es la dirección de bucle local del Mac, accesible mediante el host SSH seleccionado.",
+      "appleSrpDestinationHelp": "Para Apple Direct SRP, introduce 127.0.0.1 o ::1. Es la dirección de bucle local del Mac, accesible mediante el host SSH seleccionado.",
       "destination": "Destino RFB",
       "destinationHelp": "En las rutas SSH, se accede a este host y puerto desde el servidor SSH seleccionado, no directamente desde el Runner.",
       "direct": "Directa desde Runner",

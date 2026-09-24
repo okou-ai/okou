@@ -2,7 +2,7 @@
 
 ## Chat search user keyword GIN index (2026-09-24)
 
-Migration `1211_chat_search_user_tsv_gin` installs `btree_gin` and builds
+Migration `1212_chat_search_user_tsv_gin` installs `btree_gin` and builds
 `chat_event_search_messages_user_tsv_gin_idx` on `(user_id, tsv)` with
 `CREATE INDEX CONCURRENTLY`. It does not block chat search reads or projector
 writes. The build waits for older transactions database-wide, so the migration
@@ -24,6 +24,20 @@ extension and index and rolls back only the API. The search query and its
 responses are unchanged; the planner chooses the new index. The existing
 `chat_event_search_messages_tsv_idx` stays until production plans confirm it
 is unused.
+
+## AgentPhone connect link brand signature (2026-09-24)
+
+The API verifies only the provider-identity `sig` on an AgentPhone connect
+request. The App no longer reads `publicBrand` / `brandSig` from the link and
+no longer posts them. Production promotes the API before the App, so the new
+API still emits both link fields for older App bundles and accepts, then
+ignores, the optional body fields those bundles send. Links expire after ten
+minutes, so no long-lived link depends on either field.
+
+A new App served by an API older than this change posts no brand fields, which
+that API rejects. An API rollback below this change therefore also requires
+rolling back the App. Removing the emitted link fields and optional body fields is tracked
+by #36650.
 
 ## Voice input model selection retirement (2026-09-24)
 
