@@ -71,7 +71,7 @@ test("Link only the traced run beside Activity even after tracing is switched of
     queryAllByRoleFast("link", group).map((link) => {
       return link.getAttribute("aria-label");
     }),
-  ).toStrictEqual(["View run logs", TRACE_LABEL]);
+  ).toStrictEqual([TRACE_LABEL]);
   expect(screen.getAllByLabelText(TRACE_LABEL)).toHaveLength(1);
   expect(screen.getByText("Untraced response")).toBeInTheDocument();
 });

@@ -1,7 +1,6 @@
 //! Claimed-run sandbox execution, session history, result composition, and telemetry.
 
 pub mod executor;
-pub mod http;
 mod network_provider_adapter;
 pub mod pre_spawn_admission;
 pub mod telemetry;

@@ -115,7 +115,6 @@ import {
   officialWorkflowQueueContextId,
   webChatPublicBrandContextId,
 } from "./web-chat-public-brand-context.service";
-import { chatThreadAdmissionBlocked } from "./chat-active-run.service";
 import {
   agentRunSourceTitleSnapshot,
   hasAgentRunSourceAnnotation,
@@ -129,6 +128,7 @@ import {
   discardUnclaimedUserMessage,
   loadNextUnclaimedQueuedUserMessage,
   lockUserMessageQueueThread,
+  resolveWebChatQueueFirstDispatchPreflight,
   type QueuedUserMessage,
 } from "./chat-queued-event.service";
 import {
@@ -4385,21 +4385,12 @@ const sendQueueFirstNormalEvent$ = command(
       args.timing,
       "api_dispatch_pre_create_agent_web_chat_queue_first_check_dispatchable",
       "nested",
-      async (): Promise<
-        | { readonly kind: "self"; readonly queuedMessage: QueuedUserMessage }
-        | { readonly kind: "wait" }
-        | { readonly kind: "drain" }
-      > => {
-        if (await chatThreadAdmissionBlocked(prepared.db, { threadId })) {
-          return { kind: "wait" };
-        }
-        const queuedMessage = await loadNextUnclaimedQueuedUserMessage(
+      () => {
+        return resolveWebChatQueueFirstDispatchPreflight(
           prepared.db,
           threadId,
+          queuedEventId,
         );
-        return queuedMessage?.id === queuedEventId
-          ? { kind: "self", queuedMessage }
-          : { kind: "drain" };
       },
     );
     signal.throwIfAborted();

@@ -199,6 +199,7 @@ async function desktop() {
         userId,
         email: "fixture@example.test",
         orgId: `org-${userId}`,
+        sessionId: `session-${userId}`,
       });
     }),
     http.get(`${api}/api/org`, ({ request }) =>
@@ -358,6 +359,7 @@ describe("auth/tray/developer composition", () => {
           userId: "Bearer expired",
           email: "fixture@example.test",
           orgId: "org-Bearer expired",
+          sessionId: "session-Bearer expired",
         }),
       ),
       http.get(`${api}/api/org`, () =>

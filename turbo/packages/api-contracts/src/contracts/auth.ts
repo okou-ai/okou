@@ -21,6 +21,8 @@ export const authContract = c.router({
         userId: z.string(),
         email: z.string(),
         orgId: z.string().nullable(),
+        // Older API deployments omit this. Only Clerk session auth supplies it.
+        sessionId: z.string().optional(),
       }),
       401: apiErrorSchema,
       403: apiErrorSchema,

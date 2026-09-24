@@ -51,13 +51,13 @@ use super::session_history_cpu::{
 };
 use super::session_restore::MaterializedResumeSession;
 use crate::error::{RunnerError, RunnerResult};
-use crate::http::HttpClient;
 use crate::restored_session_identity::RestoredSessionHistoryPrefixAttribution;
 use crate::telemetry::{
     SessionHistoryCacheProbeMetadata, SessionHistoryContentEncodingState,
     SessionHistoryContentLengthState, SessionHistoryResponseTelemetryMetadata,
     SessionHistoryTelemetryMetadata, SessionHistoryTransferEncodingState,
 };
+use runner_provider::http::HttpClient;
 use runner_storage::OBJECT_DOWNLOAD_TIMEOUT;
 use runner_types::types::{
     ResumeSession, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
@@ -1141,9 +1141,9 @@ mod tests {
     use tokio::task::JoinHandle;
 
     use super::*;
-    use crate::http::{HttpClient, HttpClientConfig};
     use crate::restored_session_identity::RestoredSessionHistoryPrefixAttribution;
     use crate::test_fixtures::session_history::OneShotSessionHistoryServer;
+    use runner_provider::http::{HttpClient, HttpClientConfig};
     use runner_types::types::{
         ResumeSessionHistory, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
         ResumeSessionHistoryRefKind,
