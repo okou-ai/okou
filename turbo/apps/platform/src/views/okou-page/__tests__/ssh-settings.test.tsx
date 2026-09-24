@@ -505,6 +505,54 @@ test("SSH host settings update the chat default in thread remote access mode", a
   expect(updatedParams).toStrictEqual({ protocol: "ssh", connectionId: id });
 });
 
+test("SSH host default can retry after its settings fail to load", async () => {
+  let failed = true;
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [base] });
+  });
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return failed
+        ? respond(500, {
+            error: { code: "INTERNAL_ERROR", message: "private default error" },
+          })
+        : respond(200, {
+            ssh: [
+              {
+                connectionId: id,
+                displayName: "Deployment",
+                defaultEnabled: true,
+              },
+            ],
+            vnc: [],
+          });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/connectors?scope=remote-control&type=ssh",
+    auth,
+    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+  });
+  await screen.findByText("Couldn't load remote access.");
+  expect(document.body.textContent).not.toContain("private default error");
+  expect(
+    screen.queryByRole("switch", { name: "Enabled by default for chats" }),
+  ).toBeNull();
+  failed = false;
+  click(
+    await waitFor(() => {
+      return getAction("button", "Retry");
+    }),
+  );
+  await expect(
+    screen.findByRole("switch", {
+      name: "Enabled by default for chats",
+    }),
+  ).resolves.toBeChecked();
+});
+
 test("SSH is managed in Connectors Remote control", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, { connections: [] });

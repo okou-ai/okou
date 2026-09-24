@@ -2092,6 +2092,7 @@
       "off": "Off",
       "on": "On",
       "requiresSsh": "Requires SSH access to {{name}}.",
+      "retry": "Retry",
       "startChat": "Start a chat to change host access.",
       "title": "Remote access",
       "unavailableSsh": "unavailable SSH host",

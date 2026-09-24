@@ -2084,6 +2084,7 @@
       "off": "オフ",
       "on": "オン",
       "requiresSsh": "SSH ホスト {{name}} へのアクセスも必要です。",
+      "retry": "再試行",
       "startChat": "ホストのアクセスを変更するにはチャットを開始してください。",
       "title": "リモートアクセス",
       "unavailableSsh": "利用できない SSH ホスト",

@@ -2084,6 +2084,7 @@
       "off": "关闭",
       "on": "开启",
       "requiresSsh": "还需要访问 SSH 主机 {{name}}。",
+      "retry": "重试",
       "startChat": "开始聊天后可修改主机权限。",
       "title": "远程访问",
       "unavailableSsh": "不可用的 SSH 主机",

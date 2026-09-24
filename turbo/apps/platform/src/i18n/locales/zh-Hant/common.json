@@ -2084,6 +2084,7 @@
       "off": "關閉",
       "on": "開啟",
       "requiresSsh": "還需要存取 SSH 主機 {{name}}。",
+      "retry": "重試",
       "startChat": "開始聊天後可修改主機權限。",
       "title": "遠端存取",
       "unavailableSsh": "無法使用的 SSH 主機",

@@ -2134,6 +2134,7 @@
       "off": "Desativado",
       "on": "Ativado",
       "requiresSsh": "Também requer acesso ao host SSH {{name}}.",
+      "retry": "Tentar novamente",
       "startChat": "Inicie um chat para alterar o acesso aos hosts.",
       "title": "Acesso remoto",
       "unavailableSsh": "host SSH indisponível",

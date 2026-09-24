@@ -2084,6 +2084,7 @@
       "off": "끄기",
       "on": "켜기",
       "requiresSsh": "SSH 호스트 {{name}}에 대한 액세스도 필요합니다.",
+      "retry": "다시 시도",
       "startChat": "호스트 접근 권한을 변경하려면 채팅을 시작하세요.",
       "title": "원격 액세스",
       "unavailableSsh": "사용할 수 없는 SSH 호스트",

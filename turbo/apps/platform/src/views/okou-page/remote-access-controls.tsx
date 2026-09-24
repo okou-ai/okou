@@ -37,6 +37,7 @@ export function RemoteHostDefaultToggle({
   const { t } = useTranslation();
   const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess];
   const defaults = useLoadable(remoteHostDefaults$);
+  const retry = useSet(invalidateRemoteAccess$);
   const [saving, update] = useLoadableSet(setRemoteHostDefault$);
   const signal = useGet(pageSignal$);
   if (!enabled) {
@@ -56,11 +57,18 @@ export function RemoteHostDefaultToggle({
         })}
       </span>
       {defaults.state === "hasError" ? (
-        <span role="alert" className="text-xs text-destructive">
-          {t(($) => {
-            return $.chat.remoteAccess.loadFailed;
-          })}
-        </span>
+        <div className="flex items-center gap-2">
+          <span role="alert" className="text-xs text-destructive">
+            {t(($) => {
+              return $.chat.remoteAccess.loadFailed;
+            })}
+          </span>
+          <Button type="button" variant="outline" size="sm" onClick={retry}>
+            {t(($) => {
+              return $.chat.remoteAccess.retry;
+            })}
+          </Button>
+        </div>
       ) : (
         <LoadingSwitch
           checked={host?.defaultEnabled ?? false}
@@ -289,7 +297,7 @@ function ThreadRemoteHostChoices({
           </span>
           <Button type="button" variant="outline" size="sm" onClick={retry}>
             {t(($) => {
-              return $.vnc.retry;
+              return $.chat.remoteAccess.retry;
             })}
           </Button>
         </div>
