@@ -64,7 +64,6 @@ export function buildAgentToolsPrompt(args: {
   return [
     "# Agent Tools",
     "You have access to the Okou CLI. Run commands with: `okou <command>`.",
-    `If \`okou\` is unavailable, use \`npx --yes --package="\${CLI_PKG_URL}" okou <command>\`.`,
     "- Discover available commands: `okou --help`.",
     ...(args.privateArtifactsEnabled
       ? [
