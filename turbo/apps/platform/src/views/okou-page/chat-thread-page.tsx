@@ -5229,46 +5229,43 @@ function hasAssistantRecoveryModelPicker(
   );
 }
 
+/**
+ * The retry reads the thread's persisted model, so the card's actions wait for
+ * the selection write this picker starts. `onSelect` is owned by the actions
+ * row, which disables its buttons while the write is pending.
+ */
 function AssistantRecoveryModelPicker({
   recovery,
   thread,
+  onSelect,
 }: {
   readonly recovery: AssistantErrorRecovery;
   readonly thread: ChatPanelSignals;
+  readonly onSelect: (selection: ModelProviderSelection) => void;
 }) {
   const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
   const modelSelection =
     useLastResolved(thread.composer.model.modelSelection$) ?? null;
-  const setModelSelection = useSet(thread.composer.model.setModelSelection$);
   if (!hasAssistantRecoveryModelPicker(recovery)) {
     return null;
   }
-  const pickerValue =
-    recovery.kind === "model-unavailable" &&
-    modelSelection?.selectedModel === recovery.failedModel
-      ? null
-      : modelSelection;
   const handleModelSelection = (
     selection: ModelProviderSelection | null,
   ): void => {
     if (!selection) {
       return;
     }
-    detach(setModelSelection(selection, pageSignal), Reason.DomCallback);
+    onSelect(selection);
   };
   return (
     <ModelProviderPicker
-      value={pickerValue}
+      value={modelSelection}
       onChange={handleModelSelection}
       placeholder={t(($) => {
         return $.chat.errors.recovery.selectModel;
       })}
       triggerClassName="h-8 w-auto min-w-24 max-w-36 bg-background text-sm"
       compactTrigger
-      {...(recovery.kind === "model-unavailable" && recovery.failedModel
-        ? { excludedModel: recovery.failedModel }
-        : {})}
     />
   );
 }
@@ -5346,8 +5343,13 @@ function AssistantRecoveryActions({
   const [resetLoadable, resetAndRetry] = useLoadableSet(
     thread.resetCodexSubscriptionAndRetry$,
   );
+  const [selectModelLoadable, selectModel] = useLoadableSet(
+    thread.composer.model.setModelSelection$,
+  );
   const retrying = retryLoadable.state === "loading";
   const resetting = resetLoadable.state === "loading";
+  const selectingModel = selectModelLoadable.state === "loading";
+  const actionsDisabled = retrying || resetting || selectingModel;
   const resetAction = recovery.actions.resetAndTryAgain;
   const hasRetryAction = recovery.actions.tryAgain !== null;
   const continueAction =
@@ -5357,14 +5359,20 @@ function AssistantRecoveryActions({
 
   return (
     <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
-      <AssistantRecoveryModelPicker recovery={recovery} thread={thread} />
+      <AssistantRecoveryModelPicker
+        recovery={recovery}
+        thread={thread}
+        onSelect={(selection) => {
+          detach(selectModel(selection, pageSignal), Reason.DomCallback);
+        }}
+      />
       {hasRetryAction && (
         <Button
           type="button"
           size="sm"
           variant="neutral"
           className={ERROR_CARD_ACTION_CLASS}
-          disabled={retrying || resetting}
+          disabled={actionsDisabled}
           onClick={() => {
             detach(retry(pageSignal), Reason.DomCallback);
           }}
@@ -5385,7 +5393,7 @@ function AssistantRecoveryActions({
           size="sm"
           variant="outline"
           className={ERROR_CARD_ACTION_CLASS}
-          disabled={retrying || resetting}
+          disabled={actionsDisabled}
           onClick={() => {
             detach(resetAndRetry(pageSignal), Reason.DomCallback);
           }}
@@ -5821,26 +5829,18 @@ function assistantRecoverySourceDescription(
   recovery: AssistantErrorRecovery,
   t: TFunction<"common">,
 ): string | null {
-  if (
-    recovery.kind !== "usage-limit" ||
-    recovery.source?.credentialScope !== "member"
-  ) {
+  if (recovery.personalSubscription === null) {
     return null;
   }
-  if (recovery.source.account.status === "unavailable") {
+  if (recovery.personalSubscription === "disconnected") {
     return t(($) => {
-      return $.chat.errors.recovery.originalAccountUnavailable;
-    });
-  }
-  if (recovery.source.account.status === "unknown") {
-    return t(($) => {
-      return $.chat.errors.recovery.originalAccountUnknown;
+      return $.chat.errors.recovery.personalAccountDisconnected;
     });
   }
   return recovery.accountLabel
     ? t(
         ($) => {
-          return $.chat.errors.recovery.originalAccount;
+          return $.chat.errors.recovery.personalAccount;
         },
         { account: recovery.accountLabel },
       )
@@ -5963,8 +5963,7 @@ function assistantErrorRecoveryContent(
     description: description.content,
     descriptionTitle: description.title,
     ...(recovery.kind === "usage-limit" &&
-    (recovery.source?.credentialScope === "member" ||
-      recovery.resetWindows.length > 0)
+    (recovery.personalSubscription !== null || recovery.resetWindows.length > 0)
       ? { descriptionClassName: USAGE_RECOVERY_DESCRIPTION_CLASS }
       : {}),
     ...(hasActions
