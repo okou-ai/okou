@@ -35,7 +35,6 @@ import {
   type GithubOauthInstallQuery,
 } from "@okouai/api-contracts/contracts/github-oauth";
 import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { testSlackStateContract } from "@okouai/api-contracts/contracts/test-slack-state";
 import {
   integrationsAgentPhoneContract,
@@ -1809,8 +1808,6 @@ export function createBddIntegrationApi(context: TestContext) {
         readonly timestamp: number;
         readonly signature: string;
         readonly channel?: string;
-        readonly publicBrand?: PublicBrand;
-        readonly publicBrandSignature?: string;
       },
       statuses: readonly (200 | 400 | 401 | 409)[],
     ) {

@@ -7632,8 +7632,13 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     }
     const connectParams = new URL(connectUrl).searchParams;
     expect(new URL(connectUrl).origin).toBe("https://app.okou.ai");
-    expect(connectParams.get("publicBrand")).toBe("okou");
-    expect(connectParams.get("brandSig")).toMatch(/^[0-9a-f]{64}$/u);
+    expect([...connectParams.keys()]).toStrictEqual([
+      "handle",
+      "agent",
+      "ts",
+      "sig",
+      "channel",
+    ]);
     const timestamp = Number(connectParams.get("ts") ?? "");
     if (!Number.isFinite(timestamp)) {
       throw new Error("Expected AgentPhone connect URL to include timestamp");
@@ -7715,15 +7720,9 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       error: { code: "AGENTPHONE_ERROR" },
     });
 
-    // An older App bundle still posts the ignored brand fields; the link
-    // signature is verified and the request reaches the ownership conflict.
     const duplicateConnect = await integrations.requestConnectAgentPhone(
       integrations.user(),
-      {
-        ...connectBody,
-        publicBrand: "okou",
-        publicBrandSignature: connectParams.get("brandSig") ?? "",
-      },
+      connectBody,
       [409],
     );
     expect(duplicateConnect.body).toMatchObject({

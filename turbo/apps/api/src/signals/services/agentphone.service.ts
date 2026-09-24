@@ -1,10 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { command } from "ccstate";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
-import {
-  PUBLIC_BRAND,
-  PUBLIC_BRAND_PRESENTATION,
-} from "@okouai/core/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
 import { v5 as uuidv5 } from "uuid";
 import {
   getCanonicalModelDisplayName,
@@ -219,23 +216,6 @@ function signAgentPhoneConnectParams(params: {
     .digest("hex");
 }
 
-function signAgentPhoneConnectBrand(params: {
-  readonly phoneHandle: string;
-  readonly agentphoneAgentId: string;
-  readonly timestamp: number;
-  readonly channel: AgentPhoneChannel;
-  readonly publicBrand: PublicBrand;
-  readonly secret: string;
-}): string {
-  return createHmac("sha256", params.secret)
-    .update(
-      `${normalizeHandleForConnect(params.phoneHandle)}:${
-        params.agentphoneAgentId
-      }:${String(params.timestamp)}:${params.channel}:${params.publicBrand}`,
-    )
-    .digest("hex");
-}
-
 function safeHexSignatureEqual(expected: string, actual: string): boolean {
   if (actual.length !== expected.length || !/^[0-9a-f]+$/iu.test(actual)) {
     return false;
@@ -313,7 +293,6 @@ export function buildAgentPhoneConnectUrl(params: {
   readonly secret: string;
 }): string {
   const timestamp = Math.floor(now() / 1000);
-  const publicBrand = PUBLIC_BRAND;
   const phoneHandle = normalizeAgentPhoneHandle(
     params.phoneHandle,
     params.channel,
@@ -330,18 +309,6 @@ export function buildAgentPhoneConnectUrl(params: {
       secret: params.secret,
     }),
     channel: params.channel,
-    // Older App bundles still require these fields on the connect page. The
-    // API no longer verifies them. Remove with #36650 after those bundles
-    // drain.
-    publicBrand,
-    brandSig: signAgentPhoneConnectBrand({
-      phoneHandle,
-      agentphoneAgentId: params.agentphoneAgentId,
-      timestamp,
-      channel: params.channel,
-      publicBrand,
-      secret: params.secret,
-    }),
   });
   return `${env("APP_URL")}/agentphone/connect?${query.toString()}`;
 }

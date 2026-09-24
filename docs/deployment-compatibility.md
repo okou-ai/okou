@@ -29,15 +29,21 @@ is unused.
 
 The API verifies only the provider-identity `sig` on an AgentPhone connect
 request. The App no longer reads `publicBrand` / `brandSig` from the link and
-no longer posts them. Production promotes the API before the App, so the new
-API still emits both link fields for older App bundles and accepts, then
-ignores, the optional body fields those bundles send. Links expire after ten
-minutes, so no long-lived link depends on either field.
+no longer posts them.
 
-A new App served by an API older than this change posts no brand fields, which
-that API rejects. An API rollback below this change therefore also requires
-rolling back the App. Removing the emitted link fields and optional body fields is tracked
-by #36650.
+The rollout shims are removed (#36650): the API no longer emits `publicBrand`
+or `brandSig` on the connect link, and the connect request contract no longer
+declares the optional `publicBrand` / `publicBrandSignature` fields. The App
+release without the brand fields was serving before this change, and connect
+links expire after ten minutes, so no live link or bundle depends on them. A
+body that still carries the fields is not rejected, because undeclared keys are
+stripped.
+
+An App rollback below the release that stopped reading `brandSig` would show no
+Connect button for links from this API, so such a rollback also requires rolling
+back the API below this change. A new App served by an API older than the
+expand change posts no brand fields, which that API rejects; an API rollback
+below the expand change therefore also requires rolling back the App.
 
 ## Voice input model selection retirement (2026-09-24)
 
