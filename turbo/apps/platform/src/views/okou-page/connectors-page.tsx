@@ -1882,7 +1882,7 @@ function ManagedConnectorAccessDialog() {
   const connectorSlug = useGet(managedConnectorAccessSlug$);
   const close = useSet(closeConnectorAccessManagement$);
   const catalogItemsLoadable = useLastLoadable(relatedCatalogItems$);
-  const accountSummariesLoadable = useLoadable(
+  const accountSummariesLoadable = useLastLoadable(
     connectorOverviewAccountSummaryByTarget$,
   );
   if (!connectorSlug || catalogItemsLoadable.state !== "hasData") {
@@ -2176,7 +2176,7 @@ export function ConnectorsPage() {
     filteredCloudflareAccessSummary$,
   );
   const catalogStatusLoadable = useLastLoadable(connectorCatalogDiscovery$);
-  const accountSummariesLoadable = useLoadable(
+  const accountSummariesLoadable = useLastLoadable(
     connectorOverviewAccountSummaryByTarget$,
   );
   const accountSummaryStatus = connectorAccountSummaryStatus(
