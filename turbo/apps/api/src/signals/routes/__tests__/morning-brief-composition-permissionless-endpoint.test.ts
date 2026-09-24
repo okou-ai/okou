@@ -29,7 +29,7 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { seedRetainedNativeMorningBriefForUser } from "./helpers/feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -227,7 +227,7 @@ async function setupOwner(
     { orgId: actor.orgId, userId: actor.userId },
     { workflowId: installation.workflowId, agentId },
   );
-  await updateFeatureSwitchesForUser(
+  await seedRetainedNativeMorningBriefForUser(
     context,
     { orgId: actor.orgId, userId: actor.userId },
     { [FeatureSwitchKey.NativeMorningBrief]: true },

@@ -1,7 +1,9 @@
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
+import { seedRetainedNativeMorningBriefOverride } from "../../../../test-fixtures/retained-native-morning-brief-override";
 import { createRouteMocks } from "./route-test";
 import { featureSwitchesRoutes } from "../../feature-switches";
 
@@ -47,6 +49,30 @@ export async function updateFeatureSwitchesForUser(
     }),
     [200],
   );
+}
+
+/**
+ * A historical native opt-in cannot be created through the retired public API.
+ * Seed only that old-writer state; keep all other writes on their real route.
+ */
+export async function seedRetainedNativeMorningBriefForUser(
+  context: TestContext,
+  actor: FeatureSwitchActor,
+  switches: Readonly<Record<string, boolean>>,
+): Promise<void> {
+  if (switches[FeatureSwitchKey.NativeMorningBrief] !== true) {
+    throw new Error("Expected a retained Native Morning Brief opt-in");
+  }
+  const other = Object.fromEntries(
+    Object.entries(switches).filter(([key]) => {
+      return key !== FeatureSwitchKey.NativeMorningBrief;
+    }),
+  );
+  authenticateFeatureSwitchActor(context, actor);
+  if (Object.keys(other).length > 0) {
+    await updateFeatureSwitchesForUser(context, actor, other);
+  }
+  await seedRetainedNativeMorningBriefOverride(actor);
 }
 
 export async function deleteFeatureSwitchesForUser(

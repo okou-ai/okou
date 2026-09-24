@@ -46,7 +46,7 @@ import {
 import { morningBriefCompositionPreviewRoutes } from "../morning-brief-composition-preview";
 import { morningBriefDeliveryPreviewRoutes } from "../morning-brief-delivery-preview";
 import { morningBriefGenerationPreviewRoutes } from "../morning-brief-generation-preview";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { seedRetainedNativeMorningBriefForUser } from "./helpers/feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 
 /**
@@ -242,7 +242,7 @@ async function seedOwnerWithoutConnectors(): Promise<Fixture> {
     context.signal,
   );
   const installed = await seedInstalledMorningBrief({ orgId, userId });
-  await updateFeatureSwitchesForUser(
+  await seedRetainedNativeMorningBriefForUser(
     context,
     { userId, orgId },
     { [FeatureSwitchKey.NativeMorningBrief]: true },

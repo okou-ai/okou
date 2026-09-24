@@ -32,7 +32,10 @@ import { createScopedInlineMorningBriefCronRoutesForTest } from "../cron-execute
 import { morningBriefDebugTriggerRoutes } from "../morning-brief-debug-trigger";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { userPreferencesRoutes } from "../user-preferences";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  seedRetainedNativeMorningBriefForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
 import {
   seedSlackOrgConnection$,
   seedSlackOrgInstallation$,
@@ -167,7 +170,7 @@ async function fixture(): Promise<Fixture> {
     context.signal,
   );
   const brief = await seedInstalledMorningBrief({ orgId, userId });
-  await updateFeatureSwitchesForUser(
+  await seedRetainedNativeMorningBriefForUser(
     context,
     { orgId, userId },
     { [FeatureSwitchKey.NativeMorningBrief]: true },

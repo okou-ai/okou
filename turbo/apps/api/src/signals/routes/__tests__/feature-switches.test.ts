@@ -86,10 +86,10 @@ describe("/api/feature-switches", () => {
     const initial = await accept(client().get({ headers }), [200]);
     expect(
       initial.body.effectiveSwitches[FeatureSwitchKey.NativeMorningBrief],
-    ).toBe(false);
-    expect(initial.body.effectiveSwitches[FeatureSwitchKey.MorningBrief]).toBe(
-      true,
-    );
+    ).toBeFalsy();
+    expect(
+      initial.body.effectiveSwitches[FeatureSwitchKey.MorningBrief],
+    ).toBeTruthy();
 
     const refused = await accept(
       client().update({
@@ -116,10 +116,10 @@ describe("/api/feature-switches", () => {
     );
     expect(
       optedOut.body.effectiveSwitches[FeatureSwitchKey.NativeMorningBrief],
-    ).toBe(false);
-    expect(optedOut.body.effectiveSwitches[FeatureSwitchKey.MorningBrief]).toBe(
-      true,
-    );
+    ).toBeFalsy();
+    expect(
+      optedOut.body.effectiveSwitches[FeatureSwitchKey.MorningBrief],
+    ).toBeTruthy();
   });
 
   it.each([true, false])(

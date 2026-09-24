@@ -28,7 +28,7 @@ import { tarArchive, tarEntry } from "../../../test-fixtures/tar-archive";
 import { createDeferredPromise } from "../../utils";
 import { agentInstructionsRoutes } from "../agent-instructions";
 import { morningBriefCompositionPreviewRoutes } from "../morning-brief-composition-preview";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { seedRetainedNativeMorningBriefForUser } from "./helpers/feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -242,7 +242,7 @@ async function briefMember(): Promise<Member> {
     { orgId: seeded.orgId, userId: seeded.userId, role: "admin" },
     context.signal,
   );
-  await updateFeatureSwitchesForUser(
+  await seedRetainedNativeMorningBriefForUser(
     context,
     { orgId: seeded.orgId, userId: seeded.userId },
     { [FeatureSwitchKey.NativeMorningBrief]: true },
