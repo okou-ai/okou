@@ -24,11 +24,6 @@ import {
   modelProviderTypeSchema,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isPiAgentModelSupported } from "@okouai/pi-agent-runtime";
 import { OPENROUTER_US_ORIGIN } from "@okouai/api-contracts/contracts/openrouter-routing";
 
@@ -161,7 +156,6 @@ export function shouldUsePiExecution(args: {
   readonly selectedModel: string | null | undefined;
   readonly codexServiceTier: "fast" | undefined;
   readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
-  readonly featureSwitchContext: FeatureSwitchContext;
 }): boolean {
   return (
     Boolean(args.chatThreadId) &&
@@ -171,10 +165,6 @@ export function shouldUsePiExecution(args: {
       runtimeProviderType:
         args.builtInModelRuntimeRoute?.providerType ?? args.modelProviderType,
       codexServiceTier: args.codexServiceTier,
-      piEnabled: isFeatureEnabled(
-        FeatureSwitchKey.PiLoop,
-        args.featureSwitchContext,
-      ),
     })
   );
 }

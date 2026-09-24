@@ -17,7 +17,7 @@ import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { server } from "../../../../mocks/server";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createConnectorBddApi } from "./api-bdd-connectors";
-import { createRunsApi } from "./api-bdd-runs";
+import { createRunsApi, type OrgPolicyModel } from "./api-bdd-runs";
 import { createRouteMocks } from "./route-test";
 import { readProjectedChatEvents } from "./chat-event-test-reader";
 import { chatThreadGetRoutes } from "../../chat-threads-get";
@@ -140,6 +140,7 @@ export function createWorkflowsBddApi(context: TestContext) {
       options: {
         readonly timezone?: string;
         readonly tier?: "pro" | "team";
+        readonly model?: OrgPolicyModel;
       } = {},
     ): Promise<{
       readonly actor: ApiTestUser;
@@ -154,7 +155,7 @@ export function createWorkflowsBddApi(context: TestContext) {
       if (options.timezone) {
         await bdd.updateUserTimezone(actor, options.timezone);
       }
-      await runs.ensureOrgModelProvider(actor);
+      await runs.ensureOrgModelProvider(actor, { model: options.model });
       bdd.acceptAgentStorageWrites();
       return { actor, ...entitlement };
     },

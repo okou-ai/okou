@@ -155,9 +155,6 @@ test("Uses the effective subscription for reasoning and Fast guidance", async ()
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.PiLoop]: true,
-    },
   });
   await screen.findByRole("textbox", { name: "Message" });
   click(await findButton("Effort, Max"));

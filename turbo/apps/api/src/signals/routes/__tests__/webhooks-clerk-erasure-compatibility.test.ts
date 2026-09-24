@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { DeleteObjectsCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectsCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
 import { Webhook } from "svix";
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
@@ -683,7 +687,7 @@ test("does not recreate erased generation metadata when clearing a thread connec
   ).resolves.toBe(0);
 });
 
-test("completes signed Agent-owner erasure behind a surviving Workflow update", async () => {
+test("retries signed Agent-owner erasure after a surviving Workflow update holds its lock", async () => {
   const orgId = `synthetic_org_${randomUUID()}`;
   const ownerUserId = `synthetic_owner_${randomUUID()}`;
   const survivingUserId = `synthetic_survivor_${randomUUID()}`;
@@ -720,20 +724,20 @@ test("completes signed Agent-owner erasure behind a surviving Workflow update", 
     }),
   ).resolves.toBeGreaterThan(0);
 
-  const writerEntered = createDeferredPromise<number>(context.signal);
-  const cleanupEntered = createDeferredPromise<number>(context.signal);
+  const writerEntered = createDeferredPromise<void>(context.signal);
+  const cleanupEntered = createDeferredPromise<void>(context.signal);
   const release = createDeferredPromise<void>(context.signal);
-  holdWorkflowUpdateAfterMetadataMutationFixture(async (tx) => {
-    const result = await tx.execute(sql`SELECT pg_backend_pid()::int AS "pid"`);
-    writerEntered.resolve(Number(result.rows[0]?.pid));
+  holdWorkflowUpdateAfterMetadataMutationFixture(async () => {
+    writerEntered.resolve();
     await release.promise;
   });
-  observeClerkAgentLifecycleBeforeAgentLockFixture(async (tx, agentId) => {
-    if (agentId !== agent.body.agentId) {
-      return;
+  let cleanupObserved = false;
+  observeClerkAgentLifecycleBeforeAgentLockFixture((_tx, agentId) => {
+    if (agentId === agent.body.agentId && !cleanupObserved) {
+      cleanupObserved = true;
+      cleanupEntered.resolve();
     }
-    const result = await tx.execute(sql`SELECT pg_backend_pid()::int AS "pid"`);
-    cleanupEntered.resolve(Number(result.rows[0]?.pid));
+    return Promise.resolve();
   });
   const client = setupApp({ context, routes: workflowsRoutes })(
     workflowsDetailContract,
@@ -743,27 +747,32 @@ test("completes signed Agent-owner erasure behind a surviving Workflow update", 
     params: { workflowId: workflow.body.id },
     body: { instruction: "# commits before owner erasure" },
   });
-  const writerPid = await writerEntered.promise;
+  await writerEntered.promise;
   await deleteUserWithSignedWebhook(
     ownerUserId,
     "workflow-update-agent-owner-erasure",
     { flush: false },
   );
-  const cleanupPid = await cleanupEntered.promise;
-  await expect
-    .poll(
-      async () => {
-        return await stableContextBackendBlockedByFixture({
-          blockedPid: cleanupPid,
-          blockerPid: writerPid,
-        });
-      },
-      { interval: 5, timeout: 80 },
-    )
-    .toBe(true);
-  release.resolve();
-  await accept(update, [409]);
+  await cleanupEntered.promise;
+  // The first deletion attempt cannot take the Agent lock while the Workflow
+  // transaction holds it. Wait for its durable retry before releasing the writer.
   await flushWaitUntilForTest();
+  release.resolve();
+  await accept(update, [200]);
+  const committed = await accept(
+    client.get({ headers, params: { workflowId: workflow.body.id } }),
+    [200],
+  );
+  expect(committed.body.instruction).toBe("# commits before owner erasure");
+
+  mockEnv("ENV", "development");
+  const retried = await accept(
+    setupApp({ context, routes: testClerkUserDeletionJobRoutes })(
+      testClerkUserDeletionJobContract,
+    ).retry({ body: { userId: ownerUserId } }),
+    [200],
+  );
+  expect(retried.body.processed).toBe(1);
 
   await expect(
     countUserStableContextGenerationsFixture({
@@ -774,6 +783,77 @@ test("completes signed Agent-owner erasure behind a surviving Workflow update", 
   await expect(
     countAgentStableContextPublicationsFixture(agent.body.agentId),
   ).resolves.toBe(0);
+  await accept(
+    client.get({ headers, params: { workflowId: workflow.body.id } }),
+    [404],
+  );
+});
+
+test("rejects a Workflow update when Agent-owner erasure completes during upload", async () => {
+  const orgId = `synthetic_org_${randomUUID()}`;
+  const ownerUserId = `synthetic_owner_${randomUUID()}`;
+  const survivingUserId = `synthetic_survivor_${randomUUID()}`;
+  const headers = { authorization: "Bearer clerk-session" };
+  context.mocks.s3.send.mockResolvedValue({});
+
+  mocks.clerk.session(ownerUserId, orgId, "org:admin");
+  const agent = await accept(
+    setupApp({ context, routes: agentsRoutes })(agentsMainContract).create({
+      headers,
+      body: { displayName: "Erased upload owner", visibility: "public" },
+    }),
+    [201],
+  );
+  mocks.clerk.session(survivingUserId, orgId, "org:member");
+  const workflow = await accept(
+    setupApp({ context, routes: workflowsRoutes })(
+      workflowsCollectionContract,
+    ).create({
+      headers,
+      body: {
+        agentId: agent.body.agentId,
+        name: `surviving-upload-${randomUUID().slice(0, 8)}`,
+        visibility: "private",
+        instruction: "# existing generation",
+      },
+    }),
+    [201],
+  );
+
+  const uploadEntered = createDeferredPromise<void>(context.signal);
+  const releaseUpload = createDeferredPromise<void>(context.signal);
+  let holdArchiveUpload = true;
+  context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+    if (
+      holdArchiveUpload &&
+      command instanceof PutObjectCommand &&
+      command.input.Key?.endsWith("/archive.tar.gz")
+    ) {
+      holdArchiveUpload = false;
+      uploadEntered.resolve();
+      await releaseUpload.promise;
+    }
+    return {};
+  });
+  const client = setupApp({ context, routes: workflowsRoutes })(
+    workflowsDetailContract,
+  );
+  const update = client.update({
+    headers,
+    params: { workflowId: workflow.body.id },
+    body: { instruction: "# cannot publish after owner erasure" },
+  });
+  await uploadEntered.promise;
+  await deleteUserWithSignedWebhook(
+    ownerUserId,
+    "workflow-upload-owner-erasure",
+  );
+
+  releaseUpload.resolve();
+  const blocked = await accept(update, [409]);
+  expect(blocked.body.error.message).toBe(
+    "Workflow changed during update; retry the request",
+  );
   await accept(
     client.get({ headers, params: { workflowId: workflow.body.id } }),
     [404],

@@ -761,6 +761,11 @@ describe("X daily resource usage webhook", () => {
     const configuredPricing = await pricing();
     const owner = await createRun();
     const survivor = await createRun();
+    // The threaded run must stay active until cancelled, so it uses Fable,
+    // which model policy keeps on the native Runner instead of Pi.
+    await runs.ensureOrgModelProvider(owner.actor, {
+      model: "claude-fable-5-1",
+    });
     const chat = createChatFilesBddApi(context);
     const callbacks = createChatCallbacksApi(context);
     callbacks.acceptChatObjectStorage();

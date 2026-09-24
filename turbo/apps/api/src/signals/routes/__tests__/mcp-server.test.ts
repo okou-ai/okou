@@ -910,6 +910,33 @@ async function threadFixture() {
   return { auth, actor, agent, bdd, chat };
 }
 
+/**
+ * Run-status, cancellation and search scenarios drive chat runs through the
+ * native Runner claim protocol. Fable stays off Pi, while the fixture's
+ * default Sonnet 5 route now executes API-first.
+ */
+const NATIVE_RUNNER_MODEL = "claude-fable-5-1";
+
+async function nativeRunnerChatActor(
+  f: ReturnType<typeof createChatEventsFixture>,
+  auth: { readonly userId: string; readonly orgId: string },
+) {
+  const actor = await f.entitledChatActor({
+    userId: auth.userId,
+    orgId: auth.orgId,
+  });
+  await f.api.updateOrgModelPolicies(actor.actor, [
+    {
+      model: NATIVE_RUNNER_MODEL,
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: actor.providerId,
+    },
+  ]);
+  return actor;
+}
+
 async function chatRunFixture() {
   const auth = await fixture();
   const bdd = createBddApi(context);
@@ -924,7 +951,7 @@ async function chatRunFixture() {
   callbacks.disableVapid();
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensureOrgModelProvider(actor, { model: NATIVE_RUNNER_MODEL });
   const agent = await bdd.createAgent(actor, {
     displayName: "MCP activity agent",
     visibility: "private",
@@ -2355,10 +2382,7 @@ describe("MCP chat status", () => {
   it("tracks an original launch through running, partial output and materialized completion", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const thread = await f.chat.createThread(actor.actor, {
       agentId: actor.agentId,
     });
@@ -2522,10 +2546,7 @@ describe("MCP chat status", () => {
   it("rereads after a bounded delay and returns ready content from the fresh snapshot", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const thread = await f.chat.createThread(actor.actor, {
       agentId: actor.agentId,
     });
@@ -2604,10 +2625,7 @@ describe("MCP chat status", () => {
   it("returns a fresh deadline status and exposes output that arrives later", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const thread = await f.chat.createThread(actor.actor, {
       agentId: actor.agentId,
     });
@@ -2700,10 +2718,7 @@ describe("MCP chat status", () => {
   it("returns current status when principal wait capacity is full and reuses released slots", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const thread = await f.chat.createThread(actor.actor, {
       agentId: actor.agentId,
     });
@@ -2777,10 +2792,7 @@ describe("MCP chat status", () => {
   it("cancels only a disconnected waiter and releases its admission slot", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const thread = await f.chat.createThread(actor.actor, {
       agentId: actor.agentId,
     });
@@ -2865,10 +2877,7 @@ describe("MCP chat status", () => {
   it("keeps cancellation recovery separate from readable partial and late output", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const sent = await f.sendChatRun(actor.actor, {
       agentId: actor.agentId,
       prompt: "Cancel after partial progress",
@@ -2944,10 +2953,7 @@ describe("MCP chat status", () => {
   it("reports failed runs without inventing assistant messages from terminal errors", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const thread = await f.chat.createThread(actor.actor, {
       agentId: actor.agentId,
     });
@@ -2987,10 +2993,7 @@ describe("MCP chat status", () => {
   it("reports completed runs with confirmed no output", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const sent = await f.sendChatRun(actor.actor, {
       agentId: actor.agentId,
       prompt: "Complete without assistant output",
@@ -3013,10 +3016,7 @@ describe("MCP chat status", () => {
   it("identifies a queued launch and preserves its association after original-input retention", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const puts: RecordedChatEventPut[] = [];
     installFakeChatEventR2(context, puts);
     const active = await f.sendChatRun(actor.actor, {
@@ -3076,10 +3076,7 @@ describe("MCP chat status", () => {
     async (status) => {
       const auth = await fixture();
       const f = createChatEventsFixture(context);
-      const actor = await f.entitledChatActor({
-        userId: auth.userId,
-        orgId: auth.orgId,
-      });
+      const actor = await nativeRunnerChatActor(f, auth);
       const sent = await f.sendChatRun(actor.actor, {
         agentId: actor.agentId,
         prompt: "Observe a delayed terminal callback",
@@ -4204,10 +4201,7 @@ describe("MCP chat mutations", () => {
   it("does not withdraw reserved input and reports its later association with the same active run", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const thread = await f.chat.createThread(actor.actor, {
       agentId: actor.agentId,
     });
@@ -4404,10 +4398,7 @@ describe("MCP chat mutations", () => {
     async (letterCase) => {
       const auth = await fixture();
       const f = createChatEventsFixture(context);
-      const actor = await f.entitledChatActor({
-        userId: auth.userId,
-        orgId: auth.orgId,
-      });
+      const actor = await nativeRunnerChatActor(f, auth);
       const active = await f.sendChatRun(actor.actor, {
         agentId: actor.agentId,
         prompt: "Cancel this whole run",
@@ -4457,10 +4448,7 @@ describe("MCP chat mutations", () => {
   it("rejects cancellation of a completed run without rewriting its terminal state", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const active = await f.sendChatRun(actor.actor, {
       agentId: actor.agentId,
       prompt: "Complete normally",
@@ -4637,10 +4625,7 @@ describe("MCP canonical message reads", () => {
   it("excludes private user context and private citation markup while retaining assistant work and artifact links", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const sent = await f.sendChatRun(actor.actor, {
       agentId: actor.agentId,
       prompt: "Visible request",
@@ -5772,10 +5757,7 @@ describe("MCP message search", () => {
   async function setupMessageSearchFilters() {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const query = "mcpfilterneedle";
     const baseTime = now();
     const sent = await withMockNowForTest(baseTime, async () => {
@@ -6228,10 +6210,7 @@ describe("MCP message search", () => {
   it("continues after a full scan of lexical false positives without hiding an older exact match", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const query = "scanbudgetneedle 上海滩";
     const sent = await f.sendChatRun(actor.actor, {
       agentId: actor.agentId,
@@ -7930,7 +7909,7 @@ describe("external MCP entry", () => {
     const expected: { threadId: string; agentId: string }[] = [];
     for (const actor of actors) {
       await runs.grantProEntitlement(actor);
-      await runs.ensureOrgModelProvider(actor);
+      await runs.ensureOrgModelProvider(actor, { model: NATIVE_RUNNER_MODEL });
       const agent = await bdd.createAgent(actor, {
         displayName: "MCP organization activity",
         visibility: "private",

@@ -606,4 +606,4 @@ or history; this staff-only feature requires the updated API and CLI to honor ch
 effort on resume.
 The existing Pi model-config generations and Runner/Guest schemas are unchanged.
 `Effort` gates reasoning effort and Fast, and `ModelPickerFlyout` gates the model
-picker's layout; `PiLoop` retains its independent runtime rollout gate.
+picker's layout. Pi admission follows the route policy and runtime capability.

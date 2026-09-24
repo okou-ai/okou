@@ -6,6 +6,18 @@ runner_e2e_require_environment() {
     command -v jq >/dev/null
 }
 
+# Firewall and protocol probes need deterministic shell output from the Codex
+# mock, not an expensive real Astra completion that paraphrases stdout. The
+# mock-Claude organization also exposes a native Astra route in preview; its
+# Claude route and the separate real-model billing account remain untouched.
+runner_e2e_use_native_codex_account() {
+    local credentials="/tmp/e2e-api-credentials-runner-mock-claude.json"
+    export E2E_API_TOKEN E2E_API_URL E2E_NATIVE_CODEX_MODEL
+    E2E_NATIVE_CODEX_MODEL="gpt-6-astra"
+    E2E_API_TOKEN="$(jq -er '.token | select(type == "string" and length > 0)' "$credentials")" || return
+    E2E_API_URL="$(jq -er '.apiUrl | select(type == "string" and length > 0)' "$credentials")" || return
+}
+
 runner_e2e_setup_test() {
     TEST_ID="${E2E_RUNNER_SHARD_INDEX:-local}-$(date +%s)-$RANDOM"
     AGENT_ID=""
@@ -199,7 +211,7 @@ runner_e2e_start_chat_run() {
         "$agent_id" \
         "$shell_prompt" \
         "" \
-        "deepseek-v4-flash" \
+        "${E2E_NATIVE_CODEX_MODEL:-deepseek-v4-flash}" \
         "" \
         "$capture_network_bodies"
 }
@@ -221,7 +233,7 @@ runner_e2e_start_checkpointed_chat_run() {
     shell_prompt=$(printf '@shell-checkpoint@\n%s\n@continue@\n%s' \
         "$checkpoint_script" \
         "$continuation_script")
-    runner_chat_send "$agent_id" "$shell_prompt" "" "deepseek-v4-flash"
+    runner_chat_send "$agent_id" "$shell_prompt" "" "${E2E_NATIVE_CODEX_MODEL:-deepseek-v4-flash}"
 }
 
 runner_e2e_delete_chat_thread() {

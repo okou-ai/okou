@@ -20,10 +20,22 @@ describe("chat thread deletion lock isolation", () => {
   it.each(["cancelled", "completed"] as const)(
     "persists run.%s in another thread while a cascade deletion is blocked",
     async (status) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup, providerId } =
+        await entitledChatActor();
+      // Both threads need claimable Runner runs while the deletion is blocked;
+      // Sonnet now executes a Pi API-first turn instead of waiting to be claimed.
+      await api.updateOrgModelPolicies(actor, [
+        {
+          model: "claude-fable-5-1",
+          isDefault: true,
+          defaultProviderType: "anthropic-api-key",
+          credentialScope: "org",
+          modelProviderId: providerId,
+        },
+      ]);
       const removedRun = await sendChatRun(actor, {
         agentId,
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         prompt: "Populate the thread that will be deleted",
       });
       await api.requestCancelRun(actor, removedRun.runId, [200]);
@@ -44,7 +56,7 @@ describe("chat thread deletion lock isolation", () => {
 
       const run = await sendChatRun(actor, {
         agentId,
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         prompt: "Finish independently of another thread's deletion",
       });
       const { sandboxHeaders } = await claimChatRun(runnerGroup, run.runId);

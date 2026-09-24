@@ -186,7 +186,16 @@ describe("actual compute transactions versus the B1 projector", () => {
     // Pro plan's own concurrency limit.
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     await api.grantProEntitlement(actor);
-    await api.ensureOrgModelProvider(actor);
+    const { providerId } = await api.ensureOrgModelProvider(actor);
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-fable-5-1",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
     const agent = await bdd.createAgent(actor, {
       displayName: "Synthetic erasure admission",
       visibility: "public",
@@ -1325,7 +1334,7 @@ describe("actual compute transactions versus the B1 projector", () => {
           agentId: f.agentId,
           prompt: "Synthetic output admission",
           clientEventId: randomUUID(),
-          model: "claude-sonnet-5",
+          model: "claude-fable-5-1",
         },
         [201],
       );

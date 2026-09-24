@@ -5,8 +5,6 @@ import {
   OFFICIAL_TELEGRAM_BOT_ID,
   integrationsTelegramContract,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
-import { NATIVE_GPT_6_LUNA_HEADER } from "@okouai/api-contracts/contracts/runners";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type {
   TestTelegramStateActionBody,
   TestTelegramStateActionResponse,
@@ -39,7 +37,6 @@ import {
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
 import { testTelegramStateRoutes } from "../test-telegram-state";
 import { integrationsTelegramRoutes } from "../integrations-telegram";
@@ -282,11 +279,7 @@ async function seedTelegramPostFixture(
         ? fixture.telegram_user_id
         : undefined,
   };
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId: seeded.userId, orgId: seeded.orgId, orgRole: "org:admin" },
-    { [FeatureSwitchKey.PiLoop]: false },
-  );
+
   return seeded;
 }
 
@@ -526,6 +519,7 @@ async function claimTelegramRun(runId: string, runnerGroup: string) {
 async function completeCanonicalChatRun(args: {
   readonly runId: string;
   readonly sandboxToken: string;
+  readonly cliAgentType?: "claude-code" | "codex";
 }): Promise<string> {
   const cliAgentSessionId = `bdd-telegram-cli-${args.runId}`;
   const cliAgentSessionHistory = `bdd telegram history ${args.runId}`;
@@ -553,7 +547,7 @@ async function completeCanonicalChatRun(args: {
       runId: args.runId,
       exitCode: 0,
       checkpoint: {
-        cliAgentType: "claude-code",
+        cliAgentType: args.cliAgentType ?? "claude-code",
         cliAgentSessionId,
         cliAgentSessionHistoryHash,
       },
@@ -695,6 +689,25 @@ async function seedModelPolicies(args: {
     compose_id: args.fixture.composeId,
     selected_model: args.selectedModel,
   });
+}
+
+/**
+ * Replaces the seeded org policies with built-in Fable. Fable stays on the
+ * Claude Code harness, so Telegram runs remain claimable native Runner jobs.
+ */
+async function seedNativeFablePolicies(
+  fixture: TelegramPostFixture,
+): Promise<void> {
+  await seedModelPolicies({ fixture, selectedModel: "claude-fable-5-1" });
+  await runsApi.updateOrgModelPolicies(actorForFixture(fixture), [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "built-in",
+      credentialScope: "org",
+      modelProviderId: null,
+    },
+  ]);
 }
 
 async function selectedModelFor(
@@ -1296,7 +1309,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       seedTelegramPostFixture({ linkTelegramUser: true }),
     );
 
-    await seedModelPolicies({ fixture, selectedModel: "claude-sonnet-5" });
+    await seedNativeFablePolicies(fixture);
     const telegramMocks = telegramApiMocks();
     expect(
       stateRecord((await readTelegramState(fixture.telegramBotId)).installation)
@@ -1349,7 +1362,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         "Chat ID: 77001",
         "Chat type: private",
         "Message ID: 42",
-        `Root message ID: direct-message:${fixture.composeId}:claude-sonnet-5`,
+        `Root message ID: direct-message:${fixture.composeId}:claude-fable-5-1`,
       ].join("\n"),
     );
     const admitted = await findTelegramChatEventByPromptFixture({
@@ -1370,7 +1383,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       telegramMessageThreadId: null,
       telegramMessageText: "hello from telegram",
       telegramThreadContext: "",
-      telegramRootMessageId: `direct-message:${fixture.composeId}:claude-sonnet-5`,
+      telegramRootMessageId: `direct-message:${fixture.composeId}:claude-fable-5-1`,
       telegramThinkingMessageId: null,
       telegramPublicBrand: "okou",
       telegramUserLinkId: expect.any(String),
@@ -1392,7 +1405,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     ).toContainEqual(
       expect.objectContaining({
         chatId: "77001",
-        rootMessageId: `direct-message:${fixture.composeId}:claude-sonnet-5`,
+        rootMessageId: `direct-message:${fixture.composeId}:claude-fable-5-1`,
         chatThreadId: runState.agentRun?.chatThreadId,
       }),
     );
@@ -1409,6 +1422,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     const fixture = await trackFixture(
       seedTelegramPostFixture({ linkTelegramUser: true }),
     );
+    await seedNativeFablePolicies(fixture);
     telegramApiMocks();
     const prompt = "reuse this Telegram thread";
     expect(
@@ -1463,7 +1477,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         supportedProfiles: ["vm0/default"],
       },
       [200],
-      { [NATIVE_GPT_6_LUNA_HEADER]: "1" },
     );
     if (poll.status !== 200) {
       throw new Error("Expected the same-thread reuse poll to succeed");
@@ -1494,7 +1507,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       seedTelegramPostFixture({ linkTelegramUser: true }),
     );
 
-    await seedModelPolicies({ fixture, selectedModel: "claude-sonnet-5" });
+    await seedNativeFablePolicies(fixture);
     const telegramMocks = telegramApiMocks();
     const chatId = 77_002;
     const firstPrompt = "hold the Telegram queue";
@@ -1567,7 +1580,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       telegramMessageText: queuedPrompt,
       telegramThreadContext: expect.stringContaining(firstPrompt),
       telegramMessageId: "2202",
-      telegramRootMessageId: `direct-message:${fixture.composeId}:claude-sonnet-5`,
+      telegramRootMessageId: `direct-message:${fixture.composeId}:claude-fable-5-1`,
       telegramUserLinkKind: "custom",
     });
     await setTelegramThinkingMessageIdFixture(queuedParams.eventId, "701");
@@ -1602,7 +1615,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         `Chat ID: ${chatId}`,
         "Chat type: private",
         "Message ID: 2202",
-        `Root message ID: direct-message:${fixture.composeId}:claude-sonnet-5`,
+        `Root message ID: direct-message:${fixture.composeId}:claude-fable-5-1`,
       ].join("\n"),
       queuedThreadContext,
     );
@@ -1621,10 +1634,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     const fixture = await trackFixture(
       seedTelegramPostFixture({ linkTelegramUser: true }),
     );
-    await seedModelPolicies({
-      fixture,
-      selectedModel: "claude-sonnet-5",
-    });
+    await seedNativeFablePolicies(fixture);
     const telegramMocks = telegramApiMocks();
     const chatId = 77_101;
     const firstPrompt = "canonical telegram dm first";
@@ -1760,7 +1770,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     expect(stateRecords(state.routes)).toContainEqual(
       expect.objectContaining({
         chatId: String(chatId),
-        rootMessageId: `direct-message:${fixture.composeId}:claude-sonnet-5`,
+        rootMessageId: `direct-message:${fixture.composeId}:claude-fable-5-1`,
         chatThreadId: firstState.agentRun?.chatThreadId,
       }),
     );
@@ -1781,20 +1791,24 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       type: "anthropic-api-key",
       secret: "telegram-dm-model-routing-key",
     });
+    const openAiProvider = await runsApi.createOrgModelProvider(actor, {
+      type: "openai-api-key",
+      secret: "telegram-dm-native-codex-key",
+    });
     await runsApi.updateOrgModelPolicies(actor, [
       {
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         isDefault: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: provider.providerId,
       },
       {
-        model: "claude-opus-4-8",
+        model: "gpt-6-astra",
         isDefault: false,
-        defaultProviderType: "anthropic-api-key",
+        defaultProviderType: "openai-api-key",
         credentialScope: "org",
-        modelProviderId: provider.providerId,
+        modelProviderId: openAiProvider.providerId,
       },
     ]);
     const telegram = telegramApiMocks(
@@ -1901,6 +1915,14 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         throw new Error("Expected a Telegram DM run");
       }
       const claim = await claimTelegramRun(run.id, runnerGroup);
+      if (
+        claim.cliAgentType !== "claude-code" &&
+        claim.cliAgentType !== "codex"
+      ) {
+        throw new Error(
+          `Expected a native Telegram DM claim, got ${claim.cliAgentType}`,
+        );
+      }
       const replyCount = telegram.sentMessageIds.length;
       if (assistantText !== undefined) {
         await webhooksApi.requestAgentEvents(
@@ -1924,6 +1946,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       const sessionId = await completeCanonicalChatRun({
         runId: run.id,
         sandboxToken: claim.sandboxToken,
+        cliAgentType: claim.cliAgentType,
       });
       expect(telegram.sentMessages.at(-1)?.reply_parameters).toStrictEqual({
         message_id: messageId,
@@ -2006,13 +2029,13 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           );
           return;
         }
-        await sendDm("/model claude-opus-4-8", 3506);
+        await sendDm("/model gpt-6-astra", 3506);
         const pinnedReply = await completeDm(
           "keep the reply chain model",
           3508,
           branch.botReplyId,
         );
-        expect(pinnedReply.claim.modelUsageProvider).toBe("claude-sonnet-5");
+        expect(pinnedReply.claim.modelUsageProvider).toBe("claude-fable-5-1");
         expect(pinnedReply.claim.resumeSession?.sessionId).toBe(
           branchFollowUp.sessionId,
         );
@@ -2022,14 +2045,14 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       const followUp = await completeDm("continue the main DM", 3502);
       expect(followUp.claim.resumeSession?.sessionId).toBe(main.sessionId);
 
-      await sendDm("/model claude-opus-4-8", 3506);
+      await sendDm("/model gpt-6-astra", 3506);
       const alternate = await completeDm("use the alternate DM model", 3507);
-      expect(alternate.claim.modelUsageProvider).toBe("claude-opus-4-8");
+      expect(alternate.claim.modelUsageProvider).toBe("gpt-6-astra");
       expect(alternate.claim.resumeSession).toBeNull();
-      await sendDm("/model claude-sonnet-5", 3509);
+      await sendDm("/model claude-fable-5-1", 3509);
       const returned = await completeDm("return to the main model", 3510);
       expect(returned.claim.resumeSession?.sessionId).toBe(followUp.sessionId);
-      expect(returned.claim.modelUsageProvider).toBe("claude-sonnet-5");
+      expect(returned.claim.modelUsageProvider).toBe("claude-fable-5-1");
     });
   });
 
@@ -2040,10 +2063,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     const fixture = await trackFixture(
       seedTelegramPostFixture({ linkTelegramUser: true }),
     );
-    await seedModelPolicies({
-      fixture,
-      selectedModel: "claude-sonnet-5",
-    });
+    await seedNativeFablePolicies(fixture);
     const telegramMocks = telegramApiMocks();
     const botUsername = `bot_${fixture.telegramBotId}`;
     const chatId = -77_201;
@@ -2342,6 +2362,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     const fixture = await trackFixture(
       seedTelegramPostFixture({ linkTelegramUser: true }),
     );
+    // A native run stays queued, so its registered callback is still
+    // readable; a Pi API-first run can finish and settle it first.
+    await seedNativeFablePolicies(fixture);
     telegramApiMocks();
 
     const response = await postWebhook({
@@ -2537,7 +2560,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       seedTelegramPostFixture({ installBot: false, seedOfficialLink: true }),
     );
 
-    await seedModelPolicies({ fixture, selectedModel: "claude-sonnet-5" });
+    await seedNativeFablePolicies(fixture);
     telegramApiMocks(OFFICIAL_BOT_TOKEN);
 
     const response = await postWebhook({
@@ -2585,7 +2608,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         "Chat ID: 88002",
         "Chat type: private",
         "Message ID: 51",
-        `Root message ID: direct-message:${fixture.composeId}:claude-sonnet-5`,
+        `Root message ID: direct-message:${fixture.composeId}:claude-fable-5-1`,
       ].join("\n"),
     );
     const admitted = await findTelegramChatEventByPromptFixture({
@@ -2601,7 +2624,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     ).resolves.toMatchObject({
       contextType: "telegram",
       telegramMessageText: "run through official bot",
-      telegramRootMessageId: `direct-message:${fixture.composeId}:claude-sonnet-5`,
+      telegramRootMessageId: `direct-message:${fixture.composeId}:claude-fable-5-1`,
       telegramPublicBrand: "okou",
       telegramUserLinkId: expect.any(String),
       telegramUserLinkKind: "official",
@@ -2861,7 +2884,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       seedTelegramPostFixture({ linkTelegramUser: true }),
     );
 
-    await seedModelPolicies({ fixture, selectedModel: "claude-sonnet-5" });
+    await seedNativeFablePolicies(fixture);
     const userLinkId = await linkedTelegramUserLinkId(fixture);
     const telegramMocks = telegramApiMocks();
     const initialPrompt = "start canonical dm";
@@ -2893,7 +2916,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         userLinkId,
         ownerKind: "custom",
         chatId: fixture.telegramUserId!,
-        rootMessageId: `direct-message:${fixture.composeId}:claude-sonnet-5`,
+        rootMessageId: `direct-message:${fixture.composeId}:claude-fable-5-1`,
       }),
     ).resolves.toMatchObject({
       chatThreadId: initialState.agentRun?.chatThreadId,
@@ -2924,7 +2947,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         userLinkId,
         ownerKind: "custom",
         chatId: fixture.telegramUserId!,
-        rootMessageId: `direct-message:${fixture.composeId}:claude-sonnet-5`,
+        rootMessageId: `direct-message:${fixture.composeId}:claude-fable-5-1`,
       }),
     ).resolves.toMatchObject({
       chatThreadId: initialState.agentRun?.chatThreadId,
@@ -2957,7 +2980,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         userLinkId,
         ownerKind: "custom",
         chatId: fixture.telegramUserId!,
-        rootMessageId: `direct-message:${fixture.composeId}:claude-sonnet-5`,
+        rootMessageId: `direct-message:${fixture.composeId}:claude-fable-5-1`,
       }),
     ).resolves.toBeNull();
   });
@@ -3053,6 +3076,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         seedTelegramPostFixture({ linkTelegramUser: true }),
       );
       const actor = actorForFixture(fixture);
+      await seedNativeFablePolicies(fixture);
       const runnerGroup = configureCanonicalTelegramRunner();
       telegramApiMocks();
       const uploads = captureIntegrationInputUploads(context);
@@ -3212,6 +3236,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         seedTelegramPostFixture({ linkTelegramUser: true }),
       );
       const actor = actorForFixture(fixture);
+      await seedNativeFablePolicies(fixture);
       const runnerGroup = configureCanonicalTelegramRunner();
       telegramApiMocks();
       const uploads = captureIntegrationInputUploads(context);
@@ -3322,6 +3347,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         seedTelegramPostFixture({ linkTelegramUser: true }),
       );
       const actor = actorForFixture(fixture);
+      await seedNativeFablePolicies(fixture);
       const runnerGroup = configureCanonicalTelegramRunner();
       telegramApiMocks();
       const uploads = captureIntegrationInputUploads(context);
@@ -3396,6 +3422,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     const acceptedFixture = await trackFixture(
       seedTelegramPostFixture({ linkTelegramUser: true }),
     );
+    await seedNativeFablePolicies(acceptedFixture);
     const acceptedTelegramMocks = telegramApiMocks();
 
     const accepted = await postWebhook({

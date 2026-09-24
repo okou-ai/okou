@@ -25,6 +25,7 @@ const WRITE_ENV_JSON_MARKER: &str = "@write-env-json:";
 const APPEND_PROMPT_TRANSPORT_MARKER: &str = "@append-prompt-transport:";
 const PARALLEL_SHELL_TOOL_OOM_MARKER: &str = "@parallel-shell-tool-oom";
 const GUEST_WIDE_TOOL_OOM_MARKER: &str = "@guest-wide-tool-oom";
+const GUEST_WIDE_TOOL_OOM_INJECTED_MARKER: &str = "@guest-wide-tool-oom-injected";
 const RUNTIME_ONLY_OOM_MARKER: &str = "@runtime-only-oom";
 const HANG_AFTER_RESULT_MARKER: &str = "@hang-after-result";
 
@@ -54,6 +55,7 @@ pub(crate) enum MockScenario<'a> {
     AppendPromptTransport(&'a str),
     ParallelShellToolOom,
     GuestWideToolOom,
+    GuestWideToolOomInjected,
     RuntimeOnlyOom,
     Shell,
 }
@@ -90,6 +92,7 @@ enum ScenarioKind {
     AppendPromptTransport,
     ParallelShellToolOom,
     GuestWideToolOom,
+    GuestWideToolOomInjected,
     RuntimeOnlyOom,
 }
 
@@ -241,6 +244,11 @@ const SCENARIO_RULES: &[ScenarioRule] = &[
         scenario_kind: ScenarioKind::GuestWideToolOom,
     },
     ScenarioRule {
+        marker: GUEST_WIDE_TOOL_OOM_INJECTED_MARKER,
+        match_kind: ScenarioMatchKind::Exact,
+        scenario_kind: ScenarioKind::GuestWideToolOomInjected,
+    },
+    ScenarioRule {
         marker: RUNTIME_ONLY_OOM_MARKER,
         match_kind: ScenarioMatchKind::Exact,
         scenario_kind: ScenarioKind::RuntimeOnlyOom,
@@ -319,6 +327,9 @@ impl ScenarioKind {
                 MockScenario::ParallelShellToolOom
             }
             (Self::GuestWideToolOom, ScenarioMatch::Marker) => MockScenario::GuestWideToolOom,
+            (Self::GuestWideToolOomInjected, ScenarioMatch::Marker) => {
+                MockScenario::GuestWideToolOomInjected
+            }
             (Self::RuntimeOnlyOom, ScenarioMatch::Marker) => MockScenario::RuntimeOnlyOom,
             _ => return None,
         };
@@ -510,6 +521,10 @@ mod tests {
                 MockScenario::ParallelShellToolOom,
             ),
             ("@guest-wide-tool-oom", MockScenario::GuestWideToolOom),
+            (
+                "@guest-wide-tool-oom-injected",
+                MockScenario::GuestWideToolOomInjected,
+            ),
             ("@runtime-only-oom", MockScenario::RuntimeOnlyOom),
             (
                 "@hang-after-result",

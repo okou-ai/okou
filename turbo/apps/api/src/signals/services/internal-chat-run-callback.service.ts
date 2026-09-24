@@ -2838,7 +2838,6 @@ interface QueuedMessageModelRoute {
 function routeQueuedMessagePiExecution(args: {
   readonly input: CreateQueuedChatRunInputArgs;
   readonly modelRoute: QueuedMessageModelRoute;
-  readonly featureSwitchContext: FeatureSwitchContext;
 }) {
   const piExecution = shouldUsePiExecution({
     chatThreadId: args.input.threadId,
@@ -2846,7 +2845,6 @@ function routeQueuedMessagePiExecution(args: {
     selectedModel: args.modelRoute.modelPin.selectedModel,
     codexServiceTier: args.modelRoute.codexServiceTier,
     builtInModelRuntimeRoute: args.modelRoute.builtInModelRuntimeRoute,
-    featureSwitchContext: args.featureSwitchContext,
   });
   return {
     piExecution,
@@ -3566,7 +3564,6 @@ async function buildCreateQueuedChatRunInput(
   const { piExecution, routedModel } = routeQueuedMessagePiExecution({
     input: args,
     modelRoute,
-    featureSwitchContext,
   });
 
   const reasoningEffort = resolveReasoningEffortForDispatch({

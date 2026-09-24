@@ -40,7 +40,7 @@ const {
   webhooks,
   chatCallbacks,
   runStateStore,
-  entitledChatActor,
+  entitledChatActor: createEntitledChatActor,
   sendChatRun,
   claimChatRun,
   waitForThreadMessages,
@@ -52,6 +52,23 @@ const {
   upsertOrgModelProvider,
   requestSendEventWithBearer,
 } = createChatEventsFixture(context);
+
+// Queue ownership tests need an unfinished native Runner run. The default
+// Sonnet policy is Pi-eligible, so explicitly select the Fable native route
+// instead of relying on an API-first attempt to remain pending.
+async function entitledChatActor() {
+  const result = await createEntitledChatActor();
+  await api.updateOrgModelPolicies(result.actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: result.providerId,
+    },
+  ]);
+  return result;
+}
 
 describe("CHAT-02: shared user message queue", () => {
   it("dispatches idle-thread sends by appending a run-associated replacement", async () => {
@@ -121,7 +138,7 @@ describe("CHAT-02: shared user message queue", () => {
           }),
           {
             type: "model",
-            selectedModel: "claude-sonnet-5",
+            selectedModel: "claude-fable-5-1",
           },
         ],
       },
@@ -622,7 +639,7 @@ describe("CHAT-02: shared user message queue", () => {
     const rotatedAnchor = await sendChatRun(actor, {
       agentId,
       prompt: rotatedAnchorPrompt,
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
     });
     const rotatedAnchorClaim = await claimChatRun(
       runnerGroup,
@@ -645,14 +662,14 @@ describe("CHAT-02: shared user message queue", () => {
     );
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         isDefault: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
       },
       {
-        model: "gpt-5.6-terra",
+        model: "gpt-6-astra",
         isDefault: false,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
@@ -662,7 +679,7 @@ describe("CHAT-02: shared user message queue", () => {
     await chat.updateThreadModelSelection(
       actor,
       rotatedAnchor.threadId,
-      "gpt-5.6-terra",
+      "gpt-6-astra",
     );
 
     const rotatedEventId = randomUUID();

@@ -18,6 +18,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   CAPABILITY_AGENT_ID,
   context,
@@ -511,6 +512,8 @@ test("A Browser input card opens a preflighted dialog and completes without navi
   let preflights = 0;
   let state: BrowserUserActionResponse["state"] = "pending";
   let sentPrompt = "";
+  const firstCheckStarted = createDeferredPromise<void>(context.signal);
+  const releaseFirstCheck = createDeferredPromise<void>(context.signal);
   installCapabilityChat({
     events: completedConversation(`[Enter details](${browserInputUrl()})`),
   });
@@ -538,10 +541,14 @@ test("A Browser input card opens a preflighted dialog and completes without navi
   });
   context.mocks.api(
     browserUserActionsContract.preflight,
-    ({ params, body, respond }) => {
+    async ({ params, body, respond }) => {
       preflights += 1;
       expect(params.requestToken).toBe(BROWSER_INPUT_TOKEN);
       expect(body).toStrictEqual({});
+      if (preflights === 1) {
+        firstCheckStarted.resolve(undefined);
+        await releaseFirstCheck.promise;
+      }
       return respond(200, {
         ...browserInputAction("pending"),
         fields: [
@@ -602,16 +609,26 @@ test("A Browser input card opens a preflighted dialog and completes without navi
   const dialog = await screen.findByRole("dialog", {
     name: "Enter information in browser",
   });
-  await expect(
-    within(dialog).findByRole("textbox", { name: "Notes" }),
-  ).resolves.toHaveProperty("tagName", "TEXTAREA");
+  await firstCheckStarted.promise;
+  const earlyNotes = within(dialog).getByRole("textbox", { name: "Notes" });
+  expect(earlyNotes).toHaveProperty("tagName", "INPUT");
+  await fill(earlyNotes, "Draft");
+  expect(buttonsByName("Add to browser", dialog)[0]).toBeEnabled();
+  releaseFirstCheck.resolve(undefined);
+  await waitFor(() => {
+    expect(
+      within(dialog).getByRole("textbox", { name: "Notes" }),
+    ).toHaveProperty("tagName", "TEXTAREA");
+  });
+  expect(within(dialog).getByRole("textbox", { name: "Notes" })).toHaveValue(
+    "Draft",
+  );
   expect(within(dialog).getByLabelText("Quantity")).toHaveAttribute(
     "type",
     "number",
   );
   expect(window.location.href).toBe(currentUrl);
   expect(preflights).toBe(1);
-  await fill(within(dialog).getByLabelText("Notes"), "Draft");
   const readsBeforeFocus = reads;
   window.dispatchEvent(new Event("focus"));
   expect(dialog).toBeVisible();
@@ -629,14 +646,13 @@ test("A Browser input card opens a preflighted dialog and completes without navi
     ).toBeNull();
   });
   click(await findButton("Enter information"));
-  await expect(
-    screen.findByRole("textbox", { name: "Notes" }),
-  ).resolves.toBeVisible();
-  expect(preflights).toBe(2);
-
   const reopenedDialog = await screen.findByRole("dialog", {
     name: "Enter information in browser",
   });
+  await expect(
+    within(reopenedDialog).findByRole("textbox", { name: "Notes" }),
+  ).resolves.toBeVisible();
+  expect(preflights).toBe(2);
   await fill(within(reopenedDialog).getByLabelText("Notes"), "Ready");
   const submitButton = buttonsByName("Add to browser", reopenedDialog)[0];
   if (!submitButton) {
