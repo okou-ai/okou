@@ -29,6 +29,7 @@ import { ComposerVideoOptionsChip } from "./composer-video-options.tsx";
 import type { ComposerVoiceInputStatus } from "../../signals/okou-page/composer-voice-input.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
+import { useState } from "react";
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
@@ -6778,16 +6779,22 @@ function ComposerRemoteAccessMenu({
   signals,
   computerUse,
   onOpenDownloadDialog,
+  remoteMenuOpen,
+  onRemoteMenuOpenChange,
 }: {
   signals: ComposerSignals;
   computerUse: ComposerComputerUse | undefined;
   onOpenDownloadDialog: () => void;
+  remoteMenuOpen: boolean;
+  onRemoteMenuOpenChange: (open: boolean) => void;
 }) {
   const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess];
   const remoteAccess = enabled ? (
     <ThreadRemoteAccessSection
       threadId={signals.threadId}
       remoteAccess$={signals.remoteAccess$}
+      open={remoteMenuOpen}
+      onOpenChange={onRemoteMenuOpenChange}
     />
   ) : null;
   return computerUse ? (
@@ -7630,6 +7637,7 @@ function ConnectorsPopoverButton({
   onOpenAddDialog: () => void;
 }) {
   const { t } = useTranslation();
+  const [remoteMenuOpen, setRemoteMenuOpen] = useState(false);
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
   const accountMenuOpen = useGet(signals.connector.accounts.menuOpen$);
   const closeAccountMenu = useSet(signals.connector.accounts.closeMenu$);
@@ -7666,20 +7674,24 @@ function ConnectorsPopoverButton({
         popoverSearch: "",
       });
       closeAccountMenu();
+      setRemoteMenuOpen(false);
     }
   };
 
   return (
     <Popover
       onOpenChange={(open, eventDetails) => {
-        if (
-          !open &&
-          accountMenuOpen &&
-          eventDetails.reason === "outside-press"
-        ) {
-          eventDetails.cancel();
-          closeAccountMenu();
-          return;
+        if (!open && eventDetails.reason === "outside-press") {
+          if (accountMenuOpen) {
+            eventDetails.cancel();
+            closeAccountMenu();
+            return;
+          }
+          if (remoteMenuOpen) {
+            eventDetails.cancel();
+            setRemoteMenuOpen(false);
+            return;
+          }
         }
         handleOpenChange(open);
       }}
@@ -7728,6 +7740,8 @@ function ConnectorsPopoverButton({
           sshAccess={sshAccess}
           vncAccess={vncAccess}
           computerUse={computerUse}
+          remoteMenuOpen={remoteMenuOpen}
+          onRemoteMenuOpenChange={setRemoteMenuOpen}
           onOpenAddDialog={onOpenAddDialog}
           onOpenDownloadDialog={() => {
             setDownloadDialogOpen(true);
@@ -7753,6 +7767,8 @@ function ComposerConnectorsPopoverBody({
   sshAccess,
   vncAccess,
   computerUse,
+  remoteMenuOpen,
+  onRemoteMenuOpenChange,
   onOpenAddDialog,
   onOpenDownloadDialog,
 }: {
@@ -7761,6 +7777,8 @@ function ComposerConnectorsPopoverBody({
   sshAccess: ReturnType<typeof matchingComposerAccess>;
   vncAccess: ReturnType<typeof matchingComposerAccess>;
   computerUse: ComposerComputerUse | undefined;
+  remoteMenuOpen: boolean;
+  onRemoteMenuOpenChange: (open: boolean) => void;
   onOpenAddDialog: () => void;
   onOpenDownloadDialog: () => void;
 }) {
@@ -8123,6 +8141,8 @@ function ComposerConnectorsPopoverBody({
       <ComposerRemoteAccessMenu
         signals={signals}
         computerUse={computerUse}
+        remoteMenuOpen={remoteMenuOpen}
+        onRemoteMenuOpenChange={onRemoteMenuOpenChange}
         onOpenDownloadDialog={onOpenDownloadDialog}
       />
     </div>

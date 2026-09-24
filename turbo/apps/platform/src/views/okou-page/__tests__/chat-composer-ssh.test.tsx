@@ -46,6 +46,18 @@ test("A chat can override multiple SSH hosts and return to each host default", a
     };
   };
   context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: hostIds.map((connectionId, index) => {
+          const { displayName, defaultEnabled } = host(connectionId, index);
+          return { connectionId, displayName, defaultEnabled };
+        }),
+        vnc: [],
+      });
+    },
+  );
+  context.mocks.api(
     chatRemoteAccessContract.listThreadAccess,
     ({ respond }) => {
       return respond(200, {
@@ -91,6 +103,13 @@ test("A chat can override multiple SSH hosts and return to each host default", a
     remoteAccess.compareDocumentPosition(yourComputer) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
+  const remoteTrigger = () => {
+    return [...document.querySelectorAll("button")].find((button) => {
+      return button.textContent?.startsWith("Remote access");
+    });
+  };
+  expect(remoteTrigger()).toHaveTextContent("1 enabled");
+  expect(screen.queryByRole("combobox", { name: "SSH SSH host 1" })).toBeNull();
   click(remoteAccess);
   const first = await screen.findByRole("combobox", { name: "SSH SSH host 1" });
   const second = screen.getByRole("combobox", { name: "SSH SSH host 2" });
@@ -101,6 +120,7 @@ test("A chat can override multiple SSH hosts and return to each host default", a
   await waitFor(() => {
     expect(overrides.get(hostIds[0]!)).toBeFalsy();
     expect(second).not.toBeDisabled();
+    expect(remoteTrigger()).toHaveTextContent("0 enabled");
   });
   await user.selectOptions(
     screen.getByRole("combobox", { name: "SSH SSH host 2" }),
@@ -109,6 +129,7 @@ test("A chat can override multiple SSH hosts and return to each host default", a
   await waitFor(() => {
     expect(overrides.get(hostIds[0]!)).toBeFalsy();
     expect(overrides.get(hostIds[1]!)).toBeTruthy();
+    expect(remoteTrigger()).toHaveTextContent("1 enabled");
   });
   await user.selectOptions(
     screen.getByRole("combobox", { name: "SSH SSH host 1" }),
@@ -116,7 +137,67 @@ test("A chat can override multiple SSH hosts and return to each host default", a
   );
   await waitFor(() => {
     expect(overrides.has(hostIds[0]!)).toBeFalsy();
+    expect(remoteTrigger()).toHaveTextContent("2 enabled");
   });
+});
+
+test("Remote access is absent when no SSH or VNC hosts are configured", async () => {
+  installComposerConnectorFixture({ threadId: SCOUT_THREAD_ID });
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, { ssh: [], vnc: [] });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.listThreadAccess,
+    ({ respond }) => {
+      return respond(200, { ssh: [], vnc: [] });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${SCOUT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+  });
+  click(await findFastControl("button", "Connectors"));
+  await screen.findByText("Cloud browser");
+  expect(screen.queryByText("Remote access")).toBeNull();
+});
+
+test("A new chat summarizes enabled host defaults before a thread exists", async () => {
+  installComposerConnectorFixture();
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: [
+          {
+            connectionId: "b0000000-0000-4000-8000-000000000001",
+            displayName: "SSH host 1",
+            defaultEnabled: true,
+          },
+          {
+            connectionId: "b0000000-0000-4000-8000-000000000002",
+            displayName: "SSH host 2",
+            defaultEnabled: false,
+          },
+        ],
+        vnc: [],
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+  });
+  click(await findFastControl("button", "Connectors"));
+  const remoteAccess = await screen.findByText("Remote access");
+  expect(remoteAccess.closest("button")).toHaveTextContent("1 enabled");
+  click(remoteAccess);
+  await screen.findByText("Start a chat to change host access.");
+  expect(screen.queryByRole("combobox", { name: /SSH host/u })).toBeNull();
 });
 
 test("Remote access in two chat panes reads and updates each pane's thread", async () => {
@@ -142,6 +223,21 @@ test("Remote access in two chat panes reads and updates each pane's thread", asy
         overrideEnabled === null ? ("default" as const) : ("override" as const),
     };
   };
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: [
+          {
+            connectionId,
+            displayName: "Shared SSH host",
+            defaultEnabled: false,
+          },
+        ],
+        vnc: [],
+      });
+    },
+  );
   context.mocks.api(
     chatRemoteAccessContract.listThreadAccess,
     ({ params, respond }) => {

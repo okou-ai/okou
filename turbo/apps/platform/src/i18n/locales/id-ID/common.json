@@ -2078,9 +2078,9 @@
     },
     "remoteAccess": {
       "defaultEnabled": "Aktif secara default untuk chat",
+      "enabledCount_other": "{{count}} aktif",
       "loadFailed": "Gagal memuat akses jarak jauh.",
       "loading": "Memuat akses jarak jauh…",
-      "noHosts": "Belum ada host SSH atau VNC yang dikonfigurasi.",
       "off": "Nonaktif",
       "on": "Aktif",
       "requiresSsh": "Juga memerlukan akses ke host SSH {{name}}.",

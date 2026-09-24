@@ -2078,9 +2078,9 @@
     },
     "remoteAccess": {
       "defaultEnabled": "聊天預設啟用",
+      "enabledCount_other": "已啟用 {{count}} 個",
       "loadFailed": "無法載入遠端存取權限。",
       "loading": "正在載入遠端存取…",
-      "noHosts": "尚未設定 SSH 或 VNC 主機。",
       "off": "關閉",
       "on": "開啟",
       "requiresSsh": "還需要存取 SSH 主機 {{name}}。",

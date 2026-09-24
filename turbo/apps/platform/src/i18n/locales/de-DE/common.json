@@ -2085,9 +2085,10 @@
     },
     "remoteAccess": {
       "defaultEnabled": "Für Chats standardmäßig aktiviert",
+      "enabledCount_one": "{{count}} aktiviert",
+      "enabledCount_other": "{{count}} aktiviert",
       "loadFailed": "Fernzugriff konnte nicht geladen werden.",
       "loading": "Fernzugriff wird geladen…",
-      "noHosts": "Keine SSH- oder VNC-Hosts eingerichtet.",
       "off": "Aus",
       "on": "Ein",
       "requiresSsh": "Benötigt auch Zugriff auf den SSH-Host {{name}}.",

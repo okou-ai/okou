@@ -17,6 +17,7 @@ import {
   sshChangedPayloadSchema,
 } from "@okouai/api-contracts/contracts/ssh-access";
 import { setAblyPayloadLoop$ } from "./realtime.ts";
+import { invalidateRemoteAccess$ } from "./remote-access-refresh.ts";
 import {
   sshConnectionsContract,
   type SshConnectionResponse,
@@ -437,6 +438,7 @@ export const invalidateSsh$ = command(({ set }) => {
   set(reload$, (value) => {
     return value + 1;
   });
+  set(invalidateRemoteAccess$);
 });
 
 // Defaults belong to an untouched dialog, not to the reactive list. A failed

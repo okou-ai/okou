@@ -2126,9 +2126,11 @@
     },
     "remoteAccess": {
       "defaultEnabled": "Habilitado de forma predeterminada para chats",
+      "enabledCount_one": "{{count}} activo",
+      "enabledCount_many": "{{count}} activos",
+      "enabledCount_other": "{{count}} activos",
       "loadFailed": "No se pudo cargar el acceso remoto.",
       "loading": "Cargando acceso remoto…",
-      "noHosts": "No hay hosts SSH o VNC configurados.",
       "off": "Desactivado",
       "on": "Activado",
       "requiresSsh": "También requiere acceso al host SSH {{name}}.",

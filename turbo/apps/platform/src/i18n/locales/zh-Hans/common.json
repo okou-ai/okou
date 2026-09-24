@@ -2078,9 +2078,9 @@
     },
     "remoteAccess": {
       "defaultEnabled": "聊天默认启用",
+      "enabledCount_other": "已启用 {{count}} 个",
       "loadFailed": "无法加载远程访问权限。",
       "loading": "正在加载远程访问…",
-      "noHosts": "尚未配置 SSH 或 VNC 主机。",
       "off": "关闭",
       "on": "开启",
       "requiresSsh": "还需要访问 SSH 主机 {{name}}。",

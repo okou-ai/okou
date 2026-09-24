@@ -2085,9 +2085,10 @@
     },
     "remoteAccess": {
       "defaultEnabled": "Enabled by default for chats",
+      "enabledCount_one": "{{count}} enabled",
+      "enabledCount_other": "{{count}} enabled",
       "loadFailed": "Couldn't load remote access.",
       "loading": "Loading remote access…",
-      "noHosts": "No SSH or VNC hosts configured.",
       "off": "Off",
       "on": "On",
       "requiresSsh": "Requires SSH access to {{name}}.",

@@ -5,7 +5,7 @@ import {
   type ThreadRemoteHostAccess,
 } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { command, computed, state } from "ccstate";
+import { command, computed } from "ccstate";
 
 import { accept } from "../lib/accept.ts";
 import { apiClient$ } from "./api-client.ts";
@@ -13,14 +13,7 @@ import { clerk$ } from "./auth.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 import { sshIdentity$, invalidateSsh$ } from "./ssh.ts";
 import { invalidateVnc$ } from "./vnc.ts";
-
-const reload$ = state(0);
-
-export const invalidateRemoteAccess$ = command(({ set }) => {
-  set(reload$, (value) => {
-    return value + 1;
-  });
-});
+import { remoteAccessReload$ } from "./remote-access-refresh.ts";
 
 const client$ = computed(async (get) => {
   const [identity, clerk] = await Promise.all([get(sshIdentity$), get(clerk$)]);
@@ -52,7 +45,7 @@ const client$ = computed(async (get) => {
 });
 
 export const remoteHostDefaults$ = computed(async (get) => {
-  get(reload$);
+  get(remoteAccessReload$);
   if (!get(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess]) {
     return null;
   }
@@ -66,7 +59,7 @@ export const remoteHostDefaults$ = computed(async (get) => {
 
 export function threadRemoteAccess$(threadId: string) {
   return computed(async (get) => {
-    get(reload$);
+    get(remoteAccessReload$);
     if (
       !threadId ||
       !get(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess]
@@ -108,7 +101,6 @@ export const setRemoteHostDefault$ = command(
     );
     signal.throwIfAborted();
     if (client.identity === (await get(sshIdentity$))) {
-      set(invalidateRemoteAccess$);
       set(invalidateSsh$);
       set(invalidateVnc$);
     }
@@ -143,7 +135,6 @@ export const setThreadRemoteAccess$ = command(
     );
     signal.throwIfAborted();
     if (client.identity === (await get(sshIdentity$))) {
-      set(invalidateRemoteAccess$);
       set(invalidateSsh$);
       set(invalidateVnc$);
     }

@@ -2085,9 +2085,10 @@
     },
     "remoteAccess": {
       "defaultEnabled": "चैट के लिए डिफ़ॉल्ट रूप से सक्षम",
+      "enabledCount_one": "{{count}} सक्षम",
+      "enabledCount_other": "{{count}} सक्षम",
       "loadFailed": "रिमोट एक्सेस लोड नहीं हो सका।",
       "loading": "रिमोट एक्सेस लोड हो रहा है…",
-      "noHosts": "कोई SSH या VNC होस्ट कॉन्फ़िगर नहीं है।",
       "off": "बंद",
       "on": "चालू",
       "requiresSsh": "SSH होस्ट {{name}} का एक्सेस भी आवश्यक है।",
