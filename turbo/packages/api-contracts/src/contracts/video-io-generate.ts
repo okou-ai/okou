@@ -72,12 +72,13 @@ const creationRoute = {
     401: apiErrorSchema,
     402: apiErrorSchema,
     403: apiErrorSchema,
+    410: apiErrorSchema,
     500: apiErrorSchema,
     502: apiErrorSchema,
     503: apiErrorSchema,
     504: apiErrorSchema,
   },
-  summary: "Generate and persist a video file",
+  summary: "Retired built-in video generation endpoint",
 } as const;
 
 export const videoIoGenerateContract = c.router({

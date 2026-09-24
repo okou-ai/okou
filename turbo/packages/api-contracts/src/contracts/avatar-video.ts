@@ -183,12 +183,13 @@ const creationRoute = {
     401: apiErrorSchema,
     402: apiErrorSchema,
     403: apiErrorSchema,
+    410: apiErrorSchema,
     500: apiErrorSchema,
     502: apiErrorSchema,
     503: apiErrorSchema,
     504: apiErrorSchema,
   },
-  summary: "Generate and persist a JoggAI talking-avatar video",
+  summary: "Retired built-in avatar generation endpoint",
 } as const;
 
 export const avatarVideoContract = c.router({
@@ -206,10 +207,11 @@ export const avatarVideoContract = c.router({
       200: avatarVideoAvatarsResponseSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
+      410: apiErrorSchema,
       502: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary: "List public JoggAI avatars",
+    summary: "Retired built-in avatar catalog endpoint",
   },
   voices: {
     method: "GET",
@@ -220,10 +222,11 @@ export const avatarVideoContract = c.router({
       200: avatarVideoVoicesResponseSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
+      410: apiErrorSchema,
       502: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary: "List public JoggAI voices",
+    summary: "Retired built-in avatar voice catalog endpoint",
   },
 });
 

@@ -13862,7 +13862,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       "okou generate -h",
       "talking-avatar video via `avatar-video`",
       "okou generate <type> -h",
-      "`avatar-video` uses `--script` or `--audio-url`, not `--prompt`",
+      "video, voice/audio, and avatar-video require `--provider <connector>`",
       "okou doctor credit",
       "okou credit <credits>",
       "Plan permission requests",

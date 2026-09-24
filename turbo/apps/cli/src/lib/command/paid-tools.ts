@@ -1,6 +1,6 @@
 import {
   DISABLED_PAID_TOOLS_ENV_VAR,
-  PAID_TOOL_IDS,
+  AVAILABLE_PAID_TOOL_IDS,
   paidToolIdSchema,
   type PaidToolId,
 } from "@okouai/api-contracts/contracts/paid-tools";
@@ -49,12 +49,6 @@ export function getGenerationPaidTool(type: string): PaidToolId | undefined {
     case "image":
     case "image-batch":
       return "image-generation";
-    case "video":
-      return "video-generation";
-    case "voice":
-      return "voice-generation";
-    case "avatar-video":
-      return "avatar-video-generation";
     default:
       return undefined;
   }
@@ -96,16 +90,11 @@ function paidToolForAction(
 
 function paidToolsForHelp(path: Command[]): readonly PaidToolId[] {
   const family = path[0]?.name();
-  if (family === undefined) return PAID_TOOL_IDS;
+  if (family === undefined) return AVAILABLE_PAID_TOOL_IDS;
   if (family === "generate") {
     const type = path[1]?.name();
     if (type === undefined) {
-      return [
-        "image-generation",
-        "video-generation",
-        "voice-generation",
-        "avatar-video-generation",
-      ];
+      return ["image-generation"];
     }
     const tool = getGenerationPaidTool(type);
     return tool ? [tool] : [];

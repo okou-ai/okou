@@ -203,7 +203,7 @@ describe("okou generate source-backed artifact commands", () => {
     expect(posterSkillIds).toHaveLength(28);
     expect(presentationSkillIds).toHaveLength(6);
     expect(imageSkillIds).toHaveLength(5);
-    expect(videoSkillIds).toHaveLength(18);
+    expect(videoSkillIds).toEqual([]);
 
     expect(websiteSkillIds).toContain("skill:article-magazine");
     expect(reportSkillIds).toContain("skill:article-magazine");
@@ -220,8 +220,6 @@ describe("okou generate source-backed artifact commands", () => {
       "skill:presentation-reverse-template",
     );
     expect(imageSkillIds).toContain("skill:algorithmic-art");
-    expect(videoSkillIds).toContain("skill:video-hyperframes");
-    expect(videoSkillIds).toContain("skill:8-bit-orbit-video-template");
   });
 
   it("returns every registered template and design system", () => {

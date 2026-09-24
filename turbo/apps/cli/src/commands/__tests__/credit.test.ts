@@ -90,7 +90,7 @@ describe("okou credit command", () => {
     expect(output()).toContain("Threshold: 5,000");
     expect(output()).toContain("Amount: 20,000");
     expect(output()).toContain("Can purchase credits: yes");
-    expect(output()).toContain("Built-in video generation: available");
+    expect(output()).not.toContain("Built-in video generation:");
   });
 
   it("surfaces the admin-only checkout rejection for non-admins", async () => {
