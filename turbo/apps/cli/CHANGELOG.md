@@ -1,5 +1,23 @@
 # Changelog
 
+## [9.359.0](https://github.com/okou-ai/okou/compare/cli-v9.358.0...cli-v9.359.0) (2026-09-24)
+
+
+### Features
+
+* **browser:** support native number input ([#36549](https://github.com/okou-ai/okou/issues/36549)) ([d0006e3](https://github.com/okou-ai/okou/commit/d0006e3974bfc524e77388536422b5fe4fe70b7f))
+* **cli:** set and show chat thread reasoning effort ([#36552](https://github.com/okou-ai/okou/issues/36552)) ([ea884b9](https://github.com/okou-ai/okou/commit/ea884b96965bc50f40b7ad541db549ece3e0e11d))
+* store chat thread archive state instead of title emoji ([#36480](https://github.com/okou-ai/okou/issues/36480)) ([f5a0de6](https://github.com/okou-ai/okou/commit/f5a0de65c0621ca58c35edd65fc257417becdaa3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.503.0
+    * @okouai/core bumped to 8.708.0
+    * @okouai/pi-agent-runtime bumped to 1.40.6
+
 ## [9.358.0](https://github.com/okou-ai/okou/compare/cli-v9.357.4...cli-v9.358.0) (2026-09-24)
 
 

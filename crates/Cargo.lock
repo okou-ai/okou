@@ -1728,7 +1728,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.98.5"
+version = "0.98.6"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -3458,7 +3458,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.213.9"
+version = "0.213.10"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3525,7 +3525,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3595,7 +3595,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3804,7 +3804,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "futures-util",
  "runner-executor",
