@@ -6,7 +6,7 @@ import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import { writeDb$ } from "../external/db";
-import { onRejection } from "../utils";
+import { settleIncludingAbort } from "../utils";
 import type { RouteEntry } from "../route-entry";
 import {
   nativeHttpFanoutEnabled,
@@ -90,17 +90,19 @@ const execute$ = command(async ({ get, set }, signal: AbortSignal) => {
     AbortSignal.timeout(190_000),
   );
   const observe = async () => {
-    const result = await onRejection(work, (error) => {
+    const result = await settleIncludingAbort(work);
+    if (!result.ok) {
       log.error("Morning Brief worker invocation failed", {
         orgId: owner.orgId,
         scheduledFor: body.scheduledFor,
-        error,
+        error: result.error,
       });
-    });
+      return;
+    }
     log.debug("Morning Brief worker invocation completed", {
       orgId: owner.orgId,
       scheduledFor: body.scheduledFor,
-      ...result,
+      ...result.value,
     });
   };
   waitUntil(observe());
