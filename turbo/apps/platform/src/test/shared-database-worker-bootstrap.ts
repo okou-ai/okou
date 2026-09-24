@@ -14,11 +14,13 @@ export function installSharedDatabaseWorkerBootstrap(
   signal: AbortSignal,
 ): void {
   signal.throwIfAborted();
+  // Tests may replace the global window; clean up the one that was installed.
+  const platformWindow = window;
   runBootstrap();
   signal.addEventListener(
     "abort",
     () => {
-      delete window.__okouSharedDatabaseWorkerBootstrap;
+      delete platformWindow.__okouSharedDatabaseWorkerBootstrap;
     },
     { once: true },
   );
