@@ -17,6 +17,11 @@ export interface ZoomableImageCanvasSignals {
     (() => void) | undefined,
     [HTMLImageElement | null]
   >;
+  readonly navigationOwnerRef$: Command<
+    (() => void) | undefined,
+    [HTMLDivElement | null]
+  >;
+  readonly focusNavigationOwner$: Command<void, []>;
   readonly reset$: Command<void, []>;
   readonly setZoom$: Command<void, [number]>;
 }
@@ -98,6 +103,7 @@ function calculateImageCanvasGeometry(
 /** Derive decoded geometry from the currently mounted image. */
 export function createZoomableImageCanvasSignals(): ZoomableImageCanvasSignals {
   const image$ = state<HTMLImageElement | null>(null);
+  const navigationOwner$ = state<HTMLDivElement | null>(null);
   const internalZoom$ = state(1);
 
   const geometry$ = computed(async (get) => {
@@ -111,6 +117,23 @@ export function createZoomableImageCanvasSignals(): ZoomableImageCanvasSignals {
 
   return {
     geometry$,
+    navigationOwnerRef$: onRef(
+      command(({ get, set }, element: HTMLDivElement, signal: AbortSignal) => {
+        set(navigationOwner$, element);
+        signal.addEventListener(
+          "abort",
+          () => {
+            if (get(navigationOwner$) === element) {
+              set(navigationOwner$, null);
+            }
+          },
+          { once: true },
+        );
+      }),
+    ),
+    focusNavigationOwner$: command(({ get }) => {
+      get(navigationOwner$)?.focus({ preventScroll: true });
+    }),
     imageRef$: onRef(
       command(
         ({ get, set }, element: HTMLImageElement, signal: AbortSignal) => {

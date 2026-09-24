@@ -1,3 +1,4 @@
+import userEvent from "@testing-library/user-event";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import {
   artifactReferencePath,
@@ -202,7 +203,9 @@ test("The image viewer previews an image and navigates to the next one", async (
   });
   const dialog = screen.getByRole("dialog", { name: "first.png preview" });
   await waitFor(() => {
-    expect(dialog).toHaveFocus();
+    expect(
+      within(dialog).getByRole("group", { name: "first.png preview" }),
+    ).toHaveFocus();
   });
   const firstLightboxImage = getLightboxImage();
   expect(firstLightboxImage).not.toBeVisible();
@@ -219,10 +222,8 @@ test("The image viewer previews an image and navigates to the next one", async (
     screen.queryByRole("status", { name: "Loading artifacts" }),
   ).toBeNull();
   expect(queryButtonByName("Previous image artifact")).toBeUndefined();
-  const nextImage = await waitFor(() => {
-    return getButtonByName("Next image artifact");
-  });
-  click(nextImage);
+  expect(getButtonByName("Next image artifact")).toBeEnabled();
+  await userEvent.setup({ delay: null }).keyboard("{ArrowRight}");
   await waitFor(() => {
     expect(
       within(dialog).getByRole("status", { name: "Loading artifacts" }),
@@ -230,6 +231,7 @@ test("The image viewer previews an image and navigates to the next one", async (
   });
   expect(firstLightboxImage).not.toBeInTheDocument();
   expect(dialog).toHaveAccessibleName("second.png preview");
+  expect(within(dialog).getByRole("group")).toHaveFocus();
   secondUrlReady.resolve();
   await waitFor(() => {
     const image = getLightboxImage();
@@ -246,6 +248,7 @@ test("The image viewer previews an image and navigates to the next one", async (
     return secondDecode.resolve();
   });
   expect(secondLightboxImage).toHaveStyle({ width: "1200px" });
+  expect(within(dialog).getByRole("group")).toHaveFocus();
   expect(
     screen.queryByRole("status", { name: "Loading artifacts" }),
   ).toBeNull();
