@@ -34,7 +34,7 @@ import {
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { mockClerkUsers } from "./helpers/clerk-users";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { seedRetainedNativeMorningBriefForUser } from "./helpers/feature-switches";
 import {
   seedSlackOrgConnection$,
   seedSlackOrgInstallation$,
@@ -410,7 +410,7 @@ async function setupOwner(objectStorage: Map<string, Buffer>): Promise<{
     { slackWorkspaceId: slack.slackWorkspaceId, userId: actor.userId },
     context.signal,
   );
-  await updateFeatureSwitchesForUser(context, owner, {
+  await seedRetainedNativeMorningBriefForUser(context, owner, {
     [FeatureSwitchKey.NativeMorningBrief]: true,
   });
   await store.set(

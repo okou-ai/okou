@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   projectErasureDecision,
   type ErasureDecision,
@@ -30,7 +29,7 @@ import {
   startMorningBriefMembershipRemoval,
   waitForBlockingPid,
 } from "../../../test-fixtures/morning-brief-projection";
-import { updateFeatureSwitchesForUser } from "../../routes/__tests__/helpers/feature-switches";
+import { setHistoricalNativeMorningBriefForUser } from "../../routes/__tests__/helpers/feature-switches";
 import { loadMorningBriefMigrationState } from "../morning-brief-migration-state.service";
 import {
   readMorningBriefPreferenceProjection,
@@ -146,9 +145,7 @@ describe("Morning Brief installed preference projection persistence", () => {
     brief: InstalledBrief,
     enabled: boolean,
   ): Promise<void> {
-    await updateFeatureSwitchesForUser(context, brief.owner, {
-      [FeatureSwitchKey.NativeMorningBrief]: enabled,
-    });
+    await setHistoricalNativeMorningBriefForUser(context, brief.owner, enabled);
   }
 
   async function readProjectionRow(brief: InstalledBrief) {
