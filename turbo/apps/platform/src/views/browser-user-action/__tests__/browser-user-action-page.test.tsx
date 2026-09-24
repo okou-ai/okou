@@ -606,6 +606,7 @@ test("A changed select snapshot requires a fresh confirmation before submitting"
   let state: BrowserUserActionResponse["state"] = "pending";
   let preflights = 0;
   let applies = 0;
+  const submissions: unknown[] = [];
   const nextFingerprint = "b".repeat(64);
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, {
@@ -646,14 +647,8 @@ test("A changed select snapshot requires a fresh confirmation before submitting"
   });
   context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
     applies += 1;
+    submissions.push(body.values);
     if (applies === 1) {
-      expect(body.values).toStrictEqual([
-        {
-          key: "region",
-          optionIndexes: [2],
-          optionSetFingerprint: SELECT_FINGERPRINT,
-        },
-      ]);
       return respond(409, {
         error: {
           code: "BROWSER_USER_ACTION_INVALID_VALUE",
@@ -661,13 +656,6 @@ test("A changed select snapshot requires a fresh confirmation before submitting"
         },
       });
     }
-    expect(body.values).toStrictEqual([
-      {
-        key: "region",
-        optionIndexes: [1],
-        optionSetFingerprint: nextFingerprint,
-      },
-    ]);
     state = "succeeded";
     return respond(200, {
       ...selectAction({ required: true, multiple: false }),
@@ -705,6 +693,22 @@ test("A changed select snapshot requires a fresh confirmation before submitting"
   click(button("Add to browser"));
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   expect(applies).toBe(2);
+  expect(submissions).toStrictEqual([
+    [
+      {
+        key: "region",
+        optionIndexes: [2],
+        optionSetFingerprint: SELECT_FINGERPRINT,
+      },
+    ],
+    [
+      {
+        key: "region",
+        optionIndexes: [1],
+        optionSetFingerprint: nextFingerprint,
+      },
+    ],
+  ]);
 });
 
 test("Changed site constraints require a fresh preflight without losing ordinary draft text", async () => {
