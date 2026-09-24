@@ -176,7 +176,6 @@ describe("pinned Pi runtime capability", () => {
           modelProviderType,
           runtimeProviderType: modelProviderType,
           codexServiceTier: undefined,
-          piEnabled: true,
         }),
       ).toBe(modelProviderType !== "claude-code-oauth-token");
     }
@@ -200,7 +199,6 @@ describe("pinned Pi runtime capability", () => {
             modelProviderType,
             runtimeProviderType: modelProviderType,
             codexServiceTier: undefined,
-            piEnabled: true,
           }),
         ).toBe(true);
       }

@@ -10,7 +10,7 @@ import {
   activeInputDeliveryItems,
 } from "@okouai/db/schema/active-input-delivery";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { command } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
 
@@ -63,7 +63,7 @@ export const revokeQueuedMcpMessage$ = command(
               chatThreadOrganizationCondition(tx, principal.orgId),
             ),
           )
-          .for("update");
+          .for("no key update");
         const reference = {
           inputRef: input.inputRef,
         };

@@ -26,6 +26,7 @@ import type {
   DesktopDeveloperToolsApi,
   DesktopDeveloperToolsState,
 } from "../desktop-bridge";
+import type { DesktopLoginMethod } from "../desktop-login-method";
 import { App } from "./App";
 import { settleDesktopActions } from "./async-action";
 
@@ -286,10 +287,17 @@ function createComputerUseBridge(initialState: DesktopComputerUseState): {
   };
 }
 
-function createAuthBridge(initialState: DesktopAuthState): {
+function createAuthBridge(
+  initialState: DesktopAuthState,
+  loginMethod: DesktopLoginMethod,
+  nativeAvailable: boolean,
+): {
   readonly api: DesktopAuthApi;
   readonly getState: ReturnType<typeof vi.fn<DesktopAuthApi["getState"]>>;
   readonly openSignIn: ReturnType<typeof vi.fn<DesktopAuthApi["openSignIn"]>>;
+  readonly setLoginMethod: ReturnType<
+    typeof vi.fn<DesktopAuthApi["setLoginMethod"]>
+  >;
 } {
   let currentState = initialState;
   const subscribers = new Set<() => void>();
@@ -297,6 +305,9 @@ function createAuthBridge(initialState: DesktopAuthState): {
     return currentState;
   });
   const openSignIn = vi.fn<DesktopAuthApi["openSignIn"]>(async () => {});
+  const setLoginMethod = vi.fn<DesktopAuthApi["setLoginMethod"]>(
+    async () => {},
+  );
   const openOrgSelection = vi.fn<DesktopAuthApi["openOrgSelection"]>(
     async () => {},
   );
@@ -314,6 +325,11 @@ function createAuthBridge(initialState: DesktopAuthState): {
   });
   const api: DesktopAuthApi = {
     getState,
+    getLoginMethod: vi.fn(async () => ({
+      method: loginMethod,
+      nativeAvailable,
+    })),
+    setLoginMethod,
     openSignIn,
     openOrgSelection,
     signOut,
@@ -325,6 +341,7 @@ function createAuthBridge(initialState: DesktopAuthState): {
     api,
     getState,
     openSignIn,
+    setLoginMethod,
   };
 }
 
@@ -379,10 +396,14 @@ function createDeveloperToolsBridge(initialState: DesktopDeveloperToolsState): {
 
 function installDesktopBridges({
   authState = signedInAuthState,
+  loginMethod = "browser",
+  nativeAvailable = true,
   computerUseState = createComputerUseState(),
   developerToolsState = defaultDeveloperToolsState,
 }: {
   readonly authState?: DesktopAuthState;
+  readonly loginMethod?: DesktopLoginMethod;
+  readonly nativeAvailable?: boolean;
   readonly computerUseState?: DesktopComputerUseState;
   readonly developerToolsState?: DesktopDeveloperToolsState;
 } = {}): {
@@ -390,7 +411,7 @@ function installDesktopBridges({
   readonly computerUse: ReturnType<typeof createComputerUseBridge>;
   readonly developerTools: ReturnType<typeof createDeveloperToolsBridge>;
 } {
-  const auth = createAuthBridge(authState);
+  const auth = createAuthBridge(authState, loginMethod, nativeAvailable);
   const computerUse = createComputerUseBridge(computerUseState);
   const developerTools = createDeveloperToolsBridge(developerToolsState);
   window.vm0DesktopAuth = auth.api;
@@ -448,7 +469,40 @@ describe("Desktop renderer bridge integration", () => {
       screen
         .getAllByRole("heading", { level: 2 })
         .map((heading) => heading.textContent),
-    ).toEqual(["Filesystem plugin", "MCP servers", "Runtime", "Command Log"]);
+    ).toEqual([
+      "Login method",
+      "Filesystem plugin",
+      "MCP servers",
+      "Runtime",
+      "Command Log",
+    ]);
+  });
+
+  it("switches the login method from Developer Tools", async () => {
+    const { auth } = installDesktopBridges({
+      developerToolsState: { available: true, enabled: true },
+    });
+    renderDesktopApp();
+    const toggle = await screen.findByRole("checkbox", {
+      name: /Native Clerk sign-in/,
+    });
+    fireEvent.click(toggle);
+    await waitFor(() => {
+      expect(auth.setLoginMethod).toHaveBeenCalledWith("native");
+    });
+  });
+
+  it("offers browser sign-in recovery when native sign-in is unavailable", async () => {
+    const { auth } = installDesktopBridges({
+      authState: signedOutAuthState,
+      loginMethod: "native",
+      nativeAvailable: false,
+    });
+    renderDesktopApp();
+    fireEvent.click(await screen.findByText("Use browser sign-in"));
+    await waitFor(() => {
+      expect(auth.setLoginMethod).toHaveBeenCalledWith("browser");
+    });
   });
 
   it("keeps explicit native recovery reachable from permission setup", async () => {

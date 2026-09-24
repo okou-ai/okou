@@ -51,6 +51,7 @@ export const chatAutomationContext = pgTable(
   },
   (table) => {
     return [
+      index("chat_automation_context_thread_idx").on(table.chatThreadId),
       index("chat_automation_context_automation_id_idx").on(table.automationId),
     ];
   },

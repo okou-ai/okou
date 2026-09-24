@@ -16,6 +16,7 @@ enum Inner<S> {
     VerifiedTls(Box<TlsStream<S>>),
     AppleDhRaw(S),
     AppleSrpRaw(S),
+    AppleRsaSrpRaw(S),
 }
 
 impl<S> AuthenticatedStream<S> {
@@ -36,6 +37,12 @@ impl<S> AuthenticatedStream<S> {
             inner: Inner::AppleSrpRaw(stream),
         }
     }
+
+    pub(crate) fn apple_rsa_srp_raw(stream: S) -> Self {
+        Self {
+            inner: Inner::AppleRsaSrpRaw(stream),
+        }
+    }
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for AuthenticatedStream<S> {
@@ -48,6 +55,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for AuthenticatedStream<S> {
             Inner::VerifiedTls(stream) => Pin::new(stream.as_mut()).poll_read(cx, buf),
             Inner::AppleDhRaw(stream) => Pin::new(stream).poll_read(cx, buf),
             Inner::AppleSrpRaw(stream) => Pin::new(stream).poll_read(cx, buf),
+            Inner::AppleRsaSrpRaw(stream) => Pin::new(stream).poll_read(cx, buf),
         }
     }
 }
@@ -62,6 +70,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for AuthenticatedStream<S> {
             Inner::VerifiedTls(stream) => Pin::new(stream.as_mut()).poll_write(cx, buf),
             Inner::AppleDhRaw(stream) => Pin::new(stream).poll_write(cx, buf),
             Inner::AppleSrpRaw(stream) => Pin::new(stream).poll_write(cx, buf),
+            Inner::AppleRsaSrpRaw(stream) => Pin::new(stream).poll_write(cx, buf),
         }
     }
 
@@ -70,6 +79,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for AuthenticatedStream<S> {
             Inner::VerifiedTls(stream) => Pin::new(stream.as_mut()).poll_flush(cx),
             Inner::AppleDhRaw(stream) => Pin::new(stream).poll_flush(cx),
             Inner::AppleSrpRaw(stream) => Pin::new(stream).poll_flush(cx),
+            Inner::AppleRsaSrpRaw(stream) => Pin::new(stream).poll_flush(cx),
         }
     }
 
@@ -78,6 +88,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for AuthenticatedStream<S> {
             Inner::VerifiedTls(stream) => Pin::new(stream.as_mut()).poll_shutdown(cx),
             Inner::AppleDhRaw(stream) => Pin::new(stream).poll_shutdown(cx),
             Inner::AppleSrpRaw(stream) => Pin::new(stream).poll_shutdown(cx),
+            Inner::AppleRsaSrpRaw(stream) => Pin::new(stream).poll_shutdown(cx),
         }
     }
 }

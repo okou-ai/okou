@@ -42,7 +42,7 @@ const {
   webhooks,
   chatCallbacks,
   connectors,
-  entitledChatActor,
+  entitledChatActor: createEntitledChatActor,
   sendChatRun,
   claimChatRun,
   waitForThreadMessages,
@@ -52,6 +52,22 @@ const {
   chatEventsClient,
   sessionHeaders,
 } = createChatEventsFixture(context);
+
+// These sends observe claimable native Runner runs; Sonnet's Pi route can
+// finish API-first before the Runner claim, cancel, and callback steps run.
+async function entitledChatActor() {
+  const result = await createEntitledChatActor();
+  await api.updateOrgModelPolicies(result.actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: result.providerId,
+    },
+  ]);
+  return result;
+}
 
 type FailedMessage = Extract<ChatEvent, { eventType: "run.failed" }>;
 

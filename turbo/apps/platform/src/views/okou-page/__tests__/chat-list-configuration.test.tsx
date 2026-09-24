@@ -230,7 +230,7 @@ test("Conversation configuration arriving before creation is retained", async ()
 test("Media models do not overwrite one another or the run model", async () => {
   const auth = chatListAuth(6);
   const thread = chatListThread(38, "Independent media models", {
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     selectedVideoModel: "MiniMax-H3",
     selectedImageModel: "gpt-image-1",
   });
@@ -254,13 +254,11 @@ test("Media models do not overwrite one another or the run model", async () => {
     cachedChatThreadEvents: cachedChatListEvents(6, [thread]),
   });
 
-  await expectSelectedModel("Claude Sonnet 4.6");
+  await expectSelectedModel("Claude Sonnet 5");
   expectSelectedMediaModel(await openMediaCategory("Image"), "GPT Image 2");
   expectSelectedMediaModel(await openMediaCategory("Video"), "MiniMax H3");
   // Picking either media model must leave the run model where it was.
-  await expect(
-    composerModelTrigger("Claude Sonnet 4.6"),
-  ).resolves.toBeVisible();
+  await expect(composerModelTrigger("Claude Sonnet 5")).resolves.toBeVisible();
 });
 
 test("Service tier and Computer Use settings update independently", async () => {

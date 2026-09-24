@@ -8,7 +8,6 @@ import {
 import { apiClient$ } from "../../api-client.ts";
 import { resolveInitialLocaleFallbackFromBrowser } from "../../../i18n/locale-fallback.ts";
 import { isSupportedLocale } from "../../../i18n/resources.ts";
-import { retryMorningBriefPreference$ } from "./morning-brief-preference.ts";
 import { accept } from "../../../lib/accept.ts";
 
 // ---------------------------------------------------------------------------
@@ -126,8 +125,5 @@ export const updateUserPreference$ = command(
     signal.throwIfAborted();
 
     set(reloadUserPreferences$);
-    if (update.timezone !== undefined) {
-      set(retryMorningBriefPreference$);
-    }
   },
 );

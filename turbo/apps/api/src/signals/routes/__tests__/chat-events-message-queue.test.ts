@@ -36,7 +36,7 @@ const {
   chat,
   webhooks,
   chatCallbacks,
-  entitledChatActor,
+  entitledNativeChatActor,
   sendChatRun,
   expectNoThreadModelUpdateEvent,
   claimChatRun,
@@ -65,7 +65,7 @@ async function steerOwnedRunAtElapsedTime(
 
 describe("CHAT-02: queueing and recalling messages", () => {
   it("returns an empty active-input poll without waiting for the thread row", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const active = await sendChatRun(actor, {
@@ -114,7 +114,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 30_000);
 
   it("reserves rich inputs one at a time and settles concurrent receipts once", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const active = await sendChatRun(actor, {
@@ -274,7 +274,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("finalizes delivered input from completion receipts exactly once", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const active = await sendChatRun(actor, {
@@ -365,7 +365,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("settles delivered input with the terminal run transition", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const active = await sendChatRun(actor, {
@@ -434,7 +434,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("finalizes a late receipt without replaying terminal callbacks", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const active = await sendChatRun(actor, {
@@ -497,7 +497,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("releases prompts and expires budget input before draining in FIFO order", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const active = await sendChatRun(actor, {
@@ -599,7 +599,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("keeps cancelled deliveries as barriers after recovery expiry", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const active = await sendChatRun(actor, {
@@ -709,7 +709,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("settles timed-out delivery input when stopping the Runner fails", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped chat actor");
@@ -821,7 +821,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("cascades delivery state when its thread is deleted", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const active = await sendChatRun(actor, {
@@ -880,7 +880,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("classifies delivery lifecycle and authorization without route-level 404", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const emptyRun = await sendChatRun(actor, {
@@ -990,7 +990,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("applies the delivery-aware payload limit without consuming rejection", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const active = await sendChatRun(actor, {
@@ -1076,7 +1076,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("reserves and settles a run-scoped budget input", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const active = await sendChatRun(actor, {
@@ -1118,7 +1118,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("steers a run once when it reaches its time budget", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const active = await sendChatRun(actor, {
@@ -1185,7 +1185,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("does not carry an undelivered time budget input into a later run", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const first = await sendChatRun(actor, {
@@ -1220,7 +1220,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("queues, retries, and recalls messages behind an active run", async () => {
-    const { actor, agentId, providerId } = await entitledChatActor();
+    const { actor, agentId, providerId } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const first = await sendChatRun(actor, {
@@ -1245,7 +1245,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
     expect(queued.body.runId).toBeNull();
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "claude-opus-4-8",
+        model: "claude-opus-5",
         isDefault: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
@@ -1266,12 +1266,12 @@ describe("CHAT-02: queueing and recalling messages", () => {
     await expectNoThreadModelUpdateEvent(
       actor,
       first.threadId,
-      "claude-opus-4-8",
+      "claude-opus-5",
     );
 
     // Another user's send cannot claim the queued message's client id.
     const { actor: stranger, agentId: strangerAgentId } =
-      await entitledChatActor();
+      await entitledNativeChatActor();
     const strangerThread = await chat.createThread(stranger, {
       agentId: strangerAgentId,
       title: "Cross-user conflict thread",
@@ -1368,7 +1368,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("keeps a gap after concurrent idempotent sends reserve the same event", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const thread = await chat.createThread(actor, {
       agentId,
@@ -1430,7 +1430,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("keeps a queued message when recall targets another owned thread", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const anchor = await sendChatRun(actor, {
@@ -1494,7 +1494,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
 
 describe("CHAT-02: org queue markers", () => {
   it("marks queued chat runs and revokes the marker on dequeue", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
 

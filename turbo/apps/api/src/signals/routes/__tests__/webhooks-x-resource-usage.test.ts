@@ -761,6 +761,11 @@ describe("X daily resource usage webhook", () => {
     const configuredPricing = await pricing();
     const owner = await createRun();
     const survivor = await createRun();
+    // The threaded run must stay active until cancelled, so it uses Fable,
+    // which model policy keeps on the native Runner instead of Pi.
+    await runs.ensureOrgModelProvider(owner.actor, {
+      model: "claude-fable-5-1",
+    });
     const chat = createChatFilesBddApi(context);
     const callbacks = createChatCallbacksApi(context);
     callbacks.acceptChatObjectStorage();
@@ -935,7 +940,13 @@ describe("X daily resource usage webhook", () => {
         type: subjectKind === "user" ? "user.deleted" : "organization.deleted",
         data: { id: subjectId },
       });
-      await callbacks.requestClerkWebhook("{}", {}, [200]);
+      await gate.withAcquisitionAttemptTracking(async () => {
+        await callbacks.requestClerkWebhook("{}", {}, [200]);
+      });
+      // User deletion first captures its durable erasure inventory, which can
+      // finish after the webhook responds. Wait for this cleanup's own lock
+      // attempt before observing its blocked database participant.
+      await gate.acquisitionAttempted;
       await expect.poll(gate.waiterCount).toBeGreaterThanOrEqual(1);
 
       // Clerk must wait before owning the Run. Taking it first would make its

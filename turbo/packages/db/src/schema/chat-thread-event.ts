@@ -48,7 +48,10 @@ export const chatThreadEventSequences = pgTable(
     lastSeqId: bigint("last_seq_id", { mode: "number" }).default(0).notNull(),
   },
   (table) => {
-    return [primaryKey({ columns: [table.userId, table.orgId] })];
+    return [
+      primaryKey({ columns: [table.userId, table.orgId] }),
+      index("chat_thread_event_sequences_org_idx").on(table.orgId),
+    ];
   },
 );
 
@@ -99,6 +102,7 @@ export const chatThreadEvents = pgTable(
         table.createdAt,
         table.id,
       ),
+      index("chat_thread_events_org_idx").on(table.orgId),
       index("idx_chat_thread_events_thread_created").on(
         table.chatThreadId,
         table.createdAt,

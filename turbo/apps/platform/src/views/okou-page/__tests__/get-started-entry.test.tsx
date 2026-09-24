@@ -15,6 +15,7 @@ import {
   integrationsSlackContract,
   type SlackOrgStatus,
 } from "@okouai/api-contracts/contracts/integrations-slack";
+import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test, vi } from "vitest";
 
@@ -146,7 +147,14 @@ function mockQuestCatalog(): void {
 function configureQuestPage(
   context: TestContext,
   role: "admin" | "member",
-  { claimedToday = true }: { claimedToday?: boolean } = {},
+  {
+    claimedToday = true,
+    imessage = false,
+  }: {
+    claimedToday?: boolean;
+    /** Whether the status lists the iMessage quest. */
+    imessage?: boolean;
+  } = {},
 ): GetStartedStatus {
   context.mocks.data.org({
     id: "org_default",
@@ -170,7 +178,7 @@ function configureQuestPage(
   context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
     return respond(200, slackInstalled());
   });
-  const keys =
+  const roleKeys =
     role === "admin"
       ? ([
           "connector",
@@ -181,6 +189,9 @@ function configureQuestPage(
           "checkin",
         ] as const)
       : (["connector", "workflow", "share", "checkin"] as const);
+  const keys = imessage
+    ? [...roleKeys.slice(0, 1), "imessage" as const, ...roleKeys.slice(1)]
+    : roleKeys;
   const data: GetStartedStatus = {
     serverNow: "2026-09-15T12:00:00.000Z",
     nextResetAt: "2026-09-16T00:00:00.000Z",
@@ -491,6 +502,145 @@ test("Sharing on X restores pending state and an Ably review notification update
     within(afterReview).findByText("2,400 earned"),
   ).resolves.toBeInTheDocument();
   expect(within(afterReview).queryByText("In review")).not.toBeInTheDocument();
+});
+
+function mockPhoneLinkCode(code: string): void {
+  context.mocks.api(
+    integrationsAgentPhoneContract.createLinkCode,
+    ({ respond }) => {
+      return respond(200, {
+        code,
+        expiresAt: "2026-09-15T12:10:00.000Z",
+      });
+    },
+  );
+}
+
+async function openImessageQuestDialog(): Promise<HTMLElement> {
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-imessage"));
+  return await screen.findByRole("dialog", {
+    name: "Text Okou from your iPhone",
+  });
+}
+
+test("Adding iMessage opens the phone connect dialog with its reward", async () => {
+  configureQuestPage(context, "member", { imessage: true });
+  const code = "31415926";
+  mockPhoneLinkCode(code);
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+
+  const entry = await waitFor(() => {
+    return screen.getByTestId("get-started-entry");
+  });
+  expect(normalizedText(entry)).toBe("Get more credits2/5");
+  await openQuestPanel();
+  const row = screen.getByTestId("get-started-quest-imessage");
+  expect(normalizedText(row)).toBe("Add to iMessage+1,000Add");
+  click(row);
+
+  const dialog = await screen.findByRole("dialog", {
+    name: "Text Okou from your iPhone",
+  });
+  expect(dialog).toHaveAccessibleDescription(
+    "Scan with your camera, then send the prefilled code.",
+  );
+  await expect(within(dialog).findByText("+1,000")).resolves.toBeVisible();
+  await expect(
+    within(dialog).findByTestId("agentphone-link-qr"),
+  ).resolves.toHaveAttribute("data-sms-href", `sms:+19039853128?body=${code}`);
+  expect(within(dialog).queryByText("Later")).not.toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button", dialog).map((button) => {
+      return button.getAttribute("aria-label") ?? normalizedText(button);
+    }),
+  ).toStrictEqual([
+    `Copy connection code ${code}`,
+    "Copy +1 (903) 985-3128",
+    "Close",
+  ]);
+});
+
+test("Linking the phone closes the Get started dialog and completes the quest", async () => {
+  const data = configureQuestPage(context, "member", { imessage: true });
+  mockPhoneLinkCode("27182818");
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+
+  const dialog = await openImessageQuestDialog();
+  await expect(
+    within(dialog).findByTestId("agentphone-link-qr"),
+  ).resolves.toBeInTheDocument();
+
+  // The code arrives from the phone: the API links it, grants the quest, and
+  // announces both.
+  const imessage = data.quests.find((quest) => {
+    return quest.key === "imessage";
+  });
+  if (!imessage) {
+    throw new Error("Missing iMessage fixture");
+  }
+  Object.assign(imessage, {
+    claimedCount: 1,
+    earnedCredits: 1000,
+    canEarnMore: false,
+  });
+  context.mocks.data.agentPhoneIntegration({
+    linked: true,
+    phoneHandle: "+15555550123",
+    agentPhoneNumber: "+19039853128",
+    configured: true,
+  });
+  context.mocks.ably.trigger("agentphone:changed");
+  context.mocks.ably.trigger(GET_STARTED_REWARDS_CHANGED_EVENT);
+
+  await expect(
+    screen.findByText("Phone number connected"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Text Okou from your iPhone" }),
+    ).not.toBeInTheDocument();
+  });
+  await waitFor(() => {
+    expect(normalizedText(screen.getByTestId("get-started-entry"))).toBe(
+      "Get more credits3/5",
+    );
+  });
+});
+
+test("A phone linked before the quest existed reads as done, without credits", async () => {
+  configureQuestPage(context, "member", { imessage: true });
+  context.mocks.data.agentPhoneIntegration({
+    linked: true,
+    phoneHandle: "+15555550123",
+    agentPhoneNumber: "+19039853128",
+    configured: true,
+  });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+
+  const entry = await waitFor(() => {
+    return screen.getByTestId("get-started-entry");
+  });
+  expect(normalizedText(entry)).toBe("Get more credits3/5");
+  const panel = await openQuestPanel();
+  const row = screen.getByTestId("get-started-quest-imessage");
+  // Finished: a status line with the completion check, nothing to press.
+  expect(row.getAttribute("role")).not.toBe("menuitem");
+  expect(within(row).queryByText("Add")).not.toBeInTheDocument();
+  // No claim was ever granted, so the earned total is unchanged.
+  expect(within(panel).getByText("400 earned")).toBeInTheDocument();
 });
 
 test("The entry stays hidden while the switch is off", async () => {

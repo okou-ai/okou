@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, inArray, max, sql } from "drizzle-orm";
 import { z } from "zod";
 

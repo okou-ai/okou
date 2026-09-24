@@ -456,6 +456,7 @@ interface BrowserUserActionMutationContext {
   readonly refresh$: BrowserUserActionSignals["refresh$"];
   readonly draft$: BrowserUserActionSignals["draft$"];
   readonly entryAction$: BrowserUserActionSignals["entryAction$"];
+  readonly entryState$: BrowserUserActionSignals["entryState$"];
   readonly invalidateEntry$: BrowserUserActionSignals["invalidateEntry$"];
   readonly clearDraft$: BrowserUserActionSignals["clearDraft$"];
   readonly activeMutation$: State<boolean>;
@@ -512,6 +513,7 @@ function createSubmitSignal({
   refresh$,
   draft$,
   entryAction$,
+  entryState$,
   invalidateEntry$,
   clearDraft$,
   activeMutation$,
@@ -533,15 +535,19 @@ function createSubmitSignal({
     ) {
       return;
     }
-    const entryAction = get(entryAction$);
-    if (
-      !entryAction ||
-      !actionMatches(entryAction, descriptor) ||
-      entryAction.state !== "pending"
-    ) {
+    const entryState = get(entryState$);
+    if (entryState === "unavailable" || entryState === "invalid") {
       return;
     }
-    const values = browserInputSubmissionValues(entryAction, get(draft$));
+    const entryAction = get(entryAction$);
+    if (entryAction && !actionMatches(entryAction, descriptor)) {
+      return;
+    }
+    const action = entryState === "ready" ? entryAction : request.action;
+    if (!action || action.state !== "pending") {
+      return;
+    }
+    const values = browserInputSubmissionValues(action, get(draft$));
     if (!values) {
       return;
     }
@@ -709,6 +715,7 @@ function createMutationSignals({
   draft$,
   clearDraft$,
   entryAction$,
+  entryState$,
   invalidateEntry$,
 }: Pick<
   BrowserUserActionMutationContext,
@@ -718,6 +725,7 @@ function createMutationSignals({
   | "draft$"
   | "clearDraft$"
   | "entryAction$"
+  | "entryState$"
   | "invalidateEntry$"
 >): Pick<
   BrowserUserActionSignals,
@@ -759,6 +767,7 @@ function createMutationSignals({
     refresh$,
     draft$,
     entryAction$,
+    entryState$,
     invalidateEntry$,
     clearDraft$,
     activeMutation$,
@@ -842,6 +851,7 @@ export function createBrowserUserActionSignals(
     draft$: draftSignals.draft$,
     clearDraft$: draftSignals.clearDraft$,
     entryAction$: entrySignals.entryAction$,
+    entryState$: entrySignals.entryState$,
     invalidateEntry$: entrySignals.invalidateEntry$,
   });
   return {

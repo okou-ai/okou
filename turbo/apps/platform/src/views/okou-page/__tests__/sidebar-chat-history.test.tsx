@@ -753,6 +753,10 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
       expect.stringMatching(/^Unread/u),
     ]);
   });
+  expect(menuItemByText("Mark all read")).not.toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
   const menuWithMarkAllRead =
     document.querySelector<HTMLElement>('[role="menu"]');
   if (!menuWithMarkAllRead) {
@@ -780,20 +784,27 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
 
   click(within(list).getByLabelText("Open chat list menu"));
   await waitFor(() => {
-    expect(queryMenuItemByText("Mark all read")).not.toBeInTheDocument();
+    expect(menuItemByText("Mark all read")).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     expect(
       queryAllByRoleFast("menuitem").map((item) => {
         return item.textContent?.replace(/\s+/g, " ").trim();
       }),
-    ).toStrictEqual(["All chats", expect.stringMatching(/^Unread/u)]);
-    const menuWithoutMarkAllRead =
+    ).toStrictEqual([
+      "Mark all read",
+      "All chats",
+      expect.stringMatching(/^Unread/u),
+    ]);
+    const menuWithDisabledMarkAllRead =
       document.querySelector<HTMLElement>('[role="menu"]');
-    if (!menuWithoutMarkAllRead) {
+    if (!menuWithDisabledMarkAllRead) {
       throw new Error("Open chat list menu not found");
     }
     expect(
-      menuWithoutMarkAllRead.querySelectorAll('[role="separator"]'),
-    ).toHaveLength(0);
+      menuWithDisabledMarkAllRead.querySelectorAll('[role="separator"]'),
+    ).toHaveLength(1);
   });
 });
 

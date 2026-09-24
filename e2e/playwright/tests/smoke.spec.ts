@@ -33,14 +33,17 @@ test("send a message and receive the assistant reply", async ({ page }) => {
     waitUntil: "domcontentloaded",
   });
 
-  const marker = `PRODUCT_CHAT_E2E_${Date.now()}`;
+  const expectedAnswer = "RESULT=3";
   const composer = page.locator('[data-slot="chat-composer-card"]');
   await composer
     .getByRole("textbox", { name: "Message" })
-    .fill(`printf '%s' '${marker}'`);
+    .fill("1 + 2. Reply only RESULT=<answer>.");
   await composer.getByRole("button", { name: "Send" }).click();
 
   await expect(
-    page.locator('[data-role="assistant"]').filter({ hasText: marker }).first(),
-  ).toContainText(marker, { timeout: 90_000 });
+    page
+      .locator('[data-role="assistant"]')
+      .filter({ hasText: expectedAnswer })
+      .first(),
+  ).toContainText(expectedAnswer, { timeout: 90_000 });
 });

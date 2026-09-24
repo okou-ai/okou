@@ -1,3 +1,6 @@
+// Codex 0.156.1 catalog snapshot for the exact GPT-6 backing models.
+import OKOU_CODEX_MODEL_MESSAGES from "./okou-codex-model-messages.json" with { type: "json" };
+
 export const OKOU_RUN_MODELS = [
   "okou-1.0",
   "okou-1.0-pro",
@@ -182,6 +185,7 @@ export const OKOU_MODEL_CODEX_CATALOG = {
       effective_context_window_percent:
         metadata.codex.effectiveContextWindowPercent,
       input_modalities: [...metadata.inputModalities],
+      model_messages: OKOU_CODEX_MODEL_MESSAGES[metadata.backingModel],
     };
   }),
 };

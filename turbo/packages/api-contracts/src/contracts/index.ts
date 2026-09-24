@@ -1949,6 +1949,28 @@ export {
   type TelegramSetupStatus,
 } from "./integrations-telegram";
 export {
+  discordContextModeSchema,
+  discordOrgStatusSchema,
+  integrationsDiscordContract,
+  type DiscordContextMode,
+  type DiscordOrgStatus,
+  type IntegrationsDiscordContract,
+} from "./integrations-discord";
+export {
+  DISCORD_GATEWAY_TIMESTAMP_HEADER,
+  DISCORD_GATEWAY_SIGNATURE_HEADER,
+  DISCORD_GATEWAY_MAX_CLOCK_SKEW_SECONDS,
+  DISCORD_GATEWAY_AUTH_TEST_VECTORS,
+  discordGatewayEnvelopeSchema,
+  discordGatewayHeadersSchema,
+  discordGatewayReceiptSchema,
+  discordGatewaySigningPayload,
+  discordGatewayContract,
+  type DiscordGatewayEnvelope,
+  type DiscordGatewayReceipt,
+  type DiscordGatewayContract,
+} from "./discord-gateway";
+export {
   integrationsAgentPhoneContract,
   type IntegrationsAgentPhoneContract,
   type AgentPhoneConnectResponse,

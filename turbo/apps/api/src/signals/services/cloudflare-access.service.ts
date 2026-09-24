@@ -1,15 +1,18 @@
+import { createHash } from "node:crypto";
 import type {
   CloudflareAccessConfig,
   ScopedCloudflareAccessConfig,
   CreateCloudflareAccessConfigRequest,
   CreateCloudflareAccessRequest,
   UpdateCloudflareAccessRequest,
+  ConvertCloudflareAccessRequest,
+  DeleteCloudflareAccessRequest,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/cloudflare-access-errors";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
-import { and, asc, eq, or, sql } from "drizzle-orm";
+import { and, asc, eq, ne, or, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
 import { encryptStoredSecretValue } from "./crypto.utils";
@@ -26,12 +29,7 @@ interface Owner {
   readonly orgId: string;
   readonly userId: string;
 }
-// Old App -> new API: absent view=scoped retains the personal-only projection.
-// Remove this bridge after #36261 is live and #36262 verifies the minimum App
-// version excludes old builds.
-type ConfigView = "legacy" | "scoped";
 type AccessScope = "personal" | "organization";
-type ConfigResponse = CloudflareAccessConfig | ScopedCloudflareAccessConfig;
 interface Actor extends Owner {
   readonly orgRole?: "admin" | "member";
 }
@@ -66,6 +64,11 @@ const failures = {
     code: CLOUDFLARE_ACCESS_ERROR_CODES.REVISION_CONFLICT,
     message: "Cloudflare Access was modified by another request",
   },
+  impactConflict: {
+    kind: "conflict",
+    code: CLOUDFLARE_ACCESS_ERROR_CODES.IMPACT_CONFLICT,
+    message: "Cloudflare Access host impact changed; review it again",
+  },
   inUse: {
     kind: "conflict",
     code: CLOUDFLARE_ACCESS_ERROR_CODES.IN_USE,
@@ -95,17 +98,19 @@ function ownedConfig(owner: Owner, id?: string) {
     id === undefined ? undefined : eq(cloudflareAccessConfigs.id, id),
   );
 }
-function visibleConfig(owner: Owner, view: ConfigView, id?: string) {
-  return view === "legacy"
-    ? ownedConfig(owner, id)
-    : and(
-        eq(cloudflareAccessConfigs.orgId, owner.orgId),
-        or(
-          eq(cloudflareAccessConfigs.scope, "organization"),
-          ownedConfig(owner),
-        ),
-        id === undefined ? undefined : eq(cloudflareAccessConfigs.id, id),
-      );
+function visibleConfig(owner: Owner, id?: string) {
+  return and(
+    eq(cloudflareAccessConfigs.orgId, owner.orgId),
+    or(eq(cloudflareAccessConfigs.scope, "organization"), ownedConfig(owner)),
+    id === undefined ? undefined : eq(cloudflareAccessConfigs.id, id),
+  );
+}
+function organizationConfig(owner: Owner, id: string) {
+  return and(
+    eq(cloudflareAccessConfigs.orgId, owner.orgId),
+    eq(cloudflareAccessConfigs.id, id),
+    eq(cloudflareAccessConfigs.scope, "organization"),
+  );
 }
 export async function lockCloudflareAccessConfigForBinding(
   tx: Transaction,
@@ -115,29 +120,25 @@ export async function lockCloudflareAccessConfigForBinding(
   const [row] = await tx
     .select(metadata)
     .from(cloudflareAccessConfigs)
-    .where(visibleConfig(owner, "scoped", id))
+    .where(visibleConfig(owner, id))
     .for("share");
   return row;
 }
 function response(
   row: Metadata,
   sshHosts: CloudflareAccessConfig["sshHosts"],
-  view: ConfigView,
-): ConfigResponse {
-  const { scope, ...legacy } = row;
-  const base = {
-    ...legacy,
+): ScopedCloudflareAccessConfig {
+  return {
+    ...row,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     sshHosts,
   };
-  return view === "scoped" ? { ...base, scope } : base;
 }
 export async function listCloudflareAccessConfigs(
   db: ReadonlyDb,
   owner: Owner,
-  view: ConfigView = "legacy",
-): Promise<ConfigResponse[]> {
+): Promise<ScopedCloudflareAccessConfig[]> {
   const rows = await db
     .select({
       config: metadata,
@@ -152,17 +153,17 @@ export async function listCloudflareAccessConfigs(
         eq(sshConnections.userId, owner.userId),
       ),
     )
-    .where(visibleConfig(owner, view))
+    .where(visibleConfig(owner))
     .orderBy(
       asc(cloudflareAccessConfigs.createdAt),
       asc(cloudflareAccessConfigs.id),
       asc(sshConnections.id),
     );
-  const configs = new Map<string, ConfigResponse>();
+  const configs = new Map<string, ScopedCloudflareAccessConfig>();
   for (const row of rows) {
     let config = configs.get(row.config.id);
     if (!config) {
-      config = response(row.config, [], view);
+      config = response(row.config, []);
       configs.set(config.id, config);
     }
     if (row.host) {
@@ -201,7 +202,6 @@ export async function insertCloudflareAccessConfig(
   options: {
     readonly id?: string;
     readonly scope?: AccessScope;
-    readonly view?: ConfigView;
   } = {},
 ) {
   const scope = options.scope ?? "personal";
@@ -218,7 +218,7 @@ export async function insertCloudflareAccessConfig(
   if (!created) {
     throw new Error("Cloudflare Access insert returned no row");
   }
-  return response(created, [], options.view ?? "legacy");
+  return response(created, []);
 }
 export async function createCloudflareAccessConfig(args: {
   readonly db: Db;
@@ -226,13 +226,8 @@ export async function createCloudflareAccessConfig(args: {
   readonly body: CreateCloudflareAccessConfigRequest;
   readonly id: string;
   readonly featureContext: FeatureSwitchContext;
-  readonly view?: ConfigView;
 }) {
   const scope = args.body.scope ?? "personal";
-  const view = args.view ?? "legacy";
-  if (scope === "organization" && view !== "scoped") {
-    return cloudflareAccessFailure("notFound");
-  }
   if (scope === "organization" && args.owner.orgRole !== "admin") {
     return cloudflareAccessFailure("forbidden");
   }
@@ -260,7 +255,6 @@ export async function createCloudflareAccessConfig(args: {
     const value = await insertCloudflareAccessConfig(tx, args.owner, prepared, {
       id: args.id,
       scope,
-      view,
     });
     return { ok: true as const, value };
   });
@@ -295,10 +289,8 @@ function lockReferencingHosts(
     .orderBy(asc(sshConnections.id))
     .for("update");
 }
-function managementFailure(config: Metadata, actor: Actor, view: ConfigView) {
-  return config.scope === "organization" &&
-    view === "scoped" &&
-    actor.orgRole !== "admin"
+function managementFailure(config: Metadata, actor: Actor) {
+  return config.scope === "organization" && actor.orgRole !== "admin"
     ? cloudflareAccessFailure("forbidden")
     : null;
 }
@@ -356,17 +348,15 @@ export async function updateCloudflareAccessConfig(args: {
   readonly configId: string;
   readonly body: UpdateCloudflareAccessRequest;
   readonly featureContext: FeatureSwitchContext;
-  readonly view?: ConfigView;
 }) {
-  const view = args.view ?? "legacy";
   const [current] = await args.db
     .select(metadata)
     .from(cloudflareAccessConfigs)
-    .where(visibleConfig(args.owner, view, args.configId));
+    .where(visibleConfig(args.owner, args.configId));
   if (!current) {
     return cloudflareAccessFailure("notFound");
   }
-  const denied = managementFailure(current, args.owner, view);
+  const denied = managementFailure(current, args.owner);
   if (denied) {
     return denied;
   }
@@ -381,12 +371,12 @@ export async function updateCloudflareAccessConfig(args: {
     const [config] = await tx
       .select(metadata)
       .from(cloudflareAccessConfigs)
-      .where(visibleConfig(args.owner, view, args.configId))
+      .where(visibleConfig(args.owner, args.configId))
       .for("update");
     if (!config) {
       return cloudflareAccessFailure("notFound");
     }
-    const denied = managementFailure(config, args.owner, view);
+    const denied = managementFailure(config, args.owner);
     if (denied) {
       return denied;
     }
@@ -419,7 +409,7 @@ export async function updateCloudflareAccessConfig(args: {
         generation: config.generation + (effective ? 1 : 0),
         updatedAt: nowDate(),
       })
-      .where(visibleConfig(args.owner, view, args.configId))
+      .where(visibleConfig(args.owner, args.configId))
       .returning(metadata);
     if (!updated) {
       throw new Error("Cloudflare Access update returned no row");
@@ -452,7 +442,6 @@ export async function updateCloudflareAccessConfig(args: {
           .map(({ id, displayName }) => {
             return { id, displayName };
           }),
-        view,
       ),
       affectedHosts: effective ? hosts : [],
       scope: config.scope,
@@ -472,20 +461,18 @@ export async function deleteCloudflareAccessConfig(args: {
   readonly db: Db;
   readonly owner: Actor;
   readonly configId: string;
-  readonly expectedRevision: number;
-  readonly view?: ConfigView;
+  readonly body: DeleteCloudflareAccessRequest;
 }) {
-  const view = args.view ?? "legacy";
   const result = await args.db.transaction(async (tx) => {
     const [config] = await tx
       .select(metadata)
       .from(cloudflareAccessConfigs)
-      .where(visibleConfig(args.owner, view, args.configId))
+      .where(visibleConfig(args.owner, args.configId))
       .for("update");
     if (!config) {
       return cloudflareAccessFailure("notFound");
     }
-    const denied = managementFailure(config, args.owner, view);
+    const denied = managementFailure(config, args.owner);
     if (denied) {
       return denied;
     }
@@ -495,19 +482,375 @@ export async function deleteCloudflareAccessConfig(args: {
       args.configId,
       config.scope,
     );
-    if (config.revision !== args.expectedRevision) {
+    if (config.revision !== args.body.expectedRevision) {
       return cloudflareAccessFailure("conflict");
     }
-    if (hosts.length > 0) {
+    if (
+      hosts.some((host) => {
+        return host.userId === args.owner.userId;
+      })
+    ) {
       return cloudflareAccessFailure("inUse");
+    }
+    if (
+      (args.body.impactSnapshot !== undefined &&
+        args.body.impactSnapshot !== impactSnapshot(config, hosts)) ||
+      (hosts.length > 0 &&
+        (config.scope !== "organization" ||
+          args.body.impactSnapshot === undefined))
+    ) {
+      return cloudflareAccessFailure("impactConflict");
+    }
+    if (
+      hosts.some((host) => {
+        return host.generation === 2_147_483_647;
+      })
+    ) {
+      return cloudflareAccessFailure("exhausted");
+    }
+    if (hosts.length > 0) {
+      await tx
+        .update(sshConnections)
+        .set({
+          cloudflareAccessId: null,
+          needsRebind: true,
+          generation: sql`${sshConnections.generation} + 1`,
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(sshConnections.orgId, args.owner.orgId),
+            eq(sshConnections.cloudflareAccessId, args.configId),
+            ne(sshConnections.userId, args.owner.userId),
+          ),
+        );
     }
     await tx
       .delete(cloudflareAccessConfigs)
-      .where(visibleConfig(args.owner, view, args.configId));
+      .where(visibleConfig(args.owner, args.configId));
     return { ok: true as const, value: undefined, scope: config.scope };
   });
   if (result.ok) {
     await publishCloudflareAccessClientInvalidation(args.owner, result.scope);
+  }
+  return result;
+}
+
+type ReferencingHost = Awaited<ReturnType<typeof lockReferencingHosts>>[number];
+
+function impactSnapshot(
+  config: Metadata,
+  hosts: readonly Pick<ReferencingHost, "id" | "userId" | "generation">[],
+) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        config.id,
+        config.revision,
+        hosts.map((host) => {
+          return [host.id, host.userId, host.generation];
+        }),
+      ]),
+    )
+    .digest("hex");
+}
+
+export async function previewCloudflareAccessDeletion(args: {
+  readonly db: ReadonlyDb;
+  readonly owner: Actor;
+  readonly configId: string;
+}) {
+  if (args.owner.orgRole !== "admin") {
+    return cloudflareAccessFailure("forbidden");
+  }
+  const [config] = await args.db
+    .select(metadata)
+    .from(cloudflareAccessConfigs)
+    .where(organizationConfig(args.owner, args.configId));
+  if (!config) {
+    return cloudflareAccessFailure("notFound");
+  }
+  const hosts = await args.db
+    .select({
+      id: sshConnections.id,
+      userId: sshConnections.userId,
+      generation: sshConnections.generation,
+    })
+    .from(sshConnections)
+    .where(
+      and(
+        eq(sshConnections.orgId, args.owner.orgId),
+        eq(sshConnections.cloudflareAccessId, args.configId),
+      ),
+    )
+    .orderBy(asc(sshConnections.id));
+  const counts = new Map<string, number>();
+  for (const host of hosts) {
+    if (host.userId !== args.owner.userId) {
+      counts.set(host.userId, (counts.get(host.userId) ?? 0) + 1);
+    }
+  }
+  return {
+    ok: true as const,
+    value: {
+      expectedRevision: config.revision,
+      ownHostCount: hosts.filter((host) => {
+        return host.userId === args.owner.userId;
+      }).length,
+      affectedOwners: [...counts]
+        .sort(([a], [b]) => {
+          return a.localeCompare(b);
+        })
+        .map(([userId, hostCount]) => {
+          return {
+            userId,
+            displayName: null as string | null,
+            hostCount,
+          };
+        }),
+      impactSnapshot: impactSnapshot(config, hosts),
+    },
+  };
+}
+
+export async function convertCloudflareAccessToOrganization(args: {
+  readonly db: Db;
+  readonly owner: Actor;
+  readonly configId: string;
+  readonly expectedRevision: number;
+}) {
+  if (args.owner.orgRole !== "admin") {
+    return cloudflareAccessFailure("forbidden");
+  }
+  const result = await args.db.transaction(async (tx) => {
+    const [config] = await tx
+      .select(metadata)
+      .from(cloudflareAccessConfigs)
+      .where(ownedConfig(args.owner, args.configId))
+      .for("update");
+    if (!config) {
+      return cloudflareAccessFailure("notFound");
+    }
+    const hosts = await lockReferencingHosts(
+      tx,
+      args.owner,
+      args.configId,
+      "personal",
+    );
+    if (config.revision !== args.expectedRevision) {
+      return cloudflareAccessFailure("conflict");
+    }
+    if (
+      config.revision === 2_147_483_647 ||
+      config.generation === 2_147_483_647 ||
+      hosts.some((host) => {
+        return host.generation === 2_147_483_647;
+      })
+    ) {
+      return cloudflareAccessFailure("exhausted");
+    }
+    const [converted] = await tx
+      .update(cloudflareAccessConfigs)
+      .set({
+        scope: "organization",
+        userId: null,
+        revision: config.revision + 1,
+        generation: config.generation + 1,
+        updatedAt: nowDate(),
+      })
+      .where(ownedConfig(args.owner, args.configId))
+      .returning(metadata);
+    if (!converted) {
+      throw new Error("Cloudflare Access promotion returned no row");
+    }
+    if (hosts.length > 0) {
+      await tx
+        .update(sshConnections)
+        .set({
+          generation: sql`${sshConnections.generation} + 1`,
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(sshConnections.orgId, args.owner.orgId),
+            eq(sshConnections.cloudflareAccessId, args.configId),
+            eq(sshConnections.userId, args.owner.userId),
+          ),
+        );
+    }
+    return {
+      ok: true as const,
+      value: response(
+        converted,
+        hosts.map(({ id, displayName }) => {
+          return { id, displayName };
+        }),
+      ),
+      affectedHosts: hosts,
+    };
+  });
+  if (result.ok) {
+    await publishUpdateInvalidation(
+      args.db,
+      args.owner,
+      "organization",
+      result.affectedHosts,
+    );
+  }
+  return result;
+}
+
+export async function previewCloudflareAccessConversion(args: {
+  readonly db: ReadonlyDb;
+  readonly owner: Actor;
+  readonly configId: string;
+}) {
+  const [config] = await args.db
+    .select(metadata)
+    .from(cloudflareAccessConfigs)
+    .where(organizationConfig(args.owner, args.configId));
+  if (!config) {
+    return cloudflareAccessFailure("notFound");
+  }
+  if (args.owner.orgRole !== "admin") {
+    return cloudflareAccessFailure("forbidden");
+  }
+  const hosts = await args.db
+    .select({
+      id: sshConnections.id,
+      userId: sshConnections.userId,
+      displayName: sshConnections.displayName,
+      generation: sshConnections.generation,
+    })
+    .from(sshConnections)
+    .where(
+      and(
+        eq(sshConnections.orgId, args.owner.orgId),
+        eq(sshConnections.cloudflareAccessId, args.configId),
+      ),
+    )
+    .orderBy(asc(sshConnections.id));
+  return {
+    ok: true as const,
+    value: {
+      expectedRevision: config.revision,
+      otherHostCount: hosts.filter((host) => {
+        return host.userId !== args.owner.userId;
+      }).length,
+      impactSnapshot: impactSnapshot(config, hosts),
+    },
+  };
+}
+
+export async function convertCloudflareAccessToPersonal(args: {
+  readonly db: Db;
+  readonly owner: Actor;
+  readonly configId: string;
+  readonly body: ConvertCloudflareAccessRequest;
+}) {
+  if (args.owner.orgRole !== "admin") {
+    return cloudflareAccessFailure("forbidden");
+  }
+  const result = await args.db.transaction(async (tx) => {
+    const [config] = await tx
+      .select(metadata)
+      .from(cloudflareAccessConfigs)
+      .where(organizationConfig(args.owner, args.configId))
+      .for("update");
+    if (!config) {
+      return cloudflareAccessFailure("notFound");
+    }
+    const hosts = await lockReferencingHosts(
+      tx,
+      args.owner,
+      args.configId,
+      "organization",
+    );
+    if (config.revision !== args.body.expectedRevision) {
+      return cloudflareAccessFailure("conflict");
+    }
+    if (impactSnapshot(config, hosts) !== args.body.impactSnapshot) {
+      return cloudflareAccessFailure("impactConflict");
+    }
+    if (
+      config.revision === 2_147_483_647 ||
+      config.generation === 2_147_483_647 ||
+      hosts.some((host) => {
+        return host.generation === 2_147_483_647;
+      })
+    ) {
+      return cloudflareAccessFailure("exhausted");
+    }
+    if (
+      hosts.some((host) => {
+        return host.userId !== args.owner.userId;
+      })
+    ) {
+      await tx
+        .update(sshConnections)
+        .set({
+          cloudflareAccessId: null,
+          needsRebind: true,
+          generation: sql`${sshConnections.generation} + 1`,
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(sshConnections.orgId, args.owner.orgId),
+            eq(sshConnections.cloudflareAccessId, args.configId),
+            ne(sshConnections.userId, args.owner.userId),
+          ),
+        );
+    }
+    await tx
+      .update(sshConnections)
+      .set({
+        generation: sql`${sshConnections.generation} + 1`,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(sshConnections.orgId, args.owner.orgId),
+          eq(sshConnections.cloudflareAccessId, args.configId),
+          eq(sshConnections.userId, args.owner.userId),
+        ),
+      );
+    const [converted] = await tx
+      .update(cloudflareAccessConfigs)
+      .set({
+        scope: "personal",
+        userId: args.owner.userId,
+        revision: config.revision + 1,
+        generation: config.generation + 1,
+        updatedAt: nowDate(),
+      })
+      .where(organizationConfig(args.owner, args.configId))
+      .returning(metadata);
+    if (!converted) {
+      throw new Error("Cloudflare Access conversion returned no row");
+    }
+    return {
+      ok: true as const,
+      value: response(
+        converted,
+        hosts
+          .filter((host) => {
+            return host.userId === args.owner.userId;
+          })
+          .map(({ id, displayName }) => {
+            return { id, displayName };
+          }),
+      ),
+      affectedHosts: hosts,
+    };
+  });
+  if (result.ok) {
+    await publishUpdateInvalidation(
+      args.db,
+      args.owner,
+      "organization",
+      result.affectedHosts,
+    );
   }
   return result;
 }

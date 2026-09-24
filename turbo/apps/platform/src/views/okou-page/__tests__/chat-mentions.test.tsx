@@ -40,7 +40,7 @@ function referencedThread(
     updatedAt: CREATED_AT,
     pinnedAt: null,
     renamedAt: null,
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     serviceTier: null,
     modelSettings: {},
     computerUseHostId: null,
@@ -56,7 +56,7 @@ function configureAgentDraft(
 ): void {
   context.mocks.data.agents([{ agentId: AGENT_ID }]);
   context.mocks.data.userModelPreference({
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     serviceTier: null,
     modelSettings: {},
     selectedVideoModel: null,

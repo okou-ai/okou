@@ -2,23 +2,20 @@ import {
   MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
   type MorningBriefPreferenceErrorCode,
-  type MorningBriefLastRun,
   type MorningBriefPreferenceResponse,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isValidTimeZone } from "@okouai/core/timezone";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
-import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { delay } from "signal-timers";
 import { z } from "zod";
 
 import { clerk$ } from "../external/clerk";
 import { settle } from "../utils";
-import { publishMorningBriefChangedSafely } from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import { calculateNextRun } from "./time-automation";
 import {
@@ -51,9 +48,7 @@ import {
   applyMorningBriefLogicalChoice,
   lockMorningBriefNativeScheduleForWrite,
   materializeMorningBriefNativeSchedule,
-  readLatestMorningBriefNativeOccurrence,
   readMorningBriefNativeSchedule,
-  type MorningBriefNativeOccurrenceRow,
   type MorningBriefNativeScheduleRow,
 } from "./morning-brief-native-schedule.service";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
@@ -185,10 +180,11 @@ async function loadPendingPreference(
   enrollment: Awaited<ReturnType<typeof loadMorningBriefEnrollment>>,
   installationAgentId?: string,
 ): Promise<MorningBriefPreferenceResult> {
-  const [timezone, unavailableReason] = await Promise.all([
-    loadOfficialWorkflowUserTimezone(db, morningBriefOwner(args)),
-    loadUnavailableReason(db, args, installationAgentId),
-  ]);
+  const unavailableReason = await loadUnavailableReason(
+    db,
+    args,
+    installationAgentId,
+  );
   return {
     kind: "ok",
     preference: {
@@ -200,8 +196,6 @@ async function loadPendingPreference(
             ? "error"
             : "preparing"
           : "paused",
-      nextRunAt: null,
-      timezone,
       unavailableReason,
     },
   };
@@ -246,8 +240,6 @@ async function projectInstalledPreference(
     preference: {
       enabled: state.automation.enabled,
       status: state.automation.enabled ? "enabled" : "paused",
-      nextRunAt: state.automation.nextRunAt?.toISOString() ?? null,
-      timezone: state.automation.timezone,
       unavailableReason: null,
     },
   };
@@ -275,8 +267,6 @@ function projectNativePreference(
     preference: {
       enabled: row.enabled,
       status: row.enabled ? "enabled" : "paused",
-      nextRunAt: row.nextRunAt?.toISOString() ?? null,
-      timezone: row.timezone,
       unavailableReason: null,
     },
   };
@@ -340,68 +330,6 @@ async function withMorningBriefPreferenceLock<T>(
  * legacy state (with the disposable projection only as a compatibility check).
  * This path never writes, installs or repairs.
  */
-/**
- * The caller's most recent occurrence, projected as an account.
- *
- * This is the first-party answer to "what did my last brief actually do?".
- * Before it existed, a settled occurrence that delivered nothing was
- * indistinguishable from one that had nothing to say, and the only way to tell
- * them apart was to read a distributed trace — the diagnosis gap #35656
- * recorded. It is read-only and carries counts and labels, never evidence.
- */
-function projectLastRun(
-  occurrence: MorningBriefNativeOccurrenceRow | undefined,
-): MorningBriefLastRun | null {
-  if (occurrence === undefined) {
-    return null;
-  }
-  const facts = occurrence.collectionFacts ?? null;
-  return {
-    scheduledFor: occurrence.scheduledFor.toISOString(),
-    settledAt: occurrence.settledAt?.toISOString() ?? null,
-    state: occurrence.state,
-    outcome: occurrence.outcome,
-    // A deferral's own reason survives even when the attempt never collected,
-    // so an unexplained silent slot is no longer possible.
-    reason: facts?.reason ?? occurrence.deferReason,
-    sources: facts === null ? null : [...facts.sources],
-  };
-}
-
-/** A settled occurrence is not necessarily a delivery. Read the receipt. */
-async function readLastDeliveredAt(
-  db: Pick<ReadonlyDb, "select">,
-  owner: MorningBriefMemberIdentity,
-): Promise<string | null> {
-  const [delivery] = await db
-    .select({ deliveredAt: morningBriefDeliveries.deliveredAt })
-    .from(morningBriefDeliveries)
-    .where(
-      and(
-        eq(morningBriefDeliveries.orgId, owner.orgId),
-        eq(morningBriefDeliveries.userId, owner.userId),
-        eq(morningBriefDeliveries.executionPurpose, "production"),
-      ),
-    )
-    .orderBy(desc(morningBriefDeliveries.deliveredAt))
-    .limit(1);
-  return delivery?.deliveredAt.toISOString() ?? null;
-}
-
-/** Attach the account without changing the existing preference projection. */
-function withLastRunAndDelivery(
-  result: MorningBriefPreferenceResult & { readonly workflowId?: string },
-  lastRun: MorningBriefLastRun | null,
-  lastDeliveredAt: string | null,
-): MorningBriefPreferenceResult & { readonly workflowId?: string } {
-  return result.kind === "ok"
-    ? {
-        ...result,
-        preference: { ...result.preference, lastRun, lastDeliveredAt },
-      }
-    : result;
-}
-
 export const morningBriefPreference$ = command(
   async (
     { set },
@@ -413,25 +341,15 @@ export const morningBriefPreference$ = command(
     const owner = morningBriefOwner(args);
     const native = await readMorningBriefNativeSchedule(db, owner);
     signal.throwIfAborted();
-    const [latestOccurrence, lastDeliveredAt] = await Promise.all([
-      readLatestMorningBriefNativeOccurrence(db, owner),
-      readLastDeliveredAt(db, owner),
-    ]);
-    signal.throwIfAborted();
-    const lastRun = projectLastRun(latestOccurrence);
     if (native !== undefined && native.phase !== "legacy") {
-      return withLastRunAndDelivery(
-        projectNativePreference(native),
-        lastRun,
-        lastDeliveredAt,
-      );
+      return projectNativePreference(native);
     }
     const state = await loadMorningBriefMigrationState(db, owner);
     signal.throwIfAborted();
     const legacy = await projectInstalledPreference(db, args, state);
     signal.throwIfAborted();
     if (state.kind !== "installed" || legacy.kind !== "ok") {
-      return withLastRunAndDelivery(legacy, lastRun, lastDeliveredAt);
+      return legacy;
     }
     const featureSwitchContext = await loadUserFeatureSwitchContext(
       db,
@@ -445,15 +363,11 @@ export const morningBriefPreference$ = command(
         featureSwitchContext,
       )
     ) {
-      return withLastRunAndDelivery(legacy, lastRun, lastDeliveredAt);
+      return legacy;
     }
     const projected = await readMorningBriefPreferenceProjection(db, state);
     signal.throwIfAborted();
-    return withLastRunAndDelivery(
-      projected === null ? legacy : { kind: "ok", preference: projected },
-      lastRun,
-      lastDeliveredAt,
-    );
+    return projected === null ? legacy : { kind: "ok", preference: projected };
   },
 );
 
@@ -581,8 +495,6 @@ const installMorningBriefEnrollment$ = command(
         identity,
         installed.workflowId,
       );
-      signal.throwIfAborted();
-      await publishMorningBriefChangedSafely(identity);
       signal.throwIfAborted();
       return { outcome: "installed", workflowId: installed.workflowId };
     }
@@ -1093,18 +1005,8 @@ export const updateMorningBriefPreference$ = command(
         return outcome;
       },
     );
-    await publishMorningBriefChangedSafely(morningBriefOwner(args));
     signal.throwIfAborted();
-    // The same account the read path returns, so a caller sees one response
-    // shape whether it just read the preference or just changed it.
-    const owner = morningBriefOwner(args);
-    const [latestOccurrence, lastDeliveredAt] = await Promise.all([
-      readLatestMorningBriefNativeOccurrence(db, owner),
-      readLastDeliveredAt(db, owner),
-    ]);
-    signal.throwIfAborted();
-    const lastRun = projectLastRun(latestOccurrence);
-    return withLastRunAndDelivery(result, lastRun, lastDeliveredAt);
+    return result;
   },
 );
 
@@ -1181,6 +1083,5 @@ export const synchronizeMorningBriefTimezone$ = command(
       await synchronizeTimezoneWhileLocked(db, identity);
       await refreshMorningBriefPreferenceProjection(db, identity, signal);
     });
-    await publishMorningBriefChangedSafely(identity);
   },
 );

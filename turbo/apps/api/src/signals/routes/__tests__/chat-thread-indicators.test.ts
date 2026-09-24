@@ -62,7 +62,16 @@ async function createEntitledAgent(
   displayName: string,
 ): Promise<string> {
   await api.grantProEntitlement(actor);
-  await api.ensureOrgModelProvider(actor);
+  const { providerId } = await api.ensureOrgModelProvider(actor);
+  await api.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   const agent = await bdd.createAgent(actor, {
     displayName,
     visibility: "private",
@@ -90,7 +99,7 @@ async function createCancelledThread(args: {
 }): Promise<SeededThread> {
   const sent = await chat.requestSendEvent(
     args.actor,
-    { agentId: args.agentId, prompt: args.prompt },
+    { agentId: args.agentId, prompt: args.prompt, model: "claude-fable-5-1" },
     [201],
   );
   if (sent.status !== 201 || sent.body.runId === null) {

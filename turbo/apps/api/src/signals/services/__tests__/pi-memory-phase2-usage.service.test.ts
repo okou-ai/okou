@@ -7,7 +7,7 @@ import { accountErasureJobs } from "@okouai/db/schema/account-erasure";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { usageEvent } from "@okouai/db/schema/usage-event";

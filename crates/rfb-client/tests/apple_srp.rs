@@ -198,7 +198,7 @@ async fn srp_peer(server: &mut DuplexStream, scenario: PeerScenario) {
     let h_empty = sha512(&[b""]);
     let expected_m1 = sha512(&[&xor_ng, &h_empty, &salt, a_bytes, &b_public, &session_key]);
     if m1 != expected_m1 {
-        server.write_u32(0).await.expect("reject invalid M1");
+        server.write_u32(1).await.expect("reject invalid M1");
         return;
     }
     let mut m2 = sha512(&[a_bytes, m1, &session_key]);
@@ -334,11 +334,10 @@ async fn wrong_password_never_yields_a_session() {
         tokio::spawn(async move { srp_peer(&mut server, PeerScenario::WrongPassword).await });
     let wrong = AppleSrpCredentials::new("test-user".into(), "wrong-password".into())
         .expect("fixed wrong credential");
-    assert!(
-        authenticate_apple_srp(client, wrong, deadline())
-            .await
-            .is_err()
-    );
+    assert!(matches!(
+        authenticate_apple_srp(client, wrong, deadline()).await,
+        Err(Error::AuthenticationFailed)
+    ));
     peer.await.expect("peer");
 }
 

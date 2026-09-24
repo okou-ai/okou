@@ -3,6 +3,7 @@ import type {
   DesktopComputerUseState,
 } from "./computer-use-types";
 import type { DesktopIdentity } from "./config";
+import type { DesktopLoginMethod } from "./desktop-login-method";
 
 export interface DesktopAuthUser {
   readonly userId: string;
@@ -33,6 +34,11 @@ export type DesktopAuthState =
 
 export interface DesktopAuthApi {
   readonly getState: () => Promise<DesktopAuthState>;
+  readonly getLoginMethod: () => Promise<{
+    readonly method: DesktopLoginMethod;
+    readonly nativeAvailable: boolean;
+  }>;
+  readonly setLoginMethod: (method: DesktopLoginMethod) => Promise<void>;
   readonly openSignIn: () => Promise<void>;
   readonly openOrgSelection: () => Promise<void>;
   readonly signOut: () => Promise<void>;

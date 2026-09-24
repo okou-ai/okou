@@ -152,13 +152,6 @@ function publishChatDatabaseSignal(
   return Promise.resolve();
 }
 
-export function publishMorningBriefChangedSafely(target: {
-  readonly userId: string;
-  readonly orgId: string;
-}): Promise<void> {
-  return publishChatDatabaseSignal(target, "morningBriefChanged");
-}
-
 export function publishHomeTaskRecommendationsChangedSafely(
   target: { readonly userId: string; readonly orgId: string },
   payload: HomeTaskRecommendationsChangedPayload,

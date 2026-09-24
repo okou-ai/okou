@@ -1,3 +1,7 @@
+import {
+  recordChatContentDeletion,
+  completeChatContentDeletion,
+} from "@okouai/db/operations/chat-content-erasure";
 import { piInferenceErasureScopePredicate } from "./pi-inference-lifecycle.service";
 import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
@@ -6,6 +10,8 @@ import { agents } from "@okouai/db/schema/agent";
 import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { artifacts } from "@okouai/db/schema/artifact";
+import { chatAgentRunContext } from "@okouai/db/schema/chat-agent-run-context";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { cliTokens } from "@okouai/db/schema/cli-tokens";
 import { composeJobs } from "@okouai/db/schema/compose-job";
 import { builtinConnectorExternalCodeSessions } from "@okouai/db/schema/connector-external-code-session";
@@ -25,6 +31,7 @@ import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import { secrets } from "@okouai/db/schema/secret";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
@@ -98,6 +105,10 @@ import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-cl
 import { deleteStoragesWithPiMemoryCandidates } from "./pi-memory-stage1-candidate.service";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 import { eraseVncOwnerData } from "./vnc-owner-lifecycle.service";
+import {
+  deleteDiscordOrgData,
+  deleteDiscordUserData,
+} from "./discord-owner-cleanup.service";
 
 const L = logger("WebhookClerkCleanup");
 const CLERK_ORG_MEMBERSHIP_PAGE_SIZE = 100;
@@ -789,6 +800,8 @@ async function deleteOrgData(
   signal: AbortSignal,
 ): Promise<void> {
   await cancelOrgRuns(db, orgId);
+  await deleteDiscordOrgData(db, orgId);
+  signal.throwIfAborted();
 
   const installations = await db
     .select({ slackWorkspaceId: slackOrgInstallations.slackWorkspaceId })
@@ -819,6 +832,23 @@ async function deleteOrgData(
   await db
     .delete(browserUserActionRequests)
     .where(eq(browserUserActionRequests.orgId, orgId));
+  // Historical context rows can still have null copied ownership. Remove them
+  // through the live source before lifecycle cleanup deletes that source.
+  await db
+    .delete(chatAgentRunContext)
+    .where(
+      or(
+        eq(chatAgentRunContext.sourceOrgId, orgId),
+        inArray(
+          chatAgentRunContext.sourceChatThreadId,
+          db
+            .select({ id: chatThreads.id })
+            .from(chatThreads)
+            .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+            .where(eq(agents.orgId, orgId)),
+        ),
+      ),
+    );
   await deleteClerkAgentLifecycleData(db, { kind: "organization", orgId });
   // VNC references were removed at the start of organization cleanup. Remove
   // Access rows before SSH hosts: rotation takes config then host locks.
@@ -877,6 +907,7 @@ async function deleteOrgData(
   await db
     .delete(morningBriefEnrollments)
     .where(eq(morningBriefEnrollments.orgId, orgId));
+  await db.delete(orgModelPolicies).where(eq(orgModelPolicies.orgId, orgId));
   await db.delete(orgMetadata).where(eq(orgMetadata.orgId, orgId));
 }
 
@@ -886,6 +917,8 @@ async function deleteUserData(
   signal: AbortSignal,
 ): Promise<void> {
   await cancelUserRuns(db, userId);
+  await deleteDiscordUserData(db, userId);
+  signal.throwIfAborted();
 
   await db.transaction(async (tx) => {
     await tx.execute(
@@ -915,6 +948,20 @@ async function deleteUserData(
   await db
     .delete(browserUserActionRequests)
     .where(eq(browserUserActionRequests.userId, userId));
+  await db
+    .delete(chatAgentRunContext)
+    .where(
+      or(
+        eq(chatAgentRunContext.sourceUserId, userId),
+        inArray(
+          chatAgentRunContext.sourceChatThreadId,
+          db
+            .select({ id: chatThreads.id })
+            .from(chatThreads)
+            .where(eq(chatThreads.userId, userId)),
+        ),
+      ),
+    );
   await deleteClerkAgentLifecycleData(db, { kind: "user", userId });
   // VNC references were removed before user cleanup. Delete only this user's
   // SSH resources and personal Access configurations; organization Access
@@ -989,6 +1036,12 @@ async function deleteUserData(
 export const cleanupClerkDeletedOrg$ = command(
   async ({ get, set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
+    await recordChatContentDeletion(db, {
+      subjectKind: "organization",
+      subjectId: orgId,
+      sourceReference: `clerk:organization:${orgId}`,
+    });
+    signal.throwIfAborted();
     await eraseVncOwnerData(db, { kind: "organization", orgId });
     signal.throwIfAborted();
     await cancelOrgRuns(db, orgId, {
@@ -1011,6 +1064,11 @@ export const cleanupClerkDeletedOrg$ = command(
     await get(deleteOrgS3Data(db, orgId));
     signal.throwIfAborted();
     await deleteOrgData(db, orgId, signal);
+    await completeChatContentDeletion(db, {
+      subjectKind: "organization",
+      subjectId: orgId,
+      sourceReference: `clerk:organization:${orgId}`,
+    });
   },
 );
 
@@ -1059,6 +1117,7 @@ export const cleanupClerkDeletedUser$ = command(
     await set(cleanupUserExternalServices$, db, userId, signal);
     signal.throwIfAborted();
     for (const orgId of emptyOrgIds) {
+      signal.throwIfAborted();
       await eraseVncOwnerData(db, { kind: "organization", orgId });
       signal.throwIfAborted();
       await cancelOrgRuns(db, orgId, {

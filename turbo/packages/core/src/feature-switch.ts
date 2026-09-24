@@ -292,9 +292,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "lancy@okou.ai",
     displayName: "Native Morning Brief",
     description:
-      "Select the platform-funded native Morning Brief pipeline instead of the Official Workflow Run. Separate from the user's Morning Brief preference.",
+      "Retiring the native Morning Brief pipeline in favor of the Official Workflow Run. Separate from the user's Morning Brief preference.",
     enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.TestOauthConnector]: {
     maintainer: "liangyou@okou.ai",
@@ -335,12 +334,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Send preview chat runs through real agent CLIs instead of preview mock runners.",
     enabled: false,
-  },
-  [FeatureSwitchKey.PiLoop]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Run owned chat threads with the official Pi runtime, streamed session output, native session persistence, and shared memory learning across interactive and automation turns.",
-    enabled: true,
   },
   [FeatureSwitchKey.PiMemory]: {
     maintainer: "lancy@okou.ai",
@@ -462,6 +455,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable Lark bot setup, account connections, and messaging.",
     enabled: false,
   },
+  [FeatureSwitchKey.DiscordIntegration]: {
+    maintainer: "linghan@okou.ai",
+    description: "Enable the verified Discord guild and bot DM integration.",
+    enabled: false,
+  },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "linghan@okou.ai",
     description:
@@ -478,6 +476,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "liangyou@okou.ai",
     description: "Enable chat-scoped SSH and VNC host defaults and overrides",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ConnectorDirectory]: {
     maintainer: "tongx@okou.ai",

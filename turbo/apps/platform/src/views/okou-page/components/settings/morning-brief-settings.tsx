@@ -1,5 +1,4 @@
 import type { MorningBriefPreferenceResponse } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import { Badge } from "@okouai/ui/components/ui/badge";
 import { Button } from "@okouai/ui/components/ui/button";
 import { Switch } from "@okouai/ui/components/ui/switch";
 import { useGet, useLoadable, useSet } from "ccstate-react";
@@ -7,8 +6,6 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { AlertCircle, Loader2, RotateCcw, Sunrise } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { currentLocale } from "../../../../i18n/index.ts";
-import { emailSubscription$ } from "../../../../signals/okou-page/settings/email-subscription.ts";
 import {
   morningBriefPreference$,
   morningBriefPreferenceCardRef$,
@@ -20,191 +17,76 @@ import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
 import { PreferenceCardRow } from "./preference-card-row.tsx";
 
-function nextBriefText(
-  state: MorningBriefPreferenceState,
-  format: (date: string, timezone: string) => string,
-): string | null {
-  if (
-    state.kind !== "ready" ||
-    !state.preference.enabled ||
-    !state.preference.nextRunAt ||
-    !state.preference.timezone
-  ) {
-    return null;
-  }
-  return format(state.preference.nextRunAt, state.preference.timezone);
-}
-
-function useEnrollmentStatus(
-  state: MorningBriefPreferenceState | undefined,
-  nextBrief: string | null,
-) {
-  const { t } = useTranslation();
-  let status = nextBrief;
-  if (state?.kind === "ready" && state.preference.status === "preparing") {
-    status = t(($) => {
-      return $.settings.preferences.morningBrief.preparing;
-    });
-  }
-  if (state?.kind === "ready" && state.preference.status === "error") {
-    status = t(($) => {
-      return $.settings.preferences.morningBrief.preparationFailed;
-    });
-  }
-  return status;
-}
-
-function MorningBriefStatus({
-  state,
-  loading,
-  loadFailed,
-  mutationFailed,
-}: {
+interface MorningBriefStatusProps {
   readonly state: MorningBriefPreferenceState | undefined;
   readonly loading: boolean;
   readonly loadFailed: boolean;
   readonly mutationFailed: boolean;
-}) {
-  const { t } = useTranslation();
-  const unavailable =
-    state?.kind === "ready" ? state.preference.unavailableReason : null;
-  const conflicted = state?.kind === "error";
-  const nextBrief = state
-    ? nextBriefText(state, (date, timezone) => {
-        const formatted = new Intl.DateTimeFormat(currentLocale(), {
-          dateStyle: "medium",
-          timeStyle: "short",
-          timeZone: timezone,
-        }).format(new Date(date));
-        return t(
-          ($) => {
-            return $.settings.preferences.morningBrief.nextBrief;
-          },
-          { date: formatted },
-        );
-      })
-    : null;
+}
 
-  let status = useEnrollmentStatus(state, nextBrief);
+type MorningBriefStatusKey =
+  | "loading"
+  | "retryMessage"
+  | "conflict"
+  | "missingTimezone"
+  | "missingDefaultAgent"
+  | "preparing"
+  | "preparationFailed";
+
+function morningBriefStatusKey({
+  state,
+  loading,
+  loadFailed,
+  mutationFailed,
+}: MorningBriefStatusProps): MorningBriefStatusKey | null {
   if (loading) {
-    status = t(($) => {
-      return $.settings.preferences.morningBrief.loading;
-    });
-  } else if (loadFailed || mutationFailed) {
-    status = t(($) => {
-      return $.settings.preferences.morningBrief.retryMessage;
-    });
-  } else if (state?.kind === "error") {
-    status = t(($) => {
-      return $.settings.preferences.morningBrief.conflict;
-    });
-  } else if (unavailable === "missing-timezone") {
-    status = t(($) => {
-      return $.settings.preferences.morningBrief.missingTimezone;
-    });
-  } else if (unavailable === "missing-default-agent") {
-    status = t(($) => {
-      return $.settings.preferences.morningBrief.missingDefaultAgent;
-    });
+    return "loading";
   }
+  if (loadFailed || mutationFailed) {
+    return "retryMessage";
+  }
+  if (state?.kind !== "ready") {
+    return state?.kind === "error" ? "conflict" : null;
+  }
+  const { preference } = state;
+  if (preference.unavailableReason === "missing-timezone") {
+    return "missingTimezone";
+  }
+  if (preference.unavailableReason === "missing-default-agent") {
+    return "missingDefaultAgent";
+  }
+  if (preference.status === "preparing") {
+    return "preparing";
+  }
+  return preference.status === "error" ? "preparationFailed" : null;
+}
 
-  if (!status) {
-    return null;
-  }
+function MorningBriefStatus(props: MorningBriefStatusProps) {
+  const { t } = useTranslation();
+  const key = morningBriefStatusKey(props);
+  const { state } = props;
   const showAlert =
-    loadFailed || mutationFailed || conflicted || unavailable !== null;
-  if (nextBrief !== null && status === nextBrief) {
-    return (
-      <Badge className="border-primary/20 bg-primary/10 text-xs font-medium text-brand-text">
-        <span
-          aria-hidden="true"
-          className="size-1.5 rounded-full bg-primary-400"
-        />
-        {status}
-      </Badge>
-    );
-  }
+    key !== null &&
+    (props.loadFailed ||
+      props.mutationFailed ||
+      state?.kind === "error" ||
+      (state?.kind === "ready" && state.preference.unavailableReason !== null));
+  // The live region stays mounted so a status appearing later is announced.
   return (
-    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+    <div
+      className="flex items-center gap-1.5 text-xs text-muted-foreground"
+      aria-live="polite"
+    >
       {showAlert && <AlertCircle className="size-3.5 shrink-0" />}
-      {loading && <Loader2 className="size-3.5 animate-spin" />}
-      <span>{status}</span>
-    </div>
-  );
-}
-
-function MorningBriefDeliveryStatus({
-  preference,
-}: {
-  readonly preference: MorningBriefPreferenceResponse | undefined;
-}) {
-  const { t } = useTranslation();
-  const subscription = useLoadable(emailSubscription$);
-  if (
-    !preference ||
-    preference.unavailableReason !== null ||
-    preference.status === "preparing" ||
-    preference.status === "error"
-  ) {
-    return null;
-  }
-  if (!preference.enabled) {
-    return (
-      <Badge className="text-xs font-medium text-muted-foreground">
-        {t(($) => {
-          return $.settings.preferences.morningBrief.paused;
-        })}
-      </Badge>
-    );
-  }
-  if (subscription.state !== "hasData") {
-    return (
-      <span>
-        {t(($) => {
-          return $.settings.preferences.morningBrief.checkEmailSubscription;
-        })}
-      </span>
-    );
-  }
-  const receivesEmail =
-    subscription.data.subscribed &&
-    subscription.data.deliveryStatus === "available";
-  return (
-    <Badge className="text-xs font-medium text-muted-foreground">
-      {receivesEmail
-        ? t(($) => {
-            return $.settings.preferences.morningBrief.chatAndEmail;
-          })
-        : t(($) => {
-            return $.settings.preferences.morningBrief.chatOnly;
+      {key === "loading" && <Loader2 className="size-3.5 animate-spin" />}
+      {key !== null && (
+        <span>
+          {t(($) => {
+            return $.settings.preferences.morningBrief[key];
           })}
-    </Badge>
-  );
-}
-
-function MorningBriefLastDelivery({
-  preference,
-}: {
-  readonly preference: MorningBriefPreferenceResponse | undefined;
-}) {
-  const { t } = useTranslation();
-  if (!preference?.lastDeliveredAt) {
-    return null;
-  }
-  const date = new Intl.DateTimeFormat(currentLocale(), {
-    dateStyle: "medium",
-    timeStyle: "short",
-    ...(preference.timezone ? { timeZone: preference.timezone } : {}),
-  }).format(new Date(preference.lastDeliveredAt));
-  return (
-    <span className="text-xs text-muted-foreground">
-      {t(
-        ($) => {
-          return $.settings.preferences.morningBrief.lastDelivered;
-        },
-        { date },
+        </span>
       )}
-    </span>
+    </div>
   );
 }
 
@@ -285,19 +167,12 @@ export function MorningBriefSettings() {
           return $.settings.preferences.morningBrief.description;
         })}
         status={
-          <div
-            className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
-            aria-live="polite"
-          >
-            <MorningBriefStatus
-              state={state}
-              loading={loading || mutating}
-              loadFailed={loadFailed}
-              mutationFailed={mutationFailed}
-            />
-            <MorningBriefDeliveryStatus preference={preference} />
-            <MorningBriefLastDelivery preference={preference} />
-          </div>
+          <MorningBriefStatus
+            state={state}
+            loading={loading || mutating}
+            loadFailed={loadFailed}
+            mutationFailed={mutationFailed}
+          />
         }
       >
         <div className="flex shrink-0 items-center gap-2">

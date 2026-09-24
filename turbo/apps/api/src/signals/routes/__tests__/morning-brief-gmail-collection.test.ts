@@ -36,7 +36,10 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  seedRetainedNativeMorningBriefForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
 import {
   deleteOrgMembership$,
   seedOrgMembership$,
@@ -409,7 +412,7 @@ async function setupOwner(): Promise<Fixture> {
     { orgId: actor.orgId, userId: actor.userId },
     { agentId },
   );
-  await updateFeatureSwitchesForUser(
+  await seedRetainedNativeMorningBriefForUser(
     context,
     { orgId: actor.orgId, userId: actor.userId },
     { [FeatureSwitchKey.NativeMorningBrief]: true },
@@ -789,7 +792,7 @@ describe("Morning Brief Gmail collection preview", () => {
     const switchedOff = await collect(fixture, [403]);
     expect(switchedOff.status).toBe(403);
 
-    await updateFeatureSwitchesForUser(
+    await seedRetainedNativeMorningBriefForUser(
       context,
       { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
       { [FeatureSwitchKey.NativeMorningBrief]: true },
@@ -807,7 +810,7 @@ describe("Morning Brief Gmail collection preview", () => {
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped actor");
     }
-    await updateFeatureSwitchesForUser(
+    await seedRetainedNativeMorningBriefForUser(
       context,
       { orgId: actor.orgId, userId: actor.userId },
       { [FeatureSwitchKey.NativeMorningBrief]: true },

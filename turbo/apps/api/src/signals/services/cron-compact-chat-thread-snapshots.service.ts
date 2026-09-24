@@ -31,7 +31,7 @@ import {
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { chatThreadSnapshots } from "@okouai/db/schema/chat-thread-snapshot";
 import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { userExportEntries } from "@okouai/db/schema/user-export-entry";
 import { z } from "zod";
 import {

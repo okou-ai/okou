@@ -47,6 +47,22 @@ const github = createGithubBddApi(context);
 
 const cu = createComputerUseBddApi(context);
 
+async function entitledNativeChatActor(): Promise<
+  Awaited<ReturnType<typeof entitledChatActor>>
+> {
+  const fixture = await entitledChatActor();
+  await api.updateOrgModelPolicies(fixture.actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: fixture.providerId,
+    },
+  ]);
+  return fixture;
+}
+
 async function expectRunAppContext(args: {
   readonly actor: ApiTestUser;
   readonly runId: string;
@@ -92,7 +108,7 @@ async function readThreadComputerUseHostId(
 describe("CHAT-02: default assistant identity", () => {
   it("keeps the default name as Okou through queued runs without renaming custom agents", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
-    const { actor, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledNativeChatActor();
     bdd.acceptAgentStorageWrites();
     const onboarding = await bdd.readOnboardingStatus(actor);
     const defaultAgentId = onboarding.defaultAgentId;
@@ -199,9 +215,9 @@ describe("CHAT-02: default assistant identity", () => {
     await cancelChatRun(actor, customRun.runId);
   }, 90_000);
 
-  it("posts GitHub Audit links to the configured Okou app", async () => {
+  it("posts GitHub responses with the model footer when debug is enabled", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     bdd.acceptAgentStorageWrites();
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped chat actor");
@@ -255,16 +271,15 @@ describe("CHAT-02: default assistant identity", () => {
     await completeChatRunOk(run.runId, claim.sandboxHeaders);
     await flushWaitUntilForTest();
 
-    expect(postedComments.at(-1)).toContain(
-      `📋 [Audit](https://app.okou.ai/activities/${run.runId})`,
-    );
-    expect(postedComments).toHaveLength(1);
+    expect(postedComments).toStrictEqual([
+      "GitHub callback brand response\n\n<sub>Claude Fable 5.1</sub>",
+    ]);
   }, 90_000);
 });
 
 describe("CHAT-02: run-scoped agent-token chat launches", () => {
   it("keeps immediate and queued runs agent-scoped without retired provenance", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped chat actor");
     }
@@ -410,7 +425,7 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
 
 describe("CHAT-02/FILE-03: computer-use host grants", () => {
   it("grants computer-use capability only for a selected host", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const { hostId, hostToken } = await cu.startComputerUseHost(actor);
 

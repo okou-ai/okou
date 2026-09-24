@@ -397,11 +397,22 @@ async function setupConnectedTeamsActor(
       "Expected paid onboarding to create a Teams callback agent",
     );
   }
-  await Promise.all([
+  const [{ providerId }] = await Promise.all([
+    runsApi.ensureOrgModelProvider(actor),
     authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
       visibility: "public",
     }),
-    runsApi.ensureOrgModelProvider(actor),
+  ]);
+  // Queued Teams callbacks inspect and complete the Runner claim. Fable keeps
+  // this native fixture claimable while eligible Pi routes remain enabled.
+  await runsApi.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
   ]);
   if (options.okouDebug) {
     await updateFeatureSwitchesForUser(
@@ -708,7 +719,7 @@ describe("Teams chat callbacks", () => {
           teamsMessageFiles: [],
           teamsTenantName: teams.fixture.teamsTenantName,
           teamsTeamName: null,
-          teamsThreadId: `direct-message:${teams.defaultAgentId}:claude-sonnet-5`,
+          teamsThreadId: `direct-message:${teams.defaultAgentId}:claude-fable-5-1`,
           teamsServiceUrl: teams.fixture.serviceUrl,
           teamsAppId: teams.fixture.teamsAppId,
           teamsPublicBrand: "okou",
@@ -1166,13 +1177,9 @@ describe("Teams chat callbacks", () => {
             tenant: { id: teams.fixture.teamsTenantId },
           },
         });
-        expect(teamsApi.postedActivities[0]?.text).toContain(
-          "Task completed successfully.",
+        expect(teamsApi.postedActivities[0]?.text).toBe(
+          "Task completed successfully.\n\n_Claude Fable 5.1_",
         );
-        expect(teamsApi.postedActivities[0]?.text).toContain(
-          `[Audit](https://app.okou.ai/activities/${runId})`,
-        );
-        expect(teamsApi.postedActivities[0]?.text).not.toContain("Reply to");
         expect(teamsApi.reactionRequests).toStrictEqual([
           {
             method: "DELETE",
@@ -1241,15 +1248,7 @@ describe("Teams chat callbacks", () => {
         orgId: secondFixture.orgId,
         orgRole: "org:admin",
       });
-      await updateFeatureSwitchesForUser(
-        context,
-        {
-          userId: secondFixture.userId,
-          orgId: secondFixture.orgId,
-          orgRole: "org:admin",
-        },
-        { [FeatureSwitchKey.PiLoop]: false },
-      );
+
       const tokenRequestCountBeforeConnect = teamsApi.tokenRequests.length;
       const postedActivityCountBeforeConnect = teamsApi.postedActivities.length;
       const secondPrincipalName = secondFixture.teamsUserPrincipalName;

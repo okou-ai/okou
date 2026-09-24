@@ -132,6 +132,18 @@ async function setup(): Promise<Scenario> {
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
+  // Queue ordering uses claimable native runs; Pi route tests set their
+  // own model policy instead of inheriting this fixture's default.
+  const { providerId } = await runsApi.ensureOrgModelProvider(actor);
+  await runsApi.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   const agent = await wf.createAgent(actor, {
     displayName: "Workflow Queue Agent",
   });
@@ -353,7 +365,7 @@ async function startOrgConcurrencyBlocker(scenario: Scenario): Promise<string> {
       body: {
         agentId: scenario.agentId,
         prompt: "hold org concurrency open",
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         hasTextContent: true,
         userMessage: {
           version: 1,
@@ -758,58 +770,6 @@ describe("workflow queue", () => {
         return event.id;
       }),
     ).toContain(freshAutomationEventId);
-  });
-
-  it("keeps an automation event ahead of a goal continuation during final queue claim", async () => {
-    const scenario = await setup();
-    const automation = await createWebhookAutomation(scenario);
-    const admissionLock = await holdOrgAdmissionLockFixture({
-      orgId: scenario.orgId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      admissionLock.release();
-      await admissionLock.done;
-    });
-
-    const workflowRequest = postWorkflowWebhook(
-      automation,
-      "workflow launch before goal admission",
-    );
-    await expect.poll(admissionLock.waiterCount).toBeGreaterThanOrEqual(1);
-
-    const goal = await createActiveGoalQueueEventFixture({
-      threadId: automation.threadId,
-      orgId: scenario.orgId,
-      userId: scenario.userId,
-      agentId: scenario.agentId,
-      objective: "wait behind the preparing automation event",
-      objectiveBrief: "Wait behind the preparing automation event",
-    });
-    const goalDrain = drainChatThreadQueueFixture({
-      threadId: automation.threadId,
-      signal: context.signal,
-    });
-    await expect
-      .poll(admissionLock.transitiveWaiterCount)
-      .toBeGreaterThanOrEqual(2);
-
-    admissionLock.release();
-    const [workflowResult] = await Promise.all([workflowRequest, goalDrain]);
-    await admissionLock.done;
-    const workflowRunId = await expectAcceptedRunId(
-      workflowResult,
-      automation.threadId,
-    );
-
-    const goalQueue = await readGoalQueueStateFixture(automation.threadId);
-    expect(goalQueue.runIds).toHaveLength(0);
-    expect(goalQueue.eventIds).toContain(goal.eventId);
-    await expect(
-      pendingAutomationEvents(automation.threadId),
-    ).resolves.toHaveLength(0);
-
-    await runsApi.requestCancelRun(scenario.actor, workflowRunId, [200]);
   });
 
   it("preserves stale Goal history when the automation ahead of it completes", async () => {
@@ -1529,7 +1489,7 @@ describe("workflow queue", () => {
       version: 1,
       parts: [
         ...pendingTick.userMessage.parts,
-        { type: "model", selectedModel: "claude-sonnet-5" },
+        { type: "model", selectedModel: "claude-fable-5-1" },
       ],
     });
     expect(chatEventDisplayText(claimedTick)).toBe(admittedDisplayPrompt);

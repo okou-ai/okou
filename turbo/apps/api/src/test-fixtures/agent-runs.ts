@@ -533,7 +533,9 @@ export async function listAgentRunsFixture(args: {
   readonly until?: string;
   readonly limit?: number;
 }) {
-  return await store.get(
+  // Disposable database fixtures replace the pool between operations, so each
+  // listing owns its read store instead of retaining a previous db$ binding.
+  return await createStore().get(
     agentRunList({
       userId: args.userId,
       orgId: args.orgId,

@@ -14,7 +14,11 @@ import { clerk$ } from "./auth.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 import { sshIdentity$, invalidateSsh$ } from "./ssh.ts";
 import { invalidateVnc$ } from "./vnc.ts";
-import { remoteAccessReload$ } from "./remote-access-refresh.ts";
+import {
+  invalidateThreadRemoteAccess$,
+  remoteHostDefaultsReload$,
+  threadRemoteAccessReload$,
+} from "./remote-access-refresh.ts";
 
 const client$ = computed(async (get) => {
   const [identity, clerk] = await Promise.all([get(sshIdentity$), get(clerk$)]);
@@ -46,7 +50,7 @@ const client$ = computed(async (get) => {
 });
 
 export const remoteHostDefaults$ = computed(async (get) => {
-  get(remoteAccessReload$);
+  get(remoteHostDefaultsReload$);
   if (!get(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess]) {
     return null;
   }
@@ -89,7 +93,7 @@ export function createPendingRemoteAccessSignals() {
 
 export function threadRemoteAccess$(threadId: string) {
   return computed(async (get) => {
-    get(remoteAccessReload$);
+    get(threadRemoteAccessReload$);
     if (
       !threadId ||
       !get(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess]
@@ -165,8 +169,7 @@ export const setThreadRemoteAccess$ = command(
     );
     signal.throwIfAborted();
     if (client.identity === (await get(sshIdentity$))) {
-      set(invalidateSsh$);
-      set(invalidateVnc$);
+      set(invalidateThreadRemoteAccess$);
     }
     return result.body;
   },

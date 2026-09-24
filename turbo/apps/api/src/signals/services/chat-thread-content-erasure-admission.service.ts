@@ -5,7 +5,7 @@ import {
   type ErasureSubject,
 } from "@okouai/db/operations/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { eq } from "drizzle-orm";
 
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
@@ -229,8 +229,9 @@ function sameChatThreadContentIdentity(
  *
  * `agents` carries the `(id, org_id, owner)` unique key, so KEY SHARE conflicts
  * with an owner or organization transfer and with Agent deletion, which
- * cascades this thread. The default thread KEY SHARE conflicts with the FOR
- * UPDATE that `deleteChatThread$` takes before removing the row, while remaining
+ * cascades this thread. The thread `(id, user_id)` key similarly retains its
+ * owner under KEY SHARE. That lock conflicts with the FOR UPDATE that
+ * `deleteChatThread$` takes before removing the row, while remaining
  * compatible with this transaction's own title or draft FOR NO KEY UPDATE.
  * Callers that explicitly request UPDATE serialize at this first thread lock;
  * they do not acquire KEY SHARE and upgrade later.

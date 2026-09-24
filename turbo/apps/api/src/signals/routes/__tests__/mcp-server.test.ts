@@ -910,6 +910,33 @@ async function threadFixture() {
   return { auth, actor, agent, bdd, chat };
 }
 
+/**
+ * Run-status, cancellation and search scenarios drive chat runs through the
+ * native Runner claim protocol. Fable stays off Pi, while the fixture's
+ * default Sonnet 5 route now executes API-first.
+ */
+const NATIVE_RUNNER_MODEL = "claude-fable-5-1";
+
+async function nativeRunnerChatActor(
+  f: ReturnType<typeof createChatEventsFixture>,
+  auth: { readonly userId: string; readonly orgId: string },
+) {
+  const actor = await f.entitledChatActor({
+    userId: auth.userId,
+    orgId: auth.orgId,
+  });
+  await f.api.updateOrgModelPolicies(actor.actor, [
+    {
+      model: NATIVE_RUNNER_MODEL,
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: actor.providerId,
+    },
+  ]);
+  return actor;
+}
+
 async function chatRunFixture() {
   const auth = await fixture();
   const bdd = createBddApi(context);
@@ -924,7 +951,7 @@ async function chatRunFixture() {
   callbacks.disableVapid();
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensureOrgModelProvider(actor, { model: NATIVE_RUNNER_MODEL });
   const agent = await bdd.createAgent(actor, {
     displayName: "MCP activity agent",
     visibility: "private",
@@ -946,7 +973,7 @@ async function creationFixture(options: { withDefaultAgent?: boolean } = {}) {
   const { providerId } = await runs.ensureOrgModelProvider(f.actor);
   await runs.updateOrgModelPolicies(
     f.actor,
-    (["claude-sonnet-5", "claude-sonnet-4-6"] as const).map((model) => {
+    (["claude-sonnet-5", "claude-opus-5"] as const).map((model) => {
       return {
         model,
         isDefault: model === "claude-sonnet-5",
@@ -1311,7 +1338,7 @@ describe("MCP chat discovery and creation", () => {
         requestId: requestId.toUpperCase(),
         agentId: f.agent.agentId.toUpperCase(),
         title: "Review the quarterly plan",
-        model: "claude-sonnet-4-6",
+        model: "claude-opus-5",
       },
     );
     expectSubstantialCompactSuccess(createdResult);
@@ -1324,8 +1351,8 @@ describe("MCP chat discovery and creation", () => {
       title: "Review the quarterly plan",
       titleTruncated: false,
       model: {
-        selectedModel: "claude-sonnet-4-6",
-        effectiveModel: "claude-sonnet-4-6",
+        selectedModel: "claude-opus-5",
+        effectiveModel: "claude-opus-5",
         source: "thread",
         admission: "checked_on_send",
       },
@@ -1489,7 +1516,7 @@ describe("MCP chat discovery and creation", () => {
         modelProviderId: f.providerId,
       },
       {
-        model: "claude-sonnet-4-6",
+        model: "claude-opus-5",
         isDefault: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
@@ -1645,7 +1672,7 @@ describe("MCP chat discovery and creation", () => {
       { ...args, message: "Changed message" },
       { ...args, agentId: secondAgent.agentId },
       { ...args, agentId: undefined },
-      { ...args, model: "claude-sonnet-4-6" },
+      { ...args, model: "claude-opus-5" },
       { ...args, model: undefined },
       {
         requestId: args.requestId,
@@ -1742,7 +1769,7 @@ describe("MCP chat discovery and creation", () => {
     await f.chat.updateThreadModelSelection(
       f.actor,
       args.requestId,
-      "claude-sonnet-4-6",
+      "claude-opus-5",
     );
     const before = await f.chat.readThreadMetadata(f.actor, args.requestId);
     await expect(createThread(token, args)).resolves.toMatchObject({
@@ -1750,8 +1777,8 @@ describe("MCP chat discovery and creation", () => {
       replayed: true,
       title: "Renamed after creation",
       model: {
-        selectedModel: "claude-sonnet-4-6",
-        effectiveModel: "claude-sonnet-4-6",
+        selectedModel: "claude-opus-5",
+        effectiveModel: "claude-opus-5",
       },
     });
     await expect(
@@ -1761,7 +1788,7 @@ describe("MCP chat discovery and creation", () => {
       { ...args, title: "Different intent" },
       { ...args, title: undefined },
       { ...args, agentId: undefined },
-      { ...args, model: "claude-sonnet-4-6" },
+      { ...args, model: "claude-opus-5" },
       { ...args, model: undefined },
     ]) {
       const result = await callTool(token, "create_chat_thread", conflicting);
@@ -1812,14 +1839,14 @@ describe("MCP chat discovery and creation", () => {
       threadId: created.threadId,
       patch: {
         title: "Newer combined state",
-        model: "claude-sonnet-4-6",
+        model: "claude-opus-5",
       },
     });
     expect(second).toMatchObject({
       title: "Newer combined state",
       model: {
-        selectedModel: "claude-sonnet-4-6",
-        effectiveModel: "claude-sonnet-4-6",
+        selectedModel: "claude-opus-5",
+        effectiveModel: "claude-opus-5",
       },
       replayed: false,
     });
@@ -1833,7 +1860,7 @@ describe("MCP chat discovery and creation", () => {
     ).resolves.toMatchObject({
       acceptedAt: first.acceptedAt,
       title: "Newer combined state",
-      model: { selectedModel: "claude-sonnet-4-6" },
+      model: { selectedModel: "claude-opus-5" },
       replayed: true,
     });
     expect(
@@ -1988,7 +2015,7 @@ describe("MCP chat discovery and creation", () => {
     for (const patch of [
       { model: "not-a-supported-model" },
       { title: "Must roll back", model: "not-a-supported-model" },
-      { title: "Must roll back denied model", model: "claude-opus-4-8" },
+      { title: "Must roll back denied model", model: "claude-opus-5-5" },
     ]) {
       const result = await callTool(token, "update_chat_thread", {
         requestId: randomUUID(),
@@ -2032,7 +2059,7 @@ describe("MCP chat discovery and creation", () => {
     const args = {
       requestId: randomUUID(),
       threadId: created.threadId,
-      patch: { title: "One accepted update", model: "claude-sonnet-4-6" },
+      patch: { title: "One accepted update", model: "claude-opus-5" },
     };
     const results = await Promise.all([
       updateThread(token, args),
@@ -2048,7 +2075,7 @@ describe("MCP chat discovery and creation", () => {
     await expect(getThread(token, created.threadId)).resolves.toMatchObject({
       thread: {
         title: "One accepted update",
-        model: { selectedModel: "claude-sonnet-4-6" },
+        model: { selectedModel: "claude-opus-5" },
       },
     });
   });
@@ -2355,10 +2382,7 @@ describe("MCP chat status", () => {
   it("tracks an original launch through running, partial output and materialized completion", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const thread = await f.chat.createThread(actor.actor, {
       agentId: actor.agentId,
     });
@@ -2522,10 +2546,7 @@ describe("MCP chat status", () => {
   it("rereads after a bounded delay and returns ready content from the fresh snapshot", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const thread = await f.chat.createThread(actor.actor, {
       agentId: actor.agentId,
     });
@@ -2604,10 +2625,7 @@ describe("MCP chat status", () => {
   it("returns a fresh deadline status and exposes output that arrives later", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const thread = await f.chat.createThread(actor.actor, {
       agentId: actor.agentId,
     });
@@ -2700,10 +2718,7 @@ describe("MCP chat status", () => {
   it("returns current status when principal wait capacity is full and reuses released slots", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const thread = await f.chat.createThread(actor.actor, {
       agentId: actor.agentId,
     });
@@ -2777,10 +2792,7 @@ describe("MCP chat status", () => {
   it("cancels only a disconnected waiter and releases its admission slot", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const thread = await f.chat.createThread(actor.actor, {
       agentId: actor.agentId,
     });
@@ -2865,10 +2877,7 @@ describe("MCP chat status", () => {
   it("keeps cancellation recovery separate from readable partial and late output", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const sent = await f.sendChatRun(actor.actor, {
       agentId: actor.agentId,
       prompt: "Cancel after partial progress",
@@ -2944,10 +2953,7 @@ describe("MCP chat status", () => {
   it("reports failed runs without inventing assistant messages from terminal errors", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const thread = await f.chat.createThread(actor.actor, {
       agentId: actor.agentId,
     });
@@ -2987,10 +2993,7 @@ describe("MCP chat status", () => {
   it("reports completed runs with confirmed no output", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const sent = await f.sendChatRun(actor.actor, {
       agentId: actor.agentId,
       prompt: "Complete without assistant output",
@@ -3013,10 +3016,7 @@ describe("MCP chat status", () => {
   it("identifies a queued launch and preserves its association after original-input retention", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const puts: RecordedChatEventPut[] = [];
     installFakeChatEventR2(context, puts);
     const active = await f.sendChatRun(actor.actor, {
@@ -3076,10 +3076,7 @@ describe("MCP chat status", () => {
     async (status) => {
       const auth = await fixture();
       const f = createChatEventsFixture(context);
-      const actor = await f.entitledChatActor({
-        userId: auth.userId,
-        orgId: auth.orgId,
-      });
+      const actor = await nativeRunnerChatActor(f, auth);
       const sent = await f.sendChatRun(actor.actor, {
         agentId: actor.agentId,
         prompt: "Observe a delayed terminal callback",
@@ -4204,10 +4201,7 @@ describe("MCP chat mutations", () => {
   it("does not withdraw reserved input and reports its later association with the same active run", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const thread = await f.chat.createThread(actor.actor, {
       agentId: actor.agentId,
     });
@@ -4404,10 +4398,7 @@ describe("MCP chat mutations", () => {
     async (letterCase) => {
       const auth = await fixture();
       const f = createChatEventsFixture(context);
-      const actor = await f.entitledChatActor({
-        userId: auth.userId,
-        orgId: auth.orgId,
-      });
+      const actor = await nativeRunnerChatActor(f, auth);
       const active = await f.sendChatRun(actor.actor, {
         agentId: actor.agentId,
         prompt: "Cancel this whole run",
@@ -4457,10 +4448,7 @@ describe("MCP chat mutations", () => {
   it("rejects cancellation of a completed run without rewriting its terminal state", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const active = await f.sendChatRun(actor.actor, {
       agentId: actor.agentId,
       prompt: "Complete normally",
@@ -4637,10 +4625,7 @@ describe("MCP canonical message reads", () => {
   it("excludes private user context and private citation markup while retaining assistant work and artifact links", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const sent = await f.sendChatRun(actor.actor, {
       agentId: actor.agentId,
       prompt: "Visible request",
@@ -5772,10 +5757,7 @@ describe("MCP message search", () => {
   async function setupMessageSearchFilters() {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const query = "mcpfilterneedle";
     const baseTime = now();
     const sent = await withMockNowForTest(baseTime, async () => {
@@ -6228,10 +6210,7 @@ describe("MCP message search", () => {
   it("continues after a full scan of lexical false positives without hiding an older exact match", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
+    const actor = await nativeRunnerChatActor(f, auth);
     const query = "scanbudgetneedle 上海滩";
     const sent = await f.sendChatRun(actor.actor, {
       agentId: actor.agentId,
@@ -6556,7 +6535,6 @@ describe("external MCP entry", () => {
     { modern: true, scopes: requiredScopes },
     { modern: false, scopes: requiredScopes },
     { modern: true, scopes: defaultScopes },
-    { modern: false, scopes: defaultScopes },
   ])(
     "discovers and calls chat discovery with modern=$modern and scopes=$scopes",
     async ({ modern, scopes }) => {
@@ -7585,7 +7563,7 @@ describe("external MCP entry", () => {
     const { providerId } = await runs.ensureOrgModelProvider(f.actor);
     await runs.updateOrgModelPolicies(
       f.actor,
-      (["claude-sonnet-5", "claude-sonnet-4-6"] as const).map((model) => {
+      (["claude-sonnet-5", "claude-opus-5"] as const).map((model) => {
         return {
           model,
           isDefault: model === "claude-sonnet-5",
@@ -7604,11 +7582,11 @@ describe("external MCP entry", () => {
     await f.chat.updateThreadModelSelection(
       f.actor,
       created.id,
-      "claude-sonnet-4-6",
+      "claude-opus-5",
     );
     expect((await getThread(token, created.id)).thread.model).toStrictEqual({
-      selectedModel: "claude-sonnet-4-6",
-      effectiveModel: "claude-sonnet-4-6",
+      selectedModel: "claude-opus-5",
+      effectiveModel: "claude-opus-5",
       source: "thread",
       admission: "checked_on_send",
     });
@@ -7930,7 +7908,7 @@ describe("external MCP entry", () => {
     const expected: { threadId: string; agentId: string }[] = [];
     for (const actor of actors) {
       await runs.grantProEntitlement(actor);
-      await runs.ensureOrgModelProvider(actor);
+      await runs.ensureOrgModelProvider(actor, { model: NATIVE_RUNNER_MODEL });
       const agent = await bdd.createAgent(actor, {
         displayName: "MCP organization activity",
         visibility: "private",

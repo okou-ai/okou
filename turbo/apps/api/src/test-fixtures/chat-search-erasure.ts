@@ -6,8 +6,8 @@ import {
 } from "./account-erasure-subject";
 
 /** The per-thread transaction's first statement: the unlocked, content-free
- * ownership resolution. Candidate selection also joins Agents, but it left-joins
- * the watermarks and never filters on a single thread id.
+ * ownership resolution. Both reads join allocation sequences and Agents, but
+ * only candidate selection joins the search projection's indexed watermark.
  */
 function isProjectionOwnershipRead(
   queryArgs: unknown[],
@@ -16,8 +16,9 @@ function isProjectionOwnershipRead(
   const text = barrierQueryText(queryArgs);
   return (
     text.startsWith("select") &&
-    text.includes('from "chat_threads" inner join "agents"') &&
-    !text.includes("left join") &&
+    text.includes('from "chat_threads"') &&
+    text.includes('inner join "agents"') &&
+    !text.includes('join "chat_event_search_message_watermarks"') &&
     text.includes('where "chat_threads"."id" =') &&
     barrierQueryBinds(queryArgs, chatThreadId)
   );

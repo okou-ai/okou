@@ -201,6 +201,7 @@ jobs:
             find "$app_dir/Contents/Resources" -maxdepth 3 -print || true
             exit 1
           fi
+          test -x "$app_dir/Contents/MacOS/clerk-auth-helper"
           if [ -e "$app_dir/Contents/Resources/app/src" ]; then
             echo "Packaged app should not contain desktop source files"
             find "$app_dir/Contents/Resources/app/src" -maxdepth 2 -print || true
@@ -229,11 +230,13 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes:0:CFBundleURLName" "$plist" | grep -qx "Okou Auth"
           /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes:0:CFBundleURLSchemes:0" "$plist" | grep -qx "ai.okou.desktop"
           file "$app_dir/Contents/MacOS/Okou" | grep -q "arm64"
+          file "$app_dir/Contents/MacOS/clerk-auth-helper" | grep -q "arm64"
           file "$app_dir/Contents/Resources/native/computer-use-helper" | grep -q "arm64"
           cmp -s apps/desktop/assets/icon.icns "$app_dir/Contents/Resources/icon.icns"
           cmp -s apps/desktop/assets/icon.png "$app_dir/Contents/Resources/app/assets/icon.png"
 
           unzip -l "$artifact_path" | grep -q "Okou.app/Contents/MacOS/Okou"
+          unzip -l "$artifact_path" | grep -q "Okou.app/Contents/MacOS/clerk-auth-helper"
           unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Resources/icon.icns"
           unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Resources/native/computer-use-helper"
           unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Resources/app/dist/main.js"
@@ -260,6 +263,7 @@ jobs:
         env:
           OKOU_DESKTOP_PRODUCT: okou
           OKOU_DESKTOP_PLATFORM_URL: https://app.okou.ai
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY_PROD }}
           SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
@@ -279,12 +283,17 @@ jobs:
           node <<'NODE'
           const fs = require("node:fs");
 
+          if (!process.env.CLERK_PUBLISHABLE_KEY?.startsWith("pk_live_")) {
+            throw new Error("Production Desktop requires a Clerk live publishable key");
+          }
+
           fs.writeFileSync(
             "apps/desktop/desktop-runtime-config.json",
             `${JSON.stringify(
               {
                 platformUrl: process.env.OKOU_DESKTOP_PLATFORM_URL,
                 product: process.env.OKOU_DESKTOP_PRODUCT,
+                clerkPublishableKey: process.env.CLERK_PUBLISHABLE_KEY,
               },
               null,
               2,
@@ -340,7 +349,8 @@ jobs:
           );
           if (
             config.product !== "okou" ||
-            config.platformUrl !== "https://app.okou.ai"
+            config.platformUrl !== "https://app.okou.ai" ||
+            !config.clerkPublishableKey?.startsWith("pk_live_")
           ) {
             console.error("Unexpected Okou Desktop runtime config", config);
             process.exit(1);
@@ -360,6 +370,7 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes:0:CFBundleURLName" "$plist" | grep -qx "Okou Auth"
           /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes:0:CFBundleURLSchemes:0" "$plist" | grep -qx "ai.okou.desktop"
           file "$app_dir/Contents/MacOS/Okou" | grep -q "arm64"
+          file "$app_dir/Contents/MacOS/clerk-auth-helper" | grep -q "arm64"
           file "$app_dir/Contents/Resources/native/computer-use-helper" | grep -q "arm64"
           cmp -s apps/desktop/assets/icon.icns "$app_dir/Contents/Resources/icon.icns"
           cmp -s apps/desktop/assets/icon.png "$app_dir/Contents/Resources/app/assets/icon.png"
@@ -372,6 +383,7 @@ jobs:
           done
 
           unzip -l "$artifact_path" | grep -q "Okou.app/Contents/MacOS/Okou"
+          unzip -l "$artifact_path" | grep -q "Okou.app/Contents/MacOS/clerk-auth-helper"
           unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Resources/icon.icns"
           unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Resources/native/computer-use-helper"
           unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Resources/app/dist/main.js"
@@ -399,6 +411,7 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           OKOU_DESKTOP_PLATFORM_URL: ${{ steps.preview.outputs.platform-url }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY_PREVIEW }}
           SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
@@ -414,10 +427,17 @@ jobs:
           node <<'NODE'
           const fs = require("node:fs");
 
+          if (!process.env.CLERK_PUBLISHABLE_KEY?.startsWith("pk_test_")) {
+            throw new Error("Preview Desktop requires a Clerk test publishable key");
+          }
+
           fs.writeFileSync(
             "apps/desktop/desktop-runtime-config.json",
             `${JSON.stringify(
-              { platformUrl: process.env.OKOU_DESKTOP_PLATFORM_URL },
+              {
+                platformUrl: process.env.OKOU_DESKTOP_PLATFORM_URL,
+                clerkPublishableKey: process.env.CLERK_PUBLISHABLE_KEY,
+              },
               null,
               2,
             )}\n`,
@@ -479,6 +499,7 @@ jobs:
             find "$app_dir/Contents/Resources" -maxdepth 3 -print || true
             exit 1
           fi
+          test -x "$app_dir/Contents/MacOS/clerk-auth-helper"
           if [ -e "$app_dir/Contents/Resources/app/src" ]; then
             echo "Packaged preview app should not contain desktop source files"
             find "$app_dir/Contents/Resources/app/src" -maxdepth 2 -print || true
@@ -521,11 +542,13 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes:0:CFBundleURLName" "$plist" | grep -qx "Okou Dev Auth"
           /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes:0:CFBundleURLSchemes:0" "$plist" | grep -qx "ai.okou.desktop.dev"
           file "$app_dir/Contents/MacOS/Okou Dev" | grep -q "arm64"
+          file "$app_dir/Contents/MacOS/clerk-auth-helper" | grep -q "arm64"
           file "$app_dir/Contents/Resources/native/computer-use-helper" | grep -q "arm64"
           cmp -s apps/desktop/assets/icon.icns "$app_dir/Contents/Resources/icon.icns"
           cmp -s apps/desktop/assets/icon.png "$app_dir/Contents/Resources/app/assets/icon.png"
 
           unzip -l "$artifact_path" | grep -q "Okou Dev.app/Contents/MacOS/Okou Dev"
+          unzip -l "$artifact_path" | grep -q "Okou Dev.app/Contents/MacOS/clerk-auth-helper"
           unzip -l "$artifact_path" | grep -q "Okou Dev.app/Contents/Resources/icon.icns"
           unzip -l "$artifact_path" | grep -q "Okou Dev.app/Contents/Resources/native/computer-use-helper"
           unzip -l "$artifact_path" | grep -q "Okou Dev.app/Contents/Resources/app/dist/main.js"
@@ -672,6 +695,7 @@ jobs:
           OKOU_DESKTOP_SKIP_SIGNING: "true"
           OKOU_DESKTOP_PRODUCT: okou
           OKOU_DESKTOP_PLATFORM_URL: https://app.okou.ai
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY_PROD }}
         working-directory: turbo
         run: |
           cleanup_runtime_config() {
@@ -685,12 +709,17 @@ jobs:
           node <<'NODE'
           const fs = require("node:fs");
 
+          if (!process.env.CLERK_PUBLISHABLE_KEY?.startsWith("pk_live_")) {
+            throw new Error("Canonical Desktop requires a Clerk live publishable key");
+          }
+
           fs.writeFileSync(
             "apps/desktop/desktop-runtime-config.json",
             `${JSON.stringify(
               {
                 platformUrl: process.env.OKOU_DESKTOP_PLATFORM_URL,
                 product: process.env.OKOU_DESKTOP_PRODUCT,
+                clerkPublishableKey: process.env.CLERK_PUBLISHABLE_KEY,
               },
               null,
               2,
@@ -733,9 +762,10 @@ jobs:
             fs.readFileSync(process.env.RUNTIME_CONFIG, "utf8"),
           );
           if (
-            Object.keys(config).sort().join(",") !== "platformUrl,product" ||
+            Object.keys(config).sort().join(",") !== "clerkPublishableKey,platformUrl,product" ||
             config.product !== process.env.OKOU_DESKTOP_PRODUCT ||
-            config.platformUrl !== process.env.OKOU_DESKTOP_PLATFORM_URL
+            config.platformUrl !== process.env.OKOU_DESKTOP_PLATFORM_URL ||
+            config.clerkPublishableKey !== process.env.CLERK_PUBLISHABLE_KEY
           ) {
             console.error("Unexpected canonical Desktop runtime config", config);
             process.exit(1);

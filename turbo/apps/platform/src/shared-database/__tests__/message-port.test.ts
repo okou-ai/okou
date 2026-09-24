@@ -938,10 +938,13 @@ test("Warm unread chats only after chat message notifications", async () => {
   });
   await bridge.registerTab(context.signal);
   await vi.waitFor(() => {
-    expect(indicatorReloadCount).toBeGreaterThan(0);
+    for (const topic of ["threadListChanged", "chatThreadReadCursorUpdated"]) {
+      expect(
+        context.mocks.ably.hasSubscriptionOnChannel(credentialChannel(), topic),
+      ).toBeTruthy();
+    }
   });
 
-  const reloadsBeforeNotifications = indicatorReloadCount;
   context.mocks.ably.triggerOnChannel(credentialChannel(), "threadListChanged");
   context.mocks.ably.triggerOnChannel(
     credentialChannel(),
@@ -949,10 +952,10 @@ test("Warm unread chats only after chat message notifications", async () => {
     { threadId, lastReadAt: null },
   );
   await vi.waitFor(() => {
-    expect(indicatorReloadCount).toBeGreaterThanOrEqual(
-      reloadsBeforeNotifications + 2,
-    );
+    expect(indicatorReloadCount).toBeGreaterThanOrEqual(2);
   });
+  // Subscribing alone must not reload indicators; only the two notifications do.
+  expect(indicatorReloadCount).toBe(2);
   expect(catchUpRequestCount).toBe(0);
 
   const firstWarmed = warming.next();

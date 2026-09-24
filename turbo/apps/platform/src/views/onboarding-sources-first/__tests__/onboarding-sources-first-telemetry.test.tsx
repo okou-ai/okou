@@ -157,7 +157,7 @@ test("Each step reports its own funnel event, counting invitees rather than nami
         flow: "source_first",
         step_key: "industry",
         step_index: 0,
-        step_count: 7,
+        step_count: 6,
         route_path: ROUTES.onboarding,
         is_owner: true,
       }),
@@ -209,13 +209,13 @@ test("Each step reports its own funnel event, counting invitees rather than nami
       onboardingEvent("StepViewed", {
         step_key: "sources",
         step_index: 1,
-        step_count: 7,
+        step_count: 6,
         route_path: ROUTES.onboardingSources,
       }),
       onboardingEvent("StepViewed", {
         step_key: "team",
         step_index: 2,
-        step_count: 7,
+        step_count: 6,
       }),
       onboardingEvent("InviteAdded", {
         step_key: "team",

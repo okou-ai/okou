@@ -1,3 +1,4 @@
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { randomUUID } from "node:crypto";
 
 import type {
@@ -6,7 +7,7 @@ import type {
 } from "@okouai/db/jsonb-contracts/chat-thread";
 import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
@@ -47,9 +48,9 @@ export async function setChatThreadAgentFixture(args: {
 
 /**
  * Infrastructure exception: no production writer moves a thread between users,
- * but `user_id` is not a key column. This mutation proves the shared helper's
- * KEY SHARE permits the move and the creation-local SHARE re-read detects it
- * before a downstream run can be pinned.
+ * and `user_id` belongs to the canonical ownership key. Before admission pins
+ * the thread, this mutation exercises identity revalidation. After KEY SHARE,
+ * it waits until the admitted operation commits or rolls back.
  */
 export async function setChatThreadUserFixture(args: {
   readonly chatThreadId: string;
@@ -231,8 +232,16 @@ export async function readChatThreadEventSequenceFixture(
   chatThreadId: string,
 ): Promise<number> {
   const [thread] = await db()
-    .select({ seqId: chatThreads.lastChatEventSeqId })
+    .select({
+      seqId: sql`COALESCE(${chatEventSequences.lastSeqId}, 0)`.mapWith(
+        chatEventSequences.lastSeqId,
+      ),
+    })
     .from(chatThreads)
+    .leftJoin(
+      chatEventSequences,
+      eq(chatEventSequences.chatThreadId, chatThreads.id),
+    )
     .where(eq(chatThreads.id, chatThreadId))
     .limit(1);
   if (!thread) {

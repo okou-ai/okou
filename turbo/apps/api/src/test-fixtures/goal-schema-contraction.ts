@@ -1,3 +1,4 @@
+import { reserveFixtureChatEventSequence } from "./chat-event-sequences";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -16,10 +17,9 @@ import { env, mockEnv, optionalEnv } from "../lib/env";
 import { flushWaitUntilForTest } from "../signals/context/wait-until";
 import { installApiTestConnectorCatalog } from "./connector-catalog";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { nowDate } from "../lib/time";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { eq, and, lte, ne, sql } from "drizzle-orm";
+import { eq, and, lte, ne } from "drizzle-orm";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
 import {
   insertChatEvent,
@@ -198,13 +198,9 @@ export async function appendRetainedUsageWebContext(
     throw new Error("Expected prior usage for a legacy revision");
   }
   await db().transaction(async (tx) => {
-    const [thread] = await tx
-      .update(chatThreads)
-      .set({
-        lastChatEventSeqId: sql`${chatThreads.lastChatEventSeqId} + 1`,
-      })
-      .where(eq(chatThreads.id, prior.chatThreadId))
-      .returning({ seqId: chatThreads.lastChatEventSeqId });
+    const thread = {
+      seqId: await reserveFixtureChatEventSequence(tx, prior.chatThreadId, 1),
+    };
     if (!thread) {
       throw new Error("Expected retained thread");
     }

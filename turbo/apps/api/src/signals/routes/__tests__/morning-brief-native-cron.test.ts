@@ -64,6 +64,7 @@ import {
 } from "../../../test-fixtures/morning-brief-native-schedule";
 import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock";
 import { admitWorkflowAutomationEventFixture } from "../../../test-fixtures/workflow-queue";
+import { readNativeScheduleSkipsFixture } from "../../../test-fixtures/workflow-schedule-expiry";
 import {
   createScopedInlineMorningBriefCronRoutesForTest,
   createScopedMorningBriefCronRoutesForTest,
@@ -71,7 +72,10 @@ import {
 import { internalMorningBriefWorkerRoutes } from "../internal-morning-brief-worker";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  setHistoricalNativeMorningBriefForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
 import {
   seedSlackOrgConnection$,
   seedSlackOrgInstallation$,
@@ -218,10 +222,10 @@ async function fixture(
     context.signal,
   );
   const brief = await seedInstalledMorningBrief({ orgId, userId });
-  await updateFeatureSwitchesForUser(
+  await setHistoricalNativeMorningBriefForUser(
     context,
     { orgId, userId },
-    { [FeatureSwitchKey.NativeMorningBrief]: options.feature !== false },
+    options.feature !== false,
   );
   const installation = await store.set(
     seedSlackOrgInstallation$,
@@ -447,6 +451,27 @@ describe("native Morning Brief cron", () => {
       }),
       [401],
     );
+  });
+
+  it("skips an expired unclaimed native obligation without generation or an occurrence claim", async () => {
+    const f = await fixture();
+    await tickUntilNative(f);
+    const due = await makeNativeOccurrenceDue(f);
+    mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
+    mockNow(due.getTime() + 30 * 60_000 + 1);
+
+    const first = await accept(tick(f), [200]);
+    expect(first.body.claimed).toBe(0);
+    await expect(readNativeOccurrences(f)).resolves.toHaveLength(0);
+    await expect(readNativeScheduleSkipsFixture(f)).resolves.toMatchObject([
+      { scheduledAnchorAt: due },
+    ]);
+    expect((await readNativeSchedule(f))?.nextRunAt?.getTime()).toBeGreaterThan(
+      now(),
+    );
+    const second = await accept(tick(f), [200]);
+    expect(second.body.claimed).toBe(0);
+    await expect(readNativeOccurrences(f)).resolves.toHaveLength(0);
   });
 
   it("fans out one due owner to an authenticated, independent invocation without waiting for generation", async () => {
@@ -1577,7 +1602,6 @@ describe("native Morning Brief cron", () => {
     expect(paused.body).toMatchObject({
       enabled: false,
       status: "paused",
-      nextRunAt: null,
     });
     await expect(readNativeSchedule(f)).resolves.toMatchObject({
       enabled: false,

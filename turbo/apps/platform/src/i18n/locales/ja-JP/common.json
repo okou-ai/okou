@@ -347,7 +347,7 @@
     },
     "sources": {
       "agent": "エージェント",
-      "agentphone": "エージェントフォン",
+      "agentphone": "iMessage",
       "automationEvent": "オートメーションイベント",
       "automationSchedule": "オートメーションスケジュール",
       "email": "メール",
@@ -1182,7 +1182,7 @@
         "everythingInBuiltForTeams": "{{plan}} の全機能をチーム向けに",
         "included": "含まれるもの",
         "liveBrowser": "エージェントのライブブラウザを見て操作を奪う",
-        "models": "Claude Opus 5、GPT 5.6 Sol、DeepSeek V4 Pro",
+        "models": "Claude Opus 5、GPT 5.6 Sol、DeepSeek V4.1 Flash",
         "moreConnectorsChannels": "カスタムコネクターとチャネル連携をより多く",
         "supportEmail": "メールサポート",
         "supportPriority": "優先サポート",
@@ -1436,6 +1436,11 @@
         },
         "earned": "{{amount}} 獲得",
         "howRewardsWork": "報酬の仕組み",
+        "imessage": {
+          "action": "追加",
+          "description": "iPhone から {{assistantName}} にメッセージ",
+          "name": "iMessage に追加"
+        },
         "inReview": "確認中",
         "intro": {
           "checkin": {
@@ -1734,6 +1739,7 @@
       "cancelFailed": "リクエストをキャンセルできませんでした。もう一度お試しください。",
       "cancelled": "リクエストをキャンセルしました",
       "cancelling": "キャンセルしています…",
+      "checkFailed": "ブラウザーを確認できませんでした。入力内容は保持されています。送信前に再試行してください。",
       "clearValue": "サイトの値を消去",
       "completed": "情報を追加しました",
       "continue": "エージェントに通知",
@@ -2940,15 +2946,26 @@
     "clientSecret": "Service Token のクライアントシークレット",
     "clientSecretPlaceholder": "Service Token の Client Secret を貼り付け",
     "configuration": "Cloudflare Access",
+    "convert": "個人用に変更",
+    "convertConfirm": "所有者が再設定するまで、これらのホストに接続できなくなることを理解しました。",
+    "convertHelp": "この Service Token を個人用として保持します。自分のホストは接続を維持できます。",
+    "convertUncertain": "変更を確認できませんでした。再試行する前に最新の設定を確認してください。",
+    "convertWarning_other": "影響を受ける他のユーザーの SSH ホスト: {{count}} 台。所有者が再設定するか Direct を選ぶまで利用できません。",
     "createNew": "新しい Cloudflare Access を作成",
     "delete": "Cloudflare Access を削除",
-    "deleteHelp": "この Cloudflare Access を削除しますか？保存された Service Token は復元できません。ホストが使用中の場合は削除できません。",
+    "deleteConfirm": "所有者が再バインドするまで、これらのホストを利用できなくなることを理解しました。",
+    "deleteHelp": "この Cloudflare Access を削除しますか？保存された Service Token は復元できません。自分のホストは先に再バインドしてください。",
+    "deleteImpact": "以下のメンバーの SSH ホストは再バインドが必要です。自動的に直接接続には切り替わりません。",
+    "deleteUncertain": "削除結果を確認できませんでした。再試行する前に最新の影響を確認してください。",
     "description": "Cloudflare Access サービストークンで保護されたアプリケーションにアクセスします。",
     "edit": "Cloudflare Access を編集",
     "failed": "Cloudflare Accessの変更を保存できませんでした。再試行してください。",
     "forbidden": "共有 Cloudflare Access を変更できるのは組織の管理者だけです。",
+    "formerMember": "元メンバー（名前は取得できません）",
+    "hostCount_other": "SSH ホスト {{count}} 台",
+    "impactChanged": "この変更で影響を受けるホストが変わりました。再度確認する前に最新の影響を確認してください。",
     "inUse": "SSH ホストがこの Cloudflare Access を使用しています。ホストの所有者が先に別の設定へ再接続するか、ホストを削除する必要があります。",
-    "inUseHelp": "この Cloudflare Access を削除する前に、対象ホストに別の Cloudflare Access を選択するか、明示的に直接接続に切り替えるか、ホストを削除してください。",
+    "inUseHelp": "自分の SSH ホストがまだこの設定を使用しています。別の設定に再バインドするか、明示的に直接接続を選択するか、先にホストを削除してください。",
     "invalidInput": "一部のCloudflare Access設定が無効です。入力内容を確認して再試行してください。",
     "keepChanges": "このバージョンに自分の変更を適用",
     "latest": "最後に保存された設定",
@@ -2961,10 +2978,15 @@
     "organization": "組織",
     "organizationHelp": "この組織のメンバー全員がこのサービストークンを使用できます。変更できるのは管理者だけです。",
     "personal": "個人",
+    "promote": "組織用に変換",
+    "promoteConfirm": "組織の全メンバーがこの Service Token を使用できるようになることを理解しました。",
+    "promoteHelp": "個人用 Cloudflare Access を組織と共有します。Service Token と自分の SSH ホストのバインドは維持されます。",
+    "promoteUncertain": "変換結果を確認できませんでした。この画面を閉じ、最新の設定を確認してから再試行してください。",
     "replace": "Service Token を置換",
     "resourceIdConflict": "このリソース ID は使用できません。フォームを閉じて開き直し、もう一度お試しください。",
     "retry": "再試行",
     "reviewHelp": "下書きは保持されています。変更を適用する前に、最後に保存された設定を確認してください。",
+    "reviewLatest": "最新の影響を確認",
     "revisionExhausted": "これ以上更新できません。新しく作成してください。",
     "save": "保存",
     "saveUncertain": "変更が保存されたか確認できませんでした。同じ内容で保存を再試行するか、閉じて一覧を確認してから追加し直してください。",
@@ -3449,7 +3471,7 @@
         "invalidSignature": "このリンクの署名は無効です。",
         "invalidTimestamp": "このリンクのタイムスタンプは無効です。",
         "invalidTitle": "接続リンクが無効です",
-        "risk": "SMS および MMS の返信は確実に配信されない可能性があります。最も信頼性の高いエクスペリエンスを得るには、この AgentPhone 番号で iMessage を使用してください。",
+        "risk": "SMS および MMS の返信は確実に配信されない可能性があります。最も信頼性の高いエクスペリエンスを得るには、この番号で iMessage を使用してください。",
         "successDescription": "{{phone}} が接続されています。テキスト メッセージを送信して、{{assistantName}} とのチャットを開始します。",
         "successTitle": "接続された電話番号"
       },
@@ -3571,9 +3593,10 @@
       "agentphone": {
         "authorizedSender": "承認された送信者",
         "codeExpiry": "10分後に期限切れになります",
+        "codeLabel": "コード",
         "connectAria": "電話を接続する",
-        "connectDescription": "コードをスキャンするか「メッセージ」を開き、入力済みのコードを送信してください。",
-        "connectTitle": "電話を接続する",
+        "connectDescription": "カメラでスキャンし、入力済みのコードを送信してください。",
+        "connectTitle": "iPhone から {{assistantName}} にメッセージ",
         "copyAria": "{{phone}} をコピーします",
         "copyCodeAria": "接続コード {{code}} をコピー",
         "copyCodeError": "接続コードをコピーできませんでした",
@@ -3584,13 +3607,12 @@
         "creatingCode": "接続コードを作成中…",
         "description": "{{assistantName}} へのテキスト メッセージ アクセス",
         "destination": "iMessage または SMS で",
-        "manualSend": "または",
-        "manualSendTo": "を次の番号に送信：",
         "openMessages": "メッセージを開く",
         "options": "電話オプション",
         "phoneLabel": "電話",
         "qrTitle": "スキャンして、接続コードが入力された「メッセージ」を開く",
         "risk": "可能な場合は iMessage を使用してください。SMS および MMS の返信は確実に届かないことがあります。",
+        "sendToLabel": "送信先",
         "tryAgain": "もう一度試す"
       },
       "catalogDiagnostics": {
@@ -4000,8 +4022,8 @@
         "uninstallTitle": "Telegram ボットをアンインストールしますか?"
       },
       "toasts": {
-        "agentphoneConnected": "エージェントフォンが接続されました",
-        "agentphoneDisconnected": "AgentPhone が切断されました",
+        "agentphoneConnected": "電話番号が接続されました",
+        "agentphoneDisconnected": "電話番号の接続が解除されました",
         "slackConnected": "Slack は正常に接続されました",
         "slackDisconnected": "Slack から切断されました",
         "slackInstalled": "Slack は正常にインストールされました",
@@ -4256,7 +4278,6 @@
       "documentTitles": {
         "experience": "AI の利用経験",
         "industry": "分野を選ぶ",
-        "profile": "あなたのプロフィール",
         "ready": "Okou の準備ができました",
         "skills": "スキルをインポート",
         "slack": "Okou を Slack に追加",
@@ -4319,17 +4340,6 @@
       "industry": {
         "copy": "Okou は、あなたとチームのための仕事のアシスタントです。散らばった情報を、クラウドで完了した仕事に変えます。分野を選ぶと、合った最初のタスクを提案します。",
         "title": "どんな仕事をしていますか？"
-      },
-      "profile": {
-        "communicationStyle": "コミュニケーションのスタイル",
-        "copy": "接続したアカウントをもとに、あなたの仕事を初めて整理しました。",
-        "failed": "今はプロフィールを作成できません。再試行するか、次に進んでください。",
-        "heading": "あなたのプロフィール",
-        "loading": "接続した仕事からプロフィールを作成しています…",
-        "priorities": "考えられる優先事項",
-        "professionalIdentity": "あなたの仕事",
-        "retry": "再試行",
-        "title": "あなたについてわかったこと"
       },
       "skills": {
         "copied": "コピーしました",
@@ -4729,7 +4739,7 @@
         "unconfirmedNote": "{{provider}} の接続を確認できませんでした。もう一度試すか、あとでつなげます。"
       },
       "team": {
-        "copy": "チームメンバーを招待して、共有ワークフローを一緒に使いましょう。",
+        "copy": "チームメンバーを招待してワークフローを共有しましょう。ツールはそれぞれが自分で接続します。",
         "invite": "招待を送る",
         "invited": "招待済み",
         "label": "チームメンバーのメールアドレス",
@@ -4743,12 +4753,10 @@
           "workspace": "あなたのワークスペースに参加します。"
         },
         "sending": "送信中…",
-        "title": "チーム全員で Okou を活用しましょう",
-        "trust": "全員が同じワークフローを使い、それぞれ自分のツールを接続します。"
+        "title": "チーム全員で Okou を活用しましょう"
       },
       "welcome": {
         "copy": "仕事に合わせた提案を確認し、目的に合わせて調整してから Okou に任せましょう。",
-        "offerTitle": "最初の 1 時間のコンサルティングは無料、さらに最大 100 クレジット —",
         "promptLabel": "最初のプロンプト",
         "start": "Okou を使い始める",
         "title": "意味のあるタスクから始めましょう"
@@ -6601,9 +6609,6 @@
       "emailSubscription": {
         "description": "ブリーフ、リマインダー、その他のワークスペース更新をメールで受け取ります。",
         "descriptionWithEmail": "{{email}} でブリーフ、リマインダー、その他のワークスペース更新を受け取ります。",
-        "loading": "メール配信設定を確認中…",
-        "retryMessage": "メール配信設定を保存または読み込めませんでした。もう一度お試しください。",
-        "saving": "保存中…",
         "sectionTitle": "メール配信設定",
         "title": "メール通知",
         "unavailable": "メールを利用できません",
@@ -6629,17 +6634,11 @@
         "title": "言語"
       },
       "morningBrief": {
-        "chatAndEmail": "チャット＋メール",
-        "chatOnly": "チャットのみ",
-        "checkEmailSubscription": "上のメール配信設定で配信状況を確認してください。",
         "conflict": "インストール状態に不整合があるため、Morning Brief は一時的に利用できません。調整が完了したら再試行してください。",
         "description": "お使いのタイムゾーンの午前7:00に毎日の優先事項を受け取ります。",
-        "lastDelivered": "前回の配信：{{date}}",
         "loading": "Morning Brief の設定を読み込んでいます...",
         "missingDefaultAgent": "Morning Brief を有効にする前に、使用可能なデフォルト Agent を選択してください。",
         "missingTimezone": "Morning Brief を有効にする前に、有効なタイムゾーンを設定してください。",
-        "nextBrief": "次のブリーフ {{date}}",
-        "paused": "一時停止中",
         "preparationFailed": "設定は自動的に再試行されます。今すぐ再試行することもできます。",
         "preparing": "最初のモーニングブリーフを準備中です。いつでもオフにできます。",
         "retry": "再試行",
@@ -7084,6 +7083,7 @@
       "add": "認証情報を追加",
       "appleDhFieldHelp": "各項目は UTF-8 で 1～63 バイトです。NUL は使用できません。",
       "appleDhMethod": "Apple DH のユーザー名とパスワード",
+      "appleSrpMethod": "Apple Direct SRP のユーザー名とパスワード",
       "authentication": "認証方式",
       "createNew": "新しい認証情報を作成",
       "delete": "認証情報を削除",
@@ -7152,6 +7152,8 @@
     "security": {
       "appleDh": "Mac の画面共有 (Apple DH)",
       "appleDhHelp": "保存済みの SSH 接続経由で macOS の画面共有を使用します。RFB の接続先はその Mac の 127.0.0.1 または ::1 に限られます。SSH が VNC セッション全体を保護します。管理下の Mac SSH ホストを使用してください。ホスト鍵だけでは先へのプロキシ転送を否定できません。",
+      "appleSrp": "Mac の画面共有 (Apple Direct SRP)",
+      "appleSrpHelp": "保存済みの Mac への SSH 接続と、RFB 接続先 127.0.0.1 または ::1 が必要です。SRP はアカウントとサーバーの証明を検証し、SSH は VNC セッション全体を保護します。SSH ホスト鍵は選択した接続先を識別しますが、先へのプロキシ転送は否定できません。",
       "caBundle": "CA 証明書（PEM）",
       "caHelp": "CA 証明書は最大 8 件、合計 64 KiB です。秘密鍵やサーバー証明書は貼り付けないでください。",
       "caHint": "サーバー証明書を発行した公開 CA 証明書を貼り付けてください",
@@ -7171,6 +7173,7 @@
     "summary_other": "設定済みホスト {{count}} 台",
     "transport": {
       "appleDhDestinationHelp": "Apple DH には 127.0.0.1 または ::1 を入力してください。選択した SSH ホスト経由で到達する Mac 自身のループバックアドレスです。",
+      "appleSrpDestinationHelp": "Apple Direct SRP には 127.0.0.1 または ::1 を入力してください。選択した SSH ホスト経由で到達する Mac 自身のループバックアドレスです。",
       "destination": "RFB接続先",
       "destinationHelp": "SSHルートでは、このホストとポートへRunnerから直接ではなく、選択したSSHサーバーから接続します。",
       "direct": "Runnerから直接",
