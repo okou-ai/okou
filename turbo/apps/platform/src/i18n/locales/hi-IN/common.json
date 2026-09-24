@@ -1437,6 +1437,11 @@
         },
         "earned": "{{amount}} अर्जित",
         "howRewardsWork": "इनाम कैसे काम करते हैं",
+        "imessage": {
+          "action": "जोड़ें",
+          "description": "अपने iPhone से {{assistantName}} को मैसेज करें",
+          "name": "iMessage में जोड़ें"
+        },
         "inReview": "समीक्षा में",
         "intro": {
           "checkin": {
@@ -3595,9 +3600,10 @@
       "agentphone": {
         "authorizedSender": "अधिकृत प्रेषक",
         "codeExpiry": "10 मिनट में समाप्त होगा",
+        "codeLabel": "कोड",
         "connectAria": "फ़ोन कनेक्ट करें",
-        "connectDescription": "कोड स्कैन करें या Messages खोलें, फिर पहले से भरा हुआ कोड भेजें।",
-        "connectTitle": "फ़ोन कनेक्ट करें",
+        "connectDescription": "अपने कैमरे से स्कैन करें, फिर पहले से भरा हुआ कोड भेजें।",
+        "connectTitle": "अपने iPhone से {{assistantName}} को मैसेज करें",
         "copyAria": "{{phone}} कॉपी करें",
         "copyCodeAria": "कनेक्शन कोड {{code}} कॉपी करें",
         "copyCodeError": "कनेक्शन कोड कॉपी नहीं हो सका",
@@ -3608,13 +3614,12 @@
         "creatingCode": "कनेक्शन कोड बनाया जा रहा है…",
         "description": "{{assistantName}} तक टेक्स्ट-संदेश पहुंच",
         "destination": "iMessage या SMS को",
-        "manualSend": "या भेजें",
-        "manualSendTo": "इस नंबर पर",
         "openMessages": "मैसेज खोलें",
         "options": "फ़ोन विकल्प",
         "phoneLabel": "फ़ोन",
         "qrTitle": "कनेक्शन कोड पहले से भरे हुए Messages को खोलने के लिए स्कैन करें",
         "risk": "जहाँ संभव हो iMessage का उपयोग करें। SMS और MMS के जवाब भरोसेमंद तरीके से नहीं पहुँच सकते हैं।",
+        "sendToLabel": "इस नंबर पर भेजें",
         "tryAgain": "फिर से कोशिश करें"
       },
       "catalogDiagnostics": {
@@ -6612,9 +6617,6 @@
       "emailSubscription": {
         "description": "ईमेल से ब्रीफ़, रिमाइंडर और अन्य कार्यस्थान अपडेट प्राप्त करें।",
         "descriptionWithEmail": "{{email}} पर ब्रीफ़, रिमाइंडर और अन्य कार्यस्थान अपडेट प्राप्त करें।",
-        "loading": "ईमेल सदस्यता जाँची जा रही है…",
-        "retryMessage": "आपकी ईमेल सदस्यता सहेजी या लोड नहीं की जा सकी। फिर से कोशिश करें।",
-        "saving": "सहेजा जा रहा है…",
         "sectionTitle": "ईमेल सदस्यताएँ",
         "title": "ईमेल अपडेट",
         "unavailable": "ईमेल उपलब्ध नहीं है",

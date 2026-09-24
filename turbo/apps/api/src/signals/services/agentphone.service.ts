@@ -23,6 +23,7 @@ import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneUserAgentPreferences } from "@okouai/db/schema/agentphone-user-agent-preference";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { chatEvents } from "@okouai/db/schema/chat-event";
+import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { and, desc, eq, isNull, like, notExists, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { env } from "../../lib/env";
@@ -57,6 +58,7 @@ import {
   type AgentPhoneChannel,
   type AgentPhoneUserLink,
 } from "./agentphone-shared.service";
+import { awardCompletedGetStartedQuest } from "./get-started-rewards.service";
 import { ensureAgentPhoneChatThreadRoute } from "./agentphone-chat-ingress.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import {
@@ -319,8 +321,19 @@ export function buildAgentPhoneConnectUrl(params: {
   return `${env("APP_URL")}/agentphone/connect?${query.toString()}`;
 }
 
+/**
+ * Link a phone to the member, in the caller's transaction.
+ *
+ * Creating the link is what the Get started iMessage quest rewards, so the
+ * award commits or rolls back with the row. Only a new row earns it: the
+ * branches that find the member's existing link merely touch it, which keeps
+ * phones linked before the quest shipped from being credited retroactively.
+ * The source key is fixed rather than the phone or organization, so the member
+ * has a single claim however often they unlink and link again, and the quest's
+ * one reward slot is what holds the limit.
+ */
 export async function linkAgentPhoneUser(
-  db: Db,
+  tx: Tx,
   params: {
     readonly phoneHandle: string;
     readonly channel: AgentPhoneChannel;
@@ -332,7 +345,7 @@ export async function linkAgentPhoneUser(
     params.phoneHandle,
     params.channel,
   );
-  const [existingPhoneLink] = await db
+  const [existingPhoneLink] = await tx
     .select()
     .from(agentphoneUserLinks)
     .where(eq(agentphoneUserLinks.phoneHandle, phoneHandle))
@@ -346,7 +359,7 @@ export async function linkAgentPhoneUser(
       return {
         ok: true,
         userLink: await touchAgentPhoneUserLink(
-          db,
+          tx,
           existingPhoneLink,
           phoneHandle,
           params.channel,
@@ -361,7 +374,7 @@ export async function linkAgentPhoneUser(
     };
   }
 
-  const [existingUserOrgLink] = await db
+  const [existingUserOrgLink] = await tx
     .select()
     .from(agentphoneUserLinks)
     .where(
@@ -377,7 +390,7 @@ export async function linkAgentPhoneUser(
       return {
         ok: true,
         userLink: await touchAgentPhoneUserLink(
-          db,
+          tx,
           existingUserOrgLink,
           phoneHandle,
           params.channel,
@@ -392,7 +405,7 @@ export async function linkAgentPhoneUser(
     };
   }
 
-  const [inserted] = await db
+  const [inserted] = await tx
     .insert(agentphoneUserLinks)
     .values({
       phoneHandle,
@@ -403,6 +416,12 @@ export async function linkAgentPhoneUser(
     .returning();
 
   if (inserted) {
+    await awardCompletedGetStartedQuest(tx, {
+      orgId: params.orgId,
+      userId: params.userId,
+      questKey: "imessage",
+      sourceKey: "agentphone-link",
+    });
     return { ok: true, userLink: inserted };
   }
   return { ok: false, reason: "conflict" };
@@ -1893,4 +1912,12 @@ export async function publishAgentPhoneUserChanged(
   userId: string,
 ): Promise<void> {
   await publishUserSignal([userId], "agentphone:changed");
+}
+
+/** A new link may also have completed the Get started iMessage quest. */
+export async function publishAgentPhoneUserLinked(
+  userId: string,
+): Promise<void> {
+  await publishAgentPhoneUserChanged(userId);
+  await publishUserSignal([userId], GET_STARTED_REWARDS_CHANGED_EVENT);
 }

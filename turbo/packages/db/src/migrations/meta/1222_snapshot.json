@@ -1,6 +1,6 @@
 {
-  "id": "e87001bf-463b-4530-8c73-ef14b4966bd5",
-  "prevId": "4fd4a686-52f2-484e-bf43-417be614fcfd",
+  "id": "22087e4a-5fe1-4632-b447-80d430b2c7fc",
+  "prevId": "e87001bf-463b-4530-8c73-ef14b4966bd5",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3129,7 +3129,8 @@
           "name": "public_brand",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": false,
+          "default": "'okou'"
         },
         "agentphone_user_link_id": {
           "name": "agentphone_user_link_id",
@@ -3391,7 +3392,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'vm0'"
+          "default": "'okou'"
         },
         "created_at": {
           "name": "created_at",
@@ -7407,7 +7408,8 @@
           "name": "public_brand",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": false,
+          "default": "'okou'"
         },
         "created_at": {
           "name": "created_at",

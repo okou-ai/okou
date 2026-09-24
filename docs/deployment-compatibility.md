@@ -36,7 +36,7 @@ AgentPhone launches and file materialization use the fixed `okou` brand, and
 `GET /api/integrations/agentphone/link` no longer returns `publicBrand`. No App
 reads that response field, and the App does not validate responses.
 
-Migration `1221_agentphone_public_brand_okou_default` sets the column default to
+Migration `1222_agentphone_public_brand_okou_default` sets the column default to
 `'okou'` on `agentphone_user_links` (previously `'vm0'`), `agentphone_messages`
 and `chat_agentphone_context` (previously no default), matching
 `agentphone_connection_codes`. An old API therefore reads `okou` from rows the
