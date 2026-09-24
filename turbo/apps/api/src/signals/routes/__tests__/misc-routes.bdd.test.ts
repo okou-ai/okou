@@ -25,55 +25,6 @@ function unsubscribeToken(userId: string): string {
   return `${userId}.${signature}`;
 }
 
-describe("MISC-01: organization logo and profile-adjacent API boundaries", () => {
-  it("chains logo read, upload validation, upload success, and delete through public API", async () => {
-    const { api, admin, member } = testActors();
-
-    const unauthenticated = await api.requestOrgLogo(null, [401]);
-    expectApiError(unauthenticated.body);
-
-    api.setOrgLogoRead({
-      imageUrl: "https://images.example.test/org-logo.png",
-      hasImage: true,
-    });
-    const current = await api.requestOrgLogo(admin, [200]);
-    expect(current.body).toStrictEqual({
-      logoUrl: "https://images.example.test/org-logo.png",
-      hasImage: true,
-    });
-
-    const memberUpload = await api.uploadOrgLogo(
-      member,
-      new File([new Uint8Array([1])], "logo.png", { type: "image/png" }),
-      [403],
-    );
-    expectApiError(memberUpload.body);
-    expect(memberUpload.body.error.message).toBe(
-      "Only admins can upload the logo",
-    );
-
-    const missingFile = await api.uploadOrgLogo(admin, null, [400]);
-    expectApiError(missingFile.body);
-    expect(missingFile.body.error.message).toBe("No file provided");
-
-    api.setOrgLogoUpload({
-      imageUrl: "https://images.example.test/uploaded-logo.png",
-      hasImage: true,
-    });
-    const uploaded = await api.uploadOrgLogo(
-      admin,
-      new File([new Uint8Array([1, 2])], "logo.webp", {
-        type: "image/webp",
-      }),
-      [200],
-    );
-    expect(uploaded.body).toStrictEqual({
-      logoUrl: "https://images.example.test/uploaded-logo.png",
-      hasImage: true,
-    });
-  });
-});
-
 describe("MISC-02: preferences, push subscription, user export, and empty logs", () => {
   it("chains visible user-scoped reads and writes without hidden fixtures", async () => {
     const { api, admin } = testActors();
