@@ -745,6 +745,27 @@ async function dueWorkflowAutomationIsFireable(
   return true;
 }
 
+async function retireDepartedOwner(
+  context: { db: Db; currentTime: Date; expiryEnabled: boolean },
+  row: DueWorkflowAutomationRow,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const anchor = row.automation.nextRunAt;
+  if (
+    !context.expiryEnabled ||
+    !anchor ||
+    !scheduleExpired(anchor, nowDate())
+  ) {
+    return false;
+  }
+  return !(await dueWorkflowAutomationOwnerIsMember(
+    context.db,
+    row,
+    context.currentTime,
+    signal,
+  ));
+}
+
 type WorkflowPollerArgs = {
   readonly db: Db;
   readonly automationId?: string;
@@ -931,18 +952,9 @@ async function executeDueWorkflowAutomations(
     return true;
   };
 
+  const expiryContext = { db: args.db, currentTime, expiryEnabled };
   for (const row of rows) {
-    if (
-      expiryEnabled &&
-      row.automation.nextRunAt &&
-      scheduleExpired(row.automation.nextRunAt, nowDate()) &&
-      !(await dueWorkflowAutomationOwnerIsMember(
-        args.db,
-        row,
-        currentTime,
-        signal,
-      ))
-    ) {
+    if (await retireDepartedOwner(expiryContext, row, signal)) {
       counters.skipped++;
       continue;
     }
