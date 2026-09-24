@@ -266,6 +266,59 @@ test("Remote access is absent when no SSH or VNC hosts are configured", async ()
   expect(screen.queryByText("Remote access")).toBeNull();
 });
 
+test("A new chat has no remote access menu when no hosts are configured", async () => {
+  installComposerConnectorFixture();
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, { ssh: [], vnc: [] });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+  });
+  click(await findFastControl("button", "Connectors"));
+  await screen.findByText("Cloud browser");
+  expect(screen.queryByText("Remote access")).toBeNull();
+});
+
+test("A new chat leaves host defaults untouched when no choice is changed", async () => {
+  const fixture = installComposerConnectorFixture();
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: [
+          {
+            connectionId: "b0000000-0000-4000-8000-000000000001",
+            displayName: "SSH host 1",
+            defaultEnabled: true,
+          },
+        ],
+        vnc: [],
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+  });
+  click(await findFastControl("button", "Connectors"));
+  const remoteAccess = await screen.findByText("Remote access");
+  expect(remoteAccess.closest("button")).toHaveTextContent("1 enabled");
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  await fill(composer, "Use my defaults");
+  await userEvent.setup({ delay: null }).keyboard("{Enter}");
+  await waitFor(() => {
+    expect(fixture.createdThreadRequests).toStrictEqual([
+      { threadId: expect.any(String), connectorSelections: [] },
+    ]);
+  });
+});
+
 test("Remote access remains visible and can retry when host discovery fails", async () => {
   installComposerConnectorFixture();
   let failed = true;

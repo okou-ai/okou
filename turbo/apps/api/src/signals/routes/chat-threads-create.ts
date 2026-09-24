@@ -20,7 +20,11 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { type Db, writeDb$ } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
-import { badRequestMessage, notFound } from "../../lib/error";
+import {
+  badRequestMessage,
+  notFound,
+  resourceUnavailable,
+} from "../../lib/error";
 import {
   createChatThread$,
   type CreatedChatThread,
@@ -149,6 +153,9 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const initialRemoteAccessOverrides =
     body.data.initialRemoteAccessOverrides ?? [];
   if (initialRemoteAccessOverrides.length > 0) {
+    if (auth.tokenType !== "session") {
+      return resourceUnavailable("Remote access selection is not available");
+    }
     const featureContext = await get(
       userFeatureSwitchContext(auth.orgId, auth.userId),
     );

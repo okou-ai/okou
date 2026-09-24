@@ -6,7 +6,7 @@ The owner APIs and runtime cutover are behind `ThreadRemoteAccess`, disabled by 
 
 The host settings pages expose each host's default and the chat composer exposes per-host `On`, `Off`, and `Use default` choices below Cloud browser. Multiple SSH and VNC hosts may be enabled independently. The Agent-wide SSH/VNC controls remain visible only while the switch is off. Keep the switch off until all API and platform instances carrying this cutover have deployed and old API instances have drained. #36360 later retires the legacy grants after compatibility and rollback checks.
 
-The new-chat composer also supports these per-host choices before a thread exists. `Use default` remains inheritance and writes no row. Explicit draft choices are validated against the current owner and inserted in the chat-creation transaction, before the first Run can start. A replay of the same thread creation does not change its existing choices.
+The new-chat composer also supports these per-host choices before a thread exists. `Use default` remains inheritance and writes no row. Explicit draft choices require a user session, are validated against the current owner, and are inserted in the chat-creation transaction before the first Run can start. A replay of the same thread creation does not change its existing choices.
 
 Each new API route validates the signed-in organization and user. A chat must belong to that user and reference an Agent in the current organization. SSH and VNC hosts must belong to that organization and user. VNC operations also require `VncAccess` and current VNC membership. A missing or cross-scope host or chat receives a not-found response. The host-default and chat-access responses contain names and access state, not credentials.
 

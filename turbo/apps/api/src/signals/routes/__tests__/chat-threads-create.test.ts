@@ -32,6 +32,7 @@ import { seedRun$ } from "./helpers/usage-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { inlineSshKey } from "./helpers/ssh-credential";
+import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import {
   createVncRuntimeApi,
   initializeVncRuntimeTest,
@@ -274,7 +275,7 @@ describe("POST /api/chat-threads", () => {
     const body = {
       agentId: fixture.agentId,
       clientThreadId: threadId,
-      model: WORKSPACE_DEFAULT_MODEL,
+      model: "claude-sonnet-5" as const,
       initialRemoteAccessOverrides: [
         { protocol: "ssh" as const, connectionId: hostId, enabled: false },
         { protocol: "vnc" as const, connectionId: vncHostId, enabled: true },
@@ -317,6 +318,16 @@ describe("POST /api/chat-threads", () => {
     expect(replayed.body.ssh[0]?.overrideEnabled).toBe(false);
     expect(replayed.body.vnc[0]?.overrideEnabled).toBe(true);
 
+    await accept(
+      sshClient().delete({ headers, params: { connectionId: hostId } }),
+      [204],
+    );
+    const afterDeletion = await accept(
+      threadsClient().create({ headers, body }),
+      [201],
+    );
+    expect(afterDeletion.body.id).toBe(threadId);
+
     const invalidId = randomUUID();
     const invalidThreadId = randomUUID();
     await accept(
@@ -336,6 +347,56 @@ describe("POST /api/chat-threads", () => {
       remoteAccessClient().listThreadAccess({
         headers,
         params: { threadId: invalidThreadId },
+      }),
+      [404],
+    );
+  });
+
+  it("does not let a run token choose access to a host when creating a chat", async () => {
+    useSecretKmsProbe();
+    const fixture = await seedAgent();
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.ThreadRemoteAccess]: true,
+    });
+    const ownerHeaders = { authorization: "Bearer clerk-session" };
+    const hostId = randomUUID();
+    await accept(
+      sshClient().create({
+        headers: ownerHeaders,
+        body: {
+          id: hostId,
+          displayName: "Disabled host",
+          host: "disabled.example.com",
+          credential: inlineSshKey("deploy", "private-key", null),
+        },
+      }),
+      [201],
+    );
+    const threadId = randomUUID();
+    const token = okouToken({
+      userId: fixture.userId,
+      orgId: fixture.orgId,
+      capabilities: ["chat-thread:read", "chat-thread:write"],
+    });
+    const response = await accept(
+      threadsClient().create({
+        headers: { authorization: `Bearer ${token}` },
+        body: {
+          agentId: fixture.agentId,
+          clientThreadId: threadId,
+          model: WORKSPACE_DEFAULT_MODEL,
+          initialRemoteAccessOverrides: [
+            { protocol: "ssh", connectionId: hostId, enabled: true },
+          ],
+        },
+      }),
+      [403],
+    );
+    expect(response.body.error.code).toBe("FORBIDDEN");
+    await accept(
+      remoteAccessClient().listThreadAccess({
+        headers: ownerHeaders,
+        params: { threadId },
       }),
       [404],
     );

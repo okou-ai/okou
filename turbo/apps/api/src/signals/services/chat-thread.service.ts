@@ -857,6 +857,18 @@ export async function createChatThreadInTransaction(
       initialRemoteAccessOverrides,
     ))
   ) {
+    // A retry may arrive after a host was deleted. Preserve the already-created
+    // chat without accepting that stale host for a new chat.
+    if (args.clientThreadId) {
+      const replay = await resolveExistingClientThread(tx, {
+        clientThreadId: args.clientThreadId,
+        userId: args.userId,
+        agentId: args.agentId,
+      });
+      if (replay.kind === "existing") {
+        return replay;
+      }
+    }
     return {
       kind: "invalid_remote_access_selection" as const,
       message: "Remote access host not found",
