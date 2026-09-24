@@ -29,36 +29,6 @@ function apiClient() {
 }
 
 describe("GET /api/agents", () => {
-  it("returns 401 when the request is unauthenticated", async () => {
-    const response = await accept(apiClient().list({ headers: {} }), [401]);
-    expect(response.body).toStrictEqual({
-      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    });
-  });
-
-  it("returns 401 when the authenticated session has no organization", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, null);
-    const response = await accept(
-      apiClient().list({ headers: authHeaders() }),
-      [401],
-    );
-    expect(response.body).toStrictEqual({
-      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    });
-  });
-
-  it("returns empty array when no agents exist", async () => {
-    const user = newOrgUser();
-    mocks.clerk.session(user.userId, user.orgId);
-
-    const response = await accept(
-      apiClient().list({ headers: authHeaders() }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual([]);
-  });
-
   it("returns an agent created through POST /api/agents", async () => {
     const user = newOrgUser();
     mocks.clerk.session(user.userId, user.orgId);

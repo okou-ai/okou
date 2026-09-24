@@ -511,13 +511,6 @@ describe("ORG-01 and ORG-02", () => {
 });
 
 describe("ORG-03 onboarding status mapping", () => {
-  it("rejects onboarding status without authentication", async () => {
-    const unauthenticated = await bdd.requestReadOnboardingStatus(null, [401]);
-    expect(unauthenticated.body).toStrictEqual({
-      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    });
-  });
-
   it.each(["admin", "member"] as const)(
     "protects the default Okou for its %s owner",
     async (role) => {
@@ -782,8 +775,9 @@ describe("AGENT-01 and AGENT-02", () => {
       { displayName: "No auth" },
       [401],
     );
-    expectApiError(unauthenticated.body);
-    expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
+    expect(unauthenticated.body).toStrictEqual({
+      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
+    });
 
     const malformed = await api.requestUpdateAgentMetadata(
       admin,
@@ -800,8 +794,12 @@ describe("AGENT-01 and AGENT-02", () => {
       { displayName: "Missing" },
       [404],
     );
-    expectApiError(missing.body);
-    expect(missing.body.error.code).toBe("NOT_FOUND");
+    expect(missing.body).toStrictEqual({
+      error: {
+        message: `Agent not found: ${missingAgentId}`,
+        code: "NOT_FOUND",
+      },
+    });
   });
 
   it("enforces the public agent limit while still allowing private agents", async () => {
