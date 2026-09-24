@@ -1,11 +1,16 @@
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { isDeepStrictEqual } from "node:util";
 
-import { command } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type { OfficialWorkflowParameterBinding } from "@okouai/api-contracts/contracts/official-workflow-bindings";
+import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   chatRunFinishedEventConfigSchema,
+  githubDeploymentStatusCreatedEventConfigSchema,
+  githubIssueCommentCreatedEventConfigSchema,
+  githubPullRequestEventConfigSchema,
+  githubPullRequestReviewSubmittedEventConfigSchema,
+  githubWorkflowJobCompletedEventConfigSchema,
+  githubWorkflowRunCompletedEventConfigSchema,
   gmailLabelAppliedEventConfigSchema,
   gmailNewMessageEventConfigSchema,
   googleCalendarEventCancelledEventConfigSchema,
@@ -13,12 +18,6 @@ import {
   googleCalendarEventUpdatedEventConfigSchema,
   googleFormsResponseSubmittedEventConfigSchema,
   googleMeetTranscriptGeneratedEventConfigSchema,
-  githubDeploymentStatusCreatedEventConfigSchema,
-  githubIssueCommentCreatedEventConfigSchema,
-  githubPullRequestEventConfigSchema,
-  githubPullRequestReviewSubmittedEventConfigSchema,
-  githubWorkflowJobCompletedEventConfigSchema,
-  githubWorkflowRunCompletedEventConfigSchema,
   notionChildPageCreatedEventConfigSchema,
   notionDatabaseItemCreatedEventConfigSchema,
   notionPageContentUpdatedEventConfigSchema,
@@ -26,59 +25,53 @@ import {
   webhookReceivedEventConfigSchema,
   type ChatRunFinishedEventConfig,
   type ChatThreadWorkflowAutomation,
+  type GithubAutomationEventConfig,
   type GmailAutomationEventConfig,
   type GoogleCalendarAutomationEventConfig,
   type GoogleCalendarWatchActionRequiredReason,
-  type GoogleMeetAutomationEventConfig,
   type GoogleFormsResponseSubmittedEventConfig,
   type GoogleFormsResponseSubmittedEventCreateConfig,
-  type GithubAutomationEventConfig,
+  type GoogleMeetAutomationEventConfig,
+  type NotionAutomationEventConfig,
   type NotionChildPageCreatedEventConfig,
   type NotionChildPageCreatedEventCreateConfig,
   type NotionDatabaseItemCreatedEventConfig,
   type NotionDatabaseItemCreatedEventCreateConfig,
   type NotionPageContentUpdatedEventConfig,
   type NotionPageContentUpdatedEventCreateConfig,
-  type NotionAutomationEventConfig,
   type StripeInvoicePaidEventConfig,
   type StripeInvoicePaidEventCreateConfig,
   type StripeWorkflowAutomationHealth,
   type WebhookReceivedEventConfig,
   type WorkflowAutomationEventType,
-  type WorkflowSchedule,
-  type WorkflowWebhookSecretResponse,
   type WorkflowAutomationsListEntry,
   type WorkflowAutomationSummary,
+  type WorkflowSchedule,
+  type WorkflowWebhookSecretResponse,
 } from "@okouai/api-contracts/contracts/workflows";
 import { parseScheduledAtTime } from "@okouai/core/timezone";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { agents } from "@okouai/db/schema/agent";
 import { googleCalendarWatchStates } from "@okouai/db/schema/google-calendar-event";
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { stripeWorkflowAutomationHealth } from "@okouai/db/schema/stripe-automation-event";
-import { agents } from "@okouai/db/schema/agent";
 import {
   officialWorkflowAutomationIdentities,
-  workflowUserAutomationThreads,
   workflowAutomations,
-  workflowWebhookAutomations,
   workflows,
+  workflowUserAutomationThreads,
+  workflowWebhookAutomations,
   type WorkflowAutomationEventConfig,
   type WorkflowScheduleType,
 } from "@okouai/db/schema/workflow";
+import { command } from "ccstate";
 import { and, asc, eq, isNotNull, isNull, or } from "drizzle-orm";
 
+import type { Tx } from "../../lib/db-types";
+import { nowDate } from "../../lib/time";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { publishChatThreadAutomationsChangedSafely } from "../external/realtime";
-import {
-  applyMorningBriefLogicalChoice,
-  lockMorningBriefNativeSchedule,
-  lockMorningBriefNativeScheduleForWrite,
-  type MorningBriefChoiceApplication,
-} from "./morning-brief-native-schedule.service";
-import { recordMorningBriefChoice } from "./morning-brief-enrollment-data.service";
-import { nowDate } from "../../lib/time";
-import type { Tx } from "../../lib/db-types";
 import {
   bestEffort,
   isValidTimeZone,
@@ -86,28 +79,22 @@ import {
   safeSync,
   settle,
 } from "../utils";
-import { calculateNextRun } from "./time-automation";
+import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
+import { lockConnectorAccountTarget } from "./auth-state-lock.service";
+import { reconcileAutomationEventWatches } from "./automation-event-watch-lifecycle.service";
 import {
   insertWorkflowAutomation,
   workflowAutomationColumns,
 } from "./autonomy-budget-schema.service";
-import {
-  loadVisibleWorkflowById,
-  visibleWorkflowCondition,
-  workflowSummary,
-  type WorkflowMember,
-} from "./workflow-data.service";
+import { prepareGithubWebhookEventConfigForPersist } from "./github-webhook-automation-event.service";
+import { prepareGithubWorkflowRunEventConfigForPersist } from "./github-workflow-run-event.service";
+import { resolveGmailAutomationConnectorId } from "./gmail-automation-account.service";
 import {
   ensureGmailWatchForUser,
   hasEnabledGmailConsumer,
   resolveGmailLabelForUser,
 } from "./gmail-automation-event.service";
-import { resolveGmailAutomationConnectorId } from "./gmail-automation-account.service";
-import {
-  invalidateNotionPendingEventsForAutomation,
-  notionConfigWithConnectorId,
-  resolveNotionAutomationConnectorId,
-} from "./notion-automation-account.service";
+import { resolveGoogleCalendarAutomationConnectorId } from "./google-calendar-automation-account.service";
 import {
   ensureGoogleCalendarWatchForUser,
   googleCalendarAutomationTargetMatchesConnector,
@@ -119,35 +106,62 @@ import {
   stageGoogleCalendarWatchTargetForReconfiguration,
   type StagedGoogleCalendarWatchTarget,
 } from "./google-calendar-automation-event.service";
-import { resolveGoogleCalendarAutomationConnectorId } from "./google-calendar-automation-account.service";
+import { resolveGoogleFormsAutomationConnectorId } from "./google-forms-automation-account.service";
 import {
   ensureGoogleFormsWatchForUser,
   hasEnabledGoogleFormsConsumer,
   prepareGoogleFormsResponseEventConfigForPersist,
 } from "./google-forms-automation-event.service";
-import { resolveGoogleFormsAutomationConnectorId } from "./google-forms-automation-account.service";
 import { resolveGoogleMeetAutomationConnectorId } from "./google-meet-automation-account.service";
 import {
   ensureGoogleMeetTranscriptGeneratedSubscriptionForUser,
   hasEnabledGoogleMeetConsumer,
 } from "./google-meet-automation-event.service";
-import { prepareGithubWebhookEventConfigForPersist } from "./github-webhook-automation-event.service";
-import { prepareGithubWorkflowRunEventConfigForPersist } from "./github-workflow-run-event.service";
+import { recordMorningBriefChoice } from "./morning-brief-enrollment-data.service";
+import {
+  applyMorningBriefLogicalChoice,
+  lockMorningBriefNativeScheduleForWrite,
+} from "./morning-brief-native-schedule.service";
+import {
+  invalidateNotionPendingEventsForAutomation,
+  notionConfigWithConnectorId,
+  resolveNotionAutomationConnectorId,
+} from "./notion-automation-account.service";
 import {
   prepareNotionChildPageEventConfigForPersist,
   prepareNotionDatabaseItemEventConfigForPersist,
   prepareNotionPageContentUpdatedEventConfigForPersist,
   validateNotionEventConfigForConnector,
 } from "./notion-automation-event.service";
-import { resolveStripeInvoicePaidAutomationBinding } from "./stripe-invoice-paid-workflow-automation.service";
+import { readAcceptedOfficialWorkflowCatalog } from "./official-workflow-catalog-read.service";
+import {
+  OFFICIAL_WORKFLOW_AUTOMATION_READ_ONLY_MESSAGE,
+  OFFICIAL_WORKFLOW_RECONFIGURATION_IN_PROGRESS_MESSAGE,
+} from "./official-workflow-constants";
+import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { stripeInvoicePaidWorkflowAutomationEnabledForOwner } from "./stripe-invoice-paid-workflow-automation-feature-switch.service";
-import { lockConnectorAccountTarget } from "./auth-state-lock.service";
+import { resolveStripeInvoicePaidAutomationBinding } from "./stripe-invoice-paid-workflow-automation.service";
+import { calculateNextRun } from "./time-automation";
 import {
   workflowAutomationAccountConnectorSlug,
   type WorkflowAutomationAccountConnectorSlug,
 } from "./workflow-automation-account-classification.service";
+import { buildWorkflowScheduleAutomationBrief } from "./workflow-automation-brief.service";
+import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
+import type { RunWorkflowAutomationResult } from "./workflow-automation-launch.service";
+import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
+import { manualTriggerSource } from "./workflow-automation-trigger-source";
+import {
+  loadVisibleWorkflowById,
+  visibleWorkflowCondition,
+  workflowSummary,
+  type WorkflowMember,
+} from "./workflow-data.service";
+import {
+  ensureWorkflowUserAutomationThread,
+  loadWorkflowUserAutomationThreadId,
+} from "./workflow-user-automation-thread.service";
 import { lockWorkflowWebhookAutomationTierEligibleForOrg } from "./workflow-webhook-automation-entitlement.service";
-import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import {
   buildWorkflowWebhookSummaryFields,
   defaultWebhookReceivedEventConfig,
@@ -158,22 +172,6 @@ import {
   mintWorkflowWebhookToken,
   revealWorkflowWebhookSecretFields,
 } from "./workflow-webhook-automation.service";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
-import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import type { RunWorkflowAutomationResult } from "./workflow-automation-launch.service";
-import { manualTriggerSource } from "./workflow-automation-trigger-source";
-import {
-  ensureWorkflowUserAutomationThread,
-  loadWorkflowUserAutomationThreadId,
-} from "./workflow-user-automation-thread.service";
-import { buildWorkflowScheduleAutomationBrief } from "./workflow-automation-brief.service";
-import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
-import { reconcileAutomationEventWatches } from "./automation-event-watch-lifecycle.service";
-import { readAcceptedOfficialWorkflowCatalog } from "./official-workflow-catalog-read.service";
-import {
-  OFFICIAL_WORKFLOW_AUTOMATION_READ_ONLY_MESSAGE,
-  OFFICIAL_WORKFLOW_RECONFIGURATION_IN_PROGRESS_MESSAGE,
-} from "./official-workflow-constants";
 
 type AutomationRow = typeof workflowAutomations.$inferSelect;
 type WorkflowRow = typeof workflows.$inferSelect;

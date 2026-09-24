@@ -12,56 +12,8 @@ import {
 } from "../utils";
 import { OPENROUTER_CHAT_COMPLETIONS_URL } from "./openrouter";
 
-/**
- * The narrow platform-funded OpenRouter transport.
- *
- * `generateTextWithUsage` exists for auxiliary text: it throws on anything it
- * cannot turn into a usable string, reads successful bodies without a ceiling,
- * and discards the generation id and the reported cost. A platform-funded
- * request needs the opposite contract, so this is a separate adapter rather
- * than a change to that one — every existing caller keeps its behavior.
- *
- * What this adapter guarantees:
- *
- * - **Billing survives validation.** It returns what the provider reported —
- *   generation id, served model, native token counts and `usage.cost` — as a
- *   plain observation. Deciding whether the content is usable happens after,
- *   so invalid output still leaves an exact spend record.
- * - **Every body is bounded.** Success and error bodies are both read through
- *   `readBoundedResponseText`, so an oversized response is a finite outcome
- *   instead of unbounded memory.
- * - **Nothing is inferred.** A missing or malformed cost is unknown, never
- *   zero and never derived from token counts. An explicitly reported zero is a
- *   known zero.
- * - **Every observation is durable as observed.** Counts and amounts are
- *   accepted against the exact domain the receipt columns hold, judged on the
- *   digits the provider actually sent, so what this adapter reports is what
- *   PostgreSQL stores and returns. A value outside that domain is
- *   *unavailable*: it is never rounded into an invented measurement, and it
- *   never takes a valid sibling field or a valid cost down with it.
- * - **No payload escapes.** It never throws provider text, never logs a body
- *   and never carries the credential into its result.
- *
- * Provider contract, verified against the [official usage-accounting
- * documentation](https://openrouter.ai/docs/cookbook/administration/usage-accounting)
- * on 2026-09-17: every non-streaming response carries `usage` with native
- * `prompt_tokens`/`completion_tokens`/`total_tokens`, optional
- * `completion_tokens_details.reasoning_tokens` and
- * `prompt_tokens_details.cached_tokens`, and `cost` — documented as "the total
- * amount charged to your account", in OpenRouter credits. The `usage.include`
- * and `stream_options.include_usage` request flags are deprecated no-ops, so
- * nothing is sent to request usage. `cost_details.upstream_inference_cost` is
- * the upstream provider's charge and is documented as BYOK-only — zero or null
- * for platform-managed requests — so it is deliberately never read here.
- */
-
-const OPENROUTER_GENERATION_URL = "https://openrouter.ai/api/v1/generation";
-
 /** Success bodies above this are unreadable rather than unbounded. */
 const PLATFORM_SUCCESS_RESPONSE_MAX_BYTES = 256 * 1024;
-
-/** The read-only cost lookup returns one small metadata record. */
-const PLATFORM_GENERATION_RESPONSE_MAX_BYTES = 64 * 1024;
 /** Error bodies are smaller still; only the status is retained from them. */
 const PLATFORM_ERROR_RESPONSE_MAX_BYTES = 64 * 1024;
 

@@ -1,5 +1,3 @@
-import { createHash, randomUUID } from "node:crypto";
-import { Cron } from "croner";
 import {
   DeleteObjectsCommand,
   GetObjectCommand,
@@ -7,9 +5,8 @@ import {
   ListObjectsV2Command,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
-import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
-import { userPreferencesRoutes } from "../user-preferences";
 import { cronOfficialWorkflowCatalogContract } from "@okouai/api-contracts/contracts/cron";
+import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import {
   OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
   type OfficialWorkflowBlueprint,
@@ -17,31 +14,29 @@ import {
   type OfficialWorkflowSourceDefinition,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import { officialWorkflowInstallationsContract } from "@okouai/api-contracts/contracts/official-workflows";
-import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { testOfficialWorkflowCatalogStateContract } from "@okouai/api-contracts/contracts/test-official-workflow-catalog-state";
 import { testSystemStoragePresignedUrlCacheStateContract } from "@okouai/api-contracts/contracts/test-system-storage-presigned-url-cache-state";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import {
   workflowAutomationsContract,
   workflowsCollectionContract,
 } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { Cron } from "croner";
+import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { setupRawAppRequestWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { serializeOfficialWorkflowCatalogTests } from "../../../test-fixtures/official-workflow-catalog-lease";
-import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { holdChatEventQueueAdmissionLockFixture } from "../../../test-fixtures/chat-events";
+import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import {
   readLegacyAutomation,
   readNativeSchedule,
 } from "../../../test-fixtures/morning-brief-native-schedule";
-import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock";
-import { withOwnedPiStableContextGlobalInvalidationFixture } from "../../../test-fixtures/pi-stable-context";
 import {
   holdWorkflowAutomationCommittedRunFixture,
   installMorningBriefSettlementFailureFixture,
@@ -49,31 +44,35 @@ import {
   readMorningBriefScheduleClaimsFixture,
   withWorkflowAutomationRunPersistenceFailureFixture,
 } from "../../../test-fixtures/morning-brief-schedule-claim";
+import { serializeOfficialWorkflowCatalogTests } from "../../../test-fixtures/official-workflow-catalog-lease";
+import { withOwnedPiStableContextGlobalInvalidationFixture } from "../../../test-fixtures/pi-stable-context";
 import { holdAgentRunPiExecutionSnapshotFixture } from "../../../test-fixtures/thread-bound-run-admission";
 import { holdWorkflowAutomationRowFixture } from "../../../test-fixtures/workflow-queue";
 import {
   readWorkflowScheduleSkipsFixture,
   skewLegacyMorningBriefAnchorFixture,
 } from "../../../test-fixtures/workflow-schedule-expiry";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { acknowledgeDetachedForTest, createDeferredPromise } from "../../utils";
+import {
+  createCronOfficialWorkflowCatalogRoutes,
+  cronOfficialWorkflowCatalogRoutes,
+} from "../cron-official-workflow-catalog";
+import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
+import { officialWorkflowRoutes } from "../official-workflows";
+import { testOfficialWorkflowCatalogStateRoutes } from "../test-official-workflow-catalog-state";
+import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
+import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
+import { userPreferencesRoutes } from "../user-preferences";
+import { workflowAutomationsRoutes } from "../workflow-automations";
+import { workflowsRoutes } from "../workflows";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { seedBuiltInModelKey } from "./helpers/runtime-state";
 import { createRouteMocks } from "./helpers/route-test";
-import {
-  createCronOfficialWorkflowCatalogRoutes,
-  cronOfficialWorkflowCatalogRoutes,
-} from "../cron-official-workflow-catalog";
-import { officialWorkflowRoutes } from "../official-workflows";
-import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
-import { testOfficialWorkflowCatalogStateRoutes } from "../test-official-workflow-catalog-state";
-import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
-import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
-import { workflowAutomationsRoutes } from "../workflow-automations";
-import { workflowsRoutes } from "../workflows";
-import { acknowledgeDetachedForTest, createDeferredPromise } from "../../utils";
+import { seedBuiltInModelKey } from "./helpers/runtime-state";
 
 const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
@@ -1045,31 +1044,6 @@ describe("Morning Brief legacy schedule claim journal", () => {
   ): Promise<void> {
     await runs.requestCancelRun(actor, runId, [200]);
     await flushWaitUntilForTest();
-  }
-
-  /** Report the real insufficient-credits completion without dispatching it. */
-  async function reportInsufficientCreditsCompletion(
-    brief: JournaledBrief,
-    runId: string,
-  ): Promise<void> {
-    const sandboxToken = runs.sandboxTokenForRun(brief.actor, runId);
-    await webhooks.requestAgentComplete(
-      {
-        runId,
-        exitCode: 1,
-        failureReason: "insufficient_credits",
-        error: "Insufficient credits. Add credits to continue.",
-        checkpoint: {
-          cliAgentType: "claude-code",
-          cliAgentSessionId: `morning-brief-compatibility-${runId}`,
-          cliAgentSessionHistoryHash: createHash("sha256")
-            .update(`morning brief compatibility ${runId}`)
-            .digest("hex"),
-        },
-      },
-      { authorization: `Bearer ${sandboxToken}` },
-      [200],
-    );
   }
 
   it("preserves ordinary cron and loop callback behavior", async () => {

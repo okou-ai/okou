@@ -83,6 +83,49 @@ export function createEmailOutboxStateApi(context: TestContext) {
 
     findItems,
 
+    async seedLinkedNativeMail(options: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly membershipId: string;
+      readonly toAddress: string;
+      readonly createdAt: Date;
+    }): Promise<TestEmailOutboxStateItem> {
+      const response = await postAction(context, {
+        action: "seed-native-mail",
+        org_id: options.orgId,
+        user_id: options.userId,
+        membership_id: options.membershipId,
+        to_address: options.toAddress,
+        created_at: options.createdAt.toISOString(),
+      });
+      if (response.action !== "seed-native-mail") {
+        throw new Error("Expected the linked Native email seed response");
+      }
+      return response.item;
+    },
+
+    async nativeReceiptExists(itemId: string): Promise<boolean> {
+      const response = await postAction(context, {
+        action: "read-native-receipt",
+        item_id: itemId,
+      });
+      if (response.action !== "read-native-receipt") {
+        throw new Error("Expected the Native email receipt response");
+      }
+      return response.exists;
+    },
+
+    async deleteLinkedNativeMail(itemId: string): Promise<boolean> {
+      const response = await postAction(context, {
+        action: "delete-native-mail",
+        item_id: itemId,
+      });
+      if (response.action !== "delete-native-mail") {
+        throw new Error("Expected the Native email cleanup response");
+      }
+      return response.deleted;
+    },
+
     async findSourceState(
       options: FindEmailOutboxSourceItemsOptions,
     ): Promise<EmailOutboxSourceState> {

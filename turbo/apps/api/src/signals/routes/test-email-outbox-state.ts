@@ -2,7 +2,12 @@ import {
   testEmailOutboxStateContract,
   type TestEmailOutboxStateActionBody,
 } from "@okouai/api-contracts/contracts/test-email-outbox-state";
+import { randomUUID } from "node:crypto";
+import { agents } from "@okouai/db/schema/agent";
+import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
+import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery";
+import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { officialAutomationResultEmailClaims } from "@okouai/db/schema/official-automation-result-email-claim";
 import { command } from "ccstate";
 import { and, asc, eq, inArray } from "drizzle-orm";
@@ -24,6 +29,16 @@ import {
 const actionBody$ = bodyResultOf(testEmailOutboxStateContract.action);
 const drainBody$ = bodyResultOf(testEmailOutboxStateContract.drain);
 const cleanupBody$ = bodyResultOf(testEmailOutboxStateContract.cleanup);
+
+const historicalNativeMailTemplate = {
+  template: "morning-brief-result",
+  props: {
+    title: "Historical Morning Brief",
+    resultMarkdown: "Historical content",
+    threadUrl: "https://app.okou.test/threads/historical",
+    manageUrl: "https://app.okou.test/settings/morning-brief",
+  },
+} as const;
 
 function itemStateSelection() {
   return {
@@ -58,6 +73,151 @@ function itemState<Item extends { readonly provider_request: unknown }>(
   return { ...state, has_provider_request: providerRequest !== null };
 }
 
+async function seedTestOutboxItem(
+  db: Db,
+  body: Extract<TestEmailOutboxStateActionBody, { action: "seed-item" }>,
+  signal: AbortSignal,
+) {
+  const [item] = await db
+    .insert(emailOutbox)
+    .values({
+      fromAddress: "Okou <outbox-fixture@mail.example.com>",
+      toAddresses: body.to_address,
+      subject: body.subject,
+      template:
+        body.template === "morning-brief-result"
+          ? historicalNativeMailTemplate
+          : {
+              template: "data-export-ready",
+              props: {
+                downloadUrl: "https://storage.example/email-outbox-fixture.zip",
+                expiresAt: "January 1, 2030",
+                artifactCount: 1,
+              },
+            },
+      status: body.status,
+      attempts: 0,
+      createdAt: new Date(body.created_at),
+    })
+    .returning(itemStateSelection());
+  signal.throwIfAborted();
+  if (!item) {
+    throw new Error("Failed to seed email outbox item");
+  }
+  return {
+    status: 200 as const,
+    body: { action: "seed-item" as const, item: itemState(item) },
+  };
+}
+
+async function seedLinkedNativeMail(
+  db: Db,
+  body: Extract<TestEmailOutboxStateActionBody, { action: "seed-native-mail" }>,
+  signal: AbortSignal,
+) {
+  const owner = { orgId: body.org_id, userId: body.user_id };
+  const agentId = randomUUID();
+  const threadId = randomUUID();
+  const at = new Date(body.created_at);
+  const item = await db.transaction(async (tx) => {
+    await tx.insert(orgMembersMetadata).values({ ...owner, timezone: "UTC" });
+    await tx.insert(agents).values({
+      id: agentId,
+      orgId: owner.orgId,
+      owner: owner.userId,
+      name: `historical-mail-${agentId.slice(0, 8)}`,
+      visibility: "private",
+    });
+    await tx.insert(chatThreads).values({
+      id: threadId,
+      userId: owner.userId,
+      agentId,
+      title: "Historical Native mail fixture",
+    });
+    const [queued] = await tx
+      .insert(emailOutbox)
+      .values({
+        fromAddress: "Okou <outbox-fixture@mail.example.com>",
+        toAddresses: body.to_address,
+        subject: "Historical Native Morning Brief",
+        template: historicalNativeMailTemplate,
+        createdAt: at,
+      })
+      .returning(itemStateSelection());
+    if (!queued) {
+      throw new Error("Failed to seed linked Native email intent");
+    }
+    await tx.insert(morningBriefDeliveries).values({
+      ...owner,
+      scheduledFor: at,
+      collectionKind: "slack",
+      collectionVersion: 1,
+      executionPurpose: "production",
+      resultAttemptId: randomUUID(),
+      membershipId: body.membership_id,
+      nativeOwnerEpoch: 1,
+      workflowId: randomUUID(),
+      automationId: randomUUID(),
+      agentId,
+      chatThreadId: threadId,
+      chatEventId: randomUUID(),
+      resultDigest: "historical-mail-fixture",
+      emailResolution: "enqueued",
+      emailOutboxId: queued.id,
+      deliveredAt: at,
+    });
+    return queued;
+  });
+  signal.throwIfAborted();
+  return {
+    status: 200 as const,
+    body: { action: "seed-native-mail" as const, item: itemState(item) },
+  };
+}
+
+async function deleteLinkedNativeMail(
+  db: Db,
+  itemId: string,
+  signal: AbortSignal,
+) {
+  const deleted = await db.transaction(async (tx) => {
+    const [delivery] = await tx
+      .select({
+        orgId: morningBriefDeliveries.orgId,
+        userId: morningBriefDeliveries.userId,
+        agentId: morningBriefDeliveries.agentId,
+        chatThreadId: morningBriefDeliveries.chatThreadId,
+      })
+      .from(morningBriefDeliveries)
+      .where(eq(morningBriefDeliveries.emailOutboxId, itemId));
+    if (!delivery) {
+      return false;
+    }
+    await tx
+      .delete(morningBriefDeliveries)
+      .where(eq(morningBriefDeliveries.emailOutboxId, itemId));
+    await tx.delete(emailOutbox).where(eq(emailOutbox.id, itemId));
+    await tx
+      .delete(chatThreads)
+      .where(eq(chatThreads.id, delivery.chatThreadId));
+    await tx.delete(agents).where(eq(agents.id, delivery.agentId));
+    await tx
+      .delete(orgMembersMetadata)
+      .where(
+        and(
+          eq(orgMembersMetadata.orgId, delivery.orgId),
+          eq(orgMembersMetadata.userId, delivery.userId),
+        ),
+      );
+    return true;
+  });
+  signal.throwIfAborted();
+  return {
+    status: 200 as const,
+    body: { action: "delete-native-mail" as const, deleted },
+  };
+}
+
 async function applyAction(
   db: Db,
   body: TestEmailOutboxStateActionBody,
@@ -65,45 +225,24 @@ async function applyAction(
 ) {
   switch (body.action) {
     case "seed-item": {
-      const [item] = await db
-        .insert(emailOutbox)
-        .values({
-          fromAddress: "Okou <outbox-fixture@mail.example.com>",
-          toAddresses: body.to_address,
-          subject: body.subject,
-          template:
-            body.template === "morning-brief-result"
-              ? {
-                  template: "morning-brief-result",
-                  props: {
-                    title: "Historical Morning Brief",
-                    resultMarkdown: "Historical content",
-                    threadUrl: "https://app.okou.test/threads/historical",
-                    manageUrl: "https://app.okou.test/settings/morning-brief",
-                  },
-                }
-              : {
-                  template: "data-export-ready",
-                  props: {
-                    downloadUrl:
-                      "https://storage.example/email-outbox-fixture.zip",
-                    expiresAt: "January 1, 2030",
-                    artifactCount: 1,
-                  },
-                },
-          status: body.status,
-          attempts: 0,
-          createdAt: new Date(body.created_at),
-        })
-        .returning(itemStateSelection());
+      return await seedTestOutboxItem(db, body, signal);
+    }
+    case "seed-native-mail": {
+      return await seedLinkedNativeMail(db, body, signal);
+    }
+    case "read-native-receipt": {
+      const [delivery] = await db
+        .select({ emailOutboxId: morningBriefDeliveries.emailOutboxId })
+        .from(morningBriefDeliveries)
+        .where(eq(morningBriefDeliveries.emailOutboxId, body.item_id));
       signal.throwIfAborted();
-      if (!item) {
-        throw new Error("Failed to seed email outbox item");
-      }
       return {
         status: 200 as const,
-        body: { action: "seed-item" as const, item: itemState(item) },
+        body: { action: "read-native-receipt" as const, exists: !!delivery },
       };
+    }
+    case "delete-native-mail": {
+      return await deleteLinkedNativeMail(db, body.item_id, signal);
     }
     case "find-item": {
       const items = await db

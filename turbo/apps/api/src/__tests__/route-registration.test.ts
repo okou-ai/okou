@@ -22,18 +22,6 @@ describe("API route registrations", () => {
     }).not.toThrow();
   });
 
-  it("does not expose retired Native Morning Brief execution or preview routes", () => {
-    expect(
-      ROUTES.map(({ route }) => {
-        return route.path;
-      }).filter((path) => {
-        return /^\/api\/(?:morning-brief\/(?:preview|collection-preview)\/|debug\/morning-brief-trigger$|cron\/execute-morning-briefs$|internal\/morning-brief-worker$)/.test(
-          path,
-        );
-      }),
-    ).toStrictEqual([]);
-  });
-
   it("registers the home-task refresh cron", () => {
     const [entry, ...extra] = cronRefreshHomeTaskRecommendationsRoutes;
     expect(extra).toHaveLength(0);

@@ -1,8 +1,5 @@
-import {
-  morningBriefNativeScheduleSkips,
-  workflowScheduleSkips,
-} from "@okouai/db/schema/workflow-schedule-skip";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
+import { workflowScheduleSkips } from "@okouai/db/schema/workflow-schedule-skip";
 import { and, eq } from "drizzle-orm";
 
 import { db } from "../lib/db";
@@ -40,19 +37,4 @@ export async function readWorkflowScheduleSkipsFixture(automationId: string) {
     .select()
     .from(workflowScheduleSkips)
     .where(eq(workflowScheduleSkips.automationId, automationId));
-}
-
-async function readNativeScheduleSkipsFixture(owner: {
-  readonly orgId: string;
-  readonly userId: string;
-}) {
-  return await db()
-    .select()
-    .from(morningBriefNativeScheduleSkips)
-    .where(
-      and(
-        eq(morningBriefNativeScheduleSkips.orgId, owner.orgId),
-        eq(morningBriefNativeScheduleSkips.userId, owner.userId),
-      ),
-    );
 }

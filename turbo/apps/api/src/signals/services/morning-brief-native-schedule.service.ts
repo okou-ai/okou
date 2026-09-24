@@ -4,28 +4,12 @@ import {
   morningBriefNativeSchedules,
   type MorningBriefExecutionPhase,
   type MorningBriefExecutionTarget,
-  type MorningBriefNativeOutcome,
 } from "@okouai/db/schema/morning-brief-native-schedule";
 import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
-import { morningBriefNativeScheduleSkips } from "@okouai/db/schema/workflow-schedule-skip";
-import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
-import {
-  and,
-  count,
-  desc,
-  eq,
-  gt,
-  isNotNull,
-  isNull,
-  lt,
-  lte,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
-import { env } from "../../lib/env";
 import type { ReadonlyDb } from "../external/db";
 import type { MorningBriefMemberIdentity } from "./morning-brief-enrollment-data.service";
 import {
@@ -34,10 +18,6 @@ import {
   type MorningBriefStateReader,
 } from "./morning-brief-migration-state.service";
 import { calculateNextRun } from "./time-automation";
-import {
-  scheduleExpired,
-  scheduleExpiryEnabled,
-} from "./schedule-expiry-policy";
 
 /**
  * The durable Morning Brief choice, execution ownership and schedule.
@@ -70,21 +50,6 @@ type MorningBriefNativeReader = Pick<ReadonlyDb, "select">;
 /** The smallest writer this module needs. A transaction always satisfies it. */
 type MorningBriefNativeWriter = Tx;
 
-/** How long one tick may hold a claimed slot before another may reclaim it. */
-const NATIVE_OCCURRENCE_LEASE_MS = 5 * 60 * 1000;
-
-/**
- * The finite pre-reservation configuration deferral.
- *
- * A slot that cannot execute because its configuration is momentarily missing
- * is deferred at most this many times, each time by
- * {@link NATIVE_CONFIGURATION_DEFER_MS}. Once exhausted it settles as
- * `not-configured` and schedules the next future occurrence, so a broken
- * configuration can never hot-loop and never silently disables the member.
- */
-const NATIVE_CONFIGURATION_DEFER_LIMIT = 3;
-const NATIVE_CONFIGURATION_DEFER_MS = 15 * 60 * 1000;
-
 /**
  * How long a drain may stay unresolved before it is reported rather than held
  * silently. The phase does not advance on expiry: an expired deadline is an
@@ -114,13 +79,6 @@ function scheduleWhere(owner: MorningBriefMemberIdentity) {
   return and(
     eq(morningBriefNativeSchedules.orgId, owner.orgId),
     eq(morningBriefNativeSchedules.userId, owner.userId),
-  );
-}
-
-function occurrenceOwnerWhere(owner: MorningBriefMemberIdentity) {
-  return and(
-    eq(morningBriefNativeOccurrences.orgId, owner.orgId),
-    eq(morningBriefNativeOccurrences.userId, owner.userId),
   );
 }
 
@@ -541,34 +499,6 @@ export async function materializeMorningBriefNativeSchedule(
     ? { kind: "refused", reason: "not-installed" }
     : { kind: "materialized", row: raced };
 }
-
-/**
- * Re-export of the single real membership-generation reader.
- *
- * The authority is Clerk's immutable organization-membership id, resolved by
- * the collection executor's existing `currentMembershipId$`. A remove and
- * rejoin issues a new id, which is what stops a new membership from reviving an
- * older occurrence. `org_members_cache` is a disposable read-through cache of
- * the member's *role* and carries no generation, so it is never read here.
- *
- * It is a network read, so callers resolve it **before** their transaction and
- * revalidate the pinned value inside it. It deliberately lives in the
- * collection executor rather than being re-exported here, so this module never
- * imports its consumer.
- */
-/**
- * Which implementation's state decides whether a brief may execute right now.
- *
- * This is the single predicate S5 collection and S6 delivery consult instead of
- * reading the legacy automation's enabled bit directly. Once a member reaches
- * the `native` phase, the durable row is the whole answer — admission keeps
- * working with the legacy scheduler disabled and with no live Official Workflow
- * installation or catalog reconciliation. Every other phase keeps the existing
- * legacy behaviour untouched.
- */
-type MorningBriefChoiceAuthority =
-  | { readonly kind: "native"; readonly row: MorningBriefNativeScheduleRow }
-  | { readonly kind: "legacy" };
 
 /** What a logical-choice writer intends to change. */
 interface MorningBriefLogicalChoicePatch {
@@ -1080,22 +1010,6 @@ async function loadUnsettledOccurrence(
   return row;
 }
 
-/** Why a bring-forward was refused, with no provider work performed. */
-export type MorningBriefBringForwardRefusal =
-  | "absent"
-  | "not-native"
-  | "disabled"
-  | "membership-generation"
-  | "unsettled-occurrence"
-  | "rate-limited";
-
-type MorningBriefBringForwardResult =
-  | { readonly kind: "brought-forward"; readonly scheduledFor: Date }
-  | {
-      readonly kind: "refused";
-      readonly reason: MorningBriefBringForwardRefusal;
-    };
-
 /**
  * Revoke this member's native execution authority.
  *
@@ -1210,109 +1124,6 @@ export async function lockMorningBriefNativeAgentAuthorities(
       morningBriefNativeSchedules.userId,
     )
     .for("update");
-}
-
-type MorningBriefTransitionResult =
-  | { readonly kind: "unchanged"; readonly row: MorningBriefNativeScheduleRow }
-  | {
-      readonly kind: "transitioned";
-      readonly row: MorningBriefNativeScheduleRow;
-    }
-  | {
-      readonly kind: "held";
-      readonly row: MorningBriefNativeScheduleRow;
-      readonly reason: string;
-    }
-  | { readonly kind: "absent" };
-
-/**
- * Ask for a target implementation and advance the phase machine by one legal
- * step under the current drain evidence.
- *
- * The only legal edges are `legacy → draining → native` and
- * `native → rollback-draining → legacy`. Turning the switch off while native
- * work exists enters or continues rollback; it never reopens legacy alongside
- * that work. Repeated flips converge on the current target without opening both
- * owners or manufacturing extra epochs.
- *
- * `drainProven` is supplied by the caller because proving it needs the real
- * legacy journal, queue, Run and outbox reads, which are not this module's
- * concern. An unproven drain stays draining and records why.
- */
-type PhaseCommit = (
-  next: MorningBriefExecutionPhase,
-  patch: Partial<typeof morningBriefNativeSchedules.$inferInsert>,
-) => Promise<MorningBriefNativeScheduleRow[]>;
-
-type MorningBriefNativeClaim =
-  | {
-      readonly kind: "claimed";
-      readonly occurrence: MorningBriefNativeOccurrenceRow;
-      readonly schedule: MorningBriefNativeScheduleRow;
-    }
-  | { readonly kind: "not-due" }
-  | { readonly kind: "inadmissible"; readonly reason: string };
-
-/**
- * Unsettled slots a later tick must resume.
- *
- * These are the occurrences whose schedule obligation is already held by the
- * occurrence itself: a finite deferral that came due, or a claim whose tick
- * died before it could settle. Without this reader an enabled owner would sit
- * with `next_run_at = NULL` forever.
- */
-function resumableOccurrencesWhere(args: {
-  readonly now: Date;
-  readonly owner?: MorningBriefMemberIdentity;
-  readonly scheduledFor?: Date;
-}) {
-  return and(
-    args.owner === undefined ? undefined : occurrenceOwnerWhere(args.owner),
-    args.scheduledFor === undefined
-      ? undefined
-      : eq(morningBriefNativeOccurrences.scheduledFor, args.scheduledFor),
-    isNull(morningBriefNativeOccurrences.settledAt),
-    // A bound attempt belongs to receipt recovery, never another model call.
-    isNull(morningBriefNativeOccurrences.generationAttemptId),
-    eq(morningBriefNativeOccurrences.deliveryPending, false),
-    or(
-      and(
-        eq(morningBriefNativeOccurrences.state, "deferred"),
-        isNotNull(morningBriefNativeOccurrences.deferredUntil),
-        lte(morningBriefNativeOccurrences.deferredUntil, args.now),
-      ),
-      and(
-        eq(morningBriefNativeOccurrences.state, "claimed"),
-        or(
-          isNull(morningBriefNativeOccurrences.leaseExpiresAt),
-          lt(morningBriefNativeOccurrences.leaseExpiresAt, args.now),
-        ),
-      ),
-    ),
-  );
-}
-
-export async function loadResumableOccurrences(
-  db: MorningBriefNativeReader,
-  args: {
-    readonly now: Date;
-    readonly limit: number;
-    readonly offset?: number;
-    readonly owner?: MorningBriefMemberIdentity;
-    readonly scheduledFor?: Date;
-  },
-): Promise<readonly MorningBriefNativeOccurrenceRow[]> {
-  return await db
-    .select()
-    .from(morningBriefNativeOccurrences)
-    .where(resumableOccurrencesWhere(args))
-    .orderBy(
-      morningBriefNativeOccurrences.scheduledFor,
-      morningBriefNativeOccurrences.orgId,
-      morningBriefNativeOccurrences.userId,
-    )
-    .limit(args.limit)
-    .offset(args.offset ?? 0);
 }
 
 /**

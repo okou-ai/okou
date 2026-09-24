@@ -122,12 +122,56 @@ describe("retired Native Morning Brief email", () => {
       await outbox.deleteItems([item.id]);
     });
 
-    expect(await outbox.drainItems([item.id])).toBe(1);
-    expect(await outbox.readItem(item.id)).toMatchObject({
+    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+    await expect(outbox.readItem(item.id)).resolves.toMatchObject({
       status: "failed",
       last_error: "Morning Brief email has no native delivery provenance",
     });
     expect(resendMocks.send).not.toHaveBeenCalled();
+  });
+
+  it("rejects a linked historical intent after membership rejoin while preserving its receipt", async () => {
+    const outbox = createEmailOutboxStateApi(context);
+    const orgId = `org_${randomUUID()}`;
+    const userId = `user_${randomUUID()}`;
+    const item = await outbox.seedLinkedNativeMail({
+      orgId,
+      userId,
+      membershipId: "mem_before_rejoin",
+      toAddress: `recipient-${randomUUID()}@example.test`,
+      createdAt: nowDate(),
+    });
+    let cleaned = false;
+    onTestFinished(async () => {
+      if (!cleaned) {
+        await outbox.deleteLinkedNativeMail(item.id);
+      }
+    });
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          {
+            id: "mem_after_rejoin",
+            publicUserData: { userId },
+            organization: { id: orgId },
+          },
+        ],
+      },
+    );
+
+    await expect(outbox.nativeReceiptExists(item.id)).resolves.toBeTruthy();
+    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+    await expect(outbox.readItem(item.id)).resolves.toMatchObject({
+      status: "failed",
+      last_error:
+        "Morning Brief recipient rejoined under a new membership generation",
+    });
+    await expect(outbox.nativeReceiptExists(item.id)).resolves.toBeTruthy();
+    expect(resendMocks.send).not.toHaveBeenCalled();
+
+    await expect(outbox.deleteLinkedNativeMail(item.id)).resolves.toBeTruthy();
+    cleaned = true;
+    await expect(outbox.nativeReceiptExists(item.id)).resolves.toBeFalsy();
   });
 });
 

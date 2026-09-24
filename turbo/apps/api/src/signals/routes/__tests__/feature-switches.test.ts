@@ -112,7 +112,8 @@ describe("/api/feature-switches", () => {
       }),
       [200],
     );
-    expect(optedOut.body.switches).toStrictEqual({ simpleMorningBrief: false });
+    // Retired values are not exposed through the registered-key response.
+    expect(optedOut.body.switches).toStrictEqual({});
     expect(
       optedOut.body.effectiveSwitches[FeatureSwitchKey.MorningBrief],
     ).toBeTruthy();

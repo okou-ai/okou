@@ -1,13 +1,3 @@
-import { mockClerkUsers } from "./helpers/clerk-users";
-import { createHash, randomUUID } from "node:crypto";
-import { gunzipSync } from "node:zlib";
-import {
-  chatEventRowSchema,
-  type ChatEventRow,
-} from "@okouai/api-contracts/contracts/chat-event-rows";
-import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
-import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
-import type { UserMessagePart } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   DeleteObjectsCommand,
   GetObjectCommand,
@@ -15,11 +5,13 @@ import {
   ListObjectsV2Command,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
-import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
-import { userPreferencesRoutes } from "../user-preferences";
+import {
+  chatEventRowSchema,
+  type ChatEventRow,
+} from "@okouai/api-contracts/contracts/chat-event-rows";
+import type { UserMessagePart } from "@okouai/api-contracts/contracts/chat-threads";
 import { cronOfficialWorkflowCatalogContract } from "@okouai/api-contracts/contracts/cron";
-import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
-import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
+import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import {
   OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
   type OfficialWorkflowBlueprint,
@@ -30,11 +22,15 @@ import {
   officialWorkflowInstallationsContract,
   officialWorkflowsContract,
 } from "@okouai/api-contracts/contracts/official-workflows";
-import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
+import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
+import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
+import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { testOfficialWorkflowCatalogStateContract } from "@okouai/api-contracts/contracts/test-official-workflow-catalog-state";
 import { testSystemStoragePresignedUrlCacheStateContract } from "@okouai/api-contracts/contracts/test-system-storage-presigned-url-cache-state";
-import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { testUserExportWorkContract } from "@okouai/api-contracts/contracts/test-user-export-work";
+import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
 import {
   workflowAutomationsContract,
   workflowsCollectionContract,
@@ -47,29 +43,27 @@ import {
   SYSTEM_ORG_ID,
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
-import { HttpResponse, http } from "msw";
-import { Webhook } from "svix";
 import AdmZip from "adm-zip";
+import { http, HttpResponse } from "msw";
+import { createHash, randomUUID } from "node:crypto";
+import { gunzipSync } from "node:zlib";
+import { Webhook } from "svix";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
-import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now, nowDate, withMockNowForTest } from "../../../lib/time";
+import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
+import { now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { verifyOkouToken } from "../../auth/tokens";
-import { flushWaitUntilForTest } from "../../context/wait-until";
+import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
+import { readNativeSchedule } from "../../../test-fixtures/morning-brief-native-schedule";
+import { serializeOfficialWorkflowCatalogTests } from "../../../test-fixtures/official-workflow-catalog-lease";
 import {
   appendOfficialWorkflowQueueInputFixture,
   readOfficialWorkflowQueueInputFixture,
 } from "../../../test-fixtures/official-workflow-queue";
-import { serializeOfficialWorkflowCatalogTests } from "../../../test-fixtures/official-workflow-catalog-lease";
-import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
-import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
-import { testUserExportWorkRoutes } from "../test-user-export-work";
-import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
-import { readNativeSchedule } from "../../../test-fixtures/morning-brief-native-schedule";
+import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import {
   countAgentStableContextPublicationsFixture,
   countUserStableContextGenerationsFixture,
@@ -79,61 +73,8 @@ import {
   holdOfficialWorkflowActivationBeforeErasureAdmissionFixture,
   holdOfficialWorkflowInstallationBeforeErasureAdmissionFixture,
 } from "../../../test-fixtures/pi-stable-context-source-writers";
-import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createOpsLogsApi } from "./helpers/api-bdd-ops-logs";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { readExportText } from "./helpers/user-export-storage";
-import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import {
-  createConnectorBddApi,
-  mockGmailConnectorOAuth,
-  mockGoogleFormsConnectorOAuth,
-  mockStripeConnectorOAuth,
-} from "./helpers/api-bdd-connectors";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { projectChatEventRows } from "./helpers/chat-event-test-reader";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import {
-  createWorkflowsBddApi,
-  mockGoogleCalendarConnectorOAuth,
-  mockNotionConnectorOAuth,
-} from "./helpers/api-bdd-workflows";
-import { createEmailOutboxStateApi } from "./helpers/email-outbox-state";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import {
-  assertOfficialWorkflowAutomationFinalAdmissionRejectedFixture,
-  installOfficialWorkflowRunGateFixture,
-  readAgentRunFamilyCountsFixture,
-  readChatEventRowsAsPreviousApiFixture,
-  readChatEventSnapshotHead,
-  readRunAutonomyBudgetFixture,
-  setRunAutonomyBudgetFixture,
-  readLatestWorkflowAutomationRunFixture,
-  readOfficialWorkflowRunStateFixture,
-  readWorkflowAutomationAutonomyFixture,
-  retargetWorkflowAutomationFixture,
-  seedBuiltInModelKey,
-  setOfficialWorkflowAutomationAdmissionStateFixture,
-} from "./helpers/runtime-state";
-import { createRouteMocks } from "./helpers/route-test";
-import { createAuthDeviceApiActions } from "./helpers/api-bdd-auth-device";
-import { holdSecretKms } from "./helpers/hold-secret-kms";
-import {
-  createCronOfficialWorkflowCatalogRoutes,
-  cronOfficialWorkflowCatalogRoutes,
-} from "../cron-official-workflow-catalog";
-import { officialWorkflowRoutes } from "../official-workflows";
-import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
-import { testOfficialWorkflowCatalogStateRoutes } from "../test-official-workflow-catalog-state";
-import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
-import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
-import { workflowAutomationsRoutes } from "../workflow-automations";
-import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
-import { workflowsRoutes } from "../workflows";
-import { webhooksClerkRoutes } from "../webhooks-clerk";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
+import { verifyOkouToken } from "../../auth/tokens";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   acknowledgeDetachedForTest,
   createDeferredPromise,
@@ -141,6 +82,65 @@ import {
   settle,
   settleIncludingAbort,
 } from "../../utils";
+import {
+  createCronOfficialWorkflowCatalogRoutes,
+  cronOfficialWorkflowCatalogRoutes,
+} from "../cron-official-workflow-catalog";
+import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
+import { officialWorkflowRoutes } from "../official-workflows";
+import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
+import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
+import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
+import { testOfficialWorkflowCatalogStateRoutes } from "../test-official-workflow-catalog-state";
+import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
+import { testUserExportWorkRoutes } from "../test-user-export-work";
+import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
+import { userPreferencesRoutes } from "../user-preferences";
+import { webhooksClerkRoutes } from "../webhooks-clerk";
+import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
+import { workflowAutomationsRoutes } from "../workflow-automations";
+import { workflowsRoutes } from "../workflows";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createAuthDeviceApiActions } from "./helpers/api-bdd-auth-device";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import {
+  createConnectorBddApi,
+  mockGmailConnectorOAuth,
+  mockGoogleFormsConnectorOAuth,
+  mockStripeConnectorOAuth,
+} from "./helpers/api-bdd-connectors";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import { createOpsLogsApi } from "./helpers/api-bdd-ops-logs";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  createWorkflowsBddApi,
+  mockGoogleCalendarConnectorOAuth,
+  mockNotionConnectorOAuth,
+} from "./helpers/api-bdd-workflows";
+import { projectChatEventRows } from "./helpers/chat-event-test-reader";
+import { mockClerkUsers } from "./helpers/clerk-users";
+import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
+import { createEmailOutboxStateApi } from "./helpers/email-outbox-state";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { holdSecretKms } from "./helpers/hold-secret-kms";
+import { createRouteMocks } from "./helpers/route-test";
+import {
+  assertOfficialWorkflowAutomationFinalAdmissionRejectedFixture,
+  installOfficialWorkflowRunGateFixture,
+  readAgentRunFamilyCountsFixture,
+  readChatEventRowsAsPreviousApiFixture,
+  readChatEventSnapshotHead,
+  readLatestWorkflowAutomationRunFixture,
+  readOfficialWorkflowRunStateFixture,
+  readRunAutonomyBudgetFixture,
+  readWorkflowAutomationAutonomyFixture,
+  retargetWorkflowAutomationFixture,
+  seedBuiltInModelKey,
+  setOfficialWorkflowAutomationAdmissionStateFixture,
+  setRunAutonomyBudgetFixture,
+} from "./helpers/runtime-state";
+import { readExportText } from "./helpers/user-export-storage";
 
 const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
@@ -827,20 +827,6 @@ function configureOfficialCalendarWatchMock() {
   return recorder;
 }
 
-function morningBriefScheduleBlueprint(
-  cronExpression: string,
-): OfficialWorkflowBlueprint {
-  return {
-    key: "daily-delivery",
-    parameters: [],
-    desiredState: {
-      kind: "schedule",
-      schedule: { type: "cron", cronExpression },
-    },
-    runtime: { resultEmail: true },
-  };
-}
-
 function webhookBlueprint(resultEmail = false): OfficialWorkflowBlueprint {
   return {
     key: "webhook-trigger",
@@ -1076,15 +1062,6 @@ function connectorDoctorDefinition(): ActiveDefinition {
   ]);
 }
 
-function morningBriefCatalog(
-  blueprints: readonly OfficialWorkflowBlueprint[],
-): OfficialWorkflowSourceCatalog {
-  return catalog([
-    connectorDoctorDefinition(),
-    activeDefinition("morning-brief", blueprints),
-  ]);
-}
-
 async function syncDeployedCatalog() {
   await syncCatalog(catalog([connectorDoctorDefinition()]));
   return await withOwnedPiStableContextGlobalInvalidationFixture(
@@ -1182,33 +1159,6 @@ async function simulateDormantMaterializationDiscardCrash(args: {
         action: "simulate-dormant-materialization-discard-crash",
         ...args,
       },
-    }),
-    [200],
-  );
-}
-
-async function pauseNextDormantMaterialization(): Promise<void> {
-  await accept(
-    stateClient().action({
-      body: { action: "pause-next-dormant-materialization" },
-    }),
-    [200],
-  );
-}
-
-async function waitForDormantMaterializationPause(): Promise<void> {
-  await accept(
-    stateClient().action({
-      body: { action: "wait-for-dormant-materialization-pause" },
-    }),
-    [200],
-  );
-}
-
-async function resumeDormantMaterialization(): Promise<void> {
-  await accept(
-    stateClient().action({
-      body: { action: "resume-dormant-materialization" },
     }),
     [200],
   );
