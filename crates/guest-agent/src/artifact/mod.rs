@@ -9,13 +9,9 @@
 //! 4. PUT archive + manifest to S3
 //! 5. POST `/storages/commit`
 //!
-//! The pre-walked list is a best-effort observation of the artifact, not a
-//! completeness proof. The configured mount root must be opened and its
-//! directory listing initialized, but failures while enumerating descendants,
-//! opening child entries, reading metadata, or hashing file contents can omit an
-//! entry or subtree while the walk succeeds. The checkpoint caller at
-//! `crate::checkpoint::artifact::snapshot_artifact_entries` consumes this list
-//! as the snapshot input; it does not add information about omitted entries.
+//! The pre-walked list fails on observed directory and regular-file I/O errors,
+//! allowing checkpoint preflight to stop before any storage API call. It is not
+//! an atomic filesystem snapshot: concurrent filesystem changes remain possible.
 
 use crate::error::AgentError;
 use crate::http::HttpClient;
@@ -34,6 +30,8 @@ use api::{
 pub(crate) use archive::{
     ARTIFACT_TRAVERSAL_MAX_DEPTH, ARTIFACT_TRAVERSAL_MAX_ENTRIES, ARTIFACT_TRAVERSAL_MAX_PATH_BYTES,
 };
+#[cfg(all(test, target_os = "linux"))]
+pub(crate) use archive::{WalkFaultStage, inject_walk_fault_for_test};
 use archive::{collect_file_metadata, create_archive, validate_archive_inputs};
 use std::fs::File;
 use std::io::{BufWriter, Write};

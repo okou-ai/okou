@@ -7,14 +7,11 @@ use api_contracts::generated::constants::storages::{
 };
 use flate2::Compression;
 use flate2::write::GzEncoder;
-use guest_telemetry::log_warn;
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, Metadata};
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 use thiserror::Error;
-
-const LOG_TAG: &str = "sandbox:guest-agent";
 
 /// Maximum entries returned by `ReadDir` across one artifact walk.
 ///
@@ -29,28 +26,23 @@ pub(crate) const ARTIFACT_TRAVERSAL_MAX_DEPTH: u64 = 256;
 #[cfg(target_os = "linux")]
 pub(crate) const ARTIFACT_TRAVERSAL_MAX_PATH_BYTES: u64 = 64 * 1024;
 
-/// Collect a best-effort manifest of successfully observed regular files.
+/// Collect a manifest of regular files below a readable artifact root.
 ///
-/// On Linux, access to the configured artifact root is strict: the root must be
-/// opened and its directory listing must be initialized successfully. Below
-/// that readable root, traversal is best-effort. The returned `Ok(Vec<FileEntry>)`
-/// contains only regular files that were successfully observed, opened,
-/// inspected, and hashed; it is not proof that every descendant was included.
-/// A nested directory iteration, child open, metadata, or file read/hash
-/// failure can therefore omit an entry or subtree while the walk still
-/// succeeds. On non-Linux targets, root access is unsupported.
+/// On Linux, root and descendant directory listing, entry inspection, and
+/// regular-file open, metadata, and hashing errors fail the walk. The result
+/// is not an atomic filesystem snapshot: concurrent changes can still occur
+/// between directory enumeration and later archive creation. On non-Linux
+/// targets, root access is unsupported.
 /// Every successfully yielded directory entry consumes a separate traversal
 /// budget, including excluded and non-regular entries. Exceeding that budget,
 /// the directory-depth limit, or the active relative-path limit is a hard
-/// checkpoint failure rather than a best-effort omission.
+/// checkpoint failure.
 ///
 /// Entries named `.git` or `.vm0`, symlinks, FIFOs, and other non-regular
 /// entries are intentionally excluded. The root and descendant descriptors use
 /// the existing fd-relative no-follow opening boundary, so symlinks are not
 /// followed. Hard-linked names remain independent manifest paths even when
-/// they refer to the same underlying file. Hash/read failures currently emit a
-/// warning, but warning absence is not a completeness signal because not every
-/// omission path has a diagnostic.
+/// they refer to the same underlying file.
 ///
 /// The exclusion and hardlink behavior is covered by
 /// `walk_dir_skips_symlinks`, `walk_dir_does_not_follow_directory_symlink`,
@@ -60,22 +52,17 @@ pub(crate) const ARTIFACT_TRAVERSAL_MAX_PATH_BYTES: u64 = 64 * 1024;
 /// `crate::checkpoint::artifact::snapshot_artifact_entries`.
 #[cfg(target_os = "linux")]
 pub(super) fn collect_file_metadata(dir_path: &str) -> Result<Vec<FileEntry>, ArchiveError> {
-    let mut files = Vec::new();
-    let mut path_bytes = 0;
-    let mut observed_entries = 0;
     let root_path = Path::new(dir_path);
     let root = open_artifact_root(root_path)?;
     let entries = read_artifact_root(&root, root_path)?;
-    walk_entries(
-        &root,
-        "",
-        entries,
-        0,
-        &mut observed_entries,
-        &mut files,
-        &mut path_bytes,
-    )?;
-    Ok(files)
+    let mut state = WalkState {
+        root_path,
+        observed_entries: 0,
+        files: Vec::new(),
+        path_bytes: 0,
+    };
+    walk_entries(&root, "", entries, 0, &mut state)?;
+    Ok(state.files)
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -86,27 +73,27 @@ pub(super) fn collect_file_metadata(dir_path: &str) -> Result<Vec<FileEntry>, Ar
 }
 
 #[cfg(target_os = "linux")]
+struct WalkState<'a> {
+    root_path: &'a Path,
+    observed_entries: u64,
+    files: Vec<FileEntry>,
+    path_bytes: u64,
+}
+
+#[cfg(target_os = "linux")]
 fn walk_dir(
     current: &Dir,
     relative: &str,
     depth: u64,
-    observed_entries: &mut u64,
-    out: &mut Vec<FileEntry>,
-    path_bytes: &mut u64,
+    state: &mut WalkState<'_>,
 ) -> Result<(), ArchiveError> {
-    let entries = match current.read_dir() {
-        Ok(e) => e,
-        Err(_) => return Ok(()),
-    };
-    walk_entries(
-        current,
-        relative,
-        entries,
-        depth,
-        observed_entries,
-        out,
-        path_bytes,
-    )
+    let entries = maybe_inject_walk_fault(state.root_path, relative, WalkFaultStage::DirectoryRead)
+        .and_then(|()| current.read_dir())
+        .map_err(|source| ArchiveError::DirectoryRead {
+            path: relative.to_string(),
+            source,
+        })?;
+    walk_entries(current, relative, entries, depth, state)
 }
 
 #[cfg(target_os = "linux")]
@@ -115,65 +102,86 @@ fn walk_entries(
     relative: &str,
     entries: fs::ReadDir,
     depth: u64,
-    observed_entries: &mut u64,
-    out: &mut Vec<FileEntry>,
-    path_bytes: &mut u64,
+    state: &mut WalkState<'_>,
 ) -> Result<(), ArchiveError> {
-    for entry in entries.flatten() {
-        let candidate_entries = observed_entries.saturating_add(1);
+    for entry in entries {
+        let entry =
+            maybe_inject_walk_fault(state.root_path, relative, WalkFaultStage::DirectoryEntry)
+                .and(entry)
+                .map_err(|source| ArchiveError::DirectoryEntry {
+                    path: relative.to_string(),
+                    source,
+                })?;
+        let candidate_entries = state.observed_entries.saturating_add(1);
         enforce_traversal_limits(
             candidate_entries,
             depth,
             u64::try_from(relative.len()).unwrap_or(u64::MAX),
         )?;
-        *observed_entries = candidate_entries;
+        state.observed_entries = candidate_entries;
 
         let name = entry.file_name();
         if is_excluded_artifact_entry(&name) {
             continue;
         }
 
-        let (try_directory, try_file) = match entry.file_type() {
-            Ok(file_type) => (file_type.is_dir(), file_type.is_file()),
-            Err(_) => (true, true),
-        };
-        if try_directory && let Ok(dir) = current.open_child_dir(&name) {
+        let file_type = entry
+            .file_type()
+            .map_err(|source| ArchiveError::EntryType {
+                path: relative_artifact_path(relative, &name.to_string_lossy()),
+                source,
+            })?;
+        if file_type.is_dir() {
             let name_str = artifact_path_component(&name, relative)?;
             let rel = relative_artifact_path(relative, name_str);
             let child_depth = depth.saturating_add(1);
             enforce_traversal_limits(
-                *observed_entries,
+                state.observed_entries,
                 child_depth,
                 u64::try_from(rel.len()).unwrap_or(u64::MAX),
             )?;
-            walk_dir(&dir, &rel, child_depth, observed_entries, out, path_bytes)?;
+            let dir =
+                current
+                    .open_child_dir(&name)
+                    .map_err(|source| ArchiveError::DirectoryOpen {
+                        path: rel.clone(),
+                        source,
+                    })?;
+            walk_dir(&dir, &rel, child_depth, state)?;
             continue;
         }
-        if !try_file {
+        if !file_type.is_file() {
             continue;
         }
 
-        let Ok(file) = current.open_child_file(&name) else {
-            continue;
-        };
-        let Ok(metadata) = file.metadata() else {
-            continue;
-        };
-        if !metadata.is_file() {
-            continue;
-        }
         let name_str = artifact_path_component(&name, relative)?;
         let rel = relative_artifact_path(relative, name_str);
         enforce_traversal_limits(
-            *observed_entries,
+            state.observed_entries,
             depth,
             u64::try_from(rel.len()).unwrap_or(u64::MAX),
         )?;
-        let observed_files = u64::try_from(out.len())
+        let file = maybe_inject_walk_fault(state.root_path, &rel, WalkFaultStage::FileOpen)
+            .and_then(|()| current.open_child_file(&name))
+            .map_err(|source| ArchiveError::WalkFileOpen {
+                path: rel.clone(),
+                source,
+            })?;
+        let metadata = file
+            .metadata()
+            .map_err(|source| ArchiveError::WalkFileMetadata {
+                path: rel.clone(),
+                source,
+            })?;
+        if !metadata.is_file() {
+            return Err(ArchiveError::WalkNonRegular { path: rel });
+        }
+        let observed_files = u64::try_from(state.files.len())
             .unwrap_or(u64::MAX)
             .saturating_add(1);
-        let observed_path_bytes =
-            path_bytes.saturating_add(u64::try_from(rel.len()).unwrap_or(u64::MAX));
+        let observed_path_bytes = state
+            .path_bytes
+            .saturating_add(u64::try_from(rel.len()).unwrap_or(u64::MAX));
         if observed_files > STORAGE_MANIFEST_MAX_FILES
             || observed_path_bytes > STORAGE_MANIFEST_MAX_PATH_BYTES
         {
@@ -184,21 +192,128 @@ fn walk_entries(
                 max_path_bytes: STORAGE_MANIFEST_MAX_PATH_BYTES,
             });
         }
-        match compute_file_hash_from_reader(file) {
-            Ok((hash, size)) => {
-                *path_bytes = observed_path_bytes;
-                out.push(FileEntry {
-                    path: rel,
-                    hash,
-                    size,
-                });
+        let (hash, size) = hash_walk_file(file, state.root_path, &rel).map_err(|source| {
+            ArchiveError::WalkFileRead {
+                path: rel.clone(),
+                source,
             }
-            Err(e) => {
-                log_warn!(LOG_TAG, "Could not process file {rel}: {e}");
-            }
-        }
+        })?;
+        state.path_bytes = observed_path_bytes;
+        state.files.push(FileEntry {
+            path: rel,
+            hash,
+            size,
+        });
     }
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum WalkFaultStage {
+    DirectoryRead,
+    DirectoryEntry,
+    FileOpen,
+    #[cfg(test)]
+    FileRead,
+}
+
+#[cfg(all(test, target_os = "linux"))]
+#[derive(Clone, PartialEq, Eq)]
+struct WalkFault {
+    root: PathBuf,
+    relative: String,
+    stage: WalkFaultStage,
+}
+
+#[cfg(all(test, target_os = "linux"))]
+static WALK_FAULTS: std::sync::OnceLock<std::sync::Mutex<Vec<WalkFault>>> =
+    std::sync::OnceLock::new();
+
+#[cfg(all(test, target_os = "linux"))]
+fn walk_faults() -> &'static std::sync::Mutex<Vec<WalkFault>> {
+    WALK_FAULTS.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+}
+
+#[cfg(all(test, target_os = "linux"))]
+fn lock_walk_faults() -> std::sync::MutexGuard<'static, Vec<WalkFault>> {
+    match walk_faults().lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+pub(crate) struct WalkFaultGuard(WalkFault);
+
+#[cfg(all(test, target_os = "linux"))]
+pub(crate) fn inject_walk_fault_for_test(
+    root: &Path,
+    relative: &str,
+    stage: WalkFaultStage,
+) -> WalkFaultGuard {
+    let fault = WalkFault {
+        root: root.to_path_buf(),
+        relative: relative.to_string(),
+        stage,
+    };
+    let mut faults = lock_walk_faults();
+    assert!(!faults.contains(&fault), "duplicate artifact walk fault");
+    faults.push(fault.clone());
+    WalkFaultGuard(fault)
+}
+
+#[cfg(all(test, target_os = "linux"))]
+impl Drop for WalkFaultGuard {
+    fn drop(&mut self) {
+        let mut faults = lock_walk_faults();
+        if let Some(index) = faults.iter().position(|fault| fault == &self.0) {
+            faults.remove(index);
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn maybe_inject_walk_fault(root: &Path, relative: &str, stage: WalkFaultStage) -> io::Result<()> {
+    #[cfg(test)]
+    if walk_fault_is_active(root, relative, stage) {
+        return Err(io::Error::other(format!(
+            "injected artifact walk {stage:?} failure"
+        )));
+    }
+    #[cfg(not(test))]
+    let _ = (root, relative, stage);
+    Ok(())
+}
+
+#[cfg(all(test, target_os = "linux"))]
+fn walk_fault_is_active(root: &Path, relative: &str, stage: WalkFaultStage) -> bool {
+    lock_walk_faults()
+        .iter()
+        .any(|fault| fault.root == root && fault.relative == relative && fault.stage == stage)
+}
+
+#[cfg(all(test, target_os = "linux"))]
+struct FailingWalkReader<R> {
+    _inner: R,
+}
+
+#[cfg(all(test, target_os = "linux"))]
+impl<R: Read> Read for FailingWalkReader<R> {
+    fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
+        Err(io::Error::other("injected artifact file read failure"))
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn hash_walk_file(file: File, root: &Path, relative: &str) -> io::Result<(String, u64)> {
+    #[cfg(test)]
+    if walk_fault_is_active(root, relative, WalkFaultStage::FileRead) {
+        return compute_file_hash_from_reader(FailingWalkReader { _inner: file });
+    }
+    #[cfg(not(test))]
+    let _ = (root, relative);
+    compute_file_hash_from_reader(file)
 }
 
 #[cfg(target_os = "linux")]
@@ -281,6 +396,22 @@ pub(super) enum ArchiveError {
     RootOpen { path: PathBuf, source: io::Error },
     #[error("failed to read artifact root {}: {source}", path.display())]
     RootRead { path: PathBuf, source: io::Error },
+    #[error("failed to read artifact directory {path:?}: {source}")]
+    DirectoryRead { path: String, source: io::Error },
+    #[error("failed to iterate artifact directory {path:?}: {source}")]
+    DirectoryEntry { path: String, source: io::Error },
+    #[error("failed to inspect artifact entry {path:?}: {source}")]
+    EntryType { path: String, source: io::Error },
+    #[error("failed to open artifact directory {path:?}: {source}")]
+    DirectoryOpen { path: String, source: io::Error },
+    #[error("failed to open artifact file {path:?}: {source}")]
+    WalkFileOpen { path: String, source: io::Error },
+    #[error("failed to read artifact file metadata {path:?}: {source}")]
+    WalkFileMetadata { path: String, source: io::Error },
+    #[error("artifact file {path:?} changed type during walk")]
+    WalkNonRegular { path: String },
+    #[error("failed to hash artifact file {path:?}: {source}")]
+    WalkFileRead { path: String, source: io::Error },
     #[cfg(not(target_os = "linux"))]
     #[error(
         "artifact root access requires Linux no-follow path opening: {}",

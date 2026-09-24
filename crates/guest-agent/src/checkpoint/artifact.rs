@@ -932,6 +932,98 @@ mod tests {
         commit.assert_calls(0);
     }
 
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn artifact_snapshot_descendant_io_faults_fail_before_any_storage_api_calls() {
+        let _system_log_state_guard = crate::lock_system_log_test_state_async().await;
+        let _sandbox_ops_guard = crate::SandboxOpsTestGuard::lock().await;
+        let server = MockServer::start();
+        let prepare = server.mock(|when, then| {
+            when.method(POST)
+                .path("/api/webhooks/agent/storages/prepare");
+            then.status(200).json_body(json!({"unreachable": true}));
+        });
+        let upload = server.mock(|when, then| {
+            when.method(PUT);
+            then.status(200);
+        });
+        let commit = server.mock(|when, then| {
+            when.method(POST)
+                .path("/api/webhooks/agent/storages/commit");
+            then.status(200).json_body(json!({"unreachable": true}));
+        });
+        let http = HttpClient::with_api_config(
+            server.base_url(),
+            "test-token",
+            "",
+            "test-run-001",
+            Duration::ZERO,
+        )
+        .unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let healthy_mount = dir.path().join("healthy");
+        std::fs::create_dir(&healthy_mount).unwrap();
+        std::fs::write(healthy_mount.join("updated.txt"), "updated").unwrap();
+        let fault_mount = dir.path().join("faulting");
+        std::fs::create_dir(&fault_mount).unwrap();
+        std::fs::create_dir(fault_mount.join("nested")).unwrap();
+        std::fs::write(fault_mount.join("nested/kept.txt"), "parent content").unwrap();
+        let entries = vec![
+            env::ArtifactEnv {
+                name: "workspace".to_string(),
+                mount_path: healthy_mount.to_string_lossy().into_owned(),
+                storage_id: "workspace-storage-id".to_string(),
+                version_id: "old-workspace-version".to_string(),
+                missing_root_policy: None,
+            },
+            env::ArtifactEnv {
+                name: "memory".to_string(),
+                mount_path: fault_mount.to_string_lossy().into_owned(),
+                storage_id: "memory-storage-id".to_string(),
+                version_id: "old-memory-version".to_string(),
+                missing_root_policy: Some(ArtifactEntryMissingRootPolicy::PreserveParentVersion),
+            },
+        ];
+
+        for (stage, relative, expected) in [
+            (
+                vas::WalkFaultStage::DirectoryRead,
+                "nested",
+                "failed to read artifact directory",
+            ),
+            (
+                vas::WalkFaultStage::DirectoryEntry,
+                "nested",
+                "failed to iterate artifact directory",
+            ),
+            (
+                vas::WalkFaultStage::FileOpen,
+                "nested/kept.txt",
+                "failed to open artifact file",
+            ),
+            (
+                vas::WalkFaultStage::FileRead,
+                "nested/kept.txt",
+                "failed to hash artifact file",
+            ),
+        ] {
+            let fault = vas::inject_walk_fault_for_test(&fault_mount, relative, stage);
+            let error = snapshot_artifact_entries(&http, "test-run", &entries)
+                .await
+                .expect_err("an incomplete manifest must fail checkpoint preflight");
+            drop(fault);
+
+            assert!(matches!(error, AgentError::Checkpoint(_)), "got: {error}");
+            let message = error.to_string();
+            assert!(message.contains(expected), "got: {message}");
+            assert!(message.contains(relative), "got: {message}");
+            prepare.assert_calls(0);
+            upload.assert_calls(0);
+            commit.assert_calls(0);
+        }
+    }
+
     #[tokio::test]
     async fn artifact_snapshot_enforces_manifest_boundaries_before_storage_api_calls() {
         use api_contracts::generated::constants::storages::{
