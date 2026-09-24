@@ -86,8 +86,20 @@ function createSession(
   return { session, windows, replies, completed, changes, refreshes };
 }
 
+function sessionToken(expiresInSeconds: number, label: string): string {
+  const payload = Buffer.from(
+    JSON.stringify({ exp: Math.floor(Date.now() / 1_000) + expiresInSeconds }),
+  ).toString("base64url");
+  return `header.${payload}.${label}`;
+}
+
 function identityHandlers(
-  options: { userId?: string; orgId?: string; observed?: string[] } = {},
+  options: {
+    userId?: string;
+    orgId?: string;
+    sessionId?: string | null;
+    observed?: string[];
+  } = {},
 ) {
   server.use(
     http.get(`${api}/api/auth/me`, ({ request }) => {
@@ -98,6 +110,9 @@ function identityHandlers(
         userId: options.userId ?? token,
         email: "app@example.test",
         orgId: "app-org",
+        ...(options.sessionId === null
+          ? {}
+          : { sessionId: options.sessionId ?? "sess_app" }),
       });
     }),
     http.get(`${api}/api/org`, ({ request }) => {
@@ -286,6 +301,272 @@ describe("Okou App session authority", () => {
     expect(session.getCachedToken()).toBe("restored");
     expect(session.canRestoreSession()).toBe(true);
     expect(refreshes.some((event) => event.phase === "failed")).toBe(false);
+  });
+
+  it.each(["status", "protected request"] as const)(
+    "renews a near-expiry bearer before the next %s without sending the old token",
+    async (request) => {
+      const { session, replies, windows } = createSession();
+      const observed: string[] = [];
+      identityHandlers({ userId: "same-user", observed });
+      const old = sessionToken(10, "old");
+      const fresh = sessionToken(60, "fresh");
+      replies.push(Promise.resolve(old), Promise.resolve(fresh));
+      await session.getAuthState();
+      observed.length = 0;
+      server.use(
+        http.get(`${api}/api/protected`, ({ request: incoming }) => {
+          observed.push(`protected:${incoming.headers.get("authorization")}`);
+          return new HttpResponse(null, { status: 200 });
+        }),
+      );
+
+      if (request === "status") {
+        expect((await session.getAuthState()).status).toBe("signed_in");
+      } else {
+        expect(
+          (await session.fetchWithSessionAuth(new URL(`${api}/api/protected`)))
+            .status,
+        ).toBe(200);
+      }
+      expect(observed).toEqual([
+        `me:Bearer ${fresh}`,
+        `org:Bearer ${fresh}`,
+        ...(request === "status" ? [] : [`protected:Bearer ${fresh}`]),
+      ]);
+      expect(windows).toHaveLength(2);
+      expect(session.getCachedToken()).toBe(fresh);
+    },
+  );
+
+  it("reuses a bearer with sufficient lifetime remaining", async () => {
+    const { session, replies, windows } = createSession();
+    const observed: string[] = [];
+    identityHandlers({ userId: "same-user", observed });
+    const token = sessionToken(45, "valid");
+    replies.push(Promise.resolve(token));
+    await session.getAuthState();
+    observed.length = 0;
+
+    expect((await session.getAuthState()).status).toBe("signed_in");
+    expect(observed).toEqual([`me:Bearer ${token}`, `org:Bearer ${token}`]);
+    expect(windows).toHaveLength(1);
+  });
+
+  it("keeps execution authority during a server-verified same-identity renewal", async () => {
+    const { session, replies, windows, refreshes } = createSession();
+    identityHandlers({ userId: "same-user" });
+    replies.push(Promise.resolve(sessionToken(60, "old")));
+    await session.getAuthState();
+    const authority = session.getAuthority();
+    const events = refreshes.length;
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 50_000);
+    const fresh = sessionToken(60, "fresh");
+    const reply = deferred<string | null>();
+    replies.push(reply.promise);
+
+    const renewal = session.getAuthState();
+    expect(windows).toHaveLength(2);
+    expect(session.getAuthority()).toBe(authority);
+    reply.resolve(fresh);
+    expect((await renewal).status).toBe("signed_in");
+    expect(session.getAuthority()).toBe(authority);
+    expect(session.getCachedToken()).toBe(fresh);
+    expect(refreshes).toHaveLength(events);
+  });
+
+  it("restarts the host if Clerk changes sessions for the same user and workspace", async () => {
+    const { session, replies, windows, refreshes } = createSession();
+    const old = sessionToken(10, "old");
+    const fresh = sessionToken(60, "fresh");
+    let sessionId = "sess_old";
+    server.use(
+      http.get(`${api}/api/auth/me`, () =>
+        HttpResponse.json({
+          userId: "same-user",
+          email: "app@example.test",
+          orgId: "app-org",
+          sessionId,
+        }),
+      ),
+      http.get(`${api}/api/org`, () =>
+        HttpResponse.json({ id: "app-org", name: "App workspace" }),
+      ),
+    );
+    const protectedRequests: string[] = [];
+    server.use(
+      http.get(`${api}/api/protected`, ({ request }) => {
+        protectedRequests.push(request.headers.get("authorization") ?? "");
+        return new HttpResponse(null, { status: 200 });
+      }),
+    );
+    replies.push(Promise.resolve(old), Promise.resolve(fresh));
+    await session.getAuthState();
+    const oldAuthority = session.getAuthority();
+    sessionId = "sess_new";
+
+    expect(
+      (await session.fetchWithSessionAuth(new URL(`${api}/api/protected`)))
+        .status,
+    ).toBe(401);
+    expect(protectedRequests).toEqual([]);
+    expect(windows).toHaveLength(2);
+    expect(session.getAuthority()).not.toBe(oldAuthority);
+    expect(session.getCachedToken()).toBe(fresh);
+    expect(refreshes.at(-1)).toMatchObject({
+      phase: "completed",
+      identity: "changed",
+    });
+  });
+
+  it("does not preserve a host when an older API omits the Clerk session ID", async () => {
+    const { session, replies, windows } = createSession();
+    identityHandlers({ userId: "same-user", sessionId: null });
+    replies.push(
+      Promise.resolve(sessionToken(10, "old")),
+      Promise.resolve(sessionToken(60, "fresh")),
+    );
+    await session.getAuthState();
+    const oldAuthority = session.getAuthority();
+
+    expect((await session.getAuthState()).status).toBe("signed_in");
+    expect(windows).toHaveLength(2);
+    expect(session.getAuthority()).not.toBe(oldAuthority);
+  });
+
+  it("does not keep legacy API authority on a repeated identity read without a session ID", async () => {
+    const { session, replies, windows } = createSession();
+    identityHandlers({ userId: "same-user", sessionId: null });
+    replies.push(Promise.resolve("opaque-old"), Promise.resolve("opaque-new"));
+    await session.getAuthState();
+    const oldAuthority = session.getAuthority();
+
+    expect((await session.getAuthState()).status).toBe("signed_in");
+    expect(windows).toHaveLength(2);
+    expect(session.getAuthority()).not.toBe(oldAuthority);
+  });
+
+  it("withdraws old authority at expiry when an in-flight renewal stalls", async () => {
+    const { session, replies, windows } = createSession();
+    identityHandlers({ userId: "same-user" });
+    replies.push(Promise.resolve(sessionToken(60, "old")));
+    await session.getAuthState();
+    const previousAuthority = session.getAuthority();
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 50_000);
+    const deadline = new AbortController();
+    const originalTimeout = AbortSignal.timeout.bind(AbortSignal);
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) =>
+      ms < 15_000 ? deadline.signal : originalTimeout(ms),
+    );
+    const reply = deferred<string | null>();
+    const fresh = sessionToken(60, "fresh");
+    replies.push(reply.promise, Promise.resolve(fresh));
+    const renewal = session.getAuthState();
+    expect(windows).toHaveLength(2);
+    expect(session.getAuthority()).toBe(previousAuthority);
+
+    deadline.abort();
+    expect(session.getAuthority()).toBeNull();
+    reply.resolve(null);
+    expect((await renewal).status).toBe("signed_in");
+    expect(session.getAuthority()).not.toBe(previousAuthority);
+    expect(windows).toHaveLength(3);
+  });
+
+  it("does not publish a late seamless renewal after sign-out", async () => {
+    const { session, replies, windows } = createSession();
+    identityHandlers({ userId: "same-user" });
+    replies.push(Promise.resolve(sessionToken(60, "old")));
+    await session.getAuthState();
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 50_000);
+    const reply = deferred<string | null>();
+    replies.push(reply.promise);
+    const renewal = session.getAuthState();
+    expect(windows).toHaveLength(2);
+    session.signOut();
+    reply.resolve(sessionToken(60, "late"));
+    expect((await renewal).status).toBe("signed_out");
+    expect(session.getCachedToken()).toBeNull();
+    expect(session.getAuthority()).toBeNull();
+    expect(windows[1]?.signal.aborted).toBe(true);
+  });
+
+  it("revokes old authority immediately when a rejected request forces refresh during renewal", async () => {
+    const { session, replies, windows } = createSession();
+    identityHandlers({ userId: "same-user" });
+    replies.push(Promise.resolve(sessionToken(60, "old")));
+    await session.getAuthState();
+    const authority = session.getAuthority();
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 50_000);
+    const pendingReply = deferred<string | null>();
+    replies.push(
+      pendingReply.promise,
+      Promise.resolve(sessionToken(60, "hard")),
+    );
+    const renewal = session.getAuthState();
+    expect(session.getAuthority()).toBe(authority);
+    const hard = session.getToken({ forceRefresh: true });
+    const joined = session.getToken({ forceRefresh: true });
+    expect(session.getAuthority()).toBeNull();
+    pendingReply.resolve(sessionToken(60, "superseded"));
+    expect(await joined).toBe(await hard);
+    await renewal;
+    expect(session.getAuthority()).not.toBe(authority);
+    expect(windows).toHaveLength(3);
+  });
+
+  it("does not deliver a pending request to a different identity during proactive renewal", async () => {
+    const { session, replies, windows } = createSession();
+    const old = sessionToken(10, "old");
+    const fresh = sessionToken(60, "fresh");
+    const reply = deferred<string | null>();
+    replies.push(Promise.resolve(old), reply.promise);
+    const requests: string[] = [];
+    server.use(
+      http.get(`${api}/api/auth/me`, ({ request }) => {
+        const changed =
+          request.headers.get("authorization") === `Bearer ${fresh}`;
+        return HttpResponse.json({
+          userId: changed ? "new-user" : "old-user",
+          email: "app@example.test",
+          orgId: changed ? "new-org" : "old-org",
+          sessionId: changed ? "sess_new" : "sess_old",
+        });
+      }),
+      http.get(`${api}/api/org`, ({ request }) =>
+        HttpResponse.json({
+          id:
+            request.headers.get("authorization") === `Bearer ${fresh}`
+              ? "new-org"
+              : "old-org",
+          name: "Workspace",
+        }),
+      ),
+      http.get(`${api}/api/protected`, ({ request }) => {
+        requests.push(request.headers.get("authorization") ?? "missing");
+        return new HttpResponse(null, { status: 200 });
+      }),
+    );
+    await session.getAuthState();
+    const previousAuthority = session.getAuthority();
+    const first = session.fetchWithSessionAuth(new URL(`${api}/api/protected`));
+    const second = session.fetchWithSessionAuth(
+      new URL(`${api}/api/protected`),
+    );
+    expect(windows).toHaveLength(2);
+    expect(session.getAuthority()).toBe(previousAuthority);
+    reply.resolve(fresh);
+    expect((await first).status).toBe(401);
+    expect(session.getAuthority()).not.toBe(previousAuthority);
+    expect((await second).status).toBe(401);
+    expect(requests).toEqual([]);
+    expect((await session.getAuthState()).user).toMatchObject({
+      userId: "new-user",
+    });
   });
 
   it("does one bounded App refresh after 401 without a cookie-only retry", async () => {

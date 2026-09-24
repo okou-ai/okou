@@ -311,6 +311,7 @@ function desktop(
           userId: "user",
           email: "test@example.test",
           orgId: "org",
+          sessionId: "session-user",
         });
       if (path === "/api/org")
         return HttpResponse.json({ id: "org", name: "Workspace" });
@@ -608,6 +609,7 @@ describe("production driver generation and admission wiring", () => {
           userId: "user",
           email: "test@example.test",
           orgId: "org",
+          sessionId: "session-user",
         });
       }),
     );
