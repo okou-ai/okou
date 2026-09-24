@@ -8642,9 +8642,9 @@ function PagedGroupPrimaryActions({
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
 }) {
   const { t } = useTranslation();
-  const showActivityLogs = useGet(featureSwitch$)[FeatureSwitchKey.OkouDebug];
+  const showDebugActions = useGet(featureSwitch$)[FeatureSwitchKey.OkouDebug];
   const hasLeadingIconAction = Boolean(
-    (showActivityLogs && firstRunId) || hasContent,
+    (showDebugActions && firstRunId) || hasContent,
   );
   return (
     <div
@@ -8657,8 +8657,7 @@ function PagedGroupPrimaryActions({
       )}
       data-testid="chat-event-actions"
     >
-      {showActivityLogs && firstRunId && <RunLogsAction runId={firstRunId} />}
-      {showActivityLogs && firstRunId && (
+      {showDebugActions && firstRunId && (
         <RunLangfuseAction thread={thread} runId={firstRunId} />
       )}
       {hasContent && (
