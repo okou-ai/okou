@@ -55,7 +55,7 @@ where
     phase(
         AuthenticationStage::SecurityNegotiation,
         deadline,
-        select_direct_srp(&mut stream),
+        verify_direct_srp_offer(&mut stream),
     )
     .await?;
     phase(
@@ -80,7 +80,7 @@ async fn exchange_version<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S) -> 
     Ok(())
 }
 
-async fn select_direct_srp<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S) -> Result<(), Error> {
+async fn verify_direct_srp_offer<S: AsyncRead + Unpin>(stream: &mut S) -> Result<(), Error> {
     let count = stream.read_u8().await?;
     if count == 0 {
         discard_reason(stream).await?;
@@ -94,8 +94,9 @@ async fn select_direct_srp<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S) ->
     if !offered.contains(&DIRECT_SRP) {
         return Err(Error::UnsupportedSecurity);
     }
-    stream.write_u8(DIRECT_SRP).await?;
-    stream.flush().await?;
+    // Unlike ordinary RFB 3.8 security types, Apple's direct-SRP branch
+    // entry starts with the single selection byte. Sending a separate byte
+    // here makes macOS read the entry's length prefix as another auth type.
     Ok(())
 }
 

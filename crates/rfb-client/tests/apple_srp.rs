@@ -41,7 +41,6 @@ async fn negotiate(server: &mut DuplexStream, offered: &[u8]) {
 
 async fn read_username_entry(server: &mut DuplexStream) {
     negotiate(server, &[36]).await;
-    assert_eq!(server.read_u8().await.expect("selection"), 36);
     assert_eq!(server.read_u8().await.expect("branch"), 36);
     let entry_len = server.read_u32().await.expect("entry length") as usize;
     assert!(entry_len <= 266);
@@ -86,9 +85,9 @@ enum PeerScenario {
 
 async fn srp_peer(server: &mut DuplexStream, scenario: PeerScenario) {
     negotiate(server, &[30, 33, 36]).await;
-    assert_eq!(server.read_u8().await.expect("selection"), 36);
     assert_eq!(server.read_u8().await.expect("branch"), 36);
     let entry_len = server.read_u32().await.expect("entry length") as usize;
+    assert_eq!(entry_len, 20);
     let mut entry = vec![0; entry_len];
     server.read_exact(&mut entry).await.expect("entry");
     assert_eq!(
@@ -152,6 +151,7 @@ async fn srp_peer(server: &mut DuplexStream, scenario: PeerScenario) {
     }
 
     let response_len = server.read_u32().await.expect("response outer") as usize;
+    assert_eq!(response_len, 682);
     let mut response = vec![0; response_len];
     server.read_exact(&mut response).await.expect("response");
     assert_eq!(

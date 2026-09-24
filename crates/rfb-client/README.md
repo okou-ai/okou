@@ -89,7 +89,9 @@ not an owner permission, product rollout or production activation decision.
 ## Apple Direct SRP / type 36 engine boundary
 
 `authenticate_apple_srp` accepts exact macOS `RFB 003.889`, responds as RFB
-3.8, and selects only security type 36 when offered. There is no fallback to
+3.8, and selects only security type 36 when offered. Apple's direct-SRP branch
+entry begins with the single selection byte; unlike ordinary RFB 3.8 security
+types, no preceding separate selection byte is sent. There is no fallback to
 type 30, type 33, or a bare VNC security method. It sends a bounded username
 branch entry, then requires the exact RFC 5054 Appendix A 4096-bit group and
 generator 5, a 32-byte salt, a 512-byte in-range server public value, an
