@@ -60,7 +60,7 @@ export function chatListThread(
     updatedAt: timestamp,
     pinnedAt: null,
     renamedAt: null,
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     serviceTier: null,
     computerUseHostId: null,
     cloudBrowserEnabled: false,
@@ -189,7 +189,7 @@ export function installChatListModelPolicies(
   defaultModel: OrgModelPolicy["model"] = "deepseek-v4-flash",
 ): void {
   const models = [
-    ["claude-sonnet-4-6", "Claude Sonnet 4.6"],
+    ["claude-sonnet-5", "Claude Sonnet 5"],
     ["deepseek-v4-flash", "DeepSeek V4 Flash"],
     ["gpt-5.6-sol", "GPT 5.6 Sol"],
     ["gpt-5.6-luna", "GPT 5.6 Luna"],

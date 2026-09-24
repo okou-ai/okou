@@ -100,7 +100,7 @@ function chatThread(title: string): ChatThreadSnapshotProjection {
     updatedAt: CREATED_AT,
     pinnedAt: null,
     renamedAt: null,
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     serviceTier: null,
     modelSettings: {},
     computerUseHostId: null,
@@ -121,8 +121,8 @@ function configureModelRoute(): void {
   context.mocks.data.orgModelPolicies([
     buildModelPolicy({
       id: "00000000-0000-4000-a000-000000000081",
-      model: "claude-sonnet-4-6",
-      modelLabel: "Claude Sonnet 4.6",
+      model: "claude-sonnet-5",
+      modelLabel: "Claude Sonnet 5",
       isDefault: true,
       defaultProviderType: "openrouter-api-key",
       credentialScope: "org",
@@ -154,7 +154,7 @@ function configureExistingChat(args: {
   configureNoBrowserSession();
   context.mocks.data.agents([{ agentId: AGENT_ID }]);
   context.mocks.data.userModelPreference({
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     serviceTier: null,
     modelSettings: {},
     selectedVideoModel: null,

@@ -791,7 +791,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         modelProviderId: providerId,
       },
       {
-        model: "claude-opus-4-8",
+        model: "claude-opus-5",
         isDefault: false,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
@@ -812,7 +812,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     if (snapshot.latestSeqId === null) {
       throw new Error("Expected snapshot cursor");
     }
-    await chat.updateThreadModelSelection(actor, thread.id, "claude-opus-4-8", {
+    await chat.updateThreadModelSelection(actor, thread.id, "claude-opus-5", {
       reasoningEffort: "extra",
     });
     const events = await threadEventPage(actor, snapshot.latestSeqId);
@@ -821,10 +821,10 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     ).toContainEqual(
       expect.objectContaining({
         id: thread.id,
-        selectedModel: "claude-opus-4-8",
+        selectedModel: "claude-opus-5",
         modelSettings: {
           "claude-sonnet-5": { effort: "high" },
-          "claude-opus-4-8": { effort: "extra" },
+          "claude-opus-5": { effort: "extra" },
         },
       }),
     );
@@ -834,7 +834,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         id: thread.id,
         modelSettings: {
           "claude-sonnet-5": { effort: "high" },
-          "claude-opus-4-8": { effort: "extra" },
+          "claude-opus-5": { effort: "extra" },
         },
       }),
     );
@@ -2241,7 +2241,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     );
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "claude-opus-4-8",
+        model: "claude-opus-5",
         isDefault: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
@@ -2267,7 +2267,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 
     const thread = await chat.createThread(actor, {
       agentId,
-      model: "claude-opus-4-8",
+      model: "claude-opus-5",
     });
     const rejectedUpdate = await chat.requestUpdateThreadModelSelection(
       actor,
@@ -2348,7 +2348,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "claude-sonnet-5",
-      "claude-sonnet-4-6",
+      "claude-opus-5",
     ] as const) {
       const unconfiguredSelection =
         await chat.requestUpdateThreadModelSelection(

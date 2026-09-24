@@ -423,7 +423,7 @@ describe("okou agent edit command", () => {
           "--model-provider",
           "00000000-0000-4000-8000-000000000001",
           "--model",
-          "claude-sonnet-4-6",
+          "claude-sonnet-5",
         ]);
       }).rejects.toThrow("process.exit called");
 

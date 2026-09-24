@@ -1036,11 +1036,19 @@ describe("CHAT-02: model-first provider policies", () => {
 
   it("reuses a Pi session across DeepSeek V4 model switches", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
+    configureNativeCliArtifact();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const { providerId } = await upsertOrgModelProvider(actor, {
       type: "deepseek",
       secret: "deepseek-family-session-key",
     });
+    const { providerId: openrouterProviderId } = await upsertOrgModelProvider(
+      actor,
+      {
+        type: "openrouter-codex",
+        secret: "deepseek-family-openrouter-key",
+      },
+    );
     await api.updateOrgModelPolicies(actor, [
       {
         model: "deepseek-v4-flash",
@@ -1050,11 +1058,11 @@ describe("CHAT-02: model-first provider policies", () => {
         modelProviderId: providerId,
       },
       {
-        model: "deepseek-v4-pro",
+        model: "deepseek-v4.1-flash",
         isDefault: false,
-        defaultProviderType: "deepseek",
+        defaultProviderType: "openrouter-codex",
         credentialScope: "org",
-        modelProviderId: providerId,
+        modelProviderId: openrouterProviderId,
       },
     ]);
 
@@ -1089,15 +1097,15 @@ describe("CHAT-02: model-first provider policies", () => {
     const second = await sendChatRun(actor, {
       agentId,
       threadId: first.threadId,
-      prompt: "continue with DeepSeek V4 Pro",
-      model: "deepseek-v4-pro",
+      prompt: "continue with DeepSeek V4.1 Flash",
+      model: "deepseek-v4.1-flash",
     });
     const secondClaim = await claimChatRun(runnerGroup, second.runId);
     expect(secondClaim.claim.cliAgentType).toBe("pi");
     expect(secondClaim.claim.piSessionId).toBe(first.threadId);
     expect(secondClaim.claim.piModelConfig).toMatchObject({
-      provider: "deepseek",
-      model: "deepseek-v4-pro",
+      provider: "openrouter",
+      model: "deepseek/deepseek-v4.1-flash",
     });
     await cancelChatRun(actor, second.runId);
   });
@@ -1759,9 +1767,7 @@ describe("CHAT-02: model-first provider policies", () => {
   );
 
   it.each(
-    (
-      ["deepseek-v4.1-flash", "deepseek-v4-flash", "deepseek-v4-pro"] as const
-    ).flatMap((model) => {
+    (["deepseek-v4.1-flash", "deepseek-v4-flash"] as const).flatMap((model) => {
       return [false, true].flatMap((alternativeRoutingEnabled) => {
         return [false, true].map((usRoutingEnabled) => {
           return { model, alternativeRoutingEnabled, usRoutingEnabled };
@@ -1830,11 +1836,7 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it.each([
-    "deepseek-v4.1-flash",
-    "deepseek-v4-flash",
-    "deepseek-v4-pro",
-  ] as const)(
+  it.each(["deepseek-v4.1-flash", "deepseek-v4-flash"] as const)(
     "uses direct built-in %s when the OpenRouter fallback is unavailable",
     async (model) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -1884,11 +1886,7 @@ describe("CHAT-02: model-first provider policies", () => {
     },
   );
 
-  it.each([
-    "deepseek-v4.1-flash",
-    "deepseek-v4-flash",
-    "deepseek-v4-pro",
-  ] as const)(
+  it.each(["deepseek-v4.1-flash", "deepseek-v4-flash"] as const)(
     "fails closed for built-in %s when its required OpenRouter route is unavailable",
     async (model) => {
       const { actor, agentId } = await entitledChatActor();
@@ -1942,7 +1940,7 @@ describe("CHAT-02: model-first provider policies", () => {
   it.each(
     (
       [
-        "claude-sonnet-4-6",
+        "claude-sonnet-5",
         "claude-fable-5-1",
         "gpt-5.6-terra",
         "deepseek-v4-flash",
@@ -2049,7 +2047,7 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "claude-opus-4-8",
+        model: "claude-opus-5",
         isDefault: true,
         defaultProviderType: "openrouter-api-key",
         credentialScope: "org",
@@ -2061,7 +2059,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const run = await sendChatRun(actor, {
       agentId,
       prompt: "run with the selected openrouter provider",
-      model: "claude-opus-4-8",
+      model: "claude-opus-5",
     });
 
     const { claim, sandboxHeaders } = await claimChatRun(
@@ -2074,7 +2072,7 @@ describe("CHAT-02: model-first provider policies", () => {
       route: "openrouter-api-key",
       provider: "anthropic",
       baseUrl: "https://openrouter.ai/api",
-      model: "anthropic/claude-opus-4.8",
+      model: "anthropic/claude-opus-5",
       credentialBindings: [
         expect.objectContaining({ secretName: "OPENROUTER_API_KEY" }),
       ],
@@ -2116,7 +2114,7 @@ describe("CHAT-02: model-first provider policies", () => {
       expect.objectContaining({
         kind: "created",
         chatThreadId: run.threadId,
-        selectedModel: "claude-opus-4-8",
+        selectedModel: "claude-opus-5",
       }),
     );
 
@@ -2231,7 +2229,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const keyFixtureId = randomUUID();
     const requestedApiKey = `built-in-key-bdd-dev-seed-${keyFixtureId}`;
-    await seedBuiltInModelKey("claude-opus-4-8");
+    await seedBuiltInModelKey("claude-opus-5");
 
     let runId: string | null = null;
 
@@ -2251,7 +2249,7 @@ describe("CHAT-02: model-first provider policies", () => {
 
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "claude-opus-4-8",
+        model: "claude-opus-5",
         isDefault: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
@@ -2263,7 +2261,7 @@ describe("CHAT-02: model-first provider policies", () => {
     }
     await setOrgModelPolicyProviderTypeFixture({
       orgId: actor.orgId,
-      model: "claude-opus-4-8",
+      model: "claude-opus-5",
       defaultProviderType: "built-in",
     });
 
@@ -2271,14 +2269,14 @@ describe("CHAT-02: model-first provider policies", () => {
     const run = await sendChatRun(actor, {
       agentId,
       prompt: "run with the selected built-in provider",
-      model: "claude-opus-4-8",
+      model: "claude-opus-5",
     });
     runId = run.runId;
     await expect(
       readRunModelRuntimeRouteFixture(run.runId),
     ).resolves.toMatchObject({
       modelProvider: "built-in",
-      selectedModel: "claude-opus-4-8",
+      selectedModel: "claude-opus-5",
     });
 
     const { claim, sandboxHeaders } = await claimChatRun(
@@ -2291,7 +2289,7 @@ describe("CHAT-02: model-first provider policies", () => {
       route: "anthropic-api-key",
       provider: "anthropic",
       billingOwner: "builtin",
-      model: "claude-opus-4-8",
+      model: "claude-opus-5",
       credentialBindings: [
         expect.objectContaining({ secretName: "ANTHROPIC_API_KEY" }),
       ],
@@ -2327,7 +2325,7 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "claude-opus-4-8",
+        model: "claude-opus-5",
         isDefault: true,
         defaultProviderType: "openrouter-api-key",
         credentialScope: "org",
@@ -2350,7 +2348,7 @@ describe("CHAT-02: model-first provider policies", () => {
         version: 1,
         parts: [{ type: "text", text: prompt }],
       },
-      model: "claude-opus-4-8",
+      model: "claude-opus-5",
       hasTextContent: true,
     });
     expect(rejected.status).toBe(503);

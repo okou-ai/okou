@@ -56,7 +56,7 @@ describe("Pi capability gate", () => {
   );
 
   it("leaves every other admitted model alone", () => {
-    for (const selectedModel of ["claude-opus-5", "deepseek-v4-pro"]) {
+    for (const selectedModel of ["claude-opus-5", "deepseek-v4-flash"]) {
       expect(
         isPiExecutionRoute({
           selectedModel,

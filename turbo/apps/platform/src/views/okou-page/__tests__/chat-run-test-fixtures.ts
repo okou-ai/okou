@@ -23,7 +23,7 @@ export const RUN_THREAD_ID = "b0000000-0000-4000-a000-000000000801";
 export const RUN_PATH = `/chats/${RUN_THREAD_ID}`;
 export const NEW_CHAT_PATH = `/agents/${AGENT_ID}/chat`;
 
-const DEFAULT_MODEL = "claude-sonnet-4-6";
+const DEFAULT_MODEL = "claude-sonnet-5";
 
 type LifecycleOptions = NonNullable<
   Parameters<typeof mockChatLifecycleWithoutBrowserSession>[0]

@@ -214,7 +214,6 @@ export type PiApiFirstTurnUsageProvider =
   | z.infer<typeof piNativeCatalogModelSchema>
   | "deepseek-v4-flash"
   | "deepseek-v4.1-flash"
-  | "deepseek-v4-pro"
   | "okou-1.0"
   | "okou-1.0-pro"
   | "okou-1.0-max"
