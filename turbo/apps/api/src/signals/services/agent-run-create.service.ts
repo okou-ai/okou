@@ -2237,6 +2237,7 @@ function modelProviderFirewallAuthMaps(
   sourceUserId: string,
   secretNames: readonly string[],
   sourceId?: string,
+  expectedCodexAccountId?: string,
 ):
   | {
       readonly secretConnectorMap: Record<string, string>;
@@ -2269,6 +2270,7 @@ function modelProviderFirewallAuthMaps(
           sourceUserId,
           ...(sourceId ? { sourceId } : {}),
           metadataKey: providerType,
+          ...(expectedCodexAccountId ? { expectedCodexAccountId } : {}),
         },
       ];
     }),
@@ -2673,6 +2675,7 @@ async function multiAuthModelProviderEnvironment(
     args.userId,
     Object.keys(forwardableSecrets),
     args.accountId,
+    needsCodexRoutingAccountId ? environment.CODEX_OAUTH_ACCOUNT_ID : undefined,
   );
   return {
     id: args.id,

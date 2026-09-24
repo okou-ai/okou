@@ -2912,6 +2912,7 @@ mod tests {
                 source_id: Some("550e8400-e29b-41d4-a716-446655440000".to_string()),
                 source_user_id: Some("user-123".to_string()),
                 metadata_key: Some("codex-oauth-token".to_string()),
+                expected_codex_account_id: Some("workspace-123".to_string()),
             },
         )]);
         let registration = SandboxRegistration {
@@ -2950,6 +2951,11 @@ mod tests {
             value["sandboxes"]["10.200.0.6"]["secretConnectorMetadataMap"]["CHATGPT_ACCESS_TOKEN"]
                 ["sourceId"],
             "550e8400-e29b-41d4-a716-446655440000"
+        );
+        assert_eq!(
+            value["sandboxes"]["10.200.0.6"]["secretConnectorMetadataMap"]["CHATGPT_ACCESS_TOKEN"]
+                ["expectedCodexAccountId"],
+            "workspace-123"
         );
     }
 

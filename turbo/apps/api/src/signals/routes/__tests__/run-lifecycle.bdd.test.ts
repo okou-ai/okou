@@ -758,10 +758,10 @@ function mockSessionHistoryBlob(hash: string, history: string): void {
 }
 
 /**
- * Wire-shape `~/.codex/auth.json` paste payload for the personal
- * codex-oauth-token provider upsert (the server parses and never stores it).
+ * Wire-shape `~/.codex/auth.json` paste payload for a codex-oauth-token
+ * provider upsert (the server parses and never stores it).
  */
-function codexAuthJson(): string {
+function codexAuthJson(accountId = "ws_acct_bdd_id_token"): string {
   const accessExp = Math.floor(now() / 1000) + 7200;
   return JSON.stringify({
     OPENAI_API_KEY: null,
@@ -771,7 +771,7 @@ function codexAuthJson(): string {
       account_id: "ws_acct_bdd",
       id_token: unsignedJwt({
         "https://api.openai.com/auth": {
-          chatgpt_account_id: "ws_acct_bdd_id_token",
+          chatgpt_account_id: accountId,
           chatgpt_plan_type: "plus",
           organization: { title: "BDD Personal" },
         },
@@ -6667,6 +6667,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       sourceType: "model-provider",
       sourceUserId: "__org__",
       metadataKey: "codex-oauth-token",
+      expectedCodexAccountId: "workspace-id",
     });
     expect(
       claim.firewalls?.map((firewall) => {
@@ -6681,18 +6682,18 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     if (!claim.encryptedSecrets) {
       throw new Error("Expected the codex claim to carry encrypted secrets");
     }
+    const firewallAuthBody = {
+      encryptedSecrets: claim.encryptedSecrets,
+      authHeaders: {
+        Authorization: `Bearer \${{ secrets.CHATGPT_ACCESS_TOKEN }}`,
+        "ChatGPT-Account-ID": `\${{ secrets.CHATGPT_ACCOUNT_ID }}`,
+      },
+      secretConnectorMap: claim.secretConnectorMap ?? undefined,
+      secretConnectorMetadataMap: claim.secretConnectorMetadataMap ?? undefined,
+    };
     const resolved = await fw.requestFirewallAuth(
       { authorization: `Bearer ${claim.sandboxToken}` },
-      {
-        encryptedSecrets: claim.encryptedSecrets,
-        authHeaders: {
-          Authorization: `Bearer \${{ secrets.CHATGPT_ACCESS_TOKEN }}`,
-          "ChatGPT-Account-ID": `\${{ secrets.CHATGPT_ACCOUNT_ID }}`,
-        },
-        secretConnectorMap: claim.secretConnectorMap ?? undefined,
-        secretConnectorMetadataMap:
-          claim.secretConnectorMetadataMap ?? undefined,
-      },
+      firewallAuthBody,
       [200],
     );
     if (resolved.status !== 200) {
@@ -6702,6 +6703,39 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       Authorization: "Bearer chatgpt-access",
       "ChatGPT-Account-ID": "workspace-id",
     });
+
+    // A run keeps its selected workspace while the org can replace auth.json.
+    // Do not pair the old local selection with a new workspace's credentials.
+    server.use(
+      http.get("https://chatgpt.com/backend-api/wham/usage", () => {
+        return HttpResponse.json({
+          plan_type: "plus",
+          workspace_name: "Replacement workspace",
+          rate_limit: {
+            primary_window: {
+              limit_window_seconds: 18_000,
+              reset_at: 1_893_441_600,
+            },
+          },
+        });
+      }),
+    );
+    await api.createOrgModelProvider(actor, {
+      type: "codex-oauth-token",
+      authMethod: "auth_json",
+      secrets: {
+        CODEX_AUTH_JSON: codexAuthJson("replacement-workspace-id"),
+      },
+    });
+    const changed = await fw.requestFirewallAuth(
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      firewallAuthBody,
+      [424],
+    );
+    if (changed.status !== 424) {
+      throw new Error("Expected the changed Codex workspace to be rejected");
+    }
+    expect(changed.body.error.code).toBe("CODEX_OAUTH_WORKSPACE_CHANGED");
 
     await api.requestCancelRun(actor, run.runId, [200]);
     const cancelled = await api.readRun(actor, run.runId);
@@ -6891,6 +6925,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     ).toMatchObject({
       sourceType: "model-provider",
       sourceUserId: actor.userId,
+      expectedCodexAccountId: "ws_acct_bdd_id_token",
     });
 
     const mountPaths =

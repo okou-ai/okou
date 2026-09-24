@@ -113,6 +113,7 @@ async fn chatgpt_setup_writes_auth_outside_child_home() -> TestResult {
         &user_env_path,
         serde_json::to_vec(&serde_json::json!({
             "CHATGPT_ACCOUNT_ID": "account-test",
+            "CODEX_OAUTH_ACCOUNT_ID": "account-test",
         }))?,
     )?;
     std::fs::write(
@@ -137,6 +138,7 @@ async fn chatgpt_setup_writes_auth_outside_child_home() -> TestResult {
         serde_json::from_str(&std::fs::read_to_string(codex_home.join("auth.json"))?)?;
     assert_eq!(auth["auth_mode"], "chatgpt");
     assert!(auth["tokens"].is_object());
+    assert_eq!(auth["tokens"]["account_id"], "account-test");
     assert!(auth["OPENAI_API_KEY"].is_null());
     assert!(!child_home.join(".codex").exists());
 

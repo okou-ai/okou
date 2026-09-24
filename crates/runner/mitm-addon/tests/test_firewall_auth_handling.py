@@ -1520,8 +1520,12 @@ class TestHandleFirewallRequest:
         assert body["connectors"] == ["codex-oauth-token"]
         assert body["failureReason"] == "upstream_provider"
 
+    @pytest.mark.parametrize(
+        ("status", "code"),
+        [(403, "FORBIDDEN"), (424, "CODEX_OAUTH_WORKSPACE_CHANGED")],
+    )
     async def test_structured_api_4xx_error_blocks_without_auth_mutation(
-        self, real_flow, mitm_ctx, tmp_path
+        self, real_flow, mitm_ctx, tmp_path, status: int, code: str
     ):
         flow = _firewall_flow(real_flow, path="/repos?existing=1")
         api_entry = _api_entry(
@@ -1533,8 +1537,8 @@ class TestHandleFirewallRequest:
         sandbox_info = _sandbox_info(tmp_path)
         allow = _allow(api_entry)
         api_error = auth_client.FirewallAuthApiError(
-            status=403,
-            code="FORBIDDEN",
+            status=status,
+            code=code,
             message="Firewall auth denied",
         )
 
@@ -1552,14 +1556,14 @@ class TestHandleFirewallRequest:
 
         assert result is auth.FirewallAuthHandlingResult.LOCAL_RESPONSE
         assert flow.response is not None
-        assert flow.response.status_code == 403
+        assert flow.response.status_code == status
         assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "BLOCK"
-        assert flow.metadata[metadata_keys.FIREWALL_ERROR] == "FORBIDDEN"
+        assert flow.metadata[metadata_keys.FIREWALL_ERROR] == code
         assert "Authorization" not in flow.request.headers
         assert "api_key" not in flow.request.query
         assert flow.request.query["existing"] == "1"
         body = json.loads(flow.response.content)
-        assert body["error"] == "FORBIDDEN"
+        assert body["error"] == code
         assert body["message"] == "Firewall auth denied"
         assert body["permission"] == "github"
         assert body["base"] == "https://api.github.com"

@@ -89,6 +89,7 @@ _STRUCTURED_FIREWALL_AUTH_ERROR_CODES = frozenset(
         "FORBIDDEN",
         "TOKEN_REFRESH_FAILED",
         "TOKEN_ACCESS_RESOLUTION_FAILED",
+        "CODEX_OAUTH_WORKSPACE_CHANGED",
     }
 )
 _FIREWALL_AUTH_FAILURE_REASONS = frozenset({"upstream_provider", "reconnect_required"})
@@ -131,9 +132,10 @@ class FirewallAuthDeadlineExceededError(Exception):
 class FirewallAuthApiError(Exception):
     """Raised for general /firewall/auth errors recognized by the runner.
 
-    The recognized codes are ``FORBIDDEN``, ``TOKEN_REFRESH_FAILED``, and
-    ``TOKEN_ACCESS_RESOLUTION_FAILED``. A string-list ``connectors`` value is
-    preserved. The wire ``failureReason`` is preserved as ``failure_reason``
+    The recognized codes are ``FORBIDDEN``, ``TOKEN_REFRESH_FAILED``,
+    ``TOKEN_ACCESS_RESOLUTION_FAILED``, and ``CODEX_OAUTH_WORKSPACE_CHANGED``.
+    A string-list ``connectors`` value is preserved. The wire ``failureReason``
+    is preserved as ``failure_reason``
     only for ``upstream_provider`` and ``reconnect_required``.
     """
 

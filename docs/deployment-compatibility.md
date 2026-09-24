@@ -11,12 +11,22 @@ placeholders; the firewall still injects real credentials into outbound requests
 The API retains the existing placeholder `CHATGPT_ACCOUNT_ID` for the firewall
 and Pi. PR #36402 first deploys the additive ID field while keeping Codex
 0.155.1 and a missing-field compatibility branch. Upgrade the Runner image to
-0.156.1 and remove that branch only after the new API is deployed, old APIs
-are neither serving nor retained as rollback targets, and no claimable queued
-or replayable Codex OAuth context lacks the field. Record dated evidence for
-those gates in #36420 before merging this upgrade. Older Runners can continue
-to drain with Codex 0.155.1 and ignore the additive field; new Runners reject
-missing or empty selected IDs rather than choosing a placeholder.
+0.156.1 and remove that branch only after the new API is deployed and no
+claimable queued or replayable Codex OAuth context lacks the field. Record
+dated evidence for those gates in #36420 before merging this upgrade. The
+production rollback resolver in this change rejects API targets before the
+canonical #36402 writer commit (`422349af6b60adf89b7719a440b89ba76c10e25f`,
+first released as API 1.665.0); verify no older API is serving before Runner
+promotion. New Runners reject missing or empty selected IDs rather than
+choosing a placeholder.
+
+The run also carries its selected Codex workspace ID in firewall metadata.
+After resolving the current OAuth token and account ID from one credential
+snapshot, the API rejects egress if that account ID differs from the run's
+selection. A credential replacement with a different workspace requires a new
+run; a token refresh within the same workspace does not. The metadata field is
+additive for mixed API/Runner rollout, so the guard becomes effective for runs
+on the upgraded Runner that preserves and forwards it.
 
 ## Chat thread snapshot R2 handoff (2026-09-23)
 

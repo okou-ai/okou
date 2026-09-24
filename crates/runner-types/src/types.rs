@@ -164,6 +164,8 @@ pub struct SecretConnectorMetadata {
     pub source_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_codex_account_id: Option<String>,
 }
 
 /// Execution firewall entry supplied by the API.
