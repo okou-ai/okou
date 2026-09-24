@@ -4195,7 +4195,7 @@ describe("Morning Brief default onboarding", () => {
       expect((await readBriefPreference(actor)).body).toMatchObject({
         enabled: true,
         status: "preparing",
-        timezone: timezone ?? "America/Los_Angeles",
+        timezone,
       });
     });
     mockBriefMemberships([{ actor, createdAt }]);
@@ -11920,12 +11920,7 @@ describe("Morning Brief legacy schedule claim journal", () => {
     ).toBe("07");
   });
 
-  /** Publish a new occurrence through the real preference writer. */
-  /**
-   * Launch through the real scheduler, then retain the Run while removing only
-   * the S7a journal row. That is the historical pre-S7a compatibility state no
-   * current external entry point can create.
-   */
+  /** Cancel an ordinary automation Run and process its callback. */
   async function cancelRunAndFlush(
     actor: ApiTestUser,
     runId: string,
