@@ -191,6 +191,27 @@ test("VNC management omits the redundant refresh action", async () => {
   expect(getAction("radio", "Credentials")).toBeInTheDocument();
 });
 
+test("Returning to Connectors refreshes VNC hosts changed elsewhere", async () => {
+  const data = mockSettings();
+  await page();
+  await screen.findByText(host.displayName);
+
+  data.connections = [{ ...host, displayName: "Updated workstation" }];
+  click(
+    getAction(
+      "link",
+      "Connectors",
+      screen.getByRole("navigation", { name: "Sidebar" }),
+    ),
+  );
+  await waitFor(() => {
+    expect(window.location.search).toBe("");
+  });
+  click(getConnectorAction("tab", "Remote control"));
+  await screen.findByText("Updated workstation");
+  expect(screen.queryByText(host.displayName)).toBeNull();
+});
+
 test("Returning to Remote control does not reopen an abandoned VNC dialog", async () => {
   mockSettings({ connections: [], credentials: [] });
   await page("/connectors");
