@@ -54,6 +54,20 @@ describe("getModelDisplayName", () => {
     expect(getModelDisplayName("deepseek-v4-pro")).toBe("DeepSeek V4 Pro");
   });
 
+  it("keeps labels for retired Claude and DeepSeek run models", () => {
+    expect(getModelDisplayName("claude-sonnet-4-6")).toBe("Claude Sonnet 4.6");
+    expect(getModelDisplayName("anthropic/claude-sonnet-4.6")).toBe(
+      "Claude Sonnet 4.6",
+    );
+    expect(getModelDisplayName("claude-opus-4-8")).toBe("Claude Opus 4.8");
+    expect(getModelDisplayName("anthropic/claude-opus-4.8")).toBe(
+      "Claude Opus 4.8",
+    );
+    expect(getModelDisplayName("deepseek/deepseek-v4-pro")).toBe(
+      "DeepSeek V4 Pro",
+    );
+  });
+
   it("uses catalog labels for canonical image models and primary aliases", () => {
     expect(getModelDisplayName("fal-ai/flux-2-pro")).toBe("FLUX.2 Pro");
     expect(getModelDisplayName("flux-2-pro")).toBe("FLUX.2 Pro");

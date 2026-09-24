@@ -225,9 +225,9 @@ describe("model-first canonical catalog", () => {
     expect(isLimitedFree1RestrictedRunModel("deepseek/deepseek-v4-flash")).toBe(
       false,
     );
-    expect(isLimitedFree1RestrictedRunModel("deepseek-v4-pro")).toBe(false);
+    expect(isLimitedFree1RestrictedRunModel("deepseek-v4-pro")).toBe(true);
     expect(isLimitedFree1RestrictedRunModel("deepseek/deepseek-v4-pro")).toBe(
-      false,
+      true,
     );
     expect(isLimitedFree1RestrictedRunModel("gpt-5.5")).toBe(true);
     expect(isLimitedFree1RestrictedRunModel("openai/gpt-5.5")).toBe(true);
@@ -360,14 +360,21 @@ describe("model-first canonical catalog", () => {
     expect(SUPPORTED_RUN_MODELS).toContain("claude-sonnet-4-6");
   });
 
-  it.each(["gpt-5.5", "openai/gpt-5.5"])(
-    "keeps %s historical while removing current provider access",
-    (model) => {
-      expect(getRunModelAccess(model)).toBe("retired");
-      expect(getRunModelAccess(model, true)).toBe("retired");
-      expect(getProvidersForModel(model)).toEqual([]);
-    },
-  );
+  it.each([
+    "gpt-5.5",
+    "openai/gpt-5.5",
+    "claude-sonnet-4-6",
+    "anthropic/claude-sonnet-4.6",
+    "claude-opus-4-8",
+    "anthropic/claude-opus-4.8",
+    "deepseek-v4-pro",
+    "deepseek/deepseek-v4-pro",
+    " Anthropic/Claude-Sonnet-4.6 ",
+  ])("keeps %s historical while removing current provider access", (model) => {
+    expect(getRunModelAccess(model)).toBe("retired");
+    expect(getRunModelAccess(model, true)).toBe("retired");
+    expect(getProvidersForModel(model)).toEqual([]);
+  });
 
   it("restricts paid models only on the built-in route", () => {
     expect(getRunModelRouteAccess("gpt-6-astra", "built-in", true)).toBe(
@@ -442,15 +449,7 @@ describe("model-first canonical catalog", () => {
       "azure-foundry",
       "aws-bedrock",
     ]);
-    expect(getProvidersForModel("claude-opus-4-8")).toEqual([
-      "built-in",
-      "claude-code-oauth-token",
-      "anthropic-api-key",
-      "openrouter-api-key",
-      "vercel-ai-gateway",
-      "azure-foundry",
-      "aws-bedrock",
-    ]);
+    expect(getProvidersForModel("claude-opus-4-8")).toEqual([]);
     expect(getProvidersForModel("anthropic/claude-sonnet-5")).toEqual([
       "built-in",
       "claude-code-oauth-token",
@@ -510,11 +509,7 @@ describe("model-first canonical catalog", () => {
       "deepseek",
       "openrouter-codex",
     ]);
-    expect(getProvidersForModel("deepseek-v4-pro")).toEqual([
-      "built-in",
-      "deepseek",
-      "openrouter-codex",
-    ]);
+    expect(getProvidersForModel("deepseek-v4-pro")).toEqual([]);
     expect(getProvidersForModel("kimi-k3")).toEqual([]);
     expect(getProvidersForModel("glm-5.2")).toEqual([]);
     expect(getProvidersForModel("mimo-v2.5")).toEqual([]);
@@ -589,11 +584,11 @@ describe("model-first canonical catalog", () => {
       false,
     );
     expect(isModelSupportedByProvider("deepseek-v4-pro", "deepseek")).toBe(
-      true,
+      false,
     );
     expect(
       isModelSupportedByProvider("anthropic/claude-opus-4.8", "built-in"),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       isModelSupportedByProvider("anthropic/claude-opus-5.5", "built-in"),
     ).toBe(true);
@@ -786,7 +781,7 @@ describe("model-first canonical catalog", () => {
     expect(getBuiltInVendor("deepseek-v4.1-flash")).toBe("deepseek");
   });
 
-  it.each(["deepseek-v4-flash", "deepseek-v4-pro"] as const)(
+  it.each(["deepseek-v4-flash"] as const)(
     "routes built-in model %s directly through DeepSeek",
     (model) => {
       expect(getBuiltInConcreteProviderType(model)).toBe("deepseek");
@@ -800,9 +795,7 @@ describe("model-first canonical catalog", () => {
     "claude-fable-5-1",
     "claude-opus-5-5",
     "claude-opus-5",
-    "claude-opus-4-8",
     "claude-sonnet-5",
-    "claude-sonnet-4-6",
   ] as const)(
     "routes built-in model %s directly through Anthropic",
     (model) => {
@@ -818,15 +811,12 @@ describe("model-first canonical catalog", () => {
       "claude-fable-5-1",
       "claude-opus-5-5",
       "claude-opus-5",
-      "claude-opus-4-8",
       "claude-sonnet-5",
-      "claude-sonnet-4-6",
       "okou-1.0-max",
       "okou-1.0-pro",
       "okou-1.0",
       "deepseek-v4.1-flash",
       "deepseek-v4-flash",
-      "deepseek-v4-pro",
       "gpt-6-astra",
       "gpt-6-sol",
       "gpt-6-luna",
@@ -911,7 +901,6 @@ describe("model-first canonical catalog", () => {
   it.each([
     ["deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash"],
     ["deepseek-v4-flash", "deepseek/deepseek-v4-flash"],
-    ["deepseek-v4-pro", "deepseek/deepseek-v4-pro"],
   ] as const)(
     "projects Codex metadata for OpenRouter %s",
     (model, upstreamModel) => {
@@ -930,6 +919,23 @@ describe("model-first canonical catalog", () => {
       ]);
     },
   );
+
+  it("projects no Codex metadata for retired DeepSeek V4 Pro", () => {
+    expect(
+      getModelProviderCodexCatalogForModel(
+        "deepseek-v4-pro",
+        "deepseek/deepseek-v4-pro",
+        "openrouter-codex",
+      ),
+    ).toBeUndefined();
+    expect(
+      getModelProviderCodexCatalogForModel(
+        "deepseek-v4-pro",
+        "deepseek-v4-pro",
+        "deepseek",
+      ),
+    ).toBeUndefined();
+  });
 
   it.each([
     {
@@ -1106,8 +1112,8 @@ describe("model selection for Anthropic-native providers", () => {
       expect(models).toContain("claude-opus-5-5");
       expect(models).toContain("claude-opus-5");
       expect(models).toContain("claude-sonnet-5");
-      expect(models).toContain("claude-sonnet-4-6");
-      expect(models).toContain("claude-opus-4-8");
+      expect(models).not.toContain("claude-sonnet-4-6");
+      expect(models).not.toContain("claude-opus-4-8");
     },
   );
 
@@ -1139,9 +1145,7 @@ describe("model selection for Claude-compatible gateway providers", () => {
       "anthropic/claude-fable-5.1",
       "anthropic/claude-opus-5.5",
       "anthropic/claude-opus-5",
-      "anthropic/claude-opus-4.8",
       "anthropic/claude-sonnet-5",
-      "anthropic/claude-sonnet-4.6",
       "anthropic/claude-opus-4.5",
       "anthropic/claude-sonnet-4.5",
     ]);
@@ -1191,7 +1195,10 @@ describe("getBuiltInVisibleModels", () => {
     const models = getBuiltInVisibleModels();
     expect(models).toEqual(ACTIVE_RUN_MODELS);
     expect(models).not.toContain("gpt-5.5");
-    expect(models).toContain("claude-sonnet-4-6");
+    expect(models).not.toContain("claude-sonnet-4-6");
+    expect(models).not.toContain("claude-opus-4-8");
+    expect(models).not.toContain("deepseek-v4-pro");
+    expect(models).toContain("claude-sonnet-5");
   });
 });
 
@@ -1281,7 +1288,6 @@ describe("deepseek Responses provider", () => {
     expect(getModels("deepseek")).toEqual([
       "deepseek-flash",
       "deepseek-v4-flash",
-      "deepseek-v4-pro",
     ]);
     expect(getDefaultModel("deepseek")).toBe("deepseek-flash");
   });
@@ -1381,16 +1387,6 @@ describe("deepseek Responses provider", () => {
             default_service_tier: null,
             supports_reasoning_summaries: true,
             base_instructions: expect.stringContaining("You are Codex"),
-            model_messages: expect.objectContaining({
-              instructions_template: expect.stringContaining("You are Codex"),
-            }),
-          }),
-          expect.objectContaining({
-            slug: "deepseek-v4-pro",
-            display_name: "DeepSeek-V4-Pro",
-            input_modalities: ["text"],
-            default_reasoning_level: "high",
-            context_window: 1_048_576,
             model_messages: expect.objectContaining({
               instructions_template: expect.stringContaining("You are Codex"),
             }),
@@ -1882,9 +1878,9 @@ describe("codex-framework gateway providers (openrouter-codex, vercel-ai-gateway
             "openai/gpt-6-luna",
             "deepseek/deepseek-v4.1-flash",
             "deepseek/deepseek-v4-flash",
-            "deepseek/deepseek-v4-pro",
           ]),
         );
+        expect(getModels(type)).not.toContain("deepseek/deepseek-v4-pro");
       }
       if (type === "vercel-ai-gateway-codex") {
         expect(getModels(type)).not.toContain("openai/gpt-6-astra");

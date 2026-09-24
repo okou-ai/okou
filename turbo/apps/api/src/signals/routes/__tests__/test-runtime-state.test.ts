@@ -144,11 +144,7 @@ describe("POST /api/test/runtime-state/action", () => {
     });
   });
 
-  it.each([
-    "deepseek-v4.1-flash",
-    "deepseek-v4-flash",
-    "deepseek-v4-pro",
-  ] as const)(
+  it.each(["deepseek-v4.1-flash", "deepseek-v4-flash"] as const)(
     "uses OpenRouter during a built-in %s native cooldown",
     async (selectedModel) => {
       await seedBuiltInModelCandidateKeys(context, selectedModel);

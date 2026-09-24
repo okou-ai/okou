@@ -206,7 +206,6 @@ describe("CHAT-02: model-first provider policies", () => {
       [
         "deepseek-v4-flash",
         "deepseek-v4.1-flash",
-        "deepseek-v4-pro",
         "gpt-6-sol",
         "gpt-6-luna",
         "gpt-5.6-terra",
@@ -487,8 +486,8 @@ describe("CHAT-02: model-first provider policies", () => {
       providerUrl: "https://api.deepseek.com/responses",
     },
     {
-      name: "DeepSeek Pro",
-      selectedModel: "deepseek-v4-pro",
+      name: "DeepSeek V4 Flash",
+      selectedModel: "deepseek-v4-flash",
       providerUrl: "https://api.deepseek.com/responses",
     },
   ] as const)(

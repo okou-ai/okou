@@ -284,7 +284,6 @@ describe("CHAT-02: model-first provider policies", () => {
   it.each([
     "deepseek-v4-flash",
     "deepseek-v4.1-flash",
-    "deepseek-v4-pro",
     ...GPT_PI_BDD_MODELS,
   ] as const)(
     "runs the Pi API first turn once for %s and resumes canonical JSONL",
@@ -481,10 +480,6 @@ describe("CHAT-02: model-first provider policies", () => {
       selectedModel: "deepseek-v4-flash",
       upstreamModel: "company-deepseek-flash-production",
     },
-    {
-      selectedModel: "deepseek-v4-pro",
-      upstreamModel: "company-deepseek-pro-production",
-    },
     ...GPT_PI_BDD_MODELS.map((selectedModel) => {
       return {
         selectedModel,
@@ -497,7 +492,7 @@ describe("CHAT-02: model-first provider policies", () => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const usagePricingResolution = await createGptUsagePricingResolution();
       await configureCustomPiModel(actor, selectedModel, upstreamModel);
-      if (selectedModel === "deepseek-v4-pro") {
+      if (selectedModel === "deepseek-v4-flash") {
         // Snapshot availability must not block an admitted Pi provider request.
         context.mocks.axiom.ingest.mockImplementation((dataset) => {
           if (dataset === "run-context") {

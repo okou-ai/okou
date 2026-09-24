@@ -1,5 +1,8 @@
 /** Product-approved model/API pairs, not the entire US catalog. */
 const US_MODELS: Readonly<Record<OpenRouterApi, readonly string[]>> = {
+  // Retired Claude Opus 4.8 and Sonnet 4.6 stay listed: the native Gen4
+  // reader validates in-flight US Messages configs against this list, and run
+  // admission already rejects new work for retired models.
   messages: [
     "anthropic/claude-opus-5.5",
     "anthropic/claude-opus-5",

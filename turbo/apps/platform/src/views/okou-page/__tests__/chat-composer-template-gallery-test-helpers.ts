@@ -51,15 +51,15 @@ export function mockTemplateChat(options?: {
   const runClientThreadIds: (string | undefined)[] = [];
   const threadCreates: string[] = [];
 
-  mockAgent({ selectedModel: "claude-sonnet-4-6" });
-  mockOrgModelRoutes("claude-sonnet-4-6");
+  mockAgent({ selectedModel: "claude-sonnet-5" });
+  mockOrgModelRoutes("claude-sonnet-5");
   mockBillingCapabilities(
     { supportByok: true, restrictedBuiltInModels: false },
     options?.tier ?? "pro",
   );
   const lifecycle = mockChatLifecycle(context, {
     threadId: options?.threadId ?? THREAD_ID,
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     onThreadCreate(body) {
       threadCreates.push(body.clientThreadId ?? "server-selected");
     },

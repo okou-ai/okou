@@ -111,7 +111,7 @@ export function buildModelPolicy(
 ): OrgModelPolicy {
   return {
     id: "00000000-0000-4000-a000-000000000101",
-    modelLabel: "Claude Opus 4.8",
+    modelLabel: "Claude Opus 5.5",
     isDefault: false,
     defaultProviderType: "claude-code-oauth-token",
     credentialScope: "member",
@@ -154,17 +154,17 @@ export function mockOrgModelRoutes(defaultSelectedModel: string): void {
     }),
     buildModelPolicy({
       id: "00000000-0000-4000-a000-000000000202",
-      model: "claude-sonnet-4-6",
-      modelLabel: "Claude Sonnet 4.6",
-      isDefault: defaultSelectedModel === "claude-sonnet-4-6",
+      model: "claude-sonnet-5",
+      modelLabel: "Claude Sonnet 5",
+      isDefault: defaultSelectedModel === "claude-sonnet-5",
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: ANTHROPIC_PROVIDER_ID,
     }),
     buildModelPolicy({
       id: "00000000-0000-4000-a000-000000000203",
-      model: "claude-opus-4-8",
-      modelLabel: "Claude Opus 4.8",
+      model: "claude-opus-5-5",
+      modelLabel: "Claude Opus 5.5",
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: ANTHROPIC_PROVIDER_ID,

@@ -1310,7 +1310,7 @@ async function seedModelPoliciesForAction(
     },
     {
       orgId: required.org_id!,
-      model: "claude-opus-4-8",
+      model: "claude-opus-5",
       defaultProviderType: "built-in",
       credentialScope: "org",
       createdByUserId: required.user_id!,
