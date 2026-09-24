@@ -1,8 +1,9 @@
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
   readFileSync,
+  statSync,
   watch,
   writeFileSync,
 } from "node:fs";
@@ -23,32 +24,30 @@ import { DesktopAuthSession } from "../desktop-auth-session";
 export async function runPermissionStallFixture(
   directory: string,
 ): Promise<void> {
-  const helper = path.join(directory, "helper.cjs");
+  const helper = path.join(directory, "helper.sh");
   const received = path.join(directory, "received");
   const written = path.join(directory, "written");
   const release = path.join(directory, "release");
   const armed = path.join(directory, "armed");
   const starts = path.join(directory, "starts");
   writeFileSync(starts, "");
+  execFileSync("mkfifo", [release]);
   writeFileSync(
     helper,
-    `#!${process.execPath}
-const fs = require('node:fs');
-fs.appendFileSync(${JSON.stringify(starts)}, process.pid+'\\n');
-const lines = require('node:readline').createInterface({input:process.stdin});
-lines.on('line', line => {
-  const request = JSON.parse(line);
-  const reply = () => fs.writeSync(1, JSON.stringify({id:request.id,status:'succeeded',result:{accessibility:true,screenRecording:true}})+'\\n');
-  if (fs.existsSync(${JSON.stringify(armed)}) && !fs.existsSync(${JSON.stringify(received)})) {
-    const watcher = fs.watch(${JSON.stringify(directory)}, () => {
-      if (!fs.existsSync(${JSON.stringify(release)})) return;
-      watcher.close();
-      reply();
-      fs.writeFileSync(${JSON.stringify(written)}, String(Date.now()));
-    });
-    fs.writeFileSync(${JSON.stringify(received)}, 'received');
-  } else reply();
-});
+    `#!/bin/sh
+printf '%s\\n' "$$" >> ${JSON.stringify(starts)}
+while IFS= read -r line; do
+  id=\${line#*\\"id\\":\\"}
+  id=\${id%%\\"*}
+  if [ -f ${JSON.stringify(armed)} ] && [ ! -f ${JSON.stringify(received)} ]; then
+    : > ${JSON.stringify(received)}
+    IFS= read -r _ < ${JSON.stringify(release)}
+    printf '{"id":"%s","status":"succeeded","result":{"accessibility":true,"screenRecording":true}}\\n' "$id"
+    : > ${JSON.stringify(written)}
+  else
+    printf '{"id":"%s","status":"succeeded","result":{"accessibility":true,"screenRecording":true}}\\n' "$id"
+  fi
+done
 `,
   );
   chmodSync(helper, 0o755);
@@ -61,6 +60,7 @@ lines.on('line', line => {
           userId: "fixture",
           email: "fixture@example.test",
           orgId: "fixture-org",
+          sessionId: "fixture-session",
         });
       if (route === "/api/org")
         return HttpResponse.json({ id: "fixture-org", name: "Fixture" });
@@ -126,7 +126,31 @@ lines.on('line', line => {
   let watcher: ReturnType<typeof watch> | undefined;
   try {
     await controller.start();
+    // The 400 ms deadline belongs to the later blocked-parent request. Under
+    // a parallel test run, a cold helper can miss it before the fixture is
+    // armed. Recover setup attempts without changing the tested deadline.
+    for (
+      let attempt = 0;
+      attempt < 6 &&
+      (!driver.getState().ready || !controller.isRuntimeOnline());
+      attempt++
+    ) {
+      await controller.start({ userInitiated: true });
+    }
+    if (!driver.getState().ready || !controller.isRuntimeOnline()) {
+      throw new Error(
+        `Permission stall fixture did not reach a ready host: ${JSON.stringify({
+          driver: driver.getState(),
+          host: controller.getHostState(),
+          errors,
+        })}`,
+      );
+    }
     const generation = driver.generation;
+    const startsBeforeStall = readFileSync(starts, "utf8")
+      .trim()
+      .split("\n").length;
+    errors.length = 0;
     const receipt = new Promise<void>((resolve) => {
       watcher = watch(directory, () => {
         if (existsSync(received)) {
@@ -157,7 +181,9 @@ let deadlinePassed = false;
 const finish = () => { if (deadlinePassed && fs.existsSync(${JSON.stringify(written)})) { watcher.close(); process.exit(0); } };
 const watcher = fs.watch(${JSON.stringify(directory)}, finish);
 setTimeout(() => {deadlinePassed=true;finish();}, Math.max(0, ${startedAt + 850} - Date.now()));
-fs.writeFileSync(${JSON.stringify(release)}, 'release');
+const releaseFd = fs.openSync(${JSON.stringify(release)}, 'w');
+fs.writeSync(releaseFd, 'release\\n');
+fs.closeSync(releaseFd);
 `,
       ],
       { timeout: 5_000, encoding: "utf8" },
@@ -171,9 +197,11 @@ fs.writeFileSync(${JSON.stringify(release)}, 'release');
         generation,
         freshGeneration: driver.generation,
         ready: driver.getCapabilities().length > 0,
-        writtenAfterMs: Number(readFileSync(written, "utf8")) - startedAt,
+        writtenAfterMs: statSync(written).mtimeMs - startedAt,
         elapsedMs: Date.now() - startedAt,
-        starts: readFileSync(starts, "utf8").trim().split("\n").length,
+        startsAfterStall:
+          readFileSync(starts, "utf8").trim().split("\n").length -
+          startsBeforeStall,
         errors,
       }) + "\n",
     );

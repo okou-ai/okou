@@ -334,7 +334,8 @@ async function createWorkflow(actor: ApiTestUser, body: WorkflowCreateRequest) {
 
 async function enableWorkflowRuns(actor: ApiTestUser): Promise<void> {
   await api.grantProEntitlement(actor);
-  await api.ensureOrgModelProvider(actor);
+  // Fable keeps workflow runs on the claimable native Runner route.
+  await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
   api.configureRunnerGroup();
 }
 
@@ -509,7 +510,7 @@ describe("workflows", () => {
     }
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "gpt-5.6-terra",
+        model: "gpt-6-astra",
         isDefault: true,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
@@ -566,7 +567,7 @@ describe("workflows", () => {
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.body.runId);
     expect(claim.cliAgentType).toBe("codex");
-    expect(claim.environment?.OPENAI_MODEL).toBe("gpt-5.6-terra");
+    expect(claim.environment?.OPENAI_MODEL).toBe("gpt-6-astra");
     expect(claim.environment?.ANTHROPIC_MODEL).toBeUndefined();
     await api.requestCancelRun(actor, run.body.runId, [200]);
   });
@@ -631,11 +632,7 @@ describe("workflows", () => {
     if (!owner.orgId) {
       throw new Error("Expected a workflow owner organization");
     }
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: member.userId, orgId: owner.orgId, orgRole: "org:member" },
-      { [FeatureSwitchKey.PiLoop]: false },
-    );
+
     const publicAgent = await createAgent(owner, {
       displayName: "Public Workflow Agent",
       visibility: "public",

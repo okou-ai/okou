@@ -6,6 +6,7 @@ import type {
   DesktopDeveloperToolsApi,
   DesktopDeveloperToolsState,
 } from "../desktop-bridge";
+import type { DesktopLoginMethod } from "../desktop-login-method";
 import type {
   ComputerUseAutomationPermissionTarget,
   DesktopComputerUseState,
@@ -17,6 +18,7 @@ const DEFAULT_DEVELOPER_TOOLS_STATE: DesktopDeveloperToolsState = {
 };
 const reloadComputerUseState$ = state(0);
 const reloadDesktopAuthState$ = state(0);
+const reloadDesktopLoginMethod$ = state(0);
 const reloadDeveloperToolsState$ = state(0);
 
 function desktopComputerUseApi(): DesktopComputerUseApi {
@@ -62,6 +64,18 @@ export const desktopAuthData$ = computed((get): Promise<DesktopAuthState> => {
   get(reloadDesktopAuthState$);
   return desktopAuthApi().getState();
 });
+
+export const desktopLoginMethodData$ = computed((get) => {
+  get(reloadDesktopLoginMethod$);
+  return desktopAuthApi().getLoginMethod();
+});
+
+export const setDesktopLoginMethod$ = command(
+  async ({ set }, method: DesktopLoginMethod) => {
+    await desktopAuthApi().setLoginMethod(method);
+    set(reloadDesktopLoginMethod$, (count) => count + 1);
+  },
+);
 
 export const developerToolsData$ = computed(
   (get): Promise<DesktopDeveloperToolsState> => {

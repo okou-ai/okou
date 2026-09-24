@@ -96,26 +96,12 @@ function mutedTelegramFooter(text: string): string {
  */
 export function buildTelegramResponse(
   markdown: string,
-  logsUrl?: string,
   footerText?: string,
 ): string {
   const content = markdownToTelegramHtml(markdown);
-  const footers: string[] = [];
-
-  if (logsUrl) {
-    footers.push(
-      mutedTelegramFooter(`<a href="${escapeHtml(logsUrl)}">📋 Audit</a>`),
-    );
-  }
-  if (footerText) {
-    footers.push(mutedTelegramFooter(footerText));
-  }
-
-  if (footers.length === 0) {
-    return content;
-  }
-
-  return `${content}\n\n${footers.join("\n")}`;
+  return footerText
+    ? `${content}\n\n${mutedTelegramFooter(footerText)}`
+    : content;
 }
 
 /**

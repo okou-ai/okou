@@ -1,5 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -7,13 +5,12 @@ import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { githubChatThreadRoutes } from "@okouai/db/schema/github-chat-thread-route";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { and, eq, isNotNull } from "drizzle-orm";
-import { env, optionalEnv } from "../../lib/env";
+import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import type { Db } from "../external/db";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { now, nowDate } from "../../lib/time";
 import { settleIncludingAbort } from "../utils";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { getGithubInstallationAccessToken } from "./github-app.service";
 import {
   githubChatCallbackPayloadSchema,
@@ -199,7 +196,6 @@ function escapeGitHubSubText(text: string): string {
 
 function formatGitHubComment(args: {
   readonly response: string;
-  readonly logsUrl?: string;
   readonly footerText?: string;
   readonly triggerCommentBody?: string;
 }): string {
@@ -215,16 +211,9 @@ function formatGitHubComment(args: {
       "",
     );
   }
-  const footerParts: string[] = [];
-  if (args.logsUrl) {
-    footerParts.push(`📋 [Audit](${args.logsUrl})`);
-  }
-  if (args.footerText) {
-    footerParts.push(escapeGitHubSubText(args.footerText));
-  }
   parts.push(
-    footerParts.length > 0
-      ? `${args.response}\n\n<sub>${footerParts.join(" · ")}</sub>`
+    args.footerText
+      ? `${args.response}\n\n<sub>${escapeGitHubSubText(args.footerText)}</sub>`
       : args.response,
   );
   return parts.join("\n");
@@ -262,15 +251,6 @@ async function buildGitHubDeliveryComment(
   },
   signal: AbortSignal,
 ): Promise<string> {
-  const featureContext = await loadUserFeatureSwitchContext(
-    args.db,
-    args.run.orgId,
-    args.run.userId,
-  );
-  signal.throwIfAborted();
-  const logsUrl = isFeatureEnabled(FeatureSwitchKey.OkouDebug, featureContext)
-    ? `${env("APP_URL")}/activities/${encodeURIComponent(args.runId)}`
-    : undefined;
   const footerText = await resolveGithubAgentReplyFooterText({
     db: args.db,
     orgId: args.run.orgId,
@@ -281,7 +261,6 @@ async function buildGitHubDeliveryComment(
   signal.throwIfAborted();
   return formatGitHubComment({
     response: args.messageContent,
-    logsUrl,
     footerText,
     triggerCommentBody: args.target.triggerCommentBody,
   });

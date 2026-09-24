@@ -1,8 +1,11 @@
 [package]
 name = "runner-supervisor"
-version = "0.1.3"
+version = "0.1.4"
 edition.workspace = true
-description = "Runner start-loop idle and heartbeat orchestration"
+description = "Runner start-loop idle, heartbeat, and orphan orchestration"
+
+[features]
+test-support = []
 
 [dependencies]
 runner-executor.workspace = true
@@ -21,6 +24,7 @@ tracing = { workspace = true, features = ["std"] }
 runner-lifecycle = { workspace = true, features = ["test-support"] }
 runner-storage.workspace = true
 sandbox-mock.workspace = true
+serde_json = { workspace = true, features = ["std"] }
 api-contracts.workspace = true
 async-trait.workspace = true
 tempfile = { workspace = true, features = ["getrandom"] }

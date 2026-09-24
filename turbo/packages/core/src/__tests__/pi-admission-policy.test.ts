@@ -396,18 +396,10 @@ describe("Pi admission decisions", () => {
     expect(combinations).toHaveLength(ENUMERATED_COMBINATIONS);
     const admitted = combinations
       .filter((combination) => {
-        return isPiExecutionRoute({ ...combination, piEnabled: true });
+        return isPiExecutionRoute(combination);
       })
       .map(label);
     expect(admitted).toStrictEqual([...EXPECTED_ADMITTED_ROUTES]);
-  });
-
-  it("admits nothing while the Pi loop switch is off", () => {
-    for (const combination of enumerateCombinations()) {
-      expect(isPiExecutionRoute({ ...combination, piEnabled: false })).toBe(
-        false,
-      );
-    }
   });
 
   it("keeps claude-fable-5-1 on the vendor harness on every route", () => {
@@ -426,10 +418,7 @@ describe("Pi admission decisions", () => {
       expect(isPiPolicyAdmittedRoute(combination), label(combination)).toBe(
         false,
       );
-      expect(
-        isPiExecutionRoute({ ...combination, piEnabled: true }),
-        label(combination),
-      ).toBe(false);
+      expect(isPiExecutionRoute(combination), label(combination)).toBe(false);
     }
   });
 
@@ -447,7 +436,7 @@ describe("Pi admission decisions", () => {
         codexServiceTier: undefined,
       };
       expect(isPiRouteRuntimeCapable(route)).toBe(true);
-      expect(isPiExecutionRoute({ ...route, piEnabled: true })).toBe(true);
+      expect(isPiExecutionRoute(route)).toBe(true);
     },
   );
 });

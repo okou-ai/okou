@@ -1,5 +1,6 @@
 const os = require("node:os");
 const path = require("node:path");
+const fs = require("node:fs");
 
 const packageMetadata = require("./package.json");
 const desktopBrandAssets = require("./src/desktop-brand-assets.json");
@@ -57,22 +58,35 @@ const osxNotarize = desktopNotarizeOptions();
 
 // Forge 7 bundles Packager 18, whose CommonJS signing adapter cannot call osx-sign v2.
 async function signPackagedDarwinApps(_forgeConfig, packageResult) {
-  if (
-    packageResult.platform !== "darwin" ||
-    process.env.OKOU_DESKTOP_SKIP_SIGNING === "true"
-  ) {
+  if (packageResult.platform !== "darwin") {
     return;
   }
 
-  const { sign } = await import("@electron/osx-sign");
-  const notarizeModule = osxNotarize
-    ? await import("@electron/notarize")
-    : undefined;
+  const signModule =
+    process.env.OKOU_DESKTOP_SKIP_SIGNING === "true"
+      ? null
+      : await import("@electron/osx-sign");
+  const notarizeModule =
+    signModule && osxNotarize ? await import("@electron/notarize") : undefined;
 
   for (const outputPath of packageResult.outputPaths) {
     const appPath = path.join(outputPath, `${desktopIdentity.displayName}.app`);
+    // A binary in Contents/Resources has no Bundle.main identifier. ClerkKit
+    // uses that identifier for Keychain storage and native callback validation.
+    fs.copyFileSync(
+      path.join(
+        appPath,
+        "Contents",
+        "Resources",
+        "native",
+        "clerk-auth-helper",
+      ),
+      path.join(appPath, "Contents", "MacOS", "clerk-auth-helper"),
+    );
 
-    await sign({
+    if (!signModule) continue;
+
+    await signModule.sign({
       app: appPath,
       batchCodesignCalls: true,
       identity: codeSigningIdentity,

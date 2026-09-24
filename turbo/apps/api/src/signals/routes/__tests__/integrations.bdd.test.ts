@@ -363,7 +363,7 @@ async function configureFastCodexPreference(
   );
   await runs.updateOrgModelPolicies(actor, [
     {
-      model: "gpt-5.6-sol",
+      model: "gpt-6-astra",
       isDefault: true,
       defaultProviderType: "codex-oauth-token",
       credentialScope: "member",
@@ -373,11 +373,15 @@ async function configureFastCodexPreference(
   await bdd.readOnboardingStatus(actor);
   await integrations.updateUserModelPreference(
     actor,
-    "gpt-5.6-sol",
+    "gpt-6-astra",
     "priority",
   );
 }
 
+/**
+ * Slack Runner fixtures default to Fable and offer Astra as the Codex choice;
+ * both stay on their vendor harnesses, so runs remain claimable native jobs.
+ */
 function slackPostMessageCallsJson(): string {
   return JSON.stringify(context.mocks.slack.chat.postMessage.mock.calls);
 }
@@ -801,7 +805,7 @@ async function configureCanonicalSlackPiActor(
   );
   await runs.updateOrgModelPolicies(actor, [
     {
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
       isDefault: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
@@ -815,12 +819,8 @@ async function configureCanonicalSlackPiActor(
       modelProviderId: openaiProviderId,
     },
   ]);
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId },
-    { [FeatureSwitchKey.PiLoop]: false },
-  );
-  await integrations.updateUserModelPreference(actor, "claude-sonnet-5");
+
+  await integrations.updateUserModelPreference(actor, "claude-fable-5-1");
   return { actor, orgId, runnerGroup, selectedModel };
 }
 
@@ -897,7 +897,6 @@ async function establishCanonicalSlackHistory(args: SlackPiActorSetup) {
     context,
     { ...args.actor, orgId: args.orgId },
     {
-      [FeatureSwitchKey.PiLoop]: true,
       [FeatureSwitchKey.PiMemory]: true,
     },
   );
@@ -2272,7 +2271,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const slackUserId = uniqueSlackUserId();
     const { teamId, botUserId } = await integrations.installSlackWorkspace(
       actor,
@@ -2425,7 +2424,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     if (!actor.orgId) {
       throw new Error("Expected historical Slack actor to belong to an org");
     }
@@ -2519,7 +2518,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const runnerGroup = runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const slackUserId = uniqueSlackUserId();
     const { teamId, botUserId } = await integrations.installSlackWorkspace(
       actor,
@@ -2576,7 +2575,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       const runnerGroup = runs.configureRunnerGroup();
       integrations.configureSlackAppMocks();
       await runs.grantProEntitlement(actor);
-      await runs.ensureOrgModelProvider(actor);
+      await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
       const slackUserId = uniqueSlackUserId();
       const mentionedSlackUserId = uniqueSlackUserId();
       const { teamId, botUserId } = await integrations.installSlackWorkspace(
@@ -2873,7 +2872,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const runnerGroup = runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const slackUserId = uniqueSlackUserId();
     const { teamId, botUserId } = await integrations.installSlackWorkspace(
       actor,
@@ -3047,7 +3046,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       const runnerGroup = runs.configureRunnerGroup();
       integrations.configureSlackAppMocks();
       await runs.grantProEntitlement(actor);
-      await runs.ensureOrgModelProvider(actor);
+      await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
       if (!actor.orgId) {
         throw new Error("Expected canonical Slack actor to belong to an org");
       }
@@ -3394,7 +3393,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
         const runnerGroup = runs.configureRunnerGroup();
         integrations.configureSlackAppMocks();
         await runs.grantProEntitlement(actor);
-        await runs.ensureOrgModelProvider(actor);
+        await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
         if (!actor.orgId) {
           throw new Error("Expected canonical Slack actor to belong to an org");
         }
@@ -3885,9 +3884,11 @@ describe("INT-01: Slack app deep webhook flows", () => {
     runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     await runs.grantProEntitlement(blockerActor);
-    await runs.ensureOrgModelProvider(blockerActor);
+    await runs.ensureOrgModelProvider(blockerActor, {
+      model: "claude-fable-5-1",
+    });
     const slackUserId = uniqueSlackUserId();
     const blockerSlackUserId = uniqueSlackUserId();
     const targetInstallation = await integrations.installSlackWorkspace(actor, {
@@ -4044,7 +4045,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,
@@ -4105,7 +4106,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const runnerGroup = runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
 
     const titlePrompts: string[] = [];
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
@@ -4419,7 +4420,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
         channelId,
       }),
     );
-    await integrations.updateUserModelPreference(actor, "gpt-5.6-sol");
+    await integrations.updateUserModelPreference(actor, "gpt-6-astra");
     const gptThreadTs = "3100.000100";
     await integrations.postSlackEvent(teamId, {
       type: "app_mention",
@@ -4433,7 +4434,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(gptClaim.cliAgentType).toBe("codex");
     expect(gptClaim.environment).toMatchObject({
       OPENAI_API_KEY: expect.stringMatching(/.+/),
-      OPENAI_MODEL: "gpt-5.6-sol",
+      OPENAI_MODEL: "gpt-6-astra",
     });
     await completeSlackTriggeredRun({
       runId: gptRunId,
@@ -4446,7 +4447,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       throw new Error("Expected GPT Slack run to expose its session");
     }
 
-    await integrations.updateUserModelPreference(actor, "claude-sonnet-5");
+    await integrations.updateUserModelPreference(actor, "claude-fable-5-1");
     await integrations.postSlackEvent(teamId, {
       type: "app_mention",
       user: slackUserId,
@@ -4459,7 +4460,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const continuationClaim = await runs.claimRunnerJob(continuationRunId);
     expect(continuationClaim.cliAgentType).toBe("codex");
     expect(continuationClaim.environment).toMatchObject({
-      OPENAI_MODEL: "gpt-5.6-sol",
+      OPENAI_MODEL: "gpt-6-astra",
     });
     expect(continuationClaim.resumeSession?.sessionId).toBe(
       `bdd-slack-cli-${gptRunId}`,
@@ -4501,7 +4502,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(firstClaim.cliAgentType).toBe("claude-code");
     expect(firstClaim.environment).toMatchObject({
       ANTHROPIC_API_KEY: expect.stringMatching(/.+/),
-      ANTHROPIC_MODEL: "claude-sonnet-5",
+      ANTHROPIC_MODEL: "claude-fable-5-1",
     });
     await completeSlackTriggeredRun({
       runId: firstRunId,
@@ -4526,7 +4527,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
 
     await chat.updateThreadModelSelection(actor, chatThreadId, null);
-    await integrations.updateUserModelPreference(actor, "gpt-5.6-sol");
+    await integrations.updateUserModelPreference(actor, "gpt-6-astra");
     expect(
       (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
     ).toBeNull();
@@ -4544,12 +4545,12 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(resolvedClaim.cliAgentType).toBe("codex");
     expect(resolvedClaim.environment).toMatchObject({
       OPENAI_API_KEY: expect.stringMatching(/.+/),
-      OPENAI_MODEL: "gpt-5.6-sol",
+      OPENAI_MODEL: "gpt-6-astra",
     });
     expect(resolvedClaim.environment).not.toHaveProperty("ANTHROPIC_API_KEY");
     expect(
       (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
-    ).toBe("gpt-5.6-sol");
+    ).toBe("gpt-6-astra");
 
     const threadEvents = await chat.requestThreadEvents(actor, {}, [200]);
     if (threadEvents.status !== 200) {
@@ -4559,7 +4560,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       expect.objectContaining({
         kind: "model_selection_updated",
         chatThreadId,
-        selectedModel: "gpt-5.6-sol",
+        selectedModel: "gpt-6-astra",
       }),
     );
 
@@ -5593,7 +5594,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
     await runs.updateOrgModelPolicies(actor, [
       {
-        model: "gpt-5.6-sol",
+        model: "gpt-6-astra",
         isDefault: true,
         defaultProviderType: "codex-oauth-token",
         credentialScope: "member",
@@ -5630,15 +5631,15 @@ describe("INT-01: Slack app deep webhook flows", () => {
       );
     });
     const standardFooter = slackPostMessageCallsJson();
-    expect(standardFooter).toContain("GPT 5.6 Sol");
-    expect(standardFooter).not.toContain("GPT 5.6 Sol Fast");
+    expect(standardFooter).toContain("GPT 6 Astra");
+    expect(standardFooter).not.toContain("GPT 6 Astra Fast");
 
     const state = await integrations.readSlackTestState(teamId);
     const threadId = state.chat_thread_routes[0]?.chatThreadId;
     if (!threadId) {
       throw new Error("Expected the Slack fast-mode route to own a thread");
     }
-    await chat.updateThreadModelSelection(actor, threadId, "gpt-5.6-sol", {
+    await chat.updateThreadModelSelection(actor, threadId, "gpt-6-astra", {
       codexServiceTier: "fast",
     });
     context.mocks.slack.chat.postMessage.mockClear();
@@ -5669,9 +5670,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
       [200],
     );
     expect(agentSend.body).toMatchObject({ ok: true });
-    expect(slackPostMessageCallsJson()).toContain("GPT 5.6 Sol Fast");
+    expect(slackPostMessageCallsJson()).toContain("GPT 6 Astra Fast");
 
-    await chat.updateThreadModelSelection(actor, threadId, "gpt-5.6-sol", {
+    await chat.updateThreadModelSelection(actor, threadId, "gpt-6-astra", {
       codexServiceTier: null,
     });
     context.mocks.slack.chat.postMessage.mockClear();
@@ -5682,7 +5683,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       codexAgentMessageText: "fast answer",
     });
     await flushWaitUntilAndAssert(() => {
-      expect(slackPostMessageCallsJson()).toContain("GPT 5.6 Sol Fast");
+      expect(slackPostMessageCallsJson()).toContain("GPT 6 Astra Fast");
     });
   });
 
@@ -5696,7 +5697,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await runs.grantProEntitlement(actor);
     await integrations.configureSlackRunModelPolicies(actor);
     await bdd.readOnboardingStatus(actor);
-    await integrations.enableAuditLinkSwitch(actor);
+    await integrations.enableOkouDebug(actor);
     const slackUser1 = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUser1,
@@ -5762,7 +5763,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
             { type: "markdown", text: "SLACK_BDD_OUTPUT" },
             {
               type: "context",
-              elements: [{ type: "mrkdwn", text: "Claude Sonnet 5" }],
+              elements: [{ type: "mrkdwn", text: "Claude Fable 5.1" }],
             },
           ],
         }),
@@ -5812,11 +5813,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       orgId: actor.orgId,
       orgRole: "org:member",
     });
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor2.userId, orgId: actor.orgId, orgRole: "org:member" },
-      { [FeatureSwitchKey.PiLoop]: false },
-    );
+
     const slackUser2 = uniqueSlackUserId();
     await integrations.connectSlackUser(actor2, {
       workspaceId: teamId,
@@ -5964,7 +5961,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(claim1.cliAgentType).toBe("claude-code");
     expect(claim1.environment).toMatchObject({
       ANTHROPIC_API_KEY: expect.stringMatching(/.+/),
-      ANTHROPIC_MODEL: "claude-sonnet-5",
+      ANTHROPIC_MODEL: "claude-fable-5-1",
     });
 
     context.mocks.slack.assistant.threads.setStatus.mockRejectedValueOnce(
@@ -6687,7 +6684,7 @@ describe("INT-02: Telegram integration", () => {
     runs.acceptTelemetryIngest();
     const runnerGroup = runs.configureRunnerGroup();
     const actor = integrations.user();
-    await integrations.enableAuditLinkSwitch(actor);
+    await integrations.enableOkouDebug(actor);
     await configureFastCodexPreference(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD Telegram Fast agent",
@@ -6799,10 +6796,10 @@ describe("INT-02: Telegram integration", () => {
       [200],
     );
     expect(agentSend.body).toMatchObject({ ok: true });
-    expect(JSON.stringify(sentMessages)).toContain("GPT 5.6 Sol Fast");
+    expect(JSON.stringify(sentMessages)).toContain("GPT 6 Astra Fast");
 
     sentMessages.length = 0;
-    await integrations.updateUserModelPreference(actor, "gpt-5.6-sol", null);
+    await integrations.updateUserModelPreference(actor, "gpt-6-astra", null);
     await completeSlackTriggeredRun({
       runId,
       sandboxToken: claim.sandboxToken,
@@ -6810,12 +6807,11 @@ describe("INT-02: Telegram integration", () => {
       codexAgentMessageText: "telegram fast reply",
     });
     await flushWaitUntilAndAssert(() => {
-      const providerOutput = JSON.stringify(sentMessages);
-      expect(providerOutput).toContain("telegram fast reply");
-      expect(providerOutput).toContain("GPT 5.6 Sol Fast");
-      expect(providerOutput).toContain(
-        `https://app.okou.ai/activities/${runId}`,
-      );
+      expect(sentMessages).toStrictEqual([
+        expect.objectContaining({
+          text: "telegram fast reply\n\n<i>GPT 6 Astra Fast</i>",
+        }),
+      ]);
     });
   });
 
@@ -6826,7 +6822,7 @@ describe("INT-02: Telegram integration", () => {
     const runnerGroup = runs.configureRunnerGroup();
     const actor = integrations.user();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD Telegram typing agent",
     });

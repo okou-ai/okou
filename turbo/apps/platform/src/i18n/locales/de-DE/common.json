@@ -4758,7 +4758,7 @@
         "unconfirmedNote": "Deine {{provider}}-Verbindung konnte nicht geprüft werden. Versuch es erneut oder verbinde es später."
       },
       "team": {
-        "copy": "Lade ein Teammitglied ein, um gemeinsame Workflows zu nutzen.",
+        "copy": "Lade ein Teammitglied ein, deine Workflows zu teilen – jede Person verbindet dabei ihre eigenen Tools.",
         "invite": "Einladung senden",
         "invited": "Eingeladen",
         "label": "E-Mail des Teammitglieds",
@@ -4772,12 +4772,10 @@
           "workspace": "Tritt deinem Workspace bei."
         },
         "sending": "Wird gesendet…",
-        "title": "Mach Okou für dein ganzes Team nützlich",
-        "trust": "Alle nutzen dieselben Workflows und verbinden ihre eigenen Tools."
+        "title": "Mach Okou für dein ganzes Team nützlich"
       },
       "welcome": {
         "copy": "Prüfe den Vorschlag für deine Arbeit, passe ihn an dein Ziel an und lass Okou loslegen.",
-        "offerTitle": "Die erste Beratungsstunde geht auf uns, dazu bis zu 100 Credits —",
         "promptLabel": "Dein Startprompt",
         "start": "Mit Okou starten",
         "title": "Starte mit einer Aufgabe, die zählt"

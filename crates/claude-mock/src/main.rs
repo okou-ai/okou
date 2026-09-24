@@ -51,7 +51,9 @@
 //!                               prompt transport plus broad pkill isolation
 //!   @parallel-shell-tool-oom  - Run two Bash tools concurrently and verify
 //!                               a group OOM leaves the unrelated tool alive
-//!   @guest-wide-tool-oom      - Verify tool priority under isolated Guest-wide OOM
+//!   @guest-wide-tool-oom      - Opt-in real memory-pressure Guest-wide OOM
+//!   @guest-wide-tool-oom-injected
+//!                             - Trigger Guest-wide OOM after both tools are ready
 //!   @runtime-only-oom         - Exhaust the managed runtime with no eligible tools
 //!   @ECHO@                    - First-line marker. Validate remaining non-empty
 //!                               lines as JSONL and emit them unchanged.

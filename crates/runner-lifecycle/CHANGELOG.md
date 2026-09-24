@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.8](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.1.7...runner-lifecycle-v0.1.8) (2026-09-24)
+
+
+### Refactoring
+
+* **runner:** move heartbeat orchestration into supervisor ([#36588](https://github.com/okou-ai/okou/issues/36588)) ([ad07eb7](https://github.com/okou-ai/okou/commit/ad07eb72e7a1d5de3b3c308337f572262ce1b138))
+
 ## [0.1.7](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.1.6...runner-lifecycle-v0.1.7) (2026-09-24)
 
 

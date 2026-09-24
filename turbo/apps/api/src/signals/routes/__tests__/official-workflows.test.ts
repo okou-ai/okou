@@ -189,11 +189,13 @@ function authHeaders(actor: ApiTestUser) {
   return { authorization: "Bearer clerk-session" };
 }
 
+// Official workflow Runs complete through the native Runner claim protocol,
+// so fixtures use Fable, which model policy keeps off Pi.
 async function selectBuiltInDefaultModel(actor: ApiTestUser): Promise<void> {
-  await seedBuiltInModelKey(context, "claude-sonnet-5");
+  await seedBuiltInModelKey(context, "claude-fable-5-1");
   await runs.updateOrgModelPolicies(actor, [
     {
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
       isDefault: true,
       defaultProviderType: "built-in",
       credentialScope: "org",
@@ -1981,7 +1983,10 @@ async function installResultEmailLoopScenario(
   await syncCatalog(
     catalog([activeDefinition(definitionName, [loopBlueprint(resultEmail)])]),
   );
-  const { actor } = await workflowBdd.setupWorkflowOrg({ tier: "team" });
+  const { actor } = await workflowBdd.setupWorkflowOrg({
+    tier: "team",
+    model: "claude-fable-5-1",
+  });
   if (!actor.orgId) {
     throw new Error("Expected organization-scoped actor");
   }
@@ -2124,7 +2129,9 @@ async function installStaleAdmissionScenario() {
   await syncCatalog(
     catalog([activeDefinition(definitionName, [loopBlueprint()])]),
   );
-  const { actor } = await workflowBdd.setupWorkflowOrg();
+  const { actor } = await workflowBdd.setupWorkflowOrg({
+    model: "claude-fable-5-1",
+  });
   if (!actor.orgId) {
     throw new Error("Expected organization-scoped actor");
   }
@@ -9108,7 +9115,9 @@ describe("Official Workflow Run admission", () => {
       ]),
     );
 
-    const setup = await workflowBdd.setupWorkflowOrg();
+    const setup = await workflowBdd.setupWorkflowOrg({
+      model: "claude-fable-5-1",
+    });
     const { actor } = setup;
     if (!actor.orgId) {
       throw new Error("Expected organization-scoped actor");
@@ -9333,6 +9342,7 @@ describe("Official Workflow Run admission", () => {
         const setup = await workflowBdd.setupWorkflowOrg({
           timezone: "Asia/Shanghai",
           tier: "team",
+          model: "claude-fable-5-1",
         });
         const { actor } = setup;
         if (!actor.orgId) {
@@ -10130,6 +10140,7 @@ describe("Official Workflow Run admission", () => {
     const setup = await workflowBdd.setupWorkflowOrg({
       timezone: "Asia/Shanghai",
       tier: "team",
+      model: "claude-fable-5-1",
     });
     const { actor } = setup;
     const { agentId } = await workflowBdd.createAgent(actor);
@@ -10289,6 +10300,7 @@ describe("Official Workflow Run admission", () => {
     const setup = await workflowBdd.setupWorkflowOrg({
       timezone: "Asia/Shanghai",
       tier: "team",
+      model: "claude-fable-5-1",
     });
     const { actor } = setup;
     if (!actor.orgId) {
@@ -10444,7 +10456,9 @@ describe("Official Workflow Run admission", () => {
 
   it("launches an idle Official agent-run input with the annotated source budget", async () => {
     const definitionName = `api-test-idle-official-${randomUUID()}`;
-    const { actor } = await workflowBdd.setupWorkflowOrg();
+    const { actor } = await workflowBdd.setupWorkflowOrg({
+      model: "claude-fable-5-1",
+    });
     const { agentId } = await workflowBdd.createAgent(actor);
     installCatalogStorageFixture();
     await syncCatalog(catalog([activeDefinition(definitionName, [])]));
@@ -10537,7 +10551,9 @@ describe("Official Workflow Run admission", () => {
     async (queueCase) => {
       const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
       const definitionName = `api-test-queued-success-${suffix}`;
-      const { actor } = await workflowBdd.setupWorkflowOrg();
+      const { actor } = await workflowBdd.setupWorkflowOrg({
+        model: "claude-fable-5-1",
+      });
       const { agentId } = await workflowBdd.createAgent(actor);
       installCatalogStorageFixture();
       await syncCatalog(catalog([activeDefinition(definitionName, [])]));
@@ -10714,7 +10730,9 @@ describe("Official Workflow Run admission", () => {
     async (queueCase) => {
       const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
       const definitionName = `api-test-queued-source-${suffix}`;
-      const setup = await workflowBdd.setupWorkflowOrg();
+      const setup = await workflowBdd.setupWorkflowOrg({
+        model: "claude-fable-5-1",
+      });
       const { actor } = setup;
       const { agentId } = await workflowBdd.createAgent(actor);
       const storage = installCatalogStorageFixture();
@@ -11100,7 +11118,9 @@ describe("Official Workflow Run admission", () => {
       installCatalogStorageFixture();
       const definitionName = `api-test-queued-invalid-${randomUUID().slice(0, 8)}`;
       await syncCatalog(catalog([activeDefinition(definitionName, [])]));
-      const { actor } = await workflowBdd.setupWorkflowOrg();
+      const { actor } = await workflowBdd.setupWorkflowOrg({
+        model: "claude-fable-5-1",
+      });
       const { agentId } = await workflowBdd.createAgent(actor);
       const headers = authHeaders(actor);
       await setOfficialWorkflowsEnabled(actor, true);
@@ -11255,7 +11275,9 @@ describe("Official Workflow Run admission", () => {
     const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
     const definitionName = `api-test-uninstall-${suffix}`;
     await syncCatalog(catalog([activeDefinition(definitionName, [])]));
-    const setup = await workflowBdd.setupWorkflowOrg();
+    const setup = await workflowBdd.setupWorkflowOrg({
+      model: "claude-fable-5-1",
+    });
     const { actor } = setup;
     if (!actor.orgId) {
       throw new Error("Expected organization-scoped actor");
@@ -11401,8 +11423,12 @@ describe("Official Workflow Run admission", () => {
       ]),
     );
     const original = await readAcceptedDefinitionFixture(definitionName);
-    const firstSetup = await workflowBdd.setupWorkflowOrg();
-    const secondSetup = await workflowBdd.setupWorkflowOrg();
+    const firstSetup = await workflowBdd.setupWorkflowOrg({
+      model: "claude-fable-5-1",
+    });
+    const secondSetup = await workflowBdd.setupWorkflowOrg({
+      model: "claude-fable-5-1",
+    });
     const firstActor = firstSetup.actor;
     const secondActor = secondSetup.actor;
     if (!firstActor.orgId || !secondActor.orgId) {

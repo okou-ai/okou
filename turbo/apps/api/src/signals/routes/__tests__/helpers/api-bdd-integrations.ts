@@ -1279,6 +1279,8 @@ export function createBddIntegrationApi(context: TestContext) {
       );
     },
 
+    // Slack run fixtures claim native Runner jobs, so both org models are
+    // policy-excluded from Pi.
     async configureSlackRunModelPolicies(actor: ApiTestUser): Promise<void> {
       const providers = setupApp({ context, routes: modelProvidersRoutes })(
         modelProvidersMainContract,
@@ -1312,14 +1314,14 @@ export function createBddIntegrationApi(context: TestContext) {
             revision: snapshot.body.revision,
             policies: [
               {
-                model: "claude-sonnet-5",
+                model: "claude-fable-5-1",
                 isDefault: true,
                 defaultProviderType: "anthropic-api-key",
                 credentialScope: "org",
                 modelProviderId: anthropic.body.provider.id,
               },
               {
-                model: "gpt-5.6-sol",
+                model: "gpt-6-astra",
                 isDefault: false,
                 defaultProviderType: "openai-api-key",
                 credentialScope: "org",
@@ -1332,7 +1334,7 @@ export function createBddIntegrationApi(context: TestContext) {
       );
     },
 
-    async enableAuditLinkSwitch(actor: ApiTestUser): Promise<void> {
+    async enableOkouDebug(actor: ApiTestUser): Promise<void> {
       await accept(
         setupApp({ context, routes: featureSwitchesRoutes })(
           featureSwitchesContract,

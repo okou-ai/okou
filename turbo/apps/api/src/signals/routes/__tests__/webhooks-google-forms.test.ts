@@ -316,10 +316,26 @@ function eventContextFromAgentPrompt(prompt: string): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
+async function useNativeHarnessForFormsFixture(
+  actor: Awaited<ReturnType<typeof workflows.setupWorkflowOrg>>["actor"],
+): Promise<void> {
+  const { providerId } = await runs.ensureOrgModelProvider(actor);
+  await runs.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
+}
+
 async function setupGoogleFormsAutomation() {
   configureEnvironment();
   const formsApi = configureFormsApi();
   const { actor } = await workflows.setupWorkflowOrg();
+  await useNativeHarnessForFormsFixture(actor);
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
@@ -544,6 +560,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       readonly userId: string;
     }[] = [];
     const { actor: firstActor } = await workflows.setupWorkflowOrg();
+    await useNativeHarnessForFormsFixture(firstActor);
     if (!firstActor.orgId) {
       throw new Error("Expected an org-scoped workflow actor");
     }
@@ -658,6 +675,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       "google-forms-readded-access-token",
     ]);
     const { actor } = await workflows.setupWorkflowOrg();
+    await useNativeHarnessForFormsFixture(actor);
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped workflow actor");
     }

@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.708.2](https://github.com/okou-ai/okou/compare/core-v8.708.1...core-v8.708.2) (2026-09-24)
+
+
+### Refactoring
+
+* remove piloop feature switch ([#36382](https://github.com/okou-ai/okou/issues/36382)) ([878bc6d](https://github.com/okou-ai/okou/commit/878bc6d48524830c3da02f9622f7d056c7905a79))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.504.0
+
 ## [8.708.1](https://github.com/okou-ai/okou/compare/core-v8.708.0...core-v8.708.1) (2026-09-24)
 
 

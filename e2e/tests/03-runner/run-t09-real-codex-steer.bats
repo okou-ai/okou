@@ -31,8 +31,8 @@ teardown_file() {
 run_real_codex_steer() {
     local steer_prompt="$1"
     local after_complete_prompt="$2"
-    local initial_prompt='Run `sleep 10` with Bash, then read the follow-up message received during this run. Reply only RESULT=codex-initial-8m6+FOLLOWUP, replacing FOLLOWUP with its exact text. If no follow-up is received, reply only RESULT=missing.'
-    local expected_output="RESULT=codex-initial-8m6+$steer_prompt"
+    local initial_prompt='Run `sleep 10` with Bash, then follow the instruction in the next message received during this run. If no follow-up is received, reply only RESULT=missing.'
+    local expected_output="${steer_prompt#Reply only }"
     local after_complete_output="RESULT=codex-after-complete+$after_complete_prompt"
     local steer_result run_id thread_id steer_output successor_result
     local successor_run_id successor_output
@@ -79,14 +79,14 @@ run_real_codex_steer() {
 @test "real codex steers an active run then starts a successor" {
     local steer_nonce steer_prompt after_complete_nonce after_complete_prompt
     steer_nonce="$(_runner_uuid)"
-    steer_prompt="codex-steer-${steer_nonce%%-*}"
+    steer_prompt="Reply only RESULT=codex-steer-${steer_nonce%%-*}"
     after_complete_nonce="$(_runner_uuid)"
     after_complete_prompt="codex-new-run-${after_complete_nonce%%-*}"
 
     run run_real_codex_steer "$steer_prompt" "$after_complete_prompt"
 
     assert_success
-    assert_output --partial "RESULT=codex-initial-8m6+$steer_prompt"
+    assert_output --partial "${steer_prompt#Reply only }"
     assert_output --partial "RESULT=codex-after-complete+$after_complete_prompt"
     assert_output --partial '"status":"completed"'
     [[ -n "$(runner_chat_field "$output" '.runId')" ]]

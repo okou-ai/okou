@@ -211,8 +211,7 @@ describe("first-party Pi memory tools", () => {
     const root = await memoryRoot();
     await put(root, "MEMORY.md", "Index\nNeedle in root");
     const registry = tools({ root });
-    const expected =
-      "Memory path must be a directory. Omit path to search the memory root.";
+    const expected = "Memory path must be a directory.";
 
     await expect(
       executeText(registry, "memories_search", {

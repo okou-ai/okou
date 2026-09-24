@@ -4742,7 +4742,7 @@
         "unconfirmedNote": "Kami tidak dapat memeriksa koneksi {{provider}} Anda. Coba lagi atau hubungkan nanti."
       },
       "team": {
-        "copy": "Undang anggota tim untuk menjalankan alur kerja bersama.",
+        "copy": "Undang anggota tim untuk berbagi alur kerja Anda, sementara setiap orang menghubungkan alatnya sendiri.",
         "invite": "Kirim undangan",
         "invited": "Diundang",
         "label": "Email anggota tim",
@@ -4756,12 +4756,10 @@
           "workspace": "Bergabung ke workspace Anda."
         },
         "sending": "Mengirim…",
-        "title": "Buat Okou berguna bagi seluruh tim Anda",
-        "trust": "Semua orang menggunakan alur kerja yang sama dan menghubungkan alat mereka sendiri."
+        "title": "Buat Okou berguna bagi seluruh tim Anda"
       },
       "welcome": {
         "copy": "Tinjau tugas yang disarankan untuk pekerjaan Anda, sesuaikan dengan tujuan, lalu biarkan Okou memulai.",
-        "offerTitle": "Satu jam pertama konsultasi gratis dari kami, plus hingga 100 kredit —",
         "promptLabel": "Prompt awal Anda",
         "start": "Mulai dengan Okou",
         "title": "Mulai dengan tugas yang berarti"

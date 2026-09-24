@@ -56,7 +56,12 @@ async function setupFixture(): Promise<{
   readonly subscriptionId: string;
 }> {
   mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
-  const { actor, subscriptionId } = await wf.setupWorkflowOrg({ tier: "team" });
+  // Webhook runs are claimed by the native Runner, so the org default is
+  // Fable, which model policy keeps off Pi.
+  const { actor, subscriptionId } = await wf.setupWorkflowOrg({
+    tier: "team",
+    model: "claude-fable-5-1",
+  });
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
@@ -262,7 +267,7 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
       body: { error: "Failed to start webhook workflow run" },
     });
 
-    await runsApi.ensureOrgModelProvider(actor);
+    await runsApi.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const retried = await postWorkflowWebhook({
       token: webhook.token,
       rawBody,

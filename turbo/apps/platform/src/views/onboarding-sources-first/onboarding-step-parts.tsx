@@ -7,6 +7,13 @@ import { settingsIconAssetUrl } from "../okou-page/components/settings/settings-
 export const ILLUSTRATION_BASE =
   "https://static.okou.io/web/assets/onboarding/";
 
+/** Each illustration's published file; the guided start has no white plate. */
+const ILLUSTRATION_FILES = {
+  experienced: "v3-choice-experienced",
+  new: "v4-choice-new",
+  "skill-import": "v3-skill-import",
+} as const;
+
 /**
  * Illustrations keep their own aspect ratio, so a mark is sized by height and
  * capped in width. A card leads with the poster size; a row carries the same
@@ -33,7 +40,7 @@ export function OnboardingIllustration({
 }) {
   return (
     <img
-      src={`${ILLUSTRATION_BASE}v3-${name === "skill-import" ? "skill-import" : `choice-${name}`}-fit_480.png`}
+      src={`${ILLUSTRATION_BASE}${ILLUSTRATION_FILES[name]}-fit_480.png`}
       alt={alt}
       className={cn("shrink-0 object-contain", MARK_SIZES[size])}
     />

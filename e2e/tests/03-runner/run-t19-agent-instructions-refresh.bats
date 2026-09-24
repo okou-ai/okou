@@ -7,6 +7,7 @@ load '../../helpers/runner-chat'
 load '../../helpers/runner-api'
 
 setup() {
+    runner_e2e_use_native_codex_account
     runner_e2e_require_environment
     runner_e2e_setup_test
 }
