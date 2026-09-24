@@ -1,14 +1,18 @@
 """Connector-intent classification for omitted runtime targets."""
 
+import json
 import tracemalloc
 
 import pytest
 
 import connector_intent
+import flow_metadata_keys as metadata_keys
+import mitm_addon
 import request_classification
 from tests.request_handler_helpers import (
     _sandbox_without_firewalls,
     _shared_route_sandbox,
+    _single_firewall_sandbox,
     _write_registry,
 )
 
@@ -26,7 +30,7 @@ _CONNECTOR_INTENT_HEADER = "X-Okou-Connector-Intent"
     ],
     ids=["builtin-only", "custom-only", "both"],
 )
-def test_omitted_connector_intent_returns_ordinary_allow(
+def test_omitted_connector_intent_does_not_bypass_multiple_active_owners(
     tmp_path,
     real_flow,
     mitm_ctx,
@@ -59,7 +63,104 @@ def test_omitted_connector_intent_returns_ordinary_allow(
             tls_admission=None,
         )
 
+    assert isinstance(classification, request_classification.FirewallAmbiguous)
+    assert classification.firewall_ambiguous.reason == "connector_intent_not_candidate"
+    assert _CONNECTOR_INTENT_HEADER not in flow.request.headers
+
+
+@pytest.mark.parametrize(
+    ("omitted_field", "intent"),
+    [
+        ("omittedBuiltinFirewalls", "removed-builtin"),
+        ("omittedCustomConnectorIds", "removed-custom"),
+    ],
+)
+async def test_omitted_connector_intent_still_enforces_sole_owner_denial(
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+    headers,
+    omitted_field,
+    intent,
+):
+    sandbox = _single_firewall_sandbox(
+        tmp_path,
+        firewall_name="active",
+        api_entry={
+            "base": "https://shared.example.com",
+            "auth": {"headers": {"Authorization": "Bearer ${{ secrets.ACTIVE_TOKEN }}"}},
+            "permissions": [{"name": "items-read", "rules": ["GET /items/{id}"]}],
+        },
+        network_policy={
+            "allow": [],
+            "deny": ["items-read"],
+            "ask": [],
+            "unknownPolicy": "deny",
+        },
+        sandbox_fields={omitted_field: [intent]},
+    )
+    registry_path = _write_registry(tmp_path, client_ip=_CLIENT_IP, sandbox_info=sandbox)
+    flow = real_flow(
+        with_response=False,
+        client_ip=_CLIENT_IP,
+        host="shared.example.com",
+        path="/items/123",
+        request_headers=headers(
+            ("Host", "shared.example.com"),
+            (_CONNECTOR_INTENT_HEADER, intent),
+        ),
+    )
+
+    with (
+        mitm_ctx(registry_path=str(registry_path), api_url=_API_URL),
+        fake_firewall_headers() as auth_fetch,
+    ):
+        await mitm_addon.request(flow)
+
+    auth_fetch.assert_not_awaited()
+    assert flow.response is not None
+    assert flow.response.status_code == 403
+    assert json.loads(flow.response.content)["reason"] == "permission_denied"
+    assert flow.metadata[metadata_keys.FIREWALL_NAME] == "active"
+    assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "DENY"
+    assert _CONNECTOR_INTENT_HEADER not in flow.request.headers
+    assert "Authorization" not in flow.request.headers
+
+
+def test_omitted_connector_intent_without_active_owner_uses_ordinary_fallback(
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    headers,
+):
+    sandbox = _sandbox_without_firewalls(
+        tmp_path,
+        sandbox_fields={"omittedBuiltinFirewalls": ["removed-builtin"]},
+    )
+    registry_path = _write_registry(tmp_path, client_ip=_CLIENT_IP, sandbox_info=sandbox)
+    flow = real_flow(
+        with_response=False,
+        client_ip=_CLIENT_IP,
+        host="unowned.example.com",
+        path="/items",
+        request_headers=headers(
+            ("Host", "unowned.example.com"),
+            (_CONNECTOR_INTENT_HEADER, "removed-builtin"),
+        ),
+    )
+    connector_intent.capture_and_strip(flow)
+
+    with mitm_ctx(registry_path=str(registry_path), api_url=_API_URL):
+        classification = request_classification.classify_request(
+            flow,
+            registry_path=str(registry_path),
+            api_url=_API_URL,
+            tls_admission=None,
+        )
+
     assert isinstance(classification, request_classification.Allow)
+    assert _CONNECTOR_INTENT_HEADER not in flow.request.headers
 
 
 @pytest.mark.parametrize(

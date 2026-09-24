@@ -37,6 +37,23 @@ credential-free `api_allow` behavior and therefore may receive the MCP service's
 OAuth challenge until replaced. Production-entrypoint coverage is in
 `tests/test_request_handler_api_admission.py`.
 
+## Ordinary connector firewall owner selection
+
+Outside the platform API admission path, the addon matches active firewall URLs
+and applies route precedence before using connector intent. One eligible owner
+governs the request regardless of whether intent is absent, malformed, mismatched,
+or names a connector omitted from the run. Its permission, network-policy, and
+destination checks still apply. Multiple eligible owners require a valid intent
+that selects one of them; otherwise the route is ambiguous and blocked. A URL
+without an active firewall match keeps the ordinary network fallback. The private
+intent header is always stripped before upstream forwarding. Shared-base
+diagnostics also do not use intent to override a sole active owner.
+
+For a shared base with a unique inactive route owner, a request that already
+carries that route's authentication material receives HTTP 409
+`connector_auth_owner_conflict` before the active base-only owner's credentials
+are injected. This guard does not consult intent.
+
 ## Gmail send restriction
 
 For registered sandbox requests, trusted authority validation and the existing

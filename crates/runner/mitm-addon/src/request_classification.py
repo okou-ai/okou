@@ -449,6 +449,22 @@ def _firewall_base_is_exact_platform_connector_resource(
     return base_key is not None and base_key == request_key
 
 
+def _intent_selects_firewall_owner(
+    compiled_firewalls: matching.CompiledFirewallSet,
+    owner_name: str,
+    intent: connector_intent.ConnectorIntent,
+) -> bool:
+    """Keep platform API connector auth opt-in tied to its selected owner."""
+    if intent.status != "present" or intent.value is None:
+        return False
+    identities = {
+        firewall.intent_identity
+        for firewall in compiled_firewalls.firewalls
+        if firewall.name == owner_name
+    }
+    return identities == {intent.value}
+
+
 def _classify_request(
     flow: http.HTTPFlow,
     *,
@@ -560,25 +576,6 @@ def _classify_request(
         return GmailSendBlocked(sandbox_info=sandbox_info)
 
     is_asterisk_form = flow.request.path == "*"
-    omitted_builtin_firewalls = registry_state.omitted_builtin_firewalls.get(
-        client_ip,
-        frozenset(),
-    )
-    omitted_custom_connector_ids = registry_state.omitted_custom_connector_ids.get(
-        client_ip,
-        frozenset(),
-    )
-    if intent.status == "present" and (
-        intent.value in omitted_builtin_firewalls or intent.value in omitted_custom_connector_ids
-    ):
-        if platform_connector_api_fallback is not None:
-            return platform_connector_api_fallback
-        return Allow(
-            sandbox_info=sandbox_info,
-            builtin_firewall_catalog_snapshot=(registry_state.builtin_firewall_catalog_snapshot),
-            is_asterisk_form=is_asterisk_form,
-        )
-
     compiled_firewalls = registry_state.compiled_firewalls.get(client_ip)
     compiled_network_policies = registry_state.compiled_network_policies[client_ip]
     if compiled_firewalls:
@@ -600,11 +597,12 @@ def _classify_request(
                 builtin_firewall_catalog_snapshot=registry_state.builtin_firewall_catalog_snapshot,
             )
         if isinstance(result, matching.FirewallBlock):
-            if platform_connector_api_fallback is not None and not (
-                _firewall_base_is_exact_platform_connector_resource(
+            if platform_connector_api_fallback is not None and (
+                not _firewall_base_is_exact_platform_connector_resource(
                     result.base,
                     original_url=original_url,
                 )
+                or not _intent_selects_firewall_owner(compiled_firewalls, result.name, intent)
             ):
                 return platform_connector_api_fallback
             return FirewallBlock(
@@ -617,10 +615,13 @@ def _classify_request(
                 if isinstance(result, matching.FirewallPolicyAllow)
                 else result
             )
-            if platform_connector_api_fallback is not None and not (
-                _firewall_base_is_exact_platform_connector_resource(
+            if platform_connector_api_fallback is not None and (
+                not _firewall_base_is_exact_platform_connector_resource(
                     firewall_allow.api_entry.get("base"),
                     original_url=original_url,
+                )
+                or not _intent_selects_firewall_owner(
+                    compiled_firewalls, firewall_allow.name, intent
                 )
             ):
                 return platform_connector_api_fallback

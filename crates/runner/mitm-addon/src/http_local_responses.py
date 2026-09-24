@@ -20,6 +20,7 @@ from runtime_url_parsing import split_runtime_url, strip_url_query_and_fragment
 _BUILTIN_HOST_POLICY_DENIED_ERROR: Final = "builtin_host_policy_denied"
 _AMBIGUOUS_CONNECTOR_ROUTE_ERROR: Final = "ambiguous_connector_route"
 _FIREWALL_AUTHORIZATION_CHANGED_ERROR: Final = "firewall_authorization_changed"
+_CONNECTOR_AUTH_OWNER_CONFLICT_ERROR: Final = "connector_auth_owner_conflict"
 _STALE_TLS_ADMISSION_ERROR: Final = "stale_tls_admission"
 _UNSAFE_PLATFORM_PATH_ERROR: Final = "unsafe_platform_path"
 _UPSTREAM_DESTINATION_UNBOUND_ERROR: Final = "upstream_destination_unbound"
@@ -223,6 +224,37 @@ def block_firewall_authorization_changed(
             "message": (
                 "Request blocked: firewall authorization changed while credentials were resolving"
             ),
+        },
+    )
+
+
+def block_connector_auth_owner_conflict(
+    flow: http.HTTPFlow,
+    *,
+    active_owner: str,
+    inactive_owner: str,
+) -> None:
+    """Keep authentication for an inactive route separate from active credentials."""
+    message = "Request blocked: authentication conflicts with an inactive connector route"
+    log_proxy_entry(
+        flow_metadata.proxy_log_path(flow.metadata),
+        "warn",
+        message,
+        type="connector_auth_owner_conflict",
+        active_owner=active_owner,
+        inactive_owner=inactive_owner,
+    )
+    flow_metadata.set_firewall_decision(
+        flow.metadata,
+        "BLOCK",
+        error=_CONNECTOR_AUTH_OWNER_CONFLICT_ERROR,
+    )
+    flow.response = make_local_json_response(
+        flow,
+        _HTTP_STATUS_CONFLICT,
+        {
+            "error": _CONNECTOR_AUTH_OWNER_CONFLICT_ERROR,
+            "message": message,
         },
     )
 
