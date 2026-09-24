@@ -4859,8 +4859,7 @@
       "preparedDescription": "{{assistantName}} menyiapkan langkah berikutnya dari alat Anda.",
       "preparedTitle": "Alur kerja siap",
       "reviewDescription": "{{assistantName}} menyelesaikan alur kerja dan mengembalikan hasilnya.",
-      "reviewTitle": "Siap ditinjau",
-      "source": "Sumber"
+      "reviewTitle": "Siap ditinjau"
     },
     "workflowPicker": {
       "categoryDescription": "Pengaturan siap jalan yang bisa Anda sesuaikan dengan alat dan tujuan Anda.",

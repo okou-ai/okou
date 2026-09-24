@@ -4859,8 +4859,7 @@
       "preparedDescription": "{{assistantName}}가 도구에서 다음 단계를 준비합니다.",
       "preparedTitle": "워크플로 준비 완료",
       "reviewDescription": "{{assistantName}}가 워크플로를 완료하고 결과를 반환합니다.",
-      "reviewTitle": "검토 준비 완료",
-      "source": "소스"
+      "reviewTitle": "검토 준비 완료"
     },
     "workflowPicker": {
       "categoryDescription": "도구와 목표에 맞게 조정 가능한 즉시 실행 설정입니다.",

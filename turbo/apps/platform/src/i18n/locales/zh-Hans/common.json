@@ -4859,8 +4859,7 @@
       "preparedDescription": "{{assistantName}}会从你的工具里准备好下一步。",
       "preparedTitle": "工作流已就绪",
       "reviewDescription": "{{assistantName}}会完成工作流并给出结果。",
-      "reviewTitle": "等你确认",
-      "source": "数据源"
+      "reviewTitle": "等你确认"
     },
     "workflowPicker": {
       "categoryDescription": "开箱即用的方案，可以按你的工具和目标调整。",
