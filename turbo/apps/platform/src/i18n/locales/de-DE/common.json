@@ -4312,7 +4312,7 @@
         }
       },
       "industry": {
-        "copy": "Okou ist der Arbeitsassistent für dich und dein Team. Es führt verstreute Informationen zusammen, macht sie nutzbar und erledigt die nächsten Schritte in der Cloud. Sag ihm, was du machst, und es schlägt passende Tools und eine erste Aufgabe vor.",
+        "copy": "Okou ist der Arbeitsassistent für dich und dein Team. Es macht aus verstreuten Informationen erledigte Arbeit, in der Cloud. Wähle dein Feld für eine passende erste Aufgabe.",
         "title": "Welche Arbeit machst du?"
       },
       "profile": {

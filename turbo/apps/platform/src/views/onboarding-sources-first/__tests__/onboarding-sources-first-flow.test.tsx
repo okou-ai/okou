@@ -198,7 +198,7 @@ test("The first step introduces Okou and its compliance progress", async () => {
   ).resolves.toBeInTheDocument();
   expect(
     screen.getByText(
-      "Okou is the work assistant for you and your team. It brings scattered information together, makes it useful, and carries out the next steps in the cloud. Tell it what you do, and it will suggest the right tools and a first task.",
+      "Okou is the work assistant for you and your team. It turns scattered information into finished work, in the cloud. Pick your field for a first task that fits.",
     ),
   ).toBeInTheDocument();
   const badges = Array.from(
