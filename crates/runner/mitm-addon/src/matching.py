@@ -1897,16 +1897,16 @@ def _aws_predicates_match(
 
     headers = context.headers if context is not None else None
     action = predicates.get("action")
-    if action is not None:
-        return _aws_query_action_matches(
-            action,
-            query_pairs=query_pairs,
-            form_action_result=get_form_action_result(),
-        )
+    if action is not None and not _aws_query_action_matches(
+        action,
+        query_pairs=query_pairs,
+        form_action_result=get_form_action_result(),
+    ):
+        return False
 
     target = predicates.get("target")
-    if target is not None:
-        return _aws_target_matches(target, headers=headers)
+    if target is not None and not _aws_target_matches(target, headers=headers):
+        return False
 
     is_s3 = predicates["sigv4"] == "s3"
     if is_s3 and _has_header(headers, _AWS_S3_COPY_SOURCE_HEADER):
