@@ -286,12 +286,7 @@ export async function grantGetStartedClaim(
     .set({
       status: "granted",
       rewardKey,
-      rewardSlot:
-        claim.questKey === "invite"
-          ? awards.total + 1
-          : claim.questKey === "workflow" || claim.questKey === "share"
-            ? 1
-            : null,
+      rewardSlot: rewardSlotFor(claim.questKey, awards.total),
       memberCreditGrantId,
       orgCreditRecordId,
       grantedAt,
@@ -313,6 +308,25 @@ export async function grantGetStartedClaim(
   return granted;
 }
 
+/**
+ * The slot a grant takes, which `uq_get_started_reward_slot` keeps unique per
+ * person and quest: one per invitee, slot 1 for the once-only personal quests,
+ * and none for the quests whose limit is held elsewhere.
+ */
+function rewardSlotFor(
+  questKey: GetStartedQuestKey,
+  grantedBefore: number,
+): number | null {
+  if (questKey === "invite") {
+    return grantedBefore + 1;
+  }
+  return questKey === "workflow" ||
+    questKey === "share" ||
+    questKey === "imessage"
+    ? 1
+    : null;
+}
+
 function requiredBeneficiary(claim: GetStartedClaimRow): string {
   if (!claim.beneficiaryUserId) {
     throw new Error("Personal reward has no beneficiary");
@@ -325,7 +339,7 @@ export async function awardCompletedGetStartedQuest(
   args: {
     readonly orgId: string;
     readonly userId: string;
-    readonly questKey: "connector" | "slack" | "checkin";
+    readonly questKey: "connector" | "slack" | "imessage" | "checkin";
     readonly sourceKey: string;
   },
 ): Promise<GetStartedClaimRow | null> {
@@ -349,6 +363,8 @@ export async function getStartedStatus(
     readonly orgId: string;
     readonly userId: string;
     readonly isAdmin: boolean;
+    /** Whether the client asked for the iMessage quest; see the contract. */
+    readonly includeImessage: boolean;
   },
 ): Promise<GetStartedStatus> {
   const at = nowDate();
@@ -420,6 +436,9 @@ export async function getStartedStatus(
     .limit(20);
   const quests = getStartedQuestKeySchema.options
     .filter((key) => {
+      if (key === "imessage") {
+        return args.includeImessage;
+      }
       return args.isAdmin || (key !== "slack" && key !== "invite");
     })
     .map((key) => {

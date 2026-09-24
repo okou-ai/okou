@@ -1436,6 +1436,11 @@
         },
         "earned": "{{amount}} 획득",
         "howRewardsWork": "보상 안내",
+        "imessage": {
+          "action": "추가",
+          "description": "iPhone에서 {{assistantName}}에게 문자하기",
+          "name": "iMessage에 추가"
+        },
         "inReview": "검토 중",
         "intro": {
           "checkin": {
@@ -3571,9 +3576,10 @@
       "agentphone": {
         "authorizedSender": "승인된 발신자",
         "codeExpiry": "10분 후 만료",
+        "codeLabel": "코드",
         "connectAria": "전화 연결",
-        "connectDescription": "코드를 스캔하거나 메시지 앱을 연 다음, 미리 입력된 코드를 보내세요.",
-        "connectTitle": "전화 연결",
+        "connectDescription": "카메라로 스캔한 다음, 미리 입력된 코드를 보내세요.",
+        "connectTitle": "iPhone에서 {{assistantName}}에게 문자하기",
         "copyAria": "{{phone}} 복사",
         "copyCodeAria": "연결 코드 {{code}} 복사",
         "copyCodeError": "연결 코드를 복사하지 못했습니다",
@@ -3584,13 +3590,12 @@
         "creatingCode": "연결 코드 만드는 중…",
         "description": "{{assistantName}}에 문자 메시지 접근",
         "destination": "iMessage 또는 SMS 수신처",
-        "manualSend": "또는",
-        "manualSendTo": "코드를 다음 번호로 전송:",
         "openMessages": "메시지 열기",
         "options": "전화 옵션",
         "phoneLabel": "전화",
         "qrTitle": "스캔하여 연결 코드가 미리 입력된 메시지 앱 열기",
         "risk": "가능하면 iMessage를 사용하세요. SMS 및 MMS 답장은 안정적으로 도착하지 않을 수 있습니다.",
+        "sendToLabel": "받는 번호",
         "tryAgain": "다시 시도"
       },
       "catalogDiagnostics": {

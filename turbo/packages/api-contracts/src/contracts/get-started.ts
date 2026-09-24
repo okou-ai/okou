@@ -7,6 +7,7 @@ const c = initContract();
 export const getStartedQuestKeySchema = z.enum([
   "connector",
   "slack",
+  "imessage",
   "workflow",
   "invite",
   "share",
@@ -28,6 +29,7 @@ export const GET_STARTED_REWARDS_CHANGED_EVENT = "getStartedRewardsChanged";
 export const GET_STARTED_REWARDS = {
   connector: { amount: 100, limit: null, target: "user" },
   slack: { amount: 2000, limit: 1, target: "org" },
+  imessage: { amount: 1000, limit: 1, target: "user" },
   workflow: { amount: 1000, limit: 1, target: "user" },
   invite: { amount: 100, limit: 15, target: "user" },
   share: { amount: 2000, limit: 1, target: "user" },
@@ -80,13 +82,29 @@ export const getStartedStatusSchema = z.object({
 });
 export type GetStartedStatus = z.infer<typeof getStartedStatusSchema>;
 
+/**
+ * The quests a client has to ask for before the status lists them.
+ *
+ * App bundles from before the iMessage quest look each listed quest up in a
+ * fixed copy table and throw on a key they do not know, and the App does not
+ * validate responses, so an unknown key reaches that lookup. The API therefore
+ * lists `imessage` only to a client that sends `include=imessage`; an older API
+ * ignores the parameter and simply omits the row. Remove the parameter once
+ * the App version floor excludes bundles that predate it.
+ */
+const getStartedOptInQuestSchema = z.enum(["imessage"]);
+
 export const getStartedContract = c.router({
   status: {
     method: "GET",
     path: "/api/get-started",
     headers: authHeadersSchema,
+    query: z
+      .object({ include: getStartedOptInQuestSchema.optional() })
+      .optional(),
     responses: {
       200: getStartedStatusSchema,
+      400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
     },

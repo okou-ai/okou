@@ -1436,6 +1436,11 @@
         },
         "earned": "已获得 {{amount}}",
         "howRewardsWork": "奖励规则说明",
+        "imessage": {
+          "action": "添加",
+          "description": "用 iPhone 给 {{assistantName}} 发消息",
+          "name": "添加到 iMessage"
+        },
         "inReview": "审核中",
         "intro": {
           "checkin": {
@@ -3571,9 +3576,10 @@
       "agentphone": {
         "authorizedSender": "已授权的发送方",
         "codeExpiry": "10分钟后过期",
+        "codeLabel": "验证码",
         "connectAria": "连接手机",
-        "connectDescription": "扫描二维码或打开Messages，然后发送已填好的验证码。",
-        "connectTitle": "连接手机",
+        "connectDescription": "用相机扫描，然后发送已填好的验证码。",
+        "connectTitle": "用 iPhone 给 {{assistantName}} 发消息",
         "copyAria": "复制{{phone}}",
         "copyCodeAria": "复制连接码{{code}}",
         "copyCodeError": "连接码复制失败",
@@ -3584,13 +3590,12 @@
         "creatingCode": "正在创建连接码…",
         "description": "通过短信使用{{assistantName}}",
         "destination": "iMessage或短信发送至",
-        "manualSend": "或发送",
-        "manualSendTo": "至",
         "openMessages": "打开Messages",
         "options": "手机选项",
         "phoneLabel": "电话",
         "qrTitle": "扫码打开Messages，连接码已填好",
         "risk": "尽量使用iMessage。短信和彩信的回复可能无法可靠送达。",
+        "sendToLabel": "发送至",
         "tryAgain": "重试"
       },
       "catalogDiagnostics": {

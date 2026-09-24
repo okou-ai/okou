@@ -3,7 +3,7 @@ import { integrationsGithubContract } from "@okouai/api-contracts/contracts/inte
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
-import { click } from "../../../__tests__/page-helper.ts";
+import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   getAction,
@@ -172,26 +172,42 @@ test("A user connects AgentPhone with a prefilled one-time code", async () => {
   expect(phoneCard).toHaveTextContent("iMessage or SMS to+1 (903) 985-3128");
   click(getAction("button", "Connect phone", phoneCard));
 
-  const dialog = await screen.findByRole("dialog", { name: "Connect phone" });
+  const dialog = await screen.findByRole("dialog", {
+    name: "Text Okou from your iPhone",
+  });
   expect(dialog).toHaveAccessibleDescription(
-    "Scan the code or open Messages, then send the prefilled code.",
+    "Scan with your camera, then send the prefilled code.",
   );
   expect(
     within(dialog).getByText(
       "Use iMessage when possible. SMS and MMS replies may not arrive reliably.",
     ),
   ).toBeVisible();
-  expect(within(dialog).getByText("or send")).toBeVisible();
-  expect(within(dialog).getByText("to")).toBeVisible();
+  expect(within(dialog).getByText("Code")).toBeVisible();
+  expect(within(dialog).getByText("Send to")).toBeVisible();
   expect(within(dialog).getByText("Expires in 10 minutes")).toBeVisible();
   expect(within(dialog).getByTestId("agentphone-link-qr")).toHaveAttribute(
     "data-sms-href",
     messageHref,
   );
-  expect(getAction("link", "Open Messages", dialog)).toHaveAttribute(
-    "href",
-    messageHref,
-  );
+  // The link completes on the phone, so the dialog offers no footer actions:
+  // its only buttons copy what is sent, plus the dialog's own close.
+  expect(
+    queryAllByRoleFast("button", dialog).map((button) => {
+      return button.getAttribute("aria-label") ?? button.textContent;
+    }),
+  ).toStrictEqual([
+    `Copy connection code ${code}`,
+    "Copy +1 (903) 985-3128",
+    "Close",
+  ]);
+  // Where the QR cannot be scanned -- the phone itself -- a button opens
+  // Messages with the same prefilled code in its place.
+  expect(
+    within(dialog).getByTestId("agentphone-open-messages"),
+  ).toHaveAttribute("href", messageHref);
+  // Rewards are off for this workspace, so the dialog promises none.
+  expect(within(dialog).queryByText("+1,000")).not.toBeInTheDocument();
 
   click(getAction("button", `Copy connection code ${code}`, dialog));
   await expect(
@@ -208,7 +224,7 @@ test("A user connects AgentPhone with a prefilled one-time code", async () => {
   await waitFor(() => {
     expect(getIntegrationCard("Phone")).toHaveTextContent(PHONE_HANDLE);
     expect(
-      screen.queryByRole("dialog", { name: "Connect phone" }),
+      screen.queryByRole("dialog", { name: "Text Okou from your iPhone" }),
     ).not.toBeInTheDocument();
   });
 });
