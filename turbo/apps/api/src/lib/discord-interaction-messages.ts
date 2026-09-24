@@ -1,4 +1,4 @@
-import type { editDiscordOriginalInteractionResponse } from "../signals/external/discord-client";
+import type { discordClient } from "../signals/external/discord-client";
 import {
   createDiscordPickerCustomId,
   type DiscordInteractionActor,
@@ -6,7 +6,7 @@ import {
 } from "./discord-interaction-protocol";
 
 export type DiscordAccountMessage = Pick<
-  Parameters<typeof editDiscordOriginalInteractionResponse>[0],
+  Parameters<typeof discordClient.editDiscordOriginalInteractionResponse>[0],
   "content" | "components"
 >;
 
@@ -20,8 +20,15 @@ export interface DiscordPickerOption {
   readonly description?: string;
 }
 
-function label(value: string): string {
-  return [...value].slice(0, 100).join("");
+export function discordAccountLabel(value: string): string {
+  let label = "";
+  for (const character of value) {
+    if (label.length + character.length > 100) {
+      break;
+    }
+    label += character;
+  }
+  return label;
 }
 
 export function discordAccountPicker(args: {
@@ -85,10 +92,10 @@ export function discordAccountPicker(args: {
               .slice(args.page * 25, (args.page + 1) * 25)
               .map((option) => {
                 return {
-                  label: label(option.label),
+                  label: discordAccountLabel(option.label),
                   value: option.value,
                   ...(option.description
-                    ? { description: label(option.description) }
+                    ? { description: discordAccountLabel(option.description) }
                     : {}),
                 };
               }),

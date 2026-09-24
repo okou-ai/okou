@@ -18,16 +18,14 @@ import {
   type DiscordPickerState,
 } from "../../lib/discord-interaction-protocol";
 import {
+  discordAccountLabel,
   discordAccountMessage,
   discordAccountPicker,
   type DiscordAccountMessage,
 } from "../../lib/discord-interaction-messages";
 import { request$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
-import {
-  createDiscordInteractionResponse,
-  editDiscordOriginalInteractionResponse,
-} from "../external/discord-client";
+import { discordClient } from "../external/discord-client";
 import {
   discordGuildUserBinding,
   discordEffectiveAgent,
@@ -168,8 +166,8 @@ const discordOrgPicker$ = command(
           : STALE_CONTROL,
       );
     }
-    const options = bindings
-      .toSorted((left, right) => {
+    const options = [...bindings]
+      .sort((left, right) => {
         return left.connectionId.localeCompare(right.connectionId);
       })
       .map((binding) => {
@@ -213,7 +211,11 @@ const discordAgentPicker$ = command(
       ...(defaultAgent
         ? [
             {
-              label: `Workspace default: ${defaultAgent.displayName}`,
+              label: discordAccountLabel(
+                defaultAgent.displayName
+                  ? `Workspace default: ${defaultAgent.displayName}`
+                  : "Workspace default",
+              ),
               value: "default",
             },
           ]
@@ -222,11 +224,16 @@ const discordAgentPicker$ = command(
         .filter((agent) => {
           return !agent.isDefaultAgent;
         })
-        .toSorted((left, right) => {
+        .sort((left, right) => {
           return left.agentId.localeCompare(right.agentId);
         })
         .map((agent) => {
-          return { label: agent.displayName, value: agent.agentId };
+          return {
+            label: discordAccountLabel(
+              agent.displayName || `Agent ${agent.agentId}`,
+            ),
+            value: agent.agentId,
+          };
         }),
     ];
     if (args.selection !== undefined) {
@@ -357,7 +364,7 @@ const discordBoundAccountAction$ = command(
       const agent = await get(discordEffectiveAgent(args.binding));
       signal.throwIfAborted();
       const agentStatus = agent
-        ? `Current agent: ${agent.displayName ?? agent.name}.`
+        ? `Current agent: ${discordAccountLabel(agent.displayName || agent.name)}.`
         : "No accessible agent is configured. Use `/okou switch` to choose one.";
       return discordAccountMessage(
         `Your account already has a verified connection to this workspace. ${agentStatus} Mention Okou in a server channel or message the bot to start chatting.`,
@@ -485,7 +492,7 @@ const finishDiscordInteraction$ = command(
       : discordAccountMessage(
           "The account request could not be completed. Run the command again to check your current preferences.",
         );
-    const response = await editDiscordOriginalInteractionResponse(
+    const response = await discordClient.editDiscordOriginalInteractionResponse(
       {
         applicationId: interaction.application_id,
         interactionToken: interaction.token,
@@ -589,7 +596,7 @@ export const handleDiscordInteractions$ = command(
     // so concurrent delivery or a captured signed replay cannot apply changes.
     const ackSignal = AbortSignal.any([signal, AbortSignal.timeout(2000)]);
     const acknowledgement = await settleIncludingAbort(
-      createDiscordInteractionResponse(
+      discordClient.createDiscordInteractionResponse(
         {
           interactionId: interaction.id,
           interactionToken: interaction.token,

@@ -141,11 +141,11 @@ function guildSender(scope: Fixture): DiscordSender {
 
 async function createAgent(
   owner: Actor,
-  displayName: string,
+  displayName: string | undefined,
   visibility: "public" | "private" = "private",
 ) {
   const agent = await accountApi.createAgent(owner, {
-    displayName,
+    ...(displayName !== undefined ? { displayName } : {}),
     visibility,
   });
   onTestFinished(async () => {
@@ -627,6 +627,42 @@ describe("Discord account preferences through private controls", () => {
     expect(values).toContain(secondAgent.agentId);
     expect(values).not.toContain(firstAgent.agentId);
   });
+
+  it.each([
+    { kind: "unset", displayName: undefined },
+    { kind: "empty", displayName: "" },
+    { kind: "long Unicode", displayName: "🚀".repeat(1100) },
+  ])(
+    "renders $kind agent names within Discord limits",
+    async ({ displayName }) => {
+      const scope = await fixture();
+      const agent = await createAgent(scope.owner, displayName);
+      const discord = discordHttp([scope]);
+      const sender = guildSender(scope);
+      const menu = selectMenu(
+        await discord.send(commandPayload(sender, "switch")),
+      );
+      const option = menu.options.find((entry) => {
+        return entry.value === agent.agentId;
+      });
+      if (!option) {
+        throw new Error("Expected the agent to remain selectable");
+      }
+      expect(option.label.length).toBeGreaterThan(0);
+      expect(option.label.length).toBeLessThanOrEqual(100);
+      expect(Buffer.from(option.label).toString("utf8")).toBe(option.label);
+      const selected = await discord.send(
+        selectPayload(sender, menu.custom_id, option.value),
+      );
+      expect(selected.content).toContain(
+        "Agent selected for new Discord conversations",
+      );
+      expect(selected.content.length).toBeLessThanOrEqual(2000);
+      const connected = await discord.send(commandPayload(sender, "connect"));
+      expect(connected.content).toContain("Current agent:");
+      expect(connected.content.length).toBeLessThanOrEqual(2000);
+    },
+  );
 
   it("paginates more than 25 agents and saves a selection from the later page", async () => {
     const scope = await fixture();
