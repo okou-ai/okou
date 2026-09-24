@@ -2833,48 +2833,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "is_group": {
-          "name": "is_group",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "group_id": {
-          "name": "group_id",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "channel": {
-          "name": "channel",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "from_number": {
-          "name": "from_number",
-          "type": "varchar(254)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "to_number": {
-          "name": "to_number",
-          "type": "varchar(254)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "agentphone_agent_id": {
-          "name": "agentphone_agent_id",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "delivery_message_id": {
-          "name": "delivery_message_id",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "conversation_id": {
           "name": "conversation_id",
           "type": "varchar(255)",
@@ -15770,12 +15728,6 @@
           "type": "varchar(255)",
           "primaryKey": false,
           "notNull": true
-        },
-        "subject_kind": {
-          "name": "subject_kind",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": false
         },
         "subject_number": {
           "name": "subject_number",
@@ -32255,24 +32207,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "conversation_type": {
-          "name": "conversation_type",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "channel_id": {
-          "name": "channel_id",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "service_url": {
-          "name": "service_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "user_id": {
           "name": "user_id",
           "type": "text",
@@ -32770,24 +32704,6 @@
           "type": "varchar(255)",
           "primaryKey": false,
           "notNull": true
-        },
-        "message_thread_id": {
-          "name": "message_thread_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "chat_type": {
-          "name": "chat_type",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "delivery_message_id": {
-          "name": "delivery_message_id",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
         },
         "root_message_id": {
           "name": "root_message_id",

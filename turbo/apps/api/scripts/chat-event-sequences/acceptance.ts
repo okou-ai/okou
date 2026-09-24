@@ -8,7 +8,7 @@ import {
 } from "../../src/signals/services/chat-event-append.service";
 import { isSplitChatEventWriteEnabled } from "../../src/signals/services/chat-event-write-mode.service";
 import { createSequenceFixture, sequenceMigration } from "./fixture";
-import { verifyRoutingAndReceiptPreparation } from "./preparation";
+import { verifyOwnershipAndReceiptPreparation } from "./preparation";
 import { verifyBackfillWithLegacyThreadLock } from "./backfill-locking";
 
 // This rollout/locking contract cannot be constructed through a production API:
@@ -362,4 +362,4 @@ try {
 }
 
 await verifyBackfillWithLegacyThreadLock();
-await verifyRoutingAndReceiptPreparation();
+await verifyOwnershipAndReceiptPreparation();

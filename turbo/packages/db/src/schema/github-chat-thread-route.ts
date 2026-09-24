@@ -29,9 +29,6 @@ export const githubChatThreadRoutes = pgTable(
         { onDelete: "cascade" },
       ),
     repo: varchar("repo", { length: 255 }).notNull(),
-    subjectKind: varchar("subject_kind", { length: 32 }).$type<
-      "issue" | "pull_request"
-    >(),
     subjectNumber: integer("subject_number").notNull(),
     userId: text("user_id").notNull(),
     chatThreadId: uuid("chat_thread_id")

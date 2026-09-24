@@ -28,7 +28,6 @@ const tables = [
 ];
 
 async function seedPreparationRows(client: Client) {
-  const link = randomUUID();
   const sourceAgent = randomUUID();
   const sourceThread = randomUUID();
   await client.query(
@@ -39,58 +38,17 @@ async function seedPreparationRows(client: Client) {
     "INSERT INTO chat_threads(id,user_id,agent_id) VALUES($1,'source-user',$2)",
     [sourceThread, sourceAgent],
   );
-  const sourceContext = randomUUID();
+  await client.query(
+    `INSERT INTO chat_agent_run_context(id,source_chat_thread_id,source_agent_id)
+     SELECT ('00000000-0000-4000-8000-' || lpad(value::text,12,'0'))::uuid, $1, $2
+     FROM generate_series(1,1005) value`,
+    [sourceThread, sourceAgent],
+  );
+  const sourceContext = "00000000-0000-4000-8000-000000000001";
   const unmatchedContext = randomUUID();
   await client.query(
-    "INSERT INTO chat_agent_run_context(id,source_chat_thread_id,source_agent_id) VALUES($1,$3,$4),($2,$3,$2)",
-    [sourceContext, unmatchedContext, sourceThread, sourceAgent],
-  );
-  await client.query(
-    `INSERT INTO telegram_chat_thread_routes(id,telegram_official_user_link_id,chat_id,root_message_id,chat_thread_id)
-     SELECT ('00000000-0000-4000-8000-' || lpad(value::text,12,'0'))::uuid,
-       $1, '-10042', value::text,
-       ('00000000-0000-4000-8000-' || lpad(value::text,12,'0'))::uuid
-     FROM generate_series(1,1005) value`,
-    [link],
-  );
-  await client.query(
-    `INSERT INTO chat_telegram_context(chat_thread_id,chat_id,message_id,message_thread_id,chat_type,user_link_id,user_link_kind)
-     SELECT chat_thread_id, chat_id, root_message_id, 37, 'supergroup', $1, 'official'
-     FROM telegram_chat_thread_routes`,
-    [link],
-  );
-  const firstRoute = "00000000-0000-4000-8000-000000000001";
-  await client.query(
-    `INSERT INTO chat_telegram_context(chat_thread_id,chat_id,message_id,message_thread_id,chat_type,user_link_id,user_link_kind,created_at)
-     VALUES($1,'-10042','wrong-owner',999,'supergroup',$2,'official',now()+interval '1 hour')`,
-    [firstRoute, randomUUID()],
-  );
-  const phoneRoute = randomUUID();
-  const teamsRoute = randomUUID();
-  const githubRoute = randomUUID();
-  await client.query(
-    "INSERT INTO agentphone_chat_thread_routes(id,agentphone_user_link_id,root_message_id,chat_thread_id) VALUES($1,$2,'root',$1)",
-    [phoneRoute, link],
-  );
-  await client.query(
-    "INSERT INTO chat_agentphone_context(chat_thread_id,user_link_id,message_id,is_group,group_id,channel,from_number,to_number,agentphone_agent_id) VALUES($1,$2,'message',true,'group-42','imessage','+15550000001','+15550000002','phone-agent')",
-    [phoneRoute, link],
-  );
-  await client.query(
-    "INSERT INTO teams_chat_thread_routes(id,connection_id,conversation_id,thread_id,user_id,chat_thread_id) VALUES($1,$2,'conversation','topic','user',$1)",
-    [teamsRoute, link],
-  );
-  await client.query(
-    "INSERT INTO chat_teams_context(chat_thread_id,connection_id,tenant_id,conversation_id,conversation_type,channel_id,activity_id,thread_id,service_url,public_brand,sender_user_id) VALUES($1,$2,'tenant','conversation','channel','channel-42','activity','topic','https://teams.invalid','okou','sender')",
-    [teamsRoute, link],
-  );
-  await client.query(
-    "INSERT INTO github_chat_thread_routes(id,installation_id,repo,subject_number,user_id,chat_thread_id) VALUES($1,$2,'example/repo',42,'user',$1)",
-    [githubRoute, link],
-  );
-  await client.query(
-    "INSERT INTO chat_github_context(chat_thread_id,repo,subject_number,subject_kind) VALUES($1,'example/repo',42,'pull_request')",
-    [githubRoute],
+    "INSERT INTO chat_agent_run_context(id,source_chat_thread_id,source_agent_id) VALUES($1,$2,$1)",
+    [unmatchedContext, sourceThread],
   );
   await client.query(`INSERT INTO account_erasure_jobs(
     id,subject_kind,subject_id,generation,authority_id,decision_ref,decision_sequence,
@@ -105,7 +63,7 @@ async function seedPreparationRows(client: Client) {
     (gen_random_uuid(),'unrelated',1,'unrelated-user','deleted-org','{}','completed',now())`);
   await client.query(`INSERT INTO chat_content_erasure_subjects(subject_kind,subject_id,source_reference,confirmed_at,completed_at)
     VALUES('user','deleted-user-1','original-receipt','2026-01-01T00:00:00Z','2026-01-02T00:00:00Z')`);
-  return { firstRoute, sourceContext, unmatchedContext };
+  return { sourceContext, unmatchedContext };
 }
 
 async function assertPreparedRows(
@@ -118,25 +76,10 @@ async function assertPreparedRows(
   assert.equal(
     (
       await client.query(
-        "SELECT count(*)::int AS count FROM telegram_chat_thread_routes WHERE message_thread_id=37",
+        "SELECT count(*)::int AS count FROM chat_agent_run_context WHERE source_org_id='source-org'",
       )
     ).rows[0]?.count,
     1005,
-  );
-  assert.equal(
-    (await client.query("SELECT group_id FROM agentphone_chat_thread_routes"))
-      .rows[0]?.group_id,
-    "group-42",
-  );
-  assert.equal(
-    (await client.query("SELECT channel_id FROM teams_chat_thread_routes"))
-      .rows[0]?.channel_id,
-    "channel-42",
-  );
-  assert.equal(
-    (await client.query("SELECT subject_kind FROM github_chat_thread_routes"))
-      .rows[0]?.subject_kind,
-    "pull_request",
   );
   assert.deepEqual(
     (
@@ -184,7 +127,7 @@ async function assertPreparedRows(
 }
 
 /** Exercise deployed preparation SQL against real, populated schema shapes. */
-export async function verifyRoutingAndReceiptPreparation() {
+export async function verifyOwnershipAndReceiptPreparation() {
   assert.ok(process.env.DATABASE_URL);
   const base = new URL(process.env.DATABASE_URL);
   assert.ok(["127.0.0.1", "localhost", "postgres"].includes(base.hostname));
@@ -226,7 +169,9 @@ export async function verifyRoutingAndReceiptPreparation() {
       "prepare_chat_event_routing_and_cleanup",
     );
     const callIndex = statements.findIndex((statement) => {
-      return statement.includes('CALL "prepare_chat_event_delivery_routes"');
+      return statement.includes(
+        'CALL "backfill_chat_agent_run_context_ownership"',
+      );
     });
     assert.ok(callIndex > 0);
     for (const statement of statements.slice(0, callIndex)) {
@@ -234,7 +179,7 @@ export async function verifyRoutingAndReceiptPreparation() {
     }
     await blocker.query("BEGIN");
     await blocker.query(
-      "SELECT id FROM telegram_chat_thread_routes WHERE id='00000000-0000-4000-8000-000000001001' FOR UPDATE",
+      "SELECT id FROM chat_agent_run_context WHERE id='00000000-0000-4000-8000-000000001001' FOR UPDATE",
     );
     await client.query("SET lock_timeout='100ms'");
     await assert.rejects(
@@ -249,7 +194,7 @@ export async function verifyRoutingAndReceiptPreparation() {
       },
     );
     const committed = await client.query(
-      "SELECT count(*)::int AS count FROM telegram_chat_thread_routes WHERE delivery_message_id IS NOT NULL",
+      "SELECT count(*)::int AS count FROM chat_agent_run_context WHERE source_user_id IS NOT NULL",
     );
     assert.equal(committed.rows[0]?.count, 1000);
     await blocker.query("ROLLBACK");
@@ -258,8 +203,8 @@ export async function verifyRoutingAndReceiptPreparation() {
     }
     await assertPreparedRows(client, prepared);
     await client.query(
-      "UPDATE telegram_chat_thread_routes SET message_thread_id=99 WHERE id=$1",
-      [prepared.firstRoute],
+      "UPDATE chat_agent_run_context SET source_user_id='retained-user' WHERE id=$1",
+      [prepared.sourceContext],
     );
     // Retry includes concurrent-index recovery and every committed procedure.
     for (const statement of statements) {
@@ -268,11 +213,11 @@ export async function verifyRoutingAndReceiptPreparation() {
     assert.equal(
       (
         await client.query(
-          "SELECT message_thread_id FROM telegram_chat_thread_routes WHERE id=$1",
-          [prepared.firstRoute],
+          "SELECT source_user_id FROM chat_agent_run_context WHERE id=$1",
+          [prepared.sourceContext],
         )
-      ).rows[0]?.message_thread_id,
-      99,
+      ).rows[0]?.source_user_id,
+      "retained-user",
     );
     assert.equal(
       (
@@ -283,7 +228,7 @@ export async function verifyRoutingAndReceiptPreparation() {
       1006,
     );
     process.stdout.write(
-      "Bounded routing preparation, scope, historical deletion receipts and migration retry passed\n",
+      "Bounded ownership preparation, scope, historical deletion receipts and migration retry passed\n",
     );
   } finally {
     await blocker.end();

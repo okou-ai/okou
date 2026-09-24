@@ -2,7 +2,6 @@ import { sql } from "drizzle-orm";
 import {
   check,
   index,
-  integer,
   pgTable,
   timestamp,
   uniqueIndex,
@@ -37,10 +36,6 @@ export const telegramChatThreadRoutes = pgTable(
       { onDelete: "cascade" },
     ),
     chatId: varchar("chat_id", { length: 255 }).notNull(),
-    // Nullable until legacy rows are prepared before split writes activate.
-    messageThreadId: integer("message_thread_id"),
-    chatType: varchar("chat_type", { length: 32 }),
-    deliveryMessageId: varchar("delivery_message_id", { length: 255 }),
     rootMessageId: varchar("root_message_id", { length: 255 }).notNull(),
     chatThreadId: uuid("chat_thread_id")
       .notNull()

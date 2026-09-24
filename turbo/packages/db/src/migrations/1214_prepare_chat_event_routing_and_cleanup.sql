@@ -80,94 +80,11 @@ DROP INDEX CONCURRENTLY IF EXISTS "idx_telegram_chat_thread_routes_thread";
 --> statement-breakpoint
 CREATE INDEX CONCURRENTLY "idx_telegram_chat_thread_routes_thread" ON "telegram_chat_thread_routes" USING btree ("chat_thread_id");
 --> statement-breakpoint
-CREATE OR REPLACE PROCEDURE "prepare_chat_event_delivery_routes"()
+CREATE OR REPLACE PROCEDURE "backfill_chat_agent_run_context_ownership"()
 LANGUAGE plpgsql
 AS $$
 DECLARE changed integer;
 BEGIN
-  LOOP
-    WITH batch AS (
-      SELECT r.id, c.message_thread_id, c.chat_type, c.message_id
-      FROM telegram_chat_thread_routes r
-      JOIN LATERAL (
-        SELECT c.message_thread_id, c.chat_type, c.message_id
-        FROM chat_telegram_context c
-        WHERE c.chat_thread_id = r.chat_thread_id AND c.chat_id = r.chat_id
-          AND c.user_link_id = COALESCE(r.telegram_user_link_id, r.telegram_official_user_link_id)
-          AND c.user_link_kind = CASE WHEN r.telegram_user_link_id IS NULL THEN 'official' ELSE 'custom' END
-        ORDER BY c.created_at DESC, c.id DESC LIMIT 1
-      ) c ON true
-      WHERE r.delivery_message_id IS NULL
-      ORDER BY r.id LIMIT 1000
-    )
-    UPDATE telegram_chat_thread_routes r
-    SET message_thread_id = batch.message_thread_id, chat_type = batch.chat_type, delivery_message_id = batch.message_id
-    FROM batch WHERE r.id = batch.id AND r.delivery_message_id IS NULL;
-    GET DIAGNOSTICS changed = ROW_COUNT;
-    COMMIT;
-    EXIT WHEN changed = 0;
-  END LOOP;
-  LOOP
-    WITH batch AS (
-      SELECT r.id, c.is_group, c.group_id, c.channel, c.from_number, c.to_number, c.agentphone_agent_id, c.message_id
-      FROM agentphone_chat_thread_routes r
-      JOIN LATERAL (
-        SELECT c.is_group, c.group_id, c.channel, c.from_number, c.to_number, c.agentphone_agent_id, c.message_id
-        FROM chat_agentphone_context c
-        WHERE c.chat_thread_id = r.chat_thread_id AND c.user_link_id = r.agentphone_user_link_id
-          AND c.message_id IS NOT NULL AND c.is_group IS NOT NULL
-        ORDER BY c.created_at DESC, c.id DESC LIMIT 1
-      ) c ON true
-      WHERE r.delivery_message_id IS NULL
-      ORDER BY r.id LIMIT 1000
-    )
-    UPDATE agentphone_chat_thread_routes r
-    SET is_group = batch.is_group, group_id = batch.group_id, channel = batch.channel,
-      from_number = batch.from_number, to_number = batch.to_number, agentphone_agent_id = batch.agentphone_agent_id,
-      delivery_message_id = batch.message_id
-    FROM batch WHERE r.id = batch.id AND r.delivery_message_id IS NULL;
-    GET DIAGNOSTICS changed = ROW_COUNT;
-    COMMIT;
-    EXIT WHEN changed = 0;
-  END LOOP;
-  LOOP
-    WITH batch AS (
-      SELECT r.id, c.conversation_type, c.channel_id, c.service_url
-      FROM teams_chat_thread_routes r
-      JOIN LATERAL (
-        SELECT c.conversation_type, c.channel_id, c.service_url FROM chat_teams_context c
-        WHERE c.chat_thread_id = r.chat_thread_id AND c.connection_id = r.connection_id
-          AND c.conversation_id = r.conversation_id AND c.thread_id = r.thread_id AND c.service_url IS NOT NULL
-        ORDER BY c.created_at DESC, c.id DESC LIMIT 1
-      ) c ON true
-      WHERE r.service_url IS NULL
-      ORDER BY r.id LIMIT 1000
-    )
-    UPDATE teams_chat_thread_routes r SET conversation_type = batch.conversation_type,
-      channel_id = batch.channel_id, service_url = batch.service_url
-    FROM batch WHERE r.id = batch.id AND r.service_url IS NULL;
-    GET DIAGNOSTICS changed = ROW_COUNT;
-    COMMIT;
-    EXIT WHEN changed = 0;
-  END LOOP;
-  LOOP
-    WITH batch AS (
-      SELECT r.id, c.subject_kind
-      FROM github_chat_thread_routes r
-      JOIN LATERAL (
-        SELECT c.subject_kind FROM chat_github_context c
-        WHERE c.chat_thread_id = r.chat_thread_id AND c.repo = r.repo AND c.subject_number = r.subject_number
-        ORDER BY c.created_at DESC, c.id DESC LIMIT 1
-      ) c ON true
-      WHERE r.subject_kind IS NULL
-      ORDER BY r.id LIMIT 1000
-    )
-    UPDATE github_chat_thread_routes r SET subject_kind = batch.subject_kind
-    FROM batch WHERE r.id = batch.id AND r.subject_kind IS NULL;
-    GET DIAGNOSTICS changed = ROW_COUNT;
-    COMMIT;
-    EXIT WHEN changed = 0;
-  END LOOP;
   LOOP
     WITH batch AS (
       SELECT c.id, t.user_id, a.org_id FROM chat_agent_run_context c
@@ -185,9 +102,9 @@ BEGIN
 END $$;
 
 --> statement-breakpoint
-CALL "prepare_chat_event_delivery_routes"();
+CALL "backfill_chat_agent_run_context_ownership"();
 --> statement-breakpoint
-DROP PROCEDURE "prepare_chat_event_delivery_routes"();
+DROP PROCEDURE "backfill_chat_agent_run_context_ownership"();
 
 --> statement-breakpoint
 CREATE OR REPLACE PROCEDURE "seed_chat_content_erasure_receipts"()
