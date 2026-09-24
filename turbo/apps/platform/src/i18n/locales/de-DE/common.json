@@ -1411,6 +1411,7 @@
       "rename": "Umbenennen",
       "saving": "Speichern...",
       "send": "Senden",
+      "shareMessage": "Nachricht teilen",
       "stop": "Stoppen",
       "view": "Anzeigen"
     },
@@ -2165,11 +2166,13 @@
       "createFailed": "Die geteilte Unterhaltung konnte nicht erstellt werden. Versuche es erneut.",
       "deselectGroup": "Nachrichtengruppe abwählen",
       "linkCopied": "Link kopiert",
+      "messageShareFailed": "Der geteilte Link konnte nicht erstellt werden. Versuche es erneut.",
       "publicDescription": "Ausgewählte Nachrichten und ihre Anhänge werden öffentlich.",
       "selectedCount_one": "{{count}} ausgewählt",
       "selectedCount_other": "{{count}} ausgewählt",
       "selectGroup": "Nachrichtengruppe auswählen",
       "shareLink": "Link zur geteilten Unterhaltung",
+      "shareLinkCopied": "Freigabelink kopiert",
       "start": "Nachrichten teilen",
       "tooLarge": "Wähle weniger Nachrichten zum Teilen aus"
     },

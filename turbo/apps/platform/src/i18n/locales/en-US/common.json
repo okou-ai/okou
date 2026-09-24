@@ -1411,6 +1411,7 @@
       "rename": "Rename",
       "saving": "Saving...",
       "send": "Send",
+      "shareMessage": "Share message",
       "stop": "Stop",
       "view": "View"
     },
@@ -2165,11 +2166,13 @@
       "createFailed": "Could not create the shared conversation. Try again.",
       "deselectGroup": "Deselect message group",
       "linkCopied": "Link copied",
+      "messageShareFailed": "The shared link could not be created. Try again.",
       "publicDescription": "Selected messages and their attachments will be public.",
       "selectedCount_one": "{{count}} selected",
       "selectedCount_other": "{{count}} selected",
       "selectGroup": "Select message group",
       "shareLink": "Shared conversation link",
+      "shareLinkCopied": "Share link copied",
       "start": "Share messages",
       "tooLarge": "Select fewer messages to share"
     },

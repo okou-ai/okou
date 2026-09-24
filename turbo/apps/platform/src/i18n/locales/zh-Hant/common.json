@@ -1410,6 +1410,7 @@
       "rename": "重新命名",
       "saving": "正在儲存…",
       "send": "傳送",
+      "shareMessage": "分享訊息",
       "stop": "停止",
       "view": "檢視"
     },
@@ -2158,10 +2159,12 @@
       "createFailed": "無法建立分享對話，請重試。",
       "deselectGroup": "取消選擇該組訊息",
       "linkCopied": "連結已複製",
+      "messageShareFailed": "分享連結建立失敗，請再試一次。",
       "publicDescription": "選中的訊息及其附件將公開可見。",
       "selectedCount_other": "已選{{count}}條",
       "selectGroup": "選擇該組訊息",
       "shareLink": "分享對話連結",
+      "shareLinkCopied": "分享連結已複製",
       "start": "分享訊息",
       "tooLarge": "選擇的訊息過多，請減少後再分享"
     },

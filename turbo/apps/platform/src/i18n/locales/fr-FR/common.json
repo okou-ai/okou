@@ -1435,6 +1435,7 @@
       "rename": "Renommer",
       "saving": "Enregistrement...",
       "send": "Envoyer",
+      "shareMessage": "Partager le message",
       "stop": "Arrêter",
       "view": "Afficher"
     },
@@ -2210,12 +2211,14 @@
       "createFailed": "Impossible de créer la conversation partagée. Réessayez.",
       "deselectGroup": "Désélectionner le groupe de messages",
       "linkCopied": "Lien copié",
+      "messageShareFailed": "Impossible de créer le lien de partage. Réessayez.",
       "publicDescription": "Les messages sélectionnés et leurs pièces jointes seront publics.",
       "selectedCount_one": "{{count}} sélectionné",
       "selectedCount_many": "{{count}} sélectionnés",
       "selectedCount_other": "{{count}} sélectionnés",
       "selectGroup": "Sélectionner le groupe de messages",
       "shareLink": "Lien de la conversation partagée",
+      "shareLinkCopied": "Lien de partage copié",
       "start": "Partager des messages",
       "tooLarge": "Sélectionnez moins de messages à partager"
     },
