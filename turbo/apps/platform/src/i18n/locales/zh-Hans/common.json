@@ -4264,7 +4264,6 @@
       "documentTitles": {
         "experience": "你的AI使用经验",
         "industry": "选择你的领域",
-        "profile": "你的用户画像",
         "ready": "Okou已就绪",
         "skills": "导入你的技能",
         "slack": "把Okou添加到Slack",
@@ -4327,17 +4326,6 @@
       "industry": {
         "copy": "Okou 是你和团队的工作助手，在云端把零散的信息变成完成的工作。选择你的领域，获取适合你的第一项任务。",
         "title": "你主要做哪类工作？"
-      },
-      "profile": {
-        "communicationStyle": "你的沟通方式",
-        "copy": "根据你连接的账号，初步了解你的工作。",
-        "failed": "暂时无法生成用户画像。你可以重试或继续。",
-        "heading": "你的用户画像",
-        "loading": "正在根据你连接的工作内容生成用户画像…",
-        "priorities": "可能关注的重点",
-        "professionalIdentity": "你的工作",
-        "retry": "重试",
-        "title": "这是我们对你的初步了解"
       },
       "skills": {
         "copied": "已复制",

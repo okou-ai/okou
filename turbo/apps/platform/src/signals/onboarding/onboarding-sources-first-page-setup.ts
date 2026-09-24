@@ -6,7 +6,6 @@ import {
   OnboardingSlackPage,
 } from "../../views/onboarding-sources-first/onboarding-import-pages.tsx";
 import { OnboardingReadyPage } from "../../views/onboarding-sources-first/onboarding-ready-page.tsx";
-import { OnboardingProfilePage } from "../../views/onboarding-sources-first/onboarding-profile-page.tsx";
 import {
   OnboardingExperiencePage,
   OnboardingIndustryPage,
@@ -156,10 +155,6 @@ function createSourcesFirstPageSetup(
     set(setSourcesFirstFlow$, flow);
 
     const draft = get(sourcesFirstDraft$);
-    if (config.step === "profile" && draft.industry === null) {
-      set(redirectTo$, ROUTES.onboarding);
-      return;
-    }
     if (config.step !== "industry" && config.step !== "sources") {
       // The user's own connections, reloaded on connect, decide whether any
       // source is there yet; the catalog is not needed for that.
@@ -263,16 +258,6 @@ export const setupOnboardingSkillsPage$ = createSourcesFirstPageSetup({
   },
   Page: OnboardingSkillsPage,
   enter: enterSkillImport$,
-});
-
-export const setupOnboardingProfilePage$ = createSourcesFirstPageSetup({
-  step: "profile",
-  title: () => {
-    return i18n.t(($) => {
-      return $.onboarding.sourcesFirst.documentTitles.profile;
-    });
-  },
-  Page: OnboardingProfilePage,
 });
 
 /** Keep the AgentPhone tile's link status current while this step is open. */

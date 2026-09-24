@@ -4264,7 +4264,6 @@
       "documentTitles": {
         "experience": "AI 사용 경험",
         "industry": "분야 선택",
-        "profile": "내 프로필",
         "ready": "Okou 준비 완료",
         "skills": "스킬 가져오기",
         "slack": "Slack에 Okou 추가",
@@ -4327,17 +4326,6 @@
       "industry": {
         "copy": "Okou는 나와 팀을 위한 업무 어시스턴트입니다. 흩어진 정보를 클라우드에서 완료된 업무로 바꿉니다. 분야를 고르면 알맞은 첫 작업을 추천합니다.",
         "title": "어떤 일을 하시나요?"
-      },
-      "profile": {
-        "communicationStyle": "소통 방식",
-        "copy": "연결한 계정을 바탕으로 살펴본 업무의 첫 모습입니다.",
-        "failed": "지금은 프로필을 만들 수 없습니다. 다시 시도하거나 계속 진행하세요.",
-        "heading": "내 프로필",
-        "loading": "연결한 업무를 바탕으로 프로필을 만들고 있습니다…",
-        "priorities": "예상되는 우선순위",
-        "professionalIdentity": "하는 일",
-        "retry": "다시 시도",
-        "title": "당신에 대해 알게 된 점"
       },
       "skills": {
         "copied": "복사됨",

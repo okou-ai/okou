@@ -4338,7 +4338,6 @@
       "documentTitles": {
         "experience": "Sua experiência com IA",
         "industry": "Escolha sua área",
-        "profile": "Seu perfil",
         "ready": "O Okou está pronto",
         "skills": "Importe suas skills",
         "slack": "Adicionar o Okou ao Slack",
@@ -4401,17 +4400,6 @@
       "industry": {
         "copy": "O Okou é o assistente de trabalho para você e sua equipe. Ele transforma informações dispersas em trabalho concluído, na nuvem. Escolha sua área para uma primeira tarefa sob medida.",
         "title": "Que tipo de trabalho você faz?"
-      },
-      "profile": {
-        "communicationStyle": "Como você se comunica",
-        "copy": "Uma primeira visão do seu trabalho, com base nas contas conectadas.",
-        "failed": "Não conseguimos criar seu perfil agora. Tente novamente ou continue.",
-        "heading": "Seu perfil",
-        "loading": "Criando seu perfil a partir do trabalho conectado…",
-        "priorities": "Possíveis prioridades",
-        "professionalIdentity": "Seu trabalho",
-        "retry": "Tentar novamente",
-        "title": "Veja o que aprendemos sobre você"
       },
       "skills": {
         "copied": "Copiado",
