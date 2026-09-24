@@ -178,9 +178,9 @@ test("Remote access in two chat panes reads and updates each pane's thread", asy
   const user = userEvent.setup({ delay: null });
   click(await findFastControl("button", "Connectors", pane(SCOUT_THREAD_ID)));
   click(await screen.findByText("Remote access"));
-  expect(
-    await screen.findByRole("combobox", { name: "SSH Shared SSH host" }),
-  ).toHaveValue("on");
+  await expect(
+    screen.findByRole("combobox", { name: "SSH Shared SSH host" }),
+  ).resolves.toHaveValue("on");
   await user.keyboard("{Escape}");
 
   click(await findFastControl("button", "Connectors", pane(OTHER_THREAD_ID)));
@@ -198,7 +198,7 @@ test("Remote access in two chat panes reads and updates each pane's thread", asy
       screen.getByRole("combobox", { name: "SSH Shared SSH host" }),
     ).toHaveValue("on");
   });
-  expect(overrides.get(SCOUT_THREAD_ID)).toBe(true);
+  expect(overrides.get(SCOUT_THREAD_ID)).toBeTruthy();
 });
 
 async function loadSshAccess(trigger: HTMLElement): Promise<void> {
