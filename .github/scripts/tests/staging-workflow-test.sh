@@ -33,7 +33,8 @@ deployed = [
     'cli-e2e-01-serial', 'cli-e2e-02-browser', 'cli-e2e-02-playwright',
 ]
 finalizers = ['cli-e2e-02-playwright-finalize', 'cli-e2e-03-runner-cleanup']
-runner_e2e = ['cli-e2e-03-runner-prepare', 'cli-e2e-03-runner-bootstrap', 'cli-e2e-03-runner']
+runner_e2e = ['cli-e2e-03-runner-prepare', 'cli-e2e-03-runner-bootstrap',
+              'cli-e2e-03-runner', 'cli-e2e-03-runner-codex-oauth']
 
 
 def needs(job):
@@ -58,6 +59,7 @@ def context(event='push', run_id='100'):
         'needs.prepare.outputs.job-ref': 'staging' if event == 'push' else 'pr-42',
         'needs.prepare.outputs.turbo-runner-consumer-needed': 'false' if event == 'push' else 'true',
         'needs.prepare.outputs.playwright-runner-consumer-needed': 'true',
+        'needs.prepare.outputs.codex-oauth-e2e-needed': 'false',
     }
     for changed in ['api', 'cli', 'platform', 'migration', 'crates', 'ci', 'e2e']:
         values[f'needs.prepare.outputs.{changed}-changed'] = 'true'
