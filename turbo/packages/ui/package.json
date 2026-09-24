@@ -1,6 +1,6 @@
 {
   "name": "@okouai/ui",
-  "version": "1.11.10",
+  "version": "1.12.0",
   "type": "module",
   "private": true,
   "exports": {
