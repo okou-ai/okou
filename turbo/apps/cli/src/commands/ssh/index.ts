@@ -1,6 +1,9 @@
 import { Command } from "commander";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
-import { sshHostsContract } from "@okouai/api-contracts/contracts/ssh-access";
+import {
+  sshHostAvailabilitySchema,
+  sshHostsContract,
+} from "@okouai/api-contracts/contracts/ssh-access";
 import { z } from "zod";
 
 import {
@@ -33,6 +36,16 @@ const list = new Command("list")
       const client = initClient(sshHostsContract, await getClientConfig());
       const result = await client.list();
       if (result.status !== 200) handleError(result, "Cannot list SSH hosts");
+      if (
+        result.body.hosts.some((host) => {
+          return !sshHostAvailabilitySchema.safeParse(host.availability)
+            .success;
+        })
+      ) {
+        throw new Error(
+          "SSH host inventory response is invalid. Check API and CLI versions before using a host ID.",
+        );
+      }
       if (options.json) {
         console.log(JSON.stringify(result.body));
         return;

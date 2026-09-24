@@ -2738,6 +2738,25 @@ without first restoring a compatible authority reader. The temporary
 personal-only projection is retired only after #36261's rebind-capable App is
 live and #36262 raises the verified minimum App version.
 
+### SSH diagnostic inventory (#36572)
+
+The Run-scoped `/api/ssh/hosts` response now includes a required tagged
+`availability` on each visible host. It includes a selected `needs_rebind` host
+as `blocked/needs_rebind` for diagnosis, while Runner resolve, pinning and
+execution still deny that ID before credential decryption. The old foundation
+behavior above omitted such hosts; this change does not reveal hosts excluded
+by the current Run's owner, Agent grant or chat-level selection.
+
+The new API response is additive for older CLI readers: their human list uses
+the old metadata fields, and their JSON output passes through the extra field.
+The new CLI requires the `availability` field and must not be selected for a
+Run until the serving API fleet supports it. Promote and verify the API before
+the matching versioned CLI/Runner artifact. A rollback to an API that lacks the
+field while new CLI Runs remain active is not a supported pairing; restore a
+compatible API or drain those Runs with their CLI before that rollback. No
+database migration or Runner authorization change belongs to this response
+extension.
+
 ## Feishu and Lark integration identity
 
 New runs use `triggerSource=feishu` or `triggerSource=lark` from the verified
