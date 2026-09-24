@@ -1766,6 +1766,7 @@
       "cancelFailed": "Impossible d’annuler la demande. Réessayez.",
       "cancelled": "Demande annulée",
       "cancelling": "Annulation…",
+      "checkFailed": "Impossible de vérifier le navigateur. Vos saisies sont conservées ; réessayez avant de les envoyer.",
       "clearValue": "Effacer la valeur sur le site",
       "completed": "Informations ajoutées",
       "continue": "Prévenir l’agent",

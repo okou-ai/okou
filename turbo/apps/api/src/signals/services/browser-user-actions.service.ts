@@ -35,6 +35,7 @@ import {
 import { command } from "ccstate";
 
 import { env } from "../../lib/env";
+import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { safeSync, settle, settleIncludingAbort } from "../utils";
@@ -59,6 +60,7 @@ const REQUEST_TOKEN_PREFIX = "vm0_browser_user_action";
 const APPLY_STUCK_AFTER_MS = 60_000;
 const IDLE_LEASE_MS = BROWSER_IDLE_LEASE_MINUTES * 60_000;
 const CALLBACK_RECOVERY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const L = logger("BrowserUserActions");
 const TERMINAL_STATES: readonly BrowserUserActionState[] = [
   "succeeded",
   "cancelled",
@@ -1111,6 +1113,8 @@ export const preflightBrowserUserAction$ = command(
     if (!located) {
       return notFound();
     }
+    // Keep the admission and lease update short. The remote provider and CDP
+    // checks must not hold the thread lock while a user submits the form.
     const admitted = await withChatThreadContentWrite(
       db,
       {
@@ -1120,7 +1124,17 @@ export const preflightBrowserUserAction$ = command(
         },
         threadLock: "update",
       },
-      async (tx): Promise<ServiceResult<BrowserUserActionResponse>> => {
+      async (
+        tx,
+      ): Promise<
+        ServiceResult<{
+          readonly row: RequestRow;
+          readonly payload: Extract<
+            BrowserUserActionPayload,
+            { kind: "input" }
+          >;
+        }>
+      > => {
         const operationDb = tx as Db;
         const current = await loadExactRequest(operationDb, located);
         if (!current) {
@@ -1143,14 +1157,96 @@ export const preflightBrowserUserAction$ = command(
         if (!leased) {
           return expired();
         }
-        const provider = await settle(
-          getBrowserUseSession(current.providerSessionId, signal),
-        );
-        signal.throwIfAborted();
-        if (!provider.ok) {
-          return providerFailure(provider.error);
+        return { kind: "ok", value: { row: current, payload } };
+      },
+      signal,
+    );
+    if (admitted.outcome !== "written") {
+      return notFound();
+    }
+    if (admitted.value.kind === "error") {
+      return admitted.value;
+    }
+    const { row, payload } = admitted.value.value;
+    const attemptId = randomUUID();
+    const providerStartedAt = performance.now();
+    const provider = await settle(
+      getBrowserUseSession(row.providerSessionId, signal),
+    );
+    signal.throwIfAborted();
+    const providerPhase = {
+      type: "browser_input_preflight_phase",
+      attemptId,
+      phase: "provider_session",
+      outcome: provider.ok ? "ok" : "error",
+      durationMs: Math.round(performance.now() - providerStartedAt),
+    };
+    if (provider.ok && providerPhase.durationMs < 1_000) {
+      L.debug("Browser input preflight provider phase", providerPhase);
+    } else {
+      L.warn("Browser input preflight provider phase", providerPhase);
+    }
+    if (!provider.ok) {
+      return providerFailure(provider.error);
+    }
+    let inspection:
+      | { readonly kind: "stale" }
+      | {
+          readonly kind: "valid";
+          readonly controls: readonly BrowserUseControlInspection[];
+        };
+    if (provider.value.status === "stopped") {
+      inspection = { kind: "stale" };
+    } else {
+      if (!provider.value.cdpUrl) {
+        return providerFailure(new Error("Browser provider is not active"));
+      }
+      const checked = await settle(
+        preflightBrowserUseUserAction(
+          provider.value.cdpUrl,
+          {
+            ...exactInputTarget(payload),
+            fields: payload.target.fields.map((field) => {
+              return {
+                backendNodeId: field.backendNodeId,
+                fingerprint: field.fingerprint,
+              };
+            }),
+          },
+          signal,
+          attemptId,
+        ),
+      );
+      signal.throwIfAborted();
+      if (!checked.ok) {
+        return providerFailure(checked.error);
+      }
+      inspection = checked.value;
+    }
+    // Re-enter admission after remote I/O: apply or cancellation may have
+    // consumed the request while the check was running.
+    const verified = await withChatThreadContentWrite(
+      db,
+      {
+        chatThreadId: row.chatThreadId,
+        authorize: (identity) => {
+          return authorized(row, identity);
+        },
+        threadLock: "update",
+      },
+      async (tx): Promise<ServiceResult<BrowserUserActionResponse>> => {
+        const operationDb = tx as Db;
+        const current = await loadExactRequest(operationDb, row);
+        if (!current) {
+          return notFound();
         }
-        if (provider.value.status === "stopped") {
+        if (current.status !== "pending") {
+          return conflict("Browser input state changed during preflight");
+        }
+        if (!(await requestHasLiveBrowser(operationDb, current))) {
+          return expired();
+        }
+        if (inspection.kind === "stale") {
           const stale = await markPendingBrowserUserActionStale(
             operationDb,
             current,
@@ -1162,55 +1258,19 @@ export const preflightBrowserUserAction$ = command(
               }
             : conflict("Browser input state changed during preflight");
         }
-        if (!provider.value.cdpUrl) {
-          return providerFailure(new Error("Browser provider is not active"));
-        }
-        const target = exactInputTarget(payload);
-        const checked = await settle(
-          preflightBrowserUseUserAction(
-            provider.value.cdpUrl,
-            {
-              ...target,
-              fields: payload.target.fields.map((field) => {
-                return {
-                  backendNodeId: field.backendNodeId,
-                  fingerprint: field.fingerprint,
-                };
-              }),
-            },
-            signal,
-          ),
-        );
-        signal.throwIfAborted();
-        if (!checked.ok) {
-          return providerFailure(checked.error);
-        }
-        if (checked.value.kind === "stale") {
-          const stale = await markPendingBrowserUserActionStale(
-            operationDb,
-            current,
-          );
-          if (!stale) {
-            return conflict("Browser input state changed during preflight");
-          }
-          return {
-            kind: "ok",
-            value: publicRequest(stale, args.requestToken, payload),
-          };
-        }
         return {
           kind: "ok",
           value: publicRequest(
             current,
             args.requestToken,
             payload,
-            checked.value.controls,
+            inspection.controls,
           ),
         };
       },
       signal,
     );
-    return admitted.outcome === "written" ? admitted.value : notFound();
+    return verified.outcome === "written" ? verified.value : notFound();
   },
 );
 

@@ -209,6 +209,52 @@ function nativePasswordRequest(callbackPrompt: string) {
   };
 }
 
+async function createNativePasswordActionForPreflightTest(): Promise<string> {
+  const { routeMocks, runs, chat, actor, agent } = await setupBrowserScenario();
+  const current = await createClaimedChatRun(
+    chat,
+    runs,
+    actor,
+    agent.agentId,
+    "Enter a password on the current Browser page",
+  );
+  await updateFeatureSwitchesForUser(context, actor, {
+    [FeatureSwitchKey.BrowserNativeInput]: true,
+  });
+  const providerId = randomUUID();
+  acceptBrowserUseCdpSessions([providerId]);
+  mockNativeInputTarget();
+  server.use(
+    http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+      const body = z
+        .strictObject({ name: z.string() })
+        .parse(await request.json());
+      return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+        status: 201,
+      });
+    }),
+    http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+      return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+    }),
+    http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+      return HttpResponse.json(providerBrowser(String(params.id)));
+    }),
+  );
+  await accept(
+    client().use({ headers: current.claim.browserHeaders, body: {} }),
+    [200],
+  );
+  routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+  const created = await accept(
+    userActionClient().create({
+      headers: current.claim.browserHeaders,
+      body: nativePasswordRequest("Continue after entering the password"),
+    }),
+    [201],
+  );
+  return created.body.action.requestToken;
+}
+
 interface NativeNumberConstraints {
   readonly min: string;
   readonly max: string;
@@ -337,6 +383,73 @@ aroundEach(async (runTest) => {
 });
 
 describe("Browser user-action route", () => {
+  it("lets apply finish while the preflight provider read is still pending", async () => {
+    const token = await createNativePasswordActionForPreflightTest();
+    const readStarted = createDeferredPromise<void>(context.signal);
+    const releaseRead = createDeferredPromise<void>(context.signal);
+    let holdNextRead = true;
+    server.use(
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, async ({ params }) => {
+        if (holdNextRead) {
+          holdNextRead = false;
+          readStarted.resolve(undefined);
+          await releaseRead.promise;
+        }
+        return HttpResponse.json(providerBrowser(String(params.id)));
+      }),
+    );
+
+    const preflight = userActionClient().preflight({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: token },
+      body: {},
+    });
+    await readStarted.promise;
+    const applied = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+        body: { values: [{ key: "password", value: "synthetic-secret" }] },
+      }),
+      [200],
+    );
+    expect(applied.body.state).toBe("succeeded");
+    releaseRead.resolve(undefined);
+    const checked = await preflight;
+    expect(checked.status).toBe(409);
+    expect(browserInputWrites()).toHaveLength(1);
+  });
+
+  it("returns a retryable provider timeout when the internal CDP deadline expires", async () => {
+    const token = await createNativePasswordActionForPreflightTest();
+    const originalCommand =
+      context.mocks.browserUseCdp.command.getMockImplementation();
+    if (!originalCommand) {
+      throw new Error("Expected a Browser CDP command mock");
+    }
+    const commandStarted = createDeferredPromise<void>(context.signal);
+    const releaseCommand = createDeferredPromise<void>(context.signal);
+    context.mocks.browserUseCdp.command.mockImplementation(async (command) => {
+      if (command.method === "Target.getTargets") {
+        commandStarted.resolve(undefined);
+        await releaseCommand.promise;
+      }
+      return await originalCommand(command);
+    });
+    const preflight = userActionClient().preflight({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: token },
+      body: {},
+    });
+    await commandStarted.promise;
+    const checked = await preflight;
+    releaseCommand.resolve(undefined);
+    expect(checked).toMatchObject({
+      status: 503,
+      body: { error: { code: "BROWSER_USE_TIMEOUT" } },
+    });
+  }, 35_000);
+
   it("supports live number constraints, optional clear, and exact readback", async () => {
     const { routeMocks, runs, chat, actor, agent } =
       await setupBrowserScenario();

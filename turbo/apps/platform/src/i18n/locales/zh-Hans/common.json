@@ -1734,6 +1734,7 @@
       "cancelFailed": "无法取消这个请求，请重试。",
       "cancelled": "请求已取消",
       "cancelling": "正在取消…",
+      "checkFailed": "无法检查浏览器。填写内容已保留，请重试后提交。",
       "clearValue": "清空网页中的值",
       "completed": "信息已添加",
       "continue": "通知 Agent",

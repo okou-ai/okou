@@ -1734,6 +1734,7 @@
       "cancelFailed": "Permintaan tidak dapat dibatalkan. Coba lagi.",
       "cancelled": "Permintaan dibatalkan",
       "cancelling": "Membatalkan…",
+      "checkFailed": "Browser tidak dapat diperiksa. Isian Anda tetap tersimpan; coba lagi sebelum mengirim.",
       "clearValue": "Hapus nilai di situs",
       "completed": "Informasi ditambahkan",
       "continue": "Beri tahu agen",
