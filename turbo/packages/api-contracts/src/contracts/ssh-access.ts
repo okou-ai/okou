@@ -18,14 +18,25 @@ const errors = {
   500: apiErrorSchema,
 };
 
-export const sshHostSchema = sshConnectionMetadataSchema.pick({
-  id: true,
-  displayName: true,
-  host: true,
-  port: true,
-  username: true,
-  learnedHostKey: true,
-});
+export const sshHostAvailabilitySchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("ready") }).strict(),
+  z
+    .object({
+      status: z.literal("blocked"),
+      reason: z.literal("needs_rebind"),
+    })
+    .strict(),
+]);
+export const sshHostSchema = sshConnectionMetadataSchema
+  .pick({
+    id: true,
+    displayName: true,
+    host: true,
+    port: true,
+    username: true,
+    learnedHostKey: true,
+  })
+  .extend({ availability: sshHostAvailabilitySchema });
 export const sshHostsResponseSchema = z
   .object({ hosts: z.array(sshHostSchema) })
   .strict();

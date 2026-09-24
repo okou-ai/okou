@@ -1304,8 +1304,11 @@ describe("protected SSH authority", () => {
   it("treats a protected host awaiting rebind as unavailable, never Direct", async () => {
     // Conversion is not exposed by the production API until the App floor is
     // raised; the test-only route constructs that otherwise unreachable state.
+    const kms = useSecretKmsProbe();
     const f = await fixture();
+    const readyHost = await host();
     expect((await resolve(f)).outcome).toBe("resolved_access");
+    const priorDecryptCalls = kms.decryptCalls;
     const changed = await accept(
       state().action({
         body: {
@@ -1329,7 +1332,49 @@ describe("protected SSH authority", () => {
     expect(
       (await accept(inventory.list({ headers: f.guestHeaders }), [200])).body
         .hosts,
-    ).toStrictEqual([]);
+    ).toStrictEqual([
+      {
+        id: readyHost.id,
+        displayName: readyHost.displayName,
+        host: readyHost.host,
+        port: 22,
+        username: "deploy",
+        learnedHostKey: null,
+        availability: { status: "ready" },
+      },
+      {
+        id: f.host.id,
+        displayName: f.host.displayName,
+        host: f.host.host,
+        port: 443,
+        username: "deploy",
+        learnedHostKey: null,
+        availability: { status: "blocked", reason: "needs_rebind" },
+      },
+    ]);
+    await accept(
+      connections().delete({
+        headers,
+        params: { connectionId: readyHost.id },
+      }),
+      [204],
+    );
+    const blockedOnly = await accept(
+      inventory.list({ headers: f.guestHeaders }),
+      [200],
+    );
+    expect(blockedOnly.body.hosts).toStrictEqual([
+      {
+        id: f.host.id,
+        displayName: f.host.displayName,
+        host: f.host.host,
+        port: 443,
+        username: "deploy",
+        learnedHostKey: null,
+        availability: { status: "blocked", reason: "needs_rebind" },
+      },
+    ]);
+    expect(JSON.stringify(blockedOnly.body)).not.toContain(token.clientSecret);
     expect(
       (
         await accept(
@@ -1363,6 +1408,7 @@ describe("protected SSH authority", () => {
         )
       ).body,
     ).toStrictEqual({ outcome: "unavailable" });
+    expect(kms.decryptCalls).toBe(priorDecryptCalls);
   });
 
   it("resolves a same-organization shared Access row for another member", async () => {
@@ -1834,6 +1880,7 @@ describe("protected SSH authority", () => {
         port: 443,
         username: "deploy",
         learnedHostKey: null,
+        availability: { status: "ready" },
       },
     ]);
   });

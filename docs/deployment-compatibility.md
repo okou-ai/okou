@@ -2701,9 +2701,9 @@ organization; a database trigger additionally rejects another user's personal
 Access. Organization rows have no user owner. A host with a null Access ID and
 `needs_rebind=true` remains a protected, unusable host with its 443/FQDN target
 and host-key pin intact, not a Direct host. Runner resolution, pinning and
-observations return unavailable, and Agent inventory omits it before any token
-decryption. The old SSH management response cannot represent this state and
-fails closed; no production path creates it in this foundation release.
+observations return unavailable before any token decryption. The old SSH
+management response cannot represent this state and fails closed; no production
+path creates it in this foundation release.
 
 The outgoing API remains compatible with the migrated schema for existing
 personal/Direct data: omitted columns receive their defaults, and its existing

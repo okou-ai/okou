@@ -142,6 +142,9 @@ describe("owner SSH grants and live Run inventory", () => {
       });
     };
     await expect(listIds()).resolves.toStrictEqual([]);
+    await expect(
+      accept(inventory().list({ headers: f.token() }), [200]),
+    ).resolves.toMatchObject({ body: { hosts: [] } });
     await accept(
       remote.updateHostDefault({
         headers,
@@ -344,6 +347,7 @@ describe("owner SSH grants and live Run inventory", () => {
         port: 22,
         username: "deploy",
         learnedHostKey: null,
+        availability: { status: "ready" },
       },
       {
         id: second.body.id,
@@ -352,6 +356,7 @@ describe("owner SSH grants and live Run inventory", () => {
         port: 22,
         username: "ubuntu",
         learnedHostKey: null,
+        availability: { status: "ready" },
       },
     ]);
     expect(JSON.stringify(listed.body)).not.toContain("private-key");
@@ -546,6 +551,7 @@ describe("owner SSH grants and live Run inventory", () => {
             username: "deploy",
             port: 22,
             learnedHostKey: null,
+            availability: { status: "ready" },
           },
         ],
       });

@@ -335,11 +335,21 @@ okou ssh exec <connection-id> --command 'uname -a' --json
 ```
 
 Use the exact UUID from the live inventory, not the display name or hostname.
-List again after an unavailable or unknown ID; never invent IDs or automatically
-replay a command whose effects are unknown.
-The inventory requires a current running Run, an Agent visible to its user, a current grant,
-and `ssh:read`. An authorized empty inventory is distinct from unavailable
-authority. Execution requires `ssh:write`. Both capabilities are minted only
+Each listed host has `availability: { "status": "ready" }` or
+`availability: { "status": "blocked", "reason": "needs_rebind" }`.
+`ready` means the host is configured and eligible to attempt, not that a live
+connection has been tested. A blocked host is visible for diagnosis only:
+the owner must explicitly rebind it to a permitted Cloudflare Access configuration
+or choose Direct in the Remote control tab of `/connectors`. Do not execute a
+blocked ID; Runner resolution and pinning still return unavailable before
+credentials are decrypted. List again after an unavailable or unknown ID; never
+invent IDs or automatically replay a command whose effects are unknown.
+The inventory requires a current running Run, an Agent visible to its user,
+`ssh:read`, and either the current Agent grant or the Run's chat-level host
+selection (when Thread Remote Access is enabled). A `hosts: []` result means no
+hosts are visible to this Run; it does not prove the owner has none saved.
+An authorized empty inventory is distinct from unavailable authority.
+Execution requires `ssh:write`. Both capabilities are minted only
 for feature-enabled Runs; newly eligible Runs must start with a fresh token.
 These commands are Run-only, not PAT commands. Agents cannot grant themselves
 access or send target addresses, credentials or host keys to the helper.
