@@ -29,7 +29,6 @@ import { ComposerVideoOptionsChip } from "./composer-video-options.tsx";
 import type { ComposerVoiceInputStatus } from "../../signals/okou-page/composer-voice-input.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
-import { useState } from "react";
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
@@ -7637,8 +7636,13 @@ function ConnectorsPopoverButton({
   onOpenAddDialog: () => void;
 }) {
   const { t } = useTranslation();
-  const [remoteMenuOpen, setRemoteMenuOpen] = useState(false);
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
+  const remoteMenuOpen = useGet(
+    signals.connector.connectorUiState$,
+  ).remoteMenuOpen;
+  const setRemoteMenuOpen = (open: boolean) => {
+    updateConnectorUi({ remoteMenuOpen: open });
+  };
   const accountMenuOpen = useGet(signals.connector.accounts.menuOpen$);
   const closeAccountMenu = useSet(signals.connector.accounts.closeMenu$);
   const downloadDialogOpen = useGet(

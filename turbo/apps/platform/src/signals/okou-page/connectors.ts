@@ -63,6 +63,7 @@ export interface ComposerConnectorUiState {
   readonly popoverSearch: string;
   readonly popoverOpen: boolean;
   readonly popoverHasOpened: boolean;
+  readonly remoteMenuOpen: boolean;
   readonly popoverSortOrder: readonly string[] | null;
   readonly permissionConnectorSlug: ConnectorSlug | null;
   readonly directoryTab: ConnectorDirectoryTab;
@@ -148,6 +149,7 @@ function initialComposerConnectorUiState(): ComposerConnectorUiState {
     popoverSearch: "",
     popoverOpen: false,
     popoverHasOpened: false,
+    remoteMenuOpen: false,
     popoverSortOrder: null,
     permissionConnectorSlug: null,
     directoryTab: "discover",
