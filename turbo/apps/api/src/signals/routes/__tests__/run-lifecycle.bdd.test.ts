@@ -6244,6 +6244,9 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       },
     ]);
 
+    // This case exercises shared-key admission, so control the Pi handoff.
+    await preparePiSandboxClaim(actor, agentId);
+
     const sent = await chat.requestSendEvent(
       actor,
       {
@@ -6258,6 +6261,8 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       throw new Error("Expected the DeepSeek chat send to create a run");
     }
     expect(sent.body.runId).not.toBeNull();
+    // Join the API-to-Sandbox handoff before cancelling the admitted run.
+    await flushWaitUntilForTest();
     await api.requestCancelRun(actor, sent.body.runId, [200]);
   });
 

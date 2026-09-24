@@ -640,23 +640,8 @@
       "all": "Tout",
       "avatar": "Avatar",
       "avatarWithId": "Avatar {{id}}",
-      "backToAvatars": "Retour aux avatars",
       "categories": "Catégories de modèles",
       "category": "Catégorie de modèle",
-      "chooseVoice": "Choisir une voix pour {{title}}",
-      "filters": {
-        "age": "Âge",
-        "all": "Tous",
-        "aspectRatio": "Format",
-        "clear": "Effacer",
-        "ethnicity": "Origine ethnique",
-        "gender": "Genre",
-        "language": "Langue",
-        "scene": "Scène",
-        "style": "Style",
-        "title": "Filtres",
-        "useCase": "Cas d’utilisation"
-      },
       "fullPreview": "Aperçu complet du site {{title}}",
       "htmlPreview": "Aperçu HTML de {{title}}",
       "illustration": "Illustration",
@@ -668,25 +653,18 @@
       "importedSlides_other": "{{count}} diapositives",
       "importFile": "Importer un modèle",
       "multiAccent": "Multi-accents",
-      "needPro": "Pro requis",
       "nextSlide": "Aperçu de la diapositive suivante",
       "noMatches": "Aucun résultat",
       "placeholder": "Espace réservé pour l'aperçu du site {{title}}",
-      "playVideo": "Lire l'aperçu vidéo du modèle {{title}}",
-      "previewAvatarVideo": "Prévisualiser la vidéo de l'avatar {{title}}",
       "previewCurrentSlide": "Aperçu de {{title}} à la diapositive actuelle",
       "previewSlide": "Aperçu de la diapositive {{slideNumber}}",
-      "previewVoice": "Écouter la voix {{title}}",
       "previewWebsite": "Aperçu du modèle de site Web {{title}}",
       "previousSlide": "Aperçu de la diapositive précédente",
-      "recommended": "Recommandé",
       "renameImportedTemplate": "Renommer le modèle",
       "searchConnector": "Rechercher des modèles",
       "searchConnectors": "Rechercher des modèles",
       "selectStyle": "Sélectionner le style {{style}}",
       "selectTemplate": "Sélectionner le modèle {{title}}",
-      "selectVideo": "Sélectionner le modèle vidéo {{title}}",
-      "selectVoice": "Sélectionner la voix {{title}}",
       "selectWebsite": "Sélectionner le modèle de site Web {{title}}",
       "selectWorkflow": "Sélectionner le modèle de workflow {{title}}",
       "showVariant": "Afficher la variante {{variantNumber}}",
@@ -719,7 +697,6 @@
       "tryDifferentSearch": "Essayez une recherche différente.",
       "use": "Utiliser",
       "useThisTemplate": "Utilisez ce modèle",
-      "viewVideoPlans": "Voir les offres pour le modèle vidéo {{title}}",
       "visibility": {
         "change": "Modifier",
         "changeLabel": "Modifier la visibilité du modèle",
@@ -1210,7 +1187,6 @@
         "moreConnectorsChannels": "Plus de connecteurs personnalisés et d'intégrations de canaux",
         "supportEmail": "Assistance par e-mail",
         "supportPriority": "Assistance prioritaire",
-        "videoGeneration": "Génération de vidéos et d’avatars",
         "voiceInput": "Saisie vocale : {{requests}} requêtes et {{minutes}} minutes par jour",
         "webhookAutomations": "Lancez une exécution depuis n'importe quel système par webhook"
       },
@@ -1804,7 +1780,6 @@
         "addTemplate": "Ajouter un modèle",
         "imagePlaceholder": "Décrivez l’image à créer…",
         "presentationPlaceholder": "Quel est le sujet de votre présentation ?",
-        "settingsAdjusted": "Certains paramètres vidéo ont été adaptés à ce modèle",
         "slideCount": "Nombre de diapositives",
         "slideCountAuto": "Automatique",
         "slideCountRange": "{{range}} diapositives"
@@ -2908,16 +2883,7 @@
       "removeVideo": "Supprimer le modèle vidéo {{title}}",
       "removeWebsite": "Supprimer le modèle de site web {{title}}",
       "removeWorkflow": "Supprimer le modèle de workflow {{title}}",
-      "retry": "Réessayer",
-      "videoOptions": "Options vidéo",
-      "videoOptionsAudio": "Générer l'audio",
-      "videoOptionsAudioOff": "Audio désactivé",
-      "videoOptionsAudioOn": "Audio activé",
-      "videoOptionsDuration": "Durée",
-      "videoOptionsLabel": "Options vidéo {{spec}}",
-      "videoOptionsModel": "Modèle",
-      "videoOptionsRatio": "Format",
-      "videoOptionsResolution": "Résolution"
+      "retry": "Réessayer"
     },
     "thread": {
       "ariaLabel": "Fil de discussion",
@@ -4260,12 +4226,10 @@
     "documentTitles": {
       "chooseImage": "Choisir un style d'image",
       "choosePresentation": "Choisir un modèle de présentation",
-      "chooseVideo": "Choisissez un style de vidéo",
       "chooseWorkflow": "Choisissez un workflow",
       "make": "Bienvenue chez {{brandName}}",
       "runImage": "Créez votre première image",
       "runPresentation": "Créez votre première présentation",
-      "runVideo": "Créez votre première vidéo",
       "runWorkflow": "Exécutez votre premier workflow"
     },
     "make": {
@@ -4307,9 +4271,7 @@
       "title": "Que voulez-vous créer en premier"
     },
     "runAction": {
-      "checkingPlan": "Vérification du plan",
-      "runNow": "Exécuter maintenant",
-      "upgradePro": "Passez à Pro pour exécuter"
+      "runNow": "Exécuter maintenant"
     },
     "sourcesFirst": {
       "common": {
@@ -4852,11 +4814,6 @@
         "slideAlt": "Diapositive {{slide}} de {{title}}",
         "title": "Choisissez un modèle de présentation pour commencer",
         "viewTemplate": "Voir la présentation {{title}}"
-      },
-      "video": {
-        "description": "Utilisez-le comme référence pour la vidéo que vous souhaitez créer.",
-        "selectTemplate": "Sélectionnez le modèle de vidéo {{title}}",
-        "title": "Choisissez un modèle de vidéo pour commencer"
       }
     },
     "templateRun": {
@@ -4871,12 +4828,6 @@
         "notePlaceholder": "Ajoutez le contenu et les instructions de votre présentation",
         "previewLabel": "Aperçu du modèle de présentation",
         "title": "Complétez votre présentation"
-      },
-      "video": {
-        "noteLabel": "Prompt vidéo personnalisé",
-        "notePlaceholder": "Ajoutez votre prompt personnalisé pour remixer votre propre vidéo",
-        "previewLabel": "Aperçu du modèle vidéo",
-        "title": "Personnalisez votre vidéo"
       }
     },
     "templates": {

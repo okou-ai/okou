@@ -621,23 +621,8 @@
       "all": "Semua",
       "avatar": "Avatar",
       "avatarWithId": "Avatar {{id}}",
-      "backToAvatars": "Kembali ke avatar",
       "categories": "Kategori template",
       "category": "Kategori template",
-      "chooseVoice": "Pilih suara untuk {{title}}",
-      "filters": {
-        "age": "Usia",
-        "all": "Semua",
-        "aspectRatio": "Rasio aspek",
-        "clear": "Hapus",
-        "ethnicity": "Etnis",
-        "gender": "Gender",
-        "language": "Bahasa",
-        "scene": "Adegan",
-        "style": "Gaya",
-        "title": "Filter",
-        "useCase": "Kasus penggunaan"
-      },
       "fullPreview": "pratinjau penuh website {{title}}",
       "htmlPreview": "pratinjau HTML {{title}}",
       "illustration": "Ilustrasi",
@@ -648,25 +633,18 @@
       "importedSlides_other": "{{count}} slide",
       "importFile": "Impor template",
       "multiAccent": "Multi-aksen",
-      "needPro": "Perlu Pro",
       "nextSlide": "Pratinjau slide berikutnya",
       "noMatches": "Tidak ada hasil",
       "placeholder": "placeholder pratinjau website {{title}}",
-      "playVideo": "Putar pratinjau template video {{title}}",
-      "previewAvatarVideo": "Pratinjau video avatar {{title}}",
       "previewCurrentSlide": "Pratinjau {{title}} pada slide saat ini",
       "previewSlide": "Pratinjau slide {{slideNumber}}",
-      "previewVoice": "Dengarkan suara {{title}}",
       "previewWebsite": "Pratinjau template website {{title}}",
       "previousSlide": "Pratinjau slide sebelumnya",
-      "recommended": "Direkomendasikan",
       "renameImportedTemplate": "Ganti nama templat",
       "searchConnector": "Cari templat",
       "searchConnectors": "Cari templat",
       "selectStyle": "Pilih gaya {{style}}",
       "selectTemplate": "Pilih template {{title}}",
-      "selectVideo": "Pilih template video {{title}}",
-      "selectVoice": "Pilih suara {{title}}",
       "selectWebsite": "Pilih template website {{title}}",
       "selectWorkflow": "Pilih template alur kerja {{title}}",
       "showVariant": "Tampilkan varian {{variantNumber}}",
@@ -699,7 +677,6 @@
       "tryDifferentSearch": "Coba pencarian lain.",
       "use": "Gunakan",
       "useThisTemplate": "Gunakan template ini",
-      "viewVideoPlans": "Lihat paket untuk template video {{title}}",
       "visibility": {
         "change": "Ubah",
         "changeLabel": "Ubah visibilitas templat",
@@ -1186,7 +1163,6 @@
         "moreConnectorsChannels": "Lebih banyak custom connector & integrasi saluran",
         "supportEmail": "Dukungan email",
         "supportPriority": "Dukungan prioritas",
-        "videoGeneration": "Pembuatan video dan avatar",
         "voiceInput": "Input suara: {{requests}} permintaan dan {{minutes}} menit per hari",
         "webhookAutomations": "Mulai run dari sistem mana pun lewat satu webhook"
       },
@@ -1772,7 +1748,6 @@
         "addTemplate": "Tambahkan templat",
         "imagePlaceholder": "Jelaskan gambar yang ingin Anda buat…",
         "presentationPlaceholder": "Apa topik presentasi Anda?",
-        "settingsAdjusted": "Beberapa pengaturan video disesuaikan untuk model ini",
         "slideCount": "Jumlah slide",
         "slideCountAuto": "Otomatis",
         "slideCountRange": "{{range}} slide"
@@ -2852,16 +2827,7 @@
       "removeVideo": "Hapus template video {{title}}",
       "removeWebsite": "Hapus template situs web {{title}}",
       "removeWorkflow": "Hapus template alur kerja {{title}}",
-      "retry": "Coba lagi",
-      "videoOptions": "Opsi video",
-      "videoOptionsAudio": "Hasilkan audio",
-      "videoOptionsAudioOff": "Audio nonaktif",
-      "videoOptionsAudioOn": "Audio aktif",
-      "videoOptionsDuration": "Durasi",
-      "videoOptionsLabel": "Opsi video {{spec}}",
-      "videoOptionsModel": "Model",
-      "videoOptionsRatio": "Rasio",
-      "videoOptionsResolution": "Resolusi"
+      "retry": "Coba lagi"
     },
     "thread": {
       "ariaLabel": "Thread chat",
@@ -4186,12 +4152,10 @@
     "documentTitles": {
       "chooseImage": "Pilih gaya gambar",
       "choosePresentation": "Pilih template presentasi",
-      "chooseVideo": "Pilih gaya video",
       "chooseWorkflow": "Pilih alur kerja",
       "make": "Selamat datang di {{brandName}}",
       "runImage": "Buat gambar pertama Anda",
       "runPresentation": "Buat presentasi pertama Anda",
-      "runVideo": "Buat video pertama Anda",
       "runWorkflow": "Jalankan alur kerja pertama Anda"
     },
     "make": {
@@ -4233,9 +4197,7 @@
       "title": "Apa yang ingin Anda buat terlebih dahulu"
     },
     "runAction": {
-      "checkingPlan": "Memeriksa paket",
-      "runNow": "Jalankan sekarang",
-      "upgradePro": "Upgrade ke Pro untuk menjalankan"
+      "runNow": "Jalankan sekarang"
     },
     "sourcesFirst": {
       "common": {
@@ -4778,11 +4740,6 @@
         "slideAlt": "{{title}} slide {{slide}}",
         "title": "Pilih template presentasi untuk memulai",
         "viewTemplate": "Lihat presentasi {{title}}"
-      },
-      "video": {
-        "description": "Gunakan ini sebagai referensi untuk video yang ingin Anda buat.",
-        "selectTemplate": "Pilih template video {{title}}",
-        "title": "Pilih template video untuk memulai"
       }
     },
     "templateRun": {
@@ -4797,12 +4754,6 @@
         "notePlaceholder": "Tambahkan konten dan instruksi presentasi Anda",
         "previewLabel": "Pratinjau template presentasi",
         "title": "Lengkapi presentasi Anda"
-      },
-      "video": {
-        "noteLabel": "Prompt video khusus",
-        "notePlaceholder": "Tambahkan prompt khusus Anda untuk di-remix dengan video Anda sendiri",
-        "previewLabel": "Pratinjau template video",
-        "title": "Sesuaikan video Anda"
       }
     },
     "templates": {

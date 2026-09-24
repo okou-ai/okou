@@ -621,23 +621,8 @@
       "all": "全部",
       "avatar": "虛擬形象",
       "avatarWithId": "虛擬形象 {{id}}",
-      "backToAvatars": "返回虛擬形象",
       "categories": "模板分類",
       "category": "模板分類",
-      "chooseVoice": "為 {{title}} 選擇音色",
-      "filters": {
-        "age": "年齡",
-        "all": "全部",
-        "aspectRatio": "畫面比例",
-        "clear": "清除",
-        "ethnicity": "族裔",
-        "gender": "性別",
-        "language": "語言",
-        "scene": "場景",
-        "style": "風格",
-        "title": "篩選",
-        "useCase": "使用場景"
-      },
       "fullPreview": "{{title}} 網站完整預覽",
       "htmlPreview": "{{title}} HTML 預覽",
       "illustration": "插畫",
@@ -648,25 +633,18 @@
       "importedSlides_other": "{{count}} 頁",
       "importFile": "匯入你自己的檔案",
       "multiAccent": "多口音",
-      "needPro": "需要 Pro",
       "nextSlide": "預覽下一頁",
       "noMatches": "沒有匹配結果",
       "placeholder": "{{title}} 網站預覽佔點陣圖",
-      "playVideo": "播放影片模板預覽 {{title}}",
-      "previewAvatarVideo": "預覽虛擬形象影片 {{title}}",
       "previewCurrentSlide": "從當前頁預覽 {{title}}",
       "previewSlide": "預覽第 {{slideNumber}} 頁",
-      "previewVoice": "試聽音色 {{title}}",
       "previewWebsite": "預覽網站模板 {{title}}",
       "previousSlide": "預覽上一頁",
-      "recommended": "推薦",
       "renameImportedTemplate": "重新命名模板",
       "searchConnector": "搜尋模板",
       "searchConnectors": "搜尋模板",
       "selectStyle": "選擇風格 {{style}}",
       "selectTemplate": "選擇模板 {{title}}",
-      "selectVideo": "選擇影片模板 {{title}}",
-      "selectVoice": "選擇音色 {{title}}",
       "selectWebsite": "選擇網站模板 {{title}}",
       "selectWorkflow": "選擇工作流模板 {{title}}",
       "showVariant": "顯示變體 {{variantNumber}}",
@@ -699,7 +677,6 @@
       "tryDifferentSearch": "換個關鍵詞試試。",
       "use": "使用",
       "useThisTemplate": "使用這個模板",
-      "viewVideoPlans": "檢視影片模板 {{title}} 可用的套餐",
       "visibility": {
         "change": "修改",
         "changeLabel": "修改模板可見範圍",
@@ -1186,7 +1163,6 @@
         "moreConnectorsChannels": "更多自定義連接器和渠道整合",
         "supportEmail": "郵件支援",
         "supportPriority": "優先支援",
-        "videoGeneration": "影片和數字人生成",
         "voiceInput": "語音輸入，每天{{requests}}次請求、{{minutes}}分鐘",
         "webhookAutomations": "一個webhook就能從任何系統發起執行"
       },
@@ -1772,7 +1748,6 @@
         "addTemplate": "新增模板",
         "imagePlaceholder": "描述你想生成的圖片…",
         "presentationPlaceholder": "你的簡報要講什麼？",
-        "settingsAdjusted": "部分影片設定已針對這個模型做了調整",
         "slideCount": "投影片數量",
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}} 頁"
@@ -2852,16 +2827,7 @@
       "removeVideo": "移除影片模板 {{title}}",
       "removeWebsite": "移除網站模板 {{title}}",
       "removeWorkflow": "移除工作流模板 {{title}}",
-      "retry": "重試",
-      "videoOptions": "影片選項",
-      "videoOptionsAudio": "生成音訊",
-      "videoOptionsAudioOff": "音訊已關閉",
-      "videoOptionsAudioOn": "音訊已開啟",
-      "videoOptionsDuration": "時長",
-      "videoOptionsLabel": "影片選項 {{spec}}",
-      "videoOptionsModel": "模型",
-      "videoOptionsRatio": "畫面比例",
-      "videoOptionsResolution": "解析度"
+      "retry": "重試"
     },
     "thread": {
       "ariaLabel": "聊天會話",
@@ -4186,12 +4152,10 @@
     "documentTitles": {
       "chooseImage": "選擇圖片風格",
       "choosePresentation": "選擇簡報模板",
-      "chooseVideo": "選擇影片風格",
       "chooseWorkflow": "選擇工作流",
       "make": "歡迎使用{{brandName}}",
       "runImage": "創作你的第一張圖片",
       "runPresentation": "製作你的第一份簡報",
-      "runVideo": "製作你的第一個影片",
       "runWorkflow": "執行你的第一個工作流"
     },
     "make": {
@@ -4233,9 +4197,7 @@
       "title": "你想先做點什麼"
     },
     "runAction": {
-      "checkingPlan": "正在檢查套餐",
-      "runNow": "立即執行",
-      "upgradePro": "升級Pro後執行"
+      "runNow": "立即執行"
     },
     "sourcesFirst": {
       "common": {
@@ -4778,11 +4740,6 @@
         "slideAlt": "{{title}}第{{slide}}頁",
         "title": "選一個演示模板開始",
         "viewTemplate": "檢視{{title}}簡報"
-      },
-      "video": {
-        "description": "以它為參考，創作你想要的影片。",
-        "selectTemplate": "選擇{{title}}影片模板",
-        "title": "選一個影片模板開始"
       }
     },
     "templateRun": {
@@ -4797,12 +4754,6 @@
         "notePlaceholder": "補充你的演示內容與要求",
         "previewLabel": "演示模板預覽",
         "title": "完成你的簡報"
-      },
-      "video": {
-        "noteLabel": "自定義影片提示詞",
-        "notePlaceholder": "補充你的自定義提示詞，生成屬於你的影片",
-        "previewLabel": "影片模板預覽",
-        "title": "定製你的影片"
       }
     },
     "templates": {

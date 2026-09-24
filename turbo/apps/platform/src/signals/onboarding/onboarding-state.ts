@@ -5,7 +5,6 @@ export type OnboardingChoice =
   | "slack"
   | "workflow"
   | "presentation"
-  | "video"
   | "images"
   | "website"
   | "explore";
@@ -17,9 +16,7 @@ export type OnboardingRouteStep =
   | "presentation-template"
   | "presentation-run"
   | "image-template"
-  | "image-run"
-  | "video-template"
-  | "video-run";
+  | "image-run";
 
 export interface OnboardingDraft {
   readonly choice: OnboardingChoice | null;
@@ -30,8 +27,6 @@ export interface OnboardingDraft {
   readonly presentationNote: string;
   readonly imageTemplateSlug: string | null;
   readonly imageNote: string;
-  readonly videoTemplateSlug: string | null;
-  readonly videoNote: string;
   readonly prompt: string;
 }
 
@@ -81,8 +76,6 @@ function emptyOnboardingDraft(): OnboardingDraft {
     presentationNote: "",
     imageTemplateSlug: null,
     imageNote: "",
-    videoTemplateSlug: null,
-    videoNote: "",
     prompt: "",
   };
 }
@@ -95,17 +88,6 @@ function emptyOnboardingUiState(): OnboardingUiState {
     imageVariantBySlug: {},
   };
 }
-
-export const storeOnboardingCheckoutDraft$ = command(
-  ({ set }, draft: OnboardingCheckoutDraft): string => {
-    const stateId = crypto.randomUUID();
-    set(onboardingCheckoutStateStorage.set$, stateId);
-    set(onboardingCheckoutPromptStorage.set$, draft.prompt);
-    set(onboardingCheckoutNoteStorage.set$, draft.note);
-    set(onboardingCheckoutOwnerStorage.set$, draft.userId);
-    return stateId;
-  },
-);
 
 export const readOnboardingCheckoutDraft$ = command(
   (
@@ -204,7 +186,6 @@ function onboardingChoice(value: string | null): OnboardingChoice | null {
     value === "slack" ||
     value === "workflow" ||
     value === "presentation" ||
-    value === "video" ||
     value === "images" ||
     value === "website" ||
     value === "explore"
@@ -267,13 +248,6 @@ export const hydrateOnboardingRoute$ = command(
     if (step === "image-template" || step === "image-run") {
       patch.choice = "images";
       patch.imageTemplateSlug = templateSlug ?? current.imageTemplateSlug;
-    }
-    if (step === "video-template" || step === "video-run") {
-      patch.choice = "video";
-      patch.videoTemplateSlug = templateSlug ?? current.videoTemplateSlug;
-      if (routeText.note !== null) {
-        patch.videoNote = routeText.note;
-      }
     }
 
     set(updateOnboardingDraft$, patch);

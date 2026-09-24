@@ -22,7 +22,7 @@ import {
 } from "./chat-lifecycle-test-helpers.ts";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { openTemplatePicker } from "./chat-composer-template-gallery-test-helpers.ts";
-import { VIDEO_TEMPLATE_ITEMS } from "@okouai/core/video-template-items";
+import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import {
   AGENT_ID,
   THREAD_ID,
@@ -670,13 +670,13 @@ test("A template with no cover keeps the template glyph on its chip", async () =
   setupModels();
   mockChatLifecycle(context);
   await setupComposerWithChipCover(true);
-  const [template] = VIDEO_TEMPLATE_ITEMS;
+  const [template] = WEBSITE_TEMPLATE_ITEMS;
   if (!template) {
-    throw new Error("Expected a video template");
+    throw new Error("Expected a website template");
   }
-  await openTemplatePicker(userEvent.setup({ delay: null }), "Video");
+  await openTemplatePicker(userEvent.setup({ delay: null }), "Website");
   click(
-    await screen.findByLabelText(`Select video template ${template.title}`),
+    await screen.findByLabelText(`Select website template ${template.title}`),
   );
   await waitFor(() => {
     expect(composerInlineTemplates()).toHaveLength(1);

@@ -1,6 +1,5 @@
 import { command, computed, state } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { findVideoTemplateItem } from "@okouai/core/video-template-items";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { i18n } from "../../i18n/index.ts";
 import type { WorkflowComposerSignals } from "./tiptap-workflow-composer.ts";
@@ -36,17 +35,6 @@ export function composerCreatePlaceholder(mode: ComposerCreateMode): string {
   }
 }
 
-function createNonCreativeTemplateSignal(composer: WorkflowComposerSignals) {
-  return computed((get) => {
-    return get(composer.templateRequests$).some((template) => {
-      return (
-        template.type !== "video" ||
-        !findVideoTemplateItem(template.selection.stylePresetId)
-      );
-    });
-  });
-}
-
 function createPresentationSlideCountSignals() {
   const internalPresentationSlideCount$ = state<PresentationSlideCount>("8-12");
   const presentationSlideCount$ = computed((get) => {
@@ -63,7 +51,7 @@ function createPresentationSlideCountSignals() {
 export function createComposerCreateSignals(
   composer: WorkflowComposerSignals,
   ui: ComposerUiSignalGroups,
-  media: { readonly image: boolean; readonly video: boolean },
+  media: { readonly image: boolean },
 ) {
   const modes = COMPOSER_CREATE_MODES.filter((mode) => {
     return mode !== "image" || media.image;
@@ -84,32 +72,17 @@ export function createComposerCreateSignals(
       features[FeatureSwitchKey.ComposerTaskChips]
     );
   });
-  const hasOtherTemplate$ = createNonCreativeTemplateSignal(composer);
   const mode$ = computed((get) => {
     return get(enabled$) ? get(internalMode$) : null;
-  });
-  /**
-   * Video is no longer a type anyone picks; a video template standing on its
-   * own is what states the composer is making one.
-   */
-  const creativeVideo$ = computed((get) => {
-    if (!media.video || get(hasOtherTemplate$) || get(mode$) !== null) {
-      return false;
-    }
-    return get(composer.templateRequests$).length > 0;
   });
   const setMode$ = command(({ get, set }, mode: ComposerCreateMode | null) => {
     if (!get(enabled$)) {
       return;
     }
-    const wasCreativeVideo = get(creativeVideo$);
     set(internalMode$, mode);
     set(composer.closeSuggestionMenu$);
     set(ui.model.setModelPickerOpen$, false);
     set(ui.model.setMediaModelCategory$, mode === "image" ? "image" : null);
-    if (wasCreativeVideo) {
-      set(ui.videoOptions.setVideoOptionsOpen$, false);
-    }
     if (mode !== "presentation") {
       set(setPresentationSlideCount$, "8-12");
     }
@@ -126,7 +99,6 @@ export function createComposerCreateSignals(
     enabled$,
     modes,
     mode$,
-    creativeVideo$,
     setMode$,
     selectCommand$,
     presentationSlideCount$,

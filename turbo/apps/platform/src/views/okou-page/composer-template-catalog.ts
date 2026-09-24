@@ -11,10 +11,6 @@ import {
   type PresentationTemplateItem,
 } from "@okouai/core/presentation-template-items";
 import {
-  VIDEO_TEMPLATE_ITEMS,
-  type VideoTemplateItem,
-} from "@okouai/core/video-template-items";
-import {
   WEBSITE_TEMPLATE_ITEMS,
   type WebsiteTemplateItem,
 } from "@okouai/core/website-template-items";
@@ -60,21 +56,6 @@ export function toIllustrationGenerationTemplate(
   };
 }
 
-/**
- * Text-to-video styles, not the talking-avatar options that share the "video"
- * envelope.
- */
-export function toVideoGenerationTemplate(
-  item: VideoTemplateItem,
-): GenerationTemplateRequest {
-  return {
-    type: "video",
-    selection: {
-      stylePresetId: item.id,
-    },
-  };
-}
-
 export function toWebsiteGenerationTemplate(
   item: WebsiteTemplateItem,
 ): GenerationTemplateRequest {
@@ -87,7 +68,7 @@ export function toWebsiteGenerationTemplate(
 /**
  * The three things the slash panel's Make group indexes. These are the template
  * picker's own categories, so opening the picker from a row lands on the same
- * tab. Video is not one of them: its catalog is reached from the picker itself.
+ * tab.
  * Workflow is not one either — the panel lists the agent's own workflows right
  * underneath, so a row that only reopened the workflow catalog named the same
  * thing twice.
@@ -100,16 +81,9 @@ export const SLASH_TEMPLATE_CATEGORIES = [
 
 export type SlashTemplateCategory = (typeof SLASH_TEMPLATE_CATEGORIES)[number];
 
-/**
- * The catalogs that carry cover art, so they can fill a pane or a shelf of
- * them. `video` stays in the union because the task chips' shelf is typed over
- * every create mode, not because a surface still previews it; the note on
- * `VIDEO_IDEAS` in `composer-task-chips.tsx` records what reaches that shelf.
- */
 export type SlashTemplatePreviewCategory =
   | "slides"
   | "illustration"
-  | "video"
   | "website";
 
 /** Covers render two across a 320px pane, so they are requested at 2x that. */
@@ -200,22 +174,6 @@ function illustrationPreview(
   };
 }
 
-function videoPreview(item: VideoTemplateItem): SlashTemplatePreview {
-  return {
-    slug: item.slug,
-    title: item.title,
-    coverUrl: coverUrl(item.cardPreviewImage ?? item.previewImage),
-    template: toVideoGenerationTemplate(item),
-    // Video and website chips carry no cover in the composer today; the panel
-    // shows the poster frame without changing what the chip stores.
-    attachment: {
-      type: "video",
-      title: item.title,
-      category: "video",
-    },
-  };
-}
-
 function websitePreview(item: WebsiteTemplateItem): SlashTemplatePreview {
   return {
     slug: item.slug,
@@ -246,9 +204,6 @@ export function slashTemplatePreviews(
     }
     case "illustration": {
       return ILLUSTRATION_TEMPLATE_ITEMS.map(illustrationPreview);
-    }
-    case "video": {
-      return VIDEO_TEMPLATE_ITEMS.map(videoPreview);
     }
     case "website": {
       return WEBSITE_TEMPLATE_ITEMS.map(websitePreview);

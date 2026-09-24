@@ -227,26 +227,20 @@ test("A prompt link starts a presentation chat with its selected template", asyn
   });
 });
 
-test("A prompt link starts a video chat with its selected style", async () => {
+test("An unavailable template link keeps its brief as an editable chat draft", async () => {
   const capture = capturePromptLaunch();
   await setupPage({
     context,
-    path: "/prompt?prompt=Create%20a%20cinematic%20product%20film&template=epic-grandeur",
+    path: "/prompt?prompt=Create%20a%20launch%20brief&template=%20missing-template%20",
   });
 
-  const send = await waitForPromptLaunch(
-    "Create a cinematic product film",
-    capture,
-  );
-
-  expect(templatePart(send)).toStrictEqual({
-    type: "template",
-    titleSnapshot: "Epic Grandeur",
-    template: {
-      type: "video",
-      selection: { stylePresetId: "video-template:epic-grandeur" },
-    },
-  });
+  const composer = await waitForDraft("Create a launch brief");
+  await userEvent.setup().type(composer, " for next week");
+  expect(composer).toHaveTextContent("Create a launch brief for next week");
+  expect(pathname()).toBe(`/agents/${DEFAULT_AGENT_ID}/chat`);
+  expect(capture.createdThreads).toHaveLength(0);
+  expect(capture.sends).toHaveLength(0);
+  expect(search()).toBe("");
 });
 
 test("A prompt link starts a website chat with its selected template", async () => {

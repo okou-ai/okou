@@ -18,14 +18,12 @@ import {
 } from "./composer-actions.ts";
 import {
   ComposerCreateImageModelPicker,
-  ComposerCreateVideoModelPicker,
   ComposerTaskControls,
 } from "./composer-create.tsx";
 import {
   ComposerAddMenu,
   type ComposerAddMenuGroup,
 } from "./composer-add-menu.tsx";
-import { ComposerVideoOptionsChip } from "./composer-video-options.tsx";
 import type { ComposerVoiceInputStatus } from "../../signals/okou-page/composer-voice-input.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
@@ -97,7 +95,6 @@ import {
   Monitor,
   Palette,
   Paperclip,
-  Play,
   Plug,
   Plus,
   Presentation,
@@ -112,7 +109,6 @@ import {
   User,
   UserCheck,
   Users,
-  Video,
   X,
 } from "lucide-react";
 import {
@@ -175,10 +171,6 @@ import type {
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { RestorableAttachment } from "../../signals/okou-page/chat-draft.ts";
-import type {
-  AvatarVideoAvatar,
-  AvatarVideoVoice,
-} from "@okouai/api-contracts/contracts/avatar-video";
 import {
   TEMPLATE_CARD_SHADOW,
   TEMPLATE_TILE_CAPTION,
@@ -217,11 +209,6 @@ import {
 } from "@okouai/core/presentation-template-items";
 import { formatUserPresentationTemplateId } from "@okouai/core/presentation-template-selection";
 import {
-  type VideoTemplateItem,
-  VIDEO_TEMPLATE_ITEMS,
-  findVideoTemplateItem,
-} from "@okouai/core/video-template-items";
-import {
   type WebsiteTemplateItem,
   WEBSITE_TEMPLATE_ITEMS,
   findWebsiteTemplateItem,
@@ -238,7 +225,6 @@ import {
   presentationTemplateColorSystemId,
   toIllustrationGenerationTemplate,
   toPresentationGenerationTemplate,
-  toVideoGenerationTemplate,
   toWebsiteGenerationTemplate,
 } from "./composer-template-catalog.ts";
 import {
@@ -313,11 +299,6 @@ import { SshLoadError } from "./ssh-load-error.tsx";
 import { SshConnectorCard } from "./components/settings/ssh-connector-card.tsx";
 import { ThreadRemoteAccessSection } from "./remote-access-controls.tsx";
 import { rootSignal$ } from "../../signals/root-signal.ts";
-import { orgPlanCapabilities$ } from "../../signals/okou-page/org-plan-capabilities.ts";
-import {
-  openSettingsBillingPlans$,
-  setSettingsDialogOpen$,
-} from "../../signals/okou-page/settings/settings-dialog.ts";
 import { orgModelPolicies$ } from "../../signals/external/org-model-policies.ts";
 import {
   updateDefaultImageModel$,
@@ -365,15 +346,6 @@ import { shouldUseUserMessage } from "../../signals/okou-page/user-message-docum
 import { WebsiteTemplatePreviewDialogSlot } from "./website-template-preview-dialog.tsx";
 import { ReplaceComposerDraftDialog } from "./replace-composer-draft-dialog.tsx";
 import {
-  AvatarTemplatePickerContent,
-  AvatarTemplatePickerToolbar,
-} from "./avatar-template-picker.tsx";
-import {
-  markVideoPreviewPlaying,
-  resetVideoPreview,
-  startVideoPreview,
-} from "./video-preview-hover.ts";
-import {
   localizedWorkflowTemplate,
   localizedWorkflowTemplateCategory,
 } from "./workflow-template-copy.ts";
@@ -393,10 +365,6 @@ import {
   IMAGE_MODEL_PRICE_TIER,
   VIDEO_MODEL_PRICE_TIER,
 } from "@okouai/api-contracts/contracts/media-model-price-tiers";
-import {
-  avatarTemplateSelection,
-  toAvatarGenerationTemplate,
-} from "../../signals/okou-page/avatar-template-selection.ts";
 import { resolveModelFirstUserDefaultSelection } from "../../signals/okou-page/model-default-selection.ts";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
@@ -822,31 +790,6 @@ function selectedIllustrationTemplateItem(
   });
 }
 
-function isSelectedVideoTemplate(
-  item: VideoTemplateItem,
-  value: GenerationTemplateRequest | undefined,
-): boolean {
-  return (
-    value?.type === "video" &&
-    findVideoTemplateItem(value.selection.stylePresetId)?.id === item.id
-  );
-}
-
-/**
- * A template names the look, and nothing else. Every text-to-video parameter,
- * the model included, now belongs to the run: the model comes from the thread
- * pin and the member default, and the rest from the composer's own settings
- * chip, so nothing about a run is frozen into the message that started it.
- */
-function selectedVideoTemplateItem(
-  value: GenerationTemplateRequest | undefined,
-): VideoTemplateItem | undefined {
-  if (value?.type !== "video") {
-    return undefined;
-  }
-  return findVideoTemplateItem(value.selection.stylePresetId);
-}
-
 function isSelectedWorkflowTemplate(
   item: WorkflowTemplateItem,
   value: GenerationTemplateRequest | undefined,
@@ -919,196 +862,8 @@ function websiteTemplateCardImageUrl(item: WebsiteTemplateItem): string {
   return r2ImageTransformUrl(item.previewImageUrl, TEMPLATE_CARD_PREVIEW_SIZE);
 }
 
-function videoTemplatePosterImage(item: VideoTemplateItem): string {
-  if (item.cardPreviewImage !== undefined) {
-    return r2ImageTransformUrl(
-      item.cardPreviewImage,
-      TEMPLATE_CARD_PREVIEW_SIZE,
-    );
-  }
-  return r2ImageTransformUrl(item.previewImage, TEMPLATE_CARD_PREVIEW_SIZE);
-}
-
-function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
-  const { t } = useTranslation();
-  const posterImage = videoTemplatePosterImage(item);
-  return (
-    <div
-      data-video-template-preview=""
-      className="group/video-template-preview relative h-full w-full overflow-hidden bg-muted"
-      onPointerEnter={(event) => {
-        if (event.pointerType !== "touch") {
-          startVideoPreview(event.currentTarget.querySelector("video"));
-        }
-      }}
-      onPointerLeave={(event) => {
-        if (event.pointerType !== "touch") {
-          resetVideoPreview(event.currentTarget.querySelector("video"));
-        }
-      }}
-    >
-      <video
-        poster={posterImage}
-        className="peer h-full w-full object-cover"
-        preload="none"
-        playsInline
-        muted
-        loop
-        onPlaying={(event) => {
-          markVideoPreviewPlaying(event.currentTarget, true);
-        }}
-        onPause={(event) => {
-          markVideoPreviewPlaying(event.currentTarget, false);
-        }}
-        onEnded={(event) => {
-          resetVideoPreview(event.currentTarget);
-        }}
-        onError={(event) => {
-          markVideoPreviewPlaying(event.currentTarget, false);
-        }}
-      >
-        <source src={item.previewWebm} type="video/webm; codecs=vp9" />
-        <source src={item.previewVideo} type="video/mp4" />
-      </video>
-      <img
-        src={posterImage}
-        alt=""
-        aria-hidden="true"
-        data-video-template-poster=""
-        className="pointer-events-none absolute inset-0 h-full w-full object-cover peer-data-[preview-playing=true]:opacity-0"
-      />
-      <IconTooltipButton
-        type="button"
-        data-template-preview-id={`video:${item.id}`}
-        aria-label={t(
-          ($) => {
-            return $.artifacts.templates.playVideo;
-          },
-          {
-            title: item.title,
-          },
-        )}
-        className="absolute inset-0 flex cursor-pointer items-center justify-center bg-black/0 text-white opacity-100 transition-colors duration-200 hover:bg-black/25 focus-visible:bg-black/25 focus-visible:outline-none peer-data-[preview-playing=true]:pointer-events-none peer-data-[preview-playing=true]:!opacity-0"
-        onClick={(event) => {
-          startVideoPreview(
-            event.currentTarget.parentElement?.querySelector("video") ?? null,
-          );
-        }}
-      >
-        <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/55 text-white shadow-lg transition-transform group-hover/video-template-preview:scale-105">
-          <Play size={20} />
-        </span>
-      </IconTooltipButton>
-    </div>
-  );
-}
-
 /** The cover width every type's shelf uses, so the rows line up across tabs. */
 const PRESENTATION_SHELF_COVER = "w-[200px]";
-
-function VideoTemplateCard({
-  item,
-  selected,
-  requiresPro,
-  onSelect,
-}: {
-  item: VideoTemplateItem;
-  selected: boolean;
-  requiresPro: boolean;
-  onSelect: (item: VideoTemplateItem) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className={TEMPLATE_TILE_WRAPPER}>
-      <div
-        className={cn(
-          TEMPLATE_TILE_SELECTION_FRAME,
-          TEMPLATE_TILE_PREVIEW_FOCUS,
-          selected && TEMPLATE_TILE_SELECTED,
-        )}
-      >
-        <div className={cn(TEMPLATE_TILE_MEDIA, "aspect-[16/9]")}>
-          <VideoTemplatePreview item={item} />
-          {selected ? (
-            <span className="pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
-              <Check size={14} />
-            </span>
-          ) : null}
-          <button
-            type="button"
-            aria-label={
-              requiresPro
-                ? t(
-                    ($) => {
-                      return $.artifacts.templates.viewVideoPlans;
-                    },
-                    {
-                      title: item.title,
-                    },
-                  )
-                : t(
-                    ($) => {
-                      return $.artifacts.templates.selectVideo;
-                    },
-                    {
-                      title: item.title,
-                    },
-                  )
-            }
-            aria-pressed={requiresPro ? undefined : selected}
-            onClick={() => {
-              onSelect(item);
-            }}
-            className={cn(
-              TEMPLATE_TILE_USE,
-              requiresPro && "inline-flex items-center gap-1 !opacity-100",
-            )}
-          >
-            {requiresPro ? <Lock size={12} aria-hidden="true" /> : null}
-            {requiresPro
-              ? t(($) => {
-                  return $.artifacts.templates.needPro;
-                })
-              : t(($) => {
-                  return $.artifacts.templates.use;
-                })}
-          </button>
-        </div>
-      </div>
-      <div className={TEMPLATE_TILE_CAPTION}>
-        <p className={TEMPLATE_TILE_NAME}>{item.title}</p>
-      </div>
-    </div>
-  );
-}
-
-function VideoTemplateGrid({
-  items,
-  value,
-  videoGenerationAllowed,
-  onSelect,
-}: {
-  items: readonly VideoTemplateItem[];
-  value: GenerationTemplateRequest | undefined;
-  videoGenerationAllowed: boolean;
-  onSelect: (item: VideoTemplateItem) => void;
-}) {
-  return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {items.map((item) => {
-        return (
-          <VideoTemplateCard
-            key={item.id}
-            item={item}
-            selected={isSelectedVideoTemplate(item, value)}
-            requiresPro={!videoGenerationAllowed}
-            onSelect={onSelect}
-          />
-        );
-      })}
-    </div>
-  );
-}
 
 function WebsiteTemplateCard({
   item,
@@ -1616,14 +1371,6 @@ function illustrationPreviewImageUrlsForItems({
   });
 }
 
-function videoPreviewImageUrlsForItems(
-  items: readonly VideoTemplateItem[],
-): string[] {
-  return items.map((item) => {
-    return videoTemplatePosterImage(item);
-  });
-}
-
 function websitePreviewImageUrlsForItems(
   items: readonly WebsiteTemplateItem[],
 ): string[] {
@@ -1650,9 +1397,6 @@ function initialTemplatePreviewImageUrlsForCategory({
       items: ILLUSTRATION_TEMPLATE_ITEMS,
       variantIndexBySlug: {},
     });
-  }
-  if (category === "video") {
-    return videoPreviewImageUrlsForItems(VIDEO_TEMPLATE_ITEMS);
   }
   if (category === "website") {
     return websitePreviewImageUrlsForItems(WEBSITE_TEMPLATE_ITEMS);
@@ -3607,7 +3351,6 @@ function IllustrationTemplateCard({
 function resolveTemplatePickerCategory(
   category: string | null,
   customTemplatesEnabled: boolean,
-  videoPickersVisible: boolean,
 ): string {
   switch (category) {
     case "custom": {
@@ -3615,7 +3358,7 @@ function resolveTemplatePickerCategory(
     }
     case "video":
     case "avatar": {
-      return videoPickersVisible ? category : "slides";
+      return "slides";
     }
     case "slides":
     case "website":
@@ -3634,19 +3377,17 @@ function resolveTemplatePickerCategory(
 function TemplatePickerCategoryNav({
   selectedCategory,
   customTemplatesEnabled,
-  videoPickersVisible,
   onChange,
   onReopenCustom,
 }: {
   selectedCategory: string;
   customTemplatesEnabled: boolean;
-  videoPickersVisible: boolean;
   onChange: (value: string) => void;
   onReopenCustom: () => void;
 }) {
   const { t } = useTranslation();
   // Custom leads the list and is separated by a rule, because it answers who
-  // made a template while the seven below it answer what you are making. The
+  // made a template while the formats below it answer what you are making. The
   // format options keep their own order untouched.
   const categoryOptions: {
     value: string;
@@ -3685,24 +3426,6 @@ function TemplatePickerCategoryNav({
       }),
       Icon: ImageIcon,
     },
-    ...(videoPickersVisible
-      ? [
-          {
-            value: "video",
-            label: t(($) => {
-              return $.artifacts.kinds.video;
-            }),
-            Icon: Video,
-          },
-          {
-            value: "avatar",
-            label: t(($) => {
-              return $.artifacts.templates.avatar;
-            }),
-            Icon: User,
-          },
-        ]
-      : []),
     {
       value: "workflow",
       label: t(($) => {
@@ -5446,12 +5169,6 @@ function TemplatePickerDialog({
   signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const planCapabilities = useLastResolved(orgPlanCapabilities$);
-  const videoGenerationAllowed =
-    planCapabilities?.videoGenerationAllowed ?? true;
-  const openBillingPlans = useSet(openSettingsBillingPlans$);
-  const openSettings = useSet(setSettingsDialogOpen$);
   const category = useGet(signals.template.templatePickerCategory$);
   const setCategory = useSet(signals.template.setTemplatePickerCategory$);
   const search = useGet(signals.template.templatePickerSearch$);
@@ -5492,9 +5209,6 @@ function TemplatePickerDialog({
   const setIllustrationVariantIndex = useSet(
     signals.template.setIllustrationVariantIndex$,
   );
-  const clearAvatarVoiceSelection = useSet(
-    signals.template.clearAvatarTemplateVoiceSelection$,
-  );
   const previewItem =
     presentationItems.find((item) => {
       return item.slug === previewSlug;
@@ -5527,16 +5241,11 @@ function TemplatePickerDialog({
   const features = useGet(featureSwitch$);
   const customTemplatesEnabled =
     features[FeatureSwitchKey.CustomTemplates] === true;
-  const videoPickers = useLoadable(videoPickersVisible$);
-  const videoPickersVisible =
-    videoPickers.state === "hasData" && videoPickers.data;
   const selectedCategory = resolveTemplatePickerCategory(
     category,
     customTemplatesEnabled,
-    videoPickersVisible,
   );
   const showTemplatePickerSearch = selectedCategory === "workflow";
-  const showAvatarPickerToolbar = selectedCategory === "avatar";
 
   const previewImageUrlsForCategory = (targetCategory: string) => {
     if (targetCategory === "slides") {
@@ -5550,9 +5259,6 @@ function TemplatePickerDialog({
         items: ILLUSTRATION_TEMPLATE_ITEMS,
         variantIndexBySlug: illustrationVariantIndex,
       });
-    }
-    if (targetCategory === "video") {
-      return videoPreviewImageUrlsForItems(VIDEO_TEMPLATE_ITEMS);
     }
     if (targetCategory === "website") {
       return websitePreviewImageUrlsForItems(WEBSITE_TEMPLATE_ITEMS);
@@ -5576,7 +5282,6 @@ function TemplatePickerDialog({
     clearPresentationPreviews();
     resetImportedTemplatePicker();
     resetCustomTemplatePicker();
-    clearAvatarVoiceSelection();
     setPresentationGridScrollTop(0);
     onCloseComplete();
   };
@@ -5603,26 +5308,6 @@ function TemplatePickerDialog({
       type: "custom",
       selection: { userTemplateId: template.id },
     });
-    closeTemplatePicker();
-  };
-
-  const handleSelectVideo = (item: VideoTemplateItem) => {
-    if (!videoGenerationAllowed) {
-      closeTemplatePicker();
-      openBillingPlans();
-      detach(openSettings(true, pageSignal), Reason.DomCallback);
-      return;
-    }
-    onChange(toVideoGenerationTemplate(item));
-    closeTemplatePicker();
-  };
-
-  const handleSelectAvatar = (
-    avatar: AvatarVideoAvatar,
-    voice: AvatarVideoVoice,
-    aspectRatio: "portrait" | "landscape",
-  ) => {
-    onChange(toAvatarGenerationTemplate(avatar, voice, aspectRatio));
     closeTemplatePicker();
   };
 
@@ -5663,9 +5348,6 @@ function TemplatePickerDialog({
   };
 
   const handleCategoryChange = (nextCategory: string) => {
-    if (nextCategory !== "avatar") {
-      clearAvatarVoiceSelection();
-    }
     if (nextCategory === "custom") {
       resetCustomTemplatePicker();
     }
@@ -5744,7 +5426,6 @@ function TemplatePickerDialog({
               <TemplatePickerCategoryNav
                 selectedCategory={selectedCategory}
                 customTemplatesEnabled={customTemplatesEnabled}
-                videoPickersVisible={videoPickersVisible}
                 onChange={handleCategoryChange}
                 onReopenCustom={resetCustomTemplatePickerView}
               />
@@ -5759,9 +5440,7 @@ function TemplatePickerDialog({
                   <div
                     className={cn(
                       "relative h-[68px] shrink-0 items-center px-6 pr-14",
-                      showTemplatePickerSearch || showAvatarPickerToolbar
-                        ? "flex"
-                        : "hidden sm:flex",
+                      showTemplatePickerSearch ? "flex" : "hidden sm:flex",
                     )}
                   >
                     {showTemplatePickerSearch ? (
@@ -5769,9 +5448,6 @@ function TemplatePickerDialog({
                         search={search}
                         onSearchChange={handleSearchChange}
                       />
-                    ) : null}
-                    {showAvatarPickerToolbar ? (
-                      <AvatarTemplatePickerToolbar signals={signals} />
                     ) : null}
                   </div>
                 ) : null}
@@ -5782,8 +5458,6 @@ function TemplatePickerDialog({
                   importedPptItems={importedTemplateItems}
                   websiteItems={WEBSITE_TEMPLATE_ITEMS}
                   illustrationItems={ILLUSTRATION_TEMPLATE_ITEMS}
-                  videoItems={VIDEO_TEMPLATE_ITEMS}
-                  videoGenerationAllowed={videoGenerationAllowed}
                   workflowCatalog={workflowCatalog}
                   value={value}
                   illustrationVariantIndex={illustrationVariantIndex}
@@ -5801,8 +5475,6 @@ function TemplatePickerDialog({
                   onPreviewWebsite={handlePreviewWebsite}
                   onSelectIllustration={handleSelectIllustration}
                   onIllustrationVariantChange={setIllustrationVariantIndex}
-                  onSelectVideo={handleSelectVideo}
-                  onSelectAvatar={handleSelectAvatar}
                   onWorkflowCategoryChange={setWorkflowCategoryFilter}
                   onSelectWorkflow={handleSelectWorkflow}
                   runtime={runtime}
@@ -5842,8 +5514,6 @@ function TemplatePickerCategoryContent({
   importedPptItems,
   websiteItems,
   illustrationItems,
-  videoItems,
-  videoGenerationAllowed,
   workflowCatalog,
   value,
   illustrationVariantIndex,
@@ -5859,8 +5529,6 @@ function TemplatePickerCategoryContent({
   onPreviewWebsite,
   onSelectIllustration,
   onIllustrationVariantChange,
-  onSelectVideo,
-  onSelectAvatar,
   onWorkflowCategoryChange,
   onSelectWorkflow,
   runtime,
@@ -5871,8 +5539,6 @@ function TemplatePickerCategoryContent({
   importedPptItems: readonly ImportedPresentationTemplatePickerItem[];
   websiteItems: readonly WebsiteTemplateItem[];
   illustrationItems: readonly IllustrationTemplateItem[];
-  videoItems: readonly VideoTemplateItem[];
-  videoGenerationAllowed: boolean;
   workflowCatalog: ResolvedWorkflowTemplateCatalog;
   value: GenerationTemplateRequest | undefined;
   illustrationVariantIndex: Readonly<Record<string, number>>;
@@ -5898,12 +5564,6 @@ function TemplatePickerCategoryContent({
   onPreviewWebsite: (item: WebsiteTemplateItem) => void;
   onSelectIllustration: (item: IllustrationTemplateItem) => void;
   onIllustrationVariantChange: (slug: string, index: number) => void;
-  onSelectVideo: (item: VideoTemplateItem) => void;
-  onSelectAvatar: (
-    avatar: AvatarVideoAvatar,
-    voice: AvatarVideoVoice,
-    aspectRatio: "portrait" | "landscape",
-  ) => void;
   onWorkflowCategoryChange: (category: string) => void;
   onSelectWorkflow: (item: WorkflowTemplateItem) => void;
   runtime: TemplatePreviewRuntime;
@@ -5981,34 +5641,6 @@ function TemplatePickerCategoryContent({
           onSelect={onSelectIllustration}
           onVariantChange={onIllustrationVariantChange}
           runtime={runtime}
-        />
-      </div>
-    );
-  }
-
-  if (selectedCategory === "video") {
-    return (
-      <div
-        data-video-template-grid-scroll=""
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-0.5"
-      >
-        <VideoTemplateGrid
-          items={videoItems}
-          value={value}
-          videoGenerationAllowed={videoGenerationAllowed}
-          onSelect={onSelectVideo}
-        />
-      </div>
-    );
-  }
-
-  if (selectedCategory === "avatar") {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-6">
-        <AvatarTemplatePickerContent
-          signals={signals}
-          value={value}
-          onSelect={onSelectAvatar}
         />
       </div>
     );
@@ -6094,15 +5726,6 @@ function selectedComposerTemplateAttachment(
       customTemplates,
     );
   }
-  const avatar = avatarTemplateSelection(value);
-  if (avatar) {
-    return {
-      type: "avatar",
-      title: avatar.title,
-      category: "avatar",
-      previewImageUrl: avatar.previewUrl,
-    };
-  }
   const presentationItem = selectedPresentationTemplateItem(value);
   if (presentationItem && value?.type === "presentation") {
     const selectedTheme = findPresentationTemplateTheme(
@@ -6147,10 +5770,6 @@ function selectedComposerTemplateAttachment(
       ),
     };
   }
-  const videoItem = selectedVideoTemplateItem(value);
-  if (videoItem) {
-    return { type: "video", title: videoItem.title, category: "video" };
-  }
   const workflowItem = selectedWorkflowTemplateItem(value);
   if (workflowItem) {
     return {
@@ -6173,21 +5792,15 @@ function selectedComposerTemplateAttachment(
  */
 function useTemplatePickerTrigger(signals: ComposerSignals) {
   const { t } = useTranslation();
-  const videoPickers = useLoadable(videoPickersVisible$);
   const category = useGet(signals.template.templatePickerCategory$);
   const pickerFeatures = useGet(featureSwitch$);
   const customTemplatesEnabled =
     pickerFeatures[FeatureSwitchKey.CustomTemplates] === true;
   const createMode = useGet(signals.create.mode$);
-  const creativeVideo = useGet(signals.create.creativeVideo$);
   const openTemplatePicker = useSet(signals.template.openTemplatePicker$);
   const cardThemeIdBySlug = useGet(signals.template.templateCardThemeIdBySlug$);
   const runtime = signals.template.templatePreview;
-  const templateMode = creativeVideo
-    ? "video"
-    : createMode === "image"
-      ? "illustration"
-      : createMode;
+  const templateMode = createMode === "image" ? "illustration" : createMode;
   const label =
     templateMode === "illustration"
       ? t(($) => {
@@ -6203,7 +5816,6 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
   const selectedCategory = resolveTemplatePickerCategory(
     templateMode === "presentation" ? "slides" : (templateMode ?? category),
     customTemplatesEnabled,
-    videoPickers.state === "hasData" && videoPickers.data,
   );
   const prewarm = () => {
     prewarmTemplatePreviewImages(
@@ -9660,23 +9272,8 @@ function ComposerExistingMediaModelPickerSlot({
 
 function ComposerModelPickerSlot({ signals }: { signals: ComposerSignals }) {
   const createMode = useGet(signals.create.mode$);
-  const creativeVideo = useGet(signals.create.creativeVideo$);
-  const videoPickers = useLoadable(videoPickersVisible$);
   if (createMode === "image" && signals.imageModel) {
     return <ComposerCreateImageModelPicker model={signals.imageModel} />;
-  }
-  if (
-    creativeVideo &&
-    signals.videoModel &&
-    videoPickers.state === "hasData" &&
-    videoPickers.data
-  ) {
-    return (
-      <ComposerCreateVideoModelPicker
-        model={signals.videoModel}
-        signals={signals}
-      />
-    );
   }
   const imageModelSignals = signals.imageModel;
   const videoModelSignals = signals.videoModel;
@@ -10562,18 +10159,6 @@ function ComposerFooter({
             />
             <ComposerTaskControls signals={signals} />
           </div>
-          {/*
-            The video spec follows the type it describes, among the controls
-            that act on the run rather than on the message, and on the same line
-            as the model it is resolved against.
-
-            It is a sibling of the icon row rather than a member of it: as a
-            footer item of its own it takes `basis-full` and claims the first
-            line below the composer's width rule, instead of competing with four
-            icons for one. Nested inside the row, that basis would resolve
-            against the row and take a line the row cannot spare.
-          */}
-          <ComposerVideoOptionsChip signals={signals} />
           <div className="ml-auto flex shrink-0 items-center gap-1 composer-wide:gap-2">
             <ComposerModelPickerSlot signals={signals} />
             <MicButton signals={signals} actions={actions} />

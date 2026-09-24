@@ -621,23 +621,8 @@
       "all": "全部",
       "avatar": "虚拟形象",
       "avatarWithId": "虚拟形象 {{id}}",
-      "backToAvatars": "返回虚拟形象",
       "categories": "模板分类",
       "category": "模板分类",
-      "chooseVoice": "为 {{title}} 选择音色",
-      "filters": {
-        "age": "年龄",
-        "all": "全部",
-        "aspectRatio": "画面比例",
-        "clear": "清除",
-        "ethnicity": "族裔",
-        "gender": "性别",
-        "language": "语言",
-        "scene": "场景",
-        "style": "风格",
-        "title": "筛选",
-        "useCase": "使用场景"
-      },
       "fullPreview": "{{title}} 网站完整预览",
       "htmlPreview": "{{title}} HTML 预览",
       "illustration": "插画",
@@ -648,25 +633,18 @@
       "importedSlides_other": "{{count}} 页",
       "importFile": "导入你自己的文件",
       "multiAccent": "多口音",
-      "needPro": "需要 Pro",
       "nextSlide": "预览下一页",
       "noMatches": "没有匹配结果",
       "placeholder": "{{title}} 网站预览占位图",
-      "playVideo": "播放视频模板预览 {{title}}",
-      "previewAvatarVideo": "预览虚拟形象视频 {{title}}",
       "previewCurrentSlide": "从当前页预览 {{title}}",
       "previewSlide": "预览第 {{slideNumber}} 页",
-      "previewVoice": "试听音色 {{title}}",
       "previewWebsite": "预览网站模板 {{title}}",
       "previousSlide": "预览上一页",
-      "recommended": "推荐",
       "renameImportedTemplate": "重命名模板",
       "searchConnector": "搜索模板",
       "searchConnectors": "搜索模板",
       "selectStyle": "选择风格 {{style}}",
       "selectTemplate": "选择模板 {{title}}",
-      "selectVideo": "选择视频模板 {{title}}",
-      "selectVoice": "选择音色 {{title}}",
       "selectWebsite": "选择网站模板 {{title}}",
       "selectWorkflow": "选择工作流模板 {{title}}",
       "showVariant": "显示变体 {{variantNumber}}",
@@ -699,7 +677,6 @@
       "tryDifferentSearch": "换个关键词试试。",
       "use": "使用",
       "useThisTemplate": "使用这个模板",
-      "viewVideoPlans": "查看视频模板 {{title}} 可用的套餐",
       "visibility": {
         "change": "修改",
         "changeLabel": "修改模板可见范围",
@@ -1186,7 +1163,6 @@
         "moreConnectorsChannels": "更多自定义连接器和渠道集成",
         "supportEmail": "邮件支持",
         "supportPriority": "优先支持",
-        "videoGeneration": "视频和数字人生成",
         "voiceInput": "语音输入，每天{{requests}}次请求、{{minutes}}分钟",
         "webhookAutomations": "一个webhook就能从任何系统发起运行"
       },
@@ -1772,7 +1748,6 @@
         "addTemplate": "添加模板",
         "imagePlaceholder": "描述你想生成的图片…",
         "presentationPlaceholder": "你的演示文稿要讲什么？",
-        "settingsAdjusted": "部分视频设置已针对这个模型做了调整",
         "slideCount": "幻灯片数量",
         "slideCountAuto": "自动",
         "slideCountRange": "{{range}} 页"
@@ -2852,16 +2827,7 @@
       "removeVideo": "移除视频模板 {{title}}",
       "removeWebsite": "移除网站模板 {{title}}",
       "removeWorkflow": "移除工作流模板 {{title}}",
-      "retry": "重试",
-      "videoOptions": "视频选项",
-      "videoOptionsAudio": "生成音频",
-      "videoOptionsAudioOff": "音频已关闭",
-      "videoOptionsAudioOn": "音频已开启",
-      "videoOptionsDuration": "时长",
-      "videoOptionsLabel": "视频选项 {{spec}}",
-      "videoOptionsModel": "模型",
-      "videoOptionsRatio": "画面比例",
-      "videoOptionsResolution": "分辨率"
+      "retry": "重试"
     },
     "thread": {
       "ariaLabel": "聊天会话",
@@ -4186,12 +4152,10 @@
     "documentTitles": {
       "chooseImage": "选择图片风格",
       "choosePresentation": "选择演示文稿模板",
-      "chooseVideo": "选择视频风格",
       "chooseWorkflow": "选择工作流",
       "make": "欢迎使用{{brandName}}",
       "runImage": "创作你的第一张图片",
       "runPresentation": "制作你的第一份演示文稿",
-      "runVideo": "制作你的第一个视频",
       "runWorkflow": "运行你的第一个工作流"
     },
     "make": {
@@ -4233,9 +4197,7 @@
       "title": "你想先做点什么"
     },
     "runAction": {
-      "checkingPlan": "正在检查套餐",
-      "runNow": "立即运行",
-      "upgradePro": "升级Pro后运行"
+      "runNow": "立即运行"
     },
     "sourcesFirst": {
       "common": {
@@ -4778,11 +4740,6 @@
         "slideAlt": "{{title}}第{{slide}}页",
         "title": "选一个演示模板开始",
         "viewTemplate": "查看{{title}}演示文稿"
-      },
-      "video": {
-        "description": "以它为参考，创作你想要的视频。",
-        "selectTemplate": "选择{{title}}视频模板",
-        "title": "选一个视频模板开始"
       }
     },
     "templateRun": {
@@ -4797,12 +4754,6 @@
         "notePlaceholder": "补充你的演示内容与要求",
         "previewLabel": "演示模板预览",
         "title": "完成你的演示文稿"
-      },
-      "video": {
-        "noteLabel": "自定义视频提示词",
-        "notePlaceholder": "补充你的自定义提示词，生成属于你的视频",
-        "previewLabel": "视频模板预览",
-        "title": "定制你的视频"
       }
     },
     "templates": {

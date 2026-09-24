@@ -1,6 +1,6 @@
 import { command, computed, state } from "ccstate";
 import {
-  PAID_TOOL_IDS,
+  AVAILABLE_PAID_TOOL_IDS,
   paidToolsContract,
   type PaidToolId,
 } from "@okouai/api-contracts/contracts/paid-tools";
@@ -41,7 +41,7 @@ function createPaidToolsSignals(
       return revision + 1;
     });
   });
-  const tools = PAID_TOOL_IDS.map((toolId) => {
+  const tools = AVAILABLE_PAID_TOOL_IDS.map((toolId) => {
     const enabled$ = computed(async (get) => {
       const changes = get(confirmedChanges$);
       const disabledTools = await get(disabledTools$);

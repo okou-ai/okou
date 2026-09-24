@@ -271,12 +271,6 @@ export const ONBOARDING_WORKFLOW_SPECS = {
       requiredConnectorSlugs: ["gmail"],
       optionalConnectorSlugs: ["linear", "github"],
     },
-    {
-      id: "summarize-zendesk-tickets-daily",
-      prompt:
-        "Create a no-connector workflow that turns approved FAQ content into short digital-human support videos with the built-in avatar-video capability. Draft the script and storyboard first, then generate only after the user approves them. Do not request an avatar provider connector.",
-      requiredConnectorSlugs: [],
-    },
   ],
   ceo: [
     {

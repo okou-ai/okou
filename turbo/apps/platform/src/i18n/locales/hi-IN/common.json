@@ -622,23 +622,8 @@
       "all": "सभी",
       "avatar": "अवतार",
       "avatarWithId": "अवतार {{id}}",
-      "backToAvatars": "अवतार पर वापस जाएँ",
       "categories": "टेम्पलेट श्रेणियां",
       "category": "टेम्पलेट श्रेणी",
-      "chooseVoice": "{{title}} के लिए आवाज़ चुनें",
-      "filters": {
-        "age": "आयु",
-        "all": "सभी",
-        "aspectRatio": "आस्पेक्ट रेशियो",
-        "clear": "साफ़ करें",
-        "ethnicity": "जातीयता",
-        "gender": "लिंग",
-        "language": "भाषा",
-        "scene": "दृश्य",
-        "style": "शैली",
-        "title": "फ़िल्टर",
-        "useCase": "उपयोग का प्रकार"
-      },
       "fullPreview": "{{title}} वेबसाइट पूर्ण पूर्वावलोकन",
       "htmlPreview": "{{title}} HTML पूर्वावलोकन",
       "illustration": "चित्रण",
@@ -649,25 +634,18 @@
       "importedSlides_other": "{{count}} स्लाइड",
       "importFile": "टेम्पलेट आयात करें",
       "multiAccent": "बहु-उच्चारण",
-      "needPro": "Pro चाहिए",
       "nextSlide": "अगली स्लाइड का पूर्वावलोकन करें",
       "noMatches": "कोई मेल नहीं",
       "placeholder": "{{title}} वेबसाइट पूर्वावलोकन प्लेसहोल्डर",
-      "playVideo": "वीडियो टेम्पलेट पूर्वावलोकन {{title}} चलाएँ",
-      "previewAvatarVideo": "अवतार वीडियो {{title}} का पूर्वावलोकन करें",
       "previewCurrentSlide": "वर्तमान स्लाइड पर {{title}} का पूर्वावलोकन करें",
       "previewSlide": "पूर्वावलोकन स्लाइड {{slideNumber}}",
-      "previewVoice": "आवाज़ {{title}} सुनें",
       "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",
       "previousSlide": "पिछली स्लाइड का पूर्वावलोकन करें",
-      "recommended": "अनुशंसित",
       "renameImportedTemplate": "टेम्पलेट का नाम बदलें",
       "searchConnector": "टेम्पलेट खोजें",
       "searchConnectors": "टेम्पलेट खोजें",
       "selectStyle": "शैली {{style}} चुनें",
       "selectTemplate": "टेम्पलेट {{title}} चुनें",
-      "selectVideo": "वीडियो टेम्पलेट {{title}} चुनें",
-      "selectVoice": "आवाज़ {{title}} चुनें",
       "selectWebsite": "वेबसाइट टेम्पलेट {{title}} चुनें",
       "selectWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} चुनें",
       "showVariant": "वैरिएंट {{variantNumber}} दिखाएँ",
@@ -700,7 +678,6 @@
       "tryDifferentSearch": "भिन्न खोज का प्रयास करें.",
       "use": "उपयोग",
       "useThisTemplate": "इस टेम्पलेट का उपयोग करें",
-      "viewVideoPlans": "वीडियो टेम्पलेट {{title}} के लिए प्लान देखें",
       "visibility": {
         "change": "बदलें",
         "changeLabel": "टेम्पलेट की दृश्यता बदलें",
@@ -1187,7 +1164,6 @@
         "moreConnectorsChannels": "ज़्यादा कस्टम कनेक्टर और चैनल इंटीग्रेशन",
         "supportEmail": "ईमेल सहायता",
         "supportPriority": "प्राथमिकता सहायता",
-        "videoGeneration": "वीडियो और अवतार जनरेशन",
         "voiceInput": "वॉइस इनपुट: रोज़ {{requests}} रिक्वेस्ट और {{minutes}} मिनट",
         "webhookAutomations": "किसी भी सिस्टम से एक webhook पर रन शुरू करें"
       },
@@ -1775,7 +1751,6 @@
         "addTemplate": "टेम्पलेट जोड़ें",
         "imagePlaceholder": "आप जो छवि बनाना चाहते हैं उसका वर्णन करें…",
         "presentationPlaceholder": "आपकी प्रस्तुति का विषय क्या है?",
-        "settingsAdjusted": "इस मॉडल के लिए कुछ वीडियो सेटिंग समायोजित की गई हैं",
         "slideCount": "स्लाइड की संख्या",
         "slideCountAuto": "स्वचालित",
         "slideCountRange": "{{range}} स्लाइड"
@@ -2861,16 +2836,7 @@
       "removeVideo": "वीडियो टेम्प्लेट {{title}} हटाएं",
       "removeWebsite": "वेबसाइट टेम्पलेट {{title}} हटाएँ",
       "removeWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} हटाएँ",
-      "retry": "फिर से कोशिश करें",
-      "videoOptions": "वीडियो विकल्प",
-      "videoOptionsAudio": "ऑडियो बनाएँ",
-      "videoOptionsAudioOff": "ऑडियो बंद",
-      "videoOptionsAudioOn": "ऑडियो चालू",
-      "videoOptionsDuration": "अवधि",
-      "videoOptionsLabel": "वीडियो विकल्प {{spec}}",
-      "videoOptionsModel": "मॉडल",
-      "videoOptionsRatio": "अनुपात",
-      "videoOptionsResolution": "रिज़ॉल्यूशन"
+      "retry": "फिर से कोशिश करें"
     },
     "thread": {
       "ariaLabel": "चैट थ्रेड",
@@ -4202,12 +4168,10 @@
     "documentTitles": {
       "chooseImage": "एक छवि शैली चुनें",
       "choosePresentation": "एक प्रस्तुति टेम्पलेट चुनें",
-      "chooseVideo": "एक वीडियो शैली चुनें",
       "chooseWorkflow": "एक वर्कफ़्लो चुनें",
       "make": "{{brandName}} में आपका स्वागत है",
       "runImage": "अपनी पहली छवि बनाएं",
       "runPresentation": "अपनी पहली प्रस्तुति बनाएं",
-      "runVideo": "अपना पहला वीडियो बनाएं",
       "runWorkflow": "अपना पहला वर्कफ़्लो चलाएँ"
     },
     "make": {
@@ -4249,9 +4213,7 @@
       "title": "आप पहले क्या बनाना चाहते हैं"
     },
     "runAction": {
-      "checkingPlan": "योजना की जाँच हो रही है",
-      "runNow": "अब रन करें",
-      "upgradePro": "चलाने के लिए प्रो को अपग्रेड करें"
+      "runNow": "अब रन करें"
     },
     "sourcesFirst": {
       "common": {
@@ -4794,11 +4756,6 @@
         "slideAlt": "{{title}} स्लाइड {{slide}}",
         "title": "आरंभ करने के लिए एक प्रस्तुति टेम्पलेट चुनें",
         "viewTemplate": "{{title}} प्रस्तुति देखें"
-      },
-      "video": {
-        "description": "जिस वीडियो को आप बनाना चाहते हैं उसके संदर्भ के रूप में इसका उपयोग करें।",
-        "selectTemplate": "{{title}} वीडियो टेम्पलेट चुनें",
-        "title": "आरंभ करने के लिए एक वीडियो टेम्पलेट चुनें"
       }
     },
     "templateRun": {
@@ -4813,12 +4770,6 @@
         "notePlaceholder": "अपनी प्रस्तुति की सामग्री और निर्देश जोड़ें",
         "previewLabel": "प्रस्तुति टेम्पलेट पूर्वावलोकन",
         "title": "अपनी प्रस्तुति को पूरा करें"
-      },
-      "video": {
-        "noteLabel": "कस्टम वीडियो प्रॉम्प्ट",
-        "notePlaceholder": "अपने स्वयं के वीडियो के साथ रीमिक्स करने के लिए अपना कस्टम प्रॉम्प्ट जोड़ें",
-        "previewLabel": "वीडियो टेम्पलेट पूर्वावलोकन",
-        "title": "अपने वीडियो को अनुकूलित करें"
       }
     },
     "templates": {

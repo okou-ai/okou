@@ -621,23 +621,8 @@
       "all": "すべて",
       "avatar": "アバター",
       "avatarWithId": "アバター {{id}}",
-      "backToAvatars": "アバターに戻る",
       "categories": "テンプレートのカテゴリ",
       "category": "テンプレートカテゴリ",
-      "chooseVoice": "{{title}}の音声を選択",
-      "filters": {
-        "age": "年齢",
-        "all": "すべて",
-        "aspectRatio": "アスペクト比",
-        "clear": "クリア",
-        "ethnicity": "民族",
-        "gender": "性別",
-        "language": "言語",
-        "scene": "シーン",
-        "style": "スタイル",
-        "title": "フィルター",
-        "useCase": "用途"
-      },
       "fullPreview": "{{title}} Web サイトの完全なプレビュー",
       "htmlPreview": "{{title}} HTML プレビュー",
       "illustration": "イラストレーション",
@@ -648,25 +633,18 @@
       "importedSlides_other": "{{count}} 枚",
       "importFile": "テンプレートをインポート",
       "multiAccent": "マルチアクセント",
-      "needPro": "Pro が必要",
       "nextSlide": "次のスライドをプレビューする",
       "noMatches": "一致しません",
       "placeholder": "{{title}} Web サイトのプレビュー プレースホルダー",
-      "playVideo": "ビデオ テンプレートのプレビューを再生 {{title}}",
-      "previewAvatarVideo": "アバター動画{{title}}をプレビュー",
       "previewCurrentSlide": "現在のスライドで {{title}} をプレビューする",
       "previewSlide": "スライドのプレビュー {{slideNumber}}",
-      "previewVoice": "音声{{title}}を試聴",
       "previewWebsite": "Web サイト テンプレートのプレビュー {{title}}",
       "previousSlide": "前のスライドをプレビューする",
-      "recommended": "おすすめ",
       "renameImportedTemplate": "テンプレート名を変更",
       "searchConnector": "テンプレートを検索",
       "searchConnectors": "テンプレートを検索",
       "selectStyle": "スタイル {{style}} を選択してください",
       "selectTemplate": "テンプレート {{title}} を選択します",
-      "selectVideo": "ビデオ テンプレート {{title}} を選択してください",
-      "selectVoice": "音声{{title}}を選択",
       "selectWebsite": "Web サイト テンプレート {{title}} を選択してください",
       "selectWorkflow": "ワークフロー テンプレート {{title}} を選択します",
       "showVariant": "バリアント {{variantNumber}} を表示",
@@ -699,7 +677,6 @@
       "tryDifferentSearch": "別の検索を試してください。",
       "use": "使用する",
       "useThisTemplate": "このテンプレートを使用してください",
-      "viewVideoPlans": "動画テンプレート {{title}} のプランを表示",
       "visibility": {
         "change": "変更",
         "changeLabel": "テンプレートの公開範囲を変更",
@@ -1186,7 +1163,6 @@
         "moreConnectorsChannels": "カスタムコネクターとチャネル連携をより多く",
         "supportEmail": "メールサポート",
         "supportPriority": "優先サポート",
-        "videoGeneration": "動画とアバターの生成",
         "voiceInput": "音声入力 1 日 {{requests}} 回・{{minutes}} 分",
         "webhookAutomations": "Webhook 一発でどのシステムからでも実行を開始"
       },
@@ -1772,7 +1748,6 @@
         "addTemplate": "テンプレートを追加",
         "imagePlaceholder": "作成したい画像を説明してください…",
         "presentationPlaceholder": "プレゼンテーションのテーマは何ですか？",
-        "settingsAdjusted": "このモデルに合わせて一部の動画設定を調整しました",
         "slideCount": "スライド数",
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}}枚"
@@ -2852,16 +2827,7 @@
       "removeVideo": "ビデオ テンプレート {{title}} を削除します",
       "removeWebsite": "Web サイト テンプレート {{title}} を削除します",
       "removeWorkflow": "ワークフロー テンプレート {{title}} を削除します",
-      "retry": "再試行",
-      "videoOptions": "動画オプション",
-      "videoOptionsAudio": "音声を生成",
-      "videoOptionsAudioOff": "音声オフ",
-      "videoOptionsAudioOn": "音声オン",
-      "videoOptionsDuration": "長さ",
-      "videoOptionsLabel": "動画オプション {{spec}}",
-      "videoOptionsModel": "モデル",
-      "videoOptionsRatio": "比率",
-      "videoOptionsResolution": "解像度"
+      "retry": "再試行"
     },
     "thread": {
       "ariaLabel": "チャットスレッド",
@@ -4186,12 +4152,10 @@
     "documentTitles": {
       "chooseImage": "画像スタイルを選択してください",
       "choosePresentation": "プレゼンテーションテンプレートを選択してください",
-      "chooseVideo": "ビデオスタイルを選択してください",
       "chooseWorkflow": "ワークフローを選択する",
       "make": "{{brandName}} へようこそ",
       "runImage": "最初のイメージを作成する",
       "runPresentation": "最初のプレゼンテーションを作成する",
-      "runVideo": "初めてのビデオを作成する",
       "runWorkflow": "最初のワークフローを実行する"
     },
     "make": {
@@ -4233,9 +4197,7 @@
       "title": "最初に何を作りたいですか"
     },
     "runAction": {
-      "checkingPlan": "計画の確認",
-      "runNow": "今すぐ実行",
-      "upgradePro": "実行するには Pro をアップグレードしてください"
+      "runNow": "今すぐ実行"
     },
     "sourcesFirst": {
       "common": {
@@ -4778,11 +4740,6 @@
         "slideAlt": "{{title}} スライド {{slide}}",
         "title": "開始するプレゼンテーション テンプレートを選択してください",
         "viewTemplate": "{{title}} プレゼンテーションを表示する"
-      },
-      "video": {
-        "description": "作成したい動画の参考にしてください。",
-        "selectTemplate": "{{title}} ビデオ テンプレートを選択します",
-        "title": "開始するビデオテンプレートを選択してください"
       }
     },
     "templateRun": {
@@ -4797,12 +4754,6 @@
         "notePlaceholder": "プレゼンテーションの内容と説明を追加します",
         "previewLabel": "プレゼンテーションテンプレートのプレビュー",
         "title": "プレゼンテーションを充実させる"
-      },
-      "video": {
-        "noteLabel": "カスタムビデオプロンプト",
-        "notePlaceholder": "カスタム プロンプトを追加して、独自のビデオとリミックスします",
-        "previewLabel": "ビデオテンプレートのプレビュー",
-        "title": "ビデオをカスタマイズする"
       }
     },
     "templates": {

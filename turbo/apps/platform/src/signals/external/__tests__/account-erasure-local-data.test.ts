@@ -11,8 +11,8 @@ import {
 import {
   ONBOARDING_CHECKOUT_STATE_PARAM,
   readOnboardingCheckoutDraft$,
-  storeOnboardingCheckoutDraft$,
 } from "../../onboarding/onboarding-state.ts";
+import { sessionStorageSignals } from "../session-storage.ts";
 import {
   appendVoiceDraftSamples,
   createVoiceDraftRecording,
@@ -135,11 +135,17 @@ test("an ambiguous legacy cache name cannot cause cross-account deletion", async
 test("checkout draft belongs to one account and is purged only for that account", async () => {
   const owner = `user_${crypto.randomUUID().replaceAll("-", "")}`;
   const peer = `user_${crypto.randomUUID().replaceAll("-", "")}`;
-  const state = context.store.set(storeOnboardingCheckoutDraft$, {
-    userId: owner,
-    prompt: "private prompt",
-    note: "private note",
-  });
+  // The retired video checkout page can no longer produce this state. Seed
+  // its persisted keys to verify that account erasure still purges old drafts.
+  const state = crypto.randomUUID();
+  for (const [key, value] of [
+    ["vm0:onboarding:checkout-state", state],
+    ["vm0:onboarding:checkout-owner", owner],
+    ["vm0:onboarding:checkout-prompt", "private prompt"],
+    ["vm0:onboarding:checkout-note", "private note"],
+  ] as const) {
+    context.store.set(sessionStorageSignals(key).set$, value);
+  }
   const searchParams = new URLSearchParams({
     [ONBOARDING_CHECKOUT_STATE_PARAM]: state,
   });

@@ -87,7 +87,6 @@ import {
   createEditorDocumentSnapshot,
   draftToEditorDoc,
   INLINE_TEMPLATE_NODE_NAME,
-  messageDocumentToEditorDoc,
   TEMPLATE_ATTACHMENT_NODE_NAME,
   type EditorDocumentSnapshot,
 } from "./user-message-document-codec.ts";
@@ -2817,7 +2816,7 @@ function createInsertUserMessageCommand(editor: Editor) {
     if (insertableParts.length === 0) {
       return;
     }
-    const restored = messageDocumentToEditorDoc({
+    const restored = draftToEditorDoc({
       version: 1,
       parts: insertableParts,
     });

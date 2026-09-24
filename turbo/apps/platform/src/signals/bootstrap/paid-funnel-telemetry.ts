@@ -4,7 +4,7 @@ import { capturePaidOnboardingEvent } from "../../lib/posthog.ts";
 import type { OnboardingRouteStep } from "../onboarding/onboarding-state.ts";
 import { sendEvent$ } from "../marketing/events.ts";
 
-// Ordered so `step_index` / `step_count` stay comparable across the three
+// Ordered so `step_index` / `step_count` stay comparable across the two
 // template branches that share the same two-step shape.
 const ONBOARDING_STEP_ORDER: readonly OnboardingRouteStep[] = [
   "make",
@@ -14,8 +14,6 @@ const ONBOARDING_STEP_ORDER: readonly OnboardingRouteStep[] = [
   "presentation-run",
   "image-template",
   "image-run",
-  "video-template",
-  "video-run",
 ];
 
 type TelemetryProperties = Record<string, string | number | boolean>;
@@ -58,22 +56,11 @@ export const capturePaidOnboardingRoleConfirmed$ = command(
 );
 
 export const capturePaidOnboardingRedirectToStripe$ = command(
-  ({ set }, checkoutSource: "onboarding_video" | "paywall"): void => {
+  ({ set }, checkoutSource: "paywall"): void => {
     set(sendEvent$, "checkout-start");
     capturePaidOnboardingEvent("RedirectToStripe", {
       ...telemetryProperties(),
       checkout_source: checkoutSource,
-    });
-  },
-);
-
-export const capturePaidOnboardingAppHandoff$ = command(
-  (_context, prompt: string): void => {
-    capturePaidOnboardingEvent("AppHandoff", {
-      ...telemetryProperties(),
-      destination: "app",
-      prompt_present: prompt.trim().length > 0,
-      prompt_length: prompt.length,
     });
   },
 );

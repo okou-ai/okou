@@ -1,7 +1,7 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 
 import {
   click,
@@ -13,22 +13,11 @@ import {
   AGENT_ID,
   context,
   mockTemplateChat,
-  openTemplatePicker,
 } from "./chat-composer-template-gallery-test-helpers.ts";
 
 const BEFORE_CUTOFF = "2026-09-21T07:13:24.999Z";
 const AT_CUTOFF = "2026-09-21T07:13:25.000Z";
 const AFTER_CUTOFF = "2026-09-22T00:00:00.000Z";
-
-// Draw a deterministic card order that offers video and avatar entries when
-// permitted, so their absence cannot pass just because neither was sampled.
-vi.hoisted(() => {
-  let sample = 1;
-  vi.spyOn(Math, "random").mockImplementation(() => {
-    sample += 1;
-    return 1 / sample;
-  });
-});
 
 function account(createdAt: string | null) {
   return {
@@ -75,7 +64,7 @@ test.each([
     visible: true,
   },
 ])(
-  "Video entry points for $cohort paid accounts",
+  "Video model selection for $cohort paid accounts",
   async ({ createdAt, enabled, visible }) => {
     mockTemplateChat({ tier: "pro" });
     context.mocks.browser.matchMedia((query) => {
@@ -88,19 +77,6 @@ test.each([
       auth: { user: account(createdAt) },
       featureSwitches: { [FeatureSwitchKey.NewUserVideoPickers]: enabled },
     });
-
-    const cards = await screen.findByTestId("start-cards");
-    await waitFor(() => {
-      const templateButtons = queryAllByRoleFast("button", cards).filter(
-        (button) => {
-          return button.getAttribute("aria-label") === "Browse templates";
-        },
-      );
-      expect(templateButtons).toHaveLength(3);
-    });
-    for (const title of ["Create a video", "Create an avatar"]) {
-      expect(within(cards).queryAllByText(title)).toHaveLength(visible ? 1 : 0);
-    }
 
     await openModels();
     const models = await screen.findByRole("menu", { name: "Models" });
@@ -127,57 +103,5 @@ test.each([
         screen.queryByRole("menu", { name: "Models" }),
       ).not.toBeInTheDocument();
     });
-
-    const dialog = await openTemplatePicker(user);
-    const templates = within(dialog).getByRole("tablist", {
-      name: "Template categories",
-    });
-    const categories = queryAllByRoleFast("tab", templates).map((tab) => {
-      return tab.textContent;
-    });
-    expect(categories).toStrictEqual(
-      visible
-        ? [
-            "Presentation",
-            "Website",
-            "Illustration",
-            "Video",
-            "Avatar",
-            "Workflow",
-          ]
-        : ["Presentation", "Website", "Illustration", "Workflow"],
-    );
   },
 );
-
-test("New paid accounts cannot reopen the video catalog through a picker link", async () => {
-  mockTemplateChat({ tier: "pro" });
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat?templatePicker=video`,
-    auth: { user: account(AT_CUTOFF) },
-  });
-
-  const dialog = await screen.findByRole("dialog");
-  const templates = within(dialog).getByRole("tablist", {
-    name: "Template categories",
-  });
-  const tabs = queryAllByRoleFast("tab", templates);
-  const selected = tabs.find((tab) => {
-    return tab.getAttribute("aria-selected") === "true";
-  });
-  expect(selected).toHaveTextContent("Presentation");
-  expect(
-    tabs.map((tab) => {
-      return tab.textContent;
-    }),
-  ).not.toContain("Video");
-  expect(
-    tabs.map((tab) => {
-      return tab.textContent;
-    }),
-  ).not.toContain("Avatar");
-  expect(
-    within(dialog).queryByLabelText(/^Select video template/u),
-  ).not.toBeInTheDocument();
-});
