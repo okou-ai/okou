@@ -1491,7 +1491,6 @@
         },
         "shareDialog": {
           "description": "提交一条公开帖子供审核。每人只能成功领取一次奖励。",
-          "draft": "我每周一的竞品报告都交给 {{assistantName}} 做——它会读完资料，直接把表格给我。",
           "helper": "帖子必须是公开的，并且提到 {{assistantName}}。",
           "inputLabel": "帖子链接",
           "openX": "打开 X",
@@ -1506,7 +1505,8 @@
           "stepPaste": "把链接贴回来",
           "stepWrite": "写这条帖子",
           "submit": "提交",
-          "title": "在 X 上分享 {{assistantName}}"
+          "title": "在 X 上分享 {{assistantName}}",
+          "writingPrompt": "用自己的话写下你实际用 {{assistantName}} 尝试过的事。"
         },
         "slack": {
           "action": "添加",

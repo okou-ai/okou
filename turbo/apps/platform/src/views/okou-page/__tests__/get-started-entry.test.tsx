@@ -378,6 +378,36 @@ test("A workflow reward still with the reviewer stops offering the step again", 
   expect(row.getAttribute("role")).not.toBe("menuitem");
 });
 
+test("The X step opens a blank composer for an original post", async () => {
+  configureQuestPage(context, "member");
+  const open = vi.spyOn(window, "open").mockReturnValue(null);
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-share"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Share Okou on X",
+  });
+  expect(
+    within(dialog).getByText(
+      "Write about something you actually tried with Okou, in your own words.",
+    ),
+  ).toBeInTheDocument();
+  // The only editable field in the dialog is still the post link.
+  expect(within(dialog).getAllByRole("textbox")).toHaveLength(1);
+
+  click(buttonNamed("Open X", dialog));
+  expect(open).toHaveBeenCalledWith(
+    "https://x.com/intent/post",
+    "okou-share-post",
+  );
+  expect(buttonNamed("Submit", dialog)).toBeDisabled();
+});
+
 test("Sharing on X restores pending state and an Ably review notification updates the open panel", async () => {
   const data = configureQuestPage(context, "admin");
   await setupPage({

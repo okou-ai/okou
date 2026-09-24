@@ -1491,7 +1491,6 @@
         },
         "shareDialog": {
           "description": "Kirim postingan publik untuk ditinjau. Satu hadiah yang disetujui per orang.",
-          "draft": "Laporan kompetitor tiap Senin saya kerjakan dengan {{assistantName}} — dia membaca sumbernya dan mengembalikan tabelnya.",
           "helper": "Postingan harus publik dan menyebut {{assistantName}}.",
           "inputLabel": "Tautan postingan",
           "openX": "Buka X",
@@ -1506,7 +1505,8 @@
           "stepPaste": "Tempel tautannya",
           "stepWrite": "Tulis postingannya",
           "submit": "Kirim",
-          "title": "Bagikan {{assistantName}} di X"
+          "title": "Bagikan {{assistantName}} di X",
+          "writingPrompt": "Tulis dengan kata-katamu sendiri tentang sesuatu yang benar-benar kamu coba dengan {{assistantName}}."
         },
         "slack": {
           "action": "Tambahkan",

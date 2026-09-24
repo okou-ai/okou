@@ -1492,7 +1492,6 @@
         },
         "shareDialog": {
           "description": "Submit a public post for review. One successful reward per person.",
-          "draft": "Been running my Monday competitor report with {{assistantName}} — it reads the sources and hands back the table.",
           "helper": "The post has to be public and mention {{assistantName}}.",
           "inputLabel": "Post link",
           "openX": "Open X",
@@ -1507,7 +1506,8 @@
           "stepPaste": "Paste the link",
           "stepWrite": "Write the post",
           "submit": "Submit",
-          "title": "Share {{assistantName}} on X"
+          "title": "Share {{assistantName}} on X",
+          "writingPrompt": "Write about something you actually tried with {{assistantName}}, in your own words."
         },
         "slack": {
           "action": "Add",

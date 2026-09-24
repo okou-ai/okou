@@ -1516,7 +1516,6 @@
         },
         "shareDialog": {
           "description": "Invia un post pubblico per la verifica. Un premio approvato per persona.",
-          "draft": "Il report settimanale sui concorrenti lo faccio con {{assistantName}}: legge le fonti e mi restituisce la tabella.",
           "helper": "Il post deve essere pubblico e menzionare {{assistantName}}.",
           "inputLabel": "Link del post",
           "openX": "Apri X",
@@ -1531,7 +1530,8 @@
           "stepPaste": "Incolla il link",
           "stepWrite": "Scrivi il post",
           "submit": "Invia",
-          "title": "Condividi {{assistantName}} su X"
+          "title": "Condividi {{assistantName}} su X",
+          "writingPrompt": "Scrivi con parole tue qualcosa che hai provato davvero con {{assistantName}}."
         },
         "slack": {
           "action": "Aggiungi",

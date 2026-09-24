@@ -526,20 +526,7 @@ function ShareStep({
   );
 }
 
-/** X's own compose screen, opened with the suggestion already in it. */
-function composeUrl(text: string): string {
-  return `https://x.com/intent/post?text=${encodeURIComponent(text)}`;
-}
-
-/**
- * The step, as two things to do in the order they happen.
- *
- * It used to be a single URL field: the product asked for a link and left the
- * four steps before it -- think of something to say, post it, copy the link,
- * come back -- entirely to the reader. The first step now carries a sentence
- * they can send as it is and a button that opens X with it already typed, so
- * the only work left is the part the product genuinely cannot do.
- */
+/** Keep the two-step X quest, but let the user write their own post on X. */
 function ShareComposeBody({
   reward,
   onClose,
@@ -555,9 +542,9 @@ function ShareComposeBody({
   const pageSignal = useGet(pageSignal$);
   const submission = useLoadable(shareSubmission$);
   const submitting = submission.state === "loading";
-  const suggestion = t(
+  const writingPrompt = t(
     ($) => {
-      return $.chat.agentPage.getStarted.shareDialog.draft;
+      return $.chat.agentPage.getStarted.shareDialog.writingPrompt;
     },
     { assistantName },
   );
@@ -587,8 +574,8 @@ function ShareComposeBody({
         })}
       >
         <div className="flex flex-col items-start gap-3 rounded-xl border border-surface-border bg-card px-4 py-3.5">
-          <p className="text-[15px] leading-relaxed text-foreground">
-            {suggestion}
+          <p className="text-[15px] leading-relaxed text-muted-foreground">
+            {writingPrompt}
           </p>
           <Button
             type="button"
@@ -597,7 +584,7 @@ function ShareComposeBody({
             onClick={() => {
               // A named target rather than `_blank`, so pressing it twice
               // reuses the compose tab instead of stacking drafts.
-              window.open(composeUrl(suggestion), "okou-share-post");
+              window.open("https://x.com/intent/post", "okou-share-post");
             }}
           >
             <XMark />

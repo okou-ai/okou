@@ -1516,7 +1516,6 @@
         },
         "shareDialog": {
           "description": "Envie uma publicação pública para análise. Uma recompensa aprovada por pessoa.",
-          "draft": "Tenho feito meu relatório de concorrentes das segundas com o {{assistantName}} — ele lê as fontes e devolve a tabela pronta.",
           "helper": "A publicação precisa ser pública e mencionar o {{assistantName}}.",
           "inputLabel": "Link da publicação",
           "openX": "Abrir o X",
@@ -1531,7 +1530,8 @@
           "stepPaste": "Cole o link",
           "stepWrite": "Escreva a publicação",
           "submit": "Enviar",
-          "title": "Compartilhe o {{assistantName}} no X"
+          "title": "Compartilhe o {{assistantName}} no X",
+          "writingPrompt": "Escreva com suas próprias palavras sobre algo que você realmente tentou fazer com o {{assistantName}}."
         },
         "slack": {
           "action": "Adicionar",
