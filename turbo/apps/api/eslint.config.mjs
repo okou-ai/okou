@@ -269,6 +269,17 @@ export default [
     },
   },
   {
+    files: ["src/signals/services/agent-webhook-firewall-auth.service.ts"],
+    rules: {
+      // One safe receipt after a bounded Gmail retry succeeds. Debug is dropped
+      // by Axiom, while a warning would misclassify the recovered attempt.
+      "api/no-logger-info": [
+        "error",
+        { allowedMessages: ["gmail token refresh recovered"] },
+      ],
+    },
+  },
+  {
     files: ["src/signals/services/conversation-history-deletion.service.ts"],
     rules: {
       // One content-free aggregate per committed lifecycle deletion, never on
