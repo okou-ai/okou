@@ -209,6 +209,107 @@ function nativePasswordRequest(callbackPrompt: string) {
   };
 }
 
+function mockNativeNumberTarget(args: {
+  readonly constraints: () => {
+    readonly min: string;
+    readonly max: string;
+    readonly step: string;
+  };
+  readonly verificationMatches: () => boolean;
+}): void {
+  context.mocks.browserUseCdp.command.mockImplementation((command) => {
+    switch (command.method) {
+      case "Target.getTargets":
+        return {
+          targetInfos: [
+            {
+              targetId: "native-input-target",
+              type: "page",
+              url: "https://example.com/order",
+            },
+          ],
+        };
+      case "Target.attachToTarget":
+        return { sessionId: "native-number-session" };
+      case "Browser.getWindowForTarget":
+        return { windowId: 7 };
+      case "Page.getFrameTree":
+        return {
+          frameTree: {
+            frame: {
+              id: "main-frame",
+              loaderId: "native-number-loader",
+              url: "https://example.com/order",
+            },
+          },
+        };
+      case "DOM.resolveNode":
+        return { object: { objectId: "native-number-object" } };
+      case "Page.getLayoutMetrics":
+        return {
+          cssVisualViewport: {
+            pageX: 0,
+            pageY: 0,
+            clientWidth: 1440,
+            clientHeight: 900,
+          },
+        };
+      case "Page.captureScreenshot":
+        return { data: Buffer.from("screenshot").toString("base64") };
+      case "Runtime.callFunctionOn": {
+        const declaration = String(command.params.functionDeclaration);
+        if (declaration.includes("expectedValues")) {
+          return { result: { value: args.verificationMatches() } };
+        }
+        if (declaration.includes("cloneNode")) {
+          const first = Array.isArray(command.params.arguments)
+            ? command.params.arguments[0]
+            : undefined;
+          const value =
+            typeof first === "object" && first !== null && "value" in first
+              ? first.value
+              : undefined;
+          const { min, max, step } = args.constraints();
+          const numeric = typeof value === "string" ? Number(value) : NaN;
+          const valid =
+            value === null ||
+            (typeof value === "string" &&
+              (value === "" ||
+                (Number.isFinite(numeric) &&
+                  numeric >= Number(min) &&
+                  numeric <= Number(max) &&
+                  (step === "any" ||
+                    Number.isInteger(
+                      (numeric - Number(min)) / Number(step),
+                    )))));
+          return { result: { value: valid } };
+        }
+        if (declaration.includes("nextValue")) {
+          return { result: { value: true } };
+        }
+        return {
+          result: {
+            value: [
+              {
+                tagName: "INPUT",
+                inputType: "number",
+                connected: true,
+                mainDocument: true,
+                writable: true,
+                siteRequired: false,
+                multiple: false,
+                ...args.constraints(),
+              },
+            ],
+          },
+        };
+      }
+      default:
+        return {};
+    }
+  });
+}
+
 function browserUserActionTokenHash(requestToken: string): string {
   return createHash("sha256").update(requestToken).digest("hex");
 }
@@ -218,6 +319,205 @@ aroundEach(async (runTest) => {
 });
 
 describe("Browser user-action route", () => {
+  it("supports live number constraints, optional clear, and exact readback", async () => {
+    const { routeMocks, runs, chat, actor, agent } =
+      await setupBrowserScenario();
+    const current = await createClaimedChatRun(
+      chat,
+      runs,
+      actor,
+      agent.agentId,
+      "Enter a quantity in the current browser",
+    );
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BrowserNativeInput]: true,
+    });
+    const providerId = randomUUID();
+    acceptBrowserUseCdpSessions([providerId]);
+    let min = "10";
+    let max = "20";
+    let step = "0.5";
+    let verificationMatches = true;
+    mockNativeNumberTarget({
+      constraints: () => {
+        return { min, max, step };
+      },
+      verificationMatches: () => {
+        return verificationMatches;
+      },
+    });
+    server.use(
+      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+        const body = z
+          .strictObject({ name: z.string() })
+          .parse(await request.json());
+        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+          status: 201,
+        });
+      }),
+      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+        return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+      }),
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        return HttpResponse.json(providerBrowser(String(params.id)));
+      }),
+    );
+    await accept(
+      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      [200],
+    );
+    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    const createNumber = async (required = false) => {
+      return await accept(
+        userActionClient().create({
+          headers: current.claim.browserHeaders,
+          body: {
+            kind: "input",
+            callbackPrompt: "Continue after quantity entry",
+            pageTargetId: "native-input-target",
+            fields: [
+              {
+                key: "quantity",
+                label: "Quantity",
+                fieldKind: "number",
+                required,
+                backendNodeId: 45,
+              },
+            ],
+          },
+        }),
+        [201],
+      );
+    };
+    const created = await createNumber();
+    expect(created.body.action.fields[0]).toMatchObject({
+      fieldKind: "number",
+      control: { tagName: "INPUT", inputType: "number" },
+    });
+    const token = created.body.action.requestToken;
+    const preflight = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+        body: {},
+      }),
+      [200],
+    );
+    expect(preflight.body.fields[0]?.control).toMatchObject({
+      inputType: "number",
+      min: "10",
+      max: "20",
+      step: "0.5",
+    });
+    expect(JSON.stringify(preflight.body)).not.toContain("backendNodeId");
+
+    for (const value of ["not-a-number", "12.3"]) {
+      const invalidNumber = await userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+        body: { values: [{ key: "quantity", value }] },
+      });
+      expect(invalidNumber).toMatchObject({
+        status: 409,
+        body: { error: { code: "BROWSER_USER_ACTION_INVALID_VALUE" } },
+      });
+    }
+    expect(browserInputWrites()).toHaveLength(0);
+
+    min = "15";
+    const invalid = await userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: token },
+      body: { values: [{ key: "quantity", value: "12.5" }] },
+    });
+    expect(invalid).toMatchObject({
+      status: 409,
+      body: { error: { code: "BROWSER_USER_ACTION_INVALID_VALUE" } },
+    });
+    expect(browserInputWrites()).toHaveLength(0);
+    min = "10";
+    const applied = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+        body: { values: [{ key: "quantity", value: "12.5" }] },
+      }),
+      [200],
+    );
+    expect(applied.body.state).toBe("succeeded");
+    expect(browserInputWrites().at(-1)?.[0].params.arguments).toStrictEqual([
+      { value: "12.5" },
+    ]);
+
+    const untouched = await createNumber();
+    const writesBeforeUntouched = browserInputWrites().length;
+    const untouchedResult = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: untouched.body.action.requestToken },
+        body: { values: [] },
+      }),
+      [200],
+    );
+    expect(untouchedResult.body.state).toBe("succeeded");
+    expect(browserInputWrites()).toHaveLength(writesBeforeUntouched);
+
+    const clear = await createNumber();
+    const cleared = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: clear.body.action.requestToken },
+        body: { values: [{ key: "quantity", value: "" }] },
+      }),
+      [200],
+    );
+    expect(cleared.body.state).toBe("succeeded");
+    expect(browserInputWrites().at(-1)?.[0].params.arguments).toStrictEqual([
+      { value: "" },
+    ]);
+
+    const required = await createNumber(true);
+    const requiredEmpty = await userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: required.body.action.requestToken },
+      body: { values: [{ key: "quantity", value: "" }] },
+    });
+    expect(requiredEmpty).toMatchObject({
+      status: 400,
+      body: { error: { code: "BROWSER_USER_ACTION_REQUIRED_VALUE_MISSING" } },
+    });
+
+    min = "0";
+    max = "1e30";
+    step = "any";
+    const precise = await createNumber();
+    const preciseValue = "9007199254740993";
+    const preciseResult = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: precise.body.action.requestToken },
+        body: { values: [{ key: "quantity", value: preciseValue }] },
+      }),
+      [200],
+    );
+    expect(preciseResult.body.state).toBe("succeeded");
+    expect(browserInputWrites().at(-1)?.[0].params.arguments).toStrictEqual([
+      { value: preciseValue },
+    ]);
+
+    const mismatch = await createNumber();
+    verificationMatches = false;
+    const uncertain = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: mismatch.body.action.requestToken },
+        body: { values: [{ key: "quantity", value: "12.5" }] },
+      }),
+      [200],
+    );
+    expect(uncertain.body.state).toBe("uncertain");
+  });
+
   it("validates and applies CLI-resolved Browser input without exposing target or value data", async () => {
     const { routeMocks, runs, chat, actor, agent } =
       await setupBrowserScenario();

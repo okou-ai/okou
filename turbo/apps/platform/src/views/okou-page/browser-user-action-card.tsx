@@ -393,11 +393,13 @@ function BrowserInputFields({
   draft,
   busy,
   onUpdate,
+  onRemove,
 }: {
   readonly action: PendingBrowserInputAction;
   readonly draft: ReadonlyMap<string, string>;
   readonly busy: boolean;
   readonly onUpdate: (key: string, value: string) => void;
+  readonly onRemove: (key: string) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -484,6 +486,15 @@ function BrowserInputFields({
                   BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
                 )}
                 pattern={field.control.pattern}
+                min={
+                  field.fieldKind === "number" ? field.control.min : undefined
+                }
+                max={
+                  field.fieldKind === "number" ? field.control.max : undefined
+                }
+                step={
+                  field.fieldKind === "number" ? field.control.step : undefined
+                }
                 value={draft.get(field.key) ?? ""}
                 disabled={busy}
                 onChange={(event) => {
@@ -491,6 +502,32 @@ function BrowserInputFields({
                 }}
               />
             )}
+            {field.fieldKind === "number" &&
+              !field.required &&
+              !field.control.siteRequired && (
+                <Button
+                  type="button"
+                  variant="link"
+                  size="xs"
+                  className="h-auto self-start p-0 text-xs"
+                  disabled={busy}
+                  onClick={() => {
+                    if (draft.has(field.key) && draft.get(field.key) === "") {
+                      onRemove(field.key);
+                    } else {
+                      onUpdate(field.key, "");
+                    }
+                  }}
+                >
+                  {draft.has(field.key) && draft.get(field.key) === ""
+                    ? t(($) => {
+                        return $.chat.browserInput.keepValue;
+                      })
+                    : t(($) => {
+                        return $.chat.browserInput.clearValue;
+                      })}
+                </Button>
+              )}
           </div>
         );
       })}
@@ -554,6 +591,7 @@ function PendingForm({
   const draft = useGet(signals.draft$);
   const sharedBusy = useGet(signals.busy$);
   const updateDraft = useSet(signals.updateDraft$);
+  const removeDraft = useSet(signals.removeDraft$);
   const formRef = useSet(signals.formRef$);
   const [submitLoadable, submit] = useLoadableSet(signals.submit$);
   const [cancelLoadable, cancel] = useLoadableSet(signals.cancel$);
@@ -589,6 +627,7 @@ function PendingForm({
         draft={draft}
         busy={busy}
         onUpdate={updateDraft}
+        onRemove={removeDraft}
       />
 
       {failed && (

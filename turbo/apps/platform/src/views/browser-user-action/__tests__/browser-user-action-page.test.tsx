@@ -67,6 +67,30 @@ function action(
   };
 }
 
+function numberAction(
+  required: boolean,
+): Extract<BrowserUserActionResponse, { kind: "input" }> {
+  return {
+    ...action("pending"),
+    fields: [
+      {
+        key: "quantity",
+        label: "Quantity",
+        fieldKind: "number",
+        required,
+        control: {
+          tagName: "INPUT",
+          inputType: "number",
+          siteRequired: false,
+          min: "10",
+          max: "20",
+          step: "0.5",
+        },
+      },
+    ],
+  };
+}
+
 function mockPendingPreflight() {
   context.mocks.api(
     browserUserActionsContract.preflight,
@@ -211,6 +235,91 @@ test("The standalone form uses preflight's observed multiline and email controls
   click(button("Add to browser"));
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
+
+test("The standalone form uses the existing input style with live number constraints", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  let applied = false;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, { ...numberAction(true), state });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, numberAction(true));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    applied = true;
+    expect(body.values).toStrictEqual([{ key: "quantity", value: "12.5" }]);
+    state = "succeeded";
+    return respond(200, { ...numberAction(true), state });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const quantity = within(form).getByLabelText(/Quantity/u);
+  expect(quantity).toHaveAttribute("data-slot", "input");
+  expect(quantity).toHaveAttribute("type", "number");
+  expect(quantity).toHaveAttribute("min", "10");
+  expect(quantity).toHaveAttribute("max", "20");
+  expect(quantity).toHaveAttribute("step", "0.5");
+  expect(quantity).toBeRequired();
+  await fill(quantity, "12.5");
+  click(button("Add to browser"));
+  await waitFor(() => {
+    expect(applied).toBe(true);
+  });
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
+test.each([
+  { clear: false, expected: [] },
+  { clear: true, expected: [{ key: "quantity", value: "" }] },
+])(
+  "Optional number field can be untouched or explicitly cleared ($clear)",
+  async ({ clear, expected }) => {
+    let state: BrowserUserActionResponse["state"] = "pending";
+    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+      return respond(200, { ...numberAction(false), state });
+    });
+    context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+      return respond(200, numberAction(false));
+    });
+    context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+      expect(body.values).toStrictEqual(expected);
+      state = "succeeded";
+      return respond(200, { ...numberAction(false), state });
+    });
+    context.mocks.api(chatEventsContract.send, ({ respond }) => {
+      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    });
+    await setupPage({
+      context,
+      path: route(),
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+    });
+    const form = await screen.findByRole("form", {
+      name: "Enter information in browser",
+    });
+    expect(within(form).getByLabelText(/Quantity/u)).toHaveAttribute(
+      "type",
+      "number",
+    );
+    if (clear) {
+      click(button("Clear website value"));
+      expect(button("Leave website value unchanged")).toBeVisible();
+    }
+    click(button("Add to browser"));
+    await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  },
+);
 
 test("Changed site constraints require a fresh preflight without losing ordinary draft text", async () => {
   let preflights = 0;

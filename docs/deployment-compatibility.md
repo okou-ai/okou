@@ -3597,6 +3597,12 @@ transient provider failures leave it pending for retry. The editable form uses
 that preflight response. Apply rechecks site constraints before any mutation.
 Per `docs/fallback.md`, this pre-GA feature does not require compatibility with
 earlier Platform, API, or persisted-action shapes.
+The general number field kind expands the strict shared request and preflight
+response contract while `BrowserNativeInput` remains team-only. The API derives
+number `min`, `max`, and `step` from the live control, transports submitted
+values as strings, and accepts an explicit empty value only for an optional
+number field. Existing persisted version-1 actions remain readable; no schema
+migration or old-client compatibility branch is required for this pre-GA change.
 
 The Browser action GET response can also report `callbackDelivered` for a
 terminal success or cancellation. It derives this fact from the matching

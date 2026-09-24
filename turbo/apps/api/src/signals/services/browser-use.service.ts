@@ -5,6 +5,7 @@ import {
   BROWSER_INITIAL_SCREEN_HEIGHT,
   BROWSER_SCREEN_WIDTH,
 } from "@okouai/api-contracts/contracts/browser";
+import { BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { z } from "zod";
 
 import { env } from "../../lib/env";
@@ -627,6 +628,9 @@ export interface BrowserUseControlInspection {
   readonly minLength?: number;
   readonly maxLength?: number;
   readonly pattern?: string;
+  readonly min?: string;
+  readonly max?: string;
+  readonly step?: string;
 }
 
 function boundedOptionalControlLength(value: unknown): boolean {
@@ -642,6 +646,14 @@ function boundedOptionalControlLength(value: unknown): boolean {
 function boundedOptionalControlPattern(value: unknown): boolean {
   return (
     value === undefined || (typeof value === "string" && value.length <= 512)
+  );
+}
+
+function boundedOptionalNumberConstraint(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (typeof value === "string" &&
+      value.length <= BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
   );
 }
 
@@ -664,7 +676,10 @@ function safeControlInspection(
     typeof candidate.multiple !== "boolean" ||
     !boundedOptionalControlLength(candidate.minLength) ||
     !boundedOptionalControlLength(candidate.maxLength) ||
-    !boundedOptionalControlPattern(candidate.pattern)
+    !boundedOptionalControlPattern(candidate.pattern) ||
+    !boundedOptionalNumberConstraint(candidate.min) ||
+    !boundedOptionalNumberConstraint(candidate.max) ||
+    !boundedOptionalNumberConstraint(candidate.step)
   ) {
     return null;
   }
@@ -685,6 +700,9 @@ function safeControlInspection(
     ...(candidate.pattern === undefined
       ? {}
       : { pattern: candidate.pattern as string }),
+    ...(candidate.min === undefined ? {} : { min: candidate.min as string }),
+    ...(candidate.max === undefined ? {} : { max: candidate.max as string }),
+    ...(candidate.step === undefined ? {} : { step: candidate.step as string }),
   };
 }
 
@@ -700,12 +718,16 @@ function browserUseControlInspectionFunction(): string {
       const supported =
         textarea || (input && supportedInputTypes.has(control.type));
       const textual = supported && (textarea || control.type !== "number");
+      const number = input && control.type === "number";
+      const boundedNumberConstraints = !number ||
+        [control.min, control.max, control.step].every((value) =>
+          value.length <= ${BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH});
       return {
         tagName: typeof control.tagName === "string" ? control.tagName : "",
         inputType: input ? control.type : textarea ? "textarea" : "",
         connected: control.isConnected === true,
         mainDocument: control.ownerDocument === document,
-        writable: supported && !control.readOnly && !control.disabled,
+        writable: supported && boundedNumberConstraints && !control.readOnly && !control.disabled,
         siteRequired: supported && control.required === true,
         multiple: input && control.type === "email" && control.multiple === true,
         ...(textual && control.minLength >= 0 && control.minLength <= 4096
@@ -714,6 +736,12 @@ function browserUseControlInspectionFunction(): string {
           ? { maxLength: control.maxLength } : {}),
         ...(textual && input && control.pattern && control.pattern.length <= 512
           ? { pattern: control.pattern } : {}),
+        ...(number && boundedNumberConstraints && control.min
+          ? { min: control.min } : {}),
+        ...(number && boundedNumberConstraints && control.max
+          ? { max: control.max } : {}),
+        ...(number && boundedNumberConstraints && control.step
+          ? { step: control.step } : {}),
       };
     });
   }`;
