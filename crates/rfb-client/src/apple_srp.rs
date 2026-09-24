@@ -2,6 +2,8 @@
 //! verified on a dedicated test account is accepted. SRP authenticates the
 //! server but does not encrypt subsequent RFB traffic.
 
+use std::io;
+
 use crypto_bigint::{
     BoxedUint, Odd,
     modular::{BoxedMontyForm, BoxedMontyParams},
@@ -202,6 +204,17 @@ async fn read_blob<S: AsyncRead + Unpin>(stream: &mut S) -> Result<Vec<u8>, Erro
     Ok(bytes)
 }
 
+async fn write_message<S: AsyncWrite + Unpin>(stream: &mut S, message: &[u8]) -> Result<(), Error> {
+    // The tested Mac parser requires each complete authentication message in
+    // one socket write. A short write is an uncertain partial exchange: close
+    // the owned stream instead of sending the remainder as a second message.
+    if stream.write(message).await? != message.len() {
+        return Err(Error::Io(io::ErrorKind::WriteZero.into()));
+    }
+    stream.flush().await?;
+    Ok(())
+}
+
 fn hash(parts: &[&[u8]]) -> Zeroizing<[u8; HASH_BYTES]> {
     let mut hasher = Sha512::new();
     for part in parts {
@@ -385,26 +398,35 @@ async fn exchange_proofs<S: AsyncRead + AsyncWrite + Unpin>(
 ) -> Result<(), Error> {
     let username = &credentials.username;
     let entry_len = 11 + username.len();
-    stream.write_u8(DIRECT_SRP).await?;
-    stream.write_u32(entry_len as u32).await?;
-    stream.write_u32((entry_len - 4) as u32).await?;
-    stream.write_u16(0).await?;
-    stream.write_u16(username.len() as u16).await?;
-    stream.write_all(username).await?;
-    stream.write_u16(0).await?;
-    stream.write_u8(0).await?;
-    stream.flush().await?;
+    // macOS processes this bounded branch entry as one authentication message.
+    // Split socket writes can let it re-enter auth-type selection at the length
+    // prefix, so construct the complete entry before sending it.
+    let mut entry = Zeroizing::new(Vec::with_capacity(5 + entry_len));
+    entry.push(DIRECT_SRP);
+    entry.extend_from_slice(&(entry_len as u32).to_be_bytes());
+    entry.extend_from_slice(&((entry_len - 4) as u32).to_be_bytes());
+    entry.extend_from_slice(&0u16.to_be_bytes());
+    entry.extend_from_slice(&(username.len() as u16).to_be_bytes());
+    entry.extend_from_slice(username);
+    entry.extend_from_slice(&0u16.to_be_bytes());
+    entry.push(0);
+    write_message(stream, &entry).await?;
+    drop(entry);
 
     let challenge_bytes = read_blob(stream).await?;
     let challenge = parse_challenge(&challenge_bytes)?;
     let (response, expected_m2) =
         expected_proof(&challenge, &credentials.password, deadline).await?;
     drop(credentials);
+    let response = Zeroizing::new(response);
     let inner_len = u32::try_from(response.len()).map_err(|_| Error::InvalidAppleSrpParameters)?;
-    stream.write_u32(inner_len + 4).await?;
-    stream.write_u32(inner_len).await?;
-    stream.write_all(&response).await?;
-    stream.flush().await?;
+    let mut packet = Zeroizing::new(Vec::with_capacity(8 + response.len()));
+    packet.extend_from_slice(&(inner_len + 4).to_be_bytes());
+    packet.extend_from_slice(&inner_len.to_be_bytes());
+    packet.extend_from_slice(&response);
+    write_message(stream, &packet).await?;
+    drop(packet);
+    drop(response);
 
     let final_token = read_blob(stream).await?;
     if !valid_final_token(&final_token, &expected_m2) {

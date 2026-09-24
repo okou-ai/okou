@@ -17,6 +17,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, DuplexStream, duplex},
     time::{Duration, Instant},
 };
+use zeroize::Zeroizing;
 
 fn deadline() -> Instant {
     Instant::now() + Duration::from_secs(20)
@@ -414,6 +415,28 @@ async fn oversized_challenge_is_rejected_without_reading_or_allocating_it() {
 }
 
 #[tokio::test]
+async fn a_short_branch_write_fails_closed_without_replaying_the_remainder() {
+    let (client, mut server) = duplex(1);
+    let peer = tokio::spawn(async move {
+        negotiate(&mut server, &[36]).await;
+        assert_eq!(server.read_u8().await.expect("partial branch"), 36);
+        let mut byte = [0];
+        assert_eq!(server.read(&mut byte).await.expect("read close"), 0);
+    });
+    let (result, ()) = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::join!(
+            authenticate_apple_srp(client, credentials(), deadline()),
+            async { peer.await.expect("peer") }
+        )
+    })
+    .await
+    .expect("short-write deadline");
+    assert!(
+        matches!(result, Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::WriteZero)
+    );
+}
+
+#[tokio::test]
 async fn truncated_challenge_closes_the_owned_stream() {
     let (client, mut server) = duplex(512);
     let peer = tokio::spawn(async move {
@@ -480,14 +503,17 @@ async fn expired_deadline_writes_nothing() {
 /// the desktop, and it does not enable any product route.
 #[tokio::test]
 #[ignore = "requires dedicated macOS test host and ephemeral credential"]
-async fn exact_mac_direct_srp_authenticates() {
+async fn exact_mac_direct_srp_accepts_and_rejects_credentials() {
     let address = std::env::var("OKOU_MAC_VNC_ADDR").expect("test host address");
     let username = std::env::var("OKOU_MAC_VNC_USER").expect("test username");
     let password = std::env::var("OKOU_MAC_VNC_PASSWORD").expect("one-time test password");
-    let stream = tokio::net::TcpStream::connect(address)
+    let mut wrong_password = Zeroizing::new(password.clone());
+    wrong_password.push('!');
+    let stream = tokio::net::TcpStream::connect(&address)
         .await
         .expect("connect test host");
-    let credentials = AppleSrpCredentials::new(username, password).expect("valid test credential");
+    let credentials =
+        AppleSrpCredentials::new(username.clone(), password).expect("valid test credential");
     let authenticated = authenticate_apple_srp(
         stream,
         credentials,
@@ -496,4 +522,17 @@ async fn exact_mac_direct_srp_authenticates() {
     .await
     .expect("direct SRP authentication");
     drop(authenticated);
+
+    // The successful handshake above is the same-host positive control for a
+    // fresh connection using an intentionally different password.
+    let stream = tokio::net::TcpStream::connect(address)
+        .await
+        .expect("connect test host for negative control");
+    let wrong = AppleSrpCredentials::new_zeroizing(username, wrong_password)
+        .expect("valid negative-control credential");
+    assert!(
+        authenticate_apple_srp(stream, wrong, Instant::now() + Duration::from_secs(30))
+            .await
+            .is_err()
+    );
 }

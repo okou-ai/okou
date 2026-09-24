@@ -91,14 +91,16 @@ not an owner permission, product rollout or production activation decision.
 `authenticate_apple_srp` accepts exact macOS `RFB 003.889`, responds as RFB
 3.8, and selects only security type 36 when offered. Apple's direct-SRP branch
 entry begins with the single selection byte; unlike ordinary RFB 3.8 security
-types, no preceding separate selection byte is sent. There is no fallback to
-type 30, type 33, or a bare VNC security method. It sends a bounded username
-branch entry, then requires the exact RFC 5054 Appendix A 4096-bit group and
-generator 5, a 32-byte salt, a 512-byte in-range server public value, an
-80-byte options field, flag zero, and an iteration count from 10,000 to
-250,000. Any mismatch is rejected before password derivation. The initial
-profile reflects one tested macOS 26.6.2 (25G83) configuration; it does not
-claim to support every macOS version or Remote Management setting.
+types, no preceding separate selection byte is sent. The complete branch entry
+and proof response are each sent in one bounded write for the tested Mac parser.
+There is no fallback to type 30, type 33, or a bare VNC security method. It
+sends a bounded username branch entry, then requires the exact RFC 5054
+Appendix A 4096-bit group and generator 5, a 32-byte salt, a 512-byte in-range
+server public value, an 80-byte options field, flag zero, and an iteration
+count from 10,000 to 250,000. Any mismatch is rejected before password
+derivation. The initial profile reflects one tested macOS 26.6.2 (25G83)
+configuration; it does not claim to support every macOS version or Remote
+Management setting.
 
 Apple's observed password prehash is PBKDF2-HMAC-SHA512 to 128 bytes, followed
 by SRP-6a's SHA-512 proof exchange. The PBKDF2 loop yields and checks the
@@ -114,9 +116,11 @@ claim about compiler, kernel, socket, or external-library copies.
 **SRP authenticates the server and password holder, but it does not encrypt
 the post-authentication RFB session.** For product use, the protected channel
 must terminate on the Mac itself, with saved SSH host-key verification and VNC
-on literal Mac loopback. The current direct-public-port test exercises only
-the authentication handshake with a one-time dedicated test password and
-does not initialize or read the desktop. It is not a product transport policy.
+on literal Mac loopback. The ignored exact-Mac fixture runs on that Mac through
+host-key-verified SSH, uses literal loopback VNC and a one-time dedicated test
+password, and checks both accepted and rejected credentials. It does not
+initialize or read the desktop. An earlier direct-public-port authentication
+probe is not a product transport policy.
 Security type 33 (Apple RSA-SRP) remains unsupported pending an independently
 verified key-trust and final-proof contract. This engine does not turn on
 `VncAccess` or admit any saved profile.
