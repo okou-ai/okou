@@ -102,7 +102,7 @@ async fn verify_direct_srp_offer<S: AsyncRead + Unpin>(stream: &mut S) -> Result
     Ok(())
 }
 
-struct Challenge<'a> {
+pub(super) struct Challenge<'a> {
     modulus: &'a [u8],
     salt: &'a [u8],
     server_public: &'a [u8],
@@ -138,6 +138,13 @@ fn parse_challenge(bytes: &[u8]) -> Result<Challenge<'_>, Error> {
     {
         return Err(Error::InvalidAppleSrpParameters);
     }
+    parse_challenge_fields(rest)
+}
+
+/// Fields common to the observed Apple type-36 and type-33 SRP challenges.
+/// Each method validates its own outer envelope before reaching this parser.
+pub(super) fn parse_challenge_fields(bytes: &[u8]) -> Result<Challenge<'_>, Error> {
+    let mut rest = bytes;
     if take(&mut rest, 1)? != [0] {
         return Err(Error::InvalidAppleSrpParameters);
     }
@@ -218,7 +225,10 @@ async fn read_blob_body<S: AsyncRead + Unpin>(stream: &mut S, len: u32) -> Resul
     Ok(bytes)
 }
 
-async fn write_message<S: AsyncWrite + Unpin>(stream: &mut S, message: &[u8]) -> Result<(), Error> {
+pub(super) async fn write_message<S: AsyncWrite + Unpin>(
+    stream: &mut S,
+    message: &[u8],
+) -> Result<(), Error> {
     // The tested Mac parser requires each complete authentication message in
     // one socket write. A short write is an uncertain partial exchange: close
     // the owned stream instead of sending the remainder as a second message.
@@ -286,7 +296,7 @@ async fn derive_password(
     Ok(output)
 }
 
-async fn expected_proof(
+pub(super) async fn expected_proof(
     challenge: &Challenge<'_>,
     password: &[u8],
     deadline: Instant,
