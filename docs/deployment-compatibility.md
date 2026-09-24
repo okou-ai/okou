@@ -1,6 +1,6 @@
 # Deployment Compatibility
 
-## Codex OAuth workspace ID preparation
+## Codex 0.156.1 OAuth workspace routing
 
 The API supplies the selected workspace ID as `CODEX_OAUTH_ACCOUNT_ID` for
 Codex OAuth runs. The guest writes that ID into `auth.json` and both placeholder
@@ -8,13 +8,15 @@ JWT claims. Access and refresh tokens remain placeholders; the firewall still
 injects real credentials into outbound requests.
 
 The API retains the existing placeholder `CHATGPT_ACCOUNT_ID` for the firewall
-and Pi. This preparatory change keeps the Runner on Codex 0.155.1. An older
-Runner ignores the additive field; a newer Runner served by an older API, or
-claiming a context queued before API promotion, retains the original
-placeholder account ID when the new field is absent. An explicitly empty field
-is rejected as a broken API contract. Deploy this compatible change first;
-upgrade Codex to 0.156.1 only after the API rollout and old claimable contexts
-have drained. The follow-up upgrade and fallback removal are tracked by #36420.
+and Pi. PR #36402 deployed the additive ID field while the Runner stayed on
+Codex 0.155.1. The Runner now upgrades to 0.156.1 after that API rollout and
+old claimable contexts have drained. An older Runner ignores the additive field.
+A newer Runner served by an older API, or claiming a context without the field,
+still writes the original placeholder account ID; that combination is not
+supported with Codex 0.156.1 and may fail workspace routing. An explicitly
+empty field remains rejected. API rollback before #36402 therefore also
+requires rolling back the Runner. Removing the missing-field compatibility
+branch is tracked by #36420.
 
 ## Chat thread archived flag (2026-09-24)
 
