@@ -17,6 +17,11 @@ import { invalidateOrgModelPolicies$ } from "./org-model-policies.ts";
  */
 const internalReloadPersonalModelProviders$ = state(0);
 
+/** Account reads outside the shared list share its mutation invalidation. */
+export const personalModelProviderAccountRevision$ = computed((get) => {
+  return get(internalReloadPersonalModelProviders$);
+});
+
 /**
  * Listing personal providers makes the API read every connected subscription's
  * usage upstream, so opportunistic callers reuse a recent read instead of

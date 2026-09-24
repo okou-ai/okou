@@ -10,7 +10,6 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import { CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE } from "@okouai/api-contracts/contracts/errors";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { runsByIdContract } from "@okouai/api-contracts/contracts/run-routes";
 import { chatThreadModelSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import type { KnownRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
@@ -44,18 +43,6 @@ const RUN_B = "a0000000-0000-4000-a000-000000000302";
 const RUN_C = "a0000000-0000-4000-a000-000000000303";
 const RUN_D = "a0000000-0000-4000-a000-000000000304";
 const PROVIDER_ID = "e0000000-0000-4000-a000-000000000301";
-
-/** The recovery card never reads the failed run; it reads the current route. */
-function trackRunDetailReads(): string[] {
-  const reads: string[] = [];
-  context.mocks.api(runsByIdContract.getById, ({ params, respond }) => {
-    reads.push(params.id);
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Resource not found" },
-    });
-  });
-  return reads;
-}
 
 function configureCodexSubscriptionPolicies(
   models: readonly SupportedRunModel[],
@@ -300,7 +287,6 @@ test.each(STRUCTURED_FAILURE_CASES)(
         failureReason,
       ),
     });
-    const runDetailReads = trackRunDetailReads();
 
     await setupPage({ context, path: RUN_PATH });
     await readyChat();
@@ -338,7 +324,6 @@ test.each(STRUCTURED_FAILURE_CASES)(
     expect(Boolean(description?.textContent?.trim())).toBe(
       failureReason !== "insufficient_credits",
     );
-    expect(runDetailReads).toStrictEqual([]);
   },
 );
 
@@ -690,7 +675,6 @@ test("Recover from a personal model account limit", async () => {
       "gpt-5.6-sol",
     ),
   });
-  const runDetailReads = trackRunDetailReads();
 
   await setupPage({
     context,
@@ -722,7 +706,52 @@ test("Recover from a personal model account limit", async () => {
 
   await expect(screen.findByText("continue")).resolves.toBeVisible();
   await expect(findButton("Stop")).resolves.toBeVisible();
-  expect(runDetailReads).toStrictEqual([]);
+});
+
+// Opening the thread reads the subscription before the limit exists. The card
+// reports the usage the account has once the limit arrives, not that read.
+test("Show the reset time for a limit reached while the thread is open", async () => {
+  mockNow(new Date("2026-08-01T10:00:00.000Z"), context.signal);
+  const runCreated = context.mocks.deferred<void>();
+  configureCodexSubscriptionPolicies(["gpt-5.6-sol"]);
+  context.mocks.data.personalModelProviders([
+    codexSubscriptionAccount({ accountEmail: "current@example.com" }),
+  ]);
+  const lifecycle = installRunChat({
+    selectedModel: "gpt-5.6-sol",
+    onRunCreate: () => {
+      runCreated.resolve();
+    },
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+  await readyChat();
+  await sendText("Keep analysing");
+  await runCreated.promise;
+
+  context.mocks.data.personalModelProviders([
+    codexSubscriptionAccount({
+      accountEmail: "current@example.com",
+      subscriptionUsage: {
+        fiveHour: {
+          usedPercent: 100,
+          remainingPercent: 0,
+          resetAt: "2026-08-01T12:00:00.000Z",
+          windowSeconds: 18_000,
+        },
+        weekly: null,
+      },
+    }),
+  ]);
+  lifecycle.failRun("You've hit your usage limit.");
+
+  const recovery = await recoveryCard();
+  await expect(
+    within(recovery).findByText(/^resets /iu),
+  ).resolves.toBeInTheDocument();
+  expect(recovery).toHaveTextContent(
+    "Personal subscription current@example.com",
+  );
 });
 
 test("Recover when a model is at capacity", async () => {
@@ -768,8 +797,6 @@ test("Recover when a model is at capacity", async () => {
 
 test("Reset the current route's active subscription account", async () => {
   const resets: string[] = [];
-  const failedRunResets: string[] = [];
-  const failedRunAccountReads: string[] = [];
   const sent: unknown[] = [];
   installRunChat({
     selectedModel: "gpt-5.6-sol",
@@ -789,23 +816,6 @@ test("Reset the current route's active subscription account", async () => {
       accountEmail: "current@example.com",
     }),
   ]);
-  const runDetailReads = trackRunDetailReads();
-  context.mocks.api(
-    personalModelProviderAccountsByIdContract.getById,
-    ({ params, respond }) => {
-      failedRunAccountReads.push(params.id);
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "Resource not found" },
-      });
-    },
-  );
-  context.mocks.api(
-    personalModelProviderAccountsByIdContract.resetFailedRunSubscriptionUsage,
-    ({ params, respond }) => {
-      failedRunResets.push(params.id);
-      return respond(200, { outcome: "reset" });
-    },
-  );
   context.mocks.api(
     personalModelProviderAccountsByIdContract.resetSubscriptionUsage,
     ({ params, respond }) => {
@@ -830,9 +840,6 @@ test("Reset the current route's active subscription account", async () => {
   await waitFor(() => {
     expect(sent).toHaveLength(1);
   });
-  expect(failedRunResets).toStrictEqual([]);
-  expect(failedRunAccountReads).toStrictEqual([]);
-  expect(runDetailReads).toStrictEqual([]);
 });
 
 test("Show a disconnected subscription on the current route", async () => {

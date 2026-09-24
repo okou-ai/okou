@@ -19,7 +19,10 @@ import {
 } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
-import { personalModelProviders$ } from "../external/personal-model-providers.ts";
+import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { accept } from "../../lib/accept.ts";
+import { apiClient$ } from "../api-client.ts";
+import { personalModelProviderAccountRevision$ } from "../external/personal-model-providers.ts";
 import { resetPersonalCodexAccountSubscriptionUsage$ } from "../okou-page/settings/personal-model-providers.ts";
 import { textToMessageDocument } from "../okou-page/user-message-document-codec.ts";
 import type { ChatEventGroup, EnrichedChatEvent } from "./chat-event.ts";
@@ -633,6 +636,43 @@ interface PersonalSubscriptionRecovery {
 }
 
 /**
+ * The newest failure in the thread. A usage limit is reported after the page
+ * may already have read the subscription usage, so each new failure keys a
+ * fresh read of the accounts rather than reusing the session's cached list.
+ */
+function createLatestFailureEventIdComputed(
+  chatEvents$: ChatEventSignals["chatEvents$"],
+): Computed<string | null> {
+  return computed((get): string | null => {
+    const events = get(chatEvents$);
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const event = events[index];
+      if (
+        event.eventType === "run.failed" ||
+        event.eventType === "output.error"
+      ) {
+        return event.id;
+      }
+    }
+    return null;
+  });
+}
+
+function createFailureAccountsComputed(
+  latestFailureEventId$: Computed<string | null>,
+): Computed<Promise<readonly ModelProviderResponse[]>> {
+  return computed(async (get) => {
+    get(latestFailureEventId$);
+    get(personalModelProviderAccountRevision$);
+    const result = await accept(
+      get(apiClient$)(personalModelProvidersMainContract).list(),
+      [200],
+    );
+    return result.body.modelProviders;
+  });
+}
+
+/**
  * The account the next run would spend: the active account of the current
  * route's subscription type. A limit on another framework says nothing about
  * that account, so it is only read when the frameworks agree.
@@ -642,6 +682,7 @@ function createPersonalSubscriptionRecoveryComputed(
   currentPersonalSubscription$: Computed<
     Promise<CurrentPersonalSubscription | null>
   >,
+  failureAccounts$: Computed<Promise<readonly ModelProviderResponse[]>>,
 ): Computed<Promise<PersonalSubscriptionRecovery>> {
   return computed(async (get): Promise<PersonalSubscriptionRecovery> => {
     const none = { personalSubscription: null, provider: undefined } as const;
@@ -656,8 +697,7 @@ function createPersonalSubscriptionRecoveryComputed(
     ) {
       return none;
     }
-    const { modelProviders } = await get(personalModelProviders$);
-    const provider = modelProviders.find((candidate) => {
+    const provider = (await get(failureAccounts$)).find((candidate) => {
       return (
         candidate.type === subscription.providerType &&
         candidate.isActive !== false
@@ -726,6 +766,7 @@ function tryAgainAction(
 
 function createAssistantErrorRecoveryComputed(
   visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>,
+  chatEvents$: ChatEventSignals["chatEvents$"],
   selectedModel$: Computed<string | null>,
 ) {
   const currentPersonalSubscription$ =
@@ -738,6 +779,9 @@ function createAssistantErrorRecoveryComputed(
     createPersonalSubscriptionRecoveryComputed(
       classifiedAssistantError$,
       currentPersonalSubscription$,
+      createFailureAccountsComputed(
+        createLatestFailureEventIdComputed(chatEvents$),
+      ),
     );
   return computed(async (get): Promise<AssistantErrorRecovery | null> => {
     const classified = await get(classifiedAssistantError$);
@@ -780,6 +824,7 @@ export function createAssistantErrorRecoverySignals(deps: {
   });
   const assistantErrorRecovery$ = createAssistantErrorRecoveryComputed(
     deps.visibleRenderedChatGroups$,
+    deps.chatEvents.chatEvents$,
     selectedModel$,
   );
   /**
