@@ -35,7 +35,6 @@ use super::support::{
     test_budget_lease, test_executor_config,
 };
 use crate::guest_timezone::GuestTimezoneAssumption;
-use crate::http::{HttpClient, HttpClientConfig};
 use crate::idle_pool::{
     IdlePool, IdlePoolConfig, IdleUnparkResult, ParkResult, ParkedIdleCandidate,
 };
@@ -48,6 +47,7 @@ use crate::telemetry::{
 use crate::workspace_mount::ensure_workspace_drive_mounted;
 use runner_provider::ApiClaimTiming;
 use runner_provider::RunCancellationSignals;
+use runner_provider::http::{HttpClient, HttpClientConfig};
 use runner_types::ids::RunId;
 use runner_types::storage_manifest::{StorageEntry, StorageManifest};
 use runner_types::types::{ExecutionContext, SandboxReuseResult, WorkspaceReuseResult};

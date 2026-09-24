@@ -15,10 +15,11 @@ use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
-use crate::{RemoteApiRequestFactory, RemoteInitError};
+use crate::RemoteInitError;
 use authority::Authority;
 use network::{Network, PublicNetwork};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
+use runner_provider::HttpClient;
 use scope::Scope;
 pub(crate) use sessions::Run;
 
@@ -105,7 +106,7 @@ pub struct VncRuntime {
 
 impl VncRuntime {
     pub fn official(
-        http: impl RemoteApiRequestFactory + 'static,
+        http: HttpClient,
         token: &str,
         identity: RunnerProcessIdentity,
     ) -> Result<Option<Arc<Self>>, RemoteInitError> {
@@ -114,7 +115,7 @@ impl VncRuntime {
             return Ok(None);
         }
         // The prefix chooses transport only; the API authenticates every call.
-        let authority = Authority::new(Arc::new(http), token.to_owned(), identity)
+        let authority = Authority::new(http, token.to_owned(), identity)
             .map_err(|_| RemoteInitError::VncAuthority)?;
         Ok(Some(Arc::new(Self {
             authority,

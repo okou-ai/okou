@@ -7,11 +7,11 @@ mod duration;
 mod error;
 use runner_executor::executor;
 mod group;
-use runner_executor::http;
 use runner_lifecycle::guest_timezone;
 use runner_lifecycle::idle_pool;
 #[cfg(test)]
 use runner_lifecycle::idle_reuse_preparation;
+use runner_provider::http;
 mod idle_prune_control;
 mod image_hash;
 mod io_limits;

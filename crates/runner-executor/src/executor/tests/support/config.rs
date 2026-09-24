@@ -4,13 +4,13 @@ use std::sync::Arc;
 use sandbox::Sandbox;
 
 use super::super::super::{ExecutorConfig, JobParams};
-use crate::http::HttpClientConfig;
 use crate::idle_pool::ReusableIdleSandbox;
 use crate::network_log_drain::NetworkLogDrainCoordinator;
 use crate::network_log_manager::NetworkLogManager;
 use crate::proxy;
 use crate::telemetry::JobTelemetry;
 use runner_host::paths::{HomePaths, LogPaths};
+use runner_provider::http::HttpClientConfig;
 use runner_types::types::ExecutionContext;
 
 /// Build a real `ExecutorConfig` backed by tempdir files.
@@ -27,7 +27,7 @@ pub(in crate::executor::tests) async fn test_executor_config(dir: &Path) -> Exec
         api_url: "http://localhost:9999".into(),
         runner_hostname: None,
         registry: proxy::ProxyRegistryHandle::new(registry_path, lock_path),
-        http: crate::http::HttpClient::new(HttpClientConfig {
+        http: runner_provider::http::HttpClient::new(HttpClientConfig {
             api_url: "http://localhost:9999".into(),
             vercel_bypass: None,
             client_session_id: "runner-session-test".to_string(),

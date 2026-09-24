@@ -37,11 +37,11 @@ use super::session_history_download::{SessionHistoryMaterializer, SessionHistory
 use super::session_restore::restored_session_identity_from_context;
 use super::telemetry::{RunnerPreSpawnPhase, RunnerPreSpawnTiming};
 use super::workspace_session_history_materializer::WorkspaceSessionHistoryMaterializer;
-use crate::http::HttpClient;
 use crate::idle_pool::IdleSandboxKind;
 use crate::restored_session_identity::{
     RestoredSessionIdentity, RestoredSessionIdentityMismatchReason,
 };
+use runner_provider::http::HttpClient;
 use runner_types::types::{ExecutionContext, SandboxReuseResult};
 
 /// Stable telemetry classification for a restore that cannot use verified
@@ -311,9 +311,9 @@ mod tests {
     };
     use sha2::{Digest, Sha256};
 
-    use crate::http::HttpClientConfig;
     use crate::restored_session_identity::RestoredSessionHistoryHashSizeRelationship;
     use crate::test_fixtures::execution_context::execution_context_for_test;
+    use runner_provider::http::HttpClientConfig;
     use runner_types::ids::RunId;
     use runner_types::types::{
         ResumeSession, ResumeSessionHistory, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,

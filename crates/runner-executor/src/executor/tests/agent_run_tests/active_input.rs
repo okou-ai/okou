@@ -14,9 +14,9 @@ use crate::executor::tests::support::{
     CapturedEvent, CapturedEvents, RUN_IN_SANDBOX_TEST_TIMEOUT, create_overridden_sandbox,
     minimal_context, sandbox_read_file_error, test_executor_config, test_telemetry,
 };
-use crate::http::{HttpClient, HttpClientConfig};
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, json_response};
 use runner_provider::ApiClient;
+use runner_provider::http::{HttpClient, HttpClientConfig};
 use runner_provider::local_queue::{self, ActiveInputEntry, LocalQueue};
 use runner_provider::{
     ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES, API_ACTIVE_INPUT_RECHECK_INTERVAL,
@@ -79,15 +79,13 @@ fn api_active_input_source(
 ) -> ActiveInputSource {
     ActiveInputSource::api(
         ApiClient::new(
-            runner_provider::ProviderHttpClient::new(
-                HttpClient::new(HttpClientConfig {
-                    api_url,
-                    vercel_bypass: None,
-                    client_session_id: client_session_id.to_string(),
-                    runner_version: env!("CARGO_PKG_VERSION"),
-                })
-                .unwrap(),
-            ),
+            HttpClient::new(HttpClientConfig {
+                api_url,
+                vercel_bypass: None,
+                client_session_id: client_session_id.to_string(),
+                runner_version: env!("CARGO_PKG_VERSION"),
+            })
+            .unwrap(),
             "runner-token".to_string(),
         ),
         run_id,
