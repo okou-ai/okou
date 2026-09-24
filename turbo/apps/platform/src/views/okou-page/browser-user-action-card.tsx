@@ -487,6 +487,9 @@ function requiredSelectsSatisfied(
     ) {
       return false;
     }
+    if (field.required && !choice) {
+      return false;
+    }
     if (!field.required && !field.control.siteRequired) {
       return true;
     }
@@ -531,6 +534,22 @@ function selectedSelectIndices(
   );
 }
 
+function canKeepSiteSelectChoice(
+  field: PendingBrowserInputField,
+  choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>,
+): boolean {
+  if (choiceDraft.has(field.key)) {
+    return true;
+  }
+  if (!field.required) {
+    return false;
+  }
+  return selectedSelectIndices(field, undefined).some((index) => {
+    const option = field.control.options?.[index];
+    return option && !option.disabled && !option.empty;
+  });
+}
+
 function BrowserSelectControl({
   field,
   choiceDraft,
@@ -557,6 +576,8 @@ function BrowserSelectControl({
   const ready =
     options !== undefined && field.control.optionSetFingerprint !== undefined;
   const selected = selectedSelectIndices(field, choiceDraft.get(field.key));
+  const siteSelected = selectedSelectIndices(field, undefined);
+  const canKeep = canKeepSiteSelectChoice(field, choiceDraft);
   const multiple = field.control.inputType === "select-multiple";
   const required = field.required || field.control.siteRequired;
   return (
@@ -606,7 +627,7 @@ function BrowserSelectControl({
           );
         })}
       </select>
-      {ready && (!required || choiceDraft.has(field.key)) && (
+      {ready && (!required || canKeep) && (
         <div className="flex gap-2">
           {!required && (
             <Button
@@ -626,14 +647,21 @@ function BrowserSelectControl({
               })}
             </Button>
           )}
-          {choiceDraft.has(field.key) && (
+          {canKeep && (
             <Button
               type="button"
               variant="link"
               size="xs"
               disabled={busy}
               onClick={() => {
-                return onRemove(field.key);
+                if (field.required) {
+                  const fingerprint = field.control.optionSetFingerprint;
+                  if (fingerprint) {
+                    onUpdate(field.key, siteSelected, fingerprint);
+                  }
+                } else {
+                  onRemove(field.key);
+                }
               }}
             >
               {t(($) => {

@@ -537,10 +537,11 @@ function browserSelectSubmissionValue(
   }
   const selection = choice?.optionIndexes;
   if (selection === undefined) {
-    return (field.required || field.control.siteRequired) &&
-      !options.some((option) => {
-        return option.selected && !option.disabled && !option.empty;
-      })
+    return field.required ||
+      (field.control.siteRequired &&
+        !options.some((option) => {
+          return option.selected && !option.disabled && !option.empty;
+        }))
       ? null
       : undefined;
   }
