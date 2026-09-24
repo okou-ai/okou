@@ -19,7 +19,7 @@ Examples:
 
 Notes:
   - The phone handle must already be connected to the authenticated Okou user
-  - AgentPhone agent ID is inferred from the conversation when omitted`,
+  - Phone agent ID is inferred from the conversation when omitted`,
   )
   .action(
     withErrorHandler(

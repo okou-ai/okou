@@ -7649,6 +7649,15 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       signature: connectParams.get("sig") ?? "",
       channel: connectParams.get("channel") ?? undefined,
     };
+    const forgedConnect = await integrations.requestConnectAgentPhone(
+      actor,
+      { ...connectBody, signature: "0".repeat(64) },
+      [400],
+    );
+    expect(forgedConnect.body).toMatchObject({
+      error: { code: "BAD_REQUEST" },
+    });
+
     const connected = await integrations.requestConnectAgentPhone(
       actor,
       connectBody,
