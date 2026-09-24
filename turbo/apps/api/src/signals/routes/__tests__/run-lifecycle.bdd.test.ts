@@ -6723,6 +6723,26 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.createOrgModelProvider(actor, {
       type: "codex-oauth-token",
       authMethod: "auth_json",
+      secrets: { CODEX_AUTH_JSON: codexAuthJson("workspace-id") },
+    });
+    const sameWorkspace = await fw.requestFirewallAuth(
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      firewallAuthBody,
+      [200],
+    );
+    if (sameWorkspace.status !== 200) {
+      throw new Error("Expected same-workspace credential rotation to resolve");
+    }
+    expect(sameWorkspace.body.headers["ChatGPT-Account-ID"]).toBe(
+      "workspace-id",
+    );
+    expect(sameWorkspace.body.headers.Authorization).not.toBe(
+      "Bearer chatgpt-access",
+    );
+
+    await api.createOrgModelProvider(actor, {
+      type: "codex-oauth-token",
+      authMethod: "auth_json",
       secrets: {
         CODEX_AUTH_JSON: codexAuthJson("replacement-workspace-id"),
       },
