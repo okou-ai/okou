@@ -823,7 +823,7 @@ function PendingInlineAction({
             <DialogHeader>
               <DialogTitle>{title}</DialogTitle>
             </DialogHeader>
-            <PendingFormGate
+            <PendingFormWithCheck
               signals={signals}
               request={request}
               showTitle={false}
