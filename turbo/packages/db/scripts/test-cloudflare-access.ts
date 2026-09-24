@@ -352,7 +352,7 @@ try {
     "UPDATE cloudflare_access_configs SET user_id='foreign' WHERE id='00000000-0000-4000-8000-000000000006'",
     { code: "23514", constraint: "cloudflare_access_scope_change_guard" },
   );
-  await migrate("1213_cloudflare_access_personal_promotion");
+  await migrate("1214_cloudflare_access_personal_promotion");
   await rejects(
     "UPDATE cloudflare_access_configs SET user_id='foreign' WHERE id='00000000-0000-4000-8000-000000000004'",
     { code: "23514", constraint: "cloudflare_access_scope_change_guard" },
