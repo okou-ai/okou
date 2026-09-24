@@ -1,7 +1,6 @@
 import { command, computed, type Computed } from "ccstate";
 import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { enqueueBackgroundJob } from "./background-job.service";
-import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import type {
   UserExportJob,
@@ -209,9 +208,6 @@ export const startUserExport$ = command(
     const db = set(writeDb$);
     signal.throwIfAborted();
     return await db.transaction(async (tx) => {
-      await assertErasureSubjectWritable(tx, [
-        { subjectKind: "user", subjectId: args.userId },
-      ]);
       // Serialize admission and cooldown for this owner, not execution. This also
       // covers a previous job completing while another POST is being admitted.
       await tx.execute(

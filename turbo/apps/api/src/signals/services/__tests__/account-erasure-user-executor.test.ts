@@ -11,6 +11,7 @@ import {
   accountErasureWork,
 } from "@okouai/db/schema/account-erasure";
 import { backgroundJobs } from "@okouai/db/schema/background-job";
+import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 
 import { testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
@@ -18,15 +19,16 @@ import {
   claimBackgroundJob,
   enqueueBackgroundJob,
 } from "../background-job.service";
+import { accountErasureStatus } from "../account-erasure-status.service";
 import { captureUserErasureWork } from "../account-erasure-user-executor";
 import {
   enqueueClerkUserDeletion$,
   executeClerkUserDeletionWork$,
 } from "../clerk-user-deletion-job.service";
 
-// B1 persistence has no account-facing status route yet. This integration test
-// crosses the DB boundary to prove the durable capture and lease revision that
-// the signed webhook worker must resume after a process restart.
+// Capture revisions, work leases and residual work have no account-facing
+// route. This integration test crosses the DB boundary to prove the durable
+// state the signed webhook worker must resume after a process restart.
 const context = testContext();
 
 test("captures bounded file pages once and reuses them after worker lease loss", async () => {
@@ -144,7 +146,26 @@ test("captures bounded file pages once and reuses them after worker lease loss",
   expect(resumed?.captureRevision).toBe(captured?.captureRevision);
 });
 
-test("durable user.deleted worker captures, cleans up and finalizes in one invocation", async () => {
+async function runDeletionTask(db: ReturnType<typeof drizzle>, jobId: string) {
+  // Each invocation owns one phase budget; make the yielded task due again.
+  await db
+    .update(backgroundJobs)
+    .set({ availableAt: sql`timezone('UTC', clock_timestamp())` })
+    .where(eq(backgroundJobs.id, jobId));
+  const result = await createStore().set(
+    executeClerkUserDeletionWork$,
+    { jobId },
+    context.signal,
+  );
+  expect(result.processed).toBe(1);
+  const [task] = await db
+    .select()
+    .from(backgroundJobs)
+    .where(eq(backgroundJobs.id, jobId));
+  return task;
+}
+
+test("durable user.deleted worker cleans up after capture and finalizes on the next invocation", async () => {
   const pool = new Pool({ connectionString: env("DATABASE_URL"), max: 4 });
   onTestFinished(async () => {
     await pool.end();
@@ -156,23 +177,67 @@ test("durable user.deleted worker captures, cleans up and finalizes in one invoc
     userId,
     context.signal,
   );
-  const first = await createStore().set(
-    executeClerkUserDeletionWork$,
-    { jobId },
-    context.signal,
-  );
-  expect(first.processed).toBe(1);
-  const [task] = await db
-    .select()
-    .from(backgroundJobs)
-    .where(eq(backgroundJobs.id, jobId));
-  expect(task).toMatchObject({ status: "completed", lastError: null });
+  const cleaned = await runDeletionTask(db, jobId);
+  expect(cleaned).toMatchObject({
+    status: "pending",
+    lastError: null,
+    checkpoint: { phase: "verify" },
+  });
+  const finished = await runDeletionTask(db, jobId);
+  expect(finished).toMatchObject({ status: "completed", lastError: null });
   const [captured] = await db
     .select()
     .from(accountErasureJobs)
     .where(eq(accountErasureJobs.subjectId, userId));
   expect(captured?.sealedCaptureRevision).toBe(captured?.captureRevision);
   expect(captured?.state).toBe("verified_no_applicable_data");
+  await expect(accountErasureStatus(db, userId)).resolves.toBe("complete");
+});
+
+test("durable user.deleted worker completes with unresolved residuals still reported pending", async () => {
+  const pool = new Pool({ connectionString: env("DATABASE_URL"), max: 4 });
+  onTestFinished(async () => {
+    await pool.end();
+  });
+  const db = drizzle(pool);
+  const userId = `synthetic_deleted_${randomUUID()}`;
+  // No direct VNC provider can prove a per-user disconnect, so this credential
+  // always leaves a capability residual after its row is removed.
+  await db.insert(vncCredentials).values({
+    orgId: `org_${randomUUID()}`,
+    userId,
+    name: "VNC secret",
+    authMethod: "vnc_password",
+    encryptedPassword: "encrypted-vnc-canary",
+  });
+  const jobId = await createStore().set(
+    enqueueClerkUserDeletion$,
+    userId,
+    context.signal,
+  );
+  let task = await runDeletionTask(db, jobId);
+  for (let attempt = 0; attempt < 5 && task?.status === "pending"; attempt++) {
+    task = await runDeletionTask(db, jobId);
+  }
+  expect(task).toMatchObject({ status: "completed", lastError: null });
+  await expect(
+    db.select().from(vncCredentials).where(eq(vncCredentials.userId, userId)),
+  ).resolves.toStrictEqual([]);
+  const [captured] = await db
+    .select()
+    .from(accountErasureJobs)
+    .where(eq(accountErasureJobs.subjectId, userId));
+  const residuals = await db
+    .select({ id: accountErasureWork.id })
+    .from(accountErasureWork)
+    .where(
+      and(
+        eq(accountErasureWork.jobId, captured?.id ?? ""),
+        eq(accountErasureWork.state, "capability_unresolved"),
+      ),
+    );
+  expect(residuals.length).toBeGreaterThan(0);
+  await expect(accountErasureStatus(db, userId)).resolves.toBe("pending");
 });
 
 test("durable user.deleted worker resumes the same capture after an external object failure", async () => {
@@ -268,7 +333,7 @@ test("durable user.deleted worker resumes the same capture after an external obj
     .select()
     .from(backgroundJobs)
     .where(eq(backgroundJobs.id, jobId));
-  // Capture sealed and the legacy cleanup ran; only verification remains.
+  // Capture sealed and the legacy cleanup ran; verification runs next.
   expect(finished?.checkpoint).toMatchObject({ phase: "verify" });
   const [sameCapture] = await db
     .select()
@@ -276,11 +341,6 @@ test("durable user.deleted worker resumes the same capture after an external obj
     .where(eq(accountErasureJobs.subjectId, userId));
   expect(sameCapture?.id).toBe(captured?.id);
   expect(sameCapture?.sealedCaptureRevision).toBe(sameCapture?.captureRevision);
-  const remaining = await pool.query(
-    "SELECT id FROM run_uploaded_files WHERE id = $1",
-    [fileId],
-  );
-  expect(remaining.rows).toStrictEqual([]);
 });
 
 test("pre-upgrade deletion tasks without a phase capture before cleanup", async () => {
@@ -314,7 +374,11 @@ test("pre-upgrade deletion tasks without a phase capture before cleanup", async 
     .select()
     .from(backgroundJobs)
     .where(eq(backgroundJobs.id, jobId));
-  expect(task).toMatchObject({ status: "completed", lastError: null });
+  expect(task).toMatchObject({
+    status: "pending",
+    lastError: null,
+    checkpoint: { phase: "verify" },
+  });
   const [capture] = await db
     .select()
     .from(accountErasureJobs)

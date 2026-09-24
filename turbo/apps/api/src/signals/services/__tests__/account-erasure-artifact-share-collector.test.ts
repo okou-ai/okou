@@ -1,4 +1,3 @@
-/* eslint-disable no-restricted-syntax -- B1 collector has no API route until the shared deletion executor is wired. */
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { drizzle } from "drizzle-orm/node-postgres";

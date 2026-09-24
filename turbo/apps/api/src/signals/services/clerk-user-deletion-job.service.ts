@@ -32,7 +32,7 @@ const checkpointSchema = z.object({
   emptyOrgIds: z.array(z.string()).optional(),
   // Tasks enqueued before B1 have no phase. Their legacy cleanup is
   // idempotent, so capturing whatever remains first is safe.
-  phase: z.enum(["capture", "legacy", "verify"]).default("capture"),
+  phase: z.enum(["capture", "verify"]).default("capture"),
 });
 
 type DeletionCheckpoint = z.infer<typeof checkpointSchema>;
@@ -137,47 +137,42 @@ export const executeClerkUserDeletionWork$ = command(
 
     const work = (async (): Promise<DeletionCheckpoint | null> => {
       let checkpoint = checkpointSchema.parse(job.checkpoint);
-      const save = async (
-        next: DeletionCheckpoint,
-        saveSignal: AbortSignal,
-      ): Promise<void> => {
-        const saved = await checkpointBackgroundJob(
-          db,
-          { job, checkpoint: next },
-          saveSignal,
-        );
-        if (!saved) {
-          throw new Error("User deletion lost its job lease");
-        }
-        checkpoint = next;
-      };
       const workSignal = AbortSignal.any([
         signal,
         AbortSignal.timeout(BACKGROUND_JOB_LEASE_MS - 15_000),
       ]);
-      if (checkpoint.phase === "capture") {
-        if (!(await captureUserErasureWork(db, job, workSignal))) {
-          return checkpoint;
-        }
-        await save({ ...checkpoint, phase: "legacy" }, signal);
+      if (checkpoint.phase === "verify") {
+        return (await verifyUserErasureWork(db, job, workSignal))
+          ? null
+          : checkpoint;
       }
-      if (checkpoint.phase === "legacy") {
-        await set(
-          cleanupClerkDeletedUser$,
-          {
-            userId: job.userId,
-            emptyOrgIds: checkpoint.emptyOrgIds,
-            checkpointEmptyOrgIds: async (emptyOrgIds, checkpointSignal) => {
-              await save({ ...checkpoint, emptyOrgIds }, checkpointSignal);
-            },
+      // A sealed capture returns immediately, so a replay after an interrupted
+      // cleanup resumes that cleanup without a separate checkpoint.
+      if (!(await captureUserErasureWork(db, job, workSignal))) {
+        return checkpoint;
+      }
+      await set(
+        cleanupClerkDeletedUser$,
+        {
+          userId: job.userId,
+          emptyOrgIds: checkpoint.emptyOrgIds,
+          checkpointEmptyOrgIds: async (emptyOrgIds, checkpointSignal) => {
+            const next = { ...checkpoint, emptyOrgIds };
+            const saved = await checkpointBackgroundJob(
+              db,
+              { job, checkpoint: next },
+              checkpointSignal,
+            );
+            if (!saved) {
+              throw new Error("User deletion lost its job lease");
+            }
+            checkpoint = next;
           },
-          signal,
-        );
-        await save({ ...checkpoint, phase: "verify" }, signal);
-      }
-      return (await verifyUserErasureWork(db, job, workSignal))
-        ? null
-        : checkpoint;
+        },
+        signal,
+      );
+      // Verification gets its own invocation and time budget.
+      return { ...checkpoint, phase: "verify" };
     })();
     await settleDeletionAttempt(db, job, work);
     signal.throwIfAborted();

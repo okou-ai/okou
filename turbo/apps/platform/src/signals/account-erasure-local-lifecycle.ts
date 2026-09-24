@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, state } from "ccstate";
 import { z } from "zod";
 
 import { accountErasureStatusContract } from "@okouai/api-contracts/contracts/account-erasure-status";
@@ -13,14 +13,12 @@ import {
 } from "./external/local-storage.ts";
 import {
   bestEffort,
-  detach,
   jsonParseOr,
   onDomEventFn,
-  Reason,
   setLoop,
   settle,
-  withCleanup,
 } from "./utils.ts";
+import { throttleCommand } from "./command-scheduling.ts";
 
 const CAPABILITY_KEY_PREFIX = "account-erasure-status-capability:";
 const capabilitySchema = z.object({
@@ -106,45 +104,41 @@ const checkSavedDeletionStatuses$ = command(
   },
 );
 
+const lastIssuedUserId$ = state<string | null>(null);
+
+// Clerk events and the poll share one serialized sync: an idle call starts at
+// once and overlapping calls collapse into one trailing run.
+const syncDeletionStatus$ = throttleCommand(
+  command(async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    const { user } = await get(clerk$);
+    signal.throwIfAborted();
+    if (user === null) {
+      set(lastIssuedUserId$, null);
+    } else if (user && user.id !== get(lastIssuedUserId$)) {
+      const issued = await settle(
+        set(issueStatusCapability$, user.id, signal),
+        signal,
+      );
+      if (issued.ok && issued.value) {
+        set(lastIssuedUserId$, user.id);
+      }
+    }
+    await bestEffort(set(checkSavedDeletionStatuses$, signal), signal);
+  }),
+  0,
+);
+
 /** Runs in both browser and Desktop's renderer partition. */
 export const setupAccountErasureLocalLifecycle$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
     const clerk = await get(clerk$);
     signal.throwIfAborted();
-    let lastIssuedUserId: string | null = null;
-    let checking = false;
-    const check = async (): Promise<void> => {
-      if (checking) {
-        return;
-      }
-      checking = true;
-      await withCleanup(
-        bestEffort(set(checkSavedDeletionStatuses$, signal), signal),
-        () => {
-          checking = false;
-        },
-      );
-    };
-    const sync = async (): Promise<void> => {
-      signal.throwIfAborted();
-      const user = clerk.user;
-      if (user !== undefined) {
-        if (user && user.id !== lastIssuedUserId) {
-          const issued = await settle(
-            set(issueStatusCapability$, user.id, signal),
-            signal,
-          );
-          if (issued.ok && issued.value) {
-            lastIssuedUserId = user.id;
-          }
-        } else if (user === null) {
-          lastIssuedUserId = null;
-        }
-      }
-      // A blocked IndexedDB deletion must not hold the app's initial route.
-      detach(check(), Reason.Daemon, "account erasure local cleanup");
-    };
-    const unsubscribe = clerk.addListener(onDomEventFn(sync));
+    const unsubscribe = clerk.addListener(
+      onDomEventFn(() => {
+        return bestEffort(set(syncDeletionStatus$, signal), signal);
+      }),
+      { skipInitialEmit: true },
+    );
     signal.addEventListener(
       "abort",
       () => {
@@ -152,13 +146,11 @@ export const setupAccountErasureLocalLifecycle$ = command(
       },
       { once: true },
     );
-    // Session-token reads may wait on Clerk or Desktop IPC. Their completion
-    // must not hold public protocol pages or the application's first route.
-    detach(sync(), Reason.Daemon, "account erasure initial status sync");
-    signal.throwIfAborted();
+    // The loop owns startup and polling off the app's first route: session
+    // token reads and a blocked IndexedDB deletion must not hold it.
     setLoop(
       async () => {
-        await sync();
+        await bestEffort(set(syncDeletionStatus$, signal), signal);
         return false;
       },
       POLL_MS,

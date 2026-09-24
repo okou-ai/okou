@@ -98,7 +98,10 @@ test("owner credentials survive a dormant client while missing and altered crede
     );
     expect(later.body).toStrictEqual({ status: "active", userId: owner });
   });
-  const changed = `${token.slice(0, -1)}${token.endsWith("A") ? "B" : "A"}`;
+  // Alter a full signature character: the final base64url character also
+  // carries discarded padding bits, so changing it can decode to equal bytes.
+  const at = token.length - 2;
+  const changed = `${token.slice(0, at)}${token[at] === "A" ? "B" : "A"}${token.slice(at + 1)}`;
   for (const authorization of [
     undefined,
     `Bearer ${owner}`,

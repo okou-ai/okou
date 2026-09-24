@@ -1,4 +1,3 @@
-/* eslint-disable no-restricted-syntax -- The hash coordination protocol is exercised at the database and S3 boundaries. */
 import { createHash, randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -7,13 +6,10 @@ import { afterAll, describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
 import { createDeferredPromise } from "../../utils";
-// The exact-hash PostgreSQL/S3 interleaving cannot be selected through a product endpoint.
-// eslint-disable-next-line no-restricted-imports
 import {
   pruneExpiredBlobUploadIntents,
   reserveBlobUploadIntent,
 } from "../blob-upload-intent.service";
-// eslint-disable-next-line no-restricted-imports
 import { eraseUnreferencedSharedBlob } from "../shared-blob-erasure.service";
 
 describe("content-addressed blob erasure coordination", () => {
@@ -184,21 +180,19 @@ describe("content-addressed blob erasure coordination", () => {
     });
     const erasure = eraseUnreferencedSharedBlob(db, value, context.signal);
     await deleting.promise;
-    try {
-      await expect(
-        db.transaction(async (tx) => {
-          await reserveBlobUploadIntent(tx, {
-            hash: value,
-            runId: randomUUID(),
-          });
-        }),
-      ).rejects.toThrow("Session history blob is being erased");
-      await expect(
-        pool.query("UPDATE blobs SET ref_count = 1 WHERE hash = $1", [value]),
-      ).rejects.toThrow(/blobs_erasure_pending_zero_refs/u);
-    } finally {
-      continueDelete.resolve();
-    }
+    // A failed assertion aborts the test signal, which releases the delete.
+    await expect(
+      db.transaction(async (tx) => {
+        await reserveBlobUploadIntent(tx, {
+          hash: value,
+          runId: randomUUID(),
+        });
+      }),
+    ).rejects.toThrow("Session history blob is being erased");
+    await expect(
+      pool.query("UPDATE blobs SET ref_count = 1 WHERE hash = $1", [value]),
+    ).rejects.toThrow(/blobs_erasure_pending_zero_refs/u);
+    continueDelete.resolve();
     await expect(erasure).resolves.toStrictEqual({ outcome: "erased" });
     expect(objects.live.has(key)).toBeFalsy();
   });

@@ -1,5 +1,5 @@
-/* eslint-disable no-restricted-syntax -- B1 has no product endpoint; exact capture and byte proof are exercised through its durable job boundary. */
 import { randomBytes, randomUUID } from "node:crypto";
+import { now } from "../../../lib/time";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, describe, expect, it, onTestFinished } from "vitest";
@@ -243,7 +243,7 @@ describe("shared blob account-erasure capture", () => {
     expect(deferred.rows).toHaveLength(1);
     expect(deferred.rows[0]?.attempt_count).toBe(0);
     expect(deferred.rows[0]?.available_at.getTime()).toBeGreaterThan(
-      Date.now() + 47 * 60 * 60 * 1000,
+      now() + 47 * 60 * 60 * 1000,
     );
     await pool.query(
       "UPDATE blobs SET erasure_eligible_at = clock_timestamp() - interval '1 minute' WHERE hash = $1",

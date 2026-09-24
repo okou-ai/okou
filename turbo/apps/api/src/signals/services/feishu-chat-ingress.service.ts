@@ -6,9 +6,7 @@ import {
   type FeishuChatIngressStatus,
 } from "@okouai/db/schema/feishu-chat-ingress";
 import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
-import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgEvents } from "@okouai/db/schema/feishu-org-event";
-import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import { and, eq, sql } from "drizzle-orm";
 
 import type { Db } from "../external/db";
@@ -169,7 +167,6 @@ export async function admitFeishuChatEvent(
     readonly installationId: string;
     readonly eventId: string;
     readonly payload: string;
-    readonly senderOpenId: string;
     readonly publicBrand: PublicBrand;
     readonly currentTime: Date;
   },
@@ -188,21 +185,6 @@ export async function admitFeishuChatEvent(
       .returning({ eventId: feishuOrgEvents.eventId });
 
     if (receipt) {
-      const [binding] = await tx
-        .select({ userId: feishuOrgConnections.userId })
-        .from(feishuOrgConnections)
-        .where(
-          and(
-            eq(feishuOrgConnections.installationId, args.installationId),
-            eq(feishuOrgConnections.feishuOpenId, args.senderOpenId),
-          ),
-        )
-        .limit(1);
-      if (binding) {
-        await assertErasureSubjectWritable(tx, [
-          { subjectKind: "user", subjectId: binding.userId },
-        ]);
-      }
       const [inserted] = await tx
         .insert(feishuChatIngress)
         .values({

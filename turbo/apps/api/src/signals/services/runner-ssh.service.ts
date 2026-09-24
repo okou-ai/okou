@@ -321,10 +321,6 @@ export async function pinRunnerSsh(
     return unavailable;
   }
   const result = await db.transaction<RunnerSshPinResponse>(async (tx) => {
-    await assertErasureSubjectWritable(tx, [
-      { subjectKind: "user", subjectId: initial.userId },
-      { subjectKind: "organization", subjectId: initial.orgId },
-    ]);
     // Same row as owner edit/reset, scoped only after non-locking authorization.
     const [locked] = await tx
       .select({ id: sshConnections.id })
@@ -412,10 +408,6 @@ export async function recordRunnerSshObservation(
     readonly outcome: "recorded" | "ignored" | "unavailable";
     readonly notify: boolean;
   }>(async (tx) => {
-    await assertErasureSubjectWritable(tx, [
-      { subjectKind: "user", subjectId: initial.userId },
-      { subjectKind: "organization", subjectId: initial.orgId },
-    ]);
     const [locked] = await tx
       .select({ id: sshConnections.id })
       .from(sshConnections)

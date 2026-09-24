@@ -742,6 +742,15 @@ export default [
       // Storage erasure must use a sealed locator after its catalog row is
       // gone; no endpoint can construct that dormant executor state yet.
       "src/signals/services/__tests__/account-erasure-storage-object-collector.test.ts",
+      // Public share aliases, copies and registry entries must be captured
+      // before their catalog rows vanish; no endpoint exposes sealed capture.
+      "src/signals/services/__tests__/account-erasure-artifact-share-collector.test.ts",
+      // Exact-hash capture and byte proof run through the durable B1 job; no
+      // product endpoint can hold a shared blob between capture and erase.
+      "src/signals/services/__tests__/account-erasure-shared-blob-collector.test.ts",
+      // The exact-hash PostgreSQL/S3 upload and erase interleaving cannot be
+      // selected through a product endpoint.
+      "src/signals/services/__tests__/shared-blob-erasure.service.test.ts",
       // Bounded job ownership needs real row-lock competition, expired leases,
       // handler-version skew and publication rollback unavailable through HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
@@ -988,6 +997,8 @@ export default [
       "src/signals/services/__tests__/account-erasure-ssh-remote-collector.test.ts",
       "src/signals/services/__tests__/account-erasure-connector-remote-collector.test.ts",
       "src/signals/services/__tests__/account-erasure-vnc-direct-collector.test.ts",
+      // Upload intents and shared blob erasure race at the exact-hash row.
+      "src/signals/services/__tests__/shared-blob-erasure.service.test.ts",
       // Immutable Feishu ownership must be measured across admission,
       // disconnect and rebind commits, which HTTP cannot interleave.
       "src/signals/services/__tests__/account-erasure-relational-collector.test.ts",
