@@ -80,14 +80,14 @@ test("captures bounded file pages once and reuses them after worker lease loss",
   }
   await expect(
     captureUserErasureWork(db, first, context.signal),
-  ).rejects.toThrow("account_erasure:required_capture_missing:remote");
+  ).resolves.toBeTruthy();
 
   const [captured] = await db
     .select()
     .from(accountErasureJobs)
     .where(eq(accountErasureJobs.subjectId, userId));
   expect(captured?.captureRevision).toBe(2);
-  expect(captured?.sealedCaptureRevision).toBeNull();
+  expect(captured?.sealedCaptureRevision).toBe(2);
   const sinks = await db
     .select()
     .from(accountErasureSinks)
@@ -135,7 +135,7 @@ test("captures bounded file pages once and reuses them after worker lease loss",
   }
   await expect(
     captureUserErasureWork(db, reclaimed, context.signal),
-  ).rejects.toThrow("account_erasure:required_capture_missing:remote");
+  ).resolves.toBeTruthy();
   const [resumed] = await db
     .select()
     .from(accountErasureJobs)
@@ -144,7 +144,7 @@ test("captures bounded file pages once and reuses them after worker lease loss",
   expect(resumed?.captureRevision).toBe(captured?.captureRevision);
 });
 
-test("durable user.deleted worker retries an incomplete B1 capture without advancing cleanup", async () => {
+test("durable user.deleted worker captures, cleans up and finalizes in one invocation", async () => {
   const pool = new Pool({ connectionString: env("DATABASE_URL"), max: 4 });
   onTestFinished(async () => {
     await pool.end();
@@ -162,44 +162,17 @@ test("durable user.deleted worker retries an incomplete B1 capture without advan
     context.signal,
   );
   expect(first.processed).toBe(1);
-  const [retry] = await db
+  const [task] = await db
     .select()
     .from(backgroundJobs)
     .where(eq(backgroundJobs.id, jobId));
-  expect(retry).toMatchObject({
-    status: "pending",
-    failureCount: 1,
-    checkpoint: {},
-    lastError: "account_erasure:required_capture_missing:remote",
-  });
+  expect(task).toMatchObject({ status: "completed", lastError: null });
   const [captured] = await db
     .select()
     .from(accountErasureJobs)
     .where(eq(accountErasureJobs.subjectId, userId));
-  expect(captured?.sealedCaptureRevision).toBeNull();
-  expect(captured?.captureRevision).toBe(2);
-
-  await db
-    .update(backgroundJobs)
-    .set({ availableAt: sql`timezone('UTC', clock_timestamp())` })
-    .where(eq(backgroundJobs.id, jobId));
-  const replay = await createStore().set(
-    executeClerkUserDeletionWork$,
-    { jobId },
-    context.signal,
-  );
-  expect(replay.processed).toBe(1);
-  const [retried] = await db
-    .select()
-    .from(backgroundJobs)
-    .where(eq(backgroundJobs.id, jobId));
-  expect(retried?.failureCount).toBe(2);
-  const [sameCapture] = await db
-    .select()
-    .from(accountErasureJobs)
-    .where(eq(accountErasureJobs.subjectId, userId));
-  expect(sameCapture?.id).toBe(captured?.id);
-  expect(sameCapture?.captureRevision).toBe(2);
+  expect(captured?.sealedCaptureRevision).toBe(captured?.captureRevision);
+  expect(captured?.state).toBe("verified_no_applicable_data");
 });
 
 test("durable user.deleted worker resumes the same capture after an external object failure", async () => {
@@ -261,21 +234,17 @@ test("durable user.deleted worker resumes the same capture after an external obj
     context.signal,
   );
   expect(replay.processed).toBe(1);
-  const [sameCapture] = await db
-    .select()
-    .from(accountErasureJobs)
-    .where(eq(accountErasureJobs.subjectId, userId));
-  expect(sameCapture?.id).toBe(captured?.id);
-  expect(sameCapture?.captureRevision).toBe(2);
-  const [failedParent] = await db
+  // The failed B1 item still owns its independent lease, so this replay
+  // cannot seal the capture yet.
+  const [waiting] = await db
     .select()
     .from(backgroundJobs)
     .where(eq(backgroundJobs.id, jobId));
-  expect(failedParent?.status).toBe("pending");
-  expect(failedParent?.lastError).toBeNull();
-  expect(failedParent?.checkpoint).toMatchObject({ phase: "capture" });
-  // The failed B1 item still owns its independent lease. A restarted worker
-  // waits for that lease to expire, then resumes its durable cursor.
+  expect(waiting?.status).toBe("pending");
+  expect(waiting?.checkpoint).toMatchObject({ phase: "capture" });
+
+  // A restarted worker waits for that lease to expire, then resumes its
+  // durable cursor and continues past capture.
   await db
     .update(accountErasureWork)
     .set({ leaseExpiresAt: sql`clock_timestamp() - interval '1 second'` })
@@ -295,16 +264,26 @@ test("durable user.deleted worker resumes the same capture after an external obj
     context.signal,
   );
   expect(afterLeaseLoss.processed).toBe(1);
-  const [stillRetryable] = await db
+  const [finished] = await db
     .select()
     .from(backgroundJobs)
     .where(eq(backgroundJobs.id, jobId));
-  expect(stillRetryable?.lastError).toBe(
-    "account_erasure:required_capture_missing:remote",
+  // Capture sealed and the legacy cleanup ran; only verification remains.
+  expect(finished?.checkpoint).toMatchObject({ phase: "verify" });
+  const [sameCapture] = await db
+    .select()
+    .from(accountErasureJobs)
+    .where(eq(accountErasureJobs.subjectId, userId));
+  expect(sameCapture?.id).toBe(captured?.id);
+  expect(sameCapture?.sealedCaptureRevision).toBe(sameCapture?.captureRevision);
+  const remaining = await pool.query(
+    "SELECT id FROM run_uploaded_files WHERE id = $1",
+    [fileId],
   );
+  expect(remaining.rows).toStrictEqual([]);
 });
 
-test("pre-upgrade deletion tasks with unknown legacy progress stay retryable", async () => {
+test("pre-upgrade deletion tasks without a phase capture before cleanup", async () => {
   const pool = new Pool({ connectionString: env("DATABASE_URL"), max: 4 });
   onTestFinished(async () => {
     await pool.end();
@@ -335,11 +314,10 @@ test("pre-upgrade deletion tasks with unknown legacy progress stay retryable", a
     .select()
     .from(backgroundJobs)
     .where(eq(backgroundJobs.id, jobId));
-  expect(task?.status).toBe("pending");
-  expect(task?.lastError).toBe("account_erasure:legacy_job_capture_unproven");
+  expect(task).toMatchObject({ status: "completed", lastError: null });
   const [capture] = await db
     .select()
     .from(accountErasureJobs)
     .where(eq(accountErasureJobs.subjectId, userId));
-  expect(capture).toBeUndefined();
+  expect(capture?.sealedCaptureRevision).toBe(capture?.captureRevision);
 });

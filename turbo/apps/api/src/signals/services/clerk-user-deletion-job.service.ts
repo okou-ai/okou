@@ -30,7 +30,9 @@ const JOB_NAMESPACE = "ae6e3b21-a980-4e94-908b-795315ac47af";
 const RETRY_DELAY_MS = 60_000;
 const checkpointSchema = z.object({
   emptyOrgIds: z.array(z.string()).optional(),
-  phase: z.enum(["capture", "legacy", "verify"]),
+  // Tasks enqueued before B1 have no phase. Their legacy cleanup is
+  // idempotent, so capturing whatever remains first is safe.
+  phase: z.enum(["capture", "legacy", "verify"]).default("capture"),
 });
 
 type DeletionCheckpoint = z.infer<typeof checkpointSchema>;
@@ -134,62 +136,48 @@ export const executeClerkUserDeletionWork$ = command(
     }
 
     const work = (async (): Promise<DeletionCheckpoint | null> => {
-      const checkpoint = checkpointSchema.safeParse(job.checkpoint);
-      if (!checkpoint.success) {
-        // A pre-upgrade worker may already have removed catalog rows whose
-        // external locators B1 must capture. Never infer completion from an
-        // empty inventory when that earlier progress is unknown.
-        throw new Error("account_erasure:legacy_job_capture_unproven");
-      }
-      if (checkpoint.data.phase === "capture") {
-        const workSignal = AbortSignal.any([
-          signal,
-          AbortSignal.timeout(BACKGROUND_JOB_LEASE_MS - 15_000),
-        ]);
-        const sealed = await captureUserErasureWork(db, job, workSignal);
-        return { ...checkpoint.data, phase: sealed ? "legacy" : "capture" };
-      }
-      if (checkpoint.data.phase === "legacy") {
-        // Empty organizations need their own object and relational capture
-        // before their legacy owner rows disappear. Keep the user job retryable
-        // until that obligation is registered.
-        if (checkpoint.data.emptyOrgIds?.length) {
-          throw new Error("Empty organization erasure capture is unresolved");
-        }
-        await set(
-          cleanupClerkDeletedUser$,
-          {
-            userId: job.userId,
-            emptyOrgIds: checkpoint.data.emptyOrgIds,
-            checkpointEmptyOrgIds: async (orgIds, checkpointSignal) => {
-              const saved = await checkpointBackgroundJob(
-                db,
-                {
-                  job,
-                  checkpoint: { ...checkpoint.data, emptyOrgIds: orgIds },
-                },
-                checkpointSignal,
-              );
-              if (!saved) {
-                throw new Error("User deletion lost its job lease");
-              }
-              if (orgIds.length > 0) {
-                throw new Error(
-                  "Empty organization erasure capture is unresolved",
-                );
-              }
-            },
-          },
-          signal,
+      let checkpoint = checkpointSchema.parse(job.checkpoint);
+      const save = async (
+        next: DeletionCheckpoint,
+        saveSignal: AbortSignal,
+      ): Promise<void> => {
+        const saved = await checkpointBackgroundJob(
+          db,
+          { job, checkpoint: next },
+          saveSignal,
         );
-        return { ...checkpoint.data, phase: "verify" };
-      }
+        if (!saved) {
+          throw new Error("User deletion lost its job lease");
+        }
+        checkpoint = next;
+      };
       const workSignal = AbortSignal.any([
         signal,
         AbortSignal.timeout(BACKGROUND_JOB_LEASE_MS - 15_000),
       ]);
-      const finished = await verifyUserErasureWork(db, job, workSignal);
-      return finished ? null : checkpoint.data;
+      if (checkpoint.phase === "capture") {
+        if (!(await captureUserErasureWork(db, job, workSignal))) {
+          return checkpoint;
+        }
+        await save({ ...checkpoint, phase: "legacy" }, signal);
+      }
+      if (checkpoint.phase === "legacy") {
+        await set(
+          cleanupClerkDeletedUser$,
+          {
+            userId: job.userId,
+            emptyOrgIds: checkpoint.emptyOrgIds,
+            checkpointEmptyOrgIds: async (emptyOrgIds, checkpointSignal) => {
+              await save({ ...checkpoint, emptyOrgIds }, checkpointSignal);
+            },
+          },
+          signal,
+        );
+        await save({ ...checkpoint, phase: "verify" }, signal);
+      }
+      return (await verifyUserErasureWork(db, job, workSignal))
+        ? null
+        : checkpoint;
     })();
     await settleDeletionAttempt(db, job, work);
     signal.throwIfAborted();

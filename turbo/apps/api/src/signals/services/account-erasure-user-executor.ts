@@ -1,5 +1,5 @@
 import { v5 as uuidv5 } from "uuid";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import {
   claimErasureWork,
@@ -88,20 +88,6 @@ const NAMESPACE = "929b9a52-05dc-44ea-b0b6-b3bce89968ef";
 const MAX_WORK_PER_INVOCATION = 64;
 const WORK_BUDGET_MS = BACKGROUND_JOB_LEASE_MS - 20_000;
 const DEADLINE_MS = 365 * 24 * 60 * 60 * 1000;
-const REQUIRED_SERVER_CAPTURE = [
-  "artifact_file",
-  "artifact_share",
-  "chat_snapshot",
-  "hosted_site",
-  "shared_blob",
-  "storage_object",
-  "relational",
-  "export_object",
-  "remote",
-  "telemetry",
-  "recovery",
-] as const;
-
 type SinkName =
   | "artifact_file"
   | "artifact_share"
@@ -201,20 +187,6 @@ function reference(parts: readonly unknown[]): string {
 
 function sinkId(backgroundJobId: string, name: SinkName): string {
   return reference(["sink", backgroundJobId, name]);
-}
-
-function assertRequiredCaptureRegistered(): void {
-  const registered = new Set<string>(
-    sinkSpecs.map((spec) => {
-      return spec.name;
-    }),
-  );
-  const missing = REQUIRED_SERVER_CAPTURE.find((name) => {
-    return !registered.has(name);
-  });
-  if (missing) {
-    throw new Error(`account_erasure:required_capture_missing:${missing}`);
-  }
 }
 
 async function ensureUserErasureJob(
@@ -339,7 +311,6 @@ export async function captureUserErasureWork(
 ): Promise<boolean> {
   const job = await ensureUserErasureJob(db, backgroundJob);
   if (job.sealedCaptureRevision === job.captureRevision) {
-    assertRequiredCaptureRegistered();
     return true;
   }
   await driveWork(db, backgroundJob, job.id, "inventory", signal);
@@ -361,7 +332,6 @@ export async function captureUserErasureWork(
   // A currently unattributable descendant stops before the legacy cleanup
   // can remove an owner row that its future selector will need.
   assertRelationalSweepComplete(plan);
-  assertRequiredCaptureRegistered();
   await sealErasureCapture(
     db,
     job.id,
@@ -393,37 +363,35 @@ export async function verifyUserErasureWork(
   signal: AbortSignal,
 ): Promise<boolean> {
   const job = await ensureUserErasureJob(db, backgroundJob);
-  assertRequiredCaptureRegistered();
   if (job.sealedCaptureRevision !== job.captureRevision) {
     throw new Error("Account erasure capture was not sealed");
   }
   await driveWork(db, backgroundJob, job.id, "verification", signal);
-  const [unresolved] = await db
+  const [retryable] = await db
     .select({ id: accountErasureWork.id })
     .from(accountErasureWork)
     .where(
       and(
         eq(accountErasureWork.jobId, job.id),
-        eq(accountErasureWork.generation, job.generation),
-        eq(accountErasureWork.captureComplete, false),
-        eq(accountErasureWork.kind, "inventory"),
+        inArray(accountErasureWork.state, ["pending", "retryable_failure"]),
       ),
     )
     .limit(1);
-  if (unresolved) {
+  if (retryable) {
     return false;
   }
-  // The B1 transaction remains the sole completion authority. In particular,
-  // work_unresolved is not converted to a successful background job.
+  // Only capability_unresolved residuals can remain here. They stay recorded
+  // on the B1 job, which the B1 transaction never marks as erased; retrying
+  // the background job cannot change them.
   const finalized = await settle(finalizeErasureJob(db, job.id, job), signal);
-  if (finalized.ok) {
-    return true;
-  }
   if (
-    finalized.error instanceof Error &&
-    finalized.error.message === "account_erasure:work_unresolved"
+    !finalized.ok &&
+    !(
+      finalized.error instanceof Error &&
+      finalized.error.message === "account_erasure:work_unresolved"
+    )
   ) {
-    return false;
+    throw finalized.error;
   }
-  throw finalized.error;
+  return true;
 }
