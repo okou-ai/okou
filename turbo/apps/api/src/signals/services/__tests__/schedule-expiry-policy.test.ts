@@ -8,12 +8,12 @@ describe("unclaimed recurring schedule grace", () => {
   it("allows the exact thirty-minute boundary and skips one millisecond after", () => {
     expect(
       scheduleExpired(anchor, new Date(anchor.getTime() + SCHEDULE_GRACE_MS)),
-    ).toBe(false);
+    ).toBeFalsy();
     expect(
       scheduleExpired(
         anchor,
         new Date(anchor.getTime() + SCHEDULE_GRACE_MS + 1),
       ),
-    ).toBe(true);
+    ).toBeTruthy();
   });
 });

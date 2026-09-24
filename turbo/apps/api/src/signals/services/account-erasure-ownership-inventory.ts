@@ -720,8 +720,8 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
     ownership: ["user_id"],
   },
   morning_brief_native_schedule_skips: {
-    coverage: "user_descendant",
-    parents: ["morning_brief_native_schedules"],
+    coverage: "user_root",
+    ownership: ["user_id"],
   },
   morning_brief_native_schedules: {
     coverage: "user_root",
