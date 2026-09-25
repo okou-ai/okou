@@ -1069,46 +1069,6 @@ export async function withChatEventDeletedAfterReadFixture<T>(args: {
 }
 
 /**
- * Reproduces a crash after the canonical chat callback was acknowledged but
- * before its detached terminal processing became durable. Product APIs cannot
- * delete append-only events, so this fixture removes only the exact cancelled
- * lifecycle row after verifying that the chat callback is already delivered.
- */
-export async function removeAcknowledgedCancellationLifecycleFixture(args: {
-  readonly runId: string;
-}): Promise<void> {
-  await db().transaction(async (tx) => {
-    const [callback] = await tx
-      .select({ status: agentRunCallbacks.status })
-      .from(agentRunCallbacks)
-      .where(
-        and(
-          eq(agentRunCallbacks.runId, args.runId),
-          eq(agentRunCallbacks.internalKind, "chat"),
-        ),
-      )
-      .limit(1);
-    if (callback?.status !== "delivered") {
-      throw new Error("Expected an acknowledged canonical chat callback");
-    }
-
-    await tx.execute(sql`SET LOCAL session_replication_role = replica`);
-    const removed = await tx
-      .delete(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.runId, args.runId),
-          eq(chatEvents.eventType, "run.cancelled"),
-        ),
-      )
-      .returning({ id: chatEvents.id });
-    if (removed.length !== 1) {
-      throw new Error("Expected one cancelled lifecycle event");
-    }
-  });
-}
-
-/**
  * Reproduce a queued Feishu input persisted before the brand retirement: its
  * context has no brand and its installation still carries `vm0`.
  */

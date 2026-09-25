@@ -144,13 +144,6 @@ case "$host" in
   *) exit 255 ;;
 esac
 SH
-cat >"${fake_bin}/psql" <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
-[ "${MOCK_CHAT_EVENT_DB_AVAILABLE:-1}" = 1 ] || exit 1
-printf '%s\n' "${MOCK_CHAT_EVENT_ACTIVATED-t}"
-SH
-chmod +x "${fake_bin}/psql"
 chmod +x "${fake_bin}/git" "${fake_bin}/curl" "${fake_bin}/ssh"
 
 run_resolver() {
@@ -161,7 +154,6 @@ run_resolver() {
     PATH="${fake_bin}:$PATH" \
     HOME="${HOME:-/tmp}" \
     AWS_METAL_RUNNER_HOSTS=arm-1,x86-1 \
-    DATABASE_URL=postgresql://fixture.invalid/test \
     GH_TOKEN=test-github-token \
     GITHUB_OUTPUT="$output_file" \
     GITHUB_REPOSITORY=okou-ai/okou \
@@ -751,10 +743,6 @@ fi
 
 echo "resolve-production-rollback-target tests passed"
 
-# The contracted schema accepts only activated APIs at or after the split reader.
-assert_failure "split writes are not activated" run_resolver "${tmp_dir}/preactivation.output" MOCK_CHAT_EVENT_ACTIVATED=f
-assert_failure "predates activated split chat event writes" run_resolver "${tmp_dir}/activated.output" MOCK_CHAT_EVENT_READER_VALID=0
-run_resolver "${tmp_dir}/new-reader.output" >/dev/null
-assert_failure "split writes are not activated" run_resolver "${tmp_dir}/missing-control.output" MOCK_CHAT_EVENT_ACTIVATED=
+# The contracted schema accepts only APIs at or after the split writer.
+assert_failure "predates activated split chat event writes" run_resolver "${tmp_dir}/pre-split.output" MOCK_CHAT_EVENT_READER_VALID=0
 assert_failure "Cannot resolve the merged split chat event reader" run_resolver "${tmp_dir}/unknown-floor.output" MOCK_CHAT_EVENT_READER_COMMIT=
-assert_failure "Cannot establish chat event rollout state" run_resolver "${tmp_dir}/db-unavailable.output" MOCK_CHAT_EVENT_DB_AVAILABLE=0

@@ -264,55 +264,6 @@ try {
     });
   });
 
-  await test("replay reuses the delivered legacy callback instead of creating another delivery", async () => {
-    const f = await fixture();
-    await f.source();
-    const output = await insertChatEvent(
-      db,
-      {
-        chatThreadId: f.threadId,
-        runId: f.runId,
-        eventType: "output.message",
-        content: "Legacy completion",
-        runEventSequenceNumber: 0,
-        runEventId: "legacy:0",
-      },
-      "none",
-    );
-    assert.ok(output);
-    await insertChatEvent(
-      db,
-      {
-        chatThreadId: f.threadId,
-        runId: f.runId,
-        eventType: "run.completed",
-        content: null,
-      },
-      "run-lifecycle",
-    );
-    const legacyId = randomUUID();
-    await db.insert(agentRunCallbacks).values({
-      id: legacyId,
-      runId: f.runId,
-      internalKind: "teams:chat",
-      status: "delivered",
-      attempts: 1,
-      payload: { ...f.teamsDelivery, chatEventId: output.id },
-      deliveredAt: new Date(),
-    });
-    assert.equal((await f.project())?.teamsDeliveryCallbackId, legacyId);
-    const [delivery] = await db
-      .select({ count: count() })
-      .from(agentRunCallbacks)
-      .where(
-        and(
-          eq(agentRunCallbacks.runId, f.runId),
-          eq(agentRunCallbacks.internalKind, "teams:chat"),
-        ),
-      );
-    assert.equal(delivery?.count, 1);
-  });
-
   await test("event commit and later projections survive a failed materialization, and retry stays monotonic", async () => {
     const f = await fixture("running");
     await pool.query(

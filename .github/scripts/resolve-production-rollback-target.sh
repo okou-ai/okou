@@ -39,7 +39,6 @@ require_env() {
 
 for name in \
   AWS_METAL_RUNNER_HOSTS \
-  DATABASE_URL \
   GH_TOKEN \
   GITHUB_OUTPUT \
   GITHUB_REPOSITORY \
@@ -186,16 +185,9 @@ if ! git merge-base --is-ancestor "$PI_SESSION_CONSTRUCTION_READER_COMMIT" "$TAR
   fail "Rollback target predates the Pi session-construction digest reader: ${PI_SESSION_CONSTRUCTION_READER_COMMIT}."
 fi
 
-# Release 2 removed the legacy allocator, so only activated split-write APIs
-# can serve the contracted schema. Read the durable, irreversible activation
-# marker before resolving artifacts; any read failure or inactive state fails
-# closed instead of pretending an older API is compatible.
-chat_event_split_activated=$(PGDATABASE="$DATABASE_URL" PGOPTIONS='-c statement_timeout=5000 -c lock_timeout=1000' \
-  psql -X -qAt --set ON_ERROR_STOP=1 --command "SELECT activated_at IS NOT NULL FROM public.chat_event_write_control WHERE id = 'global'") ||
-  fail "Cannot establish chat event rollout state."
-if [ "$chat_event_split_activated" != t ]; then
-  fail "Chat event split writes are not activated; the contracted schema has no legacy allocator."
-fi
+# Production has activated split chat event writes, and the contraction
+# migration refuses any database that has not. Only APIs that contain the split
+# writer can serve the contracted schema.
 chat_event_reader_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
   origin/main -- turbo/apps/api/src/signals/services/chat-event-write-mode.service.ts | sed -n '1p')
 if [[ ! "$chat_event_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then

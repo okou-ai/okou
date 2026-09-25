@@ -81,29 +81,9 @@ jobs:
           cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
 
-      - name: Install rollback database reader
-        run: |
-          npm install -g neonctl@2.15.0
-          command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
-
-      - name: Get Production Database URL
-        id: get-db-url
-        shell: bash
-        run: |
-          DATABASE_URL=$(neonctl connection-string production --project-id "$NEON_PROJECT_ID" --database-name neondb --role-name neondb_owner --pooled --ssl verify-full)
-          WORKFLOW_COMMAND_DATA="${DATABASE_URL//%/%25}"
-          WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\r'/%0D}"
-          WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\n'/%0A}"
-          printf '::add-mask::%s\n' "$WORKFLOW_COMMAND_DATA"
-          echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
-        env:
-          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
-
       - name: Resolve and verify rollback target
         id: resolve
         env:
-          DATABASE_URL: ${{ steps.get-db-url.outputs.database-url }}
           AWS_METAL_RUNNER_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
