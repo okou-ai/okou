@@ -1066,6 +1066,16 @@ describe("Browser user-action route", () => {
       },
     });
     expect(invalid.status).toBe(400);
+    const invalidMime = await userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: token },
+      body: {
+        values: [
+          { ...value, files: [{ ...value.files[0]!, type: "TEXT/PLAIN" }] },
+        ],
+      },
+    });
+    expect(invalidMime.status).toBe(400);
     expect(files).toHaveLength(0);
     siteAccept = ".pdf";
     const drifted = await accept(

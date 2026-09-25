@@ -1075,7 +1075,11 @@ function validSubmittedFiles(
 ): boolean {
   let total = 0;
   for (const file of entry.files) {
-    if (!validBrowserFileName(file.name) || /[^\x20-\x7e]/u.test(file.type)) {
+    if (
+      !validBrowserFileName(file.name) ||
+      /[^\x20-\x7e]/u.test(file.type) ||
+      file.type !== file.type.toLowerCase()
+    ) {
       return false;
     }
     const bytes = Buffer.from(file.contentBase64, "base64");
