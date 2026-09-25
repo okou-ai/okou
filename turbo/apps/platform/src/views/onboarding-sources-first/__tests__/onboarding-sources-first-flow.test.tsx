@@ -14,10 +14,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { pathname, search } from "../../../signals/location.ts";
-import {
-  listLocalStorageEntries,
-  localStorageSignals,
-} from "../../../signals/external/local-storage.ts";
+import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
@@ -28,9 +25,6 @@ import {
 
 const context = testContext();
 const draftStorage = localStorageSignals("onboarding:sources-first-draft");
-const completedDraftStorage = localStorageSignals(
-  "onboarding:sources-first-draft",
-);
 
 const SOURCES_FIRST_ON = {
   [FeatureSwitchKey.OnboardingSourcesFirst]: true,
@@ -140,14 +134,6 @@ test("The switch opens the field question on /onboarding and continues to the so
   expect(getButtonByName("Continue")).toBeDisabled();
 
   click(fieldRadio(MARKETING_FIELD));
-
-  expect(
-    JSON.parse(context.store.get(draftStorage.get$) ?? "null"),
-  ).toMatchObject({
-    orgId: "org_default",
-    userId: "test-user-123",
-    industry: "marketing",
-  });
 
   await waitFor(() => {
     expect(getButtonByName("Continue")).toBeEnabled();
@@ -556,8 +542,6 @@ test("A refreshed ready step keeps the industry, model choice, and edited reques
   });
   expect(sentIndustry).toBe("marketing");
   expect(sentProvider).toBe("claudeCode");
-  expect(context.store.get(completedDraftStorage.get$)).toBeNull();
-  expect(listLocalStorageEntries("onboarding:")).toStrictEqual([]);
 });
 
 test("A member's run reaches the first request without the admin-only completion", async () => {
@@ -601,7 +585,6 @@ test("A member's run reaches the first request without the admin-only completion
   // `POST /api/onboarding/complete` is admin-only, so a member run would only
   // ever collect a 403 from it.
   expect(completions).toBe(0);
-  expect(listLocalStorageEntries("onboarding:")).toStrictEqual([]);
 });
 
 test("A step keeps the prompt handoff and redeem code it arrived with", async () => {

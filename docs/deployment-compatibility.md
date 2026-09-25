@@ -1,5 +1,21 @@
 # Deployment Compatibility
 
+## Account deletion local-data cleanup retirement (2026-09-25)
+
+Okou no longer deletes a deleted account's browser or Desktop local data. The
+API removes `POST /api/account-erasure/status-capability` and
+`GET /api/account-erasure/status`; the App no longer issues or stores status
+capabilities, polls deletion status, or purges account-scoped IndexedDB,
+voice-draft or onboarding bytes. Server-side account erasure is unchanged.
+
+An older App bundle or Desktop renderer keeps its detached lifecycle: its
+capability request and status polls now receive 404. Both calls already
+suppress error toasts; the capability failure is settled and a status 404 is
+skipped, so the old client simply stops purging. Its saved
+`account-erasure-status-capability:*` localStorage entries remain inert and
+are not migrated. A new App against an older API makes no such calls. Rollback
+is safe; an older API resumes serving the routes with the same signing key.
+
 ## Host-worker storage layouts replace public brand (2026-09-25)
 
 `apps/host-worker` no longer models a public brand (#36766). It resolves hosted
