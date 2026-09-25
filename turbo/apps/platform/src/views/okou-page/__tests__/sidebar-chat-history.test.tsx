@@ -922,7 +922,6 @@ async function setupReadUnreadSidebar() {
       });
       return respond(200, {
         lastReadAt: null,
-        unreads: [],
       });
     },
   );
@@ -932,7 +931,6 @@ async function setupReadUnreadSidebar() {
       unreadThreadIds.delete(params.id);
       return respond(200, {
         lastReadAt: "2026-03-10T00:05:00Z",
-        unreads: [],
       });
     },
   );
@@ -1069,7 +1067,7 @@ test("An open native-only thread reads each newer delivery without a terminal Ru
       }
       // This response snapshot is intentionally stale when the third delivery
       // arrives while the second request is in flight.
-      return respond(200, { lastReadAt: target, unreads: [] });
+      return respond(200, { lastReadAt: target });
     },
   );
 
