@@ -1,19 +1,12 @@
 import { reserveFixtureChatEventSequence } from "./chat-event-sequences";
-import { storedExecutionContextSchema } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/schema/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { randomUUID } from "node:crypto";
 import { seedLiteralGoalArchive } from "./goal-retirement";
 import { insertChatEvent } from "../signals/services/chat-event.service";
 import { createStore } from "ccstate";
 import { and, eq, desc, sql } from "drizzle-orm";
-import { now } from "../lib/time";
-import { ApiDispatchTimingCollector } from "../signals/services/api-dispatch-timing.service";
-import { claimQueueFirstRunAssociation } from "../signals/services/chat-queued-event.service";
-import { requirePiApiFirstTurnExecutionContext } from "../signals/services/pi-api-first-turn-config";
-import { runPiApiFirstTurn$ } from "../signals/services/pi-api-first-turn.service";
 
 import { db } from "../lib/db";
 import type { Tx } from "../lib/db-types";
@@ -242,91 +235,6 @@ export async function createActiveGoalQueueEventFixture(args: {
     throw new Error("Expected the goal fixture event to be inserted");
   }
   return { goalId: goal.id, eventId: admission.eventId };
-}
-
-/** Replay the final claim of a Goal prepared by an outgoing API instance. */
-export async function claimPreparedGoalFixture(args: {
-  readonly goal: { readonly chatThreadId: string };
-  readonly eventId: string;
-  readonly runId: string;
-}): Promise<"claimed" | "lost"> {
-  return await db().transaction(async (tx) => {
-    // Simulate a captured pre-retirement runtime value without adding it back
-    // to the live TypeScript admission union.
-    const association = {
-      kind: "user_message" as const,
-      threadId: args.goal.chatThreadId,
-      eventId: args.eventId,
-      admissionTime: now(),
-    };
-    Object.defineProperty(association, "kind", {
-      value: "goal_input",
-      enumerable: true,
-    });
-    await lockChatQueueThread(tx, association.threadId);
-    const claim = await claimQueueFirstRunAssociation(tx, {
-      ...association,
-      admission: { kind: "idle" },
-      runId: args.runId,
-      selectedModel: null,
-      timing: new ApiDispatchTimingCollector(),
-    });
-    return claim.kind;
-  });
-}
-
-/** Invoke a captured API-owned Pi activation at its final execution entry. */
-export async function activateLegacyGoalPiFixture(
-  runId: string,
-  signal: AbortSignal,
-): Promise<void> {
-  const [row] = await db()
-    .select({ run: agentRuns, job: runnerJobQueue })
-    .from(agentRuns)
-    .innerJoin(runnerJobQueue, eq(agentRuns.id, runnerJobQueue.runId))
-    .where(eq(agentRuns.id, runId));
-  if (!row || !row.run.chatThreadId) {
-    throw new Error("Expected a captured pending Goal job");
-  }
-  const startedAt = now();
-  await createStore().set(
-    runPiApiFirstTurn$,
-    {
-      runId,
-      userId: row.run.userId,
-      orgId: row.run.orgId,
-      runnerGroup: row.job.runnerGroup,
-      prompt: row.run.prompt,
-      appendSystemPrompt: row.run.appendSystemPrompt,
-      executionContext: requirePiApiFirstTurnExecutionContext({
-        ...storedExecutionContextSchema.parse(row.job.executionContext),
-        apiStartTime: startedAt,
-        billableFirewalls: [],
-        piSessionId: row.run.chatThreadId,
-        piModelConfig: {
-          provider: "openai",
-          baseUrl: "https://api.openai.com/v1",
-          model: "gpt-5.6-terra",
-          apiKeyEnv: "OPENAI_API_KEY",
-          credentialSecretName: "OPENAI_API_KEY",
-        },
-        piLaunchConfig: {
-          schemaVersion: 2,
-          apiFirstTurn: {
-            schemaVersion: 1,
-            resourceSnapshotDigest: "a".repeat(64),
-            manifestUrl: "https://storage.example/manifest.json",
-            sessionUrl: "https://storage.example/session.jsonl",
-            deadlineAt: startedAt + 55_000,
-            baseSession: { sessionId: row.run.chatThreadId, sha256: null },
-            sandboxEventSequenceStart: 1,
-          },
-        },
-      }),
-    },
-    undefined,
-    signal,
-  );
 }
 
 async function appendHistoricalGoalEvent(

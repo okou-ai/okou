@@ -584,7 +584,6 @@ function validateApiFirstTurnLifecycle(
   }
   if (
     !state ||
-    state.triggerSource === "goal" ||
     (state.status !== "pending" && state.status !== "running") ||
     state.userId !== args.activation.userId ||
     state.orgId !== args.activation.orgId ||
@@ -1991,9 +1990,6 @@ export const prepareCreatedPiApiFirstTurn$ = command(
     { set },
     input: CreatorAuthorizedPiPreparation,
   ): PiApiFirstTurnPreparation => {
-    if (input.triggerSource === "goal") {
-      throw new Error("Unsupported Pi preparation source");
-    }
     return set(startApiFirstTurnPreparation$, input.activation);
   },
 );
@@ -2706,7 +2702,7 @@ export const runPiApiFirstTurn$ = command(
         signal,
       );
       signal.throwIfAborted();
-      if (!run || run.triggerSource === "goal") {
+      if (!run) {
         return undefined;
       }
       // Queue promotion prepares only after canonical authorization, with its
