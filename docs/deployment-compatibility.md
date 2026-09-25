@@ -1,5 +1,14 @@
 # Deployment Compatibility
 
+## Discord native history attachment URLs (2026-09-25)
+
+`GET /api/integrations/discord/messages` and `/replies` no longer return
+`attachments[].url` (the signed Discord CDN link); `id`, `filename`, `size` and
+`contentType` remain. Older CLI builds do not validate this response and print
+only attachment filenames, so they are unaffected; downloads use the
+attachment ID through `download-file`. `channel list` also stops returning
+forum and media channels. The Discord integration is default-off.
+
 ## Slack and Discord public brand retirement (2026-09-25)
 
 Slack and Discord are Okou-only. The API no longer reads or writes

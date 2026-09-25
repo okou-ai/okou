@@ -124,7 +124,11 @@ Discord authorization source. See C's
    buttons/selects/modals, typing/status, and Markdown replace Slack App Home
    and Block Kit. Message/file limits, mention suppression, expiring attachment
    URLs, and rate limits require deliberate splitting, import, and retry. A
-   truncated result or a silently missing attachment is not parity.
+   truncated result or a silently missing attachment is not parity. Attachment
+   CDN URLs are signed bearer links, so native history returns attachment
+   metadata only and `okou discord download-file` re-authorizes each fetch.
+   Forum and media channels hold posts as threads with no channel history, so
+   `channel list` omits them; a post is read by its thread ID.
 
 OAuth deferral and disabled rollout are project scope limits, not unavoidable
 Discord differences. The Gateway owner's initial single-shard scope is likewise

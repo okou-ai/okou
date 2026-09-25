@@ -9,7 +9,10 @@ export const listCommand = new Command()
   .description(
     "List guild channels visible to both your Discord account and Okou",
   )
-  .option("--guild-id <id>", "Select one of your verified guild bindings")
+  .option(
+    "--guild-id <id>",
+    "Optional; must match your organization's bound guild",
+  )
   .option("--json", "Print the response as JSON")
   .addHelpText(
     "after",
@@ -20,7 +23,8 @@ Examples:
 
 Notes:
   - Requires discord:read and an existing verified Discord binding.
-  - Pass --guild-id when multiple guild bindings are available.
+  - Your binding is resolved from the current organization. --guild-id is optional; when given, it must match that binding's guild.
+  - Lists text and announcement channels. Forum and media posts are threads; read one with its thread ID.
   - This command does not list DMs or create or join channels.
   - Read a returned channel with okou discord message history --channel-id <id>.`,
   )

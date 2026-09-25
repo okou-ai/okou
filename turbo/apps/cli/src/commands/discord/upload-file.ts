@@ -148,7 +148,10 @@ export const uploadFileCommand = new Command()
     "Local file path to upload (up to 10 MiB)",
   )
   .requiredOption("-c, --channel <id>", "Discord channel or thread ID")
-  .option("--guild-id <id>", "Guild for the Discord connection")
+  .option(
+    "--guild-id <id>",
+    "Optional; must match your organization's bound guild",
+  )
   .option("--comment <text>", "Comment to accompany the file")
   .option("--content-type <mime>", "Override inferred content type")
   .option("--operation-id <uuid>", "Reuse a previous upload operation")

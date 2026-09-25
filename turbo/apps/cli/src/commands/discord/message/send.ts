@@ -10,7 +10,10 @@ export const sendCommand = new Command()
   )
   .requiredOption("--channel-id <id>", "Channel, native thread, or bot DM ID")
   .requiredOption("-t, --text <message>", "Message text (1-20000 characters)")
-  .option("--guild-id <id>", "Select one of your verified guild bindings")
+  .option(
+    "--guild-id <id>",
+    "Optional; must match your organization's bound guild",
+  )
   .option("--json", "Print all delivered message IDs and URLs as JSON")
   .addHelpText(
     "after",
@@ -21,7 +24,7 @@ Examples:
 
 Notes:
   - Requires discord:write and access for both your verified Discord user and Okou.
-  - Pass --guild-id when multiple guild bindings are available, including for DMs.
+  - --guild-id is optional; when given, it must match your organization's bound guild.
   - To send in a native thread, use its channel ID. This command does not create threads.
   - Bot DMs are limited to your own existing one-to-one conversation with Okou.
   - Long text is split into Discord-sized messages without truncation; every delivered URL is returned.
