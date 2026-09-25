@@ -19,7 +19,10 @@ import {
   DiscordFileFetchError,
   fetchDiscordAttachment,
 } from "../external/discord-file-fetcher";
-import { requireDiscordConversationAccess$ } from "../services/discord-access.service";
+import {
+  requireDiscordConversationAccess$,
+  requireDiscordRunReadAccess$,
+} from "../services/discord-access.service";
 import {
   discordApiFailure,
   discordUnavailable,
@@ -169,13 +172,12 @@ const downloadAttempt$ = command(
   ) => {
     const auth = get(organizationAuthContext$);
     const access = await set(
-      requireDiscordConversationAccess$,
+      requireDiscordRunReadAccess$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
         channelId: query.channelId,
         guildId: query.guildId,
-        mode: "read",
       },
       signal,
     );

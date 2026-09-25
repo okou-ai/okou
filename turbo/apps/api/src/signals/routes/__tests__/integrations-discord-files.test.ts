@@ -442,6 +442,28 @@ describe("Discord attachment downloads", () => {
     },
   );
 
+  it("denies bot DM attachment downloads while keeping uploads to the sender's own DM", async () => {
+    const fixture = await boundFixture();
+    const source = incomingAttachment(fixture);
+    // Discord keeps one bot DM per user, shared by every connected org.
+    server.use(
+      http.get(`${discordApiOrigin}/channels/${fixture.channelId}`, () => {
+        return HttpResponse.json({
+          id: fixture.channelId,
+          type: 1,
+          recipients: [{ id: fixture.discordUserId, username: "file-owner" }],
+        });
+      }),
+    );
+    const denied = await accept(
+      fileClients().download({ headers: fixture.headers, query: source.query }),
+      [403],
+    );
+    expect(denied.body.error.code).toBe("DISCORD_DM_READ_DENIED");
+    const upload = await canonicalUpload(fixture);
+    expect(upload.initialized.assetId).toStrictEqual(expect.any(String));
+  });
+
   it("returns fresh, authorized attachment bytes with private download headers", async () => {
     const fixture = await boundFixture();
     const source = incomingAttachment(fixture);

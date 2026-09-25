@@ -35,6 +35,7 @@ Output:
 
 Notes:
   - Both the requesting user and bot must have access to the message.
+  - Bot DM attachments cannot be downloaded: every organization connected to your Discord account shares that one DM.
   - Downloads are limited to 10 MiB; attachment URLs are resolved by the server.
   - The output file is replaced only after the full download is validated.`,
   )
