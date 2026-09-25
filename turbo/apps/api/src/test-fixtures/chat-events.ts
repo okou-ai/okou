@@ -118,7 +118,6 @@ interface ChatEventContextFixture {
   readonly slackThreadTs: string | null;
   readonly slackRouteThreadTs: string | null;
   readonly feishuConversationHistory: string | null;
-  readonly feishuPublicBrand: PublicBrand | null;
   readonly feishuMessageText: string | null;
   readonly feishuMessageFiles: ChatFeishuMessageFiles | null;
   readonly feishuChatType: "group" | "p2p" | "topic_group" | null;
@@ -219,7 +218,6 @@ export async function readChatEventContextFixture(
       slackThreadTs: chatSlackContext.threadTs,
       slackRouteThreadTs: chatSlackContext.routeThreadTs,
       feishuConversationHistory: chatFeishuContext.conversationHistory,
-      feishuPublicBrand: chatFeishuContext.publicBrand,
       feishuMessageText: chatFeishuContext.messageText,
       feishuMessageFiles: chatFeishuContext.messageFiles,
       feishuChatType: chatFeishuContext.chatType,
@@ -712,10 +710,6 @@ interface TelegramChatEventByPromptFixture {
   readonly eventId: string;
 }
 
-interface FeishuChatEventByPromptFixture {
-  readonly eventId: string;
-}
-
 /**
  * Chat events live in a database shared by every parallel test worker, so a
  * prompt lookup must be scoped to the caller's own user. Matching on prompt
@@ -752,20 +746,6 @@ export async function findTelegramChatEventByPromptFixture(args: {
     filter: and(
       eq(chatEvents.eventType, "input.prompt"),
       eq(chatEvents.contextType, "telegram"),
-    ),
-  });
-}
-
-export async function findFeishuChatEventByPromptFixture(args: {
-  readonly userId: string;
-  readonly prompt: string;
-}): Promise<FeishuChatEventByPromptFixture | null> {
-  return await findOwnedChatEventByPrompt({
-    userId: args.userId,
-    prompt: args.prompt,
-    filter: and(
-      eq(chatEvents.eventType, "input.prompt"),
-      eq(chatEvents.contextType, "feishu"),
     ),
   });
 }

@@ -583,7 +583,6 @@ describe("dormant relational sweep", () => {
       installationId,
       eventId: `event_${randomUUID()}`,
       payload: JSON.stringify({ userId: mine }),
-      publicBrand: "vm0",
       status: "processed",
     });
 

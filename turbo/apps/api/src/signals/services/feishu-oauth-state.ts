@@ -2,8 +2,6 @@ import type { FeishuPlatform } from "@okouai/core/feishu-platform";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { z } from "zod";
-import { publicBrandSchema } from "@okouai/api-contracts/contracts/public-brand";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 import { env } from "../../lib/env";
 import { now } from "../../lib/time";
@@ -22,7 +20,6 @@ const feishuOAuthStateSchema = z.object({
   callbackTarget: z.literal("app").optional(),
   oauthRedirectTarget: z.literal("app").optional(),
   redirectUri: z.url(),
-  publicBrand: publicBrandSchema,
   timestamp: z.number().int(),
 });
 
@@ -46,7 +43,6 @@ function createFeishuOAuthState(args: {
   const encodedPayload = Buffer.from(
     JSON.stringify({
       ...args,
-      publicBrand: PUBLIC_BRAND,
       timestamp: args.timestamp ?? Math.floor(now() / 1000),
     }),
   ).toString("base64url");

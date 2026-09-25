@@ -43,7 +43,6 @@ import {
 } from "@okouai/api-contracts/contracts/feishu-connect";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
 import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { getCustomConnectorSkillStorageName } from "@okouai/core/storage-names";
 
@@ -54,7 +53,6 @@ import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { extractFileFromTarGz } from "../../../lib/tar";
 import { server } from "../../../mocks/server";
 import {
-  findFeishuChatEventByPromptFixture,
   findPendingChatEventByPromptFixture,
   readChatEventContextFixture,
 } from "../../../test-fixtures/chat-events";
@@ -487,7 +485,6 @@ function legacyFeishuAppOAuthState(args: {
   readonly installationId: string;
   readonly orgId: string;
   readonly userId: string;
-  readonly publicBrand: PublicBrand;
   readonly redirectUri: string;
 }): string {
   const encodedPayload = Buffer.from(
@@ -2732,14 +2729,6 @@ export function registerFeishuIntegrationTests(
             "Expected Feishu status to return an OAuth connect URL",
           );
         }
-        const signedState = requireValue(
-          new URL(connectUrl).searchParams.get("state"),
-          "Expected signed Feishu connect state",
-        );
-        const [encodedState] = signedState.split(".");
-        expect(
-          JSON.parse(Buffer.from(encodedState ?? "", "base64url").toString()),
-        ).toMatchObject({ publicBrand: "okou" });
         expect(new URL(connectUrl).origin).toBe("https://api.okou.test");
 
         context.mocks.clerk.authenticateRequest.mockResolvedValue({
@@ -2852,7 +2841,6 @@ export function registerFeishuIntegrationTests(
               installationId,
               orgId: requireValue(member.orgId, "Expected an organization"),
               userId: member.userId,
-              publicBrand: "vm0",
               redirectUri: `${FEISHU_CALLBACK_ORIGIN}/api/integrations/feishu/oauth/callback`,
             }),
           })}`,
@@ -3018,7 +3006,7 @@ export function registerFeishuIntegrationTests(
         const [encodedState] = signedState.split(".");
         expect(
           JSON.parse(Buffer.from(encodedState ?? "", "base64url").toString()),
-        ).toMatchObject({ publicBrand: "okou", redirectUri: appCallbackUrl });
+        ).toMatchObject({ redirectUri: appCallbackUrl });
 
         const oauthApp = createAppWithRoutes({
           signal: context.signal,
@@ -3399,9 +3387,7 @@ export function registerFeishuIntegrationTests(
               }),
               [200],
             );
-            expect(status.body.publicBrand).toBe("okou");
             expect(status.body.installations?.[0]).toMatchObject({
-              publicBrand: "okou",
               botName: "Owner Managed Bot",
               callbackUrl: fixture.callbackUrl,
             });
@@ -3466,64 +3452,45 @@ export function registerFeishuIntegrationTests(
         },
       );
 
-      it.each(["input context", "asynchronous delivery"] as const)(
-        "uses Okou for Feishu %s",
-        async (phase) => {
-          const fixture = await setupFeishuRunFixture({
-            useSystemDefaultIdentity: true,
-          });
-          await connectFixtureUser(fixture);
-          const prompt = "run with the Okou default identity";
+      it("uses Okou for Feishu asynchronous delivery", async () => {
+        const fixture = await setupFeishuRunFixture({
+          useSystemDefaultIdentity: true,
+        });
+        await connectFixtureUser(fixture);
+        const prompt = "run with the Okou default identity";
 
-          await postEvent(
-            fixture.callbackUrl,
-            directMessage(fixture.appId, prompt),
-            {
-              encrypted: true,
-            },
-          );
-          await flushWaitUntilForTest();
+        await postEvent(
+          fixture.callbackUrl,
+          directMessage(fixture.appId, prompt),
+          {
+            encrypted: true,
+          },
+        );
+        await flushWaitUntilForTest();
 
-          const run = await findRun(fixture.actor, prompt);
-
-          if (phase === "input context") {
-            const inputEvent = requireValue(
-              await findFeishuChatEventByPromptFixture({
-                userId: fixture.actor.userId,
-                prompt,
-              }),
-              "Expected the Host-branded Feishu input event",
+        const run = await findRun(fixture.actor, prompt);
+        await runsApi.heartbeatRunner(fixture.runnerGroup);
+        const claim = await runsApi.claimRunnerJob(run.id);
+        expect(claim.appendSystemPrompt).toContain("Your name is Okou.");
+        fixtureState.outboundMessages = [];
+        await completeRunSession({
+          runId: run.id,
+          sandboxToken: claim.sandboxToken,
+          sessionId: `bdd-feishu-host-brand-${run.id}`,
+          history: `bdd Feishu host brand history ${run.id}`,
+          assistantText: "Host-branded Feishu response",
+        });
+        await flushWaitUntilForTest();
+        const delivered = requireValue(
+          fixtureState.outboundMessages.find((message) => {
+            return messageContent(message).includes(
+              "Host-branded Feishu response",
             );
-            await expect(
-              readChatEventContextFixture(inputEvent.eventId),
-            ).resolves.toMatchObject({ feishuPublicBrand: "okou" });
-
-            await runsApi.requestCancelRun(fixture.actor, run.id, [200]);
-          } else {
-            await runsApi.heartbeatRunner(fixture.runnerGroup);
-            const claim = await runsApi.claimRunnerJob(run.id);
-            expect(claim.appendSystemPrompt).toContain("Your name is Okou.");
-            fixtureState.outboundMessages = [];
-            await completeRunSession({
-              runId: run.id,
-              sandboxToken: claim.sandboxToken,
-              sessionId: `bdd-feishu-host-brand-${run.id}`,
-              history: `bdd Feishu host brand history ${run.id}`,
-              assistantText: "Host-branded Feishu response",
-            });
-            await flushWaitUntilForTest();
-            const delivered = requireValue(
-              fixtureState.outboundMessages.find((message) => {
-                return messageContent(message).includes(
-                  "Host-branded Feishu response",
-                );
-              }),
-              "Expected the asynchronous Feishu response",
-            );
-            expect(messageContent(delivered)).toContain('"content":"Okou"');
-          }
-        },
-      );
+          }),
+          "Expected the asynchronous Feishu response",
+        );
+        expect(messageContent(delivered)).toContain('"content":"Okou"');
+      });
 
       it.each(["connection identity", "rotated callback"] as const)(
         "preserves the custom Feishu app's %s when credentials rotate",
@@ -3581,10 +3548,8 @@ export function registerFeishuIntegrationTests(
             }),
             [200],
           );
-          expect(retried.body.publicBrand).toBe("okou");
           expect(retried.body.installations?.[0]).toMatchObject({
             id: fixture.installationId,
-            publicBrand: "okou",
             botName: "Okou Feishu",
             callbackUrl: fixture.callbackUrl,
             callbackVerified: false,
