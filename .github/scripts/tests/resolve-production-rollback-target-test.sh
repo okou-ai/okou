@@ -91,7 +91,7 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_SNAPSHOT_R2_READER_COMMIT-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee}"
     elif [[ "$*" == *1228_drop_agentphone_public_brand.sql* ]]; then
       printf '%s\n' "${MOCK_AGENTPHONE_BRAND_DROP_COMMIT-1111111111111111111111111111111111111111}"
-    elif [[ "$*" == *1249_retire_public_brand.sql* ]]; then
+    elif [[ "$*" == *1251_retire_public_brand.sql* ]]; then
       printf '%s\n' "${MOCK_PUBLIC_BRAND_RETIREMENT_COMMIT-2222222222222222222222222222222222222222}"
     else
       printf '%s\n' "${MOCK_PRIVACY_READER_COMMIT-dddddddddddddddddddddddddddddddddddddddd}"

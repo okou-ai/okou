@@ -27,6 +27,7 @@ import {
   lockPiApiFirstTurnLifecycle,
 } from "./pi-api-first-turn-lifecycle.service";
 import { cancelLockedRun } from "./agent-run-cancellation-transition.service";
+import { releaseActiveAgentRuns } from "./agent-run-terminal-transition.service";
 import { lockPiMemoryPhase2MaintenanceCleanupProtection } from "./pi-memory-phase2-maintenance.service";
 
 const L = logger("RunCancel");
@@ -190,12 +191,13 @@ export const cancelRun$ = command(
         run.cancellationRecoveryCompleted === null
           ? "hard"
           : args.runnerCancellationMode;
-      await cancelLockedRun(tx, {
+      const releasableRunIds = await cancelLockedRun(tx, {
         runId: run.id,
         status: run.status,
         completedAt: new Date(apiStartTime),
         runnerCancellationMode,
       });
+      await releaseActiveAgentRuns(tx, releasableRunIds);
 
       return {
         apiStartTime,

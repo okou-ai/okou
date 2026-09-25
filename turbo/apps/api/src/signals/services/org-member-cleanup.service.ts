@@ -15,7 +15,11 @@ import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { logger } from "../../lib/log";
 import { publishCancelToRunnerGroup } from "../external/realtime";
 import { tapError } from "../utils";
-import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
+import {
+  neverStartedRunIds,
+  releaseActiveAgentRuns,
+  transitionAgentRunsToTerminal,
+} from "./agent-run-terminal-transition.service";
 import { revokeMorningBriefNativeAuthority } from "./morning-brief-native-schedule.service";
 import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
@@ -265,6 +269,7 @@ async function revokeOrgMemberRunAuthority(
           eq(secrets.type, "model-provider"),
         ),
       );
+    await releaseActiveAgentRuns(tx, neverStartedRunIds(rows));
     return rows;
   });
   signal.throwIfAborted();

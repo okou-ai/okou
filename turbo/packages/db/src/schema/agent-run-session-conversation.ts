@@ -38,15 +38,9 @@ export const agentRuns = pgTable(
         table.createdAt.desc(),
       ),
       index("idx_agent_runs_org").on(table.orgId),
-      // Composite index for status-based heartbeat queries
-      index("idx_agent_runs_status_heartbeat").on(
-        table.status,
-        table.lastHeartbeatAt,
-      ),
-      // Partial index for cron cleanup (only running status)
-      index("idx_agent_runs_running_heartbeat")
-        .on(table.lastHeartbeatAt)
-        .where(sql`status = 'running'`),
+      // Active-run scans filter by status only; heartbeat stays unindexed so
+      // heartbeat updates remain HOT.
+      index("idx_agent_runs_status").on(table.status),
       // Composite index for org+status queries (concurrency checks, queue listing)
       index("idx_agent_runs_org_status_created").on(
         table.orgId,

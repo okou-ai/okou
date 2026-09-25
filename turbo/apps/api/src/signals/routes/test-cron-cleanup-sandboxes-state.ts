@@ -46,7 +46,11 @@ import {
   normalizeRunMetadata,
   writeRunMetadata,
 } from "../services/agent-run-metadata-write.service";
-import { transitionAgentRunsToTerminal } from "../services/agent-run-terminal-transition.service";
+import {
+  neverStartedRunIds,
+  releaseActiveAgentRuns,
+  transitionAgentRunsToTerminal,
+} from "../services/agent-run-terminal-transition.service";
 import { deleteArtifactCatalogForHostedSiteId } from "../services/artifact-catalog-deletion.service";
 import { cleanupSandboxes$ } from "../services/cron-cleanup-sandboxes.service";
 import { insertChatEvent } from "../services/chat-event.service";
@@ -1075,7 +1079,7 @@ async function transitionRunTerminalForAction(
     return actionBadRequest("terminal status is required");
   }
   const updated = await db.transaction(async (tx) => {
-    const [run] = await transitionAgentRunsToTerminal(tx, {
+    const transitions = await transitionAgentRunsToTerminal(tx, {
       values: {
         status: terminalStatus,
         completedAt: nowDate(),
@@ -1089,7 +1093,8 @@ async function transitionRunTerminalForAction(
         inArray(agentRuns.status, ["pending", "running"]),
       ],
     });
-    return run;
+    await releaseActiveAgentRuns(tx, neverStartedRunIds(transitions));
+    return transitions[0];
   });
   signal.throwIfAborted();
   return updated ? actionOk() : actionBadRequest("active run not found");
