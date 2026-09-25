@@ -1069,8 +1069,15 @@
     {
       "idx": 1230,
       "version": "7",
-      "when": 1790300427887,
-      "tag": "1230_teams_telegram_public_brand_okou_default",
+      "when": 1790300181834,
+      "tag": "1230_github_automation_public_brand_okou_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 1231,
+      "version": "7",
+      "when": 1790301663064,
+      "tag": "1231_teams_telegram_public_brand_okou_default",
       "breakpoints": true
     }
   ]

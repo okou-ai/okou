@@ -186,7 +186,6 @@ type ChatEventDisplayContext =
         readonly messageText: string;
         readonly triggerReactionId: string | null;
         readonly triggerCommentBody: string | null;
-        readonly publicBrand: PublicBrand;
       };
       readonly agentphoneContext?: never;
     }
@@ -260,7 +259,6 @@ type InputAutomationEvent = ChatEventIdentity &
     readonly workflowAutomationEventType?: WorkflowAutomationEventType;
     readonly workflowAutomationEventPayload?: WorkflowAutomationEventPayload;
     readonly connectorSourceId?: string;
-    readonly publicBrand?: PublicBrand;
     readonly triggerBrief: string | null;
   };
 
@@ -534,7 +532,6 @@ type NewDisplayContext =
       readonly messageText: string;
       readonly triggerReactionId: string | null;
       readonly triggerCommentBody: string | null;
-      readonly publicBrand: PublicBrand;
     }
   | {
       readonly type: "agentphone";
@@ -563,7 +560,6 @@ type NewDisplayContext =
       readonly workflowAutomationEventType: WorkflowAutomationEventType | null;
       readonly workflowAutomationEventPayload: WorkflowAutomationEventPayload | null;
       readonly connectorSourceId: string | null;
-      readonly publicBrand: PublicBrand;
       readonly triggerBrief: string | null;
     };
 
@@ -593,7 +589,6 @@ function newAutomationDisplayContext(
         : null,
     connectorSourceId:
       "connectorSourceId" in values ? (values.connectorSourceId ?? null) : null,
-    publicBrand: PUBLIC_BRAND,
     triggerBrief:
       "triggerBrief" in values ? (values.triggerBrief ?? null) : null,
   };
@@ -691,7 +686,6 @@ function newDisplayContext(
       id: eventId,
       chatThreadId: values.chatThreadId,
       ...githubContext,
-      publicBrand: PUBLIC_BRAND,
     };
   }
 
@@ -855,7 +849,6 @@ async function insertAutomationDisplayContext(
       eventType: context.workflowAutomationEventType,
       eventPayload: context.workflowAutomationEventPayload,
       connectorSourceId: context.connectorSourceId,
-      publicBrand: context.publicBrand,
       triggerBrief: context.triggerBrief,
       createdAt,
     })
@@ -988,7 +981,6 @@ async function insertDisplayContext(
         messageText: context.messageText,
         triggerReactionId: context.triggerReactionId,
         triggerCommentBody: context.triggerCommentBody,
-        publicBrand: context.publicBrand,
         createdAt,
       })
       .onConflictDoNothing();
