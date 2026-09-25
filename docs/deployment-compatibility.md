@@ -2,7 +2,7 @@
 
 ## Chat thread hot-path cleanup and draft contraction, release 3 (2026-09-25)
 
-**Draft columns and owner key.** Migration `1252_drop_chat_thread_draft_columns`:
+**Draft columns and owner key.** Migration `1253_drop_chat_thread_draft_columns`:
 
 - drops `chat_threads.draft_user_message`, `draft_attachments` and `chat_threads_draft_user_message_check`;
 - makes `(chat_thread_id, user_id)` the `chat_thread_drafts` primary key.
@@ -19,7 +19,7 @@
 
 Responses are unchanged.
 
-**Indexes.** Migration `1251_drop_redundant_chat_thread_indexes` (non-transactional) drops `idx_chat_threads_user_agent_updated` and `idx_chat_threads_user_last_read` with `CONCURRENTLY`. The planner serves their prefixes from `idx_chat_threads_user_agent_last_message` and `idx_chat_threads_user_last_message_id`. Read-cursor-only updates become HOT-eligible. No API names these indexes.
+**Indexes.** Migration `1252_drop_redundant_chat_thread_indexes` (non-transactional) drops `idx_chat_threads_user_agent_updated` and `idx_chat_threads_user_last_read` with `CONCURRENTLY`. The planner serves their prefixes from `idx_chat_threads_user_agent_last_message` and `idx_chat_threads_user_last_message_id`. Read-cursor-only updates become HOT-eligible. No API names these indexes.
 
 **Snapshot compaction.** The cron no longer unions every thread, event and snapshot scope, and no longer takes the erasure admission:
 
@@ -30,6 +30,55 @@ Responses are unchanged.
 - it prunes compacted events with bounded reads and one `DELETE` by id.
 
 Agent deletion now reads the affected thread ids and owners in bounded keyset pages before the deletion transaction. After commit it appends `deleted` lifecycle events in small batches using the single-statement sequence allocator, with the captured org id (the Agent is already gone). Batch failures are logged, not retried, and never roll back deletion; as with `sort_touched`, an occasional missing event is accepted. Event-page reads keep `deleted` tombstones visible after the Agent is gone while continuing to filter other events by live Agent. With these events driving snapshot invalidation, the 24-hour full refresh and repeated empty-scope publication are removed. A scope with no visible event and no snapshot remains empty. The projection's timestamp strings keep the exact `jsonb_build_object` format.
+
+## Computer Use erasure admission and legacy host retirement (2026-09-25)
+
+Host START, command creation, the host directory and the audit-event list no
+longer take account-erasure admission or open transactions; START is one
+upsert and creation is a bounded host read plus one INSERT. A closed erasure
+subject is no longer refused with `403` by these routes.
+
+`POST /api/computer-use/hosts/start` now requires `installationId`. Hosts
+registered without one (the last was seen in August 2026) are no longer
+accepted, and stop always keeps the host as an offline installation instead of
+revoking it and clearing chat-thread bindings. Every current Desktop build
+sends `installationId`.
+
+Migration `1251_computer_use_commands_required_host_timeout` deletes commands
+left by the retired approval flow (and their audit rows), revokes any active
+host without an installation, and makes `computer_use_commands.host_id` and
+`timeout_ms` `NOT NULL`. Older APIs always write both columns for new commands,
+so they remain compatible after the migration.
+
+## Computer Use host sessions and command reads stop locking (2026-09-25)
+
+Computer Use heartbeat, command claim, command completion, host stop, command
+status reads and screenshot/plugin-content reads no longer open multi-statement
+transactions, take account-erasure admission locks or lock host/command rows.
+Each reads with plain bounded queries and writes with single-row conditional
+UPDATEs; a request that loses a race skips its write (heartbeat), reports
+`idle` (claim), or reports the command as already completed (completion).
+Heartbeats and claim polls only rewrite the host row when its reported state
+changed or `last_seen_at` is at least 30s old, and Desktop sends steady-state
+heartbeats every 15s instead of 2s.
+
+Observable differences:
+
+- A closed erasure subject is no longer refused with `403` by these routes; late
+  writes are left to erasure cleanup.
+- Claim is no longer serialized with stop. A claim that read the host just
+  before a concurrent stop can still start one command, which then fails
+  through the normal running-command timeout.
+- A command status read times out only the command being read. Other running
+  commands time out when they are read or when their host polls again.
+- Migration `1241_computer_use_host_liveness_indexes` (#36895) drops
+  `idx_computer_use_hosts_last_seen` and adds the partial unique index
+  `idx_computer_use_commands_running_host (host_id) WHERE status = 'running'`,
+  which now enforces one running command per host. Older APIs serialized claims
+  per host and never create a second running row, so they remain compatible.
+  While old and new APIs overlap, an old claim racing a new one for the same
+  host can hit the index and return one `500`; the Desktop recovers on its next
+  poll.
 
 ## Active run state moves to `active_agent_runs` (2026-09-25, step 1 of 3)
 

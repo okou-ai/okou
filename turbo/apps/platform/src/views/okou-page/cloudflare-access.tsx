@@ -648,25 +648,27 @@ export function CloudflareAccessDialog() {
   );
 }
 
-function CloudflareAccessConversionDecision({
+function CloudflareAccessConversionControls({
   preview,
   isSaving,
+  onCancel,
   onConfirm,
 }: {
-  readonly preview: CloudflareAccessConversionPreview;
+  readonly preview: CloudflareAccessConversionPreview | null;
   readonly isSaving: boolean;
-  readonly onConfirm: () => void;
+  readonly onCancel: () => void;
+  readonly onConfirm: (preview: CloudflareAccessConversionPreview) => void;
 }) {
   const { t } = useTranslation();
   const acknowledgedSnapshot = useGet(
     cloudflareAccessConversionAcknowledgedSnapshot$,
   );
   const acknowledge = useSet(acknowledgeCloudflareAccessConversion$);
-  const confirmed = acknowledgedSnapshot === preview.impactSnapshot;
-  const requiresConfirmation = preview.otherHostCount > 0;
+  const confirmed =
+    preview !== null && acknowledgedSnapshot === preview.impactSnapshot;
   return (
     <>
-      {requiresConfirmation && (
+      {preview && preview.otherHostCount > 0 && (
         <div className="grid gap-3 rounded-lg border p-4 text-sm">
           <p role="alert">
             {t(
@@ -690,16 +692,31 @@ function CloudflareAccessConversionDecision({
           </label>
         </div>
       )}
-      <Button
-        type="button"
-        variant="destructive"
-        disabled={isSaving || (requiresConfirmation && !confirmed)}
-        onClick={onConfirm}
-      >
-        {t(($) => {
-          return $.cloudflareAccess.convert;
-        })}
-      </Button>
+      <div className="flex justify-end gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          disabled={isSaving}
+          onClick={onCancel}
+        >
+          {t(($) => {
+            return $.cloudflareAccess.cancel;
+          })}
+        </Button>
+        {preview && (
+          <Button
+            type="button"
+            disabled={isSaving || (preview.otherHostCount > 0 && !confirmed)}
+            onClick={() => {
+              onConfirm(preview);
+            }}
+          >
+            {t(($) => {
+              return $.cloudflareAccess.convert;
+            })}
+          </Button>
+        )}
+      </div>
     </>
   );
 }
@@ -1077,28 +1094,15 @@ export function CloudflareAccessConversionDialog() {
               })}
             </Button>
           )}
-          {impact && !error && (
-            <CloudflareAccessConversionDecision
-              preview={impact}
-              isSaving={isSaving}
-              onConfirm={() => {
-                return detach(confirm(impact, signal), Reason.DomCallback);
-              }}
-            />
-          )}
+          <CloudflareAccessConversionControls
+            preview={error ? null : impact}
+            isSaving={isSaving}
+            onCancel={close}
+            onConfirm={(reviewed) => {
+              return detach(confirm(reviewed, signal), Reason.DomCallback);
+            }}
+          />
         </DialogBody>
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={isSaving}
-            onClick={close}
-          >
-            {t(($) => {
-              return $.cloudflareAccess.cancel;
-            })}
-          </Button>
-        </div>
       </DialogContent>
     </Dialog>
   );
