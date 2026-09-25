@@ -1,7 +1,6 @@
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
-import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { activeInputDeliveries } from "@okouai/db/schema/active-input-delivery";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
@@ -16,51 +15,15 @@ import {
   ne,
   notExists,
   or,
-  sql,
   type SQL,
 } from "drizzle-orm";
 import type { Db } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { chatEventTypeIn } from "./chat-event-type.service";
 
-const ACTIVE_CHAT_RUN_STATUSES = ["queued", "pending", "running"] as const;
-
 interface ChatThreadAdmissionConditionArgs {
   readonly threadId: string;
   readonly excludeRunId?: string;
-  readonly apiStartTime?: number;
-}
-
-function activeChatRunCondition(db: Pick<Db, "select">) {
-  return and(
-    isNotNull(agentRuns.triggerSource),
-    inArray(agentRuns.status, ACTIVE_CHAT_RUN_STATUSES),
-    or(
-      notExists(
-        db
-          .select({ id: agentRunCallbacks.id })
-          .from(agentRunCallbacks)
-          .where(
-            and(
-              eq(agentRunCallbacks.runId, agentRuns.id),
-              eq(agentRunCallbacks.internalKind, "chat"),
-              isNotNull(sql`${agentRunCallbacks.payload}->>'queuedMessageId'`),
-            ),
-          ),
-      ),
-      exists(
-        db
-          .select({ id: chatEvents.id })
-          .from(chatEvents)
-          .where(
-            and(
-              eq(chatEvents.runId, agentRuns.id),
-              chatEventTypeIn(["input.prompt"]),
-            ),
-          ),
-      ),
-    ),
-  );
 }
 
 function unresolvedCancellationRecoveryCondition(
@@ -125,54 +88,28 @@ export async function cancellationRecoveryPendingForThread(
   return run !== undefined;
 }
 
-function chatThreadRunAdmissionBlockerExists(
-  db: Pick<Db, "select">,
-  args: ChatThreadAdmissionConditionArgs,
-): SQL {
-  return exists(
-    db
-      .select({ id: agentRuns.id })
-      .from(agentRuns)
-      .where(
-        and(
-          eq(agentRuns.chatThreadId, args.threadId),
-          args.excludeRunId === undefined
-            ? undefined
-            : ne(agentRuns.id, args.excludeRunId),
-          or(
-            activeChatRunCondition(db),
-            freshUnresolvedCancellationRecoveryCondition(db, args.apiStartTime),
-          ),
-        ),
-      ),
-  );
-}
-
-function chatThreadOpenDeliveryExists(
-  db: Pick<Db, "select">,
-  threadId: string,
-): SQL {
-  return exists(
-    db
-      .select({ id: activeInputDeliveries.id })
-      .from(activeInputDeliveries)
-      .where(
-        and(
-          eq(activeInputDeliveries.chatThreadId, threadId),
-          eq(activeInputDeliveries.status, "open"),
-        ),
-      ),
-  );
-}
-
+/**
+ * A thread is busy while it holds an active run row. The row lives from launch
+ * until the Runner finishes with the run (completion, or timeout cleanup), so
+ * it also covers cancellation recovery and open active-input deliveries.
+ */
 export function chatThreadAdmissionBlockerCondition(
   db: Pick<Db, "select">,
   args: ChatThreadAdmissionConditionArgs,
 ): SQL {
-  return sql`${chatThreadRunAdmissionBlockerExists(
-    db,
-    args,
-  )} OR ${chatThreadOpenDeliveryExists(db, args.threadId)}`;
+  return exists(
+    db
+      .select({ runId: activeAgentRuns.runId })
+      .from(activeAgentRuns)
+      .where(
+        and(
+          eq(activeAgentRuns.chatThreadId, args.threadId),
+          args.excludeRunId === undefined
+            ? undefined
+            : ne(activeAgentRuns.runId, args.excludeRunId),
+        ),
+      ),
+  );
 }
 
 async function chatThreadAdmissionBlockerExists(
@@ -200,7 +137,6 @@ export async function chatThreadAdmissionBlocked(
   args: {
     readonly threadId: string;
     readonly excludeRunId?: string;
-    readonly apiStartTime?: number;
   },
 ): Promise<boolean> {
   return await chatThreadAdmissionBlockerExists(db, args);

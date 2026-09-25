@@ -20,6 +20,36 @@ test adapter for this retained nullable text column when it drops the physical
 column, and must raise the rollback floor to this cutover's canonical main
 merge commit. No screenshot decoder or index changes belong to this step.
 
+## Chat run admission moves to the `active_agent_runs` thread slot (pending)
+
+**Release ordering:** #36900 shipped separately in release #36948. #36955
+merged into main with migration `1258_active_agent_runs_step2.sql` and shipped
+separately in release #36974. This PR follows with migration
+`1259_active_agent_runs_chat_thread_slot.sql`. Do not ship both steps in one
+release. The rollback floor for #36929 is the deployed step-2 API.
+
+#36955 owns the backfill for queued, pending, running and started terminal runs
+still within the recovery grace or heartbeating. #36929 does **not** repeat
+that backfill. Its migration keeps only the newest active row slotted per
+thread and adds the plain unique index on `active_agent_runs.chat_thread_id`.
+NULL thread IDs remain distinct. The new API's last launch statement inserts
+the active row with `ON CONFLICT (chat_thread_id) DO NOTHING`; a collision rolls
+back that launch as a lost queue claim and keeps the message queued. Queue-first
+admission, Web preflight and queue drain read the slot. Admission, completion,
+timeout and queued-run markers no longer lock the thread row; the session
+binding uses compare-and-set.
+
+**Mixed-version risk:** the step-2 API still inserts active rows without a
+thread-slot conflict handler. If its launch races a new API launch or a still-
+finishing terminal run, the unique index can reject its insert (`23505`): its
+launch rolls back and inline send returns a temporary HTTP 500. The separately
+enqueued input remains durable and can drain after slot release; no second run
+starts. This is a user-visible error, not seamless compatibility. The release
+owner must explicitly accept it and monitor errors and queue progress, or
+first provide an older-API conflict handler / avoid serving the older API
+after the index is created. Separating releases alone does not remove the
+rolling mixed-version window.
+
 ## Chat thread hot-path cleanup and draft contraction, release 3 (2026-09-25)
 
 **Draft columns and owner key.** Migration `1257_drop_chat_thread_draft_columns` drops `chat_threads.draft_user_message`, `draft_attachments` and `chat_threads_draft_user_message_check`, and makes `(chat_thread_id, user_id)` the `chat_thread_drafts` primary key.

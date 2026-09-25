@@ -3894,7 +3894,6 @@ function chatThreadAdmissionBlockedForAutoSend(
 ): Promise<boolean> {
   return chatThreadAdmissionBlocked(args.db, {
     threadId,
-    apiStartTime: args.admissionTime,
   });
 }
 

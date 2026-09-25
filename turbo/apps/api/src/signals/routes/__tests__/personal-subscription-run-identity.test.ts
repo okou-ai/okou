@@ -25,7 +25,6 @@ import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { readPiMemoryStage1DayFixture } from "../../../test-fixtures/pi-memory-stage1-candidates";
 import { createDeferredPromise, joinAll } from "../../utils";
 import {
-  holdAgentRunRowLockFixture,
   holdOrgAdmissionLockFixture,
   readRunUsageEventsFixture,
 } from "../../../test-fixtures/chat-events";
@@ -804,51 +803,13 @@ describe("personal subscription run identity", () => {
     },
   );
 
-  it.each(["completed", "timeout"] as const)(
-    "settles the canonical run with %s while a second dispatcher prepares the same head",
-    async (terminalStatus) => {
-      const f = await fixture("codex-oauth-token", true);
-      const chat = createChatFilesBddApi(context);
-      const thread = await chat.createThread(f.actor, { agentId: f.agentId });
-      const firstPrepared = createDeferredPromise<void>(context.signal);
-      const secondPrepared = createDeferredPromise<void>(context.signal);
-      const releaseFirst = createDeferredPromise<void>(context.signal);
-      const releaseSecond = createDeferredPromise<void>(context.signal);
-      onTestFinished(() => {
-        if (!releaseFirst.settled()) {
-          releaseFirst.resolve(undefined);
-        }
-        if (!releaseSecond.settled()) {
-          releaseSecond.resolve(undefined);
-        }
-      });
-      let archiveKey: string | undefined;
-      let preparations = 0;
-      // The external storage signer suspends real launch preparation. Both
-      // dispatchers must capture the same unclaimed head before either commits.
-      context.mocks.s3.getSignedUrl.mockImplementation(
-        async (_client, command) => {
-          if (
-            command instanceof GetObjectCommand &&
-            command.input.Key?.endsWith("/archive.tar.gz")
-          ) {
-            archiveKey ??= command.input.Key;
-            if (command.input.Key === archiveKey) {
-              preparations += 1;
-              if (preparations === 1) {
-                firstPrepared.resolve(undefined);
-                await releaseFirst.promise;
-              } else if (preparations === 2) {
-                secondPrepared.resolve(undefined);
-                await releaseSecond.promise;
-              }
-            }
-          }
-          return apiTestS3PresignedUrl(command);
-        },
-      );
-      const headId = randomUUID();
-      const sending = chat.requestSendEvent(
+  it("admits one canonical run for concurrent idempotent chat sends", async () => {
+    const f = await fixture("codex-oauth-token", true);
+    const chat = createChatFilesBddApi(context);
+    const thread = await chat.createThread(f.actor, { agentId: f.agentId });
+    const headId = randomUUID();
+    const send = () => {
+      return chat.requestSendEvent(
         f.actor,
         {
           agentId: f.agentId,
@@ -859,77 +820,56 @@ describe("personal subscription run identity", () => {
         },
         [201],
       );
-      await firstPrepared.promise;
-      const tailId = randomUUID();
-      const draining = chat.requestSendEvent(
-        f.actor,
-        {
-          agentId: f.agentId,
-          threadId: thread.id,
-          clientEventId: tailId,
-          prompt: "wake another dispatcher",
-          model: f.model,
-        },
-        [201],
-      );
-      const drainSettled = Promise.allSettled([draining]);
-      await secondPrepared.promise;
-      // Recall only the wake-up message; the second dispatcher is already
-      // preparing the first message through the production queue drainer.
-      await chat.requestSendEvent(
-        f.actor,
-        {
-          agentId: f.agentId,
-          threadId: thread.id,
-          clientEventId: randomUUID(),
-          revokesEventId: tailId,
-        },
-        [201],
-      );
-      releaseFirst.resolve(undefined);
-      const admitted = await sending;
-      if (admitted.status !== 201 || admitted.body.runId === null) {
-        throw new Error("Expected the first dispatcher to admit the head");
+    };
+    const responses = await Promise.all([send(), send()]);
+    expect(responses).toHaveLength(2);
+    const responseRunIds = new Set<string>();
+    for (const response of responses) {
+      if (response.status !== 201) {
+        throw new Error("Expected both idempotent sends to be accepted");
       }
-      const runId = admitted.body.runId;
-      const claim = await f.claim(runId);
-      // Infrastructure exception: hold the run row so completion first owns
-      // the thread and waits here. The stale admission must then wait behind
-      // completion without holding its provider lock. No endpoint exposes this
-      // PostgreSQL scheduling boundary; all product assertions use APIs.
-      const runLock = await holdAgentRunRowLockFixture({
-        runId,
-        signal: context.signal,
-      });
-      onTestFinished(async () => {
-        runLock.release();
-        await runLock.done;
-      });
-      const completing = finish(f.actor, runId, claim, terminalStatus);
-      const completionSettled = Promise.allSettled([completing]);
-      await expect.poll(runLock.waiterCount).toBe(1);
-      releaseSecond.resolve(undefined);
-      await expect.poll(runLock.waiterCount).toBe(2);
-      runLock.release();
-      await completionSettled;
-      await completing;
-      await drainSettled;
-      expect((await draining).body).toMatchObject({ runId: null });
-      await flushWaitUntilForTest();
-      const events = (await chat.listThreadEvents(f.actor, thread.id)).events;
-      expect(
-        events.filter((event) => {
+      if (response.body.runId !== null) {
+        responseRunIds.add(response.body.runId);
+      }
+    }
+    expect(responseRunIds.size).toBeLessThanOrEqual(1);
+
+    let claimedRunId: string | undefined;
+    await expect
+      .poll(async () => {
+        const events = (await chat.listThreadEvents(f.actor, thread.id)).events;
+        const claims = events.filter((event) => {
           return (
             event.eventType === "input.prompt" &&
-            event.revokesEventId === headId
+            event.revokesEventId === headId &&
+            event.runId !== null
           );
-        }),
-      ).toStrictEqual([expect.objectContaining({ runId })]);
-      expect((await runs.readRun(f.actor, runId)).status).toBe(terminalStatus);
-      expect((await runs.readRunQueue(f.actor)).body.queue).toHaveLength(0);
-    },
-    20_000,
-  );
+        });
+        claimedRunId = claims[0]?.runId ?? undefined;
+        return claims.length;
+      })
+      .toBe(1);
+    if (!claimedRunId) {
+      throw new Error("Expected the input to be claimed by one run");
+    }
+    expect([...responseRunIds]).toStrictEqual(
+      responseRunIds.size === 0 ? [] : [claimedRunId],
+    );
+    const claim = await f.claim(claimedRunId);
+    await finish(f.actor, claimedRunId, claim, "completed");
+    const events = (await chat.listThreadEvents(f.actor, thread.id)).events;
+    expect(
+      events.filter((event) => {
+        return (
+          event.eventType === "input.prompt" && event.revokesEventId === headId
+        );
+      }),
+    ).toStrictEqual([expect.objectContaining({ runId: claimedRunId })]);
+    expect((await runs.readRun(f.actor, claimedRunId)).status).toBe(
+      "completed",
+    );
+    expect((await runs.readRunQueue(f.actor)).body.queue).toHaveLength(0);
+  });
 
   it.each([false, true])(
     "fails captured admission when disconnect commits before run insertion (organization API: %s)",

@@ -1268,6 +1268,13 @@
       "when": 1790383932521,
       "tag": "1258_active_agent_runs_step2",
       "breakpoints": true
+    },
+    {
+      "idx": 1259,
+      "version": "7",
+      "when": 1790385524967,
+      "tag": "1259_active_agent_runs_chat_thread_slot",
+      "breakpoints": true
     }
   ]
 }
