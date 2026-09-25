@@ -278,8 +278,8 @@ and rejoins before cleanup removes the configuration, it remains the same
 owner's data and is accessible again. Each saved connection retains its own
 identity across membership changes.
 
-Mutation transactions use the existing B1 erasure admission, shared cleanup-scope
-locks and an exclusive owner lock. Cleanup takes an exclusive scope lock and
+Mutation transactions use shared cleanup-scope locks and an exclusive owner
+lock. Cleanup takes an exclusive scope lock and
 deletes hosts before credentials. These locks serialize overlapping transactions
 without retaining a VNC authority ledger or creation receipts. They do not cancel
 a request that passed membership admission before cleanup and only enters its

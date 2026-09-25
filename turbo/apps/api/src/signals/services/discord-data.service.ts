@@ -1,10 +1,6 @@
 import { command, computed, type Computed } from "ccstate";
 import { and, eq, or, type SQL } from "drizzle-orm";
 import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
-import {
-  assertErasureSubjectWritable,
-  erasureSubjectOpenCondition,
-} from "@okouai/db/operations/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
@@ -47,26 +43,14 @@ const bindingColumns = Object.freeze({
 
 function bindingRows(where: SQL) {
   return computed(async (get) => {
-    const db = get(db$);
-    return await db
+    return await get(db$)
       .select(bindingColumns)
       .from(discordOrgConnections)
       .innerJoin(
         discordOrgInstallations,
         eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
       )
-      .where(
-        and(
-          where,
-          erasureSubjectOpenCondition(db, [
-            { subjectKind: "user", subjectId: discordOrgConnections.userId },
-            {
-              subjectKind: "organization",
-              subjectId: discordOrgInstallations.orgId,
-            },
-          ]),
-        ),
-      );
+      .where(where);
   });
 }
 
@@ -260,11 +244,6 @@ async function selectDiscordDmBinding(
   signal: AbortSignal,
 ): Promise<boolean> {
   const result = await db.transaction(async (tx) => {
-    await assertErasureSubjectWritable(tx, [
-      { subjectKind: "user", subjectId: binding.userId },
-      { subjectKind: "organization", subjectId: binding.orgId },
-    ]);
-    signal.throwIfAborted();
     // Match guild uninstall's installation -> connection lock order.
     const [installation] = await tx
       .select({ guildId: discordOrgInstallations.guildId })
@@ -467,11 +446,6 @@ async function updateDiscordAgentPreference(
   signal: AbortSignal,
 ): Promise<boolean> {
   const result = await db.transaction(async (tx) => {
-    await assertErasureSubjectWritable(tx, [
-      { subjectKind: "user", subjectId: binding.userId },
-      { subjectKind: "organization", subjectId: binding.orgId },
-    ]);
-    signal.throwIfAborted();
     const [connection] = await tx
       .select()
       .from(discordOrgConnections)

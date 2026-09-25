@@ -5,7 +5,6 @@ import { nowDate } from "../../lib/time";
 import { notFound } from "../../lib/error";
 import { and, eq } from "drizzle-orm";
 import { testDiscordStateContract } from "@okouai/api-contracts/contracts/test-discord-state";
-import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -126,11 +125,6 @@ const seedDiscordState$ = command(async ({ get, set }, signal: AbortSignal) => {
   const body = bodyResult.data;
   const response = await set(writeDb$).transaction(async (tx) => {
     const createdAt = nowDate();
-    await assertErasureSubjectWritable(tx, [
-      { subjectKind: "user", subjectId: auth.userId },
-      { subjectKind: "organization", subjectId: auth.orgId },
-    ]);
-    signal.throwIfAborted();
     if (body.history) {
       const [thread] = await tx
         .select({ id: chatThreads.id })

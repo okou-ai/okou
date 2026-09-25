@@ -226,10 +226,15 @@ function learnedHostKey(row: {
   });
 }
 
-async function decryptRunnerSsh(
-  row: NonNullable<Awaited<ReturnType<typeof currentConnection>>>,
+export async function resolveRunnerSsh(
+  db: Pick<Db, "select">,
+  input: SshResolveInput,
   signal: AbortSignal,
 ): Promise<RunnerSshResolveResponse> {
+  const row = await currentConnection(db, input, false, signal);
+  if (!row) {
+    return unavailable;
+  }
   const hostKey = learnedHostKey(row);
   // The joined snapshot is the authority handoff. Never hold DB locks across KMS.
   const common = {
@@ -291,18 +296,6 @@ async function decryptRunnerSsh(
     });
   }
   return { outcome: "resolved", ...common, privateKey, passphrase };
-}
-
-export async function resolveRunnerSsh(
-  db: Pick<Db, "select">,
-  input: SshResolveInput,
-  signal: AbortSignal,
-): Promise<RunnerSshResolveResponse> {
-  const row = await currentConnection(db, input, false, signal);
-  if (!row) {
-    return unavailable;
-  }
-  return await decryptRunnerSsh(row, signal);
 }
 
 export async function pinRunnerSsh(

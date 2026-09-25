@@ -35,7 +35,6 @@ import {
   VNC_DIRECT_ERASURE_COLLECTOR_VERSION,
   createVncDirectErasureCollector,
 } from "../account-erasure-vnc-direct-collector";
-import { enterVncWrite } from "../vnc-owner-lifecycle.service";
 
 describe("direct VNC credential, connection and in-flight B1", () => {
   const pool = new Pool({ connectionString: env("DATABASE_URL"), max: 4 });
@@ -241,16 +240,6 @@ describe("direct VNC credential, connection and in-flight B1", () => {
       await cleanup(peerId);
     });
     const { job, handler } = await setup(userId);
-    await expect(
-      db.transaction(async (tx) => {
-        return await enterVncWrite(tx, { orgId, userId });
-      }),
-    ).resolves.toBeFalsy();
-    await expect(
-      db.transaction(async (tx) => {
-        return await enterVncWrite(tx, { orgId, userId: peerId });
-      }),
-    ).resolves.toBeTruthy();
     const items = await db
       .select()
       .from(accountErasureWork)
