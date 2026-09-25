@@ -2091,6 +2091,7 @@
       "skipAutomationEvent": "Skip automation event"
     },
     "remoteAccess": {
+      "default": "Default",
       "defaultEnabled": "Enabled by default for chats",
       "enabledCount_one": "{{count}} enabled",
       "enabledCount_other": "{{count}} enabled",
@@ -2101,8 +2102,7 @@
       "requiresSsh": "Requires SSH access to {{name}}.",
       "retry": "Retry",
       "title": "Remote access",
-      "unavailableSsh": "unavailable SSH host",
-      "useDefault": "Use default"
+      "unavailableSsh": "unavailable SSH host"
     },
     "replaceDraft": {
       "description": "Continuing will clear your current composer draft and start a workflow prompt.",

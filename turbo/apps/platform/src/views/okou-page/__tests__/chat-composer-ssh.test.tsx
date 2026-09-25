@@ -120,8 +120,8 @@ test("A chat can override multiple SSH hosts and return to each host default", a
   click(remoteAccess);
   const first = await screen.findByRole("combobox", { name: "SSH SSH host 1" });
   const second = screen.getByRole("combobox", { name: "SSH SSH host 2" });
-  expect(first).toHaveTextContent("Use default (On)");
-  expect(second).toHaveTextContent("Use default (Off)");
+  expect(first).toHaveTextContent("Default (On)");
+  expect(second).toHaveTextContent("Default (Off)");
   await chooseRemoteHost(first, "Off");
   await waitFor(() => {
     expect(overrides.get(hostIds[0]!)).toBeFalsy();
@@ -139,7 +139,7 @@ test("A chat can override multiple SSH hosts and return to each host default", a
   });
   await chooseRemoteHost(
     screen.getByRole("combobox", { name: "SSH SSH host 1" }),
-    "Use default (On)",
+    "Default (On)",
   );
   await waitFor(() => {
     expect(overrides.has(hostIds[0]!)).toBeFalsy();
@@ -327,7 +327,7 @@ test("A chat can enable multiple VNC hosts independently", async () => {
   await screen.findByText("1 enabled");
   expect(
     screen.getByRole("combobox", { name: "VNC VNC host 2" }),
-  ).toHaveTextContent("Use default (Off)");
+  ).toHaveTextContent("Default (Off)");
   await chooseRemoteHost(
     screen.getByRole("combobox", { name: "VNC VNC host 2" }),
     "On",
@@ -545,13 +545,13 @@ test("A new chat applies draft host choices to the thread it creates", async () 
     name: "SSH SSH host 1",
   });
   const second = screen.getByRole("combobox", { name: "SSH SSH host 2" });
-  expect(first).toHaveTextContent("Use default (On)");
-  expect(second).toHaveTextContent("Use default (Off)");
+  expect(first).toHaveTextContent("Default (On)");
+  expect(second).toHaveTextContent("Default (Off)");
   const user = userEvent.setup({ delay: null });
   first.focus();
   await user.keyboard("{Enter}");
   await screen.findByRole("option", {
-    name: "Use default (On)",
+    name: "Default (On)",
     selected: true,
   });
   await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
@@ -560,7 +560,7 @@ test("A new chat applies draft host choices to the thread it creates", async () 
     screen.getByRole("dialog", { name: "Remote access" }),
   ).toBeInTheDocument();
   expect(remoteAccess.closest("button")).toHaveTextContent("0 enabled");
-  await chooseRemoteHost(first, "Use default (On)");
+  await chooseRemoteHost(first, "Default (On)");
   expect(remoteAccess.closest("button")).toHaveTextContent("1 enabled");
   await chooseRemoteHost(first, "Off");
   await chooseRemoteHost(second, "On");
@@ -674,7 +674,7 @@ test("Remote access in two chat panes reads and updates each pane's thread", asy
   const otherHost = await screen.findByRole("combobox", {
     name: "SSH Shared SSH host",
   });
-  expect(otherHost).toHaveTextContent("Use default (Off)");
+  expect(otherHost).toHaveTextContent("Default (Off)");
   await chooseRemoteHost(otherHost, "On");
   await waitFor(() => {
     expect(updates).toStrictEqual([

@@ -637,6 +637,11 @@ function browserCreationControlType(
     "url",
     "search",
     "number",
+    "date",
+    "time",
+    "datetime-local",
+    "month",
+    "week",
     "checkbox",
     "radio",
   ];
@@ -1167,7 +1172,9 @@ function submittedValues(
       input.values.flatMap((entry) => {
         return "value" in entry &&
           entry.value.length === 0 &&
-          allowed.get(entry.key)?.fieldKind !== "number"
+          !["number", "date_time"].includes(
+            allowed.get(entry.key)?.fieldKind ?? "",
+          )
           ? []
           : [[entry.key, entry]];
       }),

@@ -1139,8 +1139,22 @@
     {
       "idx": 1240,
       "version": "7",
-      "when": 1790335620178,
-      "tag": "1240_chat_thread_drafts_user_backfill",
+      "when": 1790334514029,
+      "tag": "1240_retire_clerk_deletion_receipt_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 1241,
+      "version": "7",
+      "when": 1790336867908,
+      "tag": "1241_computer_use_host_liveness_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 1242,
+      "version": "7",
+      "when": 1790339411554,
+      "tag": "1242_chat_thread_drafts_user_backfill",
       "breakpoints": true
     }
   ]

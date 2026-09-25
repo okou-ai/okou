@@ -2084,6 +2084,7 @@
       "skipAutomationEvent": "オートメーションイベントをスキップする"
     },
     "remoteAccess": {
+      "default": "既定",
       "defaultEnabled": "チャットで既定で有効",
       "enabledCount_other": "{{count}} 件有効",
       "loadFailed": "リモートアクセスを読み込めませんでした。",
@@ -2093,8 +2094,7 @@
       "requiresSsh": "SSH ホスト {{name}} へのアクセスも必要です。",
       "retry": "再試行",
       "title": "リモートアクセス",
-      "unavailableSsh": "利用できない SSH ホスト",
-      "useDefault": "既定を使用"
+      "unavailableSsh": "利用できない SSH ホスト"
     },
     "replaceDraft": {
       "description": "続行すると、現在のコンポーザーの下書きが消去され、ワークフローのプロンプトが開始されます。",

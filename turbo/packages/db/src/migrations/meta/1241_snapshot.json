@@ -1,6 +1,6 @@
 {
-  "id": "fe374c3f-7890-4d8a-bdda-e56487bce7ab",
-  "prevId": "75818093-9fdf-4939-ada7-71ff616e381e",
+  "id": "97a3bc0d-5af1-4458-bd60-5a1151142ad6",
+  "prevId": "fe374c3f-7890-4d8a-bdda-e56487bce7ab",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -11501,6 +11501,22 @@
           "method": "btree",
           "with": {}
         },
+        "idx_computer_use_commands_running_host": {
+          "name": "idx_computer_use_commands_running_host",
+          "columns": [
+            {
+              "expression": "host_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "status = 'running'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_computer_use_commands_org_user": {
           "name": "idx_computer_use_commands_org_user",
           "columns": [
@@ -11716,21 +11732,6 @@
             },
             {
               "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_computer_use_hosts_last_seen": {
-          "name": "idx_computer_use_hosts_last_seen",
-          "columns": [
-            {
-              "expression": "last_seen_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
