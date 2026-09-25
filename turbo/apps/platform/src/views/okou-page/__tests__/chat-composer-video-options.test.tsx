@@ -228,7 +228,8 @@ test.each([false, true])(
 
     const prompt = "Generate the portrait cinematic clip.";
     const editor = await enterText(prompt);
-    await enterVideoMode("Claude Fable 5.1");
+    // Selecting a video template activates video mode. Model selection is
+    // covered separately below; it need not precede both submission paths.
     const template = await selectVideoTemplate();
     await selectPaneOption("16:9 · 8s · 720p", "9:16");
     await closeVideoOptions();
@@ -279,6 +280,29 @@ test.each([false, true])(
           },
     );
     await expect(screen.findByText(prompt)).resolves.toBeVisible();
+  },
+);
+
+test.each([false, true])(
+  "A video template keeps its options after selecting a video model with the slash panel on: %s",
+  async (enabled) => {
+    installVideoEnvironment();
+    mockChatLifecycle(context);
+    await setupPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      featureSwitches: {
+        [FeatureSwitchKey.ComposerSlashTemplatePanel]: enabled,
+      },
+    });
+    await enterVideoMode("Claude Fable 5.1");
+    await selectVideoTemplate();
+    await selectPaneOption("16:9 · 8s · 720p", "9:16");
+    await waitFor(() => {
+      expect(
+        fastControl("button", "Video options 9:16 · 8s · 720p"),
+      ).toBeInTheDocument();
+    });
   },
 );
 

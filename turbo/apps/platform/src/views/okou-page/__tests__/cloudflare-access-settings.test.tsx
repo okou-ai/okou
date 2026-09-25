@@ -57,6 +57,17 @@ async function page(
   });
 }
 
+function expectConversionActionsInOrder(dialog: HTMLElement) {
+  const actions = queryAllByRoleFast("button", dialog)
+    .map((button) => {
+      return button.textContent?.trim();
+    })
+    .filter((label) => {
+      return label === "Cancel" || label === "Make personal";
+    });
+  expect(actions).toStrictEqual(["Cancel", "Make personal"]);
+}
+
 test("The scoped page shows shared configurations to members without management or other users' metadata", async () => {
   const shared = {
     ...config,
@@ -591,6 +602,8 @@ test("admin conversion requires an aggregate impact confirmation and sends the r
   expect(warning).toHaveTextContent("Other users' SSH hosts affected: 2");
   expect(dialog.textContent).not.toContain("other-member-host");
   const confirm = getAction("button", "Make personal", dialog);
+  expectConversionActionsInOrder(dialog);
+  expect(getAction("button", "Cancel", dialog)).toBeEnabled();
   expect(confirm).toBeDisabled();
   await userEvent.click(
     within(dialog).getByRole("checkbox", {
@@ -644,6 +657,7 @@ test("zero-impact conversion needs no other-user warning", async () => {
   await waitFor(() => {
     expect(getAction("button", "Make personal", dialog)).toBeEnabled();
   });
+  expectConversionActionsInOrder(dialog);
   expect(within(dialog).queryByRole("alert")).toBeNull();
   expect(within(dialog).queryByRole("checkbox")).toBeNull();
 });

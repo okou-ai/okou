@@ -1,12 +1,8 @@
 import { chatThreadActivitySummaryRoutes } from "./chat-threads-activity-summary";
 import { CHAT_EVENT_SCHEMA_VERSION_HEADER } from "@okouai/api-contracts/contracts/chat-event-schema-version";
-import { CHAT_THREAD_SNAPSHOT_R2_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import { command, computed } from "ccstate";
-import { promisify } from "node:util";
-import { gunzip } from "node:zlib";
 import {
   chatSearchContract,
-  chatThreadSnapshotArchiveSchema,
   chatThreadByIdContract,
   chatThreadArtifactsContract,
   chatThreadEventsContract,
@@ -19,7 +15,7 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { request$, setResHeader$ } from "../context/hono";
 import { db$ } from "../external/db";
-import { downloadS3Buffer, generatePresignedGetUrl } from "../external/s3";
+import { generatePresignedGetUrl } from "../external/s3";
 import { notFound } from "../../lib/error";
 import { env } from "../../lib/env";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
@@ -67,7 +63,6 @@ import { chatThreadUnpinRoutes } from "./chat-threads-unpin";
 import { chatThreadArchiveRoutes } from "./chat-threads-archive";
 
 const chatThreadIdSchema = z.string().uuid();
-const gunzipAsync = promisify(gunzip);
 const catchUpChatEventsBody$ = bodyResultOf(chatThreadEventsContract.catchUp);
 
 function chatThreadNotFound() {
@@ -122,29 +117,6 @@ const getChatThreadSnapshotInner$ = computed(async (get) => {
     )
   ) {
     throw new Error("Invalid chat thread snapshot object key");
-  }
-
-  if (get(request$).header(CHAT_THREAD_SNAPSHOT_R2_HEADER) !== "1") {
-    // Native iOS -> API: the TestFlight iOS client (ios/Okou/Services/
-    // ChatService.swift) decodes only inline `chatThreads`, never sends this
-    // header, and sends no client version, so no floor can exclude it. Web App
-    // and CLI always send the header. Remove after the iOS client downloads
-    // the R2 URL and builds without that support are no longer installed
-    // (follow-up to #36375).
-    const body = await get(
-      downloadS3Buffer(env("R2_USER_STORAGES_BUCKET_NAME"), snapshot.objectKey),
-    );
-    const archive = chatThreadSnapshotArchiveSchema.parse(
-      JSON.parse((await gunzipAsync(body)).toString("utf8")) as unknown,
-    );
-    return {
-      status: 200 as const,
-      body: {
-        chatThreads: archive.chatThreads,
-        latestEventId: snapshot.latestEventId,
-        latestSeqId: snapshot.latestSeqId,
-      },
-    };
   }
 
   const url = await get(

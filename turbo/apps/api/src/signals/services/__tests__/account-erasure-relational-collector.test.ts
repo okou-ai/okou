@@ -342,7 +342,6 @@ describe("relational erasure plan", () => {
       "browser_session_resize_states",
       "browser_session_screenshot_deletions",
       "browser_session_screenshots",
-      "chat_agent_run_context",
       "chat_event_search_message_watermarks",
       "official_automation_result_email_claims",
       "pi_resource_version_indexes",
@@ -926,39 +925,23 @@ describe("dormant relational sweep", () => {
     expect(theirThreads.rows).toStrictEqual([{ rows: 1 }]);
   });
 
-  it("removes attributed orphan provenance and unattributed retained provenance without removing another owner's", async () => {
+  it("removes provenance by its copied owner after the source thread is gone, without removing another owner's", async () => {
     const mine = account("provenance_mine");
     const theirs = account("provenance_theirs");
     const orgId = `org_sweep_${randomUUID().replaceAll("-", "")}`;
-    const agentId = randomUUID();
-    const sourceThreadId = randomUUID();
-    const legacyId = randomUUID();
     const orphanId = randomUUID();
     const survivorId = randomUUID();
     onTestFinished(async () => {
       await db.execute(
-        sql`DELETE FROM chat_agent_run_context WHERE id IN (${legacyId}, ${orphanId}, ${survivorId})`,
+        sql`DELETE FROM chat_agent_run_context WHERE id IN (${orphanId}, ${survivorId})`,
       );
-      await db.execute(
-        sql`DELETE FROM chat_threads WHERE id = ${sourceThreadId}`,
-      );
-      await db.execute(sql`DELETE FROM agents WHERE id = ${agentId}`);
     });
-    await db.execute(
-      sql`INSERT INTO agents (id, name, org_id, owner)
-          VALUES (${agentId}, 'provenance-agent', ${orgId}, ${theirs})`,
-    );
-    await db.execute(
-      sql`INSERT INTO chat_threads (id, user_id, agent_id)
-          VALUES (${sourceThreadId}, ${mine}, ${agentId})`,
-    );
     await db.execute(sql`
       INSERT INTO chat_agent_run_context
-        (id, source_chat_thread_id, source_agent_id, source_user_id)
+        (id, source_chat_thread_id, source_agent_id, source_user_id, source_org_id)
       VALUES
-        (${legacyId}, ${sourceThreadId}, ${agentId}, NULL),
-        (${orphanId}, ${randomUUID()}, ${randomUUID()}, ${mine}),
-        (${survivorId}, ${randomUUID()}, ${randomUUID()}, ${theirs})
+        (${orphanId}, ${randomUUID()}, ${randomUUID()}, ${mine}, ${orgId}),
+        (${survivorId}, ${randomUUID()}, ${randomUUID()}, ${theirs}, ${orgId})
     `);
     const plan = await planRelationalErasure(db);
     const before = await relationalErasureResidual(
@@ -969,7 +952,7 @@ describe("dormant relational sweep", () => {
     expect(before).toContainEqual({ table: "chat_agent_run_context", rows: 1 });
     await drive(mine, { ...plan, unattributableDescendants: [] });
     const remaining = await db.execute(
-      sql`SELECT id FROM chat_agent_run_context WHERE id IN (${legacyId}, ${orphanId}, ${survivorId})`,
+      sql`SELECT id FROM chat_agent_run_context WHERE id IN (${orphanId}, ${survivorId})`,
     );
     expect(remaining.rows).toStrictEqual([{ id: survivorId }]);
     await expect(

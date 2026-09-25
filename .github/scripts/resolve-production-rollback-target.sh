@@ -21,7 +21,7 @@ readonly ARTIFACT_CHAT_TRIGGER_WRITERS_COMMIT=065f970bbb8c21c10ef709495d5824d0a6
 readonly MARKETING_PRIVACY_CLEANUP_READER_PATH=turbo/apps/api/src/signals/services/marketing-privacy-cleanup.service.ts
 readonly CHAT_THREAD_SNAPSHOT_R2_READER_PATH=turbo/apps/api/src/signals/services/chat-thread-snapshot-object.ts
 readonly AGENTPHONE_PUBLIC_BRAND_DROP_PATH=turbo/packages/db/src/migrations/1228_drop_agentphone_public_brand.sql
-readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1252_retire_public_brand.sql
+readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1253_retire_public_brand.sql
 readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6
 readonly PI_LAUNCH_CONFIG_VERSIONS_READER_COMMIT=8d8f3a3e14d23f7471e0773bd9acb988f59217af
 readonly PI_SESSION_CONSTRUCTION_READER_COMMIT=322efb6d72508e15b90dc788100a776da1485751
@@ -172,7 +172,7 @@ if ! git merge-base --is-ancestor "$agentphone_public_brand_drop_commit" "$TARGE
   fail "Rollback target predates the AgentPhone public_brand drop: ${agentphone_public_brand_drop_commit}."
 fi
 
-# Migration 1252 drops the remaining non-link public_brand columns (including
+# Migration 1253 drops the remaining non-link public_brand columns (including
 # github_installations.setup_public_brand) and renames the hosted/artifact/shared
 # link-layout column to link_layout_segment. Every earlier API, including those
 # with the Phase 1 okou defaults, still declares these columns and names them in

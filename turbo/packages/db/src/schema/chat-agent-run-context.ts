@@ -14,9 +14,9 @@ export const chatAgentRunContext = pgTable(
     id: uuid("id").primaryKey(),
     sourceChatThreadId: uuid("source_chat_thread_id").notNull(),
     sourceAgentId: uuid("source_agent_id").notNull(),
-    // Ownership survives source-row deletion so late optional writes can be swept.
-    sourceUserId: text("source_user_id"),
-    sourceOrgId: text("source_org_id"),
+    // Ownership survives source-row deletion so late writes can be swept.
+    sourceUserId: text("source_user_id").notNull(),
+    sourceOrgId: text("source_org_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => {

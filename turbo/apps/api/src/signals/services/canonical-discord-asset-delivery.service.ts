@@ -19,7 +19,7 @@ import {
 import { and, eq, isNull, ne, sql } from "drizzle-orm";
 
 import { discordMessageUrl } from "../../lib/discord-message";
-import { now, nowDate } from "../../lib/time";
+import { nowDate } from "../../lib/time";
 import { type Db, writeDb$ } from "../external/db";
 import { discordClient, type DiscordMessage } from "../external/discord-client";
 import {
@@ -66,11 +66,6 @@ interface DiscordDeliveryRow {
 interface DiscordDeliveryOperation {
   readonly identity: DiscordDeliveryIdentity;
   readonly row: DiscordDeliveryRow;
-}
-
-interface DiscordDeliveryRetry {
-  readonly safeToRetrySend: boolean;
-  readonly retryNotBeforeMs?: number;
 }
 
 type DiscordDeliveryFailure = {
@@ -234,18 +229,9 @@ function deliveryState(
       status: "failed",
       message: row.lastError.message,
       retryable: row.lastError.retryable,
-      ...retryAfter(row.providerState.retryNotBeforeMs),
     };
   }
   return { status: "pending" };
-}
-
-function retryAfter(retryNotBeforeMs: number | undefined) {
-  if (retryNotBeforeMs === undefined) {
-    return {};
-  }
-  const retryAfterSeconds = Math.ceil((retryNotBeforeMs - now()) / 1000);
-  return retryAfterSeconds > 0 ? { retryAfterSeconds } : {};
 }
 
 function deliveryResult(row: DiscordDeliveryRow): DiscordDeliveryResult {
@@ -365,99 +351,35 @@ async function markFailed(
   db: Db,
   { identity, row }: DiscordDeliveryOperation,
   failure: CanonicalAssetDeliveryError,
-  retry: DiscordDeliveryRetry,
   signal: AbortSignal,
 ): Promise<DiscordDeliveryResult> {
   await db
     .update(canonicalAssetDeliveries)
-    .set({
-      status: "failed",
-      lastError: failure,
-      providerState: retry.safeToRetrySend
-        ? {
-            provider: "discord",
-            nonce: row.providerState.nonce,
-            attempt: null,
-            ...(retry.retryNotBeforeMs === undefined
-              ? {}
-              : { retryNotBeforeMs: retry.retryNotBeforeMs }),
-          }
-        : {
-            ...row.providerState,
-            ...(retry.retryNotBeforeMs === undefined
-              ? {}
-              : { retryNotBeforeMs: retry.retryNotBeforeMs }),
-          },
-      updatedAt: sql`now()`,
-    })
+    .set({ status: "failed", lastError: failure, updatedAt: sql`now()` })
     .where(transitionCondition(row));
   signal.throwIfAborted();
   return await currentDeliveryResult(db, identity, signal);
 }
 
-const uncertainDeliveryError: CanonicalAssetDeliveryError = Object.freeze({
-  code: "discord-delivery-uncertain",
-  message:
-    "Discord delivery outcome is uncertain and can no longer be reconciled without risking a duplicate message.",
-  retryable: false,
-});
-
-const unconfirmedDeliveryError: CanonicalAssetDeliveryError = Object.freeze({
-  code: "discord-delivery-unconfirmed",
-  message:
-    "Discord did not confirm the file delivery. Retry this same upload operation promptly to reconcile it without sending twice.",
-  retryable: true,
-});
-
-/**
- * Discord deduplicates an enforced nonce only for a few minutes after the
- * original message. Replays stay well inside that window; afterwards a missing
- * receipt stays uncertain instead of risking a second message.
- */
-const DISCORD_NONCE_REPLAY_WINDOW_MS = 60_000;
-
-/** Used when Discord's 429 body carries no valid delay, e.g. an HTML error page. */
-const DISCORD_FALLBACK_RETRY_DELAY_MS = 5000;
-/** Upper bound so an extreme delay cannot block a retryable operation forever. */
-const DISCORD_MAX_RETRY_DELAY_MS = 15 * 60_000;
-
-function discordRetryDelayMs(retryAfterMs: number | undefined): number {
-  if (retryAfterMs === undefined) {
-    return DISCORD_FALLBACK_RETRY_DELAY_MS;
-  }
-  return Math.min(Math.ceil(retryAfterMs), DISCORD_MAX_RETRY_DELAY_MS);
+function deliveryFailure(
+  code: string,
+  message: string,
+): CanonicalAssetDeliveryError {
+  return { code, message, retryable: false };
 }
 
-function discordSendFailure(result: {
-  readonly status: number;
-  readonly retryAfterMs?: number;
-}): {
-  readonly error: CanonicalAssetDeliveryError;
-  readonly retry: DiscordDeliveryRetry;
-} {
-  const rejected =
-    result.status >= 400 && result.status < 500 && result.status !== 408;
-  if (!rejected) {
-    return {
-      error: unconfirmedDeliveryError,
-      retry: { safeToRetrySend: false },
-    };
-  }
-  const retryNotBeforeMs =
-    result.status === 429
-      ? now() + discordRetryDelayMs(result.retryAfterMs)
-      : undefined;
-  return {
-    error: {
-      code: "discord-send-rejected",
-      message: "Discord rejected the file delivery",
-      retryable: result.status === 429,
-    },
-    retry: {
-      safeToRetrySend: true,
-      ...(retryNotBeforeMs === undefined ? {} : { retryNotBeforeMs }),
-    },
-  };
+const unconfirmedDelivery = deliveryFailure(
+  "discord-delivery-unconfirmed",
+  "Discord did not confirm the file delivery; it was not sent again.",
+);
+
+function discordSendFailure(status: number): CanonicalAssetDeliveryError {
+  return status >= 400 && status < 500 && status !== 408
+    ? deliveryFailure(
+        "discord-send-rejected",
+        "Discord rejected the file delivery",
+      )
+    : unconfirmedDelivery;
 }
 
 function deliveredAttachment(
@@ -491,8 +413,10 @@ async function recordDelivered(
     return await markFailed(
       db,
       { identity, row },
-      uncertainDeliveryError,
-      { safeToRetrySend: false },
+      deliveryFailure(
+        "discord-delivery-unverified",
+        "Discord's response does not match the file delivery",
+      ),
       signal,
     );
   }
@@ -515,58 +439,23 @@ async function recordDelivered(
   return await currentDeliveryResult(db, identity, signal);
 }
 
-/** A replay may wait for Discord's deadline only inside its nonce window. */
-function replayRetryFitsWindow(
-  row: DiscordDeliveryRow,
-  status: number,
-  retry: DiscordDeliveryRetry,
-): boolean {
-  if (status !== 429 || retry.retryNotBeforeMs === undefined) {
-    return false;
-  }
-  return (
-    retry.retryNotBeforeMs <
-    now() - attemptAgeMs(row) + DISCORD_NONCE_REPLAY_WINDOW_MS
-  );
-}
-
-function attemptAgeMs(row: DiscordDeliveryRow): number {
-  const attempt = row.providerState.attempt;
-  if (!attempt) {
-    throw new Error("Discord reconciliation is missing its persisted attempt");
-  }
-  return now() - Date.parse(attempt.startedAt);
-}
-
+/** Claims the operation's only send; a concurrent claimer loses the race. */
 async function claimDeliveryAttempt(
   db: Db,
   row: DiscordDeliveryRow,
   signal: AbortSignal,
 ): Promise<DiscordDeliveryRow | undefined> {
-  // A nonce replay keeps the original start so its window never extends.
   const providerState: CanonicalAssetDiscordDeliveryState = {
     provider: "discord",
-    nonce: row.providerState.nonce,
-    attempt: {
-      id: randomUUID(),
-      startedAt:
-        row.providerState.attempt?.startedAt ?? nowDate().toISOString(),
-    },
+    attempt: { id: randomUUID(), startedAt: nowDate().toISOString() },
   };
   const [claimed] = await db
     .update(canonicalAssetDeliveries)
-    .set({
-      providerState,
-      status: "pending",
-      lastError: null,
-      updatedAt: sql`now()`,
-    })
+    .set({ providerState, updatedAt: sql`now()` })
     .where(transitionCondition(row))
     .returning({ id: canonicalAssetDeliveries.id });
   signal.throwIfAborted();
-  return claimed
-    ? { ...row, providerState, status: "pending", lastError: null }
-    : undefined;
+  return claimed ? { ...row, providerState } : undefined;
 }
 
 const sendDiscordFile$ = command(
@@ -574,7 +463,6 @@ const sendDiscordFile$ = command(
     { set },
     operation: DiscordDeliveryOperation,
     bytes: Uint8Array,
-    mode: { readonly replay: boolean },
     signal: AbortSignal,
   ): Promise<DiscordDeliveryResult> => {
     const db = set(writeDb$);
@@ -582,33 +470,16 @@ const sendDiscordFile$ = command(
     // Recheck after storage I/O and the durable claim, immediately before send.
     const sendAccess = await set(authorizeDelivery$, args, attemptRow, signal);
     if (!sendAccess.ok) {
-      // A replay may follow a send that Discord accepted; keep its attempt.
       await markFailed(
         db,
         operation,
-        mode.replay
-          ? unconfirmedDeliveryError
-          : {
-              code: "discord-access-denied",
-              message: "Discord destination is no longer available",
-              retryable: true,
-            },
-        { safeToRetrySend: !mode.replay },
+        deliveryFailure(
+          "discord-access-denied",
+          "Discord destination is no longer available",
+        ),
         signal,
       );
       return sendAccess;
-    }
-    if (
-      mode.replay &&
-      attemptAgeMs(attemptRow) >= DISCORD_NONCE_REPLAY_WINDOW_MS
-    ) {
-      return await markFailed(
-        db,
-        operation,
-        uncertainDeliveryError,
-        { safeToRetrySend: false },
-        signal,
-      );
     }
     const sent = await settle(
       discordClient.createDiscordMessage(
@@ -616,7 +487,6 @@ const sendDiscordFile$ = command(
           botToken: sendAccess.access.botToken,
           channelId: attemptRow.destination.channelId,
           content: attemptRow.destination.comment ?? "",
-          nonce: attemptRow.providerState.nonce,
           files: [
             {
               filename: attemptRow.filename,
@@ -631,13 +501,7 @@ const sendDiscordFile$ = command(
       signal,
     );
     if (!sent.ok) {
-      return await markFailed(
-        db,
-        operation,
-        unconfirmedDeliveryError,
-        { safeToRetrySend: false },
-        signal,
-      );
+      return await markFailed(db, operation, unconfirmedDelivery, signal);
     }
     if (sent.value.kind === "ok") {
       return await recordDelivered(
@@ -651,101 +515,19 @@ const sendDiscordFile$ = command(
         signal,
       );
     }
-    const failure = discordSendFailure(sent.value);
-    if (mode.replay && failure.retry.safeToRetrySend) {
-      // A rejected replay cannot prove the original send failed. Rate limits
-      // may be replayed again inside the nonce window; other rejections end it.
-      return replayRetryFitsWindow(attemptRow, sent.value.status, failure.retry)
-        ? await markFailed(
-            db,
-            operation,
-            unconfirmedDeliveryError,
-            {
-              safeToRetrySend: false,
-              ...(failure.retry.retryNotBeforeMs === undefined
-                ? {}
-                : { retryNotBeforeMs: failure.retry.retryNotBeforeMs }),
-            },
-            signal,
-          )
-        : await markFailed(
-            db,
-            operation,
-            uncertainDeliveryError,
-            { safeToRetrySend: false },
-            signal,
-          );
-    }
     return await markFailed(
       db,
       operation,
-      failure.error,
-      failure.retry,
+      discordSendFailure(sent.value.status),
       signal,
     );
   },
 );
 
-/** Settles a persisted send attempt without overlapping or duplicating it. */
-const resolvePersistedAttempt$ = command(
-  async (
-    { set },
-    args: DiscordDeliveryIdentity,
-    row: DiscordDeliveryRow,
-    signal: AbortSignal,
-  ): Promise<DiscordDeliveryResult> => {
-    const db = set(writeDb$);
-    const withinReplayWindow =
-      attemptAgeMs(row) < DISCORD_NONCE_REPLAY_WINDOW_MS;
-    if (row.status === "pending") {
-      // Another request may still be sending; never overlap an in-flight send.
-      return withinReplayWindow
-        ? deliveryResult(row)
-        : await markFailed(
-            db,
-            { identity: args, row },
-            uncertainDeliveryError,
-            { safeToRetrySend: false },
-            signal,
-          );
-    }
-    if (!withinReplayWindow || !row.lastError?.retryable) {
-      return row.lastError?.retryable
-        ? await markFailed(
-            db,
-            { identity: args, row },
-            uncertainDeliveryError,
-            { safeToRetrySend: false },
-            signal,
-          )
-        : deliveryResult(row);
-    }
-    if (
-      row.providerState.retryNotBeforeMs !== undefined &&
-      now() < row.providerState.retryNotBeforeMs
-    ) {
-      return deliveryResult(row);
-    }
-    // Replaying the same enforced nonce returns Discord's original message
-    // when the lost send succeeded, and sends once when it did not.
-    const replayBytes = await set(verifiedFileBytes$, row, signal);
-    if (!replayBytes.ok) {
-      return replayBytes;
-    }
-    const replayRow = await claimDeliveryAttempt(db, row, signal);
-    if (!replayRow) {
-      return await currentDeliveryResult(db, args, signal);
-    }
-    return await set(
-      sendDiscordFile$,
-      { identity: args, row: replayRow },
-      replayBytes.bytes,
-      { replay: true },
-      signal,
-    );
-  },
-);
-
+/**
+ * Fire and forget: each upload operation sends at most once. A repeated
+ * completion reports the recorded outcome and never sends again.
+ */
 export const completeCanonicalDiscordDelivery$ = command(
   async (
     { set },
@@ -764,19 +546,7 @@ export const completeCanonicalDiscordDelivery$ = command(
     if (row.materializationStatus !== "ready") {
       return invalidFile("Publish the canonical file before Discord delivery");
     }
-    if (row.status === "delivered") {
-      return deliveryResult(row);
-    }
-    if (row.providerState.attempt) {
-      return await set(resolvePersistedAttempt$, args, row, signal);
-    }
-    if (row.status === "failed" && !row.lastError?.retryable) {
-      return deliveryResult(row);
-    }
-    if (
-      row.providerState.retryNotBeforeMs !== undefined &&
-      now() < row.providerState.retryNotBeforeMs
-    ) {
+    if (row.providerState.attempt || row.status !== "pending") {
       return deliveryResult(row);
     }
     const verified = await set(verifiedFileBytes$, row, signal);
@@ -791,7 +561,6 @@ export const completeCanonicalDiscordDelivery$ = command(
       sendDiscordFile$,
       { identity: args, row: attemptRow },
       verified.bytes,
-      { replay: false },
       signal,
     );
   },
