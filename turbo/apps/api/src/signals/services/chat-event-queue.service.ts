@@ -352,11 +352,12 @@ export async function loadPendingChatQueueEvent(
 }
 
 /**
- * Shared row lock for every authoritative queue claim or revocation.
+ * Thread row lock for run admission and run termination.
  *
- * Queue mutations only change non-key columns, so `NO KEY UPDATE` preserves
- * their same-thread exclusion against other writers and deletion without
- * conflicting with a content writer's identity-only `KEY SHARE` pin.
+ * Consuming a pending event (claim, recall, rejection or discard) does not need
+ * it: every consumer appends a replacement on the event's unique revoke edge,
+ * so exactly one of them wins. `NO KEY UPDATE` does not conflict with a content
+ * writer's identity-only `KEY SHARE` pin.
  */
 export async function lockChatQueueThread(
   db: ChatQueueReadDb,

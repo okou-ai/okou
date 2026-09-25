@@ -59,6 +59,34 @@ this release. The contract release drops them, backfills any `user_id` left null
 by the rollout and makes `user_id` `NOT NULL`; ship it only after this API is in
 production and set this release as the API rollback floor.
 
+## Morning Brief expired admission containment (2026-09-25)
+
+This is a partial, fail-closed incident slice, **not** the recovery of stalled
+Morning Brief schedules. With the global schedule-expiry switch off, API
+instances at this revision no longer select `daily-delivery` anchors older than
+30 minutes in the legacy due batch. A selected anchor that ages past that
+boundary before queue admission is also refused; the generic, unjournaled
+claim CAS applies the same cutoff to `daily-delivery` and checks that the row
+is still enabled. The cutoff is strict: exactly 30 minutes late remains due.
+The old anchors, historical claims, runs, queue events, native rows, enabled
+choice, Official installation and sent messages are not changed. Other due
+automations keep their existing expiry policy and are selected in stable
+next-run order instead of sharing an unordered batch with stalled briefs.
+
+This does not advance an old anchor to a future occurrence. The global expiry
+flag must **not** be enabled as a substitute: an earlier mismatched Native
+obligation still holds that path. The Native/Official decision fence and old
+callback settlement remain in place; the mixed-version disable/enable and
+reconciliation contract has not been proven under single-statement hot-path
+constraints. An older API poller can still select or claim an expired brief
+during rollout or after rollback. Therefore production release of this
+containment requires a separately approved deployment plan that prevents old
+pollers from admitting overdue briefs throughout the overlap and sets a
+rollback floor at this revision or later; absent that plan, do not promote it
+as a no-backfill guarantee. Already queued or running claims and email/Chat
+outcomes require separate evidence and handling, not age-based settlement.
+No database migration or client protocol change is included.
+
 ## Chat search agent recency index dropped (2026-09-25)
 
 Migration `1242_drop_chat_search_agent_created_idx` drops
