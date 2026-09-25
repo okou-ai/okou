@@ -93,7 +93,6 @@ import {
   prepareAgentClaimAdmission,
   prepareComputeRunAdmission,
   validateComputeRunAdmission,
-  stopClosedComputeCandidate,
   withComputeOwnershipRetry,
   type ComputeRunAdmission,
   type ComputeRunOwner,
@@ -809,10 +808,6 @@ async function admitPendingRunnerJob(
         if (!admission || !(await validateComputeRunAdmission(tx, admission))) {
           return undefined;
         }
-        if (admission.closed) {
-          await stopClosedComputeCandidate(tx, admission);
-          return undefined;
-        }
         const [job] = await pendingRunnerJobs(tx, {
           conditions: [
             ...whereConditions,
@@ -1393,17 +1388,11 @@ async function prepareClaimTransitionAdmission(
     ? agentClaimAdmission?.valid === true
     : await validateComputeRunAdmission(tx, admission, "pending");
   if (!valid) {
-    if (!admission.closed) {
-      await deleteStaleClaimJob(tx, {
-        runId,
-        owner,
-        sessionId: admission.sessionId,
-      });
-    }
-    return undefined;
-  }
-  if (admission.closed) {
-    await stopClosedComputeCandidate(tx, admission);
+    await deleteStaleClaimJob(tx, {
+      runId,
+      owner,
+      sessionId: admission.sessionId,
+    });
     return undefined;
   }
   return admission;
@@ -1473,10 +1462,6 @@ async function failPoisonQueuedJob(
     return db.transaction(async (tx) => {
       const admission = await prepareComputeRunAdmission(tx, runId, owner);
       if (!admission || !(await validateComputeRunAdmission(tx, admission))) {
-        return { status: "run-not-found" as const };
-      }
-      if (admission.closed) {
-        await stopClosedComputeCandidate(tx, admission);
         return { status: "run-not-found" as const };
       }
       const run = await lockClaimRun(tx, runId);

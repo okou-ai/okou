@@ -21,7 +21,7 @@ describe("agentRuns circular foreign keys", () => {
   it("resolves physical circular foreign keys and the runtime projection from the root schema", async () => {
     const referenceRegistry = await import("../schema/agent-run-reference");
     expect(() => {
-      return referenceRegistry.resolveAgentRunId();
+      return referenceRegistry.resolveAgentSessionId();
     }).toThrow(
       "Agent-run schema references were resolved before schema initialization",
     );
@@ -228,18 +228,17 @@ describe("agentRuns circular foreign keys", () => {
     expect(officialWorkflowProvenanceSql).toContain("__org__");
     expect(officialWorkflowProvenanceSql).toContain("^[0-9a-f]{64}$");
 
-    const agentSessionRun = foreignKeyReference(
-      chatThreads,
-      "agent_session_run_id",
+    // Session binding writes must not lock agent_runs or agent_sessions.
+    const chatThreadForeignKeys = getTableConfig(chatThreads).foreignKeys.map(
+      (foreignKey) => {
+        return foreignKey.getName();
+      },
     );
-    expect(agentSessionRun.foreignKey.getName()).toBe(
+    expect(chatThreadForeignKeys).not.toContain(
+      "chat_threads_agent_session_id_agent_sessions_id_fk",
+    );
+    expect(chatThreadForeignKeys).not.toContain(
       "chat_threads_agent_session_run_id_agent_runs_id_fk",
     );
-    expect(agentSessionRun.foreignKey.onDelete).toBe("set null");
-    expect(agentSessionRun.reference.columns).toEqual([
-      chatThreads.agentSessionRunId,
-    ]);
-    expect(agentSessionRun.reference.foreignTable).toBe(agentRuns);
-    expect(agentSessionRun.reference.foreignColumns).toEqual([agentRuns.id]);
   });
 });

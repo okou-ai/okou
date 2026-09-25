@@ -72,11 +72,7 @@ import {
   settleIncludingAbort,
 } from "../../utils";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import {
-  promoteNextQueuedRun$,
-  cleanupExpiredQueueEntries$,
-} from "../run-queue.service";
-import { COMPUTE_CLOSURE_ERROR } from "../agent-run-terminal-transition.service";
+import { promoteNextQueuedRun$ } from "../run-queue.service";
 import { admitNewComputeRun } from "../compute-erasure-admission.service";
 
 import { generateSandboxToken } from "../../auth/tokens";
@@ -569,73 +565,6 @@ describe("actual compute transactions versus the B1 projector", () => {
     };
   }
 
-  it("promotes a surviving queued item behind a closed corrupt payload and retains its locator", async () => {
-    const f = await fixture();
-    const active = [await pending(f), await pending(f)];
-    const closed = await pending(f);
-    const survivor = bdd.user({ orgId: f.orgId });
-    const agent = await bdd.createAgent(survivor, {
-      displayName: "Surviving queued owner",
-      visibility: "public",
-    });
-    const live = await api.createRun(survivor, {
-      agentId: agent.agentId,
-      prompt: "Live queued payload",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(live.status).toBe("queued");
-    await db
-      .update(agentRuns)
-      .set({ status: "completed", completedAt: nowDate() })
-      .where(
-        inArray(
-          agentRuns.id,
-          active.map((run) => {
-            return run.runId;
-          }),
-        ),
-      );
-    await db
-      .update(agentRunQueue)
-      .set({ encryptedParams: "synthetic-corrupt-ciphertext" })
-      .where(eq(agentRunQueue.runId, closed.runId));
-    await close(decision(f.actor.userId));
-    await expect(
-      createStore().set(
-        promoteNextQueuedRun$,
-        { orgId: f.orgId },
-        context.signal,
-      ),
-    ).resolves.toMatchObject({
-      kind: "activation",
-      activation: { runnerNotification: { runId: live.runId } },
-    });
-    await expect(
-      db
-        .select({
-          error: agentRuns.error,
-          creditAdmitted: agentRuns.creditAdmitted,
-        })
-        .from(agentRuns)
-        .where(eq(agentRuns.id, closed.runId)),
-    ).resolves.toStrictEqual([
-      { error: COMPUTE_CLOSURE_ERROR, creditAdmitted: false },
-    ]);
-    await expect(
-      db
-        .select()
-        .from(agentRunQueue)
-        .where(eq(agentRunQueue.runId, closed.runId)),
-    ).resolves.toHaveLength(1);
-    await expect(
-      createStore().set(
-        promoteNextQueuedRun$,
-        { orgId: f.orgId },
-        context.signal,
-      ),
-    ).resolves.toBeNull();
-  });
-
   it("keeps inconsistent queue/run ownership as an error without admitting work", async () => {
     const w = await writerFixture("promotion");
     if (!w.runId) {
@@ -676,65 +605,6 @@ describe("actual compute transactions versus the B1 projector", () => {
         .from(agentRuns)
         .where(eq(agentRuns.id, w.runId)),
     ).resolves.toStrictEqual([{ status: "queued", failureReason: null }]);
-  });
-
-  it("polls past a closed pending candidate without releasing its prompt or deleting its locator", async () => {
-    const f = await fixture();
-    const closed = await pending(f);
-    const survivor = bdd.user({ orgId: f.orgId });
-    const agent = await bdd.createAgent(survivor, {
-      displayName: "Surviving poll owner",
-      visibility: "public",
-    });
-    const live = await api.createRun(survivor, {
-      agentId: agent.agentId,
-      prompt: "Live poll payload",
-      modelProvider: "anthropic-api-key",
-    });
-    await close(decision(f.actor.userId));
-    const polled = await api.requestPollRunner(
-      true,
-      { group: f.runnerGroup, supportedProfiles: ["vm0/default"] },
-      [200],
-    );
-    expect(polled).toMatchObject({
-      body: { job: { runId: live.runId, prompt: "Live poll payload" } },
-    });
-    await expect(
-      db
-        .select({ status: agentRuns.status })
-        .from(agentRuns)
-        .where(eq(agentRuns.id, closed.runId)),
-    ).resolves.toStrictEqual([{ status: "cancelled" }]);
-    await expect(
-      db
-        .select()
-        .from(runnerJobQueue)
-        .where(eq(runnerJobQueue.runId, closed.runId)),
-    ).resolves.toHaveLength(1);
-    await db
-      .update(runnerJobQueue)
-      .set({ expiresAt: new Date("2020-01-01") })
-      .where(eq(runnerJobQueue.runId, closed.runId));
-    await accept(
-      setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
-        testCronCleanupSandboxesStateContract,
-      ).cleanup({
-        body: {
-          chatThreadIds: [],
-          runIds: [closed.runId],
-          orgIds: [f.orgId],
-          exportJobIds: [],
-        },
-      }),
-      [200],
-    );
-    await expect(
-      db
-        .select()
-        .from(runnerJobQueue)
-        .where(eq(runnerJobQueue.runId, closed.runId)),
-    ).resolves.toHaveLength(1);
   });
 
   it("rechecks maintenance lease expiry after waiting on the actual job lock", async () => {
@@ -801,26 +671,6 @@ describe("actual compute transactions versus the B1 projector", () => {
       value: { status: 201, body: { status: "queued" } },
     });
     await expect(closing).resolves.toMatchObject({ ok: true });
-  });
-
-  it("lets closure win between the no-write attempt and actual queued persistence", async () => {
-    const w = await writerFixture("queued-create");
-    const before = await counts(w.f);
-    useSecretKmsProbe((request, call) => {
-      if (call !== 2) {
-        return undefined;
-      }
-      return (async () => {
-        await close(decision(w.f.actor.userId));
-        return {
-          keyId: request.keyId,
-          plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
-          encryptedDataKey: Buffer.from(`encrypted-data-key:${request.keyId}`),
-        };
-      })();
-    });
-    await expect(w.invoke()).resolves.toMatchObject({ status: 409 });
-    await expect(counts(w.f)).resolves.toStrictEqual(before);
   });
 
   it.each([
@@ -944,50 +794,6 @@ describe("actual compute transactions versus the B1 projector", () => {
     },
   );
 
-  it("fences an existing session when its distinct shared Agent owner closes", async () => {
-    const f = await fixture();
-    const member = bdd.user({ orgId: f.orgId });
-    const initial = await api.createRun(member, {
-      agentId: f.agentId,
-      prompt: "Synthetic shared session",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.requestCancelRun(member, initial.runId, [200]);
-    const continued = await api.createRun(member, {
-      agentId: f.agentId,
-      sessionId: initial.sessionId,
-      prompt: "Synthetic writable shared continuation",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(continued).toMatchObject({
-      status: "pending",
-      sessionId: initial.sessionId,
-    });
-    const before = await counts({ ...f, actor: member });
-    const held = await holdClosure(decision(f.actor.userId));
-    const writing = settle(
-      api.requestCreateRun(
-        member,
-        {
-          agentId: f.agentId,
-          sessionId: initial.sessionId,
-          prompt: "Synthetic shared continuation",
-          modelProvider: "anthropic-api-key",
-        },
-        [409],
-      ),
-    );
-    await waitForBlockedBy(held.pid);
-    await held.release();
-    await expect(writing).resolves.toMatchObject({
-      ok: true,
-      value: { status: 409 },
-    });
-    await expect(counts({ ...f, actor: member })).resolves.toStrictEqual(
-      before,
-    );
-  });
-
   it("resolves a changed run owner in a fresh transaction without releasing prepared credentials", async () => {
     const w = await writerFixture("claim");
     if (!w.runId) {
@@ -1024,53 +830,6 @@ describe("actual compute transactions versus the B1 projector", () => {
     ).resolves.toStrictEqual([{ status: "pending" }]);
   });
 
-  it("rechecks a changed session owner against closure before claiming", async () => {
-    const w = await writerFixture("claim");
-    if (!w.runId) {
-      throw new Error("Missing synthetic run");
-    }
-    const runId = w.runId;
-    const [run] = await db
-      .select({ sessionId: agentRuns.sessionId })
-      .from(agentRuns)
-      .where(eq(agentRuns.id, runId));
-    if (!run) {
-      throw new Error("Missing synthetic session");
-    }
-    const nextOwner = `synthetic-session-owner-${randomUUID()}`;
-    await close(decision(nextOwner));
-    const held = await holdBusinessRow(
-      (tx) => {
-        return tx
-          .select({ id: agentSessions.id })
-          .from(agentSessions)
-          .where(eq(agentSessions.id, run.sessionId))
-          .for("update");
-      },
-      (tx) => {
-        return tx
-          .update(agentSessions)
-          .set({ userId: nextOwner })
-          .where(eq(agentSessions.id, run.sessionId));
-      },
-    );
-    const writing = settle(w.invoke());
-    await waitForBlockedBy(held.pid);
-    await held.release();
-    await expect(writing).resolves.toMatchObject({
-      ok: true,
-      value: { status: 404 },
-    });
-    await expect(
-      db
-        .select({ status: agentRuns.status, error: agentRuns.error })
-        .from(agentRuns)
-        .where(eq(agentRuns.id, runId)),
-    ).resolves.toStrictEqual([
-      { status: "cancelled", error: COMPUTE_CLOSURE_ERROR },
-    ]);
-  });
-
   it("does not claim a resource deleted after its initial ownership read", async () => {
     const w = await writerFixture("claim");
     const held = await holdBusinessRow(
@@ -1105,13 +864,10 @@ describe("actual compute transactions versus the B1 projector", () => {
     await expect(counts(f)).resolves.toStrictEqual(before);
   });
 
-  it.each(["valid", "closed", "expired", "wrong-owner"] as const)(
+  it.each(["valid", "expired", "wrong-owner"] as const)(
     "validates the actual private maintenance lease: %s",
     async (state) => {
       const m = await maintenance();
-      if (state === "closed") {
-        await close(decision(m.userId));
-      }
       if (state === "expired") {
         await db
           .update(piMemoryPhase2Jobs)
@@ -1134,13 +890,7 @@ describe("actual compute transactions versus the B1 projector", () => {
         .select()
         .from(agentRuns)
         .where(eq(agentRuns.id, m.runId));
-      expect(run?.status).toBe(
-        state === "valid"
-          ? "running"
-          : state === "closed"
-            ? "cancelled"
-            : "pending",
-      );
+      expect(run?.status).toBe(state === "valid" ? "running" : "pending");
       if (state === "valid") {
         await close(decision(m.userId));
         const [admitted] = await db
@@ -1148,52 +898,6 @@ describe("actual compute transactions versus the B1 projector", () => {
           .from(agentRuns)
           .where(eq(agentRuns.id, m.runId));
         expect(admitted).toStrictEqual(run);
-      }
-    },
-  );
-
-  it.each(writerKinds)(
-    "closure first fences %s without partial content or ordinary completion",
-    async (kind) => {
-      const w = await writerFixture(kind);
-      const before = await counts(w.f);
-      const held = await holdClosure(decision(w.f.actor.userId));
-      const writing = settle(w.invoke());
-      await waitForBlockedBy(held.pid);
-      await expect(counts(w.f)).resolves.toStrictEqual(before);
-      await held.release();
-      const result = await writing;
-      expect(result.ok).toBeTruthy();
-      if (result.ok) {
-        if (kind === "promotion") {
-          expect(result.value).toBeNull();
-        } else {
-          expect(result.value).toMatchObject({
-            status: kind.endsWith("create") ? 409 : 404,
-          });
-        }
-      }
-      await flushWaitUntilForTest();
-      await expect(counts(w.f)).resolves.toStrictEqual(before);
-      if (w.runId) {
-        const [run] = await db
-          .select()
-          .from(agentRuns)
-          .where(eq(agentRuns.id, w.runId));
-        expect(run).toMatchObject({
-          status: "cancelled",
-          error: COMPUTE_CLOSURE_ERROR,
-          failureReason: null,
-        });
-        const callbacks = await db
-          .select()
-          .from(agentRunCallbacks)
-          .where(eq(agentRunCallbacks.runId, w.runId));
-        expect(
-          callbacks.every((callback) => {
-            return callback.attempts === 0 && callback.status === "pending";
-          }),
-        ).toBeTruthy();
       }
     },
   );
@@ -1231,70 +935,6 @@ describe("actual compute transactions versus the B1 projector", () => {
         }
       }
     }
-  });
-
-  it("continues past a closed owner's shared agent while preserving a surviving organization", async () => {
-    const w = await writerFixture("promotion");
-    const survivor = bdd.user({ orgId: w.f.orgId });
-    const agent = await bdd.createAgent(survivor, {
-      displayName: "Surviving owner",
-      visibility: "public",
-    });
-    const live = await api.createRun(survivor, {
-      agentId: agent.agentId,
-      prompt: "Surviving resource",
-      modelProvider: "anthropic-api-key",
-    });
-    await close(decision(w.f.actor.userId));
-    const deniedShared = await api.requestCreateRun(
-      survivor,
-      {
-        agentId: w.f.agentId,
-        prompt: "Shared closed resource",
-        modelProvider: "anthropic-api-key",
-      },
-      [409],
-    );
-    expect(deniedShared.status).toBe(409);
-    const promoted = await createStore().set(
-      promoteNextQueuedRun$,
-      { orgId: w.f.orgId },
-      context.signal,
-    );
-    expect(promoted).toBeNull();
-    const polled = await api.requestPollRunner(
-      true,
-      { group: w.f.runnerGroup, supportedProfiles: ["vm0/default"] },
-      [200],
-    );
-    expect(polled).toMatchObject({
-      status: 200,
-      body: { job: { runId: live.runId } },
-    });
-    await expect(api.claimRunnerJob(live.runId)).resolves.toMatchObject({
-      runId: live.runId,
-      prompt: "Surviving resource",
-    });
-    if (!w.runId) {
-      throw new Error("Missing queued synthetic run");
-    }
-    const [retained] = await db
-      .select()
-      .from(agentRunQueue)
-      .where(eq(agentRunQueue.runId, w.runId));
-    expect(retained?.encryptedParams).toBeTruthy();
-    await db
-      .update(agentRunQueue)
-      .set({ expiresAt: new Date("2020-01-01") })
-      .where(eq(agentRunQueue.runId, w.runId));
-    await createStore().set(
-      cleanupExpiredQueueEntries$,
-      [w.runId],
-      context.signal,
-    );
-    await expect(
-      db.select().from(agentRunQueue).where(eq(agentRunQueue.runId, w.runId)),
-    ).resolves.toHaveLength(1);
   });
 
   // B2b2-O extends the same dormant-projector/real-PostgreSQL exception.

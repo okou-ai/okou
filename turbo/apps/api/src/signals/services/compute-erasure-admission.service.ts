@@ -1,7 +1,3 @@
-import {
-  assertErasureSubjectWritable,
-  type ErasureSubject,
-} from "@okouai/db/operations/account-erasure";
 import type { RunStatus } from "@okouai/api-contracts/contracts/runs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
@@ -15,10 +11,6 @@ import { executeRawRows } from "../../lib/db-raw-rows";
 import type { Tx } from "../../lib/db-types";
 import { settle } from "../utils";
 import { lockPiMemoryPhase2MaintenanceCleanupProtection } from "./pi-memory-phase2-maintenance.service";
-import {
-  COMPUTE_CLOSURE_ERROR,
-  stopErasureClosedComputeRun,
-} from "./agent-run-terminal-transition.service";
 
 interface Owner {
   readonly userId: string;
@@ -51,7 +43,6 @@ export interface ComputeRunAdmission {
   readonly sessionId: string;
   readonly owner: ComputeRunOwner;
   readonly sessionOwner: Owner;
-  readonly closed: boolean;
 }
 
 interface ComputeRunAdmissionObservation {
@@ -101,37 +92,6 @@ export async function withComputeOwnershipRetry<T>(
       throw result.error;
     }
   }
-}
-
-function subjects(owner: Owner): ErasureSubject[] {
-  return [
-    { subjectKind: "user", subjectId: owner.userId },
-    { subjectKind: "organization", subjectId: owner.orgId },
-  ];
-}
-
-async function writable(tx: Tx, owners: readonly Owner[]): Promise<boolean> {
-  const distinctSubjects = [
-    ...new Map(
-      owners.flatMap(subjects).map((subject) => {
-        return [JSON.stringify(subject), subject];
-      }),
-    ).values(),
-  ];
-  const result = await settle(
-    assertErasureSubjectWritable(tx, distinctSubjects),
-  );
-  if (result.ok) {
-    return true;
-  }
-  // Only B1's exact closure error is a denial. Infrastructure failures propagate.
-  if (
-    result.error instanceof Error &&
-    result.error.message === COMPUTE_CLOSURE_ERROR
-  ) {
-    return false;
-  }
-  throw result.error;
 }
 
 function sameOwner(a: Owner, b: Owner): boolean {
@@ -244,20 +204,13 @@ export async function admitNewComputeRun(
     args.existingSessionId,
   );
   const expected = { userId: args.ownerUserId, orgId: args.agentOrgId };
-  const allowed = await writable(tx, [
-    args,
-    expected,
-    ...(resource ? [resource] : []),
-    ...(session ? [session] : []),
-  ]);
   if (!resource) {
     return false;
   }
   await lockResource(tx, resource);
   // A prepared payload belongs to its original owner. A transfer requires a
-  // newly prepared request, even when the new owner is writable.
+  // newly prepared request.
   return (
-    allowed &&
     sameOwner(resource, expected) &&
     (args.existingSessionId === undefined ||
       (session !== undefined &&
@@ -364,7 +317,7 @@ function maintenanceResourceOwned(args: {
   return sameOwner(args.resource, args.capturedCleanupOwner);
 }
 
-/** Resolve without business locks, then acquire the complete sorted B1 set. */
+/** Resolve the run, session and resource owners without business locks. */
 async function observeComputeRunAdmission(
   tx: Tx,
   runId: string,
@@ -423,14 +376,6 @@ async function observeComputeRunAdmission(
           { kind: "maintenance", id: maintenanceId },
           false,
         );
-  const allowed = await writable(tx, [
-    owner,
-    owner.sessionOwner,
-    ...(expected.resourceOwner ? [expected.resourceOwner] : []),
-    ...(expected.capturedCleanupOwner ? [expected.capturedCleanupOwner] : []),
-    ...(resource ? [resource] : []),
-    ...(maintenance ? [maintenance] : []),
-  ]);
   if (
     !sameOwner(owner, expected) ||
     owner.agentId !== expected.agentId ||
@@ -444,7 +389,6 @@ async function observeComputeRunAdmission(
       sessionId: owner.sessionId,
       owner,
       sessionOwner: owner.sessionOwner,
-      closed: !allowed,
     },
     resource,
     maintenance,
@@ -718,18 +662,4 @@ export async function validateComputeRunAdmission(
         userId: admission.owner.userId,
       })))
   );
-}
-
-/** A selected closed candidate is stopped without deleting a cleanup/billing
- * locator or scheduling ordinary completion. Already running work is untouched.
- * In particular, retain creditAdmitted and canonical provider/account metadata.
- */
-export async function stopClosedComputeCandidate(
-  tx: Tx,
-  admission: ComputeRunAdmission,
-): Promise<void> {
-  if (!admission.closed) {
-    throw new Error("Closed compute disposition requires closure");
-  }
-  await stopErasureClosedComputeRun(tx, admission.runId);
 }
