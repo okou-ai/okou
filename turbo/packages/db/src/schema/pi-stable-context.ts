@@ -22,36 +22,6 @@ import {
 import { agents } from "./agent";
 import { storages, storageVersions } from "./storage";
 
-export type PiStableContextErasureSubjectKind = "organization" | "user";
-
-/**
- * Retired legacy-Clerk erasure closure. The API no longer reads or writes it;
- * it is kept only while older API instances in the rollback window may still
- * insert rows, and a later migration drops it.
- */
-export const piStableContextErasureFences = pgTable(
-  "pi_stable_context_erasure_fences",
-  {
-    subjectKind: varchar("subject_kind", { length: 16 })
-      .$type<PiStableContextErasureSubjectKind>()
-      .notNull(),
-    subjectDigest: varchar("subject_digest", { length: 64 }).notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  (table) => {
-    return [
-      primaryKey({
-        name: "pi_stable_context_erasure_fences_pk",
-        columns: [table.subjectKind, table.subjectDigest],
-      }),
-      check(
-        "pi_stable_context_erasure_fences_kind_check",
-        sql`${table.subjectKind} IN ('organization', 'user')`,
-      ),
-    ];
-  },
-);
-
 export type PiStableContextPublicationState = "pending" | "ready";
 
 /**

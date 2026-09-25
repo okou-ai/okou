@@ -883,7 +883,6 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
     coverage: "user_root",
     ownership: ["user_id"],
   },
-  pi_stable_context_erasure_fences: { coverage: "not_account_scoped" },
   pi_stable_context_generations: {
     coverage: "user_root",
     ownership: ["subject"],
