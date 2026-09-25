@@ -415,11 +415,8 @@ export function createRemoteChatThreadDraft(threadId: string) {
     const client = get(apiClient$)(chatThreadDraftContract);
     const result = await accept(
       client.get({ params: { id: threadId } }),
-      [200, 404],
+      [200],
     );
-    if (result.status === 404) {
-      return null;
-    }
     return chatThreadDraftSchema.parse(result.body);
   });
 }
