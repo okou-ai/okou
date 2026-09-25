@@ -408,17 +408,21 @@ async function validateCanonicalDraftStorage(
     parts: [{ type: "text", text: "canonical API draft" }],
   };
   const canonicalDraft = await client.query<{
+    userId: string | null;
     draftUserMessage: unknown;
   }>(
     `
-      UPDATE "chat_threads"
-      SET "draft_user_message" = $2::jsonb
-      WHERE "id" = $1
+      INSERT INTO "chat_thread_drafts" (
+        "chat_thread_id", "user_id", "draft_user_message"
+      )
+      VALUES ($1, 'append-only-test-user', $2::jsonb)
       RETURNING
+        "user_id" AS "userId",
         "draft_user_message" AS "draftUserMessage"
     `,
     [threadId, JSON.stringify(draftUserMessage)],
   );
+  assert.equal(canonicalDraft.rows[0]?.userId, "append-only-test-user");
   assert.deepEqual(canonicalDraft.rows[0]?.draftUserMessage, draftUserMessage);
 }
 
@@ -549,6 +553,9 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
       "   ✅ chat events and snapshots accept explicit seq_ids and cursors\n",
     );
   } finally {
+    await client.query(
+      `DELETE FROM "chat_thread_drafts" WHERE "user_id" = 'append-only-test-user'`,
+    );
     await client.query(
       `
         DELETE FROM "chat_thread_snapshots"
@@ -1365,13 +1372,6 @@ type PermanentFunction = {
 const EXPECTED_PERMANENT_TRIGGERS = [
   {
     definition:
-      "CREATE TRIGGER preserve_chat_event_write_activation BEFORE DELETE OR UPDATE ON public.chat_event_write_control FOR EACH ROW EXECUTE FUNCTION preserve_chat_event_write_activation()",
-    schemaName: "public",
-    tableName: "chat_event_write_control",
-    triggerName: "preserve_chat_event_write_activation",
-  },
-  {
-    definition:
       "CREATE TRIGGER capture_billing_run_attribution BEFORE INSERT ON public.agent_runs FOR EACH ROW EXECUTE FUNCTION capture_billing_run_attribution()",
     schemaName: "public",
     tableName: "agent_runs",
@@ -1436,13 +1436,6 @@ const EXPECTED_PERMANENT_TRIGGERS = [
 ] as const satisfies readonly PermanentTrigger[];
 
 const EXPECTED_PERMANENT_FUNCTIONS = [
-  {
-    bodyHash: "0d37e98a01767d7416f0ae9e69f1311b",
-    functionName: "preserve_chat_event_write_activation",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
   {
     bodyHash: "31c9604bf9c9306578d884bc8aa9e5ce",
     functionName: "billing_usage_source",

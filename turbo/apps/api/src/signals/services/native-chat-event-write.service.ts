@@ -20,7 +20,6 @@ export async function withNativeChatEventThreadTouch<T>(
       return touchChatThreadLastMessageAtIndependently(db, args.chatThreadId, {
         touchedAt: args.createdAt,
         eventId: args.eventId,
-        unarchive: false,
       });
     });
   });

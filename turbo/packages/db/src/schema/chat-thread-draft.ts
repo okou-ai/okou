@@ -1,15 +1,15 @@
 import { sql } from "drizzle-orm";
 import {
   check,
-  foreignKey,
+  index,
   jsonb,
   pgTable,
   primaryKey,
+  text,
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
 
-import { chatThreads } from "./chat-thread";
 import type {
   ChatThreadDraftAttachments,
   ChatThreadDraftUserMessage,
@@ -20,23 +20,29 @@ import type {
  *
  * A draft is written on every keystroke batch while event projection, the run
  * queue and the read cursor all keep updating the thread row itself, so the two
- * workloads contend for one tuple. Holding the draft in its own child row is
- * what eventually removes that contention; see the parent issue #36173.
+ * workloads contend for one tuple. This table is the only draft store the API
+ * reads and writes; see the parent issue #36173.
  *
- * During the compatibility window `chat_threads.draft_user_message` and
- * `chat_threads.draft_attachments` remain the served values and this table is
- * written alongside them, inside the same transaction. Nothing reads it yet.
+ * A saved draft is one row and a cleared draft is no row, the same shape as
+ * `agent_drafts`. There is deliberately no foreign key to `chat_threads`: a
+ * draft write must not lock the thread row. Thread deletion removes the row
+ * itself; a row left behind by another deletion path is unreachable and is
+ * deletion cleanup's concern. A row whose values are both null is an older API's cleared
+ * tombstone and reads the same as no row.
  *
- * A cleared draft is a **retained row with null draft values**, never a deleted
- * row. `agent_drafts` deletes on clear, and copying that here would be wrong:
- * the later read cutover falls back to the legacy columns when the child row is
- * missing, so a deleted row would resurrect the draft the user just cleared.
- * Absence must keep meaning "never touched since the table existed".
+ * `chat_threads.draft_user_message` and `chat_threads.draft_attachments` are
+ * retired: nothing reads or writes them, and the contract release drops them.
  */
 export const chatThreadDrafts = pgTable(
   "chat_thread_drafts",
   {
     chatThreadId: uuid("chat_thread_id").notNull(),
+    /**
+     * Owner of the thread, copied at write time so the per-user drafts listing
+     * reads this table alone. Nullable only until the contract release backfills
+     * rows an older API inserted without it.
+     */
+    userId: text("user_id"),
     /** Canonical rich document for the thread composer's saved draft. */
     draftUserMessage:
       jsonb("draft_user_message").$type<ChatThreadDraftUserMessage>(),
@@ -57,14 +63,10 @@ export const chatThreadDrafts = pgTable(
         name: "chat_thread_drafts_chat_thread_id_pk",
         columns: [table.chatThreadId],
       }),
-      foreignKey({
-        name: "chat_thread_drafts_chat_thread_id_chat_threads_id_fk",
-        columns: [table.chatThreadId],
-        foreignColumns: [chatThreads.id],
-      }).onDelete("cascade"),
+      index("idx_chat_thread_drafts_user").on(table.userId),
       // The same invariant `chat_threads_draft_user_message_check` enforces on
       // the legacy columns: attachments cannot outlive the document they were
-      // attached to. Both values null is the cleared tombstone and is allowed.
+      // attached to. Both values null is an older API's cleared tombstone.
       check(
         "chat_thread_drafts_draft_user_message_check",
         sql`${table.draftUserMessage} IS NOT NULL

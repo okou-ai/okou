@@ -106,9 +106,10 @@ export function inferMimetype(filename: string): string {
 }
 
 /**
- * Re-proves authorization the caller already holds for this thread. The
- * predicates only re-check that same scope; they must not narrow which threads
- * the caller could already touch.
+ * Supplies the organization the caller already authorized for this thread, so
+ * the sort event does not rediscover it. The predicates only re-prove that
+ * same scope; they must not narrow which threads the caller could already
+ * touch.
  */
 interface AuthorizedChatThreadTouchScope {
   readonly userId: string;
@@ -118,27 +119,28 @@ interface AuthorizedChatThreadTouchScope {
 interface ChatThreadTouchOptions {
   readonly touchedAt?: Date;
   readonly eventId?: string;
-  /**
-   * Organization of the thread's agent, already known to the caller, so the
-   * thread events do not rediscover it. Used only for event writing.
-   */
-  readonly orgId?: string;
   readonly authorizedScope?: AuthorizedChatThreadTouchScope;
   /**
-   * Set for a completed or failed run's terminal marker. That marker makes
-   * the thread unread, so an archived thread also returns to the default
-   * sidebar list. Cancellation is user-initiated and must not set this.
+   * The thread's organization, already validated by the caller, so its thread
+   * events skip the Agent lookup. Unlike `authorizedScope`, it does not add
+   * predicates to the thread read.
    */
-  readonly unarchive: boolean;
+  readonly orgId?: string;
+  /**
+   * Set only for a completed or failed run's terminal marker: that marker makes
+   * the thread unread, so an archived thread also returns to the default
+   * sidebar list. Cancellation is user-initiated and leaves it archived.
+   */
+  readonly unarchive?: boolean;
 }
 
 export async function touchChatThreadLastMessageAtIndependently(
   tx: Db,
   threadId: string,
-  options: ChatThreadTouchOptions,
+  options: ChatThreadTouchOptions = {},
 ): Promise<void> {
-  const { eventId, orgId, authorizedScope } = options;
-  const touchedAt = options.touchedAt ?? nowDate();
+  const { touchedAt = nowDate(), eventId, authorizedScope } = options;
+  const orgId = authorizedScope?.orgId ?? options.orgId;
   // Resolve identity before either independent write. Failure of the weak
   // timestamp update must not suppress the separate ordering event attempt.
   const [thread] = await tx
@@ -169,7 +171,7 @@ export async function touchChatThreadLastMessageAtIndependently(
   // The flag rides on the same single-row UPDATE; `archived` is not indexed.
   // A concurrent re-archive between the read and this write loses, which is
   // acceptable for a best-effort sidebar state.
-  const unarchive = options.unarchive && thread.archived;
+  const unarchive = options.unarchive === true && thread.archived;
   let unarchived = false;
   await attemptChatEventSideEffect("last_message_at", threadId, async () => {
     const updated = await tx

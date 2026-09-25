@@ -52,6 +52,110 @@ and CLI keep sending the header, and it stays in the CORS allow-list. Remove
 that branch, the header, and the inline contract variant after iOS downloads
 the R2 URL and builds without that support are no longer installed.
 
+## Chat event retention and Discord delivery table retirement (2026-09-25)
+
+Discord has no production users, so this change ships without a staged
+compatibility window.
+
+- Migration `1246_drop_discord_chat_deliveries` drops `discord_chat_deliveries`
+  with its foreign keys into `chat_events`, then the
+  `chat_events_id_thread_unique` constraint that only backed the composite
+  foreign key, and the redundant `idx_chat_events_run_id` (covered by
+  `chat_events_run_event_seq_unique`). An API that predates #36879 fails its
+  Discord reply enqueue, and a user export on an older API fails its Discord
+  deliveries page until the rollout completes. Account erasure on an older API
+  also fails with `account_erasure_relational:catalogue_absent:discord_chat_deliveries`
+  and retries until it runs on this API; rolling back below this API stalls
+  erasure jobs the same way.
+- Migration `1247_chat_event_retention_cursors` adds the retention sweep
+  cursor. Retention now reads candidates with bounded, unlocked single-table
+  queries and deletes them by ID in short statements, without the advisory
+  lock, `FOR UPDATE SKIP LOCKED` or the in-transaction remainder scan. The cron
+  response drops `deleteLimit`, `candidates`, `skippedBatchLimit` and
+  `overlapPrevented` and adds `sweepRestarted`. An older API still running the
+  locked sweep is safe alongside the new one: both only delete rows that pass
+  the same holds.
+- The cancellation-recovery queue sweep only redrives barriers that expired in
+  the last ten minutes. Older barriers are left to per-thread admission and
+  callback paths, as for stale queue items.
+
+## Chat event write control retirement (2026-09-25)
+
+Migration `1245_drop_chat_event_write_control` drops `chat_event_write_control`
+together with its `preserve_chat_event_write_activation` trigger and function.
+APIs 1.674.0 and 1.675.0 read the control row on every chat event write, so the
+production rollback resolver now refuses targets before #36703 (`15117da781`,
+API 1.676.0), the release that removed that reader. The owner approved the new
+floor on 2026-09-25 while production served API 1.676.1. Migration precedes API
+promotion, and no API from 1.676.0 on reads or writes the table.
+
+APIs before this change still list the table in their account-erasure ownership
+inventory. While one of them serves after the migration (the release overlap or
+a rollback), its Clerk deletion jobs fail with
+`account_erasure_relational:catalogue_absent:chat_event_write_control` and retry
+every 60 seconds without losing their checkpoint, until an API with this change
+serves. The table was not account-scoped and had no foreign keys, so the
+relational sweep plan and its collector version are unchanged.
+
+## Thread drafts served only from `chat_thread_drafts` (2026-09-25)
+
+Thread composer drafts are read and written only through `chat_thread_drafts`
+(#36173). `PATCH /api/chat-threads/:id` reads the thread owner by primary key
+outside any transaction, then saves the draft with one upsert, or clears it by
+deleting the row. None of these paths writes or locks the `chat_threads` row, and draft writes no longer take
+the account-erasure admission. `GET /api/chat-threads/:id/draft`, the drafts
+listing and the user export read the child table. Request and response
+contracts are unchanged.
+
+`GET /api/chat-threads/:id/draft` reads only `chat_thread_drafts`, by thread id
+and the caller's `user_id`. A thread the caller does not own, a missing thread
+and a thread without a draft all return `200` with the empty draft instead of
+`404`; every App bundle maps a `404` to "no draft" and parses the empty draft to
+the same state, so the composer behaves identically. A draft row an older API
+inserted without `user_id` during the rollout reads as empty until the user's
+next save fills it. `PATCH` still reads the thread owner until the contract
+release keys drafts by `(chat_thread_id, user_id)`.
+
+Sending a message no longer touches the draft. The web client already clears
+its draft with its own `PATCH` alongside every send (since #24657, so every App
+bundle in use does), which made the server-side delete a duplicate write on
+the send path. Senders that do not clear the composer, such as MCP, agents and
+forwarded sends, now leave the user's draft in place. If the client's clearing
+`PATCH` fails, the sent text reappears as the draft.
+
+The web client now refetches the sidebar drafts listing only when a save adds
+or removes a thread's draft, instead of after every debounced save.
+
+Migration `1244_chat_thread_drafts_user_backfill` drops the
+`chat_thread_drafts` → `chat_threads` foreign key, so a draft write takes no
+lock on the thread row. It adds `chat_thread_drafts.user_id` with an index,
+copies drafts that exist only in the legacy `chat_threads.draft_user_message` /
+`draft_attachments` columns with `ON CONFLICT DO NOTHING`, and fills `user_id`
+from the thread. Every API since #36230 dual-writes both stores in one
+transaction, so an existing child row is already current. Production held 433
+legacy drafts (126 kB), 430 of them without a child row and none disagreeing
+with their child row (2026-09-25).
+
+Without the cascade, `DELETE /api/chat-threads/:id` removes the draft row with
+one statement after the thread deletion commits. Agent deletion, account
+deletion and other thread-deletion paths can leave an unreachable draft row
+behind; no API serves it, and cleaning it up belongs to deletion. Account
+erasure reaches draft rows by `user_id` and, for rows without one, through the
+thread while it exists.
+
+During the rollout an older API still dual-writes both stores and serves the
+legacy columns, so it keeps the child table current but does not see a draft
+the new API saved or cleared. An older API can also insert a child row without
+`user_id`; such a row is missing from the new drafts listing until the contract
+migration backfills it, and it is still read and cleared by thread id. Rolling
+the API back therefore only shows each thread's last draft from before this
+release; no draft is lost.
+
+The legacy columns and their check constraint stay in the schema, unused, for
+this release. The contract release drops them, backfills any `user_id` left null
+by the rollout and makes `user_id` `NOT NULL`; ship it only after this API is in
+production and set this release as the API rollback floor.
+
 ## Morning Brief expired admission containment (2026-09-25)
 
 This is a partial, fail-closed incident slice, **not** the recovery of stalled
@@ -115,12 +219,8 @@ stays readable in the Okou chat. Access checks and suppression after binding
 or channel revocation are unchanged.
 
 The API no longer writes or reads `discord_chat_deliveries`, and the test-only
-Discord delivery drain endpoint is removed. The table, its erasure inventory
-entry, its user-export section and the preview seed that covers that export stay
-until every API that writes the table has left the rollback window; a later
-migration drops them together. During rollout overlap or after an API rollback,
-older instances still enqueue and dispatch their own rows; this API ignores
-them.
+Discord delivery drain endpoint is removed. Migration
+`1246_drop_discord_chat_deliveries` drops the table (see above).
 
 ## Completed Clerk deletion receipt index retirement (2026-09-25)
 

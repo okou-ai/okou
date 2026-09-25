@@ -3,6 +3,7 @@ import {
   chatThreadDraftContract,
   chatThreadEventsContract,
   chatThreadMetadataContract,
+  chatThreadsContract,
   type ChatThreadDraft,
   type ChatThreadSnapshotProjection,
   type PersistedAttachment,
@@ -56,6 +57,8 @@ interface ContinuityWorkspace {
     readonly cachedChatThreadEvents: ReturnType<typeof cachedChatListEvents>;
   };
   readonly draftPatches: ContinuityDraftPatch[];
+  /** How many times the sidebar fetched the drafts listing. */
+  readonly draftListRequests: () => number;
   readonly eventRowQueries: ContinuityEventRowQuery[];
   readonly setDraft: (threadId: string, draft: ChatThreadDraft) => void;
   readonly setChatEventRows: (rows: readonly ChatEventRow[]) => void;
@@ -212,6 +215,7 @@ export function installContinuityWorkspace(
   );
   const drafts = new Map(options.drafts ?? []);
   const draftPatches: ContinuityDraftPatch[] = [];
+  let draftListRequests = 0;
   let chatEventRows = [...(options.chatEventRows ?? [])];
   const eventRowQueries: ContinuityEventRowQuery[] = [];
 
@@ -332,6 +336,18 @@ export function installContinuityWorkspace(
       return respond(204);
     },
   );
+  context.mocks.api(chatThreadsContract.drafts, ({ respond }) => {
+    draftListRequests += 1;
+    return respond(200, {
+      draftThreadIds: [...drafts]
+        .filter(([, draft]) => {
+          return draft.draftUserMessage !== null;
+        })
+        .map(([threadId]) => {
+          return threadId;
+        }),
+    });
+  });
   context.mocks.api(webFilesContract.fileUrl, async ({ query, respond }) => {
     const resolution =
       (await options.resolveAttachment?.(query.file_id)) ?? "available";
@@ -356,6 +372,9 @@ export function installContinuityWorkspace(
       ),
     },
     draftPatches,
+    draftListRequests() {
+      return draftListRequests;
+    },
     eventRowQueries,
     setDraft(threadId, draft) {
       drafts.set(threadId, draft);
