@@ -1,5 +1,57 @@
 # Deployment Compatibility
 
+## Chat thread archived rollout fallbacks removed (2026-09-25)
+
+Issue #36551 removes the bounded rollout fallbacks added with #36480. The
+`archived` field is now required in `chatThreadSnapshotProjectionSchema` and
+`chatThreadMetadataSchema`, and the `?? false` normalizations in chat thread
+event replay and the Platform metadata projection are gone.
+
+Evidence for each gate:
+
+- Web clients: the force-upgrade floor is 0.963.3; #36480 first shipped in
+  App 0.955.0.
+- API rollback: the production rollback floor is `32e48c76` (#36885), which
+  contains #36480, so no API from before archiving is serving or retained as a
+  rollback target.
+- Snapshots: a MaskDB census found all 5536 `chat_thread_snapshots` rows were
+  updated after the first production API containing #36480 was deployed
+  (2026-09-24T06:12Z; oldest row updated 2026-09-24T13:00Z).
+
+IndexedDB caches are intentionally **not** reset (`CHAT_IDB_VERSION` is
+unchanged). A Web snapshot cache row last written by a pre-0.955.0 build now
+fails schema parsing and takes the existing degraded read path, which refetches
+from the API. The CLI chat thread cache likewise treats such a row as invalid
+and rebuilds it. No database migration is included.
+
+## R2 chat thread snapshot rollout fallbacks removed (2026-09-25)
+
+Issue #36375 removes the rollout fallbacks that #36320 added. Evidence for the
+removal gates:
+
+- The Web App client floor is 0.963.3. #36320 first shipped in App 0.950.0.
+- The owner confirmed that no CLI builds from before R2 support remain in use.
+- A MaskDB census found 5536 `chat_thread_snapshots` rows, none with
+  `object_key IS NULL`. Compaction writes only rows that have an object key.
+- The production API rollback floor is 32e48c76 (#36885), which descends from
+  #36320.
+
+The API no longer reads the legacy `chat_threads` JSONB. A row without an
+object key is now an error. A scope without a snapshot row returns the
+permanent empty `{ chatThreads: [], latestEventId: null, latestSeqId: null }`
+shape. The App SharedWorker and CLI keep handling the inline contract variant,
+because the contract still carries it for iOS (below). They send the header,
+so current and rollback-window APIs return them an R2 URL whenever a row
+exists.
+
+One fallback remains. The native iOS TestFlight client (0.2.x) reads only
+inline `chatThreads`. It sends neither `X-Chat-Thread-Snapshot-R2` nor a client
+version, so no version floor can exclude it. The API therefore still serves
+inline data materialized from R2 to requests that omit the header. The Web App
+and CLI keep sending the header, and it stays in the CORS allow-list. Remove
+that branch, the header, and the inline contract variant after iOS downloads
+the R2 URL and builds without that support are no longer installed.
+
 ## Thread draft contraction, release 2 (2026-09-25)
 
 Release 2 of the thread-draft move off `chat_threads` (#36173). Release 1
@@ -1022,6 +1074,10 @@ JSONB after the first R2 write would leave R2-backed snapshots unreadable;
 the production rollback resolver enforces the canonical main commit that first
 introduced `chat-thread-snapshot-object.ts` as the API reader floor. Recovery
 must stay at or above that floor or roll forward.
+
+The legacy JSONB read and the Web App/CLI inline fallbacks described above
+were removed on 2026-09-25. See "R2 chat thread snapshot rollout fallbacks
+removed" at the top of this file.
 
 ## Artifact catalog API handoff (2026-09-23)
 

@@ -331,10 +331,7 @@ const chatThreadSnapshotProjectionSchema = z.object({
   pinnedAt: z.string().nullable(),
   // Optional for existing snapshots and browser caches without manual ordering.
   pinOrder: z.string().nullable().optional(),
-  // Rollout fallback: snapshots compacted before migration 1208 and Web/CLI
-  // caches from older builds omit it. Remove once they are recompacted and the
-  // client floor excludes those builds (#36551).
-  archived: z.boolean().optional(),
+  archived: z.boolean(),
   renamedAt: z.string().nullable(),
   selectedModel: z.string().nullable().default(null),
   modelSettings: modelSettingsSchema.optional(),
@@ -1091,9 +1088,7 @@ const chatThreadMetadataSchema = z.object({
   reasoningEffort: reasoningEffortSchema.nullable().optional(),
   serviceTier: chatThreadServiceTierSchema.nullable(),
   pinnedAt: z.string().nullable(),
-  // Rollout fallback for a new App reaching an API from before archiving.
-  // Remove once that API is outside the rollback window (#36551).
-  archived: z.boolean().optional(),
+  archived: z.boolean(),
   computerUseHostId: z.string().uuid().nullable(),
   cloudBrowserEnabled: z.boolean(),
   selectedVideoModel: z.string().nullable(),
@@ -1299,12 +1294,19 @@ export const chatThreadsContract = c.router({
     headers: authHeadersSchema,
     responses: {
       200: z.union([
+        // Every compacted snapshot lives in R2; capable clients download the
+        // archive from this short-lived URL.
         z.object({
           url: z.string().url(),
           expiresInSeconds: z.number().int().positive(),
           latestEventId: chatThreadEventIdSchema.nullable(),
           latestSeqId: z.number().int().positive().nullable(),
         }),
+        // A scope without a snapshot row (for example, no chat threads yet)
+        // returns `{ chatThreads: [], latestEventId: null, latestSeqId: null }`
+        // to every client. Non-empty inline data is served only to clients
+        // that omit X-Chat-Thread-Snapshot-R2 (the native iOS client; see
+        // getChatThreadSnapshotInner$).
         z.object({
           chatThreads: z.array(chatThreadSnapshotProjectionSchema),
           latestEventId: chatThreadEventIdSchema.nullable(),

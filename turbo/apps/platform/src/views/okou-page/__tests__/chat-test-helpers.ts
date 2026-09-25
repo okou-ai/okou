@@ -129,6 +129,7 @@ export function threadListSnapshot(threads: readonly ThreadListItem[]) {
       createdAt: thread.createdAt,
       updatedAt: thread.updatedAt,
       pinnedAt: thread.pinnedAt ?? null,
+      archived: false,
       renamedAt: thread.renamedAt ?? null,
       selectedModel: thread.selectedModel ?? null,
       serviceTier: thread.serviceTier ?? null,
