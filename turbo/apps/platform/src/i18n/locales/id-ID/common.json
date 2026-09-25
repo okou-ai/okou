@@ -7939,6 +7939,7 @@
       "moreOptions": "Opsi Discord lainnya",
       "retry": "Coba lagi",
       "server": "Server: {{name}}",
+      "suspended": "Discord untuk sementara tidak tersedia. Koneksi yang ada tetap disimpan, dan Anda masih dapat memutuskan atau menghapus Discord.",
       "title": "Discord",
       "unconfigured": "Discord belum tersedia untuk organisasi ini.",
       "uninstall": "Hapus Discord",

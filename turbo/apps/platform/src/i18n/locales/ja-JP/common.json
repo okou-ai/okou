@@ -7939,6 +7939,7 @@
       "moreOptions": "その他の Discord オプション",
       "retry": "再試行",
       "server": "サーバー: {{name}}",
+      "suspended": "Discord は一時的に利用できません。既存の接続は保持され、Discord の接続解除や削除は引き続き行えます。",
       "title": "Discord",
       "unconfigured": "この組織では、Discord はまだ利用できません。",
       "uninstall": "Discord を削除",

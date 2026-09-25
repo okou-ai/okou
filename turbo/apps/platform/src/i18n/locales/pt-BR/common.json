@@ -8042,6 +8042,7 @@
       "moreOptions": "Mais opções do Discord",
       "retry": "Tentar novamente",
       "server": "Servidor: {{name}}",
+      "suspended": "O Discord está temporariamente indisponível. As conexões existentes são mantidas e você ainda pode desconectar ou remover o Discord.",
       "title": "Discord",
       "unconfigured": "O Discord ainda não está disponível para esta organização.",
       "uninstall": "Remover Discord",

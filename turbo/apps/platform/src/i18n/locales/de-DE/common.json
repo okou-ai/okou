@@ -7961,6 +7961,7 @@
       "moreOptions": "Weitere Discord-Optionen",
       "retry": "Erneut versuchen",
       "server": "Server: {{name}}",
+      "suspended": "Discord ist vorübergehend nicht verfügbar. Bestehende Verbindungen bleiben erhalten, und du kannst Discord weiterhin trennen oder entfernen.",
       "title": "Discord",
       "unconfigured": "Discord ist für diese Organisation noch nicht verfügbar.",
       "uninstall": "Discord entfernen",

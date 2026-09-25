@@ -28,6 +28,16 @@ export const reloadDiscordOrg$ = command(({ set }) => {
   });
 });
 
+// Mutations stay pending until the card has the refreshed status, so the
+// previous server choice or connection never reappears after a save.
+const refreshDiscordOrg$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(reloadDiscordOrg$);
+    await get(discordOrgData$);
+    signal.throwIfAborted();
+  },
+);
+
 const uninstallDialogOpen$ = state(false);
 export const showDiscordUninstallDialog$ = computed((get) => {
   return get(uninstallDialogOpen$);
@@ -43,7 +53,7 @@ export const disconnectDiscordOrg$ = command(
     const client = get(apiClient$)(integrationsDiscordContract);
     await accept(client.disconnect({ fetchOptions: { signal } }), [200]);
     signal.throwIfAborted();
-    set(reloadDiscordOrg$);
+    await set(refreshDiscordOrg$, signal);
   },
 );
 
@@ -59,7 +69,7 @@ export const uninstallDiscordOrg$ = command(
     );
     signal.throwIfAborted();
     set(setShowDiscordUninstallDialog$, false);
-    set(reloadDiscordOrg$);
+    await set(refreshDiscordOrg$, signal);
   },
 );
 
@@ -74,7 +84,7 @@ export const selectDiscordDmBinding$ = command(
       [200],
     );
     signal.throwIfAborted();
-    set(reloadDiscordOrg$);
+    await set(refreshDiscordOrg$, signal);
   },
 );
 
