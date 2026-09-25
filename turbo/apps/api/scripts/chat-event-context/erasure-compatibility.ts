@@ -1,33 +1,25 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, ne, type SQL } from "drizzle-orm";
 import {
   accountErasureJobs,
   accountErasureSinks,
   accountErasureWork,
 } from "@okouai/db/schema/account-erasure";
-import { chatAgentRunContext } from "@okouai/db/schema/chat-agent-run-context";
-import { reviseErasureInventory } from "@okouai/db/operations/account-erasure";
 import type { Db } from "../../src/signals/external/db";
 import {
   claimBackgroundJob,
   enqueueBackgroundJob,
   type ClaimedBackgroundJob,
 } from "../../src/signals/services/background-job.service";
-import {
-  captureUserErasureWork,
-  verifyUserErasureWork,
-} from "../../src/signals/services/account-erasure-user-executor";
-import { encryptErasureSelector } from "../../src/signals/services/account-erasure-selector";
-import { PRE_SPLIT_RELATIONAL_ERASURE_COLLECTOR_VERSION } from "../../src/signals/services/account-erasure-relational-collector";
-import { cleanupLateChatContent } from "../../src/signals/services/chat-content-erasure-cleanup.service";
+import { captureUserErasureWork } from "../../src/signals/services/account-erasure-user-executor";
 import { withSecretKmsClientForTest } from "../../src/lib/secret-kms-client";
 
-/** Capture the actual old collector contract, then replay it after deployment. */
-export async function assertLegacyErasureReplay(db: Db): Promise<void> {
+/** Capture with the deployed collectors, then prove replay rejects any drift. */
+export async function assertErasureReplayRejectsDrift(db: Db): Promise<void> {
   const key = randomBytes(32);
   // Only the external key service is synthetic. Selector encryption, capture,
-  // leasing, proof validation and relational cleanup use production code.
+  // leasing and proof validation use production code.
   await withSecretKmsClientForTest(
     {
       generateDataKey: (request) => {
@@ -42,7 +34,7 @@ export async function assertLegacyErasureReplay(db: Db): Promise<void> {
       },
     },
     async () => {
-      await assertHistoricalCapture(db);
+      await assertCapturedVersionsPinned(db);
     },
   );
 }
@@ -74,9 +66,9 @@ async function assertInitialCapture(
   );
 }
 
-async function assertHistoricalCapture(db: Db): Promise<void> {
+async function assertCapturedVersionsPinned(db: Db): Promise<void> {
   const signal = AbortSignal.timeout(60_000);
-  const userId = `legacy_erasure_${randomUUID()}`;
+  const userId = `erasure_replay_${randomUUID()}`;
   const backgroundId = randomUUID();
   await enqueueBackgroundJob(
     db,
@@ -106,122 +98,56 @@ async function assertHistoricalCapture(db: Db): Promise<void> {
     .from(accountErasureJobs)
     .where(eq(accountErasureJobs.subjectId, userId));
   assert.ok(initial);
-  const sinks = await db
-    .select()
-    .from(accountErasureSinks)
-    .where(eq(accountErasureSinks.jobId, initial.id));
-  const relational = sinks.find((sink) => {
-    return sink.domain === "relational";
-  });
-  assert.ok(relational);
-  const selector = await encryptErasureSelector({
-    version: 1,
-    kind: "subject",
-    subjectKind: "user",
-    subjectId: userId,
-  });
-  // No source deletion has happened. The supported revision API creates a
-  // real historical capture with the old collector, including its proofs.
-  await reviseErasureInventory(
+  // A sealed capture replays against the unchanged registry.
+  assert.equal(await captureUserErasureWork(db, background, signal), true);
+  await assertSinkDriftRejected(
     db,
     initial.id,
-    initial,
-    sinks.map((sink) => {
-      return {
-        sinkId: sink.sinkId,
-        domain: sink.domain,
-        collectorVersion:
-          sink.domain === "relational"
-            ? PRE_SPLIT_RELATIONAL_ERASURE_COLLECTOR_VERSION
-            : sink.collectorVersion,
-        selector,
-        dependencies: [],
-      };
-    }),
+    background,
+    signal,
+    eq(accountErasureSinks.domain, "relational"),
   );
-  assert.equal(await captureUserErasureWork(db, background, signal), true);
-  const [captured] = await db
-    .select()
-    .from(accountErasureJobs)
-    .where(eq(accountErasureJobs.id, initial.id));
-  assert.ok(captured);
-  const contextId = randomUUID();
-  await db.insert(chatAgentRunContext).values({
-    id: contextId,
-    sourceChatThreadId: randomUUID(),
-    sourceAgentId: randomUUID(),
-    sourceUserId: userId,
-    sourceOrgId: `org_${randomUUID()}`,
-  });
-  assert.equal(await captureUserErasureWork(db, background, signal), true);
-  assert.equal(await verifyUserErasureWork(db, background, signal), true);
-  const [finished] = await db
-    .select()
-    .from(accountErasureJobs)
-    .where(eq(accountErasureJobs.id, initial.id));
-  assert.equal(finished?.captureRevision, captured.captureRevision);
-  assert.equal(finished?.state, "verified_no_applicable_data");
-  const [retained] = await db
-    .select()
-    .from(accountErasureSinks)
-    .where(
-      and(
-        eq(accountErasureSinks.jobId, initial.id),
-        eq(accountErasureSinks.sinkId, relational.sinkId),
-      ),
-    );
-  assert.equal(
-    retained?.collectorVersion,
-    PRE_SPLIT_RELATIONAL_ERASURE_COLLECTOR_VERSION,
+  await assertSinkDriftRejected(
+    db,
+    initial.id,
+    background,
+    signal,
+    ne(accountErasureSinks.domain, "relational"),
   );
-  assert.equal(
-    await cleanupLateChatContent(
-      db,
-      { subjectKind: "user", subjectId: userId },
-      signal,
-    ),
-    1,
-  );
-  assert.deepEqual(
-    await db
-      .select()
-      .from(chatAgentRunContext)
-      .where(eq(chatAgentRunContext.id, contextId)),
-    [],
-  );
-  await assertOtherSinkDriftRejected(db, initial.id, background, signal);
 }
 
-async function assertOtherSinkDriftRejected(
+async function assertSinkDriftRejected(
   db: Db,
   jobId: string,
   background: ClaimedBackgroundJob,
   signal: AbortSignal,
+  domain: SQL,
 ): Promise<void> {
-  // The narrow replay exception must not turn other registry drift into an
-  // implicit migration of captured provider obligations.
-  const [unrelated] = await db
-    .select({ sinkId: accountErasureSinks.sinkId })
+  // A captured collector version, relational included, is never migrated
+  // implicitly: replay fails instead of dropping a captured obligation.
+  const [sink] = await db
+    .select({
+      sinkId: accountErasureSinks.sinkId,
+      collectorVersion: accountErasureSinks.collectorVersion,
+    })
     .from(accountErasureSinks)
-    .where(
-      and(
-        eq(accountErasureSinks.jobId, jobId),
-        ne(accountErasureSinks.domain, "relational"),
-      ),
-    )
+    .where(and(eq(accountErasureSinks.jobId, jobId), domain))
     .limit(1);
-  assert.ok(unrelated);
+  assert.ok(sink);
+  const target = and(
+    eq(accountErasureSinks.jobId, jobId),
+    eq(accountErasureSinks.sinkId, sink.sinkId),
+  );
   await db
     .update(accountErasureSinks)
     .set({ collectorVersion: randomUUID() })
-    .where(
-      and(
-        eq(accountErasureSinks.jobId, jobId),
-        eq(accountErasureSinks.sinkId, unrelated.sinkId),
-      ),
-    );
+    .where(target);
   await assert.rejects(
     captureUserErasureWork(db, background, signal),
     /sink registry changed during replay/,
   );
+  await db
+    .update(accountErasureSinks)
+    .set({ collectorVersion: sink.collectorVersion })
+    .where(target);
 }

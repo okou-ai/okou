@@ -34,10 +34,6 @@ import {
   appendCanonicalChatEvents,
   type PreparedChatEventRow,
 } from "./chat-event-append.service";
-import {
-  isSplitChatEventWriteEnabled,
-  type ChatEventWriteOptions,
-} from "./chat-event-write-mode.service";
 
 const log = logger("chat-event-context");
 
@@ -1084,11 +1080,7 @@ function prepareChatEvent(values: AppendChatEvent): PreparedChatEvent {
   };
 }
 
-/**
- * Context is required event data. Split mode writes it before the append so a
- * failure rejects the input; legacy mode writes it after the append inside the
- * caller's transaction.
- */
+/** Context is required event data, written before the append so a failure rejects the input. */
 async function persistPreparedChatEventContext(
   db: ChatEventWriteTransaction,
   prepared: PreparedChatEvent,
@@ -1102,7 +1094,6 @@ async function persistPreparedChatEventContext(
 
 /** Slow-path telemetry separates allocation/lock wait from event insertion. */
 function recordChatEventAppendTiming(timing: {
-  readonly mode: "legacy" | "split";
   readonly attemptedEvents?: number;
   readonly insertedEvents: number;
   readonly statementDurationMs: number;
@@ -1120,19 +1111,10 @@ async function appendPreparedChatEvent(
   db: ChatEventWriteTransaction,
   prepared: PreparedChatEvent,
   conflict: InsertChatEventConflict = "none",
-  options?: ChatEventWriteOptions,
 ): Promise<ChatEventCommandResult | null> {
-  const splitWrites =
-    options?.splitWrites ?? (await isSplitChatEventWriteEnabled(db));
   const startedAt = performance.now();
-  const rows = await appendCanonicalChatEvents(
-    db,
-    [prepared.row],
-    conflict,
-    splitWrites,
-  );
+  const rows = await appendCanonicalChatEvents(db, [prepared.row], conflict);
   recordChatEventAppendTiming({
-    mode: splitWrites ? "split" : "legacy",
     insertedEvents: rows.length,
     statementDurationMs: performance.now() - startedAt,
     allocationDurationMs: rows[0]?.allocationDurationMs,
@@ -1144,44 +1126,28 @@ async function appendPreparedChatEvent(
     : null;
 }
 
-/** Legacy callers keep their control transaction; ordinary split writes pass DB. */
+/** Control callers may pass their transaction; ordinary writes pass DB. */
 export async function insertChatEvent(
   db: ChatEventWriteTransaction,
   values: AppendChatEvent,
   conflict: InsertChatEventConflict = "none",
-  options?: ChatEventWriteOptions,
 ): Promise<ChatEventCommandResult | null> {
   const prepared = prepareChatEvent(values);
-  const splitWrites =
-    options?.splitWrites ?? (await isSplitChatEventWriteEnabled(db));
-  if (splitWrites) {
-    await persistPreparedChatEventContext(db, prepared);
-  }
-  const inserted = await appendPreparedChatEvent(db, prepared, conflict, {
-    splitWrites,
-  });
-  if (inserted && !splitWrites) {
-    await persistPreparedChatEventContext(db, prepared);
-  }
-  return inserted;
+  await persistPreparedChatEventContext(db, prepared);
+  return await appendPreparedChatEvent(db, prepared, conflict);
 }
 
 /** Reserve N and insert atomically, preserving every existing idempotency index. */
 export async function insertChatEvents(
   db: ChatEventWriteTransaction,
   values: readonly AppendChatEvent[],
-  options?: ChatEventWriteOptions,
 ): Promise<readonly ChatEventBatchCommandResult[]> {
   if (values.length === 0) {
     return [];
   }
   const prepared = values.map(prepareChatEvent);
-  const splitWrites =
-    options?.splitWrites ?? (await isSplitChatEventWriteEnabled(db));
-  if (splitWrites) {
-    for (const event of prepared) {
-      await persistPreparedChatEventContext(db, event);
-    }
+  for (const event of prepared) {
+    await persistPreparedChatEventContext(db, event);
   }
   const startedAt = performance.now();
   const rows = await appendCanonicalChatEvents(
@@ -1190,28 +1156,14 @@ export async function insertChatEvents(
       return event.row;
     }),
     "any",
-    splitWrites,
   );
   recordChatEventAppendTiming({
-    mode: splitWrites ? "split" : "legacy",
     attemptedEvents: values.length,
     insertedEvents: rows.length,
     statementDurationMs: performance.now() - startedAt,
     allocationDurationMs: rows[0]?.allocationDurationMs,
     insertDurationMs: rows[0]?.insertDurationMs,
   });
-  if (!splitWrites) {
-    const insertedIds = new Set(
-      rows.map((row) => {
-        return row.id;
-      }),
-    );
-    for (const event of prepared) {
-      if (insertedIds.has(event.row.id)) {
-        await persistPreparedChatEventContext(db, event);
-      }
-    }
-  }
   return rows.map(({ id, createdAt, seqId, sequenceNumber }) => {
     return { id, createdAt, seqId, sequenceNumber };
   });
@@ -1286,17 +1238,8 @@ export async function replaceLoadedChatEvent(
     },
     displayContext,
   };
-  const splitWrites = await isSplitChatEventWriteEnabled(tx);
-  if (splitWrites) {
-    await persistPreparedChatEventContext(tx, prepared);
-  }
-  const inserted = await appendPreparedChatEvent(tx, prepared, "any", {
-    splitWrites,
-  });
-  if (inserted && !splitWrites) {
-    await persistPreparedChatEventContext(tx, prepared);
-  }
-  return inserted;
+  await persistPreparedChatEventContext(tx, prepared);
+  return await appendPreparedChatEvent(tx, prepared, "any");
 }
 
 /** Append a payload-free revocation event for an existing chat event. */

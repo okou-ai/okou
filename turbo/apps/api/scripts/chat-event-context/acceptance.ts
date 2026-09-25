@@ -12,7 +12,7 @@ import { insertChatEvent } from "../../src/signals/services/chat-event.service";
 import { withNativeChatEventThreadTouch } from "../../src/signals/services/native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "../../src/signals/services/queued-launch-enrichment.service";
 import { flushLogs } from "../../src/lib/log";
-import { assertLegacyErasureReplay } from "./erasure-compatibility";
+import { assertErasureReplayRejectsDrift } from "./erasure-compatibility";
 
 // Infrastructure acceptance: a server-private context storage failure is
 // deliberately not constructible through public APIs. Writers use real
@@ -49,7 +49,6 @@ const tables = [
   "agents",
   "chat_threads",
   "chat_events",
-  "chat_event_write_control",
   "chat_event_sequences",
   "chat_thread_events",
   "chat_thread_event_sequences",
@@ -127,7 +126,7 @@ try {
     maxBuffer: 20 * 1024 * 1024,
   });
   await client.connect();
-  await assertLegacyErasureReplay(drizzle(client));
+  await assertErasureReplayRejectsDrift(drizzle(client));
   await client.query(`CREATE SCHEMA ${schema}`);
   await client.query(`SET search_path TO ${schema}, public`);
   for (const table of tables) {
@@ -140,27 +139,11 @@ try {
     [agentId, orgId, userId],
   );
   const db = drizzle(client);
-  await client.query(
-    "INSERT INTO chat_event_write_control(id,activated_at) VALUES('global',NULL)",
-  );
 
   const controller = new AbortController();
   const failOptionalLookup = () => {
     return Promise.reject(new Error("optional lookup failure"));
   };
-  await assert.rejects(
-    loadOptionalChatEnrichment(
-      db,
-      "telegram",
-      failOptionalLookup,
-      () => {
-        return "";
-      },
-      controller.signal,
-    ),
-    "legacy mode keeps the optional lookup failure fatal",
-  );
-
   // Context storage failure cannot be requested by a channel caller. Fail only
   // the context INSERT and observe that the input is rejected, not accepted.
   await client.query(
@@ -169,31 +152,8 @@ try {
   await client.query(
     `CREATE TRIGGER reject_context BEFORE INSERT ON chat_agentphone_context FOR EACH ROW EXECUTE FUNCTION ${schema}.reject_context()`,
   );
-  const legacyThread = await thread();
-  const legacyEventId = randomUUID();
-  await assert.rejects(
-    db.transaction(async (tx) => {
-      await insertChatEvent(
-        tx,
-        agentphoneInput(legacyEventId, legacyThread),
-        "id",
-        { splitWrites: false },
-      );
-    }),
-    contextStorageFailure,
-  );
-  assert.equal(
-    await eventCount(legacyEventId),
-    0,
-    "legacy context failure rolls back the event with the caller transaction",
-  );
-
-  await client.query(
-    "UPDATE chat_event_write_control SET activated_at=now() WHERE id='global'",
-  );
   assert.equal(
     await loadOptionalChatEnrichment(
-      db,
       "telegram",
       failOptionalLookup,
       () => {
@@ -208,7 +168,6 @@ try {
   cancelled.abort();
   await assert.rejects(
     loadOptionalChatEnrichment(
-      db,
       "telegram",
       () => {
         return Promise.reject(cancelled.signal.reason);
@@ -224,9 +183,7 @@ try {
   const splitThread = await thread();
   const splitEventId = randomUUID();
   await assert.rejects(
-    insertChatEvent(db, agentphoneInput(splitEventId, splitThread), "id", {
-      splitWrites: true,
-    }),
+    insertChatEvent(db, agentphoneInput(splitEventId, splitThread), "id"),
     contextStorageFailure,
   );
   assert.equal(
@@ -248,18 +205,12 @@ try {
     db,
     agentphoneInput(splitEventId, splitThread),
     "id",
-    { splitWrites: true },
   );
   assert.equal(redelivered?.id, splitEventId, "redelivery is accepted");
   assert.equal(await eventCount(splitEventId), 1);
   assert.equal(await contextCount(splitEventId), 1);
   assert.equal(
-    await insertChatEvent(
-      db,
-      agentphoneInput(splitEventId, splitThread),
-      "id",
-      { splitWrites: true },
-    ),
+    await insertChatEvent(db, agentphoneInput(splitEventId, splitThread), "id"),
     null,
     "a duplicate delivery after acceptance is idempotent",
   );
@@ -276,7 +227,6 @@ try {
   const committed = await withNativeChatEventThreadTouch(
     db,
     {
-      splitWrites: true,
       chatThreadId: touchThreadId,
       createdAt: new Date(),
       eventId: committedEventId,
@@ -286,7 +236,6 @@ try {
         writer,
         agentphoneInput(committedEventId, touchThreadId),
         "id",
-        { splitWrites: true },
       );
       await touchThread();
       return appended;
@@ -307,7 +256,7 @@ try {
   );
   assert.equal(await contextCount(committedEventId), 1);
   process.stdout.write(
-    "Chat context acceptance passed: required context failures reject input in both modes and redelivery is accepted.\n",
+    "Chat context acceptance passed: required context failures reject input and redelivery is accepted.\n",
   );
 } finally {
   await flushLogs();

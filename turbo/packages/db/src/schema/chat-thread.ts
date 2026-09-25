@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { bigint, check, index, pgTable, unique } from "drizzle-orm/pg-core";
+import { check, index, pgTable, unique } from "drizzle-orm/pg-core";
 import { chatThreadColumns } from "../columns/chat-thread";
 /**
  * Server-private origin classification for a whole chat thread.
@@ -12,18 +12,14 @@ import { chatThreadColumns } from "../columns/chat-thread";
  */
 export type ChatThreadProvenance = "ordinary" | "morning_brief";
 
-/** Physical schema retains the legacy allocator until the second release. */
+/**
+ * Chat Threads table
+ * User-facing conversation thread identity, created before any run starts.
+ * Event sequence positions are allocated in `chat_event_sequences`.
+ */
 export const chatThreads = pgTable(
   "chat_threads",
-  {
-    ...chatThreadColumns(),
-    /** Last seq_id reserved in this thread; reservations may remain unused. */
-    lastChatEventSeqId: bigint("last_chat_event_seq_id", {
-      mode: "number",
-    })
-      .default(0)
-      .notNull(),
-  },
+  chatThreadColumns(),
   (table) => {
     return [
       unique("uq_chat_threads_id_user").on(table.id, table.userId),

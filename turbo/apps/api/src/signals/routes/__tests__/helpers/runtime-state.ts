@@ -778,13 +778,13 @@ export async function updateChatEventSnapshotHead(
   });
 }
 
-export async function advanceChatEventSequenceAsPreviousApi(
+export async function reserveChatEventSequenceGap(
   context: TestContext,
   threadId: string,
   count: number,
 ): Promise<void> {
   await postAction(context, {
-    action: "advance-chat-event-sequence-as-previous-api",
+    action: "reserve-chat-event-sequence-gap",
     thread_id: threadId,
     count,
   });

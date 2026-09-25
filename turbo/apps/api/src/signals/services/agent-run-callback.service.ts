@@ -75,7 +75,6 @@ interface DispatchRunCallbacksInput {
   readonly redriveChatCallbackId?: string;
   readonly redriveUndeliveredChatCallbackOnly?: true;
   readonly skipChatCallback?: boolean;
-  readonly awaitTerminalChatProjection?: boolean;
 }
 
 interface DispatchSingleCallbackInput {
@@ -132,13 +131,11 @@ interface DispatchInternalRunCallbackInput {
   readonly result?: Record<string, unknown>;
   readonly error?: string;
   readonly kind: InternalRunCallbackKind;
-  readonly awaitTerminalChatProjection?: boolean;
 }
 
 interface DispatchInternalCallbackInput {
   readonly kind: InternalRunCallbackKind;
   readonly envelope: InternalRunCallbackEnvelope;
-  readonly awaitTerminalChatProjection?: boolean;
 }
 
 const dispatchInternalCallback$ = command(
@@ -159,7 +156,6 @@ const dispatchInternalCallback$ = command(
           handleChatInternalCallback$,
           {
             callback: input.envelope,
-            awaitTerminalProjection: input.awaitTerminalChatProjection,
             drainThreadQueue: async (chatThreadId, inputSignal, timing) => {
               await set(
                 drainChatThreadQueueForThread$,
@@ -258,7 +254,6 @@ const dispatchSingleInternalCallback$ = command(
         {
           kind: input.kind,
           envelope: callbackEnvelope(input),
-          awaitTerminalChatProjection: input.awaitTerminalChatProjection,
         },
         signal,
       ),
@@ -419,7 +414,6 @@ export const dispatchRunCallbacks$ = command(
       redriveChatCallbackId,
       redriveUndeliveredChatCallbackOnly,
       skipChatCallback,
-      awaitTerminalChatProjection,
     } = input;
     const [run] = await db
       .select({
@@ -491,7 +485,6 @@ export const dispatchRunCallbacks$ = command(
               result,
               error,
               kind: internalKind,
-              awaitTerminalChatProjection,
             },
             signal,
           )

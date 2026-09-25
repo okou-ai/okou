@@ -6,7 +6,6 @@ import {
   appendCanonicalChatEvents,
   type PreparedChatEventRow,
 } from "../../src/signals/services/chat-event-append.service";
-import { isSplitChatEventWriteEnabled } from "../../src/signals/services/chat-event-write-mode.service";
 import { createSequenceFixture, sequenceMigration } from "./fixture";
 import { verifyOwnershipAndReceiptPreparation } from "./preparation";
 import { verifyBackfillWithLegacyThreadLock } from "./backfill-locking";
@@ -17,6 +16,9 @@ const fixture = await createSequenceFixture();
 const { pool, db } = fixture;
 const bridge = await sequenceMigration("chat_event_sequence_bridge");
 const backfill = await sequenceMigration("backfill_chat_event_sequences");
+const contraction = await sequenceMigration(
+  "contract_chat_event_sequence_bridge",
+);
 function event(
   chatThreadId: string,
   fields: Partial<PreparedChatEventRow> = {},
@@ -37,6 +39,39 @@ async function watermark(threadId: string): Promise<number> {
   );
   return Number(result.rows[0]?.value ?? 0);
 }
+// Frozen outgoing writer: the pre-split API reserved through the thread counter.
+async function legacyReserve(threadId: string, count: number) {
+  const result = await pool.query<{ last: string }>(
+    "UPDATE chat_threads SET last_chat_event_seq_id=last_chat_event_seq_id+$2 WHERE id=$1 RETURNING last_chat_event_seq_id::text AS last",
+    [threadId, count],
+  );
+  const last = Number(result.rows[0]?.last);
+  return Array.from({ length: count }, (_, index) => {
+    return last - count + index + 1;
+  });
+}
+async function activation(): Promise<string | null> {
+  const result = await pool.query<{ activated: string | null }>(
+    "SELECT activated_at::text AS activated FROM chat_event_write_control WHERE id='global'",
+  );
+  assert.equal(result.rows.length, 1);
+  return result.rows[0]?.activated ?? null;
+}
+async function applyContraction(target = pool) {
+  const client = await target.connect();
+  try {
+    await client.query("BEGIN");
+    for (const statement of contraction) {
+      await client.query(statement);
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 async function createThread(lastSeqId = 0): Promise<string> {
   const id = randomUUID();
   await pool.query(
@@ -47,29 +82,17 @@ async function createThread(lastSeqId = 0): Promise<string> {
 }
 try {
   const retained = await createThread(100);
-  // An unseeded expansion is not an inactive rollout. Promotion requires the
-  // bridge migration below; missing required control data must fail closed.
-  await assert.rejects(isSplitChatEventWriteEnabled(db), {
-    message: "Chat event write control singleton is missing",
-  });
   // The rollout starts before new API promotion: outgoing writers still run.
   for (const statement of bridge) {
     await pool.query(statement);
   }
-  assert.equal(await isSplitChatEventWriteEnabled(db), false);
+  assert.equal(await activation(), null);
   const first = await createThread();
-  const [firstLegacy] = await appendCanonicalChatEvents(
-    db,
-    [event(first)],
-    "none",
-    false,
-  );
-  assert.equal(firstLegacy?.seqId, 1);
+  assert.deepEqual(await legacyReserve(first, 1), [1]);
   const [firstDirect] = await appendCanonicalChatEvents(
     db,
     [event(first)],
     "none",
-    true,
   );
   assert.equal(firstDirect?.seqId, 2);
   await pool.query("INSERT INTO chat_event_sequences VALUES($1,110)", [
@@ -93,12 +116,7 @@ try {
         client.release();
       }
     })(),
-    appendCanonicalChatEvents(
-      db,
-      [event(retained), event(retained)],
-      "any",
-      true,
-    ),
+    appendCanonicalChatEvents(db, [event(retained), event(retained)], "any"),
   ]);
   assert.equal(await watermark(seeded), 400);
   assert.equal(await watermark(retained), 113);
@@ -160,38 +178,36 @@ try {
     interrupted.release();
   }
   const mixed = await createThread();
-  const mixedRows = (
+  const mixedPositions = (
     await Promise.all(
-      Array.from({ length: 24 }, (_, index) => {
-        return appendCanonicalChatEvents(
-          db,
-          [event(mixed), event(mixed)],
-          "any",
-          index % 2 === 0,
-        );
+      Array.from({ length: 24 }, async (_, index) => {
+        if (index % 2 === 0) {
+          const rows = await appendCanonicalChatEvents(
+            db,
+            [event(mixed), event(mixed)],
+            "any",
+          );
+          return rows.map((row) => {
+            return row.seqId;
+          });
+        }
+        return await legacyReserve(mixed, 2);
       }),
     )
   ).flat();
-  assert.equal(
-    new Set(
-      mixedRows.map((row) => {
-        return row.seqId;
-      }),
-    ).size,
-    48,
-  );
+  assert.equal(new Set(mixedPositions).size, 48);
   assert.equal(await watermark(mixed), 48);
   const second = await createThread();
   await Promise.all([
-    appendCanonicalChatEvents(db, [event(mixed), event(second)], "any", true),
-    appendCanonicalChatEvents(db, [event(second), event(mixed)], "any", true),
-    appendCanonicalChatEvents(db, [event(second), event(mixed)], "any", false),
+    appendCanonicalChatEvents(db, [event(mixed), event(second)], "any"),
+    appendCanonicalChatEvents(db, [event(second), event(mixed)], "any"),
+    appendCanonicalChatEvents(db, [event(second), event(mixed)], "any"),
   ]);
   assert.equal(await watermark(second), 3);
   const id = randomUUID();
-  await appendCanonicalChatEvents(db, [event(second, { id })], "id", true);
+  await appendCanonicalChatEvents(db, [event(second, { id })], "id");
   assert.deepEqual(
-    await appendCanonicalChatEvents(db, [event(second, { id })], "id", true),
+    await appendCanonicalChatEvents(db, [event(second, { id })], "id"),
     [],
   );
   const gap = await watermark(second);
@@ -201,7 +217,6 @@ try {
       db,
       [event(second, { eventType: "input.prompt" }), event(second)],
       "none",
-      true,
     ),
   );
   assert.equal(await watermark(second), gap);
@@ -210,29 +225,22 @@ try {
     db,
     [event(second, { runId, runEventSequenceNumber: 10 })],
     "any",
-    true,
   );
   assert.deepEqual(
     await appendCanonicalChatEvents(
       db,
       [event(second, { runId, runEventSequenceNumber: 10 })],
       "any",
-      false,
     ),
     [],
   );
-  const [target] = await appendCanonicalChatEvents(
-    db,
-    [event(second)],
-    "none",
-    true,
-  );
+  const [target] = await appendCanonicalChatEvents(db, [event(second)], "none");
   assert.ok(target);
   const replacement = [
     event(second, { eventType: "control.revoke", revokesEventId: target.id }),
   ];
   const revocations = await Promise.all([
-    appendCanonicalChatEvents(db, replacement, "any", true),
+    appendCanonicalChatEvents(db, replacement, "any"),
     appendCanonicalChatEvents(
       db,
       [
@@ -242,18 +250,16 @@ try {
         }),
       ],
       "any",
-      false,
     ),
   ]);
   assert.equal(revocations.flat().length, 1);
   const terminal = [event(second, { runId, eventType: "run.completed" })];
   const completions = await Promise.all([
-    appendCanonicalChatEvents(db, terminal, "run-lifecycle", true),
+    appendCanonicalChatEvents(db, terminal, "run-lifecycle"),
     appendCanonicalChatEvents(
       db,
       [event(second, { runId, eventType: "run.failed" })],
       "run-lifecycle",
-      false,
     ),
   ]);
   assert.equal(completions.flat().length, 1);
@@ -263,7 +269,6 @@ try {
     db,
     [event(second)],
     "none",
-    true,
   );
   assert.equal(afterRetention?.seqId, beforeRetention + 1);
   // A normal control lock must remain compatible with the event FK KEY SHARE.
@@ -277,12 +282,7 @@ try {
     const writer = await pool.connect();
     try {
       await writer.query("SET lock_timeout='1s'");
-      await appendCanonicalChatEvents(
-        drizzle(writer),
-        [event(second)],
-        "none",
-        true,
-      );
+      await appendCanonicalChatEvents(drizzle(writer), [event(second)], "none");
     } finally {
       writer.release();
     }
@@ -297,12 +297,7 @@ try {
     try {
       await blocked.query("SET lock_timeout='100ms'");
       await assert.rejects(
-        appendCanonicalChatEvents(
-          drizzle(blocked),
-          [event(second)],
-          "none",
-          true,
-        ),
+        appendCanonicalChatEvents(drizzle(blocked), [event(second)], "none"),
         (error: unknown) => {
           return (
             typeof error === "object" &&
@@ -323,20 +318,35 @@ try {
     await lock.query("ROLLBACK");
     lock.release();
   }
+  // Contraction fails closed while legacy writes may still be serving.
+  await assert.rejects(applyContraction(), (error: unknown) => {
+    return (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "55000"
+    );
+  });
+  assert.equal(await activation(), null);
+  const beforeRefusedContraction = await watermark(second);
+  assert.deepEqual(await legacyReserve(second, 1), [
+    beforeRefusedContraction + 1,
+  ]);
   await pool.query(
     "UPDATE chat_event_write_control SET activated_at=now() WHERE id='global'",
   );
-  assert.equal(await isSplitChatEventWriteEnabled(db), true);
   await assert.rejects(
     pool.query(
       "UPDATE chat_event_write_control SET activated_at=NULL WHERE id='global'",
     ),
   );
   await assert.rejects(pool.query("DELETE FROM chat_event_write_control"));
-  // Planned PR2 shape: PR1 new mode cannot enumerate the retired physical field.
-  await pool.query(
-    "DROP TRIGGER bridge_chat_event_sequence_allocation ON chat_threads; DROP FUNCTION bridge_chat_event_sequence_allocation(); ALTER TABLE chat_threads DROP COLUMN last_chat_event_seq_id",
+  await applyContraction();
+  const contracted = await pool.query(
+    "SELECT count(*)::int AS count FROM information_schema.columns WHERE table_schema=$1 AND table_name='chat_threads' AND column_name='last_chat_event_seq_id'",
+    [fixture.schema],
   );
+  assert.equal(contracted.rows[0]?.count, 0);
   assert.doesNotMatch(
     db.insert(chatThreads).values({ userId: "fixture" }).returning().toSQL()
       .sql,
@@ -346,12 +356,13 @@ try {
     db.select().from(chatThreads).toSQL().sql,
     /last_chat_event_seq_id/,
   );
-  await appendCanonicalChatEvents(
+  const beforeContractedAppend = await watermark(second);
+  const [contractedAppend] = await appendCanonicalChatEvents(
     db,
     [event(second)],
     "none",
-    await isSplitChatEventWriteEnabled(db),
   );
+  assert.equal(contractedAppend?.seqId, beforeContractedAppend + 1);
   await pool.query("DELETE FROM chat_threads WHERE id=$1", [second]);
   assert.equal(await watermark(second), 0);
   process.stdout.write(
@@ -359,6 +370,33 @@ try {
   );
 } finally {
   await fixture.close();
+}
+
+// A database without threads has no legacy operation to drain.
+const pristine = await createSequenceFixture();
+try {
+  for (const statement of await sequenceMigration(
+    "chat_event_sequence_bridge",
+  )) {
+    await pristine.pool.query(statement);
+  }
+  await applyContraction(pristine.pool);
+  const control = await pristine.pool.query(
+    "SELECT activated_at IS NOT NULL AS active FROM chat_event_write_control",
+  );
+  assert.deepEqual(control.rows, [{ active: true }]);
+  const threadId = randomUUID();
+  await pristine.pool.query("INSERT INTO chat_threads(id) VALUES($1)", [
+    threadId,
+  ]);
+  const [pristineAppend] = await appendCanonicalChatEvents(
+    pristine.db,
+    [event(threadId)],
+    "none",
+  );
+  assert.equal(pristineAppend?.seqId, 1);
+} finally {
+  await pristine.close();
 }
 
 await verifyBackfillWithLegacyThreadLock();

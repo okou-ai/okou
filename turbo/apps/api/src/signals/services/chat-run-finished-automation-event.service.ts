@@ -29,11 +29,7 @@ import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.servic
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
 import { insertChatEvent } from "./chat-event.service";
-import {
-  touchChatThreadLastMessageAt,
-  touchChatThreadLastMessageAtIndependently,
-} from "./chat-event-shared.service";
-import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
+import { touchChatThreadLastMessageAtIndependently } from "./chat-event-shared.service";
 import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import { agentRunSourceTitleSnapshot } from "./chat-user-message.service";
 
@@ -50,47 +46,33 @@ async function appendAutonomyBudgetError(args: {
   readonly chatThreadId: string;
   readonly sourceRunId: string;
 }): Promise<boolean> {
-  const splitWrites = await isSplitChatEventWriteEnabled(args.db);
-  const event = {
-    id: uuidv5(
-      `${args.chatThreadId}:${args.sourceRunId}`,
-      AUTONOMY_BUDGET_ERROR_EVENT_NAMESPACE,
-    ),
-    chatThreadId: args.chatThreadId,
-    eventType: "output.error",
-    content: AUTONOMY_BUDGET_EXHAUSTED_MESSAGE,
-    runId: null,
-    error: "AUTONOMY_BUDGET_EXHAUSTED",
-  } as const;
-  if (splitWrites) {
-    const errorEvent = await insertChatEvent(args.db, event, "id", {
-      splitWrites,
-    });
-    if (!errorEvent) {
-      return false;
-    }
-    await attemptChatEventSideEffect("thread_touch", args.chatThreadId, () => {
-      return touchChatThreadLastMessageAtIndependently(
-        args.db,
-        args.chatThreadId,
-        errorEvent.createdAt,
-        errorEvent.id,
-      );
-    });
-    return true;
+  const errorEvent = await insertChatEvent(
+    args.db,
+    {
+      id: uuidv5(
+        `${args.chatThreadId}:${args.sourceRunId}`,
+        AUTONOMY_BUDGET_ERROR_EVENT_NAMESPACE,
+      ),
+      chatThreadId: args.chatThreadId,
+      eventType: "output.error",
+      content: AUTONOMY_BUDGET_EXHAUSTED_MESSAGE,
+      runId: null,
+      error: "AUTONOMY_BUDGET_EXHAUSTED",
+    },
+    "id",
+  );
+  if (!errorEvent) {
+    return false;
   }
-  return await args.db.transaction(async (tx) => {
-    const errorEvent = await insertChatEvent(tx, event, "id", { splitWrites });
-    if (!errorEvent) {
-      return false;
-    }
-    await touchChatThreadLastMessageAt(
-      tx,
+  await attemptChatEventSideEffect("thread_touch", args.chatThreadId, () => {
+    return touchChatThreadLastMessageAtIndependently(
+      args.db,
       args.chatThreadId,
       errorEvent.createdAt,
+      errorEvent.id,
     );
-    return true;
   });
+  return true;
 }
 
 /**
@@ -173,13 +155,13 @@ function chatRunFinishedTriggerContext(args: {
 
 class ChatRunFinishedAutomationAlreadyAdmittedError extends Error {}
 
+// Chat callback writers do not seed this receipt key; the first admission
+// creates it. An absent key therefore means no automation has been admitted
+// for this source callback yet.
 async function loadAdmittedChatRunFinishedAutomations(
   db: Db,
   event: ChatRunFinishedEvent,
 ): Promise<ReadonlySet<string>> {
-  if (event.sourceCallbackId === undefined) {
-    return new Set();
-  }
   const [source] = await db
     .select({
       automationIds:
@@ -263,7 +245,6 @@ const admitChatRunFinishedAutomation$ = command(
       automationId: automation.id,
       event,
     });
-    const sourceCallbackId = event.sourceCallbackId;
     const admission = await settle(
       set(
         runWorkflowAutomationNow$,
@@ -274,24 +255,18 @@ const admitChatRunFinishedAutomation$ = command(
             chatThreadId,
           },
           automationContext: context,
-          queueEventId:
-            event.sourceCallbackId === undefined
-              ? undefined
-              : uuidv5(
-                  `${automation.id}:${event.runId}`,
-                  CHAT_RUN_FINISHED_QUEUE_EVENT_NAMESPACE,
-                ),
-          persistSourceTransition:
-            sourceCallbackId === undefined
-              ? undefined
-              : (tx) => {
-                  return recordChatRunFinishedAutomationAdmission(
-                    tx,
-                    sourceCallbackId,
-                    event.runId,
-                    automation.id,
-                  );
-                },
+          queueEventId: uuidv5(
+            `${automation.id}:${event.runId}`,
+            CHAT_RUN_FINISHED_QUEUE_EVENT_NAMESPACE,
+          ),
+          persistSourceTransition: (tx) => {
+            return recordChatRunFinishedAutomationAdmission(
+              tx,
+              event.sourceCallbackId,
+              event.runId,
+              automation.id,
+            );
+          },
           apiStartTime: now(),
           agentRunSource: {
             runId: event.runId,

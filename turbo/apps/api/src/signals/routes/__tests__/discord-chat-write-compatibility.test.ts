@@ -7,7 +7,6 @@ import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow, now } from "../../../lib/time";
-import { withSplitChatEventDatabase } from "../../../test-fixtures/chat-terminal-retry";
 import { installDiscordContextFailureFixture } from "../../../test-fixtures/discord-context-failure";
 import { installDiscordDeliveryRegistrationFailureFixture } from "../../../test-fixtures/discord-delivery-registration-failure";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -176,101 +175,88 @@ async function exerciseContextRetry() {
 }
 
 describe("Discord chat-write rollout compatibility", () => {
-  it("retries a required context failure without a partial legacy input or duplicate reply", async () => {
+  it("retries a required context failure without a partial input or duplicate reply", async () => {
     expect.hasAssertions();
     await exerciseContextRetry();
   });
 
   it(
-    "creates and recovers a canonical Discord chat after the legacy allocator is contracted",
-    { timeout: 120_000 },
-    async () => {
-      expect.hasAssertions();
-      await withSplitChatEventDatabase(exerciseContextRetry, {
-        contracted: true,
-      });
-    },
-  );
-
-  it(
     "replays a committed terminal marker to register and send its missing Discord reply once",
     { timeout: 120_000 },
     async () => {
-      await withSplitChatEventDatabase(async () => {
-        const actor = await setupConnectedDiscordActor(context);
-        await withCleanup(
-          async () => {
-            runs.acceptTelemetryIngest();
-            const provider = mockDiscordProvider(actor);
-            const message = discordMessageForTest(actor, {
-              channelId: provider.guildChannelId,
-              content: `<@${actor.botUserId}> finish the replayed callback`,
-            });
-            provider.messages.set(message.id, message);
-            await postDiscordMessage(context, message);
-            await flushWaitUntilForTest();
-            const [thread] = await discordChatThreads(context, actor);
-            if (!thread) {
-              throw new Error("Expected the canonical Discord thread");
-            }
-            const [input] = inputs(await events(actor, thread.id));
-            if (!input?.runId) {
-              throw new Error("Expected a Discord Run");
-            }
-            await runs.heartbeatRunner(actor.runnerGroup);
-            const claim = await runs.claimRunnerJob(input.runId);
-            const headers = { authorization: `Bearer ${claim.sandboxToken}` };
-            const completion = {
-              runId: input.runId,
-              exitCode: 1,
-              error: "Internal Discord callback test failure",
-            };
-            const removeFault =
-              await installDiscordDeliveryRegistrationFailureFixture(thread.id);
-            await withCleanup(async () => {
-              const first = await webhooks.requestAgentComplete(
-                completion,
-                headers,
-                [200, 500],
-              );
-              expect(first.status).toBe(500);
-              const committed = await events(actor, thread.id);
-              expect(
-                committed.filter((event) => {
-                  return event.eventType === "run.failed";
-                }),
-              ).toHaveLength(1);
-              expect(provider.sentMessages).toHaveLength(0);
-            }, removeFault);
-
-            await webhooks.requestAgentComplete(completion, headers, [200]);
-            await webhooks.requestAgentComplete(completion, headers, [200]);
-            await flushWaitUntilForTest();
-            expect(provider.sentMessages).toHaveLength(1);
-            expect(provider.sentMessages[0]?.channel_id).toBe(message.id);
-            const final = await events(actor, thread.id);
-            const failed = final.filter((event) => {
-              return event.eventType === "run.failed";
-            });
-            expect(failed).toHaveLength(1);
-            const error = failed[0]?.content;
-            if (!error) {
-              throw new Error("Expected the canonical safe run error");
-            }
-            expect(provider.sentMessages[0]?.content).toContain(error);
-            expect(provider.sentMessages[0]?.content).not.toContain(
-              completion.error,
+      const actor = await setupConnectedDiscordActor(context);
+      await withCleanup(
+        async () => {
+          runs.acceptTelemetryIngest();
+          const provider = mockDiscordProvider(actor);
+          const message = discordMessageForTest(actor, {
+            channelId: provider.guildChannelId,
+            content: `<@${actor.botUserId}> finish the replayed callback`,
+          });
+          provider.messages.set(message.id, message);
+          await postDiscordMessage(context, message);
+          await flushWaitUntilForTest();
+          const [thread] = await discordChatThreads(context, actor);
+          if (!thread) {
+            throw new Error("Expected the canonical Discord thread");
+          }
+          const [input] = inputs(await events(actor, thread.id));
+          if (!input?.runId) {
+            throw new Error("Expected a Discord Run");
+          }
+          await runs.heartbeatRunner(actor.runnerGroup);
+          const claim = await runs.claimRunnerJob(input.runId);
+          const headers = { authorization: `Bearer ${claim.sandboxToken}` };
+          const completion = {
+            runId: input.runId,
+            exitCode: 1,
+            error: "Internal Discord callback test failure",
+          };
+          const removeFault =
+            await installDiscordDeliveryRegistrationFailureFixture(thread.id);
+          await withCleanup(async () => {
+            const first = await webhooks.requestAgentComplete(
+              completion,
+              headers,
+              [200, 500],
             );
-          },
-          flushWaitUntilForTest,
-          async () => {
-            await deleteDiscordFixture(context, actor.fixture);
-          },
-          async () => {
-            await deleteFeatureSwitchesForUser(context, actor);
-          },
-        );
-      });
+            expect(first.status).toBe(500);
+            const committed = await events(actor, thread.id);
+            expect(
+              committed.filter((event) => {
+                return event.eventType === "run.failed";
+              }),
+            ).toHaveLength(1);
+            expect(provider.sentMessages).toHaveLength(0);
+          }, removeFault);
+
+          await webhooks.requestAgentComplete(completion, headers, [200]);
+          await webhooks.requestAgentComplete(completion, headers, [200]);
+          await flushWaitUntilForTest();
+          expect(provider.sentMessages).toHaveLength(1);
+          expect(provider.sentMessages[0]?.channel_id).toBe(message.id);
+          const final = await events(actor, thread.id);
+          const failed = final.filter((event) => {
+            return event.eventType === "run.failed";
+          });
+          expect(failed).toHaveLength(1);
+          const error = failed[0]?.content;
+          if (!error) {
+            throw new Error("Expected the canonical safe run error");
+          }
+          expect(provider.sentMessages[0]?.content).toContain(error);
+          expect(provider.sentMessages[0]?.content).not.toContain(
+            completion.error,
+          );
+        },
+        flushWaitUntilForTest,
+        async () => {
+          await deleteDiscordFixture(context, actor.fixture);
+        },
+        async () => {
+          await deleteFeatureSwitchesForUser(context, actor);
+        },
+      );
     },
   );
 });

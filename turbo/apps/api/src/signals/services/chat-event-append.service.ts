@@ -44,15 +44,11 @@ function conflictClause(conflict: ChatEventAppendConflict): SQL {
  * One SQL statement owns allocation and insertion, including cross-thread batches.
  * Sorted reservations establish a common lock order. Intentional conflicts consume
  * positions; a SQL error rolls allocation back together with the insert.
- * The legacy entry protects DB/API rolling deployment and preactivation
- * rollback. PR2 removes it only after activation, legacy-operation drain and
- * verification of the active-only rollback floor.
  */
 export async function appendCanonicalChatEvents(
   db: ApiDb | Tx,
   values: readonly PreparedChatEventRow[],
   conflict: ChatEventAppendConflict,
-  splitWrites: boolean,
 ) {
   if (values.length === 0) {
     return [];
@@ -66,51 +62,6 @@ export async function appendCanonicalChatEvents(
       };
     }),
   );
-  const countsByThread = new Map<string, number>();
-  for (const event of values) {
-    countsByThread.set(
-      event.chatThreadId,
-      (countsByThread.get(event.chatThreadId) ?? 0) + 1,
-    );
-  }
-  const orderedCounts = [...countsByThread].sort(([left], [right]) => {
-    return left.localeCompare(right);
-  });
-  // A sorted locking SELECT before a multi-row UPDATE does not establish the
-  // order in which its triggers reserve sequence rows. Chain single-thread CTEs
-  // explicitly so legacy/direct batches share the same sequence lock order.
-  const legacyReservations = splitWrites
-    ? sql.empty()
-    : sql.join(
-        orderedCounts.map(([threadId, count], index) => {
-          const predecessor =
-            index === 0
-              ? sql`EXISTS (SELECT 1 FROM append_started)`
-              : sql`(SELECT count(*) FROM ${sql.identifier(`legacy_reservation_${index - 1}`)}) >= 0`;
-          return sql`${sql.identifier(`legacy_reservation_${index}`)} AS (
-      UPDATE chat_threads SET last_chat_event_seq_id = last_chat_event_seq_id + ${count}
-      WHERE id = ${threadId}::uuid AND ${predecessor}
-      RETURNING id AS chat_thread_id, last_chat_event_seq_id AS last_seq_id
-    ),`;
-        }),
-        sql` `,
-      );
-  // The legacy column appears only inside this inactive-after-activation branch.
-  const reserve = splitWrites
-    ? sql`
-        INSERT INTO chat_event_sequences (chat_thread_id, last_seq_id)
-        SELECT counts.chat_thread_id, counts.event_count
-        FROM counts CROSS JOIN append_started
-        ORDER BY counts.chat_thread_id
-        ON CONFLICT (chat_thread_id) DO UPDATE
-          SET last_seq_id = chat_event_sequences.last_seq_id + EXCLUDED.last_seq_id
-        RETURNING chat_thread_id, last_seq_id`
-    : sql.join(
-        orderedCounts.map((_, index) => {
-          return sql`SELECT chat_thread_id, last_seq_id FROM ${sql.identifier(`legacy_reservation_${index}`)}`;
-        }),
-        sql` UNION ALL `,
-      );
   const rows = await executeRawRows(
     db,
     sql`
@@ -127,8 +78,15 @@ export async function appendCanonicalChatEvents(
       FROM input GROUP BY "chatThreadId"
     ), append_started AS MATERIALIZED (
       SELECT clock_timestamp() AS started_at
-    ), ${legacyReservations}
-    reserved AS (${reserve}), allocation_finished AS MATERIALIZED (
+    ), reserved AS (
+      INSERT INTO chat_event_sequences (chat_thread_id, last_seq_id)
+      SELECT counts.chat_thread_id, counts.event_count
+      FROM counts CROSS JOIN append_started
+      ORDER BY counts.chat_thread_id
+      ON CONFLICT (chat_thread_id) DO UPDATE
+        SET last_seq_id = chat_event_sequences.last_seq_id + EXCLUDED.last_seq_id
+      RETURNING chat_thread_id, last_seq_id
+    ), allocation_finished AS MATERIALIZED (
       SELECT clock_timestamp() AS finished_at FROM (SELECT count(*) FROM reserved) AS completed
     ), inserted AS (
       INSERT INTO chat_events (

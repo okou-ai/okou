@@ -1,7 +1,5 @@
 import { withNativeChatEventThreadTouch } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
-import type { Tx } from "../../lib/db-types";
-import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { command, computed } from "ccstate";
 import {
@@ -51,7 +49,6 @@ import { writeDb$, type Db } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
   publishOrgSignal,
-  publishThreadListChanged,
   publishThreadListChangedSafely,
 } from "../external/realtime";
 import { checkTelegramDomain } from "../external/telegram-domain";
@@ -1903,7 +1900,6 @@ async function resolveTelegramChatMessageThread(
 type PersistedTelegramChatMessage =
   | {
       readonly inserted: true;
-      readonly splitWrites: boolean;
       readonly chatThreadId: string;
       readonly chatEventId: string;
     }
@@ -1934,8 +1930,6 @@ const persistTelegramChatMessage$ = command(
     if (existingMessage) {
       return { inserted: false };
     }
-    const splitWrites = await isSplitChatEventWriteEnabled(args.source.db);
-    signal.throwIfAborted();
     const binding = await resolveTelegramChatMessageThread(args, currentTime);
     signal.throwIfAborted();
 
@@ -1957,22 +1951,17 @@ const persistTelegramChatMessage$ = command(
       ...args.source,
       canonicalAsset,
     });
-    const bindReplyRoute = async (writer: Db | Tx) => {
-      if (args.source.isDM && args.source.message.reply_to_message) {
-        await bindTelegramReplyMessageRoute(writer, {
-          ownerLink: telegramOwnerLink(args.source),
-          chatId: args.chatId,
-          rootMessageId: String(args.source.message.message_id),
-          chatThreadId: binding.chatThreadId,
-          currentTime,
-        });
-        signal.throwIfAborted();
-      }
-    };
-    if (splitWrites) {
-      await bindReplyRoute(args.source.db);
+    if (args.source.isDM && args.source.message.reply_to_message) {
+      await bindTelegramReplyMessageRoute(args.source.db, {
+        ownerLink: telegramOwnerLink(args.source),
+        chatId: args.chatId,
+        rootMessageId: String(args.source.message.message_id),
+        chatThreadId: binding.chatThreadId,
+        currentTime,
+      });
+      signal.throwIfAborted();
     }
-    const persist = async (tx: Db | Tx, touchThread: () => Promise<void>) => {
+    const persist = async (tx: Db, touchThread: () => Promise<void>) => {
       const event = await insertChatEvent(
         tx,
         {
@@ -1999,14 +1988,10 @@ const persistTelegramChatMessage$ = command(
           createdAt: currentTime,
         },
         "id",
-        { splitWrites },
       );
       signal.throwIfAborted();
       if (!event) {
         return false;
-      }
-      if (!splitWrites) {
-        await bindReplyRoute(tx);
       }
       await touchThread();
       return true;
@@ -2014,7 +1999,6 @@ const persistTelegramChatMessage$ = command(
     const inserted = await withNativeChatEventThreadTouch(
       args.source.db,
       {
-        splitWrites,
         chatThreadId: binding.chatThreadId,
         createdAt: currentTime,
         eventId: chatEventId,
@@ -2023,12 +2007,7 @@ const persistTelegramChatMessage$ = command(
     );
     signal.throwIfAborted();
     return inserted
-      ? {
-          inserted: true,
-          splitWrites,
-          chatThreadId: binding.chatThreadId,
-          chatEventId,
-        }
+      ? { inserted: true, chatThreadId: binding.chatThreadId, chatEventId }
       : { inserted: false };
   },
 );
@@ -2117,11 +2096,7 @@ const runAgentForTelegram$ = command(
       threadId: persisted.chatThreadId,
     });
     signal.throwIfAborted();
-    await (
-      persisted.splitWrites
-        ? publishThreadListChangedSafely
-        : publishThreadListChanged
-    )({
+    await publishThreadListChangedSafely({
       userId: args.source.userLink.userId,
       orgId: args.source.orgId,
     });
@@ -2193,7 +2168,6 @@ const handleTelegramAgentMessage$ = command(
       modelRoute,
     });
     const context = await loadOptionalChatEnrichment(
-      args.db,
       "telegram",
       () => {
         return fetchTelegramContext({

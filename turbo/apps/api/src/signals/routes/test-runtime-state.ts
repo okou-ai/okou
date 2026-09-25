@@ -1,4 +1,4 @@
-import { chatThreads as legacyChatThreads } from "@okouai/db/schema/chat-thread";
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import {
   piModelConfigV4Schema,
   PI_NATIVE_CREDENTIAL_PLACEHOLDER,
@@ -1728,7 +1728,7 @@ type ChatEventFixtureAction = Extract<
   TestRuntimeStateActionBody,
   {
     action:
-      | "advance-chat-event-sequence-as-previous-api"
+      | "reserve-chat-event-sequence-gap"
       | "read-chat-event-rows-as-previous-api"
       | "read-chat-event-snapshot-head"
       | "update-chat-event-snapshot-head";
@@ -1739,7 +1739,7 @@ function isChatEventFixtureAction(
   body: TestRuntimeStateActionBody,
 ): body is ChatEventFixtureAction {
   return (
-    body.action === "advance-chat-event-sequence-as-previous-api" ||
+    body.action === "reserve-chat-event-sequence-gap" ||
     body.action === "read-chat-event-rows-as-previous-api" ||
     body.action === "read-chat-event-snapshot-head" ||
     body.action === "update-chat-event-snapshot-head"
@@ -1851,20 +1851,18 @@ async function chatEventFixtureActionResponse(
   body: ChatEventFixtureAction,
   signal: AbortSignal,
 ) {
-  if (body.action === "advance-chat-event-sequence-as-previous-api") {
-    const [updated] = await db
-      .update(legacyChatThreads)
-      .set({
-        lastChatEventSeqId: sql`${legacyChatThreads.lastChatEventSeqId} + ${body.count}`,
-      })
-      .where(eq(legacyChatThreads.id, body.thread_id))
-      .returning({ id: legacyChatThreads.id });
+  if (body.action === "reserve-chat-event-sequence-gap") {
+    // Reserved positions can remain unused after intentional conflicts.
+    await db
+      .insert(chatEventSequences)
+      .values({ chatThreadId: body.thread_id, lastSeqId: body.count })
+      .onConflictDoUpdate({
+        target: chatEventSequences.chatThreadId,
+        set: {
+          lastSeqId: sql`${chatEventSequences.lastSeqId} + ${body.count}`,
+        },
+      });
     signal.throwIfAborted();
-    if (!updated) {
-      throw new Error(
-        "advance-chat-event-sequence-as-previous-api missing thread",
-      );
-    }
     return { status: 200 as const, body: { ok: true as const } };
   }
   if (body.action === "read-chat-event-rows-as-previous-api") {

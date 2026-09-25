@@ -148,11 +148,7 @@ cat >"${fake_bin}/psql" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 [ "${MOCK_CHAT_EVENT_DB_AVAILABLE:-1}" = 1 ] || exit 1
-if [[ "$*" == *to_regclass* ]]; then
-  printf '%s\n' "${MOCK_CHAT_EVENT_CONTROL_PRESENT-t}"
-else
-  printf '%s\n' "${MOCK_CHAT_EVENT_ACTIVATED-f}"
-fi
+printf '%s\n' "${MOCK_CHAT_EVENT_ACTIVATED-t}"
 SH
 chmod +x "${fake_bin}/psql"
 chmod +x "${fake_bin}/git" "${fake_bin}/curl" "${fake_bin}/ssh"
@@ -755,13 +751,10 @@ fi
 
 echo "resolve-production-rollback-target tests passed"
 
-# Reader floor is conditional on live activation, never the expansion commit alone.
-run_resolver "${tmp_dir}/preactivation.output" MOCK_CHAT_EVENT_READER_VALID=0 >/dev/null
-run_resolver "${tmp_dir}/preexpansion.output" MOCK_CHAT_EVENT_CONTROL_PRESENT=f MOCK_CHAT_EVENT_READER_VALID=0 >/dev/null
-assert_failure "predates activated split chat event writes" run_resolver "${tmp_dir}/activated.output" MOCK_CHAT_EVENT_ACTIVATED=t MOCK_CHAT_EVENT_READER_VALID=0
-run_resolver "${tmp_dir}/new-reader.output" MOCK_CHAT_EVENT_ACTIVATED=t >/dev/null
-assert_failure "rollout control row is missing" run_resolver "${tmp_dir}/missing-control.output" MOCK_CHAT_EVENT_ACTIVATED=
-assert_failure "Cannot resolve the merged split chat event reader" run_resolver "${tmp_dir}/unknown-floor.output" MOCK_CHAT_EVENT_ACTIVATED=t MOCK_CHAT_EVENT_READER_COMMIT=
-if run_resolver "${tmp_dir}/db-unavailable.output" MOCK_CHAT_EVENT_DB_AVAILABLE=0 >/dev/null 2>&1; then
-  fail "an unavailable rollout authority must block rollback"
-fi
+# The contracted schema accepts only activated APIs at or after the split reader.
+assert_failure "split writes are not activated" run_resolver "${tmp_dir}/preactivation.output" MOCK_CHAT_EVENT_ACTIVATED=f
+assert_failure "predates activated split chat event writes" run_resolver "${tmp_dir}/activated.output" MOCK_CHAT_EVENT_READER_VALID=0
+run_resolver "${tmp_dir}/new-reader.output" >/dev/null
+assert_failure "split writes are not activated" run_resolver "${tmp_dir}/missing-control.output" MOCK_CHAT_EVENT_ACTIVATED=
+assert_failure "Cannot resolve the merged split chat event reader" run_resolver "${tmp_dir}/unknown-floor.output" MOCK_CHAT_EVENT_READER_COMMIT=
+assert_failure "Cannot establish chat event rollout state" run_resolver "${tmp_dir}/db-unavailable.output" MOCK_CHAT_EVENT_DB_AVAILABLE=0

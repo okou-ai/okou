@@ -172,7 +172,7 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     thread_id: z.uuid(),
   }),
   z.object({
-    action: z.literal("advance-chat-event-sequence-as-previous-api"),
+    action: z.literal("reserve-chat-event-sequence-gap"),
     thread_id: z.uuid(),
     count: z.int().positive(),
   }),

@@ -859,12 +859,6 @@ const RELATIONAL_NAMESPACE = "6f5d2a90-5a1e-4c6a-9b6f-1d0c8a4b7e33";
  */
 export const RELATIONAL_ERASURE_COLLECTOR_VERSION =
   "f75c6bcb-b5f8-48a0-915e-c6e3b8f51f5a";
-// Already captured #36302 jobs retain their selectors and original contract.
-export const PRE_SPLIT_RELATIONAL_ERASURE_COLLECTOR_VERSION =
-  "a296ba1a-e288-4ad9-9238-29ad0ab2e36e";
-export type RelationalErasureCollectorVersion =
-  | typeof RELATIONAL_ERASURE_COLLECTOR_VERSION
-  | typeof PRE_SPLIT_RELATIONAL_ERASURE_COLLECTOR_VERSION;
 
 // The fence's own deadlines. A sweep waits for admission behind the exclusive
 // subject lock, so its lock timeout is the fence's, not a route's.
@@ -1181,13 +1175,10 @@ export async function sweepRelationalErasure(
   });
 }
 
-function enumerationReference(
-  plan: RelationalErasurePlan,
-  collectorVersion: RelationalErasureCollectorVersion,
-): string {
+function enumerationReference(plan: RelationalErasurePlan): string {
   return reference([
     "relational-enumeration",
-    collectorVersion,
+    RELATIONAL_ERASURE_COLLECTOR_VERSION,
     plan.order.map((root) => {
       return [root.table, root.owners];
     }),
@@ -1253,7 +1244,6 @@ async function verifyRelationalErasure(
   plan: RelationalErasurePlan,
   lease: ErasureLease,
   producerBoundary: string,
-  collectorVersion: RelationalErasureCollectorVersion,
 ): Promise<ErasureProof | ErasureUnresolved> {
   // Rows this sink cannot reach are not rows it may report clean. The gate
   // is here rather than inside a `catch`, so the outcome is a typed
@@ -1309,10 +1299,10 @@ async function verifyRelationalErasure(
     ]),
     authenticatedReaderRef: reference([
       "relational-reader",
-      collectorVersion,
+      RELATIONAL_ERASURE_COLLECTOR_VERSION,
       reader.reader,
     ]),
-    enumerationRef: enumerationReference(plan, collectorVersion),
+    enumerationRef: enumerationReference(plan),
     observedAt: observed.observed_at,
   };
 }
@@ -1325,30 +1315,10 @@ async function verifyRelationalErasure(
  */
 export function createRelationalErasureCollector(
   db: Db,
-  currentPlan: RelationalErasurePlan,
-  collectorVersion: RelationalErasureCollectorVersion = RELATIONAL_ERASURE_COLLECTOR_VERSION,
+  plan: RelationalErasurePlan,
 ): ErasureHandler {
-  // Re-enumerating all sinks after legacy cleanup would lose selectors whose
-  // source rows are already gone. Replay the original relational coverage;
-  // thread cascade removes the new sequence rows, and recurring maintenance
-  // removes late provenance through its copied ownership after completion.
-  // PR2 may remove this captured-version branch only after every preceding
-  // capture and its provider obligations have completed or been retired; a
-  // successful API rollout alone does not drain these durable jobs.
-  const plan =
-    collectorVersion === PRE_SPLIT_RELATIONAL_ERASURE_COLLECTOR_VERSION
-      ? {
-          ...currentPlan,
-          order: currentPlan.order.filter((root) => {
-            return root.table !== "chat_agent_run_context";
-          }),
-          descendants: currentPlan.descendants.filter((path) => {
-            return path.child !== "chat_event_sequences";
-          }),
-        }
-      : currentPlan;
   return {
-    version: collectorVersion,
+    version: RELATIONAL_ERASURE_COLLECTOR_VERSION,
     inventory: async (lease, cursor) => {
       const subject = await leaseSubject(db, lease);
       if (!subject) {
@@ -1383,7 +1353,7 @@ export function createRelationalErasureCollector(
         ]),
         inputCursorDigest: lease.item.cursorDigest,
         nextCursor: null,
-        enumerationRef: enumerationReference(plan, collectorVersion),
+        enumerationRef: enumerationReference(plan),
         items: [item],
       };
     },
@@ -1437,13 +1407,7 @@ export function createRelationalErasureCollector(
       };
     },
     verify: async (lease, producerBoundary) => {
-      return await verifyRelationalErasure(
-        db,
-        plan,
-        lease,
-        producerBoundary,
-        collectorVersion,
-      );
+      return await verifyRelationalErasure(db, plan, lease, producerBoundary);
     },
   };
 }

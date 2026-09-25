@@ -22,7 +22,6 @@ import {
   chatThreadEventSequences,
 } from "@okouai/db/schema/chat-thread-event";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
-import { chatEventWriteControl } from "@okouai/db/schema/chat-event-write-control";
 import { completeChatContentDeletion } from "@okouai/db/operations/chat-content-erasure";
 import { insertChatEvent } from "../../src/signals/services/chat-event.service";
 import { clearThreadDraftIndependently } from "../../src/signals/services/chat-event-write-side-effects.service";
@@ -93,10 +92,6 @@ try {
     env: { ...process.env, DATABASE_URL: url.toString() },
     maxBuffer: 20 * 1024 * 1024,
   });
-  await db
-    .update(chatEventWriteControl)
-    .set({ activatedAt: new Date() })
-    .where(eq(chatEventWriteControl.id, "global"));
 
   await test("draft failures preserve the committed message and do not suppress later writes", async () => {
     const f = await fixture();

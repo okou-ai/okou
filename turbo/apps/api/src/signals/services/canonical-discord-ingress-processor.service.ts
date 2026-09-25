@@ -50,7 +50,6 @@ import {
   touchChatThreadLastMessageAt,
   touchChatThreadLastMessageAtIndependently,
 } from "./chat-event-shared.service";
-import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import {
   insertChatEvent,
@@ -359,8 +358,6 @@ async function persistMessage(
   },
   signal: AbortSignal,
 ): Promise<boolean> {
-  const splitWrites = await isSplitChatEventWriteEnabled(db);
-  signal.throwIfAborted();
   // Claim ownership and acknowledgement remain atomic with the accepted input.
   const persisted = await db.transaction(async (tx) => {
     const [claimed] = await tx
@@ -379,7 +376,7 @@ async function persistMessage(
     if (!claimed) {
       return false;
     }
-    const inserted = await insertChatEvent(
+    await insertChatEvent(
       tx,
       {
         id: args.ingress.id,
@@ -398,19 +395,8 @@ async function persistMessage(
         createdAt: args.ingress.createdAt,
       },
       "id",
-      { splitWrites },
     );
     signal.throwIfAborted();
-    if (inserted && !splitWrites) {
-      await touchChatThreadLastMessageAt(
-        tx,
-        args.ingress.chatThreadId,
-        args.ingress.createdAt,
-        args.ingress.id,
-        { userId: args.ingress.userId, orgId: args.orgId },
-      );
-      signal.throwIfAborted();
-    }
     await tx
       .update(discordChatIngress)
       .set({
@@ -427,7 +413,7 @@ async function persistMessage(
     return true;
   });
   signal.throwIfAborted();
-  if (persisted && splitWrites) {
+  if (persisted) {
     await attemptChatEventSideEffect(
       "thread_touch",
       args.ingress.chatThreadId,

@@ -287,7 +287,7 @@ a later transaction so scans do not hold the expansion's exclusive table locks.
 
 Discord thread creation uses the preparation API runtime mapping, so its implicit
 INSERT remains legal after the separately authorized legacy allocator contraction.
-The physical table keeps the column for DDL and the existing bridge. Discord
+The chat event contraction later removed that column and bridge. Discord
 input claims, required per-message context, canonical events and durable ingress
 completion stay atomic; the active mode moves weak thread activity updates after
 commit. Terminal callback replay repairs missing Discord outbox registration.
@@ -511,13 +511,29 @@ production comparisons must report field coverage and Runner version mix;
 missing timing is never a zero duration. The Guest protocol and storage apply
 behavior are unchanged.
 
+## Chat event split-write contraction (2026-09-25)
+
+Release 2 of [the two-release chat event rollout](chat-event-split-write-rollout.md)
+removes the legacy write mode. Production activated split writes at
+2026-09-25 00:06:25 UTC. Migration `contract_chat_event_sequence_bridge` locks
+`chat_threads` and `chat_event_write_control`, fails with SQLSTATE `55000` unless
+the control row is activated, and then drops the allocation bridge trigger,
+its function and `chat_threads.last_chat_event_seq_id`. A database without
+chat threads is activated by the migration. Every other database, including a
+shared preview parent, must run the documented control write first.
+
+Release 1 APIs remain compatible with the contracted schema only in active
+mode: their runtime mapping already omits the column. The rollback resolver
+requires an activated control row and refuses targets that predate the split
+reader. Never null the activation marker or restore a pre-Release-1 binary.
+
 ## Chat event split-write preparation
 
 See [the two-release chat event rollout](chat-event-split-write-rollout.md) for
 the temporary allocation bridge, inactive global control, reader/writer drain,
 activation prerequisites, late-content maintenance, and postactivation rollback
-floor. This release retains the legacy column and bridge. Migration and API
-promotion do not authorize or perform activation; contraction is a later PR.
+floor. That release retained the legacy column and bridge; the contraction
+above removes them after activation.
 
 ## Codex 0.156.1 OAuth workspace routing
 
