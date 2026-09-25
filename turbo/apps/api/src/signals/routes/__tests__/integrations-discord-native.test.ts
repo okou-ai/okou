@@ -366,6 +366,53 @@ function send(f: Fixture, channelId = f.channelId, text = "hello") {
 }
 
 describe("Discord native authorization and reads", () => {
+  it.each([15, 16] as const)(
+    "reads a post in a type %s forum or media channel by its thread ID",
+    async (type) => {
+      const f = await fixture();
+      f.channels.get(f.channelId)!.type = type;
+      addThread(f);
+      expect(
+        (await accept(history(f, f.threadId), [200])).body.messages[0]?.content,
+      ).toBe("thread message");
+      expect((await accept(history(f), [404])).body.error.code).toBe(
+        "NOT_FOUND",
+      );
+    },
+  );
+
+  it("returns attachment metadata without the signed CDN URL", async () => {
+    const f = await fixture();
+    const signedUrl =
+      "https://cdn.discordapp.com/attachments/1/2/report.pdf?ex=66f0&is=66ef&hm=0123abcd";
+    const attachmentId = snowflake();
+    f.messages.set(f.channelId, [
+      {
+        ...f.message(),
+        attachments: [
+          {
+            id: attachmentId,
+            filename: "report.pdf",
+            size: 1234,
+            url: signedUrl,
+            proxy_url: signedUrl.replace("cdn", "media"),
+            content_type: "application/pdf",
+          },
+        ],
+      },
+    ]);
+    const read = await accept(history(f), [200]);
+    expect(read.body.messages[0]?.attachments).toStrictEqual([
+      {
+        id: attachmentId,
+        filename: "report.pdf",
+        size: 1234,
+        contentType: "application/pdf",
+      },
+    ]);
+    expect(JSON.stringify(read.body)).not.toContain("hm=0123abcd");
+  });
+
   it("returns exact snowflake pagination and source links", async () => {
     const f = await fixture();
     f.messages.set(f.channelId, [
@@ -559,7 +606,7 @@ describe("Discord native authorization and reads", () => {
     expect((await accept(history(f), [200])).body.messages).toHaveLength(1);
   });
 
-  it("lists only mutually visible message channels and requires history permission to read", async () => {
+  it("lists only mutually visible readable channels and requires history permission to read", async () => {
     const f = await fixture();
     const hidden = snowflake();
     f.channels.set(hidden, {
@@ -571,6 +618,22 @@ describe("Discord native authorization and reads", () => {
         { id: f.botUserId, type: 1, deny: String(VIEW), allow: "0" },
       ],
     });
+    const byType = new Map<number, string>();
+    for (const [type, name] of [
+      [5, "announcements"],
+      [15, "forum"],
+      [16, "media"],
+    ] as const) {
+      const id = snowflake();
+      byType.set(type, id);
+      f.channels.set(id, {
+        id,
+        guild_id: f.guildId,
+        type,
+        name,
+        permission_overwrites: [],
+      });
+    }
     const listed = await accept(
       f.read.listChannels({ headers: f.headers, query: {} }),
       [200],
@@ -579,7 +642,13 @@ describe("Discord native authorization and reads", () => {
       listed.body.channels.map((channel) => {
         return channel.id;
       }),
-    ).toStrictEqual([f.channelId]);
+    ).toStrictEqual([f.channelId, byType.get(5)]);
+    await accept(history(f, byType.get(5)), [200]);
+    for (const container of [byType.get(15)!, byType.get(16)!]) {
+      expect((await accept(history(f, container), [404])).body.error.code).toBe(
+        "NOT_FOUND",
+      );
+    }
     f.channels.get(f.channelId)!.permission_overwrites = [
       { id: f.discordUserId, type: 1, deny: String(READ), allow: "0" },
     ];

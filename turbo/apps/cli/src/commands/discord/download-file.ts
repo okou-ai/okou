@@ -19,7 +19,10 @@ export const downloadFileCommand = new Command()
   .argument("<attachment-id>", "Discord attachment ID")
   .requiredOption("-c, --channel <id>", "Discord channel or thread ID")
   .requiredOption("-m, --message <id>", "Discord message ID")
-  .option("--guild-id <id>", "Guild for the Discord connection")
+  .option(
+    "--guild-id <id>",
+    "Optional; must match your organization's bound guild",
+  )
   .option(
     "-o, --out <path>",
     "Output path (default: /tmp/discord-<attachment-id>)",

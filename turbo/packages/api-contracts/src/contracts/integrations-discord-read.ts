@@ -60,7 +60,6 @@ export const discordHistoryMessageSchema = z.object({
       id: discordSnowflakeSchema,
       filename: z.string(),
       size: z.number().int().nonnegative(),
-      url: z.string().url(),
       contentType: z.string().optional(),
     }),
   ),

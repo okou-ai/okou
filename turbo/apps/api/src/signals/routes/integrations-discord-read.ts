@@ -53,8 +53,10 @@ const listChannels$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const channels: DiscordChannelListResponse["channels"] = [];
   for (const channel of result.data) {
+    // Forum and media channels hold posts as threads and have no readable
+    // history of their own, so list only channels that history can read.
     if (
-      ![0, 5, 15, 16].includes(channel.type) ||
+      ![0, 5].includes(channel.type) ||
       !discordSharedChannelPermissions(guild.access, channel, "view", false)
     ) {
       continue;
