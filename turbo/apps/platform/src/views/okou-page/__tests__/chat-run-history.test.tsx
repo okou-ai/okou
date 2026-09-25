@@ -443,6 +443,13 @@ test.each([
     steps: "1 个步骤",
   },
   {
+    locale: "zh-Hans" as const,
+    active: true,
+    durationMs: 69 * 60_000,
+    expected: "已工作 1 小时 9 分钟",
+    steps: "1 个步骤",
+  },
+  {
     locale: "zh-Hant" as const,
     active: false,
     durationMs: 69 * 60_000,
