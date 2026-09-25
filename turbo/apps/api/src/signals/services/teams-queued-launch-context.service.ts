@@ -1,4 +1,5 @@
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route";
@@ -40,7 +41,6 @@ type TeamsLaunchContextRow = Pick<
   | "activityId"
   | "serviceUrl"
   | "teamsAppId"
-  | "publicBrand"
   | "senderUserId"
   | "senderDisplayName"
   | "senderPrincipalName"
@@ -100,7 +100,6 @@ async function loadTeamsLaunchContext(
       activityId: chatTeamsContext.activityId,
       serviceUrl: chatTeamsContext.serviceUrl,
       teamsAppId: chatTeamsContext.teamsAppId,
-      publicBrand: chatTeamsContext.publicBrand,
       senderUserId: chatTeamsContext.senderUserId,
       senderDisplayName: chatTeamsContext.senderDisplayName,
       senderPrincipalName: chatTeamsContext.senderPrincipalName,
@@ -222,7 +221,7 @@ export async function loadTeamsQueuedLaunchMaterial(
       }),
       threadContext: context.threadContext,
     }),
-    publicBrand: context.publicBrand,
+    publicBrand: PUBLIC_BRAND,
     teamsDelivery: teamsDeliveryTargetSchema.parse({
       tenantId: context.tenantId,
       tenantName: context.tenantName,
@@ -240,7 +239,6 @@ export async function loadTeamsQueuedLaunchMaterial(
       teamsUserPrincipalName: context.senderPrincipalName,
       botId,
       botName,
-      publicBrand: context.publicBrand,
       files: context.messageFiles.map((file) => {
         return { fileId: file.fileId, ...file.payload };
       }),

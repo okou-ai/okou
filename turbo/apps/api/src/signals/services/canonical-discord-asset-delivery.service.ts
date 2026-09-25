@@ -416,6 +416,18 @@ const unconfirmedDeliveryError: CanonicalAssetDeliveryError = Object.freeze({
  */
 const DISCORD_NONCE_REPLAY_WINDOW_MS = 60_000;
 
+/** Used when Discord's 429 body carries no valid delay, e.g. an HTML error page. */
+const DISCORD_FALLBACK_RETRY_DELAY_MS = 5000;
+/** Upper bound so an extreme delay cannot block a retryable operation forever. */
+const DISCORD_MAX_RETRY_DELAY_MS = 15 * 60_000;
+
+function discordRetryDelayMs(retryAfterMs: number | undefined): number {
+  if (retryAfterMs === undefined) {
+    return DISCORD_FALLBACK_RETRY_DELAY_MS;
+  }
+  return Math.min(Math.ceil(retryAfterMs), DISCORD_MAX_RETRY_DELAY_MS);
+}
+
 function discordSendFailure(result: {
   readonly status: number;
   readonly retryAfterMs?: number;
@@ -431,25 +443,10 @@ function discordSendFailure(result: {
       retry: { safeToRetrySend: false },
     };
   }
-  let retryNotBeforeMs: number | undefined;
-  if (
-    result.status === 429 &&
-    result.retryAfterMs !== undefined &&
-    result.retryAfterMs > 0
-  ) {
-    retryNotBeforeMs = now() + Math.ceil(result.retryAfterMs);
-    if (!Number.isSafeInteger(retryNotBeforeMs)) {
-      return {
-        error: {
-          code: "discord-retry-delay-unsupported",
-          message:
-            "Discord returned an unsupported retry delay. Delivery is blocked for this operation.",
-          retryable: false,
-        },
-        retry: { safeToRetrySend: true },
-      };
-    }
-  }
+  const retryNotBeforeMs =
+    result.status === 429
+      ? now() + discordRetryDelayMs(result.retryAfterMs)
+      : undefined;
   return {
     error: {
       code: "discord-send-rejected",
@@ -524,11 +521,8 @@ function replayRetryFitsWindow(
   status: number,
   retry: DiscordDeliveryRetry,
 ): boolean {
-  if (status !== 429) {
+  if (status !== 429 || retry.retryNotBeforeMs === undefined) {
     return false;
-  }
-  if (retry.retryNotBeforeMs === undefined) {
-    return true;
   }
   return (
     retry.retryNotBeforeMs <

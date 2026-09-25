@@ -4,7 +4,6 @@ import { and, eq } from "drizzle-orm";
 import { telegramInstallations } from "@okouai/db/schema/telegram-installation";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
 import { telegramUserLinks } from "@okouai/db/schema/telegram-user-link";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 
 import { now, nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
@@ -50,7 +49,6 @@ export interface TelegramInstallationForLink {
   readonly botUsername: string | null;
   readonly botToken: string;
   readonly orgId: string;
-  readonly publicBrand: PublicBrand;
 }
 
 function telegramUserProfileUpdate(
@@ -203,7 +201,6 @@ export function telegramInstallationForLink(args: {
         encryptedBotToken: telegramInstallations.encryptedBotToken,
         orgId: telegramInstallations.orgId,
         ownerUserId: telegramInstallations.ownerUserId,
-        publicBrand: telegramInstallations.publicBrand,
       })
       .from(telegramInstallations)
       .where(eq(telegramInstallations.telegramBotId, args.botId))
@@ -221,7 +218,6 @@ export function telegramInstallationForLink(args: {
         await get(userFeatureSwitchContext(row.orgId, row.ownerUserId)),
       ),
       orgId: row.orgId,
-      publicBrand: row.publicBrand,
     };
   });
 }
@@ -364,7 +360,6 @@ export const linkOfficialTelegramUser$ = command(
       readonly telegramDisplayName?: string | null;
       readonly userId: string;
       readonly orgId: string;
-      readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
   ): Promise<LinkOfficialTelegramUserResult> => {
@@ -401,7 +396,6 @@ export const linkOfficialTelegramUser$ = command(
             params.telegramDisplayName === undefined
               ? existingTelegramLink.telegramDisplayName
               : normalizeTelegramDisplayName(params.telegramDisplayName),
-          publicBrand: params.publicBrand,
           updatedAt: nowDate(),
         })
         .where(eq(telegramOfficialUserLinks.id, existingTelegramLink.id))
@@ -438,7 +432,6 @@ export const linkOfficialTelegramUser$ = command(
               params.telegramDisplayName === undefined
                 ? existingUserOrgLink.telegramDisplayName
                 : normalizeTelegramDisplayName(params.telegramDisplayName),
-            publicBrand: params.publicBrand,
             updatedAt: nowDate(),
           })
           .where(eq(telegramOfficialUserLinks.id, existingUserOrgLink.id))
@@ -467,7 +460,6 @@ export const linkOfficialTelegramUser$ = command(
         ),
         userId: params.userId,
         orgId: params.orgId,
-        publicBrand: params.publicBrand,
       })
       .onConflictDoNothing()
       .returning();

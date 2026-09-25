@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { command, computed } from "ccstate";
 import { and, count, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import {
@@ -97,7 +96,6 @@ async function loadInstallation(db: ReadonlyDb, botId: string) {
       orgId: telegramInstallations.orgId,
       ownerUserId: telegramInstallations.ownerUserId,
       defaultAgentId: telegramInstallations.defaultAgentId,
-      publicBrand: telegramInstallations.publicBrand,
       createdAt: telegramInstallations.createdAt,
     })
     .from(telegramInstallations)
@@ -457,7 +455,6 @@ async function seedTelegramInstallationForAction(
 
   await db.insert(telegramInstallations).values({
     telegramBotId,
-    publicBrand: PUBLIC_BRAND,
     botUsername:
       readActionNullableString(body, "bot_username") ?? `bot_${telegramBotId}`,
     encryptedBotToken,
@@ -844,7 +841,6 @@ async function seedTelegramPostInstallation(
   signal.throwIfAborted();
   await db.insert(telegramInstallations).values({
     telegramBotId: seed.telegramBotId,
-    publicBrand: PUBLIC_BRAND,
     botUsername: `bot_${seed.telegramBotId}`,
     encryptedBotToken,
     webhookSecret: seed.webhookSecret,

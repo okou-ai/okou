@@ -13,10 +13,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { env } from "../../lib/env";
 import { internalApiBaseUrl } from "../../lib/internal-api-url";
 import { logger } from "../../lib/log";
-import {
-  OFFICIAL_TEAMS_PUBLIC_BRAND,
-  teamsBotDisplayName,
-} from "../../lib/teams-official-app";
+import { teamsBotDisplayName } from "../../lib/teams-official-app";
 import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import {
@@ -698,7 +695,6 @@ function installationMetadataPatch(args: {
     ...(nonEmpty(args.botId) ? { botId: args.botId } : {}),
     ...(nonEmpty(args.botName) ? { botName: args.botName } : {}),
     ...(nonEmpty(args.serviceUrl) ? { serviceUrl: args.serviceUrl } : {}),
-    publicBrand: OFFICIAL_TEAMS_PUBLIC_BRAND,
     updatedAt: nowDate(),
   };
 }
@@ -883,7 +879,6 @@ async function bindUnclaimedTeamsInstallation(
     .set({
       orgId: args.connectArgs.orgId,
       installedByUserId: args.connectArgs.userId,
-      publicBrand: OFFICIAL_TEAMS_PUBLIC_BRAND,
       updatedAt: nowDate(),
     })
     .where(
@@ -1000,7 +995,6 @@ export const prepareTeamsInstallation$ = command(
         teamsTenantName: args.tenantName,
         orgId: args.orgId,
         installedByUserId: args.userId,
-        publicBrand: OFFICIAL_TEAMS_PUBLIC_BRAND,
       })
       .onConflictDoUpdate({
         target: teamsOrgInstallations.teamsTenantId,
@@ -1008,7 +1002,6 @@ export const prepareTeamsInstallation$ = command(
           orgId: args.orgId,
           teamsTenantName: sql`coalesce(excluded.teams_tenant_name, ${teamsOrgInstallations.teamsTenantName})`,
           installedByUserId: args.userId,
-          publicBrand: OFFICIAL_TEAMS_PUBLIC_BRAND,
           updatedAt: nowDate(),
         },
       })
@@ -1102,10 +1095,7 @@ export const connectTeamsInstallation$ = command(
       {
         db: writeDb,
         connectArgs: args,
-        installation: {
-          ...installation,
-          publicBrand: OFFICIAL_TEAMS_PUBLIC_BRAND,
-        },
+        installation,
         role: args.orgRole,
       },
       signal,
@@ -1342,7 +1332,6 @@ export const recordTeamsInstallationActivity$ = command(
         botId: recipient.id,
         botName: recipient.name,
         serviceUrl: activity.serviceUrl,
-        publicBrand: OFFICIAL_TEAMS_PUBLIC_BRAND,
       })
       .onConflictDoUpdate({
         target: teamsOrgInstallations.teamsTenantId,
@@ -1354,7 +1343,6 @@ export const recordTeamsInstallationActivity$ = command(
           botId: sql`coalesce(excluded.bot_id, ${teamsOrgInstallations.botId})`,
           botName: sql`coalesce(excluded.bot_name, ${teamsOrgInstallations.botName})`,
           serviceUrl: sql`coalesce(excluded.service_url, ${teamsOrgInstallations.serviceUrl})`,
-          publicBrand: OFFICIAL_TEAMS_PUBLIC_BRAND,
           updatedAt: nowDate(),
         },
       })

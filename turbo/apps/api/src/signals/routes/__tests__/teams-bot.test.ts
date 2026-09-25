@@ -1152,7 +1152,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
   });
 
-  it("uses the webhook Host for product branding and the Teams recipient for bot identity", async () => {
+  it("uses the configured app for connect links and the Teams recipient for bot identity", async () => {
     const fixture = await trackedBotFixture();
     botFrameworkHandlers();
     const outboundRequests = teamsOutboundHandlers(SERVICE_URL);
@@ -3196,6 +3196,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         expect.objectContaining({
           payload: expect.objectContaining({
             teamsDelivery: expect.objectContaining({
+              // Rollback shim: older APIs require this key when parsing.
               publicBrand: "okou",
               files: expect.arrayContaining([
                 expect.objectContaining({ name: "current-task.txt" }),

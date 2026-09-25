@@ -3787,6 +3787,160 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
   });
 
   it.each([
+    { issuedUnit: "seconds", expiresUnit: "seconds" },
+    { issuedUnit: "milliseconds", expiresUnit: "milliseconds" },
+    { issuedUnit: "milliseconds", expiresUnit: "absent" },
+    { issuedUnit: "milliseconds", expiresUnit: "seconds" },
+    { issuedUnit: "seconds", expiresUnit: "milliseconds" },
+  ] as const)(
+    "accepts Automatic DCR $issuedUnit issuance and $expiresUnit expiry",
+    async ({ issuedUnit, expiresUnit }) => {
+      mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+      mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
+      mockEnv("APP_URL", "https://app.okou.ai");
+      const issuedAt = now() - 1000;
+      const expiresAt = now() + 60 * 60 * 1000;
+      const provider = mockAutomaticMcpOAuthProvider(context, {
+        registration: "dcr",
+        dcrClientIdIssuedAt:
+          issuedUnit === "milliseconds"
+            ? issuedAt
+            : Math.floor(issuedAt / 1000),
+        ...(expiresUnit === "absent"
+          ? {}
+          : {
+              dcrClientSecretExpiresAt:
+                expiresUnit === "milliseconds"
+                  ? expiresAt
+                  : Math.floor(expiresAt / 1000),
+            }),
+      });
+      const admin = createBddApi(context).user({ orgRole: "org:admin" });
+      const connector = await connectorsApi.createCustomConnector(admin, {
+        kind: "mcp",
+        displayName: "BDD Automatic DCR Lifetime",
+        endpoint: provider.endpoint,
+        transport: "streamable-http",
+        fields: [],
+        headerInjections: [],
+        queryInjections: [],
+        authMode: "automatic",
+      });
+      const first = await connectorsApi.startCustomConnectorOAuth2(
+        admin,
+        connector.id,
+      );
+      await connectorsApi.completeCustomConnectorOAuth2Callback({
+        code: "automatic-dcr-lifetime-first-code",
+        state: stateFromAuthorizationUrl(first),
+        iss: provider.issuer,
+      });
+      const second = await connectorsApi.startCustomConnectorOAuth2(
+        admin,
+        connector.id,
+        undefined,
+        { intent: "add", displayName: "Second" },
+      );
+      await connectorsApi.completeCustomConnectorOAuth2Callback({
+        code: "automatic-dcr-lifetime-second-code",
+        state: stateFromAuthorizationUrl(second),
+        iss: provider.issuer,
+      });
+      expect(provider.registrationBodies).toHaveLength(1);
+      await expect(
+        connectorsApi.listCustomConnectorAccounts(admin, connector.id),
+      ).resolves.toHaveLength(2);
+      await connectorsApi.deleteCustomConnector(admin, connector.id);
+    },
+  );
+
+  it("accepts absent issuance and zero non-expiring DCR secret", async () => {
+    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+    mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
+    mockEnv("APP_URL", "https://app.okou.ai");
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "dcr",
+      dcrClientIdIssuedAt: null,
+      dcrClientSecretExpiresAt: 0,
+    });
+    const admin = createBddApi(context).user({ orgRole: "org:admin" });
+    const connector = await connectorsApi.createCustomConnector(admin, {
+      kind: "mcp",
+      displayName: "BDD Automatic DCR Without Lifetime",
+      endpoint: provider.endpoint,
+      transport: "streamable-http",
+      fields: [],
+      headerInjections: [],
+      queryInjections: [],
+      authMode: "automatic",
+    });
+    const authorization = await connectorsApi.startCustomConnectorOAuth2(
+      admin,
+      connector.id,
+    );
+    await connectorsApi.completeCustomConnectorOAuth2Callback({
+      code: "automatic-dcr-no-lifetime-code",
+      state: stateFromAuthorizationUrl(authorization),
+      iss: provider.issuer,
+    });
+    expect(provider.registrationBodies).toHaveLength(1);
+    await connectorsApi.deleteCustomConnector(admin, connector.id);
+  });
+
+  it.each([
+    {
+      reason: "stale issuance",
+      field: "issued",
+      millisecondsOffset: -30 * 24 * 60 * 60 * 1000,
+    },
+    {
+      reason: "expired secret",
+      field: "expires",
+      millisecondsOffset: -60 * 1000,
+    },
+    {
+      reason: "unbounded secret lifetime",
+      field: "expires",
+      millisecondsOffset: 200 * 366 * 24 * 60 * 60 * 1000,
+    },
+  ] as const)(
+    "rejects $reason in Automatic DCR milliseconds before persistence",
+    async ({ field, millisecondsOffset }) => {
+      mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+      mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
+      mockEnv("APP_URL", "https://app.okou.ai");
+      const provider = mockAutomaticMcpOAuthProvider(context, {
+        registration: "dcr",
+        ...(field === "issued"
+          ? { dcrClientIdIssuedAt: now() + millisecondsOffset }
+          : { dcrClientSecretExpiresAt: now() + millisecondsOffset }),
+      });
+      const admin = createBddApi(context).user({ orgRole: "org:admin" });
+      const connector = await connectorsApi.createCustomConnector(admin, {
+        kind: "mcp",
+        displayName: "BDD Automatic DCR Invalid Lifetime",
+        endpoint: provider.endpoint,
+        transport: "streamable-http",
+        fields: [],
+        headerInjections: [],
+        queryInjections: [],
+        authMode: "automatic",
+      });
+      const rejected = await connectorsApi.requestStartCustomConnectorOAuth2(
+        admin,
+        connector.id,
+        [400],
+      );
+      expectApiError(rejected.body);
+      expect(rejected.body.error.code).toBe(
+        CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.CLIENT_REGISTRATION_INVALID,
+      );
+      expect(provider.tokenBodies).toHaveLength(0);
+      await connectorsApi.deleteCustomConnector(admin, connector.id);
+    },
+  );
+
+  it.each([
     {
       tokenEndpointAuthMethod: "none" as const,
       expectedAuthorization: null,

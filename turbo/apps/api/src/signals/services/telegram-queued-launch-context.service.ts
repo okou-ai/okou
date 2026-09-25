@@ -1,5 +1,6 @@
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
@@ -41,7 +42,6 @@ type TelegramLaunchContextRow = Pick<
   | "threadContext"
   | "rootMessageId"
   | "thinkingMessageId"
-  | "publicBrand"
   | "userLinkId"
   | "userLinkKind"
   | "chatType"
@@ -107,7 +107,6 @@ async function loadTelegramLaunchContext(
       threadContext: chatTelegramContext.threadContext,
       rootMessageId: chatTelegramContext.rootMessageId,
       thinkingMessageId: chatTelegramContext.thinkingMessageId,
-      publicBrand: chatTelegramContext.publicBrand,
       userLinkId: chatTelegramContext.userLinkId,
       userLinkKind: chatTelegramContext.userLinkKind,
       chatType: chatTelegramContext.chatType,
@@ -227,10 +226,6 @@ export async function loadTelegramQueuedLaunchMaterial(
     context.userLinkKind === "custom"
       ? context.customBotUsername
       : officialBotConfig.botUsername;
-  const publicBrand = context.publicBrand;
-  if (!publicBrand) {
-    return null;
-  }
   return {
     prompt: context.messageText,
     appendSystemPrompt: buildTelegramPrompt(
@@ -249,7 +244,7 @@ export async function loadTelegramQueuedLaunchMaterial(
       }),
       context.threadContext,
     ),
-    publicBrand,
+    publicBrand: PUBLIC_BRAND,
     telegramDelivery: telegramDeliveryTargetSchema.parse({
       installationId: deliveryInstallationId,
       chatId: context.chatId,
