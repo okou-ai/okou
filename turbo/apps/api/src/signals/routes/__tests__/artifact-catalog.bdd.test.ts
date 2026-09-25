@@ -1160,7 +1160,6 @@ describe("shared thread routes", () => {
     expect(publicSnapshot.body).toStrictEqual({
       id: first.id,
       title: "Private launch plan",
-      publicBrand: "okou",
       messages: [
         {
           messageIndex: 0,
@@ -1180,14 +1179,13 @@ describe("shared thread routes", () => {
     const metadata = await readSharedThreadMeta(first.id);
     expect(metadata.body).toStrictEqual({
       title: "Private launch plan",
-      publicBrand: "okou",
     });
     expect(metadata.headers.get("cache-control")).toBe(
       "public, max-age=31536000, s-maxage=31536000, immutable",
     );
 
     const secondSnapshot = await readSharedThreadSnapshot(second.id);
-    expect(secondSnapshot.body).toMatchObject({ publicBrand: "okou" });
+    expect(secondSnapshot.body).toMatchObject({ id: second.id });
 
     const catalog = await chat.listArtifactCatalog(owner.actor, {
       kind: "shared-thread",
