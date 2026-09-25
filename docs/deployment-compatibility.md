@@ -31,8 +31,11 @@ epic.
   bridge and the separate decision journal are deleted. Blob retention uses the
   plain reference count again and upload intents are gone.
 - **X resource admission.** Clerk account cleanup no longer takes the global
-  `x_resource_reads` admission lock exclusively. The retention cron and
-  ingestion still use it; redesigning that lock is separate work.
+  `x_resource_reads` admission lock exclusively, so it no longer drains admitted
+  uploads. An upload holding its Run lock past cleanup's 100 ms lock timeout
+  fails that cleanup attempt; the user deletion job retries, organization
+  cleanup does not. The retention cron and ingestion still use the lock;
+  redesigning it is separate work.
 
 Rows written for a deleted account after its legacy cleanup committed are no
 longer swept by anything. That is the accepted gap until the redesign.
