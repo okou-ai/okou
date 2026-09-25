@@ -8,6 +8,13 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.679.0](https://github.com/okou-ai/okou/compare/api-v1.678.0...api-v1.679.0) (2026-09-25)
+
+
+### Features
+
+* **api:** unarchive a thread when a finished run makes it unread ([#36910](https://github.com/okou-ai/okou/issues/36910)) ([bdf18cc](https://github.com/okou-ai/okou/commit/bdf18cc9d06b05f6c4e24db035a95a976c0d5b03))
+
 ## [1.678.0](https://github.com/okou-ai/okou/compare/api-v1.677.1...api-v1.678.0) (2026-09-25)
 
 
