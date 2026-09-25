@@ -2371,6 +2371,9 @@ function browserUseMixedControlWriterFunction(): string {
                 disabled === expected.disabled && option.selected === selected;
             });
           };
+          if (firstSpec.verifyOnly === true) {
+            return controls.every((control, index) => matches(control, specs[index], true));
+          }
           if (!controls.every((control, index) => matches(control, specs[index], false))) return false;
           for (let index = 0; index < controls.length; index += 1) {
             const control = controls[index];
@@ -2457,6 +2460,33 @@ async function writeBrowserUseMixedControlFields(
               value: field.value ?? null,
             };
   };
+  const firstSpec = descriptor(first);
+  const writerArguments = [
+    { value: firstSpec },
+    { value: others.length },
+    ...others.flatMap((field) => {
+      return [{ objectId: field.objectId }, { value: descriptor(field) }];
+    }),
+    ...args.fields.flatMap((field) => {
+      if (!field.radio) {
+        return [];
+      }
+      return [
+        ...field.radio.memberObjectIds.map((objectId) => {
+          return { objectId };
+        }),
+        field.radio.formOwnerObjectId
+          ? { objectId: field.radio.formOwnerObjectId }
+          : { value: null },
+      ];
+    }),
+  ];
+  const params = {
+    objectId: first.objectId,
+    functionDeclaration: browserUseMixedControlWriterFunction(),
+    arguments: writerArguments,
+    returnByValue: true,
+  };
   mutation.writeStarted = true;
   const result = browserUseCdpValueSchema.parse(
     await sendBrowserUseCdpCommand(
@@ -2464,34 +2494,7 @@ async function writeBrowserUseMixedControlFields(
       {
         id: args.commandId,
         method: "Runtime.callFunctionOn",
-        params: {
-          objectId: first.objectId,
-          functionDeclaration: browserUseMixedControlWriterFunction(),
-          arguments: [
-            { value: descriptor(first) },
-            { value: others.length },
-            ...others.flatMap((field) => {
-              return [
-                { objectId: field.objectId },
-                { value: descriptor(field) },
-              ];
-            }),
-            ...args.fields.flatMap((field) => {
-              if (!field.radio) {
-                return [];
-              }
-              return [
-                ...field.radio.memberObjectIds.map((objectId) => {
-                  return { objectId };
-                }),
-                field.radio.formOwnerObjectId
-                  ? { objectId: field.radio.formOwnerObjectId }
-                  : { value: null },
-              ];
-            }),
-          ],
-          returnByValue: true,
-        },
+        params,
         sessionId: args.sessionId,
       },
       signal,
@@ -2500,6 +2503,35 @@ async function writeBrowserUseMixedControlFields(
   );
   if (result.result.value !== true) {
     throw new BrowserUseUserActionMutationError(true);
+  }
+  if (
+    args.fields.some((field) => {
+      return field.radio !== undefined;
+    })
+  ) {
+    // A separate CDP task observes microtasks queued by the website's event handlers.
+    const verified = browserUseCdpValueSchema.parse(
+      await sendBrowserUseCdpCommand(
+        socket,
+        {
+          id: args.commandId + 1,
+          method: "Runtime.callFunctionOn",
+          params: {
+            ...params,
+            arguments: [
+              { value: { ...firstSpec, verifyOnly: true } },
+              ...writerArguments.slice(1),
+            ],
+          },
+          sessionId: args.sessionId,
+        },
+        signal,
+      ),
+      { reportInput: true },
+    );
+    if (verified.result.value !== true) {
+      throw new BrowserUseUserActionMutationError(true);
+    }
   }
 }
 

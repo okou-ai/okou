@@ -744,8 +744,9 @@ writable. Agent-required groups require a deliberate selection or confirmation;
 website-required groups cannot be cleared. The API rechecks all member
 identities, grouping name, form owner and state before applying an indexed
 choice; changed membership, grouping or selection makes a choice stale, and
-post-handler mismatch is uncertain. Empty-name, unlabeled, oversized or
-unsupported groups require
+post-handler mismatch is uncertain. A second, read-only Browser check catches
+radio state reverted by handlers' queued microtasks before reporting success.
+Empty-name, unlabeled, oversized or unsupported groups require
 Browser takeover. Radio input does not submit the website form.
 Option values and submitted selections do not appear in the action URL or
 chat callback. A confirmed page or control change makes the request

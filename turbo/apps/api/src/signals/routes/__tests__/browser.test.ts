@@ -580,6 +580,7 @@ function mockNativeRadioTarget(state: {
   selectedIndex: number;
   disabledIndex: number;
   writeMatches: boolean;
+  readbackMatches: boolean;
   siteRequired: boolean;
 }): void {
   context.mocks.browserUseCdp.command.mockImplementation((command) => {
@@ -643,7 +644,16 @@ function mockNativeRadioTarget(state: {
       case "Runtime.callFunctionOn": {
         const declaration = String(command.params.functionDeclaration);
         if (declaration.includes("firstSpec")) {
-          return { result: { value: state.writeMatches } };
+          const args = command.params.arguments as {
+            value?: { verifyOnly?: boolean };
+          }[];
+          return {
+            result: {
+              value: args[0]?.value?.verifyOnly
+                ? state.readbackMatches
+                : state.writeMatches,
+            },
+          };
         }
         if (declaration.includes("function(limit)")) {
           return { result: { objectId: "radio-array" } };
@@ -1040,6 +1050,7 @@ describe("Browser user-action route", () => {
       selectedIndex: 0,
       disabledIndex: 2,
       writeMatches: true,
+      readbackMatches: true,
       siteRequired: false,
     };
     mockNativeRadioTarget(group);
@@ -1116,6 +1127,14 @@ describe("Browser user-action route", () => {
           ],
         },
       });
+    };
+    const fingerprintFor = async (requestToken: string) => {
+      const value = (await preflight(requestToken)).body.fields[0]?.control
+        .radioGroupFingerprint;
+      if (!value) {
+        throw new Error("Missing radio fingerprint");
+      }
+      return value;
     };
     const created = await create();
     const token = created.body.action.requestToken;
@@ -1199,6 +1218,18 @@ describe("Browser user-action route", () => {
         .body.state,
     ).toBe("uncertain");
     group.writeMatches = true;
+    group.readbackMatches = false;
+    const reverted = await create();
+    const revertedToken = reverted.body.action.requestToken;
+    const revertedFingerprint = await fingerprintFor(revertedToken);
+    expect(
+      (await accept(apply(revertedToken, 1, 0, revertedFingerprint), [200]))
+        .body.state,
+    ).toBe("uncertain");
+    expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
+      { value: { kind: "radio", verifyOnly: true } },
+    ]);
+    group.readbackMatches = true;
     const changed = await create();
     const changedToken = changed.body.action.requestToken;
     const checked = await preflight(changedToken);
@@ -1213,14 +1244,6 @@ describe("Browser user-action route", () => {
         .state,
     ).toBe("stale");
     group.selectedIndex = 0;
-    const fingerprintFor = async (requestToken: string) => {
-      const value = (await preflight(requestToken)).body.fields[0]?.control
-        .radioGroupFingerprint;
-      if (!value) {
-        throw new Error("Missing radio fingerprint");
-      }
-      return value;
-    };
     const renamed = await create();
     const renamedToken = renamed.body.action.requestToken;
     const renamedFingerprint = await fingerprintFor(renamedToken);
