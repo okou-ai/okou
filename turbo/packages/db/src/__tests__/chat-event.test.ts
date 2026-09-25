@@ -21,15 +21,15 @@ describe("chatAgentRunContext schema", () => {
         ["id", true],
         ["source_chat_thread_id", true],
         ["source_agent_id", true],
-        ["source_user_id", false],
-        ["source_org_id", false],
+        ["source_user_id", true],
+        ["source_org_id", true],
         ["created_at", true],
       ]),
     );
     expect(config.foreignKeys).toHaveLength(0);
   });
 
-  it("indexes copied ownership for cleanup while preserving unattributed historical rows", () => {
+  it("indexes copied ownership for cleanup", () => {
     const config = getTableConfig(chatAgentRunContext);
 
     expect(chatAgentRunContext.sourceUserId.hasDefault).toBe(false);
