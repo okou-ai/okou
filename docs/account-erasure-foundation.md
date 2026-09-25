@@ -67,7 +67,8 @@ The functional sequence remains **B1 -> B2 -> A2**, with **full G2d1 required
 before B2 activation**. A1's accepted code does not prove release, writer/compactor drain,
 or bounded backfill completeness. Broader purge requires accepted A2 billing
 isolation plus the relevant C2/D/E/G2 collectors and terminal proofs. B3/F/UX
-own trustworthy client confirmation and local data cleanup. No local guard
+own trustworthy client confirmation. Browser and Desktop local data is out of
+scope: Okou does not purge a deleted account's client-side bytes. No local guard
 authorizes deleting live run, usage, allowance, ledger, or other billing anchors.
 
 The [unregistered B2a bridge](account-erasure-decision-journal.md#b2a-unregistered-clerk-bridge)

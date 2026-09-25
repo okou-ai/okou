@@ -107,7 +107,6 @@ import {
 } from "./api-user-permission-grants.ts";
 import { apiVoiceIoHandlers } from "./api-voice-io.ts";
 import { apiBuildInfoHandlers } from "./api-build-info.ts";
-import { apiAccountErasureStatusHandlers } from "./api-account-erasure-status.ts";
 import { apiWebFilesHandlers } from "./api-web-files.ts";
 import { localeResourceHandlers } from "./locale-resources.ts";
 import { chatThreadEmojiHandlers } from "./chat-thread-emoji.ts";
@@ -119,7 +118,6 @@ export const handlers = [
   ...localeResourceHandlers,
   ...chatThreadEmojiHandlers,
   ...apiBuildInfoHandlers,
-  ...apiAccountErasureStatusHandlers,
   ...apiConnectorsHandlers,
   ...apiOrgHandlers,
   ...apiOrgMembersHandlers,

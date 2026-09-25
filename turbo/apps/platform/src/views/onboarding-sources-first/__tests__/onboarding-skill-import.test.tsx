@@ -32,9 +32,6 @@ vi.hoisted(() => {
 
 const context = testContext();
 const draftStorage = localStorageSignals("onboarding:sources-first-draft");
-const completedDraftStorage = localStorageSignals(
-  "onboarding:sources-first-draft",
-);
 
 const SOURCES_FIRST_ON = {
   [FeatureSwitchKey.OnboardingSourcesFirst]: true,
@@ -320,6 +317,8 @@ test("A saved draft from another user cannot select the current user's tool", as
     isAdmin: true,
   });
   mockConnectedSource();
+  // Another account left this draft in the browser during a previous app
+  // lifetime; one page lifetime cannot sign in as that account first.
   context.store.set(
     draftStorage.set$,
     JSON.stringify({
@@ -441,15 +440,11 @@ test("Finishing onboarding sends the selected Codex model preference after a ful
   await expect(
     screen.findByRole("heading", { name: "Start with a task that matters" }),
   ).resolves.toBeInTheDocument();
-  expect(context.store.get(draftStorage.get$)).not.toBeNull();
   click(getButtonByName("Start with Okou"));
   await waitFor(() => {
     expect(sentProvider).toBe("codex");
   });
   expect(sentIndustry).toBe("marketing");
-  await waitFor(() => {
-    expect(context.store.get(completedDraftStorage.get$)).toBeNull();
-  });
 });
 
 test("A resumed skills step without a work positioning continues to Slack", async () => {
