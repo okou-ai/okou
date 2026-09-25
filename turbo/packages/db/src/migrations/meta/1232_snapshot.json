@@ -1,5 +1,5 @@
 {
-  "id": "838c828c-7e11-4a38-a6e6-cda857403f10",
+  "id": "0558ba1c-ccb4-4e7c-8d50-7d110db5e421",
   "prevId": "7be12bc6-059f-40fb-ad00-69b9c3bcf0ba",
   "version": "7",
   "dialect": "postgresql",
@@ -9198,8 +9198,7 @@
           "name": "public_brand",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'okou'"
+          "notNull": true
         },
         "sender_user_id": {
           "name": "sender_user_id",
@@ -9334,8 +9333,7 @@
           "name": "public_brand",
           "type": "text",
           "primaryKey": false,
-          "notNull": false,
-          "default": "'okou'"
+          "notNull": false
         },
         "user_link_id": {
           "name": "user_link_id",
@@ -29882,6 +29880,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "provider_state": {
+          "name": "provider_state",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "external_id": {
           "name": "external_id",
           "type": "text",
@@ -34355,7 +34359,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'okou'"
+          "default": "'vm0'"
         },
         "created_at": {
           "name": "created_at",
@@ -34761,7 +34765,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'okou'"
+          "default": "'vm0'"
         },
         "dm_welcome_sent": {
           "name": "dm_welcome_sent",

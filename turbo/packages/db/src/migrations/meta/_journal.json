@@ -1083,8 +1083,15 @@
     {
       "idx": 1232,
       "version": "7",
-      "when": 1790303640909,
-      "tag": "1232_teams_telegram_public_brand_okou_default",
+      "when": 1790303606990,
+      "tag": "1232_discord_canonical_delivery_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 1233,
+      "version": "7",
+      "when": 1790304837116,
+      "tag": "1233_teams_telegram_public_brand_okou_default",
       "breakpoints": true
     }
   ]
