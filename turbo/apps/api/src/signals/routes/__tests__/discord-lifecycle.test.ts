@@ -331,19 +331,15 @@ test("holds user bindings across a concurrent guild uninstall and preserves anot
   });
   // The user's second binding remains pending, while the other guild and
   // surviving member remain usable.
-  const removed = await accept(
+  const denied = await accept(
     discordClient(elsewhere).getStatus({ headers: authHeaders() }),
-    [200],
+    [401],
   );
-  expect(removed.body).toMatchObject({
-    isAvailable: true,
-    isInstalled: true,
-    guildId: otherBinding.guildId,
-    isConnected: true,
-    discordUserId: otherBinding.discordUserId,
-    dmBindings: [
-      expect.objectContaining({ connectionId: otherBinding.connectionId }),
-    ],
+  // This is the same deleted user in another guild. The pending binding
+  // cannot be read with their old session, but the surviving member can still
+  // use the unaffected guild below.
+  expect(denied.body).toMatchObject({
+    error: { code: "UNAUTHORIZED" },
   });
   const preserved = await accept(
     discordClient(survivor).getStatus({ headers: authHeaders() }),

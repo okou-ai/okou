@@ -710,20 +710,22 @@ describe("explicit VNC grants and current Agent inventory", () => {
         [200],
       );
       await flushWaitUntilForTest();
-      await updateFeatureSwitchesForUser(context, consumer, {
-        [FeatureSwitchKey.VncAccess]: true,
-      });
+      if (scope !== "user") {
+        await updateFeatureSwitchesForUser(context, consumer, {
+          [FeatureSwitchKey.VncAccess]: true,
+        });
+      }
       api.authenticate(consumer);
       if (scope === "user") {
-        // A deleted Clerk account has no current membership. Its stored grant
-        // is held, but must not authorize a VNC request during the hold.
-        context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-          { data: [], totalCount: 0 },
-        );
-        await accept(
+        // Even a Clerk session still claiming membership cannot exercise the
+        // held user's retained VNC grant or change the feature override.
+        const denied = await accept(
           api.access().get({ headers, params: { agentId: shared.agentId } }),
-          [404],
+          [401],
         );
+        expect(denied.body).toMatchObject({
+          error: { code: "UNAUTHORIZED" },
+        });
       } else {
         expect(
           (
