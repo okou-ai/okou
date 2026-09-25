@@ -138,7 +138,6 @@ type ChatEventDisplayContext =
         readonly threadId: string;
         readonly serviceUrl: string;
         readonly teamsAppId: string | null;
-        readonly publicBrand: PublicBrand;
         readonly senderUserId: string;
         readonly senderDisplayName: string | null;
         readonly senderPrincipalName: string | null;
@@ -161,7 +160,6 @@ type ChatEventDisplayContext =
         readonly threadContext: string;
         readonly rootMessageId: string | null;
         readonly thinkingMessageId: string | null;
-        readonly publicBrand: PublicBrand;
         readonly userLinkId: string;
         readonly userLinkKind: "custom" | "official";
         readonly chatType: string;
@@ -500,7 +498,6 @@ type NewDisplayContext =
       readonly threadId: string;
       readonly serviceUrl: string;
       readonly teamsAppId: string | null;
-      readonly publicBrand: PublicBrand;
       readonly senderUserId: string;
       readonly senderDisplayName: string | null;
       readonly senderPrincipalName: string | null;
@@ -517,7 +514,6 @@ type NewDisplayContext =
       readonly threadContext: string;
       readonly rootMessageId: string | null;
       readonly thinkingMessageId: string | null;
-      readonly publicBrand: PublicBrand;
       readonly userLinkId: string;
       readonly userLinkKind: "custom" | "official";
       readonly chatType: string;
@@ -673,7 +669,6 @@ function newDisplayContext(
       id: eventId,
       chatThreadId: values.chatThreadId,
       ...teamsContext,
-      publicBrand: PUBLIC_BRAND,
     };
   }
 
@@ -685,7 +680,6 @@ function newDisplayContext(
       id: eventId,
       chatThreadId: values.chatThreadId,
       ...telegramContext,
-      publicBrand: PUBLIC_BRAND,
     };
   }
 
@@ -801,7 +795,6 @@ async function insertTelegramDisplayContext(
       threadContext: context.threadContext,
       rootMessageId: context.rootMessageId,
       thinkingMessageId: context.thinkingMessageId,
-      publicBrand: context.publicBrand,
       userLinkId: context.userLinkId,
       userLinkKind: context.userLinkKind,
       chatType: context.chatType,
@@ -968,7 +961,6 @@ async function insertDisplayContext(
         threadId: context.threadId,
         serviceUrl: context.serviceUrl,
         teamsAppId: context.teamsAppId,
-        publicBrand: context.publicBrand,
         senderUserId: context.senderUserId,
         senderDisplayName: context.senderDisplayName,
         senderPrincipalName: context.senderPrincipalName,

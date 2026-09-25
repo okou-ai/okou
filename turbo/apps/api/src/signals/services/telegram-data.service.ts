@@ -5,7 +5,6 @@ import type {
   TelegramBotStatus,
   TelegramLinkStatusResponse,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -332,7 +331,6 @@ function telegramLoginOrigin(): string {
 function customTelegramBotStatus(args: {
   readonly installation: TelegramInstallationRow;
   readonly userId: string;
-  readonly publicBrand: PublicBrand;
 }): Computed<Promise<TelegramBotStatus>> {
   return computed(async (get) => {
     const agent = await get(
@@ -363,7 +361,6 @@ function customTelegramBotStatus(args: {
 function officialTelegramBotStatus(args: {
   readonly orgId: string;
   readonly userId: string;
-  readonly publicBrand: PublicBrand;
 }): Computed<Promise<TelegramBotStatus>> {
   return computed(async (get) => {
     const config = getOfficialTelegramBotConfig();
@@ -409,7 +406,6 @@ export function telegramIntegrationBotStatus(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly botId: string;
-  readonly publicBrand: PublicBrand;
 }): Computed<Promise<TelegramBotStatus | null>> {
   return computed(async (get) => {
     if (args.botId === OFFICIAL_TELEGRAM_BOT_ID) {
@@ -431,7 +427,6 @@ export function telegramIntegrationBotStatus(args: {
       customTelegramBotStatus({
         installation,
         userId: args.userId,
-        publicBrand: args.publicBrand,
       }),
     );
   });
@@ -482,7 +477,6 @@ export function telegramIntegrationLinkStatus(args: {
   readonly userId: string;
   readonly botId?: string;
   readonly origin?: string;
-  readonly publicBrand: PublicBrand;
 }): Computed<Promise<TelegramLinkStatusResult>> {
   return computed(async (get): Promise<TelegramLinkStatusResult> => {
     const db = get(db$);

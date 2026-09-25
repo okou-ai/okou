@@ -1,5 +1,4 @@
 import type { ChatTeamsMessageFiles } from "@okouai/db/jsonb-contracts/chat-teams-context";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   index,
   jsonb,
@@ -42,8 +41,11 @@ export const chatTeamsContext = pgTable(
     threadId: text("thread_id"),
     serviceUrl: text("service_url"),
     teamsAppId: text("teams_app_id"),
-    /** Product brand derived from the Teams webhook hostname at ingress. */
-    publicBrand: text("public_brand").$type<PublicBrand>().notNull(),
+    /**
+     * Retired: current APIs neither read nor write it and rely on the
+     * `okou` default; drop it after older API deployments drain.
+     */
+    publicBrand: text("public_brand").default("okou").notNull(),
     senderUserId: text("sender_user_id"),
     senderDisplayName: text("sender_display_name"),
     senderPrincipalName: text("sender_principal_name"),

@@ -964,7 +964,6 @@ describe("POST /api/telegram/register", () => {
     expect(installation).toMatchObject({
       telegramBotId,
       botUsername: "owner_named_bot",
-      publicBrand: "okou",
     });
   });
 
@@ -1314,10 +1313,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
 
     await seedNativeFablePolicies(fixture);
     const telegramMocks = telegramApiMocks();
-    expect(
-      stateRecord((await readTelegramState(fixture.telegramBotId)).installation)
-        ?.publicBrand,
-    ).toBe("okou");
 
     const response = await postWebhook({
       telegramBotId: fixture.telegramBotId,
@@ -1388,7 +1383,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       telegramThreadContext: "",
       telegramRootMessageId: `direct-message:${fixture.composeId}:claude-fable-5-1`,
       telegramThinkingMessageId: null,
-      telegramPublicBrand: "okou",
       telegramUserLinkId: expect.any(String),
       telegramUserLinkKind: "custom",
       telegramChatType: "private",
@@ -2120,7 +2114,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       telegramMessageText: firstPrompt,
       telegramThreadContext: "",
       telegramRootMessageId: null,
-      telegramPublicBrand: "okou",
       telegramUserLinkKind: "custom",
       telegramChatType: "supergroup",
     });
@@ -2763,7 +2756,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       contextType: "telegram",
       telegramMessageText: "run through official bot",
       telegramRootMessageId: `direct-message:${fixture.composeId}:claude-fable-5-1`,
-      telegramPublicBrand: "okou",
       telegramUserLinkId: expect.any(String),
       telegramUserLinkKind: "official",
       telegramChatType: "private",

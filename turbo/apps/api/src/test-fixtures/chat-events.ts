@@ -144,7 +144,6 @@ interface ChatEventContextFixture {
   readonly teamsThreadId: string | null;
   readonly teamsServiceUrl: string | null;
   readonly teamsAppId: string | null;
-  readonly teamsPublicBrand: PublicBrand | null;
   readonly teamsSenderUserId: string | null;
   readonly teamsSenderDisplayName: string | null;
   readonly teamsSenderPrincipalName: string | null;
@@ -170,7 +169,6 @@ interface ChatEventContextFixture {
   readonly telegramThreadContext: string | null;
   readonly telegramRootMessageId: string | null;
   readonly telegramThinkingMessageId: string | null;
-  readonly telegramPublicBrand: PublicBrand | null;
   readonly telegramUserLinkId: string | null;
   readonly telegramUserLinkKind: "custom" | "official" | null;
   readonly telegramChatType: string | null;
@@ -245,7 +243,6 @@ export async function readChatEventContextFixture(
       teamsThreadId: chatTeamsContext.threadId,
       teamsServiceUrl: chatTeamsContext.serviceUrl,
       teamsAppId: chatTeamsContext.teamsAppId,
-      teamsPublicBrand: chatTeamsContext.publicBrand,
       teamsSenderUserId: chatTeamsContext.senderUserId,
       teamsSenderDisplayName: chatTeamsContext.senderDisplayName,
       teamsSenderPrincipalName: chatTeamsContext.senderPrincipalName,
@@ -271,7 +268,6 @@ export async function readChatEventContextFixture(
       telegramThreadContext: chatTelegramContext.threadContext,
       telegramRootMessageId: chatTelegramContext.rootMessageId,
       telegramThinkingMessageId: chatTelegramContext.thinkingMessageId,
-      telegramPublicBrand: chatTelegramContext.publicBrand,
       telegramUserLinkId: chatTelegramContext.userLinkId,
       telegramUserLinkKind: chatTelegramContext.userLinkKind,
       telegramChatType: chatTelegramContext.chatType,
@@ -362,7 +358,6 @@ const annotationProjectionInputs = [
         threadId: "activity-1",
         serviceUrl: "https://smba.trafficmanager.net/amer/",
         teamsAppId: "teams-app-1",
-        publicBrand: "vm0",
         senderUserId: "29:user-1",
         senderDisplayName: "Ada Lovelace",
         senderPrincipalName: "ada@example.com",
@@ -388,7 +383,6 @@ const annotationProjectionInputs = [
         threadId: "direct-message:agent-1:default",
         serviceUrl: "https://smba.trafficmanager.net/amer/",
         teamsAppId: "teams-app-1",
-        publicBrand: "vm0",
         senderUserId: "29:user-1",
         senderDisplayName: null,
         senderPrincipalName: null,
@@ -407,7 +401,6 @@ const annotationProjectionInputs = [
         threadContext: "",
         rootMessageId: null,
         thinkingMessageId: null,
-        publicBrand: "vm0",
         userLinkId: "00000000-0000-4000-8000-000000000004",
         userLinkKind: "custom",
         chatType: "supergroup",
@@ -429,7 +422,6 @@ const annotationProjectionInputs = [
         threadContext: "",
         rootMessageId: "dm",
         thinkingMessageId: null,
-        publicBrand: "vm0",
         userLinkId: "00000000-0000-4000-8000-000000000005",
         userLinkKind: "official",
         chatType: "private",
@@ -451,7 +443,6 @@ const annotationProjectionInputs = [
         threadContext: "",
         rootMessageId: null,
         thinkingMessageId: null,
-        publicBrand: "vm0",
         userLinkId: "00000000-0000-4000-8000-000000000006",
         userLinkKind: "custom",
         chatType: "group",
@@ -637,7 +628,6 @@ export async function seedChatEventAnnotationProjectionFixture(
         threadId: "activity-rejected",
         serviceUrl: "https://smba.trafficmanager.net/amer/",
         teamsAppId: "teams-app-2",
-        publicBrand: "vm0",
         senderUserId: "29:user-2",
         senderDisplayName: "Grace Hopper",
         senderPrincipalName: "grace@example.com",
