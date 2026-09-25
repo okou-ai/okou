@@ -1,6 +1,6 @@
 {
-  "id": "162c4e74-1eaf-43c6-925a-6088e584ff8a",
-  "prevId": "17065e50-a389-4eb9-8510-83d509591b5e",
+  "id": "9907a150-9ec3-487c-91e2-2192f0b6c006",
+  "prevId": "f1be121e-e39c-4ae4-bedc-06725101aadb",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -7334,13 +7334,13 @@
           "name": "source_user_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "source_org_id": {
           "name": "source_org_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "created_at": {
           "name": "created_at",
@@ -9689,15 +9689,35 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "uq_chat_thread_drafts_thread_user": {
+          "name": "uq_chat_thread_drafts_thread_user",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {
-        "chat_thread_drafts_chat_thread_id_user_id_pk": {
-          "name": "chat_thread_drafts_chat_thread_id_user_id_pk",
+        "chat_thread_drafts_chat_thread_id_pk": {
+          "name": "chat_thread_drafts_chat_thread_id_pk",
           "columns": [
-            "chat_thread_id",
-            "user_id"
+            "chat_thread_id"
           ]
         }
       },
@@ -10409,6 +10429,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "draft_user_message": {
+          "name": "draft_user_message",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "draft_attachments": {
+          "name": "draft_attachments",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -10533,6 +10565,10 @@
         "chat_threads_computer_access_check": {
           "name": "chat_threads_computer_access_check",
           "value": "NOT (\"chat_threads\".\"cloud_browser_enabled\" AND \"chat_threads\".\"computer_use_host_id\" IS NOT NULL)"
+        },
+        "chat_threads_draft_user_message_check": {
+          "name": "chat_threads_draft_user_message_check",
+          "value": "\"chat_threads\".\"draft_user_message\" IS NOT NULL\n          OR COALESCE(\"chat_threads\".\"draft_attachments\", '[]'::jsonb) = '[]'::jsonb"
         }
       },
       "isRLSEnabled": false

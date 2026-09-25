@@ -1223,15 +1223,22 @@
     {
       "idx": 1252,
       "version": "7",
-      "when": 1790354594888,
-      "tag": "1252_drop_redundant_chat_thread_indexes",
+      "when": 1790353538834,
+      "tag": "1252_chat_agent_run_context_owner_not_null",
       "breakpoints": true
     },
     {
       "idx": 1253,
       "version": "7",
-      "when": 1790354610560,
-      "tag": "1253_drop_chat_thread_draft_columns",
+      "when": 1790354829999,
+      "tag": "1253_drop_redundant_chat_thread_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 1254,
+      "version": "7",
+      "when": 1790354845369,
+      "tag": "1254_drop_chat_thread_draft_columns",
       "breakpoints": true
     }
   ]

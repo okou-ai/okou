@@ -2,7 +2,7 @@
 
 ## Chat thread hot-path cleanup and draft contraction, release 3 (2026-09-25)
 
-**Draft columns and owner key.** Migration `1253_drop_chat_thread_draft_columns`:
+**Draft columns and owner key.** Migration `1254_drop_chat_thread_draft_columns`:
 
 - drops `chat_threads.draft_user_message`, `draft_attachments` and `chat_threads_draft_user_message_check`;
 - makes `(chat_thread_id, user_id)` the `chat_thread_drafts` primary key.
@@ -19,7 +19,7 @@
 
 Responses are unchanged.
 
-**Indexes.** Migration `1252_drop_redundant_chat_thread_indexes` (non-transactional) drops `idx_chat_threads_user_agent_updated` and `idx_chat_threads_user_last_read` with `CONCURRENTLY`. The planner serves their prefixes from `idx_chat_threads_user_agent_last_message` and `idx_chat_threads_user_last_message_id`. Read-cursor-only updates become HOT-eligible. No API names these indexes.
+**Indexes.** Migration `1253_drop_redundant_chat_thread_indexes` (non-transactional) drops `idx_chat_threads_user_agent_updated` and `idx_chat_threads_user_last_read` with `CONCURRENTLY`. The planner serves their prefixes from `idx_chat_threads_user_agent_last_message` and `idx_chat_threads_user_last_message_id`. Read-cursor-only updates become HOT-eligible. No API names these indexes.
 
 **Snapshot compaction.** The cron no longer unions every thread, event and snapshot scope, and no longer takes the erasure admission:
 
@@ -30,6 +30,41 @@ Responses are unchanged.
 - it prunes compacted events with bounded reads and one `DELETE` by id.
 
 Agent deletion now reads the affected thread ids and owners in bounded keyset pages before the deletion transaction. After commit it appends `deleted` lifecycle events in small batches using the single-statement sequence allocator, with the captured org id (the Agent is already gone). Batch failures are logged, not retried, and never roll back deletion; as with `sort_touched`, an occasional missing event is accepted. Event-page reads keep `deleted` tombstones visible after the Agent is gone while continuing to filter other events by live Agent. With these events driving snapshot invalidation, the 24-hour full refresh and repeated empty-scope publication are removed. A scope with no visible event and no snapshot remains empty. The projection's timestamp strings keep the exact `jsonb_build_object` format.
+
+## Discord file deliveries become fire and forget (2026-09-25)
+
+`POST /api/integrations/discord/files/complete` sends each upload operation to
+Discord at most once, without a nonce. A send that Discord rejects,
+rate-limits or never answers is recorded as a failed delivery with
+`retryable: false` and no `retryAfterSeconds`; a repeated completion returns the
+recorded outcome and never sends again. To retry, start a new upload operation.
+The enforced-nonce replay, its window and the stored retry deadline are
+removed, and new delivery rows no longer store a nonce.
+
+The response contract is unchanged, so existing CLIs keep parsing it and simply
+see non-retryable failures. Discord has no production users, so rows written by
+the previous replay flow need no migration; their extra JSONB keys are ignored.
+
+## Agent-run context ownership becomes required (2026-09-25)
+
+Migration `1252_chat_agent_run_context_owner_not_null` deletes
+`chat_agent_run_context` rows whose `source_user_id` or `source_org_id` is null,
+then makes both columns `NOT NULL`. Every API from the split writer on (API
+1.672.0) inserts a row only after reading both owners from the source thread and
+agent, so no rollback target writes a null owner. The deleted rows were written
+by older APIs; on 2026-09-25 all 955 had lost their source thread, so no owner
+could be derived. No code reads these rows, and the `chat_events.context_id`
+values that referenced 70 of them carry no foreign key.
+
+Account erasure and Clerk cleanup now remove these rows by copied owner only;
+the source-thread reach and the Clerk cleanup's thread subqueries are removed.
+That changes the relational sweep plan, so `RELATIONAL_ERASURE_COLLECTOR_VERSION`
+changes. When it changed, no account erasure job was incomplete (production had
+two `verified_erased` jobs), so no captured sink carries the old version into
+replay. A job that an older API captures during the release overlap or after a
+rollback registers its relational sink under the old version, which this API
+refuses to execute. Check for such jobs after the release and after any rollback
+until the older APIs leave the rollback window.
 
 ## Computer Use erasure admission and legacy host retirement (2026-09-25)
 
@@ -165,18 +200,34 @@ removal gates:
 The API no longer reads the legacy `chat_threads` JSONB. A row without an
 object key is now an error. A scope without a snapshot row returns the
 permanent empty `{ chatThreads: [], latestEventId: null, latestSeqId: null }`
-shape. The App SharedWorker and CLI keep handling the inline contract variant,
-because the contract still carries it for iOS (below). They send the header,
-so current and rollback-window APIs return them an R2 URL whenever a row
-exists.
+shape. The App SharedWorker and CLI keep handling the inline contract variant for
+the API rollback window. They send the header, so current and rollback-window
+APIs return them an R2 URL whenever a row exists.
 
-One fallback remains. The native iOS TestFlight client (0.2.x) reads only
-inline `chatThreads`. It sends neither `X-Chat-Thread-Snapshot-R2` nor a client
-version, so no version floor can exclude it. The API therefore still serves
-inline data materialized from R2 to requests that omit the header. The Web App
-and CLI keep sending the header, and it stays in the CORS allow-list. Remove
-that branch, the header, and the inline contract variant after iOS downloads
-the R2 URL and builds without that support are no longer installed.
+At the time of #36942, one fallback remained: the native iOS TestFlight
+client (0.2.x) read only inline `chatThreads`, so the API materialized the R2
+archive for requests without the capability header. That branch was retired
+later on 2026-09-25 with explicit acceptance of breaking the old TestFlight
+builds; see "iOS inline chat thread snapshot response retired" below.
+
+## iOS inline chat thread snapshot response retired (2026-09-25)
+
+The owner approved removing the remaining header-less inline response for
+#36375 despite breaking old internal iOS TestFlight builds. For a scope with a
+compacted snapshot, `GET /api/chat-threads/snapshot` now returns a scoped,
+short-lived R2 URL whether or not `X-Chat-Thread-Snapshot-R2: 1` is present.
+The API no longer downloads and decompresses the R2 archive on behalf of a
+header-less client. A scope without a snapshot row still returns
+`{ chatThreads: [], latestEventId: null, latestSeqId: null }`.
+
+The iOS TestFlight client currently decodes only inline `chatThreads`, so a
+header-less iOS build cannot load a non-empty compacted chat thread list from
+this API. Updating iOS to download the R2 URL remains separate work; this PR
+does not provide a minimum-version gate for iOS. Web App and CLI still send the
+capability header and accept inline responses for the existing API rollback
+window: an older API behind the current rollback floor still branches on that
+header. Keep the header in CORS and the shared inline response variant until
+the API rollback floor advances past that implementation.
 
 ## Thread draft contraction, release 2 (2026-09-25)
 
@@ -1169,6 +1220,9 @@ rollback of the API below this change leaves already appended archive events in
 the stream for those older readers; roll forward instead.
 
 ## Chat thread snapshot R2 handoff (2026-09-23)
+
+Historical rollout record; the current header-less inline branch has since
+been retired as described at the top of this document.
 
 Migration `1204_chat_thread_snapshot_r2_pointer` adds a nullable R2 object key to
 `chat_thread_snapshots`. Existing rows continue to carry the legacy

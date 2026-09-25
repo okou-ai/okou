@@ -1302,11 +1302,9 @@ export const chatThreadsContract = c.router({
           latestEventId: chatThreadEventIdSchema.nullable(),
           latestSeqId: z.number().int().positive().nullable(),
         }),
-        // A scope without a snapshot row (for example, no chat threads yet)
-        // returns `{ chatThreads: [], latestEventId: null, latestSeqId: null }`
-        // to every client. Non-empty inline data is served only to clients
-        // that omit X-Chat-Thread-Snapshot-R2 (the native iOS client; see
-        // getChatThreadSnapshotInner$).
+        // A scope without a snapshot row returns an empty inline response.
+        // Keep the broader inline variant while rollback-window APIs can still
+        // return non-empty inline data to new App and CLI clients.
         z.object({
           chatThreads: z.array(chatThreadSnapshotProjectionSchema),
           latestEventId: chatThreadEventIdSchema.nullable(),

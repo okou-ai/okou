@@ -1291,14 +1291,7 @@ async function ensureCanonicalDelivery(
       destination: args.destination,
       ...(args.provider === "discord"
         ? {
-            providerState: {
-              provider: "discord" as const,
-              nonce: createHash("sha256")
-                .update(`${assetId}:${args.operationId}`)
-                .digest("base64url")
-                .slice(0, 25),
-              attempt: null,
-            },
+            providerState: { provider: "discord" as const, attempt: null },
           }
         : {}),
     });
