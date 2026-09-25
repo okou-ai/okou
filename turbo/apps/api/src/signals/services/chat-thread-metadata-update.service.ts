@@ -25,7 +25,6 @@ import {
   appendChatThreadEventStrict,
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
-import { withChatThreadContentWrite } from "./chat-thread-content-erasure-admission.service";
 import { chatThreadModelPinColumns } from "./chat-thread-model.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
@@ -86,7 +85,6 @@ type ChatThreadMetadataUpdateResult =
       readonly replayed: boolean;
     }
   | { readonly kind: "not_found" }
-  | { readonly kind: "closed" }
   | { readonly kind: "conflict"; readonly message: string }
   | { readonly kind: "expired"; readonly message: string }
   | {
@@ -115,7 +113,7 @@ interface ModelColumns {
 
 type UpdateOperationResult = Exclude<
   ChatThreadMetadataUpdateResult,
-  { readonly kind: "not_found" | "closed" }
+  { readonly kind: "not_found" }
 >;
 
 class MetadataMutationConflictError extends Error {}
@@ -429,25 +427,33 @@ async function appendModelEvents(
 async function writeMetadata(
   tx: Tx,
   args: ChatThreadMetadataUpdateArgs,
-  agentId: string,
   signal: AbortSignal,
-): Promise<UpdateOperationResult> {
-  const existing = await readMutation(tx, args, agentId);
-  signal.throwIfAborted();
-  if (existing) {
-    return await replayMutation(tx, args, existing);
-  }
-
+): Promise<ChatThreadMetadataUpdateResult> {
   const [current] = await tx
     .select({
+      agentId: chatThreads.agentId,
       modelSettings: chatThreads.modelSettings,
       codexServiceTier: chatThreads.codexServiceTier,
     })
     .from(chatThreads)
-    .where(eq(chatThreads.id, args.threadId))
-    .limit(1);
-  if (!current) {
-    throw new Error("Locked chat thread state is missing");
+    .where(
+      and(
+        eq(chatThreads.id, args.threadId),
+        eq(chatThreads.userId, args.principal.userId),
+        chatThreadOrganizationCondition(tx, args.principal.orgId),
+        isNotNull(chatThreads.agentId),
+      ),
+    )
+    .for("update");
+  if (!current?.agentId) {
+    return { kind: "not_found" };
+  }
+  const agentId = current.agentId;
+
+  const existing = await readMutation(tx, args, agentId);
+  signal.throwIfAborted();
+  if (existing) {
+    return await replayMutation(tx, args, existing);
   }
 
   const model = await resolveModelColumns(tx, args, current, signal);
@@ -488,28 +494,11 @@ export async function updateChatThreadMetadata(
   args: ChatThreadMetadataUpdateArgs,
   signal: AbortSignal,
 ): Promise<ChatThreadMetadataUpdateResult> {
+  signal.throwIfAborted();
   const outcome = await settle(
-    withChatThreadContentWrite(
-      db,
-      {
-        chatThreadId: args.threadId,
-        threadLock: "update",
-        authorize: (identity) => {
-          return (
-            identity.userId === args.principal.userId &&
-            identity.agentId !== null &&
-            identity.orgId === args.principal.orgId
-          );
-        },
-      },
-      async (tx, identity) => {
-        if (!identity.agentId) {
-          throw new Error("Admitted chat thread Agent is missing");
-        }
-        return await writeMetadata(tx, args, identity.agentId, signal);
-      },
-      signal,
-    ),
+    db.transaction(async (tx) => {
+      return await writeMetadata(tx, args, signal);
+    }),
     signal,
   );
   if (!outcome.ok) {
@@ -525,12 +514,5 @@ export async function updateChatThreadMetadata(
     }
     throw outcome.error;
   }
-  const result = outcome.value;
-  if (result.outcome === "missing") {
-    return { kind: "not_found" };
-  }
-  if (result.outcome === "closed") {
-    return { kind: "closed" };
-  }
-  return result.value;
+  return outcome.value;
 }

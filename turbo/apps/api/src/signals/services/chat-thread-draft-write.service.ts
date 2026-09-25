@@ -14,14 +14,12 @@ export interface ChatThreadDraftWrite {
 }
 
 /**
- * Upserts the thread's `chat_thread_drafts` row for one admitted draft write.
+ * Upserts the thread's `chat_thread_drafts` row for one draft write.
  *
- * The caller must already be inside {@link withChatThreadContentWrite}, which
- * has resolved the thread's canonical identity, admitted its erasure subjects
- * and taken the thread's `FOR KEY SHARE` lock. This function therefore performs
- * no ownership check of its own: the thread id it is given is the one the fence
- * revalidated, and the row it writes is deleted with the thread by the
- * table's `ON DELETE CASCADE`.
+ * This function performs no ownership check of its own: the caller runs it in
+ * the same transaction as its owned-row legacy `UPDATE` and rolls both back
+ * when that `UPDATE` matches nothing. The row it writes is deleted with the
+ * thread by the table's `ON DELETE CASCADE`.
  *
  * A clear writes null draft values into a retained row instead of deleting it.
  * `persistAgentDraft` deletes its row on clear and that is safe there, because
@@ -34,9 +32,9 @@ export interface ChatThreadDraftWrite {
  * the transaction that wrote it, and `created_at` keeps the default from the
  * first write that touched the thread.
  *
- * Draft PATCH keeps its B1 admission and child-before-parent write order.
- * Send-coupled clears use the separate existing-row-only helper below after
- * acquiring an authorized parent FOR UPDATE lock before any weaker row lock.
+ * Draft PATCH keeps its child-before-parent write order. Send-coupled clears
+ * use the separate existing-row-only helper below after acquiring an
+ * authorized parent FOR UPDATE lock before any weaker row lock.
  */
 export async function persistChatThreadDraftRow(
   tx: Tx,
@@ -61,9 +59,9 @@ export async function persistChatThreadDraftRow(
 
 /**
  * Clear a child row only after the caller's authorized parent UPDATE matched.
- * Send transactions have no B1 producer admission, so they must never use the
- * PATCH upsert above. A missing child is a normal no-op; retaining an existing
- * row and its created_at prevents a later legacy fallback from reviving it.
+ * Send transactions must never use the PATCH upsert above. A missing child is
+ * a normal no-op; retaining an existing row and its created_at prevents a
+ * later legacy fallback from reviving it.
  */
 export async function clearExistingChatThreadDraftRow(
   tx: ApiDb | Tx,

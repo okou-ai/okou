@@ -38,13 +38,13 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { withBuiltInModelRuntimeRouteUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import {
+  holdAgentRowLockFixture,
   holdAgentRunRowLockFixture,
   holdChatEventInsertTransactionFixture,
   holdChatThreadRowLockFixture,
   holdRunOutputMaterializationRowFixture,
   insertQueuedSlackMissingContextFixture,
 } from "../../../test-fixtures/chat-events";
-import { holdAgentRowLockFixture } from "../../../test-fixtures/chat-thread-agent-read-erasure";
 
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";

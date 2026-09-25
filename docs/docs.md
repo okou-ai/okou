@@ -76,21 +76,6 @@ surface; the index does not replace their detailed rules.
   design in [ADR 0004](./adr/0004-account-telemetry-recovery-erasure.md).
 - [User data export](./user-data-export.md): ZIP v2 contents, readable instruction
   scope, canonical chat history, checksum semantics, and download compatibility.
-- [Browser authorization request creation](./account-erasure-browser-authorization-creation.md):
-  account-erasure admission, retained thread/run identity, SQL cost inventory
-  and failure boundaries for minting cloud-browser authorization links.
-- [Computer Use authorization request creation](./account-erasure-computer-use-authorization-creation.md):
-  account-erasure admission, retained canonical identity, compatibility source
-  semantics and failure boundaries for Computer Use authorization links.
-- [Computer Use authorization Apply](./account-erasure-computer-use-authorization-apply.md):
-  canonical chat admission, retained request and thread identity, atomic sidebar
-  completion, bounded SQL inventory and explicit host/legacy residuals.
-- [Canonical authorization reads](./account-erasure-authorization-read.md):
-  deadlock-free Browser and Computer Use GET admission, same-thread concurrency,
-  exact SQL counts and complete unbounded host projection.
-- [Single-thread chat metadata](./account-erasure-chat-thread-metadata.md):
-  exact user authorization, canonical ownership admission, SQL counts, response
-  measurement and failure-path lifecycle evidence.
 - [Standalone Computer Use host directory](./account-erasure-computer-use-host-directory.md):
   exact host-owner admission, complete online/offline projection, Agent-bound
   narrowing and unbounded host-cardinality evidence.

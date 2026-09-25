@@ -66,7 +66,6 @@ import {
   appendChatThreadEvent,
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
-import { withChatThreadContentWrite } from "./chat-thread-content-erasure-admission.service";
 import { persistChatThreadDraftRow } from "./chat-thread-draft-write.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import { cancelRun$, type CancelRunResult } from "./run-cancel.service";
@@ -993,12 +992,10 @@ async function deleteChatThreadInTransaction(
   });
 
   // Search rows are an eventually consistent derived projection without a
-  // parent FK. Remove them synchronously under the thread lock taken above:
-  // the projector now takes a conflicting KEY SHARE on this same row and
-  // revalidates the thread inside its transaction, so it either commits
-  // before this delete removes its rows or finds the thread gone and writes
-  // nothing. Delete the watermark first so the bounded orphan repair, which
-  // still covers pre-fence rows and older producers, keeps its anchor.
+  // parent FK. Remove the normal-path rows synchronously; the projection
+  // cron repairs only writes that race this transaction. Delete the
+  // watermark first so any later projector write also restores the cleanup
+  // anchor.
   await tx
     .delete(chatEventSearchMessageWatermarks)
     .where(eq(chatEventSearchMessageWatermarks.chatThreadId, ownedThread.id));
@@ -1128,10 +1125,9 @@ export const deleteChatThread$ = command(
 /**
  * The legacy draft `UPDATE` matched no owned thread.
  *
- * The canonical ownership key retains `user_id` under `FOR KEY SHARE` after
- * admission. Keep the final owned-row predicate as a defense: if it ever
- * matches nothing, the child row staged earlier must not survive independently.
- * Roll back the whole write and preserve the route's existing 404.
+ * The owned-row predicate is the ownership check. When it matches nothing, the
+ * child row staged earlier must not survive independently, so roll back the
+ * whole write and preserve the route's existing 404.
  */
 class ChatThreadDraftNotWritten extends Error {
   constructor() {
@@ -1148,13 +1144,6 @@ class ChatThreadDraftNotWritten extends Error {
  * changes do not publish `threadListChanged`: the editing client updates its
  * own sidebar locally, and other clients pick the dot up from the drafts
  * endpoint on their next list reload.
- *
- * A draft and its attachment descriptors are account content, so the write now
- * runs under the shared B1 admission and the canonical Agent/thread locks in
- * {@link withChatThreadContentWrite}. B1 closure reuses the same
- * `{ updated: false }` 404 disposition, which keeps the endpoint non-oracular.
- * This route deliberately requires no organization and accepts a thread without
- * an Agent, so a legal null-Agent thread keeps its thread-user-only subject.
  *
  * The draft is written to `chat_thread_drafts` and to the legacy `chat_threads`
  * columns in this one transaction, so the two can never disagree about an
@@ -1182,39 +1171,29 @@ export const updateChatThreadDraft$ = command(
       ? [...args.draftAttachments]
       : null;
     const result = await settle(
-      withChatThreadContentWrite(
-        writeDb,
-        {
+      writeDb.transaction(async (tx) => {
+        await persistChatThreadDraftRow(tx, {
           chatThreadId: args.threadId,
-          authorize: (identity) => {
-            return identity.userId === args.userId;
-          },
-        },
-        async (tx) => {
-          await persistChatThreadDraftRow(tx, {
-            chatThreadId: args.threadId,
+          draftUserMessage: args.draftUserMessage,
+          draftAttachments,
+        });
+        const updated = await tx
+          .update(chatThreads)
+          .set({
             draftUserMessage: args.draftUserMessage,
             draftAttachments,
-          });
-          const updated = await tx
-            .update(chatThreads)
-            .set({
-              draftUserMessage: args.draftUserMessage,
-              draftAttachments,
-            })
-            .where(
-              and(
-                eq(chatThreads.id, args.threadId),
-                eq(chatThreads.userId, args.userId),
-              ),
-            )
-            .returning({ id: chatThreads.id });
-          if (updated.length === 0) {
-            throw new ChatThreadDraftNotWritten();
-          }
-        },
-        signal,
-      ),
+          })
+          .where(
+            and(
+              eq(chatThreads.id, args.threadId),
+              eq(chatThreads.userId, args.userId),
+            ),
+          )
+          .returning({ id: chatThreads.id });
+        if (updated.length === 0) {
+          throw new ChatThreadDraftNotWritten();
+        }
+      }),
     );
     signal.throwIfAborted();
     if (!result.ok) {
@@ -1227,6 +1206,6 @@ export const updateChatThreadDraft$ = command(
       throw result.error;
     }
 
-    return { updated: result.value.outcome === "written" };
+    return { updated: true };
   },
 );

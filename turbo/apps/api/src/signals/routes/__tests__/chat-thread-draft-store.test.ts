@@ -4,19 +4,15 @@ import type {
   PersistedAttachment,
   UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import { settleIncludingAbort } from "../../utils";
-import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
 import {
+  holdChatThreadDraftRowFixture,
   readStoredChatThreadDraftRowFixture,
   setLegacyChatThreadDraftFixture,
-  setChatThreadUserFixture,
-  withChatThreadContentBarrierFixture,
-  withHeldChatThreadDraftRowFixture,
   type StoredChatThreadDraftRow,
-} from "../../../test-fixtures/chat-thread-content-erasure";
+} from "../../../test-fixtures/chat-thread-draft";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -166,184 +162,6 @@ describe("thread drafts are written to chat_thread_drafts and chat_threads", () 
     await expect(storedDraftRow(untouched)).resolves.toBeNull();
   });
 
-  it("writes the child row before it locks the thread row", async () => {
-    const fixture = await createDraftFixture();
-
-    await withChatThreadContentBarrierFixture(
-      {
-        chatThreadId: fixture.threadId,
-        stopAt: "draft-child-upsert",
-        work: async (barrier) => {
-          const writing = chat.patchThread(
-            fixture.actor,
-            fixture.threadId,
-            draftBody("ordered draft"),
-          );
-          await barrier.entered;
-          // The child upsert has run and the legacy statement that upgrades the
-          // thread row to FOR NO KEY UPDATE has not, so the hot parent row is
-          // exclusively locked for the shortest part of the transaction. Both
-          // writes are still uncommitted and invisible from here.
-          await expect(servedDraftText(fixture)).resolves.toBeNull();
-          await expect(storedDraftRow(fixture)).resolves.toBeNull();
-          barrier.release();
-          await writing;
-        },
-      },
-      context.signal,
-    );
-
-    await expect(servedDraftText(fixture)).resolves.toBe("ordered draft");
-    await expect(storedDraftText(fixture)).resolves.toBe("ordered draft");
-  });
-
-  it("keeps the 404 and writes no child row when the owner changes before its pin", async () => {
-    const fixture = await createDraftFixture();
-
-    await withChatThreadContentBarrierFixture(
-      {
-        chatThreadId: fixture.threadId,
-        stopAt: "thread-lock",
-        work: async (barrier) => {
-          const writing = chat.requestPatchThread(
-            fixture.actor,
-            fixture.threadId,
-            draftBody("moved thread draft"),
-            [404],
-          );
-          await barrier.entered;
-          // Change ownership after identity resolution and before its first
-          // KEY SHARE pin. Revalidation must reject the stale account before
-          // either draft store is written.
-          await setChatThreadUserFixture({
-            chatThreadId: fixture.threadId,
-            userId: `user_${randomUUID()}`,
-          });
-          barrier.release();
-          await writing;
-        },
-      },
-      context.signal,
-    );
-
-    // Retried admission cannot stage this account's draft under the new owner.
-    await expect(storedDraftRow(fixture)).resolves.toBeNull();
-  });
-
-  it("commits both draft stores before a pending owner change", async () => {
-    const fixture = await createDraftFixture();
-
-    await withChatThreadContentBarrierFixture(
-      {
-        chatThreadId: fixture.threadId,
-        stopAt: "draft-child-upsert",
-        work: async (barrier) => {
-          const writing = settleIncludingAbort(
-            chat.requestPatchThread(
-              fixture.actor,
-              fixture.threadId,
-              draftBody("pinned owner's draft"),
-              [204],
-            ),
-          );
-          let moving: ReturnType<typeof settleIncludingAbort<void>> | undefined;
-          const observed = await settleIncludingAbort(
-            (async () => {
-              await barrier.entered;
-              moving = settleIncludingAbort(
-                setChatThreadUserFixture({
-                  chatThreadId: fixture.threadId,
-                  userId: `user_${randomUUID()}`,
-                }),
-              );
-              // The referenced (id, user_id) key makes this UPDATE conflict with
-              // KEY SHARE even before the legacy draft write starts.
-              await expect
-                .poll(barrier.blockedWaiterCount)
-                .toBeGreaterThanOrEqual(1);
-              await expect(storedDraftRow(fixture)).resolves.toBeNull();
-            })(),
-          );
-          // Release and join both callers even when a barrier assertion fails.
-          barrier.release();
-          const written = await writing;
-          const moved = moving === undefined ? undefined : await moving;
-          if (!observed.ok) {
-            throw observed.error;
-          }
-          if (!written.ok) {
-            throw written.error;
-          }
-          if (moved && !moved.ok) {
-            throw moved.error;
-          }
-          expect(written.value.status).toBe(204);
-        },
-      },
-      context.signal,
-    );
-
-    const denied = await chat.requestReadThreadMetadata(
-      fixture.actor,
-      fixture.threadId,
-      [404],
-    );
-    expect(denied.status).toBe(404);
-    await setChatThreadUserFixture({
-      chatThreadId: fixture.threadId,
-      userId: fixture.actor.userId,
-    });
-    await expect(servedDraftText(fixture)).resolves.toBe(
-      "pinned owner's draft",
-    );
-    await expect(storedDraftText(fixture)).resolves.toBe(
-      "pinned owner's draft",
-    );
-  });
-
-  it("commits neither store when the thread-row update loses its lock", async () => {
-    const fixture = await createDraftFixture();
-    await chat.patchThread(
-      fixture.actor,
-      fixture.threadId,
-      draftBody("saved draft"),
-    );
-    const before = await storedDraftRow(fixture);
-
-    // FOR NO KEY UPDATE is compatible with the fence's own FOR KEY SHARE, so
-    // the writer is admitted, stages its child row and then fails at the legacy
-    // `chat_threads` UPDATE — the exact shape of the production 55P03 in
-    // #36173. Phase 1 still writes that row, so it is still exposed to it.
-    const holder = await holdChatThreadRowLockFixture({
-      threadId: fixture.threadId,
-      mode: "no key update",
-      signal: context.signal,
-    });
-    await expect(
-      chat.requestPatchThread(
-        fixture.actor,
-        fixture.threadId,
-        draftBody("blocked draft"),
-        [204, 404],
-      ),
-    ).rejects.toThrow(/Unknown response status 500/);
-    holder.release();
-    await holder.done;
-
-    // The staged child row rolled back with the failed thread-row update: no
-    // half-written draft and no new `updated_at`.
-    await expect(storedDraftRow(fixture)).resolves.toStrictEqual(before);
-    await expect(servedDraftText(fixture)).resolves.toBe("saved draft");
-
-    await chat.patchThread(
-      fixture.actor,
-      fixture.threadId,
-      draftBody("recovered draft"),
-    );
-    await expect(servedDraftText(fixture)).resolves.toBe("recovered draft");
-    await expect(storedDraftText(fixture)).resolves.toBe("recovered draft");
-  });
-
   it("leaves the two stores agreeing after competing writes", async () => {
     const fixture = await createDraftFixture();
     const texts = ["competing draft a", "competing draft b"] as const;
@@ -416,41 +234,6 @@ describe("send-coupled draft clears", () => {
     await expect(storedDraftRow(fixture)).resolves.toBeNull();
   });
 
-  it("lets a phase-1 PATCH finish before a waiting send clear", async () => {
-    const fixture = await createDraftFixture();
-    await runs.ensureOrgModelProvider(fixture.actor);
-    await chat.patchThread(
-      fixture.actor,
-      fixture.threadId,
-      draftBody("initial"),
-    );
-
-    await withChatThreadContentBarrierFixture(
-      {
-        chatThreadId: fixture.threadId,
-        stopAt: "draft-child-upsert",
-        work: async (barrier) => {
-          const patch = chat.patchThread(
-            fixture.actor,
-            fixture.threadId,
-            draftBody("PATCH wins first"),
-          );
-          await barrier.entered;
-          const send = sendWithoutCredits(fixture);
-          await expect
-            .poll(barrier.blockedWaiterCount, { interval: 10, timeout: 750 })
-            .toBeGreaterThan(0);
-          barrier.release();
-          await patch;
-          await send;
-        },
-      },
-      context.signal,
-    );
-    await expect(servedDraftText(fixture)).resolves.toBeNull();
-    await expect(storedDraftText(fixture)).resolves.toBeNull();
-  });
-
   it("keeps the committed message when the draft clear fails", async () => {
     const fixture = await createDraftFixture();
     await runs.ensureOrgModelProvider(fixture.actor);
@@ -462,21 +245,23 @@ describe("send-coupled draft clears", () => {
     const child = await storedDraftRow(fixture);
     const before = await chat.listThreadEvents(fixture.actor, fixture.threadId);
 
-    await withHeldChatThreadDraftRowFixture(
-      {
-        chatThreadId: fixture.threadId,
-        work: async (control) => {
-          const send = sendWithoutCredits(fixture);
-          await expect
-            .poll(control.blockedWaiterCount, { interval: 10, timeout: 750 })
-            .toBeGreaterThan(0);
-          await expect(control.cancelBlockedQueries()).resolves.toBe(1);
-          // The draft clear is a weak side effect after the event commit.
-          await send;
-        },
-      },
-      context.signal,
-    );
+    const held = await holdChatThreadDraftRowFixture({
+      chatThreadId: fixture.threadId,
+      signal: context.signal,
+    });
+    onTestFinished(async () => {
+      held.release();
+      await held.done;
+    });
+    const send = sendWithoutCredits(fixture);
+    await expect
+      .poll(held.blockedWaiterCount, { interval: 10, timeout: 750 })
+      .toBeGreaterThan(0);
+    await expect(held.cancelBlockedQueries()).resolves.toBe(1);
+    // The draft clear is a weak side effect after the event commit.
+    await send;
+    held.release();
+    await held.done;
 
     // Each draft copy is cleared independently: the served draft is cleared
     // while the failed child clear leaves its row unchanged.

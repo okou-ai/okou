@@ -11,6 +11,7 @@ import type {
 import type { ChatTeamsMessageFiles } from "@okouai/db/jsonb-contracts/chat-teams-context";
 import type { JsonObject } from "@okouai/db/jsonb-contracts/shared";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { agents } from "@okouai/db/schema/agent";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
@@ -1580,6 +1581,55 @@ export async function holdChatThreadRowLockFixture(args: {
     },
     firstBlockedStatementKind: async () => {
       return await firstDirectBlockedStatementKind(holderPid);
+    },
+  };
+}
+
+/**
+ * Holds one Agent row exclusively, the lock a transfer or deletion would take.
+ * Product APIs never expose this boundary, and the fixture changes no column.
+ */
+export async function holdAgentRowLockFixture(args: {
+  readonly agentId: string;
+  readonly signal: AbortSignal;
+}): Promise<{
+  readonly release: () => void;
+  readonly done: Promise<void>;
+  readonly blockedWaiterCount: () => Promise<number>;
+}> {
+  const started = createDeferredPromise<number>(args.signal);
+  const released = createDeferredPromise<void>(args.signal);
+  const done = db().transaction(async (tx) => {
+    const [agent] = await tx
+      .select({ id: agents.id })
+      .from(agents)
+      .where(eq(agents.id, args.agentId))
+      .for("update")
+      .limit(1);
+    if (!agent) {
+      throw new Error("Expected the Agent row");
+    }
+    const pidRows = await executeRawRows(
+      tx,
+      sql`SELECT pg_backend_pid() AS "pid"`,
+      databasePidRowSchema,
+    );
+    if (!pidRows[0]) {
+      throw new Error("Expected the Agent lock holder pid");
+    }
+    started.resolve(pidRows[0].pid);
+    await released.promise;
+  });
+  const holderPid = await started.promise;
+  return {
+    release: () => {
+      if (!released.settled()) {
+        released.resolve(undefined);
+      }
+    },
+    done,
+    blockedWaiterCount: async () => {
+      return await transitiveBlockedWaiterCount(holderPid);
     },
   };
 }
