@@ -130,12 +130,17 @@ export const releaseStaleTerminalActiveAgentRuns$ = command(
         if (ended.length === 0) {
           return;
         }
+        // Recheck the silence: a sandbox that resumed heartbeating since the
+        // candidate read still has a runner and keeps its row.
         await db.delete(activeAgentRuns).where(
-          inArray(
-            activeAgentRuns.runId,
-            ended.map((row) => {
-              return row.id;
-            }),
+          and(
+            inArray(
+              activeAgentRuns.runId,
+              ended.map((row) => {
+                return row.id;
+              }),
+            ),
+            lt(activeAgentRuns.lastHeartbeatAt, staleBefore),
           ),
         );
       })(),
