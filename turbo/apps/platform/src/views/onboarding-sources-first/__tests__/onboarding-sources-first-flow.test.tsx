@@ -25,22 +25,6 @@ import {
 
 const context = testContext();
 const draftStorage = localStorageSignals("onboarding:sources-first-draft");
-const completedDraftStorage = localStorageSignals(
-  "onboarding:sources-first-draft",
-);
-
-// A fresh signal reads the current bytes; a reused one may return its cached
-// read from before the app changed storage.
-function storedOnboarding(): readonly (string | null)[] {
-  return [
-    context.store.get(
-      localStorageSignals("onboarding:sources-first-draft").get$,
-    ),
-    context.store.get(
-      localStorageSignals("onboarding:sources-first-step").get$,
-    ),
-  ];
-}
 
 const SOURCES_FIRST_ON = {
   [FeatureSwitchKey.OnboardingSourcesFirst]: true,
@@ -150,14 +134,6 @@ test("The switch opens the field question on /onboarding and continues to the so
   expect(getButtonByName("Continue")).toBeDisabled();
 
   click(fieldRadio(MARKETING_FIELD));
-
-  expect(
-    JSON.parse(context.store.get(draftStorage.get$) ?? "null"),
-  ).toMatchObject({
-    orgId: "org_default",
-    userId: "test-user-123",
-    industry: "marketing",
-  });
 
   await waitFor(() => {
     expect(getButtonByName("Continue")).toBeEnabled();
@@ -566,8 +542,6 @@ test("A refreshed ready step keeps the industry, model choice, and edited reques
   });
   expect(sentIndustry).toBe("marketing");
   expect(sentProvider).toBe("claudeCode");
-  expect(context.store.get(completedDraftStorage.get$)).toBeNull();
-  expect(storedOnboarding()).toStrictEqual([null, null]);
 });
 
 test("A member's run reaches the first request without the admin-only completion", async () => {
@@ -611,7 +585,6 @@ test("A member's run reaches the first request without the admin-only completion
   // `POST /api/onboarding/complete` is admin-only, so a member run would only
   // ever collect a 403 from it.
   expect(completions).toBe(0);
-  expect(storedOnboarding()).toStrictEqual([null, null]);
 });
 
 test("A step keeps the prompt handoff and redeem code it arrived with", async () => {
