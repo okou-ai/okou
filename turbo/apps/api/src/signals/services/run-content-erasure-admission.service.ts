@@ -552,6 +552,11 @@ export async function withRunOutputWrite<T>(
         args.diagnostics,
       );
       signal.throwIfAborted();
+      // The append may have waited on its FK checks. Re-read ownership after it
+      // so a transfer committed meanwhile rolls the prepared content back.
+      args.diagnostics?.enter("ownership_recheck");
+      assertPreparedOwnership(await readOwnership(tx, args.runId), args);
+      signal.throwIfAborted();
       args.diagnostics?.enter("transaction_finalize");
       return value;
     }),

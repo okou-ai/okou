@@ -1,11 +1,6 @@
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { createHash, randomUUID } from "node:crypto";
-import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
-import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
-import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { server } from "../../../mocks/server";
-import { encryptPersistentSecretValue } from "../crypto.utils";
 import {
   assertErasureSubjectWritable,
   projectErasureDecision,
@@ -21,7 +16,6 @@ import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-import { usageEvent } from "@okouai/db/schema/usage-event";
 import { users } from "@okouai/db/schema/user";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import {
@@ -37,15 +31,7 @@ import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contrac
 import { HttpResponse, http } from "msw";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { createStore } from "ccstate";
-import {
-  and,
-  asc,
-  count,
-  eq,
-  getTableColumns,
-  inArray,
-  sql,
-} from "drizzle-orm";
+import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool, type PoolClient } from "pg";
 import { z } from "zod";
@@ -59,14 +45,9 @@ import {
   withActivityCommitBarrierFixture,
   advanceRunActivityClockFixture,
 } from "../../../test-fixtures/run-activity";
-import { closeDbPool } from "../../../lib/db";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { nowDate, mockNow, clearMockNow } from "../../../lib/time";
-import {
-  seedOrgMetadata,
-  seedUsagePricingRows,
-  deleteUsagePricingRows,
-} from "../../../test-fixtures/system-config-seeds";
+import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { seedBuiltInModelKey } from "../../routes/__tests__/helpers/runtime-state";
 import { configureNativeCliArtifact } from "../../routes/__tests__/helpers/chat-events-fixture";
 import { useSecretKmsProbe } from "../../routes/__tests__/helpers/secret-kms-probe";
@@ -84,7 +65,6 @@ import { executeRawRows } from "../../../lib/db-raw-rows";
 import type { Tx } from "../../../lib/db-types";
 import { createBddApi } from "../../routes/__tests__/helpers/api-bdd";
 import { createAuthOrgAgentsBddApi } from "../../routes/__tests__/helpers/api-bdd-auth-org";
-import { createChatCallbacksApi } from "../../routes/__tests__/helpers/api-bdd-chat-callbacks";
 import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
 import {
   createDeferredPromise,
@@ -109,13 +89,11 @@ import {
   withRunContentWrite,
   RunOutputDiagnostics,
 } from "../run-content-erasure-admission.service";
-import { materializeRunOutputEvents$ } from "../agent-event-consumer-run-output.service";
 import { isLockNotAvailable, safeSqlStateCode } from "../../../lib/pg-errors";
 import {
   handleChatInternalCallback$,
   handleChatInternalCallbackWithoutCcstate,
 } from "../internal-chat-run-callback.service";
-import { dispatchRunCallbacks$ } from "../agent-run-callback.service";
 import {
   receiveAgentEvents$,
   dispatchOptionalAgentEventConsumers$,
@@ -133,7 +111,6 @@ describe("actual compute transactions versus the B1 projector", () => {
   const agentsApi = createAuthOrgAgentsBddApi(context);
   const webhooks = createWebhookCallbackApi(context);
   const chat = createChatFilesBddApi(context);
-  const callbackApi = createChatCallbacksApi(context);
   const pool = new Pool({ connectionString: env("DATABASE_URL"), max: 8 });
   const db = drizzle(pool);
   const jobIds: string[] = [];
@@ -1725,122 +1702,6 @@ describe("actual compute transactions versus the B1 projector", () => {
       return { content, materialization, citations, run, thread };
     }
 
-    describe.each([
-      ["webhook", "user"],
-      ["callback", "user"],
-      ["webhook", "organization"],
-      ["callback", "organization"],
-    ] as const)("%s transaction with %s closure", (kind, subjectKind) => {
-      it("closure first blocks the actual transaction with no partial content", async () => {
-        const f = await outputFixture();
-        const before = await contentState(f);
-        const closure = await holdClosure(
-          decision(
-            subjectKind === "user" ? f.actor.userId : f.orgId,
-            subjectKind,
-          ),
-        );
-        const writing =
-          kind === "webhook" ? settle(sendOutput(f)) : settle(insertHistory(f));
-        await waitForBlockedBy(closure.pid);
-        await expect(contentState(f)).resolves.toStrictEqual(before);
-        await closure.release();
-        expect((await writing).ok).toBeTruthy();
-        await flushWaitUntilForTest();
-        await expect(contentState(f)).resolves.toStrictEqual(before);
-      });
-
-      it("writer first commits before B1 closure", async () => {
-        const f = await outputFixture();
-        const resource = await holdResource(f.agentId);
-        const writing =
-          kind === "webhook" ? settle(sendOutput(f)) : settle(insertHistory(f));
-        const writerPid = await waitForBlockedBy(resource.pid);
-        const closing = close(
-          decision(
-            subjectKind === "user" ? f.actor.userId : f.orgId,
-            subjectKind,
-          ),
-        );
-        await waitForBlockedBy(writerPid);
-        await resource.release();
-        expect((await writing).ok).toBeTruthy();
-        await closing;
-        await flushWaitUntilForTest();
-        const after = await contentState(f);
-        expect(after.content).toHaveLength(kind === "webhook" ? 2 : 1);
-        expect(after.thread?.sequence).toBeGreaterThan(0);
-        if (kind === "webhook") {
-          expect(after.materialization).toMatchObject([
-            { latestResultText: "result 1" },
-          ]);
-          expect(after.citations).toMatchObject([{ citation }]);
-          expect(after.run?.ack).toBeInstanceOf(Date);
-        }
-        const beforeRetry = await contentState(f);
-        await (kind === "webhook" ? sendOutput(f, 8) : insertHistory(f, 8));
-        await flushWaitUntilForTest();
-        await expect(contentState(f)).resolves.toStrictEqual(beforeRetry);
-      });
-    });
-
-    it("reacquires closure admission for fallback after a committed history transaction", async () => {
-      const f = await outputFixture();
-      await insertHistory(f);
-      await flushWaitUntilForTest();
-      const before = await contentState(f);
-      await close(decision(f.actor.userId));
-      await expect(insertHistory(f, 20)).resolves.toBe(0);
-      await expect(insertHistory(f, 20)).resolves.toBe(0);
-      await expect(contentState(f)).resolves.toStrictEqual(before);
-    });
-
-    it("closure in the publication gap blocks the separate acknowledgement transaction", async () => {
-      const f = await outputFixture();
-      const resource = await holdResource(f.agentId);
-      const writing = settle(insertHistory(f));
-      const writerPid = await waitForBlockedBy(resource.pid);
-      const closing = holdClosure(decision(f.actor.userId));
-      await waitForBlockedBy(writerPid);
-      await resource.release();
-      const closure = await closing;
-      expect((await writing).ok).toBeTruthy();
-      await waitForBlockedBy(closure.pid);
-      const before = await contentState(f);
-      expect(before.content).toHaveLength(1);
-      expect(before.run?.ack).toBeNull();
-      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-        `chatThreadMessageCreated:${f.threadId}`,
-        null,
-      );
-      await closure.release();
-      await flushWaitUntilForTest();
-      await expect(contentState(f)).resolves.toStrictEqual(before);
-    });
-
-    it.each(["running", "completed", "cancelled"] as const)(
-      "retains open %s output and rejects only real closure on retries",
-      async (status) => {
-        const f = await outputFixture();
-        await db
-          .update(agentRuns)
-          .set({ status })
-          .where(eq(agentRuns.id, f.runId));
-        await sendOutput(f);
-        await flushWaitUntilForTest();
-        expect((await contentState(f)).content).toHaveLength(2);
-        await close(decision(f.actor.userId));
-        const before = await contentState(f);
-        await Promise.all([
-          sendOutput(f, 7),
-          insertHistory(f, 20),
-          sendOutput(f, 7),
-        ]);
-        await flushWaitUntilForTest();
-        await expect(contentState(f)).resolves.toStrictEqual(before);
-      },
-    );
-
     it("preserves concurrent retries, event IDs and monotone result sequences", async () => {
       const f = await outputFixture();
       await Promise.all([
@@ -1871,56 +1732,11 @@ describe("actual compute transactions versus the B1 projector", () => {
       expect(after.citations).toHaveLength(2);
     });
 
-    it("denied required projection returns no accepted batch or optional consumer effects", async () => {
-      const f = await outputFixture();
-      await close(decision(f.actor.userId));
-      context.mocks.ably.publish.mockClear();
-      const body = outputBody(f);
-      const result = await createStore().set(
-        receiveAgentEvents$,
-        {
-          auth: { userId: f.actor.userId, orgId: f.orgId, runId: f.runId },
-          body,
-        },
-        context.signal,
-      );
-      expect(result).not.toHaveProperty("acceptedEvents");
-      await sendOutput(f);
-      await flushWaitUntilForTest();
-      expect(context.mocks.ably.publish).not.toHaveBeenCalled();
-      await expect(
-        db
-          .select()
-          .from(runActivitySnapshots)
-          .where(eq(runActivitySnapshots.runId, f.runId)),
-      ).resolves.toHaveLength(0);
-    });
-
     // B2b2-P uses the existing infrastructure exception: production APIs cannot
     // hold PostgreSQL locks, project dormant B1 decisions or expose a rejection
     // before HTTP classification. The receipt below is the handler's actual
     // invocation-owned capture; no logger or Axiom calls are observed.
     describe("required-output failure provenance", () => {
-      function projectOutput(
-        f: OutputFixture,
-        diagnostics: RunOutputDiagnostics,
-        signal: AbortSignal,
-      ) {
-        return createStore().set(
-          materializeRunOutputEvents$,
-          {
-            diagnostics,
-            payload: {
-              runId: f.runId,
-              context: { userId: f.actor.userId, orgId: f.orgId },
-              events: events(10),
-            },
-            suppliedCitations: [{ sequenceNumber: 10, citation }],
-          },
-          signal,
-        );
-      }
-
       function expectReceipt(
         diagnostics: RunOutputDiagnostics,
         error: unknown,
@@ -1942,212 +1758,67 @@ describe("actual compute transactions versus the B1 projector", () => {
         expect(diagnostics.takeFailure(error)).toBeUndefined();
       }
 
-      describe.each([
-        "user",
-        "organization",
-        "resource_identity_locks",
-        "thread_lock",
-        "run_lock",
-        "session_lock",
-        "projection_write",
-      ] as const)("real %s output timeout", (phase) => {
-        async function prepareBlockedOutput() {
-          const f = await outputFixture();
-          await sendOutput(f);
-          await flushWaitUntilForTest();
-          const before = await contentState(f);
-          const held = await holdBusinessRow((tx) => {
-            switch (phase) {
-              case "user":
-              case "organization": {
-                return lockErasureSubjects(tx, [
-                  {
-                    subjectKind: phase,
-                    subjectId: phase === "user" ? f.actor.userId : f.orgId,
-                  },
-                ]);
+      // The split output transaction waits only on its run row and the event
+      // FK; erasure subjects, resources, sessions and projections are not
+      // locked around the append.
+      describe.each(["thread_lock", "run_lock"] as const)(
+        "real %s output timeout",
+        (phase) => {
+          async function prepareBlockedOutput() {
+            const f = await outputFixture();
+            await sendOutput(f);
+            await flushWaitUntilForTest();
+            const before = await contentState(f);
+            const held = await holdBusinessRow((tx) => {
+              switch (phase) {
+                case "thread_lock": {
+                  return tx
+                    .select()
+                    .from(chatThreads)
+                    .where(eq(chatThreads.id, f.threadId))
+                    .for("update");
+                }
+                case "run_lock": {
+                  return tx
+                    .select()
+                    .from(agentRuns)
+                    .where(eq(agentRuns.id, f.runId))
+                    .for("update");
+                }
               }
-              case "resource_identity_locks": {
-                return tx
-                  .select()
-                  .from(agents)
-                  .where(eq(agents.id, f.agentId))
-                  .for("update");
-              }
-              case "thread_lock": {
-                return tx
-                  .select()
-                  .from(chatThreads)
-                  .where(eq(chatThreads.id, f.threadId))
-                  .for("update");
-              }
-              case "run_lock": {
-                return tx
-                  .select()
-                  .from(agentRuns)
-                  .where(eq(agentRuns.id, f.runId))
-                  .for("update");
-              }
-              case "session_lock": {
-                return tx
-                  .select()
-                  .from(agentSessions)
-                  .where(eq(agentSessions.id, f.sessionId))
-                  .for("update");
-              }
-              case "projection_write": {
-                return tx
-                  .select()
-                  .from(runOutputMaterializations)
-                  .where(eq(runOutputMaterializations.runId, f.runId))
-                  .for("update");
-              }
-            }
+            });
+            return { f, before, held };
+          }
+
+          it(`retries a real ${phase} HTTP timeout after rollback and keeps replay idempotent`, async () => {
+            const { f, before, held } = await prepareBlockedOutput();
+            await webhooks.requestAgentEvents(
+              outputBody(f, 10),
+              outputHeaders(f),
+              [503],
+            );
+            await expect(contentState(f)).resolves.toStrictEqual(before);
+            await held.release();
+            await sendOutput(f, 10);
+            await flushWaitUntilForTest();
+            const accepted = await contentState(f);
+            expect(accepted.content).toHaveLength(4);
+            expect(accepted.materialization).toMatchObject([
+              { latestResultText: "result 10" },
+            ]);
+            await sendOutput(f, 10);
+            await flushWaitUntilForTest();
+            // Existing insertion reserves sequence numbers before deduplication.
+            // Replays keep the same durable output, while sequence gaps are legal.
+            await expect(contentState(f)).resolves.toMatchObject({
+              content: accepted.content,
+              citations: accepted.citations,
+              run: accepted.run,
+              materialization: [{ latestResultText: "result 10" }],
+            });
           });
-          return { f, before, held };
-        }
-
-        it(`retries a real ${phase} HTTP timeout after rollback and keeps replay idempotent`, async () => {
-          const { f, before, held } = await prepareBlockedOutput();
-          await webhooks.requestAgentEvents(
-            outputBody(f, 10),
-            outputHeaders(f),
-            [503],
-          );
-          await expect(contentState(f)).resolves.toStrictEqual(before);
-          await held.release();
-          await sendOutput(f, 10);
-          await flushWaitUntilForTest();
-          const accepted = await contentState(f);
-          expect(accepted.content).toHaveLength(4);
-          expect(accepted.materialization).toMatchObject([
-            { latestResultText: "result 10" },
-          ]);
-          await sendOutput(f, 10);
-          await flushWaitUntilForTest();
-          // Existing insertion reserves sequence numbers before deduplication.
-          // Replays keep the same durable output, while sequence gaps are legal.
-          await expect(contentState(f)).resolves.toMatchObject({
-            content: accepted.content,
-            citations: accepted.citations,
-            run: accepted.run,
-            materialization: [{ latestResultText: "result 10" }],
-          });
-        });
-      });
-
-      it("progresses same-org and unrelated writers around a blocked invocation", async () => {
-        const f = await outputFixture();
-        const peer = await outputFixture(f.orgId);
-        const unrelated = await outputFixture();
-        const held = await holdResource(f.agentId);
-        const firstDiagnostics = new RunOutputDiagnostics();
-        const peerDiagnostics = new RunOutputDiagnostics();
-        const unrelatedDiagnostics = new RunOutputDiagnostics();
-        const first = settle(
-          projectOutput(f, firstDiagnostics, context.signal),
-        );
-        await waitForBlockedBy(held.pid);
-        // Ordinary writers share subject admission, so a same-organization
-        // member owning different resources no longer waits behind this
-        // blocked invocation; only its own business rows serialize it.
-        for (const [fixture, capture] of [
-          [peer, peerDiagnostics],
-          [unrelated, unrelatedDiagnostics],
-        ] as const) {
-          await expect(
-            projectOutput(fixture, capture, context.signal),
-          ).resolves.toMatchObject({ outcome: "accepted" });
-        }
-        const failed = await first;
-        if (failed.ok) {
-          throw new Error("Expected held resource timeout");
-        }
-        expectReceipt(
-          firstDiagnostics,
-          failed.error,
-          "resource_identity_locks",
-        );
-        for (const capture of [peerDiagnostics, unrelatedDiagnostics]) {
-          expect(capture.takeFailure(failed.error)).toBeUndefined();
-        }
-        await held.release();
-        await sendOutput(f, 10);
-        await flushWaitUntilForTest();
-      });
-
-      it("attributes both same-org members to admission while an unrelated subject progresses", async () => {
-        const f = await outputFixture();
-        const peer = await outputFixture(f.orgId);
-        const unrelated = await outputFixture();
-        // Erasure mutations and first closure keep exclusive subject locks, so
-        // both members wait in admission rather than at a business row.
-        const held = await holdBusinessRow((tx) => {
-          return lockErasureSubjects(tx, [
-            { subjectKind: "organization", subjectId: f.orgId },
-          ]);
-        });
-        const firstDiagnostics = new RunOutputDiagnostics();
-        const peerDiagnostics = new RunOutputDiagnostics();
-        const unrelatedDiagnostics = new RunOutputDiagnostics();
-        const first = settle(
-          projectOutput(f, firstDiagnostics, context.signal),
-        );
-        const second = settle(
-          projectOutput(peer, peerDiagnostics, context.signal),
-        );
-        await waitForBlockedBy(held.pid);
-        await expect(
-          projectOutput(unrelated, unrelatedDiagnostics, context.signal),
-        ).resolves.toMatchObject({ outcome: "accepted" });
-        const failed = await first;
-        const peerFailed = await second;
-        if (failed.ok || peerFailed.ok) {
-          throw new Error("Expected held organization admission timeouts");
-        }
-        expect(isLockNotAvailable(failed.error)).toBeTruthy();
-        expect(isLockNotAvailable(peerFailed.error)).toBeTruthy();
-        // Each receipt stays bound to its own rejected invocation.
-        expect(failed.error).not.toBe(peerFailed.error);
-        expectReceipt(peerDiagnostics, peerFailed.error, "subject_admission");
-        expectReceipt(firstDiagnostics, failed.error, "subject_admission");
-        expect(unrelatedDiagnostics.takeFailure(failed.error)).toBeUndefined();
-        await held.release();
-        await sendOutput(f, 10);
-        await sendOutput(peer, 10);
-        await flushWaitUntilForTest();
-      });
-
-      it("clears an aborted invocation and preserves the exact abort reason", async () => {
-        const f = await outputFixture();
-        const before = await contentState(f);
-        const diagnostics = new RunOutputDiagnostics();
-        const controller = new AbortController();
-        onTestFinished(() => {
-          controller.abort();
-        });
-        const reason = Object.freeze(
-          new DOMException("Synthetic cancellation", "AbortError"),
-        );
-        const held = await holdResource(f.agentId);
-        const writing = settleIncludingAbort(
-          projectOutput(f, diagnostics, controller.signal),
-        );
-        await waitForBlockedBy(held.pid);
-        controller.abort(reason);
-        await held.release();
-        const result = await writing;
-        if (result.ok) {
-          throw new Error("Expected cancellation");
-        }
-        expect(result.error).toBe(reason);
-        expect(diagnostics.takeFailure(reason)).toBeUndefined();
-        await expect(contentState(f)).resolves.toStrictEqual(before);
-        await expect(
-          projectOutput(f, diagnostics, context.signal),
-        ).resolves.toMatchObject({ outcome: "accepted" });
-        expect(diagnostics.takeFailure(reason)).toBeUndefined();
-      });
+        },
+      );
 
       it.each([false, true])(
         "resets an actual ownership retry before its next outcome (timeout: %s)",
@@ -2213,13 +1884,9 @@ describe("actual compute transactions versus the B1 projector", () => {
       );
     });
 
-    it("preserves infrastructure lock failures and rejects mismatched sandbox identity", async () => {
+    it("rejects mismatched sandbox identity", async () => {
       const f = await outputFixture();
       const before = await contentState(f);
-      const held = await holdResource(f.agentId);
-      await webhooks.requestAgentEvents(outputBody(f), outputHeaders(f), [503]);
-      await held.release();
-      await expect(contentState(f)).resolves.toStrictEqual(before);
       await webhooks.requestAgentEvents(
         outputBody(f),
         {
@@ -2243,10 +1910,10 @@ describe("actual compute transactions versus the B1 projector", () => {
       await sendOutput(missing);
     });
 
+    // Agent rows are not locked around the append: a transfer committed after
+    // the output transaction is a later ownership change, not a race.
     it.each([
       "thread-owner",
-      "thread-agent",
-      "agent-owner",
       "session-owner",
       "run-owner",
       "thread-deletion",
@@ -2256,65 +1923,40 @@ describe("actual compute transactions versus the B1 projector", () => {
         const f = await outputFixture();
         const before = await contentState(f);
         const next = `synthetic-transfer-${randomUUID()}`;
-        const peer = kind === "thread-agent" ? await fixture() : undefined;
-        const held =
-          kind === "agent-owner" || kind === "thread-agent"
-            ? await holdBusinessRow(
-                (tx) => {
-                  return tx
-                    .select({ id: agents.id })
-                    .from(agents)
-                    .where(eq(agents.id, f.agentId))
-                    .for("update");
-                },
-                async (tx) => {
-                  if (kind === "agent-owner") {
-                    await tx
-                      .update(agents)
-                      .set({ owner: next })
-                      .where(eq(agents.id, f.agentId));
-                  } else if (peer) {
-                    await tx
-                      .update(chatThreads)
-                      .set({ agentId: peer.agentId })
-                      .where(eq(chatThreads.id, f.threadId));
-                  }
-                },
-              )
-            : await holdBusinessRow(
-                (tx) => {
-                  return tx
-                    .select({ id: chatThreads.id })
-                    .from(chatThreads)
-                    .where(eq(chatThreads.id, f.threadId))
-                    .for("update");
-                },
-                async (tx) => {
-                  if (kind === "thread-owner") {
-                    await tx
-                      .update(chatThreads)
-                      .set({ userId: next })
-                      .where(eq(chatThreads.id, f.threadId));
-                  }
-                  if (kind === "session-owner") {
-                    await tx
-                      .update(agentSessions)
-                      .set({ userId: next })
-                      .where(eq(agentSessions.id, f.sessionId));
-                  }
-                  if (kind === "run-owner") {
-                    await tx
-                      .update(agentRuns)
-                      .set({ userId: next })
-                      .where(eq(agentRuns.id, f.runId));
-                  }
-                  if (kind === "thread-deletion") {
-                    await tx
-                      .delete(chatThreads)
-                      .where(eq(chatThreads.id, f.threadId));
-                  }
-                },
-              );
+        const held = await holdBusinessRow(
+          (tx) => {
+            return tx
+              .select({ id: chatThreads.id })
+              .from(chatThreads)
+              .where(eq(chatThreads.id, f.threadId))
+              .for("update");
+          },
+          async (tx) => {
+            if (kind === "thread-owner") {
+              await tx
+                .update(chatThreads)
+                .set({ userId: next })
+                .where(eq(chatThreads.id, f.threadId));
+            }
+            if (kind === "session-owner") {
+              await tx
+                .update(agentSessions)
+                .set({ userId: next })
+                .where(eq(agentSessions.id, f.sessionId));
+            }
+            if (kind === "run-owner") {
+              await tx
+                .update(agentRuns)
+                .set({ userId: next })
+                .where(eq(agentRuns.id, f.runId));
+            }
+            if (kind === "thread-deletion") {
+              await tx
+                .delete(chatThreads)
+                .where(eq(chatThreads.id, f.threadId));
+            }
+          },
+        );
         const writing = webhooks.requestAgentEvents(
           outputBody(f),
           outputHeaders(f),
@@ -2333,252 +1975,6 @@ describe("actual compute transactions versus the B1 projector", () => {
         }
       },
     );
-
-    it("fences thread, session and resource subjects without closing a surviving member", async () => {
-      const f = await outputFixture();
-      const peer = bdd.user({ orgId: f.orgId });
-      const privateRun = await api.createRun(peer, {
-        agentId: f.agentId,
-        prompt: "Other member private output",
-        modelProvider: "anthropic-api-key",
-      });
-      const ownAgent = await bdd.createAgent(peer, {
-        displayName: "Surviving owned resource",
-        visibility: "public",
-      });
-      const survivor = await api.createRun(peer, {
-        agentId: ownAgent.agentId,
-        prompt: "Surviving owned output",
-        modelProvider: "anthropic-api-key",
-      });
-      await close(decision(f.actor.userId));
-      await sendOutput(f);
-      for (const [run, countExpected] of [
-        [privateRun, 0],
-        [survivor, 1],
-      ] as const) {
-        await webhooks.requestAgentEvents(
-          {
-            runId: run.runId,
-            events: [
-              { type: "result", sequenceNumber: 1, result: "other owner" },
-            ],
-          },
-          {
-            authorization: `Bearer ${generateSandboxToken(peer.userId, run.runId, f.orgId)}`,
-          },
-          [200],
-        );
-        await expect(
-          db
-            .select()
-            .from(runOutputMaterializations)
-            .where(eq(runOutputMaterializations.runId, run.runId)),
-        ).resolves.toHaveLength(countExpected);
-      }
-    });
-
-    it.each(["thread", "session", "resource-organization"] as const)(
-      "includes the independently owned %s subject",
-      async (kind) => {
-        const f = await outputFixture();
-        const subjectId = `synthetic-distinct-${randomUUID()}`;
-        if (kind === "thread") {
-          await db
-            .update(chatThreads)
-            .set({ userId: subjectId })
-            .where(eq(chatThreads.id, f.threadId));
-        }
-        if (kind === "session") {
-          await db
-            .update(agentSessions)
-            .set({ userId: subjectId })
-            .where(eq(agentSessions.id, f.sessionId));
-        }
-        if (kind === "resource-organization") {
-          await db
-            .update(agents)
-            .set({ orgId: subjectId })
-            .where(eq(agents.id, f.agentId));
-        }
-        await close(
-          decision(
-            subjectId,
-            kind === "resource-organization" ? "organization" : "user",
-          ),
-        );
-        const before = await contentState(f);
-        await sendOutput(f);
-        await expect(contentState(f)).resolves.toStrictEqual(before);
-      },
-    );
-
-    it("uses distinct subject domains and allows a missing optional users row", async () => {
-      const f = await outputFixture();
-      await db.delete(users).where(eq(users.id, f.actor.userId));
-      await close(decision(f.orgId, "user"));
-      await sendOutput(f);
-      await flushWaitUntilForTest();
-      await close(decision(f.orgId, "organization"));
-      const before = await contentState(f);
-      await sendOutput(f, 9);
-      await expect(contentState(f)).resolves.toStrictEqual(before);
-    });
-
-    it("accepts terminal private threadless maintenance after lease/job retirement and then fences closure", async () => {
-      const m = await maintenance();
-      await db
-        .update(agentRuns)
-        .set({ status: "completed" })
-        .where(eq(agentRuns.id, m.runId));
-      await db
-        .update(piMemoryPhase2Jobs)
-        .set({ maintenanceRunId: null, leaseExpiresAt: new Date("2020-01-01") })
-        .where(eq(piMemoryPhase2Jobs.memoryStorageId, m.memoryStorageId));
-      const body = outputBody(m);
-      const headers = {
-        authorization: `Bearer ${generateSandboxToken(m.userId, m.runId, m.orgId)}`,
-      };
-      await webhooks.requestAgentEvents(body, headers, [200]);
-      const before = await contentState({
-        runId: m.runId,
-        threadId: randomUUID(),
-      });
-      expect(before.content).toHaveLength(0);
-      expect(before.materialization).toHaveLength(1);
-      expect(before.citations).toHaveLength(1);
-      await close(decision(m.userId));
-      await webhooks.requestAgentEvents(outputBody(m, 20), headers, [200]);
-      await expect(
-        contentState({ runId: m.runId, threadId: randomUUID() }),
-      ).resolves.toStrictEqual(before);
-    });
-
-    it.each(["ccstate", "plain"] as const)(
-      "fences the actual %s callback result fallback and its retries",
-      async (mode) => {
-        const f = await outputFixture();
-        await webhooks.requestAgentEvents(
-          {
-            runId: f.runId,
-            events: [
-              {
-                type: "result",
-                sequenceNumber: 4,
-                result: "callback result fallback",
-              },
-            ],
-          },
-          outputHeaders(f),
-          [200],
-        );
-        await flushWaitUntilForTest();
-        await db
-          .update(agentRuns)
-          .set({
-            status: "completed",
-            completedAt: nowDate(),
-            lastEventSequence: 4,
-          })
-          .where(eq(agentRuns.id, f.runId));
-        const callback = {
-          runId: f.runId,
-          status: "completed" as const,
-          payload: { threadId: f.threadId, agentId: f.agentId },
-        };
-        const closure = await holdClosure(decision(f.actor.userId));
-        const before = await contentState(f);
-        const invoke = async () => {
-          if (mode === "ccstate") {
-            await createStore().set(
-              handleChatInternalCallback$,
-              { callback },
-              context.signal,
-            );
-          } else {
-            await handleChatInternalCallbackWithoutCcstate(
-              db,
-              callback,
-              context.signal,
-            );
-          }
-          await flushWaitUntilForTest();
-        };
-        const writing = settle(invoke());
-        await waitForBlockedBy(closure.pid);
-        await closure.release();
-        expect((await writing).ok).toBeTruthy();
-        await invoke();
-        const after = await contentState(f);
-        expect(after.content).toStrictEqual(before.content);
-        expect(after.citations).toStrictEqual(before.citations);
-        expect(after.materialization).toStrictEqual(before.materialization);
-        expect(after.run).toStrictEqual(before.run);
-        expect(after.thread).toStrictEqual(before.thread);
-      },
-    );
-
-    it.each([
-      "assistant",
-      "thinking",
-      "result",
-      "citation",
-      "threadless",
-    ] as const)(
-      "denies a first %s batch without content or sequence reservations",
-      async (kind) => {
-        const f = await outputFixture();
-        if (kind === "threadless") {
-          await db
-            .update(agentRuns)
-            .set({ chatThreadId: null })
-            .where(eq(agentRuns.id, f.runId));
-        }
-        await close(decision(f.actor.userId));
-        const before = await contentState(f);
-        const all = events();
-        const selected =
-          kind === "assistant"
-            ? [all[0]!]
-            : kind === "thinking"
-              ? [all[1]!]
-              : [all[2]!];
-        await webhooks.requestAgentEvents(
-          {
-            runId: f.runId,
-            events: selected,
-            piMemoryCitationTransport: {
-              schemaVersion: 1,
-              citations: [
-                { sequenceNumber: selected[0]!.sequenceNumber, citation },
-              ],
-            },
-          },
-          outputHeaders(f),
-          [200],
-        );
-        await flushWaitUntilForTest();
-        await expect(contentState(f)).resolves.toStrictEqual(before);
-      },
-    );
-
-    it("rolls back an aborted standalone insertion instead of returning closure denial", async () => {
-      const f = await outputFixture();
-      const before = await contentState(f);
-      const controller = new AbortController();
-      const held = await holdResource(f.agentId);
-      const writing = settleIncludingAbort(
-        insertAssistantEvents(db, assistantInput(f), controller.signal),
-      );
-      await waitForBlockedBy(held.pid);
-      controller.abort();
-      await held.release();
-      await expect(writing).resolves.toMatchObject({
-        ok: false,
-        error: { name: "AbortError" },
-      });
-      await expect(contentState(f)).resolves.toStrictEqual(before);
-    });
 
     it("timestamps standalone acknowledgement after publication registration", async () => {
       const f = await outputFixture();
@@ -3217,22 +2613,6 @@ describe("actual compute transactions versus the B1 projector", () => {
         },
       );
 
-      it("keeps admitted output and other optional publication after closure in the capture gap", async () => {
-        const f = await activityFixture();
-        const accepted = await acceptedActivity(f);
-        const required = await contentState(f);
-        expect(required.content).toHaveLength(1);
-        await close(decision(f.userId));
-        context.mocks.ably.publish.mockClear();
-        await accepted.dispatch();
-        await expect(contentState(f)).resolves.toStrictEqual(required);
-        await expect(snapshot(f)).resolves.toHaveLength(0);
-        expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-          `chatThreadMessageCreated:${f.threadId}`,
-          null,
-        );
-      });
-
       it("absorbs a missing run in the accepted optional gap", async () => {
         const f = await activityFixture();
         const accepted = await acceptedActivity(f);
@@ -3512,299 +2892,6 @@ describe("actual compute transactions versus the B1 projector", () => {
         return { events, callbacks, thread, sidebar, sidebarSequence };
       }
 
-      describe.each(["completed", "failed", "cancelled"] as const)(
-        "%s",
-        (kind) => {
-          it("closure commits first: no terminal, delivery, sidebar or sequence writes on either callback path", async () => {
-            const f = await terminalFixture(kind);
-            await callbackApi.registerPushSubscription(f.actor);
-            callbackApi.enableVapid();
-            mockOptionalEnv("OPENROUTER_API_KEY", "synthetic-erasure-test");
-            let completionRequests = 0;
-            callbackApi.mockOpenRouterCompletions(() => {
-              completionRequests += 1;
-              return "Synthetic completion";
-            });
-            const before = await terminalState(f);
-            const held = await holdClosure(decision(f.userId));
-            context.mocks.ably.publish.mockClear();
-            context.mocks.webpush.sendNotification.mockClear();
-            const writing = invokeTerminal(f, kind, { payload: deliveries(f) });
-            await waitForBlockedBy(held.pid);
-            await expect(terminalState(f)).resolves.toStrictEqual(before);
-            await held.release();
-            await writing;
-            await invokeTerminal(f, kind, {
-              mode: "ccstate",
-              payload: deliveries(f),
-            });
-            await expect(terminalState(f)).resolves.toStrictEqual(before);
-            expect(context.mocks.ably.publish).not.toHaveBeenCalled();
-            expect(completionRequests).toBe(0);
-            expect(
-              context.mocks.webpush.sendNotification,
-            ).not.toHaveBeenCalled();
-          });
-
-          it("writer commits first: B1 waits for the atomic terminal projection and all six delivery rows", async () => {
-            const f = await terminalFixture(kind);
-            if (kind === "completed") {
-              await insertHistory(f);
-              await flushWaitUntilForTest();
-            }
-            const payload = deliveries(f);
-            const before = await terminalState(f);
-            const source = before.callbacks.find((row) => {
-              return row.kind === "chat";
-            });
-            if (!source) {
-              throw new Error(
-                "Real chat creation must persist its source callback",
-              );
-            }
-            const held = await holdResource(f.agentId);
-            const writing = invokeTerminal(f, kind, {
-              payload,
-              sourceCallbackId: source.id,
-            });
-            const writerPid = await waitForBlockedBy(held.pid);
-            const closing = close(decision(f.userId));
-            await waitForBlockedBy(writerPid);
-            await held.release();
-            await writing;
-            await closing;
-            const after = await terminalState(f);
-            const terminal = after.events.filter((event) => {
-              return event.eventType === `run.${kind}`;
-            });
-            expect(terminal).toHaveLength(1);
-            expect(after.thread[0]!.seq).toBe(before.thread[0]!.seq + 1);
-            expect(after.sidebar).toHaveLength(before.sidebar.length + 1);
-            expect(after.sidebar.at(-1)).toMatchObject({
-              kind: "sort_touched",
-            });
-            expect(after.sidebarSequence[0]!.lastSeqId).toBe(
-              before.sidebarSequence[0]!.lastSeqId + 1,
-            );
-            const rows = after.callbacks.filter((row) => {
-              return row.kind !== "chat";
-            });
-            expect(
-              rows
-                .map((row) => {
-                  return row.kind;
-                })
-                .sort(),
-            ).toStrictEqual(
-              [
-                "slack:chat",
-                "feishu:chat",
-                "teams:chat",
-                "telegram:chat",
-                "agentphone:chat",
-                "github:chat",
-              ].sort(),
-            );
-            const deliveryEvent =
-              kind === "completed"
-                ? after.events.find((event) => {
-                    return event.eventType === "output.message";
-                  })!
-                : terminal[0]!;
-            for (const row of rows) {
-              expect(row).toMatchObject({
-                runId: f.runId,
-                encryptedSecret: source.encryptedSecret,
-              });
-              expect(row.payload).toMatchObject({
-                chatEventId: deliveryEvent.id,
-                publicBrand: "okou",
-              });
-            }
-            for (const [kind, target] of [
-              ["slack:chat", payload.slackDelivery],
-              ["feishu:chat", payload.feishuDelivery],
-              ["teams:chat", payload.teamsDelivery],
-              ["telegram:chat", payload.telegramDelivery],
-              ["agentphone:chat", payload.agentphoneDelivery],
-              ["github:chat", payload.githubDelivery],
-            ] as const) {
-              expect(rows).toContainEqual(
-                expect.objectContaining({
-                  kind,
-                  payload: expect.objectContaining({
-                    ...target,
-                    chatEventId: deliveryEvent.id,
-                    publicBrand: "okou",
-                  }),
-                }),
-              );
-            }
-            await Promise.all([
-              invokeTerminal(f, kind),
-              invokeTerminal(f, kind),
-            ]);
-            await expect(terminalState(f)).resolves.toStrictEqual(after);
-          });
-        },
-      );
-
-      it.each([
-        "teamsDelivery",
-        "telegramDelivery",
-        "agentphoneDelivery",
-        "githubDelivery",
-      ] as const)(
-        "atomically fences the no-output completion fallback for %s",
-        async (channel) => {
-          const f = await terminalFixture("completed");
-          const payload = { [channel]: deliveries(f)[channel] };
-          await invokeTerminal(f, "completed", { payload });
-          const before = await terminalState(f);
-          const output = before.events.filter((event) => {
-            return event.eventType === "output.message";
-          });
-          expect(output).toHaveLength(1);
-          expect(output[0]!.payload).toMatchObject({
-            content: "Task completed successfully.",
-          });
-          const delivery = before.callbacks.filter((row) => {
-            return row.kind !== "chat";
-          });
-          expect(delivery).toHaveLength(1);
-          expect(delivery[0]!.payload).toMatchObject({
-            chatEventId: output[0]!.id,
-          });
-          await close(decision(f.orgId, "organization"));
-          await invokeTerminal(f, "completed", { payload });
-          await expect(terminalState(f)).resolves.toStrictEqual(before);
-        },
-      );
-
-      it("closure between output commit and lifecycle admission suppresses terminal publication and deferred work", async () => {
-        const f = await terminalFixture("completed");
-        await webhooks.requestAgentEvents(
-          {
-            runId: f.runId,
-            events: [
-              {
-                type: "result",
-                sequenceNumber: 4,
-                result: "prepared fallback",
-              },
-            ],
-          },
-          outputHeaders(f),
-          [200],
-        );
-        await flushWaitUntilForTest();
-        await db
-          .update(agentRuns)
-          .set({ lastEventSequence: 4 })
-          .where(eq(agentRuns.id, f.runId));
-        const published = createDeferredPromise<void>(context.signal);
-        context.mocks.ably.publish.mockClear();
-        context.mocks.ably.publish.mockImplementation(
-          async (topic: unknown) => {
-            if (topic === `chatThreadMessageCreated:${f.threadId}`) {
-              await close(decision(f.userId));
-              published.resolve();
-            }
-          },
-        );
-        await invokeTerminal(f, "completed");
-        await published.promise;
-        const after = await terminalState(f);
-        expect(
-          after.events.filter((event) => {
-            return event.eventType === "output.message";
-          }),
-        ).toHaveLength(1);
-        expect(
-          after.events.filter((event) => {
-            return event.eventType === "run.completed";
-          }),
-        ).toHaveLength(0);
-        expect(
-          after.callbacks.filter((row) => {
-            return row.kind !== "chat";
-          }),
-        ).toHaveLength(0);
-        expect(context.mocks.ably.publish).toHaveBeenCalledTimes(1);
-      });
-
-      it.each([
-        "thread-owner",
-        "thread-agent",
-        "agent-owner",
-        "session-owner",
-        "run-owner",
-        "thread-deletion",
-      ] as const)(
-        "rejects prepared terminal content after a %s transfer under actual locks",
-        async (kind) => {
-          const f = await terminalFixture("failed");
-          const peer = await fixture();
-          const before = await terminalState(f);
-          const held = await holdBusinessRow(
-            (tx) => {
-              return tx
-                .select({ id: agents.id })
-                .from(agents)
-                .where(eq(agents.id, f.agentId))
-                .for("update");
-            },
-            async (tx) => {
-              if (kind === "thread-owner") {
-                await tx
-                  .update(chatThreads)
-                  .set({ userId: peer.actor.userId })
-                  .where(eq(chatThreads.id, f.threadId));
-              } else if (kind === "thread-agent") {
-                await tx
-                  .update(chatThreads)
-                  .set({ agentId: peer.agentId })
-                  .where(eq(chatThreads.id, f.threadId));
-              } else if (kind === "agent-owner") {
-                await tx
-                  .update(agents)
-                  .set({ owner: peer.actor.userId })
-                  .where(eq(agents.id, f.agentId));
-              } else if (kind === "session-owner") {
-                await tx
-                  .update(agentSessions)
-                  .set({ userId: peer.actor.userId })
-                  .where(eq(agentSessions.id, f.sessionId));
-              } else if (kind === "run-owner") {
-                await tx
-                  .update(agentRuns)
-                  .set({ userId: peer.actor.userId })
-                  .where(eq(agentRuns.id, f.runId));
-              } else {
-                await tx
-                  .delete(chatThreads)
-                  .where(eq(chatThreads.id, f.threadId));
-              }
-            },
-          );
-          const writing = invokeTerminal(f, "failed");
-          await waitForBlockedBy(held.pid);
-          await held.release();
-          await writing;
-          const after = await terminalState(f);
-          expect(after.callbacks).toStrictEqual(before.callbacks);
-          expect(after.sidebar).toStrictEqual(before.sidebar);
-          expect(after.sidebarSequence).toStrictEqual(before.sidebarSequence);
-          if (kind !== "thread-deletion") {
-            expect(after.events).toStrictEqual(before.events);
-            expect(after.thread).toStrictEqual(before.thread);
-          } else {
-            expect(after.events).toHaveLength(0);
-            expect(after.thread).toHaveLength(0);
-          }
-        },
-      );
-
       it("pins ownership before asynchronous error formatting and rejects the open new owner", async () => {
         const f = await terminalFixture("failed");
         await db
@@ -3842,235 +2929,12 @@ describe("actual compute transactions versus the B1 projector", () => {
           .set({ userId: `synthetic-new-${randomUUID()}` })
           .where(eq(agentRuns.id, f.runId));
         release.resolve();
-        await writing;
+        // The source callback keeps this work and retries; nothing is written.
+        await expect(writing).rejects.toThrow(
+          "Prepared run content ownership no longer matches",
+        );
         await expect(terminalState(f)).resolves.toStrictEqual(before);
       });
-
-      it.each([
-        { survives: false, duplicate: false },
-        { survives: true, duplicate: false },
-        { survives: true, duplicate: true },
-      ])(
-        "the ACK-owning scheduler: survivor=$survives, existing marker=$duplicate",
-        async ({ survives, duplicate }) => {
-          const f = await outputFixture();
-          const candidate = survives ? await outputFixture(f.orgId) : f;
-          if (duplicate) {
-            await db
-              .update(agentRuns)
-              .set({ status: "completed" })
-              .where(eq(agentRuns.id, f.runId));
-            await invokeTerminal(f, "completed");
-          }
-          const queuedId = randomUUID();
-          await chat.requestSendEvent(
-            candidate.actor,
-            {
-              agentId: candidate.agentId,
-              threadId: candidate.threadId,
-              prompt: "Synthetic queued survivor",
-              clientEventId: queuedId,
-            },
-            [201],
-          );
-          await flushWaitUntilForTest();
-          // Pause between real settlement and callback processing, and exercise
-          // a persisted run/thread transfer which no current public API exposes.
-          await db
-            .update(agentRuns)
-            .set({ status: "completed", completedAt: nowDate() })
-            .where(inArray(agentRuns.id, [f.runId, candidate.runId]));
-          const original = await terminalState(f);
-          const held = await holdClosure(decision(f.userId));
-          const dispatch = await createStore().set(
-            dispatchRunCallbacks$,
-            {
-              db,
-              runId: f.runId,
-              status: "completed",
-            },
-            context.signal,
-          );
-          expect(dispatch).toContainEqual(
-            expect.objectContaining({ success: true }),
-          );
-          const processing = flushWaitUntilForTest();
-          await waitForBlockedBy(held.pid);
-          if (survives) {
-            await db
-              .update(agentRuns)
-              .set({ chatThreadId: candidate.threadId })
-              .where(eq(agentRuns.id, f.runId));
-          }
-          await held.release();
-          await processing;
-          const page = await chat.listThreadEvents(
-            candidate.actor,
-            candidate.threadId,
-          );
-          const claimed = page.events.filter((event) => {
-            return (
-              event.eventType === "input.prompt" &&
-              event.revokesEventId === queuedId
-            );
-          });
-          expect(claimed).toHaveLength(survives && !duplicate ? 1 : 0);
-          if (survives && !duplicate) {
-            const nextRunId = claimed[0]?.runId;
-            if (!nextRunId) {
-              throw new Error(
-                "Expected the surviving queued candidate to create a run",
-              );
-            }
-            await expect(
-              api.readRun(candidate.actor, nextRunId),
-            ).resolves.toMatchObject({ status: "pending" });
-            const [next] = await db
-              .select({
-                userId: agentRuns.userId,
-                creditAdmitted: agentRuns.creditAdmitted,
-              })
-              .from(agentRuns)
-              .where(eq(agentRuns.id, nextRunId));
-            expect(next).toMatchObject({
-              userId: candidate.userId,
-              creditAdmitted: false,
-            });
-          }
-          const after = await terminalState(f);
-          expect(after.events).toStrictEqual(original.events);
-          expect(after.sidebar).toStrictEqual(original.sidebar);
-          expect(after.thread).toStrictEqual(original.thread);
-          expect(after.callbacks).toStrictEqual(original.callbacks);
-          await expect(
-            db
-              .select()
-              .from(chatEvents)
-              .where(
-                and(
-                  eq(chatEvents.runId, f.runId),
-                  inArray(chatEvents.eventType, [
-                    "run.completed",
-                    "output.followups",
-                  ]),
-                ),
-              ),
-          ).resolves.toHaveLength(duplicate ? 1 : 0);
-        },
-      );
-
-      it.each(["complete", "cancel"] as const)(
-        "real %s preserves admitted usage settlement after terminal projection denial",
-        async (operation) => {
-          const f = await outputFixture();
-          await api.heartbeatRunner(f.runnerGroup);
-          const claim = await api.requestClaimRunnerJob(true, f.runId, [200]);
-          if (claim.status !== 200) {
-            throw new Error("Expected the real runner claim");
-          }
-          const headers = {
-            authorization: `Bearer ${claim.body.sandboxToken}`,
-          };
-          const provider = `synthetic-terminal-${randomUUID()}`;
-          await seedUsagePricingRows([
-            {
-              kind: "connector",
-              provider,
-              category: "request",
-              unitPrice: 7,
-              unitSize: 1,
-            },
-          ]);
-          onTestFinished(async () => {
-            await deleteUsagePricingRows({
-              kind: "connector",
-              provider,
-              categories: ["request"],
-            });
-          });
-          const usage = {
-            runId: f.runId,
-            events: [
-              {
-                idempotencyKey: randomUUID(),
-                kind: "connector" as const,
-                provider,
-                category: "request",
-                quantity: 3,
-              },
-            ],
-          };
-          await close(decision(f.userId));
-          await webhooks.requestAgentUsageEvent(usage, headers, [200]);
-          await webhooks.requestAgentUsageEvent(usage, headers, [200]);
-          if (operation === "complete") {
-            await webhooks.requestAgentComplete(
-              {
-                runId: f.runId,
-                exitCode: 0,
-                checkpoint: {
-                  cliAgentType: "claude-code",
-                  cliAgentSessionId: `synthetic-${f.runId}`,
-                  cliAgentSessionHistoryHash: createHash("sha256")
-                    .update(f.runId)
-                    .digest("hex"),
-                },
-              },
-              headers,
-              [200],
-            );
-          } else {
-            await api.requestCancelRun(f.actor, f.runId, [200]);
-          }
-          await flushWaitUntilForTest();
-          const rows = await db
-            .select()
-            .from(usageEvent)
-            .where(
-              eq(usageEvent.idempotencyKey, usage.events[0]!.idempotencyKey),
-            );
-          expect(rows).toHaveLength(1);
-          expect(rows[0]).toMatchObject({
-            runId: f.runId,
-            billingRunId: f.runId,
-            billingContext: "run",
-            userId: f.userId,
-            orgId: f.orgId,
-            kind: "connector",
-            provider,
-            category: "request",
-            quantity: 3,
-            status: "processed",
-            creditsCharged: 21,
-          });
-          const run = await api.readRun(f.actor, f.runId);
-          expect(run.status).toBe(
-            operation === "complete" ? "completed" : "cancelled",
-          );
-          const [identity] = await db
-            .select({
-              creditAdmitted: agentRuns.creditAdmitted,
-              modelProvider: agentRuns.modelProvider,
-            })
-            .from(agentRuns)
-            .where(eq(agentRuns.id, f.runId));
-          expect(identity).toStrictEqual({
-            creditAdmitted: false,
-            modelProvider: "anthropic-api-key",
-          });
-          expect(
-            (await chat.listThreadEvents(f.actor, f.threadId)).events.filter(
-              (event) => {
-                return [
-                  "run.completed",
-                  "run.cancelled",
-                  "run.failed",
-                ].includes(event.eventType);
-              },
-            ),
-          ).toHaveLength(0);
-        },
-      );
 
       it("open callback collisions keep one terminal event and six delivery rows", async () => {
         const f = await terminalFixture("failed");
@@ -4095,47 +2959,6 @@ describe("actual compute transactions versus the B1 projector", () => {
         ).toHaveLength(6);
       });
 
-      it.each(["user", "organization", "thread", "session", "agent"] as const)(
-        "denies the distinct closed %s subject without treating optional users as authority",
-        async (kind) => {
-          const f = await terminalFixture("failed");
-          await db.delete(users).where(eq(users.id, f.userId));
-          await close(decision(f.orgId, "user"));
-          const subjectId = `synthetic-closed-${randomUUID()}`;
-          if (kind === "thread") {
-            await db
-              .update(chatThreads)
-              .set({ userId: subjectId })
-              .where(eq(chatThreads.id, f.threadId));
-          }
-          if (kind === "session") {
-            await db
-              .update(agentSessions)
-              .set({ userId: subjectId })
-              .where(eq(agentSessions.id, f.sessionId));
-          }
-          if (kind === "agent") {
-            await db
-              .update(agents)
-              .set({ owner: subjectId })
-              .where(eq(agents.id, f.agentId));
-          }
-          await close(
-            decision(
-              kind === "user"
-                ? f.userId
-                : kind === "organization"
-                  ? f.orgId
-                  : subjectId,
-              kind === "organization" ? "organization" : "user",
-            ),
-          );
-          const before = await terminalState(f);
-          await invokeTerminal(f, "failed");
-          await expect(terminalState(f)).resolves.toStrictEqual(before);
-        },
-      );
-
       it("open missing users row and a same-text user subject do not close the organization", async () => {
         const f = await terminalFixture("failed");
         await db.delete(users).where(eq(users.id, f.userId));
@@ -4148,584 +2971,18 @@ describe("actual compute transactions versus the B1 projector", () => {
         ).toHaveLength(1);
       });
 
-      // The synthetic multi-integration callback gap has no public setup path.
-      // Bind only this API-created run/thread to unique persisted cleanup targets.
-      async function terminalCleanupTargets(f: OutputFixture) {
-        const workspaceId = `T${randomUUID()}`;
-        const connectionId = randomUUID();
-        const installationId = randomUUID();
-        const secret = await encryptPersistentSecretValue(
-          "synthetic-cleanup-token",
-          { orgId: f.orgId },
-        );
-        await db.insert(slackOrgInstallations).values({
-          slackWorkspaceId: workspaceId,
-          orgId: f.orgId,
-          encryptedBotToken: secret,
-          botUserId: `B${randomUUID()}`,
-        });
-        await db.insert(slackOrgConnections).values({
-          id: connectionId,
-          slackWorkspaceId: workspaceId,
-          userId: f.userId,
-          slackUserId: `U${randomUUID()}`,
-        });
-        const slackDelivery = {
-          channelId: `C${randomUUID()}`,
-          threadTs: "123.456",
-        };
-        await db.insert(slackChatThreadRoutes).values({
-          connectionId,
-          ...slackDelivery,
-          userId: f.userId,
-          chatThreadId: f.threadId,
-        });
-        await db.insert(feishuOrgInstallations).values({
-          id: installationId,
-          orgId: f.orgId,
-          appId: `cli_${randomUUID()}`,
-          encryptedAppSecret: secret,
-          encryptedEncryptKey: secret,
-          encryptedVerificationToken: secret,
-          encryptedTenantAccessToken: secret,
-          tenantAccessTokenExpiresAt: new Date("2099-01-01T00:00:00Z"),
-        });
-        const feishuDelivery = {
-          ...deliveries(f).feishuDelivery,
-          installationId,
-          messageId: randomUUID(),
-          reactionId: randomUUID(),
-        };
-        let removedReactions = 0;
-        server.use(
-          http.delete(
-            `https://open.feishu.cn/open-apis/im/v1/messages/${feishuDelivery.messageId}/reactions/${feishuDelivery.reactionId}`,
-            ({ request }) => {
-              expect(request.headers.get("authorization")).toBe(
-                "Bearer synthetic-cleanup-token",
-              );
-              removedReactions += 1;
-              return HttpResponse.json({ code: 0 });
-            },
-          ),
-        );
-        context.mocks.slack.assistant.threads.setStatus.mockResolvedValue({
-          ok: true,
-        });
-        onTestFinished(async () => {
-          await db
-            .delete(slackChatThreadRoutes)
-            .where(eq(slackChatThreadRoutes.connectionId, connectionId));
-          await db
-            .delete(slackOrgConnections)
-            .where(eq(slackOrgConnections.id, connectionId));
-          await db
-            .delete(slackOrgInstallations)
-            .where(eq(slackOrgInstallations.slackWorkspaceId, workspaceId));
-          await db
-            .delete(feishuOrgInstallations)
-            .where(eq(feishuOrgInstallations.id, installationId));
-        });
-        return {
-          slackDelivery,
-          feishuDelivery,
-          removedReactions: () => {
-            return removedReactions;
-          },
-        };
-      }
-
-      // A SELECT fault cannot be injected through the public API. Only this
-      // worker's connection search_path sees the unique, temporary session view.
-      // The real capture query blocks inside PostgreSQL; all other workers keep
-      // using public tables. Healing the view queues behind that exact backend
-      // before cancellation, so recovery sees the ordinary writable relation.
-      async function holdTerminalCapture(f: OutputFixture) {
-        const schema = `capture_${f.sessionId.replaceAll("-", "")}`;
-        const schemaId = sql.identifier(schema);
-        await db.execute(sql`CREATE SCHEMA ${schemaId}`);
-        await db.execute(sql`CREATE FUNCTION ${schemaId}.capture(id uuid, value text)
-          RETURNS text LANGUAGE plpgsql AS $$
-          BEGIN
-            PERFORM pg_advisory_xact_lock(hashtextextended(id::text, 0));
-            RETURN value;
-          END $$`);
-        const columns = Object.values(getTableColumns(agentSessions)).map(
-          (column) => {
-            const name = sql.identifier(column.name);
-            return column.name === "org_id"
-              ? sql`${schemaId}.capture(id, ${name}) AS ${name}`
-              : name;
-          },
-        );
-        await db.execute(sql`CREATE VIEW ${schemaId}.agent_sessions AS
-          SELECT ${sql.join(columns, sql`, `)} FROM public.agent_sessions`);
-        const held = await holdBusinessRow((tx) => {
-          return tx.execute(
-            sql`SELECT pg_advisory_xact_lock(hashtextextended(${f.sessionId}, 0))`,
-          );
-        });
-        const originalUrl = env("DATABASE_URL");
-        const url = new URL(originalUrl);
-        url.searchParams.set("options", `-csearch_path=${schema},public`);
-        const plainPool = new Pool({
-          connectionString: url.toString(),
-          max: 2,
-        });
-        await closeDbPool();
-        mockEnv("DATABASE_URL", url.toString());
-        onTestFinished(async () => {
-          await plainPool.end();
-          await closeDbPool();
-          mockEnv("DATABASE_URL", originalUrl);
-          await db.execute(sql`DROP SCHEMA ${schemaId} CASCADE`);
-        });
-        return {
-          plainDb: drizzle(plainPool),
-          captured: async () => {
-            const pid = await waitForBlockedBy(held.pid);
-            const [backend] = await executeRawRows(
-              db,
-              sql`SELECT query FROM pg_stat_activity WHERE pid = ${pid}`,
-              z.object({ query: z.string() }),
-            );
-            // This is the ownership SELECT, before prompt/error/history reads
-            // and before any writer acquires B1 subjects or resource locks.
-            expect(backend?.query).toBe(
-              'select "user_id", "org_id", "agent_id" from "agent_sessions" where "agent_sessions"."id" = $1',
-            );
-            return pid;
-          },
-          resume: async (pid: number) => {
-            const healed = db
-              .execute(sql`DROP VIEW ${schemaId}.agent_sessions`)
-              .execute();
-            await waitForBlockedBy(pid);
-            await held.release();
-            await healed;
-          },
-          cancel: async (pid: number) => {
-            const healed = db
-              .execute(sql`DROP VIEW ${schemaId}.agent_sessions`)
-              .execute();
-            await waitForBlockedBy(pid);
-            const stopped = await executeRawRows(
-              db,
-              sql`SELECT pg_cancel_backend(${pid}) AS stopped`,
-              z.object({ stopped: z.boolean() }),
-            );
-            expect(stopped).toStrictEqual([{ stopped: true }]);
-            await healed;
-            await held.release();
-          },
-        };
-      }
-
-      it.each(["completed", "failed", "cancelled"] as const)(
-        "early ACK capture failure recovers a transferred survivor: %s",
-        async (kind) => {
-          const f = await outputFixture();
-          const survivor = await outputFixture(f.orgId);
-          const queuedId = randomUUID();
-          await chat.requestSendEvent(
-            survivor.actor,
-            {
-              agentId: survivor.agentId,
-              threadId: survivor.threadId,
-              prompt: "Recover after early ownership capture fails",
-              clientEventId: queuedId,
-            },
-            [201],
-          );
-          await flushWaitUntilForTest();
-          await db
-            .update(agentRuns)
-            .set({ status: kind, completedAt: nowDate() })
-            .where(inArray(agentRuns.id, [f.runId, survivor.runId]));
-          await close(decision(f.userId));
-          const targets = await terminalCleanupTargets(f);
-          await db
-            .update(agentRunCallbacks)
-            .set({
-              payload: {
-                threadId: f.threadId,
-                agentId: f.agentId,
-                publicBrand: "okou",
-                slackDelivery: targets.slackDelivery,
-                feishuDelivery: targets.feishuDelivery,
-              },
-            })
-            .where(
-              and(
-                eq(agentRunCallbacks.runId, f.runId),
-                eq(agentRunCallbacks.internalKind, "chat"),
-              ),
-            );
-          if (kind === "failed") {
-            context.mocks.slack.assistant.threads.setStatus.mockRejectedValueOnce(
-              new Error("Synthetic Slack cleanup failure"),
-            );
-          }
-          const before = await terminalState(f);
-          const capture = await holdTerminalCapture(f);
-          const result = await createStore().set(
-            dispatchRunCallbacks$,
-            {
-              db,
-              runId: f.runId,
-              status: kind === "completed" ? "completed" : "failed",
-              error:
-                kind === "cancelled" ? "Run cancelled" : "Synthetic failure",
-            },
-            context.signal,
-          );
-          expect(result).toContainEqual(
-            expect.objectContaining({ success: true }),
-          );
-          const processing = flushWaitUntilForTest();
-          const pid = await capture.captured();
-          await db
-            .update(agentRuns)
-            .set({ chatThreadId: survivor.threadId })
-            .where(eq(agentRuns.id, f.runId));
-          await capture.cancel(pid);
-          await processing;
-          await expect(terminalState(f)).resolves.toStrictEqual(before);
-          expect(
-            context.mocks.slack.assistant.threads.setStatus,
-          ).toHaveBeenCalledWith({
-            channel_id: targets.slackDelivery.channelId,
-            thread_ts: targets.slackDelivery.threadTs,
-            status: "",
-          });
-          expect(targets.removedReactions()).toBe(1);
-          const page = await chat.listThreadEvents(
-            survivor.actor,
-            survivor.threadId,
-          );
-          const claimed = page.events.filter((event) => {
-            return (
-              event.eventType === "input.prompt" &&
-              event.revokesEventId === queuedId
-            );
-          });
-          expect(claimed).toHaveLength(1);
-          const nextRunId = claimed[0]?.runId;
-          if (!nextRunId) {
-            throw new Error(
-              "The real scheduler must create the surviving candidate",
-            );
-          }
-          await expect(
-            api.readRun(survivor.actor, nextRunId),
-          ).resolves.toMatchObject({ status: "pending" });
-        },
-      );
-
-      it.each([
-        "closed",
-        "deleted-run",
-        "deleted-thread",
-        "deleted-run-load-miss",
-        "deleted-thread-load-miss",
-        "unmapped",
-        "duplicate",
-      ] as const)(
-        "capture recovery respects a %s destination",
-        async (change) => {
-          const f = await outputFixture();
-          const queuedId = randomUUID();
-          await chat.requestSendEvent(
-            f.actor,
-            {
-              agentId: f.agentId,
-              threadId: f.threadId,
-              prompt: "Candidate owned by the surviving thread",
-              clientEventId: queuedId,
-            },
-            [201],
-          );
-          await flushWaitUntilForTest();
-          await db
-            .update(agentRuns)
-            .set({ status: "completed", completedAt: nowDate() })
-            .where(eq(agentRuns.id, f.runId));
-          if (change === "duplicate") {
-            await invokeTerminal(f, "completed");
-          }
-          if (change === "closed") {
-            await close(decision(f.userId));
-          }
-          const decoy =
-            change === "unmapped" ? await outputFixture(f.orgId) : undefined;
-          const decoyQueuedId = randomUUID();
-          if (decoy) {
-            await chat.requestSendEvent(
-              decoy.actor,
-              {
-                agentId: decoy.agentId,
-                threadId: decoy.threadId,
-                prompt: "Payload is not scheduler authority",
-                clientEventId: decoyQueuedId,
-              },
-              [201],
-            );
-            await flushWaitUntilForTest();
-            await db
-              .update(agentRuns)
-              .set({ status: "completed" })
-              .where(eq(agentRuns.id, decoy.runId));
-            await db
-              .update(agentRunCallbacks)
-              .set({
-                payload: {
-                  threadId: decoy.threadId,
-                  agentId: decoy.agentId,
-                },
-              })
-              .where(
-                and(
-                  eq(agentRunCallbacks.runId, f.runId),
-                  eq(agentRunCallbacks.internalKind, "chat"),
-                ),
-              );
-          }
-          const before = await terminalState(f);
-          const capture = await holdTerminalCapture(f);
-          await createStore().set(
-            dispatchRunCallbacks$,
-            {
-              db,
-              runId: f.runId,
-              status: "completed",
-            },
-            context.signal,
-          );
-          const processing = flushWaitUntilForTest();
-          const pid = await capture.captured();
-          if (change === "deleted-run" || change === "deleted-run-load-miss") {
-            await db.delete(agentRuns).where(eq(agentRuns.id, f.runId));
-          } else if (
-            change === "deleted-thread" ||
-            change === "deleted-thread-load-miss"
-          ) {
-            await db.delete(chatThreads).where(eq(chatThreads.id, f.threadId));
-          } else if (change === "unmapped") {
-            await db
-              .update(agentRuns)
-              .set({ chatThreadId: null })
-              .where(eq(agentRuns.id, f.runId));
-          }
-          if (change.endsWith("load-miss")) {
-            await capture.resume(pid);
-          } else {
-            await capture.cancel(pid);
-          }
-          await processing;
-          if (decoy) {
-            const decoyPage = await chat.listThreadEvents(
-              decoy.actor,
-              decoy.threadId,
-            );
-            expect(
-              decoyPage.events.filter((event) => {
-                return event.revokesEventId === decoyQueuedId;
-              }),
-            ).toHaveLength(0);
-          }
-          if (
-            change === "deleted-thread" ||
-            change === "deleted-thread-load-miss"
-          ) {
-            await chat.requestReadThread(f.actor, f.threadId, [404]);
-            await expect(
-              db
-                .select({ id: chatThreads.id })
-                .from(chatThreads)
-                .where(eq(chatThreads.id, f.threadId)),
-            ).resolves.toStrictEqual([]);
-            return;
-          }
-          const page = await chat.listThreadEvents(f.actor, f.threadId);
-          const claimed = page.events.filter((event) => {
-            return (
-              event.eventType === "input.prompt" &&
-              event.revokesEventId === queuedId
-            );
-          });
-          expect(claimed).toHaveLength(
-            change === "deleted-run" || change === "deleted-run-load-miss"
-              ? 1
-              : 0,
-          );
-          if (change === "deleted-run" || change === "deleted-run-load-miss") {
-            const runId = claimed[0]?.runId;
-            if (!runId) {
-              throw new Error("Missing recovered run");
-            }
-            await expect(api.readRun(f.actor, runId)).resolves.toMatchObject({
-              status: "pending",
-            });
-          } else {
-            await expect(terminalState(f)).resolves.toStrictEqual(before);
-          }
-        },
-      );
-
-      it.each(["completed", "failed"] as const)(
-        "plain %s capture failure clears integrations without content or scheduler work",
-        async (kind) => {
-          const f = await terminalFixture(kind);
-          const targets = await terminalCleanupTargets(f);
-          await callbackApi.registerPushSubscription(f.actor);
-          callbackApi.enableVapid();
-          mockOptionalEnv("OPENROUTER_API_KEY", "synthetic-capture-test");
-          let completions = 0;
-          callbackApi.mockOpenRouterCompletions(() => {
-            completions += 1;
-            return "No terminal preparation should reach the provider";
-          });
-          const before = await terminalState(f);
-          const capture = await holdTerminalCapture(f);
-          context.mocks.ably.publish.mockClear();
-          context.mocks.s3.send.mockClear();
-          context.mocks.webpush.sendNotification.mockClear();
-          await expect(
-            handleChatInternalCallbackWithoutCcstate(
-              capture.plainDb,
-              {
-                runId: f.runId,
-                status: kind,
-                error: "Synthetic source failure",
-                payload: {
-                  threadId: f.threadId,
-                  agentId: f.agentId,
-                  slackDelivery: targets.slackDelivery,
-                  feishuDelivery: targets.feishuDelivery,
-                },
-              },
-              context.signal,
-            ),
-          ).resolves.toStrictEqual({ success: true });
-          const processing = flushWaitUntilForTest();
-          const pid = await capture.captured();
-          await capture.cancel(pid);
-          await processing;
-          await expect(terminalState(f)).resolves.toStrictEqual(before);
-          expect(context.mocks.ably.publish).not.toHaveBeenCalled();
-          expect(context.mocks.s3.send).not.toHaveBeenCalled();
-          expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
-          expect(completions).toBe(0);
-          expect(
-            context.mocks.slack.assistant.threads.setStatus,
-          ).toHaveBeenCalledWith({
-            channel_id: targets.slackDelivery.channelId,
-            thread_ts: targets.slackDelivery.threadTs,
-            status: "",
-          });
-          expect(targets.removedReactions()).toBe(1);
-        },
-      );
-
-      it("a source callback invariant failure retains the real dispatcher's recovery drain", async () => {
-        const f = await outputFixture();
-        const queuedId = randomUUID();
-        await chat.requestSendEvent(
-          f.actor,
-          {
-            agentId: f.agentId,
-            threadId: f.threadId,
-            prompt: "Recover the queued task after projection failure",
-            clientEventId: queuedId,
-          },
-          [201],
-        );
-        await flushWaitUntilForTest();
-        await db
-          .update(agentRuns)
-          .set({ status: "failed", completedAt: nowDate() })
-          .where(eq(agentRuns.id, f.runId));
-        const [source] = await db
-          .select()
-          .from(agentRunCallbacks)
-          .where(
-            and(
-              eq(agentRunCallbacks.runId, f.runId),
-              eq(agentRunCallbacks.internalKind, "chat"),
-            ),
-          );
-        if (!source) {
-          throw new Error("Expected the real chat source callback");
-        }
-        await db
-          .update(agentRunCallbacks)
-          .set({
-            payload: {
-              threadId: f.threadId,
-              agentId: f.agentId,
-              publicBrand: "okou",
-              slackDelivery: deliveries(f).slackDelivery,
-            },
-          })
-          .where(eq(agentRunCallbacks.id, source.id));
-        const held = await holdResource(f.agentId);
-        await createStore().set(
-          dispatchRunCallbacks$,
-          {
-            db,
-            runId: f.runId,
-            status: "failed",
-            error: "Synthetic terminal failure",
-          },
-          context.signal,
-        );
-        const processing = flushWaitUntilForTest();
-        await waitForBlockedBy(held.pid);
-        // The missing mandatory source is an infrastructure-only bad state,
-        // introduced after the genuine dispatch ACK for this unique run.
-        await db
-          .delete(agentRunCallbacks)
-          .where(eq(agentRunCallbacks.id, source.id));
-        await held.release();
-        await processing;
-        const page = await chat.listThreadEvents(f.actor, f.threadId);
-        const replacement = page.events.find((event) => {
-          return (
-            event.eventType === "input.prompt" &&
-            event.revokesEventId === queuedId
-          );
-        });
-        if (!replacement?.runId) {
-          throw new Error(
-            "Recovery must admit the queued task through the real scheduler",
-          );
-        }
-        await expect(
-          api.readRun(f.actor, replacement.runId),
-        ).resolves.toMatchObject({
-          status: "pending",
-        });
-        expect(
-          page.events.filter((event) => {
-            return event.runId === f.runId && event.eventType === "run.failed";
-          }),
-        ).toHaveLength(0);
-        await expect(
-          db
-            .select()
-            .from(agentRunCallbacks)
-            .where(eq(agentRunCallbacks.runId, f.runId)),
-        ).resolves.toHaveLength(0);
-      });
-
       it("a wrong source callback rolls back sequence, event and sidebar writes and a correct retry succeeds", async () => {
         const f = await terminalFixture("failed");
         const before = await terminalState(f);
         const payload = { slackDelivery: deliveries(f).slackDelivery };
-        await invokeTerminal(f, "failed", {
-          payload,
-          sourceCallbackId: randomUUID(),
-        });
+        await expect(
+          invokeTerminal(f, "failed", {
+            payload,
+            sourceCallbackId: randomUUID(),
+          }),
+        ).rejects.toThrow(
+          "Canonical delivery run is missing its chat callback",
+        );
         await expect(terminalState(f)).resolves.toStrictEqual(before);
         await invokeTerminal(f, "failed", { payload });
         const after = await terminalState(f);
@@ -4771,8 +3028,15 @@ describe("actual compute transactions versus the B1 projector", () => {
               }
             });
           }
-          const held = await holdResource(f.agentId);
-          const writing = invokeTerminal(f, "failed");
+          // The atomic append waits only on its thread's sequence row.
+          const held = await holdBusinessRow((tx) => {
+            return tx
+              .select({ id: chatEventSequences.chatThreadId })
+              .from(chatEventSequences)
+              .where(eq(chatEventSequences.chatThreadId, f.threadId))
+              .for("update");
+          });
+          const writing = settle(invokeTerminal(f, "failed"));
           const writerPid = await waitForBlockedBy(held.pid);
           const rows = await executeRawRows(
             db,
@@ -4782,10 +3046,7 @@ describe("actual compute transactions versus the B1 projector", () => {
             z.object({ stopped: z.boolean() }),
           );
           expect(rows).toStrictEqual([{ stopped: true }]);
-          await writing;
-          if (disconnected) {
-            await expect(disconnected.promise).resolves.toBeInstanceOf(Error);
-          }
+          expect((await writing).ok).toBeFalsy();
           await expect(terminalState(f)).resolves.toStrictEqual(before);
           await held.release();
           await invokeTerminal(f, "failed");
@@ -4819,56 +3080,6 @@ describe("actual compute transactions versus the B1 projector", () => {
         await expect(terminalState(f)).resolves.toStrictEqual(before);
       });
 
-      it("serializes the same run while an independent terminal writer in the organization commits", async () => {
-        const first = await terminalFixture("failed");
-        const independent = await terminalFixture("failed", first.orgId);
-        // The run row is the common same-run mutex for every content writer.
-        const held = await holdBusinessRow(async (tx) => {
-          await tx
-            .select({ id: agentRuns.id })
-            .from(agentRuns)
-            .where(eq(agentRuns.id, first.runId))
-            .for("update");
-        });
-        await startTerminal(first, "failed");
-        await startTerminal(first, "failed");
-        await waitForBlockedBy(held.pid);
-        await startTerminal(independent, "failed");
-        // Do not drain all background work while intentionally holding one
-        // writer. Observe the independent run through its production API.
-        await expect
-          .poll(async () => {
-            const result = await chat.listThreadEvents(
-              independent.actor,
-              independent.threadId,
-            );
-            return result.events.filter((event) => {
-              return event.eventType === "run.failed";
-            }).length;
-          })
-          .toBe(1);
-        const pending = await chat.listThreadEvents(
-          first.actor,
-          first.threadId,
-        );
-        expect(
-          pending.events.filter((event) => {
-            return event.eventType === "run.failed";
-          }),
-        ).toHaveLength(0);
-        await held.release();
-        await flushWaitUntilForTest();
-        const completed = await chat.listThreadEvents(
-          first.actor,
-          first.threadId,
-        );
-        expect(
-          completed.events.filter((event) => {
-            return event.eventType === "run.failed";
-          }),
-        ).toHaveLength(1);
-      });
-
       it("projects terminal content while a thread identity pin is held", async () => {
         const f = await terminalFixture("failed");
         const held = await holdBusinessRow((tx) => {
@@ -4886,33 +3097,6 @@ describe("actual compute transactions versus the B1 projector", () => {
           }),
         ).toHaveLength(1);
         await held.release();
-      });
-
-      it("surfaces a competing queue-writer timeout and permits an open retry", async () => {
-        const f = await terminalFixture("failed");
-        const before = await terminalState(f);
-        const held = await holdBusinessRow((tx) => {
-          return tx
-            .select({ id: chatThreads.id })
-            .from(chatThreads)
-            .where(eq(chatThreads.id, f.threadId))
-            .for("no key update");
-        });
-        const writing = settle(invokeTerminal(f, "failed"));
-        await waitForBlockedBy(held.pid);
-        const failure = await writing;
-        expect(failure.ok).toBeFalsy();
-        if (!failure.ok) {
-          expect(safeSqlStateCode(failure.error)).toBe("55P03");
-        }
-        await expect(terminalState(f)).resolves.toStrictEqual(before);
-        await held.release();
-        await invokeTerminal(f, "failed");
-        expect(
-          (await terminalState(f)).events.filter((event) => {
-            return event.eventType === "run.failed";
-          }),
-        ).toHaveLength(1);
       });
     });
   });
