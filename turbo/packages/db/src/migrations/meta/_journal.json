@@ -1198,6 +1198,13 @@
       "when": 1790347365037,
       "tag": "1248_contract_chat_thread_drafts",
       "breakpoints": true
+    },
+    {
+      "idx": 1249,
+      "version": "7",
+      "when": 1790349942807,
+      "tag": "1249_drop_account_erasure",
+      "breakpoints": true
     }
   ]
 }
