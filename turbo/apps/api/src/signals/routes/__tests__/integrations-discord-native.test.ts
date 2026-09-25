@@ -303,6 +303,21 @@ function send(f: Fixture, channelId = f.channelId, text = "hello") {
 }
 
 describe("Discord native authorization and reads", () => {
+  it.each([15, 16] as const)(
+    "reads a post in a type %s forum or media channel by its thread ID",
+    async (type) => {
+      const f = await fixture();
+      f.channels.get(f.channelId)!.type = type;
+      addThread(f);
+      expect(
+        (await accept(history(f, f.threadId), [200])).body.messages[0]?.content,
+      ).toBe("thread message");
+      expect((await accept(history(f), [404])).body.error.code).toBe(
+        "NOT_FOUND",
+      );
+    },
+  );
+
   it("returns attachment metadata without the signed CDN URL", async () => {
     const f = await fixture();
     const signedUrl =
