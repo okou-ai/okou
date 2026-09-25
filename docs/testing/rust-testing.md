@@ -64,6 +64,8 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
 # Extracted Runner idle, pre-claim admission/rollback and pending-candidate state, finalizing-successor arbitration, claimed activation, post-executor finalizing/report ordering/sandbox finalization/settlement, heartbeat, and orphan-recovery owner tests
 # The pending-candidate policy has three supervisor unit tests; existing Runner
 # main-loop admission/expiry/duplicate tests remain as cross-domain coverage.
+# Exact idle pruning has two supervisor resource/ownership tests; all four Runner
+# operator IPC/reuse tests remain as composition coverage (no tests removed).
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-supervisor -- --test-threads=1
 
