@@ -228,7 +228,8 @@ test.each([false, true])(
 
     const prompt = "Generate the portrait cinematic clip.";
     const editor = await enterText(prompt);
-    await enterVideoMode("Claude Fable 5.1");
+    // Selecting a video template activates video mode. Model selection is
+    // covered separately below; it need not precede both submission paths.
     const template = await selectVideoTemplate();
     await selectPaneOption("16:9 · 8s · 720p", "9:16");
     await closeVideoOptions();
