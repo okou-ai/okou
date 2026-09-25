@@ -2132,6 +2132,7 @@
       "skipAutomationEvent": "Ignorar evento de automação"
     },
     "remoteAccess": {
+      "default": "Padrão",
       "defaultEnabled": "Ativado por padrão para chats",
       "enabledCount_one": "{{count}} ativo",
       "enabledCount_many": "{{count}} ativos",
@@ -2143,8 +2144,7 @@
       "requiresSsh": "Também requer acesso ao host SSH {{name}}.",
       "retry": "Tentar novamente",
       "title": "Acesso remoto",
-      "unavailableSsh": "host SSH indisponível",
-      "useDefault": "Usar padrão"
+      "unavailableSsh": "host SSH indisponível"
     },
     "replaceDraft": {
       "description": "Continuar limpará o rascunho atual do editor e iniciará um prompt de fluxo de trabalho.",

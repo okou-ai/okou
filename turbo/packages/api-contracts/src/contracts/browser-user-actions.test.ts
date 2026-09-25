@@ -118,6 +118,77 @@ describe("Browser user-action contracts", () => {
     }
   });
 
+  it("accepts five native date/time response types and scalar HTML strings without timezone conversion", () => {
+    const request = browserUserActionCreateRequestSchema.parse({
+      kind: "input",
+      callbackPrompt: "Continue after date entry",
+      pageTargetId: "page-target",
+      fields: [
+        {
+          key: "arrival",
+          label: "Arrival",
+          fieldKind: "date_time",
+          required: false,
+          backendNodeId: 45,
+        },
+      ],
+    });
+    expect(request.fields[0]?.fieldKind).toBe("date_time");
+    const base = {
+      requestToken: "vm0_browser_user_action_public-token",
+      kind: "input",
+      state: "pending",
+      siteOrigin: "https://example.com",
+      completedAt: null,
+      agentId: uuid("1"),
+      threadId: uuid("2"),
+      callbackIds: {
+        success: { clientEventId: uuid("3"), chatThreadSortEventId: uuid("4") },
+        cancellation: {
+          clientEventId: uuid("5"),
+          chatThreadSortEventId: uuid("6"),
+        },
+      },
+    };
+    for (const inputType of [
+      "date",
+      "time",
+      "datetime-local",
+      "month",
+      "week",
+    ]) {
+      expect(
+        browserUserActionResponseSchema.safeParse({
+          ...base,
+          fields: [
+            {
+              key: "arrival",
+              label: "Arrival",
+              fieldKind: "date_time",
+              required: false,
+              control: {
+                tagName: "INPUT",
+                inputType,
+                siteRequired: false,
+                min: "2025-01",
+                max: "2030-12",
+                step: "any",
+              },
+            },
+          ],
+        }).success,
+      ).toBe(true);
+    }
+    expect(
+      browserUserActionApplyRequestSchema.parse({
+        values: [
+          { key: "arrival", value: "2026-09-25T09:30" },
+          { key: "optional", value: "" },
+        ],
+      }).values,
+    ).toHaveLength(2);
+  });
+
   it("keeps number values as strings and bounds observed constraints", () => {
     const request = browserUserActionCreateRequestSchema.parse({
       kind: "input",

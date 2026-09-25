@@ -1377,7 +1377,7 @@ describe("ComputerUseHostRuntime", () => {
       errorLog: [],
     });
 
-    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(15_000);
     expect(heartbeatCalls).toBe(2);
     expect(
       sessionFetch.mock.calls.some(([url]) => {

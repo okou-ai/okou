@@ -2,7 +2,7 @@
 
 ## Chat search agent recency index dropped (2026-09-25)
 
-Migration `1241_drop_chat_search_agent_created_idx` drops
+Migration `1242_drop_chat_search_agent_created_idx` drops
 `chat_event_search_messages_user_org_agent_id_created_idx` with
 `DROP INDEX CONCURRENTLY`. It does not block chat search reads or projector
 writes; it waits for older transactions on the table, so it raises

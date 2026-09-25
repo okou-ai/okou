@@ -514,6 +514,80 @@ describe("FILE-03 desktop computer-use runtime", () => {
     ).toBeFalsy();
   });
 
+  it("rewrites the host row only when heartbeats carry news or liveness goes stale", async () => {
+    const actor = bdd.user();
+    const base = now();
+    mockNow(base);
+    const host = await api.startComputerUseHost(actor);
+    context.mocks.ably.publish.mockClear();
+    const lastSeenAt = async () => {
+      const listed = await api.listComputerUseHosts(actor);
+      return listed.hosts.find((item) => {
+        return item.id === host.hostId;
+      })?.lastSeenAt;
+    };
+
+    // An unchanged heartbeat inside the refresh window writes nothing.
+    mockNow(base + 10_000);
+    await expect(
+      api.heartbeatComputerUseHost(host.hostToken),
+    ).resolves.toStrictEqual({ ok: true, hostId: host.hostId });
+    await expect(lastSeenAt()).resolves.toBe(new Date(base).toISOString());
+
+    // Once the stamp is 30s old it is refreshed, without a broadcast.
+    mockNow(base + 30_000);
+    await api.heartbeatComputerUseHost(host.hostToken);
+    await expect(lastSeenAt()).resolves.toBe(
+      new Date(base + 30_000).toISOString(),
+    );
+    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
+
+    // Changed runtime state is written and broadcast right away.
+    mockNow(base + 35_000);
+    await api.heartbeatComputerUseHost(host.hostToken, {
+      hostName: "Renamed Desktop",
+    });
+    const listed = await api.listComputerUseHosts(actor);
+    expect(listed.hosts).toMatchObject([
+      {
+        id: host.hostId,
+        hostName: "Renamed Desktop",
+        lastSeenAt: new Date(base + 35_000).toISOString(),
+      },
+    ]);
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "computerUseHostsChanged",
+      null,
+    );
+  });
+
+  it("refreshes host liveness from idle claim polls only when it is stale", async () => {
+    const actor = bdd.user();
+    const base = now();
+    mockNow(base);
+    const host = await api.startComputerUseHost(actor);
+    const lastSeenAt = async () => {
+      const listed = await api.listComputerUseHosts(actor);
+      return listed.hosts.find((item) => {
+        return item.id === host.hostId;
+      })?.lastSeenAt;
+    };
+
+    mockNow(base + 10_000);
+    await expect(
+      api.claimNextComputerUseCommand(host.hostToken),
+    ).resolves.toMatchObject({ status: "idle" });
+    await expect(lastSeenAt()).resolves.toBe(new Date(base).toISOString());
+
+    mockNow(base + 40_000);
+    await expect(
+      api.claimNextComputerUseCommand(host.hostToken),
+    ).resolves.toMatchObject({ status: "idle" });
+    await expect(lastSeenAt()).resolves.toBe(
+      new Date(base + 40_000).toISOString(),
+    );
+  });
+
   it("keeps multiple active hosts and lets stale heartbeats recover", async () => {
     const actor = bdd.user();
     const base = now();
