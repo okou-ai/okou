@@ -1,3 +1,5 @@
+import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
+import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { randomUUID } from "node:crypto";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
@@ -10,6 +12,7 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import {
   advanceRunActivityClockFixture,
+  ageSilentTerminalRunFixture,
   deleteActiveAgentRunFixture,
   readActiveAgentRunFixture,
 } from "../../../test-fixtures/run-activity";
@@ -1022,5 +1025,80 @@ describe("thread activity summary", () => {
       messages: [],
     });
     expect(inputs).toHaveLength(0);
+  });
+
+  it("keeps a cancelled running run's active row until its runner reports completion", async () => {
+    const f = await fixture();
+    await expect(readActiveAgentRunFixture(f.run.runId)).resolves.toMatchObject(
+      { chatThreadId: f.run.threadId },
+    );
+    await runs.requestCancelRun(f.actor, f.run.runId, [200]);
+    // The runner is still recovering: its row, heartbeat and activity remain.
+    await deliver(f, [tool(0)]);
+    await expect(readActiveAgentRunFixture(f.run.runId)).resolves.toMatchObject(
+      { chatThreadId: f.run.threadId },
+    );
+    await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
+      status: "ineligible",
+      messages: [],
+    });
+    await webhooks.requestAgentComplete(
+      { runId: f.run.runId, exitCode: 1, error: "Run cancelled" },
+      f.headers,
+      [200],
+    );
+    await flushWaitUntilForTest();
+    await expect(
+      readActiveAgentRunFixture(f.run.runId),
+    ).resolves.toBeUndefined();
+  });
+
+  it("releases a queued run's active row when it is cancelled", async () => {
+    const f = await fixture();
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    const queued = await chat.requestSendEvent(
+      f.actor,
+      { agentId: f.agentId, prompt: "Wait for capacity" },
+      [201],
+    );
+    if (queued.status !== 201 || !queued.body.runId) {
+      throw new Error("Expected queued run identity");
+    }
+    expect(queued.body.status).toBe("queued");
+    const queuedRunId = queued.body.runId;
+    await expect(readActiveAgentRunFixture(queuedRunId)).resolves.toMatchObject(
+      { chatThreadId: queued.body.threadId },
+    );
+    await runs.requestCancelRun(f.actor, queuedRunId, [200]);
+    await expect(
+      readActiveAgentRunFixture(queuedRunId),
+    ).resolves.toBeUndefined();
+  });
+
+  it("releases a silent terminal run's row after the recovery grace", async () => {
+    const f = await fixture();
+    await runs.requestCancelRun(f.actor, f.run.runId, [200]);
+    const sweep = async () => {
+      await accept(
+        setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
+          testCronCleanupSandboxesStateContract,
+        ).cleanup({
+          body: {
+            runIds: [f.run.runId],
+            chatThreadIds: [],
+            orgIds: [],
+            exportJobIds: [],
+          },
+        }),
+        [200],
+      );
+    };
+    await sweep();
+    await expect(readActiveAgentRunFixture(f.run.runId)).resolves.toBeDefined();
+    await ageSilentTerminalRunFixture(f.run.runId);
+    await sweep();
+    await expect(
+      readActiveAgentRunFixture(f.run.runId),
+    ).resolves.toBeUndefined();
   });
 });

@@ -1,5 +1,5 @@
 {
-  "id": "4b84d56b-c87f-4937-8204-70d1e21cc2ae",
+  "id": "48f46a02-c4f4-41d5-b610-525367b4b50f",
   "prevId": "dea9049b-e4a7-4708-ba41-29e1d5eb5c10",
   "version": "7",
   "dialect": "postgresql",
@@ -1060,6 +1060,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "chat_thread_id": {
+          "name": "chat_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "last_heartbeat_at": {
           "name": "last_heartbeat_at",

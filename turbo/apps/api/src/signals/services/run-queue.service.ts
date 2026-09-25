@@ -53,6 +53,8 @@ import {
 } from "./run-admission.service";
 import {
   COMPUTE_CLOSURE_ERROR,
+  neverStartedRunIds,
+  releaseActiveAgentRuns,
   transitionAgentRunsToTerminal,
 } from "./agent-run-terminal-transition.service";
 import {
@@ -381,7 +383,7 @@ async function failQueuedRunAdmission(
   lockedRun: LockedQueuedRun,
   error: string,
 ): Promise<PromotionResult> {
-  const [failed] = await transitionAgentRunsToTerminal(tx, {
+  const transitions = await transitionAgentRunsToTerminal(tx, {
     values: {
       status: "failed",
       completedAt: nowDate(),
@@ -394,7 +396,7 @@ async function failQueuedRunAdmission(
       eq(agentRuns.status, "queued"),
     ],
   });
-  if (!failed) {
+  if (transitions.length === 0) {
     return { status: "lost" };
   }
   await tx.delete(agentRunQueue).where(eq(agentRunQueue.runId, args.row.runId));
@@ -402,6 +404,8 @@ async function failQueuedRunAdmission(
     runId: args.row.runId,
     userId: lockedRun.userId,
   });
+  // The promotion transaction commits right after this result is returned.
+  await releaseActiveAgentRuns(tx, neverStartedRunIds(transitions));
   return {
     status: "failed",
     terminalTransition: {
@@ -850,6 +854,7 @@ export const cleanupExpiredQueueEntries$ = command(
         );
 
       if (deletableRows.length === 0) {
+        await releaseActiveAgentRuns(tx, neverStartedRunIds(timedOut));
         return { deletedCount: 0, timedOutRuns };
       }
 
@@ -865,6 +870,7 @@ export const cleanupExpiredQueueEntries$ = command(
         )
         .returning({ runId: agentRunQueue.runId });
 
+      await releaseActiveAgentRuns(tx, neverStartedRunIds(timedOut));
       return {
         deletedCount: deleted.length,
         timedOutRuns,
@@ -956,6 +962,7 @@ export const cleanupQueuedRunLaunchOrphans$ = command(
         QUEUED_RUN_LAUNCH_ORPHAN_REASON,
       );
 
+      await releaseActiveAgentRuns(tx, neverStartedRunIds(timedOut));
       return { deletedCount: 0, timedOutRuns };
     });
     signal.throwIfAborted();

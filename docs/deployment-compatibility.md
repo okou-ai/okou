@@ -7,12 +7,18 @@ query used, and activity snapshots were written through the run-content lock
 chain. Migration `1244` builds `idx_agent_runs_status` concurrently and drops
 `idx_agent_runs_status_heartbeat` and `idx_agent_runs_running_heartbeat`; no
 API names either index. Migration `1245` adds `active_agent_runs`, one narrow
-row per queued, pending or running run, and seeds it from currently active
-runs.
+row per active run with an immutable `chat_thread_id` (no foreign key, null for
+threadless runs), and seeds it from queued, pending and running runs.
 
-The new API inserts the row in the launch statement, refreshes its heartbeat on
-promotion, claim and heartbeat, and deletes it in the terminal transition. It
-still writes `agent_runs.last_heartbeat_at`, and timeout cleanup and capacity
+A row lives while a runner may still work on the run. The new API inserts it as
+the launch transaction's last statement and refreshes its heartbeat on
+promotion, claim and every sandbox heartbeat. A run that never reached `running`
+loses the row when it turns terminal; a run that did, including one cancelled
+while running, keeps it until the completion webhook, the running-heartbeat
+timeout, or a cleanup sweep that releases rows of runs terminal and silent for
+the 120-second cancellation-recovery grace. Every release is the last
+statement of its transaction, after the provider-account cleanup. The follow-up
+per-thread admission index relies on this ordering. It still writes `agent_runs.last_heartbeat_at`, and timeout cleanup and capacity
 checks still read that column. Activity capture and the activity summary read
 and write only the active row with single-row compare-and-set updates; they no
 longer touch `run_activity_snapshots`, `chat_threads` or `chat_events`, and no

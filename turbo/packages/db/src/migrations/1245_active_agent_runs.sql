@@ -2,6 +2,7 @@ CREATE TABLE "active_agent_runs" (
 	"run_id" uuid PRIMARY KEY NOT NULL,
 	"org_id" text NOT NULL,
 	"user_id" text NOT NULL,
+	"chat_thread_id" uuid,
 	"last_heartbeat_at" timestamp NOT NULL,
 	"activity_entries" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"activity_revision" text DEFAULT 'empty' NOT NULL,
@@ -18,8 +19,8 @@ CREATE INDEX "active_agent_runs_org_idx" ON "active_agent_runs" USING btree ("or
 CREATE INDEX "active_agent_runs_user_idx" ON "active_agent_runs" USING btree ("user_id");--> statement-breakpoint
 -- Seed rows for runs that are already active. Runs created by an older API
 -- during rollout are seeded by the follow-up migration that switches readers.
-INSERT INTO "active_agent_runs" ("run_id", "org_id", "user_id", "last_heartbeat_at")
-SELECT "id", "org_id", "user_id", COALESCE("last_heartbeat_at", "created_at")
+INSERT INTO "active_agent_runs" ("run_id", "org_id", "user_id", "chat_thread_id", "last_heartbeat_at")
+SELECT "id", "org_id", "user_id", "chat_thread_id", COALESCE("last_heartbeat_at", "created_at")
 FROM "agent_runs"
 WHERE "status" IN ('queued', 'pending', 'running')
 ON CONFLICT ("run_id") DO NOTHING;

@@ -31,6 +31,9 @@ export const activeAgentRuns = pgTable(
       ),
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
+    // Immutable after insert and deliberately without a foreign key: the
+    // follow-up per-thread admission index keys on it. Null for threadless runs.
+    chatThreadId: uuid("chat_thread_id"),
     lastHeartbeatAt: timestamp("last_heartbeat_at").notNull(),
     activityEntries: jsonb("activity_entries")
       .$type<RunActivityEntries>()

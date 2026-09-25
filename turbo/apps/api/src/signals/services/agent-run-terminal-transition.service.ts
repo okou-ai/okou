@@ -33,6 +33,8 @@ export async function stopErasureClosedComputeRun(
     )
     .returning({ id: agentRuns.id });
   if (stopped) {
+    // Never-started run: release its active row. Callers return right after
+    // this, so the DELETE stays the transaction's last statement.
     await tx.delete(activeAgentRuns).where(eq(activeAgentRuns.runId, runId));
   }
 }
@@ -72,6 +74,42 @@ interface TerminalRunTransition {
   readonly orgId: string;
   readonly userId: string;
   readonly runnerGroup: string | null;
+  readonly startedAt: Date | null;
+}
+
+/** Runs that became terminal before reaching `running` have no runner that
+ * will report completion, so their active row is released by the transaction
+ * that made them terminal. Started runs keep their row until the completion
+ * webhook or timeout cleanup releases it.
+ */
+export function neverStartedRunIds(
+  transitions: readonly TerminalRunTransition[],
+): readonly string[] {
+  return transitions
+    .filter((transition) => {
+      return transition.startedAt === null;
+    })
+    .map((transition) => {
+      return transition.runId;
+    });
+}
+
+/** Deletes the active rows of the given runs. The row is the per-thread
+ * active-run lock, so a concurrent launch may wait on this uncommitted DELETE
+ * while holding other locks. This MUST be the last statement of the enclosing
+ * transaction: issuing any further statement or lock afterwards risks a
+ * deadlock with that launch.
+ */
+export async function releaseActiveAgentRuns(
+  tx: Tx,
+  runIds: readonly string[],
+): Promise<void> {
+  if (runIds.length === 0) {
+    return;
+  }
+  await tx
+    .delete(activeAgentRuns)
+    .where(inArray(activeAgentRuns.runId, [...runIds]));
 }
 
 export async function transitionAgentRunsToTerminal(
@@ -88,6 +126,7 @@ export async function transitionAgentRunsToTerminal(
       userId: agentRuns.userId,
       runnerGroup: agentRuns.runnerGroup,
       modelProviderId: agentRuns.modelProviderId,
+      startedAt: agentRuns.startedAt,
     });
   if (transitioned.length === 0) {
     return transitioned;
@@ -98,9 +137,6 @@ export async function transitionAgentRunsToTerminal(
   await tx
     .delete(agentRunConnectorDiagnosticRegistrations)
     .where(inArray(agentRunConnectorDiagnosticRegistrations.runId, runIds));
-  await tx
-    .delete(activeAgentRuns)
-    .where(inArray(activeAgentRuns.runId, runIds));
   await cleanupDisconnectedPersonalModelProviderAccounts(tx, transitioned);
   return transitioned;
 }

@@ -111,6 +111,8 @@ import { generateSandboxToken } from "../auth/tokens";
 import { decryptPersistentSecretsMap } from "../services/crypto.utils";
 import {
   COMPUTE_CLOSURE_ERROR,
+  neverStartedRunIds,
+  releaseActiveAgentRuns,
   transitionAgentRunsToTerminal,
 } from "../services/agent-run-terminal-transition.service";
 import { dispatchCompleteSideEffects$ } from "../services/agent-run-lifecycle.service";
@@ -1506,7 +1508,7 @@ async function failPoisonQueuedJob(
       }
 
       const failedAt = nowDate();
-      const [updatedRun] = await transitionAgentRunsToTerminal(tx, {
+      const transitions = await transitionAgentRunsToTerminal(tx, {
         values: {
           status: "failed",
           completedAt: failedAt,
@@ -1515,13 +1517,14 @@ async function failPoisonQueuedJob(
         conditions: [eq(agentRuns.id, runId), eq(agentRuns.status, "pending")],
       });
       signal.throwIfAborted();
-      if (!updatedRun) {
+      if (transitions.length === 0) {
         throw new Error("Locked pending run was not failed");
       }
 
       await tx.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, runId));
       signal.throwIfAborted();
 
+      await releaseActiveAgentRuns(tx, neverStartedRunIds(transitions));
       return { status: "failed" as const };
     });
   });

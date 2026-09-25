@@ -10,7 +10,8 @@ because a run was created.
 `POST /api/chat-threads/:id/activity-summary` accepts only `{ "runId": "<uuid>" }`.
 It requires organization authentication and `chat-event:read`. The server reads
 the run by primary key and requires its user, organization and thread to match
-the request. Only pending and running runs are eligible; commentary does not end
+the request. Only pending and running runs are eligible, checked again after
+generation so a run that ended meanwhile is answered `ineligible`; commentary does not end
 eligibility. Responses use `Cache-Control: no-store`.
 
 The typed contract is `chatThreadActivitySummaryContract` in
@@ -39,9 +40,11 @@ entries.
 
 ## Storage and concurrency
 
-Activity lives on the run's `active_agent_runs` row, which exists only while the
-run is queued, pending or running: the launch statement inserts it, the terminal
-transition deletes it, and deleting the run cascades to it. A run created by an
+Activity lives on the run's `active_agent_runs` row, which exists while a runner
+may still work on the run: launch inserts it; a run that never started loses it
+when it turns terminal; a started run, including one cancelled while running,
+keeps it until the runner reports completion or cleanup declares the runner
+gone; deleting the run cascades to it. A run created by an
 older API during the rollout has no row and therefore no activity. The
 accepted-event consumer is shared by guest webhooks and Pi API-first delivery.
 It selects public message/tool/result fields; private reasoning, images,
@@ -67,7 +70,7 @@ additionally redacted.
   outlives one whole attempt at the 10-second provider deadline. The database
   clock enforces at least 15 seconds between attempts across API instances and
   tabs. A crashed owner's claim expires. Completion is one `UPDATE` requiring
-  the exact claim ID; a row deleted by the terminal transition makes it a no-op
+  the exact claim ID; a released row makes it a no-op
   and the response `ineligible`.
 - The model receives the run's prompt as a 700-character excerpt plus the
   retained activity entries. The summary never reads `chat_threads` or

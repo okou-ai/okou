@@ -1,3 +1,4 @@
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { eq, sql } from "drizzle-orm";
 import { db } from "../lib/db";
@@ -28,8 +29,26 @@ export async function readActiveAgentRunFixture(runId: string) {
       activityEntries: activeAgentRuns.activityEntries,
       summary: activeAgentRuns.summary,
       claimId: activeAgentRuns.claimId,
+      chatThreadId: activeAgentRuns.chatThreadId,
     })
     .from(activeAgentRuns)
     .where(eq(activeAgentRuns.runId, runId));
   return row;
+}
+
+/**
+ * Infrastructure-only time passage: age a terminal run's completion and its
+ * sandbox's last heartbeat past the cancellation-recovery grace. No API can
+ * make a runner fall silent.
+ */
+export async function ageSilentTerminalRunFixture(runId: string) {
+  const past = sql`(statement_timestamp() AT TIME ZONE 'UTC') - interval '10 minutes'`;
+  await db()
+    .update(agentRuns)
+    .set({ completedAt: past })
+    .where(eq(agentRuns.id, runId));
+  await db()
+    .update(activeAgentRuns)
+    .set({ lastHeartbeatAt: past })
+    .where(eq(activeAgentRuns.runId, runId));
 }

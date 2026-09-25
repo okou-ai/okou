@@ -242,15 +242,40 @@ export async function requestActivitySummary(
   ) {
     return { kind: "not-found" as const };
   }
-  // A queued run has not started, and a terminal run's row is about to go.
-  if (run.status !== "pending" && run.status !== "running") {
+  if (!isProgressStatus(run.status)) {
     return {
       kind: "summary" as const,
       response: emptyResponse(identity.runId, "ineligible"),
     };
   }
+  const response = await generateSummary(db, identity, run.prompt, signal);
+  if (response.status === "ineligible") {
+    return { kind: "summary" as const, response };
+  }
+  // A run that turned terminal while this request ran keeps its active row
+  // until its runner stops, so recheck the run itself before answering.
+  const [current] = await db
+    .select({
+      status: agentRuns.status,
+      chatThreadId: agentRuns.chatThreadId,
+    })
+    .from(agentRuns)
+    .where(eq(agentRuns.id, identity.runId));
+  signal.throwIfAborted();
   return {
     kind: "summary" as const,
-    response: await generateSummary(db, identity, run.prompt, signal),
+    response:
+      current &&
+      current.chatThreadId === identity.threadId &&
+      isProgressStatus(current.status)
+        ? response
+        : emptyResponse(identity.runId, "ineligible"),
   };
+}
+
+/** Queued runs have not started; terminal runs show no progress even while
+ * their runner is still recovering and the active row remains.
+ */
+function isProgressStatus(status: string): boolean {
+  return status === "pending" || status === "running";
 }

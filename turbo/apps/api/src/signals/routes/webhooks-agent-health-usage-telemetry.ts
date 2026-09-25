@@ -405,6 +405,19 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const db = set(writeDb$);
   const heartbeatAt = nowDate();
+  // The active row outlives the public status: a run cancelled while running
+  // keeps it until the runner reports completion, and its sandbox keeps
+  // heartbeating meanwhile. Row existence is the only gate.
+  await db
+    .update(activeAgentRuns)
+    .set({ lastHeartbeatAt: heartbeatAt })
+    .where(
+      and(
+        eq(activeAgentRuns.runId, body.runId),
+        eq(activeAgentRuns.userId, auth.userId),
+      ),
+    );
+  signal.throwIfAborted();
   const result = await db
     .update(agentRuns)
     .set({ lastHeartbeatAt: heartbeatAt })
@@ -424,17 +437,6 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (result.length === 0) {
     return notFound("Agent run not found");
   }
-
-  await db
-    .update(activeAgentRuns)
-    .set({ lastHeartbeatAt: heartbeatAt })
-    .where(
-      and(
-        eq(activeAgentRuns.runId, body.runId),
-        eq(activeAgentRuns.userId, auth.userId),
-      ),
-    );
-  signal.throwIfAborted();
 
   const typingRefreshIntervalSeconds = await settle(
     set(

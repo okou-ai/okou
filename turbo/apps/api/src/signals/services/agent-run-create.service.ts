@@ -8310,18 +8310,6 @@ function buildAtomicLaunchCteContext(
   // Its returned row need not participate in the final result join.
   ctes.push(insertedDiagnosticRegistration);
 
-  // Queued and pending runs are active from creation; the terminal transition
-  // deletes this row. It shares the statement so both rows commit atomically.
-  const insertedActiveRun = args.tx.$with("inserted_launch_active_run").as(
-    args.tx.insert(activeAgentRuns).values({
-      runId: returnedCteId(insertedRun),
-      orgId: rowsArgs.orgId,
-      userId: rowsArgs.userId,
-      lastHeartbeatAt: createdAt,
-    }),
-  );
-  ctes.push(insertedActiveRun);
-
   appendLaunchCallbackCte({
     tx: args.tx,
     ctes,
@@ -9385,6 +9373,37 @@ async function commitValidatedPreparedLaunch(
   });
 }
 
+/**
+ * The admitted launch transaction's tail. The active-row insert must stay the
+ * transaction's last statement: the per-thread admission index makes it wait
+ * on another transaction's uncommitted release of the same thread, which must
+ * not then need a lock this transaction already owns.
+ */
+async function finishAdmittedLaunch(
+  tx: DbTransaction,
+  args: PreparedCommitPreparedLaunchArgs,
+  run: RunRecord,
+): Promise<void> {
+  await args.admissionTiming.measureLeaf("pi_memory_schedule", () => {
+    return requestPiMemoryStage1Day(tx, {
+      ...run,
+      userId: args.createArgs.userId,
+      orgId: args.createArgs.orgId,
+      chatThreadId: args.createArgs.chatThreadId ?? null,
+      triggerSource: args.context.body.triggerSource,
+      launchSnapshot: args.context.launchSnapshot,
+      completedAt: null,
+    });
+  });
+  await tx.insert(activeAgentRuns).values({
+    runId: run.id,
+    orgId: args.createArgs.orgId,
+    userId: args.createArgs.userId,
+    chatThreadId: args.createArgs.chatThreadId ?? null,
+    lastHeartbeatAt: run.createdAt,
+  });
+}
+
 async function commitPreparedLaunch(
   args: CommitPreparedLaunchArgs,
 ): Promise<AtomicLaunchCommitCompletion> {
@@ -9472,17 +9491,7 @@ async function commitPreparedLaunch(
             "kind" in result &&
             (result.kind === "pending" || result.kind === "queued")
           ) {
-            await admissionTiming.measureLeaf("pi_memory_schedule", () => {
-              return requestPiMemoryStage1Day(tx, {
-                ...result.run,
-                userId: preparedArgs.createArgs.userId,
-                orgId: preparedArgs.createArgs.orgId,
-                chatThreadId: preparedArgs.createArgs.chatThreadId ?? null,
-                triggerSource: preparedArgs.context.body.triggerSource,
-                launchSnapshot: preparedArgs.context.launchSnapshot,
-                completedAt: null,
-              });
-            });
+            await finishAdmittedLaunch(tx, attemptArgs, result.run);
           }
           return { result, admissionLockHeldStartedAt };
         })().finally(() => {

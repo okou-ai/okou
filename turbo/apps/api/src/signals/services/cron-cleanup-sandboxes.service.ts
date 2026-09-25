@@ -4,6 +4,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   COMPUTE_CLOSURE_ERROR,
+  releaseActiveAgentRuns,
   transitionAgentRunsToTerminal,
 } from "./agent-run-terminal-transition.service";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
@@ -55,6 +56,7 @@ import {
   type ThreadlessRunCleanupResult,
 } from "./threadless-run-cleanup.service";
 import { cleanupExpiredPiApiFirstTurnData$ } from "./pi-api-first-turn-cleanup.service";
+import { releaseStaleTerminalActiveAgentRuns$ } from "./run-activity-snapshot.service";
 import { lockAgentRunCheckpointLifecycle } from "./agent-run-checkpoint-lifecycle-lock.service";
 import { lockChatQueueThread } from "./chat-event-queue.service";
 import {
@@ -411,6 +413,11 @@ async function commitStaleRunTimeout(
         await tx.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, run.id));
         signal.throwIfAborted();
 
+        // The runner is considered dead and will not report completion, so
+        // release the active row whether or not the run started.
+        await releaseActiveAgentRuns(tx, [run.id]);
+        signal.throwIfAborted();
+
         return {
           kind: "committed",
           timeout: {
@@ -743,6 +750,8 @@ const cleanupGlobalMaintenance$ = command(
       L.error("Failed to retry Feishu connect welcomes", { error });
     });
     signal.throwIfAborted();
+    await set(releaseStaleTerminalActiveAgentRuns$, null, signal);
+    signal.throwIfAborted();
     await set(cleanupExpiredPiApiFirstTurnData$, signal);
     signal.throwIfAborted();
   },
@@ -754,6 +763,8 @@ const cleanupFixtureMaintenance$ = command(
     scope: Extract<CleanupSandboxesScope, { kind: "fixtures" }>,
     signal: AbortSignal,
   ): Promise<void> => {
+    await set(releaseStaleTerminalActiveAgentRuns$, scope.runIds, signal);
+    signal.throwIfAborted();
     await set(
       drainStaleChatThreadQueues$,
       {

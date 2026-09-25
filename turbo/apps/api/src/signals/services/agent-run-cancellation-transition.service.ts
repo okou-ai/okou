@@ -5,9 +5,15 @@ import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { eq } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
-import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
+import {
+  neverStartedRunIds,
+  transitionAgentRunsToTerminal,
+} from "./agent-run-terminal-transition.service";
 
-/** The caller owns the run row lock and has classified its current status. */
+/** The caller owns the run row lock and has classified its current status.
+ * Returns the never-started run IDs whose active rows the caller must release
+ * with `releaseActiveAgentRuns` as the last statement of its transaction.
+ */
 export async function cancelLockedRun(
   tx: Tx,
   args: {
@@ -17,8 +23,8 @@ export async function cancelLockedRun(
     readonly runnerCancellationMode: RunnerCancellationMode;
     readonly error?: string;
   },
-): Promise<void> {
-  const [updated] = await transitionAgentRunsToTerminal(tx, {
+): Promise<readonly string[]> {
+  const transitions = await transitionAgentRunsToTerminal(tx, {
     values: {
       status: "cancelled",
       completedAt: args.completedAt,
@@ -30,9 +36,10 @@ export async function cancelLockedRun(
       eq(agentRuns.status, args.status),
     ],
   });
-  if (!updated) {
+  if (transitions.length === 0) {
     throw new Error("Locked cancellable run was not updated");
   }
   await tx.delete(agentRunQueue).where(eq(agentRunQueue.runId, args.runId));
   await tx.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, args.runId));
+  return neverStartedRunIds(transitions);
 }

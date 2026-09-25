@@ -31,7 +31,11 @@ import {
   encryptErasureSelector,
 } from "./account-erasure-selector";
 import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
-import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
+import {
+  neverStartedRunIds,
+  releaseActiveAgentRuns,
+  transitionAgentRunsToTerminal,
+} from "./agent-run-terminal-transition.service";
 
 const NAMESPACE = "a66735b0-9b30-468f-804a-6b0c4f6f580d";
 const PAGE_SIZE = 100;
@@ -554,6 +558,7 @@ async function erase(db: Db, lease: ErasureLease, signal: AbortSignal) {
               inArray(agentRuns.status, ["queued", "pending", "running"]),
             ],
           });
+          await releaseActiveAgentRuns(tx, neverStartedRunIds(transitioned));
           return transitioned[0]?.runnerGroup ?? null;
         })
       : null;
