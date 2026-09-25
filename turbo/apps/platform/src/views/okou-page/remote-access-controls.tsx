@@ -291,7 +291,7 @@ function HostChoiceSelect({
               <span
                 key={item.value}
                 aria-hidden="true"
-                className="invisible col-start-1 row-start-1 flex h-8 items-center gap-2 whitespace-nowrap border px-3 py-1 text-sm"
+                className="invisible col-start-1 row-start-1 flex h-8 items-center gap-2 whitespace-nowrap border px-3 py-1 pr-3.5 text-sm"
               >
                 {item.label}
                 <span className="h-4 w-4 shrink-0" />
