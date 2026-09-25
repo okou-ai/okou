@@ -7121,7 +7121,6 @@
       "invalidHost": "請輸入有效的主機名或IP地址，不要包含URL、使用者名稱或埠。",
       "invalidInput": "請檢查VNC配置後重試。",
       "invalidTrust": "請輸入有效的證書包：最多8個公開CA證書，總大小不超過64 KiB。",
-      "ownerChanged": "你的工作區訪問權限已變更，請重新整理後再繼續。",
       "revisionExhausted": "該配置已無法繼續更新，請新建一個。"
     },
     "host": "主機名或IP地址",
