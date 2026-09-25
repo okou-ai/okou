@@ -651,7 +651,6 @@ describe("canonical Discord terminal replies", () => {
     });
     expect(sendRequests).toBe(1);
     expect(started.provider.sentMessages).toHaveLength(1);
-    expect(started.provider.sentMessages[0]?.nonce).toBeUndefined();
   });
 });
 

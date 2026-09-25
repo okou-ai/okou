@@ -131,12 +131,12 @@ async function replyContent(
   request: DiscordReplyRequest,
   binding: { readonly discordUserId: string; readonly guildId: string },
   signal: AbortSignal,
-): Promise<string | null> {
+): Promise<string> {
   const [event] = await db
     .select({
       content: canonicalChatEventContent(),
       runId: chatEvents.runId,
-      agentId: chatThreads.agentId,
+      agentId: agents.id,
     })
     .from(chatEvents)
     .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
@@ -157,8 +157,8 @@ async function replyContent(
     )
     .limit(1);
   signal.throwIfAborted();
-  if (!event?.content || event.agentId === null) {
-    return null;
+  if (!event?.content) {
+    throw new Error("Discord reply canonical event is unavailable");
   }
   const [mentionerCount] = await db
     .select({ count: countDistinct(discordChatThreadRoutes.userId) })
@@ -177,14 +177,15 @@ async function replyContent(
       ),
     );
   signal.throwIfAborted();
+  if (!mentionerCount) {
+    throw new Error("Discord reply mentioner count is unavailable");
+  }
   const presentationArgs = {
     db,
     orgId: request.orgId,
     agentId: event.agentId,
     replyToMention:
-      (mentionerCount?.count ?? 0) > 1
-        ? `<@${binding.discordUserId}>`
-        : undefined,
+      mentionerCount.count > 1 ? `<@${binding.discordUserId}>` : undefined,
   };
   // An admission failure has no run, so its footer omits the model.
   const presentation =
@@ -250,9 +251,6 @@ async function sendReply(
     return;
   }
   const content = await replyContent(db, request, access.binding, signal);
-  if (content === null) {
-    return;
-  }
   await postParts(access.botToken, request.target.channelId, content, signal);
 }
 
