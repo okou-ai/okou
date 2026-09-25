@@ -982,7 +982,7 @@ jobs:
           files: turbo/junit.xml
           report_type: test_results
 
-  test-other:
+  test-discord-gateway:
     needs: [detect-turbo-ts-checks]
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     runs-on: ubuntu-latest
@@ -995,9 +995,44 @@ jobs:
       - name: Build Discord Gateway relay for runtime tests
         working-directory: turbo
         run: pnpm --filter @okouai/discord-gateway-worker run build
+      # Miniflare runs a real workerd process and SQLite Durable Object per file.
+      # The 1,000-event recovery case needs exclusive CPU and storage bandwidth.
+      - name: Test Discord Gateway worker
+        working-directory: turbo
+        run: pnpm vitest run --project=@okouai/discord-gateway-worker --no-file-parallelism --coverage.enabled --coverage.reporter=json
+      - name: Upload coverage to Codecov
+        if: success() || failure()
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: discord-gateway
+          files: turbo/coverage/coverage-final.json
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: discord-gateway
+          files: turbo/junit.xml
+          report_type: test_results
+
+  test-other:
+    needs: [detect-turbo-ts-checks]
+    if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ./.github/actions/toolchain-init
       - name: Test Other Packages
         working-directory: turbo
-        run: pnpm vitest run --project=@okouai/core --project=@okouai/ui --project=@okouai/api-contracts --project=@okouai/db --project=@okouai/discord-gateway-worker --coverage.enabled --coverage.reporter=json
+        run: pnpm vitest run --project=@okouai/core --project=@okouai/ui --project=@okouai/api-contracts --project=@okouai/db --coverage.enabled --coverage.reporter=json
       - name: Test Connectors
         working-directory: turbo
         run: pnpm -F @okouai/connectors exec vitest run --reporter=default
@@ -3175,6 +3210,7 @@ jobs:
       - test-app
       - test-api
       - test-other
+      - test-discord-gateway
       - deploy-api
       - deploy-app
       - deploy-stripe-listener
@@ -3290,6 +3326,7 @@ jobs:
           check_result "test-app" "${{ needs.test-app.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-api" "${{ needs.test-api.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-other" "${{ needs.test-other.result }}" "$TS_CHECK_SKIP_ALLOWED"
+          check_result "test-discord-gateway" "${{ needs.test-discord-gateway.result }}" "$TS_CHECK_SKIP_ALLOWED"
 
           # May-skip: 'success' or 'skipped' are both acceptable
           check_result "test-migrate" "${{ needs.test-migrate.result }}" "true"
