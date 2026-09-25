@@ -245,7 +245,6 @@ export async function ingestXResourceUsage(
     async (tx) => {
       await setXResourceTransactionTimeouts(tx);
       await lockXResourceAdmission(tx, "shared");
-      // Admission precedes Run ownership, matching account cleanup's order.
       // SHARE prevents deletion/owner updates while source rows are created.
       const [run] = await tx
         .select({

@@ -79,7 +79,7 @@ replaying one evaluates it again against the retained resource history.
 
 The three columns form the primary key. Its leading date supports cleanup;
 no separate day index is needed. There are no account, ownership or winner
-columns and no foreign keys. Personal-data erasure and ledger compaction cannot
+columns and no foreign keys. Account deletion and ledger compaction cannot
 cascade into shared reads. The migration creates one empty table and changes
 no existing table or count writer.
 
@@ -134,7 +134,7 @@ The consumer takes no compaction or organization credit lock. Compaction only
 handles processed rows older than four days, so an immutable source within the
 two-date admission window cannot be compacted. It never waits for the X
 admission lock. Cleanup takes only the exclusive X admission lock and resource
-rows; it does not acquire run, erasure or ledger locks.
+rows; it does not acquire run or ledger locks.
 
 ## Two-date admission and cleanup
 
@@ -159,32 +159,30 @@ The existing ledger retains healthy processed rows for at least four days,
 which exceeds the two-date retry horizon. There is no source replay guarantee
 after expiry or compaction; expired requests fail instead of recreating
 consumption. Run/thread/account deletion has no cascade into shared resources.
-Missing runs return 404 before source lookup. Usage accepted after an account
-closes is removed by the erasure executor like any other leftover. Ordinary thread
+Missing runs return 404 before source lookup. Ordinary thread
 deletion retains run/billing history under the existing lifecycle; cancelling
 that run does not reset the shared resource set.
 
-Clerk user/organization cleanup takes exclusive X admission and exclusive compaction admission
-before deleting the scoped ledger and organization allowance entitlements.
-It then deletes the live runs in the same transaction. The existing usage helper
-uses a savepoint on that connection, so no second pooled connection is needed.
-All locks survive until the common commit. Admitted uploads and settlements
-finish first; later uploads cannot reinsert personal usage between ledger
-cleanup and Run deletion.
-This also protects deployments without the separate erasure-decision bridge.
+Clerk user/organization cleanup takes exclusive compaction admission before
+deleting the scoped ledger and organization allowance entitlements. It then
+locks and deletes the live runs in the same transaction. The existing usage
+helper uses a savepoint on that connection, so no second pooled connection is
+needed. All locks survive until the common commit, so admitted settlements
+finish first. Account cleanup does not take X admission: an upload that already
+holds its Run `SHARE` lock finishes before the Run is deleted, and later uploads
+for the deleted Run return 404. Usage from an upload that commits between the
+ledger cleanup and the Run lock is not swept. This is an accepted gap until
+account deletion is redesigned. Ledger cleanup occurs before the lifecycle's
+existing 100-millisecond lock timeout; parent, Run and later deletion locks
+retain that policy. Shared resource records remain untouched.
 
-The Pi erasure preflight likewise drains usage admission before locking Runs,
-including already terminal Pi Runs. Admission and ledger cleanup occur before
-the lifecycle's existing 100-millisecond lock timeout; parent, Run and later
-deletion locks retain that policy. Shared resource records remain untouched.
-
-X and compaction admission locks are global: account cleanup briefly pauses all
-webhook usage writes, settlement and Run deletion. Slow settlement or deletion
-delays compaction or account cleanup. No network cleanup runs while those
-admission locks are held. Before deploying the unconditional path, all serving
-and supported rollback APIs must preserve shared compaction admission for
-settlement and ordinary Run deletion; otherwise those transactions could invert
-the combined cleanup's ledger/allowance/Run lock order. This deployment
+The compaction admission lock is global: account cleanup briefly pauses
+settlement and Run deletion. Slow settlement or deletion delays compaction or
+account cleanup. No network cleanup runs while that admission lock is held.
+Before deploying the unconditional path, all serving and supported rollback
+APIs must preserve shared compaction admission for settlement and ordinary Run
+deletion; otherwise those transactions could invert the combined cleanup's
+ledger/allowance/Run lock order. This deployment
 compatibility requirement is independent of the deduplication calculation.
 
 ## Runner and deployment compatibility
