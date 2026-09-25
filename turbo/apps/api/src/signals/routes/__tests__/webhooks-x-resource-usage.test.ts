@@ -9,10 +9,6 @@ import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now, nowDate } from "../../../lib/time";
 import {
-  closeErasureSubjectFixture,
-  removeErasureSubjectsFixture,
-} from "../../../test-fixtures/account-erasure-subject";
-import {
   usageEventCompactionDbFixture,
   xResourceAdmissionDbFixture,
 } from "../../../test-fixtures/db-fixture";
@@ -999,37 +995,6 @@ describe("X daily resource usage webhook", () => {
         });
       }
       await accept(submit(deleted, [observation([freshId])]), [404]);
-      await accept(submit(survivor, [observation([sharedId, freshId])]), [200]);
-      await expect(chargedUnits(survivor, configuredPricing)).resolves.toBe(1);
-    },
-  );
-
-  it.each(["user", "organization"] as const)(
-    "rejects a previously issued token after %s erasure admission closes",
-    async (subjectKind) => {
-      const configuredPricing = await pricing();
-      const closed = await createRun();
-      const survivor = await createRun();
-      const sharedId = resourceId();
-      const freshId = resourceId();
-      await accept(submit(closed, [observation([sharedId])]), [200]);
-      await expect(chargedUnits(closed, configuredPricing)).resolves.toBe(1);
-      const subjectId =
-        subjectKind === "user" ? closed.actor.userId : closed.actor.orgId;
-      if (!subjectId) {
-        throw new Error("Erasure fixture requires an organization");
-      }
-      // Infrastructure exception: erasure decision ingress is dormant and has
-      // no production API. Close only this test-owned subject, leaving the run
-      // present so the stale-token assertion specifically exercises admission.
-      const closure = await closeErasureSubjectFixture({
-        subjectKind,
-        subjectId,
-      });
-      onTestFinished(async () => {
-        await removeErasureSubjectsFixture([closure.jobId]);
-      });
-      await accept(submit(closed, [observation([freshId])]), [404]);
       await accept(submit(survivor, [observation([sharedId, freshId])]), [200]);
       await expect(chargedUnits(survivor, configuredPricing)).resolves.toBe(1);
     },

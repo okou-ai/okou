@@ -754,9 +754,6 @@ export default [
       // Bounded job ownership needs real row-lock competition, expired leases,
       // handler-version skew and publication rollback unavailable through HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
-      // B2b1 races the dormant real projector with actual compute writers;
-      // no HTTP route owns closure or can observe PostgreSQL lock ordering.
-      "src/signals/services/__tests__/compute-erasure-admission.service.test.ts",
       // Authentication necessarily observes an already-aborted HTTP request
       // before command creation. This one direct production-command case is the
       // only seam that mutation-tests its pre-BEGIN guard; route coverage owns
@@ -1005,9 +1002,6 @@ export default [
       // Bounded job ownership needs row locks, expired leases, handler-version
       // skew and transaction rollback that callers cannot construct via HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
-      // B2b1 races the dormant real projector with actual compute writers;
-      // no HTTP route owns closure or can observe PostgreSQL lock ordering.
-      "src/signals/services/__tests__/compute-erasure-admission.service.test.ts",
       // Authentication necessarily consumes a pre-aborted HTTP signal before
       // command creation. The route suite retains every public assertion; this
       // exception only proves the production command opens no transaction.

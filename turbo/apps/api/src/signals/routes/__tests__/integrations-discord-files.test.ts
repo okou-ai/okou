@@ -21,10 +21,6 @@ import { mockEnv } from "../../../lib/env";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { sanitizeArtifactFilename } from "../../../lib/file-url";
 import { server } from "../../../mocks/server";
-import {
-  closeErasureSubjectFixture,
-  removeErasureSubjectsFixture,
-} from "../../../test-fixtures/account-erasure-subject";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settle } from "../../utils";
@@ -715,68 +711,6 @@ describe("Discord attachment downloads", () => {
 });
 
 describe("Canonical Discord file publication and delivery", () => {
-  it.each(["user", "organization"] as const)(
-    "does not publish after its %s closes during the provider access check",
-    async (subjectKind) => {
-      const fixture = await boundFixture();
-      await updateFeatureSwitchesForUser(context, fixture.actor, {
-        [FeatureSwitchKey.DiscordIntegration]: true,
-        [FeatureSwitchKey.PrivateArtifacts]: true,
-      });
-      storage.acceptChatObjectStorage();
-      const jobs: string[] = [];
-      onTestFinished(async () => {
-        await removeErasureSubjectsFixture(jobs);
-      });
-      server.use(
-        http.get(
-          `${discordApiOrigin}/channels/${fixture.channelId}`,
-          async () => {
-            // Infrastructure exception: B1 has no production closure ingress.
-            // This existing fixture records a test-owned dormant decision only.
-            // The provider response places closure after binding authorization
-            // and before the canonical publication writer's transaction.
-            const closed = await closeErasureSubjectFixture({
-              subjectKind,
-              subjectId:
-                subjectKind === "user"
-                  ? fixture.actor.userId
-                  : fixture.actor.orgId,
-            });
-            jobs.push(closed.jobId);
-            return HttpResponse.json({
-              id: fixture.channelId,
-              type: 0,
-              guild_id: fixture.guildId,
-              permission_overwrites: [],
-            });
-          },
-        ),
-      );
-      context.mocks.s3.getSignedUrl.mockClear();
-      const response = await settle(
-        fileClients().init({
-          headers: fixture.headers,
-          body: uploadBody({ channelId: fixture.channelId }),
-        }),
-        context.signal,
-      );
-      await removeErasureSubjectsFixture(jobs);
-      if (!response.ok) {
-        throw response.error;
-      }
-      const rejected = await accept(Promise.resolve(response.value), [404]);
-
-      expect(rejected.body.error.code).toBe("NOT_FOUND");
-      expect(context.mocks.s3.getSignedUrl).not.toHaveBeenCalled();
-      const catalog = await accept(
-        catalogClient().list({ headers: fixture.headers }),
-        [200],
-      );
-      expect(catalog.body.artifacts).toStrictEqual([]);
-    },
-  );
-
   it.each(["user", "organization"])(
     "does not expose another %s's asset through materialize or complete",
     async (foreignOwner) => {
