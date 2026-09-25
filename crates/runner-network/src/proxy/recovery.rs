@@ -208,11 +208,11 @@ mod tests {
             Ok(unmanaged_child("true", None))
         }));
         let task_id = recovery.task.as_ref().unwrap().id();
-        assert!(
-            tokio::time::timeout(Duration::from_millis(10), recovery.wait(&mut mitm))
-                .await
-                .is_err()
-        );
+        tokio::select! {
+            biased;
+            result = recovery.wait(&mut mitm) => panic!("blocked restart unexpectedly completed: {result:?}"),
+            () = std::future::ready(()) => {}
+        }
         assert_eq!(recovery.task.as_ref().unwrap().id(), task_id);
         tx.send(()).unwrap();
         recovery.wait(&mut mitm).await.unwrap();
