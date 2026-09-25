@@ -4,7 +4,7 @@ import { joinAll, onRejection, settle } from "../utils";
 import { visiblePiMemoryCitationText } from "@okouai/api-contracts/contracts/pi-memory-citations";
 import { isRetiredGoalArchiveText } from "@okouai/api-contracts/contracts/retired-goal-archive";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { agents } from "@okouai/db/schema/agent";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -67,7 +67,6 @@ interface CreateSharedThreadArgs {
   readonly userId: string;
   readonly threadId: string;
   readonly eventIds: readonly string[];
-  readonly publicBrand: PublicBrand;
   readonly canReadAttachments: boolean;
   /** Client-generated ID, so the caller can copy the link before creation. */
   readonly id?: string;
@@ -326,7 +325,7 @@ const prepareSharedThreadMessages$ = command(
         {
           userId: args.userId,
           orgId: args.orgId,
-          publicBrand: args.publicBrand,
+          publicBrand: PUBLIC_BRAND,
           shareId,
           document: row.eventType === "output.message" ? null : row.userMessage,
           copies: attachmentCopies,
@@ -392,7 +391,6 @@ const persistSharedThread$ = command(
             sourceChatThreadId: args.threadId,
             title: initialTitle,
             ...sharedThreadMessageColumns(plan?.messages ?? messages),
-            publicBrand: args.publicBrand,
             createdAt,
           })
           .returning({ id: sharedThreads.id });
@@ -450,7 +448,7 @@ const persistSharedThread$ = command(
               id,
               userId: args.userId,
               orgId: args.orgId,
-              publicBrand: args.publicBrand,
+              publicBrand: PUBLIC_BRAND,
               hasArtifactSnapshot: true,
             },
             cleanupSignal,
@@ -512,7 +510,7 @@ const prepareAndPersistSharedThread$ = command(
         ? await settle(
             set(
               prepareSharedThreadArtifacts$,
-              { ...args, threadId: id, messages },
+              { ...args, publicBrand: PUBLIC_BRAND, threadId: id, messages },
               signal,
             ),
             signal,
@@ -665,6 +663,7 @@ export const readSharedThread$ = command(
         title: sharedThreads.title,
         messages: sharedThreads.messages,
         messageAttachments: sharedThreads.messageAttachments,
+        // Selects the stored shared-artifact layout of existing shares.
         publicBrand: sharedThreads.publicBrand,
         userId: sharedThreads.userId,
         orgId: sharedThreads.orgId,
@@ -677,7 +676,6 @@ export const readSharedThread$ = command(
     return row && (await get(sharedThreadArtifactsReadable(row, signal)))
       ? {
           id: row.id,
-          publicBrand: row.publicBrand,
           title: visiblePiMemoryCitationText(row.title),
           messages: row.messages.map((message) => {
             const attachments = row.messageAttachments[message.messageIndex];
@@ -709,6 +707,7 @@ export const readSharedThreadMeta$ = command(
         orgId: sharedThreads.orgId,
         hasArtifactSnapshot: sharedThreads.hasArtifactSnapshot,
         title: sharedThreads.title,
+        // Selects the stored shared-artifact layout of existing shares.
         publicBrand: sharedThreads.publicBrand,
       })
       .from(sharedThreads)
@@ -717,7 +716,6 @@ export const readSharedThreadMeta$ = command(
     signal.throwIfAborted();
     return row && (await get(sharedThreadArtifactsReadable(row, signal)))
       ? {
-          publicBrand: row.publicBrand,
           title: visiblePiMemoryCitationText(row.title),
           hasArtifactSnapshot: row.hasArtifactSnapshot,
         }

@@ -97,7 +97,6 @@ test("Shared Agent formulas render", async () => {
     return respond(200, {
       id: sharedThreadId,
       title: "Shared formula",
-      publicBrand: "okou",
       messages: [
         {
           messageIndex: 0,

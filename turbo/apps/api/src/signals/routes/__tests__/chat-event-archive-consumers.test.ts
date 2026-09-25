@@ -794,7 +794,6 @@ describe("archived chat event consumers", () => {
     );
     expect(shared.body).toStrictEqual({
       id: created.body.id,
-      publicBrand: "okou",
       title: "Shared conversation",
       messages: [
         {
@@ -893,7 +892,6 @@ describe("archived chat event consumers", () => {
     );
     expect(shared.body).toStrictEqual({
       id: created.body.id,
-      publicBrand: "okou",
       title: "Archived selection",
       messages: [
         {
@@ -985,7 +983,6 @@ describe("archived chat event consumers", () => {
     );
     expect(shared.body).toStrictEqual({
       id: created.body.id,
-      publicBrand: "okou",
       title: "Hot selection",
       messages: [
         {
@@ -1039,7 +1036,6 @@ describe("archived chat event consumers", () => {
     );
     expect(shared.body).toStrictEqual({
       id: created.body.id,
-      publicBrand: "okou",
       title: "Recovered selection",
       messages: [{ messageIndex: 0, role: "assistant", content }],
     });

@@ -27,7 +27,6 @@ import {
   isSupportedRunModel,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   chatEvents,
@@ -119,8 +118,8 @@ import {
 } from "./chat-event.service";
 import {
   officialWorkflowQueueContextId,
-  webChatPublicBrandContextId,
-} from "./web-chat-public-brand-context.service";
+  webChatContextId,
+} from "./web-chat-queue-context.service";
 import {
   agentRunSourceTitleSnapshot,
   hasAgentRunSourceAnnotation,
@@ -302,7 +301,6 @@ interface NormalSendArgs {
   readonly userId: string;
   readonly orgId: string;
   readonly apiStartTime: number;
-  readonly publicBrand: PublicBrand;
   readonly preloadedAgent?: AgentForChatSend;
   readonly timing?: ApiDispatchTimingCollector;
   readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
@@ -1958,7 +1956,6 @@ interface AppendUnassociatedUserMessageParams {
   readonly revokesEventId: string | undefined;
   readonly triggerSource: "web" | "agent";
   readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
-  readonly publicBrand: PublicBrand;
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly getStartedWorkflowId?: string;
 }
@@ -2202,8 +2199,8 @@ function unassociatedUserMessageEvent(
           contextType: "web",
           contextId:
             params.requiredOfficialWorkflowIds === undefined
-              ? webChatPublicBrandContextId(params.publicBrand)
-              : officialWorkflowQueueContextId(params.publicBrand),
+              ? webChatContextId()
+              : officialWorkflowQueueContextId(),
         }
       : {}),
     ...(params.triggerSource === "agent" && params.agentRunSource
@@ -2217,7 +2214,7 @@ function unassociatedUserMessageEvent(
           }
         : {
             contextType: "agent_run",
-            contextId: officialWorkflowQueueContextId(params.publicBrand),
+            contextId: officialWorkflowQueueContextId(),
           }
       : {}),
   };
@@ -2326,7 +2323,6 @@ export async function appendMcpQueuedUserMessageInTransaction(
     readonly threadId: string;
     readonly inputId: string;
     readonly text: string;
-    readonly publicBrand: PublicBrand;
   },
 ): Promise<boolean> {
   const resolution = await appendUnassociatedUserMessageTransaction(tx, {
@@ -2346,7 +2342,6 @@ export async function appendMcpQueuedUserMessageInTransaction(
     revokesEventId: undefined,
     triggerSource: "web",
     agentRunSource: null,
-    publicBrand: params.publicBrand,
   });
   return resolution.kind === "queued" && resolution.inserted;
 }
@@ -3502,7 +3497,6 @@ async function queueUnassociatedNormalEvent(params: {
   readonly userId: string;
   readonly touchThreadSort: boolean;
   readonly orgId: string;
-  readonly publicBrand: PublicBrand;
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly getStartedWorkflowId?: string;
 }): Promise<{
@@ -3528,7 +3522,6 @@ async function queueUnassociatedNormalEvent(params: {
     revokesEventId: params.body.revokesEventId,
     triggerSource: params.prepared.triggerSource,
     agentRunSource: params.prepared.agentRunSource,
-    publicBrand: params.publicBrand,
     getStartedWorkflowId: params.getStartedWorkflowId,
     ...(params.requiredOfficialWorkflowIds === undefined
       ? {}
@@ -3995,7 +3988,8 @@ function buildCreateAgentRunArgs(params: {
         payload: {
           threadId: prepared.thread.threadId,
           agentId: args.body.agentId,
-          publicBrand: args.publicBrand,
+          // Older API instances still default a missing brand to VM0.
+          publicBrand: PUBLIC_BRAND,
         },
       },
     ],
@@ -4425,7 +4419,6 @@ const sendQueueFirstNormalEvent$ = command(
             prepared.thread.isNewThread,
           ),
           orgId: args.orgId,
-          publicBrand: args.publicBrand,
           getStartedWorkflowId: args.getStartedWorkflowId,
           ...(args.requiredOfficialWorkflowIds === undefined
             ? {}
@@ -4551,7 +4544,6 @@ export const handleSendChatEvent$ = command(
         userId: auth.userId,
         orgId: auth.orgId,
         apiStartTime,
-        publicBrand: PUBLIC_BRAND,
         timing,
       },
       signal,

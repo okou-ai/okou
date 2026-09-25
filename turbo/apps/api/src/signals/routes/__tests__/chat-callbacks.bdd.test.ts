@@ -44,7 +44,6 @@ import {
   holdRunOutputMaterializationRowFixture,
   insertQueuedSlackMissingContextFixture,
   removeAcknowledgedCancellationLifecycleFixture,
-  removeChatCallbackPublicBrandFixture,
 } from "../../../test-fixtures/chat-events";
 import { holdAgentRowLockFixture } from "../../../test-fixtures/chat-thread-agent-read-erasure";
 
@@ -4913,7 +4912,6 @@ describe("CHAT-02: failed chat callbacks", () => {
       readonly failureReason?: RunFailureReasonToken;
       readonly selectedModel?: SupportedRunModel;
       readonly orgRole?: TestOrgRole;
-      readonly removeCallbackPublicBrand?: boolean;
       readonly configureProvider?: (
         fixture: EntitledChatActor,
       ) => Promise<void>;
@@ -4931,9 +4929,6 @@ describe("CHAT-02: failed chat callbacks", () => {
           : { selectedModel: params.selectedModel }),
       });
       const sandboxHeaders = await claimChatRun(fixture.runnerGroup, run.runId);
-      if (params.removeCallbackPublicBrand) {
-        await removeChatCallbackPublicBrandFixture(run.runId);
-      }
       if (params.orgRole !== undefined) {
         mockClerkMembership(
           context,
@@ -5081,9 +5076,8 @@ describe("CHAT-02: failed chat callbacks", () => {
     }
     await expect(
       failAndReadError({
-        prompt: "legacy callback without public brand failed for admin",
+        prompt: "org key failed for admin",
         orgRole: "admin",
-        removeCallbackPublicBrand: true,
       }),
     ).resolves.toBe(
       "Claude Code could not authenticate with the configured Anthropic API key. Update or replace the API key in Model Providers, then retry.\n\nOpen Model Providers: https://app.okou.ai/?settings=model",

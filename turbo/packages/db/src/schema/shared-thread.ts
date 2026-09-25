@@ -42,9 +42,13 @@ export const sharedThreads = pgTable(
       .$type<SharedThreadMessageAttachments>()
       .default({})
       .notNull(),
+    /**
+     * Current APIs rely on the `okou` default and read it only to locate the
+     * stored shared-artifact layout of existing shares.
+     */
     publicBrand: text("public_brand")
       .$type<PublicBrand>()
-      .default("vm0")
+      .default("okou")
       .notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },

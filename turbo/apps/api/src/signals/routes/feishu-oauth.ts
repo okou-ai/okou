@@ -744,7 +744,6 @@ const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
       userId: state.userId,
       connectorId,
       redirectUri: state.redirectUri,
-      publicBrand: state.publicBrand,
       account,
       feishuContext: {
         installationId: state.installationId,

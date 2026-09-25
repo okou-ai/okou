@@ -1,7 +1,6 @@
 import type { ChatEventType } from "@okouai/api-contracts/contracts/chat-events";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ModelProviderCredentialScope } from "@okouai/api-contracts/contracts/model-providers";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import {
@@ -64,7 +63,7 @@ import {
   agentRunSourceAnnotation,
   withRunModelAnnotation,
 } from "./chat-user-message.service";
-import { webChatQueueContextFromContextId } from "./web-chat-public-brand-context.service";
+import { webChatQueueContextFromContextId } from "./web-chat-queue-context.service";
 
 type DbTransaction = Tx;
 
@@ -148,7 +147,6 @@ export interface QueuedUserMessage {
   readonly createdAt: Date;
   readonly userMessage: ChatEventUserMessage;
   readonly requiredOfficialWorkflowIds?: readonly string[];
-  readonly publicBrand: PublicBrand | null;
   readonly modelProviderId: string | null;
   readonly modelProviderType: string | null;
   readonly modelProviderCredentialScope: ModelProviderCredentialScope | null;
@@ -251,9 +249,9 @@ function resolveQueuedOfficialWorkflowContext(args: {
       ? webChatQueueContextFromContextId(args.contextId)
       : null;
   if (args.contextType === "web" && webContext === null) {
-    throw new Error(`Invalid Web public-brand context: ${args.contextId}`);
+    throw new Error(`Invalid Web chat context: ${args.contextId}`);
   }
-  // Both Official agent encodings carry a brand here, never the source Run.
+  // Both Official agent markers identify the claim here, never the source Run.
   // Recognizing both also keeps annotation-based source/budget recovery shared.
   const officialAgentContext =
     args.contextType === "agent_run"
@@ -359,8 +357,6 @@ async function materializeQueuedUserMessage(
     modelProviderType: null,
     modelProviderCredentialScope: null,
     contextType,
-    publicBrand:
-      webContext?.publicBrand ?? officialAgentContext?.publicBrand ?? null,
     autonomyBudget: queuedUserMessageAutonomyBudget(
       contextType,
       sourceAutonomyBudget,

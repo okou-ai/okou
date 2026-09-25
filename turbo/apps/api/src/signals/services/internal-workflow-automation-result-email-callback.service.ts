@@ -21,7 +21,6 @@ import {
   buildFromAddress,
   buildOneClickUnsubscribeUrl,
   buildUnsubscribeHeaders,
-  EMAIL_PUBLIC_BRAND,
   getUserEmail,
   OFFICIAL_AUTOMATION_RESULT_EMAIL_SUBJECT_MAX_CHARACTERS,
   OFFICIAL_AUTOMATION_RESULT_EMAIL_TEXT_MAX_CHARACTERS,
@@ -276,7 +275,6 @@ export async function handleWorkflowAutomationResultEmailInternalCallback(
       toAddresses: userEmail,
       subject: resultEmailSubject(workflowLabel),
       headers: buildUnsubscribeHeaders(buildOneClickUnsubscribeUrl(run.userId)),
-      publicBrand: EMAIL_PUBLIC_BRAND,
       template: {
         template: "official-automation-result",
         props: {

@@ -1,5 +1,49 @@
 # Deployment Compatibility
 
+## Platform and run pipeline public brand retirement (2026-09-25)
+
+Okou is the only product brand (#36766, slice E). The API no longer writes
+`public_brand` on `shared_threads`, `push_subscriptions`, `email_outbox`,
+`export_jobs`, `usage_pack_invitation_purchases`, `browser_sessions` or
+`socialkit_download_jobs`, and reads it only on `shared_threads`, where the
+stored value still locates the shared-artifact layout of existing shares until
+the artifact-link slice replaces it with a neutral legacy layout. Reusing a
+pending usage-pack invitation checkout no longer filters by brand.
+
+Migration `1229_public_brand_okou_default_platform` sets the column default to
+`'okou'` on all seven tables (previously `'vm0'`, or no default on
+`browser_sessions` and `socialkit_download_jobs`). An old API reads `okou` from
+rows the new API inserts, and its own inserts still carry an explicit brand, so
+old API/new DB and rollback remain compatible. The columns and their ORM
+declarations stay in place; drop them in a separate migration after older API
+deployments drain.
+
+`GET /api/shared-threads/:id` and `GET /api/shared-threads/:id/meta` no longer
+return `publicBrand`. No App code reads it, and the App does not validate
+responses. The test-only email outbox state endpoint no longer returns
+`public_brand`.
+
+Chat run callbacks no longer read `publicBrand`. The persisted `chat` callback
+payload still carries a fixed `publicBrand: "okou"`, because an older API
+instance that processes the callback defaults a missing value to `vm0`; stop
+writing it after older API deployments drain. Stored callbacks that carry any
+`publicBrand`, including `vm0`, keep parsing because the payload schema passes
+unknown keys through, and the value is ignored. Provider delivery callback
+payloads keep the fixed value until their provider slices retire the field.
+Queued Feishu launches no longer require a run-level brand.
+
+A queued Web input whose context ID is the VM0-era Web ID now decodes exactly
+like the Okou Web ID. Writers still emit the Okou ID. Official Workflow queue
+markers, their IDs and their claim rules are unchanged (#29908).
+
+The internal custom connector OAuth start no longer takes a brand; the brand
+was never part of the persisted OAuth state, so no in-flight flow is affected.
+
+The Platform runtime configuration no longer carries `publicBrand`, and the
+Platform no longer sends the PostHog `public_brand` property or the Sentry
+`public_brand` tag. Queries that filter on `public_brand = 'okou'` must drop
+that filter; historical events keep the property.
+
 ## Host-worker storage layouts replace public brand (2026-09-25)
 
 `apps/host-worker` no longer models a public brand (#36766). It resolves hosted

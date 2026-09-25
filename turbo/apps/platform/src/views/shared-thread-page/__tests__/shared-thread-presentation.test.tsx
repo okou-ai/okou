@@ -48,7 +48,6 @@ test("A public conversation hides owner and agent identity", async () => {
     return respond(200, {
       ...sharedThread(),
       title: "Public launch plan",
-      publicBrand: "okou",
       messages: [
         {
           messageIndex: 0,

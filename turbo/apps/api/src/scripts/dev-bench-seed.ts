@@ -5,7 +5,6 @@ import { createHash, randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import {
   serializeChatFollowupsContent,
   type ChatRecommendedFollowup,
@@ -22,7 +21,7 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { closeDbPool, db } from "../lib/db";
 import { optionalEnv } from "../lib/env";
 import { normalizeRunMetadata } from "../signals/services/agent-run-metadata-write.service";
-import { webChatPublicBrandContextId } from "../signals/services/web-chat-public-brand-context.service";
+import { webChatContextId } from "../signals/services/web-chat-queue-context.service";
 import { onRejection } from "../signals/utils";
 
 const BULK_INSERT_CHUNK = 500;
@@ -836,7 +835,7 @@ function appendNullRunControlRows(args: {
       ...(isInputPrompt
         ? {
             contextType: "web",
-            contextId: webChatPublicBrandContextId(PUBLIC_BRAND),
+            contextId: webChatContextId(),
             payload: { userMessage },
           }
         : {

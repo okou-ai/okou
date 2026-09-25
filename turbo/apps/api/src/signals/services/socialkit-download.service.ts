@@ -1,4 +1,5 @@
 import { v5 as uuidv5 } from "uuid";
+import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 import {
   MANAGED_SOCIALKIT_BILLING_CATEGORY,
@@ -123,7 +124,6 @@ type CreateSocialKitDownloadResponse =
 interface CreateSocialKitDownloadArgs {
   readonly auth: AuthContext & { readonly orgId: string };
   readonly body: SocialKitDownloadRequest;
-  readonly publicBrand: "vm0" | "okou";
 }
 
 const providerStartSchema = z.object({
@@ -1075,7 +1075,6 @@ export const createSocialKitDownload$ = command(
         orgId: args.auth.orgId,
         userId: args.auth.userId,
         runId: runId(args.auth),
-        publicBrand: args.publicBrand,
         request: { ...args.body, privateArtifacts },
       })
       .onConflictDoNothing()
@@ -1405,7 +1404,7 @@ const allocateSocialKitArtifact$ = command(
       userId: args.job.userId,
       id: args.job.id,
       filename: args.filename,
-      publicBrand: args.job.publicBrand,
+      publicBrand: PUBLIC_BRAND,
     };
     if (args.job.request.privateArtifacts === true) {
       return await set(
@@ -1534,7 +1533,7 @@ const materializeSocialKitArtifact$ = command(
         sizeBytes: artifact.sizeBytes,
         url: artifact.url,
         s3Key: stored.key,
-        publicBrand: args.job.publicBrand,
+        publicBrand: PUBLIC_BRAND,
         metadata: {
           provider: "socialkit",
           providerJobId: args.job.providerJobId,

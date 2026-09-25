@@ -535,7 +535,6 @@ describe("Official Automation result email callbacks", () => {
     expect(item).toMatchObject({
       from_address: "Okou <okou@okou.io>",
       to_addresses: scenario.actor.email,
-      public_brand: "okou",
       status: "pending",
       source_run_id: runId,
       source_workflow_automation_id: scenario.automationId,

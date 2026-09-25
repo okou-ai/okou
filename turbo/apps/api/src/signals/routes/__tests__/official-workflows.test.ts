@@ -9586,7 +9586,6 @@ describe("Official Workflow Run admission", () => {
           expect(source.claim).not.toBeNull();
           expect(source.items).toStrictEqual([
             expect.objectContaining({
-              public_brand: "okou",
               subject: `Display ${definitionName}`,
               source_run_id: producer.runId,
               source_workflow_automation_id: producer.automationId,
@@ -9628,7 +9627,7 @@ describe("Official Workflow Run admission", () => {
         sourceWorkflowAutomationId: scenario.automation.id,
       }),
     ).resolves.toMatchObject({
-      items: [{ public_brand: "okou" }],
+      items: [{ source_run_id: sessionRun.body.runId }],
       claim: { source_run_id: sessionRun.body.runId },
     });
 
@@ -9684,7 +9683,6 @@ describe("Official Workflow Run admission", () => {
     expect(source.claim).not.toBeNull();
     expect(source.items).toStrictEqual([
       expect.objectContaining({
-        public_brand: "okou",
         source_run_id: agentRun.body.runId,
         source_workflow_automation_id: scenario.automation.id,
       }),
@@ -9737,7 +9735,9 @@ describe("Official Workflow Run admission", () => {
     });
     expect(enabledSource.claim).not.toBeNull();
     expect(enabledSource.items).toStrictEqual([
-      expect.objectContaining({ public_brand: "okou" }),
+      expect.objectContaining({
+        source_workflow_automation_id: scenario.automation.id,
+      }),
     ]);
 
     const disabledRun = await accept(
