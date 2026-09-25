@@ -180,7 +180,6 @@ describe("low-credit email delivery", () => {
     });
     expect(item).toMatchObject({
       from_address: "Okou Team <support@okou.io>",
-      public_brand: "okou",
       headers: {
         "List-Unsubscribe": expect.stringContaining(
           "<https://api.okou.ai/api/email/unsubscribe?token=",

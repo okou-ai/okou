@@ -6,7 +6,6 @@ import type {
 } from "@okouai/api-contracts/contracts/mcp-chat-creation";
 import type { McpChatMutationResult } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat-time";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import {
   assertErasureSubjectWritable,
   setErasureFenceDeadlines,
@@ -418,7 +417,6 @@ async function initializeThread(
       threadId: input.requestId,
       inputId: combinedInputId(input),
       text: input.message,
-      publicBrand: PUBLIC_BRAND,
     });
     signal.throwIfAborted();
   }

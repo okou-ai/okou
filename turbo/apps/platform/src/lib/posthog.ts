@@ -29,7 +29,6 @@ function sanitizePostHogCaptureResult(
       $process_person_profile: false,
       distinct_id: APP_FIRST_SKELETON_PAINT_DISTINCT_ID,
       paint_metric: "first-contentful-paint",
-      public_brand: RUNTIME_CONFIG.publicBrand,
       token: POSTHOG_KEY ?? "",
     };
     for (const name of [
@@ -86,7 +85,7 @@ export function initPostHog(): void {
             "/:id",
           );
         }
-        return { ...properties, public_brand: RUNTIME_CONFIG.publicBrand };
+        return properties;
       },
     });
   });

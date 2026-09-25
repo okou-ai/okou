@@ -1,5 +1,4 @@
 import { command } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { pushSubscriptions } from "@okouai/db/schema/push-subscription";
 import { and, eq, lt, sql } from "drizzle-orm";
 
@@ -13,7 +12,6 @@ interface RegisterPushSubscriptionArgs {
   readonly endpoint: string;
   readonly p256dh: string;
   readonly auth: string;
-  readonly publicBrand: PublicBrand;
 }
 
 export const registerPushSubscription$ = command(
@@ -31,7 +29,6 @@ export const registerPushSubscription$ = command(
         endpoint: args.endpoint,
         p256dh: args.p256dh,
         auth: args.auth,
-        publicBrand: args.publicBrand,
       })
       .onConflictDoUpdate({
         target: pushSubscriptions.endpoint,
@@ -39,7 +36,6 @@ export const registerPushSubscription$ = command(
           userId: args.userId,
           p256dh: args.p256dh,
           auth: args.auth,
-          publicBrand: args.publicBrand,
           createdAt: sql`now()`,
         },
       });

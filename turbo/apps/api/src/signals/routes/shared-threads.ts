@@ -13,7 +13,6 @@ import {
   readSharedThreadMeta$,
 } from "../services/shared-thread.service";
 import type { RouteEntry } from "../route-entry";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const createBody$ = bodyResultOf(sharedThreadsContract.create);
 
@@ -51,7 +50,6 @@ const createSharedThreadInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const creationSignal = AbortSignal.any([signal, get(requestSignal$)]);
     const auth = get(organizationAuthContext$);
-    const publicBrand = PUBLIC_BRAND;
     const body = await get(createBody$);
     signal.throwIfAborted();
     creationSignal.throwIfAborted();
@@ -68,7 +66,6 @@ const createSharedThreadInner$ = command(
         threadId: params.threadId,
         eventIds: body.data.eventIds,
         ...(body.data.id === undefined ? {} : { id: body.data.id }),
-        publicBrand,
         canReadAttachments:
           auth.tokenType !== "agent" ||
           auth.capabilities?.includes("file:read") === true,
@@ -130,7 +127,7 @@ const getSharedThreadMeta$ = command(
     );
     return {
       status: 200 as const,
-      body: { title: row.title, publicBrand: row.publicBrand },
+      body: { title: row.title },
     };
   },
 );

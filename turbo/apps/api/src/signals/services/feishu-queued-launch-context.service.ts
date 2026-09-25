@@ -1,7 +1,5 @@
 import { isFeishuInstallationEnabled } from "./feishu-config";
 import type { FeishuPlatform } from "@okouai/core/feishu-platform";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
 import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
@@ -19,7 +17,6 @@ export interface FeishuQueuedLaunchMaterial {
   readonly triggerSource: FeishuPlatform;
   readonly prompt: string;
   readonly appendSystemPrompt: string;
-  readonly publicBrand: PublicBrand;
   readonly connectorSourceId: string;
   readonly feishuDelivery: FeishuDeliveryTarget;
   readonly userInfoExtras: {
@@ -201,7 +198,6 @@ export async function loadFeishuQueuedLaunchMaterial(
       }),
       history: context.conversationHistory,
     }),
-    publicBrand: PUBLIC_BRAND,
     connectorSourceId: context.connectorSourceId,
     feishuDelivery: {
       installationId: context.installationId,

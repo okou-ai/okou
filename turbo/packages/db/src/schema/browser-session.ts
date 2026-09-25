@@ -14,7 +14,6 @@ import type {
   BrowserStatus,
   BrowserSuspensionReason,
 } from "@okouai/api-contracts/contracts/browser";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type { BrowserUserActionState } from "@okouai/api-contracts/contracts/browser-user-actions";
 import type { BrowserUserActionPayload } from "@okouai/db/jsonb-contracts/browser-user-action";
 
@@ -86,7 +85,11 @@ export const browserSessions = pgTable(
     ),
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
-    publicBrand: text("public_brand").$type<PublicBrand>().notNull(),
+    /**
+     * Retired: current APIs neither read nor write it and rely on the
+     * `okou` default; drop it after older API deployments drain.
+     */
+    publicBrand: text("public_brand").default("okou").notNull(),
     name: varchar("name", { length: 64 }).notNull(),
     // Nullable compatibility references let the current API omit legacy
     // profile identity while preserving the previous API's statement shapes.

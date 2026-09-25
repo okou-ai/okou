@@ -1171,46 +1171,6 @@ export async function readFeishuCallbackPayloadsFixture(
   });
 }
 
-/** Reproduce a pending chat callback persisted before publicBrand existed. */
-export async function removeChatCallbackPublicBrandFixture(
-  runId: string,
-): Promise<void> {
-  const [callback] = await db()
-    .select({
-      id: agentRunCallbacks.id,
-      payload: agentRunCallbacks.payload,
-    })
-    .from(agentRunCallbacks)
-    .where(
-      and(
-        eq(agentRunCallbacks.runId, runId),
-        eq(agentRunCallbacks.internalKind, "chat"),
-        eq(agentRunCallbacks.status, "pending"),
-      ),
-    )
-    .limit(1);
-  if (
-    !callback ||
-    typeof callback.payload !== "object" ||
-    callback.payload === null ||
-    Array.isArray(callback.payload) ||
-    !Object.hasOwn(callback.payload, "publicBrand")
-  ) {
-    throw new Error("Expected one branded pending canonical chat callback");
-  }
-
-  const legacyPayload: Record<string, unknown> = { ...callback.payload };
-  delete legacyPayload.publicBrand;
-  const callbacks = await db()
-    .update(agentRunCallbacks)
-    .set({ payload: legacyPayload })
-    .where(eq(agentRunCallbacks.id, callback.id))
-    .returning({ id: agentRunCallbacks.id });
-  if (callbacks.length !== 1) {
-    throw new Error("Expected one pending canonical chat callback");
-  }
-}
-
 /** Attach GitHub delivery metadata that is normally persisted by GitHub ingress. */
 export async function setChatCallbackGitHubDeliveryFixture(args: {
   readonly runId: string;

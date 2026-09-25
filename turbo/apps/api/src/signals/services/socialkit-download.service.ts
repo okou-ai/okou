@@ -124,7 +124,6 @@ type CreateSocialKitDownloadResponse =
 interface CreateSocialKitDownloadArgs {
   readonly auth: AuthContext & { readonly orgId: string };
   readonly body: SocialKitDownloadRequest;
-  readonly publicBrand: "vm0" | "okou";
 }
 
 const providerStartSchema = z.object({
@@ -1076,7 +1075,6 @@ export const createSocialKitDownload$ = command(
         orgId: args.auth.orgId,
         userId: args.auth.userId,
         runId: runId(args.auth),
-        publicBrand: args.publicBrand,
         request: { ...args.body, privateArtifacts },
       })
       .onConflictDoNothing()
