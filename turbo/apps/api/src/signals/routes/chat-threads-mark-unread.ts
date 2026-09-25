@@ -87,8 +87,10 @@ const markUnreadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     status: 200 as const,
     body: {
       lastReadAt: null,
-      // Kept for App bundles that still read it; unread state comes from
-      // `/api/indicators`.
+      // Rollout fallback for old App -> new API: bundles from before the
+      // indicators-only unread state still pass this list to their local
+      // read-mark pruning. Remove the field once the client-version floor
+      // excludes those bundles (docs/deployment-compatibility.md).
       unreads: [],
     },
   };
