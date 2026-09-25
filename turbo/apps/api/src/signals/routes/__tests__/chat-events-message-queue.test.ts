@@ -404,11 +404,19 @@ describe("CHAT-02: queueing and recalling messages", () => {
         reserved.deliveryId,
       ),
     ).resolves.toStrictEqual({ outcome: "rejected" });
+    const history = `bdd recalled delivery history ${active.runId}`;
     const completion = await webhooks.requestAgentComplete(
       {
         runId: active.runId,
         exitCode: 0,
         activeInputDeliveryIds: [reserved.deliveryId],
+        checkpoint: {
+          cliAgentType: "claude-code",
+          cliAgentSessionId: `bdd-recalled-delivery-${active.runId}`,
+          cliAgentSessionHistoryHash: createHash("sha256")
+            .update(history)
+            .digest("hex"),
+        },
       },
       claimed.sandboxHeaders,
       [200],

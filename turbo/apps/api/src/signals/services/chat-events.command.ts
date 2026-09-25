@@ -2523,10 +2523,11 @@ function appendRecallChatEvent(params: {
       )
       .limit(1);
     if (!resolved) {
-      if (wasPending) {
-        throw new Error("Failed to append recall user message");
-      }
-      return { ok: false, message: "Failed to insert recall user message" };
+      // A concurrent claim or rejection won the revoke edge.
+      return {
+        ok: false,
+        message: "Only queued user messages can be recalled",
+      };
     }
     return { ok: true, createdAt: resolved.createdAt };
   });
