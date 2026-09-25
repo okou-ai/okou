@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.9](https://github.com/okou-ai/okou/compare/runner-host-v0.1.8...runner-host-v0.1.9) (2026-09-25)
+
+
+### Refactoring
+
+* **runner:** move process identity persistence to host ([#36880](https://github.com/okou-ai/okou/issues/36880)) ([f09825f](https://github.com/okou-ai/okou/commit/f09825ff3d88416d1cfa11ca28ade29db3be5943))
+
 ## [0.1.8](https://github.com/okou-ai/okou/compare/runner-host-v0.1.7...runner-host-v0.1.8) (2026-09-25)
 
 ## [0.1.7](https://github.com/okou-ai/okou/compare/runner-host-v0.1.6...runner-host-v0.1.7) (2026-09-24)
