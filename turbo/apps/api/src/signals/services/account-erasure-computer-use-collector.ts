@@ -550,7 +550,7 @@ async function verifyRemoteResource(
   if (listed.value.objects.length > 0 || listed.value.isTruncated) {
     return unresolved("verification_failed", "retryable_failure");
   }
-  // A queued command can be claimed between inventory and D1 closure; after
+  // A queued command can be claimed between inventory and closure; after
   // relational sweep its row cannot reconstruct whether Desktop ran it.
   // Object LIST absence is necessary, not a Desktop-local deletion receipt.
   return unresolved("boundary_unproven");

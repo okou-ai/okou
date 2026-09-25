@@ -1839,8 +1839,8 @@ export async function holdOrgAdmissionLockFixture(args: {
       );
       return rows[0]?.waiterCount ?? 0;
     },
-    // B1 subjects precede the org lock. A second admission can wait on the
-    // first admission's subject lock instead of this fixture's org lock.
+    // A second admission can wait on the first admission instead of this
+    // fixture's org lock.
     transitiveWaiterCount: () => {
       return transitiveBlockedWaiterCount(holderPid);
     },
