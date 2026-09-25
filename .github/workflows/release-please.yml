@@ -406,7 +406,7 @@ jobs:
       - name: Notify Slack - Starting
         id: slack-start
         if: ${{ vars.SLACK_RELEASE_CHANNEL_ID != '' }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.postMessage
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -460,7 +460,7 @@ jobs:
           retention-days: 90
       - name: Notify Slack - Success
         if: ${{ success() && steps.slack-start.outputs.ts }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.update
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -475,7 +475,7 @@ jobs:
                   text: "*iOS TestFlight* ✅ Available to internal testers\n📦 Version: `${{ needs.release-please.outputs.ios_version }}` (build `${{ steps.prepare.outputs.build_number }}`)\n👥 Group: `${{ vars.IOS_INTERNAL_GROUP_NAME }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
       - name: Notify Slack - Failure
         if: ${{ failure() && steps.slack-start.outputs.ts }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.update
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
