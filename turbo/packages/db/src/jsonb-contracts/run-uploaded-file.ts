@@ -39,10 +39,34 @@ export interface CanonicalAssetMaterializationError {
 }
 
 export interface CanonicalAssetSlackDeliveryDestination {
+  readonly provider?: never;
   readonly channelId: string;
   readonly threadTs?: string;
   readonly title?: string;
   readonly initialComment?: string;
+}
+
+export interface CanonicalAssetDiscordDeliveryDestination {
+  readonly provider: "discord";
+  readonly connectionId: string;
+  readonly guildId: string;
+  readonly channelId: string;
+  readonly comment?: string;
+}
+
+export type CanonicalAssetDeliveryDestination =
+  | CanonicalAssetSlackDeliveryDestination
+  | CanonicalAssetDiscordDeliveryDestination;
+
+export interface CanonicalAssetDiscordDeliveryState {
+  readonly provider: "discord";
+  readonly nonce: string;
+  readonly attempt: {
+    readonly id: string;
+    readonly startedAt: string;
+  } | null;
+  readonly attachmentId?: string;
+  readonly retryNotBeforeMs?: number;
 }
 
 export interface CanonicalAssetDeliveryError {
