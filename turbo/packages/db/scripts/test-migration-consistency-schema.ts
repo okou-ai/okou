@@ -1365,13 +1365,6 @@ type PermanentFunction = {
 const EXPECTED_PERMANENT_TRIGGERS = [
   {
     definition:
-      "CREATE TRIGGER preserve_chat_event_write_activation BEFORE DELETE OR UPDATE ON public.chat_event_write_control FOR EACH ROW EXECUTE FUNCTION preserve_chat_event_write_activation()",
-    schemaName: "public",
-    tableName: "chat_event_write_control",
-    triggerName: "preserve_chat_event_write_activation",
-  },
-  {
-    definition:
       "CREATE TRIGGER capture_billing_run_attribution BEFORE INSERT ON public.agent_runs FOR EACH ROW EXECUTE FUNCTION capture_billing_run_attribution()",
     schemaName: "public",
     tableName: "agent_runs",
@@ -1436,13 +1429,6 @@ const EXPECTED_PERMANENT_TRIGGERS = [
 ] as const satisfies readonly PermanentTrigger[];
 
 const EXPECTED_PERMANENT_FUNCTIONS = [
-  {
-    bodyHash: "0d37e98a01767d7416f0ae9e69f1311b",
-    functionName: "preserve_chat_event_write_activation",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
   {
     bodyHash: "31c9604bf9c9306578d884bc8aa9e5ce",
     functionName: "billing_usage_source",

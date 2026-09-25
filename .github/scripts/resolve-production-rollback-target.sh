@@ -26,6 +26,8 @@ readonly PI_LAUNCH_CONFIG_VERSIONS_READER_COMMIT=8d8f3a3e14d23f7471e0773bd9acb98
 readonly PI_SESSION_CONSTRUCTION_READER_COMMIT=322efb6d72508e15b90dc788100a776da1485751
 # #36885 stopped GIN maintenance of the keyword-only chat search index that 1239 drops.
 readonly CHAT_SEARCH_TSV_GIN_MAINTENANCE_COMMIT=32e48c76fea61c39d0962762e1bc2e0aa5a5cab0
+# #36703 (API 1.676.0) removed the last reader of chat_event_write_control.
+readonly CHAT_EVENT_WRITE_CONTROL_READER_REMOVAL_COMMIT=15117da7815a192e2f08ca46a2084129cb7fc48f
 
 fail() {
   echo "::error::$*" >&2
@@ -193,16 +195,10 @@ if ! git merge-base --is-ancestor "$CHAT_SEARCH_TSV_GIN_MAINTENANCE_COMMIT" "$TA
   fail "Rollback target predates the keyword-only chat search GIN index drop: ${CHAT_SEARCH_TSV_GIN_MAINTENANCE_COMMIT}."
 fi
 
-# Production has activated split chat event writes, and the contraction
-# migration refuses any database that has not. Only APIs that contain the split
-# writer can serve the contracted schema.
-chat_event_reader_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
-  origin/main -- turbo/apps/api/src/signals/services/chat-event-write-mode.service.ts | sed -n '1p')
-if [[ ! "$chat_event_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
-  fail "Cannot resolve the merged split chat event reader on main."
-fi
-if ! git merge-base --is-ancestor "$chat_event_reader_commit" "$TARGET_COMMIT"; then
-  fail "Rollback target predates activated split chat event writes: ${chat_event_reader_commit}."
+# Migration 1241 drops chat_event_write_control. APIs 1.674.0 and 1.675.0 read
+# it on every chat event write, so only APIs from Release 2 on can serve.
+if ! git merge-base --is-ancestor "$CHAT_EVENT_WRITE_CONTROL_READER_REMOVAL_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the chat_event_write_control reader removal: ${CHAT_EVENT_WRITE_CONTROL_READER_REMOVAL_COMMIT}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \
