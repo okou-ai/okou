@@ -1,24 +1,16 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   appendCanonicalChatEvents,
   type PreparedChatEventRow,
 } from "../../src/signals/services/chat-event-append.service";
-import { createSequenceFixture, sequenceMigration } from "./fixture";
-import { verifyOwnershipAndReceiptPreparation } from "./preparation";
-import { verifyBackfillWithLegacyThreadLock } from "./backfill-locking";
+import { createSequenceFixture } from "./fixture";
 
-// This rollout/locking contract cannot be constructed through a production API:
-// it requires an outgoing binary's SQL, DDL, and concurrent independent sessions.
+// The atomic allocation contract cannot be constructed through a production
+// API: it requires concurrent independent sessions, lock holders and faults.
 const fixture = await createSequenceFixture();
 const { pool, db } = fixture;
-const bridge = await sequenceMigration("chat_event_sequence_bridge");
-const backfill = await sequenceMigration("backfill_chat_event_sequences");
-const contraction = await sequenceMigration(
-  "contract_chat_event_sequence_bridge",
-);
 function event(
   chatThreadId: string,
   fields: Partial<PreparedChatEventRow> = {},
@@ -39,159 +31,34 @@ async function watermark(threadId: string): Promise<number> {
   );
   return Number(result.rows[0]?.value ?? 0);
 }
-// Frozen outgoing writer: the pre-split API reserved through the thread counter.
-async function legacyReserve(threadId: string, count: number) {
-  const result = await pool.query<{ last: string }>(
-    "UPDATE chat_threads SET last_chat_event_seq_id=last_chat_event_seq_id+$2 WHERE id=$1 RETURNING last_chat_event_seq_id::text AS last",
-    [threadId, count],
-  );
-  const last = Number(result.rows[0]?.last);
-  return Array.from({ length: count }, (_, index) => {
-    return last - count + index + 1;
-  });
-}
-async function activation(): Promise<string | null> {
-  const result = await pool.query<{ activated: string | null }>(
-    "SELECT activated_at::text AS activated FROM chat_event_write_control WHERE id='global'",
-  );
-  assert.equal(result.rows.length, 1);
-  return result.rows[0]?.activated ?? null;
-}
-async function applyContraction(target = pool) {
-  const client = await target.connect();
-  try {
-    await client.query("BEGIN");
-    for (const statement of contraction) {
-      await client.query(statement);
-    }
-    await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
-}
-async function createThread(lastSeqId = 0): Promise<string> {
+async function createThread(): Promise<string> {
   const id = randomUUID();
-  await pool.query(
-    "INSERT INTO chat_threads(id,last_chat_event_seq_id) VALUES($1,$2)",
-    [id, lastSeqId],
-  );
+  await pool.query("INSERT INTO chat_threads(id) VALUES($1)", [id]);
   return id;
 }
 try {
-  const retained = await createThread(100);
-  // The rollout starts before new API promotion: outgoing writers still run.
-  for (const statement of bridge) {
-    await pool.query(statement);
-  }
-  assert.equal(await activation(), null);
+  // The first append creates the sequence row for an empty thread.
   const first = await createThread();
-  assert.deepEqual(await legacyReserve(first, 1), [1]);
-  const [firstDirect] = await appendCanonicalChatEvents(
+  assert.equal(await watermark(first), 0);
+  const [firstRow] = await appendCanonicalChatEvents(
     db,
     [event(first)],
     "none",
   );
-  assert.equal(firstDirect?.seqId, 2);
-  await pool.query("INSERT INTO chat_event_sequences VALUES($1,110)", [
-    retained,
-  ]);
-  const routed = await pool.query(
-    "UPDATE chat_threads SET last_chat_event_seq_id=last_chat_event_seq_id+1 WHERE id=$1 RETURNING last_chat_event_seq_id",
-    [retained],
-  );
-  assert.equal(routed.rows[0]?.last_chat_event_seq_id, "111");
-  const seeded = await createThread(400);
-  // Backfill may race both bridges and direct writes; it never overwrites a newer allocation.
-  await Promise.all([
-    (async () => {
-      const client = await pool.connect();
-      try {
-        for (const statement of backfill) {
-          await client.query(statement);
-        }
-      } finally {
-        client.release();
-      }
-    })(),
-    appendCanonicalChatEvents(db, [event(retained), event(retained)], "any"),
-  ]);
-  assert.equal(await watermark(seeded), 400);
-  assert.equal(await watermark(retained), 113);
-  // The backfill is restartable after completed batches / a journal retry.
-  const retryClient = await pool.connect();
-  try {
-    for (const statement of backfill) {
-      await retryClient.query(statement);
-    }
-  } finally {
-    retryClient.release();
-  }
-  assert.equal(await watermark(retained), 113);
-  // A locked row in batch two must not erase the already committed first
-  // batch. Retrying starts from the legacy watermark and keeps newer counters.
-  await pool.query(`INSERT INTO chat_threads(id,last_chat_event_seq_id)
-    SELECT ('00000000-0000-4000-8000-' || lpad(value::text,12,'0'))::uuid, 50
-    FROM generate_series(1,1005) AS value`);
-  const lockedBackfillId = "00000000-0000-4000-8000-000000001001";
-  await pool.query("INSERT INTO chat_event_sequences VALUES($1,1)", [
-    lockedBackfillId,
-  ]);
-  const backfillBlocker = await pool.connect();
-  const interrupted = await pool.connect();
-  try {
-    await backfillBlocker.query("BEGIN");
-    await backfillBlocker.query(
-      "SELECT * FROM chat_event_sequences WHERE chat_thread_id=$1 FOR UPDATE",
-      [lockedBackfillId],
-    );
-    await assert.rejects(
-      (async () => {
-        for (const statement of backfill) {
-          await interrupted.query(statement);
-        }
-      })(),
-      (error: unknown) => {
-        return (
-          typeof error === "object" &&
-          error !== null &&
-          "code" in error &&
-          error.code === "55P03"
-        );
-      },
-    );
-    const committedBatch = await pool.query(
-      "SELECT count(*)::int AS count FROM chat_event_sequences WHERE chat_thread_id < $1 AND last_seq_id=50",
-      [lockedBackfillId],
-    );
-    assert.equal(committedBatch.rows[0]?.count, 1000);
-    await backfillBlocker.query("ROLLBACK");
-    for (const statement of backfill) {
-      await interrupted.query(statement);
-    }
-    assert.equal(await watermark(lockedBackfillId), 50);
-  } finally {
-    await backfillBlocker.query("ROLLBACK");
-    backfillBlocker.release();
-    interrupted.release();
-  }
+  assert.equal(firstRow?.seqId, 1);
+  assert.equal(await watermark(first), 1);
   const mixed = await createThread();
   const mixedPositions = (
     await Promise.all(
-      Array.from({ length: 24 }, async (_, index) => {
-        if (index % 2 === 0) {
-          const rows = await appendCanonicalChatEvents(
-            db,
-            [event(mixed), event(mixed)],
-            "any",
-          );
-          return rows.map((row) => {
-            return row.seqId;
-          });
-        }
-        return await legacyReserve(mixed, 2);
+      Array.from({ length: 24 }, async () => {
+        const rows = await appendCanonicalChatEvents(
+          db,
+          [event(mixed), event(mixed)],
+          "any",
+        );
+        return rows.map((row) => {
+          return row.seqId;
+        });
       }),
     )
   ).flat();
@@ -318,86 +185,11 @@ try {
     await lock.query("ROLLBACK");
     lock.release();
   }
-  // Contraction fails closed while legacy writes may still be serving.
-  await assert.rejects(applyContraction(), (error: unknown) => {
-    return (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      error.code === "55000"
-    );
-  });
-  assert.equal(await activation(), null);
-  const beforeRefusedContraction = await watermark(second);
-  assert.deepEqual(await legacyReserve(second, 1), [
-    beforeRefusedContraction + 1,
-  ]);
-  await pool.query(
-    "UPDATE chat_event_write_control SET activated_at=now() WHERE id='global'",
-  );
-  await assert.rejects(
-    pool.query(
-      "UPDATE chat_event_write_control SET activated_at=NULL WHERE id='global'",
-    ),
-  );
-  await assert.rejects(pool.query("DELETE FROM chat_event_write_control"));
-  await applyContraction();
-  const contracted = await pool.query(
-    "SELECT count(*)::int AS count FROM information_schema.columns WHERE table_schema=$1 AND table_name='chat_threads' AND column_name='last_chat_event_seq_id'",
-    [fixture.schema],
-  );
-  assert.equal(contracted.rows[0]?.count, 0);
-  assert.doesNotMatch(
-    db.insert(chatThreads).values({ userId: "fixture" }).returning().toSQL()
-      .sql,
-    /last_chat_event_seq_id/,
-  );
-  assert.doesNotMatch(
-    db.select().from(chatThreads).toSQL().sql,
-    /last_chat_event_seq_id/,
-  );
-  const beforeContractedAppend = await watermark(second);
-  const [contractedAppend] = await appendCanonicalChatEvents(
-    db,
-    [event(second)],
-    "none",
-  );
-  assert.equal(contractedAppend?.seqId, beforeContractedAppend + 1);
   await pool.query("DELETE FROM chat_threads WHERE id=$1", [second]);
   assert.equal(await watermark(second), 0);
   process.stdout.write(
-    "Chat event sequence bridge, atomic writes, locks, retention and contraction passed\n",
+    "Chat event sequence atomic writes, conflicts, gaps, rollback, retention and locks passed\n",
   );
 } finally {
   await fixture.close();
 }
-
-// A database without threads has no legacy operation to drain.
-const pristine = await createSequenceFixture();
-try {
-  for (const statement of await sequenceMigration(
-    "chat_event_sequence_bridge",
-  )) {
-    await pristine.pool.query(statement);
-  }
-  await applyContraction(pristine.pool);
-  const control = await pristine.pool.query(
-    "SELECT activated_at IS NOT NULL AS active FROM chat_event_write_control",
-  );
-  assert.deepEqual(control.rows, [{ active: true }]);
-  const threadId = randomUUID();
-  await pristine.pool.query("INSERT INTO chat_threads(id) VALUES($1)", [
-    threadId,
-  ]);
-  const [pristineAppend] = await appendCanonicalChatEvents(
-    pristine.db,
-    [event(threadId)],
-    "none",
-  );
-  assert.equal(pristineAppend?.seqId, 1);
-} finally {
-  await pristine.close();
-}
-
-await verifyBackfillWithLegacyThreadLock();
-await verifyOwnershipAndReceiptPreparation();

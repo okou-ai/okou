@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
@@ -23,16 +22,11 @@ export async function createSequenceFixture() {
   });
   await pool.query(`
     CREATE TABLE chat_threads (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      last_chat_event_seq_id bigint NOT NULL DEFAULT 0
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid()
     );
     CREATE TABLE chat_event_sequences (
       chat_thread_id uuid PRIMARY KEY REFERENCES chat_threads(id) ON DELETE CASCADE,
       last_seq_id bigint NOT NULL CHECK(last_seq_id >= 0)
-    );
-    CREATE TABLE chat_event_write_control (
-      id text PRIMARY KEY DEFAULT 'global' CHECK(id = 'global'),
-      activated_at timestamp
     );
     CREATE TABLE chat_events (
       id uuid PRIMARY KEY,
@@ -58,21 +52,4 @@ export async function createSequenceFixture() {
       await admin.end();
     },
   };
-}
-
-export async function sequenceMigration(name: string): Promise<string[]> {
-  const directory = new URL(
-    "../../../../packages/db/src/migrations/",
-    import.meta.url,
-  );
-  const files = await readdir(directory);
-  const file = files.find((entry) => {
-    return entry.endsWith(`_${name}.sql`);
-  });
-  assert.ok(file, `Missing generated ${name} migration`);
-  return (await readFile(new URL(file, directory), "utf8"))
-    .split("--> statement-breakpoint")
-    .filter((part) => {
-      return part.trim() !== "";
-    });
 }

@@ -364,8 +364,7 @@ input claims, required per-message context, canonical events and durable ingress
 completion stay atomic; the active mode moves weak thread activity updates after
 commit. Terminal callback replay repairs missing Discord outbox registration.
 The existing bounded late-content sweep also includes Discord context through its
-retained thread ownership. These paths use the existing global write control and
-do not activate split writes or contract any production schema.
+retained thread ownership.
 
 Discord's private context snapshot is stored separately from the immutable
 user-message document. Public event and snapshot projections carry only
@@ -596,8 +595,10 @@ shared preview parent, must run the documented control write first.
 
 Release 1 APIs remain compatible with the contracted schema only in active
 mode: their runtime mapping already omits the column. The rollback resolver
-requires an activated control row and refuses targets that predate the split
-reader. Never null the activation marker or restore a pre-Release-1 binary.
+refuses targets that predate the split writer; the activation marker is
+irreversible, so it no longer reads the database. Never null the activation
+marker or restore a pre-Release-1 binary. Those APIs still read the control row
+on every write, so the table stays until they leave the rollback window.
 
 ## Chat event split-write preparation
 

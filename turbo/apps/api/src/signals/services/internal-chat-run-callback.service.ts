@@ -1248,25 +1248,6 @@ async function insertChatDeliveryCallback(args: {
 }): Promise<string> {
   const source = await requireSourceChatCallback(args);
 
-  // Delivery rows written before the split-write release carry random (v4) IDs.
-  // Callback rows live as long as their run, and an undelivered source callback
-  // can still replay terminal registration, so reuse any existing row for this
-  // event rather than inserting a deterministic twin that would resend it.
-  const [existing] = await args.db
-    .select({ id: agentRunCallbacks.id })
-    .from(agentRunCallbacks)
-    .where(
-      and(
-        eq(agentRunCallbacks.runId, args.runId),
-        eq(agentRunCallbacks.internalKind, args.internalKind),
-        eq(sql`${agentRunCallbacks.payload}->>'chatEventId'`, args.chatEventId),
-      ),
-    )
-    .orderBy(asc(agentRunCallbacks.createdAt), asc(agentRunCallbacks.id))
-    .limit(1);
-  if (existing) {
-    return existing.id;
-  }
   const id = uuidv5(
     `${source.id}:${args.internalKind}:${args.chatEventId}`,
     CHAT_DELIVERY_CALLBACK_NAMESPACE,
