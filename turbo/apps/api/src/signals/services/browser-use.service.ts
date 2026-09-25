@@ -2354,7 +2354,18 @@ function browserUseMixedControlWriterFunction(): string {
             if (spec.kind === "scalar") {
               const actualType = control instanceof HTMLInputElement ? control.type
                 : control instanceof HTMLTextAreaElement ? "textarea" : null;
-              if (control.tagName !== spec.tagName || actualType !== spec.inputType || control.readOnly) return false;
+              if (control.tagName !== spec.tagName || actualType !== spec.inputType || control.readOnly ||
+                  control.required !== spec.required) return false;
+              const textual = control instanceof HTMLTextAreaElement ||
+                (control instanceof HTMLInputElement && !["number", "checkbox", "radio"].includes(control.type));
+              const number = control instanceof HTMLInputElement && control.type === "number";
+              if ((control instanceof HTMLInputElement && control.type === "email" ? control.multiple : false) !== spec.multiple ||
+                  (textual && (control.minLength !== (spec.minLength ?? -1) ||
+                    control.maxLength !== (spec.maxLength ?? -1) ||
+                    (control instanceof HTMLInputElement && (control.pattern || undefined) !== spec.pattern))) ||
+                  (number && ((control.min || undefined) !== spec.min ||
+                    (control.max || undefined) !== spec.max ||
+                    (control.step || undefined) !== spec.step))) return false;
               return !final || spec.value === null || control.value === spec.value;
             }
             if (!(control instanceof HTMLSelectElement) ||
@@ -2457,6 +2468,14 @@ async function writeBrowserUseMixedControlFields(
               kind: "scalar",
               tagName: field.inspection.tagName,
               inputType: field.inspection.inputType,
+              required: field.inspection.siteRequired,
+              multiple: field.inspection.multiple,
+              minLength: field.inspection.minLength,
+              maxLength: field.inspection.maxLength,
+              pattern: field.inspection.pattern,
+              min: field.inspection.min,
+              max: field.inspection.max,
+              step: field.inspection.step,
               value: field.value ?? null,
             };
   };

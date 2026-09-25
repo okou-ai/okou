@@ -573,7 +573,7 @@ function mockNativeCheckboxTarget(args: {
   });
 }
 
-function mockNativeRadioTarget(state: {
+type NativeRadioMockState = {
   memberIds: readonly number[];
   name: string;
   formOwnerId: number;
@@ -582,7 +582,104 @@ function mockNativeRadioTarget(state: {
   writeMatches: boolean;
   readbackMatches: boolean;
   siteRequired: boolean;
-}): void {
+  scalar?: {
+    nodeId: number;
+    required: boolean;
+    requiredAfterWrite: boolean;
+  } | null;
+};
+
+function mockNativeRadioCallFunctionOn(
+  state: NativeRadioMockState,
+  params: {
+    functionDeclaration?: unknown;
+    arguments?: unknown;
+    objectId?: unknown;
+  },
+) {
+  const declaration = String(params.functionDeclaration);
+  if (declaration.includes("firstSpec")) {
+    const args = params.arguments as {
+      value?: { kind?: string; required?: boolean; verifyOnly?: boolean };
+    }[];
+    if (!args[0]?.value?.verifyOnly && state.scalar?.requiredAfterWrite) {
+      state.scalar.required = true;
+    }
+    const scalarSpec = args.find((arg) => {
+      return arg.value?.kind === "scalar";
+    })?.value;
+    const constraintsMatch =
+      !state.scalar || scalarSpec?.required === state.scalar.required;
+    return {
+      result: {
+        value:
+          (args[0]?.value?.verifyOnly
+            ? state.readbackMatches
+            : state.writeMatches) && constraintsMatch,
+      },
+    };
+  }
+  if (declaration.includes("function (nextValue")) {
+    return { result: { value: true } };
+  }
+  if (declaration.includes("function(limit)")) {
+    return { result: { objectId: "radio-array" } };
+  }
+  if (declaration.includes("function(anchor, owner)")) {
+    return {
+      result: {
+        value: {
+          name: state.name,
+          options: state.memberIds.map((_, index) => {
+            return {
+              label: "Same label",
+              value: "same-private-value",
+              disabled: index === state.disabledIndex,
+              selected: index === state.selectedIndex,
+              required: state.siteRequired && index === 0,
+              writable: true,
+            };
+          }),
+        },
+      },
+    };
+  }
+  const objectIds = [
+    params.objectId,
+    ...((params.arguments as { objectId: string }[] | undefined) ?? []).map(
+      (arg) => {
+        return arg.objectId;
+      },
+    ),
+  ];
+  return {
+    result: {
+      value: objectIds.map((objectId) => {
+        return objectId === "native-scalar-object"
+          ? {
+              tagName: "INPUT",
+              inputType: "text",
+              connected: true,
+              mainDocument: true,
+              writable: true,
+              siteRequired: state.scalar?.required ?? false,
+              multiple: false,
+            }
+          : {
+              tagName: "INPUT",
+              inputType: "radio",
+              connected: true,
+              mainDocument: true,
+              writable: true,
+              siteRequired: state.siteRequired,
+              multiple: false,
+            };
+      }),
+    },
+  };
+}
+
+function mockNativeRadioTarget(state: NativeRadioMockState): void {
   context.mocks.browserUseCdp.command.mockImplementation((command) => {
     switch (command.method) {
       case "Target.getTargets": {
@@ -614,7 +711,14 @@ function mockNativeRadioTarget(state: {
         };
       }
       case "DOM.resolveNode": {
-        return { object: { objectId: "radio-object" } };
+        return {
+          object: {
+            objectId:
+              state.scalar?.nodeId === command.params.backendNodeId
+                ? "native-scalar-object"
+                : "radio-object",
+          },
+        };
       }
       case "DOM.describeNode": {
         const objectId = String(command.params.objectId);
@@ -642,56 +746,7 @@ function mockNativeRadioTarget(state: {
         };
       }
       case "Runtime.callFunctionOn": {
-        const declaration = String(command.params.functionDeclaration);
-        if (declaration.includes("firstSpec")) {
-          const args = command.params.arguments as {
-            value?: { verifyOnly?: boolean };
-          }[];
-          return {
-            result: {
-              value: args[0]?.value?.verifyOnly
-                ? state.readbackMatches
-                : state.writeMatches,
-            },
-          };
-        }
-        if (declaration.includes("function(limit)")) {
-          return { result: { objectId: "radio-array" } };
-        }
-        if (declaration.includes("function(anchor, owner)")) {
-          return {
-            result: {
-              value: {
-                name: state.name,
-                options: state.memberIds.map((_, index) => {
-                  return {
-                    label: "Same label",
-                    value: "same-private-value",
-                    disabled: index === state.disabledIndex,
-                    selected: index === state.selectedIndex,
-                    required: state.siteRequired && index === 0,
-                    writable: true,
-                  };
-                }),
-              },
-            },
-          };
-        }
-        return {
-          result: {
-            value: [
-              {
-                tagName: "INPUT",
-                inputType: "radio",
-                connected: true,
-                mainDocument: true,
-                writable: true,
-                siteRequired: state.siteRequired,
-                multiple: false,
-              },
-            ],
-          },
-        };
+        return mockNativeRadioCallFunctionOn(state, command.params);
       }
       default: {
         return {};
@@ -1052,6 +1107,11 @@ describe("Browser user-action route", () => {
       writeMatches: true,
       readbackMatches: true,
       siteRequired: false,
+      scalar: null as {
+        nodeId: number;
+        required: boolean;
+        requiredAfterWrite: boolean;
+      } | null,
     };
     mockNativeRadioTarget(group);
     server.use(
@@ -1287,6 +1347,74 @@ describe("Browser user-action route", () => {
       (await accept(apply(replacedToken, 1, 0, replacedFingerprint), [200]))
         .body.state,
     ).toBe("stale");
+
+    // A radio change handler can make another, untouched field required after
+    // the initial scalar validation. This is a partial write, not success.
+    group.memberIds = [45, 46, 47];
+    group.scalar = { nodeId: 50, required: false, requiredAfterWrite: true };
+    const mixed = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after the mixed form",
+          pageTargetId: "native-input-target",
+          fields: [
+            {
+              key: "delivery",
+              label: "Delivery",
+              fieldKind: "radio",
+              required: false,
+              backendNodeId: 45,
+            },
+            {
+              key: "note",
+              label: "Note",
+              fieldKind: "text",
+              required: false,
+              backendNodeId: 50,
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+    const mixedToken = mixed.body.action.requestToken;
+    const mixedFingerprint = await fingerprintFor(mixedToken);
+    expect(
+      (
+        await accept(
+          userActionClient().apply({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { requestToken: mixedToken },
+            body: {
+              values: [
+                {
+                  key: "delivery",
+                  memberIndex: 1,
+                  observedSelectedIndex: 0,
+                  groupFingerprint: mixedFingerprint,
+                },
+              ],
+            },
+          }),
+          [200],
+        )
+      ).body.state,
+    ).toBe("uncertain");
+    expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
+      { value: { kind: "radio", index: 1 } },
+      { value: 1 },
+      { objectId: "native-scalar-object" },
+      {
+        value: {
+          kind: "scalar",
+          required: false,
+          multiple: false,
+          value: null,
+        },
+      },
+    ]);
   });
 
   it("selects by option index, rejects disabled and drifted options, and supports explicit clear", async () => {
