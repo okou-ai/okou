@@ -96,9 +96,8 @@ installation, schedule and Agent, and the Slack workspace and user.
   This request never sleeps, and there is no inline retry loop.
 - **Commit-time admission.** Waiting for a database lock can outlast a
   60-second lease, so every lease, retry and lifetime comparison reads the clock
-  _after_ the transition's own waits. Claiming and finalizing take erasure
-  admission, then the member row, then the occurrence row with `FOR UPDATE`, and
-  only then sample the instant they decide against. A request timestamp, a
+  _after_ the transition's own waits. Claiming and finalizing take the member
+  row, then the occurrence row with `FOR UPDATE`, and only then sample the instant they decide against. A request timestamp, a
   transaction-start `now()` or a statement clock read before a row wait is not
   that instant. One case is deliberately narrower: when no occurrence row exists
   yet, the first attempt's lease clock is read before its own `INSERT`, which
@@ -162,9 +161,8 @@ no background reader refills it. This deliberately replaces the evictable
 cache is not execution authority. A second key to `agents` covers the Agent
 lifecycle deletion that invalidates the installation.
 
-Claiming and finalizing both take erasure admission first with
-`assertErasureSubjectWritable`, held through `COMMIT`, then lock and recheck that
-member row with `FOR KEY SHARE`. Neither ever creates the parent.
+Claiming and finalizing both lock and recheck that member row with
+`FOR KEY SHARE`. Neither ever creates the parent.
 
 That lock orders two transactions but does not survive either of them, and the
 parent is deleted only at the very end of each cleanup. The durable half of the

@@ -1,10 +1,8 @@
-import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import { morningBriefCollectionOccurrences } from "@okouai/db/schema/morning-brief-collection-occurrence";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { and, eq, type SQL } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
-import { settle } from "../utils";
 
 /** Historical collection ownership and cleanup; no new Native admission. */
 export interface MorningBriefCollectionOwner {
@@ -20,13 +18,13 @@ function memberKey(owner: MorningBriefCollectionOwner): SQL | undefined {
 }
 
 /**
- * Admit this owner and take their durable member row.
+ * Take this owner's durable member row.
  *
- * Erasure admission comes first and is held through COMMIT, then the member row
- * this occurrence hangs from is locked and rechecked. `org_members_metadata` is
- * the source of truth for the member's own preferences — including the timezone
- * an enabled brief requires — and is deleted by membership, user and
- * organization cleanup without any background reader refilling it. A cleanup
+ * The member row this occurrence hangs from is locked and rechecked.
+ * `org_members_metadata` is the source of truth for the member's own
+ * preferences — including the timezone an enabled brief requires — and is
+ * deleted by membership, user and organization cleanup without any background
+ * reader refilling it. A cleanup
  * therefore either waits for this transaction and then cascades the row away,
  * or has already committed and leaves nothing to write. This never creates the
  * parent.
@@ -41,11 +39,11 @@ function memberKey(owner: MorningBriefCollectionOwner): SQL | undefined {
  *
  * This is the shared owner fence every later stage uses. A stage that already
  * holds a persisted occurrence — generation, its saved result, delivery —
- * proves the owner with exactly this call rather than reimplementing the
- * subject admission, the lock mode or the stamp comparison. It deliberately
- * does not compare an admission's parent generation, because such a stage has
- * no admission to compare: deleting the parent cascades its occurrence away, so
- * a surviving occurrence is itself the proof that the parent never changed.
+ * proves the owner with exactly this call rather than reimplementing the lock
+ * mode or the stamp comparison. It deliberately does not compare an
+ * admission's parent generation, because such a stage has no admission to
+ * compare: deleting the parent cascades its occurrence away, so a surviving
+ * occurrence is itself the proof that the parent never changed.
  */
 export async function lockCollectionOwner(
   tx: Tx,
@@ -61,22 +59,6 @@ async function lockOwnerRow(
 ): Promise<
   { readonly revokedAt: Date | null; readonly createdAt: Date } | undefined
 > {
-  const admission = await settle(
-    assertErasureSubjectWritable(tx, [
-      { subjectKind: "organization", subjectId: owner.orgId },
-      { subjectKind: "user", subjectId: owner.userId },
-    ]),
-  );
-  if (!admission.ok) {
-    // A closed B1 owner is a normal refusal, not an unhandled preview error.
-    if (
-      admission.error instanceof Error &&
-      admission.error.message === "account_erasure:subject_closed"
-    ) {
-      return undefined;
-    }
-    throw admission.error;
-  }
   const [member] = await tx
     .select({
       revokedAt: orgMembersMetadata.morningBriefCollectionRevokedAt,

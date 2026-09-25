@@ -1,4 +1,3 @@
-import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 import { agentVncAccess } from "@okouai/db/schema/agent-vnc-access";
@@ -125,23 +124,8 @@ async function deleteVncRows(
   await tx.delete(agentVncAccess).where(grantCondition);
 }
 
-/** B1 -> shared cleanup scopes -> exclusive owner -> business rows. */
+/** Shared cleanup scopes -> exclusive owner -> business rows. */
 export async function enterVncWrite(tx: Tx, owner: VncOwner): Promise<boolean> {
-  const writable = await settle(
-    assertErasureSubjectWritable(tx, [
-      { subjectKind: "organization", subjectId: owner.orgId },
-      { subjectKind: "user", subjectId: owner.userId },
-    ]),
-  );
-  if (!writable.ok) {
-    if (
-      writable.error instanceof Error &&
-      writable.error.message === "account_erasure:subject_closed"
-    ) {
-      return false;
-    }
-    throw writable.error;
-  }
   const keys = ownerScopeKeys(owner);
   for (const key of keys) {
     await lockScope(tx, key, "shared");
@@ -150,6 +134,8 @@ export async function enterVncWrite(tx: Tx, owner: VncOwner): Promise<boolean> {
   await tx.execute(
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${ownerLock}, 0))`,
   );
+  // Always true; the boolean is kept only until the remaining caller in
+  // chat-remote-access drops its admission check.
   return true;
 }
 

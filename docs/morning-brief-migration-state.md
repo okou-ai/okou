@@ -236,17 +236,13 @@ The row's lifetime is deliberately evictable:
   the owning Agent or the destination thread is deleted. Neither deletion
   creates a replacement thread or an enabled state; the legacy brief stays
   paused or uninstalled exactly as it does today.
-- Native writes also pass the existing transaction-level
-  [erasure admission](../turbo/packages/db/src/operations/account-erasure.ts):
-  READ COMMITTED, sorted organization and user subject locks taken before any
-  business row and held through commit.
 
 The limits are as real as the guarantees. `org_members_cache` is a 60-second
 read-through role cache, not a tombstone: a concurrent membership read can
 refill it after a cleanup, and this projection's writer cannot prevent that.
-[The Clerk erasure bridge is still unregistered](account-erasure-foundation.md),
-so admission bounds this writer, not the world. None of this is global deletion
-finality, and the presence of a row never authorizes executing a brief.
+Writes are not rejected after an account closes; the erasure executor removes
+any late rows. None of this is global deletion finality, and the presence of a
+row never authorizes executing a brief.
 
 **Hard gate:** before native state becomes execution authority, this evictable
 cache lifetime must be replaced with durable membership and erasure ownership.
