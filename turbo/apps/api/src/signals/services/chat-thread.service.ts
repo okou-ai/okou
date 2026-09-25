@@ -59,7 +59,6 @@ import {
 
 import type { Tx } from "../../lib/db-types";
 import { now, nowDate } from "../../lib/time";
-import { isLockNotAvailable } from "../../lib/pg-errors";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { inferMimetype } from "./chat-event-shared.service";
@@ -1006,27 +1005,26 @@ async function lockChatThreadForDeletion(tx: Tx, args: DeleteChatThreadArgs) {
     .where(eq(chatEventSequences.chatThreadId, args.threadId))
     .for("update");
 
-  // Queue/control writers can already own the thread and wait for a run.
-  // Never wait for that reversed edge while holding the children: NOWAIT
-  // rolls the whole deletion attempt back before bounded rediscovery.
+  // Deletion waits for a writer that already owns the thread. A writer that
+  // then waits on a locked run or sequence forms a cycle that PostgreSQL's
+  // deadlock detector aborts; the deletion request surfaces that failure.
   const [ownedThread] = await tx
     .select({ id: chatThreads.id, agentId: chatThreads.agentId })
     .from(chatThreads)
     .where(ownedThreadCondition)
-    .for("update", { noWait: true });
+    .for("update");
   if (!ownedThread?.agentId) {
     return undefined;
   }
 
-  // Include an attachment committed between discovery and the strong fence.
-  // A still-uncommitted attachment holds thread KEY SHARE, so NOWAIT above
-  // rolls back instead. Revalidation must likewise never wait out of order.
+  // Include an attachment committed between discovery and the strong fence;
+  // the thread lock above waited for any uncommitted attachment.
   await tx
     .select({ id: agentRuns.id })
     .from(agentRuns)
     .where(eq(agentRuns.chatThreadId, ownedThread.id))
     .orderBy(asc(agentRuns.id))
-    .for("no key update", { noWait: true });
+    .for("no key update");
 
   return ownedThread;
 }
@@ -1137,23 +1135,12 @@ export async function deleteChatThreadContent(
   args: DeleteChatThreadArgs,
   signal: AbortSignal,
 ) {
-  for (let attempt = 0; ; attempt++) {
-    signal.throwIfAborted();
-    const result = await settle(
-      db.transaction(async (tx) => {
-        return await deleteChatThreadInTransaction(tx, args);
-      }),
-    );
-    signal.throwIfAborted();
-    if (result.ok) {
-      return result.value;
-    }
-    // A failed NOWAIT also rolls back native authority revocation. Retry only
-    // this bounded control transaction, never an allocator or external effect.
-    if (!isLockNotAvailable(result.error) || attempt >= 2) {
-      throw result.error;
-    }
-  }
+  signal.throwIfAborted();
+  const result = await db.transaction(async (tx) => {
+    return await deleteChatThreadInTransaction(tx, args);
+  });
+  signal.throwIfAborted();
+  return result;
 }
 
 /**

@@ -805,7 +805,7 @@ try {
     assert.equal(sequences.length, 0);
   });
 
-  await test("a retained control lock causes bounded deletion retries without blocking event FK checks", async () => {
+  await test("thread deletion waits for a retained control lock instead of failing", async () => {
     const f = await fixture("running");
     const control = new Client({ connectionString: databaseUrl.toString() });
     await control.connect();
@@ -816,29 +816,20 @@ try {
         [f.threadId],
       );
       const args = { threadId: f.threadId, userId: f.userId, orgId: f.orgId };
-      await assert.rejects(
+      let deletionSettled = false;
+      const deletion = settleIncludingAbort(
         deleteChatThreadContent(db, args, signal),
-        (error: unknown) => {
-          return safeSqlStateCode(error) === "55P03";
-        },
-      );
-      assert.ok(
-        await insertChatEvent(
-          db,
-          {
-            chatThreadId: f.threadId,
-            runId: f.runId,
-            eventType: "output.message",
-            content: "The failed deletion released its child locks",
-          },
-          "none",
-        ),
-      );
+      ).then((result) => {
+        deletionSettled = true;
+        return result;
+      });
+      await waitForBlockedQuery('from "chat_threads"', () => {
+        return deletionSettled;
+      });
+      assert.equal(deletionSettled, false);
       await control.query("COMMIT");
-      assert.equal(
-        (await deleteChatThreadContent(db, args, signal)).deleted,
-        true,
-      );
+      const deleted = await deletion;
+      assert.ok(deleted.ok && deleted.value.deleted);
     } finally {
       await control.query("ROLLBACK");
       await control.end();
