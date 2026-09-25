@@ -1,23 +1,53 @@
 # Deployment Compatibility
 
-## iOS inline chat thread snapshot response retired (2026-09-25)
+## Computer Use erasure admission and legacy host retirement (2026-09-25)
 
-The owner approved removing the remaining header-less inline response for
-#36375 despite breaking old internal iOS TestFlight builds. For a scope with a
-compacted snapshot, `GET /api/chat-threads/snapshot` now returns a scoped,
-short-lived R2 URL whether or not `X-Chat-Thread-Snapshot-R2: 1` is present.
-The API no longer downloads and decompresses the R2 archive on behalf of a
-header-less client. A scope without a snapshot row still returns
-`{ chatThreads: [], latestEventId: null, latestSeqId: null }`.
+Host START, command creation, the host directory and the audit-event list no
+longer take account-erasure admission or open transactions; START is one
+upsert and creation is a bounded host read plus one INSERT. A closed erasure
+subject is no longer refused with `403` by these routes.
 
-The iOS TestFlight client currently decodes only inline `chatThreads`, so a
-header-less iOS build cannot load a non-empty compacted chat thread list from
-this API. Updating iOS to download the R2 URL remains separate work; this PR
-does not provide a minimum-version gate for iOS. Web App and CLI still send the
-capability header and accept inline responses for the existing API rollback
-window: an older API behind the current rollback floor still branches on that
-header. Keep the header in CORS and the shared inline response variant until
-the API rollback floor advances past that implementation.
+`POST /api/computer-use/hosts/start` now requires `installationId`. Hosts
+registered without one (the last was seen in August 2026) are no longer
+accepted, and stop always keeps the host as an offline installation instead of
+revoking it and clearing chat-thread bindings. Every current Desktop build
+sends `installationId`.
+
+Migration `1251_computer_use_commands_required_host_timeout` deletes commands
+left by the retired approval flow (and their audit rows), revokes any active
+host without an installation, and makes `computer_use_commands.host_id` and
+`timeout_ms` `NOT NULL`. Older APIs always write both columns for new commands,
+so they remain compatible after the migration.
+
+## Computer Use host sessions and command reads stop locking (2026-09-25)
+
+Computer Use heartbeat, command claim, command completion, host stop, command
+status reads and screenshot/plugin-content reads no longer open multi-statement
+transactions, take account-erasure admission locks or lock host/command rows.
+Each reads with plain bounded queries and writes with single-row conditional
+UPDATEs; a request that loses a race skips its write (heartbeat), reports
+`idle` (claim), or reports the command as already completed (completion).
+Heartbeats and claim polls only rewrite the host row when its reported state
+changed or `last_seen_at` is at least 30s old, and Desktop sends steady-state
+heartbeats every 15s instead of 2s.
+
+Observable differences:
+
+- A closed erasure subject is no longer refused with `403` by these routes; late
+  writes are left to erasure cleanup.
+- Claim is no longer serialized with stop. A claim that read the host just
+  before a concurrent stop can still start one command, which then fails
+  through the normal running-command timeout.
+- A command status read times out only the command being read. Other running
+  commands time out when they are read or when their host polls again.
+- Migration `1241_computer_use_host_liveness_indexes` (#36895) drops
+  `idx_computer_use_hosts_last_seen` and adds the partial unique index
+  `idx_computer_use_commands_running_host (host_id) WHERE status = 'running'`,
+  which now enforces one running command per host. Older APIs serialized claims
+  per host and never create a second running row, so they remain compatible.
+  While old and new APIs overlap, an old claim racing a new one for the same
+  host can hit the index and return one `500`; the Desktop recovers on its next
+  poll.
 
 ## Active run state moves to `active_agent_runs` (2026-09-25, step 1 of 3)
 
@@ -112,7 +142,26 @@ At the time of #36942, one fallback remained: the native iOS TestFlight
 client (0.2.x) read only inline `chatThreads`, so the API materialized the R2
 archive for requests without the capability header. That branch was retired
 later on 2026-09-25 with explicit acceptance of breaking the old TestFlight
-builds; see "iOS inline chat thread snapshot response retired" above.
+builds; see "iOS inline chat thread snapshot response retired" below.
+
+## iOS inline chat thread snapshot response retired (2026-09-25)
+
+The owner approved removing the remaining header-less inline response for
+#36375 despite breaking old internal iOS TestFlight builds. For a scope with a
+compacted snapshot, `GET /api/chat-threads/snapshot` now returns a scoped,
+short-lived R2 URL whether or not `X-Chat-Thread-Snapshot-R2: 1` is present.
+The API no longer downloads and decompresses the R2 archive on behalf of a
+header-less client. A scope without a snapshot row still returns
+`{ chatThreads: [], latestEventId: null, latestSeqId: null }`.
+
+The iOS TestFlight client currently decodes only inline `chatThreads`, so a
+header-less iOS build cannot load a non-empty compacted chat thread list from
+this API. Updating iOS to download the R2 URL remains separate work; this PR
+does not provide a minimum-version gate for iOS. Web App and CLI still send the
+capability header and accept inline responses for the existing API rollback
+window: an older API behind the current rollback floor still branches on that
+header. Keep the header in CORS and the shared inline response variant until
+the API rollback floor advances past that implementation.
 
 ## Thread draft contraction, release 2 (2026-09-25)
 
