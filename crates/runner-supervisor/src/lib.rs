@@ -11,6 +11,7 @@ use sandbox::SandboxFactory;
 
 pub mod blank_pool;
 pub mod claimed_activation;
+pub mod claimed_resource_activation;
 pub mod finalizing_admission;
 pub mod heartbeat;
 pub mod idle_lifecycle;

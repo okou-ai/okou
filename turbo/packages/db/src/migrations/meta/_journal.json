@@ -1069,8 +1069,15 @@
     {
       "idx": 1230,
       "version": "7",
-      "when": 1790300287549,
-      "tag": "1230_public_brand_okou_default_platform",
+      "when": 1790300181834,
+      "tag": "1230_github_automation_public_brand_okou_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 1231,
+      "version": "7",
+      "when": 1790301550836,
+      "tag": "1231_public_brand_okou_default_platform",
       "breakpoints": true
     }
   ]

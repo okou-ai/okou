@@ -1,5 +1,4 @@
 import { workflows, workflowAutomations } from "@okouai/db/schema/workflow";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
 import { logger } from "../../lib/log";
@@ -235,7 +234,7 @@ function consumeUnavailableAutomationEvent(
   signal: AbortSignal,
 ): Promise<WorkflowQueueDrainStep> {
   const conflictMessage =
-    event.automationId === null || event.publicBrand === null
+    event.automationId === null
       ? "Workflow queue event payload is unreadable"
       : "Workflow automation no longer exists";
   log.debug("Consuming workflow queue event without automation", {
@@ -323,7 +322,6 @@ function matchingLaunch(
 function queuedWorkflowLaunchMaterial(
   event: PendingWorkflowQueueEvent,
   target: DequeueTarget,
-  publicBrand: PublicBrand,
 ) {
   return buildWorkflowAutomationQueuedLaunchMaterial({
     workflowName: event.workflowName,
@@ -332,7 +330,6 @@ function queuedWorkflowLaunchMaterial(
     automation: target.automation,
     agentId: target.agentId,
     chatThreadId: event.chatThreadId,
-    publicBrand,
   });
 }
 
@@ -341,17 +338,12 @@ type LaunchableQueueEvent = PendingWorkflowQueueEvent & {
   readonly triggerSource: NonNullable<
     PendingWorkflowQueueEvent["triggerSource"]
   >;
-  readonly publicBrand: PublicBrand;
 };
 
 function isLaunchableQueueEvent(
   event: PendingWorkflowQueueEvent,
 ): event is LaunchableQueueEvent {
-  return (
-    event.automationId !== null &&
-    event.triggerSource !== null &&
-    event.publicBrand !== null
-  );
+  return event.automationId !== null && event.triggerSource !== null;
 }
 
 type PreparedDequeueTarget =
@@ -457,7 +449,6 @@ export const drainWorkflowQueueForThread$ = command(
       const launchMaterial = queuedWorkflowLaunchMaterial(
         event,
         preparedTarget.target,
-        event.publicBrand,
       );
       signal.throwIfAborted();
       if (!launchMaterial) {
@@ -512,7 +503,6 @@ export const drainWorkflowQueueForThread$ = command(
           queueEventId: event.id,
           apiStartTime: launchHint?.apiStartTime ?? args.apiStartTime,
           prompt: launchMaterial.prompt,
-          publicBrand: event.publicBrand,
           triggerBrief: event.triggerBrief ?? undefined,
           triggerSource: event.triggerSource,
           ...(event.connectorSourceId

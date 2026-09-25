@@ -3,7 +3,6 @@ import type {
   GithubConnectUserBody,
   GithubInstallationResponse,
 } from "@okouai/api-contracts/contracts/integrations-github";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { connectors } from "@okouai/db/schema/connector";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { githubUserLinks } from "@okouai/db/schema/github-user-link";
@@ -25,7 +24,6 @@ import {
   verifyGithubConnectSignature,
 } from "./github-oauth.service";
 import { connectorActionResolver } from "./connector-action-resolver.service";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 function errorResponse(status: 400 | 404 | 409, message: string, code: string) {
   return { status, body: { error: { message, code } } };
@@ -42,7 +40,6 @@ async function githubInstallUrl(
     readonly orgId: string;
     readonly callbackOrigin: string;
     readonly providerCallbackOrigin: string;
-    readonly publicBrand: PublicBrand;
   },
   signal: AbortSignal,
 ): Promise<string | null> {
@@ -61,7 +58,6 @@ async function githubInstallUrl(
     composeId: composeId ?? undefined,
     callbackOrigin: args.callbackOrigin,
     providerCallbackOrigin: args.providerCallbackOrigin,
-    publicBrand: args.publicBrand,
     secretsEncryptionKey: env("SECRETS_ENCRYPTION_KEY"),
   });
 }
@@ -234,7 +230,6 @@ export const connectGithubUser$ = command(
 export const getGithubInstallation$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const publicBrand = PUBLIC_BRAND;
     const apiOrigin = getOAuthApiOrigin(get(request$).raw);
     const callbackOrigin = apiOrigin;
     const providerCallbackOrigin = apiOrigin;
@@ -251,7 +246,6 @@ export const getGithubInstallation$ = command(
               orgId: auth.orgId,
               callbackOrigin,
               providerCallbackOrigin,
-              publicBrand,
             },
             signal,
           )

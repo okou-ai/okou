@@ -1,5 +1,6 @@
 import { agents } from "@okouai/db/schema/agent";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatGithubContext } from "@okouai/db/schema/chat-github-context";
 import { githubChatThreadRoutes } from "@okouai/db/schema/github-chat-thread-route";
@@ -33,7 +34,6 @@ type GitHubLaunchContextRow = Pick<
   | "messageText"
   | "triggerReactionId"
   | "triggerCommentBody"
-  | "publicBrand"
 > & {
   readonly installationId: string;
   readonly appId: string | null;
@@ -71,7 +71,6 @@ async function loadGitHubLaunchContext(
       messageText: chatGithubContext.messageText,
       triggerReactionId: chatGithubContext.triggerReactionId,
       triggerCommentBody: chatGithubContext.triggerCommentBody,
-      publicBrand: chatGithubContext.publicBrand,
       installationId: githubChatThreadRoutes.installationId,
       appId: githubInstallations.appId,
       appSlug: githubInstallations.appSlug,
@@ -139,7 +138,7 @@ export async function loadGitHubQueuedLaunchMaterial(
   }
   return {
     prompt: context.messageText,
-    publicBrand: context.publicBrand,
+    publicBrand: PUBLIC_BRAND,
     appendSystemPrompt: buildGitHubPrompt({
       issueContext: context.issueContext,
       repo: context.repo,
