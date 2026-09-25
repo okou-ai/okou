@@ -53,7 +53,7 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-executor -- --test-threads=1
 
-# Extracted Runner idle, finalizing-successor arbitration, claimed activation recovery, sandbox finalization, heartbeat, claimed-run settlement, ownership, and orphan-recovery owner tests
+# Extracted Runner idle, pre-claim admission/rollback, finalizing-successor arbitration, claimed activation recovery, sandbox finalization, heartbeat, claimed-run settlement, ownership, and orphan-recovery owner tests
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-supervisor -- --test-threads=1
 
