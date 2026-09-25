@@ -727,6 +727,13 @@ selection containing a disabled option; a new choice excludes disabled options
 that the website had already selected. The API checks the
 current options again before writing; option drift makes the action stale, and
 post-write mismatch yields an uncertain state instead of claiming success.
+Native checkboxes use the observed checkedness, not their `.value` attribute.
+An optional checkbox left untouched preserves the website's state; explicitly
+checking or unchecking it submits a Boolean bound to the preflight state. An
+Agent-required checkbox needs deliberate checking or confirmation when already
+checked, and a website-required checkbox must be checked. Changed checkedness
+before apply makes an explicit choice stale; after a possible write, failed
+readback is uncertain. Filling the checkbox does not submit the website form.
 Option values and submitted selections do not appear in the action URL or
 chat callback. A confirmed page or control change makes the request
 stale; a temporary provider failure blocks submission, preserves the draft,
