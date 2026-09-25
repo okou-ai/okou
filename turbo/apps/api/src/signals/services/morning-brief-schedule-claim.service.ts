@@ -18,10 +18,7 @@ import {
   type MorningBriefStateReader,
 } from "./morning-brief-migration-state.service";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
-import {
-  scheduleExpired,
-  scheduleExpiryEnabled,
-} from "./schedule-expiry-policy";
+import { scheduleExpired } from "./schedule-expiry-policy";
 import {
   consumeSelectedLegacyMorningBriefObligation,
   lockMorningBriefLegacyWriterAuthority,
@@ -162,8 +159,7 @@ export async function claimMorningBriefSchedule(
     locked.ownerUserId !== args.owner.ownerUserId ||
     locked.workflowId !== args.owner.workflowId ||
     locked.nextRunAt?.getTime() !== args.scheduledAnchorAt.getTime() ||
-    (scheduleExpiryEnabled() &&
-      scheduleExpired(args.scheduledAnchorAt, nowDate()))
+    scheduleExpired(args.scheduledAnchorAt, nowDate())
   ) {
     return { kind: "unavailable" };
   }

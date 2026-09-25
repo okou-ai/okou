@@ -29,6 +29,7 @@ import {
   PRESENTATION_TEMPLATE_PICKER_ITEMS,
 } from "@okouai/core";
 import { createHash, randomUUID } from "node:crypto";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { WebPushError } from "web-push";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -1574,6 +1575,91 @@ describe("CHAT-02: completed chat callback", () => {
       expect.objectContaining({ content: "Completed answer" }),
     );
   });
+
+  it("unarchives the thread when a completed or failed run makes it unread, but not on cancellation", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    if (!actor.orgId) {
+      throw new Error("Expected the chat actor to be org-scoped");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
+      { [FeatureSwitchKey.ChatThreadArchiving]: true },
+    );
+    async function startArchivedRun(prompt: string) {
+      const run = await startChatRun(actor, { agentId, prompt });
+      await chat.requestSetThreadArchived(actor, run.threadId, true, [204]);
+      return run;
+    }
+    async function expectArchiveState(
+      threadId: string,
+      archived: boolean,
+      unarchivedEventCount: number,
+    ) {
+      const metadata = await chat.readThreadMetadata(actor, threadId);
+      expect(metadata.archived).toBe(archived);
+      const threadEvents = await chat.requestThreadEvents(actor, {}, [200]);
+      if (threadEvents.status !== 200) {
+        throw new Error("Expected chat thread events to load");
+      }
+      expect(
+        threadEvents.body.events.filter((event) => {
+          return event.chatThreadId === threadId && event.kind === "unarchived";
+        }),
+      ).toHaveLength(unarchivedEventCount);
+    }
+
+    const completed = await startArchivedRun("complete while archived");
+    const completedHeaders = await claimChatRun(runnerGroup, completed.runId);
+    chatCallbacks.mockChatOutputEvents([assistantEvent(0, "Archived answer")]);
+    await completeChatRunOk(completed.runId, completedHeaders, {
+      lastEventSequence: 0,
+    });
+    await flushWaitUntilForTest();
+    await expectArchiveState(completed.threadId, false, 1);
+
+    const failed = await startArchivedRun("fail while archived");
+    const failedHeaders = await claimChatRun(runnerGroup, failed.runId);
+    await failChatRun(failed.runId, failedHeaders, "Archived run failed");
+    await flushWaitUntilForTest();
+    await expectArchiveState(failed.threadId, false, 1);
+
+    const cancelled = await startArchivedRun("cancel while archived");
+    await claimChatRunJob(runnerGroup, cancelled.runId);
+    await api.requestCancelRun(actor, cancelled.runId, [200]);
+    await flushWaitUntilForTest();
+    const afterCancel = await chat.listThreadEvents(actor, cancelled.threadId);
+    expect(
+      lifecycleMarkers(afterCancel.events, cancelled.runId, "cancelled"),
+    ).toHaveLength(1);
+    await expectArchiveState(cancelled.threadId, true, 0);
+
+    // A sandbox that reports its own cancellation goes through the failed
+    // callback but still lands a cancelled marker.
+    const sandboxCancelled = await startArchivedRun("sandbox cancels");
+    const sandboxCancelledHeaders = await claimChatRun(
+      runnerGroup,
+      sandboxCancelled.runId,
+    );
+    await failChatRun(
+      sandboxCancelled.runId,
+      sandboxCancelledHeaders,
+      "Run cancelled",
+    );
+    await flushWaitUntilForTest();
+    const afterSandboxCancel = await chat.listThreadEvents(
+      actor,
+      sandboxCancelled.threadId,
+    );
+    expect(
+      lifecycleMarkers(
+        afterSandboxCancel.events,
+        sandboxCancelled.runId,
+        "cancelled",
+      ),
+    ).toHaveLength(1);
+    await expectArchiveState(sandboxCancelled.threadId, true, 0);
+  }, 90_000);
 
   it("pins the model, reasoning effort, and token budget of every fast-path completion", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();

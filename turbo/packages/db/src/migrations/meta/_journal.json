@@ -1160,8 +1160,22 @@
     {
       "idx": 1243,
       "version": "7",
-      "when": 1790339847467,
-      "tag": "1243_drop_chat_event_write_control",
+      "when": 1790340233476,
+      "tag": "1243_drop_chat_thread_session_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 1244,
+      "version": "7",
+      "when": 1790343033244,
+      "tag": "1244_chat_thread_drafts_user_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 1245,
+      "version": "7",
+      "when": 1790344779759,
+      "tag": "1245_drop_chat_event_write_control",
       "breakpoints": true
     }
   ]

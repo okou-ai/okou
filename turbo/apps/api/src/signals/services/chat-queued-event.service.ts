@@ -199,8 +199,8 @@ export type QueueFirstRunSessionSnapshotState =
   | "unvalidated";
 
 /**
- * Establish the shared thread lock for every event-backed queue claim,
- * rejection, and revocation.
+ * Thread lock for queue-first run admission. Claims, rejections and
+ * revocations consume an event through its unique revoke edge instead.
  */
 export async function lockUserMessageQueueThread(
   db: Db,
@@ -900,9 +900,6 @@ async function discardUnclaimedUserMessageInTransaction(
     readonly eventId: string;
   },
 ): Promise<boolean> {
-  if (!(await lockUserMessageQueueThread(db, args.threadId))) {
-    return false;
-  }
   if (
     (await loadNextUnclaimedQueuedUserMessageId(db, args.threadId)) !==
     args.eventId
@@ -916,15 +913,14 @@ async function discardUnclaimedUserMessageInTransaction(
   if (pending?.eventType !== "input.prompt") {
     return false;
   }
+  // The tombstone conflicts on the revoke edge with a concurrent claim, recall
+  // or rejection, so losing that race leaves the message to its winner.
   const tombstone = await revokeChatEvent(db, args.eventId, {
     chatThreadId: args.threadId,
     eventType: "control.revoke",
     runId: null,
   });
-  if (!tombstone) {
-    throw new Error("Failed to append discarded user message tombstone");
-  }
-  return true;
+  return tombstone !== null;
 }
 
 export async function discardUnclaimedUserMessage(
@@ -956,9 +952,6 @@ async function failQueuedUserMessageInTransaction(
   tx: DbTransaction,
   args: FailQueuedUserMessageArgs,
 ): Promise<{ readonly assistantEventId: string } | null> {
-  if (!(await lockUserMessageQueueThread(tx, args.threadId))) {
-    return null;
-  }
   if (
     (await loadNextUnclaimedQueuedUserMessageId(tx, args.threadId)) !==
     args.eventId
@@ -980,7 +973,6 @@ async function failQueuedUserMessageInTransaction(
         isNull(chatEvents.runId),
       ),
     )
-    .for("update", { of: chatEvents })
     .limit(1);
   if (!queued) {
     return null;

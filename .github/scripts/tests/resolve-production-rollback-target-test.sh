@@ -751,7 +751,7 @@ if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
   fail "priority rejection must precede artifact resolution"
 fi
 
-# Migration 1243 drops chat_event_write_control, which APIs before #36703 read.
+# Migration 1245 drops chat_event_write_control, which APIs before #36703 read.
 : >"${tmp_dir}/boundaries.log"
 assert_failure "Rollback target predates the chat_event_write_control reader removal" \
   run_resolver "${tmp_dir}/write-control-floor.output" MOCK_CHAT_EVENT_WRITE_CONTROL_FLOOR_VALID=0

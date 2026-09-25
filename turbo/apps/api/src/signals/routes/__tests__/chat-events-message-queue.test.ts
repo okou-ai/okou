@@ -12,6 +12,7 @@ import { clearMockNow, mockNow, now } from "../../../lib/time";
 import {
   completeRunWithoutCallbacksFixture,
   holdChatThreadRowLockFixture,
+  revokeReservedActiveInputFixture,
 } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError } from "./helpers/api-bdd";
@@ -362,6 +363,75 @@ describe("CHAT-02: queueing and recalling messages", () => {
         );
       }),
     ).toHaveLength(1);
+  }, 90_000);
+
+  it("settles a reserved input recalled concurrently without failing completion", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+
+    const active = await sendChatRun(actor, {
+      agentId,
+      prompt: "tolerate a recalled delivery",
+    });
+    const claimed = await claimChatRun(runnerGroup, active.runId);
+    const recalledEventId = randomUUID();
+    await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: active.threadId,
+        prompt: "recalled while being delivered",
+        clientEventId: recalledEventId,
+      },
+      [201],
+    );
+    const reserved = await api.reserveRunnerActiveInputs(
+      claimed.claim.sandboxToken,
+      active.runId,
+    );
+    if (reserved.outcome !== "reserved") {
+      throw new Error("Expected the input to be reserved");
+    }
+    await revokeReservedActiveInputFixture({
+      chatThreadId: active.threadId,
+      eventId: recalledEventId,
+    });
+
+    await expect(
+      api.recordRunnerActiveInputDelivery(
+        claimed.claim.sandboxToken,
+        active.runId,
+        reserved.deliveryId,
+      ),
+    ).resolves.toStrictEqual({ outcome: "rejected" });
+    const history = `bdd recalled delivery history ${active.runId}`;
+    const completion = await webhooks.requestAgentComplete(
+      {
+        runId: active.runId,
+        exitCode: 0,
+        activeInputDeliveryIds: [reserved.deliveryId],
+        checkpoint: {
+          cliAgentType: "claude-code",
+          cliAgentSessionId: `bdd-recalled-delivery-${active.runId}`,
+          cliAgentSessionHistoryHash: createHash("sha256")
+            .update(history)
+            .digest("hex"),
+        },
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    expect(completion).toMatchObject({
+      body: { success: true, status: "completed" },
+    });
+    await flushWaitUntilForTest();
+
+    const events = await chat.listThreadEvents(actor, active.threadId);
+    expect(
+      events.events.filter((event) => {
+        return event.revokesEventId === recalledEventId;
+      }),
+    ).toStrictEqual([expect.objectContaining({ eventType: "control.revoke" })]);
   }, 90_000);
 
   it("settles delivered input with the terminal run transition", async () => {

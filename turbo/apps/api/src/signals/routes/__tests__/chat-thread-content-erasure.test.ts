@@ -12,9 +12,7 @@ import {
 import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
 import {
   holdChatThreadEventIdFixture,
-  readStoredChatThreadDraftRowFixture,
   readStoredChatThreadMetadataFixture,
-  setChatThreadAgentFixture,
   withChatThreadContentBarrierFixture,
 } from "../../../test-fixtures/chat-thread-content-erasure";
 import { createBddApi } from "./helpers/api-bdd";
@@ -41,16 +39,6 @@ async function createContentFixture(): Promise<ContentFixture> {
   return { actor, agentId: agent.agentId, threadId: thread.id };
 }
 
-function draftBody(text: string) {
-  return {
-    draftUserMessage: {
-      version: 1 as const,
-      parts: [{ type: "text" as const, text }],
-    },
-    draftAttachments: null,
-  };
-}
-
 /** Projects one dormant B1 closure and retires it with the test. */
 function closeSubject(
   subject: ErasureSubject,
@@ -61,20 +49,6 @@ function closeSubject(
     await removeErasureSubjectsFixture([jobId]);
   });
   return closing;
-}
-
-/** The stored draft text a production reader returns, or null when cleared. */
-async function readDraftText(fixture: ContentFixture): Promise<string | null> {
-  const draft = await chat.readThreadDraft(fixture.actor, fixture.threadId);
-  const message = draft.draftUserMessage;
-  if (message === null) {
-    return null;
-  }
-  const [part] = message.parts;
-  if (part === undefined || part.type !== "text") {
-    throw new Error("Expected a single text draft part");
-  }
-  return part.text;
 }
 
 interface SidebarRename {
@@ -136,148 +110,6 @@ async function readClosedThreadTitle(
 }
 
 describe("account erasure fences direct chat-thread content writes", () => {
-  it("denies a draft write for a closed thread user and leaves the stored draft", async () => {
-    const fixture = await createContentFixture();
-    await chat.patchThread(
-      fixture.actor,
-      fixture.threadId,
-      draftBody("kept draft"),
-    );
-
-    await closeSubject({
-      subjectKind: "user",
-      subjectId: fixture.actor.userId,
-    });
-
-    await chat.requestPatchThread(
-      fixture.actor,
-      fixture.threadId,
-      draftBody("erased draft"),
-      [404],
-    );
-    await expect(readDraftText(fixture)).resolves.toBe("kept draft");
-  });
-
-  it("leaves the stored draft row untouched for a closed thread user", async () => {
-    const fixture = await createContentFixture();
-    await chat.patchThread(
-      fixture.actor,
-      fixture.threadId,
-      draftBody("kept draft"),
-    );
-    // The draft now also lives in `chat_thread_drafts`, which is a descendant
-    // of the fenced thread and holds the same account content, so the closure
-    // has to stop that write too rather than only the legacy columns.
-    const before = await readStoredChatThreadDraftRowFixture(fixture.threadId);
-    expect(before).not.toBeNull();
-
-    await closeSubject({
-      subjectKind: "user",
-      subjectId: fixture.actor.userId,
-    });
-    await chat.requestPatchThread(
-      fixture.actor,
-      fixture.threadId,
-      draftBody("erased draft"),
-      [404],
-    );
-
-    await expect(
-      readStoredChatThreadDraftRowFixture(fixture.threadId),
-    ).resolves.toStrictEqual(before);
-  });
-
-  it("denies a draft write for a closed distinct Agent owner and for a closed organization", async () => {
-    const shared = await createContentFixture();
-    const sharedOwner = `user_${randomUUID()}`;
-    await transferAgentOwnerFixture({
-      agentId: shared.agentId,
-      owner: sharedOwner,
-    });
-    await closeSubject({ subjectKind: "user", subjectId: sharedOwner });
-
-    await chat.requestPatchThread(
-      shared.actor,
-      shared.threadId,
-      draftBody("shared owner draft"),
-      [404],
-    );
-    await expect(readDraftText(shared)).resolves.toBeNull();
-
-    const organization = await createContentFixture();
-    await closeSubject({
-      subjectKind: "organization",
-      subjectId: actorOrgId(organization),
-    });
-
-    await chat.requestPatchThread(
-      organization.actor,
-      organization.threadId,
-      draftBody("organization draft"),
-      [404],
-    );
-    await expect(readDraftText(organization)).resolves.toBeNull();
-  });
-
-  it("keeps an unrelated owner writable while another subject is closed", async () => {
-    const closed = await createContentFixture();
-    const unrelated = await createContentFixture();
-    await closeSubject({ subjectKind: "user", subjectId: closed.actor.userId });
-
-    await chat.requestPatchThread(
-      closed.actor,
-      closed.threadId,
-      draftBody("closed draft"),
-      [404],
-    );
-    await chat.patchThread(
-      unrelated.actor,
-      unrelated.threadId,
-      draftBody("unrelated draft"),
-    );
-    await expect(readDraftText(unrelated)).resolves.toBe("unrelated draft");
-  });
-
-  it("preserves a draft write on a thread without an Agent and still fences its user", async () => {
-    const fixture = await createContentFixture();
-    await setChatThreadAgentFixture({
-      chatThreadId: fixture.threadId,
-      agentId: null,
-    });
-
-    await chat.patchThread(
-      fixture.actor,
-      fixture.threadId,
-      draftBody("null agent draft"),
-    );
-    await setChatThreadAgentFixture({
-      chatThreadId: fixture.threadId,
-      agentId: fixture.agentId,
-    });
-    await expect(readDraftText(fixture)).resolves.toBe("null agent draft");
-
-    await setChatThreadAgentFixture({
-      chatThreadId: fixture.threadId,
-      agentId: null,
-    });
-    await closeSubject({
-      subjectKind: "user",
-      subjectId: fixture.actor.userId,
-    });
-    await chat.requestPatchThread(
-      fixture.actor,
-      fixture.threadId,
-      draftBody("closed null agent draft"),
-      [404],
-    );
-
-    await setChatThreadAgentFixture({
-      chatThreadId: fixture.threadId,
-      agentId: fixture.agentId,
-    });
-    await expect(readDraftText(fixture)).resolves.toBe("null agent draft");
-  });
-
   it("denies a rename for a closed subject without consuming a sidebar sequence", async () => {
     const fixture = await createContentFixture();
     await chat.renameThread(fixture.actor, fixture.threadId, "First title");
@@ -328,54 +160,6 @@ describe("account erasure fences direct chat-thread content writes", () => {
       [404],
     );
     await expect(readClosedThreadTitle(fixture)).resolves.toBe("Org title");
-  });
-
-  it("makes a closure wait for an admitted writer and fences the next write", async () => {
-    const fixture = await createContentFixture();
-
-    const closed = await withChatThreadContentBarrierFixture(
-      {
-        chatThreadId: fixture.threadId,
-        stopAt: "commit",
-        work: async (barrier) => {
-          const writing = chat.patchThread(
-            fixture.actor,
-            fixture.threadId,
-            draftBody("admitted draft"),
-          );
-          const settings = await barrier.entered;
-          expect(settings.lockTimeout).toBe("1s");
-          expect(settings.statementTimeout).toBe("5s");
-
-          const closing = closeErasureSubjectFixture({
-            subjectKind: "user",
-            subjectId: fixture.actor.userId,
-          });
-          // The admitted writer still holds its shared subject barrier with the
-          // draft already written, so the exclusive closure cannot commit first.
-          await expect
-            .poll(barrier.blockedWaiterCount, BLOCKED)
-            .toBeGreaterThanOrEqual(1);
-
-          barrier.release();
-          await writing;
-          return await closing;
-        },
-      },
-      context.signal,
-    );
-    onTestFinished(async () => {
-      await removeErasureSubjectsFixture([closed.jobId]);
-    });
-
-    await expect(readDraftText(fixture)).resolves.toBe("admitted draft");
-    await chat.requestPatchThread(
-      fixture.actor,
-      fixture.threadId,
-      draftBody("post closure draft"),
-      [404],
-    );
-    await expect(readDraftText(fixture)).resolves.toBe("admitted draft");
   });
 
   it("denies a rename for a closed distinct Agent owner", async () => {
@@ -431,13 +215,13 @@ describe("account erasure fences direct chat-thread content writes", () => {
             .toBeGreaterThanOrEqual(1);
 
           // An unrelated owner is not serialized behind that barrier.
-          await chat.patchThread(
+          await chat.renameThread(
             unrelated.actor,
             unrelated.threadId,
-            draftBody("concurrent unrelated draft"),
+            "Concurrent unrelated title",
           );
-          await expect(readDraftText(unrelated)).resolves.toBe(
-            "concurrent unrelated draft",
+          await expect(readThreadTitle(unrelated)).resolves.toBe(
+            "Concurrent unrelated title",
           );
 
           barrier.release();
@@ -513,6 +297,7 @@ describe("account erasure fences direct chat-thread content writes", () => {
 
   it("re-resolves a transferred Agent owner under the locks instead of writing under a stale label", async () => {
     const fixture = await createContentFixture();
+    await chat.renameThread(fixture.actor, fixture.threadId, "Owner title");
     const newOwner = `user_${randomUUID()}`;
     await closeSubject({ subjectKind: "user", subjectId: newOwner });
 
@@ -521,10 +306,10 @@ describe("account erasure fences direct chat-thread content writes", () => {
         chatThreadId: fixture.threadId,
         stopAt: "agent-lock",
         work: async (barrier) => {
-          const writing = chat.requestPatchThread(
+          const writing = chat.requestRenameThread(
             fixture.actor,
             fixture.threadId,
-            draftBody("stale owner draft"),
+            "Stale owner title",
             [404],
           );
           await barrier.entered;
@@ -539,7 +324,7 @@ describe("account erasure fences direct chat-thread content writes", () => {
       context.signal,
     );
 
-    await expect(readDraftText(fixture)).resolves.toBeNull();
+    await expect(readClosedThreadTitle(fixture)).resolves.toBe("Owner title");
   });
 
   it("finds a thread deleted under the locks and recreates no content", async () => {
@@ -550,10 +335,10 @@ describe("account erasure fences direct chat-thread content writes", () => {
         chatThreadId: fixture.threadId,
         stopAt: "agent-lock",
         work: async (barrier) => {
-          const writing = chat.requestPatchThread(
+          const writing = chat.requestRenameThread(
             fixture.actor,
             fixture.threadId,
-            draftBody("deleted thread draft"),
+            "Deleted thread title",
             [404],
           );
           await barrier.entered;
@@ -565,19 +350,17 @@ describe("account erasure fences direct chat-thread content writes", () => {
       context.signal,
     );
 
-    await chat.requestReadThreadDraft(fixture.actor, fixture.threadId, [404]);
-    await expect(chat.listThreadDrafts(fixture.actor)).resolves.not.toContain(
+    const read = await chat.requestReadThreadMetadata(
+      fixture.actor,
       fixture.threadId,
+      [404],
     );
+    expect(read.status).toBe(404);
   });
 
   it("propagates a held parent lock as a failure rather than a closure 404", async () => {
     const fixture = await createContentFixture();
-    await chat.patchThread(
-      fixture.actor,
-      fixture.threadId,
-      draftBody("locked draft"),
-    );
+    await chat.renameThread(fixture.actor, fixture.threadId, "Locked title");
 
     const holder = await holdChatThreadRowLockFixture({
       threadId: fixture.threadId,
@@ -586,22 +369,18 @@ describe("account erasure fences direct chat-thread content writes", () => {
     // Neither an accepted 204 nor the closure 404: a real blocked parent lock
     // keeps its own database failure instead of being reported as erasure.
     await expect(
-      chat.requestPatchThread(
+      chat.requestRenameThread(
         fixture.actor,
         fixture.threadId,
-        draftBody("blocked draft"),
+        "Blocked title",
         [204, 404],
       ),
     ).rejects.toThrow(/Unknown response status 500/);
     holder.release();
     await holder.done;
 
-    await expect(readDraftText(fixture)).resolves.toBe("locked draft");
-    await chat.patchThread(
-      fixture.actor,
-      fixture.threadId,
-      draftBody("recovered draft"),
-    );
-    await expect(readDraftText(fixture)).resolves.toBe("recovered draft");
+    await expect(readThreadTitle(fixture)).resolves.toBe("Locked title");
+    await chat.renameThread(fixture.actor, fixture.threadId, "Recovered title");
+    await expect(readThreadTitle(fixture)).resolves.toBe("Recovered title");
   });
 });
