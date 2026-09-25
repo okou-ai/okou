@@ -1,148 +1,29 @@
+import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { runActivitySnapshots } from "@okouai/db/schema/run-activity-snapshot";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { command } from "ccstate";
-import { and, asc, eq, getTableColumns, inArray, lte, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, notInArray, sql } from "drizzle-orm";
 import { eventConsumerPayload$ } from "../../lib/event-consumer/route";
 import { logger } from "../../lib/log";
-import {
-  isForeignKeyViolation,
-  isLockNotAvailable,
-  safeSqlStateCode,
-} from "../../lib/pg-errors";
+import { safeSqlStateCode } from "../../lib/pg-errors";
 import { activityRevision, mergeActivity } from "../../lib/run-activity";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
+import { nowDate } from "../../lib/time";
 import { settleIncludingAbort } from "../utils";
-import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
-import {
-  AgentEventRunNotFoundError,
-  RunContentOwnershipChangedError,
-  readRunContentOwnership,
-  withRunContentWrite,
-  type RunContentOwnership,
-} from "./run-content-erasure-admission.service";
+import type { RunContentOwnership } from "./run-content-erasure-admission.service";
 
 const log = logger("api:run-activity");
 
 export const activityClock = sql`(statement_timestamp() AT TIME ZONE 'UTC')`;
-const activityExpiry = sql`${activityClock} + interval '24 hours'`;
-export type ActivityTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
-export type ActivitySnapshot = typeof runActivitySnapshots.$inferSelect;
 
-async function activityTransaction<T>(
-  db: Db,
-  work: (tx: ActivityTx) => Promise<T>,
-): Promise<T> {
-  return await db.transaction(async (tx) => {
-    await tx.execute(sql`SET LOCAL lock_timeout = '250ms'`);
-    await tx.execute(sql`SET LOCAL statement_timeout = '3s'`);
-    return await work(tx);
-  });
-}
+const STALE_RELEASE_LIMIT = 500;
 
-export interface ActivityRunIdentity {
-  readonly runId: string;
-  readonly threadId: string;
-  readonly userId: string;
-  readonly orgId: string;
-}
-
-/** Each activity writer owns fresh admission; an earlier pin only fixes identity.
- * Cleanup deliberately does not use this content-creating transaction.
+/**
+ * Best-effort activity capture: one primary-key read, then one compare-and-set
+ * UPDATE on the run's active row. A run without an active row (terminal, or
+ * created before the row existed) simply has no activity. Losing the race to
+ * a concurrent delivery is acceptable; the next delivery merges again.
  */
-export async function activityContentTransaction<T>(
-  db: Db,
-  identity: ActivityRunIdentity,
-  ownership: RunContentOwnership | undefined,
-  work: (tx: ActivityTx, ownership: RunContentOwnership) => Promise<T>,
-  signal: AbortSignal,
-): Promise<T | undefined> {
-  const result = await settleIncludingAbort(
-    (async () => {
-      const pinned =
-        ownership ??
-        (await readRunContentOwnership(db, identity.runId, "activity"));
-      signal.throwIfAborted();
-      return await withRunContentWrite(
-        db,
-        {
-          runId: identity.runId,
-          runOwner: identity,
-          destination: identity,
-          ownership: pinned,
-          deadlineProfile: "activity",
-        },
-        async (tx, admitted) => {
-          if (!(await eligibleActivityRun(tx, identity))[0]) {
-            return undefined;
-          }
-          signal.throwIfAborted();
-          return await work(tx, admitted);
-        },
-        signal,
-      );
-    })(),
-  );
-  signal.throwIfAborted();
-  if (result.ok) {
-    return result.value.outcome === "written" ? result.value.value : undefined;
-  }
-  if (
-    result.error instanceof AgentEventRunNotFoundError ||
-    result.error instanceof RunContentOwnershipChangedError
-  ) {
-    return undefined;
-  }
-  throw result.error;
-}
-
-/** Admission binds this pointer atomically; queued work does not replace it. */
-export function eligibleActivityRun(
-  db: Pick<Db, "select">,
-  identity: ActivityRunIdentity,
-) {
-  return db
-    .select({ id: agentRuns.id })
-    .from(agentRuns)
-    .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
-    .where(
-      and(
-        eq(agentRuns.id, identity.runId),
-        eq(agentRuns.chatThreadId, identity.threadId),
-        eq(agentRuns.userId, identity.userId),
-        eq(agentRuns.orgId, identity.orgId),
-        eq(chatThreads.userId, identity.userId),
-        chatThreadOrganizationCondition(db, identity.orgId),
-        eq(chatThreads.agentSessionRunId, identity.runId),
-        inArray(agentRuns.status, ["pending", "running"]),
-      ),
-    );
-}
-
-export async function lockExistingActivitySnapshot(
-  tx: ActivityTx,
-  runId: string,
-) {
-  const [row] = await tx
-    .select({
-      ...getTableColumns(runActivitySnapshots),
-      clock: activityClock.mapWith(runActivitySnapshots.expiresAt),
-    })
-    .from(runActivitySnapshots)
-    .where(eq(runActivitySnapshots.runId, runId))
-    .for("update");
-  return row;
-}
-
-export async function lockActivitySnapshot(tx: ActivityTx, runId: string) {
-  await tx.insert(runActivitySnapshots).values({ runId }).onConflictDoNothing();
-  const row = await lockExistingActivitySnapshot(tx, runId);
-  if (!row) {
-    throw new Error("Activity snapshot missing after insert");
-  }
-  return row;
-}
-
 export const captureRunActivity$ = command(
   async ({ get, set }, ownership: RunContentOwnership, signal: AbortSignal) => {
     signal.throwIfAborted();
@@ -151,57 +32,38 @@ export const captureRunActivity$ = command(
       return { status: 200 };
     }
     const db = set(writeDb$);
-    const identity = {
-      runId: payload.runId,
-      threadId: ownership.thread.chatThreadId,
-      ...payload.context,
-    };
+    const identity = and(
+      eq(activeAgentRuns.runId, payload.runId),
+      eq(activeAgentRuns.userId, payload.context.userId),
+    );
     const outcome = await settleIncludingAbort(
-      activityContentTransaction(
-        db,
-        identity,
-        ownership,
-        async (tx) => {
-          signal.throwIfAborted();
-          const row = await lockActivitySnapshot(tx, payload.runId);
-          const expired = row.expiresAt <= row.clock;
-          const entries = mergeActivity(
-            expired ? [] : row.entries,
-            payload.events,
+      (async () => {
+        const [row] = await db
+          .select({
+            entries: activeAgentRuns.activityEntries,
+            revision: activeAgentRuns.activityRevision,
+          })
+          .from(activeAgentRuns)
+          .where(identity);
+        signal.throwIfAborted();
+        if (!row) {
+          return;
+        }
+        const entries = mergeActivity(row.entries, payload.events);
+        const revision = activityRevision(entries);
+        if (revision === row.revision) {
+          return;
+        }
+        await db
+          .update(activeAgentRuns)
+          .set({ activityEntries: entries, activityRevision: revision })
+          .where(
+            and(identity, eq(activeAgentRuns.activityRevision, row.revision)),
           );
-          const revision = activityRevision(entries);
-          if (!expired && revision === row.activityRevision) {
-            return;
-          }
-          await tx
-            .update(runActivitySnapshots)
-            .set({
-              entries,
-              activityRevision: revision,
-              expiresAt: activityExpiry,
-              ...(expired
-                ? {
-                    summary: null,
-                    summaryRevision: null,
-                    claimId: null,
-                    claimRevision: null,
-                    claimExpiresAt: null,
-                  }
-                : {}),
-            })
-            .where(eq(runActivitySnapshots.runId, payload.runId));
-        },
-        signal,
-      ),
+      })(),
     );
     signal.throwIfAborted();
-    // Concurrent delivery for one run contends routinely, and a run can be
-    // deleted mid-flight; neither is a defect, and both stay silent.
-    if (
-      outcome.ok ||
-      isLockNotAvailable(outcome.error) ||
-      isForeignKeyViolation(outcome.error)
-    ) {
+    if (outcome.ok) {
       return { status: 200 };
     }
     // Never attach a database error: driver messages can include bound
@@ -216,51 +78,80 @@ export const captureRunActivity$ = command(
   },
 );
 
-/** Indexed, one-batch maintenance for expired snapshots. */
-export const cleanupExpiredRunActivity$ = command(
+/**
+ * A run that reached `running` keeps its active row after it turns terminal
+ * until the runner reports completion. When the runner never does, release the
+ * row once the run has been terminal and its sandbox silent for the
+ * cancellation-recovery grace. Three bounded statements, no transaction.
+ */
+export const releaseStaleTerminalActiveAgentRuns$ = command(
   async ({ set }, runIds: readonly string[] | null, signal: AbortSignal) => {
     const db = set(writeDb$);
+    const staleBefore = new Date(
+      nowDate().getTime() - CANCELLATION_RECOVERY_STALE_AFTER_MS,
+    );
     const outcome = await settleIncludingAbort(
-      activityTransaction(db, async (tx) => {
-        const expired = await tx
-          .select({ runId: runActivitySnapshots.runId })
-          .from(runActivitySnapshots)
+      (async () => {
+        // Newest silence first: long-queued rows never heartbeat and must not
+        // crowd out runs that just ended.
+        const silent = await db
+          .select({ runId: activeAgentRuns.runId })
+          .from(activeAgentRuns)
           .where(
             and(
-              lte(runActivitySnapshots.expiresAt, activityClock),
+              lt(activeAgentRuns.lastHeartbeatAt, staleBefore),
               runIds === null
                 ? undefined
-                : inArray(runActivitySnapshots.runId, runIds),
+                : inArray(activeAgentRuns.runId, runIds),
             ),
           )
-          .orderBy(
-            asc(runActivitySnapshots.expiresAt),
-            asc(runActivitySnapshots.runId),
-          )
-          .limit(500)
-          .for("update", { skipLocked: true });
+          .orderBy(desc(activeAgentRuns.lastHeartbeatAt))
+          .limit(STALE_RELEASE_LIMIT);
         signal.throwIfAborted();
-        if (expired.length === 0) {
+        if (silent.length === 0) {
           return;
         }
-        await tx.delete(runActivitySnapshots).where(
-          inArray(
-            runActivitySnapshots.runId,
-            expired.map((row) => {
-              return row.runId;
-            }),
+        const ended = await db
+          .select({ id: agentRuns.id })
+          .from(agentRuns)
+          .where(
+            and(
+              inArray(
+                agentRuns.id,
+                silent.map((row) => {
+                  return row.runId;
+                }),
+              ),
+              notInArray(agentRuns.status, ["queued", "pending", "running"]),
+              lt(agentRuns.completedAt, staleBefore),
+            ),
+          );
+        signal.throwIfAborted();
+        if (ended.length === 0) {
+          return;
+        }
+        // Recheck the silence: a sandbox that resumed heartbeating since the
+        // candidate read still has a runner and keeps its row.
+        await db.delete(activeAgentRuns).where(
+          and(
+            inArray(
+              activeAgentRuns.runId,
+              ended.map((row) => {
+                return row.id;
+              }),
+            ),
+            lt(activeAgentRuns.lastHeartbeatAt, staleBefore),
           ),
         );
-      }),
+      })(),
     );
     signal.throwIfAborted();
     if (outcome.ok) {
       return;
     }
-    // The SQLSTATE class code alone; driver messages never reach a record.
     const errorCode = safeSqlStateCode(outcome.error);
     log.warn(
-      "Activity snapshot cleanup failed",
+      "Stale active run release failed",
       errorCode === undefined ? {} : { errorCode },
     );
   },

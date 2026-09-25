@@ -1,5 +1,6 @@
 import { command } from "ccstate";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -52,6 +53,8 @@ import {
 } from "./run-admission.service";
 import {
   COMPUTE_CLOSURE_ERROR,
+  neverStartedRunIds,
+  releaseActiveAgentRuns,
   transitionAgentRunsToTerminal,
 } from "./agent-run-terminal-transition.service";
 import {
@@ -380,7 +383,7 @@ async function failQueuedRunAdmission(
   lockedRun: LockedQueuedRun,
   error: string,
 ): Promise<PromotionResult> {
-  const [failed] = await transitionAgentRunsToTerminal(tx, {
+  const transitions = await transitionAgentRunsToTerminal(tx, {
     values: {
       status: "failed",
       completedAt: nowDate(),
@@ -393,7 +396,7 @@ async function failQueuedRunAdmission(
       eq(agentRuns.status, "queued"),
     ],
   });
-  if (!failed) {
+  if (transitions.length === 0) {
     return { status: "lost" };
   }
   await tx.delete(agentRunQueue).where(eq(agentRunQueue.runId, args.row.runId));
@@ -401,6 +404,8 @@ async function failQueuedRunAdmission(
     runId: args.row.runId,
     userId: lockedRun.userId,
   });
+  // The promotion transaction commits right after this result is returned.
+  await releaseActiveAgentRuns(tx, neverStartedRunIds(transitions));
   return {
     status: "failed",
     terminalTransition: {
@@ -440,6 +445,10 @@ async function promoteAdmittedQueuedRun(
   if (!updated) {
     return { status: "lost" };
   }
+  await tx
+    .update(activeAgentRuns)
+    .set({ lastHeartbeatAt: new Date(promotedAt) })
+    .where(eq(activeAgentRuns.runId, args.row.runId));
 
   await tx.delete(agentRunQueue).where(eq(agentRunQueue.runId, args.row.runId));
   const queueMarkerNotification = await revokeQueuedRunAssistantMarkers(tx, {
@@ -845,6 +854,7 @@ export const cleanupExpiredQueueEntries$ = command(
         );
 
       if (deletableRows.length === 0) {
+        await releaseActiveAgentRuns(tx, neverStartedRunIds(timedOut));
         return { deletedCount: 0, timedOutRuns };
       }
 
@@ -860,6 +870,7 @@ export const cleanupExpiredQueueEntries$ = command(
         )
         .returning({ runId: agentRunQueue.runId });
 
+      await releaseActiveAgentRuns(tx, neverStartedRunIds(timedOut));
       return {
         deletedCount: deleted.length,
         timedOutRuns,
@@ -951,6 +962,7 @@ export const cleanupQueuedRunLaunchOrphans$ = command(
         QUEUED_RUN_LAUNCH_ORPHAN_REASON,
       );
 
+      await releaseActiveAgentRuns(tx, neverStartedRunIds(timedOut));
       return { deletedCount: 0, timedOutRuns };
     });
     signal.throwIfAborted();

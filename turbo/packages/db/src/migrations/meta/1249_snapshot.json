@@ -1,5 +1,5 @@
 {
-  "id": "48fa4743-4945-4d2b-9ebc-33783b948e81",
+  "id": "1e261991-6b74-4772-967d-881cbec110bf",
   "prevId": "37871223-7bce-4be0-870e-f1a1db9f6845",
   "version": "7",
   "dialect": "postgresql",
@@ -2062,39 +2062,17 @@
           "method": "btree",
           "with": {}
         },
-        "idx_agent_runs_status_heartbeat": {
-          "name": "idx_agent_runs_status_heartbeat",
+        "idx_agent_runs_status": {
+          "name": "idx_agent_runs_status",
           "columns": [
             {
               "expression": "status",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
-            },
-            {
-              "expression": "last_heartbeat_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_agent_runs_running_heartbeat": {
-          "name": "idx_agent_runs_running_heartbeat",
-          "columns": [
-            {
-              "expression": "last_heartbeat_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "status = 'running'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -10329,6 +10307,54 @@
         }
       },
       "indexes": {
+        "idx_chat_threads_user_agent_updated": {
+          "name": "idx_chat_threads_user_agent_updated",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "agent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_chat_threads_user_last_read": {
+          "name": "idx_chat_threads_user_last_read",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "last_read_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_chat_threads_user_agent_pinned": {
           "name": "idx_chat_threads_user_agent_pinned",
           "columns": [

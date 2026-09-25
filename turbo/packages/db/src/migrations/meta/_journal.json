@@ -1202,15 +1202,29 @@
     {
       "idx": 1249,
       "version": "7",
-      "when": 1790349505927,
-      "tag": "1249_drop_redundant_chat_thread_indexes",
+      "when": 1790349311981,
+      "tag": "1249_agent_runs_heartbeat_index_contraction",
       "breakpoints": true
     },
     {
       "idx": 1250,
       "version": "7",
-      "when": 1790349585279,
-      "tag": "1250_drop_chat_thread_draft_columns",
+      "when": 1790349327269,
+      "tag": "1250_active_agent_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 1251,
+      "version": "7",
+      "when": 1790352797761,
+      "tag": "1251_drop_redundant_chat_thread_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 1252,
+      "version": "7",
+      "when": 1790352823576,
+      "tag": "1252_drop_chat_thread_draft_columns",
       "breakpoints": true
     }
   ]

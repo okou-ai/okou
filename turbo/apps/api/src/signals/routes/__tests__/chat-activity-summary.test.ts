@@ -1,29 +1,24 @@
+import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { randomUUID } from "node:crypto";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   advanceRunActivityClockFixture,
-  holdRunActivityFixture,
-  holdRunActivityParentFixture,
-  deleteRunActivitySnapshotFixture,
-  cancelRunActivityWaiterFixture,
-  readRunActivityBookkeepingFixture,
+  deleteActiveAgentRunFixture,
+  readActiveAgentRunFixture,
 } from "../../../test-fixtures/run-activity";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import {
-  createDeferredPromise,
-  joinAll,
-  settleIncludingAbort,
-} from "../../utils";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { chatThreadActivitySummaryRoutes } from "../chat-threads-activity-summary";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -418,13 +413,13 @@ describe("thread activity summary", () => {
     expect(inputs).toHaveLength(1);
   });
 
-  it("merges late and concurrent evidence deterministically, bounds payloads, and ignores duplicates and usage", async () => {
+  it("merges late evidence deterministically, bounds payloads, and ignores duplicates and usage", async () => {
     const f = await fixture();
     const inputs = provider();
-    await Promise.all([
-      deliver(f, [tool(20), tool(19)]),
-      deliver(f, [tool(18)]),
-    ]);
+    // Capture is a best-effort compare-and-set; a delivery that loses a race
+    // is dropped, so this test delivers sequentially.
+    await deliver(f, [tool(20), tool(19)]);
+    await deliver(f, [tool(18)]);
     const first = await summarize(f.actor, f.run);
     expect(
       inputs[0]!.activity.map((entry) => {
@@ -486,8 +481,8 @@ describe("thread activity summary", () => {
     ]);
     expect(
       concurrent.every((value) => {
-        // A follower either reads the live claim or exhausts the bounded lock
-        // budget. Both return an empty batch without dispatching another call.
+        // A follower finds the live claim and returns the empty stored batch
+        // without dispatching another call.
         return value.messages.length === 0;
       }),
     ).toBeTruthy();
@@ -504,317 +499,6 @@ describe("thread activity summary", () => {
     );
     expect(inputs).toHaveLength(1);
   });
-
-  it("preserves parent admission and coalesces refreshed claims after contention", async () => {
-    const f = await fixture();
-    await deliver(f, [tool(0)]);
-    const inputs = provider();
-    // Erasure admission now locks the parent before touching the snapshot.
-    // Its first visible context still needs refreshing once admission succeeds.
-    const before = await readRunActivityBookkeepingFixture(f.run.runId);
-    const held = await holdRunActivityParentFixture(
-      f.run.runId,
-      context.signal,
-    );
-    const blocked = await joinAll([
-      summarize(f.actor, f.run),
-      summarize(f.actor, f.run),
-    ]);
-    expect(blocked).toStrictEqual([
-      { runId: f.run.runId, status: "unavailable", messages: [] },
-      { runId: f.run.runId, status: "unavailable", messages: [] },
-    ]);
-    expect(inputs).toHaveLength(0);
-    await expect(
-      readRunActivityBookkeepingFixture(f.run.runId),
-    ).resolves.toStrictEqual(before);
-    await held.release();
-    const responses = await joinAll([
-      summarize(f.actor, f.run),
-      summarize(f.actor, f.run),
-    ]);
-    expect(
-      responses.every((result) => {
-        return result.status === "available";
-      }),
-    ).toBeTruthy();
-    expect(
-      responses.some((result) => {
-        return result.messages.length > 0;
-      }),
-    ).toBeTruthy();
-    expect(inputs).toHaveLength(1);
-    await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
-      messages: [{ text: "Preparing the launch checklist" }],
-    });
-    expect(inputs).toHaveLength(1);
-  });
-
-  it("rolls back a new snapshot blocked by its parent without calling the model", async () => {
-    const f = await fixture();
-    const inputs = provider();
-    const held = await holdRunActivityParentFixture(
-      f.run.runId,
-      context.signal,
-    );
-    await expect(summarize(f.actor, f.run)).resolves.toStrictEqual({
-      runId: f.run.runId,
-      status: "unavailable",
-      messages: [],
-    });
-    expect(inputs).toHaveLength(0);
-    // No public endpoint exposes the failed transaction's lease bookkeeping.
-    await expect(
-      readRunActivityBookkeepingFixture(f.run.runId),
-    ).resolves.toBeUndefined();
-    await held.release();
-    await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
-      status: "available",
-      messages: [{ text: "Preparing the launch checklist" }],
-    });
-    expect(inputs).toHaveLength(1);
-  });
-
-  it("leaves no new claim when unchanged retention cannot cover the attempt interval", async () => {
-    const f = await fixture();
-    const inputs = provider(() => {
-      return "";
-    });
-    await summarize(f.actor, f.run);
-    // Only infrastructure can advance retention independently of API demand.
-    // Ten seconds remain, while the failure cooldown has already elapsed.
-    await advanceRunActivityClockFixture(
-      f.run.runId,
-      24 * 60 * 60 * 1000 - 10_000,
-    );
-    const before = await readRunActivityBookkeepingFixture(f.run.runId);
-    await expect(summarize(f.actor, f.run)).resolves.toStrictEqual({
-      runId: f.run.runId,
-      status: "unavailable",
-      messages: [],
-    });
-    await expect(
-      readRunActivityBookkeepingFixture(f.run.runId),
-    ).resolves.toStrictEqual(before);
-    expect(inputs).toHaveLength(1);
-  });
-
-  it("propagates request abort while its new snapshot is blocked", async () => {
-    const f = await fixture();
-    const inputs = provider();
-    const held = await holdRunActivityParentFixture(
-      f.run.runId,
-      context.signal,
-    );
-    const shutdown = new AbortController();
-    onTestFinished(() => {
-      return shutdown.abort();
-    });
-    const pending = settleIncludingAbort(
-      request(f.actor, f.run, {
-        signal: shutdown.signal,
-        rethrowErrors: true,
-      }),
-    );
-    await held.waitForBlocked();
-    const reason = new DOMException("API instance stopping", "AbortError");
-    shutdown.abort(reason);
-    const result = await pending;
-    expect(result).toStrictEqual({ ok: false, error: reason });
-    expect(inputs).toHaveLength(0);
-    await expect(
-      readRunActivityBookkeepingFixture(f.run.runId),
-    ).resolves.toBeUndefined();
-    await held.release();
-  });
-
-  it("propagates a non-lock database cancellation after rolling back the claim", async () => {
-    const f = await fixture();
-    const inputs = provider();
-    const held = await holdRunActivityParentFixture(
-      f.run.runId,
-      context.signal,
-    );
-    const pending = settleIncludingAbort(
-      request(f.actor, f.run, { rethrowErrors: true }),
-    );
-    const waiter = await held.waitForBlocked();
-    await cancelRunActivityWaiterFixture(waiter);
-    const result = await pending;
-    expect(result).toMatchObject({
-      ok: false,
-      error: { cause: { code: "57014" } },
-    });
-    expect(inputs).toHaveLength(0);
-    await expect(
-      readRunActivityBookkeepingFixture(f.run.runId),
-    ).resolves.toBeUndefined();
-    await held.release();
-    await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
-      status: "available",
-    });
-    expect(inputs).toHaveLength(1);
-  });
-
-  it("degrades completion contention after rollback without publishing the provider phrase", async () => {
-    const f = await fixture();
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<string>(context.signal);
-    const inputs = provider(async () => {
-      entered.resolve(undefined);
-      return await release.promise;
-    });
-    const pending = summarize(f.actor, f.run);
-    await entered.promise;
-    const before = await readRunActivityBookkeepingFixture(f.run.runId);
-    const held = await holdRunActivityParentFixture(
-      f.run.runId,
-      context.signal,
-    );
-    release.resolve("This uncommitted phrase must stay private");
-    await expect(pending).resolves.toStrictEqual({
-      runId: f.run.runId,
-      status: "unavailable",
-      messages: [],
-    });
-    await expect(
-      readRunActivityBookkeepingFixture(f.run.runId),
-    ).resolves.toStrictEqual(before);
-    expect(inputs).toHaveLength(1);
-    await held.release();
-    await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
-      status: "available",
-      messages: [],
-    });
-    expect(inputs).toHaveLength(1);
-  });
-
-  it.each(["abort", "database cancellation"] as const)(
-    "propagates completion %s instead of degrading it",
-    async (failure) => {
-      const f = await fixture();
-      const entered = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<string>(context.signal);
-      const inputs = provider(async () => {
-        entered.resolve(undefined);
-        return await release.promise;
-      });
-      const shutdown = new AbortController();
-      const pending = settleIncludingAbort(
-        request(f.actor, f.run, {
-          signal: shutdown.signal,
-          rethrowErrors: true,
-        }),
-      );
-      await entered.promise;
-      const before = await readRunActivityBookkeepingFixture(f.run.runId);
-      const held = await holdRunActivityParentFixture(
-        f.run.runId,
-        context.signal,
-      );
-      release.resolve("This completion must roll back");
-      const waiter = await held.waitForBlocked();
-      const reason = new DOMException("API instance stopping", "AbortError");
-      if (failure === "abort") {
-        shutdown.abort(reason);
-      } else {
-        await cancelRunActivityWaiterFixture(waiter);
-      }
-      const result = await pending;
-      if (failure === "abort") {
-        expect(result).toStrictEqual({ ok: false, error: reason });
-      } else {
-        expect(result).toMatchObject({
-          ok: false,
-          error: { cause: { code: "57014" } },
-        });
-      }
-      await expect(
-        readRunActivityBookkeepingFixture(f.run.runId),
-      ).resolves.toStrictEqual(before);
-      expect(inputs).toHaveLength(1);
-      await held.release();
-    },
-  );
-
-  it("does not resurrect a snapshot cleaned before completion admission", async () => {
-    const f = await fixture();
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<string>(context.signal);
-    const inputs = provider(async () => {
-      entered.resolve(undefined);
-      return await release.promise;
-    });
-    const pending = summarize(f.actor, f.run);
-    await entered.promise;
-    await deleteRunActivitySnapshotFixture(f.run.runId);
-    release.resolve("This phrase has no retained snapshot");
-    await expect(pending).resolves.toStrictEqual({
-      runId: f.run.runId,
-      status: "unavailable",
-      messages: [],
-    });
-    await expect(
-      readRunActivityBookkeepingFixture(f.run.runId),
-    ).resolves.toBeUndefined();
-    expect(inputs).toHaveLength(1);
-  });
-
-  it.each(["user", "organization"] as const)(
-    "does not recreate activity after account %s deletion during generation",
-    async (kind) => {
-      const f = await fixture();
-      const entered = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<string>(context.signal);
-      const inputs = provider(async () => {
-        entered.resolve(undefined);
-        return await release.promise;
-      });
-      const pending = request(f.actor, f.run);
-      await entered.promise;
-      const prior = await readRunActivityBookkeepingFixture(f.run.runId);
-      if (!prior) {
-        throw new Error("Expected a claimed activity snapshot before deletion");
-      }
-      webhooks.configureClerkWebhookSecret();
-      webhooks.verifyNextClerkWebhook({
-        type: kind === "user" ? "user.deleted" : "organization.deleted",
-        data: { id: kind === "user" ? f.actor.userId : f.actor.orgId },
-      });
-      await webhooks.requestClerkWebhook("{}", {}, [200]);
-      await flushWaitUntilForTest();
-      release.resolve("This phrase belongs to a deleted account");
-      // Fresh completion admission rejects the deleted identity; no stale
-      // provider output reaches the caller and no response-path INSERT runs.
-      expect((await accept(pending, [200])).body).toStrictEqual({
-        runId: f.run.runId,
-        status: "ineligible",
-        messages: [],
-      });
-      const fresh = await accept(
-        request(f.actor, f.run),
-        kind === "user" ? [401] : [404],
-      );
-      if (kind === "user") {
-        expect(fresh.body).toMatchObject({
-          error: { code: "UNAUTHORIZED" },
-        });
-      }
-      const after = await readRunActivityBookkeepingFixture(f.run.runId);
-      if (kind === "user") {
-        // The hold retains the pre-existing snapshot, not the stale provider
-        // output; organization deletion still removes the row outright.
-        expect(after).toMatchObject({
-          messageCursor: prior.messageCursor,
-          summary: null,
-          summaryRevision: null,
-        });
-      } else {
-        expect(after).toBeUndefined();
-      }
-      expect(inputs).toHaveLength(1);
-    },
-  );
 
   it("fences an expired owner's completion after a replacement claim succeeds", async () => {
     const f = await fixture();
@@ -838,47 +522,6 @@ describe("thread activity summary", () => {
     expect(replacement.messages[0]?.text).toBe(
       "Checking the current launch materials",
     );
-  });
-
-  it("invalidates a cached phrase for a visible steering message without a tool event", async () => {
-    const f = await fixture();
-    const inputs = provider();
-    const first = await summarize(f.actor, f.run);
-    await chat.requestSendEvent(
-      f.actor,
-      {
-        agentId: f.agentId,
-        threadId: f.run.threadId,
-        prompt: "Focus on sales owners",
-        clientEventId: randomUUID(),
-      },
-      [201],
-    );
-    await flushWaitUntilForTest();
-    // A queued message is not context yet, so the stored batch still describes
-    // the run even once the attempt interval has elapsed.
-    await advanceRunActivityClockFixture(f.run.runId, 16_000);
-    await expect(summarize(f.actor, f.run)).resolves.toStrictEqual(first);
-    expect(inputs).toHaveLength(1);
-    const reserved = await runs.reserveRunnerActiveInputs(
-      f.sandboxToken,
-      f.run.runId,
-    );
-    if (reserved.outcome !== "reserved") {
-      throw new Error("Expected active input reservation");
-    }
-    await runs.recordRunnerActiveInputDelivery(
-      f.sandboxToken,
-      f.run.runId,
-      reserved.deliveryId,
-    );
-    // Delivery makes the steering message visible context and invalidates it.
-    await summarize(f.actor, f.run);
-    expect(inputs).toHaveLength(2);
-    expect(inputs[1]!.messages).toContainEqual({
-      role: "user",
-      content: "Focus on sales owners",
-    });
   });
 
   it.each(["cancel", "complete", "delete"] as const)(
@@ -1167,38 +810,24 @@ describe("thread activity summary", () => {
     expect(inputs).toHaveLength(1);
   }, 15_000);
 
-  it("keeps eight bounded visible messages including the current task", async () => {
+  it("sends the bounded current task as the only message", async () => {
     const prompt = "current task ".repeat(100);
     const f = await fixture(prompt);
     const inputs = provider();
-    await deliver(
-      f,
-      Array.from({ length: 10 }, (_, index) => {
-        return {
-          type: "assistant",
-          sequenceNumber: index,
-          message: {
-            content: [
-              {
-                type: "text",
-                text: `Update ${index}: ` + "context ".repeat(150),
-              },
-            ],
-          },
-        };
-      }),
-    );
+    await deliver(f, [
+      {
+        type: "assistant",
+        sequenceNumber: 0,
+        message: {
+          content: [{ type: "text", text: "Public commentary" }],
+        },
+      },
+    ]);
     await summarize(f.actor, f.run);
-    expect(inputs[0]!.messages).toHaveLength(8);
-    expect(inputs[0]!.messages[0]).toStrictEqual({
-      role: "user",
-      content: prompt.slice(0, 700),
-    });
-    expect(
-      inputs[0]!.messages.every((message) => {
-        return Array.from(message.content).length <= 700;
-      }),
-    ).toBeTruthy();
+    expect(inputs[0]!.messages).toStrictEqual([
+      { role: "user", content: prompt.trim().slice(0, 700) },
+    ]);
+    expect(inputs[0]!.activity[0]?.excerpt).toBe("Public commentary");
   });
 
   it("captures activity and delivers messages independently of Axiom ingestion", async () => {
@@ -1382,74 +1011,96 @@ describe("thread activity summary", () => {
     expect(inputs).toHaveLength(2);
   });
 
-  it("degrades a contended snapshot read, keeps normal publication, and excludes expired evidence", async () => {
+  it("treats a run without an active row as having no activity", async () => {
     const f = await fixture();
     const inputs = provider();
-    await summarize(f.actor, f.run);
-    // A stalled Postgres writer is an infrastructure condition, not a user API.
-    const held = await holdRunActivityFixture(f.run.runId, context.signal);
-    onTestFinished(async () => {
-      held.release();
-      await held.done;
-    });
-    await deliver(f, [
-      {
-        type: "assistant",
-        sequenceNumber: 0,
-        message: {
-          content: [
-            {
-              type: "text",
-              text: "Normal message survives the optional failure",
-            },
-          ],
-        },
-      },
-    ]);
+    // A run created by an older API during rollout has no active row.
+    await deleteActiveAgentRunFixture(f.run.runId);
+    await deliver(f, [tool(0)]);
+    await expect(
+      readActiveAgentRunFixture(f.run.runId),
+    ).resolves.toBeUndefined();
     await expect(summarize(f.actor, f.run)).resolves.toStrictEqual({
       runId: f.run.runId,
-      status: "unavailable",
+      status: "ineligible",
       messages: [],
     });
-    held.release();
-    await held.done;
-    const page = await chat.listThreadEvents(f.actor, f.run.threadId);
-    expect(JSON.stringify(page.events)).toContain("Normal message survives");
-    await summarize(f.actor, f.run);
-    await advanceRunActivityClockFixture(f.run.runId, 24 * 60 * 60 * 1000 + 1);
-    await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
-      status: "unavailable",
-      messages: [],
-    });
-    expect(inputs).toHaveLength(1);
+    expect(inputs).toHaveLength(0);
   });
-  it("cleans expired snapshots through scoped maintenance", async () => {
+
+  it("keeps a cancelled running run's active row until its runner reports completion", async () => {
     const f = await fixture();
-    const inputs = provider();
-    await deliver(f, [tool(0, "old evidence")]);
-    await summarize(f.actor, f.run);
-    // Retention time is infrastructure-owned and cannot be advanced via user APIs.
-    await advanceRunActivityClockFixture(f.run.runId, 24 * 60 * 60 * 1000 + 1);
-    await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
-      status: "unavailable",
-      messages: [],
-    });
-    await accept(
-      setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
-        testCronCleanupSandboxesStateContract,
-      ).cleanup({
-        body: {
-          runIds: [f.run.runId],
-          chatThreadIds: [],
-          orgIds: [],
-          exportJobIds: [],
-        },
-      }),
-      [200],
+    await expect(readActiveAgentRunFixture(f.run.runId)).resolves.toMatchObject(
+      { chatThreadId: f.run.threadId },
+    );
+    await runs.requestCancelRun(f.actor, f.run.runId, [200]);
+    // The runner is still recovering: its row, heartbeat and activity remain.
+    await deliver(f, [tool(0)]);
+    await expect(readActiveAgentRunFixture(f.run.runId)).resolves.toMatchObject(
+      { chatThreadId: f.run.threadId },
     );
     await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
-      status: "available",
+      status: "ineligible",
+      messages: [],
     });
-    expect(inputs[1]!.activity).toStrictEqual([]);
+    await webhooks.requestAgentComplete(
+      { runId: f.run.runId, exitCode: 1, error: "Run cancelled" },
+      f.headers,
+      [200],
+    );
+    await flushWaitUntilForTest();
+    await expect(
+      readActiveAgentRunFixture(f.run.runId),
+    ).resolves.toBeUndefined();
+  });
+
+  it("releases a queued run's active row when it is cancelled", async () => {
+    const f = await fixture();
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    const queued = await chat.requestSendEvent(
+      f.actor,
+      { agentId: f.agentId, prompt: "Wait for capacity" },
+      [201],
+    );
+    if (queued.status !== 201 || !queued.body.runId) {
+      throw new Error("Expected queued run identity");
+    }
+    expect(queued.body.status).toBe("queued");
+    const queuedRunId = queued.body.runId;
+    await expect(readActiveAgentRunFixture(queuedRunId)).resolves.toMatchObject(
+      { chatThreadId: queued.body.threadId },
+    );
+    await runs.requestCancelRun(f.actor, queuedRunId, [200]);
+    await expect(
+      readActiveAgentRunFixture(queuedRunId),
+    ).resolves.toBeUndefined();
+  });
+
+  it("releases a silent terminal run's row after the recovery grace", async () => {
+    const f = await fixture();
+    await runs.requestCancelRun(f.actor, f.run.runId, [200]);
+    const sweep = async () => {
+      await accept(
+        setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
+          testCronCleanupSandboxesStateContract,
+        ).cleanup({
+          body: {
+            runIds: [f.run.runId],
+            chatThreadIds: [],
+            orgIds: [],
+            exportJobIds: [],
+          },
+        }),
+        [200],
+      );
+    };
+    await sweep();
+    await expect(readActiveAgentRunFixture(f.run.runId)).resolves.toBeDefined();
+    // The run's completion and last heartbeat are both older than the grace.
+    mockNow(now() + CANCELLATION_RECOVERY_STALE_AFTER_MS + 1);
+    await sweep();
+    await expect(
+      readActiveAgentRunFixture(f.run.runId),
+    ).resolves.toBeUndefined();
   });
 });

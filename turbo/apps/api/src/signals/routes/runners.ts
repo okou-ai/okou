@@ -36,6 +36,7 @@ import {
   type RunStatus,
 } from "@okouai/api-contracts/contracts/runs";
 import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agents } from "@okouai/db/schema/agent";
@@ -110,6 +111,8 @@ import { generateSandboxToken } from "../auth/tokens";
 import { decryptPersistentSecretsMap } from "../services/crypto.utils";
 import {
   COMPUTE_CLOSURE_ERROR,
+  neverStartedRunIds,
+  releaseActiveAgentRuns,
   transitionAgentRunsToTerminal,
 } from "../services/agent-run-terminal-transition.service";
 import { dispatchCompleteSideEffects$ } from "../services/agent-run-lifecycle.service";
@@ -544,10 +547,6 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     body.data.heldWorkspaceStates,
   );
   const admittableProfiles = body.data.admittableProfiles;
-  // Older Runner heartbeats omit this field during fleet drain and rollback.
-  // Remove this API fallback only after those senders leave the supported
-  // Runner fleet and rollback floor (see #36867).
-  const activeReuseProducers = body.data.activeReuseProducers ?? [];
   const currentDate = nowDate();
   const snapshotOrder = {
     generation: body.data.snapshotGeneration,
@@ -570,7 +569,7 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       admittableProfiles,
       heldSandboxStates,
       heldWorkspaceStates,
-      activeReuseProducers,
+      activeReuseProducers: body.data.activeReuseProducers,
       mode: body.data.mode,
       lastSeenAt: currentDate,
     })
@@ -589,7 +588,7 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         admittableProfiles,
         heldSandboxStates,
         heldWorkspaceStates,
-        activeReuseProducers,
+        activeReuseProducers: body.data.activeReuseProducers,
         mode: body.data.mode,
         lastSeenAt: currentDate,
       },
@@ -1441,7 +1440,15 @@ async function transitionClaimedJobToRunning(
         },
       );
       signal.throwIfAborted();
-      return decodeClaimTransitionResult(result);
+      const transition = decodeClaimTransitionResult(result);
+      if (transition.status === "claimed") {
+        await tx
+          .update(activeAgentRuns)
+          .set({ lastHeartbeatAt: transition.claimedAt })
+          .where(eq(activeAgentRuns.runId, runId));
+        signal.throwIfAborted();
+      }
+      return transition;
     });
   });
 }
@@ -1497,7 +1504,7 @@ async function failPoisonQueuedJob(
       }
 
       const failedAt = nowDate();
-      const [updatedRun] = await transitionAgentRunsToTerminal(tx, {
+      const transitions = await transitionAgentRunsToTerminal(tx, {
         values: {
           status: "failed",
           completedAt: failedAt,
@@ -1506,13 +1513,14 @@ async function failPoisonQueuedJob(
         conditions: [eq(agentRuns.id, runId), eq(agentRuns.status, "pending")],
       });
       signal.throwIfAborted();
-      if (!updatedRun) {
+      if (transitions.length === 0) {
         throw new Error("Locked pending run was not failed");
       }
 
       await tx.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, runId));
       signal.throwIfAborted();
 
+      await releaseActiveAgentRuns(tx, neverStartedRunIds(transitions));
       return { status: "failed" as const };
     });
   });
