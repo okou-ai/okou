@@ -177,6 +177,7 @@ import { connectors } from "@okouai/db/schema/connector";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import type {
@@ -9306,6 +9307,37 @@ async function commitValidatedPreparedLaunch(
   });
 }
 
+/**
+ * The admitted launch transaction's tail. The active-row insert must stay the
+ * transaction's last statement: the per-thread admission index makes it wait
+ * on another transaction's uncommitted release of the same thread, which must
+ * not then need a lock this transaction already owns.
+ */
+async function finishAdmittedLaunch(
+  tx: DbTransaction,
+  args: PreparedCommitPreparedLaunchArgs,
+  run: RunRecord,
+): Promise<void> {
+  await args.admissionTiming.measureLeaf("pi_memory_schedule", () => {
+    return requestPiMemoryStage1Day(tx, {
+      ...run,
+      userId: args.createArgs.userId,
+      orgId: args.createArgs.orgId,
+      chatThreadId: args.createArgs.chatThreadId ?? null,
+      triggerSource: args.context.body.triggerSource,
+      launchSnapshot: args.context.launchSnapshot,
+      completedAt: null,
+    });
+  });
+  await tx.insert(activeAgentRuns).values({
+    runId: run.id,
+    orgId: args.createArgs.orgId,
+    userId: args.createArgs.userId,
+    chatThreadId: args.createArgs.chatThreadId ?? null,
+    lastHeartbeatAt: run.createdAt,
+  });
+}
+
 async function commitPreparedLaunch(
   args: CommitPreparedLaunchArgs,
 ): Promise<AtomicLaunchCommitCompletion> {
@@ -9364,17 +9396,7 @@ async function commitPreparedLaunch(
           "kind" in result &&
           (result.kind === "pending" || result.kind === "queued")
         ) {
-          await admissionTiming.measureLeaf("pi_memory_schedule", () => {
-            return requestPiMemoryStage1Day(tx, {
-              ...result.run,
-              userId: preparedArgs.createArgs.userId,
-              orgId: preparedArgs.createArgs.orgId,
-              chatThreadId: preparedArgs.createArgs.chatThreadId ?? null,
-              triggerSource: preparedArgs.context.body.triggerSource,
-              launchSnapshot: preparedArgs.context.launchSnapshot,
-              completedAt: null,
-            });
-          });
+          await finishAdmittedLaunch(tx, attemptArgs, result.run);
         }
         return { result, admissionLockHeldStartedAt };
       })().finally(() => {
