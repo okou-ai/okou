@@ -335,14 +335,14 @@ export async function validatePermanentDiscordFoundation(
       [{ guild_id: guildB }],
     );
 
-    // Canonical thread erasure also removes ingress/context without revoking the binding.
+    // Canonical thread deletion also removes ingress/context without revoking the binding.
     await client.query("DELETE FROM chat_threads WHERE id = $1", [threads[2]]);
     assert.equal(await countIds("discord_chat_thread_routes", routes), 0);
     assert.equal(await countIds("discord_chat_ingress", ingress), 0);
     assert.equal(await countIds("chat_discord_context", contexts), 0);
     assert.equal(await countIds("discord_org_connections", connections), 1);
     console.log(
-      "Discord foundation ownership, dedupe, claim and erasure invariants passed",
+      "Discord foundation ownership, dedupe, claim and deletion invariants passed",
     );
   } finally {
     await client.query("ROLLBACK");

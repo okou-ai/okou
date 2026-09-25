@@ -113,7 +113,7 @@ async function webhook(
   await flushWaitUntilForTest();
 }
 
-test("creator erasure preserves shared Access and another member's SSH host", async () => {
+test("creator deletion preserves shared Access and another member's SSH host", async () => {
   useSecretKmsProbe();
   const creator = await owner();
   const shared = await createShared();
@@ -167,7 +167,7 @@ test("creator erasure preserves shared Access and another member's SSH host", as
   ).toContainEqual(expect.objectContaining({ id: host.id }));
 });
 
-test("organization erasure removes shared Access after its member SSH references", async () => {
+test("organization deletion removes shared Access after its member SSH references", async () => {
   useSecretKmsProbe();
   const creator = await owner();
   const shared = await createShared();

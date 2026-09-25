@@ -522,7 +522,6 @@ describe("X daily resource usage webhook", () => {
     // Cleanup can queue multiple database participants behind the same
     // settlement. Their exact count is an implementation detail; the contract
     // here is that cleanup reached the verified blocking chain before release.
-    // The durable capture runs first, so allow it to finish before cleanup.
     await expect
       .poll(gate.cleanupWaiterCount, { timeout: 10_000 })
       .toBeGreaterThanOrEqual(1);
@@ -939,9 +938,8 @@ describe("X daily resource usage webhook", () => {
       await gate.withAcquisitionAttemptTracking(async () => {
         await callbacks.requestClerkWebhook("{}", {}, [200]);
       });
-      // User deletion first captures its durable erasure inventory, which can
-      // finish after the webhook responds. Wait for this cleanup's own lock
-      // attempt before observing its blocked database participant.
+      // User cleanup can finish after the webhook responds. Wait for this
+      // cleanup's own lock attempt before observing its blocked participant.
       await gate.acquisitionAttempted;
       await expect.poll(gate.waiterCount).toBeGreaterThanOrEqual(1);
 

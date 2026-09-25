@@ -6891,7 +6891,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
   });
 
   describe("verified user.deleted cleanup", () => {
-    async function prepareUserErasure() {
+    async function prepareUserDeletion() {
       const bdd = createBddApi(context);
       const runs = createRunsApi(context);
       api.configureClerkWebhookSecret();
@@ -6916,7 +6916,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
     }
 
     async function startUserDeletion(
-      fixture: Awaited<ReturnType<typeof prepareUserErasure>>,
+      fixture: Awaited<ReturnType<typeof prepareUserDeletion>>,
     ) {
       // The external membership lookup must still see the surviving peer,
       // independently of which actor made the last setup request.
@@ -6936,7 +6936,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
     }
 
     async function expectSurvivingOrganization(
-      fixture: Awaited<ReturnType<typeof prepareUserErasure>>,
+      fixture: Awaited<ReturnType<typeof prepareUserDeletion>>,
       s3CallCountBeforeCleanup: number,
     ) {
       const firstCleanupS3Prefix = commandInput(
@@ -6958,7 +6958,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
     }
 
     it("waits for usage compaction before deleting a user's runs and runner token", async () => {
-      const fixture = await prepareUserErasure();
+      const fixture = await prepareUserDeletion();
       const { runs, runnerGroup, doomed, sharedAgent } = fixture;
       const doomedKey = await runs.createCliToken(doomed);
       const doomedBearer = `Bearer ${doomedKey.token}`;
@@ -7077,7 +7077,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
     });
 
     it("deletes a user's connector state while preserving peer accounts and grants", async () => {
-      const fixture = await prepareUserErasure();
+      const fixture = await prepareUserDeletion();
       const { runs, doomed, peer, sharedAgent, doomedAgent } = fixture;
       const connectors = createConnectorBddApi(context);
       const userConfig = createUserConfigBddApi(context);
@@ -7203,7 +7203,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
     });
 
     it("keeps the peer's pending builtin and custom OAuth states usable during user deletion", async () => {
-      const fixture = await prepareUserErasure();
+      const fixture = await prepareUserDeletion();
       const { doomed, peer, sharedAgent } = fixture;
       const connectors = createConnectorBddApi(context);
       mockSlackConnectorOAuth();
@@ -7248,7 +7248,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
     });
 
     it("removes deleted-user integration links while preserving the shared organization", async () => {
-      const fixture = await prepareUserErasure();
+      const fixture = await prepareUserDeletion();
       const { doomed, sharedAgent, doomedAgent } = fixture;
       const gh = createGithubBddApi(context);
       acceptGithubGrantRevocations();
