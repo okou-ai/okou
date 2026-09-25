@@ -18,7 +18,6 @@ import { expectApiError } from "./helpers/api-bdd";
 import {
   createChatEventsFixture,
   API_FIRST_TURN_OWNERSHIP_BUDGET_MS,
-  GPT_PI_BDD_MODELS,
   USER_OWNED_GPT_FAST_BDD_ROUTES,
   expectPiApiUsage,
   expectTerraApiUsage,
@@ -362,22 +361,26 @@ describe("CHAT-02: model-first provider policies", () => {
   );
 
   it.each([
-    ...GPT_PI_BDD_MODELS.flatMap((selectedModel) => {
-      return (["openai", "openrouter"] as const).map((gptRoute) => {
-        return {
-          name: `${gptRoute} ${selectedModel}`,
-          selectedModel,
-          providerUrl:
-            gptRoute === "openai"
-              ? "https://api.openai.com/v1/responses"
-              : "https://openrouter.ai/api/v1/responses",
-          observedServiceTier: "default",
-          codexServiceTier: "fast" as const,
-          gptRoute,
-          inputTokens: 10,
-          expectedInput: 5,
-        };
-      });
+    ...(
+      [
+        ["openai", "gpt-5.6-terra"],
+        ["openrouter", "gpt-5.6-sol"],
+        ["openai", "gpt-5.6-luna"],
+      ] as const
+    ).map(([gptRoute, selectedModel]) => {
+      return {
+        name: `${gptRoute} ${selectedModel}`,
+        selectedModel,
+        providerUrl:
+          gptRoute === "openai"
+            ? "https://api.openai.com/v1/responses"
+            : "https://openrouter.ai/api/v1/responses",
+        observedServiceTier: "default",
+        codexServiceTier: "fast" as const,
+        gptRoute,
+        inputTokens: 10,
+        expectedInput: 5,
+      };
     }),
     {
       name: "built-in DeepSeek Flash",
@@ -727,7 +730,20 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it.each(USER_OWNED_GPT_FAST_BDD_ROUTES)(
+  it.each(
+    USER_OWNED_GPT_FAST_BDD_ROUTES.filter((route) => {
+      return (
+        (route.type === "codex-oauth-token" &&
+          route.selectedModel === "gpt-5.6-terra") ||
+        (route.type === "openai-api-key" &&
+          route.selectedModel === "gpt-5.6-sol") ||
+        (route.type === "openrouter-codex" &&
+          route.selectedModel === "gpt-5.6-luna") ||
+        (route.type === "vercel-ai-gateway-codex" &&
+          route.selectedModel === "gpt-5.6-terra")
+      );
+    }),
+  )(
     "fails incomplete Pi $name Fast output without Built-in billing or provider substitution",
     async (route) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();

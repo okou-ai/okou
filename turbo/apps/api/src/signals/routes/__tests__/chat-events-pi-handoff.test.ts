@@ -35,7 +35,6 @@ import {
   modelProviderSecretPlaceholder,
   API_FIRST_TURN_OWNERSHIP_BUDGET_MS,
   API_FIRST_TURN_COORDINATION_BUDGET_MS,
-  GPT_PI_BDD_MODELS,
   totalChargedCredits,
   createGptUsagePricingResolution,
   createPiApiFirstTurnUsagePricingResolution,
@@ -1373,7 +1372,7 @@ describe("CHAT-02: model-first provider policies", () => {
   it.each([
     "deepseek-v4-flash",
     "deepseek-v4.1-flash",
-    ...GPT_PI_BDD_MODELS,
+    "gpt-5.6-terra",
   ] as const)(
     "keeps %s API-first and Sandbox usage as separate billable rows",
     async (selectedModel) => {

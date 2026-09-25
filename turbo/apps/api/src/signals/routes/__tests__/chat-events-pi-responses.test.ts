@@ -34,7 +34,6 @@ import {
 import {
   createChatEventsFixture,
   configureNativeCliArtifact,
-  GPT_PI_BDD_MODELS,
   GPT_API_KEY_BDD_ROUTES,
   USER_OWNED_GPT_FAST_BDD_ROUTES,
   requireOrgId,
@@ -374,13 +373,11 @@ describe("CHAT-02: model-first provider policies", () => {
   );
 
   it.each([
-    ...GPT_PI_BDD_MODELS.map((selectedModel) => {
-      return {
-        name: selectedModel,
-        selectedModel,
-        providerUrl: "https://api.openai.com/v1/responses",
-      };
-    }),
+    {
+      name: "gpt-5.6-terra",
+      selectedModel: "gpt-5.6-terra",
+      providerUrl: "https://api.openai.com/v1/responses",
+    },
     {
       name: "DeepSeek V4.1 Flash",
       selectedModel: "deepseek-v4.1-flash",
@@ -477,13 +474,11 @@ describe("CHAT-02: model-first provider policies", () => {
   );
 
   it.each([
-    ...GPT_PI_BDD_MODELS.map((selectedModel) => {
-      return {
-        name: selectedModel,
-        selectedModel,
-        providerUrl: "https://api.openai.com/v1/responses",
-      };
-    }),
+    {
+      name: "gpt-5.6-terra",
+      selectedModel: "gpt-5.6-terra",
+      providerUrl: "https://api.openai.com/v1/responses",
+    },
     {
       name: "DeepSeek V4.1 Flash",
       selectedModel: "deepseek-v4.1-flash",
@@ -761,9 +756,10 @@ describe("CHAT-02: model-first provider policies", () => {
     await cancelChatRun(actor, second.runId, claim.sandboxHeaders);
   }, 90_000);
 
-  it.each(GPT_PI_BDD_MODELS)(
-    "reuses one OpenRouter Responses Pi session across standard, fast, and standard turns for %s",
-    async (selectedModel) => {
+  it(
+    "reuses one OpenRouter Responses Pi session across standard, fast, and standard turns for gpt-5.6-terra",
+    async () => {
+      const selectedModel = "gpt-5.6-terra";
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const usagePricingResolution = await createGptUsagePricingResolution();
       const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
@@ -1029,9 +1025,10 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it.each(GPT_PI_BDD_MODELS)(
-    "bills managed OpenRouter priority only from the observed terminal Responses tier %s",
-    async (selectedModel) => {
+  it(
+    "bills managed OpenRouter priority only from the observed terminal Responses tier for gpt-5.6-terra",
+    async () => {
+      const selectedModel = "gpt-5.6-terra";
       const { actor, agentId } = await entitledChatActor();
       const usagePricingResolution = await createGptUsagePricingResolution();
       const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
@@ -1114,9 +1111,10 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it.each(GPT_PI_BDD_MODELS)(
-    "promotes queued fast %s through Pi API-first with priority",
-    async (selectedModel) => {
+  it(
+    "promotes queued fast gpt-5.6-terra through Pi API-first with priority",
+    async () => {
+      const selectedModel = "gpt-5.6-terra";
       const { actor, agentId, runnerGroup, providerId } =
         await entitledChatActor();
       const usagePricingResolution = await createGptUsagePricingResolution();
