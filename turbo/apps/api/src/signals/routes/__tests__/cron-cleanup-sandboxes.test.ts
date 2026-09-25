@@ -1076,7 +1076,7 @@ describe("sandbox cleanup", () => {
     });
   });
 
-  it("acknowledges an event projection when root deletion wins the run-row order", async () => {
+  it("acknowledges an event projection while root deletion holds the run row", async () => {
     mockNow(THREADLESS_TEST_NOW_MS);
     const fixture = await trackRun(
       insertRunFixture({
@@ -1120,14 +1120,15 @@ describe("sandbox cleanup", () => {
       headers,
       [200],
     );
-    await expect.poll(deleting.blockedWaiterCount).toBeGreaterThan(0);
-    deleting.release();
-    await deleting.done;
+    // The output path takes no run lock, so it does not queue behind the
+    // held deletion.
     const eventResponse = await eventRequest;
     expect(eventResponse).toMatchObject({
       status: 200,
       body: { received: 1, firstSequence: 0, lastSequence: 0 },
     });
+    deleting.release();
+    await deleting.done;
   });
 
   it("skips deletion when the threadless state changes before the write transaction", async () => {
