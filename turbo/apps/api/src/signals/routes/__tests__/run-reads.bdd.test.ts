@@ -174,6 +174,17 @@ async function completeRun(
   );
 }
 
+async function finishCancelledRun(
+  runId: string,
+  sandboxToken: string,
+): Promise<void> {
+  await webhooks.requestAgentComplete(
+    { runId, exitCode: 1, error: "Run cancelled" },
+    sandboxHeaders(sandboxToken),
+    [200],
+  );
+}
+
 async function completeRunAfter(
   actor: ApiTestUser,
   runId: string,
@@ -504,7 +515,7 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
       "Invalid until timestamp format",
     );
 
-    await api.claimRunnerJob(runA.runId);
+    const claimA = await api.claimRunnerJob(runA.runId);
     const claimB = await api.claimRunnerJob(runB.runId);
     await completeRun(runB.runId, claimB.sandboxToken);
 
@@ -594,7 +605,7 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     expect(hiddenFromActor.body.error.message).toBe("Agent run not found");
     const memberDetail = await api.requestReadRun(member, runM.runId, [200]);
     expect(memberDetail.body).toMatchObject({ runId: runM.runId });
-    await api.claimRunnerJob(runM.runId);
+    const claimM = await api.claimRunnerJob(runM.runId);
 
     // auth-me refreshes the caller's user-cache email, which the queue
     // surfaces for owner entries.
@@ -669,6 +680,10 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     await api.requestCancelRun(member, queuedForeign.runId, [200]);
     await api.requestCancelRun(actor, runA.runId, [200]);
     await api.requestCancelRun(member, runM.runId, [200]);
+    // Started runs still occupy capacity until the runner reports completion.
+    expect((await api.readRunQueue(actor)).body.concurrency.active).toBe(2);
+    await finishCancelledRun(runA.runId, claimA.sandboxToken);
+    await finishCancelledRun(runM.runId, claimM.sandboxToken);
 
     const drained = await api.readRunQueue(actor);
     expect(drained.body.concurrency.active).toBe(0);
@@ -1474,8 +1489,9 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
     if (byAgent.status !== 201) {
       throw new Error("Expected the Agent-backed run create to succeed");
     }
-    await api.claimRunnerJob(byAgent.body.runId);
+    const byAgentClaim = await api.claimRunnerJob(byAgent.body.runId);
     await api.requestCancelRun(actor, byAgent.body.runId, [200]);
+    await finishCancelledRun(byAgent.body.runId, byAgentClaim.sandboxToken);
 
     const strictMemory = await api.createDirectRun(actor, {
       agentId: compose.agentId,
@@ -1504,6 +1520,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       },
     ]);
     await api.requestCancelRun(actor, strictMemory.runId, [200]);
+    await finishCancelledRun(strictMemory.runId, strictClaim.sandboxToken);
 
     const customCanonical = await api.createDirectRun(actor, {
       agentId: compose.agentId,
@@ -1540,6 +1557,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       },
     ]);
     await api.requestCancelRun(actor, customCanonical.runId, [200]);
+    await finishCancelledRun(customCanonical.runId, customClaim.sandboxToken);
 
     const continued = await api.createDirectRun(actor, {
       sessionId: r1.sessionId,
@@ -1573,6 +1591,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       missingRootPolicy: "preserveParentVersion",
     });
     await api.requestCancelRun(actor, continued.runId, [200]);
+    await finishCancelledRun(continued.runId, continuedClaim.sandboxToken);
   });
 });
 
