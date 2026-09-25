@@ -39,7 +39,7 @@ async function resolveNonDefaultAgentLabel(args: {
     .from(agents)
     .where(eq(agents.id, args.composeId))
     .limit(1);
-  return agent?.displayName ?? agent?.name ?? undefined;
+  return agent?.displayName ?? agent?.name;
 }
 
 async function resolveOrgDefaultModelProviderSelectedModel(

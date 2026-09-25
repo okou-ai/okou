@@ -1068,8 +1068,8 @@ describe("canonical Discord ingress", () => {
     await flushWaitUntilForTest();
     expect(noticesTo(dmId)).toHaveLength(1);
     expect(noticesTo(dmId)[0]?.content).toContain("/okou connect");
-    // A relay retry of the same DM and a follow-up DM send nothing more.
-    await postDiscordMessage(context, first, `relay-retry:${first.id}`);
+    // A relay retry of the same event and a follow-up DM send nothing more.
+    await postDiscordMessage(context, first);
     await postDiscordMessage(context, strangerDm("are you there?"));
     await flushWaitUntilForTest();
     expect(noticesTo(dmId)).toHaveLength(1);

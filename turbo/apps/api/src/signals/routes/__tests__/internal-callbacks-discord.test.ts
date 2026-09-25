@@ -915,4 +915,84 @@ describe("canonical Discord terminal replies", () => {
     await recoverReplies(started.actor);
     expect(sentContents(started)).toStrictEqual(contents);
   });
+
+  it("sends one notice when several parts cannot be confirmed", async () => {
+    const started = await startDiscordRun();
+    const claim = await claimRun(started.actor, started.runId);
+    let sendRequests = 0;
+    started.provider.state.beforeMessageCreate = () => {
+      sendRequests += 1;
+      return undefined;
+    };
+    // Discord accepts the first two parts, but every receipt for them is lost.
+    const lostNonces = new Set<string>();
+    started.provider.state.afterMessageCreated = (message) => {
+      if (message.nonce !== undefined && lostNonces.size < 2) {
+        lostNonces.add(message.nonce);
+      }
+      return message.nonce !== undefined && lostNonces.has(message.nonce)
+        ? HttpResponse.json({ message: "Bad gateway" }, { status: 502 })
+        : undefined;
+    };
+    await completeRun({
+      runId: started.runId,
+      sandboxToken: claim.sandboxToken,
+      text: "Several parts of this answer lose their receipts. ".repeat(120),
+    });
+    const contents = sentContents(started);
+    expect(
+      contents.filter((content) => {
+        return content === uncertainPartNotice(started);
+      }),
+    ).toHaveLength(1);
+    expect(contents.at(-1)).toBe(uncertainPartNotice(started));
+    // Each lost part: one send plus two replays; every other part: one send.
+    expect(sendRequests).toBe(contents.length + 4);
+  });
+
+  it("keeps one notice when a recovery claim finishes an interrupted reply", async () => {
+    const started = await startDiscordRun();
+    const claim = await claimRun(started.actor, started.runId);
+    let sendRequests = 0;
+    started.provider.state.beforeMessageCreate = () => {
+      sendRequests += 1;
+      // The second part's first send is rate-limited, ending this claim after
+      // the first part became unconfirmed and its notice was recorded.
+      return sendRequests === 4
+        ? HttpResponse.json(
+            { message: "Rate limited", retry_after: 1, global: false },
+            { status: 429 },
+          )
+        : undefined;
+    };
+    let lostNonce: string | undefined;
+    started.provider.state.afterMessageCreated = (message) => {
+      lostNonce ??= message.nonce;
+      return message.nonce === lostNonce
+        ? HttpResponse.json({ message: "Bad gateway" }, { status: 502 })
+        : undefined;
+    };
+    await completeRun({
+      runId: started.runId,
+      sandboxToken: claim.sandboxToken,
+      text: "An interrupted answer that a later claim completes. ".repeat(120),
+    });
+    expect(started.provider.sentMessages).toHaveLength(1);
+    expect(sendRequests).toBe(4);
+    mockNow(now() + 121_000);
+    await recoverReplies(started.actor);
+    const contents = sentContents(started);
+    expect(
+      contents.filter((content) => {
+        return content === uncertainPartNotice(started);
+      }),
+    ).toHaveLength(1);
+    expect(contents.at(-1)).toBe(uncertainPartNotice(started));
+    // The recovery claim sends each remaining part and the notice once and
+    // never repeats the unconfirmed first part.
+    expect(sendRequests).toBe(4 + contents.length - 1);
+    mockNow(now() + 121_000);
+    await recoverReplies(started.actor);
+    expect(sentContents(started)).toStrictEqual(contents);
+  });
 });

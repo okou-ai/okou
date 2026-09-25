@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
-import { discordGatewayReceipts } from "@okouai/db/schema/discord-gateway-receipt";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import type { DiscordMessageCreate } from "../../lib/discord-gateway-event";
 import { nowDate } from "../../lib/time";
@@ -9,6 +8,7 @@ import { writeDb$ } from "../external/db";
 import { discordClient } from "../external/discord-client";
 
 const NOTICE_WINDOW_MS = 60 * 60 * 1000;
+const RECENT_DM_MESSAGES = 50;
 
 type DiscordDmAdmissionNoticeKind = "not-connected" | "selection-required";
 
@@ -20,8 +20,9 @@ function noticeContent(kind: DiscordDmAdmissionNoticeKind): string {
 
 /**
  * Tells a DM sender why a message did not start a task. Discord has no
- * ephemeral messages outside interactions, so this is an ordinary bot DM, sent
- * at most once per sender, notice kind and hour.
+ * ephemeral messages outside interactions, so this is an ordinary bot DM. The
+ * DM itself records whether the notice went out in the last hour, so Okou
+ * stores nothing about senders who have no connection.
  */
 export const sendDiscordDmAdmissionNotice$ = command(
   async (
@@ -35,11 +36,10 @@ export const sendDiscordDmAdmissionNotice$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const { message } = args;
-    const db = set(writeDb$);
     if (args.kind === "not-connected") {
       // A binding that exists but no longer verifies (for example, while the
       // feature is off for its org) must not advertise setup steps.
-      const [connection] = await db
+      const [connection] = await set(writeDb$)
         .select({ id: discordOrgConnections.id })
         .from(discordOrgConnections)
         .where(eq(discordOrgConnections.discordUserId, message.author.id))
@@ -49,27 +49,6 @@ export const sendDiscordDmAdmissionNotice$ = command(
         return;
       }
     }
-    // The opaque digest names no sender; it only rate-limits this notice.
-    const eventDigest = createHash("sha256")
-      .update(
-        JSON.stringify([
-          args.applicationId,
-          "DM_ADMISSION_NOTICE",
-          args.kind,
-          message.author.id,
-          Math.floor(nowDate().getTime() / NOTICE_WINDOW_MS),
-        ]),
-      )
-      .digest("hex");
-    const [claimed] = await db
-      .insert(discordGatewayReceipts)
-      .values({ eventDigest, createdAt: nowDate() })
-      .onConflictDoNothing()
-      .returning({ eventDigest: discordGatewayReceipts.eventDigest });
-    signal.throwIfAborted();
-    if (!claimed) {
-      return;
-    }
     // Reply only in the sender's own one-to-one DM with the bot.
     const channel = await discordClient.fetchDiscordChannel(
       { botToken: args.botToken, channelId: message.channel_id },
@@ -77,34 +56,61 @@ export const sendDiscordDmAdmissionNotice$ = command(
     );
     signal.throwIfAborted();
     if (
-      channel.kind === "ok" &&
-      (channel.data.id !== message.channel_id ||
-        channel.data.type !== 1 ||
-        channel.data.guild_id !== undefined ||
-        channel.data.recipients?.length !== 1 ||
-        channel.data.recipients[0]?.id !== message.author.id)
+      channel.kind !== "ok" ||
+      channel.data.id !== message.channel_id ||
+      channel.data.type !== 1 ||
+      channel.data.guild_id !== undefined ||
+      channel.data.recipients?.length !== 1 ||
+      channel.data.recipients[0]?.id !== message.author.id
     ) {
       return;
     }
-    const sent =
-      channel.kind === "ok"
-        ? await discordClient.createDiscordMessage(
-            {
-              botToken: args.botToken,
-              channelId: message.channel_id,
-              content: noticeContent(args.kind),
-              // A retried send in this window returns the original notice.
-              nonce: eventDigest.slice(0, 25),
-            },
-            signal,
-          )
-        : channel;
+    const content = noticeContent(args.kind);
+    // Only the bot's own notices in this DM are inspected; nothing read here
+    // reaches a run. An unreadable DM sends nothing rather than risk spam.
+    const recent = await discordClient.fetchDiscordMessages(
+      {
+        botToken: args.botToken,
+        channelId: message.channel_id,
+        limit: RECENT_DM_MESSAGES,
+      },
+      signal,
+    );
     signal.throwIfAborted();
-    if (sent.kind !== "ok") {
-      // Let a later DM in this window try again.
-      await db
-        .delete(discordGatewayReceipts)
-        .where(eq(discordGatewayReceipts.eventDigest, eventDigest));
+    const currentTime = nowDate().getTime();
+    if (
+      recent.kind !== "ok" ||
+      recent.data.some((entry) => {
+        return (
+          entry.channel_id === message.channel_id &&
+          entry.author.bot === true &&
+          entry.content === content &&
+          currentTime - Date.parse(entry.timestamp) < NOTICE_WINDOW_MS
+        );
+      })
+    ) {
+      return;
     }
+    await discordClient.createDiscordMessage(
+      {
+        botToken: args.botToken,
+        channelId: message.channel_id,
+        content,
+        // Concurrent DMs share this nonce, so Discord keeps one notice.
+        nonce: createHash("sha256")
+          .update(
+            JSON.stringify([
+              args.applicationId,
+              "DM_ADMISSION_NOTICE",
+              args.kind,
+              message.author.id,
+              Math.floor(currentTime / NOTICE_WINDOW_MS),
+            ]),
+          )
+          .digest("hex")
+          .slice(0, 25),
+      },
+      signal,
+    );
   },
 );

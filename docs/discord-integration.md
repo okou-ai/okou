@@ -139,12 +139,15 @@ Discord authorization source. See C's
 8. **Admission notices.** Slack answers an unconnected sender with an ephemeral
    `not_connected` notice. Discord has no ephemeral messages outside
    interactions, so a mention from an unconnected guild member gets no reply: a
-   public reply would expose that member's connection state to the channel.
-   `/okou connect` gives the same guidance privately. A bot DM from an
-   unconnected sender gets setup guidance, and a DM from a sender with several
-   connections and no saved choice gets `/okou org` guidance, each at most once
-   per sender and hour. A sender whose connection exists but no longer verifies
-   (for example, while the feature is off for that org) gets no notice.
+   public reply would expose that member's connection state to the channel,
+   and an unsolicited bot DM to someone who only mentioned the bot can be
+   blocked by privacy settings or read as spam. `/okou connect` gives the same
+   guidance privately. A bot DM from an unconnected sender gets setup guidance,
+   and a DM from a sender with several connections and no saved choice gets
+   `/okou org` guidance, each at most once per sender in any hour. The bot's own
+   earlier notice in that DM is the rate-limit record, so Okou stores nothing
+   about unconnected senders. A sender whose connection exists but no longer
+   verifies (for example, while the feature is off for that org) gets no notice.
 
 OAuth deferral and disabled rollout are project scope limits, not unavoidable
 Discord differences. The Gateway owner's initial single-shard scope is likewise
