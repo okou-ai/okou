@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.10](https://github.com/okou-ai/okou/compare/runner-provider-v0.3.9...runner-provider-v0.3.10) (2026-09-25)
+
+
+### Bug Fixes
+
+* retain runner affinity for active predecessor producers ([#36866](https://github.com/okou-ai/okou/issues/36866)) ([d90ba1e](https://github.com/okou-ai/okou/commit/d90ba1e7d4a7bc36c2c5f1abf168c1b1e83e657a))
+
 ## [0.3.9](https://github.com/okou-ai/okou/compare/runner-provider-v0.3.8...runner-provider-v0.3.9) (2026-09-25)
 
 ## [0.3.8](https://github.com/okou-ai/okou/compare/runner-provider-v0.3.7...runner-provider-v0.3.8) (2026-09-25)

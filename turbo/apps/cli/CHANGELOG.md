@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.364.0](https://github.com/okou-ai/okou/compare/cli-v9.363.2...cli-v9.364.0) (2026-09-25)
+
+
+### Features
+
+* **browser:** support native radio groups ([#36827](https://github.com/okou-ai/okou/issues/36827)) ([2fcfef5](https://github.com/okou-ai/okou/commit/2fcfef5399320ee7c94e76db79f4ce0fc9c4266f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.511.0
+    * @okouai/core bumped to 8.710.7
+    * @okouai/pi-agent-runtime bumped to 1.40.19
+
 ## [9.363.2](https://github.com/okou-ai/okou/compare/cli-v9.363.1...cli-v9.363.2) (2026-09-25)
 
 

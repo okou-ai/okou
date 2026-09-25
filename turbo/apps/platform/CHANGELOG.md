@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.964.0](https://github.com/okou-ai/okou/compare/app-v0.963.3...app-v0.964.0) (2026-09-25)
+
+
+### Features
+
+* **browser:** support native radio groups ([#36827](https://github.com/okou-ai/okou/issues/36827)) ([2fcfef5](https://github.com/okou-ai/okou/commit/2fcfef5399320ee7c94e76db79f4ce0fc9c4266f))
+
+
+### Refactoring
+
+* **api:** simplify read watermark ordering and mark-read cursor read ([#36884](https://github.com/okou-ai/okou/issues/36884)) ([340503f](https://github.com/okou-ai/okou/commit/340503fe1fb919b42f9246276a0403992b71be71))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.511.0
+    * @okouai/core bumped to 8.710.7
+
 ## [0.963.3](https://github.com/okou-ai/okou/compare/app-v0.963.2...app-v0.963.3) (2026-09-25)
 
 

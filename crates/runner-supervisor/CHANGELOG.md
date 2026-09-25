@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.12](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.11...runner-supervisor-v0.1.12) (2026-09-25)
+
+
+### Bug Fixes
+
+* retain runner affinity for active predecessor producers ([#36866](https://github.com/okou-ai/okou/issues/36866)) ([d90ba1e](https://github.com/okou-ai/okou/commit/d90ba1e7d4a7bc36c2c5f1abf168c1b1e83e657a))
+
+
+### Refactoring
+
+* **runner:** move exact idle pruning into supervisor ([#36882](https://github.com/okou-ai/okou/issues/36882)) ([12b4033](https://github.com/okou-ai/okou/commit/12b403370158b154381722841dd2de5dd531db5f))
+
 ## [0.1.11](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.10...runner-supervisor-v0.1.11) (2026-09-25)
 
 

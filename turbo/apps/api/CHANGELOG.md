@@ -8,6 +8,33 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.677.0](https://github.com/okou-ai/okou/compare/api-v1.676.3...api-v1.677.0) (2026-09-25)
+
+
+### Features
+
+* **browser:** support native radio groups ([#36827](https://github.com/okou-ai/okou/issues/36827)) ([2fcfef5](https://github.com/okou-ai/okou/commit/2fcfef5399320ee7c94e76db79f4ce0fc9c4266f))
+
+
+### Bug Fixes
+
+* retain runner affinity for active predecessor producers ([#36866](https://github.com/okou-ai/okou/issues/36866)) ([d90ba1e](https://github.com/okou-ai/okou/commit/d90ba1e7d4a7bc36c2c5f1abf168c1b1e83e657a))
+
+
+### Refactoring
+
+* **api:** simplify read watermark ordering and mark-read cursor read ([#36884](https://github.com/okou-ai/okou/issues/36884)) ([340503f](https://github.com/okou-ai/okou/commit/340503fe1fb919b42f9246276a0403992b71be71))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.511.0
+    * @okouai/core bumped to 8.710.7
+    * @okouai/db bumped to 1.301.0
+    * @okouai/pi-agent-runtime bumped to 1.40.19
+
 ## [1.676.3](https://github.com/okou-ai/okou/compare/api-v1.676.2...api-v1.676.3) (2026-09-25)
 
 

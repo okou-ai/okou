@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.12](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.1.11...runner-lifecycle-v0.1.12) (2026-09-25)
+
+
+### Bug Fixes
+
+* retain runner affinity for active predecessor producers ([#36866](https://github.com/okou-ai/okou/issues/36866)) ([d90ba1e](https://github.com/okou-ai/okou/commit/d90ba1e7d4a7bc36c2c5f1abf168c1b1e83e657a))
+
 ## [0.1.11](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.1.10...runner-lifecycle-v0.1.11) (2026-09-25)
 
 ## [0.1.10](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.1.9...runner-lifecycle-v0.1.10) (2026-09-25)
