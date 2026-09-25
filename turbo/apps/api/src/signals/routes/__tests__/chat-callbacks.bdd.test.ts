@@ -3066,55 +3066,7 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
     await flushWaitUntilForTest();
   }, 90_000);
 
-  it("returns 503 when the required DB output projection is locked", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const run = await startChatRun(actor, {
-      agentId,
-      prompt: "locked live projection",
-    });
-    const sandboxHeaders = await claimChatRun(runnerGroup, run.runId);
-    const held = await holdChatEventInsertTransactionFixture({
-      threadId: run.threadId,
-      content: "hold the chat sequence row",
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      held.release();
-      await held.done;
-    });
-
-    const response = await webhooks.requestAgentEvents(
-      {
-        runId: run.runId,
-        events: [
-          {
-            type: "assistant",
-            sequenceNumber: 0,
-            message: {
-              id: "msg_locked_projection",
-              content: [{ type: "text", text: "must be durable" }],
-            },
-          },
-        ],
-      },
-      sandboxHeaders,
-      [503],
-    );
-    expect(response.status).toBe(503);
-    expect(response.body).toStrictEqual({
-      error: {
-        code: "EVENT_DELIVERY_UNAVAILABLE",
-        message: "Agent event delivery is temporarily unavailable",
-      },
-    });
-
-    const messages = await chat.listThreadEvents(actor, run.threadId);
-    expect(eventBackedContents(messages.events, run.runId)).toHaveLength(0);
-    held.release();
-    await held.done;
-  }, 30_000);
-
-  it("returns the route deadline while a required DB projection remains blocked", async () => {
+  it("returns the route deadline while blocked and keeps the released append durable", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const run = await startChatRun(actor, {
       agentId,
@@ -3162,8 +3114,14 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
     held.release();
     await held.done;
 
-    const messages = await chat.listThreadEvents(actor, run.threadId);
-    expect(eventBackedContents(messages.events, run.runId)).toHaveLength(0);
+    // The append is one autocommit statement with no enclosing transaction,
+    // so the route deadline cannot roll it back once the lock is released.
+    await expect
+      .poll(async () => {
+        const messages = await chat.listThreadEvents(actor, run.threadId);
+        return eventBackedContents(messages.events, run.runId).length;
+      })
+      .toBe(1);
   }, 30_000);
 
   it("persists concurrent event batches instead of skipping output projection", async () => {

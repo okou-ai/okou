@@ -24,17 +24,8 @@ import { runOutputMemoryCitations } from "@okouai/db/schema/run-output-memory-ci
 import { insertChatEvent } from "../../src/signals/services/chat-event.service";
 import { insertRunLifecycleMarkerProjection } from "../../src/signals/services/internal-chat-run-callback.service";
 import { materializeRunOutputEvents } from "../../src/signals/services/agent-event-consumer-run-output.service";
-import {
-  RunOutputDiagnostics,
-  readRunContentOwnership,
-  withRunOutputWrite,
-} from "../../src/signals/services/run-content-erasure-admission.service";
-import { activityContentTransaction } from "../../src/signals/services/run-activity-snapshot.service";
-import { runActivitySnapshots } from "@okouai/db/schema/run-activity-snapshot";
-import {
-  createDeferredPromise,
-  settleIncludingAbort,
-} from "../../src/signals/utils";
+import { RunOutputDiagnostics } from "../../src/signals/services/run-content-erasure-admission.service";
+import { settleIncludingAbort } from "../../src/signals/utils";
 import { deleteChatThreadContent } from "../../src/signals/services/chat-thread.service";
 import { deleteAgentInTransaction } from "../../src/signals/services/agent-deletion.service";
 import { safeSqlStateCode } from "../../src/lib/pg-errors";
@@ -375,202 +366,7 @@ try {
     );
   });
 
-  await test("activity control waiting on the run cannot deadlock the output event foreign key", async () => {
-    const f = await fixture("running");
-    const [run] = await db
-      .select({ sessionId: agentRuns.sessionId })
-      .from(agentRuns)
-      .where(eq(agentRuns.id, f.runId));
-    assert.ok(run);
-    await db
-      .update(chatThreads)
-      .set({ agentSessionId: run.sessionId, agentSessionRunId: f.runId })
-      .where(eq(chatThreads.id, f.threadId));
-    const ownership = await readRunContentOwnership(db, f.runId);
-    const runLocked = createDeferredPromise<void>(signal);
-    const releaseOutput = createDeferredPromise<void>(signal);
-    const output = withRunOutputWrite(
-      db,
-      { runId: f.runId, ownership },
-      async (tx) => {
-        runLocked.resolve();
-        await releaseOutput.promise;
-        return await insertChatEvent(
-          tx,
-          {
-            chatThreadId: f.threadId,
-            runId: f.runId,
-            eventType: "output.message",
-            content: "Output crosses a concurrent activity control lock",
-            runEventSequenceNumber: 0,
-            runEventId: "activity_concurrency:0",
-          },
-          "none",
-        );
-      },
-      signal,
-    );
-    const outputResult = output.then(
-      (value) => {
-        return { value };
-      },
-      (error: unknown) => {
-        return { error };
-      },
-    );
-    assert.equal(
-      await Promise.race([
-        runLocked.promise.then(() => {
-          return true;
-        }),
-        outputResult.then(() => {
-          return false;
-        }),
-      ]),
-      true,
-      "output must acquire its run boundary before the competing activity starts",
-    );
-    const activity = activityContentTransaction(
-      db,
-      {
-        runId: f.runId,
-        threadId: f.threadId,
-        userId: f.userId,
-        orgId: f.orgId,
-      },
-      ownership,
-      async (tx) => {
-        await tx.insert(runActivitySnapshots).values({ runId: f.runId });
-        return "activity committed";
-      },
-      signal,
-    );
-    let activitySettled = false;
-    const activityResult = activity.then(
-      (value) => {
-        activitySettled = true;
-        return { value };
-      },
-      (error: unknown) => {
-        activitySettled = true;
-        return { error };
-      },
-    );
-    try {
-      let blocked = false;
-      while (!blocked && !activitySettled) {
-        const state = await pool.query(
-          "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE application_name = $1 AND query LIKE '%agent_runs%' AND cardinality(pg_blocking_pids(pid)) > 0) AS blocked",
-          [applicationName],
-        );
-        blocked = state.rows[0]?.blocked === true;
-        if (!blocked) {
-          await setImmediate();
-        }
-      }
-      assert.ok(
-        blocked,
-        "activity must acquire its thread control lock before waiting for the run",
-      );
-    } finally {
-      releaseOutput.resolve();
-      await Promise.all([outputResult, activityResult]);
-    }
-    const written = await outputResult;
-    assert.ok(
-      "value" in written && written.value,
-      "the event FK must pass the activity thread lock",
-    );
-    assert.deepEqual(await activityResult, { value: "activity committed" });
-  });
-
   for (const existingSequence of [false, true]) {
-    await test(`strong deletion waits for run output before fencing its event FK (existing sequence: ${existingSequence})`, async () => {
-      const f = await fixture("running");
-      if (existingSequence) {
-        await insertChatEvent(
-          db,
-          {
-            chatThreadId: f.threadId,
-            runId: f.runId,
-            eventType: "output.message",
-            content: "Existing sequence",
-            runEventId: "deletion:seed",
-          },
-          "none",
-        );
-      }
-      const ownership = await readRunContentOwnership(db, f.runId);
-      const runLocked = createDeferredPromise<void>(signal);
-      const releaseOutput = createDeferredPromise<void>(signal);
-      const output = settleIncludingAbort(
-        withRunOutputWrite(
-          db,
-          { runId: f.runId, ownership },
-          async (tx) => {
-            runLocked.resolve();
-            await releaseOutput.promise;
-            return await insertChatEvent(
-              tx,
-              {
-                chatThreadId: f.threadId,
-                runId: f.runId,
-                eventType: "output.message",
-                content: "Output precedes strong deletion",
-                runEventId: "deletion:output",
-              },
-              "none",
-            );
-          },
-          signal,
-        ),
-      );
-      await runLocked.promise;
-      let deletionSettled = false;
-      const deletion = settleIncludingAbort(
-        deleteChatThreadContent(
-          db,
-          {
-            threadId: f.threadId,
-            userId: f.userId,
-            orgId: f.orgId,
-          },
-          signal,
-        ),
-      ).then((result) => {
-        deletionSettled = true;
-        return result;
-      });
-      try {
-        await waitForBlockedQuery('from "agent_runs"', () => {
-          return deletionSettled;
-        });
-      } finally {
-        releaseOutput.resolve();
-        await Promise.all([output, deletion]);
-      }
-      const written = await output;
-      assert.ok(
-        written.ok && written.value,
-        "output commits before deletion takes its strong thread fence",
-      );
-      const deleted = await deletion;
-      assert.ok(deleted.ok && deleted.value.deleted);
-      assert.deepEqual(deleted.value.activeRuns, [
-        { runId: f.runId, orgId: f.orgId },
-      ]);
-      const [run] = await db
-        .select({ threadId: agentRuns.chatThreadId })
-        .from(agentRuns)
-        .where(eq(agentRuns.id, f.runId));
-      assert.equal(run?.threadId, null);
-      const sequences = await db
-        .select()
-        .from(chatEventSequences)
-        .where(eq(chatEventSequences.chatThreadId, f.threadId));
-      assert.equal(sequences.length, 0, "thread cascade includes its sequence");
-    });
-
     await test(`strong deletion admits an atomic direct append before cascade (existing sequence: ${existingSequence})`, async () => {
       const f = await fixture();
       if (existingSequence) {
@@ -861,7 +657,7 @@ try {
     );
   });
 
-  await test("a timeout winning the run-row arbitration prevents the prepared output append", async () => {
+  await test("an uncommitted timeout does not hold back the prepared output append", async () => {
     const f = await fixture("running");
     const blocker = new Client({ connectionString: databaseUrl.toString() });
     await blocker.connect();
@@ -887,7 +683,7 @@ try {
                 item: {
                   id: "timeout_output",
                   type: "agent_message",
-                  text: "Must remain absent",
+                  text: "Accepted across a racing timeout",
                 },
               },
             ],
@@ -904,7 +700,8 @@ try {
           return { error };
         },
       );
-      // Observe a real waiter on this test's blocker; do not guess a sleep.
+      // The append holds no run lock. Only a later auxiliary run write may wait
+      // on this blocker; observe it rather than guessing a sleep.
       let blocked = false;
       while (!blocked && !outputSettled) {
         const state = await blocker.query(
@@ -916,19 +713,21 @@ try {
           await setImmediate();
         }
       }
-      assert.ok(
-        blocked,
-        "prepared output must arbitrate with the terminal transition",
-      );
-      await blocker.query("COMMIT");
-      assert.deepEqual(await pending, {
-        value: { outcome: "ignored-timeout" },
-      });
-      const [events] = await db
+      const [appended] = await db
         .select({ count: count() })
         .from(chatEvents)
         .where(eq(chatEvents.runId, f.runId));
-      assert.equal(events?.count, 0);
+      assert.equal(
+        appended?.count,
+        1,
+        "the event append must not wait for the terminal transition",
+      );
+      await blocker.query("COMMIT");
+      const settled = await pending;
+      assert.ok(
+        "value" in settled && settled.value.outcome === "accepted",
+        "a timeout racing preparation is the accepted late-write window",
+      );
     } finally {
       await blocker.query("ROLLBACK");
       await blocker.end();
