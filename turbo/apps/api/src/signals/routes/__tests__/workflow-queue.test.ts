@@ -881,8 +881,8 @@ describe("workflow queue", () => {
     });
     // The persisted queued message is the product milestone proving the send
     // reached the queue. The transitive PostgreSQL blocker observation includes
-    // contenders waiting on the first admission's earlier B1 subject locks and
-    // is only used as a lower-bound barrier here.
+    // contenders waiting on the first admission's earlier locks and is only
+    // used as a lower-bound barrier here.
     await expect
       .poll(async () => {
         const messages = await wf.readThreadEvents(automation.threadId);
