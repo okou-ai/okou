@@ -185,10 +185,7 @@ function restoredDraft(
   };
 }
 
-export const sourcesFirstDraftStorage = localStorageSignals(
-  "onboarding:sources-first-draft",
-);
-const draftStorage = sourcesFirstDraftStorage;
+const draftStorage = localStorageSignals("onboarding:sources-first-draft");
 const stepStorage = localStorageSignals("onboarding:sources-first-step");
 const onboardingStorages = [draftStorage, stepStorage] as const;
 const internalDraftIdentity$ = state<SourcesFirstDraftIdentity | null>(null);
@@ -251,25 +248,6 @@ export const clearSourcesFirstDraft$ = command(({ get, set }): void => {
   set(internalDraftIdentity$, null);
   set(internalDraft$, emptyDraft());
 });
-
-/** Clear a deleted user's onboarding draft without touching another account's. */
-export const clearSourcesFirstDraftForUser$ = command(
-  ({ get, set }, userId: string): void => {
-    for (const storage of onboardingStorages) {
-      const raw = get(storage.get$);
-      const parsed = persistedDraftIdentitySchema.safeParse(
-        raw === null ? null : jsonParseOr<unknown>(raw, null),
-      );
-      if (parsed.success && parsed.data.userId === userId) {
-        set(storage.clear$);
-      }
-    }
-    if (get(internalDraftIdentity$)?.userId === userId) {
-      set(internalDraftIdentity$, null);
-      set(internalDraft$, emptyDraft());
-    }
-  },
-);
 
 /**
  * Owner runs the full flow; a member invited into an existing org skips the

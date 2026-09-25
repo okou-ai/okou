@@ -20,6 +20,15 @@ import { VncCredentialImpact } from "./vnc-fields.tsx";
 import { VncLoadError } from "./vnc-load-error.tsx";
 import { RemoteHostDefaultToggle } from "./remote-access-controls.tsx";
 
+function isX509Security(
+  security: VncConnectionResponse["security"],
+): security is Extract<
+  VncConnectionResponse["security"],
+  { type: "x509_vnc" | "x509_plain" }
+> {
+  return security.type === "x509_vnc" || security.type === "x509_plain";
+}
+
 function VncProfileLabel({ profile }: { readonly profile: VncProfile }) {
   const { t } = useTranslation();
   switch (profile) {
@@ -41,6 +50,11 @@ function VncProfileLabel({ profile }: { readonly profile: VncProfile }) {
     case "apple_srp": {
       return t(($) => {
         return $.vnc.security.appleSrp;
+      });
+    }
+    case "apple_rsa_srp": {
+      return t(($) => {
+        return $.vnc.security.appleRsaSrp;
       });
     }
   }
@@ -75,9 +89,28 @@ function VncAuthenticationLabel({
         return $.vnc.credential.appleSrpMethod;
       });
     }
+    case "apple_rsa_srp_username_password": {
+      return t(($) => {
+        return $.vnc.credential.appleRsaSrpMethod;
+      });
+    }
   }
   void (method satisfies never);
   return null;
+}
+
+function VncRebindWarning() {
+  const { t } = useTranslation();
+  return (
+    <p
+      role="alert"
+      className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+    >
+      {t(($) => {
+        return $.vnc.transport.sshNeedsRebind;
+      })}
+    </p>
+  );
 }
 
 function VncHostCard({
@@ -91,11 +124,17 @@ function VncHostCard({
   const sshConnections = useLoadable(sshConnections$);
   const sshConnectionId = vncSshConnectionId(connection);
   const sshConnection =
-    sshConnectionId && sshConnections.state === "hasData"
+    sshConnectionId !== null && sshConnections.state === "hasData"
       ? sshConnections.data?.find((candidate) => {
           return candidate.id === sshConnectionId;
         })
       : null;
+  const needsSshRebind =
+    !!sshConnection &&
+    "transport" in sshConnection &&
+    typeof sshConnection.transport === "object" &&
+    sshConnection.transport !== null &&
+    "needsRebind" in sshConnection.transport;
   const destination = `${connection.host.includes(":") ? `[${connection.host}]` : connection.host}:${connection.port}`;
   return (
     <article className={surfaceVariants({ className: "grid gap-3 p-5" })}>
@@ -103,10 +142,13 @@ function VncHostCard({
         <h2 className="break-all font-semibold">{connection.displayName}</h2>
         <span className="text-sm text-muted-foreground">
           {t(($) => {
-            return $.vnc.configured;
+            return needsSshRebind
+              ? $.vnc.transport.sshNeedsRebindStatus
+              : $.vnc.configured;
           })}
         </span>
       </div>
+      {needsSshRebind && <VncRebindWarning />}
       <p className="text-sm text-muted-foreground">
         {sshConnectionId
           ? t(($) => {
@@ -134,8 +176,7 @@ function VncHostCard({
         {": "}
         {destination}
       </p>
-      {connection.security.type === "apple_dh" ||
-      connection.security.type === "apple_srp" ? null : (
+      {isX509Security(connection.security) ? (
         <p className="break-all text-sm">
           {t(($) => {
             return $.vnc.security.serverName;
@@ -143,7 +184,7 @@ function VncHostCard({
           {": "}
           {connection.security.serverName ?? connection.host}
         </p>
-      )}
+      ) : null}
       <p className="break-all text-sm text-muted-foreground">
         {connection.credentialName}
       </p>
@@ -153,8 +194,7 @@ function VncHostCard({
         <VncAuthenticationLabel
           method={vncAuthMethodForProfile(connection.security.type)}
         />
-        {connection.security.type === "apple_dh" ||
-        connection.security.type === "apple_srp" ? null : (
+        {isX509Security(connection.security) ? (
           <>
             {" "}
             {" · "}{" "}
@@ -166,7 +206,7 @@ function VncHostCard({
                   return $.vnc.security.custom;
                 })}
           </>
-        )}
+        ) : null}
       </p>
       <RemoteHostDefaultToggle protocol="vnc" connectionId={connection.id} />
       <div className="flex flex-wrap gap-2">
@@ -277,7 +317,8 @@ function VncCredentialCard({
       </p>
       {(credential.authMethod === "username_password" ||
         credential.authMethod === "apple_dh_username_password" ||
-        credential.authMethod === "apple_srp_username_password") && (
+        credential.authMethod === "apple_srp_username_password" ||
+        credential.authMethod === "apple_rsa_srp_username_password") && (
         <p className="break-all text-sm">{credential.username}</p>
       )}
       <VncCredentialImpact credential={credential} />

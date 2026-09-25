@@ -8,6 +8,30 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.674.0](https://github.com/okou-ai/okou/compare/api-v1.673.1...api-v1.674.0) (2026-09-25)
+
+
+### Features
+
+* **browser:** support native select input requests ([#36740](https://github.com/okou-ai/okou/issues/36740)) ([8193d4b](https://github.com/okou-ai/okou/commit/8193d4ba387201e4f495115773cc0d880415b7bd))
+* **vnc:** admit apple rsa/srp through verified mac ssh ([#36743](https://github.com/okou-ai/okou/issues/36743)) ([b6a626e](https://github.com/okou-ai/okou/commit/b6a626ef2bfb9e35bdec4eb351d5e1e229bfaaca))
+
+
+### Bug Fixes
+
+* **api:** restore split-mode queue wakeup and slack failure contracts ([#36762](https://github.com/okou-ai/okou/issues/36762)) ([a05a8f2](https://github.com/okou-ai/okou/commit/a05a8f2ab7e38494c25290d05bdd6df476e3af6d))
+* **vnc:** honor needs_rebind on ssh-backed hosts ([#36741](https://github.com/okou-ai/okou/issues/36741)) ([d258195](https://github.com/okou-ai/okou/commit/d258195c0d234d4bee5790b7be450af9289fc1aa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.508.0
+    * @okouai/core bumped to 8.710.2
+    * @okouai/db bumped to 1.298.0
+    * @okouai/pi-agent-runtime bumped to 1.40.14
+
 ## [1.673.1](https://github.com/okou-ai/okou/compare/api-v1.673.0...api-v1.673.1) (2026-09-24)
 
 

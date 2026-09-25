@@ -1,5 +1,5 @@
 {
-  "id": "5357f696-dd8e-4bf4-965c-1887f1c7ba38",
+  "id": "085e8bd8-b78c-4dc2-886f-e31db6807bfc",
   "prevId": "7015b06f-a782-4dc4-b87b-336760a3d15d",
   "version": "7",
   "dialect": "postgresql",
@@ -8708,8 +8708,7 @@
           "name": "public_brand",
           "type": "text",
           "primaryKey": false,
-          "notNull": false,
-          "default": "'okou'"
+          "notNull": false
         },
         "message_text": {
           "name": "message_text",
@@ -15885,8 +15884,7 @@
           "name": "public_brand",
           "type": "text",
           "primaryKey": false,
-          "notNull": false,
-          "default": "'okou'"
+          "notNull": false
         },
         "status": {
           "name": "status",
@@ -16145,8 +16143,7 @@
           "name": "public_brand",
           "type": "text",
           "primaryKey": false,
-          "notNull": false,
-          "default": "'okou'"
+          "notNull": false
         },
         "dm_welcome_sent": {
           "name": "dm_welcome_sent",
@@ -16398,7 +16395,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'okou'"
+          "default": "'vm0'"
         },
         "encrypted_app_secret": {
           "name": "encrypted_app_secret",
@@ -39809,11 +39806,11 @@
         },
         "chk_vnc_connections_profile": {
           "name": "chk_vnc_connections_profile",
-          "value": "(\"vnc_connections\".\"auth_method\" = 'vnc_password' AND \"vnc_connections\".\"security_type\" = 'x509_vnc') OR (\"vnc_connections\".\"auth_method\" = 'username_password' AND \"vnc_connections\".\"security_type\" = 'x509_plain') OR (\"vnc_connections\".\"auth_method\" = 'apple_dh_username_password' AND \"vnc_connections\".\"security_type\" = 'apple_dh' AND \"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1') AND \"vnc_connections\".\"x509_server_name\" IS NULL) OR (\"vnc_connections\".\"auth_method\" = 'apple_srp_username_password' AND \"vnc_connections\".\"security_type\" = 'apple_srp' AND \"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1') AND \"vnc_connections\".\"x509_server_name\" IS NULL)"
+          "value": "(\"vnc_connections\".\"auth_method\" = 'vnc_password' AND \"vnc_connections\".\"security_type\" = 'x509_vnc') OR (\"vnc_connections\".\"auth_method\" = 'username_password' AND \"vnc_connections\".\"security_type\" = 'x509_plain') OR (\"vnc_connections\".\"auth_method\" = 'apple_dh_username_password' AND \"vnc_connections\".\"security_type\" = 'apple_dh' AND \"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1') AND \"vnc_connections\".\"x509_server_name\" IS NULL) OR (\"vnc_connections\".\"auth_method\" = 'apple_srp_username_password' AND \"vnc_connections\".\"security_type\" = 'apple_srp' AND \"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1') AND \"vnc_connections\".\"x509_server_name\" IS NULL) OR (\"vnc_connections\".\"auth_method\" = 'apple_rsa_srp_username_password' AND \"vnc_connections\".\"security_type\" = 'apple_rsa_srp' AND \"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1') AND \"vnc_connections\".\"x509_server_name\" IS NULL)"
         },
         "chk_vnc_connections_trust": {
           "name": "chk_vnc_connections_trust",
-          "value": "(\"vnc_connections\".\"security_type\" IN ('apple_dh', 'apple_srp') AND \"vnc_connections\".\"trust_mode\" = 'none' AND \"vnc_connections\".\"ca_bundle\" IS NULL) OR (\"vnc_connections\".\"security_type\" NOT IN ('apple_dh', 'apple_srp') AND ((\"vnc_connections\".\"trust_mode\" = 'system' AND \"vnc_connections\".\"ca_bundle\" IS NULL) OR (\"vnc_connections\".\"trust_mode\" = 'custom_ca' AND \"vnc_connections\".\"ca_bundle\" IS NOT NULL AND octet_length(\"vnc_connections\".\"ca_bundle\") BETWEEN 1 AND 65536)))"
+          "value": "(\"vnc_connections\".\"security_type\" IN ('apple_dh', 'apple_srp', 'apple_rsa_srp') AND \"vnc_connections\".\"trust_mode\" = 'none' AND \"vnc_connections\".\"ca_bundle\" IS NULL) OR (\"vnc_connections\".\"security_type\" NOT IN ('apple_dh', 'apple_srp', 'apple_rsa_srp') AND ((\"vnc_connections\".\"trust_mode\" = 'system' AND \"vnc_connections\".\"ca_bundle\" IS NULL) OR (\"vnc_connections\".\"trust_mode\" = 'custom_ca' AND \"vnc_connections\".\"ca_bundle\" IS NOT NULL AND octet_length(\"vnc_connections\".\"ca_bundle\") BETWEEN 1 AND 65536)))"
         }
       },
       "isRLSEnabled": false
@@ -39974,7 +39971,7 @@
         },
         "chk_vnc_credentials_auth": {
           "name": "chk_vnc_credentials_auth",
-          "value": "(\"vnc_credentials\".\"auth_method\" = 'vnc_password' AND \"vnc_credentials\".\"username\" IS NULL) OR (\"vnc_credentials\".\"auth_method\" = 'username_password' AND \"vnc_credentials\".\"username\" IS NOT NULL AND octet_length(\"vnc_credentials\".\"username\") BETWEEN 1 AND 255) OR (\"vnc_credentials\".\"auth_method\" = 'apple_dh_username_password' AND \"vnc_credentials\".\"username\" IS NOT NULL AND octet_length(\"vnc_credentials\".\"username\") BETWEEN 1 AND 63) OR (\"vnc_credentials\".\"auth_method\" = 'apple_srp_username_password' AND \"vnc_credentials\".\"username\" IS NOT NULL AND octet_length(\"vnc_credentials\".\"username\") BETWEEN 1 AND 255)"
+          "value": "(\"vnc_credentials\".\"auth_method\" = 'vnc_password' AND \"vnc_credentials\".\"username\" IS NULL) OR (\"vnc_credentials\".\"auth_method\" = 'username_password' AND \"vnc_credentials\".\"username\" IS NOT NULL AND octet_length(\"vnc_credentials\".\"username\") BETWEEN 1 AND 255) OR (\"vnc_credentials\".\"auth_method\" = 'apple_dh_username_password' AND \"vnc_credentials\".\"username\" IS NOT NULL AND octet_length(\"vnc_credentials\".\"username\") BETWEEN 1 AND 63) OR (\"vnc_credentials\".\"auth_method\" = 'apple_srp_username_password' AND \"vnc_credentials\".\"username\" IS NOT NULL AND octet_length(\"vnc_credentials\".\"username\") BETWEEN 1 AND 255) OR (\"vnc_credentials\".\"auth_method\" = 'apple_rsa_srp_username_password' AND \"vnc_credentials\".\"username\" IS NOT NULL AND octet_length(\"vnc_credentials\".\"username\") BETWEEN 1 AND 234)"
         },
         "chk_vnc_credentials_password": {
           "name": "chk_vnc_credentials_password",

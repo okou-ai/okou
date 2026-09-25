@@ -28,7 +28,13 @@ import type {
   UsagePackMigrationPreviewResponse,
   UsagePackMigrationRevisionPreviewResponse,
 } from "@okouai/api-contracts/contracts/billing";
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import {
+  useGet,
+  useLastLoadable,
+  useLoadable,
+  useLoadableState,
+  useSet,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { MouseEvent, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -1442,8 +1448,8 @@ function PlanSelectionStep({
 
 function useUsagePackMembers(): readonly MemberDisplay[] | undefined {
   const userLoadable = useLastLoadable(currentUserInfo$);
-  const membersLoadable = useLoadable(orgMembers$);
-  const pendingInvitationsLoadable = useLoadable(orgPendingInvitations$);
+  const membersLoadable = useLastLoadable(orgMembers$);
+  const pendingInvitationsLoadable = useLastLoadable(orgPendingInvitations$);
   const user = userLoadable.state === "hasData" ? userLoadable.data : undefined;
   const orgMembers =
     membersLoadable.state === "hasData" ? membersLoadable.data : undefined;
@@ -2101,6 +2107,17 @@ function UsagePackChangeCharges({
   );
 }
 
+function useUsagePackDataReady(): boolean {
+  const managementState = useLoadableState(usagePackManagementAsync$);
+  const membersState = useLoadableState(orgMembers$);
+  const invitationsState = useLoadableState(orgPendingInvitations$);
+  return (
+    managementState === "hasData" &&
+    membersState === "hasData" &&
+    invitationsState === "hasData"
+  );
+}
+
 /* The last step of a subscription change. It repeats the monthly ledger the
    configuration step already showed and adds what the change costs today, so
    it reads as that step's conclusion rather than a separate decision. The
@@ -2108,10 +2125,12 @@ function UsagePackChangeCharges({
    button used to do, and the confirm keeps the configuration step's place and
    shape at the foot of the dialog. */
 function PackageReviewStep({
+  dataReady,
   plan,
   preview,
   totals,
 }: {
+  readonly dataReady: boolean;
   readonly plan: UsagePackPlan;
   readonly preview: UsagePackSubscriptionChangePreviewResponse;
   readonly totals: MemberUsageTotals;
@@ -2145,7 +2164,7 @@ function PackageReviewStep({
         <Button
           type="button"
           className="h-10 w-full text-sm font-medium"
-          disabled={confirming}
+          disabled={confirming || !dataReady}
           onClick={() => {
             detach(submitChange(), Reason.DomCallback);
           }}
@@ -2370,6 +2389,7 @@ function managedSubscriptionChangeState({
 }
 
 function ManagedSubscriptionActionBar({
+  dataReady,
   downgradeNotice,
   error,
   hasPaidUsagePack,
@@ -2380,6 +2400,7 @@ function ManagedSubscriptionActionBar({
   previewing,
   restoresScheduledDowngrade,
 }: {
+  readonly dataReady: boolean;
   readonly downgradeNotice: ReactNode;
   readonly error: string | null;
   readonly hasPaidUsagePack: boolean;
@@ -2405,6 +2426,7 @@ function ManagedSubscriptionActionBar({
         type="button"
         className="h-10 w-full text-sm font-medium"
         disabled={
+          !dataReady ||
           !membersLoaded ||
           !hasPaidUsagePack ||
           (hasPendingChange && !hasScheduledDowngrade) ||
@@ -2425,6 +2447,7 @@ function ManagedSubscriptionActionBar({
 
 function ManagedSubscriptionOrderSummary({
   catalog,
+  dataReady,
   defaultUsage,
   management,
   members,
@@ -2432,6 +2455,7 @@ function ManagedSubscriptionOrderSummary({
   selections,
 }: ManagedSubscriptionOrderSummaryProps & {
   readonly catalog: readonly MemberUsagePackOption[];
+  readonly dataReady: boolean;
   readonly defaultUsage: MemberUsageSelection;
 }) {
   const pageSignal = useGet(pageSignal$);
@@ -2508,6 +2532,7 @@ function ManagedSubscriptionOrderSummary({
       )}
       {hasSubscriptionAction && (
         <ManagedSubscriptionActionBar
+          dataReady={dataReady}
           downgradeNotice={downgradeNotice}
           error={error}
           hasPaidUsagePack={hasPaidUsagePack}
@@ -2538,6 +2563,7 @@ function PackageConfigurationStep({
 }) {
   const selections = useGet(memberUsageSelections$);
   const allMembers = useUsagePackMembers();
+  const dataReady = useUsagePackDataReady();
   const activeMembers = allMembers?.filter((member) => {
     return !member.isPending;
   });
@@ -2582,7 +2608,14 @@ function PackageConfigurationStep({
      component and reuses the totals rather than resolving the member list a
      second time. */
   if (preview) {
-    return <PackageReviewStep plan={plan} preview={preview} totals={totals} />;
+    return (
+      <PackageReviewStep
+        dataReady={dataReady}
+        plan={plan}
+        preview={preview}
+        totals={totals}
+      />
+    );
   }
 
   return (
@@ -2603,6 +2636,7 @@ function PackageConfigurationStep({
         {management ? (
           <ManagedSubscriptionOrderSummary
             catalog={catalog}
+            dataReady={dataReady}
             defaultUsage={defaultUsage}
             management={management}
             members={members}
@@ -3382,7 +3416,7 @@ export function UsagePackPricingDialogs({
   const changePreview = useGet(usagePackSubscriptionChangePreview$);
   const closePreview = useSet(closeUsagePackSubscriptionChangePreview$);
   const catalogLoadable = useLoadable(memberUsagePackOptionsAsync$);
-  const managementLoadable = useLoadable(usagePackManagementAsync$);
+  const managementLoadable = useLastLoadable(usagePackManagementAsync$);
   const catalog =
     catalogLoadable.state === "hasData" ? catalogLoadable.data : null;
   const management =
