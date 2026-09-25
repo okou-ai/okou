@@ -40,6 +40,7 @@ export async function currentRunnerVncAuthority(
       transportType: vncConnections.transportType,
       sshConnectionId: vncConnections.sshConnectionId,
       sshGeneration: sshConnections.generation,
+      sshNeedsRebind: sshConnections.needsRebind,
       sshGrantAgentId: agentSshAccess.agentId,
       sshAllowed: runThreadSshAccess(db),
       x509ServerName: vncConnections.x509ServerName,

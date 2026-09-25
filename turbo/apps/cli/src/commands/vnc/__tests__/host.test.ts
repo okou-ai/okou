@@ -11,6 +11,7 @@ const host = {
   port: 5900,
   authMethod: "vnc_password",
   securityType: "x509_vnc",
+  availability: { status: "ready" },
 };
 const plainHost = {
   ...host,
@@ -67,9 +68,10 @@ describe("okou vnc host list", () => {
     await invoke("--json");
 
     expect(authorization).toBe(`Bearer ${runToken()}`);
-    expect(output).toHaveBeenCalledExactlyOnceWith(
-      JSON.stringify({ hosts: [host] }),
-    );
+    expect(output).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toStrictEqual({
+      hosts: [host],
+    });
     expect(errors).not.toHaveBeenCalled();
   });
 
@@ -87,6 +89,8 @@ describe("okou vnc host list", () => {
     expect(text).toContain("Shared desktop");
     expect(text).toContain("vnc.example.com:5900");
     expect(text).toContain("vnc_password / x509_vnc");
+    expect(text).toContain("ready to attempt (connectivity not checked)");
+    expect(text).toContain("availability.status=ready");
     expect(text).toContain("okou vnc session start --help");
     expect(text).toContain("choose shared or exclusive mode explicitly");
   });
@@ -105,6 +109,32 @@ describe("okou vnc host list", () => {
     expect(text).toContain("username_password / x509_plain");
   });
 
+  it("shows a blocked SSH-backed VNC host for diagnosis without suggesting it for use", async () => {
+    const blocked = {
+      ...host,
+      id: "a0000000-0000-4000-8000-000000000003",
+      displayName: "Blocked desktop",
+      availability: { status: "blocked", reason: "needs_rebind" },
+    };
+    server.use(
+      http.get("http://localhost:3000/api/vnc/hosts", () => {
+        return HttpResponse.json({ hosts: [host, blocked] });
+      }),
+    );
+    await invoke("--json");
+    expect(output).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toStrictEqual({
+      hosts: [host, blocked],
+    });
+    output.mockClear();
+    await invoke();
+    const text = output.mock.calls.flat().join("\n");
+    expect(text).toContain(blocked.id);
+    expect(text).toContain("blocked: needs_rebind");
+    expect(text).toContain("rebind the underlying SSH host");
+    expect(text).toContain("explicitly choose Direct");
+  });
+
   it("explains an authorized empty inventory without inventing a host", async () => {
     server.use(
       http.get("http://localhost:3000/api/vnc/hosts", () => {
@@ -115,7 +145,7 @@ describe("okou vnc host list", () => {
     await invoke();
 
     expect(output).toHaveBeenCalledExactlyOnceWith(
-      "No VNC hosts configured. Ask the owner to configure a host and enable this Agent's VNC access.",
+      "No VNC hosts available to this Run. Ask the owner to check host setup and chat access in Connectors.",
     );
   });
 
@@ -201,6 +231,27 @@ describe("okou vnc host list", () => {
       () => {
         return HttpResponse.json({
           hosts: [{ ...host, authMethod: "username_password" }],
+        });
+      },
+    ],
+    [
+      "missing availability",
+      () => {
+        return HttpResponse.json({
+          hosts: [{ ...host, availability: undefined }],
+        });
+      },
+    ],
+    [
+      "unknown blocked reason",
+      () => {
+        return HttpResponse.json({
+          hosts: [
+            {
+              ...host,
+              availability: { status: "blocked", reason: "unknown" },
+            },
+          ],
         });
       },
     ],

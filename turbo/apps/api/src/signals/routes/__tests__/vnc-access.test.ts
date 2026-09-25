@@ -293,6 +293,7 @@ describe("explicit VNC grants and current Agent inventory", () => {
           port: 5900,
           authMethod: "vnc_password",
           securityType: "x509_vnc",
+          availability: { status: "ready" },
         },
       ],
     });
@@ -438,6 +439,7 @@ describe("explicit VNC grants and current Agent inventory", () => {
           port: 5900,
           authMethod: "username_password",
           securityType: "x509_plain",
+          availability: { status: "ready" },
         },
       ],
     });
@@ -454,6 +456,7 @@ describe("explicit VNC grants and current Agent inventory", () => {
           port: 5900,
           authMethod: "username_password",
           securityType: "x509_plain",
+          availability: { status: "ready" },
         },
         {
           id: supported.body.id,
@@ -462,6 +465,7 @@ describe("explicit VNC grants and current Agent inventory", () => {
           port: 5900,
           authMethod: "vnc_password",
           securityType: "x509_vnc",
+          availability: { status: "ready" },
         },
       ],
     });

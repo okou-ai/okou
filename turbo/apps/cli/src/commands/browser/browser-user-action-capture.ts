@@ -712,12 +712,13 @@ async function describeInputNode(
   }
   if (
     described.node.nodeName !== "INPUT" &&
-    described.node.nodeName !== "TEXTAREA"
+    described.node.nodeName !== "TEXTAREA" &&
+    described.node.nodeName !== "SELECT"
   ) {
     throw browserCaptureError(
-      "Browser input requests support only top-level input and textarea controls",
+      "Browser input requests support only top-level input, textarea, and select controls",
       "BROWSER_INPUT_UNSUPPORTED_CONTROL",
-      "Choose a top-level input or textarea, or hand the Browser to the user.",
+      "Choose a top-level input, textarea, or select, or hand the Browser to the user.",
     );
   }
   return described.node.backendNodeId;

@@ -190,9 +190,18 @@ Agent inventory with VNC access alone. An SSH-backed row appears only while that
 same Agent independently holds both VNC and SSH access; revoking SSH immediately
 removes only the SSH-backed rows from later inventory reads and authorization
 checks. The inventory remains secret-free and does not expose the route, SSH
-reference, trust material, certificate identity or generations. Agents select
-shared or exclusive mode when opening each session; the server decides admission
-and may override the requested mode. The settings page adds no controller lock.
+reference, trust material, certificate identity or generations. Like SSH, it
+includes `availability: { status: "ready" }` for configured hosts and
+`{ status: "blocked", reason: "needs_rebind" }` for authorized VNC hosts whose
+underlying SSH host needs Cloudflare Access rebinding. Blocked IDs are diagnostic
+only; their owners must rebind the SSH host or explicitly choose Direct, and
+fresh Runner admission remains unavailable until then. Only use a current ready
+ID for a new session; ready is not a connectivity test. The VNC inventory has
+one required `availability` field; this pre-GA feature does not retain a legacy
+response shape or CLI fallback. This repair does not activate `VncAccess`.
+Agents select shared or exclusive mode when opening each session; the server
+decides admission and may override the requested mode. The settings page adds
+no controller lock.
 
 The Credentials tab shows which hosts use each credential. Renaming does not
 rotate its authentication; explicitly replacing the password (and X509Plain
