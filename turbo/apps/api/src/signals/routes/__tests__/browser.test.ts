@@ -585,7 +585,7 @@ type NativeRadioMockState = {
   scalar?: {
     nodeId: number;
     required: boolean;
-    requiredAfterWrite: boolean;
+    requiredAfterWrite: "immediate" | "microtask";
   } | null;
 };
 
@@ -602,7 +602,12 @@ function mockNativeRadioCallFunctionOn(
     const args = params.arguments as {
       value?: { kind?: string; required?: boolean; verifyOnly?: boolean };
     }[];
-    if (!args[0]?.value?.verifyOnly && state.scalar?.requiredAfterWrite) {
+    if (
+      state.scalar &&
+      (state.scalar.requiredAfterWrite === "immediate" ||
+        (args[0]?.value?.verifyOnly &&
+          state.scalar.requiredAfterWrite === "microtask"))
+    ) {
       state.scalar.required = true;
     }
     const scalarSpec = args.find((arg) => {
@@ -1110,7 +1115,7 @@ describe("Browser user-action route", () => {
       scalar: null as {
         nodeId: number;
         required: boolean;
-        requiredAfterWrite: boolean;
+        requiredAfterWrite: "immediate" | "microtask";
       } | null,
     };
     mockNativeRadioTarget(group);
@@ -1350,71 +1355,121 @@ describe("Browser user-action route", () => {
 
     // A radio change handler can make another, untouched field required after
     // the initial scalar validation. This is a partial write, not success.
-    group.memberIds = [45, 46, 47];
-    group.scalar = { nodeId: 50, required: false, requiredAfterWrite: true };
-    const mixed = await accept(
-      userActionClient().create({
-        headers: current.claim.browserHeaders,
-        body: {
-          kind: "input",
-          callbackPrompt: "Continue after the mixed form",
-          pageTargetId: "native-input-target",
-          fields: [
-            {
-              key: "delivery",
-              label: "Delivery",
-              fieldKind: "radio",
-              required: false,
-              backendNodeId: 45,
-            },
-            {
-              key: "note",
-              label: "Note",
-              fieldKind: "text",
-              required: false,
-              backendNodeId: 50,
-            },
-          ],
-        },
-      }),
-      [201],
-    );
-    const mixedToken = mixed.body.action.requestToken;
-    const mixedFingerprint = await fingerprintFor(mixedToken);
-    expect(
-      (
-        await accept(
-          userActionClient().apply({
-            headers: { authorization: "Bearer clerk-session" },
-            params: { requestToken: mixedToken },
+    const verifyMixedConstraintDrift = async () => {
+      group.memberIds = [45, 46, 47];
+      group.scalar = {
+        nodeId: 50,
+        required: false,
+        requiredAfterWrite: "immediate",
+      };
+      const createMixed = async () => {
+        return await accept(
+          userActionClient().create({
+            headers: current.claim.browserHeaders,
             body: {
-              values: [
+              kind: "input",
+              callbackPrompt: "Continue after the mixed form",
+              pageTargetId: "native-input-target",
+              fields: [
                 {
                   key: "delivery",
-                  memberIndex: 1,
-                  observedSelectedIndex: 0,
-                  groupFingerprint: mixedFingerprint,
+                  label: "Delivery",
+                  fieldKind: "radio",
+                  required: false,
+                  backendNodeId: 45,
+                },
+                {
+                  key: "note",
+                  label: "Note",
+                  fieldKind: "text",
+                  required: false,
+                  backendNodeId: 50,
                 },
               ],
             },
           }),
-          [200],
-        )
-      ).body.state,
-    ).toBe("uncertain");
-    expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
-      { value: { kind: "radio", index: 1 } },
-      { value: 1 },
-      { objectId: "native-scalar-object" },
-      {
-        value: {
-          kind: "scalar",
-          required: false,
-          multiple: false,
-          value: null,
+          [201],
+        );
+      };
+      const mixed = await createMixed();
+      const mixedToken = mixed.body.action.requestToken;
+      const mixedFingerprint = await fingerprintFor(mixedToken);
+      expect(
+        (
+          await accept(
+            userActionClient().apply({
+              headers: { authorization: "Bearer clerk-session" },
+              params: { requestToken: mixedToken },
+              body: {
+                values: [
+                  {
+                    key: "delivery",
+                    memberIndex: 1,
+                    observedSelectedIndex: 0,
+                    groupFingerprint: mixedFingerprint,
+                  },
+                ],
+              },
+            }),
+            [200],
+          )
+        ).body.state,
+      ).toBe("uncertain");
+      expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
+        { value: { kind: "radio", index: 1 } },
+        { value: 1 },
+        { objectId: "native-scalar-object" },
+        {
+          value: {
+            kind: "scalar",
+            required: false,
+            multiple: false,
+            value: null,
+          },
         },
-      },
-    ]);
+      ]);
+
+      // If the site's handler defers the constraint change to a microtask, the
+      // first write can appear successful; the independent readback must reject it.
+      group.scalar = {
+        nodeId: 50,
+        required: false,
+        requiredAfterWrite: "microtask",
+      };
+      const delayed = await createMixed();
+      const delayedToken = delayed.body.action.requestToken;
+      const delayedFingerprint = await fingerprintFor(delayedToken);
+      const writesBeforeDelayed = browserSelectWrites().length;
+      expect(
+        (
+          await accept(
+            userActionClient().apply({
+              headers: { authorization: "Bearer clerk-session" },
+              params: { requestToken: delayedToken },
+              body: {
+                values: [
+                  {
+                    key: "delivery",
+                    memberIndex: 1,
+                    observedSelectedIndex: 0,
+                    groupFingerprint: delayedFingerprint,
+                  },
+                ],
+              },
+            }),
+            [200],
+          )
+        ).body.state,
+      ).toBe("uncertain");
+      expect(browserSelectWrites()).toHaveLength(writesBeforeDelayed + 2);
+      expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
+        { value: { kind: "radio", verifyOnly: true } },
+        { value: 1 },
+        { objectId: "native-scalar-object" },
+        { value: { kind: "scalar", required: false, value: null } },
+      ]);
+    };
+    await verifyMixedConstraintDrift();
   });
 
   it("selects by option index, rejects disabled and drifted options, and supports explicit clear", async () => {
