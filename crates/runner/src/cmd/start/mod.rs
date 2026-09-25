@@ -81,9 +81,11 @@ use runner_host::host;
 use runner_host::lock;
 use runner_host::paths::{HomePaths, LogPaths, RunnerPaths, touch_mtime};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
+#[cfg(test)]
+use runner_provider::JobCandidate;
 use runner_provider::{
     ApiProvider, ApiProviderConfig, BuiltinFirewallCatalogCachePaths, ConnectorRuntimeSyncHandle,
-    JobCandidate, JobProvider, LocalProvider, RunnerPreferenceRemovalReason,
+    JobProvider, LocalProvider,
 };
 use runner_provider::{RunCancellationRegistration, RunCancellationRegistry};
 
@@ -114,6 +116,7 @@ use runner_supervisor::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drai
 #[cfg(test)]
 use runner_supervisor::orphan_reap::OrphanReapProcessDiscovery;
 use runner_supervisor::orphan_reap::{OrphanReapMode, OrphanedActiveRuns};
+use runner_supervisor::pre_claim_admission::PendingFinalizingCandidate;
 use signals::{
     EarlySignals, SignalController, SignalHandlerTask, handle_stopping_signal, recv_handler_task,
 };
@@ -125,37 +128,6 @@ const WORKSPACE_CACHE_GC_PERIOD: Duration = Duration::from_secs(60);
 const WORKSPACE_CACHE_RECONCILIATION_PERIOD: Duration = Duration::from_secs(60);
 /// Staggers the first state inventory from the first routine cache GC.
 const WORKSPACE_CACHE_RECONCILIATION_INITIAL_DELAY: Duration = Duration::from_secs(30);
-
-fn candidate_for_admission(
-    candidate: JobCandidate,
-    pending_candidate: &mut Option<JobCandidate>,
-) -> JobCandidate {
-    if let Some(pending) =
-        pending_candidate.take_if(|pending| pending.run_id() == candidate.run_id())
-    {
-        info!(
-            run_id = %candidate.run_id(),
-            "duplicate finalizing candidate rechecks retained admission state"
-        );
-        pending
-    } else {
-        candidate
-    }
-}
-
-fn retain_finalizing_candidate(
-    pending_candidate: &mut Option<JobCandidate>,
-    candidate: JobCandidate,
-) {
-    if pending_candidate.is_none() {
-        *pending_candidate = Some(candidate);
-    } else {
-        info!(
-            run_id = %candidate.run_id(),
-            "finalizing candidate not retained because the pending slot is occupied"
-        );
-    }
-}
 
 async fn sleep_until_optional_instant(deadline: Option<Instant>) {
     match deadline {
@@ -2206,7 +2178,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     let mut workspace_cache_gc_handle = None;
     let mut status_retry_handle = None;
     let mut draining_idle_pool_drained = false;
-    let mut pending_finalizing_candidate = None;
+    let mut pending_finalizing_candidate = PendingFinalizingCandidate::new();
     let mut terminal_error = None;
     loop {
         let mode = *mode_rx.borrow_and_update();
@@ -2227,7 +2199,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
             }
         }
         if mode != RunnerMode::Running {
-            pending_finalizing_candidate = None;
+            pending_finalizing_candidate.clear();
         }
         blank_pool.cancel_if_inactive(mode);
         match mode {
@@ -2300,10 +2272,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
         }
         let mitm_retry_deadline = mitm_recovery.retry_deadline();
         let heartbeat_sending = heartbeat.is_sending();
-        let pending_finalizing_deadline = pending_finalizing_candidate
-            .as_ref()
-            .and_then(JobCandidate::runner_preference)
-            .map(runner_provider::ActiveRunnerPreference::deadline);
+        let pending_finalizing_deadline = pending_finalizing_candidate.deadline();
         tokio::select! {
             connection = prune_listener.accept() => {
                 match connection {
@@ -2350,10 +2319,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                 let Some(candidate) = discovered else { break };
                 // Future completed — create a new one for the next discovery.
                 discover_fut = Box::pin(provider_state.provider.discover());
-                let candidate = candidate_for_admission(
-                    candidate,
-                    &mut pending_finalizing_candidate,
-                );
+                let candidate = pending_finalizing_candidate.for_admission(candidate);
                 let result = handle_discovered_job(
                     DiscoveredJob { candidate },
                     DiscoveredJobContext {
@@ -2372,10 +2338,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                 let mut needs_reuse_state_refresh =
                     result.needs_reuse_state_refresh;
                 if let Some(candidate) = result.pending_candidate {
-                    retain_finalizing_candidate(
-                        &mut pending_finalizing_candidate,
-                        candidate,
-                    );
+                    pending_finalizing_candidate.retain(candidate);
                 }
                 let mut drained_ready_candidates = 0;
                 while drained_ready_candidates < READY_DIRECT_CANDIDATE_DRAIN_LIMIT {
@@ -2394,10 +2357,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                         break;
                     };
                     drained_ready_candidates += 1;
-                    let candidate = candidate_for_admission(
-                        candidate,
-                        &mut pending_finalizing_candidate,
-                    );
+                    let candidate = pending_finalizing_candidate.for_admission(candidate);
                     let result = handle_discovered_job(
                         DiscoveredJob { candidate },
                         DiscoveredJobContext {
@@ -2415,10 +2375,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                     ).await;
                     needs_reuse_state_refresh |= result.needs_reuse_state_refresh;
                     if let Some(candidate) = result.pending_candidate {
-                        retain_finalizing_candidate(
-                            &mut pending_finalizing_candidate,
-                            candidate,
-                        );
+                        pending_finalizing_candidate.retain(candidate);
                     }
                 }
                 let live_mode = *mode_rx.borrow();
@@ -2623,11 +2580,9 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
             _ = sleep_until_optional_instant(pending_finalizing_deadline),
                 if pending_finalizing_candidate.is_some() && mode == RunnerMode::Running =>
             {
-                let Some(candidate) = pending_finalizing_candidate.take() else {
+                let Some(candidate) = pending_finalizing_candidate.take_expired() else {
                     continue;
                 };
-                let candidate = candidate
-                    .without_runner_preference(RunnerPreferenceRemovalReason::Expired);
                 let result = handle_discovered_job(
                     DiscoveredJob { candidate },
                     DiscoveredJobContext {
@@ -2644,10 +2599,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                     },
                 ).await;
                 if let Some(candidate) = result.pending_candidate {
-                    retain_finalizing_candidate(
-                        &mut pending_finalizing_candidate,
-                        candidate,
-                    );
+                    pending_finalizing_candidate.retain(candidate);
                 }
                 if result.needs_reuse_state_refresh {
                     heartbeat.request(*mode_rx.borrow())?;
@@ -2676,10 +2628,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                         },
                     ).await;
                     if let Some(candidate) = result.pending_candidate {
-                        retain_finalizing_candidate(
-                            &mut pending_finalizing_candidate,
-                            candidate,
-                        );
+                        pending_finalizing_candidate.retain(candidate);
                     }
                 }
                 let source = match live_mode {

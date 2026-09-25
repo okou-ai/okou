@@ -144,6 +144,77 @@ pub enum PreClaimOutcome {
     Deferred,
 }
 
+/// The one unclaimed finalizing candidate retained between reactor wakeups.
+///
+/// Admission owns the candidate's original preference and the decision to
+/// recheck it. Runner still owns discovery, timer and reuse-notification wiring.
+#[derive(Default)]
+pub struct PendingFinalizingCandidate {
+    candidate: Option<JobCandidate>,
+}
+
+impl PendingFinalizingCandidate {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// A rediscovery of the same run must not replace its original deadline.
+    pub fn for_admission(&mut self, candidate: JobCandidate) -> JobCandidate {
+        if let Some(pending) = self
+            .candidate
+            .take_if(|pending| pending.run_id() == candidate.run_id())
+        {
+            info!(
+                run_id = %candidate.run_id(),
+                "duplicate finalizing candidate rechecks retained admission state"
+            );
+            pending
+        } else {
+            candidate
+        }
+    }
+
+    /// Keep the first pending candidate without blocking unrelated ready work.
+    pub fn retain(&mut self, candidate: JobCandidate) {
+        if self.candidate.is_none() {
+            self.candidate = Some(candidate);
+        } else {
+            info!(
+                run_id = %candidate.run_id(),
+                "finalizing candidate not retained because the pending slot is occupied"
+            );
+        }
+    }
+
+    pub fn is_some(&self) -> bool {
+        self.candidate.is_some()
+    }
+
+    pub fn deadline(&self) -> Option<Instant> {
+        self.candidate
+            .as_ref()
+            .and_then(JobCandidate::runner_preference)
+            .map(runner_provider::ActiveRunnerPreference::deadline)
+    }
+
+    /// Retry on a reuse-state notification, preserving the selected preference.
+    pub fn take(&mut self) -> Option<JobCandidate> {
+        self.candidate.take()
+    }
+
+    /// Retry after the timer fired with the original preference expired.
+    pub fn take_expired(&mut self) -> Option<JobCandidate> {
+        self.take().map(|candidate| {
+            candidate.without_runner_preference(RunnerPreferenceRemovalReason::Expired)
+        })
+    }
+
+    /// Draining or stopping cannot retain unclaimed preference state.
+    pub fn clear(&mut self) {
+        self.candidate = None;
+    }
+}
+
 struct PreparedCandidate {
     candidate: JobCandidate,
     resource: Option<LocalAdmissionResource>,
@@ -948,6 +1019,67 @@ pub async fn rollback_exact_speculation_outcome(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use runner_provider::{ActiveRunnerPreference, RunnerPreferenceClaimState};
+    use std::time::Duration;
+    use uuid::Uuid;
+
+    fn finalizing_candidate(run_id: RunId, deadline: Instant) -> JobCandidate {
+        JobCandidate::new(run_id, "vm0/default".into()).with_runner_preference(
+            ActiveRunnerPreference::new(
+                RunnerProcessIdentity::new(Uuid::new_v4(), 1).unwrap(),
+                RunnerPreferenceTier::FinalizingPredecessor,
+                deadline,
+            ),
+        )
+    }
+
+    #[test]
+    fn pending_same_run_rediscovery_keeps_original_deadline() {
+        let run_id = RunId::new_v4();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut pending = PendingFinalizingCandidate::new();
+        pending.retain(finalizing_candidate(run_id, deadline));
+
+        let selected = pending.for_admission(finalizing_candidate(
+            run_id,
+            deadline + Duration::from_secs(30),
+        ));
+        assert_eq!(selected.runner_preference().unwrap().deadline(), deadline);
+        assert!(!pending.is_some());
+    }
+
+    #[test]
+    fn pending_first_candidate_does_not_block_unrelated_ready_work() {
+        let first_run = RunId::new_v4();
+        let second_run = RunId::new_v4();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut pending = PendingFinalizingCandidate::new();
+        pending.retain(finalizing_candidate(first_run, deadline));
+
+        let ready = pending.for_admission(finalizing_candidate(second_run, deadline));
+        assert_eq!(ready.run_id(), second_run);
+        pending.retain(ready);
+        assert_eq!(pending.deadline(), Some(deadline));
+        assert_eq!(pending.take().unwrap().run_id(), first_run);
+        assert!(!pending.is_some());
+    }
+
+    #[test]
+    fn pending_expiry_and_mode_clear_release_unclaimed_state() {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut pending = PendingFinalizingCandidate::new();
+        pending.retain(finalizing_candidate(RunId::new_v4(), deadline));
+        let expired = pending.take_expired().unwrap();
+        assert!(expired.runner_preference().is_none());
+        assert_eq!(
+            expired.runner_preference_claim_telemetry().unwrap().state,
+            Some(RunnerPreferenceClaimState::Expired)
+        );
+        assert_eq!(pending.deadline(), None);
+        pending.retain(finalizing_candidate(RunId::new_v4(), deadline));
+        pending.clear();
+        assert!(pending.take().is_none());
+    }
 
     #[test]
     fn ranked_preference_admission_matrix() {
