@@ -391,6 +391,36 @@ describe("okou browser user-action commands", () => {
     expect(JSON.stringify(requestBody)).not.toContain("#quantity");
   });
 
+  it("captures a native date/time field by node, leaving subtype discovery to the API", async () => {
+    installCdp({ nodeName: "INPUT" });
+    let requestBody: unknown;
+    installCreateRoute((body) => {
+      requestBody = body;
+    });
+    await browserCommand.parseAsync([
+      "node",
+      "okou",
+      "input-request",
+      "--field",
+      JSON.stringify({
+        key: "arrival",
+        label: "Arrival",
+        fieldKind: "date_time",
+        required: false,
+        target: "#private-arrival",
+      }),
+      "--callback-prompt",
+      "Continue after date entry",
+    ]);
+    expect(requestBody).toMatchObject({
+      fields: [{ key: "arrival", fieldKind: "date_time", backendNodeId: 42 }],
+    });
+    expect(JSON.stringify(requestBody)).not.toContain("#private-arrival");
+    expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(
+      "#private-arrival",
+    );
+  });
+
   it("captures a native checkbox node without disclosing its selector or value", async () => {
     installCdp({ nodeName: "INPUT" });
     let requestBody: unknown;

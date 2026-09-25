@@ -311,10 +311,87 @@ function validNumberValue(
   );
 }
 
-function mockNativeNumberTarget(args: {
+interface NativeConstrainedMockArgs {
   readonly constraints: () => NativeNumberConstraints;
   readonly verificationMatches: () => boolean;
-}): void {
+  readonly inputType?: () => string;
+  readonly siteRequired?: () => boolean;
+  readonly validValue?: (value: unknown) => boolean;
+}
+
+function nativeVerifyOnly(argumentsValue: unknown): boolean {
+  const first = Array.isArray(argumentsValue) ? argumentsValue[0] : undefined;
+  return (
+    typeof first === "object" &&
+    first !== null &&
+    "value" in first &&
+    typeof first.value === "object" &&
+    first.value !== null &&
+    "verifyOnly" in first.value &&
+    first.value.verifyOnly === true
+  );
+}
+
+function mockNativeConstrainedCall(
+  args: NativeConstrainedMockArgs,
+  params: {
+    readonly functionDeclaration?: unknown;
+    readonly arguments?: unknown;
+  },
+) {
+  const declaration = String(params.functionDeclaration);
+  if (declaration.includes("firstSpec")) {
+    return {
+      result: {
+        value:
+          !nativeVerifyOnly(params.arguments) || args.verificationMatches(),
+      },
+    };
+  }
+  if (declaration.includes("expectedValues")) {
+    return { result: { value: args.verificationMatches() } };
+  }
+  if (declaration.includes("cloneNode")) {
+    const first = Array.isArray(params.arguments)
+      ? params.arguments[0]
+      : undefined;
+    const value =
+      typeof first === "object" && first !== null && "value" in first
+        ? first.value
+        : undefined;
+    return {
+      result: {
+        value: args.validValue
+          ? args.validValue(value)
+          : validNumberValue(value, args.constraints()),
+      },
+    };
+  }
+  if (declaration.includes("nextValue")) {
+    return { result: { value: true } };
+  }
+  const { min, max, step } = args.constraints();
+  return {
+    result: {
+      value: [
+        {
+          tagName: "INPUT",
+          inputType: args.inputType?.() ?? "number",
+          connected: true,
+          mainDocument: true,
+          writable: true,
+          siteRequired: args.siteRequired?.() ?? false,
+          multiple: false,
+          ...(min ? { min } : {}),
+          ...(max ? { max } : {}),
+          ...(step ? { step } : {}),
+        },
+      ],
+    },
+  };
+}
+
+function mockNativeNumberTarget(args: NativeConstrainedMockArgs): void {
   context.mocks.browserUseCdp.command.mockImplementation((command) => {
     switch (command.method) {
       case "Target.getTargets": {
@@ -362,41 +439,7 @@ function mockNativeNumberTarget(args: {
         return { data: Buffer.from("screenshot").toString("base64") };
       }
       case "Runtime.callFunctionOn": {
-        const declaration = String(command.params.functionDeclaration);
-        if (declaration.includes("expectedValues")) {
-          return { result: { value: args.verificationMatches() } };
-        }
-        if (declaration.includes("cloneNode")) {
-          const first = Array.isArray(command.params.arguments)
-            ? command.params.arguments[0]
-            : undefined;
-          const value =
-            typeof first === "object" && first !== null && "value" in first
-              ? first.value
-              : undefined;
-          return {
-            result: { value: validNumberValue(value, args.constraints()) },
-          };
-        }
-        if (declaration.includes("nextValue")) {
-          return { result: { value: true } };
-        }
-        return {
-          result: {
-            value: [
-              {
-                tagName: "INPUT",
-                inputType: "number",
-                connected: true,
-                mainDocument: true,
-                writable: true,
-                siteRequired: false,
-                multiple: false,
-                ...args.constraints(),
-              },
-            ],
-          },
-        };
+        return mockNativeConstrainedCall(args, command.params);
       }
       default: {
         return {};
@@ -2037,6 +2080,224 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(uncertain.body.state).toBe("uncertain");
+  });
+
+  it("validates all five native date/time subtypes, empty/required values and independent readback", async () => {
+    const { routeMocks, runs, chat, actor, agent } =
+      await setupBrowserScenario();
+    const current = await createClaimedChatRun(
+      chat,
+      runs,
+      actor,
+      agent.agentId,
+      "Enter a date or time in the current browser",
+    );
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BrowserNativeInput]: true,
+    });
+    const providerId = randomUUID();
+    acceptBrowserUseCdpSessions([providerId]);
+    let inputType = "date";
+    let min = "";
+    let max = "";
+    let step = "any";
+    let siteRequired = false;
+    let verificationMatches = true;
+    let canonical = "2026-09-25";
+    mockNativeNumberTarget({
+      constraints: () => {
+        return { min, max, step };
+      },
+      verificationMatches: () => {
+        return verificationMatches;
+      },
+      inputType: () => {
+        return inputType;
+      },
+      siteRequired: () => {
+        return siteRequired;
+      },
+      validValue: (value) => {
+        return (
+          value === null ||
+          value === canonical ||
+          (value === "" && !siteRequired)
+        );
+      },
+    });
+    server.use(
+      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+        const body = z
+          .strictObject({ name: z.string() })
+          .parse(await request.json());
+        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+          status: 201,
+        });
+      }),
+      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+        return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+      }),
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        return HttpResponse.json(providerBrowser(String(params.id)));
+      }),
+    );
+    await accept(
+      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      [200],
+    );
+    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    const create = async (required = false) => {
+      return await accept(
+        userActionClient().create({
+          headers: current.claim.browserHeaders,
+          body: {
+            kind: "input",
+            callbackPrompt: "Continue after date entry",
+            pageTargetId: "native-input-target",
+            fields: [
+              {
+                key: "arrival",
+                label: "Arrival",
+                fieldKind: "date_time",
+                required,
+                backendNodeId: 45,
+              },
+            ],
+          },
+        }),
+        [201],
+      );
+    };
+    const apply = async (
+      token: string,
+      values: readonly { key: string; value: string }[],
+    ) => {
+      return await userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+        body: { values: [...values] },
+      });
+    };
+    for (const [subtype, expected] of [
+      ["date", "2026-09-25"],
+      ["time", "09:30"],
+      ["datetime-local", "2026-09-25T09:30"],
+      ["month", "2026-09"],
+      ["week", "2026-W39"],
+    ] as const) {
+      inputType = subtype;
+      canonical = expected;
+      min = subtype === "date" ? "2026-01-01" : "";
+      max = subtype === "date" ? "2026-12-31" : "";
+      step = subtype === "time" ? "60" : "any";
+      const created = await create();
+      const token = created.body.action.requestToken;
+      expect(created.body.action.fields[0]?.control).toMatchObject({
+        tagName: "INPUT",
+        inputType: subtype,
+      });
+      const observed = await accept(
+        userActionClient().preflight({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken: token },
+          body: {},
+        }),
+        [200],
+      );
+      expect(observed.body.fields[0]?.control).toMatchObject({
+        inputType: subtype,
+        ...(min ? { min } : {}),
+        ...(max ? { max } : {}),
+        step,
+      });
+      expect(JSON.stringify(observed.body)).not.toContain("backendNodeId");
+      const invalid = await apply(token, [
+        { key: "arrival", value: "not-a-date" },
+      ]);
+      expect(invalid).toMatchObject({
+        status: 409,
+        body: { error: { code: "BROWSER_USER_ACTION_INVALID_VALUE" } },
+      });
+      const written = await accept(
+        apply(token, [{ key: "arrival", value: expected }]),
+        [200],
+      );
+      expect(written.body.state).toBe("succeeded");
+      expect(browserSelectWrites().at(-2)?.[0].params.arguments).toMatchObject([
+        {
+          value: {
+            kind: "scalar",
+            inputType: subtype,
+            value: expected,
+            ...(min ? { min } : {}),
+            ...(max ? { max } : {}),
+            step,
+          },
+        },
+        { value: 0 },
+      ]);
+      expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
+        { value: { verifyOnly: true } },
+        { value: 0 },
+      ]);
+    }
+    inputType = "date";
+    canonical = "2026-09-25";
+    siteRequired = false;
+    const untouched = await create();
+    const beforeUntouched = browserSelectWrites().length;
+    expect(
+      (await accept(apply(untouched.body.action.requestToken, []), [200])).body
+        .state,
+    ).toBe("succeeded");
+    expect(browserSelectWrites()).toHaveLength(beforeUntouched);
+    const clearing = await create();
+    expect(
+      (
+        await accept(
+          apply(clearing.body.action.requestToken, [
+            { key: "arrival", value: "" },
+          ]),
+          [200],
+        )
+      ).body.state,
+    ).toBe("succeeded");
+    expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
+      { value: { value: "", verifyOnly: true } },
+      { value: 0 },
+    ]);
+    const required = await create(true);
+    await expect(
+      apply(required.body.action.requestToken, [{ key: "arrival", value: "" }]),
+    ).resolves.toMatchObject({
+      status: 400,
+      body: { error: { code: "BROWSER_USER_ACTION_REQUIRED_VALUE_MISSING" } },
+    });
+    const drifted = await create();
+    inputType = "month";
+    expect(
+      (
+        await accept(
+          apply(drifted.body.action.requestToken, [
+            { key: "arrival", value: "2026-09" },
+          ]),
+          [200],
+        )
+      ).body.state,
+    ).toBe("stale");
+    inputType = "date";
+    const reverted = await create();
+    verificationMatches = false;
+    expect(
+      (
+        await accept(
+          apply(reverted.body.action.requestToken, [
+            { key: "arrival", value: canonical },
+          ]),
+          [200],
+        )
+      ).body.state,
+    ).toBe("uncertain");
   });
 
   it("validates and applies CLI-resolved Browser input without exposing target or value data", async () => {

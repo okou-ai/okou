@@ -1,6 +1,6 @@
 {
-  "id": "97a3bc0d-5af1-4458-bd60-5a1151142ad6",
-  "prevId": "fe374c3f-7890-4d8a-bdda-e56487bce7ab",
+  "id": "9abbb9a7-c706-4321-956f-43838d5a4073",
+  "prevId": "97a3bc0d-5af1-4458-bd60-5a1151142ad6",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -10493,32 +10493,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "chat_threads_agent_session_id_agent_sessions_id_fk": {
-          "name": "chat_threads_agent_session_id_agent_sessions_id_fk",
-          "tableFrom": "chat_threads",
-          "tableTo": "agent_sessions",
-          "columnsFrom": [
-            "agent_session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "chat_threads_agent_session_run_id_agent_runs_id_fk": {
-          "name": "chat_threads_agent_session_run_id_agent_runs_id_fk",
-          "tableFrom": "chat_threads",
-          "tableTo": "agent_runs",
-          "columnsFrom": [
-            "agent_session_run_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "chat_threads_computer_use_host_id_computer_use_hosts_id_fk": {

@@ -8,7 +8,7 @@ import {
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { compile } from "tailwindcss";
 import { expect, test } from "vitest";
 
@@ -663,6 +663,78 @@ test("A Browser input card opens a preflighted dialog and completes without navi
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   expect(sentPrompt).toBe(BROWSER_INPUT_CALLBACK);
   expect(buttonsByName("Enter information")).toHaveLength(0);
+});
+
+test("An inline native datetime-local picker keeps a wall-clock string through callback", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  const dateAction = () => {
+    return {
+      ...browserInputAction(state),
+      fields: [
+        {
+          key: "appointment",
+          label: "Appointment",
+          fieldKind: "date_time" as const,
+          required: true,
+          control: {
+            tagName: "INPUT" as const,
+            inputType: "datetime-local" as const,
+            min: "2026-09-01T00:00",
+            max: "2026-09-30T23:59",
+            step: "60",
+          },
+        },
+      ],
+    };
+  };
+  installCapabilityChat({
+    events: completedConversation(`[Enter details](${browserInputUrl()})`),
+  });
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, dateAction());
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, dateAction());
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      { key: "appointment", value: "2026-09-25T09:30" },
+    ]);
+    state = "succeeded";
+    return respond(200, dateAction());
+  });
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
+    return respond(201, {
+      runId: crypto.randomUUID(),
+      threadId: RUN_THREAD_ID,
+    });
+  });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await readyChat();
+  click(await findButton("Enter information"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
+  });
+  const picker = within(dialog).getByLabelText("Appointment");
+  expect(picker).toHaveAttribute("type", "datetime-local");
+  expect(picker).toHaveAttribute("min", "2026-09-01T00:00");
+  expect(picker).toHaveAttribute("max", "2026-09-30T23:59");
+  expect(picker).toHaveAttribute("step", "60");
+  fireEvent.change(picker, { target: { value: "2026-09-25T09:30" } });
+  const submit = buttonsByName("Add to browser", dialog)[0];
+  if (!submit) {
+    throw new Error("Missing date/time submission button");
+  }
+  click(submit);
+  await expect(
+    screen.findByText("Agent notified"),
+  ).resolves.toBeInTheDocument();
 });
 
 test("An inline Browser input dialog confirms a required native checkbox", async () => {

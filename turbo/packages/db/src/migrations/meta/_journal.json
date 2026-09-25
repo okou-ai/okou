@@ -1146,8 +1146,15 @@
     {
       "idx": 1241,
       "version": "7",
-      "when": 1790336443619,
-      "tag": "1241_drop_chat_thread_session_fks",
+      "when": 1790336867908,
+      "tag": "1241_computer_use_host_liveness_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 1242,
+      "version": "7",
+      "when": 1790339355112,
+      "tag": "1242_drop_chat_thread_session_fks",
       "breakpoints": true
     }
   ]
