@@ -192,6 +192,14 @@ After the first SSH-backed row exists, do not roll the API below the typed-route
 reader/writer; disabling `VncAccess` preserves data and does not make that
 rollback safe. Product exposure requires its own later rollout evidence.
 
+For the separately selected Mac classic-password profile, apply migration
+`1238_thin_spot` before the API. An older Runner cannot advertise the exact
+`(vnc_password, apple_vnc_password, ssh)` tuple, so the compatible API returns
+`unsupported_profile` before KMS. An older API cannot read newly saved type-2
+rows; after creating any, do not roll the API back without removing or migrating
+those rows under owner control. See [deployment compatibility](deployment-compatibility.md)
+for rollout order. `VncAccess` remains disabled until separate activation.
+
 Before creating grants, every serving and rollback API must support grant
 cleanup. Keep the additive schema on rollback. Disable the feature to stop new
 authority, and preserve cleanup for retained data. Activation is a separate
