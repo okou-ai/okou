@@ -193,7 +193,7 @@ async function assertUncommittedTransition() {
 }
 
 // Phase-A API writes at the 1172 frontier. The current ORM names the column
-// that 1251 renamed, so this spells out the phase-A statements in SQL.
+// that 1252 renamed, so this spells out the phase-A statements in SQL.
 async function exercisePhaseARuntime() {
   const ids = z.array(z.object({ id: z.string() }));
   const insertSite = async (slug: string) => {

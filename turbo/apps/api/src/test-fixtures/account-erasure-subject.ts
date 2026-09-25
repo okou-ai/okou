@@ -82,17 +82,6 @@ export async function removeErasureSubjectsFixture(
 }
 
 /** Whether one exact test-owned erasure job still exists. */
-export async function erasureSubjectJobExistsFixture(
-  jobId: string,
-): Promise<boolean> {
-  const [job] = await db()
-    .select({ id: accountErasureJobs.id })
-    .from(accountErasureJobs)
-    .where(eq(accountErasureJobs.id, jobId))
-    .limit(1);
-  return job !== undefined;
-}
-
 /** Reassigns one Agent's owner, the change a future ownership transfer would
  * persist. No production writer updates this column today, and the unique
  * `(id, org_id, owner)` key makes it the key update a content writer's KEY
@@ -202,30 +191,9 @@ export function erasureFenceStatementKinds(
   return [ERASURE_FENCE_DEADLINES];
 }
 
-export const ERASURE_FENCE_BEGIN = /^(?:begin|start transaction)(?:$|\s)/;
-export const ERASURE_FENCE_COMMIT = /^commit$/;
-
 /** The same shared prefix as exact statement patterns, for a suite that pins
  * complete SQL shapes rather than classified kinds. Both views are generated
  * from one place so admission cannot drift away from what suites assert. */
-export function erasureFenceStatementPatterns(
-  admission: ErasureFenceAdmission,
-): readonly RegExp[] {
-  const deadlines =
-    /^select set_config\('lock_timeout', ?\$\d+, true\), ?set_config\('statement_timeout', ?\$\d+, true\)$/;
-  const subjectLocks =
-    /^select (?=.*erasure_isolation_probe)(?=.*pg_advisory_xact_lock_shared).+$/;
-  const closedLookup =
-    /^select .+ from "account_erasure_jobs" where .+ limit \$\d+$/;
-  if (admission === "write") {
-    return [deadlines, subjectLocks, closedLookup];
-  }
-  if (admission === "read") {
-    return [deadlines, closedLookup];
-  }
-  return [deadlines];
-}
-
 /** Classifies the transaction controls and fence statements every fenced route
  * shares. Returns null for a statement the route itself owns, which its own
  * classifier must name. */
@@ -254,59 +222,6 @@ export function classifyErasureFenceStatement(
 }
 
 /** The advisory lock key admission derives from one subject. */
-export function erasureSubjectLockKey(subject: ErasureSubject): string {
-  return `account-erasure:${JSON.stringify([
-    subject.subjectKind,
-    subject.subjectId,
-  ])}`;
-}
-
-/**
- * The one statement that acquires every named subject's advisory lock.
- *
- * Admission folds the whole sorted key set into a single statement, so a route
- * fixture recognizes its transaction from any one subject it admits rather than
- * from a per-subject statement that no longer exists.
- */
-export function isErasureSubjectLockStatement(
-  queryArgs: unknown[],
-  args: {
-    readonly subject: ErasureSubject;
-    readonly mode?: "shared" | "exclusive";
-  },
-): boolean {
-  const text = barrierQueryText(queryArgs);
-  return (
-    text.startsWith("select") &&
-    text.includes("erasure_isolation_probe") &&
-    text.includes(
-      args.mode === "exclusive"
-        ? "pg_advisory_xact_lock(hashtextextended"
-        : "pg_advisory_xact_lock_shared(hashtextextended",
-    ) &&
-    barrierQueryBinds(queryArgs, erasureSubjectLockKey(args.subject))
-  );
-}
-
-/**
- * The closure lookup every admission ends with.
- *
- * A read path takes no advisory lock, so this is the first statement that
- * identifies its transaction; a write path issues it immediately after its
- * lock statement. It binds the subject id directly rather than the lock key.
- */
-export function isErasureSubjectClosureLookup(
-  queryArgs: unknown[],
-  args: { readonly subjectId: string },
-): boolean {
-  const text = barrierQueryText(queryArgs);
-  return (
-    text.startsWith("select") &&
-    text.includes('from "account_erasure_jobs"') &&
-    barrierQueryBinds(queryArgs, args.subjectId)
-  );
-}
-
 /**
  * The statements the currently selected transaction has already issued, in
  * order. A thread id alone cannot identify a transaction when several of them
