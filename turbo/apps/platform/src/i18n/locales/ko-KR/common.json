@@ -7939,6 +7939,7 @@
       "moreOptions": "Discord 추가 옵션",
       "retry": "다시 시도",
       "server": "서버: {{name}}",
+      "suspended": "Discord를 일시적으로 사용할 수 없습니다. 기존 연결은 유지됩니다.",
       "title": "Discord",
       "unconfigured": "이 조직에서는 아직 Discord를 사용할 수 없습니다.",
       "uninstall": "Discord 제거",

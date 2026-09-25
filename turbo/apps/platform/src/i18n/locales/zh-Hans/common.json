@@ -7939,6 +7939,7 @@
       "moreOptions": "更多Discord选项",
       "retry": "重试",
       "server": "服务器：{{name}}",
+      "suspended": "Discord暂时不可用。现有连接会保留。",
       "title": "Discord",
       "unconfigured": "此组织暂时无法使用Discord。",
       "uninstall": "移除Discord",
