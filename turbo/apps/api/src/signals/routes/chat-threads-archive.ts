@@ -11,7 +11,6 @@ import { pathParamsOf, queryOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
 import { notFound } from "../../lib/error";
-import { withChatThreadContentWrite } from "../services/chat-thread-content-erasure-admission.service";
 import { appendChatThreadEvent } from "../services/chat-thread-event.service";
 import { chatThreadOrganizationCondition } from "../services/chat-thread-organization.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
@@ -29,55 +28,38 @@ async function writeChatThreadArchived(
     readonly archived: boolean;
     readonly eventId: string | undefined;
   },
-  signal: AbortSignal,
 ): Promise<boolean> {
-  // Same admission as pin: the flag UPDATE and its sidebar event share one
-  // transaction. Repeating the request still appends an event so optimistic
-  // client events settle.
-  const result = await withChatThreadContentWrite(
-    writeDb,
-    {
-      chatThreadId: args.threadId,
-      authorize: (identity) => {
-        return (
-          identity.userId === args.userId &&
-          identity.agentId !== null &&
-          identity.orgId === args.orgId
-        );
-      },
-    },
-    async (tx) => {
-      const [thread] = await tx
-        .update(chatThreads)
-        .set({ archived: args.archived })
-        .where(
-          and(
-            eq(chatThreads.id, args.threadId),
-            eq(chatThreads.userId, args.userId),
-            chatThreadOrganizationCondition(tx, args.orgId),
-            isNotNull(chatThreads.agentId),
-          ),
-        )
-        .returning({
-          id: chatThreads.id,
-          agentId: chatThreads.agentId,
-        });
-      if (!thread?.agentId) {
-        return false;
-      }
-      await appendChatThreadEvent(tx, {
-        kind: args.archived ? "archived" : "unarchived",
-        userId: args.userId,
-        orgId: args.orgId,
-        chatThreadId: thread.id,
-        agentId: thread.agentId,
-        eventId: args.eventId,
+  // Repeating the request still appends an event so optimistic client events
+  // settle.
+  return await writeDb.transaction(async (tx) => {
+    const [thread] = await tx
+      .update(chatThreads)
+      .set({ archived: args.archived })
+      .where(
+        and(
+          eq(chatThreads.id, args.threadId),
+          eq(chatThreads.userId, args.userId),
+          chatThreadOrganizationCondition(tx, args.orgId),
+          isNotNull(chatThreads.agentId),
+        ),
+      )
+      .returning({
+        id: chatThreads.id,
+        agentId: chatThreads.agentId,
       });
-      return true;
-    },
-    signal,
-  );
-  return result.outcome === "written" && result.value;
+    if (!thread?.agentId) {
+      return false;
+    }
+    await appendChatThreadEvent(tx, {
+      kind: args.archived ? "archived" : "unarchived",
+      userId: args.userId,
+      orgId: args.orgId,
+      chatThreadId: thread.id,
+      agentId: thread.agentId,
+      eventId: args.eventId,
+    });
+    return true;
+  });
 }
 
 const archiveInner$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -93,17 +75,13 @@ const archiveInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return archivingUnavailable;
   }
 
-  const written = await writeChatThreadArchived(
-    set(writeDb$),
-    {
-      userId: auth.userId,
-      orgId: auth.orgId,
-      threadId: params.id,
-      archived: true,
-      eventId: query?.eventId,
-    },
-    signal,
-  );
+  const written = await writeChatThreadArchived(set(writeDb$), {
+    userId: auth.userId,
+    orgId: auth.orgId,
+    threadId: params.id,
+    archived: true,
+    eventId: query?.eventId,
+  });
   signal.throwIfAborted();
   if (!written) {
     return notFound("Chat thread not found");
@@ -127,17 +105,13 @@ const unarchiveInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return archivingUnavailable;
   }
 
-  const written = await writeChatThreadArchived(
-    set(writeDb$),
-    {
-      userId: auth.userId,
-      orgId: auth.orgId,
-      threadId: params.id,
-      archived: false,
-      eventId: query?.eventId,
-    },
-    signal,
-  );
+  const written = await writeChatThreadArchived(set(writeDb$), {
+    userId: auth.userId,
+    orgId: auth.orgId,
+    threadId: params.id,
+    archived: false,
+    eventId: query?.eventId,
+  });
   signal.throwIfAborted();
   if (!written) {
     return notFound("Chat thread not found");
