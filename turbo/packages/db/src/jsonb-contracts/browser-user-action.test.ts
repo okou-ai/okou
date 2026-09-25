@@ -123,9 +123,9 @@ describe("Browser user-action JSONB payload", () => {
       { ...field, fingerprint: { tagName: "TEXTAREA", inputType: "date" } },
       { ...field, radioMemberNodeIds: [45] },
     ]) {
-      expect(() => decode(invalid)).toThrow(
-        "Invalid Browser user-action payload",
-      );
+      expect(() => {
+        return decode(invalid);
+      }).toThrow("Invalid Browser user-action payload");
     }
   });
 
