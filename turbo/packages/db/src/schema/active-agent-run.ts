@@ -12,9 +12,11 @@ import type { RunActivityEntries } from "@okouai/db/jsonb-contracts/run-activity
 import { agentRuns } from "./agent-run";
 
 /**
- * Narrow, per-run state that only exists while the run is active. A row is
- * inserted with the run and deleted by its terminal transition, so heartbeat
- * and activity writes never rewrite the wide `agent_runs` row or its indexes.
+ * Narrow, per-run state that exists while a runner may still work on the run.
+ * Launch inserts it; a never-started run loses it when it turns terminal, and a
+ * started run keeps it until its runner reports completion or cleanup declares
+ * the runner gone. Heartbeat and activity writes therefore never rewrite the
+ * wide `agent_runs` row or its indexes.
  * Keep only immutable identity columns indexed; every mutable column must stay
  * unindexed so single-row updates remain HOT.
  */

@@ -4,9 +4,9 @@
 
 Heartbeats rewrote the wide `agent_runs` row and two heartbeat indexes that no
 query used, and activity snapshots were written through the run-content lock
-chain. Migration `1248` builds `idx_agent_runs_status` concurrently and drops
+chain. Migration `1249` builds `idx_agent_runs_status` concurrently and drops
 `idx_agent_runs_status_heartbeat` and `idx_agent_runs_running_heartbeat`; no
-API names either index. Migration `1249` adds `active_agent_runs`, one narrow
+API names either index. Migration `1250` adds `active_agent_runs`, one narrow
 row per active run with an immutable `chat_thread_id` (no foreign key, null for
 threadless runs), and seeds it from queued, pending and running runs.
 
@@ -31,17 +31,54 @@ New API instances no longer expire `run_activity_snapshots` rows; they stay
 until step 2 drops the table and remain erasable through the `agent_runs`
 cascade. An older API's account-erasure worker rejects the uncatalogued
 `active_agent_runs` table (`catalogue_uncovered`), so account deletions wait for
-a new worker during the migration-to-promotion window and on rollback. This API
-reads no active-row heartbeat and treats a leftover row only as activity for a
-run the summary already reports as ineligible, so none of these states needs a
-runtime fallback.
+a new worker during the migration-to-promotion window and on rollback. A row an
+older API abandons is either still live, or terminal and released by the
+stale-terminal sweep once its heartbeat and completion age past the grace; no
+reader treats it as more than activity for a run the summary already reports as
+ineligible, so none of these states needs a runtime fallback.
 
-Step 2's migration seeds the missing rows for active runs and deletes active
-rows whose run is no longer queued, pending or running; it then switches
+Step 2's migration seeds the missing rows for active runs, including runs
+cancelled while running whose recovery grace has not passed, and deletes only
+rows the stale-terminal sweep would release (terminal, completed and silent past
+the grace); it then switches
 heartbeat readers to `active_agent_runs`, stops writing
 `agent_runs.last_heartbeat_at` and drops `run_activity_snapshots`. After step 2,
 rolling back to this release is not supported because its timeout cleanup would
 read a stale heartbeat column. Step 3 drops `agent_runs.last_heartbeat_at`.
+
+## Thread draft contraction, release 2 (2026-09-25)
+
+Release 2 of the thread-draft move off `chat_threads` (#36173). Release 1
+(#36897, merge commit `4558c9fa`) made `chat_thread_drafts` the only draft
+store and writes `user_id` on every row.
+
+Migration `1248_contract_chat_thread_drafts` fills any missing `user_id` from
+the thread. It then deletes cleared tombstones (both draft values null) and rows
+whose thread no longer exists, makes `user_id` and `draft_user_message`
+`NOT NULL`, drops `chat_thread_drafts_draft_user_message_check`, and adds the
+unique index `uq_chat_thread_drafts_thread_user`. Release 1 always writes an
+owner and deletes on clear, so it stays compatible with the contracted table
+during rollout; its `ON CONFLICT (chat_thread_id)` upsert still matches the
+unchanged primary key.
+
+The API drops the two compatibility paths Release 1 declared. The drafts listing
+no longer filters null tombstones, and account erasure no longer reaches draft
+rows through the thread, because every row now has an owner. Draft upserts
+target `(chat_thread_id, user_id)`. `GET /api/chat-threads/:id/draft` no longer
+declares `404` (Release 1 already never returns it), and the App stops accepting
+it. The runtime `chat_threads` mapping no longer declares `draft_user_message`
+or `draft_attachments`, so no API from this release names them in an implicit
+`INSERT`, `SELECT` or `RETURNING`. The DDL schema still declares them.
+
+**API rollback floor: `4558c9fac46ce1a96a25745b477b32b70dab7ae6`** (#36897). An
+older API dual-writes a draft row without `user_id` and fails every draft save
+against this schema. The production rollback resolver enforces the floor.
+
+Release 3 is allowed only after this API is in production and becomes the
+rollback floor. It drops the two `chat_threads` draft columns and their check
+constraint, which Release 1 would still name in thread inserts. It also makes
+`(chat_thread_id, user_id)` the primary key and lets the draft `PATCH` skip the
+owner read, so a missing or foreign thread returns `204` instead of `404`.
 
 ## Chat event retention and Discord delivery table retirement (2026-09-25)
 
