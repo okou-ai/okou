@@ -265,9 +265,9 @@ function hostTokenHeaders(hostToken: string | null): AuthHeaders {
 
 function hostRuntimeBody(options: ComputerUseHostStartOptions = {}) {
   return {
-    ...(options.installationId
-      ? { installationId: options.installationId }
-      : {}),
+    // Every Desktop registers with its installation; a new one per start
+    // unless the test is exercising reactivation of the same installation.
+    installationId: options.installationId ?? randomUUID(),
     hostName: options.hostName ?? "BDD Desktop",
     appVersion: options.appVersion ?? "0.1.0",
     osVersion: options.osVersion ?? "macOS 15",
