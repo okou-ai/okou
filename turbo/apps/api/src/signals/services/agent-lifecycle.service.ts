@@ -7,14 +7,12 @@ import {
   piStableContextPublications,
 } from "@okouai/db/schema/pi-stable-context";
 import { agentSessions } from "@okouai/db/schema/agent-session";
+import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, asc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
 import type { Tx } from "../../lib/db-types";
-import {
-  lockAgentInstructionsStoragesInTransaction,
-  removeLockedAgentInstructionsStoragesInTransaction,
-} from "./agent-instructions-storage-transaction.service";
 import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import {
   deleteLockedRuns,
@@ -170,17 +168,6 @@ export async function deleteStableContextLifecycleAfterAuthorityRemoval(
   });
 }
 
-async function deleteScopedUsageData(
-  db: NodePgDatabase,
-  scope: ClerkDeletionScope,
-): Promise<void> {
-  if (scope.kind === "organization") {
-    await deleteOrgUsageData(db, scope.orgId);
-  } else {
-    await deleteUserUsageData(db, scope.userId);
-  }
-}
-
 async function revokeOwnedAgentMorningBriefDeliveries(
   tx: Tx,
   agentIds: readonly string[],
@@ -194,42 +181,85 @@ async function revokeOwnedAgentMorningBriefDeliveries(
   }
 }
 
-async function lockClerkAgentInstructionsStorages(
-  tx: Tx,
-  scope: ClerkDeletionScope,
-  ownedAgents: readonly {
-    readonly name: string;
-    readonly orgId: string;
-  }[],
-) {
-  if (scope.kind !== "user") {
-    return [];
-  }
-  const locked = await lockAgentInstructionsStoragesInTransaction(
-    tx,
-    ownedAgents.map((agent) => {
-      return { orgId: agent.orgId, agentName: agent.name };
-    }),
-  );
-  return locked;
+/**
+ * User deletion removes only the user's own rows. Agents the user owns are
+ * retained with their `owner` unchanged, together with everything attached to
+ * them (sessions and runs of other members, instructions Storage, Morning Brief
+ * deliveries and stable context), so another member's work is never cascaded
+ * away through an Agent.
+ */
+async function deleteClerkUserLifecycleData(
+  db: NodePgDatabase,
+  userId: string,
+): Promise<void> {
+  const receipt = await db.transaction(async (tx) => {
+    // Compaction -> ledger/entitlements -> sessions/Run. The helper uses a
+    // savepoint on this same connection; both deletion stages commit
+    // atomically and retain their locks through that commit.
+    await deleteUserUsageData(tx, userId);
+    await tx.execute(
+      sql`SELECT set_config('lock_timeout', ${AGENT_LIFECYCLE_LOCK_TIMEOUT}, true)`,
+    );
+    const userSessions = tx
+      .select({ id: agentSessions.id })
+      .from(agentSessions)
+      .where(eq(agentSessions.userId, userId));
+    await tx
+      .select({ id: agentSessions.id })
+      .from(agentSessions)
+      .where(inArray(agentSessions.id, userSessions))
+      .orderBy(asc(agentSessions.id))
+      .for("update");
+    // UNION deduplicates the user's direct runs and runs in the user's sessions.
+    const targetRuns = tx
+      .select({ id: agentRuns.id })
+      .from(agentRuns)
+      .where(eq(agentRuns.userId, userId))
+      .union(
+        tx
+          .select({ id: agentRuns.id })
+          .from(agentRuns)
+          .where(inArray(agentRuns.sessionId, userSessions)),
+      );
+    const runs = await tx
+      .select({ id: agentRuns.id })
+      .from(agentRuns)
+      .where(inArray(agentRuns.id, targetRuns))
+      .orderBy(asc(agentRuns.id))
+      .for("update");
+    const runIds = runs.map((run) => {
+      return run.id;
+    });
+    const removed = await deleteRunConversations(tx, runIds);
+    await deleteLockedRuns(tx, runIds);
+    await tx.delete(agentSessions).where(eq(agentSessions.userId, userId));
+    await tx
+      .delete(chatThreadDrafts)
+      .where(eq(chatThreadDrafts.userId, userId));
+    await tx.delete(chatThreads).where(eq(chatThreads.userId, userId));
+    await deleteClerkStableContextLifecycleData(
+      tx,
+      { kind: "user", userId },
+      [],
+    );
+    return await releaseDeletedConversationReferences(tx, removed);
+  });
+  logCommittedConversationDeletion("clerk_user", receipt);
 }
 
-export async function deleteClerkAgentLifecycleData(
+async function deleteClerkOrganizationLifecycleData(
   db: NodePgDatabase,
-  scope: ClerkDeletionScope,
+  orgId: string,
 ): Promise<void> {
   const receipt = await db.transaction(async (tx) => {
     // Compaction -> ledger/entitlements -> parents/Run. The helper uses a
     // savepoint on this same connection; both deletion stages commit
     // atomically and retain their locks through that commit.
-    await deleteScopedUsageData(tx, scope);
+    await deleteOrgUsageData(tx, orgId);
     await tx.execute(
       sql`SELECT set_config('lock_timeout', ${AGENT_LIFECYCLE_LOCK_TIMEOUT}, true)`,
     );
-    const agentScope =
-      scope.kind === "organization"
-        ? eq(agents.orgId, scope.orgId)
-        : eq(agents.owner, scope.userId);
+    const agentScope = eq(agents.orgId, orgId);
     const candidates = await tx
       .select({ id: agents.id })
       .from(agents)
@@ -243,7 +273,7 @@ export async function deleteClerkAgentLifecycleData(
       candidates.length === 0
         ? []
         : await tx
-            .select({ id: agents.id, name: agents.name, orgId: agents.orgId })
+            .select({ id: agents.id })
             .from(agents)
             .where(
               and(
@@ -263,11 +293,6 @@ export async function deleteClerkAgentLifecycleData(
     const agentIds = ownedAgents.map((agent) => {
       return agent.id;
     });
-    const lockedInstructionsStorages = await lockClerkAgentInstructionsStorages(
-      tx,
-      scope,
-      ownedAgents,
-    );
     const ownedSessions = tx
       .select({ id: agentSessions.id })
       .from(agentSessions)
@@ -280,21 +305,17 @@ export async function deleteClerkAgentLifecycleData(
       .where(inArray(agentSessions.id, ownedSessions))
       .orderBy(asc(agentSessions.id))
       .for("update");
-    const directRuns = tx
+    // UNION deduplicates direct and cross-org Agent -> Session -> Run ownership.
+    const targetRuns = tx
       .select({ id: agentRuns.id })
       .from(agentRuns)
-      .where(
-        scope.kind === "organization"
-          ? eq(agentRuns.orgId, scope.orgId)
-          : eq(agentRuns.userId, scope.userId),
+      .where(eq(agentRuns.orgId, orgId))
+      .union(
+        tx
+          .select({ id: agentRuns.id })
+          .from(agentRuns)
+          .where(inArray(agentRuns.sessionId, ownedSessions)),
       );
-    // UNION deduplicates direct and cross-user Agent -> Session -> Run ownership.
-    const targetRuns = directRuns.union(
-      tx
-        .select({ id: agentRuns.id })
-        .from(agentRuns)
-        .where(inArray(agentRuns.sessionId, ownedSessions)),
-    );
     const runs = await tx
       .select({ id: agentRuns.id })
       .from(agentRuns)
@@ -306,13 +327,8 @@ export async function deleteClerkAgentLifecycleData(
     });
     const removed = await deleteRunConversations(tx, runIds);
     await deleteLockedRuns(tx, runIds);
+    const scope = { kind: "organization", orgId } as const;
     await deleteClerkStableContextLifecycleData(tx, scope, agentIds);
-    if (scope.kind === "user") {
-      await removeLockedAgentInstructionsStoragesInTransaction(
-        tx,
-        lockedInstructionsStorages,
-      );
-    }
     if (agentIds.length > 0) {
       await revokeOwnedAgentMorningBriefDeliveries(tx, agentIds);
       await tx
@@ -330,8 +346,16 @@ export async function deleteClerkAgentLifecycleData(
     }
     return await releaseDeletedConversationReferences(tx, removed);
   });
-  logCommittedConversationDeletion(
-    scope.kind === "organization" ? "clerk_organization" : "clerk_user",
-    receipt,
-  );
+  logCommittedConversationDeletion("clerk_organization", receipt);
+}
+
+export async function deleteClerkAgentLifecycleData(
+  db: NodePgDatabase,
+  scope: ClerkDeletionScope,
+): Promise<void> {
+  if (scope.kind === "organization") {
+    await deleteClerkOrganizationLifecycleData(db, scope.orgId);
+  } else {
+    await deleteClerkUserLifecycleData(db, scope.userId);
+  }
 }

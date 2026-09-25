@@ -6925,28 +6925,23 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
           data: [{ publicUserData: { userId: fixture.peer.userId } }],
         },
       );
-      const s3CallCountBeforeCleanup = context.mocks.s3.send.mock.calls.length;
       api.verifyNextClerkWebhook({
         type: "user.deleted",
         data: { id: fixture.doomed.userId },
       });
       const response = await api.requestClerkWebhook("{}", {}, [200]);
       expect(response.body).toBe("OK");
-      return s3CallCountBeforeCleanup;
     }
 
     async function expectSurvivingOrganization(
       fixture: Awaited<ReturnType<typeof prepareUserDeletion>>,
-      s3CallCountBeforeCleanup: number,
     ) {
-      const firstCleanupS3Prefix = commandInput(
-        context.mocks.s3.send.mock.calls[s3CallCountBeforeCleanup]?.[0],
-      ).Prefix;
-      expect(
-        typeof firstCleanupS3Prefix === "string" &&
-          firstCleanupS3Prefix.startsWith(`${orgOf(fixture.doomed)}/`) &&
-          firstCleanupS3Prefix.endsWith("/"),
-      ).toBeTruthy();
+      // User deletion retains the Agents the deleted user owned.
+      await createBddApi(context).requestReadAgent(
+        fixture.doomed,
+        fixture.doomedAgent.agentId,
+        [200],
+      );
       expect(context.mocks.stripe.subscriptions.list).not.toHaveBeenCalled();
       expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
       expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
@@ -7027,10 +7022,9 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         await flushWaitUntilForTest();
       });
       context.mocks.ably.publish.mockClear();
-      const s3CallCountBeforeCleanup =
-        await compactionLock.withAcquisitionAttemptTracking(() => {
-          return startUserDeletion(fixture);
-        });
+      await compactionLock.withAcquisitionAttemptTracking(() => {
+        return startUserDeletion(fixture);
+      });
       await compactionLock.acquisitionAttempted;
       await expect.poll(compactionLock.waiterCount).toBeGreaterThanOrEqual(1);
       await expect(
@@ -7073,7 +7067,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
           context.signal,
         ),
       ).resolves.toStrictEqual({ raw: 0, hourly: 0 });
-      await expectSurvivingOrganization(fixture, s3CallCountBeforeCleanup);
+      await expectSurvivingOrganization(fixture);
     });
 
     it("deletes a user's connector state while preserving peer accounts and grants", async () => {
@@ -7147,7 +7141,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         action: "deny",
       });
 
-      const s3CallCountBeforeCleanup = await startUserDeletion(fixture);
+      await startUserDeletion(fixture);
       await flushWaitUntilForTest();
       await waitForExpectation(async () => {
         const listed = await connectors.listBuiltinConnectors(doomed);
@@ -7199,7 +7193,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       await expect(
         connectors.readCustomConnector(peer, customManual.id),
       ).resolves.toMatchObject({ connected: true });
-      await expectSurvivingOrganization(fixture, s3CallCountBeforeCleanup);
+      await expectSurvivingOrganization(fixture);
     });
 
     it("keeps the peer's pending builtin and custom OAuth states usable during user deletion", async () => {
@@ -7230,7 +7224,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         ),
       );
 
-      const s3CallCountBeforeCleanup = await startUserDeletion(fixture);
+      await startUserDeletion(fixture);
       await flushWaitUntilForTest();
       await expect(
         connectors.completeOauthCallbackResult("slack", {
@@ -7244,7 +7238,67 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
           state: peerCustomOauthState,
         }),
       ).resolves.toMatchObject({ body: { status: "success" } });
-      await expectSurvivingOrganization(fixture, s3CallCountBeforeCleanup);
+      await expectSurvivingOrganization(fixture);
+    });
+
+    it("retains the deleted user's Agents and another member's thread and run on them", async () => {
+      const fixture = await prepareUserDeletion();
+      const { runs, doomed, peer, doomedAgent } = fixture;
+      const bdd = createBddApi(context);
+      const chat = createChatFilesBddApi(context);
+      const doomedPublicAgent = await bdd.createAgent(doomed, {
+        displayName: "BDD Doomed Public Agent",
+        visibility: "public",
+      });
+      const peerThread = await chat.createThread(peer, {
+        agentId: doomedPublicAgent.agentId,
+        title: "BDD peer thread on the deleted user's Agent",
+      });
+      const peerRun = await runs.createRun(peer, {
+        agentId: doomedPublicAgent.agentId,
+        prompt: "peer run on the deleted user's Agent",
+        modelProvider: "anthropic-api-key",
+      });
+      const doomedThread = await chat.createThread(doomed, {
+        agentId: doomedAgent.agentId,
+        title: "BDD doomed private thread",
+      });
+      await chat.patchThread(doomed, doomedThread.id, {
+        draftUserMessage: {
+          version: 1,
+          parts: [{ type: "text", text: "unsent doomed draft" }],
+        },
+      });
+      await expect(chat.listThreadDrafts(doomed)).resolves.toContain(
+        doomedThread.id,
+      );
+      const doomedRun = await runs.createRun(doomed, {
+        agentId: doomedAgent.agentId,
+        prompt: "doomed run on the private Agent",
+        modelProvider: "anthropic-api-key",
+      });
+
+      await startUserDeletion(fixture);
+      await flushWaitUntilForTest();
+
+      // Both Agents survive with their owner unchanged, as does the other
+      // member's thread and run on the public one.
+      await expectSurvivingOrganization(fixture);
+      const retainedPublicAgent = await bdd.readAgent(
+        peer,
+        doomedPublicAgent.agentId,
+      );
+      expect(retainedPublicAgent).toMatchObject({
+        agentId: doomedPublicAgent.agentId,
+        ownerId: doomed.userId,
+        visibility: "public",
+      });
+      await chat.requestReadThread(peer, peerThread.id, [200]);
+      await runs.requestReadRun(peer, peerRun.runId, [200]);
+      // The deleted user's own thread, draft and run are removed.
+      await chat.requestReadThread(doomed, doomedThread.id, [404]);
+      await runs.requestReadRun(doomed, doomedRun.runId, [404]);
+      await expect(chat.listThreadDrafts(doomed)).resolves.toStrictEqual([]);
     });
 
     it("removes deleted-user integration links while preserving the shared organization", async () => {
@@ -7263,7 +7317,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       expect((await gh.readInstallation(doomed)).isConnected).toBeTruthy();
       const botToken = await registerTelegramBot(doomed, doomedAgent.agentId);
 
-      const s3CallCountBeforeCleanup = await startUserDeletion(fixture);
+      await startUserDeletion(fixture);
       await flushWaitUntilForTest();
       await waitForExpectation(() => {
         expect(context.mocks.telegram.deleteWebhook).toHaveBeenCalledWith(
@@ -7271,7 +7325,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         );
       });
       expect((await gh.readInstallation(doomed)).isConnected).toBeFalsy();
-      await expectSurvivingOrganization(fixture, s3CallCountBeforeCleanup);
+      await expectSurvivingOrganization(fixture);
     });
   });
   it("suspends user-owned runs after a verified user.banned event", async () => {

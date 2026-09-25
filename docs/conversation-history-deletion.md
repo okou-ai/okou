@@ -40,17 +40,19 @@ transactions (at most 20 in a threadless sweep), not by reads or empty sweeps.
 
 ## Production census
 
-| Entry                                                                       | Accounted deletion scope                                         | Preserved behavior                                                                                           |
-| --------------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `threadless-run-cleanup.service.ts`                                         | The revalidated, locked run                                      | 20-candidate sweep, cancellation recovery, callback blockers, usage drain and Phase 2 maintenance ownership  |
-| `agent-deletion.service.ts`                                                 | Every run under the locked agent's sessions                      | Permissions, default-agent guard, active-run rejection, canonical agent lock and existing conflict responses |
-| `agent-lifecycle.service.ts`, called by `webhooks-clerk-cleanup.service.ts` | UNION of directly scoped runs and runs under locked owned agents | Clerk user/organization lifecycle, indirect cross-user cascades, external cleanup sequencing                 |
+| Entry                                                                       | Accounted deletion scope                                                                                                               | Preserved behavior                                                                                           |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `threadless-run-cleanup.service.ts`                                         | The revalidated, locked run                                                                                                            | 20-candidate sweep, cancellation recovery, callback blockers, usage drain and Phase 2 maintenance ownership  |
+| `agent-deletion.service.ts`                                                 | Every run under the locked agent's sessions                                                                                            | Permissions, default-agent guard, active-run rejection, canonical agent lock and existing conflict responses |
+| `agent-lifecycle.service.ts`, called by `webhooks-clerk-cleanup.service.ts` | Organization: UNION of the org's runs and runs under its locked agents. User: UNION of the user's runs and runs in the user's sessions | Clerk user/organization lifecycle, indirect cross-org cascades, external cleanup sequencing                  |
 
 There is no independent production session-delete endpoint. Agent deletion
-cascades through sessions and runs. Clerk's union deduplicates direct/indirect
-overlap and includes a different user's run under an owned agent. It deletes
-only the frozen locked run set and revalidated owned agents, not a later broad
-ownership predicate that could consume an unaccounted concurrent insert.
+cascades through sessions and runs. Organization cleanup's union deduplicates
+direct/indirect overlap under the organization's agents. User cleanup deletes
+no Agent: it removes only the user's own runs, sessions, threads and drafts, so
+another member's sessions and runs on an Agent the user owned survive. Both
+delete only the frozen locked run set, not a later broad ownership predicate
+that could consume an unaccounted concurrent insert.
 
 Agent/session parent locks stop FK child inserts before discovery. Run locks
 serialize conversation creation/replacement. Foreign keys still implement
@@ -96,9 +98,8 @@ parent/run locks. Settlement takes shared compaction admission before its
 organization credit lock, so cleanup drains both compaction and settlement.
 Ledger and Run deletion commit together on one connection. Cleanup does not
 take X resource admission; see [account cleanup](x-resource-observations.md).
-Clerk revalidates agents
-after canonical mutation ownership, then locks sessions and the deduplicated
-run set in ID order. Parent, Run and subsequent deletion locks retain 100 ms;
+Organization cleanup revalidates agents after canonical mutation ownership;
+both scopes then lock sessions and the deduplicated run set in ID order. Parent, Run and subsequent deletion locks retain 100 ms;
 blob locks still use NOWAIT. Threadless cleanup retains its run and Phase 2
 maintenance barriers. The
 new helper never acquires the checkpoint advisory lock after acquiring the run.
@@ -136,8 +137,9 @@ Run/hash set, and all operations remain in the caller's atomic transaction. The
 array binding bounds parameter count, not the child statement's matched rows or
 working memory; a large conversation CTE can spill to temporary storage.
 
-Clerk discovery uses indexed user/org predicates UNION indexed owned-session
-lookups, then primary-key run locks. Agent IDs use one UUID-array parameter;
+Clerk discovery uses indexed user/org predicates UNION indexed session
+lookups (the user's own sessions, or the organization's agents' sessions), then
+primary-key run locks. Agent IDs use one UUID-array parameter;
 session IDs stay in SQL subqueries rather than an unbounded placeholder list.
 
 ### UUID-array statement comparison, 2026-09-16

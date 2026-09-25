@@ -3,8 +3,8 @@
 ## Account erasure retirement (2026-09-25)
 
 The whole account-erasure mechanism from EPIC #33745 is removed. It will be
-redesigned from scratch; until then account deletion works as it did before the
-epic.
+redesigned from scratch; until then account deletion runs the legacy Clerk
+cleanup, narrowed so that user deletion never deletes an Agent.
 
 - **Writer and reader fence.** API writes and reads no longer check whether
   their user or organization was closed for erasure, take the shared subject
@@ -25,6 +25,16 @@ epic.
   phase. Jobs queued by an older API with a `phase` or `safetyHold` checkpoint
   simply run the idempotent cleanup. `organization.deleted` is unchanged: billing
   cleanup in the webhook, then `cleanupClerkDeletedOrg$`.
+- **Agents are retained on user deletion.** User cleanup deletes no Agent and
+  never cascades through one. It removes only the user's own data by `user_id`:
+  their runs (cancelled first), sessions, chat threads and drafts, usage, stable
+  context, credentials, connectors, storages and the other per-user rows.
+  Agents the user owned keep `owner` pointing at the deleted user (no ownership
+  transfer), together with their instructions Storage, Workflows, Morning Brief
+  deliveries, other members' stable context, and other members' sessions,
+  threads and runs.
+  Other members' runs on those Agents are no longer cancelled. Organization
+  deletion is unchanged and still deletes every Agent in the organization.
 - **Executor and collectors.** The user executor, selector, ownership coverage
   guard, relational sweep, every object/remote collector, shared blob erasure,
   chat content deletion receipts and their late-content sweep, the dormant Clerk

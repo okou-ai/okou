@@ -1,4 +1,4 @@
-import { ownedAgentRunScopePredicate } from "./pi-inference-lifecycle.service";
+import { organizationAgentRunScopePredicate } from "./pi-inference-lifecycle.service";
 import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { cleanupSharedThreadArtifacts$ } from "./shared-thread-artifacts.service";
@@ -41,10 +41,6 @@ import { userCache } from "@okouai/db/schema/user-cache";
 import { users } from "@okouai/db/schema/user";
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import { variables } from "@okouai/db/schema/variable";
-import {
-  getInstructionsStorageName,
-  VOLUME_ORG_USER_ID,
-} from "@okouai/core/storage-names";
 import { command, computed, type Computed } from "ccstate";
 import {
   and,
@@ -131,19 +127,24 @@ async function publishCancelBestEffort(
 /**
  * What a deletion's first committed transaction revokes beyond its own runs.
  *
- * `cascadeOwnedAgents` widens run cancellation to the owned Agent cascade, and
- * `revokeMorningBriefCollection` joins Morning Brief collection ownership to
- * that same commit. A ban is neither, so it keeps the narrow default.
+ * `cascadeOwnedAgents` widens organization run cancellation to the owned Agent
+ * cascade, and `revokeMorningBriefCollection` joins Morning Brief collection
+ * ownership to that same commit. User deletion and bans only ever cancel the
+ * user's own runs; members' runs on Agents the user owns continue.
  */
-interface RunCancellationScope {
+interface OrgRunCancellationScope {
   readonly cascadeOwnedAgents?: boolean;
+  readonly revokeMorningBriefCollection?: boolean;
+}
+
+interface UserRunCancellationScope {
   readonly revokeMorningBriefCollection?: boolean;
 }
 
 async function cancelOrgRuns(
   db: Db,
   orgId: string,
-  scope: RunCancellationScope = {},
+  scope: OrgRunCancellationScope = {},
 ): Promise<void> {
   const revokedAt = nowDate();
   const cancelled = await db.transaction(async (tx) => {
@@ -155,10 +156,7 @@ async function cancelOrgRuns(
       },
       conditions: [
         scope.cascadeOwnedAgents
-          ? ownedAgentRunScopePredicate(tx, {
-              kind: "organization",
-              orgId,
-            })
+          ? organizationAgentRunScopePredicate(tx, orgId)
           : eq(agentRuns.orgId, orgId),
         inArray(agentRuns.status, ["queued", "pending", "running"]),
       ],
@@ -232,7 +230,7 @@ async function cancelLastAdminOrgsStripeSubscriptions(
 async function cancelUserRuns(
   db: Db,
   userId: string,
-  scope: RunCancellationScope = {},
+  scope: UserRunCancellationScope = {},
 ): Promise<void> {
   const revokedAt = nowDate();
   const cancelled = await db.transaction(async (tx) => {
@@ -243,9 +241,7 @@ async function cancelUserRuns(
         runnerCancellationMode: "hard",
       },
       conditions: [
-        scope.cascadeOwnedAgents
-          ? ownedAgentRunScopePredicate(tx, { kind: "user", userId })
-          : eq(agentRuns.userId, userId),
+        eq(agentRuns.userId, userId),
         inArray(agentRuns.status, ["queued", "pending", "running"]),
       ],
     });
@@ -746,33 +742,10 @@ function deleteUserS3Data(db: Db, userId: string): Computed<Promise<void>> {
         ),
       );
 
-    const ownedAgents = await db
-      .select({ name: agents.name, orgId: agents.orgId })
-      .from(agents)
-      .where(eq(agents.owner, userId));
-    const agentStorageRows =
-      ownedAgents.length === 0
-        ? []
-        : await db
-            .select({ s3Prefix: storages.s3Prefix })
-            .from(storages)
-            .where(
-              and(
-                eq(storages.userId, VOLUME_ORG_USER_ID),
-                or(
-                  ...ownedAgents.map((agent) => {
-                    return and(
-                      eq(storages.orgId, agent.orgId),
-                      eq(storages.name, getInstructionsStorageName(agent.name)),
-                    );
-                  }),
-                ),
-              ),
-            );
-
+    // Agents the user owns are retained, so their instructions Storage is too.
     const prefixes = [
       ...new Set(
-        [...userStorageRows, ...agentStorageRows].map((row) => {
+        userStorageRows.map((row) => {
           return row.s3Prefix;
         }),
       ),
@@ -1082,10 +1055,8 @@ export const cleanupClerkDeletedUser$ = command(
     const db = set(writeDb$);
     await eraseVncOwnerData(db, { kind: "user", userId });
     signal.throwIfAborted();
-    await cancelUserRuns(db, userId, {
-      cascadeOwnedAgents: true,
-      revokeMorningBriefCollection: true,
-    });
+    // Only the user's own runs: members' runs on Agents the user owns continue.
+    await cancelUserRuns(db, userId, { revokeMorningBriefCollection: true });
     signal.throwIfAborted();
     await revokeMorningBriefScheduleOwnership(db, { kind: "user", userId });
     signal.throwIfAborted();

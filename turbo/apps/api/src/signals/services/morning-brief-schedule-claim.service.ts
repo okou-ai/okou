@@ -341,10 +341,9 @@ function revocationWhere(scope: MorningBriefScheduleRevocationScope): SQL {
  * Revoke this scope's legacy schedule occurrences inside a cleanup transaction.
  *
  * `workflows.owner_user_id` and `workflow_automations.owner_user_id` are plain
- * text with no users foreign key, and user cleanup only cascades the Agents the
- * departing user owns, so a member whose Morning Brief runs on a colleague's
- * shared or default Agent would keep this journal if the automation cascade
- * were the only path. This runs at the same owner, organization and membership
+ * text with no users foreign key, and user cleanup retains every Agent, so a
+ * departing member would keep this journal if an Agent cascade were the only
+ * path. This runs at the same owner, organization and membership
  * revocation points the rest of Morning Brief already uses.
  *
  * It scrubs owner identity rather than deleting the row. Deleting would make a

@@ -43,10 +43,11 @@ describe("X resource account cleanup and ordinary Run deletion", () => {
     const orgId = requireOrgId(owner);
     await fixture.bdd.updateAgent(owner, agentId, { visibility: "public" });
     // The deleted user invokes another owner's Agent. Clerk retains that
-    // Agent and its Sessions, isolating the direct Run/ledger lock order.
+    // Agent, isolating the direct Run/ledger lock order.
     const actor = fixture.bdd.user({ orgId });
 
-    const deletedAgent = await fixture.bdd.createAgent(actor, {
+    // User deletion retains the deleted user's own Agent too.
+    const retainedAgent = await fixture.bdd.createAgent(actor, {
       displayName: "Account cleanup commit evidence",
       visibility: "private",
     });
@@ -167,7 +168,7 @@ describe("X resource account cleanup and ordinary Run deletion", () => {
     });
     await flushWaitUntilForTest();
     await fixture.api.requestReadRun(actor, run.runId, [404]);
-    await fixture.bdd.requestReadAgent(actor, deletedAgent.agentId, [404]);
+    await fixture.bdd.requestReadAgent(actor, retainedAgent.agentId, [200]);
     await fixture.bdd.requestReadAgent(owner, agentId, [200]);
     expect((await billing.readUsageRecord(actor)).body.totalCredits).toBe(0);
   });
