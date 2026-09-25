@@ -131,6 +131,41 @@ test("Theme preferences initialize from the shared cookie", async () => {
   expect(getFastRole("button", "Light")).toBeVisible();
 });
 
+test("Android theme color follows the app preference, not only the system", async () => {
+  mockPreferences();
+  const systemTheme = context.mocks.browser.matchMedia(false);
+  context.mocks.browser.cookie("__Secure-okou-theme=v1.dark");
+  const meta = document.createElement("meta");
+  meta.name = "theme-color";
+  meta.content = "#ffffff";
+  document.head.append(meta);
+
+  try {
+    await setupPage({ context, path: "/settings", host: "app.okou.ai" });
+    await screen.findByText("Your preferred color scheme");
+    expect(meta.content).toBe("#19191b");
+
+    click(getFastRole("button", "Light"));
+    expect(meta.content).toBe("#ffffff");
+
+    click(getFastRole("button", "Dark"));
+    expect(meta.content).toBe("#19191b");
+
+    click(getFastRole("button", "System"));
+    expect(meta.content).toBe("#ffffff");
+
+    systemTheme.setMatches((query) => {
+      return query === "(prefers-color-scheme: dark)";
+    });
+    expect(meta.content).toBe("#19191b");
+
+    systemTheme.setMatches(false);
+    expect(meta.content).toBe("#ffffff");
+  } finally {
+    meta.remove();
+  }
+});
+
 test("Cookie theme and account-backed color theme are restored and saved", async () => {
   const updates = mockPreferences({
     theme: "dark",

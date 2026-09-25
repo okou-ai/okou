@@ -88,6 +88,11 @@ function applyTheme(theme: "light" | "dark") {
   } else {
     document.documentElement.classList.remove("dark");
   }
+  // Android Chrome uses this page-level color over the installed PWA's
+  // manifest fallback. Follow the resolved app theme, not just the OS theme.
+  document
+    .querySelector('meta[name="theme-color"]')
+    ?.setAttribute("content", theme === "dark" ? "#19191b" : "#ffffff");
 }
 
 /**
