@@ -795,7 +795,10 @@ function browserInputSubmissionValues(
       if (field.required || field.control.siteRequired) {
         return null;
       }
-      if (field.fieldKind !== "number" || !draft.has(field.key)) {
+      if (
+        !["number", "date_time"].includes(field.fieldKind) ||
+        !draft.has(field.key)
+      ) {
         continue;
       }
     }

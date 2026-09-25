@@ -516,15 +516,10 @@ describe("Computer Use command creation account-erasure admission", () => {
       for (const kind of ["read", "write", "plugin"] as const) {
         expectClosedCreation(await requestCreate(kind, actor, [403]));
       }
-      // The claim poll is fenced now, so a closed subject's host is refused
-      // outright instead of being told there is no work. Reporting idle was
-      // an accident of the endpoint being unfenced, never its contract.
-      const claimed = await computerUse.requestClaimNextComputerUseCommand(
-        host.hostToken,
-        [403],
-      );
-      expect(claimed.status).toBe(403);
-      expectApiError(claimed.body);
+      // Claim polls are not fenced; with nothing created there is no work.
+      await expect(
+        computerUse.claimNextComputerUseCommand(host.hostToken),
+      ).resolves.toMatchObject({ status: "idle" });
       expectNoExternalEffects();
 
       await removeErasureSubjectsFixture([closed.jobId]);

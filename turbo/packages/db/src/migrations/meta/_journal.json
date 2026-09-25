@@ -1146,15 +1146,22 @@
     {
       "idx": 1241,
       "version": "7",
-      "when": 1790337435134,
-      "tag": "1241_agent_runs_heartbeat_index_contraction",
+      "when": 1790336867908,
+      "tag": "1241_computer_use_host_liveness_indexes",
       "breakpoints": true
     },
     {
       "idx": 1242,
       "version": "7",
-      "when": 1790337446975,
-      "tag": "1242_active_agent_runs",
+      "when": 1790339020609,
+      "tag": "1242_agent_runs_heartbeat_index_contraction",
+      "breakpoints": true
+    },
+    {
+      "idx": 1243,
+      "version": "7",
+      "when": 1790339027376,
+      "tag": "1243_active_agent_runs",
       "breakpoints": true
     }
   ]

@@ -446,6 +446,9 @@ function BrowserInputControl({
     <Input
       id={inputId}
       name={field.key}
+      className={
+        field.fieldKind === "date_time" ? "min-w-0 max-w-full" : undefined
+      }
       type={
         field.fieldKind === "one_time_code" ? "text" : field.control.inputType
       }
@@ -457,14 +460,26 @@ function BrowserInputControl({
       minLength={field.control.minLength}
       maxLength={maxLength}
       pattern={field.control.pattern}
-      min={field.fieldKind === "number" ? field.control.min : undefined}
-      max={field.fieldKind === "number" ? field.control.max : undefined}
-      step={field.fieldKind === "number" ? field.control.step : undefined}
+      min={
+        ["number", "date_time"].includes(field.fieldKind)
+          ? field.control.min
+          : undefined
+      }
+      max={
+        ["number", "date_time"].includes(field.fieldKind)
+          ? field.control.max
+          : undefined
+      }
+      step={
+        ["number", "date_time"].includes(field.fieldKind)
+          ? field.control.step
+          : undefined
+      }
       value={draft.get(field.key) ?? ""}
       disabled={busy}
       onChange={(event) => {
         const value = event.currentTarget.value;
-        if (field.fieldKind === "number" && value === "") {
+        if (["number", "date_time"].includes(field.fieldKind) && value === "") {
           onRemove(field.key);
         } else {
           onUpdate(field.key, value);
@@ -972,7 +987,7 @@ function BrowserCheckboxControl({
   );
 }
 
-function OptionalNumberClearAction({
+function OptionalConstrainedInputClearAction({
   field,
   draft,
   busy,
@@ -981,7 +996,7 @@ function OptionalNumberClearAction({
 }: BrowserInputEditProps) {
   const { t } = useTranslation();
   if (
-    field.fieldKind !== "number" ||
+    !["number", "date_time"].includes(field.fieldKind) ||
     field.required ||
     field.control.siteRequired
   ) {
@@ -1159,7 +1174,7 @@ function BrowserInputField({
           onRemove={onRemove}
         />
       )}
-      <OptionalNumberClearAction
+      <OptionalConstrainedInputClearAction
         field={field}
         draft={draft}
         busy={busy}

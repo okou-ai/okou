@@ -65,40 +65,13 @@ async function startHost(actor: ApiTestUser & { readonly orgId: string }) {
 }
 
 /**
- * These four endpoints authenticate by host token, so their erasure subjects
- * are only known after the host row is read. They are also the highest
- * frequency Computer Use calls, which is why the fence here is the folded
- * write template rather than the original per-subject one.
+ * These endpoints authenticate by host token, so their erasure subjects are
+ * only known after the host row is read. They are also the highest frequency
+ * Computer Use calls, which is why the fence here is the folded write template
+ * rather than the original per-subject one. Heartbeats and claim polls run
+ * without a transaction and are no longer fenced.
  */
 describe("Computer Use host session account-erasure fence", () => {
-  it.each(["user", "organization"] as const)(
-    "refuses heartbeat for a closed %s and writes nothing to the host row",
-    { timeout: CASE_TIMEOUT_MS },
-    async (subjectKind) => {
-      const actor = orgScoped(bdd.user());
-      const host = await startHost(actor);
-      const before = await computerUse.listComputerUseHosts(actor);
-      const closed = await closeSubject({
-        subjectKind,
-        subjectId: subjectKind === "user" ? actor.userId : actor.orgId,
-      });
-
-      const refused = await computerUse.requestComputerUseHeartbeat(
-        host.hostToken,
-        [403],
-      );
-      expect(refused.status).toBe(403);
-      expectApiError(refused.body);
-
-      await removeErasureSubjectsFixture([closed.jobId]);
-      const after = await computerUse.listComputerUseHosts(actor);
-      expect(after.hosts).toStrictEqual(before.hosts);
-      await expect(
-        computerUse.heartbeatComputerUseHost(host.hostToken),
-      ).resolves.toMatchObject({ ok: true, hostId: host.hostId });
-    },
-  );
-
   it.each(["user", "organization"] as const)(
     "refuses stop for a closed %s and leaves the host unrevoked",
     { timeout: CASE_TIMEOUT_MS },
@@ -127,40 +100,6 @@ describe("Computer Use host session account-erasure fence", () => {
       await expect(
         computerUse.stopComputerUseHost(host.hostToken),
       ).resolves.toMatchObject({ ok: true, hostId: host.hostId });
-    },
-  );
-
-  it.each(["user", "organization"] as const)(
-    "refuses a command claim for a closed %s and leaves the command queued",
-    { timeout: CASE_TIMEOUT_MS },
-    async (subjectKind) => {
-      const actor = orgScoped(bdd.user());
-      const host = await startHost(actor);
-      const created = await computerUse.createComputerUseReadCommand(actor, {
-        kind: "apps.list",
-      });
-      const closed = await closeSubject({
-        subjectKind,
-        subjectId: subjectKind === "user" ? actor.userId : actor.orgId,
-      });
-
-      const refused = await computerUse.requestClaimNextComputerUseCommand(
-        host.hostToken,
-        [403],
-      );
-      expect(refused.status).toBe(403);
-      expectApiError(refused.body);
-
-      // The claim is a write: it flips the command to running and stamps the
-      // host. Refusing it must leave both untouched, which the successful
-      // claim after restoration proves by still finding the same command.
-      await removeErasureSubjectsFixture([closed.jobId]);
-      await expect(
-        computerUse.claimNextComputerUseCommand(host.hostToken),
-      ).resolves.toMatchObject({
-        status: "command",
-        command: { id: created.commandId },
-      });
     },
   );
 
@@ -212,9 +151,7 @@ describe("Computer Use host session account-erasure fence", () => {
           orgId: actor.orgId,
           stopAt: "commit",
           work: async (barrier) => {
-            const beating = computerUse.heartbeatComputerUseHost(
-              host.hostToken,
-            );
+            const stopping = computerUse.stopComputerUseHost(host.hostToken);
             const entered = await barrier.entered;
             expect(entered).toMatchObject({
               lockTimeout: "1s",
@@ -223,7 +160,7 @@ describe("Computer Use host session account-erasure fence", () => {
             });
             const captured = barrier.statements();
             barrier.release();
-            await beating;
+            await stopping;
             return captured;
           },
         },
@@ -235,26 +172,24 @@ describe("Computer Use host session account-erasure fence", () => {
       // subjects to lock, then the folded write template, then the business
       // row lock. The unlocked read is the only statement this fence adds
       // beyond the template, and it is what makes the order possible.
-      expect(shape).toStrictEqual([
+      const admission = [
         "BEGIN READ COMMITTED",
         "FENCE DEADLINES",
         "UNLOCKED HOST IDENTITY BY TOKEN",
         ...erasureFenceStatementKinds("write").filter((kind) => {
           return kind !== "FENCE DEADLINES";
         }),
-        "LOCKED HOST ROW BY TOKEN FOR NO KEY UPDATE",
-        "HOST UPDATE",
-        "COMMIT",
-      ]);
+        "LOCKED HOST ROW BY TOKEN FOR UPDATE",
+      ];
+      expect(shape.slice(0, admission.length)).toStrictEqual(admission);
+      expect(shape.at(-1)).toBe("COMMIT");
 
       // The whole point of resolving the host without a lock first: admission
       // is complete before any business row is locked, so this path cannot
       // deadlock against a closure that locks subjects first and rows after.
       const subjectLock = shape.indexOf("B1 SUBJECT LOCKS");
       const closedLookup = shape.indexOf("B1 CLOSED LOOKUP");
-      const lockedRow = shape.indexOf(
-        "LOCKED HOST ROW BY TOKEN FOR NO KEY UPDATE",
-      );
+      const lockedRow = shape.indexOf("LOCKED HOST ROW BY TOKEN FOR UPDATE");
       expect(subjectLock).toBeGreaterThanOrEqual(0);
       expect(closedLookup).toBeGreaterThan(subjectLock);
       expect(lockedRow).toBeGreaterThan(closedLookup);
@@ -266,8 +201,6 @@ describe("Computer Use host session account-erasure fence", () => {
     },
   );
   it.each([
-    { route: "heartbeat", lock: "LOCKED HOST ROW BY TOKEN FOR NO KEY UPDATE" },
-    { route: "claim", lock: "LOCKED HOST ROW BY TOKEN FOR NO KEY UPDATE" },
     { route: "completion", lock: "LOCKED HOST ROW BY TOKEN FOR NO KEY UPDATE" },
     { route: "stop", lock: "LOCKED HOST ROW BY TOKEN FOR UPDATE" },
   ] as const)(
@@ -284,14 +217,6 @@ describe("Computer Use host session account-erasure fence", () => {
       }
       const runRoute = async () => {
         switch (route) {
-          case "heartbeat": {
-            return await computerUse.heartbeatComputerUseHost(host.hostToken);
-          }
-          case "claim": {
-            return await computerUse.claimNextComputerUseCommand(
-              host.hostToken,
-            );
-          }
           case "completion": {
             return await computerUse.requestCompleteComputerUseCommand(
               host.hostToken,
