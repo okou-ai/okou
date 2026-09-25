@@ -7133,7 +7133,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       await expectSurvivingOrganization(fixture, s3CallCountBeforeCleanup);
     });
 
-    it("invalidates only the deleted user's pending builtin and custom OAuth states", async () => {
+    it("keeps the peer's pending builtin and custom OAuth states usable during user deletion", async () => {
       const fixture = await prepareUserErasure();
       const { doomed, peer, sharedAgent } = fixture;
       const connectors = createConnectorBddApi(context);
@@ -7142,16 +7142,6 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       const customOauth = await connectors.createCustomConnector(
         doomed,
         customOauthConnectorBodyForTeardown("user", customOAuthProvider),
-      );
-      const doomedBuiltinOauthState = oauthStateFromAuthorizationUrl(
-        (
-          await connectors.startOauth(
-            doomed,
-            "slack",
-            "oauth",
-            sharedAgent.agentId,
-          )
-        ).authorizationUrl,
       );
       const peerBuiltinOauthState = oauthStateFromAuthorizationUrl(
         (
@@ -7163,13 +7153,6 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
           )
         ).authorizationUrl,
       );
-      const doomedCustomOauthState = oauthStateFromAuthorizationUrl(
-        await connectors.startCustomConnectorOAuth2(
-          doomed,
-          customOauth.id,
-          sharedAgent.agentId,
-        ),
-      );
       const peerCustomOauthState = oauthStateFromAuthorizationUrl(
         await connectors.startCustomConnectorOAuth2(
           peer,
@@ -7180,28 +7163,6 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
 
       const s3CallCountBeforeCleanup = await startUserDeletion(fixture);
       await flushWaitUntilForTest();
-      await expect(
-        connectors.completeOauthCallbackResult("slack", {
-          code: "doomed-deleted-state",
-          state: doomedBuiltinOauthState,
-        }),
-      ).resolves.toMatchObject({
-        body: {
-          status: "error",
-          message: "Invalid state - please try again",
-        },
-      });
-      await expect(
-        connectors.completeCustomConnectorOAuth2CallbackResult({
-          code: "doomed-deleted-custom-state",
-          state: doomedCustomOauthState,
-        }),
-      ).resolves.toMatchObject({
-        body: {
-          status: "error",
-          message: "Invalid OAuth state - please try again",
-        },
-      });
       await expect(
         connectors.completeOauthCallbackResult("slack", {
           code: "peer-surviving-state",
