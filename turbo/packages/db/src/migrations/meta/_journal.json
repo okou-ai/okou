@@ -1069,8 +1069,15 @@
     {
       "idx": 1230,
       "version": "7",
-      "when": 1790300144854,
-      "tag": "1230_slack_discord_public_brand_okou_default",
+      "when": 1790300181834,
+      "tag": "1230_github_automation_public_brand_okou_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 1231,
+      "version": "7",
+      "when": 1790301799268,
+      "tag": "1231_slack_discord_public_brand_okou_default",
       "breakpoints": true
     }
   ]

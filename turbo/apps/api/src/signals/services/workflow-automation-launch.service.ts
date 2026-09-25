@@ -1,7 +1,7 @@
 import { recordGetStartedWorkflow } from "./get-started-workflow.service";
 import { randomBytes } from "node:crypto";
+import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -155,7 +155,6 @@ export interface RunWorkflowAutomationNowArgs {
   readonly automationContext: WorkflowAutomationContext;
   /** Stable ingress identity when a source callback may retry the same event. */
   readonly queueEventId?: string;
-  readonly publicBrand?: PublicBrand;
   readonly apiStartTime: number;
   readonly agentRunSource?: ChatAgentRunSourceAnnotation;
   /** Exact member connector that durably delivered this provider event. */
@@ -184,7 +183,6 @@ interface WorkflowAutomationLaunchArgs {
   readonly due: DueWorkflowAutomation;
   readonly apiStartTime: number;
   readonly prompt: string;
-  readonly publicBrand: PublicBrand;
   readonly triggerBrief?: string;
   readonly triggerSource?: TriggerSource;
   readonly connectorSourceId?: string;
@@ -242,7 +240,6 @@ export function buildWorkflowAutomationCallbacks(
   automation: AutomationRow,
   agentId: string,
   chatThreadId: string,
-  publicBrand: PublicBrand,
   workflowName: string,
 ): InternalRunCallbackInput[] {
   const callbacks: InternalRunCallbackInput[] = [];
@@ -276,14 +273,16 @@ export function buildWorkflowAutomationCallbacks(
       payload: {
         automationId: automation.id,
         workflowName,
-        publicBrand,
+        // Write-only: APIs before #36766 require this key when they parse the
+        // callback during rollout or rollback. No current reader uses it.
+        publicBrand: PUBLIC_BRAND,
       },
     });
   }
   callbacks.push({
     internalKind: "chat",
     secret: generateCallbackSecret(),
-    payload: { threadId: chatThreadId, agentId, publicBrand },
+    payload: { threadId: chatThreadId, agentId, publicBrand: PUBLIC_BRAND },
   });
   return callbacks;
 }

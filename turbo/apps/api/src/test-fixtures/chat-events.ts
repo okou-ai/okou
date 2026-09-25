@@ -102,7 +102,6 @@ interface ChatEventContextFixture {
   readonly workflowName: string | null;
   readonly automationEventType: string | null;
   readonly automationEventPayload: JsonObject | null;
-  readonly automationPublicBrand: PublicBrand | null;
   readonly slackChannelId: string | null;
   readonly slackMessageTs: string | null;
   readonly slackBotUserId: string | null;
@@ -202,7 +201,6 @@ export async function readChatEventContextFixture(
       workflowName: chatAutomationContext.workflowName,
       automationEventType: chatAutomationContext.eventType,
       automationEventPayload: chatAutomationContext.eventPayload,
-      automationPublicBrand: chatAutomationContext.publicBrand,
       slackChannelId: chatSlackContext.channelId,
       slackMessageTs: chatSlackContext.messageTs,
       slackBotUserId: chatSlackContext.botUserId,
@@ -471,7 +469,6 @@ const annotationProjectionInputs = [
         messageText: "github issue comment linked",
         triggerReactionId: null,
         triggerCommentBody: null,
-        publicBrand: "vm0",
       },
     },
   },
@@ -487,7 +484,6 @@ const annotationProjectionInputs = [
         messageText: "github pull request linked",
         triggerReactionId: null,
         triggerCommentBody: null,
-        publicBrand: "vm0",
       },
     },
   },
@@ -583,7 +579,6 @@ export async function seedChatEventAnnotationProjectionFixture(
         messageText: "claimed annotation",
         triggerReactionId: null,
         triggerCommentBody: null,
-        publicBrand: "vm0",
       },
     });
     await replaceChatEvent(tx, claimedPendingId, {
@@ -1281,7 +1276,6 @@ export async function enqueueGitHubChatEventFixture(args: {
   readonly subjectKind: "issue" | "pull_request";
   readonly messageText: string;
   readonly issueContext?: string;
-  readonly publicBrand: PublicBrand;
 }): Promise<string> {
   return await db().transaction(async (tx) => {
     const [installation] = await tx
@@ -1328,7 +1322,6 @@ export async function enqueueGitHubChatEventFixture(args: {
         messageText: args.messageText,
         triggerReactionId: null,
         triggerCommentBody: null,
-        publicBrand: args.publicBrand,
       },
     });
     if (!event) {
