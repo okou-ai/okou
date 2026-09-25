@@ -648,4 +648,46 @@ describe("canonical Discord terminal replies", () => {
     expect(sendRequests).toBe(1);
     expect(started.provider.sentMessages).toHaveLength(1);
   });
+
+  it("never re-sends an unconfirmed part from a later claim", async () => {
+    const started = await startDiscordRun();
+    const claim = await claimRun(started.actor, started.runId);
+    let sendRequests = 0;
+    started.provider.state.beforeMessageCreate = () => {
+      sendRequests += 1;
+      return undefined;
+    };
+    started.provider.state.afterMessageCreated = () => {
+      // The replay's access check then fails transiently, ending this claim
+      // with the part still unconfirmed and the delivery retryable.
+      started.provider.state.channelResponse = () => {
+        return HttpResponse.json({ message: "Unavailable" }, { status: 500 });
+      };
+      return HttpResponse.error();
+    };
+    await completeRun({
+      runId: started.runId,
+      sandboxToken: claim.sandboxToken,
+      text: "A reply whose replay could not be authorized.",
+    });
+    expect(sendRequests).toBe(1);
+    started.provider.state.afterMessageCreated = undefined;
+    let accessChecks = 0;
+    started.provider.state.channelResponse = () => {
+      accessChecks += 1;
+      return undefined;
+    };
+    mockNow(now() + 121_000);
+    await recoverReplies(started.actor);
+    // The later claim runs, but it is outside the replay window and must not
+    // send the part again, even though Discord would still deduplicate it.
+    expect(accessChecks).toBeGreaterThan(0);
+    expect(sendRequests).toBe(1);
+    expect(started.provider.sentMessages).toHaveLength(1);
+    mockNow(now() + 121_000);
+    const checksAfterTerminal = accessChecks;
+    await recoverReplies(started.actor);
+    expect(accessChecks).toBe(checksAfterTerminal);
+    expect(sendRequests).toBe(1);
+  });
 });

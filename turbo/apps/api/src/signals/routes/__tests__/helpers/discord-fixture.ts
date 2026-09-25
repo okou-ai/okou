@@ -180,6 +180,9 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
     afterMessageCreated?: (
       message: DiscordMessage,
     ) => Response | undefined | Promise<Response | undefined>;
+    channelResponse?: (
+      channelId: string,
+    ) => Response | undefined | Promise<Response | undefined>;
     historyResponse?: () =>
       | Response
       | undefined
@@ -236,8 +239,12 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
         { id: botRoleId, name: "Okou bot", permissions: "8" },
       ]);
     }),
-    http.get(`${base}/channels/:channelId`, ({ params }) => {
+    http.get(`${base}/channels/:channelId`, async ({ params }) => {
       const channelId = String(params.channelId);
+      const overridden = await state.channelResponse?.(channelId);
+      if (overridden) {
+        return overridden;
+      }
       const channel = channels.get(channelId);
       return channel && !deniedChannels.has(channelId)
         ? HttpResponse.json(channel)

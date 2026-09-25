@@ -44,10 +44,13 @@ const DELIVERY_DEADLINE_MS = 60_000;
 const MAX_DELIVERY_ATTEMPTS = 5;
 /**
  * Discord returns the original message for a repeated enforced nonce only for
- * a few minutes; replays stay well inside that window.
+ * a few minutes; replays stay well inside that window. Only the claim that
+ * made the send replays it: its deadline ends before the lease expires, so a
+ * later claim always starts outside this window.
  */
-const DISCORD_NONCE_REPLAY_WINDOW_MS = 60_000;
+const DISCORD_NONCE_REPLAY_WINDOW_MS = DELIVERY_DEADLINE_MS;
 const MAX_NONCE_REPLAYS = 2;
+const NONCE_REPLAY_BACKOFF_MS = 1000;
 const deliveryPartsSchema = z.array(
   z.object({
     content: z.string(),
@@ -73,7 +76,7 @@ class DiscordDeliveryFailure extends Error {
 class DiscordDeliveryUncertain extends Error {
   constructor() {
     super(
-      "Discord delivery outcome is uncertain outside the nonce replay window; the send was not repeated",
+      "Discord delivery outcome could not be confirmed by nonce replay; the send was not repeated",
     );
     this.name = "DiscordDeliveryUncertain";
   }
@@ -499,9 +502,7 @@ async function sendDeliveryPart(
       status: result.status,
       retryAfterMs: result.retryAfterMs,
     });
-    if (retryAfterMs > 0) {
-      await delay(retryAfterMs, { signal });
-    }
+    await delay(retryAfterMs, { signal });
   }
 }
 
@@ -569,7 +570,8 @@ async function settleFailedSend(
     // Later claims start after the lease and therefore outside the window.
     throw new DiscordDeliveryUncertain();
   }
-  return retryAfterMs;
+  // Give an uncertain send time to settle before replaying its nonce.
+  return Math.max(retryAfterMs, NONCE_REPLAY_BACKOFF_MS);
 }
 
 function replayWindowRemainingMs(part: DiscordChatDeliveryPart): number {
