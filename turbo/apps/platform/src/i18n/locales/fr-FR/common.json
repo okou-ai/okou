@@ -2168,16 +2168,16 @@
         "wrappedUp": "Terminé à {{time}}"
       },
       "duration": {
-        "hoursMinutesShort": "{{hours}}\u202fh et {{minutes}}\u00a0min",
-        "hoursShort_one": "{{count}}\u202fh",
-        "hoursShort_many": "{{count}}\u202fh",
-        "hoursShort_other": "{{count}}\u202fh",
+        "hoursMinutesShort": "{{hours}}\u00a0h\u00a0{{minutes}}\u00a0min",
+        "hoursShort_one": "{{count}}\u00a0h",
+        "hoursShort_many": "{{count}}\u00a0h",
+        "hoursShort_other": "{{count}}\u00a0h",
         "minutesShort_one": "{{count}}\u00a0min",
         "minutesShort_many": "{{count}}\u00a0min",
         "minutesShort_other": "{{count}}\u00a0min",
-        "secondsShort_one": "{{count}}\u202fs",
-        "secondsShort_many": "{{count}}\u202fs",
-        "secondsShort_other": "{{count}}\u202fs"
+        "secondsShort_one": "{{count}}\u00a0s",
+        "secondsShort_many": "{{count}}\u00a0s",
+        "secondsShort_other": "{{count}}\u00a0s"
       },
       "expandWorkHistory": "Développer l'historique du travail",
       "fastModelName": "{{model}} Fast",

@@ -2126,7 +2126,7 @@
         "wrappedUp": "Wrapped up at {{time}}"
       },
       "duration": {
-        "hoursMinutesShort": "{{hours}} hr, {{minutes}} min",
+        "hoursMinutesShort": "{{hours}} hr {{minutes}} min",
         "hoursShort_one": "{{count}} hr",
         "hoursShort_other": "{{count}} hr",
         "minutesShort_one": "{{count}} min",

@@ -2118,13 +2118,13 @@
         "wrappedUp": "Diselesaikan pada {{time}}"
       },
       "duration": {
-        "hoursMinutesShort": "{{hours}} j, {{minutes}} mnt",
-        "hoursShort_one": "{{count}} j",
-        "hoursShort_other": "{{count}} j",
-        "minutesShort_one": "{{count}} mnt",
-        "minutesShort_other": "{{count}} mnt",
-        "secondsShort_one": "{{count}} dtk",
-        "secondsShort_other": "{{count}} dtk"
+        "hoursMinutesShort": "{{hours}} jam {{minutes}} menit",
+        "hoursShort_one": "{{count}} jam",
+        "hoursShort_other": "{{count}} jam",
+        "minutesShort_one": "{{count}} menit",
+        "minutesShort_other": "{{count}} menit",
+        "secondsShort_one": "{{count}} detik",
+        "secondsShort_other": "{{count}} detik"
       },
       "expandWorkHistory": "Kembangkan riwayat kerja",
       "fastModelName": "{{model}} Fast",

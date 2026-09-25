@@ -2118,13 +2118,13 @@
         "wrappedUp": "{{time}} で終了"
       },
       "duration": {
-        "hoursMinutesShort": "{{hours}} 時間 {{minutes}} 分",
-        "hoursShort_one": "{{count}} 時間",
-        "hoursShort_other": "{{count}} 時間",
-        "minutesShort_one": "{{count}} 分",
-        "minutesShort_other": "{{count}} 分",
-        "secondsShort_one": "{{count}} 秒",
-        "secondsShort_other": "{{count}} 秒"
+        "hoursMinutesShort": "{{hours}}時間{{minutes}}分",
+        "hoursShort_one": "{{count}}時間",
+        "hoursShort_other": "{{count}}時間",
+        "minutesShort_one": "{{count}}分",
+        "minutesShort_other": "{{count}}分",
+        "secondsShort_one": "{{count}}秒",
+        "secondsShort_other": "{{count}}秒"
       },
       "expandWorkHistory": "作業履歴を展開",
       "fastModelName": "{{model}} Fast",
@@ -2148,8 +2148,8 @@
       "viewLangfuseTrace": "Langfuse トレースを表示",
       "viewLogs": "実行ログを表示する",
       "waitingIn": "待機中",
-      "workedFor": "{{duration}} で働いていました",
-      "workingFor": "{{duration}} 作業中"
+      "workedFor": "{{duration}}で働いていました",
+      "workingFor": "{{duration}}作業中"
     },
     "sharing": {
       "cancel": "キャンセル",

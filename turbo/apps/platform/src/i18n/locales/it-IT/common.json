@@ -2168,7 +2168,7 @@
         "wrappedUp": "Concluso alle {{time}}"
       },
       "duration": {
-        "hoursMinutesShort": "{{hours}} h e {{minutes}} min",
+        "hoursMinutesShort": "{{hours}} h {{minutes}} min",
         "hoursShort_one": "{{count}} h",
         "hoursShort_many": "{{count}} h",
         "hoursShort_other": "{{count}} h",

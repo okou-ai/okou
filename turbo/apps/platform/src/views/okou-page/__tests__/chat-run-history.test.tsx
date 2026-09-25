@@ -317,24 +317,73 @@ test.each([
     steps: "1 个步骤",
   },
   {
+    locale: "id-ID" as const,
+    active: false,
+    durationMs: 30_000,
+    expected: "Dikerjakan selama 30 detik",
+    steps: "1 langkah",
+  },
+  {
+    locale: "id-ID" as const,
+    active: false,
+    durationMs: 60_000,
+    expected: "Dikerjakan selama 1 menit",
+    steps: "1 langkah",
+  },
+  {
+    locale: "id-ID" as const,
+    active: false,
+    durationMs: 60 * 60_000,
+    expected: "Dikerjakan selama 1 jam",
+    steps: "1 langkah",
+  },
+  {
+    locale: "ja-JP" as const,
+    active: false,
+    durationMs: 30_000,
+    expected: "30秒で働いていました",
+    steps: "1 ステップ",
+  },
+  {
+    locale: "ja-JP" as const,
+    active: false,
+    durationMs: 60_000,
+    expected: "1分で働いていました",
+    steps: "1 ステップ",
+  },
+  {
+    locale: "ja-JP" as const,
+    active: false,
+    durationMs: 60 * 60_000,
+    expected: "1時間で働いていました",
+    steps: "1 ステップ",
+  },
+  {
     locale: "en-US" as const,
     active: false,
     durationMs: 89 * 60_000,
-    expected: "Worked for 1 hr, 29 min",
+    expected: "Worked for 1 hr 29 min",
     steps: "1 step",
   },
   {
     locale: "pt-BR" as const,
     active: false,
     durationMs: 89 * 60_000,
-    expected: "Trabalhou por 1 h e 29 min",
+    expected: "Trabalhou por 1 h 29 min",
     steps: "1 etapa",
   },
   {
     locale: "ja-JP" as const,
     active: false,
     durationMs: 89 * 60_000,
-    expected: "1 時間 29 分 で働いていました",
+    expected: "1時間29分で働いていました",
+    steps: "1 ステップ",
+  },
+  {
+    locale: "ja-JP" as const,
+    active: true,
+    durationMs: 89 * 60_000,
+    expected: "1時間29分作業中",
     steps: "1 ステップ",
   },
   {
@@ -348,7 +397,7 @@ test.each([
     locale: "id-ID" as const,
     active: false,
     durationMs: 89 * 60_000,
-    expected: "Dikerjakan selama 1 j, 29 mnt",
+    expected: "Dikerjakan selama 1 jam 29 menit",
     steps: "1 langkah",
   },
   {
@@ -369,21 +418,21 @@ test.each([
     locale: "it-IT" as const,
     active: false,
     durationMs: 89 * 60_000,
-    expected: "Ha lavorato per 1 h e 29 min",
+    expected: "Ha lavorato per 1 h 29 min",
     steps: "1 passo",
   },
   {
     locale: "fr-FR" as const,
     active: false,
     durationMs: 89 * 60_000,
-    expected: "Fonctionné pendant 1 h et 29 min",
+    expected: "Fonctionné pendant 1 h 29 min",
     steps: "1 étape",
   },
   {
     locale: "hi-IN" as const,
     active: false,
     durationMs: 89 * 60_000,
-    expected: "1 घं॰, 29 मि॰ के लिए काम किया",
+    expected: "1 घं॰ 29 मि॰ के लिए काम किया",
     steps: "1 स्टेप",
   },
   {
@@ -467,7 +516,7 @@ test.each([
     // Check raw spacing too: toHaveTextContent normalizes non-breaking spaces.
     expect(
       document.querySelector("[data-chat-run-work]")?.textContent,
-    ).toContain(locale === "fr-FR" ? "1\u202fh et 29\u00a0min" : expected);
+    ).toContain(locale === "fr-FR" ? "1\u00a0h\u00a029\u00a0min" : expected);
   },
 );
 
