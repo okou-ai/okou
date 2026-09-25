@@ -28,7 +28,7 @@ const projectChatEventSearchTestRoute$ = command(
       projectChatEventSearchTestScope$,
       {
         chatThreadIds: bodyResult.data.chat_thread_ids,
-        ginIndexName: bodyResult.data.gin_index_name,
+        ginIndexNames: bodyResult.data.gin_index_names,
       },
       signal,
     );

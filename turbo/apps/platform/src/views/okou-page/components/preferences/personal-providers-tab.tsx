@@ -527,7 +527,9 @@ function OAuthAccountTableRow({
         ) : (
           <span className="text-xs text-muted-foreground">—</span>
         )}
-        {account.subscriptionResetCredits === undefined ? null : (
+        {/* A spent balance has no action to offer, so the row omits it. */}
+        {account.subscriptionResetCredits === undefined ||
+        account.subscriptionResetCredits === 0 ? null : (
           <CodexResetCreditsButton
             className="ml-auto"
             resetCredits={account.subscriptionResetCredits}

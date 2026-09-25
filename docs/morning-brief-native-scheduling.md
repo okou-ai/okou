@@ -10,13 +10,20 @@ It covers `morning_brief_native_schedules`,
 `/api/cron/execute-morning-briefs` tick, and every writer that may change a
 member's choice, schedule or execution ownership.
 
-**This is not a general production rollout.** `FeatureSwitchKey.NativeMorningBrief`
-stays registered off by default and is enabled for the staff org allowlist only,
-under S8 ([#36203](https://github.com/okou-ai/okou/issues/36203)). It retains
-the persisted/API value `simpleMorningBrief` so existing overrides and older
-API/App versions keep their decision; the Lab display name is Native Morning
-Brief. Per-user overrides still win over the allowlist, including existing
-non-staff opt-ins. The hard acceptance gates are listed at the end.
+**Retirement stage 1.** `FeatureSwitchKey.NativeMorningBrief` stays registered
+with the persisted/API value `simpleMorningBrief` for mixed-version and rollback
+compatibility, but has no staff allowlist or other default cohort. Migration
+`1215_retire_native_morning_brief_admission` changes existing `true` overrides
+to `false` without touching other preferences; new API writes of `true` are
+rejected. The native tick and worker remain solely to reconcile already admitted
+work and transfer scheduling authority back to the Official Workflow. No
+historical messages or delivery receipts are deleted by this stage. Older API
+instances may still admit native work or write an override during promotion:
+wait for them to drain, then verify no `true` override remains, every native or
+rollback-draining row reaches `legacy` with the appropriate Official schedule,
+and no unresolved native occurrence or delivery remains before removing the
+native code in a later release. Do not infer a completed rollback from the
+migration or deployment alone.
 
 ## The two rows
 

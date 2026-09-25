@@ -402,6 +402,8 @@ fn assert_lacks_api_claim_timing(telemetry: &JobTelemetry) {
         "runner_claim_http_request",
         "runner_claim_request_to_response_headers",
         "runner_claim_response_body_read",
+        "runner_claim_response_first_body_chunk_wait",
+        "runner_claim_response_body_after_first_chunk",
         "runner_claim_response_body_attribution",
         "runner_claim_response_decode",
     ] {
@@ -905,7 +907,8 @@ fn pre_spawn_timing_with_phases_and_concurrency(
         Some(ApiClaimTiming::new(
             Duration::from_millis(42),
             Duration::from_millis(11),
-            Duration::from_millis(7),
+            Duration::from_micros(7_200),
+            Duration::from_micros(4_700),
             Duration::from_millis(3),
             ClaimResponseAttribution::from_body_and_encoding(5000, None),
         )),
@@ -1454,6 +1457,8 @@ async fn execute_job_records_runner_pre_spawn_and_fresh_path_timing() {
         "runner_claim_http_request",
         "runner_claim_request_to_response_headers",
         "runner_claim_response_body_read",
+        "runner_claim_response_first_body_chunk_wait",
+        "runner_claim_response_body_after_first_chunk",
         "runner_claim_response_body_attribution",
         "runner_claim_response_decode",
         "runner_claim_to_executor_start",
@@ -1487,6 +1492,12 @@ async fn execute_job_records_runner_pre_spawn_and_fresh_path_timing() {
     assert_action_once_with_duration(&telemetry, "runner_claim_http_request", 42);
     assert_action_once_with_duration(&telemetry, "runner_claim_request_to_response_headers", 11);
     assert_action_once_with_duration(&telemetry, "runner_claim_response_body_read", 7);
+    assert_action_once_with_duration(&telemetry, "runner_claim_response_first_body_chunk_wait", 4);
+    assert_action_once_with_duration(
+        &telemetry,
+        "runner_claim_response_body_after_first_chunk",
+        3,
+    );
     assert_eq!(
         telemetry
             .pending_ops_with_outcome_snapshot()
@@ -2067,6 +2078,8 @@ async fn execute_job_reuse_records_runner_pre_spawn_and_reuse_path_timing() {
         "runner_claim_http_request",
         "runner_claim_request_to_response_headers",
         "runner_claim_response_body_read",
+        "runner_claim_response_first_body_chunk_wait",
+        "runner_claim_response_body_after_first_chunk",
         "runner_claim_response_decode",
         "runner_claim_to_executor_start",
         "runner_executor_start_to_spawn",
@@ -2092,6 +2105,12 @@ async fn execute_job_reuse_records_runner_pre_spawn_and_reuse_path_timing() {
     assert_action_once_with_duration(&telemetry, "runner_claim_http_request", 42);
     assert_action_once_with_duration(&telemetry, "runner_claim_request_to_response_headers", 11);
     assert_action_once_with_duration(&telemetry, "runner_claim_response_body_read", 7);
+    assert_action_once_with_duration(&telemetry, "runner_claim_response_first_body_chunk_wait", 4);
+    assert_action_once_with_duration(
+        &telemetry,
+        "runner_claim_response_body_after_first_chunk",
+        3,
+    );
     assert_action_once_with_duration(&telemetry, "runner_claim_response_decode", 3);
     assert_pre_spawn_phase_actions_succeeded(&telemetry);
     assert_lacks_action(&telemetry, "runner_fresh_sandbox_prepare");

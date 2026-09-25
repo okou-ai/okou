@@ -188,9 +188,13 @@ import { integrationsGithubDownloadFileRoutes } from "./routes/integrations-gith
 import { integrationsGithubUploadCompleteRoutes } from "./routes/integrations-github-upload-complete";
 import { integrationsGithubUploadInitRoutes } from "./routes/integrations-github-upload-init";
 import { integrationsFeishuFileRoutes } from "./routes/integrations-feishu-files";
+import { integrationsDiscordRoutes } from "./routes/integrations-discord";
+import { discordStatePreviewRoutes } from "./routes/discord-state-preview";
 import { integrationsSlackRoutes } from "./routes/integrations-slack";
 import { integrationsSlackMessageRoutes } from "./routes/integrations-slack-message";
 import { integrationsSlackReadRoutes } from "./routes/integrations-slack-read";
+import { integrationsDiscordReadRoutes } from "./routes/integrations-discord-read";
+import { integrationsDiscordMessageRoutes } from "./routes/integrations-discord-message";
 import { integrationsFeishuMessageRoutes } from "./routes/integrations-feishu-message";
 import { integrationsSlackUploadCompleteRoutes } from "./routes/integrations-slack-upload-complete";
 import { integrationsSlackUploadInitRoutes } from "./routes/integrations-slack-upload-init";
@@ -205,10 +209,12 @@ import { integrationsTelegramUploadCompleteRoutes } from "./routes/integrations-
 import { integrationsTelegramUploadInitRoutes } from "./routes/integrations-telegram-upload-init";
 import { skillImportRoutes } from "./routes/skill-import";
 import { slackChannelsRoutes } from "./routes/slack-channels";
+import { discordInteractionsRoutes } from "./routes/discord-interactions";
 import { slackCommandsRoutes } from "./routes/slack-commands";
 import { slackConnectRoutes } from "./routes/slack-connect";
 import { slackStatePreviewRoutes } from "./routes/slack-state-preview";
 import { slackEventsRoutes } from "./routes/slack-events";
+import { discordGatewayRoutes } from "./routes/discord-gateway";
 import { slackInteractiveRoutes } from "./routes/slack-interactive";
 import { slackOauthRoutes } from "./routes/slack-oauth";
 import { feishuBrowserConnectRoutes } from "./routes/feishu-browser-connect";
@@ -441,8 +447,10 @@ export const ROUTES: readonly RouteEntry[] = [
   // production indistinguishable from an unregistered endpoint.
   ...slackStatePreviewRoutes,
   ...slackOauthRoutes,
+  ...discordInteractionsRoutes,
   ...slackCommandsRoutes,
   ...slackEventsRoutes,
+  ...discordGatewayRoutes,
   ...slackInteractiveRoutes,
   ...feishuBrowserConnectRoutes,
   ...feishuConnectRoutes,
@@ -462,8 +470,12 @@ export const ROUTES: readonly RouteEntry[] = [
   ...integrationsGithubUploadInitRoutes,
   ...integrationsFeishuFileRoutes,
   ...integrationsSlackRoutes,
+  ...integrationsDiscordRoutes,
+  ...discordStatePreviewRoutes,
   ...integrationsSlackMessageRoutes,
   ...integrationsSlackReadRoutes,
+  ...integrationsDiscordReadRoutes,
+  ...integrationsDiscordMessageRoutes,
   ...integrationsFeishuMessageRoutes,
   ...integrationsSlackUploadCompleteRoutes,
   ...integrationsSlackUploadInitRoutes,

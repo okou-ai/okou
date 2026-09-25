@@ -1,3 +1,7 @@
+import { withNativeChatEventThreadTouch } from "./native-chat-event-write.service";
+import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
+import type { Tx } from "../../lib/db-types";
+import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { createHash, randomBytes } from "node:crypto";
 
 import { command } from "ccstate";
@@ -83,7 +87,6 @@ import {
   disconnectTeamsConnection$,
   publishTeamsChanged$,
 } from "./teams-connect.service";
-import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
 import { insertChatEvent } from "./chat-event.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
@@ -1714,6 +1717,14 @@ function teamsLaunchMessageFiles(
   ];
 }
 
+type PersistedTeamsChatMessage =
+  | {
+      readonly inserted: true;
+      readonly chatThreadId: string;
+      readonly chatEventId: string;
+    }
+  | { readonly inserted: false };
+
 const persistTeamsChatMessage$ = command(
   async (
     { set },
@@ -1730,14 +1741,7 @@ const persistTeamsChatMessage$ = command(
       readonly modelRoute: IntegrationModelRoutePin | undefined;
     },
     signal: AbortSignal,
-  ): Promise<
-    | {
-        readonly inserted: true;
-        readonly chatThreadId: string;
-        readonly chatEventId: string;
-      }
-    | { readonly inserted: false }
-  > => {
+  ): Promise<PersistedTeamsChatMessage> => {
     const currentTime = new Date(args.apiStartTime);
     const threadId = teamsSessionThreadId({
       activity: args.activity,
@@ -1788,7 +1792,9 @@ const persistTeamsChatMessage$ = command(
       ),
     });
     const chatEventId = teamsChatMessageId(args.activity, args.connection.id);
-    const inserted = await args.db.transaction(async (tx) => {
+    const splitWrites = await isSplitChatEventWriteEnabled(args.db);
+    signal.throwIfAborted();
+    const persist = async (tx: Db | Tx, touchThread: () => Promise<void>) => {
       const event = await insertChatEvent(
         tx,
         {
@@ -1822,19 +1828,25 @@ const persistTeamsChatMessage$ = command(
           createdAt: currentTime,
         },
         "id",
+        { splitWrites },
       );
       signal.throwIfAborted();
       if (!event) {
         return false;
       }
-      await touchChatThreadLastMessageAt(
-        tx,
-        route.chatThreadId,
-        currentTime,
-        chatEventId,
-      );
+      await touchThread();
       return true;
-    });
+    };
+    const inserted = await withNativeChatEventThreadTouch(
+      args.db,
+      {
+        splitWrites,
+        chatThreadId: route.chatThreadId,
+        createdAt: currentTime,
+        eventId: chatEventId,
+      },
+      persist,
+    );
     signal.throwIfAborted();
     return inserted
       ? { inserted: true, chatThreadId: route.chatThreadId, chatEventId }
@@ -2355,9 +2367,14 @@ const runResolvedTeamsAgentForActivity$ = command(
     );
     signal.throwIfAborted();
 
-    const promptContext = await fetchTeamsPromptContext(
-      {
-        activity: args.activity,
+    const promptContext = await loadOptionalChatEnrichment(
+      db,
+      "teams",
+      () => {
+        return fetchTeamsPromptContext({ activity: args.activity }, signal);
+      },
+      () => {
+        return { text: "", files: [] };
       },
       signal,
     );

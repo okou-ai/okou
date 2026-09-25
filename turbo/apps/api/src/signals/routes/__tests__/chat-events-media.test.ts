@@ -28,7 +28,7 @@ const context = testContext();
 const {
   api,
   chat,
-  entitledChatActor,
+  entitledNativeChatActor,
   sendChatRun,
   claimChatRun,
   cancelChatRun,
@@ -40,7 +40,7 @@ async function videoModelSelectionActor(): Promise<{
   readonly agentId: string;
   readonly orgId: string;
 }> {
-  const { actor, agentId } = await entitledChatActor();
+  const { actor, agentId } = await entitledNativeChatActor();
   const orgId = actor.orgId;
   if (!orgId) {
     throw new Error("Expected an entitled chat actor to own an org");
@@ -55,7 +55,7 @@ async function imageModelSnapshotActor(): Promise<{
   readonly orgId: string;
   readonly runnerGroup: string;
 }> {
-  const { actor, agentId, runnerGroup } = await entitledChatActor();
+  const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
   const orgId = actor.orgId;
   if (!orgId) {
     throw new Error("Expected an entitled chat actor to own an org");
@@ -228,7 +228,7 @@ describe("CHAT-02: run video model snapshot", () => {
   }, 90_000);
 
   it("keeps falling back past video models the catalog no longer lists", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     const orgId = actor.orgId;
     if (!orgId) {
       throw new Error("Expected an entitled chat actor to own an org");
@@ -294,7 +294,7 @@ describe("CHAT-02: run video model snapshot", () => {
   }, 90_000);
 
   it("snapshots a video model onto runs that own no chat thread", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     const orgId = actor.orgId;
     if (!orgId) {
       throw new Error("Expected an entitled chat actor to own an org");

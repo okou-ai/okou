@@ -25,6 +25,7 @@ import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { makeCodexAuthJson, makeCodexJwt } from "./helpers/api-bdd-auth-device";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
+import { readWorkflowScheduleSkipsFixture } from "../../../test-fixtures/workflow-schedule-expiry";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -134,6 +135,18 @@ async function setup(
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
+  // Scheduler scenarios that claim and complete a Runner job use a native
+  // default; explicit Pi cases select their own model policy below.
+  const { providerId } = await runsApi.ensureOrgModelProvider(actor);
+  await runsApi.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   const agent = await wf.createAgent(actor, {
     displayName: "Scheduler Agent",
   });
@@ -349,6 +362,13 @@ describe("okou workflow automation scheduler", () => {
     );
 
     expect(response.body).toBe("Not found");
+    const scoped = await accept(
+      workflowAutomationExecutionClient().executeForWorkflow({
+        body: { workflow_id: "00000000-0000-4000-8000-000000000001" },
+      }),
+      [404],
+    );
+    expect(scoped.body).toBe("Not found");
   });
 
   it("executes only the selected due automation", async () => {
@@ -605,6 +625,135 @@ describe("okou workflow automation scheduler", () => {
     );
   });
 
+  it("audits and disables an expired unclaimed one-time schedule without starting a Run", async () => {
+    mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
+    const scenario = await setup();
+    const created = await accept(
+      automationsClient().create({
+        headers: authHeaders(),
+        params: { workflowId: scenario.workflowId },
+        body: {
+          schedule: {
+            type: "once",
+            atTime: new Date(now() + 90_000).toISOString(),
+            timezone: "UTC",
+          },
+        },
+      }),
+      [201],
+    );
+    if (!created.body.nextRunAt) {
+      throw new Error("Missing one-time anchor");
+    }
+    mockNow(Date.parse(created.body.nextRunAt) + 30 * 60_000 + 1);
+    const response = await accept(
+      workflowAutomationExecutionClient().execute({
+        body: { automation_id: created.body.id },
+      }),
+      [200],
+    );
+    expect(response.body).toMatchObject({ executed: 0, skipped: 1 });
+    const after = await wf.readAutomation(created.body.id);
+    expect(after.enabled).toBeFalsy();
+    expect(after.nextRunAt).toBeNull();
+    expect(after.lastRunAt).toBeNull();
+    expect(after.chatThreadId).toBeNull();
+    await expect(
+      readWorkflowScheduleSkipsFixture(created.body.id),
+    ).resolves.toMatchObject([
+      { scheduledAnchorAt: new Date(created.body.nextRunAt) },
+    ]);
+  });
+
+  it("fires fresh work in a workflow-scoped poll behind 201 expired anchors", async () => {
+    mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
+    const scenario = await setup();
+    // Create historical due slots through the production API rather than
+    // writing scheduler rows or asserting directly on its candidate query.
+    for (let created = 0; created < 201; created += 10) {
+      await Promise.all(
+        Array.from({ length: Math.min(10, 201 - created) }, async () => {
+          await createDueLoopAutomation(scenario, 900);
+        }),
+      );
+    }
+    mockNow(now() + 60 * 60_000);
+    const fresh = await createDueLoopAutomation(scenario, 900);
+    const tick = await accept(
+      workflowAutomationExecutionClient().executeForWorkflow({
+        body: { workflow_id: scenario.workflowId },
+      }),
+      [200],
+    );
+    expect(tick.body).toMatchObject({ executed: 1, skipped: 35 });
+    const after = await wf.readAutomation(fresh.automationId);
+    if (!after.chatThreadId) {
+      throw new Error("Fresh automation did not start");
+    }
+    await expect(workflowRunMessages(after.chatThreadId)).resolves.toHaveLength(
+      1,
+    );
+    await disableAutomation(fresh.automationId);
+    await deleteWorkflowViaApi(scenario);
+  }, 90_000);
+
+  it("admits an unclaimed recurring schedule at exactly thirty minutes late", async () => {
+    mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
+    const scenario = await setup();
+    const automation = await createDueLoopAutomation(scenario, 900);
+    if (!automation.nextRunAt) {
+      throw new Error("Missing loop anchor");
+    }
+    mockNow(Date.parse(automation.nextRunAt) + 30 * 60_000);
+
+    const threadId = await executeDueWorkflowAutomations(
+      automation.automationId,
+    );
+    await expect(workflowRunMessages(threadId)).resolves.toHaveLength(1);
+    await disableAutomation(automation.automationId);
+  });
+
+  it("skips a recurring occurrence past thirty minutes without making a Run or disabling its schedule", async () => {
+    mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
+    const scenario = await setup();
+    const automation = await createDueLoopAutomation(scenario, 900);
+    if (!automation.nextRunAt) {
+      throw new Error("Missing loop anchor");
+    }
+    const at = Date.parse(automation.nextRunAt) + 30 * 60_000 + 1;
+    mockNow(at);
+
+    const first = await accept(
+      workflowAutomationExecutionClient().execute({
+        body: { automation_id: automation.automationId },
+      }),
+      [200],
+    );
+    expect(first.body).toMatchObject({ executed: 0, skipped: 1 });
+    const afterSkip = await wf.readAutomation(automation.automationId);
+    expect(afterSkip.enabled).toBeTruthy();
+    expect(afterSkip.lastRunAt).toBeNull();
+    expect(afterSkip.chatThreadId).toBeNull();
+    expect(afterSkip.nextRunAt).toBe(new Date(at + 900_000).toISOString());
+    await expect(
+      readWorkflowScheduleSkipsFixture(automation.automationId),
+    ).resolves.toMatchObject([
+      { scheduledAnchorAt: new Date(automation.nextRunAt) },
+    ]);
+
+    const repeated = await accept(
+      workflowAutomationExecutionClient().execute({
+        body: { automation_id: automation.automationId },
+      }),
+      [200],
+    );
+    expect(repeated.body).toMatchObject({ executed: 0, skipped: 0 });
+    await expect(
+      readWorkflowScheduleSkipsFixture(automation.automationId),
+    ).resolves.toHaveLength(1);
+    await disableAutomation(automation.automationId);
+  });
+
   it("fires a due loop automation with a user-facing message", async () => {
     const scenario = await setup({ timezone: "Asia/Shanghai" });
     const automation = await createDueLoopAutomation(scenario, 3600);
@@ -627,7 +776,6 @@ describe("okou workflow automation scheduler", () => {
       const misc = createMiscRoutesApi(context);
       await support.updateFeatureSwitches(scenario.actor, {
         [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-        [FeatureSwitchKey.PiLoop]: false,
       });
       const configured = await runsApi.createOrgModelProvider(scenario.actor, {
         type: "openai-api-key",
@@ -635,7 +783,7 @@ describe("okou workflow automation scheduler", () => {
       });
       await runsApi.updateOrgModelPolicies(scenario.actor, [
         {
-          model: "gpt-5.6-luna",
+          model: "gpt-6-astra",
           isDefault: true,
           defaultProviderType: "openai-api-key",
           credentialScope: "org",
@@ -679,7 +827,7 @@ describe("okou workflow automation scheduler", () => {
             scenario.actor,
             {
               agentId: scenario.agentId,
-              model: "gpt-5.6-luna",
+              model: "gpt-6-astra",
               prompt: `Occupy organization concurrency ${index}`,
             },
             [201],
@@ -710,7 +858,6 @@ describe("okou workflow automation scheduler", () => {
       );
       await support.updateFeatureSwitches(member, {
         [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-        [FeatureSwitchKey.PiLoop]: false,
       });
       const owner = await connectOwner(member, "automation-owner");
       mocks.clerk.session(member.userId, scenario.orgId, "org:member");
@@ -1103,10 +1250,10 @@ describe("okou workflow automation scheduler", () => {
     "keeps a credit-blocked %s automation enabled and resumes after billing recovers",
     async (scheduleType) => {
       const scenario = await setup();
-      await seedBuiltInModelKey(context, "claude-sonnet-5");
+      await seedBuiltInModelKey(context, "claude-fable-5-1");
       await runsApi.updateOrgModelPolicies(scenario.actor, [
         {
-          model: "claude-sonnet-5",
+          model: "claude-fable-5-1",
           isDefault: true,
           defaultProviderType: "built-in",
           credentialScope: "org",

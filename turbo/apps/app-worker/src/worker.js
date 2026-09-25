@@ -15,6 +15,9 @@ const APP_API_PREFETCH_PATHS = [
   "/api/user-preferences",
   "/api/onboarding/status",
   "/api/agents",
+  "/api/org",
+  "/api/model-policies",
+  "/api/user-model-preference",
 ];
 const APP_API_PREFETCH_MARKER = "<!--okou-app-api-prefetch-->";
 // The deferred app module waits for HTML EOF, so prefetch must not extend the

@@ -5,13 +5,13 @@ import { mockApi } from "../msw-contract.ts";
 
 export const apiRealtimeHandlers = [
   mockApi(platformRealtimeTokenContract.create, ({ respond }) => {
+    const issued = now();
     return respond(200, {
-      keyName: "mock-key",
+      token: "mock-token",
       clientId: "test-user-123",
-      timestamp: now(),
+      issued,
+      expires: issued + 60 * 60 * 1000,
       capability: '{"*":["*"]}',
-      nonce: "mock-nonce",
-      mac: "mock-mac",
     });
   }),
 ];

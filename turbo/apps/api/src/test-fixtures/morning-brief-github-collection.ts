@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { connectors } from "@okouai/db/schema/connector";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";

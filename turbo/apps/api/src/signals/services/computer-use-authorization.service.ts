@@ -7,7 +7,7 @@ import type {
   ComputerUseHostListResponse,
 } from "@okouai/api-contracts/contracts/computer-use";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   computerUseAuthorizationRequests,
   computerUseHosts,
@@ -151,8 +151,8 @@ async function resolveRunLocator(args: {
 /**
  * Retains the canonical thread and exact original run for request creation.
  *
- * The shared helper's thread KEY SHARE blocks deletion but permits non-key
- * user/Agent updates. This caller can then wait for the run, so it locally
+ * The shared helper's thread KEY SHARE blocks deletion and keyed user changes,
+ * but permits non-key Agent updates. This caller can then wait for the run, so it locally
  * upgrades the thread to SHARE and rechecks the admitted identity first. A
  * mismatch retries the whole bounded admission before any newly discovered
  * subject can be locked out of order. The run comes last and also needs SHARE:
@@ -366,7 +366,7 @@ async function teamsScopeExists(args: {
 /**
  * Retains the exact admitted thread identity with the write-compatible lock the
  * selection UPDATE below already needs. The shared helper's KEY SHARE protects
- * deletion but permits non-key user/Agent changes; a stronger SHARE lock would
+ * deletion and keyed user changes but permits Agent rebinds; a SHARE lock would
  * make concurrent applies upgrade against one another and can deadlock. NO KEY
  * UPDATE instead serializes those writers without an avoidable lock upgrade.
  */
@@ -729,7 +729,7 @@ export const createComputerUseAuthorizationRequest$ = command(
 );
 
 /**
- * Rechecks every non-key canonical thread identity field and reads the selected
+ * Rechecks every canonical thread identity field and reads the selected
  * host without locking the thread row.
  *
  * #35311 made this route take the thread `FOR UPDATE` to remove a KEY SHARE ->

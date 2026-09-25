@@ -1,11 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import { cronExecuteMorningBriefsContract } from "@okouai/api-contracts/contracts/cron";
-import {
-  morningBriefPreferenceContract,
-  type MorningBriefLastRun,
-  type MorningBriefRunSource,
-} from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
@@ -29,7 +24,6 @@ import {
   seedRecipientAddress,
 } from "../../../test-fixtures/morning-brief-native-schedule";
 import { createScopedInlineMorningBriefCronRoutesForTest } from "../cron-execute-morning-briefs";
-import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
@@ -39,16 +33,16 @@ import {
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { mockGoogleCalendarConnectorOAuth } from "./helpers/api-bdd-workflows";
 import { mockClerkUsers } from "./helpers/clerk-users";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { seedRetainedNativeMorningBriefForUser } from "./helpers/feature-switches";
 import {
   seedSlackOrgConnection$,
   seedSlackOrgInstallation$,
 } from "./helpers/integrations-slack";
 import { seedOrgMembership$ } from "./helpers/org-membership";
-import { createRouteMocks } from "./helpers/route-test";
 
 /**
- * What a settled native Morning Brief occurrence is able to say afterwards.
+ * How a native Morning Brief occurrence settles for a busy, a quiet and a
+ * failing morning.
  *
  * A real production run (#35656) collected from all five sources and delivered
  * nothing: no model request, no generation row, no Chat message, no email. The
@@ -63,8 +57,7 @@ import { createRouteMocks } from "./helpers/route-test";
  *   bounded by the attempt's own absolute deadline rather than by a second,
  *   fixed budget that ignores how many sources answered;
  * - a delivered brief, a genuinely empty one and a failed collection each
- *   record a distinguishable durable account, readable through the member's
- *   own `GET /api/preferences/morning-brief`.
+ *   settle with a distinct outcome on the occurrence row.
  *
  * Only the provider HTTP boundaries are doubled. The membership boundary is
  * additionally given a deterministic, controlled latency, because the defect is
@@ -73,7 +66,6 @@ import { createRouteMocks } from "./helpers/route-test";
  */
 
 const context = testContext({ connectorCatalog: true });
-const mocks = createRouteMocks(context);
 const store = createStore();
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
@@ -154,24 +146,6 @@ function tick(owner: Fixture) {
   return cronClient(owner).execute({
     headers: { authorization: `Bearer ${CRON_SECRET}` },
   });
-}
-
-function preferenceClient() {
-  return setupApp({ context, routes: morningBriefPreferenceRoutes })(
-    morningBriefPreferenceContract,
-  );
-}
-
-/** Read the member's own Settings answer, through the deployed endpoint. */
-async function readPreference(f: Fixture) {
-  mocks.clerk.session(f.userId, f.orgId, "org:admin");
-  const response = await accept(
-    preferenceClient().get({
-      headers: { authorization: "Bearer clerk-session" },
-    }),
-    [200],
-  );
-  return response.body;
 }
 
 async function connectGmail(actor: ApiTestUser, agentId: string) {
@@ -267,7 +241,7 @@ async function fixture(options: SourceOptions = {}): Promise<Fixture> {
       action: "allow",
     });
   }
-  await updateFeatureSwitchesForUser(
+  await seedRetainedNativeMorningBriefForUser(
     context,
     { orgId, userId },
     { [FeatureSwitchKey.NativeMorningBrief]: true },
@@ -566,17 +540,7 @@ function chargeMembershipLatency(): { calls: () => number } {
   };
 }
 
-/** One source's line in the account the member's own endpoint returned. */
-function sourceFact(
-  lastRun: MorningBriefLastRun | null | undefined,
-  source: string,
-): MorningBriefRunSource | undefined {
-  return lastRun?.sources?.find((entry) => {
-    return entry.source === source;
-  });
-}
-
-describe("native Morning Brief collection account", () => {
+describe("native Morning Brief collection settlement", () => {
   it(
     "delivers a multi-source brief whose authority revalidation outlives a fixed budget",
     async () => {
@@ -624,24 +588,7 @@ describe("native Morning Brief collection account", () => {
       expect(occurrences[0]?.outcome).toBe("delivered");
       expect(occurrences[0]?.scheduledFor.getTime()).toBe(due.getTime());
       expect(occurrences[0]?.settledAt).not.toBeNull();
-
-      // And the account says what it had to work with, through the member's
-      // own Settings endpoint rather than through a trace.
-      const preference = await readPreference(f);
-      expect(preference.lastDeliveredAt).toBe(
-        deliveries[0]?.deliveredAt.toISOString(),
-      );
-      const lastRun = preference.lastRun;
-      expect(lastRun?.state).toBe("settled");
-      expect(lastRun?.outcome).toBe("delivered");
-      expect(lastRun?.reason).toBeNull();
-      expect(sourceFact(lastRun, "gmail")).toMatchObject({
-        coverage: "complete",
-        items: 1,
-        includedInRequest: 1,
-      });
-      expect(sourceFact(lastRun, "github")?.items).toBe(1);
-      expect(sourceFact(lastRun, "slack")?.items).toBe(1);
+      expect(occurrences[0]?.state).toBe("settled");
     },
     TEST_TIMEOUT_MS,
   );
@@ -662,18 +609,6 @@ describe("native Morning Brief collection account", () => {
       await expect(readNativeDeliveries(f)).resolves.toHaveLength(0);
       const occurrences = await readNativeOccurrences(f);
       expect(occurrences[0]?.outcome).toBe("empty-skip");
-
-      const preference = await readPreference(f);
-      expect(preference.lastDeliveredAt).toBeNull();
-      const lastRun = preference.lastRun;
-      expect(lastRun?.outcome).toBe("empty-skip");
-      expect(lastRun?.reason).toBeNull();
-      // Every applicable source answered, and every one of them held nothing.
-      expect(sourceFact(lastRun, "slack")).toMatchObject({
-        coverage: "empty",
-        items: 0,
-      });
-      expect(sourceFact(lastRun, "chat")?.items).toBe(0);
     },
     TEST_TIMEOUT_MS,
   );
@@ -693,18 +628,6 @@ describe("native Morning Brief collection account", () => {
       await expect(readNativeDeliveries(f)).resolves.toHaveLength(0);
       const occurrences = await readNativeOccurrences(f);
       expect(occurrences[0]?.outcome).toBe("collection-failed");
-
-      const preference = await readPreference(f);
-      expect(preference.lastDeliveredAt).toBeNull();
-      const lastRun = preference.lastRun;
-      expect(lastRun?.outcome).toBe("collection-failed");
-      // The three settlements are distinguishable: this one names the sources
-      // that could not answer, where the quiet morning had no reason at all.
-      expect(lastRun?.reason).not.toBeNull();
-      expect(sourceFact(lastRun, "gmail")).toMatchObject({
-        coverage: "failed",
-        items: 0,
-      });
     },
     TEST_TIMEOUT_MS,
   );

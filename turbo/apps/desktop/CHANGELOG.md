@@ -1,5 +1,64 @@
 # Changelog
 
+## [0.49.5](https://github.com/okou-ai/okou/compare/desktop-v0.49.4...desktop-v0.49.5) (2026-09-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.507.1
+
+## [0.49.4](https://github.com/okou-ai/okou/compare/desktop-v0.49.3...desktop-v0.49.4) (2026-09-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.507.0
+
+## [0.49.3](https://github.com/okou-ai/okou/compare/desktop-v0.49.2...desktop-v0.49.3) (2026-09-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.506.0
+
+## [0.49.2](https://github.com/okou-ai/okou/compare/desktop-v0.49.1...desktop-v0.49.2) (2026-09-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.505.1
+
+## [0.49.1](https://github.com/okou-ai/okou/compare/desktop-v0.49.0...desktop-v0.49.1) (2026-09-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.505.0
+
+## [0.49.0](https://github.com/okou-ai/okou/compare/desktop-v0.48.142...desktop-v0.49.0) (2026-09-24)
+
+
+### Features
+
+* **desktop:** add opt-in native clerk sign-in ([#36649](https://github.com/okou-ai/okou/issues/36649)) ([a07ab31](https://github.com/okou-ai/okou/commit/a07ab319ff39b0964429c3b50ceb91b2c598b8e1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.504.0
+
 ## [0.48.142](https://github.com/okou-ai/okou/compare/desktop-v0.48.141...desktop-v0.48.142) (2026-09-24)
 
 

@@ -252,6 +252,10 @@ export const workflowAutomations = pgTable(
     timezone: varchar("timezone", { length: 50 }).default("UTC").notNull(),
     enabled: boolean("enabled").default(true).notNull(),
     nextRunAt: timestamp("next_run_at"),
+    /** Retry gate for the exact unclaimed anchor; a new anchor bypasses it. */
+    deferredAnchorAt: timestamp("deferred_anchor_at"),
+    deferredUntil: timestamp("deferred_until"),
+    deferredReason: varchar("deferred_reason", { length: 32 }),
     lastRunAt: timestamp("last_run_at"),
     lastRunId: uuid("last_run_id"),
     consecutiveFailures: integer("consecutive_failures").notNull().default(0),
@@ -282,6 +286,21 @@ export const workflowAutomations = pgTable(
       index("idx_workflow_automations_next_run")
         .on(table.nextRunAt)
         .where(sql`enabled = true`),
+      index("idx_workflow_automations_deferred_retry")
+        .on(table.deferredUntil, table.nextRunAt)
+        .where(sql`${table.deferredUntil} IS NOT NULL`),
+      check(
+        "workflow_automations_deferral_pair_check",
+        sql`(
+          ${table.deferredAnchorAt} IS NULL
+          AND ${table.deferredUntil} IS NULL
+          AND ${table.deferredReason} IS NULL
+        ) OR (
+          ${table.deferredAnchorAt} IS NOT NULL
+          AND ${table.deferredUntil} IS NOT NULL
+          AND ${table.deferredReason} IS NOT NULL
+        )`,
+      ),
       // Each automation kind carries exactly its own config.
       check(
         "workflow_automations_schedule_config_check",

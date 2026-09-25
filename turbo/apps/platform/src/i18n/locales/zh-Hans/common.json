@@ -347,7 +347,7 @@
     },
     "sources": {
       "agent": "智能体",
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "automationEvent": "自动化事件",
       "automationSchedule": "自动化定时任务",
       "discord": "Discord",
@@ -1183,7 +1183,7 @@
         "everythingInBuiltForTeams": "包含{{plan}}的全部功能，并为团队打造",
         "included": "已包含",
         "liveBrowser": "实时观看智能体的浏览器，随时接管",
-        "models": "Claude Opus 5、GPT 5.6 Sol、DeepSeek V4 Pro",
+        "models": "Claude Opus 5、GPT 5.6 Sol、DeepSeek V4.1 Flash",
         "moreConnectorsChannels": "更多自定义连接器和渠道集成",
         "supportEmail": "邮件支持",
         "supportPriority": "优先支持",
@@ -1437,6 +1437,11 @@
         },
         "earned": "已获得 {{amount}}",
         "howRewardsWork": "奖励规则说明",
+        "imessage": {
+          "action": "添加",
+          "description": "用 iPhone 给 {{assistantName}} 发消息",
+          "name": "添加到 iMessage"
+        },
         "inReview": "审核中",
         "intro": {
           "checkin": {
@@ -1735,6 +1740,7 @@
       "cancelFailed": "无法取消这个请求，请重试。",
       "cancelled": "请求已取消",
       "cancelling": "正在取消…",
+      "checkFailed": "无法检查浏览器。填写内容已保留，请重试后提交。",
       "clearValue": "清空网页中的值",
       "completed": "信息已添加",
       "continue": "通知 Agent",
@@ -2943,15 +2949,26 @@
     "clientSecret": "Service Token Client Secret",
     "clientSecretPlaceholder": "粘贴Service Token Client Secret",
     "configuration": "Cloudflare Access",
+    "convert": "转为个人配置",
+    "convertConfirm": "我了解这些主机在所有者重新绑定前将无法连接。",
+    "convertHelp": "将此服务令牌保留给你个人使用。你自己的主机可以保持连接。",
+    "convertUncertain": "无法确认转换是否成功。请查看最新配置后再尝试。",
+    "convertWarning_other": "将影响其他用户的{{count}}台 SSH 主机。在所有者重新绑定或明确选择直连前，这些主机将不可用。",
     "createNew": "新建Cloudflare Access",
     "delete": "删除Cloudflare Access",
-    "deleteHelp": "确定删除这个 Cloudflare Access？保存的 Service Token 无法恢复。如果仍有主机使用它，则无法删除。",
+    "deleteConfirm": "我了解这些成员的主机在各自所有者明确重新绑定之前将无法使用。",
+    "deleteHelp": "确定删除这个 Cloudflare Access？保存的 Service Token 无法恢复。你自己的主机必须先重新绑定。",
+    "deleteImpact": "以下成员的 SSH 主机需要重新绑定；不会自动改为直连。",
+    "deleteUncertain": "无法确认是否已删除。请查看最新影响范围后再尝试。",
     "description": "使用 Cloudflare Access 服务令牌访问受保护的应用。",
     "edit": "编辑Cloudflare Access",
     "failed": "无法保存 Cloudflare Access 更改，请重试。",
     "forbidden": "只有组织管理员可以修改共享的 Cloudflare Access。",
+    "formerMember": "原成员（姓名不可用）",
+    "hostCount_other": "{{count}} 台 SSH 主机",
+    "impactChanged": "受影响的主机发生了变化。请查看最新影响范围后再确认。",
     "inUse": "有 SSH 主机正在使用此 Cloudflare Access。主机所有者须先重新绑定或删除该主机。",
-    "inUseHelp": "删除之前，请为这些主机选择其他Cloudflare Access、明确改为直连，或删除这些主机。",
+    "inUseHelp": "你的 SSH 主机仍在使用此配置。请先将它们重新绑定至其他配置、明确改为直连，或删除这些主机。",
     "invalidInput": "部分 Cloudflare Access 设置无效，请检查各字段后重试。",
     "keepChanges": "在该版本上保留我的更改",
     "latest": "最新保存的设置",
@@ -2964,10 +2981,15 @@
     "organization": "组织",
     "organizationHelp": "组织成员都可以使用此服务令牌，只有管理员可以修改。",
     "personal": "个人",
+    "promote": "转为组织配置",
+    "promoteConfirm": "我了解组织内所有成员都将能够使用这个 Service Token。",
+    "promoteHelp": "将你的个人 Cloudflare Access 分享给整个组织。Service Token 和你现有的 SSH 主机绑定保持不变。",
+    "promoteUncertain": "无法确认是否已转换。请关闭此窗口，查看最新配置后再尝试。",
     "replace": "替换Service Token",
     "resourceIdConflict": "该资源 ID 无法使用。请关闭表单并重新打开后再试。",
     "retry": "重试",
     "reviewHelp": "你的草稿已保留。请先确认最新保存的设置，再应用你的更改。",
+    "reviewLatest": "查看最新影响范围",
     "revisionExhausted": "该配置已无法继续更新，请新建一个。",
     "save": "保存",
     "saveUncertain": "我们无法确认你的更改是否已保存。请重试这次保存，或关闭后先查看列表，再决定是否重新添加。",
@@ -3452,7 +3474,7 @@
         "invalidSignature": "此链接的签名无效。",
         "invalidTimestamp": "此链接的时间戳无效。",
         "invalidTitle": "连接链接无效",
-        "risk": "短信和彩信回复可能无法稳定送达。为获得最可靠的体验，请用iMessage与这个AgentPhone号码通信。",
+        "risk": "短信和彩信回复可能无法稳定送达。为获得最可靠的体验，请用iMessage与这个号码通信。",
         "successDescription": "{{phone}}已连接。发送一条短信，即可开始与{{assistantName}}对话。",
         "successTitle": "电话号码已连接"
       },
@@ -3574,9 +3596,10 @@
       "agentphone": {
         "authorizedSender": "已授权的发送方",
         "codeExpiry": "10分钟后过期",
+        "codeLabel": "验证码",
         "connectAria": "连接手机",
-        "connectDescription": "扫描二维码或打开Messages，然后发送已填好的验证码。",
-        "connectTitle": "连接手机",
+        "connectDescription": "用相机扫描，然后发送已填好的验证码。",
+        "connectTitle": "用 iPhone 给 {{assistantName}} 发消息",
         "copyAria": "复制{{phone}}",
         "copyCodeAria": "复制连接码{{code}}",
         "copyCodeError": "连接码复制失败",
@@ -3587,13 +3610,12 @@
         "creatingCode": "正在创建连接码…",
         "description": "通过短信使用{{assistantName}}",
         "destination": "iMessage或短信发送至",
-        "manualSend": "或发送",
-        "manualSendTo": "至",
         "openMessages": "打开Messages",
         "options": "手机选项",
         "phoneLabel": "电话",
         "qrTitle": "扫码打开Messages，连接码已填好",
         "risk": "尽量使用iMessage。短信和彩信的回复可能无法可靠送达。",
+        "sendToLabel": "发送至",
         "tryAgain": "重试"
       },
       "catalogDiagnostics": {
@@ -4003,8 +4025,8 @@
         "uninstallTitle": "卸载Telegram机器人？"
       },
       "toasts": {
-        "agentphoneConnected": "AgentPhone已连接",
-        "agentphoneDisconnected": "AgentPhone已断开连接",
+        "agentphoneConnected": "电话号码已连接",
+        "agentphoneDisconnected": "电话号码已断开连接",
         "slackConnected": "Slack连接成功",
         "slackDisconnected": "已断开与Slack的连接",
         "slackInstalled": "Slack安装成功",
@@ -4259,7 +4281,6 @@
       "documentTitles": {
         "experience": "你的AI使用经验",
         "industry": "选择你的领域",
-        "profile": "你的用户画像",
         "ready": "Okou已就绪",
         "skills": "导入你的技能",
         "slack": "把Okou添加到Slack",
@@ -4322,17 +4343,6 @@
       "industry": {
         "copy": "Okou 是你和团队的工作助手，在云端把零散的信息变成完成的工作。选择你的领域，获取适合你的第一项任务。",
         "title": "你主要做哪类工作？"
-      },
-      "profile": {
-        "communicationStyle": "你的沟通方式",
-        "copy": "根据你连接的账号，初步了解你的工作。",
-        "failed": "暂时无法生成用户画像。你可以重试或继续。",
-        "heading": "你的用户画像",
-        "loading": "正在根据你连接的工作内容生成用户画像…",
-        "priorities": "可能关注的重点",
-        "professionalIdentity": "你的工作",
-        "retry": "重试",
-        "title": "这是我们对你的初步了解"
       },
       "skills": {
         "copied": "已复制",
@@ -4732,7 +4742,7 @@
         "unconfirmedNote": "无法确认{{provider}}的连接状态。你可以重试，也可以先继续，稍后再连接。"
       },
       "team": {
-        "copy": "邀请团队成员，一起使用共享的工作流。",
+        "copy": "邀请团队成员共享你的工作流，每个人各自连接自己的工具。",
         "invite": "发送邀请",
         "invited": "已邀请",
         "label": "团队成员的邮箱",
@@ -4746,12 +4756,10 @@
           "workspace": "加入你的工作区。"
         },
         "sending": "发送中…",
-        "title": "让整个团队一起用好 Okou",
-        "trust": "大家使用同一套工作流，各自连接自己的工具。"
+        "title": "让整个团队一起用好 Okou"
       },
       "welcome": {
         "copy": "看看为你的工作推荐的任务，按目标调整，再让 Okou 开始执行。",
-        "offerTitle": "首小时咨询免费，另赠最多100积分——",
         "promptLabel": "你的起始提示词",
         "start": "开始使用Okou",
         "title": "从一项有价值的任务开始"
@@ -6604,9 +6612,6 @@
       "emailSubscription": {
         "description": "通过邮件接收简报、提醒和其他工作区更新。",
         "descriptionWithEmail": "接收发送至 {{email}} 的简报、提醒和其他工作区更新。",
-        "loading": "正在检查邮件订阅…",
-        "retryMessage": "无法保存或加载你的邮件订阅，请重试。",
-        "saving": "保存中…",
         "sectionTitle": "邮件订阅",
         "title": "邮件更新",
         "unavailable": "邮件不可用",
@@ -6632,17 +6637,11 @@
         "title": "语言"
       },
       "morningBrief": {
-        "chatAndEmail": "聊天+邮件",
-        "chatOnly": "仅聊天",
-        "checkEmailSubscription": "投递状态请查看上方的邮件订阅。",
         "conflict": "晨报的安装状态不一致，暂时无法使用。请在状态同步完成后重试。",
         "description": "每天早上 7:00（按你的时区）接收当日重点。",
-        "lastDelivered": "上次投递：{{date}}",
         "loading": "正在加载晨报设置…",
         "missingDefaultAgent": "启用晨报前，请先选择一个可用的默认智能体。",
         "missingTimezone": "启用晨报前，请先设置有效的时区。",
-        "nextBrief": "下一份晨报 {{date}}",
-        "paused": "已暂停",
         "preparationFailed": "晨报设置会自动重试，你也可以现在就重试。",
         "preparing": "正在准备你的第一份晨报，你可以随时关闭。",
         "retry": "重试",
@@ -7087,6 +7086,7 @@
       "add": "添加凭据",
       "appleDhFieldHelp": "每项 1–63 个 UTF-8 字节，不允许 NUL 字符。",
       "appleDhMethod": "Apple DH 用户名和密码",
+      "appleSrpMethod": "Apple Direct SRP 用户名和密码",
       "authentication": "认证方式",
       "createNew": "新建凭据",
       "delete": "删除凭据",
@@ -7155,6 +7155,8 @@
     "security": {
       "appleDh": "Mac 屏幕共享 (Apple DH)",
       "appleDhHelp": "需要通过已保存的 SSH 连接访问 macOS 屏幕共享。RFB 目标必须是该 Mac 上的 127.0.0.1 或 ::1；SSH 保护整个 VNC 会话。 请使用你控制的 Mac SSH 主机；其主机密钥无法排除后续代理转发。",
+      "appleSrp": "Mac 屏幕共享 (Apple Direct SRP)",
+      "appleSrpHelp": "需要已保存的 Mac SSH 连接，RFB 目标必须是 127.0.0.1 或 ::1。SRP 验证账户和服务端证明；SSH 保护整个 VNC 会话。SSH 主机密钥确认所选端点，但不能排除后续代理转发。",
       "caBundle": "CA证书（PEM）",
       "caHelp": "最多8个CA证书，总大小64 KiB。请勿粘贴私钥或服务器证书。",
       "caHint": "粘贴签发该服务器证书的公开CA证书",
@@ -7174,6 +7176,7 @@
     "summary_other": "已配置{{count}}台主机",
     "transport": {
       "appleDhDestinationHelp": "Apple DH 请填写 127.0.0.1 或 ::1；这是通过所选 SSH 主机访问的 Mac 本机回环地址。",
+      "appleSrpDestinationHelp": "Apple Direct SRP 请填写 127.0.0.1 或 ::1；这是通过所选 SSH 主机访问的 Mac 本机回环地址。",
       "destination": "RFB目标",
       "destinationHelp": "使用SSH路由时，将从所选SSH服务器访问此主机和端口，而不是由Runner直接访问。",
       "direct": "Runner直连",

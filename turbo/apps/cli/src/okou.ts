@@ -53,6 +53,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   resource: null,
   github: ["github:read", "github:write"],
   slack: ["slack:read", "slack:write"],
+  discord: ["discord:read", "discord:write"],
   feishu: "feishu:write",
   lark: "lark:write",
   teams: "teams:write",
@@ -206,6 +207,14 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     },
   },
   {
+    name: "discord",
+    description:
+      "List channels, read history, and send messages as the Discord bot",
+    load: async () => {
+      return (await import("./commands/discord")).discordCommand;
+    },
+  },
+  {
     name: "lark",
     description: "Send messages and transfer files through Lark",
     load: async () => {
@@ -237,7 +246,7 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   },
   {
     name: "phone",
-    description: "Send AgentPhone messages, upload files, and download media",
+    description: "Send phone messages, upload files, and download media",
     load: async () => {
       return (await import("./commands/phone")).phoneCommand;
     },
@@ -553,6 +562,11 @@ export function buildHelpText(
     ),
     "  Send a Slack message?  okou slack message send --help",
     ...commandExampleIfVisible(
+      "discord",
+      "  Use Discord?          okou discord --help",
+      payload,
+    ),
+    ...commandExampleIfVisible(
       "feishu",
       "  Send Feishu?          okou feishu message send --help",
       payload,
@@ -576,9 +590,9 @@ export function buildHelpText(
     "  Send Telegram?         okou telegram message send --help",
     "  Upload Telegram?       okou telegram upload-file --help",
     "  Download Telegram?     okou telegram download-file --help",
-    "  Send AgentPhone?       okou phone message --help",
-    "  Upload AgentPhone?     okou phone upload-file --help",
-    "  Download AgentPhone?   okou phone download-file --help",
+    "  Send phone message?   okou phone message --help",
+    "  Upload phone file?    okou phone upload-file --help",
+    "  Download phone file?  okou phone download-file --help",
     "  List models?          okou model ls",
     "  Model routing?        okou model-provider ls",
     "  Update yourself?       okou agent --help",

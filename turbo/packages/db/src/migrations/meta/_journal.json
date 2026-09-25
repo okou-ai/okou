@@ -925,6 +925,139 @@
       "when": 1790231546789,
       "tag": "1209_account_erasure_blob_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 1210,
+      "version": "7",
+      "when": 1790238077209,
+      "tag": "1210_cloudflare_access_conversion",
+      "breakpoints": true
+    },
+    {
+      "idx": 1211,
+      "version": "7",
+      "when": 1790243965044,
+      "tag": "1211_daily_diamondback",
+      "breakpoints": true
+    },
+    {
+      "idx": 1212,
+      "version": "7",
+      "when": 1790252500070,
+      "tag": "1212_jazzy_magma",
+      "breakpoints": true
+    },
+    {
+      "idx": 1213,
+      "version": "7",
+      "when": 1790254313135,
+      "tag": "1213_retire_sonnet_4_6_opus_4_8_deepseek_v4_pro",
+      "breakpoints": true
+    },
+    {
+      "idx": 1214,
+      "version": "7",
+      "when": 1790255895068,
+      "tag": "1214_chat_search_user_tsv_gin",
+      "breakpoints": true
+    },
+    {
+      "idx": 1215,
+      "version": "7",
+      "when": 1790257560119,
+      "tag": "1215_retire_native_morning_brief_admission",
+      "breakpoints": true
+    },
+    {
+      "idx": 1216,
+      "version": "7",
+      "when": 1790257660119,
+      "tag": "1216_chat_event_write_expansion",
+      "breakpoints": true
+    },
+    {
+      "idx": 1217,
+      "version": "7",
+      "when": 1790257689693,
+      "tag": "1217_chat_event_sequence_bridge",
+      "breakpoints": true
+    },
+    {
+      "idx": 1218,
+      "version": "7",
+      "when": 1790257705338,
+      "tag": "1218_backfill_chat_event_sequences",
+      "breakpoints": true
+    },
+    {
+      "idx": 1219,
+      "version": "7",
+      "when": 1790257715162,
+      "tag": "1219_prepare_chat_event_routing_and_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 1220,
+      "version": "7",
+      "when": 1790257729937,
+      "tag": "1220_chat_thread_sequence_erasure_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 1221,
+      "version": "7",
+      "when": 1790260335751,
+      "tag": "1221_get_started_imessage_quest",
+      "breakpoints": true
+    },
+    {
+      "idx": 1222,
+      "version": "7",
+      "when": 1790263053622,
+      "tag": "1222_cloudflare_access_personal_promotion",
+      "breakpoints": true
+    },
+    {
+      "idx": 1223,
+      "version": "7",
+      "when": 1790264437962,
+      "tag": "1223_agentphone_public_brand_okou_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 1224,
+      "version": "7",
+      "when": 1790265735542,
+      "tag": "1224_discord_integration_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1225,
+      "version": "7",
+      "when": 1790273285522,
+      "tag": "1225_discord_chat_event_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 1226,
+      "version": "7",
+      "when": 1790273293205,
+      "tag": "1226_discord_canonical_chat",
+      "breakpoints": true
+    },
+    {
+      "idx": 1227,
+      "version": "7",
+      "when": 1790273304246,
+      "tag": "1227_validate_discord_chat_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 1228,
+      "version": "7",
+      "when": 1790294466981,
+      "tag": "1228_drop_agentphone_public_brand",
+      "breakpoints": true
     }
   ]
 }

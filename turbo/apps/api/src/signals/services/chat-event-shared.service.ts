@@ -1,8 +1,9 @@
 import { command } from "ccstate";
+import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { historicalRunGroupId } from "./run-event-provenance.service";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   and,
   eq,
@@ -30,10 +31,12 @@ import {
   appendChatThreadEvent,
   type ChatThreadEventTransaction,
 } from "./chat-thread-event.service";
+import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 
 import {
   withRunContentWrite,
+  withRunOutputWrite,
   type RunContentOwnership,
 } from "./run-content-erasure-admission.service";
 
@@ -115,6 +118,65 @@ interface AuthorizedChatThreadTouchScope {
   readonly orgId: string;
 }
 
+export async function touchChatThreadLastMessageAtIndependently(
+  tx: Db,
+  threadId: string,
+  touchedAt: Date = nowDate(),
+  eventId?: string,
+  authorizedScope?: AuthorizedChatThreadTouchScope,
+): Promise<void> {
+  // Resolve identity before either independent write. Failure of the weak
+  // timestamp update must not suppress the separate ordering event attempt.
+  const [thread] = await tx
+    .select({
+      id: chatThreads.id,
+      userId: chatThreads.userId,
+      agentId: chatThreads.agentId,
+    })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.id, threadId),
+        isNotNull(chatThreads.agentId),
+        authorizedScope
+          ? and(
+              eq(chatThreads.userId, authorizedScope.userId),
+              chatThreadOrganizationCondition(tx, authorizedScope.orgId),
+            )
+          : undefined,
+      ),
+    )
+    .limit(1);
+  if (!thread?.agentId) {
+    return;
+  }
+  const agentId = thread.agentId;
+  await attemptChatEventSideEffect("last_message_at", threadId, async () => {
+    await tx
+      .update(chatThreads)
+      .set({
+        lastMessageAt: sql`GREATEST(${chatThreads.lastMessageAt}, ${touchedAt.toISOString()}::timestamp)`,
+      })
+      .where(
+        and(
+          eq(chatThreads.id, threadId),
+          eq(chatThreads.userId, thread.userId),
+        ),
+      );
+  });
+  await attemptChatEventSideEffect("sort_touched", threadId, async () => {
+    await appendChatThreadEvent(tx, {
+      kind: "sort_touched",
+      userId: thread.userId,
+      ...(authorizedScope ? { orgId: authorizedScope.orgId } : {}),
+      chatThreadId: threadId,
+      agentId,
+      eventId,
+      createdAt: touchedAt,
+    });
+  });
+}
+
 export async function touchChatThreadLastMessageAt(
   tx: ChatThreadEventTransaction,
   threadId: string,
@@ -125,7 +187,7 @@ export async function touchChatThreadLastMessageAt(
   const [thread] = await tx
     .update(chatThreads)
     .set({
-      lastMessageAt: sql`GREATEST(${chatThreads.lastMessageAt}, ${touchedAt})`,
+      lastMessageAt: sql`GREATEST(${chatThreads.lastMessageAt}, ${touchedAt.toISOString()}::timestamp)`,
     })
     .where(
       and(
@@ -195,7 +257,7 @@ export function visibleChatEventCondition(
 }
 
 async function assistantEventRunContextForRun(
-  db: ChatThreadEventTransaction,
+  db: Pick<Db, "select">,
   runId: string,
 ): Promise<{
   readonly shouldAttemptFirstAssistantEventClaim: boolean;
@@ -223,9 +285,10 @@ interface InsertAssistantEventsTransactionResult {
 }
 
 export async function insertAssistantEventsInTransaction(
-  tx: ChatThreadEventTransaction,
+  tx: Db | ChatThreadEventTransaction,
   args: Omit<InsertAssistantEventsInput, "ownership"> & {
     readonly runGroupId: string | undefined;
+    readonly splitWrites?: boolean;
   },
   signal: AbortSignal,
 ): Promise<InsertAssistantEventsTransactionResult> {
@@ -271,6 +334,9 @@ export async function insertAssistantEventsInTransaction(
         thinking: item.thinking,
       };
     }),
+    args.splitWrites === undefined
+      ? undefined
+      : { splitWrites: args.splitWrites },
   );
   signal.throwIfAborted();
 
@@ -296,18 +362,36 @@ export async function insertAssistantEvents(
     undefined,
     signal,
   );
-  const admitted = await withRunContentWrite(
-    writeDb,
-    { runId: args.runId, destination: args, ownership: args.ownership },
-    async (tx) => {
-      return await insertAssistantEventsInTransaction(
-        tx,
-        { ...args, runGroupId },
+  const splitWrites = await isSplitChatEventWriteEnabled(writeDb);
+  const admitted = splitWrites
+    ? await withRunOutputWrite(
+        writeDb,
+        { runId: args.runId, destination: args, ownership: args.ownership },
+        async (tx, current) => {
+          return {
+            outcome: "written" as const,
+            ownership: current.ownership,
+            value: await insertAssistantEventsInTransaction(
+              tx,
+              { ...args, runGroupId, splitWrites },
+              signal,
+            ),
+          };
+        },
+        signal,
+      )
+    : await withRunContentWrite(
+        writeDb,
+        { runId: args.runId, destination: args, ownership: args.ownership },
+        async (tx) => {
+          return await insertAssistantEventsInTransaction(
+            tx,
+            { ...args, runGroupId, splitWrites },
+            signal,
+          );
+        },
         signal,
       );
-    },
-    signal,
-  );
   if (admitted.outcome === "closed") {
     return 0;
   }

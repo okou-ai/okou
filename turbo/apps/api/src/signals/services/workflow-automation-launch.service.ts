@@ -153,6 +153,8 @@ type ModelContext =
 export interface RunWorkflowAutomationNowArgs {
   readonly due: DueWorkflowAutomation;
   readonly automationContext: WorkflowAutomationContext;
+  /** Stable ingress identity when a source callback may retry the same event. */
+  readonly queueEventId?: string;
   readonly publicBrand?: PublicBrand;
   readonly apiStartTime: number;
   readonly agentRunSource?: ChatAgentRunSourceAnnotation;
@@ -412,7 +414,6 @@ async function resolveModelContext(
     selectedModel,
     codexServiceTier: runCodexServiceTier,
     builtInModelRuntimeRoute: builtInModelRuntimeRoute ?? undefined,
-    featureSwitchContext: threadModelContext.featureSwitchContext,
   });
   return {
     ok: true,

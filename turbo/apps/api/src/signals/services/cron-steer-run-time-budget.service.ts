@@ -2,7 +2,7 @@ import { command } from "ccstate";
 import { and, eq, isNotNull, lte } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";

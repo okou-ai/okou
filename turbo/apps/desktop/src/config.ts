@@ -24,6 +24,7 @@ export interface DesktopIdentity {
 interface DesktopRuntimeConfig {
   readonly platformUrl: string;
   readonly product?: DesktopIdentity["product"];
+  readonly clerkPublishableKey?: string;
 }
 
 export interface DesktopConfig {
@@ -32,6 +33,7 @@ export interface DesktopConfig {
   readonly authUrl: URL;
   readonly environment: DesktopEnvironment;
   readonly identity: DesktopIdentity;
+  readonly clerkPublishableKey: string | null;
   readonly sessionPartition: string;
   readonly authPartition: string;
   readonly allowedAppOrigins: ReadonlySet<string>;
@@ -89,6 +91,7 @@ function parseRuntimeConfig(value: unknown): DesktopRuntimeConfig {
   const config = value as {
     readonly platformUrl?: unknown;
     readonly product?: unknown;
+    readonly clerkPublishableKey?: unknown;
   };
   if (typeof config.platformUrl !== "string") {
     throw new Error(
@@ -98,12 +101,24 @@ function parseRuntimeConfig(value: unknown): DesktopRuntimeConfig {
   if (config.product !== undefined && typeof config.product !== "string") {
     throw new Error(`${DESKTOP_RUNTIME_CONFIG_FILE} product must be okou`);
   }
+  if (
+    config.clerkPublishableKey !== undefined &&
+    (typeof config.clerkPublishableKey !== "string" ||
+      !/^pk_(test|live)_\S+$/.test(config.clerkPublishableKey))
+  ) {
+    throw new Error(
+      `${DESKTOP_RUNTIME_CONFIG_FILE} clerkPublishableKey is invalid`,
+    );
+  }
 
   return {
     platformUrl: config.platformUrl,
     ...(config.product === undefined
       ? {}
       : { product: desktopProduct(config.product) }),
+    ...(config.clerkPublishableKey === undefined
+      ? {}
+      : { clerkPublishableKey: config.clerkPublishableKey as string }),
   };
 }
 
@@ -238,6 +253,10 @@ export function resolveDesktopConfig(
     authUrl,
     environment,
     identity: identityForEnvironment(product, environment),
+    clerkPublishableKey:
+      process.env.OKOU_DESKTOP_CLERK_PUBLISHABLE_KEY?.trim() ||
+      fileConfig?.clerkPublishableKey ||
+      null,
     sessionPartition,
     // Keep Clerk and App credentials in their own store. Signing out can clear
     // it completely without touching native preferences, recordings or plugins.

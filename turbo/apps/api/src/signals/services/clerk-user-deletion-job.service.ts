@@ -1,3 +1,7 @@
+import {
+  recordChatContentDeletion,
+  completeChatContentDeletion,
+} from "@okouai/db/operations/chat-content-erasure";
 import { command } from "ccstate";
 import { v5 as uuidv5 } from "uuid";
 import { z } from "zod";
@@ -56,7 +60,24 @@ async function settleDeletionAttempt(
           },
           persistenceSignal,
         )
-      : await completeBackgroundJob(db, { job }, persistenceSignal);
+      : await db.transaction(async (tx) => {
+          const completed = await completeBackgroundJob(
+            tx,
+            { job },
+            persistenceSignal,
+          );
+          if (!completed) {
+            throw new Error("User deletion lost its job lease");
+          }
+          // Capture/verification yields do not complete the local cleanup.
+          // The receipt survives retirement of either durable job projection.
+          await completeChatContentDeletion(tx, {
+            subjectKind: "user",
+            subjectId: job.userId,
+            sourceReference: job.id,
+          });
+          return completed;
+        });
     if (!saved) {
       throw new Error("User deletion lost its job lease");
     }
@@ -88,6 +109,12 @@ export const enqueueClerkUserDeletion$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<string> => {
     const jobId = uuidv5(userId, JOB_NAMESPACE);
     await set(writeDb$).transaction(async (tx) => {
+      await recordChatContentDeletion(tx, {
+        subjectKind: "user",
+        subjectId: userId,
+        sourceReference: jobId,
+      });
+      signal.throwIfAborted();
       await enqueueBackgroundJob(
         tx,
         {

@@ -418,7 +418,7 @@ describe("MISC-04: model providers, policies, and logs visible state", () => {
       {
         type: "claude-code-oauth-token",
         secret: "bdd-updated-claude-oauth-token",
-        selectedModel: "claude-opus-4-8",
+        selectedModel: "claude-opus-5",
       },
       [200],
     );
@@ -426,7 +426,7 @@ describe("MISC-04: model providers, policies, and logs visible state", () => {
       created: false,
       provider: {
         type: "claude-code-oauth-token",
-        selectedModel: "claude-opus-4-8",
+        selectedModel: "claude-opus-5",
       },
     });
 

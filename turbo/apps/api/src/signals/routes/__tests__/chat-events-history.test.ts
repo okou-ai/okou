@@ -23,7 +23,7 @@ const {
   api,
   chat,
   chatCallbacks,
-  entitledChatActor,
+  entitledNativeChatActor,
   sendChatRun,
   claimChatRun,
   waitForThreadMessages,
@@ -91,7 +91,7 @@ function recommendedFollowupEvents(
 
 describe("CHAT-02: incomplete-round context", () => {
   it("injects incomplete rounds and truncates old content chronologically", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const anchor = await sendChatRun(actor, {
@@ -173,7 +173,7 @@ describe("CHAT-02: incomplete-round context", () => {
 
 describe("CHAT-02: prior rounds and thread titles", () => {
   it("leaves prior completed rounds to the session, generates the thread title, and accepts immutable follow-up revokes", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     mockOptionalEnv("OPENROUTER_API_KEY", "title-key");
     let upstreamAuthorization: string | null = null;
@@ -379,7 +379,7 @@ describe("CHAT-02: prior rounds and thread titles", () => {
   }, 90_000);
 
   it("steers an active-run recommended follow-up", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     mockOptionalEnv("OPENROUTER_API_KEY", "followup-steer-key");
     server.use(

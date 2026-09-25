@@ -8,7 +8,7 @@ import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { agents } from "@okouai/db/schema/agent";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { sharedThreads } from "@okouai/db/schema/shared-thread";
 import type { SharedThreadMessageAttachments } from "@okouai/db/jsonb-contracts/shared-thread";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";

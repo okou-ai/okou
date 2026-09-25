@@ -322,7 +322,13 @@ function runForge(
   const outputPath = join(harness.directory, "forge-output");
   // forge.config.js names the bundle from the default build product.
   const appPath = join(outputPath, "Okou.app");
-  mkdirSync(appPath, { recursive: true });
+  const nativeResource = join(appPath, "Contents", "Resources", "native");
+  mkdirSync(nativeResource, { recursive: true });
+  mkdirSync(join(appPath, "Contents", "MacOS"), { recursive: true });
+  writeFileSync(
+    join(nativeResource, "clerk-auth-helper"),
+    "native auth helper",
+  );
   const environment = baseEnvironment(harness);
   if (options.ci === false) {
     delete environment.CI;

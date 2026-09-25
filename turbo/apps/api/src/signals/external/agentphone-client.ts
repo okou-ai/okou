@@ -38,7 +38,7 @@ function makeAgentPhoneApiError(
   status: number,
   body: string,
 ): AgentPhoneApiError {
-  return Object.assign(new Error(`AgentPhone API error: ${status}`), {
+  return Object.assign(new Error(`Phone provider error: ${status}`), {
     name: "AgentPhoneApiError" as const,
     status,
     body,

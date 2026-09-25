@@ -1,3 +1,4 @@
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { createHash, randomUUID } from "node:crypto";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
@@ -27,7 +28,7 @@ import {
   chatThreadEvents,
   chatThreadEventSequences,
 } from "@okouai/db/schema/chat-thread-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { runOutputMemoryCitations } from "@okouai/db/schema/run-output-memory-citation";
 import { runActivitySnapshots } from "@okouai/db/schema/run-activity-snapshot";
@@ -186,7 +187,16 @@ describe("actual compute transactions versus the B1 projector", () => {
     // Pro plan's own concurrency limit.
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     await api.grantProEntitlement(actor);
-    await api.ensureOrgModelProvider(actor);
+    const { providerId } = await api.ensureOrgModelProvider(actor);
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-fable-5-1",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
     const agent = await bdd.createAgent(actor, {
       displayName: "Synthetic erasure admission",
       visibility: "public",
@@ -1325,7 +1335,7 @@ describe("actual compute transactions versus the B1 projector", () => {
           agentId: f.agentId,
           prompt: "Synthetic output admission",
           clientEventId: randomUUID(),
-          model: "claude-sonnet-5",
+          model: "claude-fable-5-1",
         },
         [201],
       );
@@ -1701,8 +1711,16 @@ describe("actual compute transactions versus the B1 projector", () => {
         .from(agentRuns)
         .where(eq(agentRuns.id, f.runId));
       const [thread] = await db
-        .select({ sequence: chatThreads.lastChatEventSeqId })
+        .select({
+          sequence: sql`COALESCE(${chatEventSequences.lastSeqId}, 0)`.mapWith(
+            chatEventSequences.lastSeqId,
+          ),
+        })
         .from(chatThreads)
+        .leftJoin(
+          chatEventSequences,
+          eq(chatEventSequences.chatThreadId, chatThreads.id),
+        )
         .where(eq(chatThreads.id, f.threadId));
       return { content, materialization, citations, run, thread };
     }
@@ -3470,10 +3488,16 @@ describe("actual compute transactions versus the B1 projector", () => {
           .orderBy(asc(agentRunCallbacks.id));
         const thread = await db
           .select({
-            seq: chatThreads.lastChatEventSeqId,
+            seq: sql`COALESCE(${chatEventSequences.lastSeqId}, 0)`.mapWith(
+              chatEventSequences.lastSeqId,
+            ),
             lastMessageAt: chatThreads.lastMessageAt,
           })
           .from(chatThreads)
+          .leftJoin(
+            chatEventSequences,
+            eq(chatEventSequences.chatThreadId, chatThreads.id),
+          )
           .where(eq(chatThreads.id, f.threadId));
         const sidebar = await db
           .select()

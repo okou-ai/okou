@@ -87,6 +87,25 @@ const {
   mockPiResourceArchiveDownloads,
 } = createChatEventsFixture(context);
 
+// Completion-webhook carriers are claimed through the native Runner protocol
+// before their launch snapshot is replaced. The fixture's default Sonnet
+// policy is Pi-eligible, so select the Fable native route for those carriers.
+async function entitledNativeCarrierActor(): Promise<
+  Awaited<ReturnType<typeof entitledChatActor>>
+> {
+  const fixture = await entitledChatActor();
+  await api.updateOrgModelPolicies(fixture.actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: fixture.providerId,
+    },
+  ]);
+  return fixture;
+}
+
 function frameworkMatchingCompletionOptions(
   threadId: string,
   cliAgentType: "claude-code" | "codex" | "pi",
@@ -299,7 +318,6 @@ describe("CHAT-02: model-first provider policies", () => {
       context,
       { ...actor, orgId },
       {
-        [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.PiMemory]: true,
       },
     );
@@ -442,7 +460,6 @@ describe("CHAT-02: model-first provider policies", () => {
           orgId: requireOrgId(actor),
         },
         {
-          [FeatureSwitchKey.PiLoop]: true,
           [FeatureSwitchKey.PiMemory]: true,
         },
       );
@@ -599,14 +616,7 @@ describe("CHAT-02: model-first provider policies", () => {
     async (outcome) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       await configureBuiltInPiModel(actor, "gpt-5.6-terra");
-      await updateFeatureSwitchesForUser(
-        context,
-        {
-          ...actor,
-          orgId: requireOrgId(actor),
-        },
-        { [FeatureSwitchKey.PiLoop]: true },
-      );
+
       await bdd.updateAgentInstructions(
         actor,
         agentId,
@@ -717,7 +727,6 @@ describe("CHAT-02: model-first provider policies", () => {
         orgId: requireOrgId(actor),
       },
       {
-        [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.PiMemory]: true,
       },
     );
@@ -998,7 +1007,6 @@ describe("CHAT-02: model-first provider policies", () => {
       context,
       { ...actor, orgId },
       {
-        [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.PiMemory]: true,
       },
     );
@@ -1057,7 +1065,6 @@ describe("CHAT-02: model-first provider policies", () => {
       context,
       { ...actor, orgId },
       {
-        [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.PiMemory]: true,
       },
     );
@@ -1151,11 +1158,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await seedReadyMemorySummaryProjection(context, actor, memory, summary);
     const usagePricingResolution = await createGptUsagePricingResolution();
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      { [FeatureSwitchKey.PiLoop]: true },
-    );
+
     mockPiResourceArchiveDownloads();
     const checkpointObjects = mockPiCheckpointObjectStore();
     const requestBodies: string[] = [];
@@ -1250,7 +1253,7 @@ describe("CHAT-02: model-first provider policies", () => {
         { schemaVersion: 1, framework: "pi", runnerProfile: DEFAULT_PROFILE },
       ],
       [
-        "V2 Pi disabled with PiLoop enabled",
+        "V2 Pi memory disabled",
         {
           schemaVersion: 2,
           framework: "pi",
@@ -1299,7 +1302,8 @@ describe("CHAT-02: model-first provider policies", () => {
     ] as const;
 
     for (const [name, snapshot] of rejectedSnapshots) {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } =
+        await entitledNativeCarrierActor();
       const orgId = requireOrgId(actor);
       const run = await sendChatRun(actor, {
         agentId,
@@ -1311,7 +1315,6 @@ describe("CHAT-02: model-first provider policies", () => {
         context,
         { ...actor, orgId },
         {
-          [FeatureSwitchKey.PiLoop]: true,
           [FeatureSwitchKey.PiMemory]: true,
         },
       );
@@ -1334,7 +1337,8 @@ describe("CHAT-02: model-first provider policies", () => {
     }
 
     for (const [name, snapshot] of admittedSnapshots) {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } =
+        await entitledNativeCarrierActor();
       const orgId = requireOrgId(actor);
       const run = await sendChatRun(actor, {
         agentId,
@@ -1346,7 +1350,6 @@ describe("CHAT-02: model-first provider policies", () => {
         context,
         { ...actor, orgId },
         {
-          [FeatureSwitchKey.PiLoop]: true,
           [FeatureSwitchKey.PiMemory]: true,
         },
       );
@@ -1420,12 +1423,13 @@ describe("CHAT-02: model-first provider policies", () => {
       ["synthetic run", { triggerSource: "test" as const }, false],
     ] as const;
     for (const [name, inputs, fails] of cases) {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } =
+        await entitledNativeCarrierActor();
       const orgId = requireOrgId(actor);
       const run = await sendChatRun(actor, {
         agentId,
         prompt: `preserve ${name} completion exclusion`,
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
       });
       const claimed = await claimChatRun(runnerGroup, run.runId);
       await setRunLaunchSnapshotFixture(run.runId, {
@@ -1455,7 +1459,7 @@ describe("CHAT-02: model-first provider policies", () => {
   }, 90_000);
 
   it("leaves completion scheduling-free while canonical admission honors PiMemory", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeCarrierActor();
     const orgId = requireOrgId(actor);
     const scope = { orgId, userId: actor.userId };
     async function completePiRun(threadId: string | undefined, note: string) {
@@ -1563,13 +1567,13 @@ describe("CHAT-02: model-first provider policies", () => {
   }, 90_000);
 
   it("keeps an agent-authenticated same-owner Pi history out of memory", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeCarrierActor();
     const orgId = requireOrgId(actor);
     await bdd.updateAgentMetadata(actor, agentId, { visibility: "public" });
     const source = await sendChatRun(actor, {
       agentId,
       prompt: "delegate a non-interactive Pi turn",
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
     });
     const sourceClaim = await claimChatRun(runnerGroup, source.runId);
     const sourceToken = okouTokenFromClaim(sourceClaim.claim);
@@ -1582,7 +1586,6 @@ describe("CHAT-02: model-first provider policies", () => {
       context,
       { ...actor, orgId },
       {
-        [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.PiMemory]: true,
       },
     );
@@ -1716,6 +1719,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const prerequisiteByTriggerSource = {
       web: null,
       slack: null,
+      discord: null,
       teams: null,
       feishu: null,
       lark: null,
@@ -1750,7 +1754,6 @@ describe("CHAT-02: model-first provider policies", () => {
       context,
       { ...actor, orgId },
       {
-        [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.PiMemory]: true,
       },
     );
@@ -1826,13 +1829,7 @@ describe("CHAT-02: model-first provider policies", () => {
         framework: "pi",
       },
     });
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      {
-        [FeatureSwitchKey.PiLoop]: true,
-      },
-    );
+
     releaseFirstProvider.resolve(undefined);
     await waitForRunStatus(actor, first.runId, "completed", 10_000);
     await flushWaitUntilForTest();
@@ -1887,13 +1884,7 @@ describe("CHAT-02: model-first provider policies", () => {
       leaseToken: staleLeaseToken,
       leaseExpiresAt: new Date(now() + 60_000),
     });
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      {
-        [FeatureSwitchKey.PiLoop]: true,
-      },
-    );
+
     const second = await sendChatRun(
       actor,
       {

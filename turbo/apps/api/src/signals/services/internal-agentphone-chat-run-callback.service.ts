@@ -3,9 +3,8 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { sendAgentPhoneMessage } from "../external/agentphone-client";
@@ -19,13 +18,10 @@ import {
 } from "./agentphone-chat-callback-payload";
 import {
   agentPhoneReplyDestination,
-  formatAgentPhoneAuditLink,
   markdownToImessagePlain,
-  resolveAgentPhoneAuditLogsUrl,
   resolveAgentPhoneReplyFooterText,
   storeOutboundAgentPhoneMessage,
 } from "./agentphone-shared.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 
@@ -214,14 +210,9 @@ async function loadAgentPhoneChatDeliveryContext(
 
 function buildAgentPhoneResponseText(args: {
   readonly mainText: string;
-  readonly logsUrl: string | undefined;
   readonly footerText: string | undefined;
 }): string {
-  return [
-    markdownToImessagePlain(args.mainText),
-    args.logsUrl ? formatAgentPhoneAuditLink(args.logsUrl) : undefined,
-    args.footerText,
-  ]
+  return [markdownToImessagePlain(args.mainText), args.footerText]
     .filter((part): part is string => {
       return Boolean(part);
     })
@@ -255,57 +246,16 @@ async function sendAgentPhoneReply(
   return result;
 }
 
-async function resolveAgentPhonePresentation(
-  args: {
-    readonly db: Db;
-    readonly runId: string;
-    readonly run: AgentPhoneChatRunContext;
-  },
-  signal: AbortSignal,
-): Promise<{
-  readonly logsUrl: string | undefined;
-  readonly footerText: string | undefined;
-}> {
-  const featureContext = await loadUserFeatureSwitchContext(
-    args.db,
-    args.run.orgId,
-    args.run.userId,
-  );
-  signal.throwIfAborted();
-  const [logsUrl, footerText] = await Promise.all([
-    resolveAgentPhoneAuditLogsUrl(
-      {
-        orgId: args.run.orgId,
-        userId: args.run.userId,
-        runId: args.runId,
-        getFeatureOverrides: () => {
-          return Promise.resolve(featureContext.overrides ?? {});
-        },
-      },
-      signal,
-    ),
-    resolveAgentPhoneReplyFooterText({
-      db: args.db,
-      orgId: args.run.orgId,
-      composeId: args.run.agentId,
-    }),
-  ]);
-  signal.throwIfAborted();
-  return { logsUrl, footerText };
-}
-
 async function recordAgentPhoneChatDelivery(args: {
   readonly db: Db;
   readonly target: AgentPhoneDeliveryTarget;
   readonly sent: AgentPhoneSendResult;
   readonly body: string;
-  readonly publicBrand: PublicBrand;
 }): Promise<void> {
   await storeOutboundAgentPhoneMessage(args.db, {
     agentphoneMessageId: args.sent.id,
     conversationId: args.target.conversationId,
     agentphoneAgentId: args.target.agentphoneAgentId,
-    publicBrand: args.publicBrand,
     userLinkId: args.target.userLinkId,
     phoneHandle: args.target.phoneHandle,
     fromNumber: args.sent.fromNumber ?? args.target.toNumber,
@@ -335,18 +285,15 @@ async function deliverClaimedAgentPhoneChatCallback(
   if (!binding) {
     return "skipped_revoked";
   }
-  const presentation = await resolveAgentPhonePresentation(
-    {
-      db: args.db,
-      runId: args.callback.runId,
-      run,
-    },
-    signal,
-  );
+  const footerText = await resolveAgentPhoneReplyFooterText({
+    db: args.db,
+    orgId: run.orgId,
+    composeId: run.agentId,
+  });
+  signal.throwIfAborted();
   const body = buildAgentPhoneResponseText({
     mainText: messageContent,
-    logsUrl: presentation.logsUrl,
-    footerText: presentation.footerText,
+    footerText,
   });
   const sent = await sendAgentPhoneReply(
     {
@@ -360,7 +307,6 @@ async function deliverClaimedAgentPhoneChatCallback(
     target: payload,
     sent,
     body,
-    publicBrand: payload.publicBrand,
   });
   return "delivered";
 }
@@ -425,7 +371,6 @@ interface AgentPhoneChatAdmissionFailureArgs {
   readonly agentId: string;
   readonly target: AgentPhoneDeliveryTarget;
   readonly chatEventId: string;
-  readonly publicBrand: PublicBrand;
 }
 
 export async function deliverAgentPhoneChatAdmissionFailure(
@@ -478,7 +423,6 @@ export async function deliverAgentPhoneChatAdmissionFailure(
     agentphoneMessageId: sent.id,
     conversationId: args.target.conversationId,
     agentphoneAgentId: args.target.agentphoneAgentId,
-    publicBrand: args.publicBrand,
     userLinkId: args.target.userLinkId,
     phoneHandle: args.target.phoneHandle,
     fromNumber: sent.fromNumber ?? args.target.toNumber,

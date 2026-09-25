@@ -19,7 +19,7 @@ import { accountErasureWork } from "@okouai/db/schema/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agentVncAccess } from "@okouai/db/schema/agent-vnc-access";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatThreadVncAccessOverrides } from "@okouai/db/schema/chat-thread-vnc-access-override";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";

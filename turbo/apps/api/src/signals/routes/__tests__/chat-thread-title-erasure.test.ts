@@ -136,7 +136,18 @@ async function pauseGeneratedTitle(options?: {
   runs.acceptTelemetryIngest();
   const runnerGroup = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  const { providerId } = await runs.ensureOrgModelProvider(actor);
+  // These title-fence tests hold a native Runner turn while a real database
+  // transaction races it; Sonnet now starts a Pi API-first turn instead.
+  await runs.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   // Shared visibility, not the private default of `createAgentForChatThread`:
   // a private Agent can only be run by its owner, so a thread user distinct
   // from the Agent owner cannot exist for one.
@@ -220,7 +231,7 @@ async function pauseGeneratedTitle(options?: {
           agentId: agent.agentId,
           threadId: thread.id,
           prompt: text,
-          model: "claude-sonnet-5",
+          model: "claude-fable-5-1",
         },
         [201],
       ),

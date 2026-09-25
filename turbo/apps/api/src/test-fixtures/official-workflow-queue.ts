@@ -1,9 +1,9 @@
+import { reserveFixtureChatEventSequence } from "./chat-event-sequences";
 import { randomUUID } from "node:crypto";
 
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import { db } from "../lib/db";
 import { nowDate } from "../lib/time";
@@ -43,11 +43,9 @@ export async function appendOfficialWorkflowQueueInputFixture(args: {
     if (!revoked) {
       throw new Error("Official queue fixture source was already revoked");
     }
-    const [thread] = await tx
-      .update(chatThreads)
-      .set({ lastChatEventSeqId: sql`${chatThreads.lastChatEventSeqId} + 1` })
-      .where(eq(chatThreads.id, source.chatThreadId))
-      .returning({ seqId: chatThreads.lastChatEventSeqId });
+    const thread = {
+      seqId: await reserveFixtureChatEventSequence(tx, source.chatThreadId, 1),
+    };
     if (!thread) {
       throw new Error("Official queue fixture thread is missing");
     }

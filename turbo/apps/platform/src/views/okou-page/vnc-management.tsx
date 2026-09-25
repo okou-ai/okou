@@ -1,7 +1,7 @@
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
-import { Button } from "@okouai/ui";
+import { Button, surfaceVariants } from "@okouai/ui";
 import type { VncConnectionResponse } from "@okouai/api-contracts/contracts/vnc-connections";
 import type { VncCredentialResponse } from "@okouai/api-contracts/contracts/vnc-credentials";
 import {
@@ -38,6 +38,11 @@ function VncProfileLabel({ profile }: { readonly profile: VncProfile }) {
         return $.vnc.security.appleDh;
       });
     }
+    case "apple_srp": {
+      return t(($) => {
+        return $.vnc.security.appleSrp;
+      });
+    }
   }
   void (profile satisfies never);
   return null;
@@ -65,6 +70,11 @@ function VncAuthenticationLabel({
         return $.vnc.credential.appleDhMethod;
       });
     }
+    case "apple_srp_username_password": {
+      return t(($) => {
+        return $.vnc.credential.appleSrpMethod;
+      });
+    }
   }
   void (method satisfies never);
   return null;
@@ -88,7 +98,7 @@ function VncHostCard({
       : null;
   const destination = `${connection.host.includes(":") ? `[${connection.host}]` : connection.host}:${connection.port}`;
   return (
-    <article className="grid gap-3 rounded-xl border bg-card p-5">
+    <article className={surfaceVariants({ className: "grid gap-3 p-5" })}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="break-all font-semibold">{connection.displayName}</h2>
         <span className="text-sm text-muted-foreground">
@@ -124,7 +134,8 @@ function VncHostCard({
         {": "}
         {destination}
       </p>
-      {connection.security.type === "apple_dh" ? null : (
+      {connection.security.type === "apple_dh" ||
+      connection.security.type === "apple_srp" ? null : (
         <p className="break-all text-sm">
           {t(($) => {
             return $.vnc.security.serverName;
@@ -142,7 +153,8 @@ function VncHostCard({
         <VncAuthenticationLabel
           method={vncAuthMethodForProfile(connection.security.type)}
         />
-        {connection.security.type === "apple_dh" ? null : (
+        {connection.security.type === "apple_dh" ||
+        connection.security.type === "apple_srp" ? null : (
           <>
             {" "}
             {" · "}{" "}
@@ -254,7 +266,7 @@ function VncCredentialCard({
   const open = useSet(openVncDialog$);
   const signal = useGet(pageSignal$);
   return (
-    <article className="grid gap-3 rounded-xl border bg-card p-5">
+    <article className={surfaceVariants({ className: "grid gap-3 p-5" })}>
       <h2 className="break-all font-semibold">{credential.name}</h2>
       <p className="text-sm text-muted-foreground">
         {t(($) => {
@@ -264,7 +276,8 @@ function VncCredentialCard({
         <VncAuthenticationLabel method={credential.authMethod} />
       </p>
       {(credential.authMethod === "username_password" ||
-        credential.authMethod === "apple_dh_username_password") && (
+        credential.authMethod === "apple_dh_username_password" ||
+        credential.authMethod === "apple_srp_username_password") && (
         <p className="break-all text-sm">{credential.username}</p>
       )}
       <VncCredentialImpact credential={credential} />

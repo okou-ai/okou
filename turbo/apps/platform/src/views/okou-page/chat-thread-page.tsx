@@ -164,6 +164,7 @@ import {
   PreviewableAudioAttachmentChip,
   PreviewableFileAttachmentChip,
 } from "./attachment-chips.tsx";
+import { DiscordMark } from "./components/discord-mark.tsx";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 import { DiscordMark } from "./components/discord-mark.tsx";
 import { classifyChatAttachment } from "../../signals/chat-page/parse-body-blocks.ts";
@@ -2175,7 +2176,7 @@ function HeaderWorkflowAutomationCard({
               type="button"
               variant="neutral"
               size="sm"
-              className="h-8 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-medium"
+              className="ml-auto h-8 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-medium"
               disabled={running}
               onClick={() => {
                 detach(
@@ -6967,6 +6968,11 @@ function sourceMessageLabel(
   >["part"]["kind"],
 ): string {
   switch (kind) {
+    case "discord": {
+      return t(($) => {
+        return $.chat.origins.discord;
+      });
+    }
     case "slack": {
       return t(($) => {
         return $.chat.origins.slack;

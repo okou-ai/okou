@@ -27,6 +27,7 @@ import {
   mockPublicConnectorStatus,
   publicStatusItem,
   queryConnectorAction,
+  mockConnectorAgentAccess,
 } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
@@ -195,6 +196,9 @@ async function openConnectorAccessSummary() {
       });
     },
   );
+  mockConnectorAgentAccess(context, (agentId) => {
+    return { enabledConnectorSlugs: enabled.get(agentId) ?? [] };
+  });
   context.mocks.api(
     userBuiltinConnectorsContract.update,
     ({ params, body, respond }) => {
@@ -382,6 +386,9 @@ test("Grant and revoke connector access for agents", async () => {
       });
     },
   );
+  mockConnectorAgentAccess(context, (agentId) => {
+    return { enabledConnectorSlugs: enabled.get(agentId) ?? [] };
+  });
   context.mocks.api(
     userBuiltinConnectorsContract.update,
     ({ params, body, respond }) => {
@@ -839,6 +846,9 @@ test("Manage access for a connector without configurable permissions", async () 
   context.mocks.data.agents([listAgent(mediaId, "Media Agent")]);
   context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(200, { enabledConnectorSlugs: ["cloudinary"] });
+  });
+  mockConnectorAgentAccess(context, () => {
+    return { enabledConnectorSlugs: ["cloudinary"] };
   });
   context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
     return respond(200, []);

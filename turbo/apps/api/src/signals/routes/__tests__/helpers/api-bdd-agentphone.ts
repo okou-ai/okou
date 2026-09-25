@@ -7,7 +7,6 @@ import {
   type PhoneUploadCompleteBody,
   type PhoneUploadInitBody,
 } from "@okouai/api-contracts/contracts/integrations";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
 import { HttpResponse, http } from "msw";
 
@@ -48,6 +47,7 @@ export interface AgentPhoneProviderSend {
   readonly replyToMessageId: string | undefined;
   readonly body: string | undefined;
   readonly mediaUrl: string | undefined;
+  readonly mediaUrls: readonly string[];
 }
 
 export interface AgentPhoneSendCapture {
@@ -162,8 +162,6 @@ export function createAgentPhoneBddApi(context: TestContext) {
     readonly timestamp: number;
     readonly signature: string;
     readonly channel: string | undefined;
-    readonly publicBrand: PublicBrand | undefined;
-    readonly publicBrandSignature: string | undefined;
   } {
     const prompt = [...capture.messages].reverse().find((message) => {
       return message.body?.includes("/agentphone/connect?") ?? false;
@@ -185,13 +183,6 @@ export function createAgentPhoneBddApi(context: TestContext) {
       timestamp,
       signature: params.get("sig") ?? "",
       channel: params.get("channel") ?? undefined,
-      publicBrand:
-        params.get("publicBrand") === "okou"
-          ? "okou"
-          : params.get("publicBrand") === "vm0"
-            ? "vm0"
-            : undefined,
-      publicBrandSignature: params.get("brandSig") ?? undefined,
     };
   }
 
@@ -254,6 +245,11 @@ export function createAgentPhoneBddApi(context: TestContext) {
               replyToMessageId: stringField(record, "reply_to_message_id"),
               body: stringField(record, "body"),
               mediaUrl: stringField(record, "media_url"),
+              mediaUrls: Array.isArray(record.media_urls)
+                ? record.media_urls.filter((url): url is string => {
+                    return typeof url === "string";
+                  })
+                : [],
             };
             if (!send.toNumber) {
               return HttpResponse.json(
@@ -268,7 +264,7 @@ export function createAgentPhoneBddApi(context: TestContext) {
               channel: "sms",
               from_number: AGENTPHONE_BDD_PHONE_NUMBER,
               to_number: send.toNumber ?? null,
-              media_urls: send.mediaUrl ? [send.mediaUrl] : [],
+              media_urls: send.mediaUrl ? [send.mediaUrl] : send.mediaUrls,
             });
           },
         ),

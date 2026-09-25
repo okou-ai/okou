@@ -86,6 +86,7 @@ try {
     "1196_dizzy_archangel.sql",
     "1197_puzzling_aaron_stack.sql",
     "1207_smart_oracle.sql",
+    "1211_daily_diamondback.sql",
   ]) {
     await client.query(
       (await migration(name)).replaceAll('"public".', `"${schema}".`),
@@ -417,12 +418,40 @@ try {
     "UPDATE vnc_connections SET host='::1' WHERE id='00000000-0000-4000-8000-000000000013'",
   );
 
+  await client.query(`
+    INSERT INTO vnc_credentials (id,org_id,user_id,name,username,auth_method,encrypted_password)
+      VALUES ('00000000-0000-4000-8000-000000000014','org','owner','Mac SRP login','operator','apple_srp_username_password','apple-srp-ciphertext');
+    INSERT INTO vnc_connections (id,org_id,user_id,display_name,host,transport_type,ssh_connection_id,credential_id,auth_method,security_type,trust_mode)
+      VALUES ('00000000-0000-4000-8000-000000000015','org','owner','Mac Screen Sharing SRP','127.0.0.1','ssh','00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-000000000014','apple_srp_username_password','apple_srp','none');
+  `);
+  for (const [assignment, constraint] of [
+    ["host='localhost'", "chk_vnc_connections_profile"],
+    [
+      "transport_type='direct',ssh_connection_id=NULL",
+      "chk_vnc_connections_profile",
+    ],
+    ["security_type='apple_dh'", "chk_vnc_connections_profile"],
+    ["trust_mode='system'", "chk_vnc_connections_trust"],
+  ] as const) {
+    await rejects(
+      `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000015'`,
+      { code: "23514", constraint },
+    );
+  }
+  await rejects(
+    "UPDATE vnc_credentials SET username=repeat('é',128) WHERE id='00000000-0000-4000-8000-000000000014'",
+    { code: "23514", constraint: "chk_vnc_credentials_auth" },
+  );
+  await client.query(
+    "UPDATE vnc_credentials SET username=repeat('x',255) WHERE id='00000000-0000-4000-8000-000000000014'",
+  );
+
   await client.query("DELETE FROM vnc_connections");
   await client.query("DELETE FROM ssh_connections");
   assert.deepEqual(
     (await client.query("SELECT count(*)::int AS count FROM vnc_credentials"))
       .rows,
-    [{ count: 5 }],
+    [{ count: 6 }],
   );
   await client.query("DELETE FROM vnc_credentials");
   console.log("VNC preservation migrations and storage constraints passed");

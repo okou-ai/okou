@@ -15,8 +15,9 @@ use crate::blank_pool::BlankPoolDiagnostics;
 use runner_executor::executor::{BlankPoolSelection, BlankPoolSelectionReason};
 use runner_host::paths::short_digest;
 use runner_lifecycle::idle_pool::{
-    BlankIdleReservationMiss, DestroyOutcome, IdleDestroyJob, IdleDestroyPayload,
-    IdleDestroyResult, IdlePool, IdlePoolSnapshot, ReservedIdleSandbox,
+    BlankIdleReservationMiss, DestroyOutcome, ExactIdleReservationMiss, IdleDestroyJob,
+    IdleDestroyPayload, IdleDestroyResult, IdlePool, IdlePoolSnapshot, ReservedIdleSandbox,
+    RestoreReservedIdleResult,
 };
 use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
 use runner_lifecycle::status::{StatusResult, StatusTracker};
@@ -158,6 +159,83 @@ impl Deref for ReservedIdleActivation {
 
     fn deref(&self) -> &Self::Target {
         &self.reservation
+    }
+}
+
+/// Reserve an ordinary or generation-matching idle sandbox and capture the
+/// post-reservation snapshot under the same pool lock.
+pub async fn reserve_reusable_idle_for_spawn(
+    idle_pool: &SharedIdlePool,
+    reuse_key: &str,
+    profile_name: &str,
+    device_rate_limits: &Option<DeviceRateLimits>,
+    history_generation_run_id: Option<RunId>,
+) -> Option<ReservedIdleActivation> {
+    let (reservation, snapshot) = {
+        let mut pool = idle_pool.lock().await;
+        let reservation = match history_generation_run_id {
+            Some(history_generation_run_id) => pool.reserve_reusable_generation(
+                reuse_key,
+                profile_name,
+                device_rate_limits,
+                history_generation_run_id,
+            )?,
+            None => pool.reserve_reusable(reuse_key, profile_name, device_rate_limits)?,
+        };
+        let snapshot = pool.status_snapshot();
+        (reservation, snapshot)
+    };
+    Some(ReservedIdleActivation::new(reservation, snapshot))
+}
+
+/// Reserve exactly the predecessor's generation, retaining a typed miss reason
+/// from the same locked observation when no matching entry can be claimed.
+pub async fn reserve_exact_idle_for_spawn(
+    idle_pool: &SharedIdlePool,
+    reuse_key: &str,
+    profile_name: &str,
+    device_rate_limits: &Option<DeviceRateLimits>,
+    history_generation_run_id: RunId,
+) -> Result<ReservedIdleActivation, ExactIdleReservationMiss> {
+    let (reservation, snapshot) = {
+        let mut pool = idle_pool.lock().await;
+        let reservation = pool.reserve_reusable_generation_with_reason(
+            reuse_key,
+            profile_name,
+            device_rate_limits,
+            history_generation_run_id,
+        )?;
+        let snapshot = pool.status_snapshot();
+        (reservation, snapshot)
+    };
+    Ok(ReservedIdleActivation::new(reservation, snapshot))
+}
+
+/// Restore an unconsumed claim reservation, publish the post-restore snapshot,
+/// and finish any rejected or replaced sandbox destruction before notifying.
+pub async fn rollback_reserved_idle_for_spawn(
+    reservation: ReservedIdleActivation,
+    idle_pool: &SharedIdlePool,
+    status: &StatusTracker,
+    reuse_state_notify: &Notify,
+) {
+    let (reservation, _) = reservation.into_parts();
+    let (restore_result, snapshot) = {
+        let mut pool = idle_pool.lock().await;
+        let restore_result = pool.restore_reserved(reservation);
+        let snapshot = pool.status_snapshot();
+        (restore_result, snapshot)
+    };
+    set_idle_status_snapshot(status, snapshot).await;
+    if let RestoreReservedIdleResult::Replaced(destroy_job)
+    | RestoreReservedIdleResult::Rejected(destroy_job) = restore_result
+    {
+        destroy_idle_jobs_and_wait(
+            vec![*destroy_job],
+            "finalizing_claim_reserved_idle_rollback",
+        )
+        .await;
+        reuse_state_notify.notify_one();
     }
 }
 
@@ -454,7 +532,8 @@ mod tests {
     use sandbox_mock::MockSandboxFactory;
 
     use runner_lifecycle::idle_pool::{
-        IdleParkRequest, IdleParkRequestParts, IdlePool, IdlePoolConfig, ParkResult,
+        ExactIdleReservationMiss, IdleParkRequest, IdleParkRequestParts, IdlePool, IdlePoolConfig,
+        ParkResult, ParkingGate, test_support::ParkedIdleCandidateBuilder,
     };
     use runner_lifecycle::idle_reuse_preparation::add_healthy_reuse_preparation_matcher;
     use runner_lifecycle::resource_budget::ResourceBudget;
@@ -462,6 +541,187 @@ mod tests {
         TEST_COMPLETED_AT, WorkspacePromotionFixture,
     };
     use runner_storage::storage_fingerprints::StorageFingerprints;
+
+    fn claimed_idle_pool(
+        gate: ParkingGate,
+        history_generation_run_id: RunId,
+    ) -> (SharedIdlePool, Arc<ResourceBudget>, SandboxId) {
+        let budget = Arc::new(ResourceBudget::new(2, 2048, 1.0, 0));
+        let lease = ResourceBudget::try_reserve_lease(&budget, 2, 2048).unwrap();
+        let sandbox_id = SandboxId::new_v4();
+        let mut pool = IdlePool::new_with_parking_gate(IdlePoolConfig { max_idle: 2 }, gate);
+        assert!(matches!(
+            pool.park(
+                ParkedIdleCandidateBuilder::new("thread:claimed-idle", lease)
+                    .with_sandbox_id(sandbox_id)
+                    .with_history_generation_run_id(history_generation_run_id)
+                    .build()
+            ),
+            ParkResult::Parked
+        ));
+        (Arc::new(tokio::sync::Mutex::new(pool)), budget, sandbox_id)
+    }
+
+    #[tokio::test]
+    async fn claimed_idle_reservation_rollback_restores_pool_and_status() {
+        let generation = RunId::new_v4();
+        let (idle_pool, budget, sandbox_id) =
+            claimed_idle_pool(ParkingGate::new_open(), generation);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("status.json");
+        let status = StatusTracker::new(path.clone(), 4, None, None);
+        status.write_initial().await.unwrap();
+        let initial = idle_pool.lock().await.status_snapshot();
+        status.set_idle_snapshot(initial.clone()).await.unwrap();
+
+        let reservation = reserve_reusable_idle_for_spawn(
+            &idle_pool,
+            "thread:claimed-idle",
+            "vm0/default",
+            &None,
+            None,
+        )
+        .await
+        .expect("ordinary matching sandbox should reserve");
+        assert_eq!(idle_pool.lock().await.len(), 0);
+        assert_eq!(reservation.idle_snapshot.revision, initial.revision + 1);
+        assert!(reservation.idle_snapshot.idle_sandboxes.is_empty());
+        status
+            .set_idle_snapshot(reservation.idle_snapshot.clone())
+            .await
+            .unwrap();
+        let reuse_state_notify = Notify::new();
+        rollback_reserved_idle_for_spawn(reservation, &idle_pool, &status, &reuse_state_notify)
+            .await;
+
+        let restored = idle_pool.lock().await.status_snapshot();
+        assert_eq!(restored.revision, initial.revision + 2);
+        assert_eq!(restored.idle_sandboxes.len(), 1);
+        assert_eq!(restored.idle_sandboxes[0].sandbox_id, sandbox_id);
+        let wire: serde_json::Value =
+            serde_json::from_slice(&tokio::fs::read(path).await.unwrap()).unwrap();
+        assert_eq!(
+            wire["idle_sandboxes"][0]["sandbox_id"],
+            sandbox_id.to_string()
+        );
+        assert!(reuse_state_notify.notified().now_or_never().is_none());
+        assert_eq!(budget.allocated(), (2, 2048, 1));
+        destroy_idle_jobs_and_wait(idle_pool.lock().await.drain(), "claimed_idle_test").await;
+        assert_eq!(budget.allocated(), (0, 0, 0));
+    }
+
+    #[tokio::test]
+    async fn claimed_exact_reservation_classifies_miss_without_mutation() {
+        let generation = RunId::new_v4();
+        let (idle_pool, budget, sandbox_id) =
+            claimed_idle_pool(ParkingGate::new_open(), generation);
+        let initial_revision = idle_pool.lock().await.revision();
+        let other_limits = sandbox::DeviceRateLimits {
+            block: sandbox::BlockRateLimits {
+                bandwidth_bytes_per_sec: 1024,
+                ops_per_sec: 100,
+            },
+            network: sandbox::NetworkRateLimits {
+                rx_bytes_per_sec: 1024,
+                tx_bytes_per_sec: 1024,
+            },
+        };
+        for (reuse_key, profile, device_rate_limits, history_generation_run_id, expected) in [
+            (
+                "missing-key",
+                "vm0/default",
+                None,
+                generation,
+                ExactIdleReservationMiss::Absent,
+            ),
+            (
+                "thread:claimed-idle",
+                "other-profile",
+                None,
+                generation,
+                ExactIdleReservationMiss::ProfileMismatch,
+            ),
+            (
+                "thread:claimed-idle",
+                "vm0/default",
+                Some(other_limits),
+                generation,
+                ExactIdleReservationMiss::DeviceLimitMismatch,
+            ),
+            (
+                "thread:claimed-idle",
+                "vm0/default",
+                None,
+                RunId::new_v4(),
+                ExactIdleReservationMiss::HistoryGenerationMismatch,
+            ),
+        ] {
+            let miss = reserve_exact_idle_for_spawn(
+                &idle_pool,
+                reuse_key,
+                profile,
+                &device_rate_limits,
+                history_generation_run_id,
+            )
+            .await;
+            assert!(matches!(miss, Err(reason) if reason == expected));
+            let pool = idle_pool.lock().await;
+            assert_eq!(pool.revision(), initial_revision);
+            assert!(pool.contains_sandbox_id(sandbox_id));
+        }
+        let reservation = reserve_exact_idle_for_spawn(
+            &idle_pool,
+            "thread:claimed-idle",
+            "vm0/default",
+            &None,
+            generation,
+        )
+        .await
+        .expect("matching generation should reserve");
+        assert_eq!(reservation.idle_snapshot.revision, initial_revision + 1);
+        let dir = tempfile::tempdir().unwrap();
+        let status = StatusTracker::new(dir.path().join("status.json"), 4, None, None);
+        status.write_initial().await.unwrap();
+        rollback_reserved_idle_for_spawn(reservation, &idle_pool, &status, &Notify::new()).await;
+        destroy_idle_jobs_and_wait(idle_pool.lock().await.drain(), "claimed_exact_test").await;
+        assert_eq!(budget.allocated(), (0, 0, 0));
+    }
+
+    #[tokio::test]
+    async fn rejected_claimed_idle_rollback_destroys_and_notifies() {
+        let gate = ParkingGate::new_open();
+        let (idle_pool, budget, _) = claimed_idle_pool(gate.clone(), RunId::new_v4());
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("status.json");
+        let status = StatusTracker::new(path.clone(), 4, None, None);
+        status.write_initial().await.unwrap();
+        let initial = idle_pool.lock().await.status_snapshot();
+        status.set_idle_snapshot(initial).await.unwrap();
+        let reservation = reserve_reusable_idle_for_spawn(
+            &idle_pool,
+            "thread:claimed-idle",
+            "vm0/default",
+            &None,
+            None,
+        )
+        .await
+        .expect("sandbox should reserve before soft drain");
+        status
+            .set_idle_snapshot(reservation.idle_snapshot.clone())
+            .await
+            .unwrap();
+        gate.close();
+        let reuse_state_notify = Notify::new();
+        rollback_reserved_idle_for_spawn(reservation, &idle_pool, &status, &reuse_state_notify)
+            .await;
+
+        assert_eq!(idle_pool.lock().await.len(), 0);
+        assert_eq!(budget.allocated(), (0, 0, 0));
+        let wire: serde_json::Value =
+            serde_json::from_slice(&tokio::fs::read(path).await.unwrap()).unwrap();
+        assert!(wire.get("idle_sandboxes").is_none());
+        assert!(reuse_state_notify.notified().now_or_never().is_some());
+    }
 
     #[tokio::test]
     async fn destroy_idle_jobs_and_wait_empty_returns_false() {

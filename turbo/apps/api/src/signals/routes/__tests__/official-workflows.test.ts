@@ -72,6 +72,7 @@ import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-p
 import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
 import { testUserExportWorkRoutes } from "../test-user-export-work";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
+import { withSplitChatEventDatabase } from "../../../test-fixtures/chat-terminal-retry";
 import { holdMorningBriefProjectionWrite } from "../../../test-fixtures/morning-brief-projection";
 import { holdMorningBriefReconfigurationAfterPersist } from "../../../test-fixtures/morning-brief-reconciliation";
 import {
@@ -109,7 +110,10 @@ import {
   mockNotionConnectorOAuth,
 } from "./helpers/api-bdd-workflows";
 import { createEmailOutboxStateApi } from "./helpers/email-outbox-state";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  setHistoricalNativeMorningBriefForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
 import {
   assertOfficialWorkflowAutomationFinalAdmissionRejectedFixture,
   installOfficialWorkflowRunGateFixture,
@@ -189,11 +193,13 @@ function authHeaders(actor: ApiTestUser) {
   return { authorization: "Bearer clerk-session" };
 }
 
+// Official workflow Runs complete through the native Runner claim protocol,
+// so fixtures use Fable, which model policy keeps off Pi.
 async function selectBuiltInDefaultModel(actor: ApiTestUser): Promise<void> {
-  await seedBuiltInModelKey(context, "claude-sonnet-5");
+  await seedBuiltInModelKey(context, "claude-fable-5-1");
   await runs.updateOrgModelPolicies(actor, [
     {
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
       isDefault: true,
       defaultProviderType: "built-in",
       credentialScope: "org",
@@ -1751,10 +1757,10 @@ async function setNativeMorningBriefEnabled(
   if (!actor.orgId) {
     throw new Error("Expected organization-scoped actor");
   }
-  await updateFeatureSwitchesForUser(
+  await setHistoricalNativeMorningBriefForUser(
     context,
     { orgId: actor.orgId, userId: actor.userId },
-    { [FeatureSwitchKey.NativeMorningBrief]: enabled },
+    enabled,
   );
 }
 
@@ -1981,7 +1987,10 @@ async function installResultEmailLoopScenario(
   await syncCatalog(
     catalog([activeDefinition(definitionName, [loopBlueprint(resultEmail)])]),
   );
-  const { actor } = await workflowBdd.setupWorkflowOrg({ tier: "team" });
+  const { actor } = await workflowBdd.setupWorkflowOrg({
+    tier: "team",
+    model: "claude-fable-5-1",
+  });
   if (!actor.orgId) {
     throw new Error("Expected organization-scoped actor");
   }
@@ -2124,7 +2133,9 @@ async function installStaleAdmissionScenario() {
   await syncCatalog(
     catalog([activeDefinition(definitionName, [loopBlueprint()])]),
   );
-  const { actor } = await workflowBdd.setupWorkflowOrg();
+  const { actor } = await workflowBdd.setupWorkflowOrg({
+    model: "claude-fable-5-1",
+  });
   if (!actor.orgId) {
     throw new Error("Expected organization-scoped actor");
   }
@@ -2220,11 +2231,7 @@ describe("Morning Brief preference", () => {
     expect(initial.body).toStrictEqual({
       status: "paused",
       enabled: false,
-      nextRunAt: null,
-      timezone: "Asia/Shanghai",
       unavailableReason: null,
-      lastRun: null,
-      lastDeliveredAt: null,
     });
 
     const enabledResponses = await Promise.all([
@@ -2246,10 +2253,7 @@ describe("Morning Brief preference", () => {
     for (const response of enabledResponses) {
       expect(response.body).toMatchObject({
         enabled: true,
-        nextRunAt: expect.any(String),
-        timezone: "Asia/Shanghai",
         unavailableReason: null,
-        lastRun: null,
       });
     }
 
@@ -2282,6 +2286,7 @@ describe("Morning Brief preference", () => {
       kind: "schedule",
       enabled: true,
       chatThreadId: null,
+      nextRunAt: expect.any(String),
       schedule: {
         type: "cron",
         cronExpression: "0 7 * * *",
@@ -2328,11 +2333,7 @@ describe("Morning Brief preference", () => {
     expect(disabled.body).toStrictEqual({
       status: "paused",
       enabled: false,
-      nextRunAt: null,
-      timezone: "Asia/Shanghai",
       unavailableReason: null,
-      lastRun: null,
-      lastDeliveredAt: null,
     });
 
     const reenabled = await accept(
@@ -2344,10 +2345,7 @@ describe("Morning Brief preference", () => {
     );
     expect(reenabled.body).toMatchObject({
       enabled: true,
-      nextRunAt: expect.any(String),
-      timezone: "Asia/Shanghai",
       unavailableReason: null,
-      lastRun: null,
     });
     const after = await accept(
       installationClient().get({
@@ -2361,6 +2359,7 @@ describe("Morning Brief preference", () => {
         id: identities.automationId,
         chatThreadId: identities.chatThreadId,
         enabled: true,
+        nextRunAt: expect.any(String),
       },
     ]);
     expect(after.body.workflow.id).toBe(identities.workflowId);
@@ -2414,7 +2413,6 @@ describe("Morning Brief preference", () => {
     expect(unavailableTimezone.body).toMatchObject({
       enabled: false,
       unavailableReason: "missing-timezone",
-      lastRun: null,
     });
     const rejectedTimezone = await accept(
       morningBriefPreferenceClient().update({
@@ -2427,7 +2425,6 @@ describe("Morning Brief preference", () => {
       status: "preparing",
       enabled: true,
       unavailableReason: "missing-timezone",
-      lastRun: null,
     });
 
     const missingAgent = bdd.user();
@@ -2444,9 +2441,7 @@ describe("Morning Brief preference", () => {
     );
     expect(unavailableAgent.body).toMatchObject({
       enabled: false,
-      timezone: "Asia/Shanghai",
       unavailableReason: "missing-default-agent",
-      lastRun: null,
     });
     const rejectedAgent = await accept(
       morningBriefPreferenceClient().update({
@@ -2459,7 +2454,6 @@ describe("Morning Brief preference", () => {
       status: "preparing",
       enabled: true,
       unavailableReason: "missing-default-agent",
-      lastRun: null,
     });
 
     for (const fixture of [missingTimezone.actor, missingAgent]) {
@@ -2524,9 +2518,7 @@ describe("Morning Brief preference", () => {
     expect(read.body).toMatchObject({
       enabled: true,
       status: "enabled",
-      timezone: "Asia/Shanghai",
       unavailableReason: null,
-      lastRun: null,
     });
 
     const paused = await accept(
@@ -2539,14 +2531,13 @@ describe("Morning Brief preference", () => {
     expect(paused.body).toMatchObject({
       enabled: false,
       status: "paused",
-      nextRunAt: null,
     });
 
     // The adopted installation follows the preference; the other one is left
     // alone and keeps running.
     await expect(
       readMorningBriefAutomations(actor, onDefaultAgent),
-    ).resolves.toMatchObject([{ enabled: false }]);
+    ).resolves.toMatchObject([{ enabled: false, nextRunAt: null }]);
     await expect(
       readMorningBriefAutomations(actor, onAlternateAgent),
     ).resolves.toMatchObject([{ enabled: true }]);
@@ -2603,9 +2594,7 @@ describe("Morning Brief preference", () => {
     expect(read.body).toMatchObject({
       enabled: true,
       status: "enabled",
-      timezone: "Asia/Shanghai",
       unavailableReason: null,
-      lastRun: null,
     });
 
     const paused = await accept(
@@ -2761,9 +2750,7 @@ describe("Morning Brief preference", () => {
     expect(read.body).toMatchObject({
       enabled: true,
       status: "enabled",
-      timezone: "Asia/Shanghai",
       unavailableReason: null,
-      lastRun: null,
     });
     await expect(
       readMorningBriefAutomations(actor, onAlternateAgent),
@@ -2812,10 +2799,11 @@ describe("Morning Brief native preference projection", () => {
     expect(legacyEnabled.body).toMatchObject({
       enabled: true,
       status: "enabled",
+      unavailableReason: null,
+    });
+    await expect(readBriefSchedule(actor)).resolves.toStrictEqual({
       nextRunAt: expect.any(String),
       timezone: "Asia/Shanghai",
-      unavailableReason: null,
-      lastRun: null,
     });
 
     // Turning the switch on projects nothing by itself, so the live legacy
@@ -2836,11 +2824,7 @@ describe("Morning Brief native preference projection", () => {
     expect(paused.body).toStrictEqual({
       status: "paused",
       enabled: false,
-      nextRunAt: null,
-      timezone: "Asia/Shanghai",
       unavailableReason: null,
-      lastRun: null,
-      lastDeliveredAt: null,
     });
     const projectedPause = await readBriefPreference(actor);
     expect(projectedPause.body).toStrictEqual(paused.body);
@@ -2854,6 +2838,7 @@ describe("Morning Brief native preference projection", () => {
     );
     const projected = await readBriefPreference(actor);
     expect(projected.body).toStrictEqual(reenabled.body);
+    const scheduleBeforeTimezone = await readBriefSchedule(actor);
 
     // Switching the implementation off and on again changes nothing the user
     // can see, and discards no choice they made while it was on.
@@ -2872,10 +2857,15 @@ describe("Morning Brief native preference projection", () => {
     expect(afterTimezone.body).toMatchObject({
       enabled: true,
       status: "enabled",
+    });
+    const scheduleAfterTimezone = await readBriefSchedule(actor);
+    expect(scheduleAfterTimezone).toStrictEqual({
       timezone: "America/New_York",
       nextRunAt: expect.any(String),
     });
-    expect(afterTimezone.body.nextRunAt).not.toBe(projected.body.nextRunAt);
+    expect(scheduleAfterTimezone.nextRunAt).not.toBe(
+      scheduleBeforeTimezone.nextRunAt,
+    );
     await setNativeMorningBriefEnabled(actor, false);
     const legacyAfterTimezone = await readBriefPreference(actor);
     expect(legacyAfterTimezone.body).toStrictEqual(afterTimezone.body);
@@ -2923,11 +2913,11 @@ describe("Morning Brief native preference projection", () => {
     expect(read.body).toStrictEqual({
       status: "paused",
       enabled: false,
+      unavailableReason: null,
+    });
+    await expect(readBriefSchedule(actor)).resolves.toStrictEqual({
       nextRunAt: null,
       timezone: "America/New_York",
-      unavailableReason: null,
-      lastRun: null,
-      lastDeliveredAt: null,
     });
   });
 
@@ -2987,9 +2977,7 @@ describe("Morning Brief native preference projection", () => {
     expect(read.body).toMatchObject({
       enabled: true,
       status: "enabled",
-      timezone: "Asia/Shanghai",
       unavailableReason: null,
-      lastRun: null,
     });
     await expect(
       readMorningBriefAutomations(actor, onAlternateAgent),
@@ -3005,9 +2993,7 @@ describe("Morning Brief native preference projection", () => {
     const unavailable = await readBriefPreference(actor);
     expect(unavailable.body).toMatchObject({
       enabled: false,
-      timezone: null,
       unavailableReason: "missing-timezone",
-      lastRun: null,
     });
 
     // An explicit opt-out before any installation stays an opt-out, and the
@@ -3062,17 +3048,19 @@ describe("Morning Brief native preference projection", () => {
     expect(enabledRead.body).toMatchObject({
       enabled: true,
       status: "enabled",
-      timezone: "Asia/Shanghai",
     });
+    await expect(readBriefSchedule(enabledMember.actor)).resolves.toStrictEqual(
+      { nextRunAt: expect.any(String), timezone: "Asia/Shanghai" },
+    );
     const pausedRead = await readBriefPreference(pausedMember.actor);
     expect(pausedRead.body).toStrictEqual({
       status: "paused",
       enabled: false,
+      unavailableReason: null,
+    });
+    await expect(readBriefSchedule(pausedMember.actor)).resolves.toStrictEqual({
       nextRunAt: null,
       timezone: "America/New_York",
-      unavailableReason: null,
-      lastRun: null,
-      lastDeliveredAt: null,
     });
   });
 
@@ -3128,7 +3116,6 @@ describe("Morning Brief native preference projection", () => {
     expect(afterDelete.body).toMatchObject({
       enabled: false,
       status: "paused",
-      nextRunAt: null,
     });
     await expect(
       readMorningBriefAutomations(actor, workflowId),
@@ -3185,9 +3172,7 @@ describe("Morning Brief native preference projection", () => {
     expect(afterDelete.body).toMatchObject({
       enabled: false,
       status: "paused",
-      nextRunAt: null,
       unavailableReason: null,
-      lastRun: null,
     });
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
     await expect(
@@ -3233,11 +3218,7 @@ describe("Morning Brief native preference projection", () => {
     expect(paused.body).toStrictEqual({
       status: "paused",
       enabled: false,
-      nextRunAt: null,
-      timezone: "Asia/Shanghai",
       unavailableReason: null,
-      lastRun: null,
-      lastDeliveredAt: null,
     });
     // The failed copy never became the user's answer, never turned a committed
     // choice into an error, and never replayed the legacy mutation.
@@ -3248,7 +3229,7 @@ describe("Morning Brief native preference projection", () => {
     }
     await expect(
       readMorningBriefAutomations(actor, installation.id),
-    ).resolves.toMatchObject([{ enabled: false }]);
+    ).resolves.toMatchObject([{ enabled: false, nextRunAt: null }]);
 
     // A later ordinary write, and then a no-op repeat of the same choice, both
     // complete once the fault is gone. Whether a healthy copy served the read
@@ -3316,9 +3297,7 @@ describe("Morning Brief native preference projection", () => {
         { timeout: RENDEZVOUS_TIMEOUT_MS },
       )
       .toBe("America/New_York");
-    expect((await readBriefPreference(actor)).body.timezone).toBe(
-      "Asia/Shanghai",
-    );
+    expect((await readBriefSchedule(actor)).timezone).toBe("Asia/Shanghai");
 
     await held.release();
     const [paused] = await Promise.all([pausing, synchronizing]);
@@ -3329,21 +3308,13 @@ describe("Morning Brief native preference projection", () => {
     expect(paused.body).toStrictEqual({
       status: "paused",
       enabled: false,
-      nextRunAt: null,
-      timezone: "Asia/Shanghai",
       unavailableReason: null,
-      lastRun: null,
-      lastDeliveredAt: null,
     });
     const settled = await readBriefPreference(actor);
-    expect(settled.body).toStrictEqual({
-      status: "paused",
-      enabled: false,
+    expect(settled.body).toStrictEqual(paused.body);
+    await expect(readBriefSchedule(actor)).resolves.toStrictEqual({
       nextRunAt: null,
       timezone: "America/New_York",
-      unavailableReason: null,
-      lastRun: null,
-      lastDeliveredAt: null,
     });
     await expectChoiceSurvivesImplementationSwitch(actor, settled.body);
   });
@@ -3372,6 +3343,8 @@ describe("Morning Brief native preference projection", () => {
     expect((await readBriefPreference(actor)).body).toMatchObject({
       enabled: false,
       status: "paused",
+    });
+    await expect(readBriefSchedule(actor)).resolves.toMatchObject({
       nextRunAt: null,
     });
 
@@ -3385,6 +3358,8 @@ describe("Morning Brief native preference projection", () => {
     expect((await readBriefPreference(actor)).body).toMatchObject({
       enabled: true,
       status: "enabled",
+    });
+    await expect(readBriefSchedule(actor)).resolves.toMatchObject({
       nextRunAt: expect.any(String),
     });
   });
@@ -3576,7 +3551,7 @@ describe("Morning Brief legacy writer fences", () => {
       }),
       [200],
     );
-    expect(paused.body).toMatchObject({ enabled: false, nextRunAt: null });
+    expect(paused.body).toMatchObject({ enabled: false });
     await resumeDormantMaterialization();
     await recreation;
 
@@ -3635,6 +3610,8 @@ async function prepareProjectedBrief() {
   expect(enabled.body).toMatchObject({
     enabled: true,
     status: "enabled",
+  });
+  await expect(readBriefSchedule(actor)).resolves.toMatchObject({
     timezone: "Asia/Shanghai",
   });
   return { actor, owner: { orgId, userId: actor.userId }, headers };
@@ -3754,7 +3731,7 @@ async function initializeBriefMember(actor: ApiTestUser, timezone: string) {
       userPreferencesContract,
     ).initialize({
       headers: authHeaders(actor),
-      body: { timezone },
+      body: { timezone, locale: "en-US" },
     }),
     [200],
   );
@@ -3779,6 +3756,43 @@ async function readBriefPreference(actor: ApiTestUser) {
     morningBriefPreferenceClient().get({ headers: authHeaders(actor) }),
     [200],
   );
+}
+
+/**
+ * The member's single Morning Brief schedule. A legacy-phase member is read
+ * through the workflow detail endpoint. No endpoint exposes the native
+ * schedule row, so once a member leaves the legacy phase that row is read
+ * directly.
+ */
+async function readBriefSchedule(actor: ApiTestUser) {
+  if (!actor.orgId) {
+    throw new Error("Expected organization-scoped actor");
+  }
+  const native = await readNativeSchedule({
+    orgId: actor.orgId,
+    userId: actor.userId,
+  });
+  if (native !== undefined && native.phase !== "legacy") {
+    return {
+      nextRunAt: native.nextRunAt?.toISOString() ?? null,
+      timezone: native.timezone,
+    };
+  }
+  const [installation] = await listMorningBriefInstallations(actor);
+  if (!installation) {
+    throw new Error("Expected one Morning Brief installation");
+  }
+  const [automation] = await readMorningBriefAutomations(
+    actor,
+    installation.id,
+  );
+  return {
+    nextRunAt: automation?.nextRunAt ?? null,
+    timezone:
+      automation?.kind === "schedule" && automation.schedule.type !== "loop"
+        ? automation.schedule.timezone
+        : null,
+  };
 }
 
 async function tickNativeMorningBrief(actor: ApiTestUser) {
@@ -3841,7 +3855,6 @@ describe("Morning Brief default onboarding", () => {
     expect((await readBriefPreference(actor)).body).toMatchObject({
       enabled: false,
       status: "paused",
-      timezone: "Asia/Shanghai",
     });
 
     mockBriefMemberships([{ actor, createdAt }]);
@@ -3849,6 +3862,8 @@ describe("Morning Brief default onboarding", () => {
     expect((await readBriefPreference(actor)).body).toMatchObject({
       enabled: true,
       status: "enabled",
+    });
+    await expect(readBriefSchedule(actor)).resolves.toMatchObject({
       timezone: "Asia/Shanghai",
     });
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
@@ -3876,7 +3891,6 @@ describe("Morning Brief default onboarding", () => {
         enabled: true,
         status: "preparing",
         unavailableReason: "missing-timezone",
-        lastRun: null,
       });
       await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
         0,
@@ -3887,6 +3901,8 @@ describe("Morning Brief default onboarding", () => {
       expect((await readBriefPreference(actor)).body).toMatchObject({
         enabled: true,
         status: "enabled",
+      });
+      await expect(readBriefSchedule(actor)).resolves.toMatchObject({
         timezone: "Asia/Shanghai",
       });
       await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
@@ -3914,7 +3930,6 @@ describe("Morning Brief default onboarding", () => {
         enabled: true,
         status: "preparing",
         unavailableReason: "missing-default-agent",
-        lastRun: null,
       });
       await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
         0,
@@ -3941,9 +3956,7 @@ describe("Morning Brief default onboarding", () => {
     expect((await readBriefPreference(actor)).body).toMatchObject({
       enabled: true,
       status: "enabled",
-      timezone: "Asia/Shanghai",
       unavailableReason: null,
-      lastRun: null,
     });
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
     await Promise.all([tickBriefEnrollment(actor), tickBriefEnrollment(actor)]);
@@ -3972,9 +3985,7 @@ describe("Morning Brief default onboarding", () => {
     expect(reenabled.body).toMatchObject({
       enabled: true,
       status: "enabled",
-      timezone: "Asia/Shanghai",
       unavailableReason: null,
-      lastRun: null,
     });
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
   });
@@ -3996,8 +4007,8 @@ describe("Morning Brief default onboarding", () => {
     expect((await readBriefPreference(actor)).body).toMatchObject({
       enabled: false,
       status: "paused",
-      timezone: "Asia/Shanghai",
     });
+    await expect(readUserTimezone(actor)).resolves.toBe("Asia/Shanghai");
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
   });
 
@@ -4023,7 +4034,6 @@ describe("Morning Brief default onboarding", () => {
     expect((await readBriefPreference(actor)).body).toMatchObject({
       status: "preparing",
       unavailableReason: "missing-timezone",
-      lastRun: null,
     });
     await Promise.all([
       initializeBriefMember(actor, "Asia/Shanghai"),
@@ -4060,20 +4070,8 @@ describe("Morning Brief default onboarding", () => {
     await flushWaitUntilForTest();
     for (const elapsed of [60_000, 120_000, 180_000]) {
       await withMockNowForTest(startedAt + elapsed, async () => {
-        context.mocks.ably.publish.mockClear();
         await tickBriefEnrollment(actor);
         await flushWaitUntilForTest();
-        if (elapsed === 60_000) {
-          expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-            "morningBriefChanged",
-            null,
-          );
-        } else {
-          expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
-            "morningBriefChanged",
-            null,
-          );
-        }
         expect(membershipReads).not.toHaveBeenCalled();
         expect((await readBriefPreference(actor)).body).toMatchObject({
           enabled: true,
@@ -4085,10 +4083,6 @@ describe("Morning Brief default onboarding", () => {
     await withMockNowForTest(startedAt + 240_000, async () => {
       await tickBriefEnrollment(actor);
       await flushWaitUntilForTest();
-      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-        "morningBriefChanged",
-        null,
-      );
       expect(membershipReads).toHaveBeenCalledTimes(1);
       expect((await readBriefPreference(actor)).body).toMatchObject({
         status: "enabled",
@@ -4168,15 +4162,15 @@ describe("Morning Brief default onboarding", () => {
           rethrowErrors: true,
         })(userPreferencesContract).initialize({
           headers: authHeaders(actor),
-          body: { timezone },
+          body: { timezone, locale: "en-US" },
         }),
       ).rejects.toBe(interrupted);
       expect(membershipReads).toHaveBeenCalledTimes(1);
       expect((await readBriefPreference(actor)).body).toMatchObject({
         enabled: true,
         status: "preparing",
-        timezone,
       });
+      await expect(readUserTimezone(actor)).resolves.toBe(timezone);
     });
     mockBriefMemberships([{ actor, createdAt }]);
     await withMockNowForTest(startedAt + 299_999, async () => {
@@ -4189,13 +4183,8 @@ describe("Morning Brief default onboarding", () => {
     });
     await withMockNowForTest(startedAt + 300_000, async () => {
       await flushWaitUntilForTest();
-      context.mocks.ably.publish.mockClear();
       await tickBriefEnrollment(actor);
       await flushWaitUntilForTest();
-      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-        "morningBriefChanged",
-        null,
-      );
       expect(membershipReads).toHaveBeenCalledTimes(2);
       expect((await readBriefPreference(actor)).body).toMatchObject({
         enabled: true,
@@ -4206,13 +4195,8 @@ describe("Morning Brief default onboarding", () => {
       );
     });
     await withMockNowForTest(startedAt + 360_000, async () => {
-      context.mocks.ably.publish.mockClear();
       await tickBriefEnrollment(actor);
       await flushWaitUntilForTest();
-      expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
-        "morningBriefChanged",
-        null,
-      );
       expect(membershipReads).toHaveBeenCalledTimes(2);
       expect((await readBriefPreference(actor)).body).toMatchObject({
         enabled: true,
@@ -4231,10 +4215,11 @@ describe("Morning Brief default onboarding", () => {
     expect(changed.body).toMatchObject({
       enabled: true,
       status: "enabled",
-      timezone: "America/Los_Angeles",
     });
-    expect(changed.body.nextRunAt).not.toBeNull();
-    if (!changed.body.nextRunAt) {
+    const changedSchedule = await readBriefSchedule(actor);
+    expect(changedSchedule.timezone).toBe("America/Los_Angeles");
+    expect(changedSchedule.nextRunAt).not.toBeNull();
+    if (!changedSchedule.nextRunAt) {
       throw new Error("Expected next run");
     }
     expect(
@@ -4242,7 +4227,7 @@ describe("Morning Brief default onboarding", () => {
         timeZone: "America/Los_Angeles",
         hour: "numeric",
         hour12: false,
-      }).format(new Date(changed.body.nextRunAt)),
+      }).format(new Date(changedSchedule.nextRunAt)),
     ).toBe("07");
     await accept(
       morningBriefPreferenceClient().update({
@@ -4258,6 +4243,8 @@ describe("Morning Brief default onboarding", () => {
     expect((await readBriefPreference(actor)).body).toMatchObject({
       enabled: false,
       status: "paused",
+    });
+    await expect(readBriefSchedule(actor)).resolves.toStrictEqual({
       timezone: "Asia/Tokyo",
       nextRunAt: null,
     });
@@ -4308,13 +4295,17 @@ describe("Morning Brief default onboarding", () => {
     await tickBriefEnrollment(first.actor);
     expect((await readBriefPreference(first.actor)).body).toMatchObject({
       status: "enabled",
+    });
+    await expect(readBriefSchedule(first.actor)).resolves.toMatchObject({
       timezone: "Asia/Shanghai",
     });
     expect((await readBriefPreference(second.actor)).body).toMatchObject({
       status: "paused",
       enabled: false,
-      timezone: "America/Los_Angeles",
     });
+    await expect(readUserTimezone(second.actor)).resolves.toBe(
+      "America/Los_Angeles",
+    );
     await connectBriefSource(second.actor);
     await tickBriefEnrollment(second.actor);
     expect((await readBriefPreference(second.actor)).body).toMatchObject({
@@ -4418,7 +4409,7 @@ describe("Morning Brief default onboarding", () => {
       userPreferencesContract,
     ).initialize({
       headers: authHeaders(actor),
-      body: { timezone: "Invalid/Timezone" },
+      body: { timezone: "Invalid/Timezone", locale: "en-US" },
     });
     expect(invalid.status).toBe(400);
     await bdd.updateUserTimezone(actor, "Asia/Tokyo");
@@ -9108,7 +9099,9 @@ describe("Official Workflow Run admission", () => {
       ]),
     );
 
-    const setup = await workflowBdd.setupWorkflowOrg();
+    const setup = await workflowBdd.setupWorkflowOrg({
+      model: "claude-fable-5-1",
+    });
     const { actor } = setup;
     if (!actor.orgId) {
       throw new Error("Expected organization-scoped actor");
@@ -9333,6 +9326,7 @@ describe("Official Workflow Run admission", () => {
         const setup = await workflowBdd.setupWorkflowOrg({
           timezone: "Asia/Shanghai",
           tier: "team",
+          model: "claude-fable-5-1",
         });
         const { actor } = setup;
         if (!actor.orgId) {
@@ -10130,6 +10124,7 @@ describe("Official Workflow Run admission", () => {
     const setup = await workflowBdd.setupWorkflowOrg({
       timezone: "Asia/Shanghai",
       tier: "team",
+      model: "claude-fable-5-1",
     });
     const { actor } = setup;
     const { agentId } = await workflowBdd.createAgent(actor);
@@ -10289,6 +10284,7 @@ describe("Official Workflow Run admission", () => {
     const setup = await workflowBdd.setupWorkflowOrg({
       timezone: "Asia/Shanghai",
       tier: "team",
+      model: "claude-fable-5-1",
     });
     const { actor } = setup;
     if (!actor.orgId) {
@@ -10444,7 +10440,9 @@ describe("Official Workflow Run admission", () => {
 
   it("launches an idle Official agent-run input with the annotated source budget", async () => {
     const definitionName = `api-test-idle-official-${randomUUID()}`;
-    const { actor } = await workflowBdd.setupWorkflowOrg();
+    const { actor } = await workflowBdd.setupWorkflowOrg({
+      model: "claude-fable-5-1",
+    });
     const { agentId } = await workflowBdd.createAgent(actor);
     installCatalogStorageFixture();
     await syncCatalog(catalog([activeDefinition(definitionName, [])]));
@@ -10537,7 +10535,9 @@ describe("Official Workflow Run admission", () => {
     async (queueCase) => {
       const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
       const definitionName = `api-test-queued-success-${suffix}`;
-      const { actor } = await workflowBdd.setupWorkflowOrg();
+      const { actor } = await workflowBdd.setupWorkflowOrg({
+        model: "claude-fable-5-1",
+      });
       const { agentId } = await workflowBdd.createAgent(actor);
       installCatalogStorageFixture();
       await syncCatalog(catalog([activeDefinition(definitionName, [])]));
@@ -10714,7 +10714,9 @@ describe("Official Workflow Run admission", () => {
     async (queueCase) => {
       const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
       const definitionName = `api-test-queued-source-${suffix}`;
-      const setup = await workflowBdd.setupWorkflowOrg();
+      const setup = await workflowBdd.setupWorkflowOrg({
+        model: "claude-fable-5-1",
+      });
       const { actor } = setup;
       const { agentId } = await workflowBdd.createAgent(actor);
       const storage = installCatalogStorageFixture();
@@ -11037,7 +11039,7 @@ describe("Official Workflow Run admission", () => {
     },
   );
 
-  it.each([
+  const queuedOfficialInputFailureCases = [
     {
       name: "legacy web without claim",
       encoding: "legacy",
@@ -11094,24 +11096,31 @@ describe("Official Workflow Run admission", () => {
       source: "exhausted",
       outcome: "exhausted",
     },
-  ] as const)(
-    "fails closed for queued Official input: $name",
-    async (queueCase) => {
-      installCatalogStorageFixture();
-      const definitionName = `api-test-queued-invalid-${randomUUID().slice(0, 8)}`;
-      await syncCatalog(catalog([activeDefinition(definitionName, [])]));
-      const { actor } = await workflowBdd.setupWorkflowOrg();
-      const { agentId } = await workflowBdd.createAgent(actor);
-      const headers = authHeaders(actor);
-      await setOfficialWorkflowsEnabled(actor, true);
-      const installation = await accept(
-        officialClient().install({
-          headers,
-          params: { definitionName },
-          body: { agentId, blueprints: [] },
-        }),
-        [201],
-      );
+  ] as const;
+
+  async function expectQueuedOfficialInputFailsClosed(
+    queueCase: (typeof queuedOfficialInputFailureCases)[number],
+    options: { readonly disposableDatabase?: true } = {},
+  ): Promise<void> {
+    installCatalogStorageFixture();
+    const definitionName = `api-test-queued-invalid-${randomUUID().slice(0, 8)}`;
+    await syncCatalog(catalog([activeDefinition(definitionName, [])]));
+    const { actor } = await workflowBdd.setupWorkflowOrg({
+      model: "claude-fable-5-1",
+    });
+    const { agentId } = await workflowBdd.createAgent(actor);
+    const headers = authHeaders(actor);
+    await setOfficialWorkflowsEnabled(actor, true);
+    const installation = await accept(
+      officialClient().install({
+        headers,
+        params: { definitionName },
+        body: { agentId, blueprints: [] },
+      }),
+      [201],
+    );
+    // A disposable database is dropped before test-finished hooks run.
+    if (!options.disposableDatabase) {
       onTestFinished(async () => {
         installCatalogStorageFixture();
         const createdRuns = await runs.listAgentRuns(actor, {
@@ -11125,128 +11134,155 @@ describe("Official Workflow Run admission", () => {
         await bdd.deleteAgent(actor, agentId);
         await cleanupCatalog();
       });
-      runs.configureRunnerGroup();
-      runs.acceptStorageDownloads();
-      const first = await accept(
-        workflowClient().run({
-          headers,
-          params: { workflowId: installation.body.workflow.id },
+    }
+    runs.configureRunnerGroup();
+    runs.acceptStorageDownloads();
+    const first = await accept(
+      workflowClient().run({
+        headers,
+        params: { workflowId: installation.body.workflow.id },
+      }),
+      [200],
+    );
+    const firstRunId = first.body.runId;
+    if (!firstRunId) {
+      throw new Error("Expected active queue blocker");
+    }
+    const firstClaim = await runs.claimRunnerJob(firstRunId);
+    const beforeQueued = await chat.listThreadEvents(
+      actor,
+      first.body.chatThreadId,
+    );
+    const beforeIds = new Set(
+      beforeQueued.events.map((event) => {
+        return event.id;
+      }),
+    );
+    await accept(
+      workflowClient().run({
+        headers: officialQueueHeaders(actor, firstRunId, {
+          origin: "agent_run",
         }),
-        [200],
-      );
-      const firstRunId = first.body.runId;
-      if (!firstRunId) {
-        throw new Error("Expected active queue blocker");
+        params: { workflowId: installation.body.workflow.id },
+      }),
+      [200],
+    );
+    const queued = (
+      await chat.listThreadEvents(actor, first.body.chatThreadId)
+    ).events.find((event) => {
+      return event.eventType === "input.prompt" && !beforeIds.has(event.id);
+    });
+    if (queued?.eventType !== "input.prompt") {
+      throw new Error("Expected server-annotated Official queued input");
+    }
+    const original = await readOfficialWorkflowQueueInputFixture(queued.id);
+    const counts = await readAgentRunFamilyCountsFixture(context, agentId);
+    const missingRunId = randomUUID();
+    const userMessage = {
+      ...queued.userMessage,
+      parts: queued.userMessage.parts.flatMap<UserMessagePart>((part) => {
+        if (part.type !== "source" || part.kind !== "agent") {
+          return [part];
+        }
+        if (queueCase.source === "annotation-missing") {
+          return [];
+        }
+        return [
+          queueCase.source === "run-missing"
+            ? {
+                ...part,
+                runId: missingRunId,
+                href: `/chats/${first.body.chatThreadId}#run-${missingRunId}`,
+              }
+            : part,
+        ];
+      }),
+    };
+    const claim =
+      queueCase.claim === "none"
+        ? null
+        : queueCase.claim === "duplicate"
+          ? [installation.body.workflow.id, installation.body.workflow.id]
+          : [installation.body.workflow.id];
+    const invalid = await appendOfficialWorkflowQueueInputFixture({
+      eventId: queued.id,
+      contextId:
+        queueCase.encoding === "source-run"
+          ? firstRunId
+          : queueCase.encoding === "unknown"
+            ? randomUUID()
+            : officialQueueContextIds[queueCase.encoding].okou,
+      contextType: queueCase.origin,
+      claim,
+      userMessage,
+    });
+    await expect(
+      readOfficialWorkflowQueueInputFixture(queued.id),
+    ).resolves.toStrictEqual(original);
+    if (queueCase.source === "exhausted") {
+      await setRunAutonomyBudgetFixture(context, firstRunId, 0);
+    }
+    await webhooks.requestAgentComplete(
+      { runId: firstRunId, exitCode: 1 },
+      { authorization: `Bearer ${firstClaim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    await withMockNowForTest(now() + 10 * 60 * 1000, async () => {
+      await reconcileStaleQueuedMessages(first.body.chatThreadId);
+    });
+    await flushWaitUntilForTest();
+    const after = await chat.listThreadEventRows(
+      actor,
+      first.body.chatThreadId,
+    );
+    const replacements = after.filter((event) => {
+      return event.revokesEventId === invalid.id;
+    });
+    if (queueCase.outcome === "invariant") {
+      expect(replacements).toHaveLength(0);
+    } else {
+      expect(replacements).toHaveLength(1);
+      expect(replacements[0]).toMatchObject({
+        eventType: "input.rejected",
+        runId: null,
+        payload: {
+          error:
+            queueCase.outcome === "exhausted"
+              ? "autonomy_budget_exhausted"
+              : "autonomy_source_unavailable",
+        },
+      });
+    }
+    await expect(
+      readAgentRunFamilyCountsFixture(context, agentId),
+    ).resolves.toStrictEqual(counts);
+  }
+
+  it.each(queuedOfficialInputFailureCases)(
+    "fails closed for queued Official input: $name",
+    async (queueCase) => {
+      expect.hasAssertions();
+      await expectQueuedOfficialInputFailsClosed(queueCase);
+    },
+  );
+
+  it(
+    "fails closed for queued Official input after split write activation",
+    { timeout: 120_000 },
+    async () => {
+      const duplicateClaim = queuedOfficialInputFailureCases.find((entry) => {
+        return entry.name === "duplicate claim";
+      });
+      if (!duplicateClaim) {
+        throw new Error("Expected the duplicate claim queue case");
       }
-      const firstClaim = await runs.claimRunnerJob(firstRunId);
-      const beforeQueued = await chat.listThreadEvents(
-        actor,
-        first.body.chatThreadId,
-      );
-      const beforeIds = new Set(
-        beforeQueued.events.map((event) => {
-          return event.id;
-        }),
-      );
-      await accept(
-        workflowClient().run({
-          headers: officialQueueHeaders(actor, firstRunId, {
-            origin: "agent_run",
-          }),
-          params: { workflowId: installation.body.workflow.id },
-        }),
-        [200],
-      );
-      const queued = (
-        await chat.listThreadEvents(actor, first.body.chatThreadId)
-      ).events.find((event) => {
-        return event.eventType === "input.prompt" && !beforeIds.has(event.id);
-      });
-      if (queued?.eventType !== "input.prompt") {
-        throw new Error("Expected server-annotated Official queued input");
-      }
-      const original = await readOfficialWorkflowQueueInputFixture(queued.id);
-      const counts = await readAgentRunFamilyCountsFixture(context, agentId);
-      const missingRunId = randomUUID();
-      const userMessage = {
-        ...queued.userMessage,
-        parts: queued.userMessage.parts.flatMap<UserMessagePart>((part) => {
-          if (part.type !== "source" || part.kind !== "agent") {
-            return [part];
-          }
-          if (queueCase.source === "annotation-missing") {
-            return [];
-          }
-          return [
-            queueCase.source === "run-missing"
-              ? {
-                  ...part,
-                  runId: missingRunId,
-                  href: `/chats/${first.body.chatThreadId}#run-${missingRunId}`,
-                }
-              : part,
-          ];
-        }),
-      };
-      const claim =
-        queueCase.claim === "none"
-          ? null
-          : queueCase.claim === "duplicate"
-            ? [installation.body.workflow.id, installation.body.workflow.id]
-            : [installation.body.workflow.id];
-      const invalid = await appendOfficialWorkflowQueueInputFixture({
-        eventId: queued.id,
-        contextId:
-          queueCase.encoding === "source-run"
-            ? firstRunId
-            : queueCase.encoding === "unknown"
-              ? randomUUID()
-              : officialQueueContextIds[queueCase.encoding].okou,
-        contextType: queueCase.origin,
-        claim,
-        userMessage,
-      });
-      await expect(
-        readOfficialWorkflowQueueInputFixture(queued.id),
-      ).resolves.toStrictEqual(original);
-      if (queueCase.source === "exhausted") {
-        await setRunAutonomyBudgetFixture(context, firstRunId, 0);
-      }
-      await webhooks.requestAgentComplete(
-        { runId: firstRunId, exitCode: 1 },
-        { authorization: `Bearer ${firstClaim.sandboxToken}` },
-        [200],
-      );
-      await flushWaitUntilForTest();
-      await withMockNowForTest(now() + 10 * 60 * 1000, async () => {
-        await reconcileStaleQueuedMessages(first.body.chatThreadId);
-      });
-      await flushWaitUntilForTest();
-      const after = await chat.listThreadEventRows(
-        actor,
-        first.body.chatThreadId,
-      );
-      const replacements = after.filter((event) => {
-        return event.revokesEventId === invalid.id;
-      });
-      if (queueCase.outcome === "invariant") {
-        expect(replacements).toHaveLength(0);
-      } else {
-        expect(replacements).toHaveLength(1);
-        expect(replacements[0]).toMatchObject({
-          eventType: "input.rejected",
-          runId: null,
-          payload: {
-            error:
-              queueCase.outcome === "exhausted"
-                ? "autonomy_budget_exhausted"
-                : "autonomy_source_unavailable",
-          },
+      expect.hasAssertions();
+      await withSplitChatEventDatabase(async () => {
+        await expectQueuedOfficialInputFailsClosed(duplicateClaim, {
+          disposableDatabase: true,
         });
-      }
-      await expect(
-        readAgentRunFamilyCountsFixture(context, agentId),
-      ).resolves.toStrictEqual(counts);
+      });
     },
   );
 
@@ -11255,7 +11291,9 @@ describe("Official Workflow Run admission", () => {
     const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
     const definitionName = `api-test-uninstall-${suffix}`;
     await syncCatalog(catalog([activeDefinition(definitionName, [])]));
-    const setup = await workflowBdd.setupWorkflowOrg();
+    const setup = await workflowBdd.setupWorkflowOrg({
+      model: "claude-fable-5-1",
+    });
     const { actor } = setup;
     if (!actor.orgId) {
       throw new Error("Expected organization-scoped actor");
@@ -11401,8 +11439,12 @@ describe("Official Workflow Run admission", () => {
       ]),
     );
     const original = await readAcceptedDefinitionFixture(definitionName);
-    const firstSetup = await workflowBdd.setupWorkflowOrg();
-    const secondSetup = await workflowBdd.setupWorkflowOrg();
+    const firstSetup = await workflowBdd.setupWorkflowOrg({
+      model: "claude-fable-5-1",
+    });
+    const secondSetup = await workflowBdd.setupWorkflowOrg({
+      model: "claude-fable-5-1",
+    });
     const firstActor = firstSetup.actor;
     const secondActor = secondSetup.actor;
     if (!firstActor.orgId || !secondActor.orgId) {

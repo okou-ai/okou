@@ -1,4 +1,3 @@
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   index,
   pgTable,
@@ -20,10 +19,6 @@ export const agentphoneConnectionCodes = pgTable(
     codeHash: varchar("code_hash", { length: 64 }).notNull(),
     userId: text("user_id").notNull(),
     orgId: text("org_id").notNull(),
-    publicBrand: text("public_brand")
-      .$type<PublicBrand>()
-      .default("okou")
-      .notNull(),
     expiresAt: timestamp("expires_at").notNull(),
     consumedAt: timestamp("consumed_at"),
     consumedPhoneHandle: varchar("consumed_phone_handle", { length: 254 }),

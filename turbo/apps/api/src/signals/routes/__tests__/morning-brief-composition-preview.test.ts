@@ -19,7 +19,7 @@ import {
   mockGitHubConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { seedRetainedNativeMorningBriefForUser } from "./helpers/feature-switches";
 
 /**
  * The source-independent composition, driven through the registered route.
@@ -155,7 +155,7 @@ async function fixture(
   if (options.github !== false) {
     await connectGithubAccount(actor, `compose-${randomUUID()}`, brief.agentId);
   }
-  await updateFeatureSwitchesForUser(
+  await seedRetainedNativeMorningBriefForUser(
     context,
     { orgId, userId },
     { [FeatureSwitchKey.NativeMorningBrief]: true },

@@ -1,7 +1,7 @@
 import type { McpSearchChatMessagesInput } from "@okouai/api-contracts/contracts/mcp-chat-search";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEventSearchMessages } from "@okouai/db/schema/chat-event-search";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
 

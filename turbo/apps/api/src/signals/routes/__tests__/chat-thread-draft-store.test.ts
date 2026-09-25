@@ -7,6 +7,7 @@ import type {
 import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
+import { settleIncludingAbort } from "../../utils";
 import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
 import {
   readChatThreadEventSequenceFixture,
@@ -198,13 +199,13 @@ describe("thread drafts are written to chat_thread_drafts and chat_threads", () 
     await expect(storedDraftText(fixture)).resolves.toBe("ordered draft");
   });
 
-  it("keeps the 404 and writes no child row when the thread moves away", async () => {
+  it("keeps the 404 and writes no child row when the owner changes before its pin", async () => {
     const fixture = await createDraftFixture();
 
     await withChatThreadContentBarrierFixture(
       {
         chatThreadId: fixture.threadId,
-        stopAt: "draft-child-upsert",
+        stopAt: "thread-lock",
         work: async (barrier) => {
           const writing = chat.requestPatchThread(
             fixture.actor,
@@ -213,9 +214,9 @@ describe("thread drafts are written to chat_thread_drafts and chat_threads", () 
             [404],
           );
           await barrier.entered;
-          // `user_id` is not a key column, so the retained FOR KEY SHARE lock
-          // does not stop this move, and it lands after the fence has already
-          // revalidated the identity. The legacy statement then matches nothing.
+          // Change ownership after identity resolution and before its first
+          // KEY SHARE pin. Revalidation must reject the stale account before
+          // either draft store is written.
           await setChatThreadUserFixture({
             chatThreadId: fixture.threadId,
             userId: `user_${randomUUID()}`,
@@ -227,9 +228,79 @@ describe("thread drafts are written to chat_thread_drafts and chat_threads", () 
       context.signal,
     );
 
-    // The staged child row rolled back with the whole transaction rather than
-    // committing one account's draft against a thread another account now owns.
+    // Retried admission cannot stage this account's draft under the new owner.
     await expect(storedDraftRow(fixture)).resolves.toBeNull();
+  });
+
+  it("commits both draft stores before a pending owner change", async () => {
+    const fixture = await createDraftFixture();
+
+    await withChatThreadContentBarrierFixture(
+      {
+        chatThreadId: fixture.threadId,
+        stopAt: "draft-child-upsert",
+        work: async (barrier) => {
+          const writing = settleIncludingAbort(
+            chat.requestPatchThread(
+              fixture.actor,
+              fixture.threadId,
+              draftBody("pinned owner's draft"),
+              [204],
+            ),
+          );
+          let moving: ReturnType<typeof settleIncludingAbort<void>> | undefined;
+          const observed = await settleIncludingAbort(
+            (async () => {
+              await barrier.entered;
+              moving = settleIncludingAbort(
+                setChatThreadUserFixture({
+                  chatThreadId: fixture.threadId,
+                  userId: `user_${randomUUID()}`,
+                }),
+              );
+              // The referenced (id, user_id) key makes this UPDATE conflict with
+              // KEY SHARE even before the legacy draft write starts.
+              await expect
+                .poll(barrier.blockedWaiterCount)
+                .toBeGreaterThanOrEqual(1);
+              await expect(storedDraftRow(fixture)).resolves.toBeNull();
+            })(),
+          );
+          // Release and join both callers even when a barrier assertion fails.
+          barrier.release();
+          const written = await writing;
+          const moved = moving === undefined ? undefined : await moving;
+          if (!observed.ok) {
+            throw observed.error;
+          }
+          if (!written.ok) {
+            throw written.error;
+          }
+          if (moved && !moved.ok) {
+            throw moved.error;
+          }
+          expect(written.value.status).toBe(204);
+        },
+      },
+      context.signal,
+    );
+
+    const denied = await chat.requestReadThreadMetadata(
+      fixture.actor,
+      fixture.threadId,
+      [404],
+    );
+    expect(denied.status).toBe(404);
+    await setChatThreadUserFixture({
+      chatThreadId: fixture.threadId,
+      userId: fixture.actor.userId,
+    });
+    await expect(servedDraftText(fixture)).resolves.toBe(
+      "pinned owner's draft",
+    );
+    await expect(storedDraftText(fixture)).resolves.toBe(
+      "pinned owner's draft",
+    );
   });
 
   it("commits neither store when the thread-row update loses its lock", async () => {

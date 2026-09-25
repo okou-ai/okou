@@ -2285,9 +2285,8 @@ function billingDowngradeTargetTier(
   if (value === "pro") {
     return value;
   }
-  if (value === "limited-free-1" || value === "pro-suspend") {
-    // Checkout sessions created by a previous App can complete after rollout.
-    return "limited-free-1";
+  if (value === "limited-free-1") {
+    return value;
   }
   return null;
 }

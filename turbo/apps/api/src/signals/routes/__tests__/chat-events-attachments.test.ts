@@ -39,7 +39,7 @@ const {
   api,
   chat,
   chatCallbacks,
-  entitledChatActor,
+  entitledChatActor: createEntitledChatActor,
   seedBuiltInModelKey,
   sendChatRun,
   claimChatRun,
@@ -49,6 +49,22 @@ const {
   cancelChatRun,
   requestSendEventRaw,
 } = createChatEventsFixture(context);
+
+// These sends observe claimable native Runner runs; Sonnet's Pi route can
+// finish API-first before the Runner claim, cancel, and callback steps run.
+async function entitledChatActor() {
+  const result = await createEntitledChatActor();
+  await api.updateOrgModelPolicies(result.actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: result.providerId,
+    },
+  ]);
+  return result;
+}
 
 describe("CHAT-02: generation templates and attachments", () => {
   it("uses the userMessage document for the runtime prompt", async () => {
@@ -168,7 +184,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         version: 1,
         parts: [
           ...userMessage.parts,
-          { type: "model", selectedModel: "claude-sonnet-5" },
+          { type: "model", selectedModel: "claude-fable-5-1" },
         ],
       },
     });
@@ -532,7 +548,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         version: 1,
         parts: [
           ...userMessage.parts,
-          { type: "model", selectedModel: "claude-sonnet-5" },
+          { type: "model", selectedModel: "claude-fable-5-1" },
         ],
       },
     });
@@ -594,7 +610,7 @@ describe("CHAT-02: generation templates and attachments", () => {
             contentType: "text/plain",
           },
           { type: "text", text: "plain API attachment" },
-          { type: "model", selectedModel: "claude-sonnet-5" },
+          { type: "model", selectedModel: "claude-fable-5-1" },
         ],
       },
     });
@@ -1234,7 +1250,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         isDefault: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
@@ -1243,13 +1259,13 @@ describe("CHAT-02: generation templates and attachments", () => {
     ]);
     const thread = await chat.createThread(actor, {
       agentId,
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
     });
 
-    await seedBuiltInModelKey("gpt-5.6-terra");
+    await seedBuiltInModelKey("gpt-6-astra");
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "gpt-5.6-terra",
+        model: "gpt-6-astra",
         isDefault: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
@@ -2171,7 +2187,7 @@ describe("CHAT-02: queued attachments on auto-send", () => {
         ...userMessage.parts,
         {
           type: "model",
-          selectedModel: "claude-sonnet-5",
+          selectedModel: "claude-fable-5-1",
         },
       ],
     });

@@ -517,6 +517,7 @@ pub struct ApiClaimTiming {
     request_elapsed: Duration,
     request_to_response_headers_elapsed: Duration,
     response_body_read_elapsed: Duration,
+    response_first_body_chunk_wait_elapsed: Duration,
     response_decode_elapsed: Duration,
     response_attribution: ClaimResponseAttribution,
 }
@@ -575,6 +576,7 @@ impl ApiClaimTiming {
         request_elapsed: Duration,
         request_to_response_headers_elapsed: Duration,
         response_body_read_elapsed: Duration,
+        response_first_body_chunk_wait_elapsed: Duration,
         response_decode_elapsed: Duration,
         response_attribution: ClaimResponseAttribution,
     ) -> Self {
@@ -582,6 +584,7 @@ impl ApiClaimTiming {
             request_elapsed,
             request_to_response_headers_elapsed,
             response_body_read_elapsed,
+            response_first_body_chunk_wait_elapsed,
             response_decode_elapsed,
             response_attribution,
         }
@@ -597,6 +600,27 @@ impl ApiClaimTiming {
 
     pub const fn response_body_read_elapsed(self) -> Duration {
         self.response_body_read_elapsed
+    }
+
+    /// Time after response headers until the first non-empty, application-visible body chunk.
+    /// This is not a server-flush or first physical wire-byte measurement.
+    pub const fn response_first_body_chunk_wait_elapsed(self) -> Duration {
+        self.response_first_body_chunk_wait_elapsed
+    }
+
+    /// Reconcile the emitted millisecond durations with the existing total event.
+    /// Subtracting sub-millisecond Durations before serialization can otherwise
+    /// lose one millisecond when each event is truncated independently.
+    pub fn response_body_after_first_chunk_elapsed(self) -> Duration {
+        let total_ms =
+            u64::try_from(self.response_body_read_elapsed.as_millis()).unwrap_or(u64::MAX);
+        let first_ms = u64::try_from(self.response_first_body_chunk_wait_elapsed.as_millis())
+            .unwrap_or(u64::MAX);
+        assert!(
+            first_ms <= total_ms,
+            "first body chunk must arrive before body read completes"
+        );
+        Duration::from_millis(total_ms - first_ms)
     }
 
     pub const fn response_decode_elapsed(self) -> Duration {
@@ -864,6 +888,7 @@ mod tests {
             Duration::from_millis(10),
             Duration::from_millis(4),
             Duration::from_millis(2),
+            Duration::from_millis(1),
             Duration::from_millis(3),
             ClaimResponseAttribution::from_body_and_encoding(100, None),
         )
