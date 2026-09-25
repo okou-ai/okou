@@ -7,7 +7,6 @@ import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { chatAgentRunContext } from "@okouai/db/schema/chat-agent-run-context";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { cliTokens } from "@okouai/db/schema/cli-tokens";
 import { composeJobs } from "@okouai/db/schema/compose-job";
 import { builtinConnectorExternalCodeSessions } from "@okouai/db/schema/connector-external-code-session";
@@ -807,23 +806,9 @@ async function deleteOrgData(
   await db
     .delete(browserUserActionRequests)
     .where(eq(browserUserActionRequests.orgId, orgId));
-  // Historical context rows can still have null copied ownership. Remove them
-  // through the live source before lifecycle cleanup deletes that source.
   await db
     .delete(chatAgentRunContext)
-    .where(
-      or(
-        eq(chatAgentRunContext.sourceOrgId, orgId),
-        inArray(
-          chatAgentRunContext.sourceChatThreadId,
-          db
-            .select({ id: chatThreads.id })
-            .from(chatThreads)
-            .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-            .where(eq(agents.orgId, orgId)),
-        ),
-      ),
-    );
+    .where(eq(chatAgentRunContext.sourceOrgId, orgId));
   await deleteClerkAgentLifecycleData(db, { kind: "organization", orgId });
   // VNC references were removed at the start of organization cleanup. Remove
   // Access rows before SSH hosts: rotation takes config then host locks.
@@ -925,18 +910,7 @@ async function deleteUserData(
     .where(eq(browserUserActionRequests.userId, userId));
   await db
     .delete(chatAgentRunContext)
-    .where(
-      or(
-        eq(chatAgentRunContext.sourceUserId, userId),
-        inArray(
-          chatAgentRunContext.sourceChatThreadId,
-          db
-            .select({ id: chatThreads.id })
-            .from(chatThreads)
-            .where(eq(chatThreads.userId, userId)),
-        ),
-      ),
-    );
+    .where(eq(chatAgentRunContext.sourceUserId, userId));
   await deleteClerkAgentLifecycleData(db, { kind: "user", userId });
   // VNC references were removed before user cleanup. Delete only this user's
   // SSH resources and personal Access configurations; organization Access

@@ -50,9 +50,9 @@ cleanup, narrowed so that user deletion never deletes an Agent.
 Rows written for a deleted account after its legacy cleanup committed are no
 longer swept by anything. That is the accepted gap until the redesign.
 
-Migration `1252_drop_account_erasure` follows the Computer Use migration
-`1251` and replaces the earlier, never-released
-`1248_drop_pi_stable_context_erasure_fences`. It drops the `account_erasure_*`
+Migration `1253_drop_account_erasure` follows the required agent-run context
+owner migration `1252` (and Computer Use migration `1251`) and replaces the
+earlier, never-released `1248_drop_pi_stable_context_erasure_fences`. It drops the `account_erasure_*`
 tables (jobs, work, pages, sinks, selector dependencies, bridge ingress and
 replay), `chat_content_erasure_subjects`, `pi_stable_context_erasure_fences`,
 `blob_upload_intents`, and `blobs.erasure_pending`/`erasure_eligible_at` with
@@ -66,6 +66,36 @@ deletion. **Rolling the API back below this revision is unsupported.**
 Older entries below that mention account erasure, erasure admission, the
 relational sweep, collectors, the Clerk erasure bridge or deletion-status
 capabilities describe the retired mechanism.
+
+## Discord file deliveries become fire and forget (2026-09-25)
+
+`POST /api/integrations/discord/files/complete` sends each upload operation to
+Discord at most once, without a nonce. A send that Discord rejects,
+rate-limits or never answers is recorded as a failed delivery with
+`retryable: false` and no `retryAfterSeconds`; a repeated completion returns the
+recorded outcome and never sends again. To retry, start a new upload operation.
+The enforced-nonce replay, its window and the stored retry deadline are
+removed, and new delivery rows no longer store a nonce.
+
+The response contract is unchanged, so existing CLIs keep parsing it and simply
+see non-retryable failures. Discord has no production users, so rows written by
+the previous replay flow need no migration; their extra JSONB keys are ignored.
+
+## Agent-run context ownership becomes required (2026-09-25)
+
+Migration `1252_chat_agent_run_context_owner_not_null` deletes
+`chat_agent_run_context` rows whose `source_user_id` or `source_org_id` is null,
+then makes both columns `NOT NULL`. Every API from the split writer on (API
+1.672.0) inserts a row only after reading both owners from the source thread and
+agent, so no rollback target writes a null owner. The deleted rows were written
+by older APIs; on 2026-09-25 all 955 had lost their source thread, so no owner
+could be derived. No code reads these rows, and the `chat_events.context_id`
+values that referenced 70 of them carry no foreign key.
+
+The Clerk legacy cleanup deletes these rows by copied ownership. The account-
+erasure collector and its captured replay are retired by this PR; older API
+instances cannot safely run against the dropped relations, and API rollback
+below this revision is unsupported as noted above.
 
 ## Computer Use erasure admission and legacy host retirement (2026-09-25)
 
@@ -202,18 +232,34 @@ removal gates:
 The API no longer reads the legacy `chat_threads` JSONB. A row without an
 object key is now an error. A scope without a snapshot row returns the
 permanent empty `{ chatThreads: [], latestEventId: null, latestSeqId: null }`
-shape. The App SharedWorker and CLI keep handling the inline contract variant,
-because the contract still carries it for iOS (below). They send the header,
-so current and rollback-window APIs return them an R2 URL whenever a row
-exists.
+shape. The App SharedWorker and CLI keep handling the inline contract variant for
+the API rollback window. They send the header, so current and rollback-window
+APIs return them an R2 URL whenever a row exists.
 
-One fallback remains. The native iOS TestFlight client (0.2.x) reads only
-inline `chatThreads`. It sends neither `X-Chat-Thread-Snapshot-R2` nor a client
-version, so no version floor can exclude it. The API therefore still serves
-inline data materialized from R2 to requests that omit the header. The Web App
-and CLI keep sending the header, and it stays in the CORS allow-list. Remove
-that branch, the header, and the inline contract variant after iOS downloads
-the R2 URL and builds without that support are no longer installed.
+At the time of #36942, one fallback remained: the native iOS TestFlight
+client (0.2.x) read only inline `chatThreads`, so the API materialized the R2
+archive for requests without the capability header. That branch was retired
+later on 2026-09-25 with explicit acceptance of breaking the old TestFlight
+builds; see "iOS inline chat thread snapshot response retired" below.
+
+## iOS inline chat thread snapshot response retired (2026-09-25)
+
+The owner approved removing the remaining header-less inline response for
+#36375 despite breaking old internal iOS TestFlight builds. For a scope with a
+compacted snapshot, `GET /api/chat-threads/snapshot` now returns a scoped,
+short-lived R2 URL whether or not `X-Chat-Thread-Snapshot-R2: 1` is present.
+The API no longer downloads and decompresses the R2 archive on behalf of a
+header-less client. A scope without a snapshot row still returns
+`{ chatThreads: [], latestEventId: null, latestSeqId: null }`.
+
+The iOS TestFlight client currently decodes only inline `chatThreads`, so a
+header-less iOS build cannot load a non-empty compacted chat thread list from
+this API. Updating iOS to download the R2 URL remains separate work; this PR
+does not provide a minimum-version gate for iOS. Web App and CLI still send the
+capability header and accept inline responses for the existing API rollback
+window: an older API behind the current rollback floor still branches on that
+header. Keep the header in CORS and the shared inline response variant until
+the API rollback floor advances past that implementation.
 
 ## Thread draft contraction, release 2 (2026-09-25)
 
@@ -1207,6 +1253,9 @@ the stream for those older readers; roll forward instead.
 
 ## Chat thread snapshot R2 handoff (2026-09-23)
 
+Historical rollout record; the current header-less inline branch has since
+been retired as described at the top of this document.
+
 Migration `1204_chat_thread_snapshot_r2_pointer` adds a nullable R2 object key to
 `chat_thread_snapshots`. Existing rows continue to carry the legacy
 `chat_threads` JSONB and the API returns the same inline snapshot for them.
@@ -1606,7 +1655,7 @@ Legacy Clerk user and organization deletion no longer writes
 `pi_stable_context_erasure_fences`, and no writer or reader consults it:
 membership-cache refresh, generation initialization, demand registration,
 publication, and connector, permission and Workflow writes proceed after
-deletion. Migration `1251_drop_account_erasure` drops the table. Keep
+deletion. Migration `1253_drop_account_erasure` drops the table. Keep
 stable-context activation on hold until migration 1168 is present on every
 serving API instance.
 
