@@ -32,17 +32,9 @@
       "import": "./src/types.ts",
       "types": "./src/types.ts"
     },
-    "./operations/account-erasure": {
-      "import": "./src/operations/account-erasure.ts",
-      "types": "./src/operations/account-erasure.ts"
-    },
     "./migrations/014-goal-archive-search": {
       "import": "./scripts/migrations/014-goal-archive-search/recover.ts",
       "types": "./scripts/migrations/014-goal-archive-search/recover.ts"
-    },
-    "./operations/chat-content-erasure": {
-      "import": "./src/operations/chat-content-erasure.ts",
-      "types": "./src/operations/chat-content-erasure.ts"
     }
   },
   "scripts": {
@@ -54,7 +46,6 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "db:reset": "tsx scripts/reset-db.ts",
-    "check:account-erasure-claim-scale": "tsx scripts/check-account-erasure-claim-scale.ts",
     "test:migration-consistency": "pnpm test:pi-memory-stage1-alerts && pnpm test:migration-runner && pnpm test:kms-rotation && pnpm test:pi-memory-checkpoint-settlement && pnpm test:pi-memory-citations && pnpm test:show-usage-pack-migration && pnpm test:plan-entitlement-capability-migration && pnpm test:reusable-ssh-credentials && pnpm test:cloudflare-access && pnpm test:vnc-configuration && pnpm test:vnc-runner-authority && pnpm test:morning-brief-enrollment-installation && pnpm test:billing-attribution && pnpm test:pi-candidate-trigger-retirement && pnpm test:historical-blob-audit && pnpm test:hosted-publication-history-audit && pnpm test:hosted-publication-runtime && pnpm test:hosted-publication-contraction && pnpm test:hosted-publication-pointers && pnpm test:private-artifact-absolute-urls && pnpm test:pro-suspend-retirement && pnpm test:slack-ingress-failed-retirement && pnpm test:prepared-domain-trigger-retirement && pnpm test:pi-inference-lifecycle && pnpm test:marketing-privacy-retirement && pnpm --filter api test:chat-event-sequences && pnpm --filter api test:chat-event-context && pnpm --filter api test:chat-event-split && pnpm --filter api test:chat-event-auxiliary && tsx scripts/test-migration-consistency-schema.ts",
     "test:vnc-configuration": "tsx scripts/test-vnc-configuration.ts",
     "test:vnc-runner-authority": "tsx scripts/test-vnc-runner-authority.ts",
