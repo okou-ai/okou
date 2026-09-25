@@ -1,4 +1,3 @@
-import { lockErasureSubjects } from "@okouai/db/operations/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
@@ -27,7 +26,6 @@ import {
   deleteOrgUsageData,
   deleteUserUsageData,
 } from "./usage-event-cleanup.service";
-import { closePiStableContextErasureSubject } from "./pi-stable-context-erasure.service";
 import { lockXResourceAdmission } from "./x-resource-usage-lifecycle";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 
@@ -222,23 +220,11 @@ export async function deleteClerkAgentLifecycleData(
   scope: ClerkDeletionScope,
 ): Promise<void> {
   const receipt = await db.transaction(async (tx) => {
-    // Drain compute admission before retaining entitlement locks: creators
-    // and queue promotion hold Agent locks before accessing allowances.
-    await lockErasureSubjects(tx, [
-      {
-        subjectKind: scope.kind,
-        subjectId: scope.kind === "organization" ? scope.orgId : scope.userId,
-      },
-    ]);
-    // Subjects -> X admission -> compaction -> ledger/entitlements -> parents/Run.
+    // X admission -> compaction -> ledger/entitlements -> parents/Run.
     // The helper uses a savepoint on this same connection; both deletion
     // stages commit atomically and retain their locks through that commit.
     await lockXResourceAdmission(tx, "exclusive");
     await deleteScopedUsageData(tx, scope);
-    await closePiStableContextErasureSubject(tx, {
-      subjectKind: scope.kind,
-      subjectId: scope.kind === "organization" ? scope.orgId : scope.userId,
-    });
     await tx.execute(
       sql`SELECT set_config('lock_timeout', ${AGENT_LIFECYCLE_LOCK_TIMEOUT}, true)`,
     );

@@ -28,7 +28,6 @@ import {
   verifyUserErasureWork,
 } from "./account-erasure-user-executor";
 import { markMorningBriefCollectionOwnershipRevoked } from "./morning-brief-collection-occurrence.service";
-import { closePiStableContextErasureSubject } from "./pi-stable-context-erasure.service";
 import {
   cancelDeletedUserRuns$,
   cleanupClerkDeletedUser$,
@@ -123,13 +122,6 @@ export const enqueueClerkUserDeletion$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<string> => {
     const jobId = uuidv5(userId, JOB_NAMESPACE);
     await set(writeDb$).transaction(async (tx) => {
-      // The hold skips legacy identity cleanup. Close cached authority under
-      // the same lock as delayed membership refills before acknowledging the
-      // webhook; a late refresh cannot restore this deleted user's access.
-      await closePiStableContextErasureSubject(tx, {
-        subjectKind: "user",
-        subjectId: userId,
-      });
       await recordChatContentDeletion(tx, {
         subjectKind: "user",
         subjectId: userId,

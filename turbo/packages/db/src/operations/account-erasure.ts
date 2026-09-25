@@ -12,11 +12,8 @@ import {
   lte,
   ne,
   exists,
-  notExists,
   or,
   sql,
-  type SQL,
-  type SQLWrapper,
 } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
@@ -227,27 +224,24 @@ function digest(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
-/** One statement acquires every sorted subject key, so admission costs one
- * round trip whatever a caller's subject count is.
+/** Lock order: sorted subject advisory locks, job, then work rows by id.
  *
- * The `CASE` still guards the locks themselves: an unsupported snapshot cannot
- * wait for admission, so nothing may be locked before the isolation level is
- * known. Three properties keep the folded form equivalent to the previous
- * statement-per-subject loop.
+ * The subject lock serializes the erasure participants of one subject across
+ * generations: a new decision's first closure has no job row to lock yet, and
+ * a mutation of an older generation must not commit past a newer one. Business
+ * writers do not take it; rows they write after closure are removed by the
+ * collectors and the relational sweep.
  *
- * - `unnest` emits the already sorted array in order and the lock is a lateral
- *   function scan on its right, so keys are still locked in one global order
- *   and two overlapping subject sets cannot deadlock against each other.
- * - The aggregate forces the executor to drain the whole join. A bare scalar
- *   subquery with `LIMIT 1` would be free to stop after the first row and
- *   leave the remaining keys unlocked.
- * - A `CROSS JOIN LATERAL` to a volatile function is never removed or reordered
- *   ahead of its lateral input, so no key can be skipped by planning.
+ * One statement acquires every sorted subject key. `unnest` emits the sorted
+ * array in order and the lock is a lateral function scan on its right, so keys
+ * are locked in one global order; the aggregate forces the executor to drain
+ * the whole join. The `CASE` refuses to lock anything under an isolation level
+ * other than READ COMMITTED, where a later statement would not see a
+ * generation committed while the lock was waiting.
  */
-async function acquireErasureSubjectLocks(
+export async function lockErasureSubjects(
   tx: Tx,
   subjects: readonly ErasureSubject[],
-  mode: "shared" | "exclusive",
 ): Promise<void> {
   invariant(
     subjects.length > 0 && subjects.length <= MAX_SINKS,
@@ -256,10 +250,6 @@ async function acquireErasureSubjectLocks(
   const keys = [...new Set(subjects.map(subjectKey))].sort().map((key) => {
     return `account-erasure:${key}`;
   });
-  const lock =
-    mode === "shared"
-      ? sql`pg_advisory_xact_lock_shared(hashtextextended(erasure_subject_key, 0))`
-      : sql`pg_advisory_xact_lock(hashtextextended(erasure_subject_key, 0))`;
   const [isolation] = await tx
     .select({
       value: sql`CASE
@@ -267,148 +257,13 @@ async function acquireErasureSubjectLocks(
         THEN (
           SELECT max(current_setting('transaction_isolation'))
           FROM unnest(${sql.param(keys)}::text[]) AS erasure_subject_keys(erasure_subject_key)
-          CROSS JOIN LATERAL ${lock} AS erasure_subject_lock
+          CROSS JOIN LATERAL pg_advisory_xact_lock(hashtextextended(erasure_subject_key, 0)) AS erasure_subject_lock
         )
         ELSE current_setting('transaction_isolation')
       END`.mapWith(jobs.subjectId),
     })
     .from(sql`(VALUES (1)) AS erasure_isolation_probe`);
   invariant(isolation?.value === "read committed", "unsupported_isolation");
-}
-
-/** The single `account_erasure_jobs` lookup every admission ends with.
- *
- * It must stay its own statement on the write path. Under READ COMMITTED a
- * statement's snapshot is taken when the statement starts, which is before the
- * advisory lock above is granted, so a closure that committed while that lock
- * was waiting would be invisible to a folded lookup. Starting a new statement
- * after the locks are held is what makes that closure visible.
- */
-async function assertErasureSubjectNotClosed(
-  tx: Tx,
-  subjects: readonly ErasureSubject[],
-): Promise<void> {
-  const [closed] = await tx
-    .select({ id: jobs.id })
-    .from(jobs)
-    .where(or(...subjects.map(subjectCondition)))
-    .limit(1);
-  invariant(!closed, "subject_closed");
-}
-
-/** Both fence deadlines in one statement. They are transaction-local, so a
- * caller that previously issued two `set_config` calls keeps exactly the same
- * budgets for exactly the same scope at half the round trips.
- */
-export async function setErasureFenceDeadlines(
-  tx: Tx,
-  deadlines: {
-    readonly lockTimeout: string;
-    readonly statementTimeout: string;
-  },
-): Promise<void> {
-  await tx.execute(
-    sql`SELECT set_config('lock_timeout', ${deadlines.lockTimeout}, true), set_config('statement_timeout', ${deadlines.statementTimeout}, true)`,
-  );
-}
-
-/** Lock order: sorted subject advisory locks, job, then work rows by id.
- * Erasure mutations require exclusive locks, including first closure when no
- * job exists. Take them BEFORE business-row locks and retain them through COMMIT.
- */
-export async function lockErasureSubjects(
-  tx: Tx,
-  subjects: readonly ErasureSubject[],
-): Promise<void> {
-  await acquireErasureSubjectLocks(tx, subjects, "exclusive");
-}
-
-/** Ordinary writers share admission, not business-row ownership. Closure still
- * waits for every admitted transaction to finish; post-closure writers observe
- * the job under READ COMMITTED. Do not upgrade admission to an erasure mutation.
- * The unchanged keys also conflict safely with older exclusive admissions.
- */
-export async function assertErasureSubjectWritable(
-  tx: Tx,
-  subjects: readonly ErasureSubject[],
-): Promise<void> {
-  await acquireErasureSubjectLocks(tx, subjects, "shared");
-  // Start a new READ COMMITTED statement after every lock has been acquired.
-  // A closure committed while a lock was waiting must be visible here.
-  await assertErasureSubjectNotClosed(tx, subjects);
-}
-
-/** Read admission. A read creates nothing, so making closure wait for an
- * in-flight read buys no resurrection safety, and the only property a read
- * needs is that it does not serve a subject that is already closed. This
- * therefore takes **no advisory lock at all**: it is the closure lookup on its
- * own, in one statement, raising the same `account_erasure:subject_closed` a
- * writer's admission raises.
- *
- * The consequence is explicit and intended. Without the shared lock a closure
- * can commit the instant after this returns, so this carries no authority and
- * must never gate a write; {@link assertErasureSubjectWritable} remains the
- * only admission a writer may use. A caller whose own query can carry
- * {@link erasureSubjectOpenCondition} should compose that instead and pay no
- * round trip at all.
- */
-export async function assertErasureSubjectReadable(
-  tx: Tx,
-  subjects: readonly ErasureSubject[],
-): Promise<void> {
-  invariant(
-    subjects.length > 0 && subjects.length <= MAX_SINKS,
-    "subject_limit",
-  );
-  for (const subject of subjects) {
-    subjectKey(subject);
-  }
-  await assertErasureSubjectNotClosed(tx, subjects);
-}
-
-/** Indexed candidate filter for a batched ordinary writer whose selection runs
- * outside its write transaction. It reads the same subject domains the shared
- * admission checks, using the `(subject_kind, subject_id)` prefix of
- * `account_erasure_subject_generation`, so a closed subject stops consuming the
- * writer's bounded batch instead of starving later open candidates.
- *
- * This is selection, never authority: it takes no lock, it can go stale the
- * moment it returns, and `assertErasureSubjectWritable` remains the only
- * admission inside the writer's own transaction. A `SQLWrapper` subject id lets
- * a caller pass the joined owner columns it already selects.
- */
-export function erasureSubjectOpenCondition(
-  executor: Pick<Db, "select"> | Tx,
-  subjects: readonly {
-    readonly subjectKind: Job["subjectKind"];
-    readonly subjectId: SQLWrapper;
-  }[],
-): SQL {
-  invariant(
-    subjects.length > 0 && subjects.length <= MAX_SINKS,
-    "subject_limit",
-  );
-  for (const subject of subjects) {
-    invariant(
-      subject.subjectKind === "user" || subject.subjectKind === "organization",
-      "invalid_subject",
-    );
-  }
-  return notExists(
-    executor
-      .select({ id: jobs.id })
-      .from(jobs)
-      .where(
-        or(
-          ...subjects.map((subject) => {
-            return and(
-              eq(jobs.subjectKind, subject.subjectKind),
-              eq(jobs.subjectId, subject.subjectId),
-            );
-          }),
-        ),
-      ),
-  );
 }
 
 async function lockJob(tx: Tx, jobId: string, retiring = false): Promise<Job> {
@@ -1143,7 +998,6 @@ export async function assertErasureSourceCaptured(
     locator && subjectKey(subject) === subjectKey(locator),
     "wrong_subject",
   );
-  await lockErasureSubjects(tx, [subject]);
   const job = await lockJob(tx, jobId);
   invariant(subjectKey(subject) === subjectKey(job), "wrong_subject");
   sameRevision(job, expected);
