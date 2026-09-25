@@ -18,6 +18,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  surfaceVariants,
 } from "@okouai/ui";
 import {
   CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH,
@@ -1147,7 +1148,7 @@ function CloudflareAccessSection({
         return (
           <article
             key={config.id}
-            className="grid gap-3 rounded-xl border bg-card p-5"
+            className={surfaceVariants({ className: "grid gap-3 p-5" })}
           >
             <h3 className="font-semibold">{config.name}</h3>
             <AccessImpact config={config} />
