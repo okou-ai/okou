@@ -159,10 +159,7 @@ where
     }
 }
 
-async fn authenticate_vnc<S>(
-    stream: &mut tokio_rustls::client::TlsStream<S>,
-    password: VncPassword,
-) -> Result<(), Error>
+pub(crate) async fn authenticate_vnc<S>(stream: &mut S, password: VncPassword) -> Result<(), Error>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
