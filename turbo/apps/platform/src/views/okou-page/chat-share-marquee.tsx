@@ -42,7 +42,9 @@ interface MarqueeRect {
 interface MarqueeViewportProps {
   readonly children: ReactNode;
   readonly phase: SharedThreadSelectionPhase;
-  readonly onViewportRef: (element: HTMLDivElement | null) => void;
+  readonly onViewportRef: (
+    element: HTMLDivElement | null,
+  ) => (() => void) | undefined;
   readonly onScroll: (event: ReactUIEvent<HTMLDivElement>) => void;
   readonly viewportClassName: string;
   readonly tooLargeLabel: string;
@@ -229,12 +231,33 @@ export class ChatShareMarqueeViewport extends Component<
     }
   }
 
-  private readonly handleViewportRef = (
-    element: HTMLDivElement | null,
-  ): void => {
-    this.viewport = element;
-    this.props.onViewportRef(element);
-  };
+  private viewportRefOwner: MarqueeViewportProps["onViewportRef"] | null = null;
+  private viewportRef: ((element: HTMLDivElement | null) => () => void) | null =
+    null;
+
+  /**
+   * The ref callback changes identity with `onViewportRef`. The pane is reused
+   * across threads, so a stable callback would leave the next thread's scroll
+   * signals unbound and the previous thread's listeners attached.
+   */
+  private currentViewportRef(): (element: HTMLDivElement | null) => () => void {
+    const onViewportRef = this.props.onViewportRef;
+    if (this.viewportRef && this.viewportRefOwner === onViewportRef) {
+      return this.viewportRef;
+    }
+    this.viewportRefOwner = onViewportRef;
+    this.viewportRef = (element) => {
+      this.viewport = element;
+      const cleanup = onViewportRef(element);
+      return () => {
+        if (this.viewport === element) {
+          this.viewport = null;
+        }
+        cleanup?.();
+      };
+    };
+    return this.viewportRef;
+  }
 
   private updateSelection(viewport: HTMLElement, drag: DragState): void {
     const rect = marqueeRect(viewport, drag);
@@ -391,7 +414,7 @@ export class ChatShareMarqueeViewport extends Component<
     return (
       <>
         <ScrollArea.Viewport
-          ref={this.handleViewportRef}
+          ref={this.currentViewportRef()}
           data-slot="scroll-area-viewport"
           data-scroll-container
           tabIndex={-1}
