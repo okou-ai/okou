@@ -69,12 +69,6 @@ const CHAT_THREAD_EVENT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_CHAT_THREAD_SNAPSHOT_BATCH_SIZE = 500;
 const CHAT_THREAD_SNAPSHOT_PUBLISH_CONCURRENCY = 10;
 const DEFAULT_CHAT_THREAD_EVENT_PRUNE_BATCH_SIZE = 500;
-/**
- * Agent deletion removes threads without a thread event, so a scope's snapshot
- * is also rebuilt once it is this old. An unchanged projection only advances
- * the head; it is not uploaded again.
- */
-const CHAT_THREAD_SNAPSHOT_STALE_MS = 24 * 60 * 60 * 1000;
 /** Rows read per bounded page while scanning sequences or a scope's threads. */
 const SCAN_PAGE_SIZE = 500;
 const gzipAsync = promisify(gzip);
@@ -204,32 +198,30 @@ async function latestEventAtOrBelow(
 }
 
 /**
- * A scope needs a new snapshot when it has none, still has the retired inline
- * payload, has a visible event past the snapshot's position, or its snapshot
- * is older than {@link CHAT_THREAD_SNAPSHOT_STALE_MS}. A sequence that only
- * advanced over an id-conflict gap needs nothing.
+ * A scope needs a new snapshot when it has a visible event past its position
+ * or still has the retired inline payload. A sequence that only advanced over
+ * an id-conflict gap needs nothing.
  */
 async function toCandidate(
   db: SnapshotRootDb,
   scope: ScopeKey,
   lastSeqId: number,
   previous: SnapshotHead | undefined,
-  staleCutoff: Date,
 ): Promise<SnapshotCandidate | null> {
   const covered = previous?.latestEventSeqId ?? 0;
-  const current =
-    previous !== undefined &&
-    previous.objectKey !== null &&
-    previous.updatedAt >= staleCutoff;
-  if (current && lastSeqId <= covered) {
+  const hasObject = previous !== undefined && previous.objectKey !== null;
+  if (hasObject && lastSeqId <= covered) {
     return null;
   }
   const latest = await latestEventAtOrBelow(db, scope, lastSeqId);
-  if (current && (latest === undefined || latest.seqId <= covered)) {
+  if (hasObject && (latest === undefined || latest.seqId <= covered)) {
     return null;
   }
-  // Never move the position backwards: a stale refresh with nothing newer
-  // keeps the head's own event, which retention may already have pruned.
+  // An empty scope with no snapshot and only allocator gaps has nothing to
+  // publish. Subsequent cron runs must not keep sending an empty projection.
+  if (previous === undefined && latest === undefined) {
+    return null;
+  }
   const advanced = latest !== undefined && latest.seqId > covered;
   return {
     ...scope,
@@ -251,9 +243,6 @@ async function findSnapshotCandidates(
   limit: number,
 ): Promise<readonly SnapshotCandidate[]> {
   const candidates: SnapshotCandidate[] = [];
-  const staleCutoff = new Date(
-    nowDate().getTime() - CHAT_THREAD_SNAPSHOT_STALE_MS,
-  );
   let after: ScopeKey | null = null;
   while (candidates.length < limit) {
     const page: readonly (ScopeKey & { readonly lastSeqId: number })[] =
@@ -293,7 +282,6 @@ async function findSnapshotCandidates(
         row,
         row.lastSeqId,
         heads.get(scopeKey(row)),
-        staleCutoff,
       );
       if (candidate) {
         candidates.push(candidate);
