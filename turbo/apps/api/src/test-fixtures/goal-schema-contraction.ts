@@ -11,7 +11,6 @@ import {
   SimpleSpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import { Client } from "pg";
-import { z } from "zod";
 import { closeDbPool, db } from "../lib/db";
 import { env, mockEnv, optionalEnv } from "../lib/env";
 import { flushWaitUntilForTest } from "../signals/context/wait-until";
@@ -216,61 +215,4 @@ export async function appendRetainedUsageWebContext(
       contextId: null,
     });
   });
-}
-
-/** Hold a real database response across snapshot publication, without replacing its rows. */
-export async function withEmptySnapshotReadBarrier(args: {
-  readonly threadId: string;
-  readonly whileResponseHeld: () => Promise<void>;
-  readonly work: () => Promise<void>;
-}): Promise<void> {
-  await closeDbPool();
-  const original = Client.prototype.query;
-  let held = false;
-  Client.prototype.query = new Proxy(original, {
-    apply(target, receiver: unknown, queryArgs: unknown[]): unknown {
-      const result: unknown = Reflect.apply(target, receiver, queryArgs);
-      const query = z
-        .object({ text: z.string(), values: z.array(z.unknown()) })
-        .safeParse(queryArgs[0]);
-      if (
-        held ||
-        !(result instanceof Promise) ||
-        !query.success ||
-        !query.data.text.startsWith("select ") ||
-        !query.data.text.includes('from "chat_event_snapshots"') ||
-        !query.data.values.includes(args.threadId)
-      ) {
-        return result;
-      }
-      return (async () => {
-        const response: unknown = await result;
-        if (
-          !held &&
-          z.object({ rows: z.array(z.unknown()).length(0) }).safeParse(response)
-            .success
-        ) {
-          held = true;
-          await args.whileResponseHeld();
-        }
-        return response;
-      })();
-    },
-  });
-  const run = async () => {
-    await args.work();
-    if (!held) {
-      throw new Error("Expected the empty snapshot response barrier");
-    }
-  };
-  const [result] = await Promise.allSettled([run()]);
-  // Pool instrumentation captures bound query methods on each client.
-  const [closed] = await Promise.allSettled([closeDbPool()]);
-  Client.prototype.query = original;
-  if (result.status === "rejected") {
-    throw result.reason;
-  }
-  if (closed.status === "rejected") {
-    throw closed.reason;
-  }
 }

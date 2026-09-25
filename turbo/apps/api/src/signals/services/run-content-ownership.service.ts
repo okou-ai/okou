@@ -132,42 +132,21 @@ export class RunContentOwnershipChangedError extends Error {
   }
 }
 
-async function readOwnership(db: Pick<Db, "select">, runId: string) {
-  const [run] = await db
-    .select({
-      userId: agentRuns.userId,
-      orgId: agentRuns.orgId,
-      chatThreadId: agentRuns.chatThreadId,
-      triggerSource: agentRuns.triggerSource,
-    })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, runId));
-  if (!run) {
-    throw new AgentEventRunNotFoundError(runId);
-  }
-  const [thread] = run.chatThreadId
-    ? await db
-        .select({ chatThreadId: chatThreads.id, userId: chatThreads.userId })
-        .from(chatThreads)
-        .where(eq(chatThreads.id, run.chatThreadId))
-    : [];
-  if (run.chatThreadId && !thread) {
-    throw new RunContentOwnershipChangedError();
-  }
-  return Object.freeze({
-    runId,
-    userId: run.userId,
-    orgId: run.orgId,
-    triggerSource: run.triggerSource,
-    thread: thread ? Object.freeze(thread) : null,
-  });
+export interface RunContentOwnership {
+  readonly runId: string;
+  readonly userId: string;
+  readonly orgId: string;
+  readonly triggerSource: string | null;
+  readonly thread: {
+    readonly chatThreadId: string;
+    readonly userId: string;
+  } | null;
 }
 
-export type RunContentOwnership = Awaited<ReturnType<typeof readOwnership>>;
-
 /** Preserve timeout disposition before potentially remote history preparation.
- * Bounded primary-key reads outside any transaction; the append holds no run
- * lock, so a timeout committed after this read may still admit one batch.
+ * One primary-key run read, then the thread owner, outside any transaction.
+ * The append holds no run lock, so a timeout committed after this read may
+ * still admit one batch.
  */
 export async function prepareRunOutputOwnership(
   db: Db,
@@ -186,6 +165,10 @@ export async function prepareRunOutputOwnership(
         .select({
           status: agentRuns.status,
           modelProvider: agentRuns.modelProvider,
+          userId: agentRuns.userId,
+          orgId: agentRuns.orgId,
+          chatThreadId: agentRuns.chatThreadId,
+          triggerSource: agentRuns.triggerSource,
         })
         .from(agentRuns)
         .where(eq(agentRuns.id, runId));
@@ -195,8 +178,26 @@ export async function prepareRunOutputOwnership(
       if (run.status === "timeout") {
         return undefined;
       }
+      const [thread] = run.chatThreadId
+        ? await db
+            .select({
+              chatThreadId: chatThreads.id,
+              userId: chatThreads.userId,
+            })
+            .from(chatThreads)
+            .where(eq(chatThreads.id, run.chatThreadId))
+        : [];
+      if (run.chatThreadId && !thread) {
+        throw new RunContentOwnershipChangedError();
+      }
       return {
-        ownership: await readOwnership(db, runId),
+        ownership: Object.freeze({
+          runId,
+          userId: run.userId,
+          orgId: run.orgId,
+          triggerSource: run.triggerSource,
+          thread: thread ? Object.freeze(thread) : null,
+        }),
         modelProvider: run.modelProvider,
       };
     })(),

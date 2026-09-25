@@ -23,7 +23,6 @@ import {
 } from "./chat-event-shared.service";
 import { recordFirstAssistantEventAcknowledgementMetric } from "./chat-first-assistant-event-metric.service";
 import { writeRunMetadataInTransaction } from "./agent-run-metadata-write.service";
-import { historicalRunGroupId } from "./run-event-provenance.service";
 import {
   assertPreparedRunContentIdentity,
   prepareRunOutputOwnership,
@@ -471,12 +470,11 @@ async function materializePreparedRunOutputEvents(
     readonly preparedOwnership: NonNullable<
       Awaited<ReturnType<typeof prepareRunOutputOwnership>>
     >;
-    readonly runGroupId: string | undefined;
     readonly diagnostics: RunOutputDiagnostics;
   },
   signal: AbortSignal,
 ): Promise<RunOutputMaterializationResult> {
-  const { prepared, preparedOwnership, runGroupId, diagnostics } = args;
+  const { prepared, preparedOwnership, diagnostics } = args;
   const { ownership } = preparedOwnership;
   const { payload } = prepared;
   const items = assistantEventItems({
@@ -504,7 +502,6 @@ async function materializePreparedRunOutputEvents(
           userId: thread.userId,
           orgId: thread.orgId,
           items,
-          runGroupId,
         },
         signal,
       )
@@ -555,21 +552,10 @@ export async function materializeRunOutputEvents(
   if (!preparedOwnership) {
     return { outcome: "ignored-timeout" };
   }
-  const { ownership } = preparedOwnership;
   diagnostics.enter("preparation");
-  const runGroupId =
-    ownership.thread &&
-    prepared.payload.events.some((event) => {
-      return (
-        assistantMessageText(event) !== null ||
-        codexReasoningText(event) !== null
-      );
-    })
-      ? await historicalRunGroupId(writeDb, payload.runId, undefined, signal)
-      : undefined;
   return await materializePreparedRunOutputEvents(
     writeDb,
-    { prepared, preparedOwnership, runGroupId, diagnostics },
+    { prepared, preparedOwnership, diagnostics },
     signal,
   );
 }

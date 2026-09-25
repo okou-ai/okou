@@ -1,4 +1,3 @@
-import { historicalRunGroupId } from "./run-event-provenance.service";
 import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { randomBytes } from "node:crypto";
@@ -1458,7 +1457,6 @@ async function insertAssistantErrorEventTransaction(
   tx: ChatCallbackTransaction,
   input: AssistantErrorEventArgs,
   displayErrorMessage: string,
-  goalId: string | undefined,
 ): Promise<
   (RunLifecycleDeliveryCallbacks & { readonly markerInserted: boolean }) | null
 > {
@@ -1470,7 +1468,6 @@ async function insertAssistantErrorEventTransaction(
         input.lifecycleEvent === "failed" ? "run.failed" : "run.cancelled",
       content: displayErrorMessage,
       runId: input.runId,
-      runGroupId: goalId,
       error: displayErrorMessage,
       ...(input.lifecycleEvent === "failed" && input.failureReason !== null
         ? { failureReason: input.failureReason }
@@ -1568,17 +1565,11 @@ async function insertAssistantErrorEvent(
   signal: AbortSignal,
 ): Promise<FailedChatCallbackResult> {
   const displayErrorMessage = await args.getFormattedError();
-  const goalId = await historicalRunGroupId(
-    args.db,
-    args.runId,
-    undefined,
-    signal,
-  );
+  signal.throwIfAborted();
   const inserted = await insertAssistantErrorEventTransaction(
     args.db,
     args,
     displayErrorMessage,
-    goalId,
   );
   if (!inserted) {
     return { outcome: "duplicate" };
@@ -1670,7 +1661,6 @@ async function insertIntegrationCompletionFallback(args: {
   readonly db: ChatCallbackTransaction;
   readonly runId: string;
   readonly threadId: string;
-  readonly goalId: string | null | undefined;
   readonly createdAt: Date;
 }): Promise<CanonicalDeliveryEvent> {
   const eventId = integrationCompletionFallbackEventIdForRun(args.runId);
@@ -1682,7 +1672,6 @@ async function insertIntegrationCompletionFallback(args: {
       eventType: "output.message",
       content: "Task completed successfully.",
       runId: args.runId,
-      runGroupId: args.goalId,
       createdAt: args.createdAt,
     },
     "id",
@@ -1847,7 +1836,6 @@ export async function insertRunLifecycleMarkerProjection(args: {
   readonly tx: ChatCallbackTransaction;
   readonly input: RunLifecycleMarkerArgs;
   readonly markerCreatedAt: Date;
-  readonly goalId: string | undefined;
 }): Promise<
   (RunLifecycleDeliveryCallbacks & { readonly markerInserted: boolean }) | null
 > {
@@ -1862,7 +1850,6 @@ export async function insertRunLifecycleMarkerProjection(args: {
       db: args.tx,
       runId: input.runId,
       threadId: input.threadId,
-      goalId: args.goalId,
       createdAt: args.markerCreatedAt,
     });
   }
@@ -1874,7 +1861,6 @@ export async function insertRunLifecycleMarkerProjection(args: {
         input.event === "completed" ? "run.completed" : "run.cancelled",
       content: null,
       runId: input.runId,
-      runGroupId: args.goalId,
       createdAt: args.markerCreatedAt,
     },
     "run-lifecycle",
@@ -1909,18 +1895,12 @@ async function insertRunLifecycleMarker(
       readonly outcome: "written" | "replayed";
     } & RunLifecycleDeliveryCallbacks)
 > {
+  signal.throwIfAborted();
   const markerCreatedAt = nowDate();
-  const goalId = await historicalRunGroupId(
-    args.db,
-    args.runId,
-    undefined,
-    signal,
-  );
   const inserted = await insertRunLifecycleMarkerProjection({
     tx: args.db,
     input: args,
     markerCreatedAt,
-    goalId,
   });
   if (!inserted) {
     return { outcome: "duplicate" };
@@ -1963,7 +1943,6 @@ async function insertRecommendedFollowupsEvent(args: {
   readonly orgId: string;
   readonly followups: readonly ChatRecommendedFollowup[];
 }): Promise<boolean> {
-  const goalId = await historicalRunGroupId(args.db, args.runId);
   const inserted = await insertChatEvent(
     args.db,
     {
@@ -1972,7 +1951,6 @@ async function insertRecommendedFollowupsEvent(args: {
       eventType: "output.followups",
       content: serializeChatFollowupsContent(args.followups),
       runId: args.runId,
-      runGroupId: goalId,
     },
     "id",
   );
