@@ -176,29 +176,26 @@ const hostStopInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const hostsListInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const result = await set(
+  const boundHostId =
+    auth.tokenType === "agent" ? (auth.computerUseHostId ?? null) : undefined;
+  if (boundHostId === null) {
+    return computerUseHostNotAuthorized;
+  }
+  const listed = await set(
     listComputerUseHosts$,
     { orgId: auth.orgId, userId: auth.userId },
     signal,
   );
   signal.throwIfAborted();
-
-  if (auth.tokenType === "agent") {
-    const hostId = auth.computerUseHostId;
-    if (!hostId) {
-      return computerUseHostNotAuthorized;
-    }
-    return {
-      status: 200 as const,
-      body: {
-        hosts: result.hosts.filter((host) => {
-          return host.id === hostId;
-        }),
-      },
-    };
-  }
-
-  return { status: 200 as const, body: result };
+  const body =
+    boundHostId === undefined
+      ? listed
+      : {
+          hosts: listed.hosts.filter((host) => {
+            return host.id === boundHostId;
+          }),
+        };
+  return { status: 200 as const, body };
 });
 
 const commandCreateBody$ = bodyResultOf(computerUseCommandContract.create);
@@ -593,7 +590,7 @@ const auditEventsListInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const query = get(auditEventsQuery$);
-    const result = await set(
+    const body = await set(
       listComputerUseAuditEvents$,
       {
         orgId: auth.orgId,
@@ -606,8 +603,7 @@ const auditEventsListInner$ = command(
       signal,
     );
     signal.throwIfAborted();
-
-    return { status: 200 as const, body: result };
+    return { status: 200 as const, body };
   },
 );
 

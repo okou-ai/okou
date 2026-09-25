@@ -2,7 +2,6 @@ import { aroundEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockNow, withMockNowForTest } from "../../../lib/time";
-import { withComputerUseHostSessionBarrierFixture } from "../../../test-fixtures/computer-use-host-session-barrier";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 
@@ -12,7 +11,6 @@ const computerUse = createComputerUseBddApi(context);
 
 const STARTED_AT_MS = Date.parse("2026-09-23T08:00:00.000Z");
 const CASE_TIMEOUT_MS = 30_000;
-const BLOCKED = { interval: 10, timeout: 10_000 } as const;
 
 aroundEach(async (runTest) => {
   await withMockNowForTest(STARTED_AT_MS, runTest);
@@ -42,49 +40,11 @@ async function commandStatus(
 }
 
 /**
- * Real PostgreSQL interleavings for the host row lock each host session route
- * holds. The barrier pauses the first route's transaction right after its
- * locked host read, so its lock is held while a second session runs; nothing
- * is mocked and no statement is changed.
+ * Host session routes hold no transaction or row lock; each write is a
+ * single-row compare-and-set. These run concurrent requests against real
+ * PostgreSQL and assert that every interleaving has exactly one winner.
  */
-describe("Computer Use host session row locks", () => {
-  it(
-    "still makes a new command reference wait for a stop that holds the host",
-    { timeout: CASE_TIMEOUT_MS },
-    async () => {
-      const actor = orgScoped(bdd.user());
-      const host = await startHost(actor);
-
-      const created = await withComputerUseHostSessionBarrierFixture(
-        async (barrier) => {
-          const stopping = computerUse.stopComputerUseHost(host.hostToken);
-          await barrier.entered;
-
-          // Stop keeps FOR UPDATE, which conflicts with the foreign-key
-          // KEY SHARE, so this is the contrast the non-stop routes avoid.
-          const creating = computerUse.createComputerUseReadCommand(actor, {
-            kind: "apps.list",
-          });
-          await expect
-            .poll(barrier.blockedWaiterCount, BLOCKED)
-            .toBeGreaterThanOrEqual(1);
-
-          barrier.release();
-          await expect(stopping).resolves.toMatchObject({
-            ok: true,
-            hostId: host.hostId,
-          });
-          return await creating;
-        },
-        context.signal,
-      );
-
-      await expect(commandStatus(actor, created.commandId)).resolves.toBe(
-        "queued",
-      );
-    },
-  );
-
+describe("Computer Use host session concurrency", () => {
   it(
     "lets only one of several concurrent claims start a command on a host",
     { timeout: CASE_TIMEOUT_MS },
@@ -122,46 +82,6 @@ describe("Computer Use host session row locks", () => {
   );
 
   it(
-    "makes a completion wait for a concurrent stop and then refuse the rotated token",
-    { timeout: CASE_TIMEOUT_MS },
-    async () => {
-      const actor = orgScoped(bdd.user());
-      const host = await startHost(actor);
-      const created = await computerUse.createComputerUseReadCommand(actor, {
-        kind: "apps.list",
-      });
-      await computerUse.claimNextComputerUseCommand(host.hostToken);
-
-      const refused = await withComputerUseHostSessionBarrierFixture(
-        async (barrier) => {
-          const stopping = computerUse.stopComputerUseHost(host.hostToken);
-          await barrier.entered;
-
-          const completing = computerUse.requestCompleteComputerUseCommand(
-            host.hostToken,
-            created.commandId,
-            { status: "succeeded", result: { apps: [] } },
-            [401],
-          );
-          await expect
-            .poll(barrier.blockedWaiterCount, BLOCKED)
-            .toBeGreaterThanOrEqual(1);
-
-          barrier.release();
-          await expect(stopping).resolves.toMatchObject({ ok: true });
-          return await completing;
-        },
-        context.signal,
-      );
-
-      expect(refused.status).toBe(401);
-      await expect(commandStatus(actor, created.commandId)).resolves.toBe(
-        "running",
-      );
-    },
-  );
-
-  it(
     "broadcasts one online transition when concurrent heartbeats revive a host",
     { timeout: CASE_TIMEOUT_MS },
     async () => {
@@ -192,6 +112,79 @@ describe("Computer Use host session row locks", () => {
       const listed = await computerUse.listComputerUseHosts(actor);
       expect(listed.hosts).toMatchObject([
         { id: host.hostId, status: "online" },
+      ]);
+    },
+  );
+
+  it(
+    "records exactly one completion when a host reports the same command concurrently",
+    { timeout: CASE_TIMEOUT_MS },
+    async () => {
+      const actor = orgScoped(bdd.user());
+      const host = await startHost(actor);
+      // Write commands are the ones that record a completion audit event.
+      const created = await computerUse.createComputerUseWriteCommand(actor, {
+        kind: "app.open",
+        app: "Finder",
+        timeoutMs: 15_000,
+      });
+      await computerUse.claimNextComputerUseCommand(host.hostToken);
+
+      const responses = await Promise.all([
+        computerUse.requestCompleteComputerUseCommand(
+          host.hostToken,
+          created.commandId,
+          { status: "succeeded", result: {} },
+          [200],
+        ),
+        computerUse.requestCompleteComputerUseCommand(
+          host.hostToken,
+          created.commandId,
+          { status: "succeeded", result: {} },
+          [200],
+        ),
+      ]);
+      expect(
+        responses.map((response) => {
+          return response.status;
+        }),
+      ).toStrictEqual([200, 200]);
+      await expect(commandStatus(actor, created.commandId)).resolves.toBe(
+        "succeeded",
+      );
+      const audit = await computerUse.listComputerUseAuditEvents(actor, {
+        commandId: created.commandId,
+      });
+      expect(audit.auditEvents).toHaveLength(1);
+    },
+  );
+
+  it(
+    "lets only one of two concurrent stops end the host session",
+    { timeout: CASE_TIMEOUT_MS },
+    async () => {
+      const actor = orgScoped(bdd.user());
+      const host = await startHost(actor);
+
+      const responses = await Promise.all([
+        computerUse.requestStopComputerUseHost(host.hostToken, [200, 401]),
+        computerUse.requestStopComputerUseHost(host.hostToken, [200, 401]),
+      ]);
+      expect(
+        responses
+          .map((response) => {
+            return response.status;
+          })
+          .sort(),
+      ).toStrictEqual([200, 401]);
+      const afterStop = await computerUse.requestComputerUseHeartbeat(
+        host.hostToken,
+        [401],
+      );
+      expect(afterStop.status).toBe(401);
+      const listed = await computerUse.listComputerUseHosts(actor);
+      expect(listed.hosts).toMatchObject([
+        { id: host.hostId, status: "offline" },
       ]);
     },
   );

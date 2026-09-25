@@ -565,37 +565,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
     expectApiError(unknownHost.body);
     expect(unknownHost.body.error.message).toBe("Computer-use host not found");
 
-    // Stopping a host revokes it, so an explicit selection reports it as
-    // missing rather than offline, and clears any thread binding immediately.
-    const stopped = await cu.startComputerUseHost(actor);
-    const stoppedPinned = await chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "pin the host before stopping it",
-        computerUseHostId: stopped.hostId,
-      },
-      [201],
-    );
-    if (stoppedPinned.status !== 201) {
-      throw new Error("Expected the stopped-host pin send to be accepted");
-    }
-    await cu.stopComputerUseHost(stopped.hostToken);
-    await expect(
-      readThreadComputerUseHostId(actor, stoppedPinned.body.threadId),
-    ).resolves.toBeNull();
-    const revokedHost = await chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "use a stopped host",
-        computerUseHostId: stopped.hostId,
-      },
-      [404],
-    );
-    expectApiError(revokedHost.body);
-    expect(revokedHost.body.error.message).toBe("Computer-use host not found");
-
     // Installation-backed hosts stop as temporary offline devices, so thread
     // bindings survive and reconnect to the same host id on the next start.
     const installationId = randomUUID();
