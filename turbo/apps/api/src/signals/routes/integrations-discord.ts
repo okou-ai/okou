@@ -8,7 +8,6 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, queryOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { discordIntegrationEnabledForOwner } from "../services/discord-config";
 import {
   discordOrgStatus,
   discordUserBinding,
@@ -84,13 +83,7 @@ const deleteDiscordIntegration$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const query = get(queryOf(integrationsDiscordContract.disconnect));
-    const enabled = await get(
-      discordIntegrationEnabledForOwner(auth.orgId, auth.userId),
-    );
-    signal.throwIfAborted();
-    if (!enabled) {
-      return unavailable();
-    }
+    // Data removal stays available while the feature is rolled back.
     const role = await get(discordMemberRole(auth));
     signal.throwIfAborted();
     if (!role) {

@@ -3,6 +3,11 @@ import { nowDate } from "../../lib/time";
 import { randomUUID } from "node:crypto";
 import { artifactFilenameExtension } from "@okouai/api-contracts/contracts/artifact-delivery";
 import { artifactShareReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
+import {
+  linkLayoutFromSegment,
+  linkLayoutSegment,
+  type LinkLayout,
+} from "@okouai/api-contracts/contracts/link-layout";
 import type { ArtifactDownloadResponse } from "@okouai/api-contracts/contracts/artifact-downloads";
 import { command, computed } from "ccstate";
 import { and, eq, isNull, or } from "drizzle-orm";
@@ -20,6 +25,7 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import { settle } from "../utils";
 import { env } from "../../lib/env";
+import { hostedLinkOrigin } from "../../lib/link-layout";
 import { artifactHash } from "../../lib/file-url";
 import { legacyPrivateHostedDeploymentVersion } from "../../lib/hosted-publication";
 import { badRequestMessage } from "../../lib/error";
@@ -46,7 +52,7 @@ import { resolveSharedThreadHostedDownload$ } from "./shared-thread-artifacts.se
 
 interface ShareCandidate {
   readonly targetId: string;
-  readonly publicBrand: "vm0" | "okou";
+  readonly layout: LinkLayout;
   readonly candidateVersion: number | null;
   readonly target:
     | Exclude<ArtifactSharePolicy["target"], { kind: "html" }>
@@ -130,7 +136,7 @@ function ownedShareTarget(
           privateArtifactUrl(file.id, file.filename, file.metadata),
           env("APP_URL"),
         ).href,
-        publicBrand: file.publicBrand,
+        layout: file.layout,
         candidateVersion: null,
         target: {
           kind: "file" as const,
@@ -168,7 +174,7 @@ function ownedShareTarget(
     return {
       targetId: deployment.siteId,
       ownerUrl: new URL(deployment.artifactUrl, env("APP_URL")).href,
-      publicBrand: deployment.publicBrand,
+      layout: linkLayoutFromSegment(deployment.publicBrand),
       candidateVersion: deploymentVersion,
       target: {
         kind: "html" as const,
@@ -206,19 +212,9 @@ function publicShareUrl(policy: ArtifactSharePolicy): string {
   }
   // Persisted pre-registry grants keep their working URL without a read-time
   // write. Retain until #32492 accounts for every durable old share link.
+  const layout = linkLayoutFromSegment(policy.publicBrand);
   if (!policy.delivery) {
-    const domain =
-      policy.publicBrand === "okou"
-        ? env("OKOU_PUBLIC_HOST_DOMAIN")
-        : env("ZERO_HOST_DOMAIN");
-    const scheme =
-      policy.publicBrand === "okou"
-        ? env("OKOU_HOST_SCHEME")
-        : env("ZERO_HOST_SCHEME");
-    if (!domain || !scheme) {
-      throw new Error("Legacy public artifact delivery is not configured");
-    }
-    return `${scheme}://sh-${policy.shareId.replaceAll("-", "")}-${policy.publicToken}.${domain}/`;
+    return `${hostedLinkOrigin(layout, `sh-${policy.shareId.replaceAll("-", "")}-${policy.publicToken}`)}/`;
   }
   if (policy.target.kind === "file") {
     const origin = env("PUBLIC_ARTIFACT_SHARES_BASE_URL");
@@ -232,20 +228,9 @@ function publicShareUrl(policy: ArtifactSharePolicy): string {
       origin,
     ).href;
   }
-  const domain =
-    policy.publicBrand === "okou"
-      ? env("OKOU_PUBLIC_HOST_DOMAIN")
-      : env("ZERO_HOST_DOMAIN");
-  const scheme =
-    policy.publicBrand === "okou"
-      ? env("OKOU_HOST_SCHEME")
-      : env("ZERO_HOST_SCHEME");
-  if (!domain || !scheme) {
-    throw new Error("Public HTML delivery is not configured");
-  }
   // Preserve requested durable token links without publishing during reads.
   // Retire only after #32492 accounts for the remaining old share policies.
-  return `${scheme}://${policy.publicSlug ?? policy.publicToken}.${domain}/`;
+  return `${hostedLinkOrigin(layout, policy.publicSlug ?? policy.publicToken)}/`;
 }
 
 function publicSharePreview(policy: ArtifactSharePolicy) {
@@ -450,7 +435,7 @@ export const updateArtifactShare$ = command(
       .values({
         userId: args.userId,
         orgId: args.orgId,
-        publicBrand: candidate.publicBrand,
+        publicBrand: linkLayoutSegment(candidate.layout),
         targetKind: args.target.kind,
         targetId: candidate.targetId,
       })
@@ -552,7 +537,7 @@ const authorizedArtifactSharePolicy$ = command(
       readonly allowPrivateOwner?: boolean;
       readonly allowPublic?: boolean;
       readonly publicToken?: string;
-      readonly publicBrand?: "vm0" | "okou";
+      readonly layout?: LinkLayout;
     },
     signal: AbortSignal,
   ) => {
@@ -578,8 +563,8 @@ const authorizedArtifactSharePolicy$ = command(
       (args.publicToken !== undefined &&
         (policy.audience !== "public" ||
           policy.publicToken !== args.publicToken)) ||
-      (args.publicBrand !== undefined &&
-        policy.publicBrand !== args.publicBrand)
+      (args.layout !== undefined &&
+        policy.publicBrand !== linkLayoutSegment(args.layout))
     ) {
       return null;
     }
@@ -663,7 +648,7 @@ export const resolveArtifactShareDownload$ = command(
         | { readonly kind: "site"; readonly id: string };
       readonly allowPrivateOwner?: boolean;
       readonly publicToken?: string;
-      readonly publicBrand?: "vm0" | "okou";
+      readonly layout?: LinkLayout;
       readonly expectedKind?: "html";
     },
     signal: AbortSignal,
@@ -692,7 +677,7 @@ export const resolveArtifactShareDownload$ = command(
         allowPublic: true,
         allowPrivateOwner: args.allowPrivateOwner,
         publicToken: args.publicToken,
-        publicBrand: args.publicBrand,
+        layout: args.layout,
         expectedTarget:
           selector.kind === "target" ? selector.target : undefined,
       },
@@ -768,7 +753,7 @@ export const resolveHostedSitePublicationDownload$ = command(
     { get, set },
     args: {
       readonly publicSlug: string;
-      readonly publicBrand: "vm0" | "okou";
+      readonly layout: LinkLayout;
       readonly userId: string;
     },
     signal: AbortSignal,
@@ -786,7 +771,7 @@ export const resolveHostedSitePublicationDownload$ = command(
           }
         : await get(
             artifactDeliveryRecord(
-              args.publicBrand,
+              args.layout,
               "html",
               args.publicSlug,
               signal,
@@ -817,7 +802,7 @@ export const resolveHostedSitePublicationDownload$ = command(
       {
         selector: { kind: "share", id: record.shareId },
         userId: args.userId,
-        publicBrand: args.publicBrand,
+        layout: args.layout,
         publicToken: record.publicToken,
         expectedKind: "html",
       },

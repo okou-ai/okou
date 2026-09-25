@@ -6,7 +6,7 @@ import {
   type DiscordMessage,
 } from "../external/discord-client";
 import { discordMessageUrl } from "../../lib/discord-message";
-import { requireDiscordConversationAccess$ } from "./discord-access.service";
+import { requireDiscordRunReadAccess$ } from "./discord-access.service";
 import { discordApiFailure } from "./discord-api-response";
 
 /**
@@ -55,11 +55,7 @@ export const readDiscordHistoryPage$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const access = await set(
-      requireDiscordConversationAccess$,
-      { ...args, mode: "read" },
-      signal,
-    );
+    const access = await set(requireDiscordRunReadAccess$, args, signal);
     if (access.kind === "denied") {
       return access;
     }
@@ -93,10 +89,9 @@ export const readDiscordHistoryPage$ = command(
     });
     return {
       kind: "ok" as const,
-      contextMode:
-        access.channel.type === 1 || access.messageContentEnabled
-          ? ("full" as const)
-          : ("mentions_only" as const),
+      contextMode: access.messageContentEnabled
+        ? ("full" as const)
+        : ("mentions_only" as const),
       channel: access.channel,
       binding: access.binding,
       messages,

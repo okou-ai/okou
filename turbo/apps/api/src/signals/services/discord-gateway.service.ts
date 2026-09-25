@@ -33,6 +33,7 @@ import {
 import { getDiscordAppConfig } from "./discord-config";
 import {
   discordDmBinding,
+  discordGuildBotUserId,
   discordGuildUserBinding,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
@@ -109,6 +110,18 @@ const handleDiscordMessage$ = command(
     if (previousResponse) {
       return previousResponse;
     }
+    if (message.guild_id) {
+      // Ordinary guild chatter must not reach the identity provider: a
+      // failure there would stall the relay's ordered delivery for everyone.
+      const botUserId = await get(discordGuildBotUserId(message.guild_id));
+      signal.throwIfAborted();
+      if (!botUserId) {
+        return ignored("unbound-disabled-or-dm-selection-required");
+      }
+      if (!hasDiscordBotMention(message, botUserId)) {
+        return ignored("no-explicit-mention");
+      }
+    }
     let selection: DiscordVerifiedBinding | null;
     if (message.guild_id) {
       selection = await get(
@@ -128,12 +141,6 @@ const handleDiscordMessage$ = command(
     }
     if (message.author.id === selection.botUserId) {
       return ignored("self-message");
-    }
-    if (
-      message.guild_id &&
-      !hasDiscordBotMention(message, selection.botUserId)
-    ) {
-      return ignored("no-explicit-mention");
     }
     const ingress = await admitCanonicalDiscordChatEvent(set(writeDb$), {
       applicationId: envelope.applicationId,

@@ -1,5 +1,5 @@
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import type { LinkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
 
 export type ChatEventUserMessage = UserMessageDocument;
 
@@ -36,7 +36,8 @@ export interface ChatEventAttachFileMetadata {
   readonly contentType: string;
   readonly size: number;
   readonly objectKey: string;
-  readonly publicBrand: PublicBrand;
+  /** Persisted link-layout marker of the uploaded object. */
+  readonly publicBrand: LinkLayoutSegment;
 }
 
 export type ChatEventAttachFileMetadataList = ChatEventAttachFileMetadata[];

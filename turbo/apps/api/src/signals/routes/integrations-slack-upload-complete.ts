@@ -3,6 +3,7 @@ import {
   integrationsSlackUploadCompleteContract,
   type SlackUploadCompleteBody,
 } from "@okouai/api-contracts/contracts/integrations";
+import { CURRENT_LINK_LAYOUT } from "@okouai/api-contracts/contracts/link-layout";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -16,7 +17,6 @@ import { completeCanonicalSlackDelivery$ } from "../services/canonical-slack-ass
 import { recordSlackUploadedFile$ } from "../services/run-uploaded-files.service";
 import { slackOrgInstallation } from "../services/slack-data.service";
 import type { RouteEntry } from "../route-entry";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const noInstallation = Object.freeze({
   status: 404 as const,
@@ -177,7 +177,7 @@ const completeDirectUpload$ = command(
         contentType: file?.mimetype ?? null,
         sizeBytes: file?.size ?? null,
         url: permalink || null,
-        publicBrand: PUBLIC_BRAND,
+        layout: CURRENT_LINK_LAYOUT,
         metadata: buildSlackUploadMetadata(body, file),
       },
       signal,

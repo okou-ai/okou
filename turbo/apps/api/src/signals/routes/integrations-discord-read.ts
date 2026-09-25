@@ -9,7 +9,7 @@ import { queryOf } from "../context/request";
 import { discordClient } from "../external/discord-client";
 import {
   requireDiscordBinding$,
-  requireDiscordConversationAccess$,
+  requireDiscordRunReadAccess$,
 } from "../services/discord-access.service";
 import {
   discordApiFailure,
@@ -103,8 +103,8 @@ const replies$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const query = get(queryOf(integrationsDiscordReadContract.replies));
   const access = await set(
-    requireDiscordConversationAccess$,
-    { ...auth, ...query, mode: "read" },
+    requireDiscordRunReadAccess$,
+    { ...auth, ...query },
     signal,
   );
   if (access.kind === "denied") {

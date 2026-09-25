@@ -11,6 +11,7 @@ import {
 } from "./chat-reasoning-effort.service";
 /** Canonical ChatEvent write commands. */
 import { randomBytes } from "node:crypto";
+import { linkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
 import { command } from "ccstate";
 import type { ChatEventType } from "@okouai/api-contracts/contracts/chat-events";
 import {
@@ -925,7 +926,7 @@ const resolveIncomingAttachFileMetadata$ = command(
               contentType: file.contentType,
               size: object.size,
               objectKey: object.key,
-              publicBrand: object.publicBrand,
+              publicBrand: linkLayoutSegment(object.layout),
             });
           }
         }

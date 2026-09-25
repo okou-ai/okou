@@ -67,7 +67,7 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         key: s3Object.key,
         filename,
         contentType,
-        publicBrand: s3Object.publicBrand,
+        layout: s3Object.layout,
       },
       signal,
     );
@@ -86,7 +86,7 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       sizeBytes: size,
       url,
       s3Key: s3Object.key,
-      publicBrand: s3Object.publicBrand,
+      layout: s3Object.layout,
       metadata: lastModified ? { lastModified } : {},
     },
     signal,

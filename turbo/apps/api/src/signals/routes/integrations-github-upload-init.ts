@@ -8,7 +8,6 @@ import { bodyResultOf } from "../context/request";
 import { generatePresignedPutUrl, s3MetadataHeaders } from "../external/s3";
 import { allocateUploadedArtifact$ } from "../services/uploaded-artifact.service";
 import type { RouteEntry } from "../route-entry";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const init$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -30,7 +29,6 @@ const init$ = command(async ({ get, set }, signal: AbortSignal) => {
       contentType: body.contentType,
       size: body.length,
       filename: body.filename,
-      publicBrand: PUBLIC_BRAND,
     },
     signal,
   );

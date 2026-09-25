@@ -33,6 +33,7 @@ const VIEW = 1n << 10n;
 const SEND = 1n << 11n;
 const READ = 1n << 16n;
 const THREAD_SEND = 1n << 38n;
+const MANAGE_THREADS = 1n << 34n;
 const BASE_PERMISSIONS = String(VIEW | SEND | READ | THREAD_SEND | (1n << 15n));
 
 function snowflake() {
@@ -267,6 +268,68 @@ async function fixture(
 }
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
+
+/** Binds the same Okou user and Discord account through a second org's guild. */
+async function bindAnotherOrganization(f: Fixture) {
+  const orgId = `org_${randomUUID()}`;
+  const guildId = snowflake();
+  // One store holds both memberships so the user remains in each org.
+  const store = createStore();
+  for (const membershipOrgId of [f.orgId, orgId]) {
+    await store.set(
+      seedOrgMembership$,
+      { orgId: membershipOrgId, userId: f.userId, role: "admin" },
+      context.signal,
+    );
+  }
+  await updateFeatureSwitchesForUser(
+    context,
+    { orgId, userId: f.userId, orgRole: "org:admin" },
+    { [FeatureSwitchKey.DiscordIntegration]: true },
+  );
+  mockDiscordMemberships(context, [
+    { orgId: f.orgId, userId: f.userId },
+    { orgId, userId: f.userId },
+  ]);
+  await seedDiscordFixture(context, {
+    orgId,
+    userId: f.userId,
+    guildId,
+    guildName: "Other guild",
+    discordUserId: f.discordUserId,
+    botUserId: f.botUserId,
+  });
+  server.use(
+    http.get(`${API}/guilds/${guildId}`, () => {
+      return HttpResponse.json({
+        id: guildId,
+        name: "Other guild",
+        owner_id: snowflake(),
+      });
+    }),
+    http.get(`${API}/guilds/${guildId}/roles`, () => {
+      return HttpResponse.json([
+        { id: guildId, name: "@everyone", permissions: BASE_PERMISSIONS },
+      ]);
+    }),
+    http.get(`${API}/guilds/${guildId}/members/:id`, ({ params }) => {
+      const isUser = params.id === f.discordUserId;
+      return HttpResponse.json({
+        user: isUser
+          ? { id: f.discordUserId, username: "sender" }
+          : { id: f.botUserId, username: "Okou", bot: true },
+        roles: [],
+      });
+    }),
+  );
+  const seconds = Math.floor(now() / 1000);
+  return {
+    orgId,
+    headers: {
+      authorization: `Bearer ${signSandboxJwtForTests({ scope: "okou", orgId, userId: f.userId, runId: randomUUID(), capabilities: ["discord:read", "discord:write"], iat: seconds, exp: seconds + 3600 })}`,
+    },
+  };
+}
 function addThread(
   f: Fixture,
   options: { private?: boolean; archived?: boolean; locked?: boolean } = {},
@@ -392,19 +455,63 @@ describe("Discord native authorization and reads", () => {
     expect(second.body.nextBefore).toBeNull();
   });
 
-  it("marks ordinary guild content as limited without affecting bot DM identity", async () => {
+  it("marks ordinary guild content as limited", async () => {
     const f = await fixture({ messageContent: false });
     expect((await accept(history(f), [200])).body.contextMode).toBe(
       "mentions_only",
     );
-    f.channels.set(f.channelId, {
-      id: f.channelId,
+  });
+
+  it("denies bot DM content to every organization's run token while keeping DM sends", async () => {
+    const f = await fixture();
+    const other = await bindAnotherOrganization(f);
+    const dmId = snowflake();
+    f.channels.set(dmId, {
+      id: dmId,
       type: 1,
       recipients: [{ id: f.discordUserId, username: "sender" }],
     });
-    const dm = await accept(history(f), [200]);
-    expect(dm.body.contextMode).toBe("full");
-    expect(dm.body.messages[0]?.url).toContain("/channels/@me/");
+    // Discord keeps one bot DM per user, so the other organization's run
+    // replies into the same channel this organization's token can address.
+    const otherReply = await accept(
+      f.write.sendMessage({
+        headers: other.headers,
+        body: { channelId: dmId, text: "Other organization: 42 open deals" },
+      }),
+      [200],
+    );
+    const replyId = otherReply.body.messages[0]?.id;
+    if (!replyId) {
+      throw new Error("Expected the other organization's DM reply");
+    }
+    for (const headers of [f.headers, other.headers]) {
+      const reads = [
+        await accept(
+          f.read.history({ headers, query: { channelId: dmId, limit: 50 } }),
+          [403],
+        ),
+        await accept(
+          f.read.replies({
+            headers,
+            query: { channelId: dmId, messageId: replyId, limit: 50 },
+          }),
+          [403],
+        ),
+      ];
+      for (const denied of reads) {
+        expect(denied.body.error.code).toBe("DISCORD_DM_READ_DENIED");
+        expect(JSON.stringify(denied.body)).not.toContain("42 open deals");
+      }
+    }
+    await accept(send(f, dmId, "this organization can still reply"), [200]);
+    expect(
+      f.messages.get(dmId)?.map((entry) => {
+        return entry.content;
+      }),
+    ).toStrictEqual([
+      "Other organization: 42 open deals",
+      "this organization can still reply",
+    ]);
   });
 
   it.each([
@@ -738,15 +845,83 @@ describe("Discord native sends and transport failures", () => {
     ).toBeTruthy();
   });
 
-  it.each(["archived", "locked"] as const)(
-    "reads but refuses sending into %s threads",
-    async (state) => {
+  it.each([false, true])(
+    "sends into an archived unlocked thread, which Discord reopens (private: %s)",
+    async (isPrivate) => {
       const f = await fixture();
-      addThread(f, { [state]: true });
+      addThread(f, { private: isPrivate, archived: true });
       await accept(history(f, f.threadId), [200]);
-      expect((await accept(send(f, f.threadId), [403])).body.error.code).toBe(
+      await accept(send(f, f.threadId), [200]);
+      expect(f.sentBodies).toHaveLength(1);
+    },
+  );
+
+  it.each<{
+    readonly name: string;
+    readonly user: "role" | "none" | "role-denied";
+    readonly bot: "role" | "none";
+    readonly allowed: boolean;
+    readonly private?: boolean;
+  }>([
+    { name: "neither principal", user: "none", bot: "none", allowed: false },
+    { name: "only the bot", user: "none", bot: "role", allowed: false },
+    { name: "only the sender", user: "role", bot: "none", allowed: false },
+    {
+      name: "a sender whose member overwrite denies it",
+      user: "role-denied",
+      bot: "role",
+      allowed: false,
+    },
+    { name: "both principals", user: "role", bot: "role", allowed: true },
+    {
+      name: "only the bot in a private thread",
+      user: "none",
+      bot: "role",
+      allowed: false,
+      private: true,
+    },
+    {
+      name: "both principals in a private thread",
+      user: "role",
+      bot: "role",
+      allowed: true,
+      private: true,
+    },
+  ])(
+    "reads a locked thread and sends only when MANAGE_THREADS is held by $name",
+    async ({ user, bot, allowed, private: isPrivate }) => {
+      const f = await fixture();
+      const thread = addThread(f, {
+        private: isPrivate,
+        locked: true,
+        archived: true,
+      });
+      const grant = String(MANAGE_THREADS);
+      if (user !== "none") {
+        f.roles.find((role) => {
+          return role.id === f.userRoleId;
+        })!.permissions = grant;
+      }
+      if (user === "role-denied") {
+        f.channels.get(f.channelId)!.permission_overwrites = [
+          { id: f.discordUserId, type: 1, deny: grant, allow: "0" },
+        ];
+      }
+      if (bot === "role") {
+        f.roles.find((role) => {
+          return role.id === f.botRoleId;
+        })!.permissions = grant;
+      }
+      await accept(history(f, thread.id), [200]);
+      if (allowed) {
+        await accept(send(f, thread.id), [200]);
+        expect(f.sentBodies).toHaveLength(1);
+        return;
+      }
+      expect((await accept(send(f, thread.id), [403])).body.error.code).toBe(
         "DISCORD_THREAD_CLOSED",
       );
+      expect(f.sentBodies).toHaveLength(0);
     },
   );
 

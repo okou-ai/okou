@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { isArtifactPublicationFilePath } from "@okouai/api-contracts/contracts/artifact-delivery";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import type { LinkLayout } from "@okouai/api-contracts/contracts/link-layout";
 
 import { env } from "./env";
 
@@ -26,11 +26,14 @@ export function sanitizeArtifactFilename(filename: string): string {
   return filename.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-export function publicArtifactsBaseUrlForBrand(
-  publicBrand: PublicBrand,
-): string {
+/**
+ * The current layout publishes on `OKOU_PUBLIC_ARTIFACTS_BASE_URL`. The legacy
+ * layout origin (`PUBLIC_ARTIFACTS_BASE_URL`) only rebuilds links for objects
+ * stored before the layout change.
+ */
+export function publicArtifactsBaseUrl(layout: LinkLayout): string {
   const configuredUrl =
-    publicBrand === "okou"
+    layout === "current"
       ? env("OKOU_PUBLIC_ARTIFACTS_BASE_URL")
       : env("PUBLIC_ARTIFACTS_BASE_URL");
   return configuredUrl.replace(/\/+$/, "");
@@ -129,14 +132,11 @@ export function canonicalOkouArtifactCatalogUrl(url: URL): string | null {
     : `${OKOU_CDN_ARTIFACTS_ORIGIN}/${key}${url.search}${url.hash}`;
 }
 
-export function buildFileUrlFromKey(
-  key: string,
-  publicBrand: PublicBrand,
-): string {
-  const baseUrl = publicArtifactsBaseUrlForBrand(publicBrand);
+export function buildFileUrlFromKey(key: string, layout: LinkLayout): string {
+  const baseUrl = publicArtifactsBaseUrl(layout);
   const normalizedKey = key.replace(/^\/+/, "");
   const publicPath =
-    publicBrand === "okou" &&
+    layout === "current" &&
     baseUrl === OKOU_SHORT_ARTIFACTS_ORIGIN &&
     normalizedKey.startsWith(ARTIFACTS_PATH_PREFIX)
       ? normalizedKey.slice(ARTIFACTS_PATH_PREFIX.length)

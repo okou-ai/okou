@@ -40,7 +40,6 @@ import {
   startRunBuiltInAdmission$,
 } from "../services/run-built-in-admission.service";
 import { resolveProviderReferenceUrls$ } from "../services/provider-reference-url.service";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const generateBody$ = bodyResultOf(avatarVideoContract.generate);
 const avatarsQuery$ = queryOf(avatarVideoContract.avatars);
@@ -245,7 +244,6 @@ const postGenerateInner$ = command(
       generationId,
     );
     signal.throwIfAborted();
-    const publicBrand = PUBLIC_BRAND;
     const admission = await set(
       startRunBuiltInAdmission$,
       { runId, kind: "video" },
@@ -266,7 +264,7 @@ const postGenerateInner$ = command(
         runId,
         request: builtInGenerationRequestWithInternal(
           avatarVideoRequestRecord(options),
-          { admissionId: admission?.id, publicBrand },
+          { admissionId: admission?.id },
         ),
       },
       signal,

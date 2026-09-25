@@ -2,7 +2,8 @@
 //!
 //! The executable builds concrete factories and configuration; this crate owns
 //! idle, pre-claim admission, finalizing-successor admission, claimed activation ownership,
-//! post-executor sandbox finalization, heartbeat, claimed-run completion, and orphan policy
+//! post-executor finalizing/report/settlement coordination, sandbox finalization,
+//! heartbeat, claimed-run completion, and orphan policy
 //! above lifecycle, provider, and executor.
 
 use std::sync::Arc;
