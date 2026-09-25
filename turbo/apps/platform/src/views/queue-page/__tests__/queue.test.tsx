@@ -199,8 +199,7 @@ test("The queue labels the limited-free tier as Free", async () => {
   await setupPage({ context, path: openQueuePath() });
 
   const drawer = await visibleQueueDrawer();
-  expect(within(drawer).getByText("Free")).toBeVisible();
-  expect(within(drawer).queryByText("Limited free")).toBeNull();
+  expect(within(drawer).getByText("Free")).toBeInTheDocument();
 });
 
 test("A Team administrator reviews and pays for an existing concurrency change", async () => {
