@@ -11,7 +11,6 @@ import {
   holdThreadSessionBindingClearFixture,
   holdThreadSessionConversationChangesFixture,
   holdThreadSessionConversationClearFixture,
-  holdThreadSessionOwnerChangeFixture,
   replaceThreadSessionBindingFixture,
 } from "../../../test-fixtures/chat-events";
 import type { UsagePricingFixture } from "../../../test-fixtures/usage-pricing";
@@ -565,78 +564,6 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(primarySecondClaim.claim.resumeSession).toBeNull();
     await cancelChatRun(primary.actor, primarySecond.runId);
   }, 90_000);
-
-  it.each([
-    { owner: "user", clearConversation: false },
-    { owner: "org", clearConversation: false },
-    { owner: "agent", clearConversation: false },
-    { owner: "user", clearConversation: true },
-    { owner: "org", clearConversation: true },
-    { owner: "agent", clearConversation: true },
-  ] as const)(
-    "rejects a $owner ownership change at the session lock (conversation changed: $clearConversation)",
-    async ({ owner, clearConversation }) => {
-      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-      chatCallbacks.failIfChatCallbackRouteIsFetched();
-      const first = await sendChatRun(actor, {
-        agentId,
-        prompt: "establish a session before its ownership changes",
-      });
-      const firstClaim = await claimChatRun(runnerGroup, first.runId);
-      chatCallbacks.mockChatOutputEvents([]);
-      await completeChatRunOk(first.runId, firstClaim.sandboxHeaders);
-      await flushWaitUntilForTest();
-
-      // Session ownership is not mutable through a product API. Only the race
-      // setup crosses that boundary; admission and denial use the Chat API.
-      const ownerChange =
-        owner === "user"
-          ? { userId: `user_${randomUUID()}` }
-          : owner === "org"
-            ? { orgId: `org_${randomUUID()}` }
-            : { agentId: (await bdd.createAgent(actor)).agentId };
-      const change = await holdThreadSessionOwnerChangeFixture({
-        threadId: first.threadId,
-        ownerChange,
-        clearConversation,
-        signal: context.signal,
-      });
-      const prompt = "must not admit the previously owned session";
-      const responsePromise = requestSendEventRaw(actor, {
-        agentId,
-        threadId: first.threadId,
-        clientEventId: randomUUID(),
-        prompt,
-        userMessage: {
-          version: 1,
-          parts: [{ type: "text", text: prompt }],
-        },
-        hasTextContent: true,
-      });
-      const operationsSettled = Promise.allSettled([
-        change.done,
-        responsePromise,
-      ]);
-      onTestFinished(async () => {
-        change.release();
-        await operationsSettled;
-      });
-      await expect.poll(change.blockedWaiterCount).toBeGreaterThanOrEqual(1);
-      change.release();
-      await change.done;
-
-      // Ownership denial must win even if conversation staleness could have
-      // retried preparation and selected a new session.
-      await expect(responsePromise).resolves.toMatchObject({
-        status: 409,
-        body: { error: { message: "Run admission is unavailable" } },
-      });
-      await expect(api.readRun(actor, first.runId)).resolves.toMatchObject({
-        status: "completed",
-      });
-    },
-    90_000,
-  );
 
   it.each(["sandbox", "pi"] as const)(
     "does not repeat preparation after a competing run changes the binding for %s",

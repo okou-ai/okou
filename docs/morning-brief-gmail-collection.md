@@ -49,8 +49,7 @@ automation, Agent, nullable bound thread, anchor, timezone and the immutable
 membership id — from
 `FeatureSwitchKey.NativeMorningBrief`, the canonical
 [migration state](./morning-brief-migration-state.md), the member's current
-Clerk membership and erasure admission. Nothing in a request body contributes to
-it.
+Clerk membership. Nothing in a request body contributes to it.
 
 ### What "authorized" means here
 
@@ -60,8 +59,8 @@ holding a credential is never permission. Each authorization pass re-derives:
 
 1. the member's current Clerk membership generation, compared against the
    immutable id this collection was admitted under,
-2. after that external answer, transaction-level erasure admission and a
-   canonical Morning Brief that is still `installed`, still enabled, and still
+2. after that external answer, a canonical Morning Brief that is still
+   `installed`, still enabled, and still
    the same installation, automation, Agent and nullable destination,
 3. the Agent's current visibility to this member in that same local transaction,
 4. the pinned connector account,
@@ -78,7 +77,7 @@ presence alone.
 
 The pass runs **before the credential is decrypted or refreshed** and **before
 every request**. Clerk is always queried before the short final local
-transaction, so no network call runs under erasure or database locks. That
+transaction, so no network call runs under database locks. That
 transaction is the local decision point; it does not make Clerk and PostgreSQL
 globally atomic or recall a payload after a later revocation.
 
@@ -175,7 +174,7 @@ cannot, which is interrupt I/O already in flight.
 
 That includes the last decision of all. Each authorization re-derives identity
 and the effective policy for the endpoint it admits, which takes real time and
-can outlast the budget. Its local erasure, complete-binding and Agent-visibility
+can outlast the budget. Its local complete-binding and Agent-visibility
 transaction spends the same deadline as the external membership read, so an
 external answer that arrives just inside the boundary does not create a fresh
 allowance for those queries. The clock is compared again before any payload is
@@ -202,8 +201,8 @@ runs once it returns. The shared Clerk gateway's own bounding remains
 ### Limits this reader does not exceed
 
 Provider work already in flight cannot be retracted. The guarantee is admission
-fencing plus final-payload fencing, not instantaneous revocation. Erasure
-admission runs in its own short transaction with finite `lock_timeout` and
+fencing plus final-payload fencing, not instantaneous revocation. The final
+local decision runs in its own short transaction with finite `lock_timeout` and
 `statement_timeout` and no network call inside it.
 
 ## Gmail collection
@@ -352,7 +351,7 @@ the reader a real consumed boundary, not to ship a feature:
   into production code.
 - Development and protected preview additionally require the authenticated
   org/user, the implementation switch, a live canonical installed **and enabled**
-  Morning Brief, valid Agent access and current membership/erasure admission.
+  Morning Brief, valid Agent access and current membership.
 - The only request input is a validated anchor. There is no Settings UI.
 - The result is ephemeral. It claims no occurrence, no schedule and no delivery,
   and it creates no Run, Chat message, email, LLM call or credit operation.

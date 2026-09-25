@@ -3,13 +3,6 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import {
-  barrierQueryBinds,
-  barrierQueryText,
-  closeErasureSubjectFixture,
-  removeErasureSubjectsFixture,
-  withDatabaseTransactionBarrierFixture,
-} from "../../../test-fixtures/account-erasure-subject";
 import { holdRunnerClaimSessionFixture } from "../../../test-fixtures/runner-claim-session-lock";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
@@ -131,63 +124,7 @@ async function cancellationEvents(
   });
 }
 
-function gateRunnerCancellation(runId: string) {
-  const entered = createDeferredPromise<void>(context.signal);
-  const released = createDeferredPromise<void>(context.signal);
-  const release = () => {
-    if (!released.settled()) {
-      released.resolve(undefined);
-    }
-  };
-  const original = context.mocks.ably.publish.getMockImplementation();
-  let paused = false;
-  context.mocks.ably.publish.mockImplementation(async (...args: unknown[]) => {
-    const [topic, payload] = args;
-    if (
-      !paused &&
-      topic === "cancel" &&
-      typeof payload === "object" &&
-      payload !== null &&
-      "runId" in payload &&
-      payload.runId === runId
-    ) {
-      paused = true;
-      entered.resolve(undefined);
-      await released.promise;
-    }
-    return await original?.(...args);
-  });
-  onTestFinished(release);
-  return { entered: entered.promise, release };
-}
-
 describe("Runner claims racing cancellation", () => {
-  it("retains an erasure-stopped job across repeated rejected claims", async () => {
-    const fixture = await inheritedChatRunFixture();
-    // Infrastructure exception: the dormant erasure projector has no public
-    // ingress. Close only this test-owned user; claim and read behavior still
-    // exercise production endpoints.
-    const { jobId } = await closeErasureSubjectFixture({
-      subjectKind: "user",
-      subjectId: fixture.actor.userId,
-    });
-    onTestFinished(async () => {
-      await removeErasureSubjectsFixture([jobId]);
-    });
-
-    for (let attempt = 0; attempt < 2; attempt++) {
-      await expect(
-        api.requestClaimRunnerJob(true, fixture.runId, [404]),
-      ).resolves.toMatchObject({
-        status: 404,
-        body: { error: { message: "Run not found" } },
-      });
-    }
-    await expect(
-      api.readRun(fixture.actor, fixture.runId),
-    ).resolves.toMatchObject({ status: "cancelled" });
-  });
-
   it("rejects a cancelled claim without waiting for its inherited Session", async () => {
     const fixture = await inheritedChatRunFixture();
     const history = gateClaimHistory(fixture.historyHash);
@@ -251,87 +188,5 @@ describe("Runner claims racing cancellation", () => {
     if (!result.ok) {
       throw result.error;
     }
-  }, 30_000);
-
-  it("persists cancellation while a stale claim's ownership query response is held", async () => {
-    const fixture = await inheritedChatRunFixture();
-    let captureClaim = false;
-
-    // Infrastructure exception: no API can suspend an already-executed SQL
-    // response. The query executes unchanged; retaining its transaction proves
-    // that rejecting a stale claim does not retain the cancelled Run's lock.
-    await withDatabaseTransactionBarrierFixture(
-      {
-        select: (queryArgs) => {
-          const text = barrierQueryText(queryArgs);
-          return (
-            captureClaim &&
-            barrierQueryBinds(queryArgs, fixture.runId) &&
-            text.includes('from "agent_runs"') &&
-            text.includes('"user_id"') &&
-            text.includes('"org_id"') &&
-            text.includes('"session_id"') &&
-            text.includes("for update")
-          );
-        },
-        stopAt: (_queryArgs, selectingStatement) => {
-          return selectingStatement;
-        },
-        pauseAfter: true,
-        work: async (barrier) => {
-          const history = gateClaimHistory(fixture.historyHash);
-          const claim = staleClaim(fixture.runId);
-          const cancellation = gateRunnerCancellation(fixture.runId);
-          onTestFinished(async () => {
-            history.release();
-            cancellation.release();
-            barrier.release();
-            await claim.done;
-          });
-          const result = await settleIncludingAbort(
-            (async () => {
-              await awaitClaimHistory(history, claim);
-              // Another real Runner wins while the first is preparing its
-              // response. Cancellation then commits before that stale claim
-              // enters ownership admission.
-              await api.claimRunnerJob(fixture.runId);
-              await flushWaitUntilForTest();
-              await api.requestCancelRun(fixture.actor, fixture.runId, [200]);
-              await cancellation.entered;
-              captureClaim = true;
-              history.release();
-              await barrier.entered;
-              cancellation.release();
-
-              await flushWaitUntilForTest();
-              const terminal = await cancellationEvents(fixture);
-              expect(terminal).toHaveLength(1);
-              await expect(
-                api.readRun(fixture.actor, fixture.runId),
-              ).resolves.toMatchObject({ status: "cancelled" });
-
-              barrier.release();
-              await expect(claim.request).resolves.toMatchObject({
-                status: 404,
-                body: { error: { message: "Run not found" } },
-              });
-              await api.requestCancelRun(fixture.actor, fixture.runId, [200]);
-              await flushWaitUntilForTest();
-              await expect(cancellationEvents(fixture)).resolves.toStrictEqual(
-                terminal,
-              );
-            })(),
-          );
-          history.release();
-          cancellation.release();
-          barrier.release();
-          await claim.done;
-          if (!result.ok) {
-            throw result.error;
-          }
-        },
-      },
-      context.signal,
-    );
   }, 30_000);
 });

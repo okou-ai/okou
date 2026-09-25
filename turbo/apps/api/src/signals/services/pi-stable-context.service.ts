@@ -54,7 +54,6 @@ import {
 } from "./pi-stable-context-digest.service";
 import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import { PI_STABLE_CONTEXT_AGENT_SUBJECT } from "./pi-stable-context-generation.service";
-import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
 import { recapturePiStableContextInput } from "./pi-stable-context-recapture.service";
 
 export { piStableContextArtifactDigest, piStableContextVariantDigest };
@@ -181,31 +180,6 @@ async function lockStableContextOwnerAuthority(
   tx: Tx,
   owner: PiStableContextOwner,
 ): Promise<boolean> {
-  const subjects = [
-    { subjectKind: "user" as const, subjectId: owner.userId },
-    { subjectKind: "organization" as const, subjectId: owner.orgId },
-    {
-      subjectKind: "user" as const,
-      subjectId: owner.resourceOwner.userId,
-    },
-    {
-      subjectKind: "organization" as const,
-      subjectId: owner.resourceOwner.orgId,
-    },
-  ];
-  const admitted = await admitPiStableContextSubjects(tx, [
-    ...new Map(
-      subjects.map((subject) => {
-        return [
-          `${subject.subjectKind}:${subject.subjectId}`,
-          subject,
-        ] as const;
-      }),
-    ).values(),
-  ]);
-  if (!admitted) {
-    return false;
-  }
   const [executingMember] = await tx
     .select({ userId: orgMembersCache.userId })
     .from(orgMembersCache)
@@ -689,9 +663,9 @@ async function publishProjection(
         ]),
   );
   return await db.transaction(async (tx) => {
-    // Admission is first, then canonical Agent and resource parents, then the
-    // head. This matches source mutation/erasure order and prevents both
-    // post-erasure resurrection and Agent/head or Storage/head lock cycles.
+    // Owner authority and canonical Agent first, then resource parents, then
+    // the head. This matches source mutation order and prevents Agent/head or
+    // Storage/head lock cycles.
     if (!(await lockStableContextOwnerAuthority(tx, demand.input.owner))) {
       return false;
     }

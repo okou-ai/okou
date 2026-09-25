@@ -1013,7 +1013,7 @@ async function loadUnsettledOccurrence(
 /**
  * Revoke this member's native execution authority.
  *
- * Used by membership loss, Agent or thread deletion and erasure. It bumps the
+ * Used by membership loss, Agent or thread deletion and account deletion. It bumps the
  * epoch so no admitted work can deliver or settle, and clears the obligation in
  * the same transaction. It never deletes an occurrence row: the content-free
  * deduplication and drain facts must outlive content retention.

@@ -1,9 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
-import { projectErasureDecision } from "@okouai/db/operations/account-erasure";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import {
   runnerVncContract,
@@ -11,16 +6,15 @@ import {
 } from "@okouai/api-contracts/contracts/runner-vnc";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { env } from "../../../lib/env";
-import { nowDate } from "../../../lib/time";
 import { createDeferredPromise, onRejection } from "../../utils";
 import { runnerVncRoutes } from "../runner-vnc";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { inlineSshKey } from "./helpers/ssh-credential";
@@ -40,6 +34,7 @@ import {
 
 const context = testContext();
 const api = createVncRuntimeApi(context);
+const runs = createRunsApi(context);
 beforeEach(initializeVncRuntimeTest);
 
 function check(
@@ -63,12 +58,6 @@ function check(
 }
 
 describe("private Runner VNC authority", () => {
-  const pool = new Pool({ connectionString: env("DATABASE_URL"), max: 2 });
-  const db = drizzle(pool);
-  afterAll(async () => {
-    await pool.end();
-  });
-
   it("uses current chat VNC and exact SSH dependency access during an active Run", async () => {
     const f = await api.fixture({
       grant: false,
@@ -1538,47 +1527,6 @@ describe("private Runner VNC authority", () => {
     });
   });
 
-  it("denies a VNC handoff when the user closes while KMS is pending", async () => {
-    const f = await api.fixture();
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<Uint8Array>(context.signal);
-    useSecretKmsProbe(undefined, (_request, call) => {
-      if (call === 1) {
-        entered.resolve(undefined);
-        return release.promise;
-      }
-      return undefined;
-    });
-    const pending = api.resolve(f);
-    await entered.promise;
-    const releaseKms = () => {
-      release.resolve(Buffer.from("0123456789abcdef0123456789abcdef"));
-    };
-    await onRejection(
-      projectErasureDecision(db, {
-        subjectKind: "user",
-        subjectId: f.userId,
-        generation: 1,
-        authorityId: randomUUID(),
-        decisionRef: randomUUID(),
-        decisionSequence: 1n,
-        confirmationRef: randomUUID(),
-        previousDecisionRef: null,
-        dispositionVersion: 1,
-        requestedAt: nowDate(),
-        deadlineAt: new Date("2090-01-01T00:00:00Z"),
-      }),
-      () => {
-        releaseKms();
-      },
-    );
-    releaseKms();
-    await expect(pending).resolves.toStrictEqual({ outcome: "unavailable" });
-    await expect(check(f, 1)).resolves.toMatchObject({
-      body: { outcome: "unavailable" },
-    });
-  });
-
   it("discards an in-flight direct VNC password when its Run is cancelled before KMS returns", async () => {
     const f = await api.fixture();
     const peer = await api.fixture();
@@ -1597,15 +1545,25 @@ describe("private Runner VNC authority", () => {
     const releaseKms = () => {
       release.resolve(Buffer.from("0123456789abcdef0123456789abcdef"));
     };
-    await onRejection(
-      db
-        .update(agentRuns)
-        .set({ status: "cancelled", runnerCancellationMode: "hard" })
-        .where(eq(agentRuns.id, f.runId)),
+    const cancellation = await onRejection(
+      runs.requestCancelRun(
+        {
+          userId: f.userId,
+          orgId: f.orgId,
+          orgRole: "org:admin",
+          email: `${f.userId}@example.com`,
+        },
+        f.runId,
+        [200],
+      ),
       () => {
         releaseKms();
       },
     );
+    expect(cancellation.body).toMatchObject({
+      id: f.runId,
+      status: "cancelled",
+    });
     releaseKms();
     await expect(pending).resolves.toStrictEqual({ outcome: "unavailable" });
     await expect(check(f, 1)).resolves.toMatchObject({

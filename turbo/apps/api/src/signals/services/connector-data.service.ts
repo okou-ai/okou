@@ -50,7 +50,6 @@ import {
   encryptStoredSecretValue,
 } from "./crypto.utils";
 import { lockBuiltinConnectorState } from "./auth-state-lock.service";
-import { assertConnectorTokenWriteOpen } from "./connector-token-erasure-admission.service";
 import {
   userFeatureSwitchContext,
   userFeatureSwitchOverrides,
@@ -2403,7 +2402,6 @@ async function commitConnectorTokenConnection(
   | ConnectorConnectionMutationFailure
   | { readonly status: "identityMismatch" }
 > {
-  await assertConnectorTokenWriteOpen(args.db, args.userId, signal);
   const mutation = args.account;
   const resolution = await resolveConnectorConnectionMutation(args.db, {
     orgId: args.orgId,

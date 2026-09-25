@@ -28,7 +28,6 @@ import {
   sql,
 } from "drizzle-orm";
 
-import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
@@ -359,21 +358,6 @@ function checkoutExpiration(currentPeriodEnd: Date): number | null {
   return expiration >= current + MIN_CHECKOUT_DURATION_SECONDS
     ? expiration
     : null;
-}
-
-export async function usagePackInvitationPurchaseSchemaAvailable(
-  db: Pick<Db, "select">,
-): Promise<boolean> {
-  const [state] = await db
-    .select({
-      available:
-        sql`to_regclass('usage_pack_invitation_purchases') IS NOT NULL`.mapWith(
-          pgBooleanDecoder,
-        ),
-    })
-    .from(sql`(SELECT 1) AS schema_probe`)
-    .limit(1);
-  return state?.available ?? false;
 }
 
 async function currentUsagePackSubscriptionForOrg(
@@ -2184,9 +2168,6 @@ export async function handleUsagePackInvitationAccepted(
   if (!args.purchaseId && !args.invitationId) {
     return false;
   }
-  if (!(await usagePackInvitationPurchaseSchemaAvailable(db))) {
-    return false;
-  }
   const candidate = await loadAcceptanceCandidate(db, args);
   if (!candidate) {
     return false;
@@ -2410,9 +2391,6 @@ export async function reconcileUsagePackInvitationPurchases(
   scope: BillingReconciliationScope | undefined,
   signal: AbortSignal,
 ): Promise<number> {
-  if (!(await usagePackInvitationPurchaseSchemaAvailable(db))) {
-    return 0;
-  }
   signal.throwIfAborted();
   const at = nowDate();
   await db

@@ -15,21 +15,13 @@ import {
   readChatEventSearchProjectionRowsFixture,
   removeChatEventSearchProjectionRowsFixture,
   rejectSearchablePromptFixture,
-  updateChatSearchSourceThreadFixture,
   writeChatEventSearchProjectionFixture,
 } from "../../../test-fixtures/chat-event-search";
 import {
   holdChatEventSearchWatermarkRowLockFixture,
   holdChatEventInsertTransactionFixture,
   holdChatThreadDeleteTransactionFixture,
-  holdChatThreadRowLockFixture,
 } from "../../../test-fixtures/chat-events";
-import {
-  closeErasureSubjectFixture,
-  removeErasureSubjectsFixture,
-  transferAgentOwnerFixture,
-} from "../../../test-fixtures/account-erasure-subject";
-import { withChatSearchProjectionBarrierFixture } from "../../../test-fixtures/chat-search-erasure";
 import {
   createChatSearchGinFixture,
   withChatSearchStatementFailureFixture,
@@ -112,18 +104,6 @@ async function seedProjectionContent(
     errorText: `${marker} error`,
     terminalText: `${marker} terminal`,
   });
-}
-
-function closeSubject(subject: {
-  readonly subjectKind: "user" | "organization";
-  readonly subjectId: string;
-}): Promise<{ readonly jobId: string }> {
-  const closing = closeErasureSubjectFixture(subject);
-  onTestFinished(async () => {
-    const { jobId } = await closing;
-    await removeErasureSubjectsFixture([jobId]);
-  });
-  return closing;
 }
 
 async function expectNoProjection(chatThreadId: string): Promise<void> {
@@ -249,179 +229,49 @@ describe("GET /api/cron/project-chat-event-search", () => {
     );
   });
 
-  it("defers a thread while an in-flight deletion holds its canonical parent", async () => {
-    const { actor, threadId } = await createProjectionFixture();
+  it("projects without waiting for an in-flight thread deletion", async () => {
+    const actor = bdd.user();
+    const agent = await chat.createAgentForChatThread(actor);
+    const thread = await chat.createThread(actor, {
+      agentId: agent.agentId,
+      title: `Projection deletion ${randomUUID()}`,
+    });
     const promptText = `deleting prompt ${randomUUID()}`;
     await insertChatSearchProjectionCoverageFixture({
-      chatThreadId: threadId,
+      chatThreadId: thread.id,
       promptText,
       assistantText: `deleting assistant ${randomUUID()}`,
       errorText: `deleting error ${randomUUID()}`,
       terminalText: `deleting terminal ${randomUUID()}`,
     });
     const heldDeletion = await holdChatThreadDeleteTransactionFixture({
-      threadId,
+      threadId: thread.id,
       signal: context.signal,
     });
-    const tick = projectOwnedChatEventSearch([threadId]);
+    const tick = projectOwnedChatEventSearch([thread.id]);
     onTestFinished(async () => {
       heldDeletion.release();
-      await Promise.allSettled([heldDeletion.done, tick]);
+      await Promise.all([heldDeletion.done, tick]);
     });
 
-    // Deferral is only reachable through the new identity lock: the projector
-    // waited on the held parent instead of writing past it. Its own bounded
-    // budget owns that wait, so the test never races it for an observation.
     const projected = await tick;
     expect(projected.success).toBeTruthy();
-    expect(projected.threads).toBe(0);
-    expect(projected.indexedEvents).toBe(0);
-    expect(projected.deferredThreads).toBe(1);
-    expect(projected.closedThreads).toBe(0);
-    await expectNoProjection(threadId);
+    expect(projected.threads).toBe(1);
+    await expect(heldDeletion.firstBlockedStatementKind()).resolves.toBeNull();
 
     heldDeletion.release();
     await heldDeletion.done;
 
-    const deleted = await chat.requestReadThread(actor, threadId, [404]);
+    const deleted = await chat.requestReadThread(actor, thread.id, [404]);
     expect(deleted.status).toBe(404);
     const hidden = await chat.searchChat(actor, promptText);
     expect(hidden.results).toStrictEqual([]);
 
-    // The deletion resolved with no derived rows to repair, and the next tick
-    // cannot recreate a message or a watermark for the missing parent.
-    const cleanup = await projectOwnedChatEventSearch([threadId]);
-    expect(cleanup.orphanedThreads).toBe(0);
-    expect(cleanup.deferredThreads).toBe(0);
-    await expectNoProjection(threadId);
+    const cleanup = await projectOwnedChatEventSearch([thread.id]);
+    expect(cleanup.orphanedThreads).toBe(1);
+    const clean = await projectOwnedChatEventSearch([thread.id]);
+    expect(clean.orphanedThreads).toBe(0);
   });
-
-  it("retries a thread deferred by a bounded identity lock wait", async () => {
-    const { threadId } = await createProjectionFixture();
-    const marker = `deferred ${randomUUID()}`;
-    await seedProjectionContent(threadId, marker);
-    const heldThread = await holdChatThreadRowLockFixture({
-      threadId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      heldThread.release();
-      await Promise.allSettled([heldThread.done]);
-    });
-
-    const deferred = await projectOwnedChatEventSearch([threadId]);
-    expect(deferred.deferredThreads).toBe(1);
-    expect(deferred.threads).toBe(0);
-    expect(deferred.closedThreads).toBe(0);
-    await expectNoProjection(threadId);
-
-    heldThread.release();
-    await heldThread.done;
-
-    const retried = await projectOwnedChatEventSearch([threadId]);
-    expect(retried.deferredThreads).toBe(0);
-    expect(retried.threads).toBe(1);
-    expect(retried.indexedEvents).toBe(2);
-    const projection = await readChatEventSearchProjectionFixture(threadId);
-    expect(projection.indexedSeqId).toBe(projection.lastChatEventSeqId);
-    expect(projection.messages).toHaveLength(2);
-  });
-
-  it("rolls back a statement timeout, continues other threads and retries next tick", async () => {
-    const fixtures = [
-      await createProjectionFixture(),
-      await createProjectionFixture(),
-    ];
-    const [first, second] = fixtures.sort((a, b) => {
-      return a.threadId.localeCompare(b.threadId);
-    });
-    if (!first || !second) {
-      throw new Error("Expected two owned projection threads");
-    }
-    await seedProjectionContent(
-      first.threadId,
-      `beforetimeout ${randomUUID()}`,
-    );
-    await projectOwnedChatEventSearch([first.threadId]);
-    const before = await readChatEventSearchProjectionRowsFixture(
-      first.threadId,
-    );
-    const marker = `timeoutretry${randomUUID().replaceAll("-", "")}`;
-    await insertSearchablePromptFixture({
-      chatThreadId: first.threadId,
-      text: marker,
-    });
-    await seedProjectionContent(second.threadId, `continuing ${randomUUID()}`);
-
-    const deferred = await withChatSearchStatementFailureFixture(
-      first.threadId,
-      "timeout",
-      async () => {
-        // The existing watermark is read without a row lock; the real upsert
-        // blocks only after this attempt has written the new search message.
-        const held = await holdChatEventSearchWatermarkRowLockFixture({
-          chatThreadId: first.threadId,
-          signal: context.signal,
-        });
-        onTestFinished(async () => {
-          held.release();
-          await held.done;
-        });
-        const result = await settleIncludingAbort(
-          projectOwnedChatEventSearch([first.threadId, second.threadId]),
-        );
-        // The failure fixture closes the pool after work returns, so the row
-        // holder must finish before its callback returns.
-        held.release();
-        await held.done;
-        if (!result.ok) {
-          throw result.error;
-        }
-        return result.value;
-      },
-    );
-    expect(deferred).toMatchObject({
-      threads: 1,
-      indexedEvents: 2,
-      deferredThreads: 1,
-      closedThreads: 0,
-      convergence: { eligibleThreads: 2, durableCaughtUpThreads: 1 },
-    });
-    await expect(
-      readChatEventSearchProjectionRowsFixture(first.threadId),
-    ).resolves.toStrictEqual(before);
-    expect((await chat.searchChat(first.actor, marker)).results).toStrictEqual(
-      [],
-    );
-    expect(
-      (await readChatEventSearchProjectionFixture(second.threadId)).messages,
-    ).toHaveLength(2);
-
-    const retry = await projectOwnedChatEventSearch([
-      first.threadId,
-      second.threadId,
-    ]);
-    expect(retry).toMatchObject({
-      threads: 1,
-      indexedEvents: 1,
-      deferredThreads: 0,
-      convergence: { eligibleThreads: 2, durableCaughtUpThreads: 2 },
-    });
-    const repeated = await projectOwnedChatEventSearch([
-      first.threadId,
-      second.threadId,
-    ]);
-    expect(repeated).toMatchObject({
-      threads: 0,
-      indexedEvents: 0,
-      deferredThreads: 0,
-    });
-    expect(
-      (await chat.searchChat(first.actor, marker)).results.map((result) => {
-        return result.chatThreadId;
-      }),
-    ).toStrictEqual([first.threadId]);
-  }, 20_000);
 
   it("propagates server cancellation and rolls back the interrupted projection", async () => {
     const { threadId } = await createProjectionFixture();
@@ -509,28 +359,36 @@ describe("GET /api/cron/project-chat-event-search", () => {
       throw new Error("Expected two owned projection threads");
     }
     await seedProjectionContent(first.threadId, `beforegin ${randomUUID()}`);
+    await projectOwnedChatEventSearch([first.threadId]);
+    await insertSearchablePromptFixture({
+      chatThreadId: first.threadId,
+      text: `laggingbeforegin ${randomUUID()}`,
+    });
     await seedProjectionContent(second.threadId, `aftergin ${randomUUID()}`);
-    const projected = await withChatSearchProjectionBarrierFixture(
-      {
-        chatThreadId: first.threadId,
-        stopAt: "commit",
-        work: async ({ entered, release }) => {
-          const tick = projectOwnedChatEventSearch(
-            [first.threadId, second.threadId],
-            [gin.indexName],
-          );
-          await entered;
-          await gin.insert(600);
-          await expect(gin.pendingPages()).resolves.toBeGreaterThanOrEqual(64);
-          release();
-          return await tick;
-        },
-      },
-      context.signal,
+    // The existing watermark is read without a row lock; the first thread's
+    // upsert blocks here, after its search message is written and before the
+    // second thread's maintenance check.
+    const held = await holdChatEventSearchWatermarkRowLockFixture({
+      chatThreadId: first.threadId,
+      signal: context.signal,
+    });
+    const tick = projectOwnedChatEventSearch(
+      [first.threadId, second.threadId],
+      [gin.indexName],
     );
+    onTestFinished(async () => {
+      held.release();
+      await Promise.allSettled([held.done, tick]);
+    });
+    await expect.poll(held.blockedWaiterCount, BLOCKED).toBeGreaterThan(0);
+    await gin.insert(600);
+    await expect(gin.pendingPages()).resolves.toBeGreaterThanOrEqual(64);
+    held.release();
+    await held.done;
+    const projected = await tick;
     expect(projected).toMatchObject({
       threads: 2,
-      indexedEvents: 4,
+      indexedEvents: 3,
       deferredThreads: 0,
     });
     await expect(gin.pendingPages()).resolves.toBe(0);
@@ -587,342 +445,6 @@ describe("GET /api/cron/project-chat-event-search", () => {
       indexedEvents: 4,
       deferredThreads: 0,
     });
-  });
-
-  it("holds thread deletion until the projector transaction commits", async () => {
-    const { actor, threadId } = await createProjectionFixture();
-    const marker = `commitorder${randomUUID().replaceAll("-", "")}`;
-    await seedProjectionContent(threadId, marker);
-
-    const projected = await withChatSearchProjectionBarrierFixture(
-      {
-        chatThreadId: threadId,
-        stopAt: "commit",
-        work: async ({ entered, blockedWaiterCount, release }) => {
-          const tick = projectOwnedChatEventSearch([threadId]);
-          const barrier = await entered;
-          // The per-thread budget is finite and visible on the real connection.
-          expect(barrier.lockTimeout).toBe("1s");
-          expect(barrier.statementTimeout).toBe("5s");
-          const deleting = chat.deleteThread(actor, threadId);
-          await expect.poll(blockedWaiterCount, BLOCKED).toBeGreaterThan(0);
-          release();
-          const result = await tick;
-          await deleting;
-          return result;
-        },
-      },
-      context.signal,
-    );
-
-    expect(projected.threads).toBe(1);
-    expect(projected.indexedEvents).toBe(2);
-    // The deletion waited, then removed both the messages and the watermark the
-    // projector had just written.
-    await expectNoProjection(threadId);
-    const hidden = await chat.searchChat(actor, `${marker} prompt`);
-    expect(hidden.results).toStrictEqual([]);
-    const cleanup = await projectOwnedChatEventSearch([threadId]);
-    expect(cleanup.orphanedThreads).toBe(0);
-    expect(cleanup.threads).toBe(0);
-    await expectNoProjection(threadId);
-  });
-
-  it("holds an account closure until the projector transaction commits", async () => {
-    const { actor, threadId } = await createProjectionFixture();
-    const marker = `closureorder${randomUUID().replaceAll("-", "")}`;
-    await seedProjectionContent(threadId, marker);
-
-    const projected = await withChatSearchProjectionBarrierFixture(
-      {
-        chatThreadId: threadId,
-        stopAt: "commit",
-        work: async ({ entered, blockedWaiterCount, release }) => {
-          const tick = projectOwnedChatEventSearch([threadId]);
-          await entered;
-          const closing = closeSubject({
-            subjectKind: "user",
-            subjectId: actor.userId,
-          });
-          await expect.poll(blockedWaiterCount, BLOCKED).toBeGreaterThan(0);
-          release();
-          const result = await tick;
-          await closing;
-          return result;
-        },
-      },
-      context.signal,
-    );
-
-    expect(projected.threads).toBe(1);
-    expect(projected.indexedEvents).toBe(2);
-    // The admitted transaction completed; already durable rows are historical
-    // data for a later purge, not something this producer fence removes.
-    const projection = await readChatEventSearchProjectionFixture(threadId);
-    expect(projection.messages).toHaveLength(2);
-
-    // After the closure commits the same thread stops producing new rows.
-    await insertSearchablePromptFixture({
-      chatThreadId: threadId,
-      text: `${marker} after closure`,
-    });
-    const afterClosure = await projectOwnedChatEventSearch([threadId]);
-    expect(afterClosure.threads).toBe(0);
-    expect(afterClosure.indexedEvents).toBe(0);
-    expect(afterClosure.convergence.eligibleThreads).toBe(0);
-    const unchanged = await readChatEventSearchProjectionFixture(threadId);
-    expect(unchanged.messages).toHaveLength(2);
-    expect(unchanged.indexedSeqId).toBe(projection.indexedSeqId);
-  });
-
-  it("denies a closure committed after candidate selection", async () => {
-    const { actor, threadId } = await createProjectionFixture();
-    await seedProjectionContent(threadId, `lateclosure ${randomUUID()}`);
-
-    const denied = await withChatSearchProjectionBarrierFixture(
-      {
-        chatThreadId: threadId,
-        // Pause the per-thread transaction before it resolves ownership, so the
-        // candidate was already selected while the subject was open.
-        stopAt: "ownership",
-        work: async ({ entered, release }) => {
-          const tick = projectOwnedChatEventSearch([threadId]);
-          const barrier = await entered;
-          expect(barrier.lockTimeout).toBe("1s");
-          expect(barrier.statementTimeout).toBe("5s");
-          await closeSubject({
-            subjectKind: "user",
-            subjectId: actor.userId,
-          });
-          release();
-          return await tick;
-        },
-      },
-      context.signal,
-    );
-
-    // Selection did not deny it; only the in-transaction admission can.
-    expect(denied.closedThreads).toBe(1);
-    expect(denied.threads).toBe(0);
-    expect(denied.indexedEvents).toBe(0);
-    expect(denied.deferredThreads).toBe(0);
-    await expectNoProjection(threadId);
-  });
-
-  it.each([
-    ["thread user", "user"],
-    ["organization", "organization"],
-  ] as const)(
-    "stops projecting a thread whose %s is closed while other owners progress",
-    async (_label, subjectKind) => {
-      const orgId = `org_${randomUUID()}`;
-      const closed = await createProjectionFixture({ orgId });
-      const surviving = await createProjectionFixture();
-      const marker = `mixed${randomUUID().replaceAll("-", "")}`;
-      await seedProjectionContent(closed.threadId, `${marker} closed`);
-      await seedProjectionContent(surviving.threadId, `${marker} surviving`);
-      await closeSubject(
-        subjectKind === "user"
-          ? { subjectKind, subjectId: closed.actor.userId }
-          : { subjectKind, subjectId: orgId },
-      );
-
-      const tick = await projectOwnedChatEventSearch([
-        closed.threadId,
-        surviving.threadId,
-      ]);
-      expect(tick.threads).toBe(1);
-      expect(tick.indexedEvents).toBe(2);
-      // The closed thread leaves the eligible set instead of being reported as
-      // outstanding work or silently counted as indexed.
-      expect(tick.convergence).toStrictEqual({
-        eligibleThreads: 1,
-        durableCaughtUpThreads: 1,
-      });
-
-      await expectNoProjection(closed.threadId);
-      const denied = await chat.searchChat(closed.actor, `${marker} closed`);
-      expect(denied.results).toStrictEqual([]);
-
-      const kept = await chat.searchChat(
-        surviving.actor,
-        `${marker} surviving`,
-      );
-      expect(
-        kept.results.map((result) => {
-          return result.chatThreadId;
-        }),
-      ).toStrictEqual([surviving.threadId, surviving.threadId]);
-    },
-  );
-
-  it("stops projecting a thread whose distinct Agent owner is closed", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const owner = bdd.user({ orgId });
-    const member = bdd.user({ orgId });
-    bdd.acceptAgentStorageWrites();
-    const shared = await bdd.createAgent(owner, {
-      displayName: `Shared search agent ${randomUUID().slice(0, 8)}`,
-      visibility: "public",
-    });
-    const thread = await chat.createThread(member, {
-      agentId: shared.agentId,
-      title: `Shared projection ${randomUUID()}`,
-    });
-    const marker = `agentowner${randomUUID().replaceAll("-", "")}`;
-    await seedProjectionContent(thread.id, marker);
-    await closeSubject({ subjectKind: "user", subjectId: owner.userId });
-
-    const tick = await projectOwnedChatEventSearch([thread.id]);
-    expect(tick.threads).toBe(0);
-    expect(tick.indexedEvents).toBe(0);
-    expect(tick.convergence.eligibleThreads).toBe(0);
-    await expectNoProjection(thread.id);
-    // The thread user is a separate open subject and keeps every other thread.
-    const denied = await chat.searchChat(member, `${marker} prompt`);
-    expect(denied.results).toStrictEqual([]);
-  });
-
-  it("re-derives ownership after a transfer instead of reusing candidate labels", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const previous = await createProjectionFixture({ orgId });
-    const next = await createProjectionFixture({ orgId });
-    const marker = `transfer${randomUUID().replaceAll("-", "")}`;
-    await seedProjectionContent(previous.threadId, `${marker} original`);
-    const first = await projectOwnedChatEventSearch([previous.threadId]);
-    expect(first.threads).toBe(1);
-
-    await insertSearchablePromptFixture({
-      chatThreadId: previous.threadId,
-      text: `${marker} transferred`,
-    });
-    await updateChatSearchSourceThreadFixture({
-      chatThreadId: previous.threadId,
-      userId: next.actor.userId,
-      agentId: next.agentId,
-    });
-
-    // The new owner is closed, so the previously selected labels cannot admit
-    // the pending content under the old owner.
-    const closedNext = await closeSubject({
-      subjectKind: "user",
-      subjectId: next.actor.userId,
-    });
-    const denied = await projectOwnedChatEventSearch([previous.threadId]);
-    expect(denied.threads).toBe(0);
-    expect(denied.indexedEvents).toBe(0);
-    const unchanged = await readChatEventSearchProjectionRowsFixture(
-      previous.threadId,
-    );
-    expect(unchanged.messages).toHaveLength(2);
-
-    // Closing the previous owner instead must not stop the current one.
-    await removeErasureSubjectsFixture([closedNext.jobId]);
-    await closeSubject({
-      subjectKind: "user",
-      subjectId: previous.actor.userId,
-    });
-    const projected = await projectOwnedChatEventSearch([previous.threadId]);
-    expect(projected.threads).toBe(1);
-    expect(projected.indexedEvents).toBe(1);
-
-    // The new message belongs to the current owner, and the old owner cannot
-    // see content relabelled onto it.
-    const current = await chat.searchChat(next.actor, `${marker} transferred`);
-    expect(current.results).toHaveLength(1);
-    expect(current.results[0]?.chatThreadId).toBe(previous.threadId);
-    const stale = await chat.searchChat(
-      previous.actor,
-      `${marker} transferred`,
-    );
-    expect(stale.results).toStrictEqual([]);
-  });
-
-  it("rolls back when ownership moves while identity locks are acquired", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const current = await createProjectionFixture({ orgId });
-    const nextOwner = bdd.user({ orgId });
-    const marker = `ownerrace${randomUUID().replaceAll("-", "")}`;
-    await seedProjectionContent(current.threadId, marker);
-    await closeSubject({
-      subjectKind: "user",
-      subjectId: nextOwner.userId,
-    });
-
-    const denied = await withChatSearchProjectionBarrierFixture(
-      {
-        chatThreadId: current.threadId,
-        // The unlocked ownership read and subject admission have already used
-        // the previous owner; the transfer commits before the identity locks.
-        stopAt: "agent-lock",
-        work: async ({ entered, release }) => {
-          const tick = projectOwnedChatEventSearch([current.threadId]);
-          await entered;
-          await transferAgentOwnerFixture({
-            agentId: current.agentId,
-            owner: nextOwner.userId,
-          });
-          release();
-          return await tick;
-        },
-      },
-      context.signal,
-    );
-
-    expect(denied.closedThreads).toBe(1);
-    expect(denied.threads).toBe(0);
-    expect(denied.indexedEvents).toBe(0);
-    expect(denied.deferredThreads).toBe(0);
-    await expectNoProjection(current.threadId);
-  });
-
-  it("indexes a later eligible thread behind more than one closed batch", async () => {
-    const fixtures = [
-      await createProjectionFixture(),
-      await createProjectionFixture(),
-      await createProjectionFixture(),
-      await createProjectionFixture(),
-    ];
-    const marker = `starvation${randomUUID().replaceAll("-", "")}`;
-    for (const fixture of fixtures) {
-      await seedProjectionContent(fixture.threadId, marker);
-    }
-    const ordered = [...fixtures].sort((left, right) => {
-      return left.threadId.localeCompare(right.threadId);
-    });
-    const eligible = ordered.at(-1);
-    if (!eligible) {
-      throw new Error("Expected an eligible chat search thread");
-    }
-    for (const fixture of ordered.slice(0, -1)) {
-      await closeSubject({
-        subjectKind: "user",
-        subjectId: fixture.actor.userId,
-      });
-    }
-
-    // Three closed candidates sort ahead of the eligible thread, so more than
-    // one whole batch would be consumed if closure were resolved per candidate.
-    mockOptionalEnv("CHAT_EVENT_SEARCH_PROJECTION_BATCH_SIZE", "2");
-    const tick = await projectOwnedChatEventSearch(
-      ordered.map((fixture) => {
-        return fixture.threadId;
-      }),
-    );
-
-    expect(tick.threads).toBe(1);
-    expect(tick.indexedEvents).toBe(2);
-    expect(tick.convergence).toStrictEqual({
-      eligibleThreads: 1,
-      durableCaughtUpThreads: 1,
-    });
-    const indexed = await readChatEventSearchProjectionFixture(
-      eligible.threadId,
-    );
-    expect(indexed.indexedSeqId).toBe(indexed.lastChatEventSeqId);
-    for (const fixture of ordered.slice(0, -1)) {
-      await expectNoProjection(fixture.threadId);
-    }
   });
 
   it("removes a later projection that races orphan cleanup", async () => {

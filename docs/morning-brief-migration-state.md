@@ -17,7 +17,7 @@ code, change data, or close either issue. Code/schema baseline:
 entrypoints, **not** historical email admission, retention, deletion, or the
 Official scheduler's Native authority reads. Re-inventory after the S1 release
 and before opening any separately authorized S2 physical-drop change. As of
-this baseline, in-flight #36901 touches Morning Brief erasure admission and
+this baseline, in-flight #36901 touches Morning Brief write admission and
 this document, #36909 touches `email-common.service.ts`, and #36900, #36907,
 #36911, #36897 and #36894 touch the ownership inventory. Reconcile their
 **merged** semantics at S2; file overlap alone is not a reason to wait now.
@@ -37,10 +37,9 @@ No raw message, template, provider request or personal content was read:
 | `morning_brief_native_occurrences`                        | 10 settled, zero unsettled; outcomes: 4 delivered, 3 generation-failed, 1 generation-unknown, 1 collection-failed, 1 not-configured                                                                                                                                 | No unknown provider request or delivery/recovery obligation.                                                                                                                                                                       |
 | `morning_brief_collection_occurrences`                    | 10: 8 completed, 2 running                                                                                                                                                                                                                                          | The two running attempts are harmless or terminal; lease, provider and deletion state need separate evidence.                                                                                                                      |
 | `morning_brief_generations`                               | 8 physical rows, all `expires_at <= 2026-09-25 13:05 UTC`: 4 succeeded/deliver, 3 output-rejected, 1 invocation-outcome-unknown; all 8 `result_bytes` and `retained_until` were null on a bounded eight-row read; the four deliver rows had `content_purged_at` set | Eight expired generation rows are **not** zero physical rows. MaskDB does not expose `result_title`, `result_markdown` or `retained_sources`; the receipt/provider ambiguity survives the result purge.                            |
-| `morning_brief_platform_generation_receipts` (**retain**) | 8: 7 reported/response-received, 1 invocation-unknown                                                                                                                                                                                                               | Not user-content erasure proof; never clear accounting receipts to make a drop count pass.                                                                                                                                         |
+| `morning_brief_platform_generation_receipts` (**retain**) | 8: 7 reported/response-received, 1 invocation-unknown                                                                                                                                                                                                               | Not user-content deletion proof; never clear accounting receipts to make a drop count pass.                                                                                                                                        |
 | Shared `email_outbox`                                     | 2,055 `sent`; no global `pending` or `sending` at this instant                                                                                                                                                                                                      | `template` is masked and cannot be filtered/grouped, and the gateway omits committed provider request/key. Global zero is not Native-template drain, nor proof about already-accepted or unknown Resend calls; `sent` rows remain. |
 | Official `workflow_automations` (`daily-delivery` only)   | 478, 448 enabled                                                                                                                                                                                                                                                    | No successful S1 release, owner-choice, claim/queue, or delivery-window proof.                                                                                                                                                     |
-| `account_erasure_jobs`                                    | 2 `verified_erased`                                                                                                                                                                                                                                                 | No future/newly captured jobs, sink-version compatibility or guarantee that old binaries have drained.                                                                                                                             |
 
 MaskDB exposes the four Native tables named above and the **retained** receipt
 table, but not `morning_brief_native_schedule_skips`,
@@ -55,7 +54,7 @@ and rollback-target identity. The snapshot cannot be a deletion certificate.
 Here, "drop gate" means a condition to prove in a **later** contract/release,
 not a request to perform the drop now. Refresh direct and indirect callers,
 including old serving/rollback binaries, test fixtures, exports, raw SQL, schema
-barrels, migration-consistency and account-erasure tests. Published migrations
+barrels and migration-consistency tests. Published migrations
 remain immutable history. Schema sources: `turbo/packages/db/src/schema/`
 `morning-brief-{native-schedule,collection-occurrence,generation,delivery,installed-preference}.ts`
 and `workflow-schedule-skip.ts`; creation/changes in migrations 1149, 1151,
@@ -69,7 +68,7 @@ and `workflow-schedule-skip.ts`; creation/changes in migrations 1149, 1151,
 | `morning_brief_collection_occurrences` | Composite cascade FKs to `org_members_metadata` and `agents`; **parent** of generations through a composite cascade FK. `morning-brief-collection-occurrence.service.ts` and membership/Clerk cleanup delete/stamp ownership; `morning-brief-native-email-admission.service.ts` locks frozen membership for mail. Test-only outbox fixture creates rows. Gate: independently resolve running/expired leases and legacy mail provenance before removing cleanup/admission and dropping; do not cascade away generation content as a substitute for retention.                                                                                                                                                                                                                                                                                                                                                                                  |
 | `morning_brief_generations`            | Composite cascade FK to collection occurrence; unique invoked-anchor fence, no FK to billing receipts or deliveries. `morning-brief-generation-store.service.ts` still sanitizes expired bodies and deletes rows older than the **seven-day scheduled-anchor replay window**; `morning-brief-generation-retention-worker.service.ts` is still called by `cron-execute-workflow-automations.ts`. Gate: keep tick and privacy fence until body/proof purge is proved, wait for safe replay/unknown-outcome reconciliation, then verify **zero physical generation rows** and no old writer/reader before stopping the worker or dropping. Do not issue a second model request for `reserved`/`invocation_outcome_unknown`. Keep `morning_brief_platform_generation_receipts` independent and intact.                                                                                                                                            |
 | `morning_brief_deliveries`             | Composite member FK plus Agent/thread cascade FKs; **deliberately no FK** to generation, `chat_events` or `email_outbox`; unique outbox and attempt references are logical provenance. `morning-brief-native-email-admission.service.ts` joins/locks it for the historical `morning-brief-result` template; `morning-brief-delivery.service.ts` removes owned deliveries and their linked outbox intents atomically during member/Clerk/Agent/thread deletion. Gate: prove Native-template mail/provider lifecycle and deletion path retired or safely replaced, with no linked or orphaned live intent; preserve sent Chat and Official result-mail. MaskDB does not expose this table.                                                                                                                                                                                                                                                      |
-| `morning_brief_installed_preferences`  | Non-authoritative projection, FKs to evictable `org_members_cache`, `agents`, `chat_threads`, all cascade. No production runtime reader/writer found on this baseline after #36750; schema/inventory remain. Gate: verify old API and rollback floor no longer read/write it, catalogue and erasure compatibility, and actual row count via authorized read. **Do not** delete canonical Official preference, enrollment, installation or disabled choice with the projection.                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `morning_brief_installed_preferences`  | Non-authoritative projection, FKs to evictable `org_members_cache`, `agents`, `chat_threads`, all cascade. No production runtime reader/writer found on this baseline after #36750; schema/inventory remain. Gate: verify old API and rollback floor no longer read/write it, deletion compatibility, and actual row count via authorized read. **Do not** delete canonical Official preference, enrollment, installation or disabled choice with the projection.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 `ACCOUNT_OWNERSHIP_INVENTORY` declares **each of these seven** `user_root`
 owned by `user_id`, while `email_outbox` is `deferred_retention`,
@@ -83,12 +82,9 @@ single age threshold, empty pending-outbox snapshot or global rollback commit
 can replace a per-consumer drain. Retain Official definitions, installations,
 preferences, enrollments, automation and skip history, schedule claims, email
 subscriptions, sent Chat and platform receipts.
-`account-erasure-relational-collector.ts:assertCatalogueInventoryCoverage`
-rejects both an uncovered live table and a declared-but-absent table
-(`catalogue_absent`). Remove inventory/schema entries only in the separately
-staged contraction with compatible fleet/rollback target and tests; **never
-weaken the fail-closed guard**. Member/Clerk cleanup, Agent deletion and thread
-deletion also call Native revokers, independently of the relational sweep.
+Remove schema entries only in the separately staged contraction with a
+compatible fleet/rollback target and tests. Member/Clerk cleanup, Agent
+deletion and thread deletion call Native revokers.
 A dropped table makes an old deletion binary fail during the migration-before-
 API-promotion window; #34296's all-present/all-absent transaction/advisory-lock
 bridge concerned different tables and is not an approved hot-path template here.
@@ -133,7 +129,7 @@ bridge concerned different tables and is not an approved hot-path template here.
    release/data-deletion authorization. No same-release assumption from a new
    schema alone. A table drop is not reversible by rolling back API code; do
    not use `DROP ... CASCADE`. Pause on unknown active work, unexplained count,
-   missing FK, erasure sink/version mismatch, unsafe locks, provider ambiguity,
+   missing FK, unsafe locks, provider ambiguity,
    unverified Official choice/delivery or unprovable rollback floor.
 
 ### Minimum-privilege preflight and later acceptance reads
@@ -142,9 +138,8 @@ After S1 business acceptance, **re-measure** all seven table counts and bytes,
 Native phases/owners, enabled/disabled Official anchor divergence and future
 anchors, unsettled Native and Official claims, running collection leases,
 generation state/age/body/proof/physical counts, deliveries and linked/orphan
-outbox status _by template_, provider acceptance/idempotency outcomes, account-
-erasure jobs/sinks/collector versions, FK/dependent objects and API fleet and
-rollback target. Check at least the one-hour operational window and the next
+outbox status _by template_, provider acceptance/idempotency outcomes,
+FK/dependent objects and API fleet and rollback target. Check at least the one-hour operational window and the next
 relevant local delivery windows for advancing schedules, zero stale backfill
 Runs, no duplicate Chat/email, and preserved disabled choices. A CI/deploy
 success is not business acceptance. Record each query's UTC timestamp, scope,
@@ -197,11 +192,11 @@ GROUP BY template->>'template', status;
 Do not run these SQL queries through MaskDB. An operator must additionally inspect provider-side intent status using approved minimal
 permissions, deployment history/rollback resolver, logs and active jobs; DB
 counts alone cannot prove a request never crossed the network. Acceptance after
-an authorized contract must assert target relations absent, seven schema and
-erasure entries removed _together_ with old readers, retained Official
+an authorized contract must assert target relations absent, seven schema
+entries removed _together_ with old readers, retained Official
 `morning_brief_schedule_claims`/automations/definitions/installations/
 preferences/enrollments, sent Chat and accounting receipts still present and
-unmodified, and shared outbox and erasure jobs healthy. On a mismatch, abort
+unmodified, and shared outbox healthy. On a mismatch, abort
 before DDL or halt promotion and escalate; after a committed drop, roll forward
 with a compatible binary/repair plan, **not** an old API rollback into missing
 tables or a blind resend. The controller independently accepts the evidence;
@@ -422,7 +417,7 @@ indistinguishable through the API. Whether a refresh was `refreshed`, `failed`,
 `skipped` or `cleared` is therefore asserted where that outcome exists, in the
 projection service suite, not inferred from a response body.
 
-### The deletion fence is a cache lifetime, not erasure authority
+### The deletion fence is a cache lifetime, not deletion authority
 
 The row's lifetime is deliberately evictable:
 
@@ -437,20 +432,16 @@ The row's lifetime is deliberately evictable:
   the owning Agent or the destination thread is deleted. Neither deletion
   creates a replacement thread or an enabled state; the legacy brief stays
   paused or uninstalled exactly as it does today.
-- Native writes also pass the existing transaction-level
-  [erasure admission](../turbo/packages/db/src/operations/account-erasure.ts):
-  READ COMMITTED, sorted organization and user subject locks taken before any
-  business row and held through commit.
 
 The limits are as real as the guarantees. `org_members_cache` is a 60-second
 read-through role cache, not a tombstone: a concurrent membership read can
 refill it after a cleanup, and this projection's writer cannot prevent that.
-[The Clerk erasure bridge is still unregistered](account-erasure-foundation.md),
-so admission bounds this writer, not the world. None of this is global deletion
-finality, and the presence of a row never authorizes executing a brief.
+Writes are not rejected after an account is deleted, and nothing removes a late
+row afterwards. None of this is global deletion finality, and the presence of a
+row never authorizes executing a brief.
 
 **Hard gate:** before native state becomes execution authority, this evictable
-cache lifetime must be replaced with durable membership and erasure ownership.
+cache lifetime must be replaced with durable membership and deletion ownership.
 Cutover must not inherit a disposable parent.
 
 ### What this slice does not do
@@ -630,7 +621,7 @@ insufficient-credit behavior: credit failures neither increment the failure
 count nor disable recurring schedules. At a representative retained-history
 scale of 80,000 rows (slightly above one year at the measured 215 daily
 schedules), PostgreSQL uses the dedicated owner-user index for global user
-erasure, the org-leading owner index for membership erasure, and the sequence
+deletion, the org-leading owner index for membership deletion, and the sequence
 index for the current-claim read. These are executed boundaries, not an
 assertion that `claim_sequence` is the later S7b choice or rollback epoch.
 

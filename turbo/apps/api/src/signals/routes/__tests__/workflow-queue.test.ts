@@ -23,8 +23,6 @@ import {
   setWorkflowQueueEventCreatedAtFixture,
 } from "../../../test-fixtures/chat-events";
 import {
-  seedGoalForRunFixture,
-  setLegacyGoalRunOriginFixture,
   createActiveGoalQueueEventFixture,
   drainChatThreadQueueFixture,
   pauseGoalQueueTargetFixture,
@@ -881,8 +879,8 @@ describe("workflow queue", () => {
     });
     // The persisted queued message is the product milestone proving the send
     // reached the queue. The transitive PostgreSQL blocker observation includes
-    // contenders waiting on the first admission's earlier B1 subject locks and
-    // is only used as a lower-bound barrier here.
+    // contenders waiting on the first admission's earlier locks and is only
+    // used as a lower-bound barrier here.
     await expect
       .poll(async () => {
         const messages = await wf.readThreadEvents(automation.threadId);
@@ -1236,44 +1234,6 @@ describe("workflow queue", () => {
       await runsApi.requestCancelRun(scenario.actor, runIds[1]!, [200]);
       await runsApi.requestCancelRun(scenario.actor, blockerRunId, [200]);
     });
-  });
-
-  it("rejects captured Goal promotion without rewriting it as an ordinary run", async () => {
-    const scenario = await setup();
-    const automation = await createWebhookAutomation(scenario);
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
-    const firstRunId = await expectAcceptedRunId(
-      await postWorkflowWebhook(automation, "first"),
-      automation.threadId,
-    );
-    const blockerRunId = await startOrgConcurrencyBlocker(scenario);
-    expectAcceptedWithoutRun(
-      await postWorkflowWebhook(automation, "captured Goal admission"),
-    );
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    await completeRunThroughSandbox(scenario, firstRunId);
-    const runs = await workflowRunIds(automation.threadId);
-    const goalRunId = runs[1];
-    if (!goalRunId) {
-      throw new Error("Expected the queued predecessor");
-    }
-    expect((await runsApi.readRun(scenario.actor, goalRunId)).status).toBe(
-      "queued",
-    );
-    const goal = await seedGoalForRunFixture(goalRunId, "legacy queued Goal");
-    await setLegacyGoalRunOriginFixture(goalRunId, goal.id);
-    expectAcceptedWithoutRun(
-      await postWorkflowWebhook(automation, "normal follower"),
-    );
-    await runsApi.requestCancelRun(scenario.actor, blockerRunId, [200]);
-    await flushWaitUntilForTest();
-    const retired = await runsApi.readRun(scenario.actor, goalRunId);
-    expect(retired.status).toBe("queued");
-    expect(retired.error).toBeUndefined();
-    await expect(workflowRunIds(automation.threadId)).resolves.toHaveLength(2);
-    // Explicit ordinary cancellation can unblock the thread; the queue worker
-    // itself has no remaining retirement settlement authority.
-    await runsApi.requestCancelRun(scenario.actor, goalRunId, [200]);
   });
 
   it("keeps a concurrency-queued workflow run when the completion request is aborted", async () => {

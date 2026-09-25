@@ -45,14 +45,7 @@ async function fixture(triggerSource: "test" | "web" = "test") {
     modelProviderType: "anthropic-api-key",
     triggerSource,
   });
-  let userDeletionHeld = false;
   onTestFinished(async () => {
-    if (userDeletionHeld) {
-      // The Clerk receipt intentionally retains this Agent, while its
-      // deleted owner's API credentials can no longer perform cleanup.
-      await flushWaitUntilForTest();
-      return;
-    }
     await runs.requestCancelRun(actor, run.runId, [200, 400, 404]);
     await flushWaitUntilForTest();
     await bdd.requestDeleteAgent(actor, agent.agentId, [204, 404]);
@@ -71,9 +64,6 @@ async function fixture(triggerSource: "test" | "web" = "test") {
     actor,
     agentId: agent.agentId,
     runId: run.runId,
-    markUserDeletionHeld: () => {
-      userDeletionHeld = true;
-    },
     headers: { authorization: `Bearer ${claim.sandboxToken}` },
     query: { runnerGroup, ...identity },
   };
@@ -277,7 +267,7 @@ describe("Run cancellation reconciliation", () => {
   });
 
   it.each(["user.deleted", "organization.deleted"])(
-    "reports held cancellation or physical absence after %s",
+    "keeps authenticated absence readable after %s",
     async (type) => {
       const f = await fixture();
       const webhooks = createWebhookCallbackApi(context);
@@ -288,23 +278,11 @@ describe("Run cancellation reconciliation", () => {
       });
       await webhooks.requestClerkWebhook("{}", {}, [200]);
       await flushWaitUntilForTest();
-      if (type === "user.deleted") {
-        f.markUserDeletionHeld();
-      }
-      expect((await read(f)).body).toStrictEqual(
-        type === "user.deleted"
-          ? {
-              protocolVersion: 1,
-              runId: f.runId,
-              state: "present",
-              mode: "hard",
-            }
-          : {
-              protocolVersion: 1,
-              runId: f.runId,
-              state: "gone",
-            },
-      );
+      expect((await read(f)).body).toStrictEqual({
+        protocolVersion: 1,
+        runId: f.runId,
+        state: "gone",
+      });
     },
   );
 });

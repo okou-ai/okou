@@ -11,6 +11,7 @@ import type {
 import type { ChatTeamsMessageFiles } from "@okouai/db/jsonb-contracts/chat-teams-context";
 import type { JsonObject } from "@okouai/db/jsonb-contracts/shared";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { agents } from "@okouai/db/schema/agent";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
@@ -1607,6 +1608,55 @@ export async function holdChatThreadRowLockFixture(args: {
 }
 
 /**
+ * Holds one Agent row exclusively, the lock a transfer or deletion would take.
+ * Product APIs never expose this boundary, and the fixture changes no column.
+ */
+export async function holdAgentRowLockFixture(args: {
+  readonly agentId: string;
+  readonly signal: AbortSignal;
+}): Promise<{
+  readonly release: () => void;
+  readonly done: Promise<void>;
+  readonly blockedWaiterCount: () => Promise<number>;
+}> {
+  const started = createDeferredPromise<number>(args.signal);
+  const released = createDeferredPromise<void>(args.signal);
+  const done = db().transaction(async (tx) => {
+    const [agent] = await tx
+      .select({ id: agents.id })
+      .from(agents)
+      .where(eq(agents.id, args.agentId))
+      .for("update")
+      .limit(1);
+    if (!agent) {
+      throw new Error("Expected the Agent row");
+    }
+    const pidRows = await executeRawRows(
+      tx,
+      sql`SELECT pg_backend_pid() AS "pid"`,
+      databasePidRowSchema,
+    );
+    if (!pidRows[0]) {
+      throw new Error("Expected the Agent lock holder pid");
+    }
+    started.resolve(pidRows[0].pid);
+    await released.promise;
+  });
+  const holderPid = await started.promise;
+  return {
+    release: () => {
+      if (!released.settled()) {
+        released.resolve(undefined);
+      }
+    },
+    done,
+    blockedWaiterCount: async () => {
+      return await transitiveBlockedWaiterCount(holderPid);
+    },
+  };
+}
+
+/**
  * Deletes one test-owned thread and pauses before commit. Product APIs cannot
  * pause after DELETE has locked the parent but before the transaction commits,
  * so this fixture exposes that exact projection/deletion concurrency boundary.
@@ -1789,8 +1839,8 @@ export async function holdOrgAdmissionLockFixture(args: {
       );
       return rows[0]?.waiterCount ?? 0;
     },
-    // B1 subjects precede the org lock. A second admission can wait on the
-    // first admission's subject lock instead of this fixture's org lock.
+    // A second admission can wait on the first admission instead of this
+    // fixture's org lock.
     transitiveWaiterCount: () => {
       return transitiveBlockedWaiterCount(holderPid);
     },
@@ -2044,75 +2094,6 @@ export async function replaceThreadSessionBindingFixture(args: {
   if (updated.length !== 1) {
     throw new Error("Expected one chat thread session binding to be replaced");
   }
-}
-
-/**
- * Product APIs cannot transfer session ownership. Stage that infrastructure-only
- * race without changing the committed preparation snapshot, then let admission
- * observe it after waiting for the real session row lock.
- */
-export async function holdThreadSessionOwnerChangeFixture(args: {
-  readonly threadId: string;
-  readonly ownerChange:
-    | { readonly userId: string }
-    | { readonly orgId: string }
-    | { readonly agentId: string };
-  readonly clearConversation: boolean;
-  readonly signal: AbortSignal;
-}): Promise<{
-  readonly release: () => void;
-  readonly done: Promise<void>;
-  readonly blockedWaiterCount: () => Promise<number>;
-}> {
-  const started = createDeferredPromise<number>(args.signal);
-  const released = createDeferredPromise<void>(args.signal);
-  const done = onRejection(
-    db().transaction(async (tx) => {
-      const [thread] = await tx
-        .select({ agentSessionId: chatThreads.agentSessionId })
-        .from(chatThreads)
-        .where(eq(chatThreads.id, args.threadId));
-      if (!thread?.agentSessionId) {
-        throw new Error("Expected a bound chat thread session");
-      }
-      const [session] = await tx
-        .update(agentSessions)
-        .set({
-          ...args.ownerChange,
-          ...(args.clearConversation ? { conversationId: null } : {}),
-        })
-        .where(eq(agentSessions.id, thread.agentSessionId))
-        .returning({ id: agentSessions.id });
-      if (!session) {
-        throw new Error("Expected a bound agent session");
-      }
-      const [row] = await executeRawRows(
-        tx,
-        sql`SELECT pg_backend_pid() AS "pid"`,
-        databasePidRowSchema,
-      );
-      if (!row) {
-        throw new Error("Expected the session owner change holder pid");
-      }
-      started.resolve(row.pid);
-      await released.promise;
-    }),
-    (error) => {
-      started.reject(error);
-    },
-  );
-  const holderPid = await started.promise;
-  return {
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-    done,
-    blockedWaiterCount: async () => {
-      return await directBlockedWaiterCount(holderPid);
-    },
-  };
 }
 
 /** Replaces a completed run's native session blob with exact test-owned bytes. */
@@ -2779,8 +2760,12 @@ async function insertCanonicalSingleWrites(
     eventType: "output.message",
     content: "goal output",
     runId: randomUUID(),
-    runGroupId: single.goalId,
   });
+  // Current writers never emit Goal context; restore the historical pointer.
+  await tx
+    .update(chatEvents)
+    .set({ contextType: "goal", contextId: single.goalId })
+    .where(eq(chatEvents.id, single.goalContextEventId));
   await appendHistoricalGoalMarker(tx, {
     id: single.goalOpenId,
     chatThreadId: threadId,

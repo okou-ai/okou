@@ -1,13 +1,9 @@
 import { xResourceReads } from "@okouai/db/schema/x-resource-usage";
 import { command } from "ccstate";
-import { and, asc, eq, exists, inArray, lt } from "drizzle-orm";
+import { and, asc, inArray, lt, sql } from "drizzle-orm";
 
 import { type Db, writeDb$ } from "../external/db";
-import {
-  lockXResourceAdmission,
-  readXResourceClock,
-  setXResourceTransactionTimeouts,
-} from "./x-resource-usage-lifecycle";
+import { readXResourceClock } from "./x-resource-usage-lifecycle";
 
 const DELETE_BATCH_SIZE = 1000;
 
@@ -17,64 +13,60 @@ async function cleanupXResourceReads(
   signal: AbortSignal,
 ): Promise<number> {
   signal.throwIfAborted();
-  return await db.transaction(
-    async (tx) => {
-      await setXResourceTransactionTimeouts(tx);
-      signal.throwIfAborted();
-      await lockXResourceAdmission(tx, "exclusive");
-      signal.throwIfAborted();
+  // Admission is limited to today and yesterday. Sample the database clock
+  // before selecting keys; delayed cleanup never extends that admission window.
+  const now = await readXResourceClock(db);
+  signal.throwIfAborted();
+  const yesterday = new Date(now);
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  const cutoff = yesterday.toISOString().slice(0, 10);
+  const keys = await db
+    .select({
+      utcDay: xResourceReads.utcDay,
+      resourceType: xResourceReads.resourceType,
+      resourceId: xResourceReads.resourceId,
+    })
+    .from(xResourceReads)
+    .where(
+      and(
+        lt(xResourceReads.utcDay, cutoff),
+        resourceIds === undefined
+          ? undefined
+          : inArray(xResourceReads.resourceId, resourceIds),
+      ),
+    )
+    .orderBy(
+      asc(xResourceReads.utcDay),
+      asc(xResourceReads.resourceType),
+      asc(xResourceReads.resourceId),
+    )
+    .limit(DELETE_BATCH_SIZE);
+  signal.throwIfAborted();
+  if (keys.length === 0) {
+    return 0;
+  }
 
-      // Read the database clock after waiting for in-flight admissions. An
-      // older transaction timestamp would retain an extra day across midnight.
-      const now = await readXResourceClock(tx);
-      signal.throwIfAborted();
-      const yesterday = new Date(now);
-      yesterday.setUTCDate(yesterday.getUTCDate() - 1);
-      const cutoff = yesterday.toISOString().slice(0, 10);
-      const expired = tx.$with("expired_x_resource_reads").as(
-        tx
-          .select()
-          .from(xResourceReads)
-          .where(
-            and(
-              lt(xResourceReads.utcDay, cutoff),
-              resourceIds === undefined
-                ? undefined
-                : inArray(xResourceReads.resourceId, resourceIds),
-            ),
-          )
-          .orderBy(
-            asc(xResourceReads.utcDay),
-            asc(xResourceReads.resourceType),
-            asc(xResourceReads.resourceId),
-          )
-          .limit(DELETE_BATCH_SIZE),
-      );
-      const deleted = await tx
-        .with(expired)
-        .delete(xResourceReads)
-        .where(
-          exists(
-            tx
-              .select({ resourceId: expired.resourceId })
-              .from(expired)
-              .where(
-                and(
-                  eq(xResourceReads.utcDay, expired.utcDay),
-                  eq(xResourceReads.resourceType, expired.resourceType),
-                  eq(xResourceReads.resourceId, expired.resourceId),
-                ),
-              ),
-          ),
-        )
-        .returning({ resourceId: xResourceReads.resourceId });
-      // Cancellation must roll back the deletion, rather than report an error
-      // after committing a request whose owner has gone away.
-      signal.throwIfAborted();
-      return deleted.length;
-    },
-    { isolationLevel: "read committed" },
-  );
+  // One bounded statement: never hold locks across reads and writes. Repeat
+  // the day predicate so a changed row cannot be deleted on stale eligibility;
+  // the full primary key keeps the delete confined to the selected rows.
+  const deleted = await db
+    .delete(xResourceReads)
+    .where(
+      and(
+        lt(xResourceReads.utcDay, cutoff),
+        inArray(
+          sql`(${xResourceReads.utcDay}, ${xResourceReads.resourceType}, ${xResourceReads.resourceId})`,
+          keys.map((key) => {
+            return sql`(${key.utcDay}, ${key.resourceType}, ${key.resourceId})`;
+          }),
+        ),
+      ),
+    )
+    .returning({ resourceId: xResourceReads.resourceId });
+  // A cancellation after this single statement has committed can still be
+  // reported to the caller; a retry is idempotent and drains the next batch.
+  signal.throwIfAborted();
+  return deleted.length;
 }
 
 export const cleanupXResourceReads$ = command(

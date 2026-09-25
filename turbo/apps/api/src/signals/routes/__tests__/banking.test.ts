@@ -1,5 +1,4 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
-import { createStore } from "ccstate";
 
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
@@ -26,14 +25,12 @@ import {
   seedBankingState,
 } from "./helpers/banking-state";
 import { bankingRoutes } from "../banking";
-import { seedRun$ } from "./helpers/usage-state";
 
 const context = testContext();
 
 const UNATTENDED_TRIGGER_SOURCES = [
   "automation-schedule",
   "automation-event",
-  "goal",
 ] as const satisfies readonly TriggerSource[];
 
 const FINICITY_BASE_URL = "https://api.finicity.com";
@@ -115,35 +112,20 @@ async function seedBankingFixture(
     visibility: "private",
   });
 
-  // Existing Goal runs retain their banking grant boundary while draining.
-  const run =
-    args.triggerSource === "goal"
-      ? await createStore().set(
-          seedRun$,
-          {
-            orgId: actor.orgId,
-            userId: actor.userId,
-            composeId: agent.agentId,
-            triggerSource: "goal",
-            status: "running",
-            startedAt: new Date(now()),
-          },
-          context.signal,
-        )
-      : args.triggerSource
-        ? await api.createDirectRun(actor, {
-            agentId: agent.agentId,
-            prompt: "banking automation precondition",
-            modelProviderType: "anthropic-api-key",
-            triggerSource: args.triggerSource,
-            vars: { OKOU_AGENT_ID: agent.agentId },
-            secrets: { OKOU_TOKEN: "bdd-banking-okou-token" },
-          })
-        : await api.createRun(actor, {
-            agentId: agent.agentId,
-            prompt: "banking precondition",
-            modelProvider: "anthropic-api-key",
-          });
+  const run = args.triggerSource
+    ? await api.createDirectRun(actor, {
+        agentId: agent.agentId,
+        prompt: "banking automation precondition",
+        modelProviderType: "anthropic-api-key",
+        triggerSource: args.triggerSource,
+        vars: { OKOU_AGENT_ID: agent.agentId },
+        secrets: { OKOU_TOKEN: "bdd-banking-okou-token" },
+      })
+    : await api.createRun(actor, {
+        agentId: agent.agentId,
+        prompt: "banking precondition",
+        modelProvider: "anthropic-api-key",
+      });
 
   const providerCustomerId = randomProviderId("customer");
   const enabledAccountId = randomProviderId("acct-enabled");

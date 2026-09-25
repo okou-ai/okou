@@ -273,33 +273,6 @@ describe("FW-1: firewall auth boundaries", () => {
 });
 
 describe("FW-2: template resolution without connector refresh", () => {
-  it("denies credential access after user.deleted without blocking another user", async () => {
-    const fw = createFirewallApi(context);
-    const owned = await firewallRun();
-    const other = await firewallRun();
-    const body = {
-      encryptedSecrets: fw.encryptedSecretsBody({ API_KEY: "secret-value" }),
-      authHeaders: { Authorization: `Bearer ${secretTemplate("API_KEY")}` },
-    };
-    expect(
-      (await fw.requestFirewallAuth(owned.headers, body, [200])).status,
-    ).toBe(200);
-
-    const webhooks = createWebhookCallbackApi(context);
-    webhooks.configureClerkWebhookSecret();
-    webhooks.verifyNextClerkWebhook({
-      type: "user.deleted",
-      data: { id: owned.actor.userId },
-    });
-    await webhooks.requestClerkWebhook("{}", {}, [200]);
-    expect(
-      (await fw.requestFirewallAuth(owned.headers, body, [403])).status,
-    ).toBe(403);
-    expect(
-      (await fw.requestFirewallAuth(other.headers, body, [200])).status,
-    ).toBe(200);
-  });
-
   it("resolves secret-backed auth headers", async () => {
     const fw = createFirewallApi(context);
     const { headers } = await firewallRun();

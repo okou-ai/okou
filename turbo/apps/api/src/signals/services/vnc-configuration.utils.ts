@@ -107,11 +107,6 @@ const failures = {
     code: VNC_ERROR_CODES.REVISION_EXHAUSTED,
     message: "VNC configuration revision limit reached",
   },
-  ownerChanged: {
-    kind: "conflict",
-    code: VNC_ERROR_CODES.OWNER_CHANGED,
-    message: "VNC owner is no longer writable",
-  },
   resourceIdConflict: {
     kind: "conflict",
     code: VNC_ERROR_CODES.RESOURCE_ID_CONFLICT,

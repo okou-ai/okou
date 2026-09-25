@@ -7143,7 +7143,6 @@
       "invalidHost": "Gib einen gültigen Hostnamen oder eine IP-Adresse ohne URL, Benutzernamen oder Port ein.",
       "invalidInput": "Prüfe die VNC-Konfiguration und versuche es erneut.",
       "invalidTrust": "Gib ein gültiges Paket mit bis zu 8 öffentlichen CA-Zertifikaten und maximal 64 KiB ein.",
-      "ownerChanged": "Dein Workspace-Zugriff wurde geändert. Aktualisiere die Ansicht, bevor du fortfährst.",
       "revisionExhausted": "Diese Konfiguration kann nicht mehr aktualisiert werden. Erstelle eine neue."
     },
     "host": "Hostname oder IP-Adresse",

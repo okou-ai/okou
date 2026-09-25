@@ -7217,7 +7217,6 @@
       "invalidHost": "Digite um nome de host ou endereço IP válido, sem URL, usuário ou porta.",
       "invalidInput": "Confira a configuração VNC e tente novamente.",
       "invalidTrust": "Insira até 8 certificados públicos de CA válidos, com no máximo 64 KiB.",
-      "ownerChanged": "Seu acesso ao espaço de trabalho mudou. Atualize antes de continuar.",
       "revisionExhausted": "Esta configuração não pode mais ser atualizada. Crie uma nova."
     },
     "host": "Nome do host ou endereço IP",

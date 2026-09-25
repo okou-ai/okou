@@ -7493,7 +7493,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     const unauthorizedMessage = await integrations.requestSendPhoneMessage(
       null,
       {
-        toNumber: "+15555551212",
         text: "BDD AgentPhone message",
       },
       [401],
@@ -7691,8 +7690,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       actor,
       {
         agentphoneAgentId: connectBody.agentphoneAgentId,
-        // Deprecated and ignored: the linked handle is always the recipient.
-        toNumber: uniquePhoneHandle(),
         text: "BDD linked AgentPhone message",
       },
       [200],

@@ -743,7 +743,7 @@ export class DiscordGateway {
   }
 
   // Retains bounded, content-free references for operator diagnosis; Durable
-  // Object storage is outside account erasure, so message bodies stay out.
+  // Object storage is outside account deletion, so message bodies stay out.
   // Returns the oldest record to drop so retention stays bounded.
   private async deadLetterEviction(): Promise<string | undefined> {
     if (this.state.deadLettered < MAX_DEAD_LETTERS) return undefined;
