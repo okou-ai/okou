@@ -1083,8 +1083,15 @@
     {
       "idx": 1232,
       "version": "7",
-      "when": 1790303619613,
-      "tag": "1232_hosted_artifact_link_layout_okou_default",
+      "when": 1790303606990,
+      "tag": "1232_discord_canonical_delivery_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 1233,
+      "version": "7",
+      "when": 1790304854813,
+      "tag": "1233_hosted_artifact_link_layout_okou_default",
       "breakpoints": true
     }
   ]

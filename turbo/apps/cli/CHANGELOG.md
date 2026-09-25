@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.362.0](https://github.com/okou-ai/okou/compare/cli-v9.361.0...cli-v9.362.0) (2026-09-25)
+
+
+### Features
+
+* **browser:** support native checkbox input requests ([#36807](https://github.com/okou-ai/okou/issues/36807)) ([46b2f26](https://github.com/okou-ai/okou/commit/46b2f264ae9f2c7f49c403ea3e9318627e65684d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.509.0
+    * @okouai/core bumped to 8.710.3
+    * @okouai/pi-agent-runtime bumped to 1.40.15
+
 ## [9.361.0](https://github.com/okou-ai/okou/compare/cli-v9.360.1...cli-v9.361.0) (2026-09-25)
 
 

@@ -56,6 +56,7 @@ const initInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     const prepared = await set(
       prepareCanonicalPublishedAsset$,
       {
+        provider: "slack",
         runId,
         userId: auth.userId,
         orgId: auth.orgId,

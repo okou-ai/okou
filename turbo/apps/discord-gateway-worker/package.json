@@ -1,0 +1,29 @@
+{
+  "name": "@okouai/discord-gateway-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "wrangler deploy --env test --dry-run --outdir dist",
+    "check-types": "tsc --noEmit",
+    "lint": "oxlint && eslint . --max-warnings 0",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@okouai/api-contracts": "workspace:*",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260903.1",
+    "@okouai/eslint-config": "workspace:*",
+    "@okouai/typescript-config": "workspace:*",
+    "@types/node": "^24.3.0",
+    "@typescript/native": "npm:typescript@7.0.2",
+    "eslint": "^9.34.0",
+    "miniflare": "5.20260903.0-alpha",
+    "oxlint": "^1.75.0",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "vitest": "^5.0.0",
+    "wrangler": "^4.129.0"
+  }
+}
