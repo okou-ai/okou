@@ -2,7 +2,6 @@ import { awardCompletedGetStartedQuest } from "../services/get-started-rewards.s
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { command } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { slackOauthContract } from "@okouai/api-contracts/contracts/slack-oauth";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { eq } from "drizzle-orm";
@@ -31,8 +30,6 @@ import {
 import { SLACK_BOT_SCOPES } from "../services/slack-data.service";
 import type { RouteEntry } from "../route-entry";
 import { getOAuthApiOrigin } from "../../lib/oauth-origin";
-import { OFFICIAL_SLACK_PUBLIC_BRAND } from "../../lib/slack-official-app";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import {
   completeSlackConnectorOAuth$,
   startSlackConnectorOAuth$,
@@ -54,7 +51,6 @@ interface OAuthState {
   readonly flow: "install" | "connect";
   readonly reinstall: boolean;
   readonly prompt: string | null;
-  readonly publicBrand: PublicBrand;
 }
 
 interface SignedOAuthState extends OAuthState {
@@ -122,17 +118,12 @@ function parseOAuthStateValue(parsed: unknown): OAuthState | null {
   }
 
   const record = parsed as Record<string, unknown>;
-  const publicBrand = record.publicBrand;
-  if (publicBrand !== "vm0" && publicBrand !== "okou") {
-    return null;
-  }
   return {
     orgId: optionalString(record.orgId),
     userId: optionalString(record.userId),
     flow: record.flow === "connect" ? "connect" : "install",
     reinstall: optionalBoolean(record.reinstall),
     prompt: optionalString(record.prompt),
-    publicBrand,
   };
 }
 
@@ -261,7 +252,6 @@ const installOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
       signal,
     );
   }
-  const publicBrand = PUBLIC_BRAND;
   const userId = query.userId;
   const redirectUri = callbackRedirectUri(origin);
   const state = createOAuthState(
@@ -271,7 +261,6 @@ const installOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
       flow: "install",
       reinstall: query.reinstall === "1",
       prompt: query.prompt ? truncatePrompt(query.prompt) : null,
-      publicBrand,
     },
     redirectUri,
   );
@@ -305,7 +294,6 @@ const connectOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
       signal,
     );
   }
-  const publicBrand = PUBLIC_BRAND;
   const userId = query.userId;
   if (!query.orgId || !userId) {
     return jsonErrorResponse("Missing orgId or userId", 400);
@@ -334,7 +322,6 @@ const connectOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
       flow: "connect",
       reinstall: false,
       prompt: query.prompt ? truncatePrompt(query.prompt) : null,
-      publicBrand,
     },
     redirectUri,
   );
@@ -496,10 +483,7 @@ async function persistSlackInstallation(
   },
   signal: AbortSignal,
 ): Promise<SlackInstallation> {
-  const fields = {
-    ...args.fields,
-    publicBrand: OFFICIAL_SLACK_PUBLIC_BRAND,
-  } as const;
+  const { fields } = args;
   const isPlatformFlow = Boolean(args.state.orgId && args.state.userId);
   const [installation] = args.isReinstall
     ? await tx

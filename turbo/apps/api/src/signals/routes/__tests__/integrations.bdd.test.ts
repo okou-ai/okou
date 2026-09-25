@@ -2674,7 +2674,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
       expect(state.chat_ingress[0]).toMatchObject({
         eventId,
         payload: eventBody,
-        publicBrand: "okou",
         routeId: state.chat_thread_routes[0]?.id,
         status: "processed",
         retryCount: 3,
@@ -2763,7 +2762,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
         readChatEventContextFixture(canonicalInputMessage.id),
       ).resolves.toMatchObject({
         slackBotUserId: botUserId,
-        slackPublicBrand: "okou",
         slackMessageText: originalMessageText,
         slackMessageAssets: [
           {

@@ -1,5 +1,44 @@
 # Deployment Compatibility
 
+## Slack and Discord public brand retirement (2026-09-25)
+
+Slack and Discord are Okou-only. The API no longer reads or writes
+`public_brand` on `slack_org_installations`, `slack_chat_ingress`,
+`chat_slack_context`, `discord_chat_ingress` or `chat_discord_context`, and the
+Slack webhook handlers no longer overlay a request brand on the installation
+row (#36766, slice A).
+
+Migration `1229_slack_discord_public_brand_okou_default` sets the column default
+to `'okou'` on `slack_chat_ingress`, `chat_slack_context`,
+`discord_chat_ingress` and `chat_discord_context` (previously no default);
+`slack_org_installations` already defaulted to `'okou'`. An old API therefore
+reads a non-null `okou` brand from rows the new API inserts, so old API/new DB
+and rollback remain compatible. The columns and their ORM declarations stay in
+place; drop them in a separate migration after older API deployments drain.
+
+Persisted callback payloads:
+
+- `slack:chat`: the reader no longer declares `publicBrand`, so stored payloads
+  that carry it keep parsing (the key is stripped). Older APIs require the
+  field, so the writer still emits the literal `publicBrand: "okou"`. Remove
+  that write once no API rollback target predates this change.
+- `chat` callback `discordDelivery`: the target no longer declares
+  `publicBrand`; stored targets that carry it keep parsing. The writer stops
+  emitting it. An older API rejects a Discord target without it, so an API
+  rollback below this change fails delivery for Discord runs started on the new
+  API. Discord is off by default (`_discordIntegration`, no enabled orgs) and
+  only reachable through user overrides, so no compatibility write is kept.
+
+Slack OAuth state no longer carries `publicBrand`. The new API accepts states
+issued before this change, because it ignores the key. An older API rejects
+states without it, so an install or connect started on the new API and
+completed on an older one (the rollout window or a rollback) fails with
+"Invalid OAuth state." States expire after 15 minutes; the user restarts the
+flow. The `?publicBrand=` install query parameter was already ignored.
+
+The test-only `/api/test/slack-state` contract no longer accepts
+`public_brand` or returns `publicBrand`; undeclared request keys are stripped.
+
 ## Discord canonical Chat sources (2026-09-24)
 
 The default-off Discord integration adds `discord` to the canonical Chat context,

@@ -44,7 +44,6 @@ interface SignedOAuthStatePayload {
   readonly issuedAt: number;
   readonly orgId: string | null;
   readonly prompt: string | null;
-  readonly publicBrand: "vm0" | "okou";
   readonly redirectUri: string;
   readonly reinstall: boolean;
   readonly userId: string | null;
@@ -219,26 +218,9 @@ describe("Slack OAuth API routes", () => {
       expect(scopes).toContain("files:write");
       expect(signedOAuthState(redirectUrl).payload).toMatchObject({
         flow: "install",
-        publicBrand: "okou",
         redirectUri: `${API_ORIGIN}/api/integrations/slack/oauth/callback`,
       });
       expect(response.headers.get("cache-control")).toBe("no-store");
-    });
-
-    it("serializes the Okou brand in install state", async () => {
-      const response = await appRequest("/api/slack/oauth/install", {
-        origin: "https://okou.ai",
-      });
-
-      expect(response.status).toBe(307);
-      const redirectUrl = new URL(response.headers.get("location")!);
-      expect(redirectUrl.searchParams.get("redirect_uri")).toBe(
-        `${API_ORIGIN}/api/integrations/slack/oauth/callback`,
-      );
-      expect(signedOAuthState(redirectUrl).payload).toMatchObject({
-        publicBrand: "okou",
-        redirectUri: `${API_ORIGIN}/api/integrations/slack/oauth/callback`,
-      });
     });
 
     it("includes platform state and truncates prompt by codepoint", async () => {
@@ -272,7 +254,6 @@ describe("Slack OAuth API routes", () => {
       expect(state).toMatchObject({
         orgId: "org_1",
         prompt: "summarize my inbox",
-        publicBrand: "okou",
         redirectUri: `${API_ORIGIN}/api/integrations/slack/oauth/callback`,
         userId: "user_1",
       });
@@ -327,7 +308,6 @@ describe("Slack OAuth API routes", () => {
       expect(redirectUrl.searchParams.get("redirect_uri")).toBe(
         `${API_ORIGIN}/api/integrations/slack/oauth/callback`,
       );
-      expect(signedOAuthState(redirectUrl).payload.publicBrand).toBe("okou");
     });
 
     it("trusts okou.ai subdomains for shared Okou starts", async () => {
@@ -342,7 +322,6 @@ describe("Slack OAuth API routes", () => {
       expect(redirectUrl.searchParams.get("redirect_uri")).toBe(
         `${API_ORIGIN}/api/integrations/slack/oauth/callback`,
       );
-      expect(signedOAuthState(redirectUrl).payload.publicBrand).toBe("okou");
     });
 
     it("does not accept a callback host from untrusted request headers", async () => {
@@ -357,7 +336,6 @@ describe("Slack OAuth API routes", () => {
       expect(redirectUrl.searchParams.get("redirect_uri")).toBe(
         `${API_ORIGIN}/api/integrations/slack/oauth/callback`,
       );
-      expect(signedOAuthState(redirectUrl).payload.publicBrand).toBe("okou");
     });
 
     it("does not trust lookalike okou.ai web origins", async () => {
@@ -374,7 +352,6 @@ describe("Slack OAuth API routes", () => {
       expect(redirectUrl.searchParams.get("redirect_uri")).toBe(
         `${API_ORIGIN}/api/integrations/slack/oauth/callback`,
       );
-      expect(signedOAuthState(redirectUrl).payload.publicBrand).toBe("okou");
     });
   });
 
@@ -401,7 +378,6 @@ describe("Slack OAuth API routes", () => {
       expect(state).toMatchObject({
         flow: "connect",
         orgId: fixture.orgId,
-        publicBrand: "okou",
         userId: fixture.userId,
       });
     });
@@ -442,7 +418,6 @@ describe("Slack OAuth API routes", () => {
         flow: "connect",
         orgId: fixture.orgId,
         prompt: "summarize my inbox",
-        publicBrand: "okou",
         redirectUri: `${API_ORIGIN}/api/integrations/slack/oauth/callback`,
         userId: fixture.userId,
       });
@@ -568,7 +543,6 @@ describe("Slack OAuth API routes", () => {
         installedByUserId: fixture.userId,
         botUserId: "B_TEST",
         botScopes: JSON.stringify(["chat:write", "channels:read"]),
-        publicBrand: "okou",
       });
       expect(context.mocks.slack.oauth.v2.access).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -630,7 +604,6 @@ describe("Slack OAuth API routes", () => {
       );
       expect(installation).toMatchObject({
         botUserId: "B_TEST",
-        publicBrand: "okou",
       });
       expect(context.mocks.slack.oauth.v2.access).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -705,27 +678,19 @@ describe("Slack OAuth API routes", () => {
     it.each([
       ["missing", ""],
       ["malformed", `&state=${encodeURIComponent("not-json")}`],
-      ["omitted-brand", `&state=${encodeURIComponent("{}")}`],
-      [
-        "invalid-brand",
-        `&state=${encodeURIComponent(JSON.stringify({ publicBrand: "other" }))}`,
-      ],
-    ])(
-      "rejects %s state using the trusted request brand",
-      async (_caseName, stateQuery) => {
-        const response = await appRequest(
-          `/api/integrations/slack/oauth/callback?code=valid-code${stateQuery}`,
-          { origin: "https://okou.ai" },
-        );
+    ])("rejects %s state", async (_caseName, stateQuery) => {
+      const response = await appRequest(
+        `/api/integrations/slack/oauth/callback?code=valid-code${stateQuery}`,
+        { origin: "https://okou.ai" },
+      );
 
-        expect(response.status).toBe(307);
-        const location = new URL(response.headers.get("location")!);
-        expect(location.origin).toBe(OKOU_APP_ORIGIN);
-        expect(location.pathname).toBe("/slack/failed");
-        expect(location.searchParams.get("error")).toBe("Invalid OAuth state.");
-        expect(context.mocks.slack.oauth.v2.access).not.toHaveBeenCalled();
-      },
-    );
+      expect(response.status).toBe(307);
+      const location = new URL(response.headers.get("location")!);
+      expect(location.origin).toBe(OKOU_APP_ORIGIN);
+      expect(location.pathname).toBe("/slack/failed");
+      expect(location.searchParams.get("error")).toBe("Invalid OAuth state.");
+      expect(context.mocks.slack.oauth.v2.access).not.toHaveBeenCalled();
+    });
 
     it("uses the configured app for provider errors with malformed state", async () => {
       const response = await appRequest(
@@ -1036,7 +1001,6 @@ describe("Slack OAuth API routes", () => {
           "channels:read",
           "users:read",
         ]),
-        publicBrand: "okou",
       });
     });
 
@@ -1227,7 +1191,6 @@ describe("Slack OAuth API routes", () => {
         fixture.slackWorkspaceId,
         context.signal,
       );
-      expect(installation?.publicBrand).toBe("okou");
       await flushWaitUntilForTest();
       expect(
         slackPostMessageContaining("would you like me to run"),

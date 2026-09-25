@@ -9,7 +9,6 @@ import {
   testSlackStateContract,
   type TestSlackStatePostBody,
 } from "@okouai/api-contracts/contracts/test-slack-state";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -90,7 +89,6 @@ interface UpsertSlackInstallationInput {
   readonly botToken: string;
   readonly botScopes?: string | null;
   readonly installedByUserId?: string;
-  readonly publicBrand?: PublicBrand;
 }
 
 async function upsertSlackInstallation(
@@ -113,7 +111,6 @@ async function upsertSlackInstallation(
       botUserId: input.botUserId,
       botScopes: input.botScopes ?? null,
       installedByUserId: input.installedByUserId,
-      ...(input.publicBrand ? { publicBrand: input.publicBrand } : {}),
     })
     .onConflictDoUpdate({
       target: slackOrgInstallations.slackWorkspaceId,
@@ -124,7 +121,6 @@ async function upsertSlackInstallation(
         botUserId: input.botUserId,
         botScopes: input.botScopes ?? null,
         installedByUserId: input.installedByUserId,
-        ...(input.publicBrand ? { publicBrand: input.publicBrand } : {}),
         updatedAt: nowDate(),
       },
     })
@@ -342,7 +338,6 @@ async function slackInstallation(db: ReadonlyDb, teamId: string) {
           botUserId: slackOrgInstallations.botUserId,
           botScopes: slackOrgInstallations.botScopes,
           installedByUserId: slackOrgInstallations.installedByUserId,
-          publicBrand: slackOrgInstallations.publicBrand,
           createdAt: slackOrgInstallations.createdAt,
         })
         .from(slackOrgInstallations)
@@ -391,7 +386,6 @@ function slackChatIngressRows(db: ReadonlyDb, teamId: string) {
       routeId: slackChatIngress.routeId,
       eventId: slackChatIngress.eventId,
       payload: slackChatIngress.payload,
-      publicBrand: slackChatIngress.publicBrand,
       status: slackChatIngress.status,
       retryCount: slackChatIngress.retryCount,
       processingAttemptCount: slackChatIngress.processingAttemptCount,
@@ -710,7 +704,6 @@ async function maybeUpsertSlackInstallationForPost(
     botScopes:
       body.bot_scopes === undefined ? SLACK_BOT_SCOPES : body.bot_scopes,
     installedByUserId: actor.userId,
-    publicBrand: body.public_brand,
   });
 }
 
@@ -720,7 +713,6 @@ function hasExplicitSlackInstallationFields(body: TestSlackStatePostBody) {
     body.bot_user_id !== undefined ||
     body.bot_scopes !== undefined ||
     body.bot_token !== undefined ||
-    body.public_brand !== undefined ||
     body.installation_org_id !== undefined
   );
 }

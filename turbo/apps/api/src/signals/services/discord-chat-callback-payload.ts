@@ -8,7 +8,6 @@ export const discordDeliveryTargetSchema = z.object({
   channelId: z.string().min(1),
   messageId: z.string().min(1),
   sessionKey: z.string().min(1),
-  publicBrand: z.literal("okou"),
 });
 
 export type DiscordDeliveryTarget = z.infer<typeof discordDeliveryTargetSchema>;

@@ -106,7 +106,6 @@ interface ChatEventContextFixture {
   readonly slackChannelId: string | null;
   readonly slackMessageTs: string | null;
   readonly slackBotUserId: string | null;
-  readonly slackPublicBrand: PublicBrand | null;
   readonly slackConversationContext: string | null;
   readonly slackMessageText: string | null;
   readonly slackMessageFiles: ChatSlackMessageFiles | null;
@@ -207,7 +206,6 @@ export async function readChatEventContextFixture(
       slackChannelId: chatSlackContext.channelId,
       slackMessageTs: chatSlackContext.messageTs,
       slackBotUserId: chatSlackContext.botUserId,
-      slackPublicBrand: chatSlackContext.publicBrand,
       slackConversationContext: chatSlackContext.conversationContext,
       slackMessageText: chatSlackContext.messageText,
       slackMessageFiles: chatSlackContext.messageFiles,
@@ -310,7 +308,6 @@ const annotationProjectionInputs = [
         channelId: "C123",
         messageTs: "1753257600.000100",
         botUserId: "U_BOT123",
-        publicBrand: "vm0",
         conversationContext: "",
         messageText: "slack linked",
         messageFiles: [],
@@ -810,7 +807,6 @@ export async function insertQueuedSlackMissingContextFixture(args: {
         channelId: "C_MONITOR_FAILURE",
         messageTs: "1.000001",
         botUserId: "U_MONITOR_FAILURE_BOT",
-        publicBrand: "vm0",
         conversationContext: "",
         messageText: args.content,
         messageFiles: [],

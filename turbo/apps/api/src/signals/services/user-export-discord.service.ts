@@ -150,7 +150,6 @@ export async function readDiscordUserExportPage(args: DiscordExportArgs) {
             eventId: discordChatIngress.eventId,
             messageId: discordChatIngress.messageId,
             payload: discordChatIngress.payload,
-            publicBrand: discordChatIngress.publicBrand,
             status: discordChatIngress.status,
             createdAt: discordChatIngress.createdAt,
             updatedAt: discordChatIngress.updatedAt,
