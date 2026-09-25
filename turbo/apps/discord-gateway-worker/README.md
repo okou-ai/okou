@@ -120,6 +120,17 @@ reference (event type, ID and size) in the same transaction, so resuming cannot
 replay it and stall delivery. Discord's own resume retention is finite: prolonged outages
 or nonresumable sessions cannot recover events Discord no longer retains.
 
+Only events that can start or end work occupy the ordered outbox: DMs, guild
+messages whose `mentions` include the bot user reported by READY, and
+`GUILD_DELETE`. Other guild chatter only advances the checkpoint. This is a
+transport filter; the API still revalidates the mention and sender identity, and
+checks the mention before any identity-provider call.
+
+Delivery is strictly ordered, so a failing head-of-queue event delays every
+guild. `/health` reports `deliveryFailures` (consecutive failed attempts for the
+head event) and `oldestPendingAgeMs` (null when the outbox is empty); activation
+monitoring must alert when either keeps rising.
+
 An event the API rejects as malformed (`400`) or too large (`413`) cannot
 succeed on retry, so the relay moves it out of the outbox into a dead-letter
 record and continues with later events; one member's message never stops
@@ -133,7 +144,8 @@ while the relay still reports `running`.
 Fatal Gateway close codes, an application mismatch, an invalid receipt or any
 other permanent API rejection (such as `401`, `403` or `404`) require operator
 correction and a new authenticated `/start`; they do not erase the outbox.
-`/health` exposes the stopped reason, pending and dead-lettered counts, never
+`/health` exposes the stopped reason, pending, dead-lettered and delivery-failure
+counts and the oldest pending age, never
 event content, credentials or session IDs. Identify reservations survive process loss,
 respect Discord's reported session-start budget and enforce the five-second
 single-shard Identify interval. A failed connection may conservatively consume

@@ -182,6 +182,26 @@ describe("canonical Discord ingress", () => {
     },
   );
 
+  it("ignores unmentioned guild chatter even while the identity provider is failing", async () => {
+    const actor = await connected();
+    const provider = mockDiscordProvider(actor);
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
+      new Error("Clerk unavailable"),
+    );
+    const message = discordMessageForTest(actor, {
+      channelId: provider.guildChannelId,
+      content: "ordinary guild conversation",
+    });
+
+    expect(
+      (await postDiscordMessage(context, { ...message, mentions: [] })).body,
+    ).toStrictEqual({
+      ok: true,
+      outcome: "ignored",
+      reason: "no-explicit-mention",
+    });
+  });
+
   it("creates one owned input and run across concurrent relay retries", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);

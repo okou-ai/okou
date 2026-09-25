@@ -1,9 +1,11 @@
 import { createHmac } from "node:crypto";
 import { Response } from "miniflare";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   APPLICATION_ID,
   BOT_TOKEN,
+  BOT_USER_ID,
   CHANNEL_ID,
   GATEWAY_SECRET,
   GUILD_ID,
@@ -27,6 +29,8 @@ describe("Discord Gateway relay", () => {
       resumable: false,
       pending: 0,
       deadLettered: 0,
+      deliveryFailures: 0,
+      oldestPendingAgeMs: null,
       fatal: null,
     });
     expect(relay.opened).toEqual([]);
@@ -64,8 +68,8 @@ describe("Discord Gateway relay", () => {
         channel_id: CHANNEL_ID,
         guild_id: GUILD_ID,
         author: { id: "100000000000000005", username: "member", bot: false },
-        content: "<@100000000000000001> Hello",
-        mentions: [{ id: APPLICATION_ID, username: "okou", bot: true }],
+        content: `<@${BOT_USER_ID}> Hello`,
+        mentions: [{ id: BOT_USER_ID, username: "okou", bot: true }],
         attachments: [],
         type: 0,
       },
@@ -83,6 +87,134 @@ describe("Discord Gateway relay", () => {
       })
       .toMatchObject({ pending: 0, resumable: true, connected: true });
   });
+
+  it("relays only DMs and bot mentions while checkpointing past other guild chatter", async () => {
+    const relay = await createRelay();
+    const gateway = await relay.start();
+    gateway.hello();
+    await gateway.next(2);
+    gateway.ready("filter-session");
+    const author = { id: "100000000000000005", username: "member", bot: false };
+    const guildMessage = (id: string, mentions: object[]) => {
+      return {
+        id,
+        channel_id: CHANNEL_ID,
+        guild_id: GUILD_ID,
+        author,
+        content: "hello",
+        mentions,
+        attachments: [],
+        type: 0,
+      };
+    };
+    // Mentioning another user, or only the application ID, does not address
+    // the bot user reported by READY.
+    gateway.send({
+      op: 0,
+      t: "MESSAGE_CREATE",
+      s: 2,
+      d: guildMessage("100000000000000011", [
+        { id: APPLICATION_ID, username: "app", bot: false },
+      ]),
+    });
+    gateway.send({
+      op: 0,
+      t: "MESSAGE_CREATE",
+      s: 3,
+      d: {
+        id: "100000000000000012",
+        channel_id: CHANNEL_ID,
+        author,
+        content: "direct message",
+        mentions: [],
+        attachments: [],
+        type: 0,
+      },
+    });
+    gateway.send({
+      op: 0,
+      t: "MESSAGE_CREATE",
+      s: 4,
+      d: guildMessage("100000000000000013", [
+        { id: BOT_USER_ID, username: "okou", bot: true },
+      ]),
+    });
+    gateway.send({
+      op: 0,
+      t: "MESSAGE_CREATE",
+      s: 5,
+      d: guildMessage("100000000000000014", []),
+    });
+
+    const relayed = [
+      JSON.parse((await relay.deliveries.next()).rawBody).eventId,
+      JSON.parse((await relay.deliveries.next()).rawBody).eventId,
+    ];
+    expect(relayed).toEqual([
+      "MESSAGE_CREATE:100000000000000012",
+      "MESSAGE_CREATE:100000000000000013",
+    ]);
+    await expect
+      .poll(() => {
+        return relay.health();
+      })
+      .toMatchObject({ pending: 0, connected: true });
+
+    gateway.socket.close(4000, "Unknown error");
+    const resumed = await relay.connections.next();
+    resumed.hello();
+    expect(await resumed.next(6)).toEqual({
+      op: 6,
+      d: { token: BOT_TOKEN, session_id: "filter-session", seq: 5 },
+    });
+    expect(relay.forwarded).toHaveLength(2);
+  });
+
+  it("reports head-of-queue delivery failures and the oldest pending age", async () => {
+    const relay = await createRelay();
+    relay.reply = () => {
+      return new Response(null, { status: 503 });
+    };
+    const gateway = await relay.start();
+    gateway.hello();
+    await gateway.next(2);
+    gateway.ready();
+    gateway.message();
+    await relay.deliveries.next();
+    await expect
+      .poll(async () => {
+        const health = z
+          .object({
+            pending: z.number(),
+            deliveryFailures: z.number(),
+            oldestPendingAgeMs: z.number().nullable(),
+          })
+          .parse(await relay.health());
+        return (
+          health.pending === 1 &&
+          health.deliveryFailures >= 1 &&
+          health.oldestPendingAgeMs !== null &&
+          health.oldestPendingAgeMs >= 0
+        );
+      })
+      .toBe(true);
+
+    relay.reply = () => {
+      return Response.json({ ok: true, outcome: "accepted" });
+    };
+    await expect
+      .poll(
+        () => {
+          return relay.health();
+        },
+        { timeout: 10_000 },
+      )
+      .toMatchObject({
+        pending: 0,
+        deliveryFailures: 0,
+        oldestPendingAgeMs: null,
+      });
+  }, 15_000);
 
   it.each(["missing-receipt", "non-json-200", "empty-204"])(
     "retains delivery after %s until a durable receipt is returned",
@@ -552,6 +684,8 @@ describe("Discord Gateway relay", () => {
         resumable: false,
         pending: 0,
         deadLettered: 0,
+        deliveryFailures: 0,
+        oldestPendingAgeMs: null,
         fatal: "gateway-close-4004",
       });
     expect(relay.opened).toHaveLength(1);
