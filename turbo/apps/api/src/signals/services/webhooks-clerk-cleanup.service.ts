@@ -2,7 +2,6 @@ import { organizationAgentRunScopePredicate } from "./pi-inference-lifecycle.ser
 import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { cleanupSharedThreadArtifacts$ } from "./shared-thread-artifacts.service";
-import { agents } from "@okouai/db/schema/agent";
 import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { artifacts } from "@okouai/db/schema/artifact";
@@ -49,7 +48,6 @@ import {
   inArray,
   isNotNull,
   like,
-  or,
   sql,
 } from "drizzle-orm";
 import { env } from "../../lib/env";
