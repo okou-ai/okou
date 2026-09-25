@@ -15,7 +15,7 @@
     "lint:emoji-data": "node scripts/generate-chat-thread-emoji-data.node.mjs --check",
     "lint:build-config": "tsx --test scripts/check-build-config.node.ts",
     "lint:runtime-imports": "node --test scripts/check-runtime-imports.node.mjs",
-    "lint:i18n": "tsx --test scripts/check-i18n-fixtures.node.mjs && pnpm i18n:check",
+    "lint:i18n": "node --test scripts/check-i18n-whitespace.test.node.mjs && node scripts/check-i18n-whitespace.node.mjs && tsx --test scripts/check-i18n-fixtures.node.mjs && pnpm i18n:check",
     "lint:localized-ui": "node --test scripts/check-localized-ui.node.mjs && node scripts/check-localized-ui.mjs",
     "lint:clerk-customize": "node --test scripts/check-clerk-customize.node.mjs && node scripts/check-clerk-customize.mjs",
     "lint:static-assets": "node scripts/check-static-assets.mjs",

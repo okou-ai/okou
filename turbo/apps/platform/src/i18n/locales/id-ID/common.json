@@ -2118,6 +2118,7 @@
         "wrappedUp": "Diselesaikan pada {{time}}"
       },
       "duration": {
+        "hoursMinutesShort": "{{hours}}j {{minutes}}m",
         "hoursShort_one": "{{count}}j",
         "hoursShort_other": "{{count}}j",
         "minutesShort_one": "{{count}}m",
@@ -5263,23 +5264,23 @@
         "title": "Ubah spesifikasi Notion menjadi proyek Linear"
       },
       "flagged-gmail-todoist-tasks": {
-        "description": "Buat tugas yang dapat diambil dari pesan dengan label yang dipilih.\\n",
-        "scenario": "Email penting menjadi lebih mudah diselesaikan ketika mereka keluar dari inbox sebagai tugas yang jelas. {{assistantName}} mengubah pesan Gmail yang dilabeli menjadi item Todoist dengan tanggal jatuh tempo dan konteks sumber.\\n",
+        "description": "Buat tugas yang dapat diambil dari pesan dengan label yang dipilih.",
+        "scenario": "Email penting menjadi lebih mudah diselesaikan ketika mereka keluar dari inbox sebagai tugas yang jelas. {{assistantName}} mengubah pesan Gmail yang dilabeli menjadi item Todoist dengan tanggal jatuh tempo dan konteks sumber.",
         "steps": {
           "one": {
-            "description": "{{assistantName}} mendeteksi label yang dipilih dan membaca pesan.\\n",
-            "title": "Pesan Gmail ditandai\\n"
+            "description": "{{assistantName}} mendeteksi label yang dipilih dan membaca pesan.",
+            "title": "Pesan Gmail ditandai"
           },
           "three": {
-            "description": "{{assistantName}} membuat tugas dengan tautan sumber.\\n",
-            "title": "Tugas Todoist dibuat\\n"
+            "description": "{{assistantName}} membuat tugas dengan tautan sumber.",
+            "title": "Tugas Todoist dibuat"
           },
           "two": {
-            "description": "{{assistantName}} mengidentifikasi tugas, tanggal jatuh tempo, dan konteks mendukung.\\n",
+            "description": "{{assistantName}} mengidentifikasi tugas, tanggal jatuh tempo, dan konteks mendukung.",
             "title": "Tindakan diambil"
           }
         },
-        "title": "Ubah surat Gmail yang ditandai menjadi tugas Todoist\\n"
+        "title": "Ubah surat Gmail yang ditandai menjadi tugas Todoist"
       },
       "github-idea-to-notion-spec": {
         "description": "Perluas ide GitHub yang dilabeli menjadi spesifikasi produk yang struktur.",
@@ -5415,42 +5416,42 @@
         "title": "Ubah catatan Google Meet menjadi tugas Asana"
       },
       "meeting-recaps-slack": {
-        "description": "Ubah transcript rapat menjadi ringkasan yang singkat dan tindakan.\\n",
-        "scenario": "Keputusan rapat hilang ketika transcript tidak pernah diproses. {{assistantName}} membaca transcript Google Meet dan menulis keputusan kunci, tindakan, dan pemiliknya di Google Docs.\\n",
+        "description": "Ubah transcript rapat menjadi ringkasan yang singkat dan tindakan.",
+        "scenario": "Keputusan rapat hilang ketika transcript tidak pernah diproses. {{assistantName}} membaca transcript Google Meet dan menulis keputusan kunci, tindakan, dan pemiliknya di Google Docs.",
         "steps": {
           "one": {
-            "description": "{{assistantName}} membaca transcript dan konteks Calendar yang tersedia.\\n",
-            "title": "Transcript rapat tiba\\n"
+            "description": "{{assistantName}} membaca transcript dan konteks Calendar yang tersedia.",
+            "title": "Transcript rapat tiba"
           },
           "three": {
-            "description": "{{assistantName}} menulis ringkasan yang terstruktur di Google Docs.\\n",
-            "title": "Ringkasan disimpan\\n"
+            "description": "{{assistantName}} menulis ringkasan yang terstruktur di Google Docs.",
+            "title": "Ringkasan disimpan"
           },
           "two": {
-            "description": "{{assistantName}} mengidentifikasi hasil, pemilik, tanggal jatuh tempo, dan pertanyaan terbuka.\\n",
-            "title": "Keputusan dan tindakan diambil\\n"
+            "description": "{{assistantName}} mengidentifikasi hasil, pemilik, tanggal jatuh tempo, dan pertanyaan terbuka.",
+            "title": "Keputusan dan tindakan diambil"
           }
         },
-        "title": "Simpan ringkasan Google Meet ke Google Docs\\n"
+        "title": "Simpan ringkasan Google Meet ke Google Docs"
       },
       "morning-brief-slack": {
-        "description": "Gabungkan email penting, jadwal hari ini, dan konteks Notion opsional.\\n",
-        "scenario": "Rencana pagi yang berguna membutuhkan inbox dan kalender. {{assistantName}} memeriksa Gmail dan Google Calendar, menambahkan konteks Notion jika tersedia, dan mengembalikan ringkasan harian singkat.\\n",
+        "description": "Gabungkan email penting, jadwal hari ini, dan konteks Notion opsional.",
+        "scenario": "Rencana pagi yang berguna membutuhkan inbox dan kalender. {{assistantName}} memeriksa Gmail dan Google Calendar, menambahkan konteks Notion jika tersedia, dan mengembalikan ringkasan harian singkat.",
         "steps": {
           "one": {
-            "description": "{{assistantName}} membaca email penting dan jadwal hari ini.\\n",
-            "title": "Input hari ini dikumpulkan\\n"
+            "description": "{{assistantName}} membaca email penting dan jadwal hari ini.",
+            "title": "Input hari ini dikumpulkan"
           },
           "three": {
-            "description": "{{assistantName}} membuat rencana terfokus di thread otomasi.\\n",
-            "title": "Ringkasan dikembalikan\\n"
+            "description": "{{assistantName}} membuat rencana terfokus di thread otomasi.",
+            "title": "Ringkasan dikembalikan"
           },
           "two": {
-            "description": "{{assistantName}} mengidentifikasi komitmen, persiapan, dan tindak lanjut.\\n",
-            "title": "Prioritas terhubung\\n"
+            "description": "{{assistantName}} mengidentifikasi komitmen, persiapan, dan tindak lanjut.",
+            "title": "Prioritas terhubung"
           }
         },
-        "title": "Buat ringkasan pagi\\n"
+        "title": "Buat ringkasan pagi"
       },
       "new-gmail-contacts-hubspot": {
         "description": "Buat atau kayakan data kontak CRM dari percakapan email yang relevan.",
@@ -5605,23 +5606,23 @@
         "title": "Peringatkan pada insiden Cloudflare"
       },
       "research-calendar-meetings": {
-        "description": "Bangun ringkasan yang singkat dari Calendar dan konteks email.\n",
-        "scenario": "Persiapan rapat lebih cepat ketika peserta dan riwayat percakapan sudah terhubung. {{assistantName}} memeriksa acara Calendar mendatang dan menambahkan konteks Gmail ketika tersedia.\n",
+        "description": "Bangun ringkasan yang singkat dari Calendar dan konteks email.",
+        "scenario": "Persiapan rapat lebih cepat ketika peserta dan riwayat percakapan sudah terhubung. {{assistantName}} memeriksa acara Calendar mendatang dan menambahkan konteks Gmail ketika tersedia.",
         "steps": {
           "one": {
-            "description": "{{assistantName}} membaca jendela Calendar Google yang dipilih.\\n",
-            "title": "Rapat mendatang ditemukan\\n"
+            "description": "{{assistantName}} membaca jendela Calendar Google yang dipilih.",
+            "title": "Rapat mendatang ditemukan"
           },
           "three": {
-            "description": "{{assistantName}} mengembalikan tujuan, konteks, dan pertanyaan yang disarankan.\\n",
-            "title": "Ringkasan dibuat\\n"
+            "description": "{{assistantName}} mengembalikan tujuan, konteks, dan pertanyaan yang disarankan.",
+            "title": "Ringkasan dibuat"
           },
           "two": {
-            "description": "{{assistantName}} memeriksa tautan Gmail terkait.\n",
-            "title": "Konteks peserta dikumpulkan\\n"
+            "description": "{{assistantName}} memeriksa tautan Gmail terkait.",
+            "title": "Konteks peserta dikumpulkan"
           }
         },
-        "title": "Persiapkan untuk rapat mendatang\\n"
+        "title": "Persiapkan untuk rapat mendatang"
       },
       "research-new-signups-apollo": {
         "description": "Temukan dan kualifikasi lead kreator dari X.",
@@ -5681,23 +5682,23 @@
         "title": "Ubah email dukungan menjadi isu GitHub"
       },
       "sort-gmail-draft-replies": {
-        "description": "Tindak surat baru dan siapkan balasan untuk diproses oleh manusia.\\n",
-        "scenario": "Inbox yang sibuk menyembunyikan permintaan yang mendesak dan balasan yang mudah. {{assistantName}} mengelompokkan surat baru Gmail berdasarkan kepentingan dan tindakan, kemudian membuat draft balasan tanpa mengirimnya.\\n",
+        "description": "Tindak surat baru dan siapkan balasan untuk diproses oleh manusia.",
+        "scenario": "Inbox yang sibuk menyembunyikan permintaan yang mendesak dan balasan yang mudah. {{assistantName}} mengelompokkan surat baru Gmail berdasarkan kepentingan dan tindakan, kemudian membuat draft balasan tanpa mengirimnya.",
         "steps": {
           "one": {
-            "description": "{{assistantName}} membaca inbox Gmail atau label yang dipilih.\\n",
-            "title": "Surat baru diproses\\n"
+            "description": "{{assistantName}} membaca inbox Gmail atau label yang dipilih.",
+            "title": "Surat baru diproses"
           },
           "three": {
-            "description": "{{assistantName}} siapkan balasan untuk diproses oleh manusia.\\n",
-            "title": "Balasan dibuat\\n"
+            "description": "{{assistantName}} siapkan balasan untuk diproses oleh manusia.",
+            "title": "Balasan dibuat"
           },
           "two": {
-            "description": "{{assistantName}} mengelompokkan surat berdasarkan kepentingan, permintaan, dan tindakan berikutnya.\\n",
-            "title": "Surat diproses\\n"
+            "description": "{{assistantName}} mengelompokkan surat berdasarkan kepentingan, permintaan, dan tindakan berikutnya.",
+            "title": "Surat diproses"
           }
         },
-        "title": "Urutkan Gmail dan balas draft\\n"
+        "title": "Urutkan Gmail dan balas draft"
       },
       "sort-route-zendesk-tickets": {
         "description": "Kelas email dukungan dan buat isu Linear yang dapat diambil tindakan.",
@@ -5738,23 +5739,23 @@
         "title": "Buat ringkasan dukungan harian"
       },
       "summarize-gmail-newsletters": {
-        "description": "Ubah surat berita yang dipilih menjadi ringkasan berulang yang berguna.\\n",
-        "scenario": "Nilai surat berita hilang ketika setiap isu bersaing untuk perhatian inbox. {{assistantName}} meringkas surat berita Gmail yang dipilih menjadi tema, tautan berguna, dan bacaan yang direkomendasikan.\\n",
+        "description": "Ubah surat berita yang dipilih menjadi ringkasan berulang yang berguna.",
+        "scenario": "Nilai surat berita hilang ketika setiap isu bersaing untuk perhatian inbox. {{assistantName}} meringkas surat berita Gmail yang dipilih menjadi tema, tautan berguna, dan bacaan yang direkomendasikan.",
         "steps": {
           "one": {
-            "description": "{{assistantName}} membaca pesan dari pengirim yang dipilih atau label.\\n",
-            "title": "Surat berita dikumpulkan\\n"
+            "description": "{{assistantName}} membaca pesan dari pengirim yang dipilih atau label.",
+            "title": "Surat berita dikumpulkan"
           },
           "three": {
-            "description": "{{assistantName}} mengembalikan ringkasan dan dapat menyimpannya di Notion.\\n",
-            "title": "Ringkasan dibuat\\n"
+            "description": "{{assistantName}} mengembalikan ringkasan dan dapat menyimpannya di Notion.",
+            "title": "Ringkasan dibuat"
           },
           "two": {
-            "description": "{{assistantName}} mengelompokkan tema dan mengidentifikasi tautan terkuat.\\n",
-            "title": "Konten berguna dikonsentrasikan\\n"
+            "description": "{{assistantName}} mengelompokkan tema dan mengidentifikasi tautan terkuat.",
+            "title": "Konten berguna dikonsentrasikan"
           }
         },
-        "title": "Ringkaskan surat berita Gmail\\n"
+        "title": "Ringkaskan surat berita Gmail"
       },
       "summarize-user-feedback-notion": {
         "description": "Kelompokkan respons formulir baru menjadi inisiatif produk yang terurut.",

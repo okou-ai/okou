@@ -1,7 +1,8 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { now } from "../../../lib/time.ts";
 import { setupPage } from "./chat-lifecycle-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
@@ -290,6 +291,102 @@ test.each([
       assistantGroupFor(main),
     );
     expectTextOrder(workMessage(0), workMessage(1), workMessage(2));
+  },
+);
+
+test.each([
+  {
+    locale: "zh-Hans" as const,
+    active: false,
+    durationMs: 30_000,
+    expected: "共工作 30 秒",
+    steps: "1 个步骤",
+  },
+  {
+    locale: "zh-Hans" as const,
+    active: false,
+    durationMs: 60_000,
+    expected: "共工作 1 分钟",
+    steps: "1 个步骤",
+  },
+  {
+    locale: "zh-Hans" as const,
+    active: false,
+    durationMs: 60 * 60_000,
+    expected: "共工作 1 小时",
+    steps: "1 个步骤",
+  },
+  {
+    locale: "zh-Hans" as const,
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "共工作 1 小时 29 分钟",
+    steps: "1 个步骤",
+  },
+  {
+    locale: "zh-Hant" as const,
+    active: true,
+    durationMs: 89 * 60_000,
+    expected: "已工作 1 小時 29 分鐘",
+    steps: "1 個步驟",
+  },
+])(
+  "Render localized $locale $expected work duration",
+  async ({ locale, active, durationMs, expected, steps }) => {
+    context.mocks.browser.language(locale);
+    context.mocks.data.userPreferences({ locale });
+    // ElapsedTime uses Date.now directly for active runs; allow time to advance
+    // naturally while keeping the completed-run timestamps deterministic.
+    const startedAt = active
+      ? now() - durationMs
+      : new Date(createdAt(0)).getTime();
+    installRunChat({
+      activeRunIds: active ? [RUN_A] : [],
+      chatEvents: [
+        promptEvent({
+          id: "localized-work-user",
+          runId: RUN_A,
+          seqId: 1,
+          text: "Prepare the report",
+          createdAt: new Date(startedAt).toISOString(),
+        }),
+        assistantEvent({
+          id: "localized-work-first",
+          runId: RUN_A,
+          seqId: 2,
+          text: "Collected data",
+          createdAt: new Date(startedAt + 5000).toISOString(),
+        }),
+        assistantEvent({
+          id: "localized-work-second",
+          runId: RUN_A,
+          seqId: 3,
+          text: "Prepared report",
+          createdAt: new Date(startedAt + 10_000).toISOString(),
+        }),
+        ...(active
+          ? []
+          : [
+              completedEvent({
+                id: "localized-work-complete",
+                runId: RUN_A,
+                seqId: 4,
+                createdAt: new Date(startedAt + durationMs).toISOString(),
+              }),
+            ]),
+      ],
+    });
+
+    await setupPage({ context, path: RUN_PATH });
+    await screen.findByText("Prepared report");
+    await waitFor(() => {
+      expect(document.querySelector("[data-chat-run-work]")).toHaveTextContent(
+        expected,
+      );
+    });
+    expect(document.querySelector("[data-chat-run-work]")).toHaveTextContent(
+      steps,
+    );
   },
 );
 

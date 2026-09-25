@@ -2168,6 +2168,7 @@
         "wrappedUp": "Terminé à {{time}}"
       },
       "duration": {
+        "hoursMinutesShort": "{{hours}}h {{minutes}}m",
         "hoursShort_one": "{{count}}h",
         "hoursShort_many": "{{count}}h",
         "hoursShort_other": "{{count}}h",

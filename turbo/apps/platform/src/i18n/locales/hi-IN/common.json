@@ -2126,6 +2126,7 @@
         "wrappedUp": "{{time}} पर समाप्त हुआ"
       },
       "duration": {
+        "hoursMinutesShort": "{{hours}}h {{minutes}}m",
         "hoursShort_one": "{{count}}h",
         "hoursShort_other": "{{count}}h",
         "minutesShort_one": "{{count}}m",
