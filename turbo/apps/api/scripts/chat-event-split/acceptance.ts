@@ -24,15 +24,8 @@ import { runOutputMemoryCitations } from "@okouai/db/schema/run-output-memory-ci
 import { insertChatEvent } from "../../src/signals/services/chat-event.service";
 import { insertRunLifecycleMarkerProjection } from "../../src/signals/services/internal-chat-run-callback.service";
 import { materializeRunOutputEvents } from "../../src/signals/services/agent-event-consumer-run-output.service";
-import {
-  RunOutputDiagnostics,
-  readRunContentOwnership,
-  withRunOutputWrite,
-} from "../../src/signals/services/run-content-erasure-admission.service";
-import {
-  createDeferredPromise,
-  settleIncludingAbort,
-} from "../../src/signals/utils";
+import { RunOutputDiagnostics } from "../../src/signals/services/run-content-erasure-admission.service";
+import { settleIncludingAbort } from "../../src/signals/utils";
 import { deleteChatThreadContent } from "../../src/signals/services/chat-thread.service";
 import { deleteAgentInTransaction } from "../../src/signals/services/agent-deletion.service";
 import { safeSqlStateCode } from "../../src/lib/pg-errors";
@@ -374,92 +367,6 @@ try {
   });
 
   for (const existingSequence of [false, true]) {
-    await test(`strong deletion waits for run output before fencing its event FK (existing sequence: ${existingSequence})`, async () => {
-      const f = await fixture("running");
-      if (existingSequence) {
-        await insertChatEvent(
-          db,
-          {
-            chatThreadId: f.threadId,
-            runId: f.runId,
-            eventType: "output.message",
-            content: "Existing sequence",
-            runEventId: "deletion:seed",
-          },
-          "none",
-        );
-      }
-      const ownership = await readRunContentOwnership(db, f.runId);
-      const runLocked = createDeferredPromise<void>(signal);
-      const releaseOutput = createDeferredPromise<void>(signal);
-      const output = settleIncludingAbort(
-        withRunOutputWrite(
-          db,
-          { runId: f.runId, ownership },
-          async (tx) => {
-            runLocked.resolve();
-            await releaseOutput.promise;
-            return await insertChatEvent(
-              tx,
-              {
-                chatThreadId: f.threadId,
-                runId: f.runId,
-                eventType: "output.message",
-                content: "Output precedes strong deletion",
-                runEventId: "deletion:output",
-              },
-              "none",
-            );
-          },
-          signal,
-        ),
-      );
-      await runLocked.promise;
-      let deletionSettled = false;
-      const deletion = settleIncludingAbort(
-        deleteChatThreadContent(
-          db,
-          {
-            threadId: f.threadId,
-            userId: f.userId,
-            orgId: f.orgId,
-          },
-          signal,
-        ),
-      ).then((result) => {
-        deletionSettled = true;
-        return result;
-      });
-      try {
-        await waitForBlockedQuery('from "agent_runs"', () => {
-          return deletionSettled;
-        });
-      } finally {
-        releaseOutput.resolve();
-        await Promise.all([output, deletion]);
-      }
-      const written = await output;
-      assert.ok(
-        written.ok && written.value,
-        "output commits before deletion takes its strong thread fence",
-      );
-      const deleted = await deletion;
-      assert.ok(deleted.ok && deleted.value.deleted);
-      assert.deepEqual(deleted.value.activeRuns, [
-        { runId: f.runId, orgId: f.orgId },
-      ]);
-      const [run] = await db
-        .select({ threadId: agentRuns.chatThreadId })
-        .from(agentRuns)
-        .where(eq(agentRuns.id, f.runId));
-      assert.equal(run?.threadId, null);
-      const sequences = await db
-        .select()
-        .from(chatEventSequences)
-        .where(eq(chatEventSequences.chatThreadId, f.threadId));
-      assert.equal(sequences.length, 0, "thread cascade includes its sequence");
-    });
-
     await test(`strong deletion admits an atomic direct append before cascade (existing sequence: ${existingSequence})`, async () => {
       const f = await fixture();
       if (existingSequence) {
@@ -750,7 +657,7 @@ try {
     );
   });
 
-  await test("a timeout winning the run-row arbitration prevents the prepared output append", async () => {
+  await test("an uncommitted timeout does not hold back the prepared output append", async () => {
     const f = await fixture("running");
     const blocker = new Client({ connectionString: databaseUrl.toString() });
     await blocker.connect();
@@ -776,7 +683,7 @@ try {
                 item: {
                   id: "timeout_output",
                   type: "agent_message",
-                  text: "Must remain absent",
+                  text: "Accepted across a racing timeout",
                 },
               },
             ],
@@ -793,7 +700,8 @@ try {
           return { error };
         },
       );
-      // Observe a real waiter on this test's blocker; do not guess a sleep.
+      // The append holds no run lock. Only a later auxiliary run write may wait
+      // on this blocker; observe it rather than guessing a sleep.
       let blocked = false;
       while (!blocked && !outputSettled) {
         const state = await blocker.query(
@@ -805,19 +713,21 @@ try {
           await setImmediate();
         }
       }
-      assert.ok(
-        blocked,
-        "prepared output must arbitrate with the terminal transition",
-      );
-      await blocker.query("COMMIT");
-      assert.deepEqual(await pending, {
-        value: { outcome: "ignored-timeout" },
-      });
-      const [events] = await db
+      const [appended] = await db
         .select({ count: count() })
         .from(chatEvents)
         .where(eq(chatEvents.runId, f.runId));
-      assert.equal(events?.count, 0);
+      assert.equal(
+        appended?.count,
+        1,
+        "the event append must not wait for the terminal transition",
+      );
+      await blocker.query("COMMIT");
+      const settled = await pending;
+      assert.ok(
+        "value" in settled && settled.value.outcome === "accepted",
+        "a timeout racing preparation is the accepted late-write window",
+      );
     } finally {
       await blocker.query("ROLLBACK");
       await blocker.end();

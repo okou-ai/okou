@@ -1,5 +1,5 @@
 {
-  "id": "a46cde1f-a12c-4f4c-b7e1-b623746a4e18",
+  "id": "1b6f7c21-a49a-4d3d-a4bf-ff3dbf0c1fed",
   "prevId": "97a3bc0d-5af1-4458-bd60-5a1151142ad6",
   "version": "7",
   "dialect": "postgresql",
@@ -2062,17 +2062,39 @@
           "method": "btree",
           "with": {}
         },
-        "idx_agent_runs_status": {
-          "name": "idx_agent_runs_status",
+        "idx_agent_runs_status_heartbeat": {
+          "name": "idx_agent_runs_status_heartbeat",
           "columns": [
             {
               "expression": "status",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "last_heartbeat_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_agent_runs_running_heartbeat": {
+          "name": "idx_agent_runs_running_heartbeat",
+          "columns": [
+            {
+              "expression": "last_heartbeat_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "status = 'running'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -7907,39 +7929,6 @@
             },
             {
               "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "chat_event_search_messages_user_org_agent_id_created_idx": {
-          "name": "chat_event_search_messages_user_org_agent_id_created_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "agent_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
