@@ -32,8 +32,6 @@ import { SharedDatabaseWorkerRuntime } from "../worker-runtime.ts";
 
 const context = testContext();
 const SNAPSHOT_URL = "https://r2.example.com/shared-worker-chat-events.ndjson";
-const THREAD_SNAPSHOT_URL =
-  "https://r2.example.com/shared-worker-chat-threads.json";
 const CREATED_AT = "2026-08-14T08:00:00.000Z";
 const WORKER_APP_VERSION = "shared-worker-store-version";
 const AGENT_ID = "c0000000-0000-4000-a000-000000000920";
@@ -433,53 +431,6 @@ test("Load a chat thread snapshot from its presigned object URL", async () => {
   ).resolves.toStrictEqual({ snapshot: expected, events: [] });
 });
 
-test("Load an empty chat thread snapshot for a scope without a snapshot row", async () => {
-  const { runtime } = startRuntime();
-  context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      chatThreads: [],
-      latestEventId: null,
-      latestSeqId: null,
-    });
-  });
-  context.mocks.api(chatThreadsContract.events, ({ respond }) => {
-    return respond(200, { events: [], hasMore: false });
-  });
-
-  await expect(
-    queryRuntime(runtime, {
-      dataKey: chatThreadEventKey(),
-      afterSeqId: null,
-      consistency: "catch-up",
-    }),
-  ).resolves.toStrictEqual({
-    snapshot: { chatThreads: [], latestEventId: null, latestSeqId: null },
-    events: [],
-  });
-});
-
-test("Reject a non-empty inline chat thread snapshot", async () => {
-  const { runtime } = startRuntime();
-  context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      chatThreads: [snapshotThread("Inline")],
-      latestEventId: crypto.randomUUID(),
-      latestSeqId: 1,
-    });
-  });
-  context.mocks.api(chatThreadsContract.events, ({ respond }) => {
-    return respond(200, { events: [], hasMore: false });
-  });
-
-  await expect(
-    queryRuntime(runtime, {
-      dataKey: chatThreadEventKey(),
-      afterSeqId: null,
-      consistency: "catch-up",
-    }),
-  ).rejects.toThrow("Expected an R2 chat thread snapshot URL");
-});
-
 test("Preserve a future run failure reason from snapshot storage", async () => {
   const { runtime } = startRuntime();
   const dataKey = chatEventKey(crypto.randomUUID());
@@ -626,16 +577,14 @@ test("Rebuild chat data after its saved cursor expires", async () => {
     let snapshotVersion = 1;
     let returnExpiry = false;
     context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
+      const current = snapshotVersion === 1;
       return respond(200, {
-        url: THREAD_SNAPSHOT_URL,
-        expiresInSeconds: 900,
+        chatThreads: [
+          snapshotThread(current ? "old snapshot" : "new snapshot"),
+        ],
         latestEventId: crypto.randomUUID(),
-        latestSeqId: snapshotVersion === 1 ? 1 : 10,
+        latestSeqId: current ? 1 : 10,
       });
-    });
-    context.mocks.http.get(THREAD_SNAPSHOT_URL, () => {
-      const title = snapshotVersion === 1 ? "old snapshot" : "new snapshot";
-      return Response.json({ chatThreads: [snapshotThread(title)] });
     });
     context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
       if (returnExpiry && query.sinceSeqId === oldEvent.seqId) {
@@ -819,15 +768,7 @@ test("Serve remote chat data without Sentry reports when IndexedDB write transac
     return respond(200, chatEventRowsResponse([remoteRow], query));
   });
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      url: THREAD_SNAPSHOT_URL,
-      expiresInSeconds: 900,
-      latestEventId: snapshot.latestEventId,
-      latestSeqId: snapshot.latestSeqId,
-    });
-  });
-  context.mocks.http.get(THREAD_SNAPSHOT_URL, () => {
-    return Response.json({ chatThreads: snapshot.chatThreads });
+    return respond(200, snapshot);
   });
   context.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });

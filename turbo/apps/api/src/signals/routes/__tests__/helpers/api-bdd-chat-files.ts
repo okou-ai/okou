@@ -21,7 +21,6 @@ import {
   chatThreadUnpinContract,
   chatThreadsContract,
   chatThreadSnapshotArchiveSchema,
-  emptyChatThreadSnapshot,
   type ChatEvent,
   type ChatSearchResponse,
   type ChatThreadArtifactRun,
@@ -616,7 +615,7 @@ export function createChatFilesBddApi(context: TestContext) {
         [200],
       );
       if (!("url" in response.body)) {
-        return emptyChatThreadSnapshot(response.body);
+        return response.body;
       }
       const archiveResponse = await fetch(response.body.url);
       if (!archiveResponse.ok) {
