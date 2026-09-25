@@ -43,7 +43,6 @@ export async function createSequenceFixture() {
       WHERE event_type IN ('run.completed', 'run.failed', 'run.cancelled');
   `);
   return {
-    schema,
     pool,
     db: drizzle(pool),
     async close() {
