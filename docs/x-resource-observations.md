@@ -168,13 +168,16 @@ deleting the scoped ledger and organization allowance entitlements. It then
 locks and deletes the live runs in the same transaction. The existing usage
 helper uses a savepoint on that connection, so no second pooled connection is
 needed. All locks survive until the common commit, so admitted settlements
-finish first. Account cleanup does not take X admission: an upload that already
-holds its Run `SHARE` lock finishes before the Run is deleted, and later uploads
-for the deleted Run return 404. Usage from an upload that commits between the
-ledger cleanup and the Run lock is not swept. This is an accepted gap until
-account deletion is redesigned. Ledger cleanup occurs before the lifecycle's
-existing 100-millisecond lock timeout; parent, Run and later deletion locks
-retain that policy. Shared resource records remain untouched.
+finish first. Ledger cleanup occurs before the lifecycle's existing
+100-millisecond lock timeout; parent, Run and later deletion locks retain that
+policy. Account cleanup does not take X admission, so it no longer drains
+admitted uploads first. An upload holding its Run `SHARE` lock past that
+timeout fails the cleanup transaction: the durable user deletion job retries it
+a minute later, while organization cleanup, which runs once after the webhook
+is acknowledged, is not retried. Uploads for a deleted Run return 404. Usage
+from an upload that commits between the ledger cleanup and the Run lock is not
+swept. These are accepted gaps until account deletion is redesigned. Shared
+resource records remain untouched.
 
 The compaction admission lock is global: account cleanup briefly pauses
 settlement and Run deletion. Slow settlement or deletion delays compaction or
