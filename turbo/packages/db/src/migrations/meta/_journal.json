@@ -1174,15 +1174,36 @@
     {
       "idx": 1245,
       "version": "7",
-      "when": 1790345063270,
-      "tag": "1245_agent_runs_heartbeat_index_contraction",
+      "when": 1790344779759,
+      "tag": "1245_drop_chat_event_write_control",
       "breakpoints": true
     },
     {
       "idx": 1246,
       "version": "7",
-      "when": 1790345070177,
-      "tag": "1246_active_agent_runs",
+      "when": 1790344779760,
+      "tag": "1246_drop_discord_chat_deliveries",
+      "breakpoints": true
+    },
+    {
+      "idx": 1247,
+      "version": "7",
+      "when": 1790344779761,
+      "tag": "1247_chat_event_retention_cursors",
+      "breakpoints": true
+    },
+    {
+      "idx": 1248,
+      "version": "7",
+      "when": 1790347985974,
+      "tag": "1248_agent_runs_heartbeat_index_contraction",
+      "breakpoints": true
+    },
+    {
+      "idx": 1249,
+      "version": "7",
+      "when": 1790347993148,
+      "tag": "1249_active_agent_runs",
       "breakpoints": true
     }
   ]

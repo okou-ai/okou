@@ -529,7 +529,7 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
     coverage: "user_descendant",
     parents: ["chat_threads"],
   },
-  chat_event_write_control: { coverage: "not_account_scoped" },
+  chat_event_retention_cursors: { coverage: "not_account_scoped" },
   chat_event_snapshot_scan_state: { coverage: "not_account_scoped" },
   chat_event_snapshots: {
     coverage: "user_descendant",
@@ -643,7 +643,6 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   },
   desktop_auth_handoff_codes: { coverage: "user_root", ownership: ["user_id"] },
   device_codes: { coverage: "user_root", ownership: ["user_id"] },
-  discord_chat_deliveries: { coverage: "user_root", ownership: ["user_id"] },
   // One-way Gateway event digests carry no account identity or message body.
   // Keep them across deletion so replay cannot launch the same task again
   // or uninstall a later installation of the same guild.

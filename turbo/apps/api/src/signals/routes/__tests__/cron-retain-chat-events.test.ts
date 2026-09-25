@@ -8,9 +8,9 @@ import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
 import {
   coverRetentionThread$,
-  holdChatEventRetentionLockFixture,
   openRetentionActiveInput$,
   readRetentionEvents$,
   revokeRetentionEvent$,
@@ -34,6 +34,7 @@ const CRON_SECRET = "test-chat-event-retention-secret";
 const DEPLOYMENT_SHA = "a".repeat(40);
 const OLD_OFFSET_MS = -60_000;
 const NEW_OFFSET_MS = 60_000;
+const AFTER_SWEEP_RESTART_MS = 2 * 60 * 60 * 1000;
 
 function fixtureClient() {
   return setupApp({ context, routes: testChatEventRetentionRoutes })(
@@ -90,6 +91,11 @@ function retentionCompletionEvents(): readonly Record<string, unknown>[] {
   });
 }
 
+function restartSweepOnNextRun(): void {
+  mockNow(now() + AFTER_SWEEP_RESTART_MS);
+  onTestFinished(clearMockNow);
+}
+
 describe("chat event retention cron", () => {
   beforeEach(() => {
     mockEnv("CRON_SECRET", CRON_SECRET);
@@ -133,13 +139,11 @@ describe("chat event retention cron", () => {
     const cutoff = new Date(result.cutoff);
 
     expect(result).toMatchObject({
-      scanLimit: 5000,
-      deleteLimit: 2500,
-      candidates: 2501,
+      scanLimit: 2500,
+      scanned: 2500,
       deleted: 2500,
-      skippedBatchLimit: 1,
-      overlapPrevented: false,
       hasMore: true,
+      sweepRestarted: true,
     });
     expect(
       before
@@ -180,25 +184,28 @@ describe("chat event retention cron", () => {
       context: "api:cron:retain-chat-events",
       deploymentCommitSha: DEPLOYMENT_SHA,
       cutoff: result.cutoff,
-      scanLimit: 5000,
-      scanned: result.scanned,
-      candidates: 2501,
+      scanLimit: 2500,
+      scanned: 2500,
       deleted: 2500,
       skippedSnapshot: 0,
       skippedSearchWatermark: 0,
       skippedPendingRunless: 0,
       skippedNonterminalRun: 0,
       skippedActiveInput: 0,
-      skippedBatchLimit: 1,
       hasMore: true,
     });
 
     const retry = await retainFixtures(threadId);
-    expect(retry).toMatchObject({ deleted: 1, candidates: 1, hasMore: false });
+    expect(retry).toMatchObject({
+      scanned: 1,
+      deleted: 1,
+      hasMore: false,
+      sweepRestarted: false,
+    });
     const finalRetry = await retainFixtures(threadId);
     expect(finalRetry).toMatchObject({
+      scanned: 0,
       deleted: 0,
-      candidates: 0,
       hasMore: false,
     });
     await expect(eventRows(...oldEventIds)).resolves.toHaveLength(0);
@@ -278,7 +285,12 @@ describe("chat event retention cron", () => {
       { chatThreadId: searchThreadId },
       context.signal,
     );
-    const released = await retainFixtures(snapshotThreadId, searchThreadId);
+    restartSweepOnNextRun();
+    const released = await retainFixtures(
+      snapshotThreadId,
+      searchThreadId,
+      redactedAuthorityThreadId,
+    );
     expect(released.deleted).toBe(2);
     await expect(
       eventRows(snapshotEventId, searchEventId),
@@ -367,6 +379,7 @@ describe("chat event retention cron", () => {
       context.signal,
     );
 
+    restartSweepOnNextRun();
     const released = await retainFixtures(threadId);
     expect(released.deleted).toBe(4);
     await expect(
@@ -379,9 +392,14 @@ describe("chat event retention cron", () => {
     ).resolves.toHaveLength(0);
   }, 60_000);
 
-  it("prevents overlapping retention transactions without waiting", async () => {
-    const threadId = await createFixtureThread("overlap");
-    const eventId = await store.set(
+  it("resumes after held rows until the sweep restarts", async () => {
+    const threadId = await createFixtureThread("resume");
+    const pendingEventId = await store.set(
+      seedRetentionPendingEvent$,
+      { chatThreadId: threadId, offsetMs: -120_000 },
+      context.signal,
+    );
+    const firstEventId = await store.set(
       seedRetentionOutputEvent$,
       { chatThreadId: threadId, offsetMs: OLD_OFFSET_MS },
       context.signal,
@@ -391,24 +409,43 @@ describe("chat event retention cron", () => {
       { chatThreadId: threadId },
       context.signal,
     );
-    const lock = await holdChatEventRetentionLockFixture(context.signal);
-    onTestFinished(async () => {
-      lock.release();
-      await lock.done;
+
+    const first = await retainFixtures(threadId);
+    expect(first).toMatchObject({
+      scanned: 2,
+      deleted: 1,
+      skippedPendingRunless: 1,
+      sweepRestarted: true,
     });
 
-    const overlapped = await retainFixtures(threadId);
-    expect(overlapped).toMatchObject({
-      overlapPrevented: true,
-      scanned: 0,
-      candidates: 0,
+    const laterEventId = await store.set(
+      seedRetentionOutputEvent$,
+      { chatThreadId: threadId, offsetMs: OLD_OFFSET_MS + 1000 },
+      context.signal,
+    );
+    await store.set(
+      coverRetentionThread$,
+      { chatThreadId: threadId },
+      context.signal,
+    );
+    const resumed = await retainFixtures(threadId);
+    expect(resumed).toMatchObject({
+      scanned: 1,
+      deleted: 1,
+      skippedPendingRunless: 0,
+      sweepRestarted: false,
+    });
+
+    restartSweepOnNextRun();
+    const restarted = await retainFixtures(threadId);
+    expect(restarted).toMatchObject({
+      scanned: 1,
       deleted: 0,
+      skippedPendingRunless: 1,
+      sweepRestarted: true,
     });
-    await expect(eventRows(eventId)).resolves.toHaveLength(1);
-
-    lock.release();
-    await lock.done;
-    const released = await retainFixtures(threadId);
-    expect(released).toMatchObject({ overlapPrevented: false, deleted: 1 });
+    await expect(
+      eventRows(pendingEventId, firstEventId, laterEventId),
+    ).resolves.toStrictEqual([expect.objectContaining({ id: pendingEventId })]);
   }, 60_000);
 });

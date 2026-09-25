@@ -1,6 +1,6 @@
 {
-  "id": "5083e5a7-053d-4b6b-80b4-fecf93b4abbb",
-  "prevId": "dc39fdb2-7df8-414c-ac1b-ae21b5cf1f92",
+  "id": "7b670aa9-f855-438c-99c3-0beb4a0f2cba",
+  "prevId": "16bf282c-e32f-4943-83df-ce29da44dbb8",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1039,6 +1039,143 @@
       },
       "isRLSEnabled": false
     },
+    "public.active_agent_runs": {
+      "name": "active_agent_runs",
+      "schema": "",
+      "columns": {
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chat_thread_id": {
+          "name": "chat_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_heartbeat_at": {
+          "name": "last_heartbeat_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "activity_entries": {
+          "name": "activity_entries",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "activity_revision": {
+          "name": "activity_revision",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'empty'"
+        },
+        "summary": {
+          "name": "summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "summary_revision": {
+          "name": "summary_revision",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_attempt_at": {
+          "name": "next_attempt_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "claim_expires_at": {
+          "name": "claim_expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "active_agent_runs_org_idx": {
+          "name": "active_agent_runs_org_idx",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "active_agent_runs_user_idx": {
+          "name": "active_agent_runs_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "active_agent_runs_run_id_agent_runs_id_fk": {
+          "name": "active_agent_runs_run_id_agent_runs_id_fk",
+          "tableFrom": "active_agent_runs",
+          "tableTo": "agent_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "active_agent_runs_activity_entries_bound": {
+          "name": "active_agent_runs_activity_entries_bound",
+          "value": "jsonb_typeof(\"active_agent_runs\".\"activity_entries\") = 'array' AND jsonb_array_length(\"active_agent_runs\".\"activity_entries\") <= 16 AND octet_length(\"active_agent_runs\".\"activity_entries\"::text) <= 16384"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.active_input_deliveries": {
       "name": "active_input_deliveries",
       "schema": "",
@@ -2062,39 +2199,17 @@
           "method": "btree",
           "with": {}
         },
-        "idx_agent_runs_status_heartbeat": {
-          "name": "idx_agent_runs_status_heartbeat",
+        "idx_agent_runs_status": {
+          "name": "idx_agent_runs_status",
           "columns": [
             {
               "expression": "status",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
-            },
-            {
-              "expression": "last_heartbeat_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_agent_runs_running_heartbeat": {
-          "name": "idx_agent_runs_running_heartbeat",
-          "columns": [
-            {
-              "expression": "last_heartbeat_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "status = 'running'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -7817,6 +7932,43 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.chat_event_retention_cursors": {
+      "name": "chat_event_retention_cursors",
+      "schema": "",
+      "columns": {
+        "scope_key": {
+          "name": "scope_key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "last_created_at": {
+          "name": "last_created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_event_id": {
+          "name": "last_event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sweep_started_at": {
+          "name": "sweep_started_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.chat_event_search_message_watermarks": {
       "name": "chat_event_search_message_watermarks",
       "schema": "",
@@ -8364,21 +8516,6 @@
           "method": "btree",
           "with": {}
         },
-        "idx_chat_events_run_id": {
-          "name": "idx_chat_events_run_id",
-          "columns": [
-            {
-              "expression": "run_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "chat_events_revokes_event_id_not_null_unique": {
           "name": "chat_events_revokes_event_id_not_null_unique",
           "columns": [
@@ -8530,16 +8667,7 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "chat_events_id_thread_unique": {
-          "name": "chat_events_id_thread_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "id",
-            "chat_thread_id"
-          ]
-        }
-      },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
         "chat_events_event_type_check": {
@@ -14118,386 +14246,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.discord_chat_deliveries": {
-      "name": "discord_chat_deliveries",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "connection_id": {
-          "name": "connection_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ingress_id": {
-          "name": "ingress_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "chat_event_id": {
-          "name": "chat_event_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "chat_thread_id": {
-          "name": "chat_thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "route_id": {
-          "name": "route_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "channel_id": {
-          "name": "channel_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "content": {
-          "name": "content",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "parts": {
-          "name": "parts",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "attempts": {
-          "name": "attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "last_attempt_at": {
-          "name": "last_attempt_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "retry_at": {
-          "name": "retry_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "delivered_at": {
-          "name": "delivered_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_error": {
-          "name": "last_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_discord_chat_deliveries_event": {
-          "name": "idx_discord_chat_deliveries_event",
-          "columns": [
-            {
-              "expression": "chat_event_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_discord_chat_deliveries_ingress": {
-          "name": "idx_discord_chat_deliveries_ingress",
-          "columns": [
-            {
-              "expression": "ingress_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_discord_chat_deliveries_pending": {
-          "name": "idx_discord_chat_deliveries_pending",
-          "columns": [
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "last_attempt_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_discord_chat_deliveries_owner": {
-          "name": "idx_discord_chat_deliveries_owner",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_discord_chat_deliveries_connection": {
-          "name": "idx_discord_chat_deliveries_connection",
-          "columns": [
-            {
-              "expression": "connection_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_discord_chat_deliveries_thread": {
-          "name": "idx_discord_chat_deliveries_thread",
-          "columns": [
-            {
-              "expression": "chat_thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_discord_chat_deliveries_route": {
-          "name": "idx_discord_chat_deliveries_route",
-          "columns": [
-            {
-              "expression": "route_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "discord_chat_deliveries_connection_id_discord_org_connections_id_fk": {
-          "name": "discord_chat_deliveries_connection_id_discord_org_connections_id_fk",
-          "tableFrom": "discord_chat_deliveries",
-          "tableTo": "discord_org_connections",
-          "columnsFrom": [
-            "connection_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "discord_chat_deliveries_ingress_id_discord_chat_ingress_id_fk": {
-          "name": "discord_chat_deliveries_ingress_id_discord_chat_ingress_id_fk",
-          "tableFrom": "discord_chat_deliveries",
-          "tableTo": "discord_chat_ingress",
-          "columnsFrom": [
-            "ingress_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "discord_chat_deliveries_chat_event_id_chat_events_id_fk": {
-          "name": "discord_chat_deliveries_chat_event_id_chat_events_id_fk",
-          "tableFrom": "discord_chat_deliveries",
-          "tableTo": "chat_events",
-          "columnsFrom": [
-            "chat_event_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "discord_chat_deliveries_chat_thread_id_chat_threads_id_fk": {
-          "name": "discord_chat_deliveries_chat_thread_id_chat_threads_id_fk",
-          "tableFrom": "discord_chat_deliveries",
-          "tableTo": "chat_threads",
-          "columnsFrom": [
-            "chat_thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "discord_chat_deliveries_route_id_discord_chat_thread_routes_id_fk": {
-          "name": "discord_chat_deliveries_route_id_discord_chat_thread_routes_id_fk",
-          "tableFrom": "discord_chat_deliveries",
-          "tableTo": "discord_chat_thread_routes",
-          "columnsFrom": [
-            "route_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "discord_chat_deliveries_event_thread_fk": {
-          "name": "discord_chat_deliveries_event_thread_fk",
-          "tableFrom": "discord_chat_deliveries",
-          "tableTo": "chat_events",
-          "columnsFrom": [
-            "chat_event_id",
-            "chat_thread_id"
-          ],
-          "columnsTo": [
-            "id",
-            "chat_thread_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "discord_chat_deliveries_connection_owner_fk": {
-          "name": "discord_chat_deliveries_connection_owner_fk",
-          "tableFrom": "discord_chat_deliveries",
-          "tableTo": "discord_org_connections",
-          "columnsFrom": [
-            "connection_id",
-            "user_id"
-          ],
-          "columnsTo": [
-            "id",
-            "user_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "discord_chat_deliveries_route_owner_fk": {
-          "name": "discord_chat_deliveries_route_owner_fk",
-          "tableFrom": "discord_chat_deliveries",
-          "tableTo": "discord_chat_thread_routes",
-          "columnsFrom": [
-            "route_id",
-            "connection_id",
-            "chat_thread_id"
-          ],
-          "columnsTo": [
-            "id",
-            "connection_id",
-            "chat_thread_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "discord_chat_deliveries_ingress_owner_fk": {
-          "name": "discord_chat_deliveries_ingress_owner_fk",
-          "tableFrom": "discord_chat_deliveries",
-          "tableTo": "discord_chat_ingress",
-          "columnsFrom": [
-            "ingress_id",
-            "connection_id"
-          ],
-          "columnsTo": [
-            "id",
-            "connection_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "discord_chat_deliveries_source_check": {
-          "name": "discord_chat_deliveries_source_check",
-          "value": "(\"discord_chat_deliveries\".\"chat_event_id\" IS NOT NULL AND \"discord_chat_deliveries\".\"ingress_id\" IS NULL AND \"discord_chat_deliveries\".\"chat_thread_id\" IS NOT NULL AND \"discord_chat_deliveries\".\"route_id\" IS NOT NULL) OR (\"discord_chat_deliveries\".\"chat_event_id\" IS NULL AND \"discord_chat_deliveries\".\"ingress_id\" IS NOT NULL AND \"discord_chat_deliveries\".\"chat_thread_id\" IS NULL AND \"discord_chat_deliveries\".\"route_id\" IS NULL)"
-        },
-        "discord_chat_deliveries_status_check": {
-          "name": "discord_chat_deliveries_status_check",
-          "value": "\"discord_chat_deliveries\".\"status\" IN ('pending', 'delivered', 'failed', 'suppressed')"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.discord_chat_ingress": {
