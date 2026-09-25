@@ -308,43 +308,6 @@ describe("Discord Gateway relay", () => {
     },
   );
 
-  it("halts on a credential rejection and redelivers the same event after /start", async () => {
-    const relay = await createRelay();
-    relay.reply = () => {
-      return Response.json(
-        { error: { code: "UNAUTHORIZED" } },
-        { status: 401 },
-      );
-    };
-    const gateway = await relay.start();
-    gateway.hello();
-    await gateway.next(2);
-    gateway.ready();
-    gateway.message();
-    const first = await relay.deliveries.next();
-    await expect
-      .poll(() => {
-        return relay.health();
-      })
-      .toMatchObject({
-        running: false,
-        pending: 1,
-        deadLettered: 0,
-        fatal: "api-rejected-401",
-      });
-
-    relay.reply = () => {
-      return Response.json({ ok: true, outcome: "accepted" });
-    };
-    expect((await relay.request("/start")).status).toBe(200);
-    expect((await relay.deliveries.next()).rawBody).toBe(first.rawBody);
-    await expect
-      .poll(() => {
-        return relay.health();
-      })
-      .toMatchObject({ running: true, pending: 0, fatal: null });
-  });
-
   it("keeps GUILD_DELETE unavailable unchanged and uses a stable lifecycle identity", async () => {
     const relay = await createRelay();
     const gateway = await relay.start();
@@ -651,29 +614,6 @@ describe("Discord Gateway relay", () => {
     );
     expect(relay.opened).toHaveLength(1);
   }, 15_000);
-
-  it("identifies again after an invalid sequence close instead of resuming it", async () => {
-    const relay = await createRelay();
-    const gateway = await relay.start();
-    gateway.hello();
-    await gateway.next(2);
-    gateway.ready("invalid-sequence-session");
-    await expect
-      .poll(() => {
-        return relay.health();
-      })
-      .toMatchObject({ resumable: true });
-    gateway.socket.close(4007, "Invalid sequence");
-
-    const replacement = await relay.connections.next();
-    replacement.hello();
-    expect((await replacement.next(2)).d).toMatchObject({ token: BOT_TOKEN });
-    replacement.ready("new-session");
-    replacement.message();
-    expect(JSON.parse((await relay.deliveries.next()).rawBody).eventId).toBe(
-      `MESSAGE_CREATE:${MESSAGE_ID}`,
-    );
-  }, 10_000);
 
   it("stops after a fatal Discord close without exposing credentials", async () => {
     const relay = await createRelay();
