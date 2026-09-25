@@ -49,53 +49,6 @@ async function commandStatus(
  */
 describe("Computer Use host session row locks", () => {
   it(
-    "lets a new command reference the host while a claim holds its host row",
-    { timeout: CASE_TIMEOUT_MS },
-    async () => {
-      const actor = orgScoped(bdd.user());
-      const host = await startHost(actor);
-
-      const outcome = await withComputerUseHostSessionBarrierFixture(
-        {
-          orgId: actor.orgId,
-          stopAt: "locked-host",
-          work: async (barrier) => {
-            const holding = computerUse.claimNextComputerUseCommand(
-              host.hostToken,
-            );
-            const entered = await barrier.entered;
-            expect(entered).toMatchObject({
-              rowCount: 1,
-              lockTimeout: "1s",
-              statementTimeout: "5s",
-            });
-
-            // The command INSERT's foreign-key check takes KEY SHARE on the
-            // host row. It must not queue behind the held host lock, where
-            // it would spend the command route's own 1s lock budget.
-            const created = await computerUse.createComputerUseReadCommand(
-              actor,
-              { kind: "apps.list" },
-            );
-            await expect(barrier.blockedWaiterCount()).resolves.toBe(0);
-
-            barrier.release();
-            return { created, held: await holding };
-          },
-        },
-        context.signal,
-      );
-
-      // The command committed while the claim held the host, so the same
-      // poll's later candidate read dispatches it.
-      expect(outcome.held).toMatchObject({
-        status: "command",
-        command: { id: outcome.created.commandId, status: "running" },
-      });
-    },
-  );
-
-  it(
     "still makes a new command reference wait for a stop that holds the host",
     { timeout: CASE_TIMEOUT_MS },
     async () => {
@@ -137,7 +90,7 @@ describe("Computer Use host session row locks", () => {
   );
 
   it(
-    "serializes concurrent claims so one host runs at most one command",
+    "lets only one of several concurrent claims start a command on a host",
     { timeout: CASE_TIMEOUT_MS },
     async () => {
       const actor = orgScoped(bdd.user());
@@ -149,82 +102,24 @@ describe("Computer Use host session row locks", () => {
         kind: "apps.list",
       });
 
-      const claims = await withComputerUseHostSessionBarrierFixture(
-        {
-          orgId: actor.orgId,
-          stopAt: "locked-host",
-          work: async (barrier) => {
-            const firstClaim = computerUse.claimNextComputerUseCommand(
-              host.hostToken,
-            );
-            await barrier.entered;
-
-            // Each poll picks a different queued row under SKIP LOCKED, so
-            // only the host row lock keeps the second poll from starting a
-            // second running command.
-            const secondClaim = computerUse.claimNextComputerUseCommand(
-              host.hostToken,
-            );
-            await expect
-              .poll(barrier.blockedWaiterCount, BLOCKED)
-              .toBeGreaterThanOrEqual(1);
-
-            barrier.release();
-            return [await firstClaim, await secondClaim] as const;
-          },
-        },
-        context.signal,
-      );
-
-      expect(claims).toMatchObject([
-        { status: "command", command: { id: first.commandId } },
-        { status: "idle" },
+      // Claims hold no lock. The queued-status compare-and-set and the
+      // one-running-command-per-host unique index make every losing poll
+      // report idle, whatever the interleaving.
+      const claims = await Promise.all([
+        computerUse.claimNextComputerUseCommand(host.hostToken),
+        computerUse.claimNextComputerUseCommand(host.hostToken),
+        computerUse.claimNextComputerUseCommand(host.hostToken),
       ]);
+
+      expect(
+        claims.filter((claim) => {
+          return claim.status === "command";
+        }),
+      ).toMatchObject([{ command: { id: first.commandId } }]);
       await expect(commandStatus(actor, first.commandId)).resolves.toBe(
         "running",
       );
       await expect(commandStatus(actor, second.commandId)).resolves.toBe(
-        "queued",
-      );
-    },
-  );
-
-  it(
-    "makes a claim wait for a concurrent stop and then refuse the rotated token",
-    { timeout: CASE_TIMEOUT_MS },
-    async () => {
-      const actor = orgScoped(bdd.user());
-      const host = await startHost(actor);
-      const created = await computerUse.createComputerUseReadCommand(actor, {
-        kind: "apps.list",
-      });
-
-      const refused = await withComputerUseHostSessionBarrierFixture(
-        {
-          orgId: actor.orgId,
-          stopAt: "locked-host",
-          work: async (barrier) => {
-            const stopping = computerUse.stopComputerUseHost(host.hostToken);
-            await barrier.entered;
-
-            const claiming = computerUse.requestClaimNextComputerUseCommand(
-              host.hostToken,
-              [401],
-            );
-            await expect
-              .poll(barrier.blockedWaiterCount, BLOCKED)
-              .toBeGreaterThanOrEqual(1);
-
-            barrier.release();
-            await expect(stopping).resolves.toMatchObject({ ok: true });
-            return await claiming;
-          },
-        },
-        context.signal,
-      );
-
-      expect(refused.status).toBe(401);
-      await expect(commandStatus(actor, created.commandId)).resolves.toBe(
         "queued",
       );
     },
@@ -271,56 +166,6 @@ describe("Computer Use host session row locks", () => {
       await expect(commandStatus(actor, created.commandId)).resolves.toBe(
         "running",
       );
-    },
-  );
-
-  it(
-    "makes a stop wait for an in-flight claim before rotating the token",
-    { timeout: CASE_TIMEOUT_MS },
-    async () => {
-      const actor = orgScoped(bdd.user());
-      const host = await startHost(actor);
-      const created = await computerUse.createComputerUseReadCommand(actor, {
-        kind: "apps.list",
-      });
-
-      const claimed = await withComputerUseHostSessionBarrierFixture(
-        {
-          orgId: actor.orgId,
-          stopAt: "locked-host",
-          work: async (barrier) => {
-            const claiming = computerUse.claimNextComputerUseCommand(
-              host.hostToken,
-            );
-            await barrier.entered;
-
-            // The claim's NO KEY UPDATE still excludes stop's FOR UPDATE.
-            const stopping = computerUse.stopComputerUseHost(host.hostToken);
-            await expect
-              .poll(barrier.blockedWaiterCount, BLOCKED)
-              .toBeGreaterThanOrEqual(1);
-
-            barrier.release();
-            const result = await claiming;
-            await expect(stopping).resolves.toMatchObject({
-              ok: true,
-              hostId: host.hostId,
-            });
-            return result;
-          },
-        },
-        context.signal,
-      );
-
-      expect(claimed).toMatchObject({
-        status: "command",
-        command: { id: created.commandId },
-      });
-      const afterStop = await computerUse.requestComputerUseHeartbeat(
-        host.hostToken,
-        [401],
-      );
-      expect(afterStop.status).toBe(401);
     },
   );
 

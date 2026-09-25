@@ -86,6 +86,11 @@ export const computerUseCommands = pgTable(
         table.hostId,
         table.status,
       ),
+      // One running command per host. Claim polls race without locks, so
+      // this is what makes the losing poll's compare-and-set fail.
+      uniqueIndex("idx_computer_use_commands_running_host")
+        .on(table.hostId)
+        .where(sql`status = 'running'`),
       index("idx_computer_use_commands_org_user").on(table.orgId, table.userId),
       index("idx_computer_use_commands_created").on(table.createdAt),
     ];

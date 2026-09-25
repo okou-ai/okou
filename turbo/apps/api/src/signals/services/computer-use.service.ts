@@ -4,7 +4,6 @@ import { command, computed, type Computed } from "ccstate";
 import {
   assertErasureSubjectReadable,
   assertErasureSubjectWritable,
-  erasureSubjectOpenCondition,
   setErasureFenceDeadlines,
   type ErasureSubject,
 } from "@okouai/db/operations/account-erasure";
@@ -55,10 +54,8 @@ import {
 } from "@okouai/db/schema/computer-use-host";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
-import {
-  pgBooleanDecoder,
-  pgTextDecoder,
-} from "../../lib/db-structured-result";
+import { pgTextDecoder } from "../../lib/db-structured-result";
+import { isUniqueViolation } from "../../lib/pg-errors";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
@@ -172,8 +169,7 @@ type StartComputerUseHostResult =
 
 type HeartbeatComputerUseHostResult =
   | { readonly status: "ok"; readonly hostId: string }
-  | { readonly status: "invalid_token" }
-  | { readonly status: "subject_closed" };
+  | { readonly status: "invalid_token" };
 
 type StopComputerUseHostResult =
   | { readonly status: "stopped"; readonly hostId: string }
@@ -182,7 +178,6 @@ type StopComputerUseHostResult =
 
 type ClaimNextComputerUseHostCommandResult =
   | { readonly status: "invalid_token" }
-  | { readonly status: "subject_closed" }
   | { readonly status: "idle" }
   | {
       readonly status: "command";
@@ -1070,7 +1065,7 @@ function serializeCommand(row: ComputerUseCommandRow, hostName: string | null) {
 }
 
 async function insertComputerUseCommandAuditEvent(
-  tx: ComputerUseTx,
+  tx: ComputerUseTx | Db,
   params: {
     readonly command: ComputerUseCommandRow;
     readonly event: "completed";
@@ -1517,18 +1512,15 @@ function computerUseHostLivenessIsFresh(
   );
 }
 
-/** Bounded optimistic retries when a concurrent host write lands between a
- * heartbeat's read and its conditional update. */
-const COMPUTER_USE_HEARTBEAT_ATTEMPTS = 3;
-
 /**
  * The heartbeat is the most frequent Computer Use call and only refreshes a
  * row that already exists, so it runs without a transaction: one plain read,
  * and a write only when the host went offline, its reported state changed, or
  * its liveness stamp is getting stale. The write is a single conditional
- * UPDATE guarded by the row version (`xmin`) the read saw, so a concurrent
- * stop, revocation, erasure closure or heartbeat makes it match nothing and
- * the loop re-reads instead of overwriting a newer row.
+ * UPDATE guarded by the row version (`xmin`) the read saw. When a concurrent
+ * writer (stop, revocation, another heartbeat) got there first it matches
+ * nothing and this beat simply skips its write; the next one reads the new
+ * row.
  */
 export const heartbeatComputerUseHost$ = command(
   async (
@@ -1551,98 +1543,73 @@ export const heartbeatComputerUseHost$ = command(
     const supportedCapabilities = normalizeCapabilities(
       params.supportedCapabilities,
     );
-    const subjectOpen = erasureSubjectOpenCondition(db, [
-      { subjectKind: "user", subjectId: computerUseHosts.userId },
-      { subjectKind: "organization", subjectId: computerUseHosts.orgId },
-    ]);
 
-    for (
-      let attempt = 1;
-      attempt <= COMPUTER_USE_HEARTBEAT_ATTEMPTS;
-      attempt += 1
-    ) {
-      const [host] = await db
-        .select({
-          id: computerUseHosts.id,
-          userId: computerUseHosts.userId,
-          displayName: computerUseHosts.displayName,
-          appVersion: computerUseHosts.appVersion,
-          osVersion: computerUseHosts.osVersion,
-          supportedCapabilities: computerUseHosts.supportedCapabilities,
-          permissions: computerUseHosts.permissions,
-          status: computerUseHosts.status,
-          lastSeenAt: computerUseHosts.lastSeenAt,
-          revokedAt: computerUseHosts.revokedAt,
-          rowVersion: sql`${computerUseHosts}.xmin::text`.mapWith(
-            pgTextDecoder,
-          ),
-          subjectOpen: subjectOpen.mapWith(pgBooleanDecoder),
-        })
-        .from(computerUseHosts)
-        .where(
-          and(
-            eq(computerUseHosts.tokenHash, tokenHash),
-            isNull(computerUseHosts.revokedAt),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (!host) {
-        return { status: "invalid_token" };
-      }
-      if (!host.subjectOpen) {
-        return { status: "subject_closed" };
-      }
+    const [host] = await db
+      .select({
+        id: computerUseHosts.id,
+        userId: computerUseHosts.userId,
+        displayName: computerUseHosts.displayName,
+        appVersion: computerUseHosts.appVersion,
+        osVersion: computerUseHosts.osVersion,
+        supportedCapabilities: computerUseHosts.supportedCapabilities,
+        permissions: computerUseHosts.permissions,
+        status: computerUseHosts.status,
+        lastSeenAt: computerUseHosts.lastSeenAt,
+        revokedAt: computerUseHosts.revokedAt,
+        rowVersion: sql`${computerUseHosts}.xmin::text`.mapWith(pgTextDecoder),
+      })
+      .from(computerUseHosts)
+      .where(
+        and(
+          eq(computerUseHosts.tokenHash, tokenHash),
+          isNull(computerUseHosts.revokedAt),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!host) {
+      return { status: "invalid_token" };
+    }
 
-      const now = nowDate();
-      const stateChanged =
-        host.displayName !== displayName ||
-        host.appVersion !== appVersion ||
-        host.osVersion !== osVersion ||
-        !sameStringArray(host.supportedCapabilities, supportedCapabilities) ||
-        !samePermissions(host.permissions, params.permissions);
-      if (!stateChanged && computerUseHostLivenessIsFresh(host, now)) {
-        return { status: "ok", hostId: host.id };
-      }
-      const publishChanged =
-        stateChanged || !computerUseHostIsOnline(host, now);
-
-      const updated = await db
-        .update(computerUseHosts)
-        .set({
-          displayName,
-          appVersion,
-          osVersion,
-          supportedCapabilities,
-          permissions: params.permissions,
-          status: "online",
-          lastSeenAt: now,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(computerUseHosts.id, host.id),
-            eq(computerUseHosts.tokenHash, tokenHash),
-            isNull(computerUseHosts.revokedAt),
-            sql`${computerUseHosts}.xmin = ${host.rowVersion}::xid`,
-            subjectOpen,
-          ),
-        )
-        .returning({ id: computerUseHosts.id });
-      signal.throwIfAborted();
-      if (updated.length === 0) {
-        // Another writer committed first; re-read and decide again.
-        continue;
-      }
-      if (publishChanged) {
-        await publishComputerUseHostsChanged(host.userId);
-        signal.throwIfAborted();
-      }
+    const now = nowDate();
+    const stateChanged =
+      host.displayName !== displayName ||
+      host.appVersion !== appVersion ||
+      host.osVersion !== osVersion ||
+      !sameStringArray(host.supportedCapabilities, supportedCapabilities) ||
+      !samePermissions(host.permissions, params.permissions);
+    if (!stateChanged && computerUseHostLivenessIsFresh(host, now)) {
       return { status: "ok", hostId: host.id };
     }
-    throw new Error(
-      "Computer Use heartbeat kept losing concurrent host writes",
-    );
+
+    const updated = await db
+      .update(computerUseHosts)
+      .set({
+        displayName,
+        appVersion,
+        osVersion,
+        supportedCapabilities,
+        permissions: params.permissions,
+        status: "online",
+        lastSeenAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(computerUseHosts.id, host.id),
+          sql`${computerUseHosts}.xmin = ${host.rowVersion}::xid`,
+        ),
+      )
+      .returning({ id: computerUseHosts.id });
+    signal.throwIfAborted();
+    if (
+      updated.length > 0 &&
+      (stateChanged || !computerUseHostIsOnline(host, now))
+    ) {
+      await publishComputerUseHostsChanged(host.userId);
+      signal.throwIfAborted();
+    }
+    return { status: "ok", hostId: host.id };
   },
 );
 
@@ -2126,6 +2093,14 @@ export const getComputerUseCommandPluginContent$ = command(
   },
 );
 
+/**
+ * Claim polls run every 0.5–5s per host, so they hold no transaction and no
+ * lock. Everything is read up front with plain bounded queries, then each
+ * write is one single-row conditional UPDATE used as a compare-and-set. A
+ * poll that loses a race reports `idle` and the next poll tries again. The
+ * partial unique index on running commands per host is what keeps one host
+ * from running two commands when two polls race.
+ */
 export const claimNextComputerUseHostCommand$ = command(
   async (
     { set },
@@ -2137,106 +2112,128 @@ export const claimNextComputerUseHostCommand$ = command(
   ): Promise<ClaimNextComputerUseHostCommandResult> => {
     const db = set(writeDb$);
     const capabilities = normalizeCapabilities(params.supportedCapabilities);
-    const result = await db.transaction(async (tx) => {
-      const admitted = await admitComputerUseHostSession(
-        tx,
-        params.hostToken,
-        "no key update",
-        signal,
-      );
-      if (admitted.outcome !== "admitted") {
-        return { status: admitted.outcome };
-      }
-      // Admission can wait behind an erasure mutation. One fresh clock after
-      // that wait owns the stale-command sweep and every claim timestamp.
-      const now = nowDate();
-      const host = admitted.host;
+    const [host] = await db
+      .select()
+      .from(computerUseHosts)
+      .where(
+        and(
+          eq(computerUseHosts.tokenHash, hashSecret(params.hostToken)),
+          isNull(computerUseHosts.revokedAt),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!host) {
+      return { status: "invalid_token" };
+    }
+    const now = nowDate();
 
-      // Polls run every few seconds; only rewrite the host row when its
-      // capabilities changed or its liveness stamp is getting stale.
-      if (
-        !sameStringArray(host.supportedCapabilities, capabilities) ||
-        !computerUseHostLivenessIsFresh(host, now)
-      ) {
-        await tx
-          .update(computerUseHosts)
-          .set({
-            supportedCapabilities: capabilities,
-            status: "online",
-            lastSeenAt: now,
-            updatedAt: now,
-          })
-          .where(eq(computerUseHosts.id, host.id));
-        signal.throwIfAborted();
-      }
-
-      await failStaleRunningComputerUseCommands(
-        tx,
-        {
-          orgId: host.orgId,
-          userId: host.userId,
-          hostId: host.id,
-          now,
-        },
-        signal,
-      );
-
-      const [runningCommand] = await tx
-        .select({ id: computerUseCommands.id })
-        .from(computerUseCommands)
+    // Only rewrite the host row when its capabilities changed or its liveness
+    // stamp is getting stale.
+    if (
+      !sameStringArray(host.supportedCapabilities, capabilities) ||
+      !computerUseHostLivenessIsFresh(host, now)
+    ) {
+      await db
+        .update(computerUseHosts)
+        .set({
+          supportedCapabilities: capabilities,
+          status: "online",
+          lastSeenAt: now,
+          updatedAt: now,
+        })
         .where(
           and(
-            eq(computerUseCommands.orgId, host.orgId),
-            eq(computerUseCommands.userId, host.userId),
-            eq(computerUseCommands.hostId, host.id),
+            eq(computerUseHosts.id, host.id),
+            isNull(computerUseHosts.revokedAt),
+          ),
+        );
+      signal.throwIfAborted();
+    }
+
+    const [runningCommand] = await db
+      .select()
+      .from(computerUseCommands)
+      .where(
+        and(
+          eq(computerUseCommands.hostId, host.id),
+          eq(computerUseCommands.status, "running"),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (runningCommand) {
+      if (!runningCommandHasTimedOut(runningCommand, now)) {
+        return { status: "idle" };
+      }
+      const error = timeoutErrorForCommand(runningCommand);
+      const [timedOut] = await db
+        .update(computerUseCommands)
+        .set({
+          status: "failed",
+          result: { error },
+          error: error.code,
+          completedAt: now,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(computerUseCommands.id, runningCommand.id),
             eq(computerUseCommands.status, "running"),
           ),
         )
-        .limit(1);
+        .returning();
       signal.throwIfAborted();
-      if (runningCommand) {
-        return { status: "idle" as const };
+      if (!timedOut) {
+        return { status: "idle" };
       }
-
-      const effectiveCapabilities =
-        capabilities.length > 0 ? capabilities : host.supportedCapabilities;
-      const candidateRows = await tx
-        .select()
-        .from(computerUseCommands)
-        .where(
-          and(
-            eq(computerUseCommands.orgId, host.orgId),
-            eq(computerUseCommands.userId, host.userId),
-            eq(computerUseCommands.status, "queued"),
-            or(
-              eq(computerUseCommands.hostId, host.id),
-              isNull(computerUseCommands.hostId),
-            ),
-            inArray(computerUseCommands.kind, COMPUTER_USE_COMMANDS),
-          ),
-        )
-        .orderBy(asc(computerUseCommands.createdAt))
-        .for("update", { skipLocked: true })
-        .limit(50);
-      signal.throwIfAborted();
-
-      const hostWithEffectiveCapabilities = {
-        ...host,
-        supportedCapabilities: effectiveCapabilities,
-      };
-      const row = candidateRows.find((candidate) => {
-        return hostSupportsCommand({
-          host: hostWithEffectiveCapabilities,
-          kind: candidate.kind as ComputerUseCommandKind,
-          payload: candidate.payload,
-        });
+      await insertComputerUseCommandAuditEvent(db, {
+        command: timedOut,
+        event: "completed",
+        error,
+        createdAt: now,
       });
+      signal.throwIfAborted();
+    }
 
-      if (!row) {
-        return { status: "idle" as const };
-      }
+    const effectiveCapabilities =
+      capabilities.length > 0 ? capabilities : host.supportedCapabilities;
+    const candidateRows = await db
+      .select()
+      .from(computerUseCommands)
+      .where(
+        and(
+          eq(computerUseCommands.orgId, host.orgId),
+          eq(computerUseCommands.userId, host.userId),
+          eq(computerUseCommands.status, "queued"),
+          or(
+            eq(computerUseCommands.hostId, host.id),
+            isNull(computerUseCommands.hostId),
+          ),
+          inArray(computerUseCommands.kind, COMPUTER_USE_COMMANDS),
+        ),
+      )
+      .orderBy(asc(computerUseCommands.createdAt))
+      .limit(50);
+    signal.throwIfAborted();
 
-      const [updated] = await tx
+    const hostWithEffectiveCapabilities = {
+      ...host,
+      supportedCapabilities: effectiveCapabilities,
+    };
+    const row = candidateRows.find((candidate) => {
+      return hostSupportsCommand({
+        host: hostWithEffectiveCapabilities,
+        kind: candidate.kind as ComputerUseCommandKind,
+        payload: candidate.payload,
+      });
+    });
+    if (!row) {
+      return { status: "idle" };
+    }
+
+    const claimed = await settle(
+      db
         .update(computerUseCommands)
         .set({
           hostId: host.id,
@@ -2244,21 +2241,30 @@ export const claimNextComputerUseHostCommand$ = command(
           claimedAt: now,
           updatedAt: now,
         })
-        .where(eq(computerUseCommands.id, row.id))
-        .returning();
-      signal.throwIfAborted();
-
-      if (!updated) {
-        throw new Error("Failed to claim computer-use command");
-      }
-
-      return {
-        status: "command" as const,
-        command: serializeCommand(updated, host.displayName),
-      };
-    });
+        .where(
+          and(
+            eq(computerUseCommands.id, row.id),
+            eq(computerUseCommands.status, "queued"),
+          ),
+        )
+        .returning(),
+    );
     signal.throwIfAborted();
-    return result;
+    if (!claimed.ok) {
+      // Another poll for this host started a command first.
+      if (isUniqueViolation(claimed.error)) {
+        return { status: "idle" };
+      }
+      throw claimed.error;
+    }
+    const [updated] = claimed.value;
+    if (!updated) {
+      return { status: "idle" };
+    }
+    return {
+      status: "command",
+      command: serializeCommand(updated, host.displayName),
+    };
   },
 );
 

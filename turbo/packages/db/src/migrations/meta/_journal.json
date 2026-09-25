@@ -1142,6 +1142,13 @@
       "when": 1790334103114,
       "tag": "1240_drop_computer_use_hosts_last_seen_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 1241,
+      "version": "7",
+      "when": 1790335284219,
+      "tag": "1241_computer_use_commands_running_host_idx",
+      "breakpoints": true
     }
   ]
 }
