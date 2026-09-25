@@ -236,7 +236,7 @@ function HostChoiceSelect({
     {
       value: "default",
       label: `${t(($) => {
-        return $.chat.remoteAccess.useDefault;
+        return $.chat.remoteAccess.default;
       })} (${
         host.defaultEnabled
           ? t(($) => {
@@ -285,14 +285,31 @@ function HostChoiceSelect({
           );
         }}
       >
-        <SelectTrigger
-          variant="neutral"
-          className="h-8 w-40 shrink-0 py-1 text-sm"
-          aria-label={`${protocol.toUpperCase()} ${host.displayName}`}
+        <div className="relative grid min-w-0 max-w-[calc(100%-1.5rem)] shrink-0">
+          {items.map((item) => {
+            return (
+              <span
+                key={item.value}
+                aria-hidden="true"
+                className="invisible col-start-1 row-start-1 flex h-8 items-center gap-2 whitespace-nowrap border px-3 py-1 text-sm"
+              >
+                {item.label}
+                <span className="h-4 w-4 shrink-0" />
+              </span>
+            );
+          })}
+          <SelectTrigger
+            variant="neutral"
+            className="col-start-1 row-start-1 h-8 min-w-0 w-full py-1 text-sm"
+            aria-label={`${protocol.toUpperCase()} ${host.displayName}`}
+          >
+            <SelectValue />
+          </SelectTrigger>
+        </div>
+        <SelectContent
+          align="start"
+          className="min-w-(--anchor-width) w-(--anchor-width)"
         >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent align="start" className="w-(--anchor-width)">
           {items.map((item) => {
             return (
               <SelectItem key={item.value} value={item.value}>

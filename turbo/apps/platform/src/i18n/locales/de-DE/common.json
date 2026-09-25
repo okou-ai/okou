@@ -2091,6 +2091,7 @@
       "skipAutomationEvent": "Automatisierungsereignis überspringen"
     },
     "remoteAccess": {
+      "default": "Standard",
       "defaultEnabled": "Für Chats standardmäßig aktiviert",
       "enabledCount_one": "{{count}} aktiviert",
       "enabledCount_other": "{{count}} aktiviert",
@@ -2101,8 +2102,7 @@
       "requiresSsh": "Benötigt auch Zugriff auf den SSH-Host {{name}}.",
       "retry": "Erneut versuchen",
       "title": "Fernzugriff",
-      "unavailableSsh": "nicht verfügbarer SSH-Host",
-      "useDefault": "Standard verwenden"
+      "unavailableSsh": "nicht verfügbarer SSH-Host"
     },
     "replaceDraft": {
       "description": "Wenn Sie fortfahren, wird Ihr aktueller Composer-Entwurf gelöscht und eine Workflow-Eingabeaufforderung gestartet.",

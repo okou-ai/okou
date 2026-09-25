@@ -2084,6 +2084,7 @@
       "skipAutomationEvent": "跳過自動化事件"
     },
     "remoteAccess": {
+      "default": "預設",
       "defaultEnabled": "聊天預設啟用",
       "enabledCount_other": "已啟用 {{count}} 個",
       "loadFailed": "無法載入遠端存取權限。",
@@ -2093,8 +2094,7 @@
       "requiresSsh": "還需要存取 SSH 主機 {{name}}。",
       "retry": "重試",
       "title": "遠端存取",
-      "unavailableSsh": "無法使用的 SSH 主機",
-      "useDefault": "使用預設設定"
+      "unavailableSsh": "無法使用的 SSH 主機"
     },
     "replaceDraft": {
       "description": "繼續將清空你當前的輸入框草稿，並開始一個工作流提示詞。",
