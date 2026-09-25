@@ -34,18 +34,6 @@ function publishedChannelTopics(
   });
 }
 
-/** Publications of one topic actually routed to one exact channel. */
-export function countPublishedTo(
-  mocks: ApiTestMocks,
-  target: { readonly channel: string; readonly topic: string },
-): number {
-  return publishedChannelTopics(mocks).filter((published) => {
-    return (
-      published.channel === target.channel && published.topic === target.topic
-    );
-  }).length;
-}
-
 /** Every channel one topic reached, so a total can be asserted without
  * collapsing two owners into one sum. */
 export function channelsPublishedTo(
