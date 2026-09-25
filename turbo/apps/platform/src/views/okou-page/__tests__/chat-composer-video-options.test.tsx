@@ -286,7 +286,8 @@ test.each([false, true])(
 test.each([false, true])(
   "A video template keeps its options after selecting a video model with the slash panel on: %s",
   async (enabled) => {
-    installVideoSubmissionCapture();
+    installVideoEnvironment();
+    mockChatLifecycle(context);
     await setupPage({
       context,
       path: `/agents/${AGENT_ID}/chat`,
