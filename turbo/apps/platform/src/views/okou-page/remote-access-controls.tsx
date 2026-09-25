@@ -295,7 +295,20 @@ function HostChoiceSelect({
             className="col-start-1 row-start-1 h-8 min-w-0 w-full py-1 text-sm"
             aria-label={`${protocol.toUpperCase()} ${host.displayName}`}
           >
-            <SelectValue className="min-w-0" />
+            <SelectValue className="min-w-0">
+              {value === "default" ? (
+                <span className="flex min-w-0 w-full items-center">
+                  <span className="min-w-0 truncate">{defaultLabel}</span>
+                  <span className="shrink-0 whitespace-pre">
+                    {` (${host.defaultEnabled ? onLabel : offLabel})`}
+                  </span>
+                </span>
+              ) : value === "on" ? (
+                onLabel
+              ) : (
+                offLabel
+              )}
+            </SelectValue>
           </SelectTrigger>
         </div>
         <SelectContent align="start" className="w-max max-w-[calc(100vw-2rem)]">
