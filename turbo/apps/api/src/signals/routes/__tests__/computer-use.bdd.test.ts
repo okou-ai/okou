@@ -424,14 +424,15 @@ describe("FILE-03 desktop computer-use runtime", () => {
     expect(completed.completedAt).not.toBeNull();
     expect(completed.computerUseHostId).toBe(host.hostId);
 
+    // Stopping an installation host leaves it offline but still bound.
     await api.stopComputerUseHost(host.hostToken);
     await expect(readComputerUseRunState(run.runId)).resolves.toStrictEqual({
       source: "teams",
-      computer_use_host_id: null,
+      computer_use_host_id: host.hostId,
     });
   });
 
-  it("chains host start, command claim, completion, audit, and host deletion", async () => {
+  it("chains host start, command claim, completion, audit, and host stop", async () => {
     const orgId = `org_${randomUUID()}`;
     const actor = bdd.user({ orgId });
     const peer = bdd.user({ orgId });
@@ -506,12 +507,11 @@ describe("FILE-03 desktop computer-use runtime", () => {
     ).toStrictEqual(expect.arrayContaining(["completed"]));
 
     await api.stopComputerUseHost(host.hostToken);
-    const afterDelete = await api.listComputerUseHosts(actor);
-    expect(
-      afterDelete.hosts.some((item) => {
-        return item.id === host.hostId;
-      }),
-    ).toBeFalsy();
+    const afterStop = await api.listComputerUseHosts(actor);
+    expect(afterStop.hosts).toMatchObject([
+      { id: host.hostId, status: "offline" },
+    ]);
+    await api.requestComputerUseHeartbeat(host.hostToken, [401]);
   });
 
   it("rewrites the host row only when heartbeats carry news or liveness goes stale", async () => {

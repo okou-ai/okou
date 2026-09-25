@@ -709,7 +709,7 @@ describe("account erasure fences chat-thread Computer Use selection", () => {
     await expect(sidebarHostEvents(fixture)).resolves.toStrictEqual(appended);
   });
 
-  it("keeps an offline installed host selectable and rejects a revoked host", async () => {
+  it("keeps an offline installed host selectable", async () => {
     const fixture = await createHostSelectionFixture();
     const installed = await cu.startComputerUseHost(fixture.actor, {
       installationId: randomUUID(),
@@ -721,20 +721,6 @@ describe("account erasure fences chat-thread Computer Use selection", () => {
       fixture.actor,
       fixture.threadId,
       installed.hostId,
-    );
-    await expect(readSelection(fixture)).resolves.toStrictEqual({
-      computerUseHostId: installed.hostId,
-      cloudBrowserEnabled: false,
-    });
-
-    // An ephemeral host revokes on stop, and a revoked host is not selectable.
-    const ephemeral = await cu.startComputerUseHost(fixture.actor);
-    await cu.stopComputerUseHost(ephemeral.hostToken);
-    await chat.requestUpdateThreadComputerUseHost(
-      fixture.actor,
-      fixture.threadId,
-      ephemeral.hostId,
-      [404],
     );
     await expect(readSelection(fixture)).resolves.toStrictEqual({
       computerUseHostId: installed.hostId,

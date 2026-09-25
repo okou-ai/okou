@@ -1,6 +1,6 @@
 {
-  "id": "32ba1ded-f193-4866-8643-54d7d2657d3f",
-  "prevId": "dd9e3241-162d-4a7c-8251-0418849ea064",
+  "id": "f1be121e-e39c-4ae4-bedc-06725101aadb",
+  "prevId": "32ba1ded-f193-4866-8643-54d7d2657d3f",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -7334,13 +7334,13 @@
           "name": "source_user_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "source_org_id": {
           "name": "source_org_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "created_at": {
           "name": "created_at",

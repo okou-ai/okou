@@ -134,6 +134,10 @@ const computerUseRuntimeBodySchema = z.object({
   permissions: computerUsePermissionsSchema,
 });
 
+const computerUseHostStartBodySchema = computerUseRuntimeBodySchema.extend({
+  installationId: hostInstallationIdSchema,
+});
+
 const computerUseCommandTargetShape = {
   timeoutMs: z.number().int().min(1_000).max(120_000).default(60_000),
 } as const;
@@ -555,7 +559,7 @@ export const computerUseHostsContract = c.router({
     method: "POST",
     path: "/api/computer-use/hosts/start",
     headers: authHeadersSchema,
-    body: computerUseRuntimeBodySchema,
+    body: computerUseHostStartBodySchema,
     responses: {
       200: computerUseHostStartResponseSchema,
       401: apiErrorSchema,

@@ -1314,7 +1314,7 @@ describe("createApp", () => {
       },
     );
 
-    it.each([undefined, "", "development"])(
+    it.each([undefined, "development"])(
       "preserves App requests without a parseable version (%s)",
       async (version) => {
         const app = createApp({
@@ -1396,7 +1396,7 @@ describe("createApp", () => {
       },
     );
 
-    it.each([undefined, "", "unknown", "Okou", "zero,okou"])(
+    it.each([undefined, "unknown", "Okou", "zero,okou"])(
       "preserves Desktop requests and metadata with unclassified product %s",
       async (product) => {
         const app = createApp({

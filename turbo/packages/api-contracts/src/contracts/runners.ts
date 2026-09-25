@@ -1909,12 +1909,7 @@ export const heartbeatBodySchema = z
     admittableProfiles: runnerProfileListSchema,
     heldSandboxStates: z.array(heldSandboxStateSchema).max(1024),
     heldWorkspaceStates: z.array(heldWorkspaceStateSchema).max(1024),
-    // Accept older Runner heartbeats until the fleet and rollback floor no
-    // longer include senders without this field (see #36867).
-    activeReuseProducers: z
-      .array(activeReuseProducerSchema)
-      .max(1024)
-      .optional(),
+    activeReuseProducers: z.array(activeReuseProducerSchema).max(1024),
     mode: z.enum(["starting", "running", "draining", "stopping"]),
   })
   .superRefine((heartbeat, ctx) => {
