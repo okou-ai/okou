@@ -103,9 +103,8 @@ import {
   dispatchTeamsChatDeliveryOnce,
 } from "./internal-teams-chat-run-callback.service";
 import {
-  deliverDiscordChatAdmissionFailure,
-  enqueueDiscordChatDelivery,
-  dispatchDiscordChatDeliveryOnce,
+  sendDiscordChatReply,
+  type DiscordReplyRequest,
 } from "./internal-discord-chat-run-callback.service";
 import {
   deliverTelegramChatAdmissionFailure,
@@ -614,18 +613,9 @@ interface ChatCallbackDependencies {
     },
     signal: AbortSignal,
   ) => Promise<void>;
-  readonly dispatchDiscordDelivery: (
-    callbackId: string,
-    signal: AbortSignal,
-  ) => Promise<void>;
-  readonly deliverDiscordAdmissionFailure: (
-    args: {
-      readonly chatThreadId: string;
-      readonly userId: string;
-      readonly orgId: string;
-      readonly target: DiscordDeliveryTarget;
-      readonly chatEventId: string;
-    },
+  /** Fire and forget; it logs its own failures and never throws. */
+  readonly sendDiscordReply: (
+    request: DiscordReplyRequest,
     signal: AbortSignal,
   ) => Promise<void>;
   readonly dispatchTelegramDelivery: (
@@ -879,7 +869,7 @@ type CompletedChatCallbackResult =
       readonly slackDeliveryCallbackId?: string;
       readonly feishuDeliveryCallbackId?: string;
       readonly teamsDeliveryCallbackId?: string;
-      readonly discordDeliveryCallbackId?: string;
+      readonly discordReply?: DiscordReplyRequest;
       readonly telegramDeliveryCallbackId?: string;
       readonly agentphoneDeliveryCallbackId?: string;
       readonly githubDeliveryCallbackId?: string;
@@ -893,7 +883,7 @@ type FailedChatCallbackResult =
       readonly slackDeliveryCallbackId?: string;
       readonly feishuDeliveryCallbackId?: string;
       readonly teamsDeliveryCallbackId?: string;
-      readonly discordDeliveryCallbackId?: string;
+      readonly discordReply?: DiscordReplyRequest;
       readonly telegramDeliveryCallbackId?: string;
       readonly agentphoneDeliveryCallbackId?: string;
       readonly githubDeliveryCallbackId?: string;
@@ -905,7 +895,7 @@ interface TerminalChatCallbackWork {
   readonly slackDeliveryCallbackId?: string;
   readonly feishuDeliveryCallbackId?: string;
   readonly teamsDeliveryCallbackId?: string;
-  readonly discordDeliveryCallbackId?: string;
+  readonly discordReply?: DiscordReplyRequest;
   readonly telegramDeliveryCallbackId?: string;
   readonly agentphoneDeliveryCallbackId?: string;
   readonly githubDeliveryCallbackId?: string;
@@ -1330,12 +1320,16 @@ async function insertTeamsChatDeliveryCallback(args: {
   });
 }
 
-async function insertDiscordChatDeliveryCallback(args: {
+/**
+ * Discord replies are fire and forget with no delivery record, so only the
+ * attempt that created the event posts it; replays never post twice.
+ */
+async function discordReplyRequest(args: {
   readonly db: ChatCallbackTransaction;
   readonly runId: string;
   readonly target: DiscordDeliveryTarget;
   readonly chatEventId: string;
-}): Promise<string | undefined> {
+}): Promise<DiscordReplyRequest> {
   const [run] = await args.db
     .select({
       userId: agentRuns.userId,
@@ -1348,14 +1342,13 @@ async function insertDiscordChatDeliveryCallback(args: {
   if (!run?.chatThreadId) {
     throw new Error("Canonical Discord delivery run is unavailable");
   }
-  const deliveryId = await enqueueDiscordChatDelivery(args.db, {
+  return {
     chatEventId: args.chatEventId,
     chatThreadId: run.chatThreadId,
     userId: run.userId,
     orgId: run.orgId,
     target: args.target,
-  });
-  return deliveryId ?? undefined;
+  };
 }
 
 async function insertTelegramChatDeliveryCallback(args: {
@@ -1529,14 +1522,15 @@ async function insertAssistantErrorEventTransaction(
         chatEventId: event.id,
       })
     : undefined;
-  const discordDeliveryCallbackId = input.discordDelivery
-    ? await insertDiscordChatDeliveryCallback({
-        db: tx,
-        runId: input.runId,
-        target: input.discordDelivery,
-        chatEventId: event.id,
-      })
-    : undefined;
+  const discordReply =
+    input.discordDelivery && insertedEvent
+      ? await discordReplyRequest({
+          db: tx,
+          runId: input.runId,
+          target: input.discordDelivery,
+          chatEventId: event.id,
+        })
+      : undefined;
   const telegramDeliveryCallbackId = input.telegramDelivery
     ? await insertTelegramChatDeliveryCallback({
         db: tx,
@@ -1569,7 +1563,7 @@ async function insertAssistantErrorEventTransaction(
     slackDeliveryCallbackId,
     feishuDeliveryCallbackId,
     teamsDeliveryCallbackId,
-    discordDeliveryCallbackId,
+    discordReply,
     telegramDeliveryCallbackId,
     agentphoneDeliveryCallbackId,
     githubDeliveryCallbackId,
@@ -1620,7 +1614,7 @@ async function insertAssistantErrorEvent(
     slackDeliveryCallbackId: inserted.slackDeliveryCallbackId,
     feishuDeliveryCallbackId: inserted.feishuDeliveryCallbackId,
     teamsDeliveryCallbackId: inserted.teamsDeliveryCallbackId,
-    discordDeliveryCallbackId: inserted.discordDeliveryCallbackId,
+    discordReply: inserted.discordReply,
     telegramDeliveryCallbackId: inserted.telegramDeliveryCallbackId,
     agentphoneDeliveryCallbackId: inserted.agentphoneDeliveryCallbackId,
     githubDeliveryCallbackId: inserted.githubDeliveryCallbackId,
@@ -1746,7 +1740,7 @@ interface RunLifecycleDeliveryCallbacks {
   readonly slackDeliveryCallbackId?: string;
   readonly feishuDeliveryCallbackId?: string;
   readonly teamsDeliveryCallbackId?: string;
-  readonly discordDeliveryCallbackId?: string;
+  readonly discordReply?: DiscordReplyRequest;
   readonly telegramDeliveryCallbackId?: string;
   readonly agentphoneDeliveryCallbackId?: string;
   readonly githubDeliveryCallbackId?: string;
@@ -1785,6 +1779,7 @@ async function registerRunLifecycleDeliveryCallbacks(
   tx: ChatCallbackTransaction,
   input: Omit<RunLifecycleMarkerArgs, "ownership">,
   deliveryEvent: { readonly id: string } | undefined,
+  markerInserted: boolean,
 ): Promise<RunLifecycleDeliveryCallbacks> {
   const slackDeliveryCallbackId =
     deliveryEvent && input.slackDelivery
@@ -1816,9 +1811,9 @@ async function registerRunLifecycleDeliveryCallbacks(
           chatEventId: deliveryEvent.id,
         })
       : undefined;
-  const discordDeliveryCallbackId =
-    deliveryEvent && input.discordDelivery
-      ? await insertDiscordChatDeliveryCallback({
+  const discordReply =
+    deliveryEvent && input.discordDelivery && markerInserted
+      ? await discordReplyRequest({
           db: tx,
           runId: input.runId,
           target: input.discordDelivery,
@@ -1859,7 +1854,7 @@ async function registerRunLifecycleDeliveryCallbacks(
     slackDeliveryCallbackId,
     feishuDeliveryCallbackId,
     teamsDeliveryCallbackId,
-    discordDeliveryCallbackId,
+    discordReply,
     telegramDeliveryCallbackId,
     agentphoneDeliveryCallbackId,
     githubDeliveryCallbackId,
@@ -1918,6 +1913,7 @@ export async function insertRunLifecycleMarkerProjection(args: {
       args.tx,
       input,
       deliveryEvent,
+      marker !== null,
     )),
   };
 }
@@ -1983,7 +1979,7 @@ async function insertRunLifecycleMarker(
     slackDeliveryCallbackId: inserted.slackDeliveryCallbackId,
     feishuDeliveryCallbackId: inserted.feishuDeliveryCallbackId,
     teamsDeliveryCallbackId: inserted.teamsDeliveryCallbackId,
-    discordDeliveryCallbackId: inserted.discordDeliveryCallbackId,
+    discordReply: inserted.discordReply,
     telegramDeliveryCallbackId: inserted.telegramDeliveryCallbackId,
     agentphoneDeliveryCallbackId: inserted.agentphoneDeliveryCallbackId,
     githubDeliveryCallbackId: inserted.githubDeliveryCallbackId,
@@ -2231,7 +2227,7 @@ async function handleCompletedChatCallback(
     slackDeliveryCallbackId: inserted.slackDeliveryCallbackId,
     feishuDeliveryCallbackId: inserted.feishuDeliveryCallbackId,
     teamsDeliveryCallbackId: inserted.teamsDeliveryCallbackId,
-    discordDeliveryCallbackId: inserted.discordDeliveryCallbackId,
+    discordReply: inserted.discordReply,
     telegramDeliveryCallbackId: inserted.telegramDeliveryCallbackId,
     agentphoneDeliveryCallbackId: inserted.agentphoneDeliveryCallbackId,
     githubDeliveryCallbackId: inserted.githubDeliveryCallbackId,
@@ -3651,7 +3647,7 @@ interface QueuedAdmissionFailureDeliverers {
   readonly deliverFeishu: ChatCallbackDependencies["deliverFeishuAdmissionFailure"];
   readonly clearFeishuThinking: ChatCallbackDependencies["clearFeishuThinkingReaction"];
   readonly deliverTeams: ChatCallbackDependencies["deliverTeamsAdmissionFailure"];
-  readonly deliverDiscord: ChatCallbackDependencies["deliverDiscordAdmissionFailure"];
+  readonly deliverDiscord: ChatCallbackDependencies["sendDiscordReply"];
   readonly deliverTelegram: ChatCallbackDependencies["deliverTelegramAdmissionFailure"];
   readonly deliverAgentPhone: ChatCallbackDependencies["deliverAgentPhoneAdmissionFailure"];
   readonly deliverGitHub: ChatCallbackDependencies["deliverGitHubAdmissionFailure"];
@@ -3858,22 +3854,7 @@ async function handleQueuedMessageAdmissionFailure(
     errorMarker: failure.error.code.toLowerCase(),
     currentTime: nowDate(),
   };
-  const failed =
-    failure.kind === "discord_admission_failure"
-      ? await args.db.transaction(async (tx) => {
-          const rejected = await failQueuedUserMessage(tx, failInput);
-          if (rejected) {
-            await enqueueDiscordChatDelivery(tx, {
-              chatEventId: rejected.assistantEventId,
-              chatThreadId: failure.threadId,
-              orgId: failure.orgId,
-              userId: failure.userId,
-              target: failure.discordDelivery,
-            });
-          }
-          return rejected;
-        })
-      : await failQueuedUserMessage(args.db, failInput);
+  const failed = await failQueuedUserMessage(args.db, failInput);
   signal.throwIfAborted();
   if (!failed) {
     return;
@@ -3921,7 +3902,7 @@ interface AutoSendQueuedMessageArgs {
   readonly deliverFeishuAdmissionFailure: ChatCallbackDependencies["deliverFeishuAdmissionFailure"];
   readonly clearFeishuThinkingReaction: ChatCallbackDependencies["clearFeishuThinkingReaction"];
   readonly deliverTeamsAdmissionFailure: ChatCallbackDependencies["deliverTeamsAdmissionFailure"];
-  readonly deliverDiscordAdmissionFailure: ChatCallbackDependencies["deliverDiscordAdmissionFailure"];
+  readonly sendDiscordReply: ChatCallbackDependencies["sendDiscordReply"];
   readonly deliverTelegramAdmissionFailure: ChatCallbackDependencies["deliverTelegramAdmissionFailure"];
   readonly deliverAgentPhoneAdmissionFailure: ChatCallbackDependencies["deliverAgentPhoneAdmissionFailure"];
   readonly deliverGitHubAdmissionFailure: ChatCallbackDependencies["deliverGitHubAdmissionFailure"];
@@ -4020,7 +4001,7 @@ function autoSendAdmissionFailureArgs(
     deliverFeishu: args.deliverFeishuAdmissionFailure,
     clearFeishuThinking: args.clearFeishuThinkingReaction,
     deliverTeams: args.deliverTeamsAdmissionFailure,
-    deliverDiscord: args.deliverDiscordAdmissionFailure,
+    deliverDiscord: args.sendDiscordReply,
     deliverTelegram: args.deliverTelegramAdmissionFailure,
     deliverAgentPhone: args.deliverAgentPhoneAdmissionFailure,
     deliverGitHub: args.deliverGitHubAdmissionFailure,
@@ -4338,7 +4319,7 @@ async function prepareCompletedTerminalChatCallbackWork(
     slackDeliveryCallbackId: completed.slackDeliveryCallbackId,
     feishuDeliveryCallbackId: completed.feishuDeliveryCallbackId,
     teamsDeliveryCallbackId: completed.teamsDeliveryCallbackId,
-    discordDeliveryCallbackId: completed.discordDeliveryCallbackId,
+    discordReply: completed.discordReply,
     telegramDeliveryCallbackId: completed.telegramDeliveryCallbackId,
     agentphoneDeliveryCallbackId: completed.agentphoneDeliveryCallbackId,
     githubDeliveryCallbackId: completed.githubDeliveryCallbackId,
@@ -4452,7 +4433,7 @@ async function prepareFailedTerminalChatCallbackWork(
     slackDeliveryCallbackId: failed.slackDeliveryCallbackId,
     feishuDeliveryCallbackId: failed.feishuDeliveryCallbackId,
     teamsDeliveryCallbackId: failed.teamsDeliveryCallbackId,
-    discordDeliveryCallbackId: failed.discordDeliveryCallbackId,
+    discordReply: failed.discordReply,
     telegramDeliveryCallbackId: failed.telegramDeliveryCallbackId,
     agentphoneDeliveryCallbackId: failed.agentphoneDeliveryCallbackId,
     githubDeliveryCallbackId: failed.githubDeliveryCallbackId,
@@ -4654,7 +4635,7 @@ async function dispatchCanonicalDeliveryCallbacks(
     readonly slackDeliveryCallbackId: string | undefined;
     readonly feishuDeliveryCallbackId: string | undefined;
     readonly teamsDeliveryCallbackId: string | undefined;
-    readonly discordDeliveryCallbackId: string | undefined;
+    readonly discordReply: DiscordReplyRequest | undefined;
     readonly telegramDeliveryCallbackId: string | undefined;
     readonly agentphoneDeliveryCallbackId: string | undefined;
     readonly githubDeliveryCallbackId: string | undefined;
@@ -4695,16 +4676,6 @@ async function dispatchCanonicalDeliveryCallbacks(
       callbackId: args.teamsDeliveryCallbackId,
       dispatch: (callbackId, dispatchSignal) => {
         return args.dependencies.dispatchTeamsDelivery(
-          callbackId,
-          dispatchSignal,
-        );
-      },
-    },
-    {
-      name: "Discord",
-      callbackId: args.discordDeliveryCallbackId,
-      dispatch: (callbackId, dispatchSignal) => {
-        return args.dependencies.dispatchDiscordDelivery(
           callbackId,
           dispatchSignal,
         );
@@ -4760,6 +4731,9 @@ async function dispatchCanonicalDeliveryCallbacks(
         },
       );
     }
+  }
+  if (args.discordReply) {
+    await args.dependencies.sendDiscordReply(args.discordReply, signal);
   }
 }
 
@@ -4907,7 +4881,7 @@ async function finishTerminalChatCallbackAfterProjection(
       slackDeliveryCallbackId: args.work.slackDeliveryCallbackId,
       feishuDeliveryCallbackId: args.work.feishuDeliveryCallbackId,
       teamsDeliveryCallbackId: args.work.teamsDeliveryCallbackId,
-      discordDeliveryCallbackId: args.work.discordDeliveryCallbackId,
+      discordReply: args.work.discordReply,
       telegramDeliveryCallbackId: args.work.telegramDeliveryCallbackId,
       agentphoneDeliveryCallbackId: args.work.agentphoneDeliveryCallbackId,
       githubDeliveryCallbackId: args.work.githubDeliveryCallbackId,
@@ -5088,14 +5062,13 @@ function withoutQueuedRunDependency(
     deliverSlackAdmissionFailure: dependencies.deliverSlackAdmissionFailure,
     deliverFeishuAdmissionFailure: dependencies.deliverFeishuAdmissionFailure,
     deliverTeamsAdmissionFailure: dependencies.deliverTeamsAdmissionFailure,
-    deliverDiscordAdmissionFailure: dependencies.deliverDiscordAdmissionFailure,
+    sendDiscordReply: dependencies.sendDiscordReply,
     deliverTelegramAdmissionFailure:
       dependencies.deliverTelegramAdmissionFailure,
     deliverAgentPhoneAdmissionFailure:
       dependencies.deliverAgentPhoneAdmissionFailure,
     dispatchFeishuDelivery: dependencies.dispatchFeishuDelivery,
     dispatchTeamsDelivery: dependencies.dispatchTeamsDelivery,
-    dispatchDiscordDelivery: dependencies.dispatchDiscordDelivery,
     dispatchTelegramDelivery: dependencies.dispatchTelegramDelivery,
     dispatchAgentPhoneDelivery: dependencies.dispatchAgentPhoneDelivery,
     deliverGitHubAdmissionFailure: dependencies.deliverGitHubAdmissionFailure,
@@ -5357,16 +5330,10 @@ function teamsChatDeliveryDependencies(
 
 function discordChatDeliveryDependencies(
   db: Db,
-): Pick<
-  ChatCallbackDependencies,
-  "deliverDiscordAdmissionFailure" | "dispatchDiscordDelivery"
-> {
+): Pick<ChatCallbackDependencies, "sendDiscordReply"> {
   return {
-    deliverDiscordAdmissionFailure: (params, signal) => {
-      return deliverDiscordChatAdmissionFailure({ db, ...params }, signal);
-    },
-    dispatchDiscordDelivery: (callbackId, signal) => {
-      return dispatchDiscordChatDeliveryOnce(db, callbackId, signal);
+    sendDiscordReply: (request, signal) => {
+      return sendDiscordChatReply(db, request, signal);
     },
   };
 }
@@ -5659,8 +5626,7 @@ export const drainQueuedUserMessagesForThread$ = command(
           dependencies.deliverFeishuAdmissionFailure,
         clearFeishuThinkingReaction: dependencies.clearFeishuThinkingReaction,
         deliverTeamsAdmissionFailure: dependencies.deliverTeamsAdmissionFailure,
-        deliverDiscordAdmissionFailure:
-          dependencies.deliverDiscordAdmissionFailure,
+        sendDiscordReply: dependencies.sendDiscordReply,
         deliverTelegramAdmissionFailure:
           dependencies.deliverTelegramAdmissionFailure,
         deliverAgentPhoneAdmissionFailure:

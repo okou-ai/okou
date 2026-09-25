@@ -1,6 +1,6 @@
 {
-  "id": "9e550a5e-c05d-4b68-b4a4-058be684b748",
-  "prevId": "6decf8c3-4fc6-410e-85bb-48a9bd78e935",
+  "id": "97a3bc0d-5af1-4458-bd60-5a1151142ad6",
+  "prevId": "fe374c3f-7890-4d8a-bdda-e56487bce7ab",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4430,22 +4430,6 @@
           ],
           "isUnique": false,
           "where": "\"background_jobs\".\"status\" = 'running'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_background_jobs_completed_clerk_deletion": {
-          "name": "idx_background_jobs_completed_clerk_deletion",
-          "columns": [
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"background_jobs\".\"kind\" = 'clerk-user-deletion' AND \"background_jobs\".\"status\" = 'completed'",
           "concurrently": false,
           "method": "btree",
           "with": {}

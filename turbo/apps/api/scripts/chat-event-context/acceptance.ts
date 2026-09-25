@@ -162,7 +162,7 @@ try {
       controller.signal,
     ),
     "",
-    "split mode omits unavailable optional enrichment",
+    "unavailable optional enrichment is omitted",
   );
   const cancelled = new AbortController();
   cancelled.abort();

@@ -1139,15 +1139,15 @@
     {
       "idx": 1240,
       "version": "7",
-      "when": 1790334103114,
-      "tag": "1240_drop_computer_use_hosts_last_seen_idx",
+      "when": 1790334514029,
+      "tag": "1240_retire_clerk_deletion_receipt_index",
       "breakpoints": true
     },
     {
       "idx": 1241,
       "version": "7",
-      "when": 1790335284219,
-      "tag": "1241_computer_use_commands_running_host_idx",
+      "when": 1790336867908,
+      "tag": "1241_computer_use_host_liveness_indexes",
       "breakpoints": true
     }
   ]

@@ -1,5 +1,5 @@
 {
-  "id": "6decf8c3-4fc6-410e-85bb-48a9bd78e935",
+  "id": "fe374c3f-7890-4d8a-bdda-e56487bce7ab",
   "prevId": "75818093-9fdf-4939-ada7-71ff616e381e",
   "version": "7",
   "dialect": "postgresql",
@@ -4430,22 +4430,6 @@
           ],
           "isUnique": false,
           "where": "\"background_jobs\".\"status\" = 'running'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_background_jobs_completed_clerk_deletion": {
-          "name": "idx_background_jobs_completed_clerk_deletion",
-          "columns": [
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"background_jobs\".\"kind\" = 'clerk-user-deletion' AND \"background_jobs\".\"status\" = 'completed'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -11732,6 +11716,21 @@
             },
             {
               "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_computer_use_hosts_last_seen": {
+          "name": "idx_computer_use_hosts_last_seen",
+          "columns": [
+            {
+              "expression": "last_seen_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
