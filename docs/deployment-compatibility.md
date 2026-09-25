@@ -3,7 +3,7 @@
 ## Public brand retirement contraction (2026-09-25)
 
 Phase 2 of #36766 contracts the columns that Phase 1 stopped reading. Migration
-`1244_retire_public_brand` drops `public_brand` from `slack_org_installations`,
+`1245_retire_public_brand` drops `public_brand` from `slack_org_installations`,
 `slack_chat_ingress`, `chat_slack_context`, `discord_chat_ingress`,
 `chat_discord_context`, `feishu_org_installations`, `feishu_org_connections`,
 `feishu_chat_ingress`, `chat_feishu_context`, `teams_org_installations`,
@@ -69,9 +69,68 @@ unaffected; Phase 1 already removed the brand from them.
 
 Rollback promotes artifacts without restoring schema. The production rollback
 resolver therefore rejects API targets that predate the canonical main commit
-that added `1244_retire_public_brand.sql`. Recovering past that commit requires
+that added `1245_retire_public_brand.sql`. Recovering past that commit requires
 a forward-fix migration that restores the columns and the old layout column
 name, not an artifact rollback.
+
+## Thread drafts served only from `chat_thread_drafts` (2026-09-25)
+
+Thread composer drafts are read and written only through `chat_thread_drafts`
+(#36173). `PATCH /api/chat-threads/:id` reads the thread owner by primary key
+outside any transaction, then saves the draft with one upsert, or clears it by
+deleting the row. None of these paths writes or locks the `chat_threads` row, and draft writes no longer take
+the account-erasure admission. `GET /api/chat-threads/:id/draft`, the drafts
+listing and the user export read the child table. Request and response
+contracts are unchanged.
+
+`GET /api/chat-threads/:id/draft` reads only `chat_thread_drafts`, by thread id
+and the caller's `user_id`. A thread the caller does not own, a missing thread
+and a thread without a draft all return `200` with the empty draft instead of
+`404`; every App bundle maps a `404` to "no draft" and parses the empty draft to
+the same state, so the composer behaves identically. A draft row an older API
+inserted without `user_id` during the rollout reads as empty until the user's
+next save fills it. `PATCH` still reads the thread owner until the contract
+release keys drafts by `(chat_thread_id, user_id)`.
+
+Sending a message no longer touches the draft. The web client already clears
+its draft with its own `PATCH` alongside every send (since #24657, so every App
+bundle in use does), which made the server-side delete a duplicate write on
+the send path. Senders that do not clear the composer, such as MCP, agents and
+forwarded sends, now leave the user's draft in place. If the client's clearing
+`PATCH` fails, the sent text reappears as the draft.
+
+The web client now refetches the sidebar drafts listing only when a save adds
+or removes a thread's draft, instead of after every debounced save.
+
+Migration `1244_chat_thread_drafts_user_backfill` drops the
+`chat_thread_drafts` → `chat_threads` foreign key, so a draft write takes no
+lock on the thread row. It adds `chat_thread_drafts.user_id` with an index,
+copies drafts that exist only in the legacy `chat_threads.draft_user_message` /
+`draft_attachments` columns with `ON CONFLICT DO NOTHING`, and fills `user_id`
+from the thread. Every API since #36230 dual-writes both stores in one
+transaction, so an existing child row is already current. Production held 433
+legacy drafts (126 kB), 430 of them without a child row and none disagreeing
+with their child row (2026-09-25).
+
+Without the cascade, `DELETE /api/chat-threads/:id` removes the draft row with
+one statement after the thread deletion commits. Agent deletion, account
+deletion and other thread-deletion paths can leave an unreachable draft row
+behind; no API serves it, and cleaning it up belongs to deletion. Account
+erasure reaches draft rows by `user_id` and, for rows without one, through the
+thread while it exists.
+
+During the rollout an older API still dual-writes both stores and serves the
+legacy columns, so it keeps the child table current but does not see a draft
+the new API saved or cleared. An older API can also insert a child row without
+`user_id`; such a row is missing from the new drafts listing until the contract
+migration backfills it, and it is still read and cleared by thread id. Rolling
+the API back therefore only shows each thread's last draft from before this
+release; no draft is lost.
+
+The legacy columns and their check constraint stay in the schema, unused, for
+this release. The contract release drops them, backfills any `user_id` left null
+by the rollout and makes `user_id` `NOT NULL`; ship it only after this API is in
+production and set this release as the API rollback floor.
 
 ## Morning Brief expired admission containment (2026-09-25)
 

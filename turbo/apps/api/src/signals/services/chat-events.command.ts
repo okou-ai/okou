@@ -103,10 +103,7 @@ import {
   recordOfficialWorkflowThreadProvenance,
 } from "./morning-brief-thread-provenance.service";
 import { touchChatThreadLastMessageAtIndependently } from "./chat-event-shared.service";
-import {
-  attemptChatEventSideEffect,
-  clearThreadDraftIndependently,
-} from "./chat-event-write-side-effects.service";
+import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import {
   revokeChatEvent,
   insertChatEvent,
@@ -2306,7 +2303,6 @@ async function appendUnassociatedUserMessage(
     }
     throw duplicate.error;
   }
-  await clearThreadDraftIndependently(db, params);
   const workflowId = params.getStartedWorkflowId;
   if (workflowId) {
     await attemptChatEventSideEffect(
@@ -2362,9 +2358,6 @@ async function appendAssociatedUserMessage(params: {
   readonly userMessage: UserMessageDocument;
   readonly appendQueueMarker: boolean;
   readonly triggerSource: "web" | "agent";
-  // When false, the thread's in-progress draft is preserved. Automation posts
-  // are not user-initiated typing, so they must not clear the user's draft.
-  readonly clearDraft: boolean;
 }): Promise<boolean> {
   await registerCanonicalWebInputAssets(params.db, {
     chatThreadId: params.threadId,
@@ -2383,9 +2376,6 @@ async function appendAssociatedUserMessage(params: {
   const inserted = params.revokesEventId
     ? await replaceChatEvent(params.db, params.revokesEventId, event)
     : await insertChatEvent(params.db, event, "id");
-  if (inserted && params.clearDraft) {
-    await clearThreadDraftIndependently(params.db, params);
-  }
   if (inserted && params.touchThreadSort) {
     await attemptChatEventSideEffect("thread_touch", params.threadId, () => {
       return touchChatThreadLastMessageAtIndependently(
@@ -3404,7 +3394,6 @@ function scheduleAssociatedUserMessage(params: {
         userMessage: params.body.userMessage,
         appendQueueMarker: params.appendQueueMarker,
         triggerSource: params.triggerSource,
-        clearDraft: true,
       });
       if (inserted) {
         await publishChatEventCreated({
