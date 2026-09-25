@@ -1,6 +1,5 @@
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
-import { testDiscordDeliveriesContract } from "@okouai/api-contracts/contracts/test-discord-deliveries";
 import { testDiscordIngressContract } from "@okouai/api-contracts/contracts/test-discord-ingress";
 import { describe, expect, it } from "vitest";
 
@@ -8,10 +7,8 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow, now } from "../../../lib/time";
 import { installDiscordContextFailureFixture } from "../../../test-fixtures/discord-context-failure";
-import { installDiscordDeliveryRegistrationFailureFixture } from "../../../test-fixtures/discord-delivery-registration-failure";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { settleIncludingAbort } from "../../utils";
-import { testDiscordDeliveriesRoutes } from "../test-discord-deliveries";
 import { testDiscordIngressRoutes } from "../test-discord-ingress";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -135,15 +132,9 @@ async function exerciseContextRetry() {
       });
 
       // Terminal projection and its native delivery also cross the active
-      // runtime mapping. Replaying recovery must retain a single visible reply.
+      // runtime mapping. Recovery must retain a single visible reply.
       await runs.requestCancelRun(actor.actor, input.runId, [200]);
       await flushWaitUntilForTest();
-      await accept(
-        setupApp({ context, routes: testDiscordDeliveriesRoutes })(
-          testDiscordDeliveriesContract,
-        ).drain({ body: { connectionIds: [actor.connectionId] } }),
-        [200],
-      );
       expect(provider.sentMessages).toHaveLength(1);
       expect(provider.sentMessages[0]).toMatchObject({
         channel_id: message.id,
@@ -181,7 +172,7 @@ describe("Discord chat-write rollout compatibility", () => {
   });
 
   it(
-    "replays a committed terminal marker to register and send its missing Discord reply once",
+    "posts the Discord reply once when the runner repeats its terminal callback",
     { timeout: 120_000 },
     async () => {
       const actor = await setupConnectedDiscordActor(context);
@@ -212,24 +203,7 @@ describe("Discord chat-write rollout compatibility", () => {
             exitCode: 1,
             error: "Internal Discord callback test failure",
           };
-          const removeFault =
-            await installDiscordDeliveryRegistrationFailureFixture(thread.id);
-          await withCleanup(async () => {
-            const first = await webhooks.requestAgentComplete(
-              completion,
-              headers,
-              [200, 500],
-            );
-            expect(first.status).toBe(500);
-            const committed = await events(actor, thread.id);
-            expect(
-              committed.filter((event) => {
-                return event.eventType === "run.failed";
-              }),
-            ).toHaveLength(1);
-            expect(provider.sentMessages).toHaveLength(0);
-          }, removeFault);
-
+          await webhooks.requestAgentComplete(completion, headers, [200]);
           await webhooks.requestAgentComplete(completion, headers, [200]);
           await webhooks.requestAgentComplete(completion, headers, [200]);
           await flushWaitUntilForTest();

@@ -1,6 +1,6 @@
 {
-  "id": "fe374c3f-7890-4d8a-bdda-e56487bce7ab",
-  "prevId": "75818093-9fdf-4939-ada7-71ff616e381e",
+  "id": "346c1b20-dfa9-4ce4-a2f8-235a83fb2787",
+  "prevId": "fe374c3f-7890-4d8a-bdda-e56487bce7ab",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -7929,39 +7929,6 @@
             },
             {
               "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "chat_event_search_messages_user_org_agent_id_created_idx": {
-          "name": "chat_event_search_messages_user_org_agent_id_created_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "agent_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

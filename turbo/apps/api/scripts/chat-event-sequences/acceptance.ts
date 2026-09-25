@@ -47,13 +47,13 @@ try {
   );
   assert.equal(firstRow?.seqId, 1);
   assert.equal(await watermark(first), 1);
-  const mixed = await createThread();
-  const mixedPositions = (
+  const concurrent = await createThread();
+  const concurrentPositions = (
     await Promise.all(
       Array.from({ length: 24 }, async () => {
         const rows = await appendCanonicalChatEvents(
           db,
-          [event(mixed), event(mixed)],
+          [event(concurrent), event(concurrent)],
           "any",
         );
         return rows.map((row) => {
@@ -62,13 +62,13 @@ try {
       }),
     )
   ).flat();
-  assert.equal(new Set(mixedPositions).size, 48);
-  assert.equal(await watermark(mixed), 48);
+  assert.equal(new Set(concurrentPositions).size, 48);
+  assert.equal(await watermark(concurrent), 48);
   const second = await createThread();
   await Promise.all([
-    appendCanonicalChatEvents(db, [event(mixed), event(second)], "any"),
-    appendCanonicalChatEvents(db, [event(second), event(mixed)], "any"),
-    appendCanonicalChatEvents(db, [event(second), event(mixed)], "any"),
+    appendCanonicalChatEvents(db, [event(concurrent), event(second)], "any"),
+    appendCanonicalChatEvents(db, [event(second), event(concurrent)], "any"),
+    appendCanonicalChatEvents(db, [event(second), event(concurrent)], "any"),
   ]);
   assert.equal(await watermark(second), 3);
   const id = randomUUID();
