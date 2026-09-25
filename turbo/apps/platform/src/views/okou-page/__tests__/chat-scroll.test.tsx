@@ -402,7 +402,7 @@ async function completeRunWhileReadingExpandedWork() {
   });
 
   await screen.findByText("The rollout is healthy");
-  await screen.findByText("Worked for 1m");
+  await screen.findByText("Worked for 1 min");
 }
 
 test("Keep expanded work history and its duration visible after the run completes", async () => {
@@ -410,7 +410,7 @@ test("Keep expanded work history and its duration visible after the run complete
   await waitFor(() => {
     expect(screen.getByText("Checked the first rollout stage")).toBeVisible();
     expect(buttonByLabel("Collapse work history")).toBeVisible();
-    expect(screen.getByText("Worked for 1m")).toBeVisible();
+    expect(screen.getByText("Worked for 1 min")).toBeVisible();
   });
 });
 

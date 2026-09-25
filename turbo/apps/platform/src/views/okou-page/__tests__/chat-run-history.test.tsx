@@ -195,11 +195,11 @@ test("Summarize completed work by conversation phase", async () => {
   await setupCompletedConversationPhases();
   expect(
     assistantGroupFor(screen.getByText("Phase one outline")),
-  ).toHaveTextContent("Worked for 1m");
+  ).toHaveTextContent("Worked for 1 min");
   expect(
     assistantGroupFor(screen.getByText("Phase one final plan")),
-  ).toHaveTextContent("Worked for 1m");
-  expect(screen.getByText("Worked for 2m")).toBeVisible();
+  ).toHaveTextContent("Worked for 1 min");
+  expect(screen.getByText("Worked for 2 min")).toBeVisible();
   expect(screen.getByText("Phase one outline")).toBeVisible();
   expect(screen.getByText("Phase one final plan")).toBeVisible();
   expect(screen.getByText("Phase two final plan")).toBeVisible();
@@ -299,28 +299,98 @@ test.each([
     locale: "zh-Hans" as const,
     active: false,
     durationMs: 30_000,
-    expected: "共工作 30 秒",
+    expected: "共工作 30秒",
     steps: "1 个步骤",
   },
   {
     locale: "zh-Hans" as const,
     active: false,
     durationMs: 60_000,
-    expected: "共工作 1 分钟",
+    expected: "共工作 1分钟",
     steps: "1 个步骤",
   },
   {
     locale: "zh-Hans" as const,
     active: false,
     durationMs: 60 * 60_000,
-    expected: "共工作 1 小时",
+    expected: "共工作 1小时",
     steps: "1 个步骤",
+  },
+  {
+    locale: "en-US" as const,
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "Worked for 1 hr, 29 min",
+    steps: "1 step",
+  },
+  {
+    locale: "pt-BR" as const,
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "Trabalhou por 1 h e 29 min",
+    steps: "1 etapa",
+  },
+  {
+    locale: "ja-JP" as const,
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "1 時間 29 分 で働いていました",
+    steps: "1 ステップ",
+  },
+  {
+    locale: "ko-KR" as const,
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "1시간 29분 동안 작업 완료",
+    steps: "1 단계",
+  },
+  {
+    locale: "id-ID" as const,
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "Dikerjakan selama 1 j, 29 mnt",
+    steps: "1 langkah",
+  },
+  {
+    locale: "de-DE" as const,
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "Ausgeführt in 1 h 29 min",
+    steps: "1 Schritt",
+  },
+  {
+    locale: "es-ES" as const,
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "Trabajo realizado durante 1 h 29 min",
+    steps: "1 paso",
+  },
+  {
+    locale: "it-IT" as const,
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "Ha lavorato per 1 h e 29 min",
+    steps: "1 passo",
+  },
+  {
+    locale: "fr-FR" as const,
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "Fonctionné pendant 1 h et 29 min",
+    steps: "1 étape",
+  },
+  {
+    locale: "hi-IN" as const,
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "1 घं॰, 29 मि॰ के लिए काम किया",
+    steps: "1 स्टेप",
   },
   {
     locale: "zh-Hans" as const,
     active: false,
     durationMs: 89 * 60_000,
-    expected: "共工作 1 小时 29 分钟",
+    expected: "共工作 1小时29分钟",
     steps: "1 个步骤",
   },
   {
@@ -387,6 +457,10 @@ test.each([
     expect(document.querySelector("[data-chat-run-work]")).toHaveTextContent(
       steps,
     );
+    // Check raw spacing too: toHaveTextContent normalizes non-breaking spaces.
+    expect(
+      document.querySelector("[data-chat-run-work]")?.textContent,
+    ).toContain(locale === "fr-FR" ? "1\u202fh et 29\u00a0min" : expected);
   },
 );
 
