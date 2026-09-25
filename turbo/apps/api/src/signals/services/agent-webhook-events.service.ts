@@ -21,7 +21,7 @@ import {
 import {
   AgentEventRunNotFoundError,
   RunOutputDiagnostics,
-} from "./run-content-erasure-admission.service";
+} from "./run-content-ownership.service";
 import type { EventCitation } from "./pi-memory-citation-events";
 import { refreshTelegramTypingEvents$ } from "./agent-event-consumer-telegram-typing.service";
 import { settle, tapError } from "../utils";

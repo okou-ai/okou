@@ -29,7 +29,7 @@ import {
   prepareRunOutputOwnership,
   type RunOutputDiagnostics,
   type RunContentOwnership,
-} from "./run-content-erasure-admission.service";
+} from "./run-content-ownership.service";
 import {
   normalizeRunOutputEvents,
   type EventCitation,
