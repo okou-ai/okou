@@ -24,7 +24,6 @@ import {
   onRejection,
 } from "./utils.ts";
 import { writeConnectionDiagnostic$ } from "./connection-diagnostics.ts";
-import { sessionStorageSignals } from "./external/session-storage.ts";
 import { ROUTES } from "./route-paths.ts";
 
 const reload$ = state(0);
@@ -517,12 +516,6 @@ export const setupClerk$ = command(
   },
 );
 
-/**
- * User signal that provides the current authenticated user from Clerk.
- * Returns undefined if no user is authenticated.
- */
-const ORG_ID_KEY = "clerk-active-org-id";
-const activeOrgIdStorage = sessionStorageSignals(ORG_ID_KEY);
 const createdOrgToOnboard$ = state<string | null>(null);
 
 export const prepareCreatedOrgOnboarding$ = command(
@@ -531,17 +524,9 @@ export const prepareCreatedOrgOnboarding$ = command(
   },
 );
 
-const persistOrgId$ = command(({ set }, orgId: string | undefined) => {
-  if (orgId) {
-    set(activeOrgIdStorage.set$, orgId);
-  } else {
-    set(activeOrgIdStorage.clear$);
-  }
-});
-
 /**
  * Command that monitors the active Clerk organization and reloads
- * the page when it changes. Persists the active org ID to session storage.
+ * the page when it changes.
  */
 export const watchOrgSwitch$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -549,7 +534,6 @@ export const watchOrgSwitch$ = command(
     signal.throwIfAborted();
 
     let prevOrgId = clerk.organization?.id ?? undefined;
-    set(persistOrgId$, prevOrgId);
     setPostHogOrganization(prevOrgId);
 
     // Listener stays `() => void`: Clerk's `ListenerCallback` signature
@@ -581,7 +565,6 @@ export const watchOrgSwitch$ = command(
         // creation explicitly requested onboarding for this organization.
         const isFirstActivation = prevOrgId === undefined;
         prevOrgId = newOrgId;
-        set(persistOrgId$, newOrgId);
         setPostHogOrganization(newOrgId);
         if (isFirstActivation && !needsOnboarding) {
           return;

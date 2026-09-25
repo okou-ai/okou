@@ -2,7 +2,6 @@ import { z } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import { publicBrandSchema } from "./public-brand";
 
 import { feishuPlatformSchema } from "./feishu-platform";
 
@@ -95,7 +94,6 @@ export const FEISHU_OAUTH_SCOPES = [
 
 const feishuInstallationStatusSchema = z.object({
   id: z.string().uuid(),
-  publicBrand: publicBrandSchema,
   platform: feishuPlatformSchema.optional(),
   isConnected: z.boolean(),
   connectedUserName: z.string().nullable().optional(),
@@ -116,8 +114,6 @@ const feishuInstallationStatusSchema = z.object({
 });
 
 const feishuConnectStatusSchema = z.object({
-  /** Product brand of the Host that initiated this status flow. */
-  publicBrand: publicBrandSchema,
   platform: feishuPlatformSchema.optional(),
   isInstalled: z.boolean(),
   isConnected: z.boolean(),

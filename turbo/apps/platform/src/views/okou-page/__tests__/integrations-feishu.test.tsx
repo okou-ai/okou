@@ -42,7 +42,6 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     overrides: Partial<FeishuInstallationStatus> = {},
   ): FeishuInstallationStatus {
     return {
-      publicBrand: "okou",
       id: INSTALLATION_ID,
       isConnected: true,
       appId: "cli_feishu",
@@ -500,7 +499,6 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
         setupCompleted: false,
       });
       return respond(200, {
-        publicBrand: "okou",
         isConnected,
         isInstalled: true,
         isAdmin: true,

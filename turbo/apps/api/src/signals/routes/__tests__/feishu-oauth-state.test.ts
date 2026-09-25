@@ -57,16 +57,21 @@ describe("Feishu OAuth state", () => {
     mockNow(NOW);
   });
 
-  it.each(["vm0", "okou"] as const)(
-    "passes an explicit %s public brand to installation validation",
-    async (publicBrand) => {
-      expect.hasAssertions();
-      await expectConnectError(
-        signedState({ ...statePayload(), publicBrand }),
-        "Feishu bot not found",
-      );
-    },
-  );
+  it("passes a valid state to installation validation", async () => {
+    expect.hasAssertions();
+    await expectConnectError(
+      signedState(statePayload()),
+      "Feishu bot not found",
+    );
+  });
+
+  it("verifies a state signed before the brand was retired", async () => {
+    expect.hasAssertions();
+    await expectConnectError(
+      signedState({ ...statePayload(), publicBrand: "vm0" }),
+      "Feishu bot not found",
+    );
+  });
 
   it("identifies a missing Lark bot from its signed redirect URI", async () => {
     expect.hasAssertions();
@@ -74,31 +79,9 @@ describe("Feishu OAuth state", () => {
     await expectConnectError(
       signedState({
         ...statePayload(),
-        publicBrand: "okou",
         redirectUri: "https://app.okou.ai/integrations/lark/callback",
       }),
       "Lark bot not found",
-    );
-  });
-
-  it.each([
-    {
-      kind: "omitted",
-      payload: statePayload(),
-    },
-    {
-      kind: "malformed",
-      payload: { ...statePayload(), publicBrand: null },
-    },
-    {
-      kind: "invalid",
-      payload: { ...statePayload(), publicBrand: "zero" },
-    },
-  ])("rejects an $kind public brand", async ({ payload }) => {
-    expect.hasAssertions();
-    await expectConnectError(
-      signedState(payload),
-      "Invalid or expired connect state",
     );
   });
 
@@ -106,7 +89,7 @@ describe("Feishu OAuth state", () => {
     expect.hasAssertions();
     const { redirectUri: _redirectUri, ...payload } = statePayload();
     await expectConnectError(
-      signedState({ ...payload, publicBrand: "vm0" }),
+      signedState(payload),
       "Invalid or expired connect state",
     );
   });
@@ -116,7 +99,6 @@ describe("Feishu OAuth state", () => {
     await expectConnectError(
       signedState({
         ...statePayload(),
-        publicBrand: "vm0",
         timestamp: NOW_SECONDS - 10 * 60,
       }),
       "Feishu bot not found",
@@ -124,7 +106,6 @@ describe("Feishu OAuth state", () => {
     await expectConnectError(
       signedState({
         ...statePayload(),
-        publicBrand: "vm0",
         timestamp: NOW_SECONDS - 10 * 60 - 1,
       }),
       "Invalid or expired connect state",
@@ -134,7 +115,7 @@ describe("Feishu OAuth state", () => {
   it("rejects a state signed with a different secret", async () => {
     expect.hasAssertions();
     await expectConnectError(
-      signedState({ ...statePayload(), publicBrand: "vm0" }, "b".repeat(64)),
+      signedState(statePayload(), "b".repeat(64)),
       "Invalid or expired connect state",
     );
   });

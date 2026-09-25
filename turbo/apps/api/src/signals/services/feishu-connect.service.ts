@@ -1,6 +1,5 @@
 import type { FeishuPlatform } from "@okouai/core/feishu-platform";
 import { command, computed } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
 import {
   FEISHU_OAUTH_SCOPES,
@@ -53,7 +52,6 @@ async function loadFeishuInstallations(
       platform: feishuOrgInstallations.platform,
       botName: feishuOrgInstallations.botName,
       botAvatarUrl: feishuOrgInstallations.botAvatarUrl,
-      publicBrand: feishuOrgInstallations.publicBrand,
       tenantKey: feishuOrgInstallations.feishuTenantKey,
       tenantName: feishuOrgInstallations.feishuTenantName,
       callbackVerifiedAt: feishuOrgInstallations.callbackVerifiedAt,
@@ -138,7 +136,6 @@ function toFeishuInstallationStatus(
   return {
     id: installation.id,
     platform: installation.platform,
-    publicBrand: installation.publicBrand,
     isConnected: connectedUserNameByInstallationId.has(installation.id),
     connectedUserName:
       connectedUserNameByInstallationId.get(installation.id) ?? null,
@@ -173,7 +170,6 @@ function feishuStatusResponse(
   installations: readonly FeishuInstallationStatus[],
   args: {
     readonly isAdmin: boolean;
-    readonly publicBrand: PublicBrand;
     readonly platform?: FeishuPlatform;
     readonly preferredInstallationId?: string;
   },
@@ -184,7 +180,6 @@ function feishuStatusResponse(
     }) ?? installations[0];
   if (!installation) {
     return {
-      publicBrand: args.publicBrand,
       platform: args.platform ?? "feishu",
       isInstalled: false,
       isConnected: false,
@@ -208,7 +203,6 @@ function feishuStatusResponse(
     };
   }
   return {
-    publicBrand: args.publicBrand,
     platform: args.platform ?? "feishu",
     isInstalled: true,
     isConnected: installation.isConnected,
@@ -235,7 +229,6 @@ function feishuStatusResponse(
 export const feishuConnectStatus = (args: {
   readonly orgId: string;
   readonly userId: string;
-  readonly publicBrand: PublicBrand;
   readonly platform?: FeishuPlatform;
   readonly isAdmin: boolean;
   readonly preferredInstallationId?: string;
@@ -266,7 +259,6 @@ export const feishuConnectStatus = (args: {
 interface ConfigureFeishuArgs {
   readonly orgId: string;
   readonly userId: string;
-  readonly publicBrand: PublicBrand;
   readonly platform?: FeishuPlatform;
   readonly appId: string;
   readonly appSecret: string;
@@ -421,7 +413,6 @@ async function persistFeishuInstallation(
       encryptedVerificationToken: args.prepared.encryptedVerificationToken,
       encryptedEncryptKey: args.prepared.encryptedEncryptKey,
       defaultAgentId: args.input.defaultAgentId,
-      publicBrand: args.input.publicBrand,
       encryptedTenantAccessToken: args.prepared.encryptedTenantAccessToken,
       tenantAccessTokenExpiresAt: args.prepared.tokenExpiresAt,
     })

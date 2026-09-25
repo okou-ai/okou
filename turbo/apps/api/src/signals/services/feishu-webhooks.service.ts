@@ -4,7 +4,6 @@ import { command } from "ccstate";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { feishuEventsContract } from "@okouai/api-contracts/contracts/feishu-events";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 
 import { logger } from "../../lib/log";
@@ -30,7 +29,6 @@ import {
   parseFeishuMessageContent,
 } from "../../lib/feishu-message-content";
 import { publishFeishuOrgChanged } from "./feishu-realtime.service";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const L = logger("FeishuWebhooks");
 
@@ -298,7 +296,6 @@ async function admitInboundFeishuMessage(
   args: {
     readonly db: Db;
     readonly message: FeishuInboundMessage;
-    readonly publicBrand: PublicBrand;
     readonly processIngress: (
       ingressId: string,
       signal: AbortSignal,
@@ -311,7 +308,6 @@ async function admitInboundFeishuMessage(
     installationId: args.message.installationId,
     eventId: args.message.eventId,
     payload: JSON.stringify(args.message),
-    publicBrand: args.publicBrand,
     currentTime: admittedAt,
   });
   signal.throwIfAborted();
@@ -340,7 +336,6 @@ async function admitInboundFeishuMessage(
 export const handleFeishuEvents$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<Response> => {
     const request = get(request$);
-    const publicBrand = PUBLIC_BRAND;
     const params = get(pathParamsOf(feishuEventsContract.post));
     const db = set(writeDb$);
     const config = await loadFeishuInstallationConfig(
@@ -446,7 +441,6 @@ export const handleFeishuEvents$ = command(
         {
           db,
           message,
-          publicBrand,
           processIngress: (ingressId, inputSignal) => {
             return set(
               processCanonicalFeishuIngress$,

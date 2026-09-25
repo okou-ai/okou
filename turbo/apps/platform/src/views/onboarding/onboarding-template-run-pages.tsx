@@ -296,7 +296,6 @@ function OnboardingTemplateRunPage({
       footer={
         <OnboardingRunAction
           prompt={config.prompt}
-          note={config.note}
           template={config.templateId}
           templateSlug={config.templateSlug}
           requiresPaidPlan={config.requiresPaidPlan}

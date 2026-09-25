@@ -1,6 +1,6 @@
 {
-  "id": "7be12bc6-059f-40fb-ad00-69b9c3bcf0ba",
-  "prevId": "0d60a10d-2a1b-4fa3-87b0-d0bfddcccf0d",
+  "id": "838c828c-7e11-4a38-a6e6-cda857403f10",
+  "prevId": "7be12bc6-059f-40fb-ad00-69b9c3bcf0ba",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -9198,7 +9198,8 @@
           "name": "public_brand",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'okou'"
         },
         "sender_user_id": {
           "name": "sender_user_id",
@@ -9333,7 +9334,8 @@
           "name": "public_brand",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": false,
+          "default": "'okou'"
         },
         "user_link_id": {
           "name": "user_link_id",
@@ -34353,7 +34355,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'vm0'"
+          "default": "'okou'"
         },
         "created_at": {
           "name": "created_at",
@@ -34759,7 +34761,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'vm0'"
+          "default": "'okou'"
         },
         "dm_welcome_sent": {
           "name": "dm_welcome_sent",

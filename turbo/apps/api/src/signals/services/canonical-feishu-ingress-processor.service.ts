@@ -10,8 +10,8 @@ import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { and, asc, eq, inArray, lt, or } from "drizzle-orm";
 import { z } from "zod";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type { FeishuPlatform } from "@okouai/api-contracts/contracts/feishu-platform";
+import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { logger } from "../../lib/log";
 import { env } from "../../lib/env";
 import { buildFeishuNoticeMessage } from "../../lib/feishu-message-card";
@@ -167,7 +167,6 @@ async function loadClaimedIngress(db: Db, ingressId: string) {
       defaultAgentId: feishuOrgInstallations.defaultAgentId,
       botName: feishuOrgInstallations.botName,
       messageReceivedAt: feishuOrgInstallations.messageReceivedAt,
-      publicBrand: feishuChatIngress.publicBrand,
     })
     .from(feishuChatIngress)
     .innerJoin(
@@ -182,15 +181,6 @@ async function loadClaimedIngress(db: Db, ingressId: string) {
     )
     .limit(1);
   return row;
-}
-
-function resolveFeishuIngressPublicBrand(
-  ingress: NonNullable<Awaited<ReturnType<typeof loadClaimedIngress>>>,
-): PublicBrand {
-  if (ingress.publicBrand === null) {
-    throw new Error("Canonical Feishu ingress has no public brand");
-  }
-  return ingress.publicBrand;
 }
 
 function parseMatchingMessage(
@@ -283,7 +273,6 @@ interface PersistedCanonicalFeishuIngress {
   readonly chatThreadId: string;
   readonly message: CanonicalFeishuInboundMessage;
   readonly receivedAt: Date;
-  readonly publicBrand: PublicBrand;
 }
 
 interface CanonicalFeishuLaunchContext {
@@ -304,7 +293,6 @@ interface CanonicalFeishuLaunchContext {
   readonly senderOpenId: string;
   readonly connectionId: string;
   readonly installationId: string;
-  readonly publicBrand: PublicBrand;
 }
 
 function canonicalFeishuLaunchContext(args: {
@@ -313,7 +301,6 @@ function canonicalFeishuLaunchContext(args: {
   readonly reactionId: string | undefined;
   readonly conversationHistory: string;
   readonly files: readonly FeishuPromptFile[];
-  readonly publicBrand: PublicBrand;
 }): CanonicalFeishuLaunchContext {
   return {
     conversationHistory: args.conversationHistory,
@@ -339,7 +326,6 @@ function canonicalFeishuLaunchContext(args: {
     senderOpenId: args.message.openId,
     connectionId: args.connectionId,
     installationId: args.message.installationId,
-    publicBrand: args.publicBrand,
   };
 }
 
@@ -444,7 +430,7 @@ const persistCanonicalFeishuIngress$ = command(
         userId: args.connection.userId,
         orgId: args.installation.orgId,
         chatThreadId: route.chatThreadId,
-        publicBrand: args.installation.publicBrand,
+        publicBrand: PUBLIC_BRAND,
         files: feishuInputFiles(args.db, args.message, args.ingress.platform),
       },
       signal,
@@ -526,7 +512,6 @@ const persistCanonicalFeishuIngress$ = command(
       chatThreadId: route.chatThreadId,
       message: args.message,
       receivedAt: args.ingress.createdAt,
-      publicBrand: args.installation.publicBrand,
     };
   },
 );
@@ -572,7 +557,6 @@ async function finishUnconnectedFeishuIngress(
     readonly db: Db;
     readonly ingressId: string;
     readonly message: CanonicalFeishuInboundMessage;
-    readonly publicBrand: PublicBrand;
     readonly botName: string | null;
   },
   signal: AbortSignal,
@@ -581,7 +565,6 @@ async function finishUnconnectedFeishuIngress(
     {
       db: args.db,
       message: args.message,
-      publicBrand: args.publicBrand,
       botName: args.botName,
     },
     signal,
@@ -621,7 +604,6 @@ async function loadFeishuIngressDispatchContext(
     throw new Error("Lark integration is not enabled");
   }
   const message = parseMatchingMessage(ingress);
-  const publicBrand = resolveFeishuIngressPublicBrand(ingress);
   if (ingress.defaultAgentId === null) {
     return { ingress, message, installation: null, connection: null };
   }
@@ -632,7 +614,6 @@ async function loadFeishuIngressDispatchContext(
     defaultAgentId: ingress.defaultAgentId,
     botName: ingress.botName,
     messageReceivedAt: ingress.messageReceivedAt,
-    publicBrand,
   };
   await markFeishuMessageReceived({ db, installation, message }, signal);
   const connection = await loadConnection(db, ingress.orgId, message);
@@ -669,7 +650,6 @@ const processClaimedIngress$ = command(
           db: args.db,
           ingressId: ingress.ingressId,
           message,
-          publicBrand: installation.publicBrand,
           botName: installation.botName,
         },
         signal,
@@ -759,7 +739,6 @@ const processClaimedIngress$ = command(
         reactionId,
         conversationHistory: history.text,
         files: history.files,
-        publicBrand: installation.publicBrand,
       }),
     };
     return await set(persistCanonicalFeishuIngress$, persistInput, signal);
