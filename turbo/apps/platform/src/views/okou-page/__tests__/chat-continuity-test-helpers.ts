@@ -308,16 +308,13 @@ export function installContinuityWorkspace(
     chatThreadDraftContract.get,
     async ({ params, respond }) => {
       await options.beforeDraftResponse?.(params.id);
-      const draft = drafts.get(params.id);
-      if (!draft) {
-        return respond(404, {
-          error: {
-            code: "CHAT_THREAD_NOT_FOUND",
-            message: "Chat draft not found",
-          },
-        });
-      }
-      return respond(200, draft);
+      return respond(
+        200,
+        drafts.get(params.id) ?? {
+          draftUserMessage: null,
+          draftAttachments: null,
+        },
+      );
     },
   );
   context.mocks.api(

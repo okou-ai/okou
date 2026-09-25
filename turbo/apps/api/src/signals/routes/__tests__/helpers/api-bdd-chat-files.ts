@@ -899,20 +899,6 @@ export function createChatFilesBddApi(context: TestContext) {
       return response.body;
     },
 
-    async requestReadThreadDraft(
-      actor: ApiTestUser | null,
-      threadId: string,
-      statuses: readonly (200 | 400 | 401 | 404)[],
-    ) {
-      return await accept(
-        threadDraftClient().get({
-          headers: authenticate(context, actor),
-          params: { id: threadId },
-        }),
-        statuses,
-      );
-    },
-
     async patchThread(
       actor: ApiTestUser,
       threadId: string,

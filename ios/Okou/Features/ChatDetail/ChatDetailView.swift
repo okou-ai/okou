@@ -3,7 +3,6 @@ import SwiftUI
 struct ChatDetailView: View {
   @Bindable var store: WorkspaceStore
   let thread: ChatThread
-  @FocusState private var isComposing: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var hasPositionedHistory = false
   @State private var followsLatestMessage = true
@@ -11,10 +10,6 @@ struct ChatDetailView: View {
 
   private var history: ChatHistory { store.histories[thread.id] ?? .empty }
   private var messages: [ChatMessage] { store.messages(for: thread.id) }
-  private var draft: Binding<String> {
-    Binding(get: { store.drafts[thread.id] ?? "" }, set: { store.drafts[thread.id] = $0 })
-  }
-
   var body: some View {
     let displayedMessages = messages
     ScrollViewReader { proxy in
@@ -81,8 +76,7 @@ struct ChatDetailView: View {
             Image(systemName: "arrow.down")
               .font(.system(size: 18, weight: .medium))
               .frame(width: 44, height: 44)
-              .background(.regularMaterial, in: Circle())
-              .overlay(Circle().strokeBorder(.quaternary, lineWidth: 0.5))
+              .glassEffect(.regular.interactive(), in: Circle())
               .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
           }
           .buttonStyle(.plain)
@@ -111,9 +105,7 @@ struct ChatDetailView: View {
         }
       }
     }
-    .navigationTitle(thread.displayTitle)
-    .navigationBarTitleDisplayMode(.inline)
-    .safeAreaInset(edge: .bottom, spacing: 0) { composer }
+    .safeAreaInset(edge: .bottom, spacing: 0) { ChatComposerView(store: store, thread: thread) }
     .task(id: thread.id) { await store.loadHistory(thread.id) }
     .overlay {
       if store.loadingThreads.contains(thread.id) && store.histories[thread.id] == nil {
@@ -163,48 +155,4 @@ struct ChatDetailView: View {
     }
   }
 
-  private var composer: some View {
-    VStack(spacing: 10) {
-      if let error = store.threadErrors[thread.id] {
-        VStack(alignment: .leading, spacing: 6) {
-          Text(error).font(.caption).foregroundStyle(.red)
-          HStack {
-            Button("Refresh") { Task { await store.loadHistory(thread.id) } }
-            Spacer()
-            Link("Open on web", destination: store.webURL.appending(path: "chats/\(thread.id)"))
-          }.font(.caption)
-        }
-      }
-      HStack(alignment: .bottom, spacing: 10) {
-        TextField("Message Okou", text: draft, axis: .vertical)
-          .lineLimit(1...6)
-          .focused($isComposing)
-          .padding(.horizontal, 14).padding(.vertical, 12)
-          .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 22))
-          .accessibilityIdentifier("message-input")
-        Button {
-          Task {
-            if showsStop { await store.stop(thread) } else { await store.send(in: thread) }
-          }
-        } label: {
-          Image(systemName: showsStop ? "stop.fill" : "arrow.up")
-            .font(.system(size: 18, weight: .semibold))
-            .frame(width: 42, height: 42)
-        }
-        .buttonStyle(.borderedProminent).buttonBorderShape(.circle)
-        .accessibilityLabel(showsStop ? "Stop" : "Send message")
-        .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")
-        .disabled(
-          (!showsStop && draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            || store.sendingThreads.contains(thread.id)
-            || store.stoppingThreads.contains(thread.id) || store.needsUpgrade)
-      }
-    }
-    .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 8)
-    .background(.bar)
-  }
-
-  private var showsStop: Bool {
-    history.canStop && draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-  }
 }

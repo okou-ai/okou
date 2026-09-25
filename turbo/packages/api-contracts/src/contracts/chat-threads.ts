@@ -1457,7 +1457,6 @@ export const chatThreadDraftContract = c.router({
       200: chatThreadDraftSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
-      404: apiErrorSchema,
     },
     summary: "Get chat thread draft content and attachments",
   },
