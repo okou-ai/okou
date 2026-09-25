@@ -1,6 +1,6 @@
 {
-  "id": "e1bab3c1-ee47-4794-bc49-1f9f1fd1fa1a",
-  "prevId": "0558ba1c-ccb4-4e7c-8d50-7d110db5e421",
+  "id": "1230a4cd-c4a3-4622-b143-74676ef51c60",
+  "prevId": "e1bab3c1-ee47-4794-bc49-1f9f1fd1fa1a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3619,7 +3619,8 @@
           "name": "public_brand",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'okou'"
         },
         "target_kind": {
           "name": "target_kind",
@@ -19282,7 +19283,8 @@
           "name": "public_brand",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'okou'"
         },
         "status": {
           "name": "status",
@@ -19523,7 +19525,8 @@
           "name": "public_brand",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'okou'"
         },
         "chat_thread_id": {
           "name": "chat_thread_id",
@@ -19728,7 +19731,8 @@
           "name": "public_brand",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'okou'"
         },
         "status": {
           "name": "status",

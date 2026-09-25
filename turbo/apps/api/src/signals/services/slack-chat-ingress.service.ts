@@ -1,6 +1,5 @@
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   slackChatIngress,
   type SlackChatIngressStatus,
@@ -200,7 +199,6 @@ export async function admitCanonicalSlackChatEvent(
     readonly routeId: string;
     readonly eventId: string;
     readonly payload: string;
-    readonly publicBrand: PublicBrand;
     readonly isRetry: boolean;
     readonly currentTime: Date;
   },
@@ -212,7 +210,6 @@ export async function admitCanonicalSlackChatEvent(
         routeId: args.routeId,
         eventId: args.eventId,
         payload: args.payload,
-        publicBrand: args.publicBrand,
         status: "pending",
         retryCount: args.isRetry ? 1 : 0,
         createdAt: args.currentTime,

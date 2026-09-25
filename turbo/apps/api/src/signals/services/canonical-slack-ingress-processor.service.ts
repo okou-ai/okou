@@ -3,7 +3,6 @@ import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import type { Tx } from "../../lib/db-types";
 import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { command } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type { ChatSlackMessageAssets } from "@okouai/db/jsonb-contracts/chat-slack-context";
 import { slackChatIngress } from "@okouai/db/schema/slack-chat-ingress";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
@@ -191,7 +190,6 @@ async function loadClaimedIngress(db: Db, ingressId: string) {
       orgId: slackOrgInstallations.orgId,
       encryptedBotToken: slackOrgInstallations.encryptedBotToken,
       botUserId: slackOrgInstallations.botUserId,
-      publicBrand: slackChatIngress.publicBrand,
     })
     .from(slackChatIngress)
     .innerJoin(
@@ -417,7 +415,6 @@ interface CanonicalSlackLaunchContext {
   readonly channelId: string;
   readonly messageTs: string;
   readonly botUserId: string;
-  readonly publicBrand: PublicBrand;
   readonly conversationContext: string;
   readonly messageText: string;
   readonly messageFiles: readonly SlackFile[];
@@ -434,7 +431,6 @@ function canonicalSlackLaunchContext(args: {
   readonly event: SlackAgentEvent;
   readonly routeThreadTs: string;
   readonly botUserId: string;
-  readonly publicBrand: PublicBrand;
   readonly messageText: string;
   readonly conversationContext: string;
   readonly canonicalAssets: readonly CanonicalSlackInputAsset[];
@@ -449,7 +445,6 @@ function canonicalSlackLaunchContext(args: {
     channelId: args.event.channel,
     messageTs: args.event.ts,
     botUserId: args.botUserId,
-    publicBrand: args.publicBrand,
     conversationContext: args.conversationContext,
     messageText: args.messageText,
     messageFiles: args.event.files ?? [],
@@ -723,7 +718,6 @@ const persistClaimedCanonicalSlackIngress$ = command(
           event,
           routeThreadTs: ingress.threadTs,
           botUserId: ingress.botUserId,
-          publicBrand: ingress.publicBrand,
           messageText: messageContent,
           conversationContext: context.executionContext,
           canonicalAssets,

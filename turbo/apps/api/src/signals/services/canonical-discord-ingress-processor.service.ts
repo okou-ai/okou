@@ -687,7 +687,6 @@ function createIngressContext(args: {
         : "channel"
       : "dm",
     threadId: message.guild_id ? destinationChannelId : null,
-    publicBrand: "okou",
     conversationContext,
     messageText: messageContent.displayContent,
     messageFiles: message.attachments,
@@ -995,7 +994,6 @@ async function recordTerminalIngressFailure(
           channelId: route.destinationChannelId,
           messageId: message.data.id,
           sessionKey: route.sessionKey,
-          publicBrand: "okou",
         },
       });
       signal.throwIfAborted();
