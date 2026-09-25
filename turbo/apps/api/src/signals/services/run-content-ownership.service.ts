@@ -133,7 +133,6 @@ class RunContentOwnershipChangedError extends Error {
 }
 
 export interface RunContentOwnership {
-  readonly runId: string;
   readonly userId: string;
   readonly orgId: string;
   readonly triggerSource: string | null;
@@ -192,7 +191,6 @@ export async function prepareRunOutputOwnership(
       }
       return {
         ownership: Object.freeze({
-          runId,
           userId: run.userId,
           orgId: run.orgId,
           triggerSource: run.triggerSource,
