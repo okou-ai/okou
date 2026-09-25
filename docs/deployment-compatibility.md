@@ -29,7 +29,8 @@ Responses are unchanged.
 - it publishes with one single-row compare-and-set;
 - it prunes compacted events with bounded reads and one `DELETE` by id.
 
-Agent deletion now reads the affected thread ids and owners in bounded keyset pages before the deletion transaction. After commit it appends `deleted` lifecycle events in small batches using the single-statement sequence allocator, with the captured org id (the Agent is already gone). Batch failures are logged, not retried, and never roll back deletion; as with `sort_touched`, an occasional missing event is accepted. With these events driving snapshot invalidation, the 24-hour full refresh and repeated empty-scope publication are removed. A scope with no visible event and no snapshot remains empty. The projection's timestamp strings keep the exact `jsonb_build_object` format.
+Agent deletion now reads the affected thread ids and owners in bounded keyset pages before the deletion transaction. After commit it appends `deleted` lifecycle events in small batches using the single-statement sequence allocator, with the captured org id (the Agent is already gone). Batch failures are logged, not retried, and never roll back deletion; as with `sort_touched`, an occasional missing event is accepted. Event-page reads keep `deleted` tombstones visible after the Agent is gone while continuing to filter other events by live Agent. With these events driving snapshot invalidation, the 24-hour full refresh and repeated empty-scope publication are removed. A scope with no visible event and no snapshot remains empty. The projection's timestamp strings keep the exact `jsonb_build_object` format.
+
 ## Chat thread archived rollout fallbacks removed (2026-09-25)
 
 Issue #36551 removes the bounded rollout fallbacks added with #36480. The
