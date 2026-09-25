@@ -17,7 +17,7 @@ struct ChatSidebarView: View {
   }
 
   private var visibleThreads: [ChatThread] {
-    store.threads.filter { $0.agentID == store.selectedAgentID && $0.isArchived == showArchived }
+    store.threads.filter { !store.canArchiveChats || $0.isArchived == showArchived }
   }
 
   var body: some View {
@@ -183,6 +183,16 @@ struct ChatSidebarView: View {
               .font(.system(size: 17, weight: .regular))
               .lineLimit(1)
             Spacer(minLength: 0)
+            if thread.indicator == .active {
+              ProgressView()
+                .controlSize(.small)
+                .accessibilityLabel("Working")
+            } else if thread.indicator == .unread {
+              Circle()
+                .fill(Color.accentColor)
+                .frame(width: 7, height: 7)
+                .accessibilityLabel("Unread")
+            }
           }
           .frame(height: 48)
           .contentShape(Rectangle())
@@ -229,7 +239,7 @@ struct ChatSidebarView: View {
         }
       }
     } header: {
-      Text(showArchived ? "Archived" : "Recent")
+      Text(store.canArchiveChats && showArchived ? "Archived" : "Recent")
         .lineLimit(1)
         .textCase(nil)
     }

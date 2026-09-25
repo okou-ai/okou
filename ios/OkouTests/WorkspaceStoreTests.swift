@@ -6,7 +6,7 @@ import XCTest
 
 @MainActor
 final class WorkspaceStoreTests: XCTestCase {
-  func testSidebarUsesPinnedAgentsAndScopesChatsToSelectedAgent() async {
+  func testSidebarUsesPinnedAgentsAndTracksSelectedChatAgent() async {
     let otherAgentID = "40000000-0000-4000-8000-000000000006"
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
