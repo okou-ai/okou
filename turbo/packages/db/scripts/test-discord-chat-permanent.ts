@@ -69,8 +69,8 @@ export async function validatePermanentDiscordChat(
     );
     await client.query(
       `INSERT INTO discord_chat_ingress
-       (id, connection_id, event_id, message_id, payload, public_brand)
-       VALUES ($1, $2, $3, $3, '{}', 'okou')`,
+       (id, connection_id, event_id, message_id, payload)
+       VALUES ($1, $2, $3, $3, '{}')`,
       [ingressId, connectionA, `event-${suffix}`],
     );
     await client.query(

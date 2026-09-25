@@ -130,6 +130,7 @@ import {
 } from "./teams-chat-callback-payload";
 import {
   discordDeliveryTargetSchema,
+  storedDiscordDeliveryTarget,
   type DiscordDeliveryTarget,
 } from "./discord-chat-callback-payload";
 import {
@@ -984,7 +985,7 @@ function buildQueuedCreateAgentRunArgs(
           slackDelivery: input.slackDelivery,
           feishuDelivery: input.feishuDelivery,
           teamsDelivery: input.teamsDelivery,
-          discordDelivery: input.discordDelivery,
+          discordDelivery: storedDiscordDeliveryTarget(input.discordDelivery),
           telegramDelivery: input.telegramDelivery,
           agentphoneDelivery: input.agentphoneDelivery,
           githubDelivery: input.githubDelivery,
@@ -1305,7 +1306,6 @@ async function insertSlackChatDeliveryCallback(args: {
   readonly sourceCallbackId?: string;
   readonly target: SlackDeliveryTarget;
   readonly chatEventId: string;
-  readonly publicBrand: PublicBrand;
 }): Promise<string> {
   return await insertChatDeliveryCallback({
     db: args.db,
@@ -1316,7 +1316,9 @@ async function insertSlackChatDeliveryCallback(args: {
     payload: {
       ...args.target,
       chatEventId: args.chatEventId,
-      publicBrand: args.publicBrand,
+      // Older APIs require this field when they deliver the callback; remove
+      // it once no rollback target predates #36766 Phase 1.
+      publicBrand: "okou",
     },
   });
 }
@@ -1549,7 +1551,6 @@ async function insertAssistantErrorEventTransaction(
         sourceCallbackId: input.sourceCallbackId,
         target: input.slackDelivery,
         chatEventId: event.id,
-        publicBrand: input.publicBrand,
       })
     : undefined;
   const feishuDeliveryCallbackId = input.feishuDelivery
@@ -1880,7 +1881,6 @@ async function registerRunLifecycleDeliveryCallbacks(
           sourceCallbackId: input.sourceCallbackId,
           target: input.slackDelivery,
           chatEventId: deliveryEvent.id,
-          publicBrand: input.publicBrand,
         })
       : undefined;
   const feishuDeliveryCallbackId =

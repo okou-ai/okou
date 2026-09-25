@@ -1,5 +1,4 @@
 import { sql } from "drizzle-orm";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   check,
   index,
@@ -39,8 +38,11 @@ export const slackChatIngress = pgTable(
       ),
     eventId: varchar("event_id", { length: 255 }).notNull(),
     payload: text("payload").notNull(),
-    /** Product brand derived from the Slack webhook hostname at ingress. */
-    publicBrand: text("public_brand").$type<PublicBrand>().notNull(),
+    /**
+     * Retired: current APIs neither read nor write it and rely on the
+     * `okou` default; drop it after older API deployments drain.
+     */
+    publicBrand: text("public_brand").default("okou").notNull(),
     status: varchar("status", { length: 16 })
       .$type<SlackChatIngressStatus>()
       .default("pending")

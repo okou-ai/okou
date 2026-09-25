@@ -74,7 +74,7 @@ describe("Discord Gateway durable recovery", () => {
     ).toEqual({ op: 1, d: 1002 });
   }, 20_000);
 
-  it("halts before checkpointing an oversized event and resumes after explicit correction", async () => {
+  it("sets aside an oversized event past the checkpoint so its replay cannot stall the relay", async () => {
     const relay = await createRelay();
     relay.reply = () => {
       return new Response(null, { status: 503 });
@@ -86,66 +86,72 @@ describe("Discord Gateway durable recovery", () => {
     gateway.message(2);
     const retained = await relay.deliveries.next();
 
-    const correctedId = "100000000000000006";
-    gateway.send({
+    const oversizedId = "100000000000000006";
+    const oversized = {
       op: 0,
       t: "MESSAGE_CREATE",
       s: 3,
       d: {
-        id: correctedId,
+        id: oversizedId,
         channel_id: CHANNEL_ID,
         guild_id: GUILD_ID,
-        author: { id: "100000000000000005", bot: false },
+        author: { id: "100000000000000005", username: "member", bot: false },
         content: "x".repeat(120_001),
+        mentions: [],
         attachments: [],
+        type: 0,
       },
-    });
-    await gateway.closed.promise;
+    };
+    gateway.send(oversized);
     await expect
       .poll(() => {
         return relay.health();
       })
       .toMatchObject({
-        running: false,
-        connected: false,
-        resumable: true,
+        running: true,
+        connected: true,
         pending: 1,
-        fatal: "event-exceeds-durable-record-limit",
+        deadLettered: 1,
+        fatal: null,
       });
-    expect(
-      relay.forwarded.every((delivery) => {
-        return delivery.rawBody === retained.rawBody;
-      }),
-    ).toBe(true);
 
+    // A dropped connection resumes after the oversized event. Even if Discord
+    // replays it, the relay neither forwards it nor counts it again.
     relay.reply = () => {
       return Response.json({ ok: true, outcome: "accepted" });
     };
-    const resumed = await relay.start();
+    gateway.socket.close(4000, "Unknown error");
+    const resumed = await relay.connections.next();
     resumed.hello();
     expect(await resumed.next(6)).toEqual({
       op: 6,
-      d: { token: BOT_TOKEN, session_id: "oversized-session", seq: 2 },
+      d: { token: BOT_TOKEN, session_id: "oversized-session", seq: 3 },
     });
-    resumed.message(3, correctedId);
-    let corrected = await relay.deliveries.next();
-    while (
-      JSON.parse(corrected.rawBody).eventId !== `MESSAGE_CREATE:${correctedId}`
-    ) {
-      corrected = await relay.deliveries.next();
+    resumed.send(oversized);
+    resumed.message(4, "100000000000000007");
+    const eventIds: string[] = [];
+    while (!eventIds.includes("MESSAGE_CREATE:100000000000000007")) {
+      eventIds.push(
+        JSON.parse((await relay.deliveries.next()).rawBody).eventId,
+      );
     }
-    expect(JSON.parse(corrected.rawBody)).toMatchObject({
-      eventId: `MESSAGE_CREATE:${correctedId}`,
-      payload: {
-        id: correctedId,
-        content: "<@100000000000000001> Hello",
-      },
-    });
+    expect(eventIds).not.toContain(`MESSAGE_CREATE:${oversizedId}`);
+    expect(eventIds).toContain(JSON.parse(retained.rawBody).eventId);
+    expect(
+      relay.forwarded.some((delivery) => {
+        return delivery.rawBody.includes(oversizedId);
+      }),
+    ).toBe(false);
     await expect
       .poll(() => {
         return relay.health();
       })
-      .toMatchObject({ running: true, pending: 0, fatal: null });
+      .toMatchObject({
+        running: true,
+        pending: 0,
+        deadLettered: 1,
+        fatal: null,
+      });
   }, 20_000);
 
   it.each([undefined, "http://api.example.test"])(

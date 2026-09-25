@@ -29,8 +29,12 @@ const MAX_DEAD_LETTERS = 100;
 // halting would let one member's message block every other guild.
 const EVENT_REJECTIONS = new Set([400, 413]);
 const FATAL_CLOSES = new Set([4004, 4010, 4011, 4012, 4013, 4014]);
+const MAX_DURABLE_RECORD_BYTES = 120_000;
 const outboxKey = (index: number) => {
   return `outbox:${index.toString().padStart(16, "0")}`;
+};
+const deadKey = (index: number) => {
+  return `dead:${index.toString().padStart(16, "0")}`;
 };
 
 // This is an outbound socket. Inbound WebSocket hibernation cannot own it.
@@ -537,16 +541,31 @@ export class DiscordGateway {
         payload,
       });
       const body = JSON.stringify(envelope);
-      if (new TextEncoder().encode(body).byteLength > 120_000) {
-        await this.halt("event-exceeds-durable-record-limit");
-        return;
-      }
-      next.pending++;
+      const bytes = new TextEncoder().encode(body).byteLength;
       next.nextOutbox++;
-      await this.ctx.storage.transaction(async (transaction) => {
-        await transaction.put(outboxKey(this.state.nextOutbox), body);
-        await transaction.put("state", next);
-      });
+      if (bytes > MAX_DURABLE_RECORD_BYTES) {
+        // Discord replays this event on every resume, so halting would stall
+        // every guild. Checkpoint past it and keep only a reference record.
+        next.deadLettered++;
+        const evicted = await this.deadLetterEviction();
+        const reference = JSON.stringify({
+          eventType: envelope.eventType,
+          eventId: envelope.eventId,
+          reason: "exceeds-durable-record-limit",
+          bytes,
+        });
+        await this.ctx.storage.transaction(async (transaction) => {
+          if (evicted !== undefined) await transaction.delete(evicted);
+          await transaction.put(deadKey(this.state.nextOutbox), reference);
+          await transaction.put("state", next);
+        });
+      } else {
+        next.pending++;
+        await this.ctx.storage.transaction(async (transaction) => {
+          await transaction.put(outboxKey(this.state.nextOutbox), body);
+          await transaction.put("state", next);
+        });
+      }
       this.state = next;
     } else {
       await this.save(next);
@@ -679,11 +698,19 @@ export class DiscordGateway {
   }
 
   // Retains a bounded sample of rejected envelopes for operator diagnosis.
-  private async deadLetter(key: string, body: string): Promise<void> {
+  // Returns the oldest record to drop so retention stays bounded.
+  private async deadLetterEviction(): Promise<string | undefined> {
+    if (this.state.deadLettered < MAX_DEAD_LETTERS) return undefined;
     const oldest = await this.ctx.storage.list<string>({
       prefix: "dead:",
       limit: 1,
     });
+    const [evicted] = oldest.keys();
+    return evicted;
+  }
+
+  private async deadLetter(key: string, body: string): Promise<void> {
+    const evicted = await this.deadLetterEviction();
     const next = {
       ...this.state,
       pending: this.state.pending - 1,
@@ -692,10 +719,7 @@ export class DiscordGateway {
       deadLettered: this.state.deadLettered + 1,
     };
     await this.ctx.storage.transaction(async (transaction) => {
-      if (this.state.deadLettered >= MAX_DEAD_LETTERS) {
-        const [evicted] = oldest.keys();
-        if (evicted !== undefined) await transaction.delete(evicted);
-      }
+      if (evicted !== undefined) await transaction.delete(evicted);
       await transaction.delete(key);
       await transaction.put(`dead:${key.slice("outbox:".length)}`, body);
       await transaction.put("state", next);

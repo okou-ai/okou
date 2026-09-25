@@ -16,10 +16,7 @@ import {
   buildWelcomeMessage,
 } from "../../lib/slack-connect-blocks";
 import { env } from "../../lib/env";
-import {
-  OFFICIAL_SLACK_PUBLIC_BRAND,
-  officialSlackBotMention,
-} from "../../lib/slack-official-app";
+import { officialSlackBotMention } from "../../lib/slack-official-app";
 import { clerk$ } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
 import { publishUserSignal } from "../external/realtime";
@@ -570,7 +567,6 @@ export const connectSlackWorkspace$ = command(
             .set({
               orgId: args.orgId,
               installedByUserId: args.userId,
-              publicBrand: OFFICIAL_SLACK_PUBLIC_BRAND,
               updatedAt: nowDate(),
             })
             .where(

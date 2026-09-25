@@ -13,7 +13,6 @@ import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { env, optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
-import { OFFICIAL_SLACK_PUBLIC_BRAND } from "../../lib/slack-official-app";
 import { writeDb$ } from "../external/db";
 import {
   exchangeSlackOAuthCodeForConnector,
@@ -192,7 +191,6 @@ const storeInstallation$ = command(
       botUserId: oauth.botUserId,
       installedByUserId: context.userId,
       botScopes: JSON.stringify(oauth.botScopes.split(",").filter(Boolean)),
-      publicBrand: OFFICIAL_SLACK_PUBLIC_BRAND,
     } as const;
     const installation = await set(writeDb$).transaction(async (tx) => {
       const [stored] = await tx
