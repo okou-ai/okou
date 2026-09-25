@@ -1,5 +1,4 @@
 import {
-  DEFAULT_USER_LOCALE,
   type UserPreferencesResponse,
   userPreferencesContract,
 } from "@okouai/api-contracts/contracts/user-preferences";
@@ -72,7 +71,7 @@ export const apiUserPreferencesHandlers = [
     mockPreferences = {
       ...mockPreferences,
       timezone: mockPreferences.timezone ?? body.timezone ?? null,
-      locale: mockPreferences.locale ?? body.locale ?? DEFAULT_USER_LOCALE,
+      locale: mockPreferences.locale ?? body.locale,
     };
     return respond(200, mockPreferences);
   }),

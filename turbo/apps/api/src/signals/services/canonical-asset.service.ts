@@ -26,6 +26,7 @@ import { inferMimetype } from "../../lib/mimetype";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { isAllowedUploadType } from "../../lib/uploads-constants";
 import { type Db, writeDb$ } from "../external/db";
+import { DiscordFileFetchError } from "../external/discord-file-fetcher";
 import { FeishuApiError } from "../external/feishu-client";
 import { isTelegramApiError } from "../external/telegram-client";
 import {
@@ -236,6 +237,17 @@ function inputMaterializationError(error: unknown): {
   readonly message: string;
   readonly retryable: boolean;
 } {
+  if (error instanceof DiscordFileFetchError) {
+    return {
+      code: error.code,
+      message: error.message,
+      retryable:
+        error.code === "download-failed" &&
+        (error.statusCode === undefined ||
+          error.statusCode === 429 ||
+          error.statusCode >= 500),
+    };
+  }
   if (
     error instanceof FeishuApiError &&
     error.upstreamStatusCode !== undefined

@@ -113,6 +113,8 @@ describe("Desktop preload bridge", () => {
     const auth = exposedApi<DesktopAuthApi>("vm0DesktopAuth");
 
     await auth.getState();
+    await auth.getLoginMethod();
+    await auth.setLoginMethod("native");
     await auth.openSignIn();
     await auth.openOrgSelection();
     await auth.signOut();
@@ -120,6 +122,8 @@ describe("Desktop preload bridge", () => {
 
     expect(electronMock.ipcRenderer.invoke.mock.calls).toStrictEqual([
       [DESKTOP_AUTH_CHANNELS.getState],
+      [DESKTOP_AUTH_CHANNELS.getLoginMethod],
+      [DESKTOP_AUTH_CHANNELS.setLoginMethod, "native"],
       [DESKTOP_AUTH_CHANNELS.openSignIn],
       [DESKTOP_AUTH_CHANNELS.openOrgSelection],
       [DESKTOP_AUTH_CHANNELS.signOut],

@@ -122,6 +122,17 @@ export const ablyTokenRequestSchema = z.object({
 });
 
 /**
+ * Ably token details schema (matches Ably SDK's TokenDetails type)
+ */
+const ablyTokenDetailsSchema = z.object({
+  token: z.string(),
+  expires: z.number(),
+  issued: z.number(),
+  capability: z.string(),
+  clientId: z.string().optional(),
+});
+
+/**
  * Runner realtime token contract for /api/runners/realtime/token
  */
 export const runnerRealtimeTokenContract = c.router({
@@ -164,7 +175,9 @@ export const platformRealtimeTokenContract = c.router({
     headers: authHeadersSchema,
     body: z.object({}),
     responses: {
-      200: ablyTokenRequestSchema,
+      // Token details when the server exchanged the token; a token request
+      // when that exchange failed and the client must exchange it itself.
+      200: z.union([ablyTokenDetailsSchema, ablyTokenRequestSchema]),
       401: apiErrorSchema,
       500: apiErrorSchema,
     },

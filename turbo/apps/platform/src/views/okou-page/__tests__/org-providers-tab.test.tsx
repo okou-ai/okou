@@ -129,8 +129,8 @@ function builtInPolicy(
 function claudeOpusApiKeyPolicy(): OrgModelPolicy {
   return {
     id: "00000000-0000-4000-a000-000000000212",
-    model: "claude-opus-4-8",
-    modelLabel: "Claude Opus 4.8",
+    model: "claude-opus-5",
+    modelLabel: "Claude Opus 5",
     isDefault: false,
     defaultProviderType: "anthropic-api-key",
     credentialScope: "org",
@@ -405,7 +405,7 @@ async function openAddApiKeyModelDialog(): Promise<void> {
   await openProvidersTab();
 
   click(screen.getByText("Add model"));
-  await selectDialogModel("Claude Opus 4.8");
+  await selectDialogModel("Claude Opus 5");
   click(routeButtonByName(/API key/u));
   await waitFor(() => {
     expect(
@@ -483,7 +483,7 @@ test("Show the default model and available routes before provider connections", 
         authHeaderName: "Authorization",
         authHeaderTemplate: "Bearer {{secret}}",
         modelMappings: {
-          "claude-opus-4-8": "anthropic/claude-opus-4.8",
+          "claude-opus-5": "anthropic/claude-opus-5",
         },
       },
     ],
@@ -503,8 +503,8 @@ test("Show the default model and available routes before provider connections", 
     ),
     {
       id: "00000000-0000-4000-a000-000000000212",
-      model: "claude-opus-4-8",
-      modelLabel: "Claude Opus 4.8",
+      model: "claude-opus-5",
+      modelLabel: "Claude Opus 5",
       isDefault: false,
       defaultProviderType: "custom-anthropic-messages",
       credentialScope: "org",
@@ -526,7 +526,7 @@ test("Show the default model and available routes before provider connections", 
   const providerConnections = screen.getByRole("heading", {
     name: "Provider connections",
   });
-  const claudeRow = screen.getByTestId("org-model-policy-row-claude-opus-4-8");
+  const claudeRow = screen.getByTestId("org-model-policy-row-claude-opus-5");
 
   expect(within(defaultModel).getByRole("combobox")).toHaveTextContent(
     "GPT 5.6 Luna",
@@ -755,10 +755,11 @@ test("Offer only models available to add a workspace route", async () => {
     { model: "GPT 5.6 Sol", available: true },
     { model: "GPT 5.6 Luna", available: true },
     { model: "GPT 5.5", available: false },
-    { model: "Claude Sonnet 4.6", available: true },
-    { model: "Claude Opus 4.8", available: true },
+    { model: "Claude Sonnet 5", available: true },
+    { model: "Claude Sonnet 4.6", available: false },
+    { model: "Claude Opus 4.8", available: false },
     { model: "DeepSeek V4 Flash", available: true },
-    { model: "DeepSeek V4 Pro", available: true },
+    { model: "DeepSeek V4 Pro", available: false },
     { model: "Kimi K2.7 Code", available: false },
     { model: "Claude Opus 4.7", available: false },
   ]) {
@@ -818,7 +819,7 @@ test("Connect a workspace API key to a model route", async () => {
   click(buttonByText("Add model", dialog));
   expect(screen.getByText("API key is required")).toBeInTheDocument();
   expect(
-    screen.queryByTestId("org-model-policy-row-claude-opus-4-8"),
+    screen.queryByTestId("org-model-policy-row-claude-opus-5"),
   ).not.toBeInTheDocument();
 
   await fill(
@@ -827,8 +828,8 @@ test("Connect a workspace API key to a model route", async () => {
   );
   click(buttonByText("Add model", dialog));
 
-  const row = await screen.findByTestId("org-model-policy-row-claude-opus-4-8");
-  expect(within(row).getByText("Claude Opus 4.8")).toBeInTheDocument();
+  const row = await screen.findByTestId("org-model-policy-row-claude-opus-5");
+  expect(within(row).getByText("Claude Opus 5")).toBeInTheDocument();
   expect(within(row).getByText("Anthropic")).toBeInTheDocument();
 });
 
@@ -836,11 +837,11 @@ test("Rotate a workspace model API key without exposing the new secret", async (
   mockApiKeyModelRouteStory();
   await openProvidersTab();
 
-  const row = await screen.findByTestId("org-model-policy-row-claude-opus-4-8");
-  expect(within(row).getByText("Claude Opus 4.8")).toBeInTheDocument();
+  const row = await screen.findByTestId("org-model-policy-row-claude-opus-5");
+  expect(within(row).getByText("Claude Opus 5")).toBeInTheDocument();
   expect(within(row).getByText("Anthropic")).toBeInTheDocument();
 
-  click(within(row).getByLabelText("Actions for Claude Opus 4.8"));
+  click(within(row).getByLabelText("Actions for Claude Opus 5"));
   click(menuItemByText("Edit model"));
 
   await waitFor(() => {
@@ -867,14 +868,14 @@ test("Route a workspace model through a Claude subscription", async () => {
   await openProvidersTab();
 
   click(buttonByText("Add model"));
-  await selectDialogModel("Claude Opus 4.8");
+  await selectDialogModel("Claude Opus 5");
   click(routeButtonByName(/Claude subscription/u));
   click(buttonByText("Add model"));
 
   const oauthRow = await screen.findByTestId(
-    "org-model-policy-row-claude-opus-4-8",
+    "org-model-policy-row-claude-opus-5",
   );
-  expect(within(oauthRow).getByText("Claude Opus 4.8")).toBeInTheDocument();
+  expect(within(oauthRow).getByText("Claude Opus 5")).toBeInTheDocument();
   expect(
     within(oauthRow).getByText("Claude Code (OAuth token)"),
   ).toBeInTheDocument();
@@ -1033,7 +1034,7 @@ test("Offer a plan change when bring-your-own-key is unavailable", async () => {
   await openModelSettings();
 
   click(buttonByText("Add model"));
-  await selectDialogModel("Claude Opus 4.8");
+  await selectDialogModel("Claude Opus 5");
 
   const apiKeyRoute = routeButtonByName(/API key/u);
   const user = userEvent.setup();
@@ -1112,8 +1113,8 @@ test("Reconnect a stale workspace Claude account", async () => {
   context.mocks.data.orgModelPolicies([
     {
       id: "00000000-0000-4000-a000-000000000231",
-      model: "claude-opus-4-8",
-      modelLabel: "Claude Opus 4.8",
+      model: "claude-opus-5",
+      modelLabel: "Claude Opus 5",
       isDefault: true,
       defaultProviderType: "claude-code-oauth-token",
       credentialScope: "member",
@@ -1185,7 +1186,7 @@ test("Reconnect a stale workspace Claude account", async () => {
     expect(
       screen.queryByText("Claude Code session needs reconnection"),
     ).toBeNull();
-    const routeRow = screen.getByTestId("org-model-policy-row-claude-opus-4-8");
+    const routeRow = screen.getByTestId("org-model-policy-row-claude-opus-5");
     expect(
       within(routeRow).getByText("Claude Code (OAuth token)"),
     ).toBeInTheDocument();
@@ -1371,21 +1372,19 @@ test("Enabled priority adds a subscription while preserving the displayed defaul
   });
   expect(within(legacy).getByText("ChatGPT (Codex)")).toBeInTheDocument();
   click(buttonByText("Add model"));
-  await selectDialogModel("Claude Opus 4.8");
+  await selectDialogModel("Claude Opus 5");
   const dialog = screen.getByRole("dialog", { name: "Add model" });
   expect(routeButtonByName(/Built-in/u, dialog)).toBeInTheDocument();
   expect(routeButtonByName(/Claude subscription/u, dialog)).toBeEnabled();
   click(routeButtonByName(/Claude subscription/u, dialog));
   click(buttonByText("Add model", dialog));
-  const added = await screen.findByTestId(
-    "org-model-policy-row-claude-opus-4-8",
-  );
+  const added = await screen.findByTestId("org-model-policy-row-claude-opus-5");
   expect(
     within(added).getByText("Claude Code (OAuth token)"),
   ).toBeInTheDocument();
   expect(submitted()?.policies).toContainEqual(
     expect.objectContaining({
-      model: "claude-opus-4-8",
+      model: "claude-opus-5",
       defaultProviderType: "claude-code-oauth-token",
       credentialScope: "member",
       isDefault: false,

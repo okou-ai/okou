@@ -50,8 +50,12 @@ case "${1:-}" in
       [ "${MOCK_ARTIFACT_CHAT_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "dddddddddddddddddddddddddddddddddddddddd" ]; then
       [ "${MOCK_PRIVACY_CLEANUP_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "ffffffffffffffffffffffffffffffffffffffff" ]; then
+      [ "${MOCK_CHAT_EVENT_READER_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ]; then
       [ "${MOCK_SNAPSHOT_R2_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "1111111111111111111111111111111111111111" ]; then
+      [ "${MOCK_AGENTPHONE_BRAND_DROP_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "6e1abbb785dc1613d0f5cd1b1dd80fae694abb46" ]; then
       [ "${MOCK_MORNING_BRIEF_ELIGIBILITY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "f205ec54fc463f43b1106a3659e5d6a8c979cab8" ]; then
@@ -77,8 +81,12 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   log)
-    if [[ "$*" == *chat-thread-snapshot-object.ts* ]]; then
+    if [[ "$*" == *chat-event-write-mode.service.ts* ]]; then
+      printf '%s\n' "${MOCK_CHAT_EVENT_READER_COMMIT-ffffffffffffffffffffffffffffffffffffffff}"
+    elif [[ "$*" == *chat-thread-snapshot-object.ts* ]]; then
       printf '%s\n' "${MOCK_SNAPSHOT_R2_READER_COMMIT-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee}"
+    elif [[ "$*" == *1228_drop_agentphone_public_brand.sql* ]]; then
+      printf '%s\n' "${MOCK_AGENTPHONE_BRAND_DROP_COMMIT-1111111111111111111111111111111111111111}"
     else
       printf '%s\n' "${MOCK_PRIVACY_READER_COMMIT-dddddddddddddddddddddddddddddddddddddddd}"
     fi
@@ -136,6 +144,17 @@ case "$host" in
   *) exit 255 ;;
 esac
 SH
+cat >"${fake_bin}/psql" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+[ "${MOCK_CHAT_EVENT_DB_AVAILABLE:-1}" = 1 ] || exit 1
+if [[ "$*" == *to_regclass* ]]; then
+  printf '%s\n' "${MOCK_CHAT_EVENT_CONTROL_PRESENT-t}"
+else
+  printf '%s\n' "${MOCK_CHAT_EVENT_ACTIVATED-f}"
+fi
+SH
+chmod +x "${fake_bin}/psql"
 chmod +x "${fake_bin}/git" "${fake_bin}/curl" "${fake_bin}/ssh"
 
 run_resolver() {
@@ -146,6 +165,7 @@ run_resolver() {
     PATH="${fake_bin}:$PATH" \
     HOME="${HOME:-/tmp}" \
     AWS_METAL_RUNNER_HOSTS=arm-1,x86-1 \
+    DATABASE_URL=postgresql://fixture.invalid/test \
     GH_TOKEN=test-github-token \
     GITHUB_OUTPUT="$output_file" \
     GITHUB_REPOSITORY=okou-ai/okou \
@@ -177,6 +197,7 @@ grep -Fxq "git merge-base --is-ancestor 8d8f3a3e14d23f7471e0773bd9acb988f59217af
 grep -Fxq "git merge-base --is-ancestor 322efb6d72508e15b90dc788100a776da1485751 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Pi session-construction digest reader floor"
 grep -Fxq "git merge-base --is-ancestor 065f970bbb8c21c10ef709495d5824d0a6183e50 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the artifact/chat explicit-writer floor"
 grep -Fxq "git merge-base --is-ancestor eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread snapshot R2 reader floor"
+grep -Fxq "git merge-base --is-ancestor 1111111111111111111111111111111111111111 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the AgentPhone public_brand drop floor"
 grep -Fxq "git merge-base --is-ancestor 8a5e1299b4d26bd114ccec017b84b7a83fb4a164 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible target must pass the accepted personal subscription floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
@@ -671,6 +692,23 @@ if grep -qE '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
   fail "snapshot R2 reader floor must be checked before artifact resolution"
 fi
 
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged AgentPhone public_brand drop" \
+    run_resolver "${tmp_dir}/agentphone-brand-history.output" "MOCK_AGENTPHONE_BRAND_DROP_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/agentphone-brand-history.output" ] || fail "missing AgentPhone drop history must not publish outputs"
+  if grep -qE '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "missing AgentPhone drop history must fail before artifact resolution"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the AgentPhone public_brand drop" \
+  run_resolver "${tmp_dir}/agentphone-brand-floor.output" MOCK_AGENTPHONE_BRAND_DROP_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/agentphone-brand-floor.output" ] || fail "pre-drop API target must not publish outputs"
+if grep -qE '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "AgentPhone public_brand drop floor must be checked before artifact resolution"
+fi
+
 # Verify the real Git history boundary, including the cleanup file's later
 # deletion. The canonical introduction on main, rather than a PR branch SHA,
 # is the boundary that a retained release must contain.
@@ -716,3 +754,14 @@ if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
 fi
 
 echo "resolve-production-rollback-target tests passed"
+
+# Reader floor is conditional on live activation, never the expansion commit alone.
+run_resolver "${tmp_dir}/preactivation.output" MOCK_CHAT_EVENT_READER_VALID=0 >/dev/null
+run_resolver "${tmp_dir}/preexpansion.output" MOCK_CHAT_EVENT_CONTROL_PRESENT=f MOCK_CHAT_EVENT_READER_VALID=0 >/dev/null
+assert_failure "predates activated split chat event writes" run_resolver "${tmp_dir}/activated.output" MOCK_CHAT_EVENT_ACTIVATED=t MOCK_CHAT_EVENT_READER_VALID=0
+run_resolver "${tmp_dir}/new-reader.output" MOCK_CHAT_EVENT_ACTIVATED=t >/dev/null
+assert_failure "rollout control row is missing" run_resolver "${tmp_dir}/missing-control.output" MOCK_CHAT_EVENT_ACTIVATED=
+assert_failure "Cannot resolve the merged split chat event reader" run_resolver "${tmp_dir}/unknown-floor.output" MOCK_CHAT_EVENT_ACTIVATED=t MOCK_CHAT_EVENT_READER_COMMIT=
+if run_resolver "${tmp_dir}/db-unavailable.output" MOCK_CHAT_EVENT_DB_AVAILABLE=0 >/dev/null 2>&1; then
+  fail "an unavailable rollout authority must block rollback"
+fi

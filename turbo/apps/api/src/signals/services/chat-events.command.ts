@@ -33,7 +33,7 @@ import {
   chatEvents,
   type ChatEventAttachFileMetadata,
 } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -102,12 +102,18 @@ import {
   ORDINARY_CHAT_THREAD_PROVENANCE,
   recordOfficialWorkflowThreadProvenance,
 } from "./morning-brief-thread-provenance.service";
-import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
+import {
+  touchChatThreadLastMessageAt,
+  touchChatThreadLastMessageAtIndependently,
+} from "./chat-event-shared.service";
+import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
+import {
+  attemptChatEventSideEffect,
+  clearThreadDraftIndependently,
+} from "./chat-event-write-side-effects.service";
 import {
   revokeChatEvent,
   insertChatEvent,
-  insertChatEventWithReservedSequence,
-  type ChatEventSequenceReservation,
   type NewChatEvent,
   replaceChatEvent,
 } from "./chat-event.service";
@@ -1958,7 +1964,7 @@ interface AppendUnassociatedUserMessageParams {
 }
 
 async function resolveExistingUnassociatedClientEventId(
-  tx: ChatThreadEventTransaction,
+  tx: Db | ChatThreadEventTransaction,
   params: AppendUnassociatedUserMessageParams,
   explicitId: string,
 ): Promise<ClientEventIdResolution> {
@@ -2066,6 +2072,7 @@ async function recordOfficialSourceThreadProvenance(
 async function resolveLockedMcpSubmission(
   tx: ChatThreadEventTransaction,
   params: AppendUnassociatedUserMessageParams,
+  splitWrites = false,
 ): Promise<ClientEventIdResolution | undefined> {
   if (params.mcpSubmission) {
     const [thread] = await tx
@@ -2078,7 +2085,7 @@ async function resolveLockedMcpSubmission(
           chatThreadOrganizationCondition(tx, params.orgId),
         ),
       )
-      .for("update");
+      .for(splitWrites ? "no key update" : "update");
     if (!thread) {
       return { kind: "conflict" };
     }
@@ -2107,10 +2114,6 @@ async function resolveLockedMcpSubmission(
  * not narrow which threads the caller could already enqueue into; the thread's
  * Agent is fixed at creation, so it is not re-checked here.
  */
-interface AuthorizedChatThreadForEnqueue {
-  readonly eventSequenceReservation?: ChatEventSequenceReservation;
-}
-
 /**
  * Enter a send-clear transaction with the authorized parent's FOR UPDATE lock.
  * PATCH retains KEY SHARE -> child -> parent; this strong lock makes either
@@ -2140,21 +2143,10 @@ async function lockAuthorizedThreadForDraftClear(
   return thread !== undefined;
 }
 
-function shouldReserveEventSequence(
-  params: AppendUnassociatedUserMessageParams,
-): boolean {
-  return (
-    params.triggerSource === "web" &&
-    params.mcpSubmission === undefined &&
-    params.revokesEventId === undefined
-  );
-}
-
 async function authorizeChatThreadForEnqueue(
   tx: ChatThreadEventTransaction,
   params: AppendUnassociatedUserMessageParams,
-  reserveEventSequence: boolean,
-): Promise<AuthorizedChatThreadForEnqueue | undefined> {
+): Promise<boolean> {
   // This must precede the parent UPDATE and all child writes. MCP submission
   // already holds FOR UPDATE; reacquiring it in the same transaction is safe.
   if (
@@ -2165,18 +2157,13 @@ async function authorizeChatThreadForEnqueue(
       params.orgId,
     ))
   ) {
-    return undefined;
+    return false;
   }
   const [thread] = await tx
     .update(chatThreads)
     .set({
       draftUserMessage: null,
       draftAttachments: null,
-      ...(reserveEventSequence
-        ? {
-            lastChatEventSeqId: sql`${chatThreads.lastChatEventSeqId} + 1`,
-          }
-        : {}),
     })
     .where(
       and(
@@ -2187,48 +2174,19 @@ async function authorizeChatThreadForEnqueue(
     )
     .returning({
       id: chatThreads.id,
-      lastChatEventSeqId: chatThreads.lastChatEventSeqId,
     });
   if (!thread) {
-    return undefined;
+    return false;
   }
   await clearExistingChatThreadDraftRow(tx, thread.id);
-  return reserveEventSequence
-    ? {
-        eventSequenceReservation: {
-          chatThreadId: thread.id,
-          seqId: thread.lastChatEventSeqId,
-        },
-      }
-    : {};
+  return true;
 }
 
-async function appendUnassociatedUserMessageTransaction(
-  tx: ChatThreadEventTransaction,
+function unassociatedUserMessageEvent(
   params: AppendUnassociatedUserMessageParams,
-): Promise<ClientEventIdResolution> {
-  const existing = await resolveLockedMcpSubmission(tx, params);
-  if (existing) {
-    return existing;
-  }
-  const reserveEventSequence = shouldReserveEventSequence(params);
-  const authorizedThread = await measureApiDispatchTiming(
-    params.timing,
-    "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue_clear_draft",
-    "nested",
-    () => {
-      return authorizeChatThreadForEnqueue(tx, params, reserveEventSequence);
-    },
-  );
-  if (!authorizedThread) {
-    // `conflict` is the duplicate-clientEventId answer. The request already
-    // authorized this thread, so losing it here is a broken invariant.
-    throw new Error("Authorized chat thread changed before enqueue");
-  }
-
-  const explicitId = params.clientEventId ?? undefined;
-  assertOfficialSourceClaim(params);
-  const event: NewChatEvent = {
+): Extract<NewChatEvent, { readonly eventType: "input.prompt" }> {
+  const explicitId = params.clientEventId;
+  return {
     ...(explicitId ? { id: explicitId } : {}),
     chatThreadId: params.threadId,
     eventType: "input.prompt",
@@ -2263,6 +2221,36 @@ async function appendUnassociatedUserMessageTransaction(
           }
       : {}),
   };
+}
+
+async function appendUnassociatedUserMessageTransaction(
+  tx: ChatThreadEventTransaction,
+  params: AppendUnassociatedUserMessageParams,
+): Promise<ClientEventIdResolution> {
+  const splitWrites = await isSplitChatEventWriteEnabled(tx);
+  const existing = await resolveLockedMcpSubmission(tx, params, splitWrites);
+  if (existing) {
+    return existing;
+  }
+  const authorizedThread =
+    splitWrites ||
+    (await measureApiDispatchTiming(
+      params.timing,
+      "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue_clear_draft",
+      "nested",
+      () => {
+        return authorizeChatThreadForEnqueue(tx, params);
+      },
+    ));
+  if (!authorizedThread) {
+    // `conflict` is the duplicate-clientEventId answer. The request already
+    // authorized this thread, so losing it here is a broken invariant.
+    throw new Error("Authorized chat thread changed before enqueue");
+  }
+
+  const explicitId = params.clientEventId ?? undefined;
+  assertOfficialSourceClaim(params);
+  const event = unassociatedUserMessageEvent(params);
   const inserted = await measureApiDispatchTiming(
     params.timing,
     "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue_persist_event",
@@ -2270,14 +2258,7 @@ async function appendUnassociatedUserMessageTransaction(
     () => {
       return params.revokesEventId
         ? replaceChatEvent(tx, params.revokesEventId, event)
-        : authorizedThread.eventSequenceReservation
-          ? insertChatEventWithReservedSequence(
-              tx,
-              event,
-              authorizedThread.eventSequenceReservation,
-              "id",
-            )
-          : insertChatEvent(tx, event, "id");
+        : insertChatEvent(tx, event, "id");
     },
   );
   if (inserted) {
@@ -2304,7 +2285,7 @@ async function appendUnassociatedUserMessageTransaction(
         });
       },
     );
-    if (params.touchThreadSort) {
+    if (params.touchThreadSort && !splitWrites) {
       await measureApiDispatchTiming(
         params.timing,
         "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue_touch_thread_sort",
@@ -2376,9 +2357,123 @@ class McpEnqueueCollision extends Error {
   }
 }
 
-function appendUnassociatedUserMessage(
+async function appendUnassociatedUserMessageIndependently(
   params: AppendUnassociatedUserMessageParams & { readonly db: Db },
 ): Promise<ClientEventIdResolution> {
+  const db = params.db;
+  const [thread] = await db
+    .select({ id: chatThreads.id })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.id, params.threadId),
+        eq(chatThreads.userId, params.userId),
+        chatThreadOrganizationCondition(db, params.orgId),
+      ),
+    )
+    .limit(1);
+  if (!thread) {
+    throw new Error("Authorized chat thread changed before enqueue");
+  }
+  assertOfficialSourceClaim(params);
+  const event = unassociatedUserMessageEvent(params);
+  // Canonical assets and server-owned source identity are required launch
+  // material. Prepare them before the event makes the input claimable.
+  await registerCanonicalWebInputAssets(db, {
+    chatThreadId: params.threadId,
+    userId: params.userId,
+    orgId: params.orgId,
+    files: params.attachFileMetadata ?? [],
+  });
+  if (params.requiredOfficialWorkflowIds !== undefined) {
+    await db.transaction((tx) => {
+      return recordOfficialSourceThreadProvenance(tx, params);
+    });
+  }
+  const append = async (writer: Db | ChatThreadEventTransaction) => {
+    return params.revokesEventId
+      ? await replaceChatEvent(writer, params.revokesEventId, event)
+      : await insertChatEvent(writer, event, "id");
+  };
+  const result = params.mcpSubmission
+    ? await db.transaction(async (tx) => {
+        const existing = await resolveLockedMcpSubmission(tx, params, true);
+        if (existing) {
+          return { existing };
+        }
+        return { inserted: await append(tx) };
+      })
+    : { inserted: await append(db) };
+  if (result.existing) {
+    return result.existing;
+  }
+  const inserted = result.inserted;
+  if (!inserted) {
+    if (!params.clientEventId) {
+      throw new Error("Failed to insert unassociated user message");
+    }
+    const duplicate = await settle(
+      resolveExistingUnassociatedClientEventId(
+        db,
+        params,
+        params.clientEventId,
+      ),
+    );
+    if (duplicate.ok) {
+      return duplicate.value;
+    }
+    if (duplicate.error instanceof McpEnqueueCollision) {
+      return duplicate.error.resolution;
+    }
+    throw duplicate.error;
+  }
+  await clearThreadDraftIndependently(db, params);
+  const workflowId = params.getStartedWorkflowId;
+  if (workflowId) {
+    await attemptChatEventSideEffect(
+      "get_started_workflow",
+      params.threadId,
+      async () => {
+        await db.transaction((tx) => {
+          return recordGetStartedWorkflow(tx, {
+            orgId: params.orgId,
+            userId: params.userId,
+            workflowId,
+            sourceEventId: inserted.id,
+          });
+        });
+      },
+    );
+  }
+  if (params.touchThreadSort) {
+    await attemptChatEventSideEffect(
+      "thread_touch",
+      params.threadId,
+      async () => {
+        await touchChatThreadLastMessageAtIndependently(
+          db,
+          params.threadId,
+          inserted.createdAt,
+          params.chatThreadSortEventId,
+          { userId: params.userId, orgId: params.orgId },
+        );
+      },
+    );
+  }
+  return {
+    kind: "queued",
+    createdAt: inserted.createdAt,
+    inserted: true,
+    messageId: inserted.id,
+  };
+}
+
+async function appendUnassociatedUserMessage(
+  params: AppendUnassociatedUserMessageParams & { readonly db: Db },
+): Promise<ClientEventIdResolution> {
+  if (await isSplitChatEventWriteEnabled(params.db)) {
+    return await appendUnassociatedUserMessageIndependently(params);
+  }
   return measureApiDispatchTiming(
     params.timing,
     "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue_transaction",
@@ -2440,6 +2535,51 @@ async function appendAssociatedUserMessage(params: {
   // are not user-initiated typing, so they must not clear the user's draft.
   readonly clearDraft: boolean;
 }): Promise<boolean> {
+  if (await isSplitChatEventWriteEnabled(params.db)) {
+    await registerCanonicalWebInputAssets(params.db, {
+      chatThreadId: params.threadId,
+      userId: params.userId,
+      orgId: params.orgId,
+      files: params.attachFileMetadata ?? [],
+    });
+    const event: NewChatEvent = {
+      ...(params.clientEventId ? { id: params.clientEventId } : {}),
+      chatThreadId: params.threadId,
+      eventType: "input.prompt",
+      userMessage: params.userMessage,
+      runId: params.runId,
+      ...(params.triggerSource === "web"
+        ? { contextType: "web" as const }
+        : {}),
+    };
+    const inserted = params.revokesEventId
+      ? await replaceChatEvent(params.db, params.revokesEventId, event)
+      : await insertChatEvent(params.db, event, "id");
+    if (inserted && params.clearDraft) {
+      await clearThreadDraftIndependently(params.db, params);
+    }
+    if (inserted && params.touchThreadSort) {
+      await attemptChatEventSideEffect("thread_touch", params.threadId, () => {
+        return touchChatThreadLastMessageAtIndependently(
+          params.db,
+          params.threadId,
+          inserted.createdAt,
+          params.chatThreadSortEventId,
+          { userId: params.userId, orgId: params.orgId },
+        );
+      });
+    }
+    if (params.appendQueueMarker) {
+      await params.db.transaction((tx) => {
+        return appendQueuedRunAssistantMarker(tx, {
+          chatThreadId: params.threadId,
+          runId: params.runId,
+          createdAfter: inserted?.createdAt ?? nowDate(),
+        });
+      });
+    }
+    return inserted !== null;
+  }
   return await params.db.transaction(async (tx) => {
     if (params.clearDraft) {
       await clearThreadDraft(tx, params.threadId, params.userId);
@@ -3022,12 +3162,7 @@ function resolveTimedThread(
                 ?.providerType ??
               resolved.runConfiguration.providerAdmission
                 .effectiveModelProvider,
-            piExecution: usesPi(
-              args,
-              resolved.thread,
-              resolved.runConfiguration,
-              featureSwitches,
-            ),
+            piExecution: usesPi(resolved.thread, resolved.runConfiguration),
           }),
         },
       };
@@ -3211,10 +3346,8 @@ async function persistTimedExplicitSelections(
 }
 
 function usesPi(
-  args: NormalSendArgs,
   thread: PreparedNormalSend["thread"],
   runConfiguration: PreparedNormalSend["runConfiguration"],
-  featureSwitches: NormalSendFeatureSwitches,
 ): boolean {
   return shouldUsePiExecution({
     chatThreadId: thread.threadId,
@@ -3223,7 +3356,6 @@ function usesPi(
     selectedModel: runConfiguration.modelPin.selectedModel ?? undefined,
     codexServiceTier: runConfiguration.codexServiceTier,
     builtInModelRuntimeRoute: runConfiguration.builtInModelRuntimeRoute,
-    featureSwitchContext: featureSwitches.featureSwitchContext,
   });
 }
 
@@ -3336,7 +3468,7 @@ const prepareNormalSend$ = command(
     const [attachFileMetadataResult] = await attachFileMetadataResultPromise;
     signal.throwIfAborted();
     const attachFileMetadata = unwrapSettledResult(attachFileMetadataResult);
-    const piExecution = usesPi(args, thread, runConfiguration, featureSwitches);
+    const piExecution = usesPi(thread, runConfiguration);
 
     return {
       db,
@@ -3405,10 +3537,16 @@ async function queueUnassociatedNormalEvent(params: {
         }),
   });
   if (resolution.kind === "queued" && resolution.inserted) {
-    await publishThreadListChanged({
-      userId: params.userId,
-      orgId: params.orgId,
-    });
+    await attemptChatEventSideEffect(
+      "thread_list_invalidation",
+      params.prepared.thread.threadId,
+      async () => {
+        await publishThreadListChanged({
+          userId: params.userId,
+          orgId: params.orgId,
+        });
+      },
+    );
   }
   const response = clientEventIdResolutionResponse(
     resolution,
@@ -3697,95 +3835,23 @@ async function appendQueueFirstInsufficientCreditsEvents(params: {
 
 async function appendInsufficientCreditsEvents(params: {
   readonly prepared: PreparedNormalSend;
-  readonly body: RuntimeNormalSendBody;
   readonly userId: string;
   readonly orgId: string;
-  readonly touchThreadSort: boolean;
-  readonly queueFirstEventId?: string;
+  readonly queueFirstEventId: string;
 }): Promise<CreatedChatEventResponse> {
   const assistantContent = await buildInsufficientCreditsAssistantMessage({
     db: params.prepared.db,
     orgId: params.orgId,
   });
-  if (params.queueFirstEventId) {
-    return appendQueueFirstInsufficientCreditsEvents({
-      prepared: params.prepared,
-      userId: params.userId,
-      orgId: params.orgId,
-      eventId: params.queueFirstEventId,
-      assistantContent,
-    });
-  }
-  const userCreatedAt = nowDate();
-  const assistantCreatedAt = new Date(userCreatedAt.getTime() + 1);
-  const result = await params.prepared.db.transaction(async (tx) => {
-    await clearThreadDraft(tx, params.prepared.thread.threadId, params.userId);
-
-    const explicitId = params.body.clientEventId ?? undefined;
-    const fileMetadata = params.prepared.attachFileMetadata;
-    const userValues: NewChatEvent = {
-      ...(explicitId ? { id: explicitId } : {}),
-      chatThreadId: params.prepared.thread.threadId,
-      eventType: "input.rejected",
-      userMessage: params.body.userMessage,
-      runId: null,
-      error: INSUFFICIENT_CREDITS_MARKER,
-      runEventSequenceNumber: 0,
-      createdAt: userCreatedAt,
-    };
-    const userMessage = params.body.revokesEventId
-      ? await replaceChatEvent(tx, params.body.revokesEventId, userValues)
-      : await insertChatEvent(tx, userValues, "id");
-
-    const createdAt = userMessage?.createdAt ?? userCreatedAt;
-    if (userMessage) {
-      await registerCanonicalWebInputAssets(tx, {
-        chatThreadId: params.prepared.thread.threadId,
-        userId: params.userId,
-        orgId: params.orgId,
-        files: fileMetadata ?? [],
-      });
-    }
-    if (userMessage && params.touchThreadSort) {
-      await touchChatThreadLastMessageAt(
-        tx,
-        params.prepared.thread.threadId,
-        createdAt,
-        params.body.chatThreadSortEventId,
-      );
-    }
-    await insertChatEvent(tx, {
-      chatThreadId: params.prepared.thread.threadId,
-      eventType: "output.error",
-      content: assistantContent,
-      error: INSUFFICIENT_CREDITS_MARKER,
-      runEventSequenceNumber: 1,
-      createdAt: assistantCreatedAt,
-      runId: null,
-    });
-    return { createdAt, inserted: userMessage !== null };
-  });
-
-  await publishChatEventCreated({
+  // Every normal send is already queued. Keep rejection in its narrow claim
+  // transaction; draft/assets/sort were handled when the input was committed.
+  return await appendQueueFirstInsufficientCreditsEvents({
+    prepared: params.prepared,
     userId: params.userId,
     orgId: params.orgId,
-    threadId: params.prepared.thread.threadId,
+    eventId: params.queueFirstEventId,
+    assistantContent,
   });
-  if (result.inserted) {
-    await publishThreadListChanged({
-      userId: params.userId,
-      orgId: params.orgId,
-    });
-  }
-
-  return {
-    status: 201,
-    body: {
-      runId: null,
-      threadId: params.prepared.thread.threadId,
-      createdAt: result.createdAt.toISOString(),
-    },
-  };
 }
 
 function codexFastServiceTierRequested(body: NormalSendBody): boolean {
@@ -4138,13 +4204,8 @@ const createNormalChatRun$ = command(
       }
       return await appendInsufficientCreditsEvents({
         prepared,
-        body: prepared.body,
         userId: args.userId,
         orgId: args.orgId,
-        touchThreadSort: shouldTouchThreadSortFromNormalSend(
-          args.agentRunPreCreateSource,
-          prepared.thread.isNewThread,
-        ),
         queueFirstEventId,
       });
     }

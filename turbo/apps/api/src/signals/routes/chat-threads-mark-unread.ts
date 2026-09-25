@@ -1,7 +1,7 @@
 import { command } from "ccstate";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { chatThreadMarkUnreadContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";

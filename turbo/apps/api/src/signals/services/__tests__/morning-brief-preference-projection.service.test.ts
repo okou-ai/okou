@@ -1,13 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   projectErasureDecision,
   type ErasureDecision,
 } from "@okouai/db/operations/account-erasure";
 import { accountErasureJobs } from "@okouai/db/schema/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { morningBriefInstalledPreferences } from "@okouai/db/schema/morning-brief-installed-preference";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import {
@@ -30,7 +29,7 @@ import {
   startMorningBriefMembershipRemoval,
   waitForBlockingPid,
 } from "../../../test-fixtures/morning-brief-projection";
-import { updateFeatureSwitchesForUser } from "../../routes/__tests__/helpers/feature-switches";
+import { setHistoricalNativeMorningBriefForUser } from "../../routes/__tests__/helpers/feature-switches";
 import { loadMorningBriefMigrationState } from "../morning-brief-migration-state.service";
 import {
   readMorningBriefPreferenceProjection,
@@ -146,9 +145,7 @@ describe("Morning Brief installed preference projection persistence", () => {
     brief: InstalledBrief,
     enabled: boolean,
   ): Promise<void> {
-    await updateFeatureSwitchesForUser(context, brief.owner, {
-      [FeatureSwitchKey.NativeMorningBrief]: enabled,
-    });
+    await setHistoricalNativeMorningBriefForUser(context, brief.owner, enabled);
   }
 
   async function readProjectionRow(brief: InstalledBrief) {
@@ -234,12 +231,11 @@ describe("Morning Brief installed preference projection persistence", () => {
       enabled: true,
       cronExpression: "0 7 * * *",
       timezone: "Asia/Shanghai",
+      nextRunAt: new Date("2026-09-17T23:00:00.000Z"),
     });
     await expect(readProjectedPreference(brief)).resolves.toStrictEqual({
       enabled: true,
       status: "enabled",
-      nextRunAt: "2026-09-17T23:00:00.000Z",
-      timezone: "Asia/Shanghai",
       unavailableReason: null,
     });
 

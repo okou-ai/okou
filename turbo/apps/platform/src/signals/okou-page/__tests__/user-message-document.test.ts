@@ -657,7 +657,7 @@ test("Routing metadata is not shown as user text", () => {
     },
     {
       type: "model",
-      selectedModel: "claude-sonnet-4-6",
+      selectedModel: "claude-sonnet-5",
       serviceTier: "priority",
     },
   ];

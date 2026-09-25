@@ -63,33 +63,6 @@ test("Read composer summaries without fetching the connector directory or old au
   });
 });
 
-test("Show connected connectors while an older API is still serving", async () => {
-  const github = builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" });
-  installComposerConnectorFixture({
-    catalog: [github],
-    builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
-  });
-  context.mocks.api(connectorOverviewContract.overview, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Route unavailable" },
-    });
-  });
-  context.mocks.api(connectorOverviewContract.agent, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Route unavailable" },
-    });
-  });
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [github] });
-  });
-
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
-  click(await findFastControl("button", "Connectors"));
-  await expect(
-    screen.findByLabelText("Remove GitHub"),
-  ).resolves.toBeInTheDocument();
-});
-
 test("Load the Agent's connector access only when the Connectors menu opens", async () => {
   const catalog = [
     builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" }),

@@ -44,7 +44,6 @@ const EXPERIENCE_QUESTION = "How would you like to start with Okou?";
 const SKILLS_QUESTION = "Bring your existing skills into Okou";
 const SKILLS_ARRIVED_TITLE = "Your skills are in Okou";
 const SLACK_QUESTION = "Keep work moving in Slack";
-const PROFILE_TITLE = "Here's what we've learned about you";
 const CODEX_CARD = "Codex";
 const PROMPT_LABEL = "Skill import prompt";
 /** The prompt's own opening line, as the user's agent would read it. */
@@ -435,8 +434,6 @@ test("Finishing onboarding sends the selected Codex model preference after a ful
 
   await openSkillsStep(CODEX_CARD, true);
   click(getButtonByName("Continue"));
-  await screen.findByRole("heading", { name: PROFILE_TITLE });
-  click(getButtonByName("Continue"));
   await expect(
     screen.findByRole("heading", { name: SLACK_QUESTION }),
   ).resolves.toBeInTheDocument();
@@ -455,16 +452,16 @@ test("Finishing onboarding sends the selected Codex model preference after a ful
   });
 });
 
-test("A resumed skills step without a work positioning returns to the first question", async () => {
+test("A resumed skills step without a work positioning continues to Slack", async () => {
   mockAgentWorkflows();
   await openSkillsStep();
 
   click(getButtonByName("Continue"));
 
-  await screen.findByRole("heading", {
-    name: "What kind of work do you do?",
-  });
-  expect(pathname()).toBe(ROUTES.onboarding);
+  await expect(
+    screen.findByRole("heading", { name: SLACK_QUESTION }),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(ROUTES.onboardingSlack);
 });
 
 test("A skill the import writes appears without the step being asked again", async () => {
@@ -502,9 +499,6 @@ test("A skill the import writes appears without the step being asked again", asy
 
   click(getButtonByName("Continue"));
 
-  await screen.findByRole("heading", { name: PROFILE_TITLE });
-  click(getButtonByName("Continue"));
-
   await expect(
     screen.findByRole("heading", { name: SLACK_QUESTION }),
   ).resolves.toBeInTheDocument();
@@ -522,9 +516,6 @@ test("The step can be left with nothing imported", async () => {
   ).resolves.toBeInTheDocument();
 
   click(getButtonByName("Skip for now"));
-
-  await screen.findByRole("heading", { name: PROFILE_TITLE });
-  click(getButtonByName("Continue"));
 
   await expect(
     screen.findByRole("heading", { name: SLACK_QUESTION }),

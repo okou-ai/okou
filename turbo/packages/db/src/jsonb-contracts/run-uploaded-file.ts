@@ -22,6 +22,13 @@ export type CanonicalAssetProvenance =
       readonly externalFileId: string;
     }
   | {
+      readonly provider: "discord";
+      readonly guildId: string | null;
+      readonly channelId: string;
+      readonly messageId: string;
+      readonly externalFileId: string;
+    }
+  | {
       readonly provider: "agent";
     };
 

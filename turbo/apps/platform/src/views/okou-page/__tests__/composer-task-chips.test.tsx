@@ -318,7 +318,7 @@ async function setupTaskChangesWithUpload() {
     ).toHaveTextContent("16–20 slides");
   });
   click(selectedTask(editor, "Presentation"));
-  await composerModelTrigger("Claude Sonnet 4.6");
+  await composerModelTrigger("Claude Sonnet 5");
   expect(editor).toHaveTextContent("Keep my draft");
   expect(screen.getByText("brief.txt")).toBeInTheDocument();
   expect(capture.sentMessages).toHaveLength(0);

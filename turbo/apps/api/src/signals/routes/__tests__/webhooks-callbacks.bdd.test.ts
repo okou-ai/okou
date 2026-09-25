@@ -6062,7 +6062,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
             purpose: "billing_downgrade",
             orgId,
             subscriptionId: granted.subscriptionId,
-            targetTier: "pro-suspend",
+            targetTier: "limited-free-1",
           },
         },
       }),

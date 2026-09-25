@@ -11,6 +11,8 @@ export const CAPABILITIES = [
   "github:write",
   "slack:read",
   "slack:write",
+  "discord:read",
+  "discord:write",
   "feishu:write",
   "lark:write",
   "teams:write",
@@ -90,6 +92,14 @@ export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
     label: "List Slack channels and read history",
   },
   "slack:write": { group: "Integrations", label: "Send Slack messages" },
+  "discord:read": {
+    group: "Integrations",
+    label: "Read Discord channels, messages and files",
+  },
+  "discord:write": {
+    group: "Integrations",
+    label: "Send Discord messages and files",
+  },
   "feishu:write": {
     group: "Integrations",
     label: "Send Feishu messages and files",
@@ -104,11 +114,11 @@ export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
   },
   "phone:read": {
     group: "Integrations",
-    label: "Download AgentPhone files",
+    label: "Download phone files",
   },
   "phone:write": {
     group: "Integrations",
-    label: "Send AgentPhone messages and files",
+    label: "Send phone messages and files",
   },
   "telegram:read": {
     group: "Integrations",

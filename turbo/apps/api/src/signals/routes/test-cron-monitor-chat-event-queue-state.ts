@@ -1,3 +1,4 @@
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -8,10 +9,10 @@ import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
 import { command } from "ccstate";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import { request$ } from "../context/hono";
@@ -301,9 +302,14 @@ async function seedFixtureEvents(
       recentStaleEventCreatedAt(),
     );
     await tx
-      .update(chatThreads)
-      .set({ lastChatEventSeqId: 1 })
-      .where(eq(chatThreads.id, threadId));
+      .insert(chatEventSequences)
+      .values({ chatThreadId: threadId, lastSeqId: 1 })
+      .onConflictDoUpdate({
+        target: chatEventSequences.chatThreadId,
+        set: {
+          lastSeqId: sql`GREATEST(${chatEventSequences.lastSeqId}, ${1})`,
+        },
+      });
     return [sourceEvent];
   }
   const event =

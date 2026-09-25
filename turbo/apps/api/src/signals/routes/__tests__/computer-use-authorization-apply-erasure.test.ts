@@ -214,7 +214,17 @@ async function createAuthorizationRunFixture(options?: {
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  const { providerId } = await runs.ensureOrgModelProvider(actor);
+  // These Apply fixtures assert native-harness event and sequence boundaries.
+  await runs.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   const agent = await bdd.createAgent(owner, {
     displayName: `Computer Use Apply ${randomUUID().slice(0, 8)}`,
     visibility: "public",
@@ -1029,7 +1039,7 @@ describe("account erasure fences canonical Computer Use authorization Apply", ()
   );
 
   it(
-    "denies pre-admission and reselected thread-user changes",
+    "denies pre-admission and pre-lock thread-user changes",
     { timeout: 60_000 },
     async () => {
       const preAdmission = await createAuthorizationFixture();
@@ -1056,7 +1066,7 @@ describe("account erasure fences canonical Computer Use authorization Apply", ()
       await withComputerUseAuthorizationApplyBarrierFixture(
         {
           chatThreadId: reselected.threadId,
-          stopAt: "before-thread-pin",
+          stopAt: "before-agent-pin",
           work: async (barrier) => {
             const applying = operations.start(
               applyAuthorization(reselected, [404]),
@@ -1090,6 +1100,52 @@ describe("account erasure fences canonical Computer Use authorization Apply", ()
       await applyAuthorization(reselected, [200]);
       await expectApplied(reselected, reselectedBefore, appliedAt);
       expectOneInvalidation(reselected);
+    },
+  );
+
+  it(
+    "retains the thread owner from shared admission through Apply completion",
+    { timeout: CASE_TIMEOUT_MS },
+    async () => {
+      const fixture = await createAuthorizationFixture();
+      const before = await readApplyState(fixture);
+      const operations = ownSuccessfulOperations(context.signal);
+      const appliedAt = STARTED_AT_MS + 1000;
+      mockNow(appliedAt);
+      clearPublications();
+
+      await withComputerUseAuthorizationApplyBarrierFixture(
+        {
+          chatThreadId: fixture.threadId,
+          stopAt: "before-thread-pin",
+          work: async (barrier) => {
+            const applying = operations.start(
+              applyAuthorization(fixture, [200]),
+            );
+            await barrier.entered;
+            const moving = operations.start(
+              setChatThreadUserFixture({
+                chatThreadId: fixture.threadId,
+                userId: `user_${randomUUID()}`,
+              }),
+            );
+            await expect
+              .poll(barrier.blockedWaiterCount, BLOCKED)
+              .toBeGreaterThanOrEqual(1);
+            barrier.release();
+            await applying;
+            await moving;
+          },
+        },
+        context.signal,
+      );
+      await setChatThreadUserFixture({
+        chatThreadId: fixture.threadId,
+        userId: fixture.actor.userId,
+      });
+      await operations.finish();
+      await expectApplied(fixture, before, appliedAt);
+      expectOneInvalidation(fixture);
     },
   );
 

@@ -1,7 +1,7 @@
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";

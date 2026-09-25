@@ -15,6 +15,7 @@ import {
   Checkbox,
   SegmentControl,
   SegmentControlItem,
+  surfaceVariants,
   Select,
   SelectTrigger,
   SelectValue,
@@ -940,7 +941,7 @@ function HostCard({
         })
       : null;
   return (
-    <article className="grid gap-3 rounded-xl border bg-card p-5">
+    <article className={surfaceVariants({ className: "grid gap-3 p-5" })}>
       <h2 className="font-semibold">{connection.displayName}</h2>
       {needsRebind ? (
         <p
@@ -1169,7 +1170,7 @@ export function SshCredentials() {
         return (
           <article
             key={credential.id}
-            className="grid gap-3 rounded-xl border bg-card p-5"
+            className={surfaceVariants({ className: "grid gap-3 p-5" })}
           >
             <h2 className="font-semibold">{credential.name}</h2>
             <p className="text-sm">

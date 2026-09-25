@@ -8,7 +8,6 @@ import {
   RESUME_SESSION_HISTORY_MAX_BYTES,
   piApiFirstTurnManifestSchema,
 } from "@okouai/api-contracts/contracts/runners";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   PI_AGENT_RUNTIME_VERSION,
   PI_SESSION_CONSTRUCTION_DIGEST,
@@ -28,7 +27,6 @@ import {
   replacePiSessionHistoryJsonlFixture,
 } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { readThreadSessionConversation } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
@@ -38,7 +36,6 @@ import {
   API_FIRST_TURN_OWNERSHIP_BUDGET_MS,
   API_FIRST_TURN_COORDINATION_BUDGET_MS,
   GPT_PI_BDD_MODELS,
-  requireOrgId,
   totalChargedCredits,
   createGptUsagePricingResolution,
   createPiApiFirstTurnUsagePricingResolution,
@@ -824,17 +821,29 @@ describe("CHAT-02: model-first provider policies", () => {
   it.each(["gpt-5.6-terra", "deepseek-v4.1-flash"] as const)(
     "hands a %s resource failure to Sandbox without replaying a later credential failure",
     async (selectedModel) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup, providerId } =
+        await entitledChatActor();
       await publishPendingPiInstructions(actor, agentId);
       if (!actor.orgId) {
         throw new Error("Expected entitled chat actor to have an org");
       }
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
       await api.heartbeatRunner(runnerGroup);
+      // Keep the anchor claimable while the separate queued target proves Pi
+      // API-first resource-failure handoff.
+      await api.updateOrgModelPolicies(actor, [
+        {
+          model: "claude-fable-5-1",
+          isDefault: true,
+          defaultProviderType: "anthropic-api-key",
+          credentialScope: "org",
+          modelProviderId: providerId,
+        },
+      ]);
       const anchor = await sendChatRun(actor, {
         agentId,
         prompt: "hold the thread while the future Pi launch is queued",
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
       });
       await flushWaitUntilForTest();
       const anchorState = await api.readRun(actor, anchor.runId);
@@ -847,11 +856,7 @@ describe("CHAT-02: model-first provider policies", () => {
       expect(anchorClaim.claim.cliAgentType).toBe("claude-code");
 
       await configureBuiltInPiModel(actor, selectedModel);
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: actor.orgId },
-        { [FeatureSwitchKey.PiLoop]: true },
-      );
+
       mockPiResourceArchiveDownloads(true);
       let modelCalls = 0;
       server.use(
@@ -1093,10 +1098,20 @@ describe("CHAT-02: model-first provider policies", () => {
       runnerId: runnerIdentity.runnerId,
       group: runnerGroup,
     });
+    const { providerId } = await api.ensureOrgModelProvider(actor);
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-fable-5-1",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
     const anchor = await sendChatRun(actor, {
       agentId,
       prompt: "hold capacity for the resume transfer",
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
     });
     await flushWaitUntilForTest();
     const anchorState = await api.readRun(actor, anchor.runId);
@@ -1117,13 +1132,7 @@ describe("CHAT-02: model-first provider policies", () => {
       actor,
       "gpt-5.6-terra",
     );
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      {
-        [FeatureSwitchKey.PiLoop]: true,
-      },
-    );
+
     mockPiResourceArchiveDownloads();
     let modelCalls = 0;
     const modelRequests: unknown[] = [];
@@ -1280,11 +1289,7 @@ describe("CHAT-02: model-first provider policies", () => {
         throw new Error("Expected entitled chat actor to have an org");
       }
       await configureBuiltInPiModel(actor, "deepseek-v4-flash");
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: actor.orgId },
-        { [FeatureSwitchKey.PiLoop]: true },
-      );
+
       mockPiResourceArchiveDownloads();
       let modelCalls = 0;
       server.use(
@@ -1373,18 +1378,13 @@ describe("CHAT-02: model-first provider policies", () => {
     "keeps %s API-first and Sandbox usage as separate billable rows",
     async (selectedModel) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const orgId = requireOrgId(actor);
       const isDeepSeek =
         selectedModel === "deepseek-v4-flash" ||
         selectedModel === "deepseek-v4.1-flash";
       const usagePricingResolution =
         await createPiApiFirstTurnUsagePricingResolution(selectedModel);
       await configureBuiltInPiModel(actor, selectedModel);
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId },
-        { [FeatureSwitchKey.PiLoop]: true },
-      );
+
       mockPiResourceArchiveDownloads();
       const checkpointObjects = mockPiCheckpointObjectStore();
       let modelCalls = 0;

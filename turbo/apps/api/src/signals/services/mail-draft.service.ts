@@ -12,7 +12,7 @@ import {
 } from "@okouai/api-contracts/contracts/mail";
 import { connectorAuthMethodHasRequiredScopes } from "@okouai/connectors/connector-auth-method";
 import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { connectors } from "@okouai/db/schema/connector";
 import { mailDrafts } from "@okouai/db/schema/mail-draft";

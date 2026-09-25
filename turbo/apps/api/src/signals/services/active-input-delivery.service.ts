@@ -23,6 +23,14 @@ import { alias } from "drizzle-orm/pg-core";
 
 import type { Db } from "../external/db";
 import {
+  publishChatThreadMessageCreatedSafely,
+  publishThreadListChangedSafely,
+} from "../external/realtime";
+import { settle } from "../utils";
+import { nowDate } from "../../lib/time";
+import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
+import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-context.service";
+import {
   activeInputDeliveryPromptFitsControlPayload,
   activeInputRowsByIds,
   materializePendingActiveInputPrompts,
@@ -34,7 +42,7 @@ import {
 import { logTemplateUsage } from "../../lib/template-usage-log";
 import type { GenerationTemplateIdentity } from "@okouai/core/generation-template-identity";
 import { lockChatQueueThread } from "./chat-event-queue.service";
-import { replaceLoadedChatEvent } from "./chat-event.service";
+import { insertChatEvent, replaceLoadedChatEvent } from "./chat-event.service";
 import { lockPiApiFirstTurnLifecycle } from "./pi-api-first-turn-lifecycle.service";
 
 interface ActiveInputDeliveryScope {
@@ -193,16 +201,26 @@ async function prepareReservation(
   if (!row) {
     return { kind: "empty" };
   }
-  const prompts = await materializePendingActiveInputPrompts(
-    db,
-    rows,
-    scope,
+  const prepared = await settle(
+    materializePendingActiveInputPrompts(db, rows, scope, signal),
     signal,
   );
-  if (!prompts) {
+  if (!prepared.ok) {
+    if (!(prepared.error instanceof DiscordQueuedLaunchUnavailableError)) {
+      throw prepared.error;
+    }
+    await rejectUnavailableDiscordActiveInput(
+      db,
+      scope,
+      { sourceEventId: row.id },
+      signal,
+    );
+    return { kind: "empty" };
+  }
+  if (!prepared.value) {
     throw new Error("Pending active input cannot be materialized");
   }
-  const materialized = materializedPrompt(row, prompts);
+  const materialized = materializedPrompt(row, prepared.value);
   const deliveryId = randomUUID();
   if (
     !activeInputDeliveryPromptFitsControlPayload(
@@ -475,11 +493,22 @@ async function reserveActiveInputDeliveryForOwner(
       };
     }
     if (result.outcome === "retrieve") {
+      const prompt = await settle(
+        materializeDelivery(db, scope, result, signal),
+        signal,
+      );
+      if (!prompt.ok) {
+        if (!(prompt.error instanceof DiscordQueuedLaunchUnavailableError)) {
+          throw prompt.error;
+        }
+        await rejectUnavailableDiscordActiveInput(db, scope, result, signal);
+        return { outcome: "empty" };
+      }
       return {
         outcome: "reserved",
         deliveryId: result.deliveryId,
         sourceEventId: result.sourceEventId,
-        prompt: await materializeDelivery(db, scope, result, signal),
+        prompt: prompt.value,
       };
     }
     return result;
@@ -843,6 +872,102 @@ async function settleOpenActiveInputDeliveryAsUndelivered(
     finalized: true,
     chatEventsAppended: budgetEventIds.length > 0,
   };
+}
+
+/** Revoke an undelivered Discord follow-up when its current binding is gone. */
+async function rejectUnavailableDiscordActiveInput(
+  db: Db,
+  scope: ActiveInputDeliveryScope,
+  source: { readonly sourceEventId: string; readonly deliveryId?: string },
+  signal: AbortSignal,
+): Promise<void> {
+  const rejected = await db.transaction(async (tx) => {
+    await lockPiApiFirstTurnLifecycle(tx, scope.runId);
+    if (!(await lockChatQueueThread(tx, scope.chatThreadId))) {
+      return false;
+    }
+    if (source.deliveryId !== undefined) {
+      const delivery = await lockActiveInputDeliveryReceipt(
+        tx,
+        scope,
+        source.deliveryId,
+      );
+      if (!delivery || delivery.status === "settled") {
+        return false;
+      }
+      if (
+        delivery.items.length !== 1 ||
+        delivery.items[0]?.sourceEventId !== source.sourceEventId
+      ) {
+        throw new Error(
+          "Unavailable Discord active input has invalid membership",
+        );
+      }
+      await settleOpenActiveInputDeliveryAsUndelivered(
+        tx,
+        scope,
+        source.deliveryId,
+        delivery.items,
+      );
+    }
+    const [pending] = await pendingActiveInputRows(
+      tx,
+      scope.chatThreadId,
+      scope.runId,
+      [source.sourceEventId],
+    ).for("update");
+    if (!pending) {
+      return false;
+    }
+    if (pending.contextType !== "discord" || !pending.userMessage) {
+      throw new Error("Unavailable Discord active input has invalid context");
+    }
+    const rejectedInput = await replaceLoadedChatEvent(
+      tx,
+      activeInputReplacementTarget(pending),
+      {
+        chatThreadId: scope.chatThreadId,
+        eventType: "input.rejected",
+        userMessage: pending.userMessage,
+        runId: null,
+        error: "discord_access_revoked",
+      },
+    );
+    if (!rejectedInput) {
+      return false;
+    }
+    const error = await insertChatEvent(tx, {
+      chatThreadId: scope.chatThreadId,
+      eventType: "output.error",
+      content: new DiscordQueuedLaunchUnavailableError().message,
+      runId: null,
+      error: "discord_access_revoked",
+      createdAt: new Date(
+        Math.max(nowDate().getTime(), rejectedInput.createdAt.getTime() + 1),
+      ),
+    });
+    if (!error) {
+      throw new Error(
+        "Unavailable Discord active input rejection was not appended",
+      );
+    }
+    await touchChatThreadLastMessageAt(tx, scope.chatThreadId, error.createdAt);
+    return true;
+  });
+  signal.throwIfAborted();
+  if (rejected) {
+    await publishChatThreadMessageCreatedSafely({
+      userId: scope.userId,
+      orgId: scope.orgId,
+      threadId: scope.chatThreadId,
+    });
+    signal.throwIfAborted();
+    await publishThreadListChangedSafely({
+      userId: scope.userId,
+      orgId: scope.orgId,
+    });
+    signal.throwIfAborted();
+  }
 }
 
 async function expirePendingActiveInputBudgetEvents(

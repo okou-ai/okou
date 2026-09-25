@@ -69,10 +69,22 @@ describe("home task recommendation cache recovery", () => {
   };
 
   it("resets a pre-purpose cache on GET and regenerates it on the next cron", async () => {
-    const { actor, agentId, runnerGroup } = await fixture.entitledChatActor();
+    const { actor, agentId, runnerGroup, providerId } =
+      await fixture.entitledChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped actor");
     }
+    // This cache fixture needs a claimable native Runner run to publish its
+    // checkpoint; the default Sonnet route now runs through Pi API-first.
+    await fixture.api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-fable-5-1",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
     const thread = await fixture.chat.createThread(actor, {
       agentId,
       title: "Follow-up",
@@ -80,6 +92,7 @@ describe("home task recommendation cache recovery", () => {
     const run = await fixture.sendChatRun(actor, {
       agentId,
       threadId: thread.id,
+      model: "claude-fable-5-1",
       prompt: "Prepare the customer follow-up for review.",
     });
     const claim = await fixture.claimChatRun(runnerGroup, run.runId);

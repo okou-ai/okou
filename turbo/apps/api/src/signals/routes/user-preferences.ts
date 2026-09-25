@@ -2,13 +2,9 @@ import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { DEFAULT_USER_TIMEZONE, isValidTimeZone } from "@okouai/core/timezone";
 import { and, eq } from "drizzle-orm";
 import { writeDb$, type Db } from "../external/db";
-import {
-  publishMorningBriefChangedSafely,
-  publishUserPreferenceChangedForUserSafely,
-} from "../external/realtime";
+import { publishUserPreferenceChangedForUserSafely } from "../external/realtime";
 import { command, computed } from "ccstate";
 import {
-  DEFAULT_USER_LOCALE,
   USER_PREFERENCES_UNINITIALIZED,
   userLocaleSchema,
   userPreferencesContract,
@@ -161,7 +157,7 @@ async function fillMissingUserPreferenceFields(
   existing:
     | Pick<typeof orgMembersMetadata.$inferSelect, "timezone" | "locale">
     | undefined,
-  requested: { readonly timezone?: string; readonly locale?: UserLocale },
+  requested: { readonly timezone?: string; readonly locale: UserLocale },
 ): Promise<
   | {
       readonly kind: "unchanged";
@@ -188,9 +184,7 @@ async function fillMissingUserPreferenceFields(
     !existingTimezone || !isValidTimeZone(existingTimezone);
   const localeMissing = !isValidUserLocale(existingLocale);
   const timezone = requested.timezone ?? DEFAULT_USER_TIMEZONE;
-  // Old App -> new API: timezone-only initialize omits locale. Reassess the
-  // optional request after the client-version floor excludes that App; #36270.
-  const locale = requested.locale ?? DEFAULT_USER_LOCALE;
+  const locale = requested.locale;
   if (!isValidTimeZone(timezone)) {
     return { kind: "invalid-timezone" };
   }
@@ -280,7 +274,6 @@ const initializeUserPreferencesInner$ = command(
     } else {
       L.info("Morning Brief initialization outcome", details);
     }
-    await publishMorningBriefChangedSafely(identity);
     signal.throwIfAborted();
     const [stored] = await db
       .select({

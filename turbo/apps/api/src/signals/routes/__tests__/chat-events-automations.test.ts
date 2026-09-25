@@ -49,7 +49,6 @@ const {
   api,
   chat,
   webhooks,
-  authDeviceSupport,
   runStateStore,
   entitledChatActor,
   seedBuiltInModelKey,
@@ -121,17 +120,34 @@ async function extractOwnedThreadPiMemory(
   mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
   await updateFeatureSwitchesForUser(context, scope, {
     [FeatureSwitchKey.PiMemory]: false,
-    [FeatureSwitchKey.PiLoop]: false,
   });
+  // The anchor must hold the only concurrency slot: Astra stays on the native
+  // Runner and remains pending, while a Terra anchor would finish API-first.
+  await seedBuiltInModelKey("gpt-6-astra");
+  await api.updateOrgModelPolicies(actor, [
+    {
+      model: "gpt-5.6-terra",
+      isDefault: true,
+      defaultProviderType: "built-in",
+      credentialScope: "org",
+      modelProviderId: null,
+    },
+    {
+      model: "gpt-6-astra",
+      isDefault: false,
+      defaultProviderType: "built-in",
+      credentialScope: "org",
+      modelProviderId: null,
+    },
+  ]);
   const anchor = await sendChatRun(actor, {
     agentId,
     prompt: "hold daily startup admission",
-    model: "gpt-5.6-terra",
+    model: "gpt-6-astra",
   });
   await flushWaitUntilForTest();
   await updateFeatureSwitchesForUser(context, scope, {
     [FeatureSwitchKey.PiMemory]: true,
-    [FeatureSwitchKey.PiLoop]: true,
   });
   const startup = await sendChatRun(actor, {
     agentId,
@@ -187,10 +203,8 @@ describe("thread-bound Pi Automation and Goal execution", () => {
   )(
     "rotates the $source $selectedModel Automation session into Pi and learns only from its user turns",
     async ({ source, selectedModel }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor(
-        {},
-        source === "event" ? "team" : "pro",
-      );
+      const { actor, agentId, runnerGroup, providerId } =
+        await entitledChatActor({}, source === "event" ? "team" : "pro");
       const orgId = requireOrgId(actor);
       const usagePricingResolution =
         await createPiApiFirstTurnUsagePricingResolution(selectedModel);
@@ -200,15 +214,28 @@ describe("thread-bound Pi Automation and Goal execution", () => {
         name: `pi-source-${source}`,
       });
       if (source === "schedule") {
-        await configureBuiltInPiModel(actor, selectedModel);
+        await seedBuiltInModelKey("gpt-6-astra");
+        await api.updateOrgModelPolicies(actor, [
+          {
+            model: "gpt-6-astra",
+            isDefault: true,
+            defaultProviderType: "built-in",
+            credentialScope: "org",
+            modelProviderId: null,
+          },
+        ]);
+      } else {
+        await api.updateOrgModelPolicies(actor, [
+          {
+            model: "claude-fable-5-1",
+            isDefault: true,
+            defaultProviderType: "anthropic-api-key",
+            credentialScope: "org",
+            modelProviderId: providerId,
+          },
+        ]);
       }
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId },
-        {
-          [FeatureSwitchKey.PiLoop]: false,
-        },
-      );
+
       const created = await accept(
         threadPiAutomationsClient().create({
           headers: sessionHeaders(actor),
@@ -276,7 +303,6 @@ describe("thread-bound Pi Automation and Goal execution", () => {
         context,
         { ...actor, orgId },
         {
-          [FeatureSwitchKey.PiLoop]: true,
           [FeatureSwitchKey.PiMemory]: true,
         },
       );
@@ -478,10 +504,18 @@ describe("thread-bound Pi Automation and Goal execution", () => {
 describe("CHAT effort: automation launches", () => {
   async function startAutomation() {
     const scenario = await entitledChatActor({}, "pro");
-    const { actor, agentId, runnerGroup } = scenario;
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PiLoop]: false,
-    });
+    const { actor, agentId, runnerGroup, providerId } = scenario;
+    // Fable keeps the automation on the native Runner claim protocol; the
+    // Sonnet fixture default would run through Pi API-first instead.
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-fable-5-1",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
     const workflowId = await createWorkflowsBddApi(context).createWorkflow(
       actor,
       { agentId, name: "native-effort" },
@@ -504,9 +538,8 @@ describe("CHAT effort: automation launches", () => {
     const threadId = started.body.chatThreadId;
     const runId = await lastThreadPiAutomationRun(actor, threadId);
     const claimed = await claimChatRun(runnerGroup, runId);
-    expect(claimed.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
-      "high",
-    );
+    // No saved thread effort yet: the launch uses Fable's route default.
+    expect(claimed.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe("max");
     return {
       ...scenario,
       threadId,
@@ -519,7 +552,7 @@ describe("CHAT effort: automation launches", () => {
   it("uses the latest thread effort for a queued automation", async () => {
     const { actor, runnerGroup, threadId, runId, claimed, automationId } =
       await startAutomation();
-    await chat.updateThreadModelSelection(actor, threadId, "claude-sonnet-5", {
+    await chat.updateThreadModelSelection(actor, threadId, "claude-fable-5-1", {
       reasoningEffort: "extra",
     });
     const queued = await accept(
@@ -530,7 +563,7 @@ describe("CHAT effort: automation launches", () => {
       [201],
     );
     expect(queued.body.runId).toBeNull();
-    await chat.updateThreadModelSelection(actor, threadId, "claude-sonnet-5", {
+    await chat.updateThreadModelSelection(actor, threadId, "claude-fable-5-1", {
       reasoningEffort: "high",
     });
     await completeChatRunOk(runId, claimed.sandboxHeaders, {
@@ -544,7 +577,7 @@ describe("CHAT effort: automation launches", () => {
     await expect(
       chat.readThreadMetadata(actor, threadId),
     ).resolves.toMatchObject({
-      modelSettings: { "claude-sonnet-5": { effort: "high" } },
+      modelSettings: { "claude-fable-5-1": { effort: "high" } },
     });
     await cancelChatRun(actor, nextRunId, next.sandboxHeaders);
   }, 90_000);
@@ -558,11 +591,11 @@ describe("CHAT effort: automation launches", () => {
     await flushWaitUntilForTest();
     for (const route of [
       {
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         effort: "ultracode",
         pi: false,
         providerType: "anthropic-api-key",
-        effectiveEffort: "high",
+        effectiveEffort: "max",
       },
       {
         model: "gpt-5.6-sol",
@@ -585,9 +618,6 @@ describe("CHAT effort: automation launches", () => {
           modelProviderId: providerId,
         },
       ]);
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: route.pi,
-      });
       await chat.updateThreadModelSelection(actor, threadId, route.model, {
         reasoningEffort: route.effort,
       });

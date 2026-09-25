@@ -15,21 +15,18 @@ describe("DeepSeek Pi admission", () => {
   ] as const)(
     "keeps V4.1 policy for %s via %s",
     (modelProviderType, runtimeProviderType, supported) => {
-      for (const piEnabled of [false, true]) {
-        expect(
-          isPiExecutionRoute({
-            selectedModel: "deepseek-v4.1-flash",
-            modelProviderType,
-            runtimeProviderType,
-            piEnabled,
-            codexServiceTier: undefined,
-          }),
-        ).toBe(piEnabled && supported);
-      }
+      expect(
+        isPiExecutionRoute({
+          selectedModel: "deepseek-v4.1-flash",
+          modelProviderType,
+          runtimeProviderType,
+          codexServiceTier: undefined,
+        }),
+      ).toBe(supported);
     },
   );
 
-  it.each(["deepseek-v4-flash", "deepseek-v4-pro"] as const)(
+  it.each(["deepseek-v4-flash"] as const)(
     "preserves existing routes for %s",
     (selectedModel) => {
       for (const modelProviderType of [
@@ -43,7 +40,6 @@ describe("DeepSeek Pi admission", () => {
             selectedModel,
             modelProviderType,
             runtimeProviderType: "deepseek",
-            piEnabled: true,
             codexServiceTier: undefined,
           }),
         ).toBe(true);
@@ -59,7 +55,6 @@ describe("DeepSeek Pi admission", () => {
           selectedModel,
           modelProviderType: "built-in",
           runtimeProviderType: "deepseek",
-          piEnabled: true,
           codexServiceTier: undefined,
         }),
       ).toBe(false);
@@ -76,7 +71,6 @@ describe("Okou preset Pi admission", () => {
           selectedModel,
           modelProviderType: "built-in",
           runtimeProviderType: "openrouter-codex",
-          piEnabled: true,
           codexServiceTier: undefined,
         }),
       ).toBe(true);
@@ -101,7 +95,6 @@ describe("Okou preset Pi admission", () => {
           isPiExecutionRoute({
             selectedModel,
             ...rejected,
-            piEnabled: true,
           }),
         ).toBe(false);
       }

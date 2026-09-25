@@ -43,9 +43,10 @@ const {
   authDevice,
   authDeviceSupport,
   entitledChatActor,
+  entitledNativeChatActor,
   configureOrganizationGptModel,
   configureSubscriptionPiModel,
-  configureBuiltInPiModel,
+  seedBuiltInModelKey,
   sendChatRun,
   expectThreadCreatedModelEvent,
   expectNoThreadModelUpdateEvent,
@@ -139,7 +140,9 @@ function settledSubscriptionToolHistory(h1: string): string {
 
 describe("CHAT-02: run-level model overrides", () => {
   it("describes raw chat history sync by default", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    // This checks the appended prompt, not API-first model execution. Keep the
+    // run claimable by the native Runner until the test cancels it.
+    const { actor, agentId } = await entitledNativeChatActor();
 
     const run = await sendChatRun(actor, {
       agentId,
@@ -161,23 +164,32 @@ describe("CHAT-02: run-level model overrides", () => {
   }, 60_000);
 
   it("uses send model overrides without mutating the thread model while preserving same-family sessions", async () => {
-    const { actor, agentId, runnerGroup, providerId } =
-      await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
+    // Claude subscription credentials stay on the native Claude Code harness
+    // for every Claude model, so a same-family override keeps the CLI session.
+    await misc.upsertPersonalModelProvider(
+      actor,
+      {
+        type: "claude-code-oauth-token",
+        secret: "send-override-claude-oauth-token",
+      },
+      [200, 201],
+    );
     await chatCallbacks.updateOrgModelPolicies(actor, [
       {
-        model: "claude-opus-4-8",
+        model: "claude-opus-5",
         isDefault: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
+        defaultProviderType: "claude-code-oauth-token",
+        credentialScope: "member",
+        modelProviderId: null,
       },
       {
         model: "claude-sonnet-5",
         isDefault: false,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
+        defaultProviderType: "claude-code-oauth-token",
+        credentialScope: "member",
+        modelProviderId: null,
       },
     ]);
 
@@ -185,11 +197,11 @@ describe("CHAT-02: run-level model overrides", () => {
     const first = await sendChatRun(actor, {
       agentId,
       prompt: firstPrompt,
-      model: "claude-opus-4-8",
+      model: "claude-opus-5",
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
     expect(claimEnvironment(firstClaim.claim).ANTHROPIC_MODEL).toBe(
-      "claude-opus-4-8",
+      "claude-opus-5",
     );
     chatCallbacks.mockChatOutputEvents([assistantEvent(0, "opus answer")]);
     await completeChatRunOk(first.runId, firstClaim.sandboxHeaders, {
@@ -201,11 +213,7 @@ describe("CHAT-02: run-level model overrides", () => {
         return message.content === "opus answer";
       });
     });
-    await expectThreadCreatedModelEvent(
-      actor,
-      first.threadId,
-      "claude-opus-4-8",
-    );
+    await expectThreadCreatedModelEvent(actor, first.threadId, "claude-opus-5");
     expect(
       (await api.readRun(actor, first.runId)).result?.agentSessionId,
     ).toMatch(/[0-9a-f-]{36}/);
@@ -255,7 +263,7 @@ describe("CHAT-02: run-level model overrides", () => {
       `bdd-cli-${second.runId}`,
     );
     expect(claimEnvironment(thirdClaim.claim).ANTHROPIC_MODEL).toBe(
-      "claude-opus-4-8",
+      "claude-opus-5",
     );
     await cancelChatRun(actor, third.runId);
   }, 90_000);
@@ -278,12 +286,12 @@ describe("CHAT-02: run-level model overrides", () => {
       model: "claude-sonnet-5",
     });
 
-    const { accountSourceId } = await configureSubscriptionPiModel(
-      actor,
-      { accountId: "personal-default-fallback-account" },
-      "gpt-5.6-terra",
-    );
-    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    const { accountSourceId } = await configureSubscriptionPiModel(actor, {
+      accountId: "personal-default-fallback-account",
+    });
+    // Astra keeps the fallback run on the native Codex harness, so the receipt
+    // observes only send admission rather than a concurrent Pi API-first turn.
+    await seedBuiltInModelKey("gpt-6-astra");
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-sonnet-5",
@@ -293,7 +301,7 @@ describe("CHAT-02: run-level model overrides", () => {
         modelProviderId: providerId,
       },
       {
-        model: "gpt-5.6-terra",
+        model: "gpt-6-astra",
         isDefault: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
@@ -301,9 +309,6 @@ describe("CHAT-02: run-level model overrides", () => {
       },
     ]);
     await misc.deleteOrgModelProvider(actor, "anthropic-api-key", [204]);
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PiLoop]: false,
-    });
 
     const captured = await withModelRoutingQueryReceipt(() => {
       return sendChatRun(actor, {
@@ -322,13 +327,13 @@ describe("CHAT-02: run-level model overrides", () => {
       modelProvider: "codex-oauth-token",
       modelProviderCredentialScope: "member",
       modelProviderId: accountSourceId,
-      selectedModel: "gpt-5.6-terra",
+      selectedModel: "gpt-6-astra",
       creditAdmitted: false,
       builtInModelKeyId: null,
     });
     await expect(
       chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({ selectedModel: "gpt-5.6-terra" });
+    ).resolves.toMatchObject({ selectedModel: "gpt-6-astra" });
     await cancelChatRun(actor, followUp.runId);
   }, 90_000);
 
@@ -392,7 +397,6 @@ describe("CHAT-02: run-level model overrides", () => {
       }
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PersonalModelProviderAccounts]: false,
-        [FeatureSwitchKey.PiLoop]: true,
       });
 
       mockPiResourceArchiveDownloads();
@@ -754,7 +758,6 @@ describe("CHAT-02: run-level model overrides", () => {
       const refreshToken = `rt_${scenario.failureReason}_high_entropy`;
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-        [FeatureSwitchKey.PiLoop]: true,
       });
       if (scenario.organizationApi) {
         mockCodexDeviceAuthProvider({

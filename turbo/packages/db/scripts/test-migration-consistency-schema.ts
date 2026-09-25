@@ -41,8 +41,11 @@ import { validateOfficialAutomationResultEmailSchema } from "./test-official-aut
 import { validatePermanentBuiltInModelCooldownState } from "./test-built-in-model-cooldown-permanent";
 import { validatePermanentBuiltInModelKeyState } from "./test-built-in-model-keys-permanent";
 import { validatePermanentSlackPublicBrandState } from "./test-slack-public-brand-permanent";
+import { validatePermanentDiscordFoundation } from "./test-discord-foundation-permanent";
+import { validatePermanentDiscordChat } from "./test-discord-chat-permanent";
 import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitlement-permanent";
 import { validateGpt55Retirement } from "./test-gpt-55-retirement";
+import { validateSonnet46Opus48DeepSeekV4ProRetirement } from "./test-sonnet-46-opus-48-deepseek-v4-pro-retirement";
 import { validateXResourceUsageSchema } from "./test-x-resource-usage";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -232,6 +235,69 @@ async function validateExpandedBrowserSchema(dbUrl: string): Promise<void> {
   }
 }
 
+async function validateCanonicalBillingSources(dbUrl: string): Promise<void> {
+  const client = new Client({ connectionString: dbUrl });
+  await client.connect();
+  await client.query("BEGIN");
+
+  try {
+    const sourceConstraint = await client.query<{ validated: boolean }>(`
+      SELECT convalidated AS validated FROM pg_constraint
+      WHERE conrelid = 'public.billing_run_attribution'::regclass
+        AND conname = 'billing_run_attribution_source_check'
+    `);
+    assert.deepEqual(sourceConstraint.rows, [{ validated: true }]);
+    const sources = await client.query<{
+      triggerSource: string | null;
+      source: string;
+    }>(`
+      SELECT trigger_source AS "triggerSource",
+        billing_usage_source(trigger_source) AS source
+      FROM unnest(ARRAY[
+        'web', 'automation-schedule', 'automation-event', 'goal',
+        'slack', 'discord', 'teams', 'telegram', 'email', 'agentphone',
+        'github', 'agent', 'unsupported', NULL
+      ]::text[]) WITH ORDINALITY AS inputs(trigger_source, position)
+      ORDER BY position
+    `);
+    assert.deepEqual(sources.rows, [
+      { triggerSource: "web", source: "chat" },
+      { triggerSource: "automation-schedule", source: "automation" },
+      { triggerSource: "automation-event", source: "automation" },
+      { triggerSource: "goal", source: "automation" },
+      { triggerSource: "slack", source: "slack" },
+      { triggerSource: "discord", source: "discord" },
+      { triggerSource: "teams", source: "teams" },
+      { triggerSource: "telegram", source: "telegram" },
+      { triggerSource: "email", source: "email" },
+      { triggerSource: "agentphone", source: "agentphone" },
+      { triggerSource: "github", source: "github" },
+      { triggerSource: "agent", source: "agent" },
+      { triggerSource: "unsupported", source: "other" },
+      { triggerSource: null, source: "other" },
+    ]);
+
+    await client.query(`
+      SELECT ensure_billing_run_attribution(
+        '3ae9c61f-3d08-4a8b-9810-3c627ed746de',
+        'discord-source-validation-org', 'discord-source-validation-user',
+        '2026-09-24 00:00:00'::timestamp, billing_usage_source('discord')
+      )
+    `);
+    const attribution = await client.query<{ source: string }>(`
+      SELECT source FROM billing_run_attribution
+      WHERE run_id = '3ae9c61f-3d08-4a8b-9810-3c627ed746de'
+    `);
+    assert.deepEqual(attribution.rows, [{ source: "discord" }]);
+    console.log(
+      "   ✅ Discord billing capture preserves existing source mappings\n",
+    );
+  } finally {
+    await client.query("ROLLBACK");
+    await client.end();
+  }
+}
+
 function databaseErrorCode(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null || !("code" in error)) {
     return undefined;
@@ -245,10 +311,9 @@ async function validateCanonicalChatMessageStorage(
 ): Promise<void> {
   const sequenceReservation = await client.query<{ lastSeqId: string }>(
     `
-      UPDATE "chat_threads"
-      SET "last_chat_event_seq_id" = "last_chat_event_seq_id" + 2
-      WHERE "id" = $1
-      RETURNING "last_chat_event_seq_id" AS "lastSeqId"
+      INSERT INTO "chat_event_sequences" ("chat_thread_id", "last_seq_id") VALUES ($1, 2)
+      ON CONFLICT ("chat_thread_id") DO UPDATE SET "last_seq_id" = "chat_event_sequences"."last_seq_id" + 2
+      RETURNING "last_seq_id" AS "lastSeqId"
     `,
     [threadId],
   );
@@ -326,9 +391,9 @@ async function validateCanonicalChatMessageStorage(
 
   const sequenceState = await client.query<{ lastSeqId: string }>(
     `
-      SELECT "last_chat_event_seq_id" AS "lastSeqId"
-      FROM "chat_threads"
-      WHERE "id" = $1
+      SELECT "last_seq_id" AS "lastSeqId"
+      FROM "chat_event_sequences"
+      WHERE "chat_thread_id" = $1
     `,
     [threadId],
   );
@@ -515,6 +580,12 @@ async function validateChatEventContextPointerConstraints(
   const threadId = "00000000-0000-4000-8000-000000074502";
 
   try {
+    const contextConstraint = await client.query<{ validated: boolean }>(`
+      SELECT convalidated AS validated FROM pg_constraint
+      WHERE conrelid = 'public.chat_events'::regclass
+        AND conname = 'chat_events_context_type_check'
+    `);
+    assert.deepEqual(contextConstraint.rows, [{ validated: true }]);
     await client.query(
       `
         INSERT INTO "agents" ("id", "org_id", "owner", "name")
@@ -529,18 +600,21 @@ async function validateChatEventContextPointerConstraints(
           "id",
           "user_id",
           "agent_id",
-          "last_chat_event_seq_id",
           "title"
         )
         VALUES (
           $1,
           'context-pointer-test-user',
           $2,
-          2,
           'context pointer test'
         )
       `,
       [threadId, agentId],
+    );
+
+    await client.query(
+      "INSERT INTO chat_event_sequences(chat_thread_id, last_seq_id) VALUES($1, 2)",
+      [threadId],
     );
 
     const accepted = await client.query<{
@@ -593,6 +667,15 @@ async function validateChatEventContextPointerConstraints(
             NULL,
             '{"userMessage":{"version":1,"parts":[{"type":"text","text":"rejected input"}]}}'::jsonb,
             4
+          ),
+          (
+            '00000000-0000-4000-8000-000000074517',
+            $1,
+            'input.prompt',
+            'discord',
+            '00000000-0000-4000-8000-000000074506',
+            '{"userMessage":{"version":1,"parts":[{"type":"text","text":"Discord input"},{"type":"source","kind":"discord"}]}}'::jsonb,
+            6
           )
         RETURNING
           "context_type" AS "contextType",
@@ -608,6 +691,10 @@ async function validateChatEventContextPointerConstraints(
       },
       { contextId: null, contextType: "web" },
       { contextId: null, contextType: null },
+      {
+        contextId: "00000000-0000-4000-8000-000000074506",
+        contextType: "discord",
+      },
     ]);
 
     await expectDatabaseError(client, {
@@ -647,7 +734,7 @@ async function validateChatEventContextPointerConstraints(
           '00000000-0000-4000-8000-000000074514',
           $1,
           'output.message',
-          'discord',
+          'unsupported',
           '00000000-0000-4000-8000-000000074505',
           3
         )
@@ -721,7 +808,38 @@ async function restoreMigrations(): Promise<void> {
   await fs.rm(BACKUP_DIR, { recursive: true, force: true });
 }
 
-async function addPgVectorExtensionPreludeToGeneratedMigrations(): Promise<void> {
+type ExtensionPrelude = {
+  readonly extension: string;
+  readonly label: string;
+  readonly usesExtension: (sql: string) => boolean;
+};
+
+// drizzle-kit does not emit CREATE EXTENSION, so a freshly generated chain
+// needs the extensions that shipped migrations create explicitly.
+const GENERATED_MIGRATION_EXTENSION_PRELUDES: readonly ExtensionPrelude[] = [
+  {
+    extension: "vector",
+    label: "pgvector",
+    usesExtension: (sql) => {
+      return (
+        /\bvector\s*\(/i.test(sql) ||
+        /\bvector_cosine_ops\b/i.test(sql) ||
+        /\bUSING\s+hnsw\b/i.test(sql)
+      );
+    },
+  },
+  {
+    extension: "btree_gin",
+    label: "btree_gin",
+    // Multi-column GIN indexes over scalar columns need btree_gin operator
+    // classes.
+    usesExtension: (sql) => {
+      return /\bUSING\s+gin\s*\(\s*"[^"]+"\s*,/i.test(sql);
+    },
+  },
+];
+
+async function addExtensionPreludesToGeneratedMigrations(): Promise<void> {
   const sqlFiles = (await fs.readdir(MIGRATIONS_DIR))
     .filter((file) => {
       return file.endsWith(".sql");
@@ -737,43 +855,34 @@ async function addPgVectorExtensionPreludeToGeneratedMigrations(): Promise<void>
     }),
   );
 
-  const usesPgVector = sqlByFile.some(({ sql }) => {
-    return (
-      /\bvector\s*\(/i.test(sql) ||
-      /\bvector_cosine_ops\b/i.test(sql) ||
-      /\bUSING\s+hnsw\b/i.test(sql)
+  for (const prelude of GENERATED_MIGRATION_EXTENSION_PRELUDES) {
+    const createExtension = new RegExp(
+      `CREATE\\s+EXTENSION\\s+(IF\\s+NOT\\s+EXISTS\\s+)?"?${prelude.extension}"?`,
+      "i",
     );
-  });
-  if (!usesPgVector) {
-    return;
-  }
+    const hasExtension = sqlByFile.some(({ sql }) => {
+      return createExtension.test(sql);
+    });
+    if (hasExtension) {
+      continue;
+    }
 
-  const hasPgVectorExtension = sqlByFile.some(({ sql }) => {
-    return /CREATE\s+EXTENSION\s+(IF\s+NOT\s+EXISTS\s+)?"?vector"?/i.test(sql);
-  });
-  if (hasPgVectorExtension) {
-    return;
-  }
+    const firstMigration = sqlByFile.find(({ sql }) => {
+      return prelude.usesExtension(sql);
+    });
+    if (!firstMigration) {
+      continue;
+    }
 
-  const firstPgVectorMigration = sqlByFile.find(({ sql }) => {
-    return (
-      /\bvector\s*\(/i.test(sql) ||
-      /\bvector_cosine_ops\b/i.test(sql) ||
-      /\bUSING\s+hnsw\b/i.test(sql)
+    firstMigration.sql = `CREATE EXTENSION IF NOT EXISTS ${prelude.extension};--> statement-breakpoint\n${firstMigration.sql}`;
+    await fs.writeFile(
+      path.join(MIGRATIONS_DIR, firstMigration.file),
+      firstMigration.sql,
     );
-  });
-  if (!firstPgVectorMigration) {
-    return;
+    console.log(
+      `   Added ${prelude.label} extension prelude to generated migration ${firstMigration.file}`,
+    );
   }
-
-  const migrationPath = path.join(MIGRATIONS_DIR, firstPgVectorMigration.file);
-  await fs.writeFile(
-    migrationPath,
-    `CREATE EXTENSION IF NOT EXISTS vector;--> statement-breakpoint\n${firstPgVectorMigration.sql}`,
-  );
-  console.log(
-    `   Added pgvector extension prelude to generated migration ${firstPgVectorMigration.file}`,
-  );
 }
 
 async function generateFreshMigrations(): Promise<void> {
@@ -785,7 +894,7 @@ async function generateFreshMigrations(): Promise<void> {
 
   // Generate new migrations (non-interactive)
   execCommand("pnpm drizzle-kit generate", { cwd: PACKAGE_DIR });
-  await addPgVectorExtensionPreludeToGeneratedMigrations();
+  await addExtensionPreludesToGeneratedMigrations();
 }
 
 async function validateSnapshotFiles(): Promise<void> {
@@ -1257,6 +1366,20 @@ type PermanentFunction = {
 const EXPECTED_PERMANENT_TRIGGERS = [
   {
     definition:
+      "CREATE TRIGGER bridge_chat_event_sequence_allocation BEFORE UPDATE OF last_chat_event_seq_id ON public.chat_threads FOR EACH ROW EXECUTE FUNCTION bridge_chat_event_sequence_allocation()",
+    schemaName: "public",
+    tableName: "chat_threads",
+    triggerName: "bridge_chat_event_sequence_allocation",
+  },
+  {
+    definition:
+      "CREATE TRIGGER preserve_chat_event_write_activation BEFORE DELETE OR UPDATE ON public.chat_event_write_control FOR EACH ROW EXECUTE FUNCTION preserve_chat_event_write_activation()",
+    schemaName: "public",
+    tableName: "chat_event_write_control",
+    triggerName: "preserve_chat_event_write_activation",
+  },
+  {
+    definition:
       "CREATE TRIGGER capture_billing_run_attribution BEFORE INSERT ON public.agent_runs FOR EACH ROW EXECUTE FUNCTION capture_billing_run_attribution()",
     schemaName: "public",
     tableName: "agent_runs",
@@ -1322,7 +1445,21 @@ const EXPECTED_PERMANENT_TRIGGERS = [
 
 const EXPECTED_PERMANENT_FUNCTIONS = [
   {
-    bodyHash: "8838fc6fbf2d02e7ca8294efda788e90",
+    bodyHash: "1fa222f5cedf2d5f5899fcbd5605e860",
+    functionName: "bridge_chat_event_sequence_allocation",
+    identityArguments: "",
+    kind: "f",
+    schemaName: "public",
+  },
+  {
+    bodyHash: "0d37e98a01767d7416f0ae9e69f1311b",
+    functionName: "preserve_chat_event_write_activation",
+    identityArguments: "",
+    kind: "f",
+    schemaName: "public",
+  },
+  {
+    bodyHash: "31c9604bf9c9306578d884bc8aa9e5ce",
     functionName: "billing_usage_source",
     identityArguments: "trigger_source text",
     kind: "f",
@@ -1394,7 +1531,7 @@ const EXPECTED_PERMANENT_FUNCTIONS = [
     schemaName: "public",
   },
   {
-    bodyHash: "4d92a54f6249527907cf82d427614076",
+    bodyHash: "9a32858723d6facc53fb33925484a8f3",
     functionName: "reject_cloudflare_access_scope_change",
     identityArguments: "",
     kind: "f",
@@ -3108,14 +3245,18 @@ async function main(): Promise<void> {
 
     await validateCanonicalIntegrationIdentitySchema(dbUrl1);
     await validatePermanentTriggerAndFunctionInventory(dbUrl1);
+    await validateCanonicalBillingSources(dbUrl1);
     await validatePiMemoryStage1Cost(dbUrl1);
     await validatePermanentUsagePackPendingSnapshotState(dbUrl1);
     await validatePermanentAgentRunMetadataState(dbUrl1);
     await validatePermanentBuiltInModelCooldownState(dbUrl1);
     await validatePermanentBuiltInModelKeyState(dbUrl1);
     await validatePermanentSlackPublicBrandState(dbUrl1);
+    await validatePermanentDiscordFoundation(dbUrl1);
+    await validatePermanentDiscordChat(dbUrl1);
     await validatePermanentOrgPlanEntitlementState(dbUrl1);
     await validateGpt55Retirement(dbUrl1);
+    await validateSonnet46Opus48DeepSeekV4ProRetirement(dbUrl1);
     await validateXResourceUsageSchema(dbUrl1);
     await validateAgentRunLaunchSnapshotSchema(dbUrl1);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl1);
@@ -3142,6 +3283,8 @@ async function main(): Promise<void> {
     await validatePermanentBuiltInModelCooldownState(dbUrl2);
     await validatePermanentBuiltInModelKeyState(dbUrl2);
     await validatePermanentSlackPublicBrandState(dbUrl2);
+    await validatePermanentDiscordFoundation(dbUrl2);
+    await validatePermanentDiscordChat(dbUrl2);
     await validatePermanentOrgPlanEntitlementState(dbUrl2);
     await validateXResourceUsageSchema(dbUrl2);
     await validateAgentRunLaunchSnapshotSchema(dbUrl2);

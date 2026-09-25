@@ -34,7 +34,10 @@ import {
   createWorkflowsBddApi,
   mockGoogleCalendarConnectorOAuth,
 } from "./helpers/api-bdd-workflows";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  seedRetainedNativeMorningBriefForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
 import {
   deleteOrgMembership$,
   seedOrgMembership$,
@@ -415,7 +418,7 @@ async function setupOwner(timezone = "Asia/Shanghai"): Promise<Fixture> {
     { orgId: actor.orgId, userId: actor.userId },
     { agentId, timezone },
   );
-  await updateFeatureSwitchesForUser(
+  await seedRetainedNativeMorningBriefForUser(
     context,
     { orgId: actor.orgId, userId: actor.userId },
     { [FeatureSwitchKey.NativeMorningBrief]: true },
@@ -661,7 +664,7 @@ describe("Morning Brief calendar collection preview", () => {
     const switchedOff = await collect(fixture, [403]);
     expect(switchedOff.status).toBe(403);
 
-    await updateFeatureSwitchesForUser(
+    await seedRetainedNativeMorningBriefForUser(
       context,
       { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
       { [FeatureSwitchKey.NativeMorningBrief]: true },

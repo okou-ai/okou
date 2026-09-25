@@ -1,7 +1,7 @@
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq } from "drizzle-orm";
 
 import type { Db } from "../external/db";

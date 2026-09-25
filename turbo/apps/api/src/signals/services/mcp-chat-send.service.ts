@@ -7,7 +7,7 @@ import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   activeInputDeliveries,
   activeInputDeliveryItems,

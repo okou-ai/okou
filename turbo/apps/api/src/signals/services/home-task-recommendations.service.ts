@@ -16,7 +16,7 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/schema/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { homeTaskRecommendations } from "@okouai/db/schema/home-task-recommendation";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import {

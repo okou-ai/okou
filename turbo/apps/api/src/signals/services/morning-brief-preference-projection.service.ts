@@ -111,8 +111,6 @@ export async function readMorningBriefPreferenceProjection(
   return {
     enabled: row.enabled,
     status: row.enabled ? "enabled" : "paused",
-    nextRunAt: row.nextRunAt?.toISOString() ?? null,
-    timezone: row.timezone,
     unavailableReason: null,
   };
 }

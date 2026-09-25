@@ -8,6 +8,167 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.673.1](https://github.com/okou-ai/okou/compare/api-v1.673.0...api-v1.673.1) (2026-09-24)
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#36754](https://github.com/okou-ai/okou/issues/36754)) ([cc5147f](https://github.com/okou-ai/okou/commit/cc5147f9b25b62821d11daa489a0a96b7bdbf92e))
+
+
+### Performance Improvements
+
+* **app:** edge-prefetch org and model preferences, exchange ably token on the server ([#36731](https://github.com/okou-ai/okou/issues/36731)) ([c6495e1](https://github.com/okou-ai/okou/commit/c6495e1927c69bf5479300e841a9805df59d0a77))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.507.1
+    * @okouai/core bumped to 8.710.1
+    * @okouai/db bumped to 1.297.1
+    * @okouai/pi-agent-runtime bumped to 1.40.13
+
+## [1.673.0](https://github.com/okou-ai/okou/compare/api-v1.672.0...api-v1.673.0) (2026-09-24)
+
+
+### Features
+
+* **access:** promote personal configurations and review shared deletion ([#36715](https://github.com/okou-ai/okou/issues/36715)) ([aa20d6a](https://github.com/okou-ai/okou/commit/aa20d6a8609326008f5da853bd9db75d0ad1d204))
+* add verified discord integration foundation ([#36665](https://github.com/okou-ai/okou/issues/36665)) ([fdeb98f](https://github.com/okou-ai/okou/commit/fdeb98f05f1ef4d51eb44dfed1f4bd4244fe74be))
+* **api:** add discord commands and account interactions ([#36659](https://github.com/okou-ai/okou/issues/36659)) ([af9be5c](https://github.com/okou-ai/okou/commit/af9be5c5d0a04d2425c5187f7d7717ff2dbbf897))
+* **discord:** add authorized native reads and message tools ([#36661](https://github.com/okou-ai/okou/issues/36661)) ([dafe827](https://github.com/okou-ai/okou/commit/dafe827d3ddc4fe391776c35e49a36022d4397c6))
+* **discord:** add canonical chat ingress and reply delivery ([#36685](https://github.com/okou-ai/okou/issues/36685)) ([99ddcab](https://github.com/okou-ai/okou/commit/99ddcab5538b064d842ad523f50579f3d14ebe1e))
+
+
+### Refactoring
+
+* **agentphone:** retire public brand and connect link brand signature ([#36722](https://github.com/okou-ai/okou/issues/36722)) ([3c4cdb4](https://github.com/okou-ai/okou/commit/3c4cdb4a0d241eed624b878dcd7b4717513e3724))
+* **morning-brief:** remove settings status line, realtime refresh and collection account ([#36719](https://github.com/okou-ai/okou/issues/36719)) ([8d8de09](https://github.com/okou-ai/okou/commit/8d8de09466c1ef81d3d2017e75351b315aa40b0b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.507.0
+    * @okouai/core bumped to 8.710.0
+    * @okouai/db bumped to 1.297.0
+    * @okouai/pi-agent-runtime bumped to 1.40.12
+
+## [1.672.0](https://github.com/okou-ai/okou/compare/api-v1.671.1...api-v1.672.0) (2026-09-24)
+
+
+### Features
+
+* **browser:** guide agents to request only user-owned native input ([#36726](https://github.com/okou-ai/okou/issues/36726)) ([d3d8c0c](https://github.com/okou-ai/okou/commit/d3d8c0c03c417ba046eb00bfdc2db1d863c0f9ed))
+* **platform:** add the get started imessage quest and unify the phone connect dialog ([#36655](https://github.com/okou-ai/okou/issues/36655)) ([fc14031](https://github.com/okou-ai/okou/commit/fc140318a21f6ae3ea2c350abf9482e67a089482))
+
+
+### Refactoring
+
+* **api:** decouple chat event writes behind a two-release bridge ([#36614](https://github.com/okou-ai/okou/issues/36614)) ([63ad2ee](https://github.com/okou-ai/okou/commit/63ad2eed786e3f36eb9341f4db436b95a1eac6e3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.506.0
+    * @okouai/core bumped to 8.709.0
+    * @okouai/db bumped to 1.296.0
+    * @okouai/pi-agent-runtime bumped to 1.40.11
+
+## [1.671.1](https://github.com/okou-ai/okou/compare/api-v1.671.0...api-v1.671.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* retire claude sonnet 4.6, claude opus 4.8, and deepseek v4 pro ([#36698](https://github.com/okou-ai/okou/issues/36698)) ([66a5341](https://github.com/okou-ai/okou/commit/66a534132b49aee893bcbae2cb94b150f19396c8))
+
+
+### Performance Improvements
+
+* **db:** add btree_gin user and keyword index for chat search ([#36697](https://github.com/okou-ai/okou/issues/36697)) ([030c632](https://github.com/okou-ai/okou/commit/030c632f999b8c4f08d801a2d1a97391b2f0a128))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.505.1
+    * @okouai/core bumped to 8.708.4
+    * @okouai/db bumped to 1.295.1
+    * @okouai/pi-agent-runtime bumped to 1.40.10
+
+## [1.671.0](https://github.com/okou-ai/okou/compare/api-v1.670.0...api-v1.671.0) (2026-09-24)
+
+
+### Features
+
+* **vnc:** admit apple direct srp over mac ssh loopback ([#36556](https://github.com/okou-ai/okou/issues/36556)) ([737563c](https://github.com/okou-ai/okou/commit/737563c6c3d95b13cf53480ddb8f34ce9709cae9))
+
+
+### Bug Fixes
+
+* **agentphone:** recognize imessage mentions without the at-sign ([#36683](https://github.com/okou-ai/okou/issues/36683)) ([7372271](https://github.com/okou-ai/okou/commit/7372271772f2c54f31a3098eb0a85a467e2f0b3d))
+* **agentphone:** remove vendor name and brand signature from phone surfaces ([#36651](https://github.com/okou-ai/okou/issues/36651)) ([bc12388](https://github.com/okou-ai/okou/commit/bc12388e72374f8ffa7d06a401a0b3235e08a015))
+* **api:** audit expired schedules and prevent poller starvation ([#36691](https://github.com/okou-ai/okou/issues/36691)) ([6f85fb5](https://github.com/okou-ai/okou/commit/6f85fb5862331ff5ac5683ca0ed749efb13c36a8))
+* **api:** delete model policies with an empty or deleted organization ([#36684](https://github.com/okou-ai/okou/issues/36684)) ([83f56c3](https://github.com/okou-ai/okou/commit/83f56c313ffa1e3f4e29aad1a881817e6b4ef520)), closes [#36680](https://github.com/okou-ai/okou/issues/36680)
+* **api:** remove audit links from integration messages ([#36675](https://github.com/okou-ai/okou/issues/36675)) ([6a677c0](https://github.com/okou-ai/okou/commit/6a677c04839fd7d2aee1aa5f3280c0638136068e))
+
+
+### Performance Improvements
+
+* **pi:** decrypt coherent codex first-turn credentials outside user lock ([#36658](https://github.com/okou-ai/okou/issues/36658)) ([03c8f46](https://github.com/okou-ai/okou/commit/03c8f467c858346237ee8eaa5510751137f6fa07))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.505.0
+    * @okouai/core bumped to 8.708.3
+    * @okouai/db bumped to 1.295.0
+    * @okouai/pi-agent-runtime bumped to 1.40.9
+
+## [1.670.0](https://github.com/okou-ai/okou/compare/api-v1.669.1...api-v1.670.0) (2026-09-24)
+
+
+### Features
+
+* **access:** enable guarded organization conversion ([#36623](https://github.com/okou-ai/okou/issues/36623)) ([5d1ba8b](https://github.com/okou-ai/okou/commit/5d1ba8b930cd414c3e3700996e25d79ba99a4ce6))
+* **agentphone:** split connect welcome and send okou contact card ([#36629](https://github.com/okou-ai/okou/issues/36629)) ([d875a13](https://github.com/okou-ai/okou/commit/d875a130af04ecd3eda879b02b8607dc773f37d9))
+* **desktop:** add opt-in native clerk sign-in ([#36649](https://github.com/okou-ai/okou/issues/36649)) ([a07ab31](https://github.com/okou-ai/okou/commit/a07ab319ff39b0964429c3b50ceb91b2c598b8e1))
+
+
+### Bug Fixes
+
+* **api:** log the route that answered as the request path template ([#36630](https://github.com/okou-ai/okou/issues/36630)) ([ad9804b](https://github.com/okou-ai/okou/commit/ad9804b0a729a83f18f424f4d76dfdcd3a6e8da5))
+* **browser:** keep input available during preflight ([#36608](https://github.com/okou-ai/okou/issues/36608)) ([eaeb850](https://github.com/okou-ai/okou/commit/eaeb85079a04b3e4bc14906c01251e4fba370784))
+* **chat:** configure remote access before chat creation ([#36599](https://github.com/okou-ai/okou/issues/36599)) ([f2f9e40](https://github.com/okou-ai/okou/commit/f2f9e40971439d1510ea1df5194a05b8216249c5))
+
+
+### Refactoring
+
+* remove piloop feature switch ([#36382](https://github.com/okou-ai/okou/issues/36382)) ([878bc6d](https://github.com/okou-ai/okou/commit/878bc6d48524830c3da02f9622f7d056c7905a79))
+
+
+### Performance Improvements
+
+* **runner:** attribute guest storage batch server time ([#36600](https://github.com/okou-ai/okou/issues/36600)) ([8019ca6](https://github.com/okou-ai/okou/commit/8019ca6775d5873d8fcaa7ee4fbd71de37d79f56))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.504.0
+    * @okouai/core bumped to 8.708.2
+    * @okouai/db bumped to 1.294.0
+    * @okouai/pi-agent-runtime bumped to 1.40.8
+
 ## [1.669.1](https://github.com/okou-ai/okou/compare/api-v1.669.0...api-v1.669.1) (2026-09-24)
 
 

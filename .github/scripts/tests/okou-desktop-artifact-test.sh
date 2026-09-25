@@ -100,10 +100,18 @@ if bash "$verify_script" "$unsafe_dir" "$commit_sha" "$desktop_version" >/dev/nu
   exit 1
 fi
 
-OKOU_DESKTOP_SKIP_SIGNING=true node - "$repo_root" <<'NODE'
+forge_output="${tmp_dir}/forge-output"
+mkdir -p "$forge_output/Okou.app/Contents/Resources/native" \
+  "$forge_output/Okou.app/Contents/MacOS"
+printf '#!/bin/sh\nexit 0\n' > "$forge_output/Okou.app/Contents/Resources/native/clerk-auth-helper"
+chmod +x "$forge_output/Okou.app/Contents/Resources/native/clerk-auth-helper"
+
+OKOU_DESKTOP_SKIP_SIGNING=true node - "$repo_root" "$forge_output" <<'NODE'
+const fs = require("node:fs");
 const path = require("node:path");
 
 const repoRoot = process.argv[2];
+const outputPath = process.argv[3];
 const forgeConfig = require(path.join(
   repoRoot,
   "turbo/apps/desktop/forge.config.js",
@@ -117,7 +125,13 @@ if (forgeConfig.packagerConfig.appBundleId !== "ai.okou.desktop") {
 }
 
 forgeConfig.hooks
-  .postPackage({}, { platform: "darwin", outputPaths: ["/missing"] })
+  .postPackage({}, { platform: "darwin", outputPaths: [outputPath] })
+  .then(() => {
+    const helperPath = path.join(outputPath, "Okou.app/Contents/MacOS/clerk-auth-helper");
+    if (!fs.statSync(helperPath).isFile()) {
+      throw new Error("Packaged native Clerk helper is missing");
+    }
+  })
   .catch((error) => {
     console.error(error);
     process.exit(1);

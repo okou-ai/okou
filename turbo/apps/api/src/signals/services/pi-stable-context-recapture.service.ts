@@ -97,6 +97,10 @@ function featurePromptInputs(
     ),
     bankingEnabled: isFeatureEnabled(FeatureSwitchKey.Banking, featureContext),
     vncEnabled: isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext),
+    discordEnabled: isFeatureEnabled(
+      FeatureSwitchKey.DiscordIntegration,
+      featureContext,
+    ),
     larkEnabled: isFeatureEnabled(
       FeatureSwitchKey.LarkIntegration,
       featureContext,

@@ -223,7 +223,7 @@ describe("POST /api/integrations/telegram/message", () => {
     });
   });
 
-  it("sends a Telegram message and appends the audit footer", async () => {
+  it("sends a Telegram message and appends the attribution footer", async () => {
     const fixture = await seedSendableContext({
       agentName: "my-assistant",
       withOrgModelProvider: true,

@@ -156,6 +156,9 @@ export function vncAuthMethodForProfile(profile: VncProfile): VncAuthMethod {
     case "apple_dh": {
       return "apple_dh_username_password";
     }
+    case "apple_srp": {
+      return "apple_srp_username_password";
+    }
   }
   void (profile satisfies never);
   throw new Error("Unsupported VNC profile");
@@ -171,6 +174,9 @@ function vncProfileForAuthMethod(method: VncAuthMethod): VncProfile {
     }
     case "apple_dh_username_password": {
       return "apple_dh";
+    }
+    case "apple_srp_username_password": {
+      return "apple_srp";
     }
   }
   void (method satisfies never);
@@ -260,7 +266,8 @@ export const chooseVncProfile$ = command(
       !get(editorLocked$) &&
       (profile === "x509_vnc" ||
         profile === "x509_plain" ||
-        profile === "apple_dh")
+        profile === "apple_dh" ||
+        profile === "apple_srp")
     ) {
       set(editor$, (current): Editor => {
         return current.profile === profile
@@ -269,7 +276,10 @@ export const chooseVncProfile$ = command(
               ...current,
               profile,
               selection: "",
-              transport: profile === "apple_dh" ? "ssh" : current.transport,
+              transport:
+                profile === "apple_dh" || profile === "apple_srp"
+                  ? "ssh"
+                  : current.transport,
             };
       });
     }
@@ -287,7 +297,9 @@ export const chooseVncTransport$ = command(
     if (
       !get(editorLocked$) &&
       (transport === "direct" || transport === "ssh") &&
-      (transport !== "direct" || get(editor$).profile !== "apple_dh")
+      (transport !== "direct" ||
+        (get(editor$).profile !== "apple_dh" &&
+          get(editor$).profile !== "apple_srp"))
     ) {
       set(editor$, (current): Editor => {
         return { ...current, transport };
@@ -376,12 +388,14 @@ function initialVncEditor(
     selection: connection?.credentialId ?? (kind === "create" ? "" : "new"),
     profile: initialVncProfile(connection, credential),
     trust:
-      connection?.security.type === "apple_dh"
+      connection?.security.type === "apple_dh" ||
+      connection?.security.type === "apple_srp"
         ? "system"
         : (connection?.security.trust.mode ?? "system"),
     transport:
       sshConnectionId ||
-      initialVncProfile(connection, credential) === "apple_dh"
+      initialVncProfile(connection, credential) === "apple_dh" ||
+      initialVncProfile(connection, credential) === "apple_srp"
         ? "ssh"
         : "direct",
     sshConnectionId: sshConnectionId ?? "",
@@ -487,6 +501,16 @@ function credentialFields(form: HTMLFormElement, profile: VncProfile) {
         },
       };
     }
+    case "apple_srp": {
+      return {
+        name,
+        authentication: {
+          method: "apple_srp_username_password" as const,
+          username: textField(form, "username"),
+          password: textField(form, "password"),
+        },
+      };
+    }
   }
   void (profile satisfies never);
   throw new Error("Unsupported VNC profile");
@@ -513,7 +537,9 @@ interface Editor {
 
 function connectionFields(form: HTMLFormElement, editor: Editor) {
   const serverName =
-    editor.profile === "apple_dh" ? "" : textField(form, "serverName").trim();
+    editor.profile === "apple_dh" || editor.profile === "apple_srp"
+      ? ""
+      : textField(form, "serverName").trim();
   return {
     displayName: textField(form, "displayName"),
     host: textField(form, "host"),
@@ -527,8 +553,8 @@ function connectionFields(form: HTMLFormElement, editor: Editor) {
         ? { create: credentialFields(form, editor.profile) }
         : { id: editor.selection },
     security:
-      editor.profile === "apple_dh"
-        ? { type: "apple_dh" as const }
+      editor.profile === "apple_dh" || editor.profile === "apple_srp"
+        ? { type: editor.profile }
         : {
             type: editor.profile,
             ...(serverName ? { serverName } : {}),

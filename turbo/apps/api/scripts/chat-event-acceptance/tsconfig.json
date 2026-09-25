@@ -1,0 +1,17 @@
+{
+  "extends": "../erasure-bridge/tsconfig.json",
+  "include": [
+    "../chat-event-sequences/*.ts",
+    "../chat-event-context/*.ts",
+    "../chat-event-split/*.ts",
+    "../chat-event-auxiliary/*.ts"
+  ],
+  "references": [
+    {
+      "path": "../../tsconfig.gateways.json"
+    },
+    {
+      "path": "../../tsconfig.core.json"
+    }
+  ]
+}

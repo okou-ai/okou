@@ -1,8 +1,11 @@
 import { command } from "ccstate";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import type { MorningBriefMemberIdentity } from "./morning-brief-enrollment-data.service";
+import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { currentMembershipId$ } from "./morning-brief-collection-executor.service";
 import {
   bringMorningBriefNativeObligationForward,
@@ -33,6 +36,17 @@ export const triggerMorningBriefNativeRun$ = command(
     signal: AbortSignal,
   ): Promise<MorningBriefBringForwardResult> => {
     const db = set(writeDb$);
+    const featureContext = await loadUserFeatureSwitchContext(
+      db,
+      owner.orgId,
+      owner.userId,
+    );
+    signal.throwIfAborted();
+    if (
+      !isFeatureEnabled(FeatureSwitchKey.NativeMorningBrief, featureContext)
+    ) {
+      return { kind: "refused", reason: "disabled" };
+    }
     const membershipId = await set(currentMembershipId$, owner, signal);
     signal.throwIfAborted();
     if (membershipId === null) {

@@ -89,6 +89,15 @@ SLACK_OAUTH_CLIENT_ID=op://Development/slack/SLACK_OAUTH_CLIENT_ID
 SLACK_OAUTH_CLIENT_SECRET=op://Development/slack/SLACK_OAUTH_CLIENT_SECRET
 SLACK_SIGNING_SECRET=op://Development/slack/SLACK_SIGNING_SECRET
 
+# Optional: Discord integration. Leave unset until a test application is approved.
+# App-level credentials are never stored in per-guild installation rows.
+DISCORD_BOT_TOKEN=
+DISCORD_APPLICATION_ID=
+DISCORD_PUBLIC_KEY=
+DISCORD_GATEWAY_SECRET=
+# Set true only when the bot has the MESSAGE_CONTENT intent enabled.
+DISCORD_MESSAGE_CONTENT_ENABLED=false
+
 # Optional: Official Telegram Bot
 TELEGRAM_OFFICIAL_BOT_TOKEN=op://Development/telegram/TELEGRAM_OFFICIAL_BOT_TOKEN
 TELEGRAM_OFFICIAL_BOT_USERNAME=op://Development/telegram/TELEGRAM_OFFICIAL_BOT_USERNAME

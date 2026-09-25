@@ -1,5 +1,5 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { runActivitySnapshots } from "@okouai/db/schema/run-activity-snapshot";
 import { command } from "ccstate";
 import { and, asc, eq, getTableColumns, inArray, lte, sql } from "drizzle-orm";

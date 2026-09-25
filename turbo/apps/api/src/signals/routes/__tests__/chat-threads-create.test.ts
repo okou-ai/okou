@@ -54,7 +54,7 @@ const connectorApi = createConnectorBddApi(context);
 const vnc = createVncRuntimeApi(context);
 
 const WORKSPACE_DEFAULT_MODEL = "claude-sonnet-5";
-const OTHER_WORKSPACE_MODEL = "claude-opus-4-8";
+const OTHER_WORKSPACE_MODEL = "claude-opus-5";
 const PRIORITY_MODEL = "gpt-5.6-sol";
 const EXPLICIT_VIDEO_MODEL = "fal-ai/veo3.1/fast";
 const INHERITED_VIDEO_MODEL = "MiniMax-H3";

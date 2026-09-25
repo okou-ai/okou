@@ -8,7 +8,7 @@ import {
   chatEvents,
   type ChatEventUserMessage,
 } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import {
   and,
@@ -76,6 +76,7 @@ export type QueuedUserMessageTriggerSource =
   | "web"
   | "agent"
   | "slack"
+  | "discord"
   | "feishu"
   | "lark"
   | "teams"
@@ -103,6 +104,7 @@ export function queuedUserMessageTriggerSource(
   switch (contextType) {
     case "web":
     case "slack":
+    case "discord":
     case "teams":
     case "telegram":
     case "agentphone":
