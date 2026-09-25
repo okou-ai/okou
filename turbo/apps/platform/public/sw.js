@@ -5,7 +5,7 @@ self.addEventListener("install", (_event) => {
 // --- Web Push Notifications ---
 
 const NOTIFICATION_ICON_URL =
-  "https://static.vm0.io/platform/icons/okou-icon-192-81c6e7aaadac.png";
+  "https://static.okou.io/platform/icons/okou-icon-192-81c6e7aaadac.png";
 
 self.addEventListener("push", (event) => {
   let data = {};
