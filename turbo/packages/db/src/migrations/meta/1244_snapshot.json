@@ -1,6 +1,6 @@
 {
-  "id": "fadf047c-e8de-42bb-87c7-6703acf9f6e8",
-  "prevId": "5e25edb5-d7b7-4ce3-976b-dfe048f6105c",
+  "id": "ab6166f2-f9b2-4c93-9b95-5ce184ef6ec7",
+  "prevId": "bb4b7531-12d9-442a-9101-50ad1f3d7e07",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -7817,43 +7817,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.chat_event_retention_cursors": {
-      "name": "chat_event_retention_cursors",
-      "schema": "",
-      "columns": {
-        "scope_key": {
-          "name": "scope_key",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "last_created_at": {
-          "name": "last_created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "last_event_id": {
-          "name": "last_event_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sweep_started_at": {
-          "name": "sweep_started_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.chat_event_search_message_watermarks": {
       "name": "chat_event_search_message_watermarks",
       "schema": "",
@@ -10473,32 +10436,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "chat_threads_agent_session_id_agent_sessions_id_fk": {
-          "name": "chat_threads_agent_session_id_agent_sessions_id_fk",
-          "tableFrom": "chat_threads",
-          "tableTo": "agent_sessions",
-          "columnsFrom": [
-            "agent_session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "chat_threads_agent_session_run_id_agent_runs_id_fk": {
-          "name": "chat_threads_agent_session_run_id_agent_runs_id_fk",
-          "tableFrom": "chat_threads",
-          "tableTo": "agent_runs",
-          "columnsFrom": [
-            "agent_session_run_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "chat_threads_computer_use_host_id_computer_use_hosts_id_fk": {
