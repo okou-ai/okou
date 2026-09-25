@@ -7,13 +7,17 @@ import {
 
 import { discordInteractionsContract } from "@okouai/api-contracts/contracts/discord-interactions";
 import { HttpResponse, http } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
+import {
+  clearMockMonotonicNow,
+  mockMonotonicNow,
+  now,
+} from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { discordInteractionsRoutes } from "../discord-interactions";
@@ -212,6 +216,18 @@ describe("Discord private account interactions", () => {
 
   it.each([
     {
+      kind: "timed-out",
+      response: async (request: Request) => {
+        // Discord answers only after the 2 s local deadline aborted the request.
+        const aborted = createDeferredPromise<void>(context.signal);
+        request.signal.addEventListener("abort", () => {
+          aborted.resolve();
+        });
+        await aborted.promise;
+        return new HttpResponse(null, { status: 204 });
+      },
+    },
+    {
       kind: "network failure",
       response: () => {
         return HttpResponse.error();
@@ -224,23 +240,23 @@ describe("Discord private account interactions", () => {
       },
     },
   ])(
-    "reports no change instead of failing after an uncertain $kind acknowledgement",
+    "reports no change instead of failing after a $kind acknowledgement",
     async ({ response }) => {
       const replies = privateResponses();
+      mockMonotonicNow(0);
+      onTestFinished(clearMockMonotonicNow);
       server.use(
         http.post(
           "https://discord.com/api/v10/interactions/:id/:token/callback",
-          response,
+          async ({ request }) => {
+            // Let Discord's 3-second response window close before the edit.
+            mockMonotonicNow(10_000);
+            return await response(request);
+          },
         ),
       );
-      // Created 5 s ago, so Discord's 3-second response window has closed.
-      const createdAt = BigInt(now() - 5000 - 1_420_070_400_000);
-      const request = signedRequest({
-        ...command("help"),
-        id: String(createdAt << 22n),
-      });
 
-      const result = await client().post(request);
+      const result = await client().post(signedRequest(command("help")));
 
       expect(result.status).toBe(202);
       const message = await replies.delivered;
@@ -250,4 +266,34 @@ describe("Discord private account interactions", () => {
       expect(replies.messages).toHaveLength(1);
     },
   );
+
+  it("accepts Discord rejecting the no-change edit when the acknowledgement never arrived", async () => {
+    const attempted = createDeferredPromise<void>(context.signal);
+    mockMonotonicNow(0);
+    onTestFinished(clearMockMonotonicNow);
+    server.use(
+      http.post(
+        "https://discord.com/api/v10/interactions/:id/:token/callback",
+        () => {
+          mockMonotonicNow(10_000);
+          return HttpResponse.error();
+        },
+      ),
+      http.patch(
+        "https://discord.com/api/v10/webhooks/:applicationId/:token/messages/@original",
+        () => {
+          attempted.resolve();
+          return HttpResponse.json(
+            { code: 10_015, message: "Unknown Webhook" },
+            { status: 404 },
+          );
+        },
+      ),
+    );
+
+    const result = await client().post(signedRequest(command("disconnect")));
+
+    expect(result.status).toBe(202);
+    await attempted.promise;
+  });
 });

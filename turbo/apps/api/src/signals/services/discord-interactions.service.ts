@@ -15,7 +15,7 @@ import {
 import { delay } from "signal-timers";
 
 import { env } from "../../lib/env";
-import { now } from "../../lib/time";
+import { monotonicNow } from "../../lib/time";
 import {
   parseDiscordPickerCustomId,
   resolveDiscordInteractionActor,
@@ -67,8 +67,7 @@ const SETUP_GUIDANCE =
   "Discord account onboarding is not available yet. An administrator must configure a verified connection before you can use Okou. This command does not connect or verify an account.";
 const UNCONFIRMED_REQUEST =
   "Discord could not confirm this request in time, so no changes were made. Run the command again.";
-const DISCORD_EPOCH_MS = 1_420_070_400_000;
-// Discord's 3 s initial-response deadline plus a margin for clock skew.
+// Discord's 3 s initial-response deadline plus a margin for in-flight delivery.
 const DISCORD_RESPONSE_WINDOW_MS = 3500;
 const STALE_CONTROL =
   "This control has expired or your access has changed. Run the command again.";
@@ -599,7 +598,7 @@ const finishDiscordInteraction$ = command(
 );
 
 function discordAcknowledgementOutcome(
-  /** Null when the callback request threw or was aborted by its timeout. */
+  /** Null when the callback request was aborted by its local deadline. */
   result: DiscordApiResult<undefined> | null,
 ): "acknowledged" | "duplicate" | "uncertain" | "rejected" {
   if (!result) {
@@ -618,6 +617,34 @@ function discordAcknowledgementOutcome(
   return result.status >= 500 ? "uncertain" : "rejected";
 }
 
+/** Components defer an update so the result replaces the picker in place. */
+async function acknowledgeDiscordInteraction(
+  interaction: AccountInteraction,
+  signal: AbortSignal,
+): Promise<ReturnType<typeof discordAcknowledgementOutcome>> {
+  const deadline = AbortSignal.timeout(2000);
+  const acknowledgement = await settleIncludingAbort(
+    discordClient.createDiscordInteractionResponse(
+      {
+        interactionId: interaction.id,
+        interactionToken: interaction.token,
+        response:
+          interaction.type === 3
+            ? { type: 6 }
+            : { type: 5, data: { flags: 64 } },
+      },
+      AbortSignal.any([signal, deadline]),
+    ),
+  );
+  signal.throwIfAborted();
+  if (!acknowledgement.ok && !deadline.aborted) {
+    throw acknowledgement.error;
+  }
+  return discordAcknowledgementOutcome(
+    acknowledgement.ok ? acknowledgement.value : null,
+  );
+}
+
 /**
  * A callback that timed out or failed in transit may still reach Discord within
  * its 3-second window. Afterward the token is valid only if it did, so an edit
@@ -627,14 +654,13 @@ const settleUncertainDiscordInteraction$ = command(
   async (
     _,
     interaction: AccountInteraction,
+    receivedAt: number,
     signal: AbortSignal,
   ): Promise<void> => {
-    const createdAt = Number(BigInt(interaction.id) >> 22n) + DISCORD_EPOCH_MS;
+    // Discord's window opened before this request arrived, so a local
+    // monotonic deadline from receipt outlasts it regardless of clock skew.
     await delay(
-      Math.min(
-        Math.max(createdAt + DISCORD_RESPONSE_WINDOW_MS - now(), 0),
-        DISCORD_RESPONSE_WINDOW_MS,
-      ),
+      Math.max(receivedAt + DISCORD_RESPONSE_WINDOW_MS - monotonicNow(), 0),
       { signal },
     );
     await discordClient.editDiscordOriginalInteractionResponse(
@@ -650,6 +676,7 @@ const settleUncertainDiscordInteraction$ = command(
 
 export const handleDiscordInteractions$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<Response> => {
+    const receivedAt = monotonicNow();
     const request = get(request$).raw;
     const publicKey = env("DISCORD_PUBLIC_KEY");
     const applicationId = env("DISCORD_APPLICATION_ID");
@@ -733,32 +760,21 @@ export const handleDiscordInteractions$ = command(
     const { botToken } = config;
     // Discord accepts one callback per interaction ID. Consume it before work,
     // so concurrent delivery or a captured signed replay cannot apply changes.
-    // Components defer an update so the result replaces the picker in place.
-    const ackSignal = AbortSignal.any([signal, AbortSignal.timeout(2000)]);
-    const acknowledgement = await settleIncludingAbort(
-      discordClient.createDiscordInteractionResponse(
-        {
-          interactionId: interaction.id,
-          interactionToken: interaction.token,
-          response:
-            interaction.type === 3
-              ? { type: 6 }
-              : { type: 5, data: { flags: 64 } },
-        },
-        ackSignal,
-      ),
-    );
-    signal.throwIfAborted();
-    const outcome = discordAcknowledgementOutcome(
-      acknowledgement.ok ? acknowledgement.value : null,
-    );
+    const outcome = await acknowledgeDiscordInteraction(interaction, signal);
     if (outcome === "duplicate") {
       return new Response(null, { status: 202 });
     }
     if (outcome === "uncertain") {
       // Discord may still have accepted the callback. Apply no change, and
       // replace any loading state once its 3 s response window has closed.
-      waitUntil(set(settleUncertainDiscordInteraction$, interaction, signal));
+      waitUntil(
+        set(
+          settleUncertainDiscordInteraction$,
+          interaction,
+          receivedAt,
+          signal,
+        ),
+      );
       return new Response(null, { status: 202 });
     }
     if (outcome === "rejected") {

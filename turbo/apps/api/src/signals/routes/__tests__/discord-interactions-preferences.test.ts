@@ -22,7 +22,12 @@ import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { mockNow, now } from "../../../lib/time";
+import {
+  clearMockMonotonicNow,
+  mockMonotonicNow,
+  mockNow,
+  now,
+} from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { discordInteractionsRoutes } from "../discord-interactions";
@@ -815,6 +820,54 @@ describe("Discord account preferences through private controls", () => {
     expect(selected.components).toStrictEqual([]);
     const reopened = await discord.send(commandPayload(sender, "switch"));
     expect(preselected(reopened)).toStrictEqual([chosen.agentId]);
+  });
+
+  it("preselects the workspace default agent before an agent is chosen", async () => {
+    const scope = await fixture();
+    const onboarding = await accountApi.readOnboardingStatus(scope.owner);
+    expect(onboarding.defaultAgentId).toBeTruthy();
+    await createAgent(scope.owner, "Unchosen agent");
+    const discord = discordHttp([scope]);
+
+    const picker = await discord.send(
+      commandPayload(guildSender(scope), "switch"),
+    );
+
+    expect(preselected(picker)).toStrictEqual(["default"]);
+  });
+
+  it("applies no selection when Discord's acknowledgement is uncertain", async () => {
+    const scope = await fixture();
+    const kept = await createAgent(scope.owner, "Kept agent");
+    const attempted = await createAgent(scope.owner, "Attempted agent");
+    const discord = discordHttp([scope]);
+    const sender = guildSender(scope);
+    const menu = selectMenu(
+      await discord.send(commandPayload(sender, "switch")),
+    );
+    await discord.send(selectPayload(sender, menu.custom_id, kept.agentId));
+    mockMonotonicNow(0);
+    onTestFinished(clearMockMonotonicNow);
+    server.use(
+      http.post(
+        "https://discord.com/api/v10/interactions/:id/:token/callback",
+        () => {
+          // Discord's 3-second response window closes before the edit.
+          mockMonotonicNow(10_000);
+          return HttpResponse.json({ message: "Unavailable" }, { status: 503 });
+        },
+        { once: true },
+      ),
+    );
+
+    const notice = await discord.send(
+      selectPayload(sender, menu.custom_id, attempted.agentId),
+    );
+
+    expect(notice.content).toContain("no changes were made");
+    expect(notice.components).toStrictEqual([]);
+    const reopened = await discord.send(commandPayload(sender, "switch"));
+    expect(preselected(reopened)).toStrictEqual([kept.agentId]);
   });
 
   it("preselects the effective model and the selected DM workspace", async () => {
