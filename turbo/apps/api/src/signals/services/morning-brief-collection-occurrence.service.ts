@@ -1,10 +1,8 @@
-import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import { morningBriefCollectionOccurrences } from "@okouai/db/schema/morning-brief-collection-occurrence";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { and, eq, type SQL } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
-import { settle } from "../utils";
 
 /** Historical collection ownership and cleanup; no new Native admission. */
 export interface MorningBriefCollectionOwner {
@@ -20,13 +18,13 @@ function memberKey(owner: MorningBriefCollectionOwner): SQL | undefined {
 }
 
 /**
- * Admit this owner and take their durable member row.
+ * Take this owner's durable member row.
  *
- * Erasure admission comes first and is held through COMMIT, then the member row
- * this occurrence hangs from is locked and rechecked. `org_members_metadata` is
- * the source of truth for the member's own preferences — including the timezone
- * an enabled brief requires — and is deleted by membership, user and
- * organization cleanup without any background reader refilling it. A cleanup
+ * The member row this occurrence hangs from is locked and rechecked.
+ * `org_members_metadata` is the source of truth for the member's own
+ * preferences — including the timezone an enabled brief requires — and is
+ * deleted by membership, user and organization cleanup without any background
+ * reader refilling it. A cleanup
  * therefore either waits for this transaction and then cascades the row away,
  * or has already committed and leaves nothing to write. This never creates the
  * parent.
@@ -41,11 +39,11 @@ function memberKey(owner: MorningBriefCollectionOwner): SQL | undefined {
  *
  * This is the shared owner fence every later stage uses. A stage that already
  * holds a persisted occurrence — generation, its saved result, delivery —
- * proves the owner with exactly this call rather than reimplementing the
- * subject admission, the lock mode or the stamp comparison. It deliberately
- * does not compare an admission's parent generation, because such a stage has
- * no admission to compare: deleting the parent cascades its occurrence away, so
- * a surviving occurrence is itself the proof that the parent never changed.
+ * proves the owner with exactly this call rather than reimplementing the lock
+ * mode or the stamp comparison. It deliberately does not compare an
+ * admission's parent generation, because such a stage has no admission to
+ * compare: deleting the parent cascades its occurrence away, so a surviving
+ * occurrence is itself the proof that the parent never changed.
  */
 export async function lockCollectionOwner(
   tx: Tx,
@@ -61,22 +59,6 @@ async function lockOwnerRow(
 ): Promise<
   { readonly revokedAt: Date | null; readonly createdAt: Date } | undefined
 > {
-  const admission = await settle(
-    assertErasureSubjectWritable(tx, [
-      { subjectKind: "organization", subjectId: owner.orgId },
-      { subjectKind: "user", subjectId: owner.userId },
-    ]),
-  );
-  if (!admission.ok) {
-    // A closed B1 owner is a normal refusal, not an unhandled preview error.
-    if (
-      admission.error instanceof Error &&
-      admission.error.message === "account_erasure:subject_closed"
-    ) {
-      return undefined;
-    }
-    throw admission.error;
-  }
   const [member] = await tx
     .select({
       revokedAt: orgMembersMetadata.morningBriefCollectionRevokedAt,
@@ -124,13 +106,34 @@ function revokedMemberWhere(
 }
 
 /**
- * Revoke collection authority without destroying pending occurrences. Durable
- * user deletion can use this at the enqueue boundary, retaining occurrences
- * for B1 capture before eventual cleanup. FOR UPDATE must precede the stamp:
- * a non-key UPDATE alone does not conflict with a claim's FOR KEY SHARE, and
- * could allow a stale claim to commit alongside revocation.
+ * Revoke this scope's collection ownership inside a cleanup transaction.
+ *
+ * This runs in the first transaction each membership, user and organization
+ * cleanup commits, so an owner loses collection ownership before the rest of
+ * their state is torn down — and the caller must pass that transaction, not a
+ * connection, because the decision has to become visible with the rest of that
+ * revocation and not a statement later.
+ *
+ * Deleting the occurrences is only half of it. Taking `FOR UPDATE` on the owner
+ * rows first serializes this against the `FOR KEY SHARE` a claim or
+ * finalization holds, and stamping those rows records the revocation durably.
+ * That explicit lock is load-bearing and must not be folded into the `UPDATE`:
+ * an `UPDATE` of a non-key column acquires `FOR NO KEY UPDATE`, which does not
+ * conflict with `FOR KEY SHARE`, so a single statement would let a claim read
+ * an unstamped row and commit its insert alongside this delete. No test would
+ * catch that, because the regressions depend on the blocking order rather than
+ * on the number of statements.
+ * A claim that commits first is therefore seen and deleted here; a claim that
+ * arrives later reads the stamp and refuses, even though this transaction found
+ * no occurrence to delete and even though the member row itself is removed only
+ * at the end of the cleanup. Other owners are untouched, and the member and
+ * Agent cascades remain the final guarantee.
+ *
+ * A running attempt is left with nothing to finalize. Its in-flight Slack
+ * requests cannot be retracted; what this guarantees is that no result of one
+ * is accepted, persisted or returned once this transaction commits.
  */
-export async function markMorningBriefCollectionOwnershipRevoked(
+export async function revokeMorningBriefCollectionOwnership(
   tx: Tx,
   scope: MorningBriefCollectionRevocationScope,
   at: Date,
@@ -144,20 +147,6 @@ export async function markMorningBriefCollectionOwnershipRevoked(
     .update(orgMembersMetadata)
     .set({ morningBriefCollectionRevokedAt: at, updatedAt: at })
     .where(revokedMemberWhere(scope));
-}
-
-/**
- * After capture, atomically revoke and remove occurrences in the first legacy
- * cleanup transaction. Claims that committed before this lock are deleted;
- * later claims observe the durable stamp. In-flight provider reads cannot be
- * cancelled, but their results can no longer be accepted or persisted.
- */
-export async function revokeMorningBriefCollectionOwnership(
-  tx: Tx,
-  scope: MorningBriefCollectionRevocationScope,
-  at: Date,
-): Promise<void> {
-  await markMorningBriefCollectionOwnershipRevoked(tx, scope, at);
   await tx
     .delete(morningBriefCollectionOccurrences)
     .where(revocationWhere(scope));

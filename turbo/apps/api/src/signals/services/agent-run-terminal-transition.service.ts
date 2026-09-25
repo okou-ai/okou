@@ -2,42 +2,10 @@ import type { RunStatus } from "@okouai/api-contracts/contracts/runs";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { and, eq, inArray, type SQL } from "drizzle-orm";
+import { and, inArray, type SQL } from "drizzle-orm";
 
 import { cleanupDisconnectedPersonalModelProviderAccounts } from "./model-provider-account.service";
 import type { Tx } from "../../lib/db-types";
-import { nowDate } from "../../lib/time";
-
-export const COMPUTE_CLOSURE_ERROR = "account_erasure:subject_closed";
-
-/** The admission owner already holds B1 subjects and the run/session rows.
- * Closure has a separate capture lifecycle: preserve diagnostic and provider
- * locators, credit admission and queues instead of ordinary terminal cleanup.
- */
-export async function stopErasureClosedComputeRun(
-  tx: Tx,
-  runId: string,
-): Promise<void> {
-  const [stopped] = await tx
-    .update(agentRuns)
-    .set({
-      status: "cancelled",
-      completedAt: nowDate(),
-      error: COMPUTE_CLOSURE_ERROR,
-    })
-    .where(
-      and(
-        eq(agentRuns.id, runId),
-        inArray(agentRuns.status, ["pending", "queued"]),
-      ),
-    )
-    .returning({ id: agentRuns.id });
-  if (stopped) {
-    // Never-started run: release its active row. Callers return right after
-    // this, so the DELETE stays the transaction's last statement.
-    await tx.delete(activeAgentRuns).where(eq(activeAgentRuns.runId, runId));
-  }
-}
 
 type TerminalRunStatus = Extract<
   RunStatus,

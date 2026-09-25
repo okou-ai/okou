@@ -10,11 +10,6 @@ import { now } from "../../lib/time";
 import { tapError } from "../utils";
 import { writeRunMetadataInTransaction } from "./agent-run-metadata-write.service";
 
-import {
-  validateRunContentIdentity,
-  type RunContentOwnership,
-} from "./run-content-erasure-admission.service";
-
 const L = logger("api:chat-first-assistant-message-metric");
 
 export function recordFirstAssistantEventEligibility(args: {
@@ -33,7 +28,6 @@ export function recordFirstAssistantEventEligibility(args: {
 
 async function recordFirstAssistantEventAcknowledgement(args: {
   readonly db: Db;
-  readonly ownership: RunContentOwnership;
   readonly runId: string;
   readonly acknowledgedAt: number;
 }): Promise<void> {
@@ -45,11 +39,6 @@ async function recordFirstAssistantEventAcknowledgement(args: {
   if (!firstAssistantClaimWhere) {
     throw new Error("First assistant acknowledgement predicate is empty");
   }
-  await validateRunContentIdentity(
-    args.db,
-    { runId: args.runId, ownership: args.ownership },
-    AbortSignal.timeout(20_000),
-  );
   const [claimed] = await writeRunMetadataInTransaction(args.db, {
     patch: {
       firstAssistantEventAcknowledgedAt: new Date(args.acknowledgedAt),
@@ -92,7 +81,6 @@ export function recordFirstAssistantEventAcknowledgementMetric(args: {
 
 async function publishFirstAssistantEventCreated(args: {
   readonly db: Db;
-  readonly ownership: RunContentOwnership;
   readonly orgId: string;
   readonly threadId: string;
   readonly userId: string;
@@ -103,7 +91,6 @@ async function publishFirstAssistantEventCreated(args: {
   await tapError(
     recordFirstAssistantEventAcknowledgement({
       db: args.db,
-      ownership: args.ownership,
       runId: args.runId,
       acknowledgedAt,
     }),
@@ -118,7 +105,6 @@ async function publishFirstAssistantEventCreated(args: {
 
 export async function publishFirstAssistantEventCreatedSafely(args: {
   readonly db: Db;
-  readonly ownership: RunContentOwnership;
   readonly orgId: string;
   readonly threadId: string;
   readonly userId: string;

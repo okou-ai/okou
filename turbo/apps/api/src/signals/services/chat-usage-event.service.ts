@@ -1,7 +1,4 @@
-import {
-  historicalRunGroupId,
-  runEventHistory,
-} from "./run-event-provenance.service";
+import { runEventHistory } from "./run-event-provenance.service";
 import { isDeepStrictEqual } from "node:util";
 import { command } from "ccstate";
 import {
@@ -197,8 +194,7 @@ export const maybeEmitRunUsageEvent$ = command(
         .limit(1);
       signal.throwIfAborted();
 
-      // Keep a necessary canonical read within this locked operation, so first
-      // late usage can also resolve its group without downloading history twice.
+      // An archived usage event is only found through canonical history.
       const history = hotUsageEvent
         ? undefined
         : await runEventHistory(tx, context.chatThreadId, runId, signal);
@@ -226,17 +222,12 @@ export const maybeEmitRunUsageEvent$ = command(
         return null;
       }
 
-      const runGroupId = existingUsageEvent
-        ? undefined
-        : await historicalRunGroupId(tx, runId, history, signal);
       const event = {
         chatThreadId: context.chatThreadId,
         eventType: "usage.recorded" as const,
         content: null,
         runId,
         // A replacement inherits the exact context pointer, including null.
-        // Only a first event needs the retained run provenance lookup.
-        ...(existingUsageEvent ? {} : { runGroupId }),
         usagePayload: payload,
       };
       const inserted = existingUsageEvent

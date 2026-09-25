@@ -6,10 +6,6 @@ import {
   type RunnerVncResolveResponse,
 } from "@okouai/api-contracts/contracts/runner-vnc";
 import { vncAuthenticationSchema } from "@okouai/api-contracts/contracts/vnc-credentials";
-import {
-  assertErasureSubjectReadable,
-  assertErasureSubjectWritable,
-} from "@okouai/db/operations/account-erasure";
 import type { Db } from "../external/db";
 import type { ClerkClient } from "../external/clerk";
 import { decryptStoredSecretValue } from "./crypto.utils";
@@ -66,7 +62,8 @@ function hasValidAppleRoute(
   transport: TransportSnapshot,
 ) {
   return (
-    (row.securityType !== "apple_dh" &&
+    (row.securityType !== "apple_vnc_password" &&
+      row.securityType !== "apple_dh" &&
       row.securityType !== "apple_srp" &&
       row.securityType !== "apple_rsa_srp") ||
     (row.trustMode === "none" &&
@@ -170,24 +167,6 @@ export async function checkRunnerVnc(
   if (!hasValidAppleRoute(row, transport)) {
     return { outcome: "unavailable" };
   }
-  const admission = await settle(
-    db.transaction(async (tx) => {
-      await assertErasureSubjectReadable(tx, [
-        { subjectKind: "user", subjectId: row.userId },
-        { subjectKind: "organization", subjectId: row.orgId },
-      ]);
-    }),
-    signal,
-  );
-  if (!admission.ok) {
-    if (
-      admission.error instanceof Error &&
-      admission.error.message === "account_erasure:subject_closed"
-    ) {
-      return { outcome: "unavailable" };
-    }
-    throw admission.error;
-  }
   return {
     outcome:
       row.generation === input.expectedGeneration &&
@@ -203,7 +182,8 @@ function storedRunnerSecurity(
 ) {
   if (
     !hasValidAppleRoute(row, transport) ||
-    (row.securityType !== "apple_dh" &&
+    (row.securityType !== "apple_vnc_password" &&
+      row.securityType !== "apple_dh" &&
       row.securityType !== "apple_srp" &&
       row.securityType !== "apple_rsa_srp" &&
       ((row.trustMode === "system" && row.caBundle !== null) ||
@@ -214,7 +194,8 @@ function storedRunnerSecurity(
   }
   const security = runnerVncSecuritySchema.safeParse({
     type: row.securityType,
-    ...(row.securityType === "apple_dh" ||
+    ...(row.securityType === "apple_vnc_password" ||
+    row.securityType === "apple_dh" ||
     row.securityType === "apple_srp" ||
     row.securityType === "apple_rsa_srp"
       ? {}
@@ -280,6 +261,24 @@ function resolvedRunnerResponse(
     security,
     authentication,
   };
+  if (row.securityType === "apple_vnc_password") {
+    if (
+      transport.type !== "ssh" ||
+      security.type !== "apple_vnc_password" ||
+      authentication.method !== "vnc_password"
+    ) {
+      throw new Error(
+        "VNC Apple classic-password handoff has an invalid stored profile",
+      );
+    }
+    return {
+      outcome: "resolved_apple_vnc_password",
+      ...resolved,
+      security,
+      authentication,
+      transport,
+    };
+  }
   if (row.securityType === "apple_dh") {
     if (
       transport.type !== "ssh" ||
@@ -373,48 +372,6 @@ export async function resolveRunnerVnc(
   const authentication = await decryptRunnerAuthentication(row, signal);
   const current = await currentRunnerVncAuthority(db, input, signal);
   if (!(await isSameCurrentHandoff(current, row, transport, clerk, signal))) {
-    return { outcome: "unavailable" };
-  }
-  // KMS and Clerk membership reads are outside the D1 fence. A final scoped
-  // admission and primary read prevent a late SSH/VNC secret handoff after a
-  // committed account closure or a concurrently cancelled Run.
-  const admitted = await db.transaction(async (tx) => {
-    const result = await settle(
-      assertErasureSubjectWritable(tx, [
-        { subjectKind: "user", subjectId: row.userId },
-        { subjectKind: "organization", subjectId: row.orgId },
-      ]),
-      signal,
-    );
-    if (!result.ok) {
-      if (
-        result.error instanceof Error &&
-        result.error.message === "account_erasure:subject_closed"
-      ) {
-        return false;
-      }
-      throw result.error;
-    }
-    const latest = await currentRunnerVncAuthority(tx, input, signal);
-    if (!latest) {
-      return false;
-    }
-    const latestTransport = storedTransportSnapshot(latest);
-    return (
-      hasTransportAuthority(latest, latestTransport) &&
-      latest.generation === row.generation &&
-      latest.encryptedPassword === row.encryptedPassword &&
-      latest.username === row.username &&
-      latest.authMethod === row.authMethod &&
-      latest.securityType === row.securityType &&
-      latest.trustMode === row.trustMode &&
-      latest.caBundle === row.caBundle &&
-      latest.host === row.host &&
-      latest.port === row.port &&
-      sameTransport(latestTransport, transport)
-    );
-  });
-  if (!admitted) {
     return { outcome: "unavailable" };
   }
   return resolvedRunnerResponse(

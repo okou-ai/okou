@@ -12,7 +12,7 @@ import {
   appendTerminalChatEventsFixture,
   readChatThreadCursorsFixture,
   readSeededUnreadThreadIdsFixture,
-} from "../../../test-fixtures/chat-thread-agent-read-erasure";
+} from "../../../test-fixtures/chat-thread-agent-read";
 import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -27,7 +27,7 @@ const NOTIFIED_THREAD_ID_BUDGET = 100;
 interface AgentReadFixture {
   /** Owns the threads and calls the endpoint; never owns the Agent. */
   readonly actor: ApiTestUser;
-  /** The canonical Agent owner, a user subject distinct from the actor. */
+  /** The Agent owner is a different user from the actor. */
   readonly owner: ApiTestUser;
   readonly agentId: string;
   readonly orgId: string;
@@ -38,8 +38,7 @@ interface AgentReadFixture {
  * One shared Agent owned by another member of the caller's organization, with
  * `threadCount` threads that belong to the caller. The distinct Agent owner
  * exists before any request runs, so a test never has to transfer the
- * Agent first and can never be satisfied by an identity mismatch instead of the
- * shared admission.
+ * Agent first; the test exercises the actor's read cursor for a shared Agent.
  */
 async function createAgentReadFixture(
   threadCount: number,

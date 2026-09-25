@@ -12,19 +12,13 @@ import {
   piStableContextPublications,
 } from "@okouai/db/schema/pi-stable-context";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-import { agents } from "@okouai/db/schema/agent";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
-import {
-  getInstructionsStorageName,
-  VOLUME_ORG_USER_ID,
-} from "@okouai/core/storage-names";
+import { storages } from "@okouai/db/schema/storage";
 import { createStore } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
 import { onTestFinished } from "vitest";
 import { z } from "zod";
 
 import { executeRawRows } from "../lib/db-raw-rows";
-import type { Tx } from "../lib/db-types";
 import { writeDb$, type Db } from "../signals/external/db";
 import { createDeferredPromise } from "../signals/utils";
 import {
@@ -34,7 +28,6 @@ import {
   setStableContextCacheIdentityBuildHookForTest,
 } from "../signals/services/agent-runs-create.service";
 import { piStableContextInputDigest } from "../signals/services/pi-stable-context-digest.service";
-import { deleteExpiredPiStableContextArtifacts } from "../signals/services/pi-api-first-turn-cleanup.service";
 import {
   beginPiStableContextPublication,
   invalidatePiStableContext,
@@ -434,134 +427,6 @@ export async function seedPiStableContextStorageDemandFixture(args: {
   }
   registerStableContextStorageDemandCleanup(db, args.agentId);
   return head.id;
-}
-
-export async function seedAgentInstructionsStorageWithIdFixture(args: {
-  readonly agentId: string;
-  readonly storageId: string;
-}) {
-  const db = store.set(writeDb$);
-  const [agent] = await db
-    .select({ orgId: agents.orgId, owner: agents.owner, name: agents.name })
-    .from(agents)
-    .where(eq(agents.id, args.agentId))
-    .limit(1);
-  if (!agent) {
-    throw new Error("Expected Agent instructions fixture authority");
-  }
-  const storageName = getInstructionsStorageName(agent.name.toLowerCase());
-  const versionId = args.storageId.replaceAll("-", "").repeat(2);
-  await db
-    .delete(storages)
-    .where(
-      and(
-        eq(storages.orgId, agent.orgId),
-        eq(storages.userId, VOLUME_ORG_USER_ID),
-        eq(storages.name, storageName),
-      ),
-    );
-  await db.insert(storages).values({
-    id: args.storageId,
-    orgId: agent.orgId,
-    userId: VOLUME_ORG_USER_ID,
-    name: storageName,
-    s3Prefix: `test/agent-instructions/${args.storageId}`,
-  });
-  await db.insert(storageVersions).values({
-    id: versionId,
-    storageId: args.storageId,
-    s3Key: `test/agent-instructions/${args.storageId}/${versionId}`,
-    archiveSize: 0,
-    createdBy: agent.owner,
-  });
-  await db
-    .update(storages)
-    .set({ headVersionId: versionId })
-    .where(eq(storages.id, args.storageId));
-  return {
-    storageId: args.storageId,
-    storageName,
-    versionId,
-    archiveSize: 0,
-    resourceUserId: VOLUME_ORG_USER_ID,
-  };
-}
-
-export async function readAgentInstructionsStorageFixture(agentId: string) {
-  const db = store.set(writeDb$);
-  const [agent] = await db
-    .select({ orgId: agents.orgId, name: agents.name })
-    .from(agents)
-    .where(eq(agents.id, agentId))
-    .limit(1);
-  if (!agent) {
-    throw new Error("Expected Agent instructions fixture authority");
-  }
-  const [storage] = await db
-    .select({
-      storageId: storages.id,
-      storageName: storages.name,
-      versionId: storages.headVersionId,
-      archiveSize: storageVersions.archiveSize,
-    })
-    .from(storages)
-    .innerJoin(storageVersions, eq(storageVersions.id, storages.headVersionId))
-    .where(
-      and(
-        eq(storages.orgId, agent.orgId),
-        eq(storages.userId, VOLUME_ORG_USER_ID),
-        eq(storages.name, getInstructionsStorageName(agent.name.toLowerCase())),
-      ),
-    )
-    .limit(1);
-  if (!storage?.versionId) {
-    throw new Error("Expected Agent instructions Storage fixture");
-  }
-  return {
-    storageId: storage.storageId,
-    storageName: storage.storageName,
-    versionId: storage.versionId,
-    archiveSize: storage.archiveSize,
-    resourceUserId: VOLUME_ORG_USER_ID,
-  };
-}
-
-export async function removePiStableContextHeadFixture(
-  headId: string,
-): Promise<string> {
-  const [removed] = await store
-    .set(writeDb$)
-    .delete(piStableContextHeads)
-    .where(eq(piStableContextHeads.id, headId))
-    .returning({ artifactDigest: piStableContextHeads.artifactDigest });
-  if (!removed?.artifactDigest) {
-    throw new Error("Expected ready stable-context head fixture");
-  }
-  return removed.artifactDigest;
-}
-
-export async function deleteExpiredOwnedPiStableContextArtifactFixture(args: {
-  readonly artifactDigest?: string;
-  readonly artifactDigests?: readonly string[];
-  readonly cutoff: Date;
-  readonly beforeStorageLocks?: (tx: Tx) => Promise<void>;
-  readonly afterCandidatesLocked?: (tx: Tx) => Promise<void>;
-}) {
-  const artifactDigests =
-    args.artifactDigests ?? (args.artifactDigest ? [args.artifactDigest] : []);
-  return await deleteExpiredPiStableContextArtifacts(
-    store.set(writeDb$),
-    args.cutoff,
-    {
-      artifactDigests,
-      ...(args.beforeStorageLocks
-        ? { beforeStorageLocks: args.beforeStorageLocks }
-        : {}),
-      ...(args.afterCandidatesLocked
-        ? { afterCandidatesLocked: args.afterCandidatesLocked }
-        : {}),
-    },
-  );
 }
 
 export async function readPiStableContextStorageDemandFixture(headId: string) {

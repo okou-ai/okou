@@ -3,7 +3,6 @@ import { command } from "ccstate";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
-  COMPUTE_CLOSURE_ERROR,
   releaseActiveAgentRuns,
   transitionAgentRunsToTerminal,
 } from "./agent-run-terminal-transition.service";
@@ -623,40 +622,17 @@ async function cleanupExpiredRunnerJobs(
   runIds: readonly string[] | null,
   signal: AbortSignal,
 ): Promise<number> {
-  const deletedCount = await db.transaction(async (tx) => {
-    // Lock run before queue, as claims do. Recheck closure after waiting so an
-    // in-flight TTL statement cannot discard a newly retained locator.
-    const candidates = await tx
-      .select({ runId: agentRuns.id })
-      .from(agentRuns)
-      .innerJoin(runnerJobQueue, eq(runnerJobQueue.runId, agentRuns.id))
-      .where(
-        and(
-          lte(runnerJobQueue.expiresAt, sql`now()`),
-          sql`${agentRuns.error} IS DISTINCT FROM ${COMPUTE_CLOSURE_ERROR}`,
-          runIds === null ? undefined : inArray(agentRuns.id, runIds),
-        ),
-      )
-      .orderBy(agentRuns.createdAt, agentRuns.id)
-      .limit(100)
-      .for("update", { of: agentRuns });
-    if (candidates.length === 0) {
-      return 0;
-    }
-    const { rowCount } = await tx.delete(runnerJobQueue).where(
+  const { rowCount } = await db
+    .delete(runnerJobQueue)
+    .where(
       and(
-        inArray(
-          runnerJobQueue.runId,
-          candidates.map((row) => {
-            return row.runId;
-          }),
-        ),
         lte(runnerJobQueue.expiresAt, sql`now()`),
+        runIds === null ? undefined : inArray(runnerJobQueue.runId, runIds),
       ),
     );
-    return rowCount ?? 0;
-  });
   signal.throwIfAborted();
+
+  const deletedCount = rowCount ?? 0;
 
   if (deletedCount > 0) {
     L.debug("Cleaned up expired runner job queue entries", {
@@ -684,7 +660,6 @@ async function cleanupConnectorDiagnosticRegistrations(
           isNull(agentRuns.id),
           inArray(agentRuns.status, TERMINAL_RUN_STATUSES),
         ),
-        sql`${agentRuns.error} IS DISTINCT FROM ${COMPUTE_CLOSURE_ERROR}`,
         runIds === null
           ? undefined
           : inArray(agentRunConnectorDiagnosticRegistrations.runId, runIds),

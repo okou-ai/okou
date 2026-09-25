@@ -3,7 +3,7 @@ import { Client } from "pg";
 
 import { closeDbPool } from "../lib/db";
 import { settleIncludingAbort } from "../signals/utils";
-import { barrierQueryText } from "./account-erasure-subject";
+import { barrierQueryText } from "./database-transaction-barrier";
 
 export interface ModelRoutingQueryReceipt {
   readonly planReads: number;

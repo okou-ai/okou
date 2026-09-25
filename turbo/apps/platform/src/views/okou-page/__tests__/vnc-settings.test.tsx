@@ -619,6 +619,85 @@ test("Profile selection filters credentials and clears incompatible choices", as
   );
 });
 
+test("Mac classic password is an explicit SSH-only profile with risk disclosure and bounded password", async () => {
+  mockSettings({
+    connections: [],
+    credentials: [],
+    sshConnections: [sshHost],
+  });
+  const requests: unknown[] = [];
+  context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
+    requests.push(body);
+    return respond(201, {
+      ...host,
+      host: "127.0.0.1",
+      credentialName: "Mac classic password",
+      security: { type: "apple_vnc_password" },
+      transport: { type: "ssh", connectionId: sshHost.id },
+    });
+  });
+  await openAddHostPage();
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await choose(
+    dialog,
+    "Security profile",
+    "Mac Screen Sharing (classic VNC password)",
+  );
+  expect(
+    within(dialog).getByText(/other clients may reach port 5900/u),
+  ).toBeInTheDocument();
+  expect(
+    within(dialog).queryByLabelText("TLS certificate identity"),
+  ).toBeNull();
+  expect(
+    within(dialog).queryByLabelText("Server certificate trust"),
+  ).toBeNull();
+  expect(within(dialog).getByLabelText("Connection route")).toHaveTextContent(
+    "Through saved SSH host",
+  );
+  await userEvent.click(within(dialog).getByLabelText("Connection route"));
+  expect(
+    screen.queryByRole("option", { name: "Direct from Runner" }),
+  ).toBeNull();
+  await userEvent.keyboard("{Escape}");
+  await choose(dialog, "SSH host", "Desktop gateway · gateway.example.com:22");
+  await fill(within(dialog).getByLabelText("Display name"), "Mac classic VNC");
+  const destination = within(dialog).getByLabelText("RFB destination host");
+  await fill(destination, "localhost");
+  expect(destination).toBeInvalid();
+  await fill(destination, "127.0.0.1");
+  await choose(dialog, "Credential", "Create new credential");
+  await fill(
+    within(dialog).getByLabelText("Credential name"),
+    "Mac classic password",
+  );
+  expect(within(dialog).queryByLabelText("Username")).toBeNull();
+  const password = within(dialog).getByLabelText("VNC password");
+  await fill(password, "ninebytes");
+  expect(password).toBeInvalid();
+  await fill(password, "secret");
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      id: expect.any(String),
+      displayName: "Mac classic VNC",
+      host: "127.0.0.1",
+      port: 5900,
+      transport: { type: "ssh", connectionId: sshHost.id },
+      credential: {
+        create: {
+          name: "Mac classic password",
+          authentication: { method: "vnc_password", password: "secret" },
+        },
+      },
+      security: { type: "apple_vnc_password" },
+    },
+  ]);
+});
+
 test.each([
   {
     profile: "apple_dh" as const,

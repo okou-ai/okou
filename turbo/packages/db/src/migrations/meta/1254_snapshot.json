@@ -1,1044 +1,9 @@
 {
-  "id": "78ad8a67-00be-420e-8b84-42a09182e067",
-  "prevId": "9907a150-9ec3-487c-91e2-2192f0b6c006",
+  "id": "58c28b5d-1ba9-46b3-8f87-761ece71bc01",
+  "prevId": "eb7067bd-954a-41c3-9700-0e79ee6d11bd",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.account_erasure_ingress": {
-      "name": "account_erasure_ingress",
-      "schema": "",
-      "columns": {
-        "confirmation_ref": {
-          "name": "confirmation_ref",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "audience": {
-          "name": "audience",
-          "type": "varchar(192)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "event_id": {
-          "name": "event_id",
-          "type": "varchar(192)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "authority_id": {
-          "name": "authority_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subject_kind": {
-          "name": "subject_kind",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subject_id": {
-          "name": "subject_id",
-          "type": "varchar(192)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "generation": {
-          "name": "generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decision_ref": {
-          "name": "decision_ref",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "previous_decision_ref": {
-          "name": "previous_decision_ref",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "disposition_version": {
-          "name": "disposition_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "requested_at": {
-          "name": "requested_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "deadline_at": {
-          "name": "deadline_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decision_sequence": {
-          "name": "decision_sequence",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "state": {
-          "name": "state",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "attempts": {
-          "name": "attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "available_at": {
-          "name": "available_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "lease_id": {
-          "name": "lease_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "account_erasure_ingress_event": {
-          "name": "account_erasure_ingress_event",
-          "columns": [
-            {
-              "expression": "audience",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "event_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "account_erasure_ingress_retry": {
-          "name": "account_erasure_ingress_retry",
-          "columns": [
-            {
-              "expression": "authority_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "audience",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "available_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "confirmation_ref",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"account_erasure_ingress\".\"state\" IN ('pending', 'external_committed') AND \"account_erasure_ingress\".\"attempts\" < 5",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "account_erasure_ingress_shape": {
-          "name": "account_erasure_ingress_shape",
-          "value": "\"account_erasure_ingress\".\"subject_kind\" IN ('user', 'organization') AND octet_length(\"account_erasure_ingress\".\"subject_id\") BETWEEN 1 AND 192 AND octet_length(\"account_erasure_ingress\".\"audience\") BETWEEN 1 AND 192 AND octet_length(\"account_erasure_ingress\".\"event_id\") BETWEEN 1 AND 192 AND \"account_erasure_ingress\".\"generation\" > 0 AND \"account_erasure_ingress\".\"disposition_version\" > 0 AND \"account_erasure_ingress\".\"deadline_at\" > \"account_erasure_ingress\".\"requested_at\" AND \"account_erasure_ingress\".\"attempts\" BETWEEN 0 AND 5 AND (\"account_erasure_ingress\".\"decision_sequence\" IS NULL OR \"account_erasure_ingress\".\"decision_sequence\" > 0)"
-        },
-        "account_erasure_ingress_state": {
-          "name": "account_erasure_ingress_state",
-          "value": "\"account_erasure_ingress\".\"state\" IN ('pending', 'external_committed', 'projection_committed', 'unresolved') AND (\"account_erasure_ingress\".\"state\" NOT IN ('external_committed', 'projection_committed') OR \"account_erasure_ingress\".\"decision_sequence\" IS NOT NULL)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.account_erasure_replay": {
-      "name": "account_erasure_replay",
-      "schema": "",
-      "columns": {
-        "authority_id": {
-          "name": "authority_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "audience": {
-          "name": "audience",
-          "type": "varchar(192)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "target_id": {
-          "name": "target_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "replay_generation": {
-          "name": "replay_generation",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "watermark": {
-          "name": "watermark",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cursor": {
-          "name": "cursor",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "0"
-        },
-        "state": {
-          "name": "state",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "lease_id": {
-          "name": "lease_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lease_expires_at": {
-          "name": "lease_expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "account_erasure_replay_authority_id_target_id_replay_generation_pk": {
-          "name": "account_erasure_replay_authority_id_target_id_replay_generation_pk",
-          "columns": [
-            "authority_id",
-            "target_id",
-            "replay_generation"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "account_erasure_replay_shape": {
-          "name": "account_erasure_replay_shape",
-          "value": "\"account_erasure_replay\".\"watermark\" >= 0 AND \"account_erasure_replay\".\"cursor\" >= 0 AND \"account_erasure_replay\".\"cursor\" <= \"account_erasure_replay\".\"watermark\" AND octet_length(\"account_erasure_replay\".\"audience\") BETWEEN 1 AND 192 AND \"account_erasure_replay\".\"state\" IN ('pending', 'complete', 'unresolved') AND (\"account_erasure_replay\".\"state\" <> 'complete' OR \"account_erasure_replay\".\"cursor\" = \"account_erasure_replay\".\"watermark\") AND ((\"account_erasure_replay\".\"lease_id\" IS NULL) = (\"account_erasure_replay\".\"lease_expires_at\" IS NULL))"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.account_erasure_jobs": {
-      "name": "account_erasure_jobs",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "subject_kind": {
-          "name": "subject_kind",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subject_id": {
-          "name": "subject_id",
-          "type": "varchar(192)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "generation": {
-          "name": "generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "authority_id": {
-          "name": "authority_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decision_ref": {
-          "name": "decision_ref",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decision_sequence": {
-          "name": "decision_sequence",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "confirmation_ref": {
-          "name": "confirmation_ref",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "previous_decision_ref": {
-          "name": "previous_decision_ref",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "disposition_version": {
-          "name": "disposition_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "requested_at": {
-          "name": "requested_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "deadline_at": {
-          "name": "deadline_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "capture_revision": {
-          "name": "capture_revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "inventory_revision": {
-          "name": "inventory_revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "sealed_capture_revision": {
-          "name": "sealed_capture_revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "producer_boundary_ref": {
-          "name": "producer_boundary_ref",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "retirement_release_ref": {
-          "name": "retirement_release_ref",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "state": {
-          "name": "state",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        }
-      },
-      "indexes": {
-        "account_erasure_subject_generation": {
-          "name": "account_erasure_subject_generation",
-          "columns": [
-            {
-              "expression": "subject_kind",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "subject_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "generation",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "account_erasure_decision": {
-          "name": "account_erasure_decision",
-          "columns": [
-            {
-              "expression": "decision_ref",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "account_erasure_authority_sequence": {
-          "name": "account_erasure_authority_sequence",
-          "columns": [
-            {
-              "expression": "authority_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "decision_sequence",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "account_erasure_positive_versions": {
-          "name": "account_erasure_positive_versions",
-          "value": "\"account_erasure_jobs\".\"generation\" > 0 AND \"account_erasure_jobs\".\"decision_sequence\" > 0 AND \"account_erasure_jobs\".\"disposition_version\" > 0 AND \"account_erasure_jobs\".\"capture_revision\" > 0 AND \"account_erasure_jobs\".\"inventory_revision\" > 0"
-        },
-        "account_erasure_subject_kind": {
-          "name": "account_erasure_subject_kind",
-          "value": "\"account_erasure_jobs\".\"subject_kind\" IN ('user', 'organization')"
-        },
-        "account_erasure_job_outcome": {
-          "name": "account_erasure_job_outcome",
-          "value": "\"account_erasure_jobs\".\"state\" IN ('pending', 'retryable_failure', 'capability_unresolved', 'verified_erased', 'verified_no_applicable_data')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.account_erasure_pages": {
-      "name": "account_erasure_pages",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "work_id": {
-          "name": "work_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "capture_revision": {
-          "name": "capture_revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "page_key": {
-          "name": "page_key",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "digest": {
-          "name": "digest",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "input_cursor_digest": {
-          "name": "input_cursor_digest",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "account_erasure_page_identity": {
-          "name": "account_erasure_page_identity",
-          "columns": [
-            {
-              "expression": "work_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "capture_revision",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "page_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "account_erasure_pages_work_id_account_erasure_work_id_fk": {
-          "name": "account_erasure_pages_work_id_account_erasure_work_id_fk",
-          "tableFrom": "account_erasure_pages",
-          "tableTo": "account_erasure_work",
-          "columnsFrom": [
-            "work_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.account_erasure_selector_dependencies": {
-      "name": "account_erasure_selector_dependencies",
-      "schema": "",
-      "columns": {
-        "work_id": {
-          "name": "work_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sink_id": {
-          "name": "sink_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "item_key": {
-          "name": "item_key",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "obligation": {
-          "name": "obligation",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "account_erasure_selector_dependencies_work_id_account_erasure_work_id_fk": {
-          "name": "account_erasure_selector_dependencies_work_id_account_erasure_work_id_fk",
-          "tableFrom": "account_erasure_selector_dependencies",
-          "tableTo": "account_erasure_work",
-          "columnsFrom": [
-            "work_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "account_erasure_selector_dependencies_work_id_sink_id_item_key_pk": {
-          "name": "account_erasure_selector_dependencies_work_id_sink_id_item_key_pk",
-          "columns": [
-            "work_id",
-            "sink_id",
-            "item_key"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.account_erasure_sinks": {
-      "name": "account_erasure_sinks",
-      "schema": "",
-      "columns": {
-        "job_id": {
-          "name": "job_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sink_id": {
-          "name": "sink_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "domain": {
-          "name": "domain",
-          "type": "varchar(24)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "inventory_revision": {
-          "name": "inventory_revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "collector_version": {
-          "name": "collector_version",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "account_erasure_sinks_job_id_account_erasure_jobs_id_fk": {
-          "name": "account_erasure_sinks_job_id_account_erasure_jobs_id_fk",
-          "tableFrom": "account_erasure_sinks",
-          "tableTo": "account_erasure_jobs",
-          "columnsFrom": [
-            "job_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "account_erasure_sinks_job_id_sink_id_pk": {
-          "name": "account_erasure_sinks_job_id_sink_id_pk",
-          "columns": [
-            "job_id",
-            "sink_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "account_erasure_sink_domain": {
-          "name": "account_erasure_sink_domain",
-          "value": "\"account_erasure_sinks\".\"domain\" IN ('relational', 'objects', 'providers', 'telemetry', 'recovery', 'client')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.account_erasure_work": {
-      "name": "account_erasure_work",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "job_id": {
-          "name": "job_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sink_id": {
-          "name": "sink_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "item_key": {
-          "name": "item_key",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "generation": {
-          "name": "generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "selector_ciphertext": {
-          "name": "selector_ciphertext",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "selector_digest": {
-          "name": "selector_digest",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "selector_capture_revision": {
-          "name": "selector_capture_revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cursor_ciphertext": {
-          "name": "cursor_ciphertext",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cursor_digest": {
-          "name": "cursor_digest",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "capture_complete": {
-          "name": "capture_complete",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "enumeration_ref": {
-          "name": "enumeration_ref",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "state": {
-          "name": "state",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "attempt_count": {
-          "name": "attempt_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "available_at": {
-          "name": "available_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "lease_id": {
-          "name": "lease_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lease_expires_at": {
-          "name": "lease_expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "error_code": {
-          "name": "error_code",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "request_ref": {
-          "name": "request_ref",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "evidence_ref": {
-          "name": "evidence_ref",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "proof_capture_revision": {
-          "name": "proof_capture_revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "proof_inventory_revision": {
-          "name": "proof_inventory_revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "proof_boundary_ref": {
-          "name": "proof_boundary_ref",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "proof_reader_ref": {
-          "name": "proof_reader_ref",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "proof_observed_at": {
-          "name": "proof_observed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "account_erasure_work_identity": {
-          "name": "account_erasure_work_identity",
-          "columns": [
-            {
-              "expression": "job_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "sink_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "item_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "generation",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "account_erasure_work_claim": {
-          "name": "account_erasure_work_claim",
-          "columns": [
-            {
-              "expression": "job_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "available_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"account_erasure_work\".\"state\" IN ('pending', 'retryable_failure')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "account_erasure_work_deadline": {
-          "name": "account_erasure_work_deadline",
-          "columns": [
-            {
-              "expression": "job_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"account_erasure_work\".\"state\" IN ('pending', 'retryable_failure')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "account_erasure_work_capture": {
-          "name": "account_erasure_work_capture",
-          "columns": [
-            {
-              "expression": "job_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "selector_capture_revision",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "account_erasure_work_job_id_account_erasure_jobs_id_fk": {
-          "name": "account_erasure_work_job_id_account_erasure_jobs_id_fk",
-          "tableFrom": "account_erasure_work",
-          "tableTo": "account_erasure_jobs",
-          "columnsFrom": [
-            "job_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "account_erasure_work_sink_fk": {
-          "name": "account_erasure_work_sink_fk",
-          "tableFrom": "account_erasure_work",
-          "tableTo": "account_erasure_sinks",
-          "columnsFrom": [
-            "job_id",
-            "sink_id"
-          ],
-          "columnsTo": [
-            "job_id",
-            "sink_id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "account_erasure_work_outcome": {
-          "name": "account_erasure_work_outcome",
-          "value": "\"account_erasure_work\".\"state\" IN ('pending', 'retryable_failure', 'capability_unresolved', 'verified_erased', 'verified_no_applicable_data')"
-        },
-        "account_erasure_work_kind": {
-          "name": "account_erasure_work_kind",
-          "value": "\"account_erasure_work\".\"kind\" IN ('inventory', 'erase', 'recovery')"
-        },
-        "account_erasure_terminal_proof": {
-          "name": "account_erasure_terminal_proof",
-          "value": "\"account_erasure_work\".\"state\" NOT IN ('verified_erased', 'verified_no_applicable_data') OR (\"account_erasure_work\".\"evidence_ref\" IS NOT NULL AND \"account_erasure_work\".\"proof_capture_revision\" IS NOT NULL AND \"account_erasure_work\".\"proof_inventory_revision\" IS NOT NULL AND \"account_erasure_work\".\"proof_boundary_ref\" IS NOT NULL AND \"account_erasure_work\".\"proof_reader_ref\" IS NOT NULL AND \"account_erasure_work\".\"proof_observed_at\" IS NOT NULL AND \"account_erasure_work\".\"enumeration_ref\" IS NOT NULL)"
-        },
-        "account_erasure_capture_version": {
-          "name": "account_erasure_capture_version",
-          "value": "\"account_erasure_work\".\"selector_capture_revision\" > 0 AND \"account_erasure_work\".\"generation\" > 0 AND \"account_erasure_work\".\"attempt_count\" >= 0"
-        },
-        "account_erasure_lease_pair": {
-          "name": "account_erasure_lease_pair",
-          "value": "(\"account_erasure_work\".\"lease_id\" IS NULL) = (\"account_erasure_work\".\"lease_expires_at\" IS NULL)"
-        },
-        "account_erasure_selector_size": {
-          "name": "account_erasure_selector_size",
-          "value": "\"account_erasure_work\".\"selector_ciphertext\" IS NULL OR octet_length(\"account_erasure_work\".\"selector_ciphertext\") <= 16384"
-        },
-        "account_erasure_cursor_size": {
-          "name": "account_erasure_cursor_size",
-          "value": "\"account_erasure_work\".\"cursor_ciphertext\" IS NULL OR octet_length(\"account_erasure_work\".\"cursor_ciphertext\") <= 16384"
-        },
-        "account_erasure_cursor_pair": {
-          "name": "account_erasure_cursor_pair",
-          "value": "(\"account_erasure_work\".\"cursor_ciphertext\" IS NULL) = (\"account_erasure_work\".\"cursor_digest\" IS NULL)"
-        },
-        "account_erasure_complete_enumeration": {
-          "name": "account_erasure_complete_enumeration",
-          "value": "NOT \"account_erasure_work\".\"capture_complete\" OR \"account_erasure_work\".\"enumeration_ref\" IS NOT NULL"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.active_agent_runs": {
       "name": "active_agent_runs",
       "schema": "",
@@ -5717,75 +4682,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.blob_upload_intents": {
-      "name": "blob_upload_intents",
-      "schema": "",
-      "columns": {
-        "hash": {
-          "name": "hash",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "intent_id": {
-          "name": "intent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "blob_upload_intents_expires_at": {
-          "name": "blob_upload_intents_expires_at",
-          "columns": [
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "blob_upload_intents_hash_blobs_hash_fk": {
-          "name": "blob_upload_intents_hash_blobs_hash_fk",
-          "tableFrom": "blob_upload_intents",
-          "tableTo": "blobs",
-          "columnsFrom": [
-            "hash"
-          ],
-          "columnsTo": [
-            "hash"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "blob_upload_intents_hash_intent_id_pk": {
-          "name": "blob_upload_intents_hash_intent_id_pk",
-          "columns": [
-            "hash",
-            "intent_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.blobs": {
       "name": "blobs",
       "schema": "",
@@ -5821,20 +4717,6 @@
           "notNull": true,
           "default": 1
         },
-        "erasure_pending": {
-          "name": "erasure_pending",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "erasure_eligible_at": {
-          "name": "erasure_eligible_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now() + interval '49 hours'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -5864,12 +4746,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "blobs_erasure_pending_zero_refs": {
-          "name": "blobs_erasure_pending_zero_refs",
-          "value": "NOT \"blobs\".\"erasure_pending\" OR \"blobs\".\"ref_count\" = 0"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.browser_authorization_requests": {
@@ -7649,99 +6526,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.chat_content_erasure_subjects": {
-      "name": "chat_content_erasure_subjects",
-      "schema": "",
-      "columns": {
-        "subject_kind": {
-          "name": "subject_kind",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subject_id": {
-          "name": "subject_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_reference": {
-          "name": "source_reference",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "confirmed_at": {
-          "name": "confirmed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "completed_at": {
-          "name": "completed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "next_sweep_at": {
-          "name": "next_sweep_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "chat_content_erasure_next_sweep": {
-          "name": "chat_content_erasure_next_sweep",
-          "columns": [
-            {
-              "expression": "next_sweep_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "subject_kind",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "subject_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"chat_content_erasure_subjects\".\"completed_at\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "chat_content_erasure_subjects_subject_kind_subject_id_pk": {
-          "name": "chat_content_erasure_subjects_subject_kind_subject_id_pk",
-          "columns": [
-            "subject_kind",
-            "subject_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "chat_content_erasure_subject_kind": {
-          "name": "chat_content_erasure_subject_kind",
-          "value": "\"chat_content_erasure_subjects\".\"subject_kind\" IN ('user', 'organization')"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.chat_discord_context": {
@@ -9689,15 +8473,35 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "uq_chat_thread_drafts_thread_user": {
+          "name": "uq_chat_thread_drafts_thread_user",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {
-        "chat_thread_drafts_chat_thread_id_user_id_pk": {
-          "name": "chat_thread_drafts_chat_thread_id_user_id_pk",
+        "chat_thread_drafts_chat_thread_id_pk": {
+          "name": "chat_thread_drafts_chat_thread_id_pk",
           "columns": [
-            "chat_thread_id",
-            "user_id"
+            "chat_thread_id"
           ]
         }
       },
@@ -10409,9 +9213,69 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "draft_user_message": {
+          "name": "draft_user_message",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "draft_attachments": {
+          "name": "draft_attachments",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
+        "idx_chat_threads_user_agent_updated": {
+          "name": "idx_chat_threads_user_agent_updated",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "agent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_chat_threads_user_last_read": {
+          "name": "idx_chat_threads_user_last_read",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "last_read_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_chat_threads_user_agent_pinned": {
           "name": "idx_chat_threads_user_agent_pinned",
           "columns": [
@@ -10533,6 +9397,10 @@
         "chat_threads_computer_access_check": {
           "name": "chat_threads_computer_access_check",
           "value": "NOT (\"chat_threads\".\"cloud_browser_enabled\" AND \"chat_threads\".\"computer_use_host_id\" IS NOT NULL)"
+        },
+        "chat_threads_draft_user_message_check": {
+          "name": "chat_threads_draft_user_message_check",
+          "value": "\"chat_threads\".\"draft_user_message\" IS NOT NULL\n          OR COALESCE(\"chat_threads\".\"draft_attachments\", '[]'::jsonb) = '[]'::jsonb"
         }
       },
       "isRLSEnabled": false
@@ -28194,51 +27062,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.pi_stable_context_erasure_fences": {
-      "name": "pi_stable_context_erasure_fences",
-      "schema": "",
-      "columns": {
-        "subject_kind": {
-          "name": "subject_kind",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subject_digest": {
-          "name": "subject_digest",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "pi_stable_context_erasure_fences_pk": {
-          "name": "pi_stable_context_erasure_fences_pk",
-          "columns": [
-            "subject_kind",
-            "subject_digest"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "pi_stable_context_erasure_fences_kind_check": {
-          "name": "pi_stable_context_erasure_fences_kind_check",
-          "value": "\"pi_stable_context_erasure_fences\".\"subject_kind\" IN ('organization', 'user')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.pi_stable_context_generations": {
       "name": "pi_stable_context_generations",
       "schema": "",
@@ -39395,11 +38218,11 @@
         },
         "chk_vnc_connections_profile": {
           "name": "chk_vnc_connections_profile",
-          "value": "(\"vnc_connections\".\"auth_method\" = 'vnc_password' AND \"vnc_connections\".\"security_type\" = 'x509_vnc') OR (\"vnc_connections\".\"auth_method\" = 'username_password' AND \"vnc_connections\".\"security_type\" = 'x509_plain') OR (\"vnc_connections\".\"auth_method\" = 'apple_dh_username_password' AND \"vnc_connections\".\"security_type\" = 'apple_dh' AND \"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1') AND \"vnc_connections\".\"x509_server_name\" IS NULL) OR (\"vnc_connections\".\"auth_method\" = 'apple_srp_username_password' AND \"vnc_connections\".\"security_type\" = 'apple_srp' AND \"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1') AND \"vnc_connections\".\"x509_server_name\" IS NULL) OR (\"vnc_connections\".\"auth_method\" = 'apple_rsa_srp_username_password' AND \"vnc_connections\".\"security_type\" = 'apple_rsa_srp' AND \"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1') AND \"vnc_connections\".\"x509_server_name\" IS NULL)"
+          "value": "(\"vnc_connections\".\"auth_method\" = 'vnc_password' AND \"vnc_connections\".\"security_type\" = 'x509_vnc') OR (\"vnc_connections\".\"auth_method\" = 'vnc_password' AND \"vnc_connections\".\"security_type\" = 'apple_vnc_password' AND \"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1') AND \"vnc_connections\".\"x509_server_name\" IS NULL) OR (\"vnc_connections\".\"auth_method\" = 'username_password' AND \"vnc_connections\".\"security_type\" = 'x509_plain') OR (\"vnc_connections\".\"auth_method\" = 'apple_dh_username_password' AND \"vnc_connections\".\"security_type\" = 'apple_dh' AND \"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1') AND \"vnc_connections\".\"x509_server_name\" IS NULL) OR (\"vnc_connections\".\"auth_method\" = 'apple_srp_username_password' AND \"vnc_connections\".\"security_type\" = 'apple_srp' AND \"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1') AND \"vnc_connections\".\"x509_server_name\" IS NULL) OR (\"vnc_connections\".\"auth_method\" = 'apple_rsa_srp_username_password' AND \"vnc_connections\".\"security_type\" = 'apple_rsa_srp' AND \"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1') AND \"vnc_connections\".\"x509_server_name\" IS NULL)"
         },
         "chk_vnc_connections_trust": {
           "name": "chk_vnc_connections_trust",
-          "value": "(\"vnc_connections\".\"security_type\" IN ('apple_dh', 'apple_srp', 'apple_rsa_srp') AND \"vnc_connections\".\"trust_mode\" = 'none' AND \"vnc_connections\".\"ca_bundle\" IS NULL) OR (\"vnc_connections\".\"security_type\" NOT IN ('apple_dh', 'apple_srp', 'apple_rsa_srp') AND ((\"vnc_connections\".\"trust_mode\" = 'system' AND \"vnc_connections\".\"ca_bundle\" IS NULL) OR (\"vnc_connections\".\"trust_mode\" = 'custom_ca' AND \"vnc_connections\".\"ca_bundle\" IS NOT NULL AND octet_length(\"vnc_connections\".\"ca_bundle\") BETWEEN 1 AND 65536)))"
+          "value": "(\"vnc_connections\".\"security_type\" IN ('apple_vnc_password', 'apple_dh', 'apple_srp', 'apple_rsa_srp') AND \"vnc_connections\".\"trust_mode\" = 'none' AND \"vnc_connections\".\"ca_bundle\" IS NULL) OR (\"vnc_connections\".\"security_type\" NOT IN ('apple_vnc_password', 'apple_dh', 'apple_srp', 'apple_rsa_srp') AND ((\"vnc_connections\".\"trust_mode\" = 'system' AND \"vnc_connections\".\"ca_bundle\" IS NULL) OR (\"vnc_connections\".\"trust_mode\" = 'custom_ca' AND \"vnc_connections\".\"ca_bundle\" IS NOT NULL AND octet_length(\"vnc_connections\".\"ca_bundle\") BETWEEN 1 AND 65536)))"
         }
       },
       "isRLSEnabled": false

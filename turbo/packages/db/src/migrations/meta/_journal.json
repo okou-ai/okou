@@ -1230,15 +1230,29 @@
     {
       "idx": 1253,
       "version": "7",
-      "when": 1790354829999,
-      "tag": "1253_drop_redundant_chat_thread_indexes",
+      "when": 1790354750068,
+      "tag": "1253_unique_zarek",
       "breakpoints": true
     },
     {
       "idx": 1254,
       "version": "7",
-      "when": 1790354845369,
-      "tag": "1254_drop_chat_thread_draft_columns",
+      "when": 1790356985326,
+      "tag": "1254_drop_account_erasure",
+      "breakpoints": true
+    },
+    {
+      "idx": 1255,
+      "version": "7",
+      "when": 1790380278389,
+      "tag": "1255_drop_redundant_chat_thread_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 1256,
+      "version": "7",
+      "when": 1790380294961,
+      "tag": "1256_drop_chat_thread_draft_columns",
       "breakpoints": true
     }
   ]

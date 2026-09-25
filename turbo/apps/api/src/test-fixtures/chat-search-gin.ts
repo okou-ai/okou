@@ -6,7 +6,10 @@ import { z } from "zod";
 import { closeDbPool, db } from "../lib/db";
 import { executeRawRows } from "../lib/db-raw-rows";
 import { createDeferredPromise, settleIncludingAbort } from "../signals/utils";
-import { barrierQueryBinds, barrierQueryText } from "./account-erasure-subject";
+import {
+  barrierQueryBinds,
+  barrierQueryText,
+} from "./database-transaction-barrier";
 
 /** GIN storage/maintenance cannot be controlled through the message API. Each
  * fixture owns a separate table, index and advisory-lock key; concurrent suites

@@ -51,6 +51,9 @@ const vncX509PlainSecurityVariantSchema = z
     serverName: hostSchema.optional(),
   })
   .strict();
+const vncAppleVncPasswordSecurityVariantSchema = z
+  .object({ type: z.literal("apple_vnc_password") })
+  .strict();
 const vncAppleDhSecurityVariantSchema = z
   .object({ type: z.literal("apple_dh") })
   .strict();
@@ -71,6 +74,7 @@ export const vncX509PlainSecuritySchema = z.discriminatedUnion("type", [
 export const vncSecuritySchema = z.discriminatedUnion("type", [
   vncX509VncSecurityVariantSchema,
   vncX509PlainSecurityVariantSchema,
+  vncAppleVncPasswordSecurityVariantSchema,
   vncAppleDhSecurityVariantSchema,
   vncAppleSrpSecurityVariantSchema,
   vncAppleRsaSrpSecurityVariantSchema,

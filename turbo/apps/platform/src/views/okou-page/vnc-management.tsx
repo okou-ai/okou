@@ -42,6 +42,11 @@ function VncProfileLabel({ profile }: { readonly profile: VncProfile }) {
         return $.vnc.security.x509Plain;
       });
     }
+    case "apple_vnc_password": {
+      return t(($) => {
+        return $.vnc.security.appleVncPassword;
+      });
+    }
     case "apple_dh": {
       return t(($) => {
         return $.vnc.security.appleDh;

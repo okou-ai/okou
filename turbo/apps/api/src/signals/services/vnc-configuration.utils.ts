@@ -34,6 +34,12 @@ const failures = {
     code: VNC_ERROR_CODES.INVALID_HOST,
     message: "Invalid VNC host",
   },
+  invalidAppleVncPasswordRoute: {
+    kind: "bad_request",
+    code: VNC_ERROR_CODES.INVALID_APPLE_VNC_PASSWORD_ROUTE,
+    message:
+      "Mac classic VNC password requires saved SSH to the Mac's loopback VNC service",
+  },
   invalidAppleDhRoute: {
     kind: "bad_request",
     code: VNC_ERROR_CODES.INVALID_APPLE_DH_ROUTE,
@@ -100,11 +106,6 @@ const failures = {
     kind: "conflict",
     code: VNC_ERROR_CODES.REVISION_EXHAUSTED,
     message: "VNC configuration revision limit reached",
-  },
-  ownerChanged: {
-    kind: "conflict",
-    code: VNC_ERROR_CODES.OWNER_CHANGED,
-    message: "VNC owner is no longer writable",
   },
   resourceIdConflict: {
     kind: "conflict",
@@ -252,6 +253,7 @@ export function prepareVncSecurity(security: VncSecurity): VncResult<{
   readonly x509ServerName: string | null;
 }> {
   if (
+    security.type === "apple_vnc_password" ||
     security.type === "apple_dh" ||
     security.type === "apple_srp" ||
     security.type === "apple_rsa_srp"
@@ -293,6 +295,7 @@ export function isVncProfileCompatible(
 ): boolean {
   return (
     (authMethod === "vnc_password" && securityType === "x509_vnc") ||
+    (authMethod === "vnc_password" && securityType === "apple_vnc_password") ||
     (authMethod === "username_password" && securityType === "x509_plain") ||
     (authMethod === "apple_dh_username_password" &&
       securityType === "apple_dh") ||
@@ -309,17 +312,20 @@ export function validateVncProfileRoute(
   transportType: "direct" | "ssh",
 ): VncResult<undefined> {
   if (
-    (securityType === "apple_dh" ||
+    (securityType === "apple_vnc_password" ||
+      securityType === "apple_dh" ||
       securityType === "apple_srp" ||
       securityType === "apple_rsa_srp") &&
     (transportType !== "ssh" || (host !== "127.0.0.1" && host !== "::1"))
   ) {
     return vncFailure(
-      securityType === "apple_dh"
-        ? "invalidAppleDhRoute"
-        : securityType === "apple_srp"
-          ? "invalidAppleSrpRoute"
-          : "invalidAppleRsaSrpRoute",
+      securityType === "apple_vnc_password"
+        ? "invalidAppleVncPasswordRoute"
+        : securityType === "apple_dh"
+          ? "invalidAppleDhRoute"
+          : securityType === "apple_srp"
+            ? "invalidAppleSrpRoute"
+            : "invalidAppleRsaSrpRoute",
     );
   }
   return { ok: true, value: undefined };

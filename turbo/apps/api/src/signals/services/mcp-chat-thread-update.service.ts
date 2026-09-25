@@ -74,14 +74,6 @@ export const updateMcpChatThread$ = command(
         retryable: false,
       };
     }
-    if (update.kind === "closed") {
-      return {
-        kind: "error",
-        code: "account_closed",
-        message: "Account content is closed.",
-        retryable: false,
-      };
-    }
     if (update.kind === "conflict" || update.kind === "expired") {
       return {
         kind: "error",

@@ -69,7 +69,6 @@ import {
   completePrivateArtifact$,
   privateArtifactRecord,
 } from "./private-artifact-storage.service";
-import { browserScreenshotSchemaAvailable } from "./browser-screenshot-schema.service";
 import {
   decryptPersistentSecretValue,
   encryptPersistentSecretValue,
@@ -378,10 +377,6 @@ const loadBrowserScreenshotUrl$ = command(
     chatThreadId: string,
     signal: AbortSignal,
   ): Promise<string | null> => {
-    if (!(await browserScreenshotSchemaAvailable(db))) {
-      signal.throwIfAborted();
-      return null;
-    }
     const [screenshot] = await db
       .select({
         url: browserSessionScreenshots.url,
@@ -933,10 +928,6 @@ const captureAndStoreBrowserScreenshot$ = command(
     const [result] = await Promise.allSettled([
       (async () => {
         const db = set(writeDb$);
-        if (!(await browserScreenshotSchemaAvailable(db))) {
-          signal.throwIfAborted();
-          return;
-        }
         const instance = await loadActiveInstance(db, browser.chatThreadId);
         signal.throwIfAborted();
         if (!instance) {
@@ -2981,7 +2972,6 @@ async function claimExpiredInactiveBrowser(
   db: Db,
   target: ExpiredInactiveBrowserTarget,
   cutoff: Date,
-  screenshotSchemaReady: boolean,
   signal: AbortSignal,
 ): Promise<Date | null> {
   const claimedAt = nowDate();
@@ -3051,11 +3041,9 @@ async function claimExpiredInactiveBrowser(
       return false;
     }
 
-    if (screenshotSchemaReady) {
-      await tx
-        .delete(browserSessionScreenshots)
-        .where(eq(browserSessionScreenshots.chatThreadId, target.chatThreadId));
-    }
+    await tx
+      .delete(browserSessionScreenshots)
+      .where(eq(browserSessionScreenshots.chatThreadId, target.chatThreadId));
     await tx
       .delete(browserSessionTabSnapshots)
       .where(eq(browserSessionTabSnapshots.chatThreadId, target.chatThreadId));
@@ -3163,14 +3151,12 @@ async function cleanupExpiredInactiveBrowser(
   db: Db,
   target: ExpiredInactiveBrowserTarget,
   cutoff: Date,
-  screenshotSchemaReady: boolean,
   signal: AbortSignal,
 ): Promise<boolean> {
   const claimedAt = await claimExpiredInactiveBrowser(
     db,
     target,
     cutoff,
-    screenshotSchemaReady,
     signal,
   );
   if (claimedAt === null) {
@@ -3211,7 +3197,6 @@ async function cleanupExpiredInactiveBrowser(
 async function reconcileExpiredInactiveBrowsers(
   db: Db,
   limit: number,
-  screenshotSchemaReady: boolean,
   chatThreadIds: readonly string[] | null,
   signal: AbortSignal,
 ): Promise<{
@@ -3288,7 +3273,6 @@ async function reconcileExpiredInactiveBrowsers(
         db,
         { ...row, status: row.status },
         cutoff,
-        screenshotSchemaReady,
         signal,
       ),
     );
@@ -3648,12 +3632,9 @@ const reconcileBrowsersWithScope$ = command(
       chatThreadIds,
       signal,
     );
-    const screenshotSchemaReady = await browserScreenshotSchemaAvailable(db);
-    signal.throwIfAborted();
     const expiredBrowserCleanup = await reconcileExpiredInactiveBrowsers(
       db,
       RECONCILE_BATCH_SIZE,
-      screenshotSchemaReady,
       chatThreadIds,
       signal,
     );
@@ -3669,14 +3650,12 @@ const reconcileBrowsersWithScope$ = command(
       chatThreadIds,
       signal,
     );
-    const orphanedScreenshotCleanup = screenshotSchemaReady
-      ? await reconcileOrphanedBrowserScreenshots(
-          db,
-          RECONCILE_BATCH_SIZE,
-          chatThreadIds,
-          signal,
-        )
-      : { checked: 0, cleaned: 0, errors: 0 };
+    const orphanedScreenshotCleanup = await reconcileOrphanedBrowserScreenshots(
+      db,
+      RECONCILE_BATCH_SIZE,
+      chatThreadIds,
+      signal,
+    );
 
     return {
       checked:

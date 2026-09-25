@@ -398,6 +398,71 @@ describe("explicit VNC grants and current Agent inventory", () => {
     await expect(listIds()).resolves.toStrictEqual([direct.body.id]);
   });
 
+  it("lists the authorized Mac classic password profile without exposing its secret", async () => {
+    const current = await owner();
+    const runtime = { ...current, ...(await api.runtime(current)) };
+    const ssh = await accept(
+      sshConnections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Mac SSH",
+          host: "mac.example.com",
+          credential: inlineSshKey("operator", "private-key"),
+        },
+      }),
+      [201],
+    );
+    const saved = await accept(
+      api.connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Classic desktop",
+          host: "127.0.0.1",
+          credential: {
+            create: {
+              name: "Classic password",
+              authentication: {
+                method: "vnc_password",
+                password: "testpass",
+              },
+            },
+          },
+          security: { type: "apple_vnc_password" },
+          transport: { type: "ssh", connectionId: ssh.body.id },
+        },
+      }),
+      [201],
+    );
+    await api.grant(runtime, true);
+    await api.grantSsh(runtime, true);
+    const kms = useSecretKmsProbe();
+    const listed = await accept(
+      inventory().list({ headers: token(runtime) }),
+      [200],
+    );
+    expect(listed.body).toStrictEqual({
+      hosts: [
+        {
+          id: saved.body.id,
+          displayName: "Classic desktop",
+          host: "127.0.0.1",
+          port: 5900,
+          authMethod: "vnc_password",
+          securityType: "apple_vnc_password",
+          availability: { status: "ready" },
+        },
+      ],
+    });
+    expect(JSON.stringify(listed.body)).not.toContain("testpass");
+    expect(kms.decryptCalls).toBe(0);
+    await api.grantSsh(runtime, false);
+    expect(
+      (await accept(inventory().list({ headers: token(runtime) }), [200])).body,
+    ).toStrictEqual({ hosts: [] });
+  });
+
   it("returns both exact supported pairs without decrypting credentials", async () => {
     const current = await owner();
     const runtime = { ...current, ...(await api.runtime(current)) };
@@ -669,7 +734,7 @@ describe("explicit VNC grants and current Agent inventory", () => {
   });
 
   it.each(["membership", "user"] as const)(
-    "%s deletion denies VNC access even when the shared Agent has no VNC connections",
+    "%s cleanup removes grants even when the shared Agent has no VNC connections",
     async (scope) => {
       const creator = await owner();
       const shared = await api.runtime(creator);
@@ -710,34 +775,19 @@ describe("explicit VNC grants and current Agent inventory", () => {
         [200],
       );
       await flushWaitUntilForTest();
-      if (scope !== "user") {
-        await updateFeatureSwitchesForUser(context, consumer, {
-          [FeatureSwitchKey.VncAccess]: true,
-        });
-      }
+      // Retained external identity permits reading the post-cleanup boundary.
+      await updateFeatureSwitchesForUser(context, consumer, {
+        [FeatureSwitchKey.VncAccess]: true,
+      });
       api.authenticate(consumer);
-      if (scope === "user") {
-        // Even a Clerk session still claiming membership cannot exercise the
-        // held user's retained VNC grant or change the feature override.
-        const denied = await accept(
-          api.access().get({ headers, params: { agentId: shared.agentId } }),
-          [401],
-        );
-        expect(denied.body).toMatchObject({
-          error: { code: "UNAUTHORIZED" },
-        });
-      } else {
-        expect(
-          (
-            await accept(
-              api
-                .access()
-                .get({ headers, params: { agentId: shared.agentId } }),
-              [200],
-            )
-          ).body,
-        ).toStrictEqual({ enabled: false });
-      }
+      expect(
+        (
+          await accept(
+            api.access().get({ headers, params: { agentId: shared.agentId } }),
+            [200],
+          )
+        ).body,
+      ).toStrictEqual({ enabled: false });
     },
   );
 });

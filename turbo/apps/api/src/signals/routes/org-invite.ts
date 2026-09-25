@@ -31,7 +31,6 @@ import {
   confirmUsagePackInvitationPurchase,
   createUsagePackInvitationPreview,
   revokeUsagePackInvitationPurchase,
-  usagePackInvitationPurchaseSchemaAvailable,
   type UsagePackInvitationPurchaseConflictReason,
 } from "../services/usage-pack-invitation-purchase.service";
 import { activeUsagePackBillingContext } from "../services/usage-pack-subscription.service";
@@ -309,33 +308,29 @@ const revokeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const client = get(clerk$);
-  const readDb = get(db$);
-  if (await usagePackInvitationPurchaseSchemaAvailable(readDb)) {
+  const result = await revokeUsagePackInvitationPurchase(
+    set(writeDb$),
+    client,
+    {
+      orgId: auth.orgId,
+      invitationId: body.data.invitationId,
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (result.status === "accepted") {
+    return conflict("The invitation has already been accepted");
+  }
+  if (result.status === "revoked") {
+    await revokeGetStartedInvitation(set(writeDb$), {
+      orgId: auth.orgId,
+      invitationId: body.data.invitationId,
+    });
     signal.throwIfAborted();
-    const result = await revokeUsagePackInvitationPurchase(
-      set(writeDb$),
-      client,
-      {
-        orgId: auth.orgId,
-        invitationId: body.data.invitationId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (result.status === "accepted") {
-      return conflict("The invitation has already been accepted");
-    }
-    if (result.status === "revoked") {
-      await revokeGetStartedInvitation(set(writeDb$), {
-        orgId: auth.orgId,
-        invitationId: body.data.invitationId,
-      });
-      signal.throwIfAborted();
-      return {
-        status: 200 as const,
-        body: { message: "Invitation revoked and refund initiated" },
-      };
-    }
+    return {
+      status: 200 as const,
+      body: { message: "Invitation revoked and refund initiated" },
+    };
   }
 
   // Legacy invitations remain a direct Clerk operation.
@@ -373,9 +368,6 @@ const purchasePreviewInner$ = command(
     signal.throwIfAborted();
     if (capabilities?.status !== "active") {
       return activePlanRequired;
-    }
-    if (!(await usagePackInvitationPurchaseSchemaAvailable(db))) {
-      return providerUnavailable("Usage pack invitations are not ready");
     }
     signal.throwIfAborted();
     const body = await get(purchasePreviewBody$);
@@ -533,9 +525,6 @@ const purchaseConfirmInner$ = command(
     signal.throwIfAborted();
     if (capabilities?.status !== "active") {
       return activePlanRequired;
-    }
-    if (!(await usagePackInvitationPurchaseSchemaAvailable(db))) {
-      return providerUnavailable("Usage pack invitations are not ready");
     }
     const body = await get(bodyResultOf(orgInviteContract.confirmPurchase));
     signal.throwIfAborted();

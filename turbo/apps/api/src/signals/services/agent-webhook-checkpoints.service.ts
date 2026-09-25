@@ -51,7 +51,6 @@ import {
   SESSION_HISTORY_ENCODING_ZSTD,
 } from "./session-history-blobs";
 import { lockAgentRunCheckpointLifecycle } from "./agent-run-checkpoint-lifecycle-lock.service";
-import { reserveBlobUploadIntent } from "./blob-upload-intent.service";
 import { safeSync, settle } from "../utils";
 
 export type AgentCheckpointBody = z.infer<
@@ -575,19 +574,17 @@ export const prepareCheckpointHistoryUpload$ = command(
       if (status === "timeout") {
         return { kind: "timeout", status } as const;
       }
-      const prepared = await ensureSessionHistoryBlobMetadata(
-        {
-          db: tx,
-          body: input.body,
-          requestedEncoding,
-        },
-        signal,
-      );
-      await reserveBlobUploadIntent(tx, {
-        hash: input.body.hash,
-        runId: input.body.runId,
-      });
-      return { kind: "admitted", prepared } as const;
+      return {
+        kind: "admitted",
+        prepared: await ensureSessionHistoryBlobMetadata(
+          {
+            db: tx,
+            body: input.body,
+            requestedEncoding,
+          },
+          signal,
+        ),
+      } as const;
     });
     signal.throwIfAborted();
 
@@ -870,7 +867,7 @@ async function persistAgentCheckpoint(
   const historyChanged = previousHistoryHash !== (historyHash ?? null);
 
   if (historyHash !== undefined && historyChanged) {
-    const [retainedBlob] = await tx
+    await tx
       .insert(blobs)
       .values({
         hash: historyHash,
@@ -881,14 +878,8 @@ async function persistAgentCheckpoint(
       })
       .onConflictDoUpdate({
         target: blobs.hash,
-        set: {
-          refCount: sql`CASE WHEN ${blobs.erasurePending} THEN ${blobs.refCount} ELSE ${blobs.refCount} + 1 END`,
-        },
-      })
-      .returning({ erasurePending: blobs.erasurePending });
-    if (!retainedBlob || retainedBlob.erasurePending) {
-      throw new Error("Session history blob is being erased");
-    }
+        set: { refCount: sql`${blobs.refCount} + 1` },
+      });
     signal.throwIfAborted();
   }
 

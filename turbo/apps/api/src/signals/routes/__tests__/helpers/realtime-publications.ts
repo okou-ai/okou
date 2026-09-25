@@ -34,15 +34,7 @@ function publishedChannelTopics(
   });
 }
 
-/** The per-user-org channel `publishChatDatabaseSignalNow` routes to. */
-export function userOrgChannelName(target: {
-  readonly userId: string;
-  readonly orgId: string;
-}): string {
-  return `user-org:${target.userId}:${target.orgId}`;
-}
-
-/** Publications of one topic actually routed to one exact channel. */
+/** Count one topic delivered to the exact channel the caller observes. */
 export function countPublishedTo(
   mocks: ApiTestMocks,
   target: { readonly channel: string; readonly topic: string },

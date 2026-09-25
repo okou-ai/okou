@@ -83,18 +83,6 @@ function printDelivery(result: DiscordUploadMaterializeResponse): void {
   console.log(JSON.stringify(result));
   if (result.delivery.status === "failed") {
     console.warn(`Discord delivery failed: ${result.delivery.message}`);
-    if (result.delivery.retryable) {
-      const retryAfter = result.delivery.retryAfterSeconds;
-      console.warn(
-        retryAfter !== undefined && retryAfter > 0
-          ? `Retry after ${retryAfter} seconds with --operation-id ${result.operationId}`
-          : `Retry with --operation-id ${result.operationId}`,
-      );
-    }
-  } else if (result.delivery.status === "pending") {
-    console.warn(
-      `Discord delivery is pending; retry with --operation-id ${result.operationId}`,
-    );
   }
 }
 
@@ -134,7 +122,7 @@ async function uploadFile(options: UploadFileOptions): Promise<void> {
     printDelivery(completed);
   } catch (error) {
     console.warn(
-      `Retry the same file and destination with --operation-id ${operationId}`,
+      `To resume publication or check delivery status, reuse the same file and destination with --operation-id ${operationId}; delivery will not be resent.`,
     );
     throw error;
   }
@@ -168,12 +156,12 @@ Output:
 
 Notes:
   - Canonical publication completes before Discord delivery begins.
-  - Retry with the same file, destination and --operation-id to avoid duplicate publication.
+  - Reuse the same file, destination and --operation-id to resume publication or
+    check a recorded delivery; it will never resend that delivery.
   - Uses server-side bot credentials; no Discord token is needed locally.
   - Like okou slack upload-file, the command exits 0 whenever the server reports a
     delivery status, even if Discord delivery failed or is pending. Check
-    delivery.status in the JSON output and follow the printed retry guidance.
-    A non-zero exit after publication means the delivery request itself failed;
-    retry with the same --operation-id.`,
+    delivery.status in the JSON output. To send again after a failed delivery,
+    start a new upload operation.`,
   )
   .action(withErrorHandler(uploadFile));

@@ -88,6 +88,7 @@ try {
     "1207_smart_oracle.sql",
     "1211_daily_diamondback.sql",
     "1229_peaceful_mathemanic.sql",
+    "1253_unique_zarek.sql",
   ]) {
     await client.query(
       (await migration(name)).replaceAll('"public".', `"${schema}".`),
@@ -384,6 +385,32 @@ try {
   );
   await client.query(
     "UPDATE vnc_credentials SET revision=2147483647 WHERE id='00000000-0000-4000-8000-000000000001'",
+  );
+
+  // One existing classic password can be explicitly selected for either X509Vnc
+  // or Mac type 2; the saved security remains a distinct, constrained profile.
+  await client.query(`
+    INSERT INTO vnc_connections (id,org_id,user_id,display_name,host,transport_type,ssh_connection_id,credential_id,auth_method,security_type,trust_mode)
+      VALUES ('00000000-0000-4000-8000-000000000018','org','owner','Mac classic password','127.0.0.1','ssh','00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-000000000001','vnc_password','apple_vnc_password','none');
+  `);
+  for (const [assignment, constraint] of [
+    ["host='localhost'", "chk_vnc_connections_profile"],
+    [
+      "transport_type='direct',ssh_connection_id=NULL",
+      "chk_vnc_connections_profile",
+    ],
+    ["x509_server_name='mac.example.com'", "chk_vnc_connections_profile"],
+    ["trust_mode='system'", "chk_vnc_connections_trust"],
+    ["ca_bundle='unexpected'", "chk_vnc_connections_trust"],
+    ["security_type='apple_dh'", "chk_vnc_connections_profile"],
+  ] as const) {
+    await rejects(
+      `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000018'`,
+      { code: "23514", constraint },
+    );
+  }
+  await client.query(
+    "UPDATE vnc_connections SET host='::1' WHERE id='00000000-0000-4000-8000-000000000018'",
   );
 
   await client.query(`
