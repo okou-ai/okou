@@ -82,7 +82,7 @@ terminal event when setup requires a materialized successful anchor.
 
 The candidate limit bounds selected rounds and subsequent text retrieval, not
 the number of physical rows an index scan can examine. Long-thread plans must
-be checked against `chat_events_thread_seq_unique`, `idx_chat_events_run_id`
+be checked against `chat_events_thread_seq_unique`, `chat_events_run_event_seq_unique`
 and the revocation index; a full-history aggregate or sort must not be assumed
 cheap because its output has a LIMIT.
 
