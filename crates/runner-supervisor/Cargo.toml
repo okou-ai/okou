@@ -28,6 +28,7 @@ tracing = { workspace = true, features = ["std"] }
 [dev-dependencies]
 guest-contracts.workspace = true
 hex.workspace = true
+runner-executor = { workspace = true, features = ["test-support"] }
 runner-lifecycle = { workspace = true, features = ["test-support"] }
 runner-network = { workspace = true, features = ["test-support"] }
 runner-storage = { workspace = true, features = ["test-support"] }
