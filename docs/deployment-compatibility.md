@@ -1,5 +1,20 @@
 # Deployment Compatibility
 
+## Keyword-only chat search GIN index dropped (2026-09-25)
+
+Migration `1239_drop_chat_search_tsv_gin` drops
+`chat_event_search_messages_tsv_idx` with `DROP INDEX CONCURRENTLY`. It does not
+block chat search reads or projector writes; it waits for older transactions on
+the table, so it raises `lock_timeout` to 10 minutes and disables
+`statement_timeout` for its own session, then resets both.
+
+Ship it only after the API that stops maintaining this index (previous entry,
+#36885) is in production; that API was promoted in release #36887. Every API that rollback can select then names only
+`chat_event_search_messages_user_tsv_gin_idx` in GIN maintenance. Chat search
+and MCP chat search already use the `(user_id, tsv)` index; queries and
+responses are unchanged. Rolling back the migration means rebuilding the index
+concurrently; no data is lost.
+
 ## Chat search stops maintaining the keyword-only GIN index (2026-09-25)
 
 Chat search and MCP chat search both filter by `user_id` before the keyword
