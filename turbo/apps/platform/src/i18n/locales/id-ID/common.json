@@ -1192,9 +1192,6 @@
         "webhookAutomations": "Mulai run dari sistem mana pun lewat satu webhook"
       },
       "legacy": "Lama",
-      "limitedFree": {
-        "name": "Gratis terbatas"
-      },
       "loadError": "Tidak dapat memuat status penagihan.",
       "namedPlan": "Paket {{plan}}",
       "noActivePlan": "Tidak ada paket aktif",
@@ -5966,7 +5963,6 @@
     "tiers": {
       "custom": "Kustom",
       "free": "Gratis",
-      "limitedFree": "Gratis terbatas",
       "pro": "Pro",
       "team": "Tim"
     },

@@ -1192,9 +1192,6 @@
         "webhookAutomations": "Webhook 一発でどのシステムからでも実行を開始"
       },
       "legacy": "旧プラン",
-      "limitedFree": {
-        "name": "限定無料"
-      },
       "loadError": "請求ステータスを読み込めませんでした。",
       "namedPlan": "{{plan}} プラン",
       "noActivePlan": "有効なプランはありません",
@@ -5966,7 +5963,6 @@
     "tiers": {
       "custom": "カスタム",
       "free": "無料",
-      "limitedFree": "限定無料",
       "pro": "プロ",
       "team": "チーム"
     },
