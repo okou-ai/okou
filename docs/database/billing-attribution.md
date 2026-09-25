@@ -183,7 +183,7 @@ bills show the ordinary net quantity, with no separate deduplication status or
 operation-result annotation. This expected condition is not `billingError`.
 
 Shared daily resource claims and observation idempotency still require durable
-state. Their atomic write with the net usage obligation, replay/erasure fences
+state. Their atomic write with the net usage obligation, replay fences
 and scope-wide activation gates belong to the consuming implementation in
 #34610. No dedicated remainder migration or counter-preserving compactor rollout
 is a prerequisite. This policy does not activate resource deduplication.

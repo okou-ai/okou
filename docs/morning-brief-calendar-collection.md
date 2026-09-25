@@ -296,7 +296,7 @@ value on the path — there is no caller-supplied owner, Agent, account, calenda
 ID, query or URL. The membership generation is what stops a member who left and
 rejoined from releasing content the previous membership started collecting.
 After each external membership answer, one short local transaction rechecks
-erasure, the complete canonical binding and Brief-Agent visibility; it contains
+the complete canonical binding and Brief-Agent visibility; it contains
 no network call and does not promise cross-system atomicity or retroactive
 recall.
 
