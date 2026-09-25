@@ -6606,14 +6606,6 @@
           "title": "IndexedDB-Speicher",
           "unavailable": "IndexedDB-Speicher ist nicht verfügbar."
         },
-        "morningBriefTrigger": {
-          "description": "Führe jetzt einen echten Morning Brief aus. Dein nächster Lauf wird beim regulären Planer eingereiht, der innerhalb einer Minute einen echten Brief und eine echte E-Mail zustellt. Ein Auslösen vor deiner täglichen Uhrzeit ergibt zwei Briefs an diesem Morgen.",
-          "failed": "Der Morning Brief konnte nicht eingereiht werden. Versuche es erneut.",
-          "queued": "Eingereiht. Der Planer stellt den Brief innerhalb einer Minute zu.",
-          "title": "Morning Brief",
-          "trigger": "Morning Brief jetzt ausführen",
-          "triggering": "Wird eingereiht…"
-        },
         "welcomeThread": {
           "create": "Willkommenschat erstellen",
           "creating": "Wird erstellt…",

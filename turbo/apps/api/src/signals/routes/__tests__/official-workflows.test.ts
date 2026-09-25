@@ -1,13 +1,3 @@
-import { mockClerkUsers } from "./helpers/clerk-users";
-import { createHash, randomUUID } from "node:crypto";
-import { gunzipSync } from "node:zlib";
-import {
-  chatEventRowSchema,
-  type ChatEventRow,
-} from "@okouai/api-contracts/contracts/chat-event-rows";
-import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
-import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
-import type { UserMessagePart } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   DeleteObjectsCommand,
   GetObjectCommand,
@@ -15,14 +5,13 @@ import {
   ListObjectsV2Command,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
-import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
-import { userPreferencesRoutes } from "../user-preferences";
 import {
-  cronExecuteMorningBriefsContract,
-  cronOfficialWorkflowCatalogContract,
-} from "@okouai/api-contracts/contracts/cron";
-import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
-import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
+  chatEventRowSchema,
+  type ChatEventRow,
+} from "@okouai/api-contracts/contracts/chat-event-rows";
+import type { UserMessagePart } from "@okouai/api-contracts/contracts/chat-threads";
+import { cronOfficialWorkflowCatalogContract } from "@okouai/api-contracts/contracts/cron";
+import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import {
   OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
   type OfficialWorkflowBlueprint,
@@ -33,11 +22,15 @@ import {
   officialWorkflowInstallationsContract,
   officialWorkflowsContract,
 } from "@okouai/api-contracts/contracts/official-workflows";
-import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
+import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
+import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
+import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { testOfficialWorkflowCatalogStateContract } from "@okouai/api-contracts/contracts/test-official-workflow-catalog-state";
 import { testSystemStoragePresignedUrlCacheStateContract } from "@okouai/api-contracts/contracts/test-system-storage-presigned-url-cache-state";
-import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { testUserExportWorkContract } from "@okouai/api-contracts/contracts/test-user-export-work";
+import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
 import {
   workflowAutomationsContract,
   workflowsCollectionContract,
@@ -50,34 +43,27 @@ import {
   SYSTEM_ORG_ID,
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
-import { HttpResponse, http } from "msw";
-import { Webhook } from "svix";
 import AdmZip from "adm-zip";
+import { http, HttpResponse } from "msw";
+import { createHash, randomUUID } from "node:crypto";
+import { gunzipSync } from "node:zlib";
+import { Webhook } from "svix";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
-import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now, nowDate, withMockNowForTest } from "../../../lib/time";
+import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
+import { now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { verifyOkouToken } from "../../auth/tokens";
-import { flushWaitUntilForTest } from "../../context/wait-until";
+import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
+import { readNativeSchedule } from "../../../test-fixtures/morning-brief-native-schedule";
+import { serializeOfficialWorkflowCatalogTests } from "../../../test-fixtures/official-workflow-catalog-lease";
 import {
   appendOfficialWorkflowQueueInputFixture,
   readOfficialWorkflowQueueInputFixture,
 } from "../../../test-fixtures/official-workflow-queue";
-import { serializeOfficialWorkflowCatalogTests } from "../../../test-fixtures/official-workflow-catalog-lease";
-import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
-import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
-import { testUserExportWorkRoutes } from "../test-user-export-work";
-import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
-import { holdMorningBriefProjectionWrite } from "../../../test-fixtures/morning-brief-projection";
-import { holdMorningBriefReconfigurationAfterPersist } from "../../../test-fixtures/morning-brief-reconciliation";
-import {
-  readLegacyAutomation,
-  readNativeSchedule,
-} from "../../../test-fixtures/morning-brief-native-schedule";
+import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import {
   countAgentStableContextPublicationsFixture,
   countUserStableContextGenerationsFixture,
@@ -87,65 +73,8 @@ import {
   holdOfficialWorkflowActivationBeforeErasureAdmissionFixture,
   holdOfficialWorkflowInstallationBeforeErasureAdmissionFixture,
 } from "../../../test-fixtures/pi-stable-context-source-writers";
-import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createOpsLogsApi } from "./helpers/api-bdd-ops-logs";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { readExportText } from "./helpers/user-export-storage";
-import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import {
-  createConnectorBddApi,
-  mockGmailConnectorOAuth,
-  mockGoogleFormsConnectorOAuth,
-  mockStripeConnectorOAuth,
-} from "./helpers/api-bdd-connectors";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { projectChatEventRows } from "./helpers/chat-event-test-reader";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import {
-  createWorkflowsBddApi,
-  mockGoogleCalendarConnectorOAuth,
-  mockNotionConnectorOAuth,
-} from "./helpers/api-bdd-workflows";
-import { createEmailOutboxStateApi } from "./helpers/email-outbox-state";
-import {
-  setHistoricalNativeMorningBriefForUser,
-  updateFeatureSwitchesForUser,
-} from "./helpers/feature-switches";
-import {
-  assertOfficialWorkflowAutomationFinalAdmissionRejectedFixture,
-  installOfficialWorkflowRunGateFixture,
-  readAgentRunFamilyCountsFixture,
-  readChatEventRowsAsPreviousApiFixture,
-  readChatEventSnapshotHead,
-  readRunAutonomyBudgetFixture,
-  setRunAutonomyBudgetFixture,
-  readLatestWorkflowAutomationRunFixture,
-  readOfficialWorkflowRunStateFixture,
-  readWorkflowAutomationAutonomyFixture,
-  retargetWorkflowAutomationFixture,
-  seedBuiltInModelKey,
-  setOfficialWorkflowAutomationAdmissionStateFixture,
-} from "./helpers/runtime-state";
-import { createRouteMocks } from "./helpers/route-test";
-import { createAuthDeviceApiActions } from "./helpers/api-bdd-auth-device";
-import { holdSecretKms } from "./helpers/hold-secret-kms";
-import {
-  createCronOfficialWorkflowCatalogRoutes,
-  cronOfficialWorkflowCatalogRoutes,
-} from "../cron-official-workflow-catalog";
-import { officialWorkflowRoutes } from "../official-workflows";
-import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
-import { createScopedInlineMorningBriefCronRoutesForTest } from "../cron-execute-morning-briefs";
-import { testOfficialWorkflowCatalogStateRoutes } from "../test-official-workflow-catalog-state";
-import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
-import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
-import { workflowAutomationsRoutes } from "../workflow-automations";
-import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
-import { workflowsRoutes } from "../workflows";
-import { webhooksClerkRoutes } from "../webhooks-clerk";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
+import { verifyOkouToken } from "../../auth/tokens";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   acknowledgeDetachedForTest,
   createDeferredPromise,
@@ -153,6 +82,65 @@ import {
   settle,
   settleIncludingAbort,
 } from "../../utils";
+import {
+  createCronOfficialWorkflowCatalogRoutes,
+  cronOfficialWorkflowCatalogRoutes,
+} from "../cron-official-workflow-catalog";
+import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
+import { officialWorkflowRoutes } from "../official-workflows";
+import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
+import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
+import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
+import { testOfficialWorkflowCatalogStateRoutes } from "../test-official-workflow-catalog-state";
+import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
+import { testUserExportWorkRoutes } from "../test-user-export-work";
+import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
+import { userPreferencesRoutes } from "../user-preferences";
+import { webhooksClerkRoutes } from "../webhooks-clerk";
+import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
+import { workflowAutomationsRoutes } from "../workflow-automations";
+import { workflowsRoutes } from "../workflows";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createAuthDeviceApiActions } from "./helpers/api-bdd-auth-device";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import {
+  createConnectorBddApi,
+  mockGmailConnectorOAuth,
+  mockGoogleFormsConnectorOAuth,
+  mockStripeConnectorOAuth,
+} from "./helpers/api-bdd-connectors";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import { createOpsLogsApi } from "./helpers/api-bdd-ops-logs";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  createWorkflowsBddApi,
+  mockGoogleCalendarConnectorOAuth,
+  mockNotionConnectorOAuth,
+} from "./helpers/api-bdd-workflows";
+import { projectChatEventRows } from "./helpers/chat-event-test-reader";
+import { mockClerkUsers } from "./helpers/clerk-users";
+import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
+import { createEmailOutboxStateApi } from "./helpers/email-outbox-state";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { holdSecretKms } from "./helpers/hold-secret-kms";
+import { createRouteMocks } from "./helpers/route-test";
+import {
+  assertOfficialWorkflowAutomationFinalAdmissionRejectedFixture,
+  installOfficialWorkflowRunGateFixture,
+  readAgentRunFamilyCountsFixture,
+  readChatEventRowsAsPreviousApiFixture,
+  readChatEventSnapshotHead,
+  readLatestWorkflowAutomationRunFixture,
+  readOfficialWorkflowRunStateFixture,
+  readRunAutonomyBudgetFixture,
+  readWorkflowAutomationAutonomyFixture,
+  retargetWorkflowAutomationFixture,
+  seedBuiltInModelKey,
+  setOfficialWorkflowAutomationAdmissionStateFixture,
+  setRunAutonomyBudgetFixture,
+} from "./helpers/runtime-state";
+import { readExportText } from "./helpers/user-export-storage";
 
 const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
@@ -839,20 +827,6 @@ function configureOfficialCalendarWatchMock() {
   return recorder;
 }
 
-function morningBriefScheduleBlueprint(
-  cronExpression: string,
-): OfficialWorkflowBlueprint {
-  return {
-    key: "daily-delivery",
-    parameters: [],
-    desiredState: {
-      kind: "schedule",
-      schedule: { type: "cron", cronExpression },
-    },
-    runtime: { resultEmail: true },
-  };
-}
-
 function webhookBlueprint(resultEmail = false): OfficialWorkflowBlueprint {
   return {
     key: "webhook-trigger",
@@ -1088,15 +1062,6 @@ function connectorDoctorDefinition(): ActiveDefinition {
   ]);
 }
 
-function morningBriefCatalog(
-  blueprints: readonly OfficialWorkflowBlueprint[],
-): OfficialWorkflowSourceCatalog {
-  return catalog([
-    connectorDoctorDefinition(),
-    activeDefinition("morning-brief", blueprints),
-  ]);
-}
-
 async function syncDeployedCatalog() {
   await syncCatalog(catalog([connectorDoctorDefinition()]));
   return await withOwnedPiStableContextGlobalInvalidationFixture(
@@ -1194,33 +1159,6 @@ async function simulateDormantMaterializationDiscardCrash(args: {
         action: "simulate-dormant-materialization-discard-crash",
         ...args,
       },
-    }),
-    [200],
-  );
-}
-
-async function pauseNextDormantMaterialization(): Promise<void> {
-  await accept(
-    stateClient().action({
-      body: { action: "pause-next-dormant-materialization" },
-    }),
-    [200],
-  );
-}
-
-async function waitForDormantMaterializationPause(): Promise<void> {
-  await accept(
-    stateClient().action({
-      body: { action: "wait-for-dormant-materialization-pause" },
-    }),
-    [200],
-  );
-}
-
-async function resumeDormantMaterialization(): Promise<void> {
-  await accept(
-    stateClient().action({
-      body: { action: "resume-dormant-materialization" },
     }),
     [200],
   );
@@ -1746,20 +1684,6 @@ async function setMorningBriefEnabled(
     context,
     { orgId: actor.orgId, userId: actor.userId },
     { [FeatureSwitchKey.MorningBrief]: enabled },
-  );
-}
-
-async function setNativeMorningBriefEnabled(
-  actor: ApiTestUser,
-  enabled: boolean,
-): Promise<void> {
-  if (!actor.orgId) {
-    throw new Error("Expected organization-scoped actor");
-  }
-  await setHistoricalNativeMorningBriefForUser(
-    context,
-    { orgId: actor.orgId, userId: actor.userId },
-    enabled,
   );
 }
 
@@ -2772,850 +2696,6 @@ describe("Morning Brief preference", () => {
   });
 });
 
-describe("Morning Brief native preference projection", () => {
-  it("projects installed state and keeps every public response identical", async () => {
-    installCatalogStorageFixture();
-    await syncDeployedCatalog();
-    const { actor } = await workflowBdd.setupWorkflowOrg({
-      timezone: "Asia/Shanghai",
-    });
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await cleanupCatalog();
-    });
-    const headers = authHeaders(actor);
-    await setOfficialWorkflowsEnabled(actor, false);
-    await setMorningBriefEnabled(actor, true);
-
-    // Enabled while the implementation switch is off, exactly like production.
-    const legacyEnabled = await accept(
-      morningBriefPreferenceClient().update({
-        headers,
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    expect(legacyEnabled.body).toMatchObject({
-      enabled: true,
-      status: "enabled",
-      unavailableReason: null,
-    });
-    await expect(readBriefSchedule(actor)).resolves.toStrictEqual({
-      nextRunAt: expect.any(String),
-      timezone: "Asia/Shanghai",
-    });
-
-    // Turning the switch on projects nothing by itself, so the live legacy
-    // state still answers and the read stays a read.
-    await setNativeMorningBriefEnabled(actor, true);
-    const withoutProjection = await readBriefPreference(actor);
-    expect(withoutProjection.body).toStrictEqual(legacyEnabled.body);
-
-    // A real Settings write under the switch copies the state, and reading it
-    // back returns exactly what the legacy answer would have been.
-    const paused = await accept(
-      morningBriefPreferenceClient().update({
-        headers,
-        body: { enabled: false },
-      }),
-      [200],
-    );
-    expect(paused.body).toStrictEqual({
-      status: "paused",
-      enabled: false,
-      unavailableReason: null,
-    });
-    const projectedPause = await readBriefPreference(actor);
-    expect(projectedPause.body).toStrictEqual(paused.body);
-
-    const reenabled = await accept(
-      morningBriefPreferenceClient().update({
-        headers,
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    const projected = await readBriefPreference(actor);
-    expect(projected.body).toStrictEqual(reenabled.body);
-    const scheduleBeforeTimezone = await readBriefSchedule(actor);
-
-    // Switching the implementation off and on again changes nothing the user
-    // can see, and discards no choice they made while it was on.
-    await setNativeMorningBriefEnabled(actor, false);
-    const withSwitchOff = await readBriefPreference(actor);
-    expect(withSwitchOff.body).toStrictEqual(projected.body);
-    await setNativeMorningBriefEnabled(actor, true);
-    const withSwitchOn = await readBriefPreference(actor);
-    expect(withSwitchOn.body).toStrictEqual(projected.body);
-
-    // Timezone synchronization refreshes the copy instead of pinning the old
-    // schedule, and the answer stays identical once the switch is off again.
-    await bdd.updateUserTimezone(actor, "America/New_York");
-    await flushWaitUntilForTest();
-    const afterTimezone = await readBriefPreference(actor);
-    expect(afterTimezone.body).toMatchObject({
-      enabled: true,
-      status: "enabled",
-    });
-    const scheduleAfterTimezone = await readBriefSchedule(actor);
-    expect(scheduleAfterTimezone).toStrictEqual({
-      timezone: "America/New_York",
-      nextRunAt: expect.any(String),
-    });
-    expect(scheduleAfterTimezone.nextRunAt).not.toBe(
-      scheduleBeforeTimezone.nextRunAt,
-    );
-    await setNativeMorningBriefEnabled(actor, false);
-    const legacyAfterTimezone = await readBriefPreference(actor);
-    expect(legacyAfterTimezone.body).toStrictEqual(afterTimezone.body);
-  });
-
-  it("ignores a projection an older writer left behind", async () => {
-    installCatalogStorageFixture();
-    await syncDeployedCatalog();
-    const { actor } = await workflowBdd.setupWorkflowOrg({
-      timezone: "Asia/Shanghai",
-    });
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await cleanupCatalog();
-    });
-    const headers = authHeaders(actor);
-    await setOfficialWorkflowsEnabled(actor, false);
-    await setMorningBriefEnabled(actor, true);
-    await setNativeMorningBriefEnabled(actor, true);
-    await accept(
-      morningBriefPreferenceClient().update({
-        headers,
-        body: { enabled: true },
-      }),
-      [200],
-    );
-
-    // Roll the implementation switch back off, exactly like an older API
-    // binary or a rollback: the legacy writes still happen, the copy does not.
-    await setNativeMorningBriefEnabled(actor, false);
-    await accept(
-      morningBriefPreferenceClient().update({
-        headers,
-        body: { enabled: false },
-      }),
-      [200],
-    );
-    await bdd.updateUserTimezone(actor, "America/New_York");
-    await flushWaitUntilForTest();
-
-    // The retained copy still describes an enabled Asia/Shanghai brief with a
-    // next run. None of it may reach the user.
-    await setNativeMorningBriefEnabled(actor, true);
-    const read = await readBriefPreference(actor);
-    expect(read.body).toStrictEqual({
-      status: "paused",
-      enabled: false,
-      unavailableReason: null,
-    });
-    await expect(readBriefSchedule(actor)).resolves.toStrictEqual({
-      nextRunAt: null,
-      timezone: "America/New_York",
-    });
-  });
-
-  it("does not answer from a projection of an installation Settings no longer manages", async () => {
-    installCatalogStorageFixture();
-    await syncDeployedCatalog();
-    const { actor } = await workflowBdd.setupWorkflowOrg({
-      timezone: "Asia/Shanghai",
-    });
-    if (!actor.orgId) {
-      throw new Error("Expected organization-scoped actor");
-    }
-    const alternate = await workflowBdd.createAgent(actor);
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await cleanupCatalog();
-    });
-    const headers = authHeaders(actor);
-    await setOfficialWorkflowsEnabled(actor, false);
-    await setMorningBriefEnabled(actor, true);
-    await setNativeMorningBriefEnabled(actor, true);
-    await accept(
-      morningBriefPreferenceClient().update({
-        headers,
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    const managed = await accept(
-      morningBriefPreferenceClient().update({
-        headers,
-        body: { enabled: false },
-      }),
-      [200],
-    );
-    expect(managed.body).toMatchObject({ enabled: false, status: "paused" });
-    const [enrolled] = await listMorningBriefInstallations(actor);
-    if (!enrolled) {
-      throw new Error("Expected a Preferences-managed installation");
-    }
-
-    // Ownership moves to an enabled installation on another Agent while the
-    // copy still describes the paused one Settings used to manage.
-    await setOfficialWorkflowsEnabled(actor, true);
-    const onAlternateAgent = await installMorningBriefFromCatalog(
-      actor,
-      alternate.agentId,
-    );
-    await accept(
-      installationClient().uninstall({
-        headers,
-        params: { workflowId: enrolled.id },
-      }),
-      [204],
-    );
-    const read = await readBriefPreference(actor);
-    expect(read.body).toMatchObject({
-      enabled: true,
-      status: "enabled",
-      unavailableReason: null,
-    });
-    await expect(
-      readMorningBriefAutomations(actor, onAlternateAgent),
-    ).resolves.toMatchObject([{ enabled: true }]);
-  });
-
-  it("keeps absent, unavailable and opt-out states on their legacy answers", async () => {
-    const { actor } = await workflowBdd.setupWorkflowOrg();
-    await setMorningBriefEnabled(actor, true);
-    await setNativeMorningBriefEnabled(actor, true);
-    const headers = authHeaders(actor);
-
-    const unavailable = await readBriefPreference(actor);
-    expect(unavailable.body).toMatchObject({
-      enabled: false,
-      unavailableReason: "missing-timezone",
-    });
-
-    // An explicit opt-out before any installation stays an opt-out, and the
-    // switch neither installs a brief nor invents native state for it.
-    const optedOut = await accept(
-      morningBriefPreferenceClient().update({
-        headers,
-        body: { enabled: false },
-      }),
-      [200],
-    );
-    expect(optedOut.body).toMatchObject({ enabled: false, status: "paused" });
-    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
-    const afterOptOut = await readBriefPreference(actor);
-    expect(afterOptOut.body).toStrictEqual(optedOut.body);
-  });
-
-  it("answers each owner from their own state", async () => {
-    installCatalogStorageFixture();
-    await syncDeployedCatalog();
-    const enabledMember = await workflowBdd.setupWorkflowOrg({
-      timezone: "Asia/Shanghai",
-    });
-    const pausedMember = await workflowBdd.setupWorkflowOrg({
-      timezone: "America/New_York",
-    });
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await cleanupCatalog();
-    });
-    for (const actor of [enabledMember.actor, pausedMember.actor]) {
-      await setOfficialWorkflowsEnabled(actor, false);
-      await setMorningBriefEnabled(actor, true);
-      await setNativeMorningBriefEnabled(actor, true);
-      await accept(
-        morningBriefPreferenceClient().update({
-          headers: authHeaders(actor),
-          body: { enabled: true },
-        }),
-        [200],
-      );
-    }
-    await accept(
-      morningBriefPreferenceClient().update({
-        headers: authHeaders(pausedMember.actor),
-        body: { enabled: false },
-      }),
-      [200],
-    );
-
-    const enabledRead = await readBriefPreference(enabledMember.actor);
-    expect(enabledRead.body).toMatchObject({
-      enabled: true,
-      status: "enabled",
-    });
-    await expect(readBriefSchedule(enabledMember.actor)).resolves.toStrictEqual(
-      { nextRunAt: expect.any(String), timezone: "Asia/Shanghai" },
-    );
-    const pausedRead = await readBriefPreference(pausedMember.actor);
-    expect(pausedRead.body).toStrictEqual({
-      status: "paused",
-      enabled: false,
-      unavailableReason: null,
-    });
-    await expect(readBriefSchedule(pausedMember.actor)).resolves.toStrictEqual({
-      nextRunAt: null,
-      timezone: "America/New_York",
-    });
-  });
-
-  it("invalidates the projection when the destination thread is deleted", async () => {
-    installCatalogStorageFixture();
-    await syncDeployedCatalog();
-    const { actor } = await workflowBdd.setupWorkflowOrg({
-      timezone: "Asia/Shanghai",
-    });
-    const orgId = actor.orgId;
-    if (!orgId) {
-      throw new Error("Expected organization-scoped actor");
-    }
-    await selectBuiltInDefaultModel(actor);
-    const { agentId } = await workflowBdd.createAgent(actor);
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
-    });
-    const headers = authHeaders(actor);
-    await setMorningBriefEnabled(actor, true);
-    await setOfficialWorkflowsEnabled(actor, true);
-    const workflowId = await installMorningBriefFromCatalog(actor, agentId);
-    const [automation] = await readMorningBriefAutomations(actor, workflowId);
-    if (!automation) {
-      throw new Error("Expected the Morning Brief Automation");
-    }
-    const started = await accept(
-      automationClient().run({ headers, params: { id: automation.id } }),
-      [201],
-    );
-    if (started.body.runId) {
-      await runs.requestCancelRun(actor, started.body.runId, [200, 400]);
-    }
-
-    // Copy the state now that the brief owns a destination thread. Asking for
-    // the state it already has exercises the no-op completion path.
-    await setNativeMorningBriefEnabled(actor, true);
-    const bound = await accept(
-      morningBriefPreferenceClient().update({
-        headers,
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    expect(bound.body).toMatchObject({ enabled: true, status: "enabled" });
-    const projectedBound = await readBriefPreference(actor);
-    expect(projectedBound.body).toStrictEqual(bound.body);
-
-    await chat.deleteThread(actor, started.body.chatThreadId);
-    const afterDelete = await readBriefPreference(actor);
-    expect(afterDelete.body).toMatchObject({
-      enabled: false,
-      status: "paused",
-    });
-    await expect(
-      readMorningBriefAutomations(actor, workflowId),
-    ).resolves.toMatchObject([{ enabled: false, chatThreadId: null }]);
-    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
-    await expect(
-      readNativeSchedule({ orgId, userId: actor.userId }),
-    ).resolves.toMatchObject({
-      enabled: false,
-      nextRunAt: null,
-      scheduleOwner: null,
-    });
-  });
-
-  it("invalidates the projection when the owning Agent is deleted", async () => {
-    installCatalogStorageFixture();
-    await syncDeployedCatalog();
-    const { actor } = await workflowBdd.setupWorkflowOrg({
-      timezone: "Asia/Shanghai",
-    });
-    const orgId = actor.orgId;
-    if (!orgId) {
-      throw new Error("Expected organization-scoped actor");
-    }
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await cleanupCatalog();
-    });
-    const onboarding = await bdd.readOnboardingStatus(actor);
-    if (!onboarding.defaultAgentId) {
-      throw new Error("Expected a default Agent");
-    }
-    await setOfficialWorkflowsEnabled(actor, false);
-    await setMorningBriefEnabled(actor, true);
-    await setNativeMorningBriefEnabled(actor, true);
-    const enabled = await accept(
-      morningBriefPreferenceClient().update({
-        headers: authHeaders(actor),
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    expect(enabled.body).toMatchObject({ enabled: true, status: "enabled" });
-
-    // Repoint the org default so the Agent holding the brief can be deleted.
-    const replacement = await workflowBdd.createAgent(actor);
-    await setOrgDefaultAgentFixture({
-      orgId,
-      agentId: replacement.agentId,
-    });
-    await bdd.deleteAgent(actor, onboarding.defaultAgentId);
-
-    const afterDelete = await readBriefPreference(actor);
-    expect(afterDelete.body).toMatchObject({
-      enabled: false,
-      status: "paused",
-      unavailableReason: null,
-    });
-    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
-    await expect(
-      readNativeSchedule({ orgId, userId: actor.userId }),
-    ).resolves.toMatchObject({
-      enabled: false,
-      nextRunAt: null,
-      scheduleOwner: null,
-    });
-  });
-
-  it("returns the committed choice when its projection write fails after that commit", async () => {
-    const { actor, owner, headers } = await prepareProjectedBrief();
-
-    // Fail exactly this owner's projection write. Nothing the Settings
-    // endpoints accept can reject one copy after its legacy choice committed,
-    // so this narrow infrastructure fault owns that boundary and no other.
-    const fault = await holdMorningBriefProjectionWrite(
-      owner,
-      { failAfterGate: true },
-      context.signal,
-    );
-    const pausing = accept(
-      morningBriefPreferenceClient().update({
-        headers,
-        body: { enabled: false },
-      }),
-      [200],
-    );
-
-    // Observed, not assumed: the mutation is suspended inside its copy, and
-    // the choice it already committed is visible through the public read while
-    // that copy is still uncommitted.
-    await fault.waitForArrival();
-    expect((await readBriefPreference(actor)).body).toMatchObject({
-      enabled: false,
-      status: "paused",
-    });
-
-    // Release the held write into a real database failure.
-    await fault.release();
-    const paused = await pausing;
-    expect(paused.body).toStrictEqual({
-      status: "paused",
-      enabled: false,
-      unavailableReason: null,
-    });
-    // The failed copy never became the user's answer, never turned a committed
-    // choice into an error, and never replayed the legacy mutation.
-    expect((await readBriefPreference(actor)).body).toStrictEqual(paused.body);
-    const [installation] = await listMorningBriefInstallations(actor);
-    if (!installation) {
-      throw new Error("Expected the Morning Brief installation");
-    }
-    await expect(
-      readMorningBriefAutomations(actor, installation.id),
-    ).resolves.toMatchObject([{ enabled: false, nextRunAt: null }]);
-
-    // A later ordinary write, and then a no-op repeat of the same choice, both
-    // complete once the fault is gone. Whether a healthy copy served the read
-    // is deliberately invisible here: the projection may only answer while it
-    // equals the legacy state it was copied from.
-    await fault.remove();
-    const reenabled = await accept(
-      morningBriefPreferenceClient().update({
-        headers,
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    expect(reenabled.body).toMatchObject({ enabled: true, status: "enabled" });
-    expect((await readBriefPreference(actor)).body).toStrictEqual(
-      reenabled.body,
-    );
-    const repeated = await accept(
-      morningBriefPreferenceClient().update({
-        headers,
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    expect(repeated.body).toStrictEqual(reenabled.body);
-  });
-
-  it("keeps the last choice when a toggle owns the projection write before a timezone change", async () => {
-    const { actor, owner, headers } = await prepareProjectedBrief();
-
-    const held = await holdMorningBriefProjectionWrite(
-      owner,
-      {},
-      context.signal,
-    );
-    const pausing = accept(
-      morningBriefPreferenceClient().update({
-        headers,
-        body: { enabled: false },
-      }),
-      [200],
-    );
-
-    // Ownership order one. The toggle holds the preference advisory lock and
-    // is suspended at its projection write, so its legacy choice is already
-    // committed and readable.
-    await held.waitForArrival();
-    expect((await readBriefPreference(actor)).body).toMatchObject({
-      enabled: false,
-      status: "paused",
-    });
-
-    // The timezone change is the contender. Its own preference write commits
-    // first and becomes publicly visible, which is the arrival evidence a
-    // `pg_try_advisory_xact_lock` retry loop can give: from here the request
-    // is inside Morning Brief synchronization and cannot finish until the
-    // suspended toggle commits. It never waits on a PostgreSQL lock, so
-    // `pg_blocking_pids` cannot see it and is not claimed here.
-    const synchronizing = bdd.updateUserTimezone(actor, "America/New_York");
-    await expect
-      .poll(
-        async () => {
-          return await readUserTimezone(actor);
-        },
-        { timeout: RENDEZVOUS_TIMEOUT_MS },
-      )
-      .toBe("America/New_York");
-    expect((await readBriefSchedule(actor)).timezone).toBe("Asia/Shanghai");
-
-    await held.release();
-    const [paused] = await Promise.all([pausing, synchronizing]);
-    await flushWaitUntilForTest();
-
-    // The toggle answered from inside its own lock ownership, before the
-    // timezone change could commit over it.
-    expect(paused.body).toStrictEqual({
-      status: "paused",
-      enabled: false,
-      unavailableReason: null,
-    });
-    const settled = await readBriefPreference(actor);
-    expect(settled.body).toStrictEqual(paused.body);
-    await expect(readBriefSchedule(actor)).resolves.toStrictEqual({
-      nextRunAt: null,
-      timezone: "America/New_York",
-    });
-    await expectChoiceSurvivesImplementationSwitch(actor, settled.body);
-  });
-
-  it("commits generic automation toggles into the durable choice", async () => {
-    const { actor, headers } = await prepareProjectedBrief();
-    const [installation] = await listMorningBriefInstallations(actor);
-    if (!installation) {
-      throw new Error("Expected the Morning Brief installation");
-    }
-    const [automation] = await readMorningBriefAutomations(
-      actor,
-      installation.id,
-    );
-    if (!automation) {
-      throw new Error("Expected the Morning Brief automation");
-    }
-
-    await accept(
-      automationClient().disable({
-        headers,
-        params: { id: automation.id },
-      }),
-      [200],
-    );
-    expect((await readBriefPreference(actor)).body).toMatchObject({
-      enabled: false,
-      status: "paused",
-    });
-    await expect(readBriefSchedule(actor)).resolves.toMatchObject({
-      nextRunAt: null,
-    });
-
-    await accept(
-      automationClient().enable({
-        headers,
-        params: { id: automation.id },
-      }),
-      [200],
-    );
-    expect((await readBriefPreference(actor)).body).toMatchObject({
-      enabled: true,
-      status: "enabled",
-    });
-    await expect(readBriefSchedule(actor)).resolves.toMatchObject({
-      nextRunAt: expect.any(String),
-    });
-  });
-});
-
-describe("Morning Brief legacy writer fences", () => {
-  async function prepareSelectedMorningBrief() {
-    installCatalogStorageFixture();
-    await syncDeployedCatalog();
-    const { actor } = await workflowBdd.setupWorkflowOrg({
-      tier: "team",
-      timezone: "Asia/Shanghai",
-    });
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped Morning Brief owner");
-    }
-    mockBriefMemberships([{ actor, createdAt: nowDate() }]);
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await cleanupCatalog();
-    });
-    await setOfficialWorkflowsEnabled(actor, false);
-    await setMorningBriefEnabled(actor, true);
-    const enabled = await accept(
-      morningBriefPreferenceClient().update({
-        headers: authHeaders(actor),
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    expect(enabled.body).toMatchObject({ enabled: true });
-    const [installation] = await listMorningBriefInstallations(actor);
-    if (!installation) {
-      throw new Error("Expected the selected Morning Brief installation");
-    }
-    const [automation] = await readMorningBriefAutomations(
-      actor,
-      installation.id,
-    );
-    if (!automation) {
-      throw new Error("Expected the selected Morning Brief automation");
-    }
-    await setNativeMorningBriefEnabled(actor, true);
-    return {
-      actor,
-      owner: { orgId: actor.orgId, userId: actor.userId },
-      workflowId: installation.id,
-      automationId: automation.id,
-    };
-  }
-
-  async function runReconciliationUntilRetryOrComplete() {
-    for (let page = 0; page < 100; page += 1) {
-      const worker = await runOfficialWorkflowReconciliationWorker();
-      if (worker.retried > 0 || worker.completed > 0) {
-        return worker;
-      }
-    }
-    throw new Error("Official Workflow reconciliation did not terminate");
-  }
-
-  async function tickUntilPhase(
-    actor: ApiTestUser,
-    owner: { readonly orgId: string; readonly userId: string },
-    phase: "native" | "legacy",
-  ): Promise<void> {
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      await tickNativeMorningBrief(actor);
-      if ((await readNativeSchedule(owner))?.phase === phase) {
-        return;
-      }
-    }
-    throw new Error(`Morning Brief did not reach ${phase}`);
-  }
-
-  it("keeps admission closed when reconciliation persists before cutover", async () => {
-    const brief = await prepareSelectedMorningBrief();
-    const gate = holdMorningBriefReconfigurationAfterPersist({
-      workflowId: brief.workflowId,
-      automationId: brief.automationId,
-      signal: context.signal,
-    });
-    onTestFinished(gate.release);
-    const activation = await syncCatalog(
-      morningBriefCatalog([morningBriefScheduleBlueprint("0 8 * * *")]),
-    );
-    if (activation.body.outcome !== "accepted") {
-      throw new Error(JSON.stringify(activation.body));
-    }
-    const reconciliation = runReconciliationUntilRetryOrComplete();
-    await gate.arrival;
-
-    // The first real reconciliation transaction converged configuration while
-    // legacy still owned the schedule. Cutover then closes that admission.
-    await expect(
-      readLegacyAutomation(brief.automationId),
-    ).resolves.toMatchObject({
-      cronExpression: "0 8 * * *",
-      nextRunAt: expect.any(Date),
-    });
-    await bdd.updateUserTimezone(brief.actor, "America/Los_Angeles");
-    await expect(readNativeSchedule(brief.owner)).resolves.toMatchObject({
-      cronExpression: "0 8 * * *",
-      timezone: "America/Los_Angeles",
-    });
-    await tickNativeMorningBrief(brief.actor);
-    await expect(readNativeSchedule(brief.owner)).resolves.toMatchObject({
-      phase: "draining",
-      cronExpression: "0 8 * * *",
-      timezone: "America/Los_Angeles",
-      ownerEpoch: 1,
-    });
-
-    gate.release();
-    await reconciliation;
-    await expect(
-      readLegacyAutomation(brief.automationId),
-    ).resolves.toMatchObject({ cronExpression: "0 8 * * *", nextRunAt: null });
-
-    // A retry may finalize retained readiness, but it still cannot reopen the
-    // old poller while the durable phase owns the drain.
-    await makeOfficialWorkflowReconciliationWorkDue("morning-brief");
-    await runReconciliationUntilRetryOrComplete();
-    await expect(
-      readLegacyAutomation(brief.automationId),
-    ).resolves.toMatchObject({
-      cronExpression: "0 8 * * *",
-      nextRunAt: null,
-      officialReconciliationStatus: "current",
-    });
-  });
-
-  it("reconciles after native cutover without creating a legacy obligation", async () => {
-    const brief = await prepareSelectedMorningBrief();
-    await tickUntilPhase(brief.actor, brief.owner, "native");
-
-    const activation = await syncCatalog(
-      morningBriefCatalog([morningBriefScheduleBlueprint("0 9 * * *")]),
-    );
-    if (activation.body.outcome !== "accepted") {
-      throw new Error(JSON.stringify(activation.body));
-    }
-    const worker = await runReconciliationUntilRetryOrComplete();
-    expect(worker.completed).toBeGreaterThan(0);
-
-    await expect(
-      readLegacyAutomation(brief.automationId),
-    ).resolves.toMatchObject({
-      enabled: true,
-      cronExpression: "0 9 * * *",
-      nextRunAt: null,
-      officialReconciliationStatus: "current",
-    });
-    await expect(readNativeSchedule(brief.owner)).resolves.toMatchObject({
-      enabled: true,
-      phase: "native",
-      cronExpression: "0 9 * * *",
-      scheduleOwner: "native",
-      nextRunAt: expect.any(Date),
-    });
-  });
-
-  it("recreates only the disabled retained target after Settings changes", async () => {
-    const brief = await prepareSelectedMorningBrief();
-    await tickUntilPhase(brief.actor, brief.owner, "native");
-
-    await syncCatalog(morningBriefCatalog([]));
-    await runReconciliationUntilRetryOrComplete();
-    await expect(
-      readLegacyAutomation(brief.automationId),
-    ).resolves.toBeUndefined();
-    await expect(readNativeSchedule(brief.owner)).resolves.toMatchObject({
-      enabled: true,
-      phase: "native",
-      legacyWorkflowId: brief.workflowId,
-      legacyAutomationId: brief.automationId,
-    });
-
-    await pauseNextDormantMaterialization();
-    await syncCatalog(
-      morningBriefCatalog([morningBriefScheduleBlueprint("0 10 * * *")]),
-    );
-    const recreation = runReconciliationUntilRetryOrComplete();
-    await waitForDormantMaterializationPause();
-    const paused = await accept(
-      morningBriefPreferenceClient().update({
-        headers: authHeaders(brief.actor),
-        body: { enabled: false },
-      }),
-      [200],
-    );
-    expect(paused.body).toMatchObject({ enabled: false });
-    await resumeDormantMaterialization();
-    await recreation;
-
-    await expect(
-      readLegacyAutomation(brief.automationId),
-    ).resolves.toMatchObject({
-      id: brief.automationId,
-      enabled: false,
-      officialIntendedEnabled: false,
-      officialReconciliationStatus: "current",
-      cronExpression: "0 10 * * *",
-      nextRunAt: null,
-    });
-    await expect(readNativeSchedule(brief.owner)).resolves.toMatchObject({
-      enabled: false,
-      phase: "native",
-      legacyWorkflowId: brief.workflowId,
-      legacyAutomationId: brief.automationId,
-      nextRunAt: null,
-      scheduleOwner: null,
-    });
-  });
-});
-
-/** Bounds every rendezvous wait; arrival is observed, never slept through. */
-const RENDEZVOUS_TIMEOUT_MS = 10_000;
-
-async function prepareProjectedBrief() {
-  installCatalogStorageFixture();
-  await syncDeployedCatalog();
-  const { actor } = await workflowBdd.setupWorkflowOrg({
-    timezone: "Asia/Shanghai",
-  });
-  const orgId = actor.orgId;
-  if (!orgId) {
-    throw new Error("Expected organization-scoped actor");
-  }
-  onTestFinished(async () => {
-    installCatalogStorageFixture();
-    await cleanupCatalog();
-  });
-  const headers = authHeaders(actor);
-  await accept(
-    setupApp({ context, routes: userPreferencesRoutes })(
-      userPreferencesContract,
-    ).initialize({ headers, body: { locale: "en-US" } }),
-    [200],
-  );
-  await setOfficialWorkflowsEnabled(actor, false);
-  await setMorningBriefEnabled(actor, true);
-  await setNativeMorningBriefEnabled(actor, true);
-  const enabled = await accept(
-    morningBriefPreferenceClient().update({ headers, body: { enabled: true } }),
-    [200],
-  );
-  expect(enabled.body).toMatchObject({
-    enabled: true,
-    status: "enabled",
-  });
-  await expect(readBriefSchedule(actor)).resolves.toMatchObject({
-    timezone: "Asia/Shanghai",
-  });
-  return { actor, owner: { orgId, userId: actor.userId }, headers };
-}
-
 async function readUserTimezone(actor: ApiTestUser): Promise<string | null> {
   const response = await accept(
     setupApp({ context, routes: userPreferencesRoutes })(
@@ -3624,20 +2704,6 @@ async function readUserTimezone(actor: ApiTestUser): Promise<string | null> {
     [200],
   );
   return response.body.timezone;
-}
-
-/**
- * Turning the implementation switch off and on again must answer with the same
- * choice, so no copy written during the race can outlive the state it copied.
- */
-async function expectChoiceSurvivesImplementationSwitch(
-  actor: ApiTestUser,
-  expected: Awaited<ReturnType<typeof readBriefPreference>>["body"],
-): Promise<void> {
-  await setNativeMorningBriefEnabled(actor, false);
-  expect((await readBriefPreference(actor)).body).toStrictEqual(expected);
-  await setNativeMorningBriefEnabled(actor, true);
-  expect((await readBriefPreference(actor)).body).toStrictEqual(expected);
 }
 
 async function installMorningBriefFromCatalog(
@@ -3792,24 +2858,6 @@ async function readBriefSchedule(actor: ApiTestUser) {
         ? automation.schedule.timezone
         : null,
   };
-}
-
-async function tickNativeMorningBrief(actor: ApiTestUser) {
-  if (!actor.orgId) {
-    throw new Error("Expected an organization-scoped Morning Brief owner");
-  }
-  return await accept(
-    setupApp({
-      context,
-      routes: createScopedInlineMorningBriefCronRoutesForTest({
-        orgId: actor.orgId,
-        userId: actor.userId,
-      }),
-    })(cronExecuteMorningBriefsContract).execute({
-      headers: { authorization: `Bearer ${CRON_SECRET}` },
-    }),
-    [200],
-  );
 }
 
 async function prepareBriefMember({

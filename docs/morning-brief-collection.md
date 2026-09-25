@@ -1,5 +1,10 @@
 # Morning Brief source collection
 
+> Historical Native design record: collection preview and execution entrypoints
+> were removed in retirement stage 2. The remaining occurrence and revocation
+> structures support historical cleanup; this is not a live collection contract.
+> See [deployment compatibility](deployment-compatibility.md).
+
 The `simple-morning-brief` pipeline replaces the Morning Brief Official Workflow
 Run with a server-side pipeline. This document owns the first real piece of that
 execution: an explicitly invoked, bounded Slack collection and the occurrence,

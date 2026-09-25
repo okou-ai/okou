@@ -416,6 +416,31 @@ Runner/API version, size, host and time before interpreting a shifted total
 read distribution, because the new observation reads an initial chunk before
 collecting the rest.
 
+## Native Morning Brief execution retirement (stage 2)
+
+Stage 1 removed Native admission in migration 1215 and the public API; the
+2026-09-24 production handoff check found all 456 Native schedule rows in `legacy`, zero
+personal `simpleMorningBrief: true` overrides, ten settled occurrences and
+current Official schedules for each enabled former Native member. Stage 2
+removes the Native cron, internal worker, debug trigger and preview endpoints,
+plus the Native generation/delivery entrypoints. It does not drop or rewrite
+historical tables, messages, email receipts or in-flight source collection rows.
+The two historical source collection attempts still marked `running` had expired
+leases and settled occurrences; their upstream outcomes and billing are not
+inferred and are never replayed by this change.
+
+The old App's Native-only Debug card or a caller of an old preview API may
+receive 404 after API promotion; a new App no longer renders that card. The
+Official Workflow preference, installation and scheduler APIs are retained.
+An older API still in flight can read the persisted `simpleMorningBrief` key;
+new API writes of `true` remain rejected even though the registry key and
+Native collection entrypoints are removed. Historical email admission still
+recognizes the distinct Native template and fails closed; it is not gated by
+the feature switch. No migration drops Native columns or contracts needed by
+retained historical cleanup and scheduling services. Do not remove their fail-closed outbox admission merely because the
+scheduler is gone. Releasing this PR needs a separate authorization and normal
+release/production checks; PR creation is not deployment approval.
+
 ## Morning Brief settings status and collection account retirement (2026-09-24)
 
 `GET`/`PUT /api/preferences/morning-brief` no longer return `nextRunAt`,

@@ -40,10 +40,35 @@ export const testEmailOutboxStateActionBodySchema = z.discriminatedUnion(
   [
     z.object({
       action: z.literal("seed-item"),
+      template: z
+        .enum(["data-export-ready", "morning-brief-result"])
+        .optional(),
       to_address: z.string().min(1),
       subject: z.string().min(1),
       status: z.enum(["pending", "failed"]),
       created_at: z.iso.datetime(),
+    }),
+    z.object({
+      action: z.literal("seed-native-mail"),
+      org_id: z.string().min(1),
+      user_id: z.string().min(1),
+      membership_id: z.string().min(1),
+      active_authority: z.boolean().optional(),
+      to_address: z.string().min(1),
+      created_at: z.iso.datetime(),
+    }),
+    z.object({
+      action: z.literal("read-native-receipt"),
+      item_id: z.string().uuid(),
+    }),
+    z.object({
+      action: z.literal("delete-native-mail"),
+      item_id: z.string().uuid(),
+    }),
+    z.object({
+      action: z.literal("cleanup-native-owner"),
+      org_id: z.string().min(1),
+      user_id: z.string().min(1),
     }),
     z.object({
       action: z.literal("find-item"),
@@ -72,6 +97,23 @@ export const testEmailOutboxStateActionResponseSchema = z.discriminatedUnion(
     z.object({
       action: z.literal("seed-item"),
       item: testEmailOutboxStateItemSchema,
+    }),
+    z.object({
+      action: z.literal("seed-native-mail"),
+      item: testEmailOutboxStateItemSchema,
+      agent_id: z.string().uuid(),
+    }),
+    z.object({
+      action: z.literal("read-native-receipt"),
+      exists: z.boolean(),
+    }),
+    z.object({
+      action: z.literal("delete-native-mail"),
+      deleted: z.boolean(),
+    }),
+    z.object({
+      action: z.literal("cleanup-native-owner"),
+      cleaned: z.boolean(),
     }),
     z.object({
       action: z.literal("find-item"),

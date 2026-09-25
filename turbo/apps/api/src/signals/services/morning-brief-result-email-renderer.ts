@@ -16,7 +16,6 @@ import {
  */
 export const MORNING_BRIEF_RESULT_EMAIL_BODY_MAX_BYTES = 32 * 1024;
 export const MORNING_BRIEF_RESULT_EMAIL_TITLE_MAX_CHARACTERS = 160;
-export const MORNING_BRIEF_RESULT_EMAIL_SUBJECT_MAX_CHARACTERS = 180;
 /**
  * HTML ceiling for a fully escaped worst case. A 32 KiB body of `&` expands to
  * 160 KiB of `&amp;` before the surrounding document, so this bound can always

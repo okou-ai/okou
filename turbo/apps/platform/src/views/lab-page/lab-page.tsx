@@ -43,17 +43,13 @@ interface MaintainerFilterOption {
 function sortedFeatureSwitchKeys(
   metadata: FeatureSwitchMetadataByKey,
 ): FeatureSwitchKey[] {
-  return Object.values(FeatureSwitchKey)
-    .filter((key) => {
-      return key !== FeatureSwitchKey.NativeMorningBrief;
-    })
-    .sort((a, b) => {
-      return (metadata[a].displayName ?? a).localeCompare(
-        metadata[b].displayName ?? b,
-        undefined,
-        { sensitivity: "base" },
-      );
-    });
+  return Object.values(FeatureSwitchKey).sort((a, b) => {
+    return (metadata[a].displayName ?? a).localeCompare(
+      metadata[b].displayName ?? b,
+      undefined,
+      { sensitivity: "base" },
+    );
+  });
 }
 
 function maintainerLabel(email: string): string {

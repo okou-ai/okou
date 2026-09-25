@@ -11,6 +11,7 @@ import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { testEmailOutboxStateRoutes } from "../../test-email-outbox-state";
 
 interface SeedEmailOutboxItemOptions {
+  readonly template?: "data-export-ready" | "morning-brief-result";
   readonly toAddress: string;
   readonly subject: string;
   readonly status: "pending" | "failed";
@@ -68,6 +69,7 @@ export function createEmailOutboxStateApi(context: TestContext) {
     ): Promise<TestEmailOutboxStateItem> {
       const response = await postAction(context, {
         action: "seed-item",
+        ...(options.template ? { template: options.template } : {}),
         to_address: options.toAddress,
         subject: options.subject,
         status: options.status,
@@ -80,6 +82,64 @@ export function createEmailOutboxStateApi(context: TestContext) {
     },
 
     findItems,
+
+    async seedLinkedNativeMail(options: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly membershipId: string;
+      readonly activeAuthority?: boolean;
+      readonly toAddress: string;
+      readonly createdAt: Date;
+    }): Promise<TestEmailOutboxStateItem & { readonly agentId: string }> {
+      const response = await postAction(context, {
+        action: "seed-native-mail",
+        org_id: options.orgId,
+        user_id: options.userId,
+        membership_id: options.membershipId,
+        ...(options.activeAuthority === undefined
+          ? {}
+          : { active_authority: options.activeAuthority }),
+        to_address: options.toAddress,
+        created_at: options.createdAt.toISOString(),
+      });
+      if (response.action !== "seed-native-mail") {
+        throw new Error("Expected the linked Native email seed response");
+      }
+      return { ...response.item, agentId: response.agent_id };
+    },
+
+    async cleanupNativeOwner(orgId: string, userId: string): Promise<void> {
+      const response = await postAction(context, {
+        action: "cleanup-native-owner",
+        org_id: orgId,
+        user_id: userId,
+      });
+      if (response.action !== "cleanup-native-owner" || !response.cleaned) {
+        throw new Error("Expected the Native owner fixture cleanup response");
+      }
+    },
+
+    async nativeReceiptExists(itemId: string): Promise<boolean> {
+      const response = await postAction(context, {
+        action: "read-native-receipt",
+        item_id: itemId,
+      });
+      if (response.action !== "read-native-receipt") {
+        throw new Error("Expected the Native email receipt response");
+      }
+      return response.exists;
+    },
+
+    async deleteLinkedNativeMail(itemId: string): Promise<boolean> {
+      const response = await postAction(context, {
+        action: "delete-native-mail",
+        item_id: itemId,
+      });
+      if (response.action !== "delete-native-mail") {
+        throw new Error("Expected the Native email cleanup response");
+      }
+      return response.deleted;
+    },
 
     async findSourceState(
       options: FindEmailOutboxSourceItemsOptions,

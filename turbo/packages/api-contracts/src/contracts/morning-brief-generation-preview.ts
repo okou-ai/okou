@@ -9,17 +9,9 @@ const c = initContract();
 /**
  * The explicitly invoked platform-funded generation preview.
  *
- * It ships in the ordinary API route table and is reachable on a development
- * server and on a protected preview deployment; production answers 404 through
- * the environment gate even when `FeatureSwitchKey.NativeMorningBrief` is on for the caller. The
- * caller is an ordinary authenticated member acting on their own organization
- * and user, and the single input is a scheduled anchor. No owner, account,
- * model, prompt, source bundle or credential can be supplied.
- *
- * One invocation runs real Slack collection, commits a generation reservation
- * in the same transaction that finalizes that collection, and only then makes
- * one platform-funded model request. Nothing here delivers anything: no Chat
- * message, no email and no schedule change follows an accepted result.
+ * The preview route was retired. The schemas here remain for the persisted
+ * historical generation result types until their storage contract is removed.
+ * No new preview or production model invocation uses this contract.
  */
 
 /** Why an invocation never reached a reservation, so never called a provider. */

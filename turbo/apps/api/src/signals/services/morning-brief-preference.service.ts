@@ -39,17 +39,11 @@ import {
   loadMorningBriefOwnership,
   type MorningBriefMigrationState,
 } from "./morning-brief-migration-state.service";
-import {
-  readMorningBriefPreferenceProjection,
-  refreshMorningBriefPreferenceProjection,
-} from "./morning-brief-preference-projection.service";
 import { executeRawRows } from "../../lib/db-raw-rows";
 import {
   applyMorningBriefLogicalChoice,
   lockMorningBriefNativeScheduleForWrite,
   materializeMorningBriefNativeSchedule,
-  readMorningBriefNativeSchedule,
-  type MorningBriefNativeScheduleRow,
 } from "./morning-brief-native-schedule.service";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import {
@@ -61,7 +55,6 @@ import { reconcileOfficialWorkflowInstallation$ } from "./official-workflow-reco
 import {
   disableWorkflowAutomation$,
   enableWorkflowAutomation$,
-  persistNativeMorningBriefPreferenceChoice,
 } from "./workflow-automation.service";
 import type { WorkflowMember } from "./workflow-data.service";
 
@@ -245,42 +238,11 @@ async function projectInstalledPreference(
   };
 }
 
-/**
- * Project the durable native choice onto the Settings response.
- *
- * Once a member's execution ownership has left `legacy`, that row is the
- * authority for what Settings shows: the legacy automation's enabled bit and
- * `next_run_at` belong to a scheduler that no longer admits this member's work,
- * and during a rollback drain they are deliberately not the user's choice
- * either. Reading them would let a disabled native brief still look enabled.
- *
- * Nothing here writes, and a member still on `legacy` is not affected at all.
- */
-function projectNativePreference(
-  row: MorningBriefNativeScheduleRow,
-): MorningBriefPreferenceResult & { readonly workflowId?: string } {
-  return {
-    kind: "ok",
-    ...(row.legacyWorkflowId === null
-      ? {}
-      : { workflowId: row.legacyWorkflowId }),
-    preference: {
-      enabled: row.enabled,
-      status: row.enabled ? "enabled" : "paused",
-      unavailableReason: null,
-    },
-  };
-}
-
 async function loadInstalledPreference(
   db: ReadonlyDb,
   args: MorningBriefPreferenceArgs,
 ): Promise<MorningBriefPreferenceResult & { readonly workflowId?: string }> {
   const owner = morningBriefOwner(args);
-  const native = await readMorningBriefNativeSchedule(db, owner);
-  if (native !== undefined && native.phase !== "legacy") {
-    return projectNativePreference(native);
-  }
   return await projectInstalledPreference(
     db,
     args,
@@ -321,15 +283,7 @@ async function withMorningBriefPreferenceLock<T>(
   }
 }
 
-/**
- * Read the member's Morning Brief preference.
- *
- * Once execution ownership has left `legacy`, the durable native choice is the
- * Settings authority even if the implementation switch rolls back or the old
- * installation/catalog disappears. A legacy-phase member still reads the live
- * legacy state (with the disposable projection only as a compatibility check).
- * This path never writes, installs or repairs.
- */
+/** Read the live Official Workflow installation without writing or repairing it. */
 export const morningBriefPreference$ = command(
   async (
     { set },
@@ -339,35 +293,11 @@ export const morningBriefPreference$ = command(
     const db = set(writeDb$);
     signal.throwIfAborted();
     const owner = morningBriefOwner(args);
-    const native = await readMorningBriefNativeSchedule(db, owner);
-    signal.throwIfAborted();
-    if (native !== undefined && native.phase !== "legacy") {
-      return projectNativePreference(native);
-    }
     const state = await loadMorningBriefMigrationState(db, owner);
     signal.throwIfAborted();
     const legacy = await projectInstalledPreference(db, args, state);
     signal.throwIfAborted();
-    if (state.kind !== "installed" || legacy.kind !== "ok") {
-      return legacy;
-    }
-    const featureSwitchContext = await loadUserFeatureSwitchContext(
-      db,
-      args.orgId,
-      args.member.userId,
-    );
-    signal.throwIfAborted();
-    if (
-      !isFeatureEnabled(
-        FeatureSwitchKey.NativeMorningBrief,
-        featureSwitchContext,
-      )
-    ) {
-      return legacy;
-    }
-    const projected = await readMorningBriefPreferenceProjection(db, state);
-    signal.throwIfAborted();
-    return projected === null ? legacy : { kind: "ok", preference: projected };
+    return legacy;
   },
 );
 
@@ -735,11 +665,6 @@ export const ensureMorningBriefDefaultEnabled$ = command(
     const db = set(writeDb$);
     return await withMorningBriefPreferenceLock(db, args, signal, async () => {
       const outcome = await set(ensureMorningBriefWhileLocked$, args, signal);
-      await refreshMorningBriefPreferenceProjection(
-        db,
-        morningBriefOwner(args),
-        signal,
-      );
       return outcome;
     });
   },
@@ -888,40 +813,6 @@ const updateMorningBriefWhileLocked$ = command(
       }
     }
 
-    // A member whose execution ownership has left `legacy` is decided by the
-    // durable row alone. Its legacy automation no longer admits work, so the
-    // toggle commits once, in one transaction, and never depends on a second
-    // commit landing afterwards. This is what removes the window where a
-    // failure between the two left Settings disabled while native execution
-    // stayed enabled.
-    const nativeRow = await readMorningBriefNativeSchedule(db, identity);
-    signal.throwIfAborted();
-    if (nativeRow !== undefined && nativeRow.phase !== "legacy") {
-      const applied = await persistNativeMorningBriefPreferenceChoice(db, {
-        ...identity,
-        automationId: nativeRow.legacyAutomationId,
-        enabled: args.enabled,
-        expectedEpoch: nativeRow.ownerEpoch,
-        at: nowDate(),
-      });
-      signal.throwIfAborted();
-      if (applied.kind === "stale") {
-        return conflict(
-          "MORNING_BRIEF_STATE_CONFLICT",
-          "Morning Brief ownership changed during this update. Retry the preference update.",
-        );
-      }
-      if (args.enabled && nativeRow.legacyWorkflowId !== null) {
-        await completeAndMaterializeMorningBriefEnrollment(
-          db,
-          identity,
-          nativeRow.legacyWorkflowId,
-        );
-        signal.throwIfAborted();
-      }
-      return await loadInstalledPreference(db, args);
-    }
-
     await recordMorningBriefChoice(db, identity, args.enabled);
     signal.throwIfAborted();
     const current = await loadInstalledPreference(db, args);
@@ -997,11 +888,6 @@ export const updateMorningBriefPreference$ = command(
       signal,
       async () => {
         const outcome = await set(updateMorningBriefWhileLocked$, args, signal);
-        await refreshMorningBriefPreferenceProjection(
-          db,
-          morningBriefOwner(args),
-          signal,
-        );
         return outcome;
       },
     );
@@ -1081,7 +967,6 @@ export const synchronizeMorningBriefTimezone$ = command(
     const identity = morningBriefOwner(args);
     await withMorningBriefPreferenceLock(db, args, signal, async () => {
       await synchronizeTimezoneWhileLocked(db, identity);
-      await refreshMorningBriefPreferenceProjection(db, identity, signal);
     });
   },
 );

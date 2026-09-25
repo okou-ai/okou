@@ -288,13 +288,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Enable Morning Brief and email subscription management in Preferences.",
     enabled: true,
   },
-  [FeatureSwitchKey.NativeMorningBrief]: {
-    maintainer: "lancy@okou.ai",
-    displayName: "Native Morning Brief",
-    description:
-      "Retiring the native Morning Brief pipeline in favor of the Official Workflow Run. Separate from the user's Morning Brief preference.",
-    enabled: false,
-  },
   [FeatureSwitchKey.TestOauthConnector]: {
     maintainer: "liangyou@okou.ai",
     description:

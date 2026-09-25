@@ -454,45 +454,6 @@ describe("isFeatureEnabled", () => {
     });
   });
 
-  it("keeps the persisted native key for rollback but removes staff admission", () => {
-    expect(FeatureSwitchKey.NativeMorningBrief).toBe("simpleMorningBrief");
-    for (const context of [{}, { orgId: "org_nonexistent" }]) {
-      expect(
-        isFeatureEnabled(FeatureSwitchKey.NativeMorningBrief, context),
-      ).toBe(false);
-      // Selecting the replacement implementation never changes whether the
-      // user has Morning Brief.
-      expect(isFeatureEnabled(FeatureSwitchKey.MorningBrief, context)).toBe(
-        true,
-      );
-    }
-    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
-    expect(isFeatureEnabled(FeatureSwitchKey.NativeMorningBrief, staff)).toBe(
-      false,
-    );
-    expect(isFeatureEnabled(FeatureSwitchKey.MorningBrief, staff)).toBe(true);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.NativeMorningBrief, {
-        ...staff,
-        overrides: { [FeatureSwitchKey.NativeMorningBrief]: false },
-      }),
-    ).toBe(false);
-    // Existing binaries still understand this persisted key during rollout.
-    // The migration clears saved true values and the API refuses new ones.
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.NativeMorningBrief, {
-        orgId: "org_nonexistent",
-        overrides: { [FeatureSwitchKey.NativeMorningBrief]: true },
-      }),
-    ).toBe(true);
-    expect(
-      getFeatureSwitchMetadata()[FeatureSwitchKey.NativeMorningBrief],
-    ).toMatchObject({
-      displayName: "Native Morning Brief",
-      rolloutStage: "alpha",
-    });
-  });
-
   it("should return true when orgId matches even if userId does not", () => {
     expect(
       isFeatureEnabled(FeatureSwitchKey.Lab, {
@@ -548,7 +509,6 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.GradientColorThemes]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.MorningBrief]).toBe(true);
-    expect(staffOrgStates[FeatureSwitchKey.NativeMorningBrief]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(true);

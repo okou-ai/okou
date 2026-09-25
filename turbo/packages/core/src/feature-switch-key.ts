@@ -36,8 +36,6 @@ export enum FeatureSwitchKey {
   StripeInvoicePaidWorkflowAutomations = "stripeInvoicePaidWorkflowAutomations",
   OfficialWorkflows = "officialWorkflows",
   MorningBrief = "morningBrief",
-  // Preserve the persisted/API key while renaming the feature itself.
-  NativeMorningBrief = "simpleMorningBrief",
   TestOauthConnector = "_testOauthConnector",
   FreshdeskConnector = "freshdeskConnector",
   StabilityAiConnector = "stabilityAiConnector",
