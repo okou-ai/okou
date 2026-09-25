@@ -5,14 +5,16 @@ both write modes behind the singleton `chat_event_write_control` row. Release 2
 (the `contract_chat_event_sequence_bridge` migration) removes the legacy mode:
 the API only writes through `chat_event_sequences`, the bridge trigger/function
 and `chat_threads.last_chat_event_seq_id` are dropped, and no runtime path reads
-the write mode. The control row and its irreversible activation trigger remain
-the durable record used by the rollback resolver.
+the write mode. Production activated split writes at 2026-09-25 00:06:25 UTC.
+Migration `drop_chat_event_write_control` then drops the control table and its
+activation trigger/function; the rollback resolver refuses API targets before
+Release 2 (#36703, API 1.676.0), the last release that read the table.
 
-The contraction migration fails closed (SQLSTATE `55000`) unless the row is
-activated. A database without any chat thread has no legacy allocation or
-operation to drain and is activated by that migration; every other database,
-including shared preview parents and local development databases with data,
-must be activated with the control write below before it can migrate.
+The contraction migration still fails closed (SQLSTATE `55000`) unless the row
+is activated. A database without any chat thread is activated by that migration;
+any other database that has not yet applied it, including a shared preview
+parent or a local development database with data, must run the control write
+under [Activation](#activation) before it can migrate.
 
 ## Storage and consistency
 
@@ -76,81 +78,27 @@ After activation:
 There is no outbox or durable compensation queue for draft/timestamp/sort. A lost
 weak side effect is an accepted observable outcome, not an event-write failure.
 
-## Release 1, before activation
+## Activation
 
-1. Apply the generated expansion, bridge, sequence backfill, and routing/cleanup
-   preparation migrations through the normal release pipeline. Database migration
-   precedes API promotion. Old binaries remain on the legacy entry point.
-   Bounded procedures commit each page; online indexes are built concurrently.
-   Interrupted migration attempts are safe to rerun through the migration runner.
-   The preceding API's strict erasure catalogue rejects the expanded tables (or
-   a newly captured collector version). Its durable Clerk deletion jobs retain
-   their checkpoint/selectors and retry every 60 seconds without an attempt cap.
-   This maintenance backlog is also expected during a preactivation rollback.
-   Monitor pending age/failure count; after Release 1 resumes, confirm the backlog
-   drains. Do not reset captures or delete these pending jobs.
-2. Verify the bridge and control trigger/function inventory, migration frontier,
-   index validity and backfill completeness. This query must return zero:
+Release 1 shipped the expansion, bridge, backfill and routing/cleanup
+migrations. Production was activated at 2026-09-25 00:06:25 UTC after event
+producers were quiesced and every legacy-mode operation had drained. A database
+that has not yet applied the contraction migration and holds chat threads must
+be activated before migrating:
 
-   ```sql
-   SELECT count(*) AS incomplete_watermarks
-   FROM chat_threads AS thread
-   LEFT JOIN chat_event_sequences AS sequence ON sequence.chat_thread_id = thread.id
-   WHERE thread.last_chat_event_seq_id > 0
-     AND COALESCE(sequence.last_seq_id, 0) < thread.last_chat_event_seq_id;
-   ```
+```sql
+BEGIN;
+SET LOCAL lock_timeout = '1s';
+SET LOCAL statement_timeout = '10s';
+UPDATE chat_event_write_control
+SET activated_at = COALESCE(activated_at, timezone('UTC', now()))
+WHERE id = 'global'
+RETURNING activated_at;
+COMMIT;
+```
 
-   Confirm `SELECT activated_at FROM chat_event_write_control WHERE id = 'global'`
-   returns exactly one null value. Do not derive a watermark from `MAX(chat_events)`.
-
-3. Promote Release 1 and verify all API instances, cron workers, retries and
-   in-flight readers using pre-Release-1 code have drained. Exercise native
-   replies, Web sends, output, cancellation/queue admission and callback replay.
-4. Record the actual serving release and supported rollback artifact. Expansion
-   alone does not raise the chat-event rollback floor: preactivation rollback to
-   a previously otherwise-compatible API remains valid.
-
-## Separately authorized activation
-
-Activation is a global operational step, not part of opening or merging this PR.
-
-1. Briefly quiesce event-producing traffic and workers, including Web/native
-   ingress, output/callback processing, cron and control operations. Drain **all**
-   operations that entered legacy mode, including requests running Release 1 that
-   already observed a null activation value. Draining only old binaries is not
-   sufficient. The retained legacy send/draft protocol can hold a strong thread
-   lock before allocation, whereas direct allocation reaches the sequence first.
-   Do not introduce those mixed lock orders by flipping under active writers.
-   Also finish pending/retrying source chat callbacks that entered legacy mode,
-   including their deferred automation work. Legacy automation admissions do not
-   carry the new callback-owned receipt; activation must not reinterpret their
-   partially completed side effects as a fresh source obligation. Retained
-   channel delivery callbacks still use their existing retry/deduplication path.
-2. Repeat completeness/routing checks and verify a Release-1-compatible rollback
-   target. Then perform this single authorized control write:
-
-   ```sql
-   BEGIN;
-   SET LOCAL lock_timeout = '1s';
-   SET LOCAL statement_timeout = '10s';
-   UPDATE chat_event_write_control
-   SET activated_at = COALESCE(activated_at, timezone('UTC', now()))
-   WHERE id = 'global'
-   RETURNING activated_at;
-   COMMIT;
-   ```
-
-   Exactly one row must be returned. Resume writers after commit. Late legacy
-   allocator entry calls still obtain unique positions through the bridge; the
-   drain is additionally required for the enclosing legacy operations' locks and
-   side effects. No pre-Release-1 reader may serve after activation.
-
-3. Verify new-mode allocation, all weak side-effect attempts, native destination
-   correctness, output replay, queue recovery, periodic erasure and metrics.
-   The activation trigger prevents reverting or deleting the active marker.
-   The production rollback resolver reads this marker and refuses pre-Release-1
-   API targets only after activation. Recover with a compatible artifact or a
-   forward fix; never restore pre-Release-1 binaries or null the marker.
+Exactly one row must be returned. Never run a pre-Release-1 binary against an
+activated database.
 
 ## Periodic late-content cleanup
 
@@ -193,9 +141,10 @@ must outlive local job retention and must not be purged with account content.
 Release 2 ([#36696](https://github.com/okou-ai/okou/issues/36696)) may only be
 promoted after production acceptance of the activated Release 1 and a verified
 drain of every legacy-mode operation. Since migration precedes API promotion,
-Release 1 remains a valid rollback target after contraction **only in its
-verified, fixed active mode**; the rollback resolver requires a target that
-contains the split writer. Never reactivate the compatibility branch.
+Release 1 remained a valid rollback target after contraction only in its
+verified, fixed active mode. Dropping the control table ends that window: the
+rollback resolver now requires a target from Release 2 on. Never reactivate the
+compatibility branch.
 
 ### Compatibility inventory
 
@@ -206,7 +155,7 @@ contains the split writer. Never reactivate the compatibility branch.
 | `ensureUserErasureJob` / `createRelationalErasureCollector` replay of the preceding captured collector                                                                   | Removed. Merge requires zero incomplete preceding-version captures.                                                                                                                                                                                                                                                                                                                                                                                              |
 | `insertChatDeliveryCallback` recognizes historical random-ID registrations, and cancel recovery replays an acknowledged callback whose `run.cancelled` marker is missing | Removed together. Split writes commit the marker before the callback is acknowledged, so only undelivered source callbacks are replayed. On 2026-09-25 no historical delivery row had a pending or failed source callback, and every cancelled run missing a hot marker belonged to an archived thread.                                                                                                                                                          |
 | Source-thread reach for `chat_agent_run_context` rows with null `source_user_id`/`source_org_id`                                                                         | Removed. Every writer from the split writer on copies both owners. On 2026-09-25, 955 rows had a null owner and none of their source threads still existed, so no owner could be derived and nothing read them. Migration `chat_agent_run_context_owner_not_null` deletes them and makes both columns `NOT NULL`. The relational collector version changes because the sweep plan no longer has the thread reach; no erasure job was incomplete when it changed. |
-| `chat_event_write_control`, its `preserve_chat_event_write_activation` trigger, and the rollback resolver floor at the split-writer commit                               | Retained for now. API 1.674.0 and 1.675.0 read the control row on every write, so dropping the table requires raising the rollback floor to Release 2 (`15117da781`, API 1.676.0), which excludes those two versions as rollback targets. That needs explicit approval.                                                                                                                                                                                          |
+| `chat_event_write_control`, its `preserve_chat_event_write_activation` trigger, and the rollback resolver floor at the split-writer commit                               | Removed. Migration `drop_chat_event_write_control` drops the table, trigger and function. API 1.674.0/1.675.0 read the control row on every write, so the resolver floor moved to Release 2 (`15117da781`, API 1.676.0) with owner approval; production was serving 1.676.1 or later.                                                                                                                                                                            |
 
 The following are permanent accepted data states:
 
@@ -218,7 +167,7 @@ The following are permanent accepted data states:
 
 The migration-consistency pipeline includes PostgreSQL acceptance for mixed
 allocation, concurrent batches/replacement, first writes, gaps, rollback,
-interrupted backfill/retry, retention, FK/control locks and contraction. Separate
+interrupted backfill/retry, retention, FK locks and contraction. Separate
 suites inject real SQL failures into required context (the input is rejected
 in both modes without a partial event, and a duplicate delivery is accepted) and into weak
 draft/timestamp/sort/materialization side effects, exercise callback replay,

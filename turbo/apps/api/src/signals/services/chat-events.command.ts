@@ -103,10 +103,7 @@ import {
   recordOfficialWorkflowThreadProvenance,
 } from "./morning-brief-thread-provenance.service";
 import { touchChatThreadLastMessageAtIndependently } from "./chat-event-shared.service";
-import {
-  attemptChatEventSideEffect,
-  clearThreadDraftIndependently,
-} from "./chat-event-write-side-effects.service";
+import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import {
   revokeChatEvent,
   insertChatEvent,
@@ -129,7 +126,6 @@ import { appendQueuedRunAssistantMarker } from "./chat-queue-marker.service";
 import {
   discardUnclaimedUserMessage,
   loadNextUnclaimedQueuedUserMessage,
-  lockUserMessageQueueThread,
   resolveWebChatQueueFirstDispatchPreflight,
   type QueuedUserMessage,
 } from "./chat-queued-event.service";
@@ -2308,7 +2304,6 @@ async function appendUnassociatedUserMessage(
     }
     throw duplicate.error;
   }
-  await clearThreadDraftIndependently(db, params);
   const workflowId = params.getStartedWorkflowId;
   if (workflowId) {
     await attemptChatEventSideEffect(
@@ -2331,13 +2326,11 @@ async function appendUnassociatedUserMessage(
       "thread_touch",
       params.threadId,
       async () => {
-        await touchChatThreadLastMessageAtIndependently(
-          db,
-          params.threadId,
-          inserted.createdAt,
-          params.chatThreadSortEventId,
-          { userId: params.userId, orgId: params.orgId },
-        );
+        await touchChatThreadLastMessageAtIndependently(db, params.threadId, {
+          touchedAt: inserted.createdAt,
+          eventId: params.chatThreadSortEventId,
+          authorizedScope: { userId: params.userId, orgId: params.orgId },
+        });
       },
     );
   }
@@ -2364,9 +2357,6 @@ async function appendAssociatedUserMessage(params: {
   readonly userMessage: UserMessageDocument;
   readonly appendQueueMarker: boolean;
   readonly triggerSource: "web" | "agent";
-  // When false, the thread's in-progress draft is preserved. Automation posts
-  // are not user-initiated typing, so they must not clear the user's draft.
-  readonly clearDraft: boolean;
 }): Promise<boolean> {
   await registerCanonicalWebInputAssets(params.db, {
     chatThreadId: params.threadId,
@@ -2385,17 +2375,16 @@ async function appendAssociatedUserMessage(params: {
   const inserted = params.revokesEventId
     ? await replaceChatEvent(params.db, params.revokesEventId, event)
     : await insertChatEvent(params.db, event, "id");
-  if (inserted && params.clearDraft) {
-    await clearThreadDraftIndependently(params.db, params);
-  }
   if (inserted && params.touchThreadSort) {
     await attemptChatEventSideEffect("thread_touch", params.threadId, () => {
       return touchChatThreadLastMessageAtIndependently(
         params.db,
         params.threadId,
-        inserted.createdAt,
-        params.chatThreadSortEventId,
-        { userId: params.userId, orgId: params.orgId },
+        {
+          touchedAt: inserted.createdAt,
+          eventId: params.chatThreadSortEventId,
+          authorizedScope: { userId: params.userId, orgId: params.orgId },
+        },
       );
     });
   }
@@ -2418,7 +2407,6 @@ function appendRecallChatEvent(params: {
   readonly clientEventId: string | undefined;
 }): Promise<AppendEventResult> {
   return params.db.transaction(async (tx) => {
-    await lockUserMessageQueueThread(tx, params.threadId);
     const pendingTarget = await loadPendingChatQueueEvent(tx, {
       chatThreadId: params.threadId,
       eventId: params.revokesEventId,
@@ -2525,10 +2513,11 @@ function appendRecallChatEvent(params: {
       )
       .limit(1);
     if (!resolved) {
-      if (wasPending) {
-        throw new Error("Failed to append recall user message");
-      }
-      return { ok: false, message: "Failed to insert recall user message" };
+      // A concurrent claim or rejection won the revoke edge.
+      return {
+        ok: false,
+        message: "Only queued user messages can be recalled",
+      };
     }
     return { ok: true, createdAt: resolved.createdAt };
   });
@@ -3406,7 +3395,6 @@ function scheduleAssociatedUserMessage(params: {
         userMessage: params.body.userMessage,
         appendQueueMarker: params.appendQueueMarker,
         triggerSource: params.triggerSource,
-        clearDraft: true,
       });
       if (inserted) {
         await publishChatEventCreated({
@@ -3544,7 +3532,6 @@ async function appendQueueFirstInsufficientCreditsEvents(params: {
   // replacement is the atomic claim that makes it non-runnable.
   const userCreatedAt = nowDate();
   const createdAt = await params.prepared.db.transaction(async (tx) => {
-    await lockUserMessageQueueThread(tx, params.prepared.thread.threadId);
     const pending = await loadPendingChatQueueEvent(tx, {
       chatThreadId: params.prepared.thread.threadId,
       eventId: params.eventId,
@@ -3566,7 +3553,6 @@ async function appendQueueFirstInsufficientCreditsEvents(params: {
           isNull(chatEvents.runId),
         ),
       )
-      .for("update", { of: chatEvents })
       .limit(1);
     if (!queuedMessage) {
       throw new Error("Queue-first message is no longer available");

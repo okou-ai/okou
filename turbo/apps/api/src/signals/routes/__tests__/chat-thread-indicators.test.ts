@@ -267,14 +267,14 @@ describe("GET /api/indicators", () => {
 
     await expect(
       chat.markThreadRead(actor, toggled.threadId),
-    ).resolves.toStrictEqual({ lastReadAt: expect.any(String), unreads: [] });
+    ).resolves.toStrictEqual({ lastReadAt: expect.any(String) });
     await expect(chat.listThreadUnreads(actor, agentId)).resolves.toStrictEqual(
       [untouched],
     );
 
     await expect(
       chat.markThreadUnread(actor, toggled.threadId),
-    ).resolves.toStrictEqual({ lastReadAt: null, unreads: [] });
+    ).resolves.toStrictEqual({ lastReadAt: null });
     const unreads = await chat.listThreadUnreads(actor, agentId);
     expect(unreads).toHaveLength(2);
     expect(unreads).toStrictEqual(expect.arrayContaining([toggled, untouched]));

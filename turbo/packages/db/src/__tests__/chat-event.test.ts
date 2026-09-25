@@ -1,4 +1,4 @@
-import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
+import { getTableConfig, PgDialect, PgTable } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 
 import { schema } from "../index";
@@ -103,7 +103,6 @@ describe("chatEvents schema", () => {
       "chat_events_run_terminal_unique",
       "chat_events_thread_seq_unique",
       "idx_chat_events_created_at_id",
-      "idx_chat_events_run_id",
       "idx_chat_events_thread_created",
       "idx_chat_events_thread_run_terminal_created",
     ]);
@@ -185,6 +184,28 @@ describe("chatEvents schema", () => {
         onDelete: "cascade",
       },
     ]);
+  });
+
+  it("keeps integration constraints off canonical events", () => {
+    // Integrations reference canonical events by (context_type, context_id)
+    // or a plain ID. Only core Chat tables may constrain or index chat_events.
+    const referencingTables = Object.values(schema)
+      .filter((table) => {
+        return table instanceof PgTable;
+      })
+      .flatMap((table) => {
+        const config = getTableConfig(table);
+        return config.foreignKeys
+          .filter((foreignKey) => {
+            return foreignKey.reference().foreignTable === chatEvents;
+          })
+          .map(() => {
+            return config.name;
+          });
+      });
+
+    expect(referencingTables).toStrictEqual(["active_input_delivery_items"]);
+    expect(getTableConfig(chatEvents).uniqueConstraints).toStrictEqual([]);
   });
 });
 

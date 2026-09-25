@@ -29,6 +29,7 @@ import {
   PRESENTATION_TEMPLATE_PICKER_ITEMS,
 } from "@okouai/core";
 import { createHash, randomUUID } from "node:crypto";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { WebPushError } from "web-push";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -1575,6 +1576,91 @@ describe("CHAT-02: completed chat callback", () => {
     );
   });
 
+  it("unarchives the thread when a completed or failed run makes it unread, but not on cancellation", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    if (!actor.orgId) {
+      throw new Error("Expected the chat actor to be org-scoped");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
+      { [FeatureSwitchKey.ChatThreadArchiving]: true },
+    );
+    async function startArchivedRun(prompt: string) {
+      const run = await startChatRun(actor, { agentId, prompt });
+      await chat.requestSetThreadArchived(actor, run.threadId, true, [204]);
+      return run;
+    }
+    async function expectArchiveState(
+      threadId: string,
+      archived: boolean,
+      unarchivedEventCount: number,
+    ) {
+      const metadata = await chat.readThreadMetadata(actor, threadId);
+      expect(metadata.archived).toBe(archived);
+      const threadEvents = await chat.requestThreadEvents(actor, {}, [200]);
+      if (threadEvents.status !== 200) {
+        throw new Error("Expected chat thread events to load");
+      }
+      expect(
+        threadEvents.body.events.filter((event) => {
+          return event.chatThreadId === threadId && event.kind === "unarchived";
+        }),
+      ).toHaveLength(unarchivedEventCount);
+    }
+
+    const completed = await startArchivedRun("complete while archived");
+    const completedHeaders = await claimChatRun(runnerGroup, completed.runId);
+    chatCallbacks.mockChatOutputEvents([assistantEvent(0, "Archived answer")]);
+    await completeChatRunOk(completed.runId, completedHeaders, {
+      lastEventSequence: 0,
+    });
+    await flushWaitUntilForTest();
+    await expectArchiveState(completed.threadId, false, 1);
+
+    const failed = await startArchivedRun("fail while archived");
+    const failedHeaders = await claimChatRun(runnerGroup, failed.runId);
+    await failChatRun(failed.runId, failedHeaders, "Archived run failed");
+    await flushWaitUntilForTest();
+    await expectArchiveState(failed.threadId, false, 1);
+
+    const cancelled = await startArchivedRun("cancel while archived");
+    await claimChatRunJob(runnerGroup, cancelled.runId);
+    await api.requestCancelRun(actor, cancelled.runId, [200]);
+    await flushWaitUntilForTest();
+    const afterCancel = await chat.listThreadEvents(actor, cancelled.threadId);
+    expect(
+      lifecycleMarkers(afterCancel.events, cancelled.runId, "cancelled"),
+    ).toHaveLength(1);
+    await expectArchiveState(cancelled.threadId, true, 0);
+
+    // A sandbox that reports its own cancellation goes through the failed
+    // callback but still lands a cancelled marker.
+    const sandboxCancelled = await startArchivedRun("sandbox cancels");
+    const sandboxCancelledHeaders = await claimChatRun(
+      runnerGroup,
+      sandboxCancelled.runId,
+    );
+    await failChatRun(
+      sandboxCancelled.runId,
+      sandboxCancelledHeaders,
+      "Run cancelled",
+    );
+    await flushWaitUntilForTest();
+    const afterSandboxCancel = await chat.listThreadEvents(
+      actor,
+      sandboxCancelled.threadId,
+    );
+    expect(
+      lifecycleMarkers(
+        afterSandboxCancel.events,
+        sandboxCancelled.runId,
+        "cancelled",
+      ),
+    ).toHaveLength(1);
+    await expectArchiveState(sandboxCancelled.threadId, true, 0);
+  }, 90_000);
+
   it("pins the model, reasoning effort, and token budget of every fast-path completion", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
@@ -3066,55 +3152,7 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
     await flushWaitUntilForTest();
   }, 90_000);
 
-  it("returns 503 when the required DB output projection is locked", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const run = await startChatRun(actor, {
-      agentId,
-      prompt: "locked live projection",
-    });
-    const sandboxHeaders = await claimChatRun(runnerGroup, run.runId);
-    const held = await holdChatEventInsertTransactionFixture({
-      threadId: run.threadId,
-      content: "hold the chat sequence row",
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      held.release();
-      await held.done;
-    });
-
-    const response = await webhooks.requestAgentEvents(
-      {
-        runId: run.runId,
-        events: [
-          {
-            type: "assistant",
-            sequenceNumber: 0,
-            message: {
-              id: "msg_locked_projection",
-              content: [{ type: "text", text: "must be durable" }],
-            },
-          },
-        ],
-      },
-      sandboxHeaders,
-      [503],
-    );
-    expect(response.status).toBe(503);
-    expect(response.body).toStrictEqual({
-      error: {
-        code: "EVENT_DELIVERY_UNAVAILABLE",
-        message: "Agent event delivery is temporarily unavailable",
-      },
-    });
-
-    const messages = await chat.listThreadEvents(actor, run.threadId);
-    expect(eventBackedContents(messages.events, run.runId)).toHaveLength(0);
-    held.release();
-    await held.done;
-  }, 30_000);
-
-  it("returns the route deadline while a required DB projection remains blocked", async () => {
+  it("returns the route deadline while blocked and keeps the released append durable", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const run = await startChatRun(actor, {
       agentId,
@@ -3162,8 +3200,14 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
     held.release();
     await held.done;
 
-    const messages = await chat.listThreadEvents(actor, run.threadId);
-    expect(eventBackedContents(messages.events, run.runId)).toHaveLength(0);
+    // The append is one autocommit statement with no enclosing transaction,
+    // so the route deadline cannot roll it back once the lock is released.
+    await expect
+      .poll(async () => {
+        const messages = await chat.listThreadEvents(actor, run.threadId);
+        return eventBackedContents(messages.events, run.runId).length;
+      })
+      .toBe(1);
   }, 30_000);
 
   it("persists concurrent event batches instead of skipping output projection", async () => {

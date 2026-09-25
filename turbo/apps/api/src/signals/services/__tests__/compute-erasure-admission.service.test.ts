@@ -1758,67 +1758,40 @@ describe("actual compute transactions versus the B1 projector", () => {
         expect(diagnostics.takeFailure(error)).toBeUndefined();
       }
 
-      // The split output transaction waits only on its run row and the event
-      // FK; erasure subjects, resources, sessions and projections are not
-      // locked around the append.
-      describe.each(["thread_lock", "run_lock"] as const)(
-        "real %s output timeout",
-        (phase) => {
-          async function prepareBlockedOutput() {
-            const f = await outputFixture();
-            await sendOutput(f);
-            await flushWaitUntilForTest();
-            const before = await contentState(f);
-            const held = await holdBusinessRow((tx) => {
-              switch (phase) {
-                case "thread_lock": {
-                  return tx
-                    .select()
-                    .from(chatThreads)
-                    .where(eq(chatThreads.id, f.threadId))
-                    .for("update");
-                }
-                case "run_lock": {
-                  return tx
-                    .select()
-                    .from(agentRuns)
-                    .where(eq(agentRuns.id, f.runId))
-                    .for("update");
-                }
-              }
-            });
-            return { f, before, held };
-          }
-
-          it(`retries a real ${phase} HTTP timeout after rollback and keeps replay idempotent`, async () => {
-            const { f, before, held } = await prepareBlockedOutput();
-            await webhooks.requestAgentEvents(
-              outputBody(f, 10),
-              outputHeaders(f),
-              [503],
-            );
-            await expect(contentState(f)).resolves.toStrictEqual(before);
-            await held.release();
-            await sendOutput(f, 10);
-            await flushWaitUntilForTest();
-            const accepted = await contentState(f);
-            expect(accepted.content).toHaveLength(4);
-            expect(accepted.materialization).toMatchObject([
-              { latestResultText: "result 10" },
-            ]);
-            await sendOutput(f, 10);
-            await flushWaitUntilForTest();
-            // Existing insertion reserves sequence numbers before deduplication.
-            // Replays keep the same durable output, while sequence gaps are legal.
-            await expect(contentState(f)).resolves.toMatchObject({
-              content: accepted.content,
-              citations: accepted.citations,
-              run: accepted.run,
-              materialization: [{ latestResultText: "result 10" }],
-            });
-          });
-        },
-      );
+      // The output path holds no run lock and opens no transaction; a run row
+      // held for a non-key update (status, heartbeat, metadata) cannot delay
+      // the event append.
+      it("appends output while the run row is held for a non-key update", async () => {
+        const f = await outputFixture();
+        await sendOutput(f);
+        await flushWaitUntilForTest();
+        const held = await holdBusinessRow((tx) => {
+          return tx
+            .select({ id: agentRuns.id })
+            .from(agentRuns)
+            .where(eq(agentRuns.id, f.runId))
+            .for("no key update");
+        });
+        const writing = webhooks.requestAgentEvents(
+          outputBody(f, 10),
+          outputHeaders(f),
+          [200],
+        );
+        await expect
+          .poll(
+            async () => {
+              return (await contentState(f)).content.length;
+            },
+            { timeout: 10_000 },
+          )
+          .toBe(4);
+        await held.release();
+        await writing;
+        await flushWaitUntilForTest();
+        expect((await contentState(f)).materialization).toMatchObject([
+          { latestResultText: "result 10" },
+        ]);
+      });
 
       it.each([false, true])(
         "resets an actual ownership retry before its next outcome (timeout: %s)",
@@ -1909,72 +1882,6 @@ describe("actual compute transactions versus the B1 projector", () => {
       const missing = { ...f, runId: randomUUID() };
       await sendOutput(missing);
     });
-
-    // Agent rows are not locked around the append: a transfer committed after
-    // the output transaction is a later ownership change, not a race.
-    it.each([
-      "thread-owner",
-      "session-owner",
-      "run-owner",
-      "thread-deletion",
-    ] as const)(
-      "rolls back a %s race and never attributes prepared content to the new identity",
-      async (kind) => {
-        const f = await outputFixture();
-        const before = await contentState(f);
-        const next = `synthetic-transfer-${randomUUID()}`;
-        const held = await holdBusinessRow(
-          (tx) => {
-            return tx
-              .select({ id: chatThreads.id })
-              .from(chatThreads)
-              .where(eq(chatThreads.id, f.threadId))
-              .for("update");
-          },
-          async (tx) => {
-            if (kind === "thread-owner") {
-              await tx
-                .update(chatThreads)
-                .set({ userId: next })
-                .where(eq(chatThreads.id, f.threadId));
-            }
-            if (kind === "session-owner") {
-              await tx
-                .update(agentSessions)
-                .set({ userId: next })
-                .where(eq(agentSessions.id, f.sessionId));
-            }
-            if (kind === "run-owner") {
-              await tx
-                .update(agentRuns)
-                .set({ userId: next })
-                .where(eq(agentRuns.id, f.runId));
-            }
-            if (kind === "thread-deletion") {
-              await tx
-                .delete(chatThreads)
-                .where(eq(chatThreads.id, f.threadId));
-            }
-          },
-        );
-        const writing = webhooks.requestAgentEvents(
-          outputBody(f),
-          outputHeaders(f),
-          [503],
-        );
-        await waitForBlockedBy(held.pid);
-        await held.release();
-        await writing;
-        const after = await contentState(f);
-        expect(after.content).toStrictEqual(before.content);
-        expect(after.materialization).toStrictEqual(before.materialization);
-        expect(after.citations).toStrictEqual(before.citations);
-        expect(after.run).toStrictEqual(before.run);
-        if (kind !== "thread-deletion") {
-          expect(after.thread).toStrictEqual(before.thread);
-        }
-      },
-    );
 
     it("timestamps standalone acknowledgement after publication registration", async () => {
       const f = await outputFixture();

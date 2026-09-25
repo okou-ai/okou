@@ -114,7 +114,6 @@ describe("CHAT-01 chat thread lifecycle", () => {
     const markedRead = await api.markThreadRead(actor, created.id);
     expect(markedRead).toStrictEqual({
       lastReadAt: expect.any(String),
-      unreads: [],
     });
 
     context.mocks.ably.publish.mockClear();
@@ -122,7 +121,6 @@ describe("CHAT-01 chat thread lifecycle", () => {
     const markedUnread = await api.markThreadUnread(actor, created.id);
     expect(markedUnread).toStrictEqual({
       lastReadAt: null,
-      unreads: [],
     });
     expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
       [`user-org:${actor.userId}:${actor.orgId}`],
@@ -175,13 +173,11 @@ describe("CHAT-01 chat thread lifecycle", () => {
     const peerRead = await api.requestReadThread(peer, thread.id, [404]);
     expectApiError(peerRead.body);
     expect(peerRead.body.error.code).toBe("NOT_FOUND");
-    const peerDraftRead = await api.requestReadThreadDraft(
-      peer,
-      thread.id,
-      [404],
-    );
-    expectApiError(peerDraftRead.body);
-    expect(peerDraftRead.body.error.code).toBe("NOT_FOUND");
+    // A thread the caller does not own reads as the empty draft.
+    await expect(api.readThreadDraft(peer, thread.id)).resolves.toStrictEqual({
+      draftUserMessage: null,
+      draftAttachments: null,
+    });
     await api.patchThread(owner, thread.id, {
       draftAttachments: null,
       draftUserMessage: {
@@ -194,6 +190,10 @@ describe("CHAT-01 chat thread lifecycle", () => {
         version: 1,
         parts: [{ type: "text", text: "private draft" }],
       },
+    });
+    await expect(api.readThreadDraft(peer, thread.id)).resolves.toStrictEqual({
+      draftUserMessage: null,
+      draftAttachments: null,
     });
     await expect(api.listThreadDrafts(peer)).resolves.not.toContain(thread.id);
 
@@ -236,7 +236,6 @@ describe("CHAT-01 chat thread lifecycle", () => {
 
     expect(readEmpty).toStrictEqual({
       lastReadAt: expect.any(String),
-      unreads: [],
     });
 
     let detail = await api.readThread(owner, thread.id);

@@ -8,6 +8,76 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.680.1](https://github.com/okou-ai/okou/compare/api-v1.680.0...api-v1.680.1) (2026-09-25)
+
+
+### Refactoring
+
+* **db:** drop the chat event write control ([#36907](https://github.com/okou-ai/okou/issues/36907)) ([8c50449](https://github.com/okou-ai/okou/commit/8c5044916f4a6ff195f7ef72cb6b53af3f24b342))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 1.302.2
+
+## [1.680.0](https://github.com/okou-ai/okou/compare/api-v1.679.0...api-v1.680.0) (2026-09-25)
+
+
+### Features
+
+* **api:** force app.vm0.ai clients to upgrade to v0.963.3 ([#36921](https://github.com/okou-ai/okou/issues/36921)) ([c6c9c1f](https://github.com/okou-ai/okou/commit/c6c9c1f93a3ee7fc1cef78e1da746e2c9f967f3e))
+
+
+### Refactoring
+
+* **api:** serve thread drafts only from chat_thread_drafts ([#36897](https://github.com/okou-ai/okou/issues/36897)) ([4558c9f](https://github.com/okou-ai/okou/commit/4558c9fac46ce1a96a25745b477b32b70dab7ae6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.513.0
+    * @okouai/core bumped to 8.710.9
+    * @okouai/db bumped to 1.302.1
+    * @okouai/pi-agent-runtime bumped to 1.40.21
+
+## [1.679.0](https://github.com/okou-ai/okou/compare/api-v1.678.0...api-v1.679.0) (2026-09-25)
+
+
+### Features
+
+* **api:** unarchive a thread when a finished run makes it unread ([#36910](https://github.com/okou-ai/okou/issues/36910)) ([bdf18cc](https://github.com/okou-ai/okou/commit/bdf18cc9d06b05f6c4e24db035a95a976c0d5b03))
+
+## [1.678.0](https://github.com/okou-ai/okou/compare/api-v1.677.1...api-v1.678.0) (2026-09-25)
+
+
+### Features
+
+* **browser:** support native date and time inputs ([#36889](https://github.com/okou-ai/okou/issues/36889)) ([db3145c](https://github.com/okou-ai/okou/commit/db3145cef2d62bb17ad8062279419a1a8cc96d83))
+
+
+### Refactoring
+
+* **api:** trim chat event rollout leftovers and send discord replies fire and forget ([#36879](https://github.com/okou-ai/okou/issues/36879)) ([00d3b6f](https://github.com/okou-ai/okou/commit/00d3b6f5becca50de2067a7687d0d7183cbfe072))
+
+
+### Performance Improvements
+
+* lock-free computer use heartbeat and command claim ([#36895](https://github.com/okou-ai/okou/issues/36895)) ([dce0cd6](https://github.com/okou-ai/okou/commit/dce0cd68e4567bafeab81dcf2a163eebeffefa83))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.512.0
+    * @okouai/core bumped to 8.710.8
+    * @okouai/db bumped to 1.302.0
+    * @okouai/pi-agent-runtime bumped to 1.40.20
+
 ## [1.677.1](https://github.com/okou-ai/okou/compare/api-v1.677.0...api-v1.677.1) (2026-09-25)
 
 

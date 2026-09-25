@@ -780,6 +780,63 @@ describe("Morning Brief legacy schedule claim journal", () => {
     expect(automation?.chatThreadId).toBeNull();
   });
 
+  it("does not claim or change an expired brief while general expiry is off", async () => {
+    mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "false");
+    const brief = await installJournaledBrief();
+    const at = brief.anchor + 30 * 60_000 + 1;
+    await pollAt(brief.automationId, at);
+
+    await expect(
+      readMorningBriefScheduleClaimsFixture(brief.automationId),
+    ).resolves.toHaveLength(0);
+    await expect(
+      readWorkflowScheduleSkipsFixture(brief.automationId),
+    ).resolves.toHaveLength(0);
+    const [automation] = await readMorningBriefAutomations(
+      brief.actor,
+      brief.workflowId,
+    );
+    expect(automation?.nextRunAt).toBe(new Date(brief.anchor).toISOString());
+    expect(automation?.lastRunAt).toBeNull();
+    expect(automation?.chatThreadId).toBeNull();
+  });
+
+  it("does not revive an expired brief after its member disables delivery", async () => {
+    mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "false");
+    const brief = await installJournaledBrief();
+    mockNow(brief.anchor + 30 * 60_000 + 1);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(brief.actor),
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    await pollAt(brief.automationId, now());
+
+    await expect(readBriefState(brief)).resolves.toMatchObject({
+      enabled: false,
+      nextRunAt: null,
+    });
+    await expect(
+      readMorningBriefScheduleClaimsFixture(brief.automationId),
+    ).resolves.toHaveLength(0);
+  });
+
+  it("admits a brief exactly thirty minutes late with general expiry off", async () => {
+    mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "false");
+    const brief = await installJournaledBrief();
+    await pollAt(brief.automationId, brief.anchor + 30 * 60_000);
+
+    const claims = await readMorningBriefScheduleClaimsFixture(
+      brief.automationId,
+    );
+    expect(claims).toHaveLength(1);
+    expect(claims[0]?.scheduledAnchorAt).toStrictEqual(new Date(brief.anchor));
+    const threadId = await briefThreadId(brief.actor, brief.workflowId);
+    await expect(briefRunIds(threadId)).resolves.toHaveLength(1);
+  });
+
   it("audits a stale expired legacy mirror without replacing the durable future brief", async () => {
     mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
     const brief = await installJournaledBrief();
@@ -809,7 +866,7 @@ describe("Morning Brief legacy schedule claim journal", () => {
 
   it("records the original due instant when the poll is late and keeps one occurrence across a retried tick", async () => {
     const brief = await installJournaledBrief();
-    const polledAt = brief.anchor + 47 * 60 * 1000;
+    const polledAt = brief.anchor + 29 * 60 * 1000;
 
     await pollAt(brief.automationId, polledAt);
 
@@ -910,6 +967,56 @@ describe("Morning Brief legacy schedule claim journal", () => {
     await expect(briefAutomationEventCount(threadId)).resolves.toBe(
       claims.length,
     );
+  });
+
+  it("refuses a fresh selected brief that expires while queue admission is blocked", async () => {
+    mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "false");
+    const brief = await installJournaledBrief();
+    await pollAt(brief.automationId, brief.anchor + 60_000);
+    const threadId = await briefThreadId(brief.actor, brief.workflowId);
+    const [firstRunId] = await briefRunIds(threadId);
+    if (!firstRunId) {
+      throw new Error("Expected the first brief Run");
+    }
+    await deliverBriefCallback(firstRunId);
+    const advanced = await readBriefState(brief);
+    if (!advanced.nextRunAt) {
+      throw new Error("Expected a future brief occurrence");
+    }
+    const nextAnchor = Date.parse(advanced.nextRunAt);
+    const barrier = await holdChatEventQueueAdmissionLockFixture({
+      threadId,
+      signal: context.signal,
+    });
+    onTestFinished(async () => {
+      barrier.release();
+      await barrier.done;
+    });
+    mockNow(nextAnchor + 29 * 60_000);
+    const tick = accept(
+      automationExecutionClient().execute({
+        body: { automation_id: brief.automationId },
+      }),
+      [200],
+    );
+    await expect
+      .poll(async () => {
+        return await barrier.directWaiterCount();
+      })
+      .toBe(1);
+    mockNow(nextAnchor + 30 * 60_000 + 1);
+    barrier.release();
+    await barrier.done;
+    await tick;
+
+    await expect(briefRunIds(threadId)).resolves.toStrictEqual([firstRunId]);
+    await expect(briefAutomationEventCount(threadId)).resolves.toBe(1);
+    await expect(
+      readMorningBriefScheduleClaimsFixture(brief.automationId),
+    ).resolves.toHaveLength(1);
+    await expect(readBriefState(brief)).resolves.toMatchObject({
+      nextRunAt: advanced.nextRunAt,
+    });
   });
 
   it("binds the journal through the actual Pi launch composition", async () => {

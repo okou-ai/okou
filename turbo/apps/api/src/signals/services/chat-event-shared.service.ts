@@ -34,7 +34,7 @@ import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.serv
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 
 import {
-  withRunOutputWrite,
+  assertPreparedRunContentIdentity,
   type RunContentOwnership,
 } from "./run-content-erasure-admission.service";
 
@@ -116,13 +116,31 @@ interface AuthorizedChatThreadTouchScope {
   readonly orgId: string;
 }
 
+interface ChatThreadTouchOptions {
+  readonly touchedAt?: Date;
+  readonly eventId?: string;
+  readonly authorizedScope?: AuthorizedChatThreadTouchScope;
+  /**
+   * The thread's organization, already validated by the caller, so its thread
+   * events skip the Agent lookup. Unlike `authorizedScope`, it does not add
+   * predicates to the thread read.
+   */
+  readonly orgId?: string;
+  /**
+   * Set only for a completed or failed run's terminal marker: that marker makes
+   * the thread unread, so an archived thread also returns to the default
+   * sidebar list. Cancellation is user-initiated and leaves it archived.
+   */
+  readonly unarchive?: boolean;
+}
+
 export async function touchChatThreadLastMessageAtIndependently(
   tx: Db,
   threadId: string,
-  touchedAt: Date = nowDate(),
-  eventId?: string,
-  authorizedScope?: AuthorizedChatThreadTouchScope,
+  options: ChatThreadTouchOptions = {},
 ): Promise<void> {
+  const { touchedAt = nowDate(), eventId, authorizedScope } = options;
+  const orgId = authorizedScope?.orgId ?? options.orgId;
   // Resolve identity before either independent write. Failure of the weak
   // timestamp update must not suppress the separate ordering event attempt.
   const [thread] = await tx
@@ -130,6 +148,7 @@ export async function touchChatThreadLastMessageAtIndependently(
       id: chatThreads.id,
       userId: chatThreads.userId,
       agentId: chatThreads.agentId,
+      archived: chatThreads.archived,
     })
     .from(chatThreads)
     .where(
@@ -149,28 +168,43 @@ export async function touchChatThreadLastMessageAtIndependently(
     return;
   }
   const agentId = thread.agentId;
+  // The flag rides on the same single-row UPDATE; `archived` is not indexed.
+  // A concurrent re-archive between the read and this write loses, which is
+  // acceptable for a best-effort sidebar state.
+  const unarchive = options.unarchive === true && thread.archived;
+  let unarchived = false;
   await attemptChatEventSideEffect("last_message_at", threadId, async () => {
-    await tx
+    const updated = await tx
       .update(chatThreads)
       .set({
         lastMessageAt: sql`GREATEST(${chatThreads.lastMessageAt}, ${touchedAt.toISOString()}::timestamp)`,
+        ...(unarchive ? { archived: false } : {}),
       })
-      .where(
-        and(
-          eq(chatThreads.id, threadId),
-          eq(chatThreads.userId, thread.userId),
-        ),
-      );
+      .where(eq(chatThreads.id, threadId))
+      .returning({ id: chatThreads.id });
+    unarchived = unarchive && updated.length > 0;
   });
   await attemptChatEventSideEffect("sort_touched", threadId, async () => {
     await appendChatThreadEvent(tx, {
       kind: "sort_touched",
       userId: thread.userId,
-      ...(authorizedScope ? { orgId: authorizedScope.orgId } : {}),
+      orgId,
       chatThreadId: threadId,
       agentId,
       eventId,
       createdAt: touchedAt,
+    });
+  });
+  if (!unarchived) {
+    return;
+  }
+  await attemptChatEventSideEffect("unarchived", threadId, async () => {
+    await appendChatThreadEvent(tx, {
+      kind: "unarchived",
+      userId: thread.userId,
+      orgId,
+      chatThreadId: threadId,
+      agentId,
     });
   });
 }
@@ -277,18 +311,18 @@ async function assistantEventRunContextForRun(
   };
 }
 
-interface InsertAssistantEventsTransactionResult {
+interface AppendAssistantEventRowsResult {
   readonly insertedRowCount: number;
   readonly shouldAttemptFirstAssistantEventClaim: boolean;
 }
 
-export async function insertAssistantEventsInTransaction(
+export async function appendAssistantEventRows(
   tx: Db | ChatThreadEventTransaction,
   args: Omit<InsertAssistantEventsInput, "ownership"> & {
     readonly runGroupId: string | undefined;
   },
   signal: AbortSignal,
-): Promise<InsertAssistantEventsTransactionResult> {
+): Promise<AppendAssistantEventRowsResult> {
   if (args.items.length === 0) {
     return {
       insertedRowCount: 0,
@@ -356,30 +390,23 @@ export async function insertAssistantEvents(
     undefined,
     signal,
   );
-  const admitted = await withRunOutputWrite(
+  assertPreparedRunContentIdentity({
+    runId: args.runId,
+    destination: args,
+    ownership: args.ownership,
+  });
+  const result = await appendAssistantEventRows(
     writeDb,
-    { runId: args.runId, destination: args, ownership: args.ownership },
-    async (tx, current) => {
-      return {
-        outcome: "written" as const,
-        ownership: current.ownership,
-        value: await insertAssistantEventsInTransaction(
-          tx,
-          { ...args, runGroupId },
-          signal,
-        ),
-      };
-    },
+    { ...args, runGroupId },
     signal,
   );
-  const result = admitted.value;
   signal.throwIfAborted();
 
   if (result.insertedRowCount > 0) {
     if (result.shouldAttemptFirstAssistantEventClaim) {
       await publishFirstAssistantEventCreatedSafely({
         db: writeDb,
-        ownership: admitted.ownership,
+        ownership: args.ownership,
         orgId: args.orgId,
         userId: args.userId,
         threadId: args.threadId,
