@@ -27,6 +27,7 @@ import { useTranslation } from "react-i18next";
 
 import type {
   BrowserCheckboxDraft,
+  BrowserRadioDraft,
   BrowserSelectChoiceDraft,
   BrowserUserActionRequestState,
   BrowserUserActionSignals,
@@ -521,6 +522,45 @@ function requiredSelectsSatisfied(
   });
 }
 
+function requiredRadiosSatisfied(
+  action: PendingBrowserInputAction,
+  radioDraft: ReadonlyMap<string, BrowserRadioDraft>,
+): boolean {
+  return action.fields.every((field) => {
+    if (field.fieldKind !== "radio") {
+      return true;
+    }
+    const options = field.control.radioOptions;
+    const fingerprint = field.control.radioGroupFingerprint;
+    if (!options || !fingerprint) {
+      return false;
+    }
+    const selectedIndex = options.findIndex((option) => {
+      return option.selected;
+    });
+    const choice = radioDraft.get(field.key);
+    if (
+      choice &&
+      (choice.groupFingerprint !== fingerprint ||
+        choice.observedSelectedIndex !== selectedIndex ||
+        choice.memberIndex >= options.length ||
+        options[choice.memberIndex]?.disabled ||
+        (choice.memberIndex === -1 &&
+          selectedIndex !== -1 &&
+          options[selectedIndex]?.disabled))
+    ) {
+      return false;
+    }
+    if (field.required && !choice) {
+      return false;
+    }
+    return (
+      !(field.required || field.control.siteRequired) ||
+      (choice?.memberIndex ?? selectedIndex) >= 0
+    );
+  });
+}
+
 function requiredCheckboxesSatisfied(
   action: PendingBrowserInputAction,
   checkboxDraft: ReadonlyMap<string, BrowserCheckboxDraft>,
@@ -721,6 +761,130 @@ function BrowserSelectControl({
   );
 }
 
+function BrowserRadioControl({
+  field,
+  radioDraft,
+  busy,
+  inputId,
+  describedBy,
+  onUpdate,
+  onRemove,
+}: {
+  readonly field: PendingBrowserInputField;
+  readonly radioDraft: ReadonlyMap<string, BrowserRadioDraft>;
+  readonly busy: boolean;
+  readonly inputId: string;
+  readonly describedBy: string;
+  readonly onUpdate: (key: string, choice: BrowserRadioDraft) => void;
+  readonly onRemove: (key: string) => void;
+}) {
+  const { t } = useTranslation();
+  const options = field.control.radioOptions;
+  const fingerprint = field.control.radioGroupFingerprint;
+  if (!options || !fingerprint) {
+    return null;
+  }
+  const observed = options.findIndex((option) => {
+    return option.selected;
+  });
+  const draft = radioDraft.get(field.key);
+  const choice =
+    draft?.groupFingerprint === fingerprint &&
+    draft.observedSelectedIndex === observed
+      ? draft.memberIndex
+      : observed;
+  const required = field.required || field.control.siteRequired;
+  const firstEnabled = options.findIndex((option) => {
+    return !option.disabled;
+  });
+  return (
+    <div
+      role="radiogroup"
+      aria-labelledby={`${inputId}-label`}
+      aria-describedby={describedBy}
+      className="flex max-w-full flex-col gap-2"
+    >
+      {options.map((option) => {
+        return (
+          <label
+            key={option.index}
+            className="flex min-w-0 max-w-full items-start gap-2 text-sm"
+          >
+            <input
+              id={option.index === 0 ? inputId : undefined}
+              name={`browser-radio-${inputId}`}
+              type="radio"
+              value={String(option.index)}
+              className="mt-0.5 size-4 shrink-0 accent-primary"
+              checked={choice === option.index}
+              required={required && option.index === firstEnabled}
+              disabled={busy || option.disabled}
+              onChange={() => {
+                return onUpdate(field.key, {
+                  memberIndex: option.index,
+                  observedSelectedIndex: observed,
+                  groupFingerprint: fingerprint,
+                });
+              }}
+            />
+            <span className="min-w-0 break-words">
+              {option.index + 1}. {option.label}
+            </span>
+          </label>
+        );
+      })}
+      <div className="flex max-w-full flex-wrap items-center gap-2">
+        {!required && observed !== -1 && !options[observed]?.disabled && (
+          <Button
+            type="button"
+            variant="link"
+            size="xs"
+            className="h-auto min-h-7 max-w-full whitespace-normal py-1 text-left"
+            disabled={busy}
+            onClick={() => {
+              return onUpdate(field.key, {
+                memberIndex: -1,
+                observedSelectedIndex: observed,
+                groupFingerprint: fingerprint,
+              });
+            }}
+          >
+            {t(($) => {
+              return $.chat.browserInput.clearValue;
+            })}
+          </Button>
+        )}
+        {(field.required
+          ? observed !== -1 && !options[observed]?.disabled
+          : draft !== undefined) && (
+          <Button
+            type="button"
+            variant="link"
+            size="xs"
+            className="h-auto min-h-7 max-w-full whitespace-normal py-1 text-left"
+            disabled={busy}
+            onClick={() => {
+              if (field.required) {
+                onUpdate(field.key, {
+                  memberIndex: observed,
+                  observedSelectedIndex: observed,
+                  groupFingerprint: fingerprint,
+                });
+              } else {
+                onRemove(field.key);
+              }
+            }}
+          >
+            {t(($) => {
+              return $.chat.browserInput.keepValue;
+            })}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function BrowserCheckboxControl({
   field,
   checkboxDraft,
@@ -850,46 +1014,26 @@ function OptionalNumberClearAction({
   );
 }
 
-function BrowserInputField({
+function BrowserInputFieldHeader({
   field,
-  index,
-  draft,
-  choiceDraft,
-  checkboxDraft,
-  busy,
-  onUpdate,
-  onRemove,
-  onUpdateChoice,
-  onRemoveChoice,
-  onUpdateCheckbox,
-  onRemoveCheckbox,
-}: BrowserInputEditProps & {
-  readonly index: number;
-  readonly choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>;
-  readonly checkboxDraft: ReadonlyMap<string, BrowserCheckboxDraft>;
-  readonly onUpdateCheckbox: (
-    key: string,
-    checked: boolean,
-    observedChecked: boolean,
-  ) => void;
-  readonly onRemoveCheckbox: (key: string) => void;
-  readonly onUpdateChoice: (
-    key: string,
-    indices: readonly number[],
-    optionSetFingerprint: string,
-  ) => void;
-  readonly onRemoveChoice: (key: string) => void;
+  inputId,
+  requirementId,
+  descriptionId,
+}: {
+  readonly field: PendingBrowserInputField;
+  readonly inputId: string;
+  readonly requirementId: string;
+  readonly descriptionId: string | undefined;
 }) {
   const { t } = useTranslation();
-  const inputId = `browser-input-field-${index}`;
-  const requirementId = `${inputId}-requirement`;
-  const descriptionId = field.description
-    ? `${inputId}-description`
-    : undefined;
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-baseline gap-1 text-sm text-foreground">
-        <label htmlFor={inputId} className="font-medium">
+    <>
+      <div className="flex min-w-0 flex-wrap items-baseline gap-1 text-sm text-foreground">
+        <label
+          id={`${inputId}-label`}
+          htmlFor={inputId}
+          className="min-w-0 break-words font-medium"
+        >
           {field.label}
         </label>
         <span
@@ -908,12 +1052,77 @@ function BrowserInputField({
       {field.description && (
         <span
           id={descriptionId}
-          className="text-xs font-normal leading-4 text-muted-foreground"
+          className="min-w-0 break-words text-xs font-normal leading-4 text-muted-foreground"
         >
           {field.description}
         </span>
       )}
-      {field.fieldKind === "checkbox" ? (
+    </>
+  );
+}
+
+function BrowserInputField({
+  field,
+  index,
+  draft,
+  choiceDraft,
+  checkboxDraft,
+  radioDraft,
+  busy,
+  onUpdate,
+  onRemove,
+  onUpdateChoice,
+  onRemoveChoice,
+  onUpdateCheckbox,
+  onRemoveCheckbox,
+  onUpdateRadio,
+  onRemoveRadio,
+}: BrowserInputEditProps & {
+  readonly radioDraft: ReadonlyMap<string, BrowserRadioDraft>;
+  readonly onUpdateRadio: (key: string, choice: BrowserRadioDraft) => void;
+  readonly onRemoveRadio: (key: string) => void;
+  readonly index: number;
+  readonly choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>;
+  readonly checkboxDraft: ReadonlyMap<string, BrowserCheckboxDraft>;
+  readonly onUpdateCheckbox: (
+    key: string,
+    checked: boolean,
+    observedChecked: boolean,
+  ) => void;
+  readonly onRemoveCheckbox: (key: string) => void;
+  readonly onUpdateChoice: (
+    key: string,
+    indices: readonly number[],
+    optionSetFingerprint: string,
+  ) => void;
+  readonly onRemoveChoice: (key: string) => void;
+}) {
+  const inputId = `browser-input-field-${index}`;
+  const requirementId = `${inputId}-requirement`;
+  const descriptionId = field.description
+    ? `${inputId}-description`
+    : undefined;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <BrowserInputFieldHeader
+        field={field}
+        inputId={inputId}
+        requirementId={requirementId}
+        descriptionId={descriptionId}
+      />
+      {field.fieldKind === "radio" ? (
+        <BrowserRadioControl
+          field={field}
+          radioDraft={radioDraft}
+          busy={busy}
+          inputId={inputId}
+          describedBy={
+            descriptionId ? `${requirementId} ${descriptionId}` : requirementId
+          }
+          onUpdate={onUpdateRadio}
+          onRemove={onRemoveRadio}
+        />
+      ) : field.fieldKind === "checkbox" ? (
         <BrowserCheckboxControl
           field={field}
           inputId={inputId}
@@ -966,6 +1175,7 @@ function BrowserInputFields({
   draft,
   choiceDraft,
   checkboxDraft,
+  radioDraft,
   busy,
   onUpdate,
   onRemove,
@@ -973,10 +1183,15 @@ function BrowserInputFields({
   onRemoveChoice,
   onUpdateCheckbox,
   onRemoveCheckbox,
+  onUpdateRadio,
+  onRemoveRadio,
 }: Omit<BrowserInputEditProps, "field"> & {
   readonly action: PendingBrowserInputAction;
   readonly choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>;
   readonly checkboxDraft: ReadonlyMap<string, BrowserCheckboxDraft>;
+  readonly radioDraft: ReadonlyMap<string, BrowserRadioDraft>;
+  readonly onUpdateRadio: (key: string, choice: BrowserRadioDraft) => void;
+  readonly onRemoveRadio: (key: string) => void;
   readonly onUpdateCheckbox: (
     key: string,
     checked: boolean,
@@ -1001,6 +1216,7 @@ function BrowserInputFields({
             draft={draft}
             choiceDraft={choiceDraft}
             checkboxDraft={checkboxDraft}
+            radioDraft={radioDraft}
             busy={busy}
             onUpdate={onUpdate}
             onRemove={onRemove}
@@ -1008,6 +1224,8 @@ function BrowserInputFields({
             onRemoveChoice={onRemoveChoice}
             onUpdateCheckbox={onUpdateCheckbox}
             onRemoveCheckbox={onRemoveCheckbox}
+            onUpdateRadio={onUpdateRadio}
+            onRemoveRadio={onRemoveRadio}
           />
         );
       })}
@@ -1129,6 +1347,7 @@ function PendingForm({
   const draft = useGet(signals.draft$);
   const choiceDraft = useGet(signals.choiceDraft$);
   const checkboxDraft = useGet(signals.checkboxDraft$);
+  const radioDraft = useGet(signals.radioDraft$);
   const sharedBusy = useGet(signals.busy$);
   const entryState = useGet(signals.entryState$);
   const entryAction = useGet(signals.entryAction$);
@@ -1138,6 +1357,8 @@ function PendingForm({
   const removeChoiceDraft = useSet(signals.removeChoiceDraft$);
   const updateCheckboxDraft = useSet(signals.updateCheckboxDraft$);
   const removeCheckboxDraft = useSet(signals.removeCheckboxDraft$);
+  const updateRadioDraft = useSet(signals.updateRadioDraft$);
+  const removeRadioDraft = useSet(signals.removeRadioDraft$);
   const formRef = useSet(signals.formRef$);
   const [submitLoadable, submit] = useLoadableSet(signals.submit$);
   const [cancelLoadable, cancel] = useLoadableSet(signals.cancel$);
@@ -1154,11 +1375,13 @@ function PendingForm({
     activeAction,
     checkboxDraft,
   );
+  const radioValuesValid = requiredRadiosSatisfied(activeAction, radioDraft);
   const submitForm = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (
       !selectValuesValid ||
       !checkboxValuesValid ||
+      !radioValuesValid ||
       !event.currentTarget.reportValidity()
     ) {
       return;
@@ -1184,6 +1407,7 @@ function PendingForm({
         draft={draft}
         choiceDraft={choiceDraft}
         checkboxDraft={checkboxDraft}
+        radioDraft={radioDraft}
         busy={busy}
         onUpdate={updateDraft}
         onRemove={removeDraft}
@@ -1191,6 +1415,8 @@ function PendingForm({
         onRemoveChoice={removeChoiceDraft}
         onUpdateCheckbox={updateCheckboxDraft}
         onRemoveCheckbox={removeCheckboxDraft}
+        onUpdateRadio={updateRadioDraft}
+        onRemoveRadio={removeRadioDraft}
       />
 
       <PendingFormPreflight signals={signals} entryState={entryState} />
@@ -1213,9 +1439,12 @@ function PendingForm({
           entryState !== "invalid" &&
           selectValuesValid &&
           checkboxValuesValid &&
+          radioValuesValid &&
           (!request.action.fields.some((field) => {
             return (
-              field.fieldKind === "select" || field.fieldKind === "checkbox"
+              field.fieldKind === "select" ||
+              field.fieldKind === "checkbox" ||
+              field.fieldKind === "radio"
             );
           }) ||
             entryState === "ready")

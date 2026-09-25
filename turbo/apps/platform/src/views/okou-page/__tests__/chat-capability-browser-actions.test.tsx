@@ -743,6 +743,102 @@ test("An inline Browser input dialog confirms a required native checkbox", async
   expect(window.location.href).toBe(currentUrl);
 });
 
+test("An inline Browser dialog confirms an existing radio choice and preserves the chat callback", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  const radioAction = (preflight: boolean) => {
+    return {
+      ...browserInputAction(state),
+      fields: [
+        {
+          key: "delivery",
+          label: "Delivery",
+          fieldKind: "radio" as const,
+          required: true,
+          control: {
+            tagName: "INPUT" as const,
+            inputType: "radio" as const,
+            ...(preflight
+              ? {
+                  siteRequired: false,
+                  radioGroupFingerprint: "b".repeat(64),
+                  radioOptions: [
+                    {
+                      index: 0,
+                      label: "Standard",
+                      disabled: false,
+                      selected: true,
+                    },
+                    {
+                      index: 1,
+                      label: "Express",
+                      disabled: false,
+                      selected: false,
+                    },
+                  ],
+                }
+              : {}),
+          },
+        },
+      ],
+    };
+  };
+  installCapabilityChat({
+    events: completedConversation(`[Enter details](${browserInputUrl()})`),
+  });
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, radioAction(false));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, radioAction(true));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      {
+        key: "delivery",
+        memberIndex: 0,
+        observedSelectedIndex: 0,
+        groupFingerprint: "b".repeat(64),
+      },
+    ]);
+    state = "succeeded";
+    return respond(200, radioAction(false));
+  });
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
+    return respond(201, {
+      runId: crypto.randomUUID(),
+      threadId: RUN_THREAD_ID,
+    });
+  });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await readyChat();
+  const url = window.location.href;
+  click(await findButton("Enter information"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
+  });
+  await within(dialog).findAllByRole("radio");
+  const submit = buttonsByName("Add to browser", dialog)[0];
+  if (!submit) {
+    throw new Error("Missing Browser submit button");
+  }
+  expect(submit).toBeDisabled();
+  const keep = buttonsByName("Leave website value unchanged", dialog)[0];
+  if (!keep) {
+    throw new Error("Missing radio confirmation");
+  }
+  click(keep);
+  expect(submit).toBeEnabled();
+  click(submit);
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  expect(window.location.href).toBe(url);
+});
+
 test("A pending transcript card becomes consumed when the standalone form completes", async () => {
   let state: BrowserUserActionResponse["state"] = "pending";
   installCapabilityChat({

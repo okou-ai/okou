@@ -88,6 +88,48 @@ describe("Browser user-action JSONB payload", () => {
     ).toBe("one_time_code");
   });
 
+  it("seals only bounded, unique radio group member identities around the anchor", () => {
+    const field = {
+      key: "delivery",
+      label: "Delivery",
+      fieldKind: "radio",
+      required: false,
+      backendNodeId: 45,
+      radioMemberNodeIds: [44, 45, 46],
+      fingerprint: { tagName: "INPUT", inputType: "radio" },
+    };
+    const decode = (candidate: Record<string, unknown>) => {
+      return parseBrowserUserActionPayload({
+        version: 1,
+        kind: "input",
+        callbackIds,
+        target: { ...inputTarget, fields: [candidate] },
+      });
+    };
+    expect(decode(field).target.fields[0]).toMatchObject(field);
+    for (const invalid of [
+      { ...field, radioMemberNodeIds: undefined },
+      { ...field, radioMemberNodeIds: [44, 46] },
+      { ...field, radioMemberNodeIds: [45, 45] },
+      { ...field, radioMemberNodeIds: [45, -1] },
+      {
+        ...field,
+        radioMemberNodeIds: Array.from({ length: 17 }, (_, i) => {
+          return i + 45;
+        }),
+      },
+      {
+        ...field,
+        fieldKind: "checkbox",
+        fingerprint: { tagName: "INPUT", inputType: "checkbox" },
+      },
+    ]) {
+      expect(() => {
+        return decode(invalid);
+      }).toThrow("Invalid Browser user-action payload");
+    }
+  });
+
   it("rejects unknown versions, duplicate keys, and unsafe shapes", () => {
     expect(() => {
       return parseBrowserUserActionPayload({
