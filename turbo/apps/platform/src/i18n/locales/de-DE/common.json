@@ -7106,6 +7106,8 @@
       "add": "Zugangsdaten hinzufügen",
       "appleDhFieldHelp": "Je Feld 1–63 UTF-8-Bytes. NUL ist nicht zulässig.",
       "appleDhMethod": "Apple-DH-Benutzername und Passwort",
+      "appleRsaSrpMethod": "Apple-RSA/SRP-Benutzername und Passwort",
+      "appleRsaSrpUsernameHelp": "RSA/SRP-Benutzername: 1–234 UTF-8-Bytes. NUL ist nicht zulässig.",
       "appleSrpMethod": "Apple-Direct-SRP-Benutzername und Passwort",
       "authentication": "Authentifizierungsmethode",
       "createNew": "Neue Zugangsdaten erstellen",
@@ -7176,6 +7178,8 @@
     "security": {
       "appleDh": "Mac-Bildschirmfreigabe (Apple DH)",
       "appleDhHelp": "Erfordert macOS-Bildschirmfreigabe über eine gespeicherte SSH-Verbindung. Das RFB-Ziel muss auf diesem Mac 127.0.0.1 oder ::1 sein. SSH schützt die gesamte VNC-Sitzung. Verwenden Sie einen Mac-SSH-Host, den Sie kontrollieren; sein Host-Schlüssel schließt eine Weiterleitung nicht aus.",
+      "appleRsaSrp": "Mac-Bildschirmfreigabe (Apple RSA/SRP)",
+      "appleRsaSrpHelp": "Erfordert gespeichertes SSH zum Mac mit RFB-Ziel 127.0.0.1 oder ::1. Der vom RFB-Server gelieferte RSA-Schlüssel ist kein vertrauenswürdiger Identitätsnachweis. SRP prüft Konto und Serverbeweis, SSH schützt die gesamte Sitzung. Der SSH-Host-Schlüssel bestätigt den Endpunkt, schließt eine Weiterleitung aber nicht aus.",
       "appleSrp": "Mac-Bildschirmfreigabe (Apple Direct SRP)",
       "appleSrpHelp": "Erfordert eine gespeicherte SSH-Verbindung zum Mac und 127.0.0.1 oder ::1 als RFB-Ziel. SRP prüft Konto und Serverbeweis; SSH schützt die gesamte VNC-Sitzung. Der SSH-Host-Schlüssel bestätigt den gewählten Endpunkt, schließt aber eine Weiterleitung nicht aus.",
       "caBundle": "CA-Zertifikate (PEM)",
@@ -7197,6 +7201,7 @@
     "summary_other": "{{count}} konfigurierte Hosts",
     "transport": {
       "appleDhDestinationHelp": "Geben Sie für Apple DH 127.0.0.1 oder ::1 ein. Dies ist die Loopback-Adresse des Mac, die über den ausgewählten SSH-Host erreicht wird.",
+      "appleRsaSrpDestinationHelp": "Geben Sie für Apple RSA/SRP 127.0.0.1 oder ::1 auf dem Mac über den ausgewählten SSH-Host ein.",
       "appleSrpDestinationHelp": "Geben Sie für Apple Direct SRP 127.0.0.1 oder ::1 ein. Dies ist die Loopback-Adresse des Mac, die über den ausgewählten SSH-Host erreicht wird.",
       "destination": "RFB-Ziel",
       "destinationHelp": "Bei SSH-Routen werden dieser Host und Port vom ausgewählten SSH-Server aus erreicht, nicht direkt vom Runner.",
