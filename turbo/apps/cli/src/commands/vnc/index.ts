@@ -89,7 +89,7 @@ function createSessionCommand() {
       .option("--json", "Print session ID and requested mode")
       .addHelpText(
         "after",
-        "\nShared viewers can interfere with one another. Exclusive mode can disconnect other viewers; the VNC server may refuse or override it. Success is not proof of exclusive control. Never retry with another mode automatically.",
+        "\nUse an exact current ID with availability.status=ready from okou vnc host list --json. A blocked needs_rebind host is diagnostic only: ask the owner to rebind its SSH host to permitted Cloudflare Access or explicitly choose Direct in SSH settings. List again after an unknown or unavailable ID. Shared viewers can interfere with one another. Exclusive mode can disconnect other viewers; the VNC server may refuse or override it. Success is not proof of exclusive control. Never retry with another mode automatically.",
       )
       .action(
         withErrorHandler(
@@ -146,13 +146,13 @@ export function createVncCommand() {
     .addHelpText(
       "after",
       `
-Start with okou vnc host list --json, then read the relevant subcommand's --help. Credentials and trust configuration stay with the saved host; commands accept no endpoint, password or insecure override.
+Start with okou vnc host list --json and use an exact current ID only when availability.status=ready; blocked needs_rebind IDs are diagnostic only. Ask the owner to rebind the underlying SSH host to permitted Cloudflare Access or explicitly choose Direct in SSH settings. Read the relevant subcommand's --help. Credentials and trust configuration stay with the saved host; commands accept no endpoint, password or insecure override.
 
 Choose session start --mode shared or --mode exclusive explicitly. Shared viewers can interfere; exclusive requests may disconnect other viewers or be refused/overridden by the server. Neither mode provides an Okou-wide control lock.
 
 Take a screenshot with --output <file> --json before coordinate input. Reuse its exact geometry, then take another screenshot to inspect the result. Never automatically replay an uncertain operation or switch sharing modes on failure. Close sessions when finished.
 
-VNC requires the owner's grant, an enabled VNC feature and a supporting Runner. A listed host is not a connectivity check. Ask the owner to check saved host diagnostics if connection or authentication fails.`,
+VNC requires the owner's grant, an enabled VNC feature and a supporting Runner. Ready means configured to attempt, not connectivity-tested. Ask the owner to check saved host diagnostics if connection or authentication fails.`,
     )
     .addCommand(createVncHostCommand())
     .addCommand(createSessionCommand());

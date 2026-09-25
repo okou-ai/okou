@@ -7187,6 +7187,8 @@
       "ssh": "透過已儲存的SSH主機",
       "sshConnection": "SSH主機",
       "sshHelp": "SSH僅保護Runner到SSH伺服器這一段。該伺服器必須能夠存取RFB目標。Agent必須同時取得VNC和SSH存取權限。",
+      "sshNeedsRebind": "此 VNC 連線使用的 SSH 主機需要重新綁定 Cloudflare Access。請先在 SSH 設定中重新綁定，或明確選擇直接連線，再嘗試連線。",
+      "sshNeedsRebindStatus": "SSH 需要重新綁定",
       "title": "連線路由",
       "unavailable": "此帳戶無法使用SSH設定。",
       "via": "SSH主機："

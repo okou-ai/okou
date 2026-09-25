@@ -7187,6 +7187,8 @@
       "ssh": "保存済みSSHホスト経由",
       "sshConnection": "SSHホスト",
       "sshHelp": "SSHはRunnerからSSHサーバーまでを保護します。そのサーバーからRFB接続先へ到達できる必要があります。AgentにはVNCとSSHの両方のアクセス権が必要です。",
+      "sshNeedsRebind": "この VNC 接続の SSH ホストは Cloudflare Access の再設定が必要です。接続する前に SSH 設定で再紐付けするか、明示的に直接接続を選んでください。",
+      "sshNeedsRebindStatus": "SSH の再紐付けが必要",
       "title": "接続ルート",
       "unavailable": "このアカウントではSSH設定を利用できません。",
       "via": "SSHホスト:"

@@ -371,6 +371,42 @@ test("An owner creates an SSH-backed route with a distinct RFB destination and c
   ]);
 });
 
+test("A VNC host warns when its saved SSH transport needs rebind and recovers after SSH refresh", async () => {
+  const settings = mockSettings({
+    connections: [host, tunneledHost],
+    sshConnections: [
+      {
+        ...sshHost,
+        port: 443,
+        transport: { type: "cloudflare_access", needsRebind: true },
+      },
+    ],
+  });
+  await page();
+  const card = await screen.findByRole("heading", {
+    name: tunneledHost.displayName,
+  });
+  const blocked = card.closest("article");
+  expect(blocked).not.toBeNull();
+  expect(within(blocked!).getByText("SSH needs rebind")).toBeInTheDocument();
+  expect(within(blocked!).getByRole("alert")).toHaveTextContent(
+    "Rebind it or explicitly choose Direct in SSH settings",
+  );
+  const direct = screen.getByRole("heading", { name: host.displayName });
+  expect(
+    within(direct.closest("article")!).getByText("Configured"),
+  ).toBeInTheDocument();
+
+  settings.sshConnections = [sshHost];
+  context.mocks.ably.trigger("ssh:changed", {
+    orgId: auth.organization.activeOrg.id,
+  });
+  await waitFor(() => {
+    expect(within(blocked!).queryByRole("alert")).toBeNull();
+    expect(within(blocked!).getByText("Configured")).toBeInTheDocument();
+  });
+});
+
 test("An SSH-backed card shows topology and a missing saved SSH host blocks edits", async () => {
   mockSettings({ connections: [tunneledHost], sshConnections: [] });
   const requests: unknown[] = [];

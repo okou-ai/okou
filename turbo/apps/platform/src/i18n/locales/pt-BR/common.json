@@ -7284,6 +7284,8 @@
       "ssh": "Por um host SSH salvo",
       "sshConnection": "Host SSH",
       "sshHelp": "O SSH protege o trecho do Runner até o servidor SSH. Esse servidor deve conseguir acessar o destino RFB. O Agent precisa de acesso VNC e SSH.",
+      "sshNeedsRebind": "O host SSH desta conexão VNC precisa ser vinculado novamente ao Cloudflare Access. Vincule-o nas configurações de SSH ou escolha explicitamente Direta ali antes de conectar.",
+      "sshNeedsRebindStatus": "SSH precisa de nova vinculação",
       "title": "Rota de conexão",
       "unavailable": "As configurações de SSH não estão disponíveis para esta conta.",
       "via": "Host SSH:"

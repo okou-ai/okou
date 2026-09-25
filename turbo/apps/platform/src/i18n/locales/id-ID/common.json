@@ -7187,6 +7187,8 @@
       "ssh": "Melalui host SSH tersimpan",
       "sshConnection": "Host SSH",
       "sshHelp": "SSH melindungi jalur Runner ke server SSH. Server tersebut harus dapat menjangkau tujuan RFB. Agent memerlukan akses VNC dan SSH.",
+      "sshNeedsRebind": "Host SSH untuk koneksi VNC ini perlu ditautkan kembali ke Cloudflare Access. Tautkan kembali di pengaturan SSH atau pilih Direct secara eksplisit di sana sebelum menyambung.",
+      "sshNeedsRebindStatus": "SSH perlu ditautkan kembali",
       "title": "Rute koneksi",
       "unavailable": "Pengaturan SSH tidak tersedia untuk akun ini.",
       "via": "Host SSH:"
