@@ -2,6 +2,7 @@ import {
   BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH,
   BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
   browserUserActionsContract,
+  type BrowserUserActionApplyRequest,
   type BrowserUserActionResponse,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -56,9 +57,17 @@ export type BrowserUserActionRequestState =
   | { readonly kind: "expired" }
   | { readonly kind: "unavailable" };
 
+export interface BrowserSelectChoiceDraft {
+  readonly optionIndexes: readonly number[];
+  readonly optionSetFingerprint: string;
+}
+
 export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly request$: Computed<Promise<BrowserUserActionRequestState>>;
   readonly draft$: Computed<ReadonlyMap<string, string>>;
+  readonly choiceDraft$: Computed<
+    ReadonlyMap<string, BrowserSelectChoiceDraft>
+  >;
   readonly callbackDelivered$: Computed<boolean>;
   readonly callbackFailed$: Computed<boolean>;
   readonly busy$: Computed<boolean>;
@@ -72,6 +81,11 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly retryStandaloneRequest$: Command<Promise<void>, [AbortSignal]>;
   readonly refresh$: Command<void, []>;
   readonly updateDraft$: Command<void, [string, string]>;
+  readonly updateChoiceDraft$: Command<
+    void,
+    [string, readonly number[], string]
+  >;
+  readonly removeChoiceDraft$: Command<void, [string]>;
   readonly removeDraft$: Command<void, [string]>;
   readonly clearDraft$: Command<void, []>;
   readonly clearDraftRef$: Command<
@@ -352,13 +366,44 @@ function createRequestSignals(descriptor: BrowserUserActionDescriptor) {
 function createDraftSignals(): Pick<
   BrowserUserActionSignals,
   | "draft$"
+  | "choiceDraft$"
   | "updateDraft$"
+  | "updateChoiceDraft$"
+  | "removeChoiceDraft$"
   | "removeDraft$"
   | "clearDraft$"
   | "clearDraftRef$"
   | "formRef$"
 > {
   const internalDraft$ = state<ReadonlyMap<string, string>>(new Map());
+  const internalChoiceDraft$ = state<
+    ReadonlyMap<string, BrowserSelectChoiceDraft>
+  >(new Map());
+  const choiceDraft$ = computed((get) => {
+    return get(internalChoiceDraft$);
+  });
+  const updateChoiceDraft$ = command(
+    (
+      { set },
+      key: string,
+      indices: readonly number[],
+      optionSetFingerprint: string,
+    ): void => {
+      set(internalChoiceDraft$, (current) => {
+        return new Map(current).set(key, {
+          optionIndexes: [...indices],
+          optionSetFingerprint,
+        });
+      });
+    },
+  );
+  const removeChoiceDraft$ = command(({ set }, key: string): void => {
+    set(internalChoiceDraft$, (current) => {
+      const next = new Map(current);
+      next.delete(key);
+      return next;
+    });
+  });
   const ownerCount$ = state(0);
   const draft$ = computed((get) => {
     return get(internalDraft$);
@@ -373,6 +418,7 @@ function createDraftSignals(): Pick<
   });
   const clearDraft$ = command(({ set }): void => {
     set(internalDraft$, new Map());
+    set(internalChoiceDraft$, new Map());
   });
   const removeDraft$ = command(({ set }, key: string): void => {
     set(internalDraft$, (current) => {
@@ -429,7 +475,10 @@ function createDraftSignals(): Pick<
   );
   return {
     draft$,
+    choiceDraft$,
     updateDraft$,
+    updateChoiceDraft$,
+    removeChoiceDraft$,
     removeDraft$,
     clearDraft$,
     clearDraftRef$: onRef(clearDraftOnMount$),
@@ -455,6 +504,7 @@ interface BrowserUserActionMutationContext {
   readonly request$: BrowserUserActionSignals["request$"];
   readonly refresh$: BrowserUserActionSignals["refresh$"];
   readonly draft$: BrowserUserActionSignals["draft$"];
+  readonly choiceDraft$: BrowserUserActionSignals["choiceDraft$"];
   readonly entryAction$: BrowserUserActionSignals["entryAction$"];
   readonly entryState$: BrowserUserActionSignals["entryState$"];
   readonly invalidateEntry$: BrowserUserActionSignals["invalidateEntry$"];
@@ -466,12 +516,70 @@ interface BrowserUserActionMutationContext {
   >;
 }
 
+function browserSelectSubmissionValue(
+  field: BrowserInputAction["fields"][number],
+  choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>,
+):
+  | Extract<
+      BrowserUserActionApplyRequest["values"][number],
+      { optionIndexes: readonly number[] }
+    >
+  | null
+  | undefined {
+  const options = field.control.options;
+  const optionSetFingerprint = field.control.optionSetFingerprint;
+  if (!options || !optionSetFingerprint) {
+    return null;
+  }
+  const choice = choiceDraft.get(field.key);
+  if (choice && choice.optionSetFingerprint !== optionSetFingerprint) {
+    return null;
+  }
+  const selection = choice?.optionIndexes;
+  if (selection === undefined) {
+    return field.required ||
+      (field.control.siteRequired &&
+        !options.some((option) => {
+          return option.selected && !option.disabled && !option.empty;
+        }))
+      ? null
+      : undefined;
+  }
+  if (
+    selection.some((index) => {
+      return !options[index] || options[index].disabled;
+    }) ||
+    ((field.required || field.control.siteRequired) &&
+      selection.every((index) => {
+        return options[index]?.empty;
+      }))
+  ) {
+    return null;
+  }
+  return {
+    key: field.key,
+    optionIndexes: [...selection],
+    optionSetFingerprint,
+  };
+}
+
 function browserInputSubmissionValues(
   action: BrowserInputAction,
   draft: ReadonlyMap<string, string>,
-): { key: string; value: string }[] | null {
-  const values: { key: string; value: string }[] = [];
+  choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>,
+): BrowserUserActionApplyRequest["values"] | null {
+  const values: BrowserUserActionApplyRequest["values"][number][] = [];
   for (const field of action.fields) {
+    if (field.fieldKind === "select") {
+      const selection = browserSelectSubmissionValue(field, choiceDraft);
+      if (selection === null) {
+        return null;
+      }
+      if (selection !== undefined) {
+        values.push(selection);
+      }
+      continue;
+    }
     const value = draft.get(field.key) ?? "";
     if (value === "") {
       if (field.required || field.control.siteRequired) {
@@ -512,6 +620,7 @@ function createSubmitSignal({
   request$,
   refresh$,
   draft$,
+  choiceDraft$,
   entryAction$,
   entryState$,
   invalidateEntry$,
@@ -547,7 +656,11 @@ function createSubmitSignal({
     if (!action || action.state !== "pending") {
       return;
     }
-    const values = browserInputSubmissionValues(action, get(draft$));
+    const values = browserInputSubmissionValues(
+      action,
+      get(draft$),
+      get(choiceDraft$),
+    );
     if (!values) {
       return;
     }
@@ -713,6 +826,7 @@ function createMutationSignals({
   request$,
   refresh$,
   draft$,
+  choiceDraft$,
   clearDraft$,
   entryAction$,
   entryState$,
@@ -723,6 +837,7 @@ function createMutationSignals({
   | "request$"
   | "refresh$"
   | "draft$"
+  | "choiceDraft$"
   | "clearDraft$"
   | "entryAction$"
   | "entryState$"
@@ -766,6 +881,7 @@ function createMutationSignals({
     request$,
     refresh$,
     draft$,
+    choiceDraft$,
     entryAction$,
     entryState$,
     invalidateEntry$,
@@ -849,6 +965,7 @@ export function createBrowserUserActionSignals(
     request$: requestSignals.request$,
     refresh$: requestSignals.refresh$,
     draft$: draftSignals.draft$,
+    choiceDraft$: draftSignals.choiceDraft$,
     clearDraft$: draftSignals.clearDraft$,
     entryAction$: entrySignals.entryAction$,
     entryState$: entrySignals.entryState$,

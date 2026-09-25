@@ -24,8 +24,12 @@ grant incarnation.
 Agent tokens receive `vnc:read` and `vnc:write` only when the feature is enabled.
 These capabilities do not replace a current grant. GET `/api/vnc/hosts` requires
 `vnc:read`, the exact running Run, same-owner session, visible Agent and owner's
-grant. Inventory contains only id, displayName, host, port, authMethod and
-securityType. It never includes credentials or trust bundles. An authorized
+grant. Inventory contains only id, displayName, host, port, authMethod,
+securityType, and availability. Availability is `ready` for configured hosts or
+`blocked: needs_rebind` for an SSH-backed host whose underlying SSH binding
+needs repair. The host stays visible for diagnosis, but fresh Runner authority
+rejects it until its owner explicitly rebinds SSH or chooses Direct. Inventory
+never includes credentials, SSH references, or trust bundles. An authorized
 owner with no hosts receives an empty list. Every request checks the current
 feature and Clerk membership; cached token claims cannot bypass them.
 
@@ -50,14 +54,20 @@ Unavailable authority returns the opaque `unavailable` outcome. Invalid input is
 `resolve` requires `connectionId` and `supportedProfiles`, a bounded list of
 exact authentication/security/transport tuples. Current Runners advertise the
 X509Vnc and X509Plain pairs separately for `direct` and `ssh`, plus the Apple
-DH and Apple Direct SRP pairs only for `ssh`. A pre-transport Runner
+DH, Apple Direct SRP and Apple RSA/SRP pairs only for `ssh`. A pre-transport Runner
 omits `transportType`; omission means direct-only. An empty list or a saved
 tuple absent from the list returns `unsupported_profile` only after VNC
 authorization and before KMS. An SSH row is also checked for its SSH grant
 before any credential handoff.
 Unknown methods, profiles and cross-paired combinations are rejected. Future
 engine support must add a new exact pair instead of broadening a saved policy or
-creating an implicit downgrade path.
+creating an implicit downgrade path. For Apple RSA/SRP (RFB type 33), the
+RFB-provided RSA key is not an independent host identity and SRP proof does not
+encrypt the subsequent desktop stream. The saved SSH host must be verified,
+terminate on a Mac controlled by the owner, and connect to literal `127.0.0.1`
+or `::1` on that Mac. The exact `apple_rsa_srp_username_password` /
+`apple_rsa_srp` / `ssh` tuple is checked before KMS; neither an arbitrary
+onward proxy nor a fallback to Apple DH or Direct SRP is admitted.
 
 Saved owner configuration also has an outer direct/SSH transport discriminator.
 For a capable Runner, authority returns either an explicit direct snapshot or

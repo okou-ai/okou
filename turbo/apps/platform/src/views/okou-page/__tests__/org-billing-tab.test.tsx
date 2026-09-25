@@ -15,7 +15,14 @@ import {
   type CreditCheckoutRequest,
   type UsagePackMigrationStateResponse,
 } from "@okouai/api-contracts/contracts/billing";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { orgMembersContract } from "@okouai/api-contracts/contracts/org-member-routes";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi, type Mock } from "vitest";
 
@@ -1415,6 +1422,9 @@ test("Review and revise an already scheduled legacy Team conversion", async () =
 });
 
 test("Upgrade a current member package in the app", async () => {
+  const managementRefreshReady = createDeferredPromise<void>(context.signal);
+  const membersRefreshStarted = createDeferredPromise<void>(context.signal);
+  const membersRefreshReady = createDeferredPromise<void>(context.signal);
   let changeProcessing = false;
   let paymentApplied = false;
   let previewed = false;
@@ -1423,23 +1433,29 @@ test("Upgrade a current member package in the app", async () => {
     name: "Managed Usage Pack Org",
     role: "admin",
   });
-  context.mocks.data.orgMembers({
-    name: "Managed Usage Pack Org",
-    role: "admin",
-    members: [
-      {
-        userId: "user_1",
-        email: "alex@example.com",
-        firstName: "Alex",
-        lastName: "Chen",
-        imageUrl: "",
-        role: "admin",
-        joinedAt: "2026-01-01T00:00:00Z",
-      },
-    ],
-    pendingInvitations: [],
-    membershipRequests: [],
-    createdAt: "2026-01-01T00:00:00Z",
+  context.mocks.api(orgMembersContract.members, async ({ respond }) => {
+    if (paymentApplied) {
+      membersRefreshStarted.resolve();
+      await membersRefreshReady.promise;
+    }
+    return respond(200, {
+      name: "Managed Usage Pack Org",
+      role: "admin",
+      members: [
+        {
+          userId: "user_1",
+          email: "alex@example.com",
+          firstName: "Alex",
+          lastName: "Chen",
+          imageUrl: "",
+          role: "admin",
+          joinedAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+      pendingInvitations: [],
+      membershipRequests: [],
+      createdAt: "2026-01-01T00:00:00Z",
+    });
   });
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, activeProBillingStatus());
@@ -1447,39 +1463,45 @@ test("Upgrade a current member package in the app", async () => {
   context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
     return respond(200, usagePackCatalogResponse());
   });
-  context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
-    return respond(200, {
-      supportsFreeMembers: true,
-      tier: "pro",
-      currentPeriodEnd: "2026-04-01T00:00:00Z",
-      allocations: [
-        {
-          id: "b5235934-83df-4f16-bf41-f46890db7d40",
-          memberId: "user_1",
-          usagePackUsd: paymentApplied ? 50 : 20,
-          currentPeriodEnd: "2026-04-01T00:00:00Z",
-          pendingChange:
-            changeProcessing && !paymentApplied
-              ? {
-                  id: "ad3bd64c-7237-436d-a221-61b14ed719e7",
-                  kind: "upgrade",
-                  status: "applying",
-                  targetUsagePackUsd: 50,
-                  effectiveAt: "2026-03-16T00:00:00Z",
-                }
-              : previewed && !paymentApplied
+  context.mocks.api(
+    billingUsagePackManagementContract.get,
+    async ({ respond }) => {
+      if (changeProcessing) {
+        await managementRefreshReady.promise;
+      }
+      return respond(200, {
+        supportsFreeMembers: true,
+        tier: "pro",
+        currentPeriodEnd: "2026-04-01T00:00:00Z",
+        allocations: [
+          {
+            id: "b5235934-83df-4f16-bf41-f46890db7d40",
+            memberId: "user_1",
+            usagePackUsd: paymentApplied ? 50 : 20,
+            currentPeriodEnd: "2026-04-01T00:00:00Z",
+            pendingChange:
+              changeProcessing && !paymentApplied
                 ? {
                     id: "ad3bd64c-7237-436d-a221-61b14ed719e7",
                     kind: "upgrade",
-                    status: "previewed",
+                    status: "applying",
                     targetUsagePackUsd: 50,
                     effectiveAt: "2026-03-16T00:00:00Z",
                   }
-                : null,
-        },
-      ],
-    });
-  });
+                : previewed && !paymentApplied
+                  ? {
+                      id: "ad3bd64c-7237-436d-a221-61b14ed719e7",
+                      kind: "upgrade",
+                      status: "previewed",
+                      targetUsagePackUsd: 50,
+                      effectiveAt: "2026-03-16T00:00:00Z",
+                    }
+                  : null,
+          },
+        ],
+      });
+    },
+  );
   context.mocks.api(
     billingUsagePackManagementContract.previewSubscriptionChange,
     ({ body, respond }) => {
@@ -1669,9 +1691,22 @@ test("Upgrade a current member package in the app", async () => {
   ).not.toBeInTheDocument();
   expect(window.location.href).toBe(locationBeforeConfirmation);
   click(buttonByText("Confirm", confirmationDialog));
-  await screen.findByRole("heading", {
-    name: "Configure member packages",
-  });
+  await screen.findByText("Subscription change confirmed.");
+  // Keep the saved configuration visible while the server refresh is pending.
+  expect(
+    screen.getByRole("dialog", { name: "Configure member packages" }),
+  ).toBeInTheDocument();
+  expect(screen.getByText("Step 2 of 3")).toBeInTheDocument();
+  expect(
+    screen.getByRole("combobox", { name: "Usage for Alex Chen" }),
+  ).toHaveTextContent("54,321 credits · 8% off");
+  expect(
+    buttonByText(
+      "Confirm",
+      screen.getByRole("region", { name: "Order summary" }),
+    ),
+  ).toBeDisabled();
+  managementRefreshReady.resolve();
   await screen.findByText("Change is processing");
   expect(
     queryAllByRoleFast(
@@ -1691,7 +1726,18 @@ test("Upgrade a current member package in the app", async () => {
     expect(context.mocks.ably.hasSubscription("billing:changed")).toBeTruthy();
   });
   paymentApplied = true;
-  context.mocks.ably.trigger("billing:changed");
+  await act(async () => {
+    context.mocks.ably.trigger("billing:changed");
+    await membersRefreshStarted.promise;
+  });
+  // A later billing event also refreshes the roster without hiding its rows.
+  expect(
+    screen.getByRole("dialog", { name: "Configure member packages" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("combobox", { name: "Usage for Alex Chen" }),
+  ).toHaveTextContent("54,321 credits · 8% off");
+  membersRefreshReady.resolve();
 
   await waitFor(() => {
     expect(
