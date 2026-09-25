@@ -283,9 +283,12 @@ describe("account erasure fences chat-thread pin mutations", () => {
 
     await expect(readClosedPinnedAt(fixture)).resolves.toBe(pinnedAt);
     await expect(sidebarPinEvents(fixture)).resolves.toStrictEqual(before);
-    // Closing the organization hides its thread from the client snapshot;
-    // neither the rejected writes nor projection may silently erase SQL state.
-    await expect(compactedPinState(fixture)).resolves.toBeNull();
+    // Compaction no longer reads the retiring erasure admission state. The
+    // denied pin writes still leave the persisted pin unchanged in the snapshot.
+    await expect(compactedPinState(fixture)).resolves.toStrictEqual({
+      pinnedAtMs: pinnedAtMs(pinnedAt),
+      pinOrder: "a0",
+    });
   });
 
   it("keeps an unrelated owner pinning while another subject is closed", async () => {
