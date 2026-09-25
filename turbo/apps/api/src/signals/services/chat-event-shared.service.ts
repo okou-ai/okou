@@ -34,7 +34,7 @@ import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.serv
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 
 import {
-  withRunOutputWrite,
+  assertPreparedRunContentIdentity,
   type RunContentOwnership,
 } from "./run-content-erasure-admission.service";
 
@@ -277,18 +277,18 @@ async function assistantEventRunContextForRun(
   };
 }
 
-interface InsertAssistantEventsTransactionResult {
+interface AppendAssistantEventRowsResult {
   readonly insertedRowCount: number;
   readonly shouldAttemptFirstAssistantEventClaim: boolean;
 }
 
-export async function insertAssistantEventsInTransaction(
+export async function appendAssistantEventRows(
   tx: Db | ChatThreadEventTransaction,
   args: Omit<InsertAssistantEventsInput, "ownership"> & {
     readonly runGroupId: string | undefined;
   },
   signal: AbortSignal,
-): Promise<InsertAssistantEventsTransactionResult> {
+): Promise<AppendAssistantEventRowsResult> {
   if (args.items.length === 0) {
     return {
       insertedRowCount: 0,
@@ -356,30 +356,23 @@ export async function insertAssistantEvents(
     undefined,
     signal,
   );
-  const admitted = await withRunOutputWrite(
+  assertPreparedRunContentIdentity({
+    runId: args.runId,
+    destination: args,
+    ownership: args.ownership,
+  });
+  const result = await appendAssistantEventRows(
     writeDb,
-    { runId: args.runId, destination: args, ownership: args.ownership },
-    async (tx, current) => {
-      return {
-        outcome: "written" as const,
-        ownership: current.ownership,
-        value: await insertAssistantEventsInTransaction(
-          tx,
-          { ...args, runGroupId },
-          signal,
-        ),
-      };
-    },
+    { ...args, runGroupId },
     signal,
   );
-  const result = admitted.value;
   signal.throwIfAborted();
 
   if (result.insertedRowCount > 0) {
     if (result.shouldAttemptFirstAssistantEventClaim) {
       await publishFirstAssistantEventCreatedSafely({
         db: writeDb,
-        ownership: admitted.ownership,
+        ownership: args.ownership,
         orgId: args.orgId,
         userId: args.userId,
         threadId: args.threadId,

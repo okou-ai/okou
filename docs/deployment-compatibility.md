@@ -5,7 +5,7 @@
 Discord has no production users, so this change ships without a staged
 compatibility window.
 
-- Migration `1242_drop_discord_chat_deliveries` drops `discord_chat_deliveries`
+- Migration `1243_drop_discord_chat_deliveries` drops `discord_chat_deliveries`
   with its foreign keys into `chat_events`, then the
   `chat_events_id_thread_unique` constraint that only backed the composite
   foreign key, and the redundant `idx_chat_events_run_id` (covered by
@@ -15,7 +15,7 @@ compatibility window.
   also fails with `account_erasure_relational:catalogue_absent:discord_chat_deliveries`
   and retries until it runs on this API; rolling back below this API stalls
   erasure jobs the same way.
-- Migration `1243_chat_event_retention_cursors` adds the retention sweep
+- Migration `1244_chat_event_retention_cursors` adds the retention sweep
   cursor. Retention now reads candidates with bounded, unlocked single-table
   queries and deletes them by ID in short statements, without the advisory
   lock, `FOR UPDATE SKIP LOCKED` or the in-transaction remainder scan. The cron
@@ -26,6 +26,29 @@ compatibility window.
 - The cancellation-recovery queue sweep only redrives barriers that expired in
   the last ten minutes. Older barriers are left to per-thread admission and
   callback paths, as for stale queue items.
+
+## Chat search agent recency index dropped (2026-09-25)
+
+Migration `1242_drop_chat_search_agent_created_idx` drops
+`chat_event_search_messages_user_org_agent_id_created_idx` with
+`DROP INDEX CONCURRENTLY`. It does not block chat search reads or projector
+writes; it waits for older transactions on the table, so it raises
+`lock_timeout` to 10 minutes and disables `statement_timeout` for its own
+session, then resets both.
+
+Since #36456 no query orders this table by `(user_id, org_id, agent_id,
+created_at)`. Chat search and MCP chat search take keyword candidates from
+`chat_event_search_messages_user_tsv_gin_idx` and sort them in the query;
+projection writes and thread deletion use the primary key; account erasure
+deletes by `user_id`, which `chat_event_search_messages_user_org_created_idx`
+serves.
+Production statistics from 2026-09-17 to 2026-09-25 show 164 scans reading
+about 157,000 index tuples each, consistent with agent-scoped searches that
+walked an agent's whole history and filtered each row by keyword.
+
+No code names the index, so old API/new DB and new API/old DB are both
+compatible and no API rollback floor is needed. Restoring the index means
+rebuilding it concurrently; no data is lost.
 
 ## Discord replies become fire and forget (2026-09-25)
 
@@ -40,7 +63,7 @@ or channel revocation are unchanged.
 
 The API no longer writes or reads `discord_chat_deliveries`, and the test-only
 Discord delivery drain endpoint is removed. Migration
-`1242_drop_discord_chat_deliveries` drops the table (see below).
+`1243_drop_discord_chat_deliveries` drops the table (see above).
 
 ## Completed Clerk deletion receipt index retirement (2026-09-25)
 

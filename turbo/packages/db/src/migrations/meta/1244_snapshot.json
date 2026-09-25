@@ -1,6 +1,6 @@
 {
-  "id": "5e25edb5-d7b7-4ce3-976b-dfe048f6105c",
-  "prevId": "1b6f7c21-a49a-4d3d-a4bf-ff3dbf0c1fed",
+  "id": "fadf047c-e8de-42bb-87c7-6703acf9f6e8",
+  "prevId": "5e25edb5-d7b7-4ce3-976b-dfe048f6105c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -7811,6 +7811,43 @@
           "onUpdate": "no action"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.chat_event_retention_cursors": {
+      "name": "chat_event_retention_cursors",
+      "schema": "",
+      "columns": {
+        "scope_key": {
+          "name": "scope_key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "last_created_at": {
+          "name": "last_created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_event_id": {
+          "name": "last_event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sweep_started_at": {
+          "name": "sweep_started_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
