@@ -45,7 +45,7 @@ poster transform still runs on the source artifact's CDN origin. The private
 video poster request always uses the current `files.` host, which the Worker
 accepts for both domains.
 
-Migration `1229_hosted_artifact_link_layout_okou_default` sets `DEFAULT 'okou'`
+Migration `1230_hosted_artifact_link_layout_okou_default` sets `DEFAULT 'okou'`
 on the four `public_brand` columns, so any writer that omits the column
 records the current layout. The API still writes the segment explicitly on
 hosted sites, deployments, shares and shared threads, using the same layout that
