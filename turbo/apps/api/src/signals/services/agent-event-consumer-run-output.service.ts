@@ -24,7 +24,7 @@ import {
 import { recordFirstAssistantEventAcknowledgementMetric } from "./chat-first-assistant-event-metric.service";
 import { writeRunMetadataInTransaction } from "./agent-run-metadata-write.service";
 import {
-  assertPreparedRunContentIdentity,
+  assertRunOutputOwner,
   prepareRunOutputOwnership,
   type RunOutputDiagnostics,
   type RunContentOwnership,
@@ -483,11 +483,7 @@ async function materializePreparedRunOutputEvents(
   });
   // No transaction or run lock: a timeout committed after preparation may admit
   // this batch. The single reserve+insert statement is the only write here.
-  assertPreparedRunContentIdentity({
-    runId: payload.runId,
-    runOwner: payload.context,
-    ownership,
-  });
+  assertRunOutputOwner(ownership, payload.context);
   const thread =
     ownership.triggerSource !== null && ownership.thread
       ? { ...ownership.thread, orgId: ownership.orgId }

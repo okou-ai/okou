@@ -2760,8 +2760,12 @@ async function insertCanonicalSingleWrites(
     eventType: "output.message",
     content: "goal output",
     runId: randomUUID(),
-    runGroupId: single.goalId,
   });
+  // Current writers never emit Goal context; restore the historical pointer.
+  await tx
+    .update(chatEvents)
+    .set({ contextType: "goal", contextId: single.goalId })
+    .where(eq(chatEvents.id, single.goalContextEventId));
   await appendHistoricalGoalMarker(tx, {
     id: single.goalOpenId,
     chatThreadId: threadId,

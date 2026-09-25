@@ -110,13 +110,20 @@ export async function setLegacyGoalRunOriginFixture(
     if (!run?.threadId) {
       throw new Error("Expected an owned historical run");
     }
-    await insertChatEvent(tx, {
+    const output = await insertChatEvent(tx, {
       chatThreadId: run.threadId,
       runId,
       eventType: "output.message",
       content: "Retained Goal run output",
-      runGroupId: goalId,
     });
+    if (!output) {
+      throw new Error("Expected retained Goal output");
+    }
+    // Current writers never emit Goal context; restore the historical pointer.
+    await tx
+      .update(chatEvents)
+      .set({ contextType: "goal", contextId: goalId })
+      .where(eq(chatEvents.id, output.id));
   });
 }
 

@@ -126,7 +126,7 @@ export class AgentEventRunNotFoundError extends Error {
   }
 }
 
-export class RunContentOwnershipChangedError extends Error {
+class RunContentOwnershipChangedError extends Error {
   constructor(message = "Prepared run content ownership no longer matches") {
     super(message);
   }
@@ -205,36 +205,12 @@ export async function prepareRunOutputOwnership(
   );
 }
 
-function sameOwner(left: Owner, right: Owner): boolean {
-  return left.userId === right.userId && left.orgId === right.orgId;
-}
-
-interface PreparedRunContentIdentity {
-  readonly runId: string;
-  readonly runOwner?: Owner;
-  readonly destination?: Owner & { readonly threadId: string };
-  readonly ownership: RunContentOwnership;
-}
-
-function assertPreparedOwnership(
-  snapshot: RunContentOwnership,
-  args: PreparedRunContentIdentity,
+/** The sandbox token's user and organization must own the prepared run. */
+export function assertRunOutputOwner(
+  ownership: RunContentOwnership,
+  owner: Owner,
 ): void {
-  if (
-    JSON.stringify(snapshot) !== JSON.stringify(args.ownership) ||
-    (args.runOwner && !sameOwner(snapshot, args.runOwner)) ||
-    (args.destination &&
-      (snapshot.thread?.chatThreadId !== args.destination.threadId ||
-        snapshot.thread.userId !== args.destination.userId ||
-        snapshot.orgId !== args.destination.orgId))
-  ) {
+  if (ownership.userId !== owner.userId || ownership.orgId !== owner.orgId) {
     throw new RunContentOwnershipChangedError();
   }
-}
-
-/** Pure identity check of a prepared write against its caller's claim. */
-export function assertPreparedRunContentIdentity(
-  args: PreparedRunContentIdentity,
-): void {
-  assertPreparedOwnership(args.ownership, args);
 }

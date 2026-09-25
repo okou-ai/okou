@@ -71,7 +71,6 @@ export async function finalizeClaimedRunUserMessage(params: {
   readonly userId: string;
   readonly runId: string;
   readonly runStatus: string;
-  readonly runGroupId?: string;
   readonly createdAt: Date;
 }): Promise<void> {
   if (params.runStatus === "queued") {
@@ -79,7 +78,6 @@ export async function finalizeClaimedRunUserMessage(params: {
       await appendQueuedRunAssistantMarker(tx, {
         chatThreadId: params.threadId,
         runId: params.runId,
-        runGroupId: params.runGroupId,
         createdAfter: params.createdAt,
       });
     });
