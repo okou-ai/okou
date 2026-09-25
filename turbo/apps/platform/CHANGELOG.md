@@ -11,6 +11,22 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.966.1](https://github.com/okou-ai/okou/compare/app-v0.966.0...app-v0.966.1) (2026-09-25)
+
+
+### Refactoring
+
+* contract thread drafts after the child-table cutover ([#36932](https://github.com/okou-ai/okou/issues/36932)) ([7a187fa](https://github.com/okou-ai/okou/commit/7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38))
+* **morning-brief:** drop settings loading status row ([#36938](https://github.com/okou-ai/okou/issues/36938)) ([0644672](https://github.com/okou-ai/okou/commit/0644672530fce6f387645b5bfc3d0cd8309aa38c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.513.1
+    * @okouai/core bumped to 8.710.10
+
 ## [0.966.0](https://github.com/okou-ai/okou/compare/app-v0.965.0...app-v0.966.0) (2026-09-25)
 
 
