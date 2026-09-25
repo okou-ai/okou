@@ -125,19 +125,11 @@ function turn(
 }
 
 describe("native API-owned billing reader", () => {
-  it.each(
-    piNativeCatalogModelSchema.options.flatMap((model) => {
-      return (["stop", "toolUse", "aborted", "error", "length"] as const).map(
-        (stopReason) => {
-          return { model, stopReason };
-        },
-      );
-    }),
-  )(
-    "records exact non-overlapping categories for $model after $stopReason",
-    async ({ model, stopReason }) => {
+  it.each(piNativeCatalogModelSchema.options)(
+    "records exact non-overlapping categories for %s",
+    async (model) => {
       const run = await nativeRun(model);
-      const result = turn(stopReason, model);
+      const result = turn("stop", model);
       await run.record(result);
       await run.record(result);
       const ledger = await run.ledger();

@@ -81,6 +81,7 @@ import {
   feishuDeliveryTargetSchema,
   type FeishuDeliveryTarget,
 } from "./feishu-chat-callback-payload";
+import { FEISHU_CALLBACK_ROLLBACK_PUBLIC_BRAND } from "./feishu-org-callback-payload";
 import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
 import {
   deliverAgentPhoneChatAdmissionFailure,
@@ -992,7 +993,7 @@ function buildQueuedCreateAgentRunArgs(
                 replyInThread: input.feishuDelivery.replyInThread,
                 files: input.feishuDelivery.files,
                 canonicalChatDelivery: true,
-                publicBrand: PUBLIC_BRAND,
+                publicBrand: FEISHU_CALLBACK_ROLLBACK_PUBLIC_BRAND,
               },
             },
           ]
@@ -1322,7 +1323,7 @@ async function insertFeishuChatDeliveryCallback(args: {
     payload: {
       ...args.target,
       chatEventId: args.chatEventId,
-      publicBrand: PUBLIC_BRAND,
+      publicBrand: FEISHU_CALLBACK_ROLLBACK_PUBLIC_BRAND,
     },
   });
 }

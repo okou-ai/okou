@@ -7,7 +7,6 @@ import { command } from "ccstate";
 import { and, eq, isNotNull, ne } from "drizzle-orm";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { connectors } from "@okouai/db/schema/connector";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
@@ -75,7 +74,6 @@ import {
 import { publishFeishuOrgChanged } from "../services/feishu-realtime.service";
 import { notifyFeishuConnect } from "../services/feishu-welcome.service";
 import { tapError } from "../utils";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const L = logger("FeishuOAuth");
 const REDIRECT_STATUS = 307;
@@ -112,7 +110,6 @@ interface FeishuConnectionState {
   readonly installationId: string;
   readonly orgId: string;
   readonly userId: string;
-  readonly publicBrand: PublicBrand;
   readonly accountMutation: ConnectorAccountMutationIntent;
 }
 
@@ -358,7 +355,6 @@ async function upsertFeishuConnection(
       .update(feishuOrgConnections)
       .set({
         feishuUserName: args.userInfo.name,
-        publicBrand: args.state.publicBrand,
         updatedAt: nowDate(),
       })
       .where(eq(feishuOrgConnections.id, existing.id));
@@ -373,7 +369,6 @@ async function upsertFeishuConnection(
         feishuOpenId: args.userInfo.openId,
         userId: args.state.userId,
         feishuUserName: args.userInfo.name,
-        publicBrand: args.state.publicBrand,
       })
       .onConflictDoNothing({
         target: [
@@ -992,7 +987,6 @@ const completeClaimedCustomFeishuOAuth$ = command(
       installationId: installation.installationId,
       orgId: args.state.orgId,
       userId: args.state.userId,
-      publicBrand: PUBLIC_BRAND,
       accountMutation: args.state.accountMutation,
     };
     const completed = await finishFeishuOAuthConnection(

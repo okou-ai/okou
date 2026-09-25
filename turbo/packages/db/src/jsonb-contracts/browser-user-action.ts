@@ -71,6 +71,8 @@ export function browserUserActionFieldSupportsTarget(
       return ["text", "tel", "number"].includes(fingerprint.inputType);
     case "number":
       return fingerprint.inputType === "number";
+    case "checkbox":
+      return fingerprint.inputType === "checkbox";
     case "select":
       return false;
   }
@@ -192,6 +194,7 @@ function decodeField(value: unknown): BrowserUserActionInputField | null {
       "one_time_code",
       "number",
       "select",
+      "checkbox",
     ].includes(String(field.fieldKind)) ||
     typeof field.required !== "boolean" ||
     !Number.isSafeInteger(field.backendNodeId) ||

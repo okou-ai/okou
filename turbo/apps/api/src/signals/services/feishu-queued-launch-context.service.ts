@@ -1,6 +1,5 @@
 import { isFeishuInstallationEnabled } from "./feishu-config";
 import type { FeishuPlatform } from "@okouai/core/feishu-platform";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
 import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
@@ -18,7 +17,6 @@ export interface FeishuQueuedLaunchMaterial {
   readonly triggerSource: FeishuPlatform;
   readonly prompt: string;
   readonly appendSystemPrompt: string;
-  readonly publicBrand: PublicBrand;
   readonly connectorSourceId: string;
   readonly feishuDelivery: FeishuDeliveryTarget;
   readonly userInfoExtras: {
@@ -41,7 +39,6 @@ type FeishuLaunchContextRow = Pick<
   | "senderOpenId"
   | "connectionId"
   | "installationId"
-  | "publicBrand"
 > & {
   readonly tenantKey: string | null;
   readonly platform: FeishuPlatform;
@@ -65,8 +62,7 @@ function requiredFeishuLaunchContext(row: FeishuLaunchContextRow | undefined) {
     row.senderOpenId === null ||
     row.connectionId === null ||
     row.connectorSourceId === null ||
-    row.installationId === null ||
-    row.publicBrand === null
+    row.installationId === null
   ) {
     return null;
   }
@@ -85,7 +81,6 @@ function requiredFeishuLaunchContext(row: FeishuLaunchContextRow | undefined) {
     connectionId: row.connectionId,
     connectorSourceId: row.connectorSourceId,
     installationId: row.installationId,
-    publicBrand: row.publicBrand,
   };
 }
 
@@ -118,7 +113,6 @@ async function loadFeishuLaunchContext(
       installationId: chatFeishuContext.installationId,
       routeThreadId: feishuChatThreadRoutes.threadId,
       feishuDisplayName: feishuOrgConnections.feishuUserName,
-      publicBrand: chatFeishuContext.publicBrand,
     })
     .from(chatEvents)
     .innerJoin(
@@ -204,7 +198,6 @@ export async function loadFeishuQueuedLaunchMaterial(
       }),
       history: context.conversationHistory,
     }),
-    publicBrand: context.publicBrand,
     connectorSourceId: context.connectorSourceId,
     feishuDelivery: {
       installationId: context.installationId,

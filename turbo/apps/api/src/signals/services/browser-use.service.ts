@@ -720,6 +720,7 @@ export interface BrowserUseControlInspection {
   readonly writable: boolean;
   readonly siteRequired: boolean;
   readonly multiple: boolean;
+  readonly checked?: boolean;
   readonly minLength?: number;
   readonly maxLength?: number;
   readonly pattern?: string;
@@ -820,6 +821,25 @@ function optionalControlMetadata(candidate: Record<string, unknown>) {
   };
 }
 
+function validCheckboxInspection(
+  candidate: Readonly<Record<string, unknown>>,
+): boolean {
+  return (
+    (candidate.checked === undefined ||
+      typeof candidate.checked === "boolean") &&
+    (candidate.inputType !== "checkbox" ||
+      typeof candidate.checked === "boolean")
+  );
+}
+
+function optionalCheckboxMetadata(
+  candidate: Readonly<Record<string, unknown>>,
+) {
+  return candidate.checked === undefined
+    ? {}
+    : { checked: candidate.checked as boolean };
+}
+
 function safeControlInspection(
   value: unknown,
 ): BrowserUseControlInspection | null {
@@ -837,6 +857,7 @@ function safeControlInspection(
     typeof candidate.writable !== "boolean" ||
     typeof candidate.siteRequired !== "boolean" ||
     typeof candidate.multiple !== "boolean" ||
+    !validCheckboxInspection(candidate) ||
     !boundedOptionalControlMetadata(candidate)
   ) {
     return null;
@@ -860,6 +881,7 @@ function safeControlInspection(
     writable: candidate.writable,
     siteRequired: candidate.siteRequired,
     multiple: candidate.multiple,
+    ...optionalCheckboxMetadata(candidate),
     ...optionalControlMetadata(candidate),
     ...(options === undefined || options === null
       ? {}
@@ -882,7 +904,7 @@ function browserUseControlInspectionFunction(): string {
   return `function (...otherControls) {
     const controls = [this, ...otherControls];
     const supportedInputTypes = new Set([
-      "text", "password", "email", "tel", "url", "search", "number"
+      "text", "password", "email", "tel", "url", "search", "number", "checkbox"
     ]);
     return controls.map((control) => {
       const input = control instanceof HTMLInputElement;
@@ -894,7 +916,7 @@ function browserUseControlInspectionFunction(): string {
           option.value.length <= ${BROWSER_USER_ACTION_MAX_OPTION_VALUE_LENGTH}));
       const supported =
         textarea || select || (input && supportedInputTypes.has(control.type));
-      const textual = supported && (textarea || control.type !== "number");
+      const textual = supported && (textarea || (control.type !== "number" && control.type !== "checkbox"));
       const number = input && control.type === "number";
       const boundedNumberConstraints = !number ||
         [control.min, control.max, control.step].every((value) =>
@@ -904,8 +926,9 @@ function browserUseControlInspectionFunction(): string {
         inputType: input ? control.type : textarea ? "textarea" : select ? (control.multiple ? "select-multiple" : "select-one") : "",
         connected: control.isConnected === true,
         mainDocument: control.ownerDocument === document,
-        writable: supported && boundedNumberConstraints && boundedOptions && !control.readOnly && !control.matches(":disabled"),
+        writable: supported && boundedNumberConstraints && boundedOptions && !control.readOnly && !control.matches(":disabled") && !(input && control.type === "checkbox" && control.indeterminate),
         siteRequired: supported && control.required === true,
+        ...(input && control.type === "checkbox" ? { checked: control.checked } : {}),
         multiple: select ? control.multiple : input && control.type === "email" && control.multiple === true,
         ...(select && boundedOptions ? { options: options.map((option, index) => ({
           index, label: option.label, value: option.value,
@@ -1197,6 +1220,10 @@ export interface BrowserUseUserActionApplyField {
   readonly fingerprint: BrowserUseUserActionFingerprint;
   readonly required?: boolean;
   readonly value?: string;
+  readonly checkbox?: {
+    readonly checked: boolean;
+    readonly observedChecked: boolean;
+  };
   readonly selection?: {
     readonly optionIndexes: readonly number[];
     readonly optionSetFingerprint: string;
@@ -1223,6 +1250,10 @@ interface ResolvedBrowserUseUserActionField {
   readonly objectId: string;
   readonly required?: boolean;
   readonly value?: string;
+  readonly checkbox?: {
+    readonly checked: boolean;
+    readonly observedChecked: boolean;
+  };
   readonly selection?: {
     readonly optionIndexes: readonly number[];
     readonly optionSetFingerprint: string;
@@ -1280,6 +1311,16 @@ async function openBrowserUseApplyPage(
     return null;
   }
   return attached;
+}
+
+function checkboxObservationMatches(
+  field: BrowserUseUserActionApplyField,
+  inspection: BrowserUseControlInspection,
+): boolean {
+  return (
+    field.checkbox === undefined ||
+    inspection.checked === field.checkbox.observedChecked
+  );
 }
 
 async function resolveBrowserUseApplyFields(
@@ -1341,6 +1382,7 @@ async function resolveBrowserUseApplyFields(
       !inspection.writable ||
       inspection.tagName !== field.fingerprint.tagName ||
       inspection.inputType !== field.fingerprint.inputType ||
+      !checkboxObservationMatches(field, inspection) ||
       (field.selection !== undefined &&
         inspection.optionSetFingerprint !==
           field.selection.optionSetFingerprint)
@@ -1352,6 +1394,7 @@ async function resolveBrowserUseApplyFields(
       inspection,
       required: field.required,
       ...(field.value === undefined ? {} : { value: field.value }),
+      ...(field.checkbox === undefined ? {} : { checkbox: field.checkbox }),
       ...(field.selection === undefined ? {} : { selection: field.selection }),
     });
   }
@@ -1505,11 +1548,25 @@ async function validateBrowserUseApplyValues(
   },
   signal: AbortSignal,
 ): Promise<boolean> {
-  if (!validSelectApplyFields(args.fields)) {
+  if (
+    !validSelectApplyFields(args.fields) ||
+    args.fields.some((field) => {
+      return (
+        field.inspection.inputType === "checkbox" &&
+        (field.inspection.checked === undefined ||
+          (field.required === true && field.checkbox?.checked !== true) ||
+          (field.inspection.siteRequired &&
+            (field.checkbox?.checked ?? field.inspection.checked) !== true))
+      );
+    })
+  ) {
     return false;
   }
   const scalarFields = args.fields.filter((field) => {
-    return field.inspection.tagName !== "SELECT";
+    return (
+      field.inspection.tagName !== "SELECT" &&
+      field.inspection.inputType !== "checkbox"
+    );
   });
   const [firstField, ...otherFields] = scalarFields;
   if (!firstField) {
@@ -1656,7 +1713,7 @@ async function writeBrowserUseApplyFields(
   }
 }
 
-async function writeBrowserUseMixedSelectFields(
+async function writeBrowserUseMixedControlFields(
   socket: WebSocket,
   args: {
     readonly sessionId: string;
@@ -1671,20 +1728,27 @@ async function writeBrowserUseMixedSelectFields(
     return;
   }
   const descriptor = (field: ResolvedBrowserUseUserActionField) => {
-    return field.inspection.tagName === "SELECT"
+    return field.inspection.inputType === "checkbox"
       ? {
-          kind: "select",
-          mode: field.inspection.inputType,
+          kind: "checkbox",
+          checked: field.checkbox?.checked ?? null,
+          observedChecked: field.inspection.checked,
           required: field.inspection.siteRequired,
-          options: field.inspection.options,
-          indices: field.selection?.optionIndexes ?? null,
         }
-      : {
-          kind: "scalar",
-          tagName: field.inspection.tagName,
-          inputType: field.inspection.inputType,
-          value: field.value ?? null,
-        };
+      : field.inspection.tagName === "SELECT"
+        ? {
+            kind: "select",
+            mode: field.inspection.inputType,
+            required: field.inspection.siteRequired,
+            options: field.inspection.options,
+            indices: field.selection?.optionIndexes ?? null,
+          }
+        : {
+            kind: "scalar",
+            tagName: field.inspection.tagName,
+            inputType: field.inspection.inputType,
+            value: field.value ?? null,
+          };
   };
   mutation.writeStarted = true;
   const result = browserUseCdpValueSchema.parse(
@@ -1704,6 +1768,11 @@ async function writeBrowserUseMixedSelectFields(
           }
           const matches = (control, spec, final) => {
             if (!control.isConnected || control.ownerDocument !== document || control.matches(":disabled")) return false;
+            if (spec.kind === "checkbox") {
+              return control instanceof HTMLInputElement && control.type === "checkbox" &&
+                !control.indeterminate && control.required === spec.required &&
+                control.checked === (final && spec.checked !== null ? spec.checked : spec.observedChecked);
+            }
             if (spec.kind === "scalar") {
               const actualType = control instanceof HTMLInputElement ? control.type
                 : control instanceof HTMLTextAreaElement ? "textarea" : null;
@@ -1729,7 +1798,12 @@ async function writeBrowserUseMixedSelectFields(
             const control = controls[index];
             const spec = specs[index];
             if (!matches(control, spec, false)) return false;
-            if (spec.kind === "scalar" && spec.value !== null) {
+            if (spec.kind === "checkbox") {
+              if (spec.checked === null || spec.checked === control.checked) continue;
+              const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "checked")?.set;
+              if (!setter) return false;
+              setter.call(control, spec.checked);
+            } else if (spec.kind === "scalar" && spec.value !== null) {
               const prototype = control instanceof HTMLTextAreaElement
                 ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
               const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
@@ -1807,10 +1881,18 @@ async function applyBrowserUseUserActionOnSocket(
   };
   if (
     resolved.fields.some((field) => {
-      return field.inspection.tagName === "SELECT";
+      return (
+        field.inspection.tagName === "SELECT" ||
+        field.inspection.inputType === "checkbox"
+      );
     })
   ) {
-    await writeBrowserUseMixedSelectFields(socket, writeArgs, mutation, signal);
+    await writeBrowserUseMixedControlFields(
+      socket,
+      writeArgs,
+      mutation,
+      signal,
+    );
   } else {
     await writeBrowserUseApplyFields(socket, writeArgs, mutation, signal);
   }

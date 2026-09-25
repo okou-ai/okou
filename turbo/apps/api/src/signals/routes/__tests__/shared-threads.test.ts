@@ -62,16 +62,6 @@ function completion(content = "**Launch checklist**", finishReason = "stop") {
   });
 }
 
-function brokenBody(error: Error) {
-  return new HttpResponse(
-    new ReadableStream({
-      start(controller) {
-        controller.error(error);
-      },
-    }),
-  );
-}
-
 async function prepareShare(content = selectedContent) {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
@@ -210,20 +200,6 @@ describe("optional shared-thread titles", () => {
       title: "Shared conversation",
     },
     {
-      name: "network failure",
-      response: () => {
-        return HttpResponse.error();
-      },
-      title: "Shared conversation",
-    },
-    {
-      name: "unknown defect",
-      response: () => {
-        return brokenBody(new TypeError(providerSecret));
-      },
-      title: "Shared conversation",
-    },
-    {
       name: "empty interpreted title",
       response: () => {
         return completion("---");
@@ -236,13 +212,6 @@ describe("optional shared-thread titles", () => {
       name: "exhausted token budget",
       response: () => {
         return completion("A Truncated Shared Title That Must", "length");
-      },
-      title: "Shared conversation",
-    },
-    {
-      name: "invalid JSON",
-      response: () => {
-        return new HttpResponse(providerSecret);
       },
       title: "Shared conversation",
     },

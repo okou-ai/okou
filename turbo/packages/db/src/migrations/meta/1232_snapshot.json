@@ -1,6 +1,6 @@
 {
-  "id": "7be12bc6-059f-40fb-ad00-69b9c3bcf0ba",
-  "prevId": "0d60a10d-2a1b-4fa3-87b0-d0bfddcccf0d",
+  "id": "8fb1fb13-721b-4801-8645-67f4b468af00",
+  "prevId": "7be12bc6-059f-40fb-ad00-69b9c3bcf0ba",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -6427,7 +6427,8 @@
           "name": "public_brand",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'okou'"
         },
         "name": {
           "name": "name",
@@ -15486,7 +15487,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'vm0'"
+          "default": "'okou'"
         },
         "template": {
           "name": "template",
@@ -15739,7 +15740,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'vm0'"
+          "default": "'okou'"
         },
         "status": {
           "name": "status",
@@ -29273,7 +29274,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'vm0'"
+          "default": "'okou'"
         },
         "created_at": {
           "name": "created_at",
@@ -30894,7 +30895,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'vm0'"
+          "default": "'okou'"
         },
         "created_at": {
           "name": "created_at",
@@ -32077,7 +32078,8 @@
           "name": "public_brand",
           "type": "varchar(8)",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'okou'"
         },
         "request": {
           "name": "request",
@@ -36696,7 +36698,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'vm0'"
+          "default": "'okou'"
         },
         "normalized_email": {
           "name": "normalized_email",

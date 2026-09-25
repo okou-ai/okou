@@ -1076,8 +1076,15 @@
     {
       "idx": 1231,
       "version": "7",
-      "when": 1790301550836,
-      "tag": "1231_public_brand_okou_default_platform",
+      "when": 1790301790768,
+      "tag": "1231_feishu_public_brand_okou_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 1232,
+      "version": "7",
+      "when": 1790303706033,
+      "tag": "1232_public_brand_okou_default_platform",
       "breakpoints": true
     }
   ]

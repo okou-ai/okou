@@ -87,7 +87,6 @@ const startFeishuAccountOAuth$ = command(
         platform: feishuOrgInstallations.platform,
         ownerUserId: feishuOrgInstallations.ownerUserId,
         botName: feishuOrgInstallations.botName,
-        publicBrand: feishuOrgInstallations.publicBrand,
         setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
       })
       .from(feishuOrgInstallations)

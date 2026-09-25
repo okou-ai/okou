@@ -1,5 +1,4 @@
 import { useGet, useSet } from "ccstate-react";
-import { ONBOARDING_CHECKOUT_STATE_PARAM } from "../../signals/onboarding/onboarding-state.ts";
 import { ROUTES, type RoutePath } from "../../signals/route-paths.ts";
 import { detachedNavigateTo$, searchParams$ } from "../../signals/route.ts";
 
@@ -18,7 +17,6 @@ const ONBOARDING_STATE_PARAMS = [
   "onboarding_billing_session_id",
   "onboarding_note",
   "onboarding_template",
-  ONBOARDING_CHECKOUT_STATE_PARAM,
   "redeemCode",
 ] as const;
 
