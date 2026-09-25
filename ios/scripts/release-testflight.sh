@@ -76,7 +76,7 @@ xcode_args=(
   -clonedSourcePackagesDirPath "$work/SourcePackages"
   -onlyUsePackageVersionsFromResolvedFile -disableAutomaticPackageResolution -skipPackageUpdates
   CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=C5UWSXYB67
-  CODE_SIGN_IDENTITY="$identity" PROVISIONING_PROFILE_SPECIFIER="$profile_uuid"
+  CODE_SIGN_IDENTITY="$identity" OKOU_RELEASE_PROFILE_UUID="$profile_uuid"
   OTHER_CODE_SIGN_FLAGS="--keychain $keychain"
   MARKETING_VERSION="$IOS_VERSION" CURRENT_PROJECT_VERSION="$IOS_BUILD_NUMBER"
 )
