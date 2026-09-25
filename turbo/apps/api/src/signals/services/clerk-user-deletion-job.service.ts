@@ -1,7 +1,3 @@
-import {
-  recordChatContentDeletion,
-  completeChatContentDeletion,
-} from "@okouai/db/operations/chat-content-erasure";
 import { command } from "ccstate";
 import { v5 as uuidv5 } from "uuid";
 import { z } from "zod";
@@ -11,20 +7,13 @@ import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { settleIncludingAbort } from "../utils";
 import {
-  BACKGROUND_JOB_LEASE_MS,
   claimBackgroundJob,
   checkpointBackgroundJob,
   completeBackgroundJob,
   enqueueBackgroundJob,
   retryBackgroundJob,
-  yieldBackgroundJob,
   type ClaimedBackgroundJob,
 } from "./background-job.service";
-import {
-  captureUserErasureWork,
-  verifyUserErasureWork,
-} from "./account-erasure-user-executor";
-import { markMorningBriefCollectionOwnershipRevoked } from "./morning-brief-collection-occurrence.service";
 import { cleanupClerkDeletedUser$ } from "./webhooks-clerk-cleanup.service";
 
 const L = logger("ClerkUserDeletionJob");
@@ -32,52 +21,22 @@ const JOB_KIND = "clerk-user-deletion";
 const JOB_HANDLER_VERSION = 1;
 const JOB_NAMESPACE = "ae6e3b21-a980-4e94-908b-795315ac47af";
 const RETRY_DELAY_MS = 60_000;
+// Jobs enqueued by earlier releases may still carry a `phase` or `safetyHold`
+// key. Zod strips unknown keys, and the legacy cleanup is idempotent.
 const checkpointSchema = z.object({
   emptyOrgIds: z.array(z.string()).optional(),
-  // Tasks enqueued before B1 have no phase. Their legacy cleanup is
-  // idempotent, so capturing whatever remains first is safe.
-  phase: z.enum(["capture", "verify"]).default("capture"),
 });
-
-type DeletionCheckpoint = z.infer<typeof checkpointSchema>;
 
 async function settleDeletionAttempt(
   db: Db,
   job: ClaimedBackgroundJob,
-  work: Promise<DeletionCheckpoint | null>,
+  work: Promise<void>,
 ): Promise<void> {
   const attempt = await settleIncludingAbort(work);
   // Cleanup may have been aborted. Use a fresh deadline to release the lease.
   const persistenceSignal = AbortSignal.timeout(5000);
   if (attempt.ok) {
-    const saved = attempt.value
-      ? await yieldBackgroundJob(
-          db,
-          {
-            job,
-            checkpoint: attempt.value,
-            availableAt: new Date(nowDate().getTime() + RETRY_DELAY_MS),
-          },
-          persistenceSignal,
-        )
-      : await db.transaction(async (tx) => {
-          const completed = await completeBackgroundJob(
-            tx,
-            { job },
-            persistenceSignal,
-          );
-          if (!completed) {
-            throw new Error("User deletion lost its job lease");
-          }
-          // Capture/verification yields do not complete the local cleanup.
-          // The receipt survives retirement of either durable job projection.
-          await completeChatContentDeletion(tx, {
-            subjectKind: "user",
-            subjectId: job.userId,
-            sourceReference: job.id,
-          });
-          return completed;
-        });
+    const saved = await completeBackgroundJob(db, { job }, persistenceSignal);
     if (!saved) {
       throw new Error("User deletion lost its job lease");
     }
@@ -108,34 +67,18 @@ async function settleDeletionAttempt(
 export const enqueueClerkUserDeletion$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<string> => {
     const jobId = uuidv5(userId, JOB_NAMESPACE);
-    await set(writeDb$).transaction(async (tx) => {
-      await recordChatContentDeletion(tx, {
-        subjectKind: "user",
-        subjectId: userId,
-        sourceReference: jobId,
-      });
-      signal.throwIfAborted();
-      await enqueueBackgroundJob(
-        tx,
-        {
-          id: jobId,
-          kind: JOB_KIND,
-          handlerVersion: JOB_HANDLER_VERSION,
-          userId,
-          orgId: "",
-          input: {},
-          checkpoint: { phase: "capture" },
-        },
-        signal,
-      );
-      // Stop new collections at the durable receipt without destroying the
-      // occurrences B1 must capture before the legacy cleanup removes them.
-      await markMorningBriefCollectionOwnershipRevoked(
-        tx,
-        { kind: "user", userId },
-        nowDate(),
-      );
-    });
+    await enqueueBackgroundJob(
+      set(writeDb$),
+      {
+        id: jobId,
+        kind: JOB_KIND,
+        handlerVersion: JOB_HANDLER_VERSION,
+        userId,
+        orgId: "",
+        input: {},
+      },
+      signal,
+    );
     signal.throwIfAborted();
     return jobId;
   },
@@ -162,45 +105,25 @@ export const executeClerkUserDeletionWork$ = command(
       return { processed: 0 };
     }
 
-    const work = (async (): Promise<DeletionCheckpoint | null> => {
-      let checkpoint = checkpointSchema.parse(job.checkpoint);
-      const workSignal = AbortSignal.any([
-        signal,
-        AbortSignal.timeout(BACKGROUND_JOB_LEASE_MS - 15_000),
-      ]);
-      if (checkpoint.phase === "verify") {
-        return (await verifyUserErasureWork(db, job, workSignal))
-          ? null
-          : checkpoint;
-      }
-      // A sealed capture returns immediately, so a replay after an interrupted
-      // cleanup resumes that cleanup without a separate checkpoint.
-      if (!(await captureUserErasureWork(db, job, workSignal))) {
-        return checkpoint;
-      }
-      await set(
-        cleanupClerkDeletedUser$,
-        {
-          userId: job.userId,
-          emptyOrgIds: checkpoint.emptyOrgIds,
-          checkpointEmptyOrgIds: async (emptyOrgIds, checkpointSignal) => {
-            const next = { ...checkpoint, emptyOrgIds: [...emptyOrgIds] };
-            const saved = await checkpointBackgroundJob(
-              db,
-              { job, checkpoint: next },
-              checkpointSignal,
-            );
-            if (!saved) {
-              throw new Error("User deletion lost its job lease");
-            }
-            checkpoint = next;
-          },
+    const { emptyOrgIds } = checkpointSchema.parse(job.checkpoint);
+    const work = set(
+      cleanupClerkDeletedUser$,
+      {
+        userId: job.userId,
+        emptyOrgIds,
+        checkpointEmptyOrgIds: async (orgIds, checkpointSignal) => {
+          const saved = await checkpointBackgroundJob(
+            db,
+            { job, checkpoint: { emptyOrgIds: [...orgIds] } },
+            checkpointSignal,
+          );
+          if (!saved) {
+            throw new Error("User deletion lost its job lease");
+          }
         },
-        signal,
-      );
-      // Verification gets its own invocation and time budget.
-      return { ...checkpoint, phase: "verify" };
-    })();
+      },
+      signal,
+    );
     await settleDeletionAttempt(db, job, work);
     signal.throwIfAborted();
     return { processed: 1 };

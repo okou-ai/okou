@@ -5,8 +5,6 @@ import { workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
 
-import { testOverride } from "../../lib/singleton";
-import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
@@ -25,24 +23,6 @@ import {
   piStableContextWorkflowInvalidationOptions,
   piStableContextWorkflowPublicationKey,
 } from "./pi-stable-context-generation.service";
-
-interface WorkflowUpdateHooks {
-  readonly afterMetadataMutation?: (tx: Tx) => Promise<void>;
-}
-
-const workflowUpdateHooks = testOverride<WorkflowUpdateHooks>(() => {
-  return {};
-});
-
-export function setWorkflowUpdateHooksForTest(
-  hooks: WorkflowUpdateHooks,
-): void {
-  workflowUpdateHooks.set(hooks);
-}
-
-export function clearWorkflowUpdateHooksForTest(): void {
-  workflowUpdateHooks.clear();
-}
 
 interface UpdateWorkflowInput {
   readonly workflow: WorkflowRow;
@@ -88,7 +68,6 @@ async function commitWorkflowMetadata(
     if (!updated) {
       return { updated: false as const };
     }
-    await workflowUpdateHooks.get().afterMetadataMutation?.(tx);
     const stableContextPublication = derived.volumeChanged
       ? await beginPiStableContextPublication(
           tx,

@@ -29,14 +29,14 @@ export function sandboxCapacityPredicate(
   return inArray(agentRuns.id, active);
 }
 
-type InferenceErasureScope =
+type OwnedAgentRunScope =
   | { readonly kind: "user"; readonly userId: string }
   | { readonly kind: "organization"; readonly orgId: string };
 
 /** Match direct runs plus the actual Agent -> Session -> Run deletion cascade. */
-export function piInferenceErasureScopePredicate(
+export function ownedAgentRunScopePredicate(
   db: Pick<Db, "select">,
-  scope: InferenceErasureScope,
+  scope: OwnedAgentRunScope,
 ): SQL {
   const predicate = or(
     scope.kind === "user"

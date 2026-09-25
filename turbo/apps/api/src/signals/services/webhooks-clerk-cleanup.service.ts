@@ -1,8 +1,4 @@
-import {
-  recordChatContentDeletion,
-  completeChatContentDeletion,
-} from "@okouai/db/operations/chat-content-erasure";
-import { piInferenceErasureScopePredicate } from "./pi-inference-lifecycle.service";
+import { ownedAgentRunScopePredicate } from "./pi-inference-lifecycle.service";
 import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { cleanupSharedThreadArtifacts$ } from "./shared-thread-artifacts.service";
@@ -135,7 +131,7 @@ async function publishCancelBestEffort(
 /**
  * What a deletion's first committed transaction revokes beyond its own runs.
  *
- * `cascadeOwnedAgents` widens run cancellation to the erasure scope, and
+ * `cascadeOwnedAgents` widens run cancellation to the owned Agent cascade, and
  * `revokeMorningBriefCollection` joins Morning Brief collection ownership to
  * that same commit. A ban is neither, so it keeps the narrow default.
  */
@@ -159,7 +155,7 @@ async function cancelOrgRuns(
       },
       conditions: [
         scope.cascadeOwnedAgents
-          ? piInferenceErasureScopePredicate(tx, {
+          ? ownedAgentRunScopePredicate(tx, {
               kind: "organization",
               orgId,
             })
@@ -248,7 +244,7 @@ async function cancelUserRuns(
       },
       conditions: [
         scope.cascadeOwnedAgents
-          ? piInferenceErasureScopePredicate(tx, { kind: "user", userId })
+          ? ownedAgentRunScopePredicate(tx, { kind: "user", userId })
           : eq(agentRuns.userId, userId),
         inArray(agentRuns.status, ["queued", "pending", "running"]),
       ],
@@ -1036,12 +1032,6 @@ async function deleteUserData(
 export const cleanupClerkDeletedOrg$ = command(
   async ({ get, set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
-    await recordChatContentDeletion(db, {
-      subjectKind: "organization",
-      subjectId: orgId,
-      sourceReference: `clerk:organization:${orgId}`,
-    });
-    signal.throwIfAborted();
     await eraseVncOwnerData(db, { kind: "organization", orgId });
     signal.throwIfAborted();
     await cancelOrgRuns(db, orgId, {
@@ -1064,11 +1054,6 @@ export const cleanupClerkDeletedOrg$ = command(
     await get(deleteOrgS3Data(db, orgId));
     signal.throwIfAborted();
     await deleteOrgData(db, orgId, signal);
-    await completeChatContentDeletion(db, {
-      subjectKind: "organization",
-      subjectId: orgId,
-      sourceReference: `clerk:organization:${orgId}`,
-    });
   },
 );
 
