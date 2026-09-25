@@ -27,7 +27,11 @@ import {
   decryptErasureSelector,
   encryptErasureSelector,
 } from "./account-erasure-selector";
-import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
+import {
+  neverStartedRunIds,
+  releaseActiveAgentRuns,
+  transitionAgentRunsToTerminal,
+} from "./agent-run-terminal-transition.service";
 
 const NAMESPACE = "4bdb17ae-090d-4b15-b282-dbe985ba263e";
 const PAGE_SIZE = 100;
@@ -619,6 +623,7 @@ async function stopRun(db: Db, resource: Target): Promise<string | null> {
           eq(agentRuns.userId, resource.userId),
         ),
       );
+    await releaseActiveAgentRuns(tx, neverStartedRunIds(stopped));
     return stopped[0]?.runnerGroup ?? current?.runnerGroup ?? null;
   });
 }
