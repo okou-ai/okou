@@ -1,7 +1,6 @@
 import { command, computed, type Computed } from "ccstate";
 import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { enqueueBackgroundJob } from "./background-job.service";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import type {
   UserExportJob,
   UserExportStartResponse,
@@ -16,7 +15,7 @@ import { clerk$ } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
 import { generatePresignedGetUrl } from "../external/s3";
 import { nowDate } from "../../lib/time";
-import { buildFromAddress, EMAIL_PUBLIC_BRAND } from "./email-common.service";
+import { buildFromAddress } from "./email-common.service";
 
 const RATE_LIMIT_MS = 24 * 60 * 60 * 1000;
 const USER_CACHE_TTL_MS = 15 * 60 * 1000;
@@ -260,7 +259,6 @@ export const startUserExport$ = command(
           userId: args.userId,
           orgId: args.orgId,
           status: "pending",
-          publicBrand: PUBLIC_BRAND,
           executionMode: "durable-v1",
           createdAt: nowDate(),
         })
@@ -375,7 +373,6 @@ export function userExportReadyEmail(
       fromAddress: buildFromAddress(),
       toAddresses: email,
       subject: DATA_EXPORT_READY_SUBJECT,
-      publicBrand: EMAIL_PUBLIC_BRAND,
       template: {
         template: "data-export-ready",
         props: {

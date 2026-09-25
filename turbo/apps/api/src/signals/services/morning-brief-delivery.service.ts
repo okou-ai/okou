@@ -31,7 +31,6 @@ import {
   buildFromAddress,
   buildOneClickUnsubscribeUrl,
   buildUnsubscribeHeaders,
-  EMAIL_PUBLIC_BRAND,
 } from "./email-common.service";
 import { currentMorningBriefCollectionAuthority$ } from "./morning-brief-collection-executor.service";
 import {
@@ -294,7 +293,6 @@ async function resolveEmailIntent(
       toAddresses: recipient,
       subject: deliverySubject(args.title),
       headers: buildUnsubscribeHeaders(unsubscribeUrl),
-      publicBrand: EMAIL_PUBLIC_BRAND,
       template: { template: MORNING_BRIEF_RESULT_EMAIL_TEMPLATE, props },
       status: "pending",
       attempts: 0,

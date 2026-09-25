@@ -5,7 +5,6 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import {
   createBrowser$,
   closeBrowserForThread$,
@@ -40,14 +39,12 @@ const createBrowserInner$ = command(
       return body.response;
     }
     const auth = get(organizationAuthContext$);
-    const publicBrand = PUBLIC_BRAND;
     const result = await set(
       createBrowser$,
       {
         actor: {
           orgId: auth.orgId,
           userId: auth.userId,
-          publicBrand,
           ...("runId" in auth ? { runId: auth.runId } : {}),
         },
         input: body.data,
@@ -68,13 +65,11 @@ const useBrowserInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const auth = get(organizationAuthContext$);
-  const publicBrand = PUBLIC_BRAND;
   const result = await set(
     useBrowser$,
     {
       orgId: auth.orgId,
       userId: auth.userId,
-      publicBrand,
       ...("runId" in auth ? { runId: auth.runId } : {}),
     },
     signal,
@@ -93,13 +88,11 @@ const leaseBrowserInner$ = command(
       return body.response;
     }
     const auth = get(organizationAuthContext$);
-    const publicBrand = PUBLIC_BRAND;
     const result = await set(
       leaseCurrentBrowser$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
-        publicBrand,
         ...("runId" in auth ? { runId: auth.runId } : {}),
       },
       signal,
@@ -120,13 +113,11 @@ const leaseBrowserByThreadInner$ = command(
       return body.response;
     }
     const auth = get(organizationAuthContext$);
-    const publicBrand = PUBLIC_BRAND;
     const result = await set(
       leaseBrowserByThread$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
-        publicBrand,
         chatThreadId: get(leaseByThreadParams$).threadId,
         ...("runId" in auth ? { runId: auth.runId } : {}),
       },
@@ -147,13 +138,11 @@ const openBrowserInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const auth = get(organizationAuthContext$);
-  const publicBrand = PUBLIC_BRAND;
   const result = await set(
     openBrowserForThread$,
     {
       orgId: auth.orgId,
       userId: auth.userId,
-      publicBrand,
       chatThreadId: get(openParams$).threadId,
       lifecycleEventId: body.data.eventId,
       ...("runId" in auth ? { runId: auth.runId } : {}),
@@ -175,13 +164,11 @@ const closeBrowserInner$ = command(
       return body.response;
     }
     const auth = get(organizationAuthContext$);
-    const publicBrand = PUBLIC_BRAND;
     const result = await set(
       closeBrowserForThread$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
-        publicBrand,
         chatThreadId: get(closeParams$).threadId,
         lifecycleEventId: body.data.eventId,
         ...("runId" in auth ? { runId: auth.runId } : {}),
@@ -204,13 +191,11 @@ const resizeBrowserByThreadInner$ = command(
       return body.response;
     }
     const auth = get(organizationAuthContext$);
-    const publicBrand = PUBLIC_BRAND;
     const result = await set(
       resizeBrowserByThread$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
-        publicBrand,
         chatThreadId: get(resizeByThreadParams$).threadId,
         aspectRatio: body.data.aspectRatio,
         ...("runId" in auth ? { runId: auth.runId } : {}),
@@ -226,13 +211,11 @@ const resizeBrowserByThreadInner$ = command(
 const currentBrowserInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const publicBrand = PUBLIC_BRAND;
     const result = await set(
       getCurrentBrowser$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
-        publicBrand,
         ...("runId" in auth ? { runId: auth.runId } : {}),
       },
       signal,
@@ -246,13 +229,11 @@ const currentBrowserInner$ = command(
 const getParams$ = pathParamsOf(browserContract.get);
 const getBrowserInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const publicBrand = PUBLIC_BRAND;
   const result = await set(
     getBrowser$,
     {
       orgId: auth.orgId,
       userId: auth.userId,
-      publicBrand,
       chatThreadId: get(getParams$).threadId,
       ...("runId" in auth ? { runId: auth.runId } : {}),
     },

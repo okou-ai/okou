@@ -128,7 +128,6 @@ async function expectSharedSnapshot(
   expect(shared.body).toStrictEqual({
     id,
     title,
-    publicBrand: "okou",
     messages: [
       {
         messageIndex: 0,
@@ -140,7 +139,7 @@ async function expectSharedSnapshot(
   });
   expect(shared.headers.get("cache-control")).toBe("no-store");
   const meta = await accept(client().meta({ params: { id } }), [200]);
-  expect(meta.body).toStrictEqual({ title, publicBrand: "okou" });
+  expect(meta.body).toStrictEqual({ title });
   expect(meta.headers.get("cache-control")).toBe(
     "public, max-age=31536000, s-maxage=31536000, immutable",
   );

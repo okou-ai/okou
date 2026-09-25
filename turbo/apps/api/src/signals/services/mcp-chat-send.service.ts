@@ -4,7 +4,6 @@ import type {
   McpChatMutationResult,
 } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat-time";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -170,7 +169,6 @@ export const sendMcpChatMessage$ = command(
             clientEventId: input.requestId,
           },
           apiStartTime: now(),
-          publicBrand: PUBLIC_BRAND,
           mcpSubmission: identity,
         },
         signal,

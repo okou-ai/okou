@@ -21,7 +21,6 @@ import {
 } from "@okouai/db/schema/browser-session";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
 import { command } from "ccstate";
 import {
@@ -118,7 +117,6 @@ const BROWSER_SESSION_SELECTION = {
   runId: browserSessions.runId,
   orgId: browserSessions.orgId,
   userId: browserSessions.userId,
-  publicBrand: browserSessions.publicBrand,
   name: browserSessions.name,
   browserProfileId: browserSessions.browserProfileId,
   browserThreadProfileId: browserSessions.browserThreadProfileId,
@@ -131,7 +129,10 @@ const BROWSER_SESSION_SELECTION = {
   updatedAt: browserSessions.updatedAt,
 } as const;
 
-type BrowserSessionRow = typeof browserSessions.$inferSelect;
+type BrowserSessionRow = Omit<
+  typeof browserSessions.$inferSelect,
+  "publicBrand"
+>;
 type BrowserInstanceRow = typeof browserSessionInstances.$inferSelect;
 type BrowserThreadProfileRow = typeof browserThreadProfiles.$inferSelect;
 type DbTransaction = Tx;
@@ -175,7 +176,6 @@ interface BrowserScreen {
 interface BrowserActor {
   readonly orgId: string;
   readonly userId: string;
-  readonly publicBrand: PublicBrand;
   readonly runId?: string;
 }
 
@@ -186,7 +186,6 @@ interface BrowserRunContext {
   // calling run; for viewer requests it is the thread's most recent run.
   readonly runId: string;
   readonly chatThreadId: string;
-  readonly publicBrand: PublicBrand;
   // Viewer requests may start a browser while no run is alive, so only run
   // tokens assert that their own run is still running.
   readonly requireLiveRun: boolean;
@@ -200,7 +199,6 @@ interface BrowserCreateInput {
 interface BrowserOwnerAccess {
   readonly orgId: string;
   readonly userId: string;
-  readonly publicBrand: PublicBrand;
   readonly runId?: string;
 }
 
@@ -1118,7 +1116,6 @@ async function resolveRunContext(
       userId: actor.userId,
       runId: actor.runId,
       chatThreadId: run.chatThreadId,
-      publicBrand: actor.publicBrand,
       requireLiveRun: true,
     },
   };
@@ -1171,7 +1168,6 @@ async function resolveViewerStartContext(
       userId: access.userId,
       runId: latestRunId,
       chatThreadId: access.chatThreadId,
-      publicBrand: access.publicBrand,
       requireLiveRun: false,
     },
   };
@@ -1861,7 +1857,6 @@ async function claimFreshBrowser(
         runId: context.runId,
         orgId: context.orgId,
         userId: context.userId,
-        publicBrand: context.publicBrand,
         name: args.name,
         status: "creating",
         proxyCountryCode: args.proxyCountryCode,
@@ -2699,7 +2694,6 @@ export const getCurrentBrowser$ = command(
         orgId: actor.orgId,
         userId: actor.userId,
         chatThreadId: context.value.chatThreadId,
-        publicBrand: actor.publicBrand,
       },
       signal,
     );

@@ -43,7 +43,6 @@ import {
 import type { RouteEntry } from "../route-entry";
 import { settle } from "../utils";
 import { withBillingClerkRateLimit } from "./billing-clerk-rate-limit";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const log = logger("api:org-invite");
 
@@ -403,7 +402,6 @@ const purchasePreviewInner$ = command(
         email: body.data.email,
         role: body.data.role,
         usagePackUsd: body.data.usagePackUsd,
-        publicBrand: PUBLIC_BRAND,
       },
       readSignal,
     );
