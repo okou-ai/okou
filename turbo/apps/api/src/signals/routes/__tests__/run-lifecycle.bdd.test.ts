@@ -13588,6 +13588,8 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     expect(cancelledRuntime.body.error.code).toBe(
       CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
     );
+    expect((await api.readRunQueue(actor)).body.concurrency.active).toBe(1);
+    await finishCancelledRun(snapshotRun.runId, snapshotClaim.sandboxToken);
     const drained = await api.readRunQueue(actor);
     expect(drained.body.concurrency.active).toBe(0);
   });
