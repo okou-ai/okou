@@ -1193,9 +1193,6 @@
         "webhookAutomations": "किसी भी सिस्टम से एक webhook पर रन शुरू करें"
       },
       "legacy": "पुराना",
-      "limitedFree": {
-        "name": "लिमिटेड फ्री"
-      },
       "loadError": "बिलिंग स्थिति लोड नहीं हो सकी.",
       "namedPlan": "{{plan}} योजना",
       "noActivePlan": "कोई सक्रिय योजना नहीं",
@@ -5983,7 +5980,6 @@
     "tiers": {
       "custom": "कस्टम",
       "free": "मुक्त",
-      "limitedFree": "सीमित मुफ़्त",
       "pro": "प्रो",
       "team": "टीम"
     },
