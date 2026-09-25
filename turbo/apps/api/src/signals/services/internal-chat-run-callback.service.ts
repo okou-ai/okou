@@ -4939,10 +4939,24 @@ async function drainAndClearTerminalChatThread(
     })(),
     signal,
   );
-  await clearTerminalIntegrationStatus(
-    args.callback,
-    args.chatThreadId,
-    signal,
+  // Integration status clears are best-effort provider calls with no retry
+  // owner. As before activation, they must not hold the completion ACK.
+  const backgroundSignal = new AbortController().signal;
+  waitUntil(
+    tapError(
+      clearTerminalIntegrationStatus(
+        args.callback,
+        args.chatThreadId,
+        backgroundSignal,
+      ),
+      (error) => {
+        log.warn("Failed to clear terminal integration status", {
+          runId: args.callback.callback.runId,
+          chatThreadId: args.chatThreadId,
+          error,
+        });
+      },
+    ),
   );
   return result.ok ? result.value : { ok: false, error: result.error };
 }
