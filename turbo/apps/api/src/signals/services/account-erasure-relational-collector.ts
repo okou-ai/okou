@@ -434,7 +434,7 @@ function catalogueResolves(
   return path.length > 0;
 }
 
-/** Resolves every declared descendant to the paths the sweep can delete it by.
+/** Resolves descendant paths, including a root's transitional parent reaches.
  *
  * A catalogue foreign key to a declared parent is the ordinary case. Where the
  * schema deliberately declines the key, the inventory's declared reach supplies
@@ -455,7 +455,11 @@ function resolveDescendantPaths(
   const unreachable: string[] = [];
   const unattributable: string[] = [];
   for (const [table, entry] of Object.entries(ACCOUNT_OWNERSHIP_INVENTORY)) {
-    if (entry.coverage !== "user_descendant") {
+    const parents =
+      entry.coverage === "user_descendant" || entry.coverage === "user_root"
+        ? entry.parents
+        : undefined;
+    if (!parents) {
       continue;
     }
     if (table in UNATTRIBUTABLE_DESCENDANTS) {
@@ -464,7 +468,7 @@ function resolveDescendantPaths(
     }
     const resolved: RelationalDescendantPath[] = keys
       .filter((key) => {
-        return key.child === table && entry.parents.includes(key.parent);
+        return key.child === table && parents.includes(key.parent);
       })
       .map((key) => {
         return {

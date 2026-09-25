@@ -95,6 +95,9 @@ const ACCOUNT_OWNERSHIP_COLUMNS = [
  *   declared ownership columns. Ownership is the account that owns the row,
  *   not the agent or organization it hangs under, so a thread the deleted
  *   account created inside somebody else's Agent is still a root here.
+ *   A root also keeps parent reaches when its copied ownership is nullable and
+ *   retained rows were never attributed; those rows are swept through the
+ *   parent before the parent roots disappear.
  * - `user_descendant`: rows carry no account identity and are removed with the
  *   named roots, by foreign-key cascade or by a root's own deletion. A
  *   collector owes a sweep from every declared parent, so the list is plural.
@@ -109,7 +112,12 @@ const ACCOUNT_OWNERSHIP_COLUMNS = [
  *   they remain for a separate, future retention/cleanup policy.
  */
 export type AccountOwnershipEntry =
-  | { readonly coverage: "user_root"; readonly ownership: readonly string[] }
+  | {
+      readonly coverage: "user_root";
+      readonly ownership: readonly string[];
+      /** Permanent reach for retained rows whose nullable ownership was never copied. */
+      readonly parents?: readonly string[];
+    }
   | {
       readonly coverage: "user_descendant";
       readonly parents: readonly string[];
@@ -1184,7 +1192,8 @@ function assertReachDeclared(
   columns: ReadonlyMap<string, ReadonlySet<string>>,
   reaches: readonly DescendantReach[],
 ): void {
-  if (entry.coverage !== "user_descendant") {
+  const parents = "parents" in entry ? entry.parents : undefined;
+  if (!parents) {
     fail("reach_not_a_descendant", table);
   }
   for (const reach of reaches) {
@@ -1195,7 +1204,7 @@ function assertReachDeclared(
       fail("reach_path_invalid", table);
     }
     const last = reach.path[reach.path.length - 1];
-    if (!last || !entry.parents.includes(last.parent)) {
+    if (!last || !parents.includes(last.parent)) {
       fail("reach_parent_undeclared", `${table}->${last?.parent ?? ""}`);
     }
     let below = table;
@@ -1296,13 +1305,17 @@ export function assertOwnershipInventoryCoverage(
     if (!present.has(name)) {
       fail("unknown_table", name);
     }
-    if (entry.coverage !== "user_descendant") {
+    const parents =
+      entry.coverage === "user_descendant" || entry.coverage === "user_root"
+        ? entry.parents
+        : undefined;
+    if (!parents) {
       continue;
     }
-    if (entry.parents.length === 0) {
+    if (parents.length === 0) {
       fail("descendant_unanchored", name);
     }
-    for (const parent of entry.parents) {
+    for (const parent of parents) {
       if (ACCOUNT_OWNERSHIP_INVENTORY[parent]?.coverage !== "user_root") {
         fail("unknown_parent", `${name}->${parent}`);
       }
