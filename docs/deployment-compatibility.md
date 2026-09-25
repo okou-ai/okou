@@ -11,7 +11,10 @@ compatibility window.
   foreign key, and the redundant `idx_chat_events_run_id` (covered by
   `chat_events_run_event_seq_unique`). An API that predates #36879 fails its
   Discord reply enqueue, and a user export on an older API fails its Discord
-  deliveries page until the rollout completes.
+  deliveries page until the rollout completes. Account erasure on an older API
+  also fails with `account_erasure_relational:catalogue_absent:discord_chat_deliveries`
+  and retries until it runs on this API; rolling back below this API stalls
+  erasure jobs the same way.
 - Migration `1242_chat_event_retention_cursors` adds the retention sweep
   cursor. Retention now reads candidates with bounded, unlocked single-table
   queries and deletes them by ID in short statements, without the advisory
