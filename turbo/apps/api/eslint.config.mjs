@@ -269,6 +269,39 @@ export default [
     },
   },
   {
+    files: ["src/signals/services/credit-usage.service.ts"],
+    rules: {
+      // One numeric-only observation per completed nonempty settlement,
+      // emitted after COMMIT. Axiom drops debug, and warn would falsely mark
+      // normal financial work as an actionable production error.
+      "api/no-logger-info": [
+        "error",
+        { allowedMessages: ["usage settlement work"] },
+      ],
+    },
+  },
+  {
+    files: ["src/signals/services/usage-allowance.service.ts"],
+    rules: {
+      // One ID-free observation per advisory availability transaction, after
+      // COMMIT; this is measurement, not a claim that admission succeeded.
+      "api/no-logger-info": [
+        "error",
+        { allowedMessages: ["usage allowance availability work"] },
+      ],
+    },
+  },
+  {
+    files: ["src/signals/services/cron-compact-usage-events.service.ts"],
+    rules: {
+      // One ID-free observation per bounded compaction batch, postcommit.
+      "api/no-logger-info": [
+        "error",
+        { allowedMessages: ["usage event compaction work"] },
+      ],
+    },
+  },
+  {
     files: ["src/signals/services/agent-webhook-firewall-auth.service.ts"],
     rules: {
       // One safe receipt after a bounded Gmail retry succeeds. Debug is dropped

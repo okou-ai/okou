@@ -493,7 +493,7 @@ export function createBillingMediaApi(context: TestContext) {
       );
     },
 
-    async readUsageRecord(actor: ApiTestUser) {
+    async readUsageRecord(actor: ApiTestUser, range: UsageRecordRange = "24h") {
       const client = setupApp({ context, routes: usageRecordRoutes })(
         usageRecordContract,
       );
@@ -504,7 +504,7 @@ export function createBillingMediaApi(context: TestContext) {
             page: 1,
             pageSize: 20,
             scope: "mine",
-            range: "24h",
+            range,
             tz: "UTC",
           },
         }),

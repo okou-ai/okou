@@ -615,17 +615,22 @@ export async function resolveUsageAllowanceAvailability(
   db: Db,
   orgId: string,
 ): Promise<UsageAllowanceAvailability | null> {
-  return await db.transaction(async (tx) => {
-    return await resolveUsageAllowanceAvailabilityInTransaction(tx, orgId);
+  const startedAt = performance.now();
+  let lockWaitMs = 0;
+  const availability = await db.transaction(async (tx) => {
+    const lockStartedAt = performance.now();
+    await lockOrgCredits(tx, orgId);
+    lockWaitMs = Math.round(performance.now() - lockStartedAt);
+    return await resolveUsageAllowanceAvailabilityForLockedOrg(tx, orgId);
   });
-}
-
-async function resolveUsageAllowanceAvailabilityInTransaction(
-  tx: UsageAllowanceStore,
-  orgId: string,
-): Promise<UsageAllowanceAvailability | null> {
-  await lockOrgCredits(tx, orgId);
-  return await resolveUsageAllowanceAvailabilityForLockedOrg(tx, orgId);
+  // This measures the advisory read including COMMIT; it does not claim
+  // the later authoritative admission was accepted under the same lock.
+  L.info("usage allowance availability work", {
+    durationMs: Math.round(performance.now() - startedAt),
+    lockWaitMs,
+    available: availability !== null,
+  });
+  return availability;
 }
 
 export async function resolveUsageAllowanceAvailabilityForLockedOrg(

@@ -673,13 +673,22 @@ export const compactUsageEvents$ = command(
       durationMs: Math.round(performance.now() - startedAt),
     };
     const logicalInputRows = stats.rawRowsDeleted + stats.hourlyRowsDeleted;
-    L.debug("usage event compaction completed", {
-      ...stats,
+    L.info("usage event compaction work", {
+      durationMs: stats.durationMs,
+      lockWaitMs: stats.lockWaitMs,
+      rawSeedLimit: stats.rawSeedLimit,
+      seededRawRows: stats.seededRawRows,
+      selectedGrains: stats.selectedGrains,
+      rawRowsDeleted: stats.rawRowsDeleted,
+      hourlyRowsDeleted: stats.hourlyRowsDeleted,
+      hourlyRowsInserted: stats.hourlyRowsInserted,
+      billingErrorHeldRows: stats.billingErrorHeldRows,
       logicalInputRows,
       logicalCompressionRatio:
         stats.hourlyRowsInserted === 0
           ? null
           : logicalInputRows / stats.hourlyRowsInserted,
+      hasMore: stats.hasMore,
     });
     return stats;
   },
