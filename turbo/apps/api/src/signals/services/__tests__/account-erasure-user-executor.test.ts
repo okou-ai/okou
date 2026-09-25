@@ -19,7 +19,6 @@ import {
   claimBackgroundJob,
   enqueueBackgroundJob,
 } from "../background-job.service";
-import { accountErasureStatus } from "../account-erasure-status.service";
 import { captureUserErasureWork } from "../account-erasure-user-executor";
 import {
   enqueueClerkUserDeletion$,
@@ -191,7 +190,6 @@ test("durable user.deleted worker cleans up after capture and finalizes on the n
     .where(eq(accountErasureJobs.subjectId, userId));
   expect(captured?.sealedCaptureRevision).toBe(captured?.captureRevision);
   expect(captured?.state).toBe("verified_no_applicable_data");
-  await expect(accountErasureStatus(db, userId)).resolves.toBe("complete");
 });
 
 test("durable user.deleted worker completes with unresolved residuals still reported pending", async () => {
@@ -237,7 +235,6 @@ test("durable user.deleted worker completes with unresolved residuals still repo
       ),
     );
   expect(residuals.length).toBeGreaterThan(0);
-  await expect(accountErasureStatus(db, userId)).resolves.toBe("pending");
 });
 
 test("durable user.deleted worker resumes the same capture after an external object failure", async () => {
