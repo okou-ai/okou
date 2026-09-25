@@ -1,5 +1,4 @@
 import type { AgentRunLaunchSnapshot } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
-import { cleanupInactiveActiveAgentRuns$ } from "./run-activity-snapshot.service";
 import { command } from "ccstate";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -744,8 +743,6 @@ const cleanupGlobalMaintenance$ = command(
       L.error("Failed to retry Feishu connect welcomes", { error });
     });
     signal.throwIfAborted();
-    await set(cleanupInactiveActiveAgentRuns$, null, signal);
-    signal.throwIfAborted();
     await set(cleanupExpiredPiApiFirstTurnData$, signal);
     signal.throwIfAborted();
   },
@@ -757,8 +754,6 @@ const cleanupFixtureMaintenance$ = command(
     scope: Extract<CleanupSandboxesScope, { kind: "fixtures" }>,
     signal: AbortSignal,
   ): Promise<void> => {
-    await set(cleanupInactiveActiveAgentRuns$, scope.runIds, signal);
-    signal.throwIfAborted();
     await set(
       drainStaleChatThreadQueues$,
       {

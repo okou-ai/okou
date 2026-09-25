@@ -16,16 +16,26 @@ still writes `agent_runs.last_heartbeat_at`, and timeout cleanup and capacity
 checks still read that column. Activity capture and the activity summary read
 and write only the active row with single-row compare-and-set updates; they no
 longer touch `run_activity_snapshots`, `chat_threads` or `chat_events`, and no
-longer pass the account-erasure write fence. A scheduled sweep deletes rows
-whose run is no longer active.
+longer pass the account-erasure write fence.
 
-During rollout an old API keeps writing `run_activity_snapshots`, and runs it
-creates have no active row, so the new API shows no activity for them. Both are
-disposable UI state. Step 2 seeds the missing rows, switches heartbeat readers
-to `active_agent_runs`, stops writing `agent_runs.last_heartbeat_at` and drops
-`run_activity_snapshots`; after step 2, rolling back to this release is not
-supported because its timeout cleanup would read a stale heartbeat column. Step
-3 drops `agent_runs.last_heartbeat_at`.
+During rollout, and on any rollback to an older API, the older API keeps writing
+`run_activity_snapshots`, creates runs without an active row (the new API shows
+no activity for them), and ends seeded runs without deleting their active row.
+New API instances no longer expire `run_activity_snapshots` rows; they stay
+until step 2 drops the table and remain erasable through the `agent_runs`
+cascade. An older API's account-erasure worker rejects the uncatalogued
+`active_agent_runs` table (`catalogue_uncovered`), so account deletions wait for
+a new worker during the migration-to-promotion window and on rollback. This API
+reads no active-row heartbeat and treats a leftover row only as activity for a
+run the summary already reports as ineligible, so none of these states needs a
+runtime fallback.
+
+Step 2's migration seeds the missing rows for active runs and deletes active
+rows whose run is no longer queued, pending or running; it then switches
+heartbeat readers to `active_agent_runs`, stops writing
+`agent_runs.last_heartbeat_at` and drops `run_activity_snapshots`. After step 2,
+rolling back to this release is not supported because its timeout cleanup would
+read a stale heartbeat column. Step 3 drops `agent_runs.last_heartbeat_at`.
 
 ## Discord replies become fire and forget (2026-09-25)
 

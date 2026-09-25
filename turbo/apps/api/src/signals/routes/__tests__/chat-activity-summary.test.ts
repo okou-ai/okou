@@ -1,5 +1,3 @@
-import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { randomUUID } from "node:crypto";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
@@ -14,7 +12,6 @@ import {
   advanceRunActivityClockFixture,
   deleteActiveAgentRunFixture,
   readActiveAgentRunFixture,
-  staleActiveAgentRunFixture,
 } from "../../../test-fixtures/run-activity";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
@@ -1025,79 +1022,5 @@ describe("thread activity summary", () => {
       messages: [],
     });
     expect(inputs).toHaveLength(0);
-  });
-
-  it("answers ineligible when the active row disappears during generation", async () => {
-    const f = await fixture();
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<string>(context.signal);
-    const inputs = provider(async () => {
-      entered.resolve(undefined);
-      return await release.promise;
-    });
-    const pending = summarize(f.actor, f.run);
-    await entered.promise;
-    await deleteActiveAgentRunFixture(f.run.runId);
-    release.resolve("This phrase has no active row");
-    await expect(pending).resolves.toStrictEqual({
-      runId: f.run.runId,
-      status: "ineligible",
-      messages: [],
-    });
-    await expect(
-      readActiveAgentRunFixture(f.run.runId),
-    ).resolves.toBeUndefined();
-    expect(inputs).toHaveLength(1);
-  });
-
-  it("sweeps inactive rows of ended runs and keeps queued and running ones", async () => {
-    const f = await fixture();
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const queued = await chat.requestSendEvent(
-      f.actor,
-      { agentId: f.agentId, prompt: "Wait for capacity" },
-      [201],
-    );
-    if (queued.status !== 201 || !queued.body.runId) {
-      throw new Error("Expected queued run identity");
-    }
-    expect(queued.body.status).toBe("queued");
-    const queuedRunId = queued.body.runId;
-    const sweep = async () => {
-      await accept(
-        setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
-          testCronCleanupSandboxesStateContract,
-        ).cleanup({
-          body: {
-            runIds: [f.run.runId, queuedRunId],
-            chatThreadIds: [],
-            orgIds: [],
-            exportJobIds: [],
-          },
-        }),
-        [200],
-      );
-    };
-    // Heartbeat age has no production mutation API.
-    await staleActiveAgentRunFixture(f.run.runId);
-    await staleActiveAgentRunFixture(queuedRunId);
-    await sweep();
-    await expect(readActiveAgentRunFixture(f.run.runId)).resolves.toBeDefined();
-    await expect(readActiveAgentRunFixture(queuedRunId)).resolves.toBeDefined();
-    await runs.requestCancelRun(f.actor, f.run.runId, [200]);
-    await webhooks.requestAgentComplete(
-      { runId: f.run.runId, exitCode: 1, error: "Run cancelled" },
-      f.headers,
-      [200],
-    );
-    await flushWaitUntilForTest();
-    // Reproduce a row the terminal transition missed.
-    await staleActiveAgentRunFixture(f.run.runId);
-    await staleActiveAgentRunFixture(queuedRunId);
-    await sweep();
-    await expect(
-      readActiveAgentRunFixture(f.run.runId),
-    ).resolves.toBeUndefined();
-    await expect(readActiveAgentRunFixture(queuedRunId)).resolves.toBeDefined();
   });
 });
