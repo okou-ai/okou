@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.363.1](https://github.com/okou-ai/okou/compare/cli-v9.363.0...cli-v9.363.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* **phone:** send proactive messages to the caller's linked handle ([#36849](https://github.com/okou-ai/okou/issues/36849)) ([7f1091d](https://github.com/okou-ai/okou/commit/7f1091d2967db0f2bc126262c548d21a62684e8f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.510.1
+    * @okouai/core bumped to 8.710.5
+    * @okouai/pi-agent-runtime bumped to 1.40.17
+
 ## [9.363.0](https://github.com/okou-ai/okou/compare/cli-v9.362.0...cli-v9.363.0) (2026-09-25)
 
 
