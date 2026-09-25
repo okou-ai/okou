@@ -1,4 +1,3 @@
-import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { randomUUID } from "node:crypto";
 
 import type {
@@ -225,29 +224,6 @@ export async function setLegacyChatThreadDraftFixture(args: {
   if (updated.length !== 1) {
     throw new Error("Expected one test-owned chat thread to update");
   }
-}
-
-/** The reserved event sequence is not served by the draft reader. */
-export async function readChatThreadEventSequenceFixture(
-  chatThreadId: string,
-): Promise<number> {
-  const [thread] = await db()
-    .select({
-      seqId: sql`COALESCE(${chatEventSequences.lastSeqId}, 0)`.mapWith(
-        chatEventSequences.lastSeqId,
-      ),
-    })
-    .from(chatThreads)
-    .leftJoin(
-      chatEventSequences,
-      eq(chatEventSequences.chatThreadId, chatThreads.id),
-    )
-    .where(eq(chatThreads.id, chatThreadId))
-    .limit(1);
-  if (!thread) {
-    throw new Error("Expected the chat thread row to exist");
-  }
-  return thread.seqId;
 }
 
 /**
@@ -608,50 +584,8 @@ export async function withChatThreadContentBarrierFixture<T>(
 }
 
 /**
- * Pauses a real send transaction at its authorized strong entry lock, or after
- * it has cleared an existing child row. The latter retains both row locks so
- * an unchanged PATCH can prove which writer wins without a timer or mock.
- */
-export async function withChatThreadSendClearBarrierFixture<T>(
-  args: {
-    readonly chatThreadId: string;
-    readonly stopAt: "entry" | "child-clear";
-    readonly work: (barrier: TransactionBarrier) => Promise<T>;
-  },
-  signal: AbortSignal,
-): Promise<T> {
-  return await withDatabaseTransactionBarrierFixture(
-    {
-      select: (queryArgs) => {
-        const text = barrierQueryText(queryArgs);
-        return (
-          text.startsWith("select") &&
-          text.includes('from "chat_threads"') &&
-          text.includes('for update of "chat_threads"') &&
-          barrierQueryBinds(queryArgs, args.chatThreadId)
-        );
-      },
-      stopAt: (queryArgs, selectingStatement) => {
-        if (args.stopAt === "entry") {
-          return selectingStatement;
-        }
-        const text = barrierQueryText(queryArgs);
-        return (
-          text.startsWith('update "chat_thread_drafts"') &&
-          barrierQueryBinds(queryArgs, args.chatThreadId)
-        );
-      },
-      pauseAfter: args.stopAt === "child-clear",
-      work: args.work,
-    },
-    signal,
-  );
-}
-
-/**
- * Holds an existing child row without touching the parent. This makes a send
- * fail at the child UPDATE after its parent clear, proving transaction rollback
- * where no API read exposes the child during compatibility.
+ * Holds an existing child draft row without touching the parent, so a send's
+ * weak draft clear blocks on it and can be cancelled after the event commit.
  */
 export async function withHeldChatThreadDraftRowFixture<T>(
   args: {

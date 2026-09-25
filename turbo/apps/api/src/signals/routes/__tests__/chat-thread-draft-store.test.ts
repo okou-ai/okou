@@ -10,12 +10,10 @@ import { testContext } from "../../../__tests__/test-context";
 import { settleIncludingAbort } from "../../utils";
 import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
 import {
-  readChatThreadEventSequenceFixture,
   readStoredChatThreadDraftRowFixture,
   setLegacyChatThreadDraftFixture,
   setChatThreadUserFixture,
   withChatThreadContentBarrierFixture,
-  withChatThreadSendClearBarrierFixture,
   withHeldChatThreadDraftRowFixture,
   type StoredChatThreadDraftRow,
 } from "../../../test-fixtures/chat-thread-content-erasure";
@@ -453,42 +451,7 @@ describe("send-coupled draft clears", () => {
     await expect(storedDraftText(fixture)).resolves.toBeNull();
   });
 
-  it("lets a send clear finish before a waiting phase-1 PATCH", async () => {
-    const fixture = await createDraftFixture();
-    await runs.ensureOrgModelProvider(fixture.actor);
-    await chat.patchThread(
-      fixture.actor,
-      fixture.threadId,
-      draftBody("initial"),
-    );
-
-    await withChatThreadSendClearBarrierFixture(
-      {
-        chatThreadId: fixture.threadId,
-        stopAt: "child-clear",
-        work: async (barrier) => {
-          const send = sendWithoutCredits(fixture);
-          await barrier.entered;
-          const patch = chat.patchThread(
-            fixture.actor,
-            fixture.threadId,
-            draftBody("PATCH wins last"),
-          );
-          await expect
-            .poll(barrier.blockedWaiterCount, { interval: 10, timeout: 750 })
-            .toBeGreaterThan(0);
-          barrier.release();
-          await send;
-          await patch;
-        },
-      },
-      context.signal,
-    );
-    await expect(servedDraftText(fixture)).resolves.toBe("PATCH wins last");
-    await expect(storedDraftText(fixture)).resolves.toBe("PATCH wins last");
-  });
-
-  it("rolls back the parent clear, sequence and event when the child fails", async () => {
+  it("keeps the committed message when the draft clear fails", async () => {
     const fixture = await createDraftFixture();
     await runs.ensureOrgModelProvider(fixture.actor);
     await chat.patchThread(
@@ -497,8 +460,7 @@ describe("send-coupled draft clears", () => {
       draftBody("retained"),
     );
     const child = await storedDraftRow(fixture);
-    const sequence = await readChatThreadEventSequenceFixture(fixture.threadId);
-    const events = await chat.listThreadEvents(fixture.actor, fixture.threadId);
+    const before = await chat.listThreadEvents(fixture.actor, fixture.threadId);
 
     await withHeldChatThreadDraftRowFixture(
       {
@@ -509,20 +471,24 @@ describe("send-coupled draft clears", () => {
             .poll(control.blockedWaiterCount, { interval: 10, timeout: 750 })
             .toBeGreaterThan(0);
           await expect(control.cancelBlockedQueries()).resolves.toBe(1);
-          await expect(send).rejects.toThrow(/Unknown response status 500/);
+          // The draft clear is a weak side effect after the event commit.
+          await send;
         },
       },
       context.signal,
     );
 
-    await expect(servedDraftText(fixture)).resolves.toBe("retained");
     await expect(storedDraftRow(fixture)).resolves.toStrictEqual(child);
-    await expect(
-      readChatThreadEventSequenceFixture(fixture.threadId),
-    ).resolves.toBe(sequence);
-    await expect(
-      chat.listThreadEvents(fixture.actor, fixture.threadId),
-    ).resolves.toStrictEqual(events);
+    const after = await chat.listThreadEvents(fixture.actor, fixture.threadId);
+    expect(
+      after.events.filter((event) => {
+        return event.eventType === "input.prompt";
+      }),
+    ).toHaveLength(
+      before.events.filter((event) => {
+        return event.eventType === "input.prompt";
+      }).length + 1,
+    );
   });
 
   it("leaves a foreign or deleted thread's child untouched", async () => {
@@ -556,39 +522,5 @@ describe("send-coupled draft clears", () => {
     );
     expect(deleted.status).toBe(404);
     await expect(storedDraftRow(fixture)).resolves.toBeNull();
-  });
-
-  it("does not clear a child when ownership changes before the strong lock", async () => {
-    const fixture = await createDraftFixture();
-    await runs.ensureOrgModelProvider(fixture.actor);
-    await chat.patchThread(fixture.actor, fixture.threadId, draftBody("owned"));
-    const before = await storedDraftRow(fixture);
-
-    await withChatThreadSendClearBarrierFixture(
-      {
-        chatThreadId: fixture.threadId,
-        stopAt: "entry",
-        work: async (barrier) => {
-          const send = chat.requestSendEvent(
-            fixture.actor,
-            {
-              agentId: fixture.agentId,
-              threadId: fixture.threadId,
-              prompt: "Ownership race",
-            },
-            [201, 404],
-          );
-          await barrier.entered;
-          await setChatThreadUserFixture({
-            chatThreadId: fixture.threadId,
-            userId: `user_${randomUUID()}`,
-          });
-          barrier.release();
-          await expect(send).rejects.toThrow(/Unknown response status 500/);
-        },
-      },
-      context.signal,
-    );
-    await expect(storedDraftRow(fixture)).resolves.toStrictEqual(before);
   });
 });

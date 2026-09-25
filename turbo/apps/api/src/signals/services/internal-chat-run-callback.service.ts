@@ -4939,26 +4939,31 @@ async function drainAndClearTerminalChatThread(
     })(),
     signal,
   );
-  // Integration status clears are best-effort provider calls with no retry
-  // owner. As before activation, they must not hold the completion ACK.
-  const backgroundSignal = new AbortController().signal;
-  waitUntil(
-    tapError(
-      clearTerminalIntegrationStatus(
-        args.callback,
-        args.chatThreadId,
-        backgroundSignal,
-      ),
-      (error) => {
-        log.warn("Failed to clear terminal integration status", {
-          runId: args.callback.callback.runId,
-          chatThreadId: args.chatThreadId,
-          error,
-        });
-      },
-    ),
+  await clearTerminalIntegrationStatus(
+    args.callback,
+    args.chatThreadId,
+    signal,
   );
   return result.ok ? result.value : { ok: false, error: result.error };
+}
+
+async function drainTerminalChatThreadInBackground(args: {
+  readonly callback: TerminalChatCallbackArgs;
+  readonly chatThreadId: string;
+  readonly timing: ChatCallbackPreCreateTimingCollector;
+  readonly work: TerminalChatCallbackWork;
+}): Promise<void> {
+  const drainResult = await drainAndClearTerminalChatThread(
+    args,
+    new AbortController().signal,
+  );
+  if (!drainResult.ok) {
+    log.error("Failed to drain chat thread queue after terminal callback", {
+      runId: args.callback.callback.runId,
+      chatThreadId: args.chatThreadId,
+      error: drainResult.error,
+    });
+  }
 }
 
 async function finishTerminalChatCallbackAfterProjection(
@@ -4988,28 +4993,17 @@ async function finishTerminalChatCallbackAfterProjection(
     signal,
   );
 
-  const drainResult = await drainAndClearTerminalChatThread(
-    {
+  // Queue wakeups and integration status clears keep their established
+  // detached owner: the stale queue sweep recovers a lost wakeup. They must
+  // neither hold the completion ACK nor be cancelled with its request.
+  waitUntil(
+    drainTerminalChatThreadInBackground({
       chatThreadId: args.chatThread.chatThreadId,
       callback: args.callback,
       timing: args.timing,
       work: args.work,
-    },
-    signal,
+    }),
   );
-
-  if (!drainResult.ok) {
-    // Queue wakeups keep their established detached recovery owner: the stale
-    // queue sweep. A queued-input invariant failure repeats on every attempt,
-    // so rethrowing would fail the completion ACK and retry the callback
-    // forever while blocking automation admission below.
-    log.error("Failed to drain chat thread queue after terminal callback", {
-      runId: args.runId,
-      chatThreadId: args.chatThread.chatThreadId,
-      error: drainResult.error,
-    });
-  }
-  signal.throwIfAborted();
 
   // A committed marker must not acknowledge an unfinished automation. Throw
   // back to the existing callback owner so its failed/pending row can retry.
