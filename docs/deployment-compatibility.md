@@ -1,5 +1,30 @@
 # Deployment Compatibility
 
+## Account erasure writer fence retirement (2026-09-25)
+
+API writes and reads no longer check whether their user or organization has
+been closed for account erasure. Runs, compute, chat threads, Pi context,
+connectors, Workflows, Computer Use, Discord, Morning Brief, SSH and VNC all
+proceed for a closed subject; nothing returns `subject_closed`,
+`account_closed`, "Account unavailable" or a closure-only 404 any more. Rows
+written after closure are removed afterwards by the erasure collectors, the
+relational sweep and the legacy Clerk cleanup. The Computer Use host stop and
+command completion contracts drop their `403` response; the Desktop client only
+handles `401`/`409` there.
+
+Business writers no longer take the shared account-erasure subject advisory
+lock, a closure lookup or custom `lock_timeout`/`statement_timeout`. The
+exclusive subject lock remains only between erasure participants (first
+closure and job transitions). Legacy Clerk deletion no longer writes
+`pi_stable_context_erasure_fences`.
+
+No schema, migration or data change. During rollout overlap or after an API
+rollback, older instances still fence their own writes against the same
+`account_erasure_jobs` rows and advisory keys, which new erasure code still
+takes exclusively, so each version stays internally consistent; an older
+instance may still insert into `pi_stable_context_erasure_fences`, which is why
+the table stays until every such API has left the rollback window.
+
 ## Thread draft contraction, release 2 (2026-09-25)
 
 Release 2 of the thread-draft move off `chat_threads` (#36173). Release 1

@@ -84,10 +84,13 @@ If an immutable provider cannot modify that association, the historical
 replacement procedure must preserve a sanitized surviving record. An actor ID
 match alone is not authorization to destroy an entire shared resource.
 
-B closes account admission, stops active work, rejects late account callbacks
-and commits the selector inventory before C2 deletes its source rows. G2 checks
-the fence both when accepting an export and immediately before sending a
-buffered batch. This includes Axiom SDK/direct/OTel queues, Runner's bounded
+B stops active work and commits the selector inventory before C2 deletes its
+source rows. Amended 2026-09-25: API writers, readers and late account callbacks
+are not fenced against a closed subject. A row written after closure is removed
+afterwards by the collectors and the relational sweep, which re-run until they
+find nothing (see [the foundation](../account-erasure-foundation.md#persistence-and-locking)).
+G2 checks the deletion job both when accepting an export and immediately
+before sending a buffered batch. This includes Axiom SDK/direct/OTel queues, Runner's bounded
 channel and local buffers, browser/CLI/Desktop SDK persistence, Langfuse plugin
 flushes and PostHog queues. Partition batches by subject so a deleted subject
 can be dropped without dropping another subject's events. Billing reconciliation
@@ -399,7 +402,7 @@ owners, releases or historical cleanup jobs.
 | Fault or transition                                                                                | Required observable result in G2/H                                                                                                                                                                 |
 | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Context, Activity and network migration; old/new API/Runner/client combinations                    | Surviving account retains exact supported response data, both pagination orders and cursor continuity; no fabricated historical values. Unauthorized account gets the existing not-found response. |
-| Delayed export, buffered SDK, retry or restored worker after deletion                              | Fence blocks re-creation; final sweep observes no applicable arrivals after a proven producer boundary. Another account's events still arrive.                                                     |
+| Delayed export, buffered SDK, retry or restored worker after deletion                              | Late arrivals are removed by a later sweep; final sweep observes no applicable arrivals after a proven producer boundary. Another account's events still arrive.                                   |
 | Provider returns 2xx while data remains; partial batch; 429; network timeout after submission      | Durable per-item state resumes without losing selectors, respects backoff, reconciles uncertain effects and stays pending until verified.                                                          |
 | Source rows removed before selector capture                                                        | Transaction/barrier rejects removal. Already-lost historical selectors yield a named unresolved item, never success.                                                                               |
 | Deleted account owns private roots under another member's agent; surviving organization            | Own roots erased, surviving roots preserved, personal associations scrubbed, organization billing not cancelled.                                                                                   |
