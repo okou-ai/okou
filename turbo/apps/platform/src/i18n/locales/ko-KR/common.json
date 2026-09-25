@@ -1192,9 +1192,6 @@
         "webhookAutomations": "웹훅 하나로 어떤 시스템에서든 실행 시작"
       },
       "legacy": "기존",
-      "limitedFree": {
-        "name": "제한된 무료"
-      },
       "loadError": "청구 상태를 불러올 수 없습니다.",
       "namedPlan": "{{plan}} 플랜",
       "noActivePlan": "활성 플랜 없음",
@@ -5966,7 +5963,6 @@
     "tiers": {
       "custom": "맞춤형",
       "free": "무료",
-      "limitedFree": "제한된 무료",
       "pro": "프로",
       "team": "팀"
     },

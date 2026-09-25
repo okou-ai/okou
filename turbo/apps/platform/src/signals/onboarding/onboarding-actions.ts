@@ -18,12 +18,7 @@ import { refreshOrg$ } from "../org.ts";
 import { ROUTES } from "../route-paths.ts";
 import { billingStatusAsync$ } from "../okou-page/billing.ts";
 import { reloadOnboardingStatus$ } from "../okou-page/onboarding.ts";
-import {
-  ONBOARDING_CHECKOUT_STATE_PARAM,
-  onboardingDraft$,
-  resetOnboardingDraft$,
-  storeOnboardingCheckoutDraft$,
-} from "./onboarding-state.ts";
+import { onboardingDraft$, resetOnboardingDraft$ } from "./onboarding-state.ts";
 import {
   clearSourcesFirstDraft$,
   sourcesFirstDraft$,
@@ -99,8 +94,6 @@ export const completeOnboarding$ = command(
 type OnboardingVideoRunResult = "run" | "checkout";
 
 interface OnboardingVideoCheckoutInput {
-  readonly prompt: string;
-  readonly note: string;
   readonly templateId: string;
   readonly templateSlug: string;
 }
@@ -108,14 +101,12 @@ interface OnboardingVideoCheckoutInput {
 function checkoutReturnUrl(
   input: OnboardingVideoCheckoutInput,
   result: "pro" | "canceled",
-  checkoutState: string,
 ): string {
   const url = new URL(ROUTES.onboardingVideoRun, window.location.origin);
   const params = new URLSearchParams();
   params.set("choice", "video");
   params.set("template", input.templateId);
   params.set("onboarding_template", input.templateSlug);
-  params.set(ONBOARDING_CHECKOUT_STATE_PARAM, checkoutState);
   params.set("onboarding_billing", result);
   if (result === "pro") {
     params.set("onboarding_billing_session_id", "{CHECKOUT_SESSION_ID}");
@@ -145,13 +136,8 @@ export const prepareOnboardingVideoRun$ = command(
 
     const { userId } = await get(authenticatedIdentity$);
     signal.throwIfAborted();
-    const checkoutState = set(storeOnboardingCheckoutDraft$, {
-      userId,
-      prompt: input.prompt,
-      note: input.note,
-    });
-    const successUrl = checkoutReturnUrl(input, "pro", checkoutState);
-    const cancelUrl = checkoutReturnUrl(input, "canceled", checkoutState);
+    const successUrl = checkoutReturnUrl(input, "pro");
+    const cancelUrl = checkoutReturnUrl(input, "canceled");
     const client = get(apiClient$)(billingUsagePackCheckoutContract);
     const result = await accept(
       client.create({

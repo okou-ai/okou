@@ -123,11 +123,6 @@ function planName(tier: BillingTier): string {
       return $.billing.plans.custom.name;
     });
   }
-  if (tier === "limited-free-1") {
-    return i18n.t(($) => {
-      return $.billing.plans.limitedFree.name;
-    });
-  }
   return i18n.t(($) => {
     return $.billing.plans.free.name;
   });

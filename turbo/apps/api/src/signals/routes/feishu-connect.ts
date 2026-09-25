@@ -7,10 +7,7 @@ import {
   larkConnectContract,
 } from "@okouai/api-contracts/contracts/feishu-connect";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import {
-  PUBLIC_BRAND_PRESENTATION,
-  PUBLIC_BRAND,
-} from "@okouai/core/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
@@ -88,7 +85,6 @@ const getStatus$ = computed(async (get) => {
       orgId: auth.orgId,
       platform: get(feishuPlatform$),
       userId: auth.userId,
-      publicBrand: PUBLIC_BRAND,
       isAdmin: auth.orgRole === "admin",
     }),
   );
@@ -119,7 +115,6 @@ const setup$ = command(async ({ get, set }, signal: AbortSignal) => {
     return get(feishuIntegrationDisabled$);
   }
   const auth = get(organizationAuthContext$);
-  const publicBrand = PUBLIC_BRAND;
   if (auth.orgRole !== "admin") {
     return adminRequired(get(feishuPlatformName$));
   }
@@ -135,7 +130,6 @@ const setup$ = command(async ({ get, set }, signal: AbortSignal) => {
         orgId: auth.orgId,
         platform: get(feishuPlatform$),
         userId: auth.userId,
-        publicBrand,
         ...bodyResult.data,
       },
       signal,
@@ -176,7 +170,6 @@ const setup$ = command(async ({ get, set }, signal: AbortSignal) => {
       orgId: auth.orgId,
       platform: get(feishuPlatform$),
       userId: auth.userId,
-      publicBrand,
       isAdmin: auth.orgRole === "admin",
       preferredInstallationId: result.installationId,
     }),
@@ -198,7 +191,6 @@ const remove$ = command(async ({ get, set }, signal: AbortSignal) => {
       orgId: auth.orgId,
       platform: get(feishuPlatform$),
       userId: auth.userId,
-      publicBrand: PUBLIC_BRAND,
       isAdmin: true,
     }),
   );
@@ -266,7 +258,6 @@ const updateInstallation$ = command(
         orgId: auth.orgId,
         platform: get(feishuPlatform$),
         userId: auth.userId,
-        publicBrand: PUBLIC_BRAND,
         isAdmin: auth.orgRole === "admin",
         preferredInstallationId: params.installationId,
       }),
@@ -317,7 +308,6 @@ const disconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
       orgId: auth.orgId,
       platform: get(feishuPlatform$),
       userId: auth.userId,
-      publicBrand: PUBLIC_BRAND,
       isAdmin: auth.orgRole === "admin",
     }),
   );

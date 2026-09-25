@@ -1192,9 +1192,6 @@
         "webhookAutomations": "一個webhook就能從任何系統發起執行"
       },
       "legacy": "舊版",
-      "limitedFree": {
-        "name": "受限免費版"
-      },
       "loadError": "無法載入帳單狀態。",
       "namedPlan": "{{plan}}套餐",
       "noActivePlan": "沒有生效的套餐",
@@ -5966,7 +5963,6 @@
     "tiers": {
       "custom": "自定義",
       "free": "免費",
-      "limitedFree": "限量免費",
       "pro": "Pro",
       "team": "Team"
     },

@@ -4,7 +4,6 @@ import {
 } from "@okouai/core/feishu-platform";
 import { command } from "ccstate";
 import { and, desc, eq, isNull, or } from "drizzle-orm";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
 import {
   getBuiltInVisibleModels,
@@ -87,7 +86,6 @@ export interface FeishuDispatchInstallation {
   readonly defaultAgentId: string;
   readonly botName: string | null;
   readonly messageReceivedAt: Date | null;
-  readonly publicBrand: PublicBrand;
 }
 
 export interface FeishuDispatchConnection {
@@ -187,7 +185,6 @@ export async function replyToUnconnectedFeishuMessage(
   args: {
     readonly db: Db;
     readonly message: FeishuInboundMessage;
-    readonly publicBrand: PublicBrand;
     readonly botName: string | null;
   },
   signal: AbortSignal,
@@ -227,7 +224,6 @@ export async function replyToUnconnectedFeishuMessage(
     installationId: args.message.installationId,
     openId: args.message.openId,
     chatId: args.message.chatId,
-    publicBrand: args.publicBrand,
   });
   await reply(
     {

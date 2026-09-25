@@ -1,5 +1,40 @@
 # Deployment Compatibility
 
+## Feishu public brand retirement (2026-09-25)
+
+Feishu and Lark are Okou-only (#36766, slice B). The API no longer reads or
+writes `public_brand` on `feishu_org_installations`, `feishu_org_connections`,
+`feishu_chat_ingress` or `chat_feishu_context`. Ingress processing and queued
+launches no longer reject a null brand, so stored null or `vm0` rows launch and
+deliver normally. The Feishu launch hands the fixed `okou` brand to the shared
+run pipeline; that run-level field is retired separately.
+
+Migration `1231_feishu_public_brand_okou_default` sets the column default to
+`'okou'` on all four tables (`feishu_org_installations` was `'vm0'`; the others
+had none). An old API therefore reads `okou` from rows the new API inserts,
+including the non-null brand that its ingress processor and queued-launch path
+require, so old API/new DB and rollback remain compatible. The columns and their
+ORM declarations stay until a later migration drops them.
+
+Stored `feishu:chat` and `feishu:org` callback payloads keep parsing: current
+readers no longer declare `publicBrand`, so a stored brand is ignored. Older
+APIs still require the field, so writers keep stamping the fixed
+`FEISHU_CALLBACK_ROLLBACK_PUBLIC_BRAND` value until those APIs are no longer
+rollback targets.
+
+Feishu OAuth state no longer carries `publicBrand`. States signed by an older
+API still verify, because the extra key is stripped. A state signed by the new
+API and returned to an older API during rollout overlap or after a rollback is
+rejected as an invalid or expired connect state. States live ten minutes, and
+the user retries the connect flow; no compatibility path is kept for them.
+
+The Feishu and Lark connect status responses no longer return `publicBrand`,
+either at the top level or per installation. The App only copied the value into
+its installation list and never read it, and the App does not validate
+responses, so older App bundles are unaffected. The unused `publicBrand`
+argument of `startCustomConnectorOAuth2$` is removed; it never reached a
+persisted or external shape.
+
 ## Account deletion local-data cleanup retirement (2026-09-25)
 
 Okou no longer deletes a deleted account's browser or Desktop local data. The
@@ -4150,7 +4185,7 @@ retries. Native member uploads have no Run; Run-scoped uploads retain their actu
 Run source. The API validates the stored bytes before publication, then records
 Discord delivery independently from the canonical file URL.
 
-Migration `1231_discord_canonical_delivery_state` adds nullable `provider_state`
+Migration `1232_discord_canonical_delivery_state` adds nullable `provider_state`
 to `canonical_asset_deliveries`. Existing Slack destinations keep their original
 JSON shape and have no Discord state. Outgoing API statements remain valid after
 the additive migration. The new API requires the migration before promotion;

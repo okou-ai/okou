@@ -502,6 +502,77 @@ function mockNativeSelectTarget(args: {
   });
 }
 
+function mockNativeCheckboxTarget(args: {
+  readonly checked: () => boolean;
+  readonly writable: () => boolean;
+  readonly type: () => string;
+  readonly writeMatches: () => boolean;
+  readonly siteRequired: () => boolean;
+}): void {
+  context.mocks.browserUseCdp.command.mockImplementation((command) => {
+    switch (command.method) {
+      case "Target.getTargets": {
+        return {
+          targetInfos: [
+            {
+              targetId: "native-input-target",
+              type: "page",
+              url: "https://example.com/consent",
+            },
+          ],
+        };
+      }
+      case "Target.attachToTarget": {
+        return { sessionId: "native-checkbox-session" };
+      }
+      case "Browser.getWindowForTarget": {
+        return { windowId: 7 };
+      }
+      case "Page.getFrameTree": {
+        return {
+          frameTree: {
+            frame: {
+              id: "main-frame",
+              loaderId: "native-checkbox-loader",
+              url: "https://example.com/consent",
+            },
+          },
+        };
+      }
+      case "DOM.resolveNode": {
+        return { object: { objectId: "native-checkbox-object" } };
+      }
+      case "Runtime.callFunctionOn": {
+        const declaration = String(command.params.functionDeclaration);
+        if (declaration.includes("firstSpec")) {
+          return { result: { value: args.writeMatches() } };
+        }
+        return {
+          result: {
+            value: [
+              {
+                tagName: "INPUT",
+                inputType: args.type(),
+                connected: true,
+                mainDocument: true,
+                writable: args.writable(),
+                siteRequired: args.siteRequired(),
+                multiple: false,
+                ...(args.type() === "checkbox"
+                  ? { checked: args.checked() }
+                  : {}),
+              },
+            ],
+          },
+        };
+      }
+      default: {
+        return {};
+      }
+    }
+  });
+}
+
 function browserUserActionTokenHash(requestToken: string): string {
   return createHash("sha256").update(requestToken).digest("hex");
 }
@@ -589,6 +660,243 @@ describe("Browser user-action route", () => {
       status: 503,
       body: { error: { code: "BROWSER_USE_TIMEOUT" } },
     });
+  });
+
+  it("applies explicit checkbox booleans, preserves untouched state, and rejects changed or required checkboxes", async () => {
+    const { routeMocks, runs, chat, actor, agent } =
+      await setupBrowserScenario();
+    const current = await createClaimedChatRun(
+      chat,
+      runs,
+      actor,
+      agent.agentId,
+      "Confirm a checkbox in the Browser",
+    );
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BrowserNativeInput]: true,
+    });
+    const providerId = randomUUID();
+    acceptBrowserUseCdpSessions([providerId]);
+    let checked = true;
+    let writable = true;
+    let type = "checkbox";
+    let writeMatches = true;
+    let siteRequired = false;
+    mockNativeCheckboxTarget({
+      checked: () => {
+        return checked;
+      },
+      writable: () => {
+        return writable;
+      },
+      type: () => {
+        return type;
+      },
+      writeMatches: () => {
+        return writeMatches;
+      },
+      siteRequired: () => {
+        return siteRequired;
+      },
+    });
+    server.use(
+      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+        const body = z
+          .strictObject({ name: z.string() })
+          .parse(await request.json());
+        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+          status: 201,
+        });
+      }),
+      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+        return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+      }),
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        return HttpResponse.json(providerBrowser(String(params.id)));
+      }),
+    );
+    await accept(
+      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      [200],
+    );
+    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    const createCheckbox = async (required = false) => {
+      return await accept(
+        userActionClient().create({
+          headers: current.claim.browserHeaders,
+          body: {
+            kind: "input",
+            callbackPrompt: "Continue after checkbox input",
+            pageTargetId: "native-input-target",
+            fields: [
+              {
+                key: "consent",
+                label: "Consent",
+                fieldKind: "checkbox",
+                required,
+                backendNodeId: 45,
+              },
+            ],
+          },
+        }),
+        [201],
+      );
+    };
+    const preflight = async (token: string) => {
+      return await accept(
+        userActionClient().preflight({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken: token },
+          body: {},
+        }),
+        [200],
+      );
+    };
+    const apply = async (
+      token: string,
+      values: readonly {
+        readonly key: string;
+        readonly checked: boolean;
+        readonly observedChecked: boolean;
+      }[],
+    ) => {
+      return await userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+        body: { values: [...values] },
+      });
+    };
+    const created = await createCheckbox();
+    expect(created.body.action.fields[0]).toMatchObject({
+      fieldKind: "checkbox",
+      control: { tagName: "INPUT", inputType: "checkbox" },
+    });
+    expect(JSON.stringify(created.body)).not.toContain('"checked"');
+    const token = created.body.action.requestToken;
+    expect((await preflight(token)).body.fields[0]?.control).toMatchObject({
+      checked: true,
+      siteRequired: false,
+    });
+    const falseChoice = {
+      key: "consent",
+      checked: false,
+      observedChecked: true,
+    };
+    expect((await accept(apply(token, [falseChoice]), [200])).body.state).toBe(
+      "succeeded",
+    );
+    expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
+      { value: { kind: "checkbox", checked: false, observedChecked: true } },
+    ]);
+    expect(
+      JSON.stringify(browserSelectWrites().at(-1)?.[0].params.arguments),
+    ).not.toContain('"on"');
+    const untouched = await createCheckbox();
+    expect(
+      (await accept(apply(untouched.body.action.requestToken, []), [200])).body
+        .state,
+    ).toBe("succeeded");
+    expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
+      { value: { kind: "checkbox", checked: null, observedChecked: true } },
+    ]);
+    const drifted = await createCheckbox();
+    const driftedToken = drifted.body.action.requestToken;
+    await preflight(driftedToken);
+    checked = false;
+    expect(
+      (await accept(apply(driftedToken, [falseChoice]), [200])).body.state,
+    ).toBe("stale");
+    const required = await createCheckbox(true);
+    const requiredToken = required.body.action.requestToken;
+    await expect(apply(requiredToken, [])).resolves.toMatchObject({
+      status: 400,
+      body: { error: { code: "BROWSER_USER_ACTION_REQUIRED_VALUE_MISSING" } },
+    });
+    await expect(
+      apply(requiredToken, [
+        { key: "consent", checked: false, observedChecked: false },
+      ]),
+    ).resolves.toMatchObject({
+      status: 400,
+      body: { error: { code: "BROWSER_USER_ACTION_REQUIRED_VALUE_MISSING" } },
+    });
+    expect(
+      (
+        await accept(
+          apply(requiredToken, [
+            { key: "consent", checked: true, observedChecked: false },
+          ]),
+          [200],
+        )
+      ).body.state,
+    ).toBe("succeeded");
+    siteRequired = true;
+    const siteRequiredAction = await createCheckbox();
+    const siteRequiredToken = siteRequiredAction.body.action.requestToken;
+    await expect(
+      apply(siteRequiredToken, [
+        { key: "consent", checked: false, observedChecked: false },
+      ]),
+    ).resolves.toMatchObject({
+      status: 409,
+      body: { error: { code: "BROWSER_USER_ACTION_INVALID_VALUE" } },
+    });
+    siteRequired = false;
+    writable = false;
+    const disabled = await userActionClient().create({
+      headers: current.claim.browserHeaders,
+      body: {
+        kind: "input",
+        callbackPrompt: "Continue after checkbox input",
+        pageTargetId: "native-input-target",
+        fields: [
+          {
+            key: "consent",
+            label: "Consent",
+            fieldKind: "checkbox",
+            required: false,
+            backendNodeId: 45,
+          },
+        ],
+      },
+    });
+    expect(disabled.status).toBe(409);
+    writable = true;
+    type = "text";
+    expect(
+      (
+        await userActionClient().create({
+          headers: current.claim.browserHeaders,
+          body: {
+            kind: "input",
+            callbackPrompt: "Continue after checkbox input",
+            pageTargetId: "native-input-target",
+            fields: [
+              {
+                key: "consent",
+                label: "Consent",
+                fieldKind: "checkbox",
+                required: false,
+                backendNodeId: 45,
+              },
+            ],
+          },
+        })
+      ).status,
+    ).toBe(409);
+    type = "checkbox";
+    writeMatches = false;
+    const uncertain = await createCheckbox();
+    expect(
+      (
+        await accept(
+          apply(uncertain.body.action.requestToken, [
+            { key: "consent", checked: true, observedChecked: false },
+          ]),
+          [200],
+        )
+      ).body.state,
+    ).toBe("uncertain");
   });
 
   it("selects by option index, rejects disabled and drifted options, and supports explicit clear", async () => {

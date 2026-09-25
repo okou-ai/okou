@@ -62,12 +62,18 @@ export interface BrowserSelectChoiceDraft {
   readonly optionSetFingerprint: string;
 }
 
+export interface BrowserCheckboxDraft {
+  readonly checked: boolean;
+  readonly observedChecked: boolean;
+}
+
 export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly request$: Computed<Promise<BrowserUserActionRequestState>>;
   readonly draft$: Computed<ReadonlyMap<string, string>>;
   readonly choiceDraft$: Computed<
     ReadonlyMap<string, BrowserSelectChoiceDraft>
   >;
+  readonly checkboxDraft$: Computed<ReadonlyMap<string, BrowserCheckboxDraft>>;
   readonly callbackDelivered$: Computed<boolean>;
   readonly callbackFailed$: Computed<boolean>;
   readonly busy$: Computed<boolean>;
@@ -86,6 +92,8 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
     [string, readonly number[], string]
   >;
   readonly removeChoiceDraft$: Command<void, [string]>;
+  readonly updateCheckboxDraft$: Command<void, [string, boolean, boolean]>;
+  readonly removeCheckboxDraft$: Command<void, [string]>;
   readonly removeDraft$: Command<void, [string]>;
   readonly clearDraft$: Command<void, []>;
   readonly clearDraftRef$: Command<
@@ -363,10 +371,60 @@ function createRequestSignals(descriptor: BrowserUserActionDescriptor) {
   return { request$, refresh$ };
 }
 
+function createCheckboxDraftSignals() {
+  const internalCheckboxDraft$ = state<
+    ReadonlyMap<string, BrowserCheckboxDraft>
+  >(new Map());
+  const checkboxDraft$ = computed((get) => {
+    return get(internalCheckboxDraft$);
+  });
+  const updateCheckboxDraft$ = command(
+    (
+      { set },
+      key: string,
+      checked: boolean,
+      observedChecked: boolean,
+    ): void => {
+      set(internalCheckboxDraft$, (current) => {
+        return new Map(current).set(key, { checked, observedChecked });
+      });
+    },
+  );
+  const removeCheckboxDraft$ = command(({ set }, key: string): void => {
+    set(internalCheckboxDraft$, (current) => {
+      const next = new Map(current);
+      next.delete(key);
+      return next;
+    });
+  });
+  return {
+    internalCheckboxDraft$,
+    checkboxDraft$,
+    updateCheckboxDraft$,
+    removeCheckboxDraft$,
+  };
+}
+
+function createScalarDraftUpdater(
+  internalDraft$: State<ReadonlyMap<string, string>>,
+) {
+  return command(({ set }, key: string, value: string): void => {
+    const boundedValue = value.slice(0, BROWSER_USER_ACTION_MAX_VALUE_LENGTH);
+    set(internalDraft$, (current) => {
+      const next = new Map(current);
+      next.set(key, boundedValue);
+      return next;
+    });
+  });
+}
+
 function createDraftSignals(): Pick<
   BrowserUserActionSignals,
   | "draft$"
   | "choiceDraft$"
+  | "checkboxDraft$"
+  | "updateCheckboxDraft$"
+  | "removeCheckboxDraft$"
   | "updateDraft$"
   | "updateChoiceDraft$"
   | "removeChoiceDraft$"
@@ -404,21 +462,16 @@ function createDraftSignals(): Pick<
       return next;
     });
   });
+  const checkboxSignals = createCheckboxDraftSignals();
   const ownerCount$ = state(0);
   const draft$ = computed((get) => {
     return get(internalDraft$);
   });
-  const updateDraft$ = command(({ set }, key: string, value: string): void => {
-    const boundedValue = value.slice(0, BROWSER_USER_ACTION_MAX_VALUE_LENGTH);
-    set(internalDraft$, (current) => {
-      const next = new Map(current);
-      next.set(key, boundedValue);
-      return next;
-    });
-  });
+  const updateDraft$ = createScalarDraftUpdater(internalDraft$);
   const clearDraft$ = command(({ set }): void => {
     set(internalDraft$, new Map());
     set(internalChoiceDraft$, new Map());
+    set(checkboxSignals.internalCheckboxDraft$, new Map());
   });
   const removeDraft$ = command(({ set }, key: string): void => {
     set(internalDraft$, (current) => {
@@ -476,6 +529,9 @@ function createDraftSignals(): Pick<
   return {
     draft$,
     choiceDraft$,
+    checkboxDraft$: checkboxSignals.checkboxDraft$,
+    updateCheckboxDraft$: checkboxSignals.updateCheckboxDraft$,
+    removeCheckboxDraft$: checkboxSignals.removeCheckboxDraft$,
     updateDraft$,
     updateChoiceDraft$,
     removeChoiceDraft$,
@@ -505,6 +561,7 @@ interface BrowserUserActionMutationContext {
   readonly refresh$: BrowserUserActionSignals["refresh$"];
   readonly draft$: BrowserUserActionSignals["draft$"];
   readonly choiceDraft$: BrowserUserActionSignals["choiceDraft$"];
+  readonly checkboxDraft$: BrowserUserActionSignals["checkboxDraft$"];
   readonly entryAction$: BrowserUserActionSignals["entryAction$"];
   readonly entryState$: BrowserUserActionSignals["entryState$"];
   readonly invalidateEntry$: BrowserUserActionSignals["invalidateEntry$"];
@@ -563,13 +620,53 @@ function browserSelectSubmissionValue(
   };
 }
 
+function browserCheckboxSubmissionValue(
+  field: BrowserInputAction["fields"][number],
+  checkboxDraft: ReadonlyMap<string, BrowserCheckboxDraft>,
+):
+  | Extract<
+      BrowserUserActionApplyRequest["values"][number],
+      { checked: boolean }
+    >
+  | null
+  | undefined {
+  const observedChecked = field.control.checked;
+  if (observedChecked === undefined) {
+    return null;
+  }
+  const choice = checkboxDraft.get(field.key);
+  if (choice && choice.observedChecked !== observedChecked) {
+    return null;
+  }
+  if (!choice) {
+    return field.required || (field.control.siteRequired && !observedChecked)
+      ? null
+      : undefined;
+  }
+  if ((field.required || field.control.siteRequired) && !choice.checked) {
+    return null;
+  }
+  return { key: field.key, checked: choice.checked, observedChecked };
+}
+
 function browserInputSubmissionValues(
   action: BrowserInputAction,
   draft: ReadonlyMap<string, string>,
   choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>,
+  checkboxDraft: ReadonlyMap<string, BrowserCheckboxDraft>,
 ): BrowserUserActionApplyRequest["values"] | null {
   const values: BrowserUserActionApplyRequest["values"][number][] = [];
   for (const field of action.fields) {
+    if (field.fieldKind === "checkbox") {
+      const checkbox = browserCheckboxSubmissionValue(field, checkboxDraft);
+      if (checkbox === null) {
+        return null;
+      }
+      if (checkbox !== undefined) {
+        values.push(checkbox);
+      }
+      continue;
+    }
     if (field.fieldKind === "select") {
       const selection = browserSelectSubmissionValue(field, choiceDraft);
       if (selection === null) {
@@ -621,6 +718,7 @@ function createSubmitSignal({
   refresh$,
   draft$,
   choiceDraft$,
+  checkboxDraft$,
   entryAction$,
   entryState$,
   invalidateEntry$,
@@ -660,6 +758,7 @@ function createSubmitSignal({
       action,
       get(draft$),
       get(choiceDraft$),
+      get(checkboxDraft$),
     );
     if (!values) {
       return;
@@ -827,6 +926,7 @@ function createMutationSignals({
   refresh$,
   draft$,
   choiceDraft$,
+  checkboxDraft$,
   clearDraft$,
   entryAction$,
   entryState$,
@@ -838,6 +938,7 @@ function createMutationSignals({
   | "refresh$"
   | "draft$"
   | "choiceDraft$"
+  | "checkboxDraft$"
   | "clearDraft$"
   | "entryAction$"
   | "entryState$"
@@ -882,6 +983,7 @@ function createMutationSignals({
     refresh$,
     draft$,
     choiceDraft$,
+    checkboxDraft$,
     entryAction$,
     entryState$,
     invalidateEntry$,
@@ -966,6 +1068,7 @@ export function createBrowserUserActionSignals(
     refresh$: requestSignals.refresh$,
     draft$: draftSignals.draft$,
     choiceDraft$: draftSignals.choiceDraft$,
+    checkboxDraft$: draftSignals.checkboxDraft$,
     clearDraft$: draftSignals.clearDraft$,
     entryAction$: entrySignals.entryAction$,
     entryState$: entrySignals.entryState$,

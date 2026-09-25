@@ -1193,9 +1193,6 @@
         "webhookAutomations": "Start a run from any system with one webhook"
       },
       "legacy": "Legacy",
-      "limitedFree": {
-        "name": "Limited free"
-      },
       "loadError": "Could not load billing status.",
       "namedPlan": "{{plan}} plan",
       "noActivePlan": "No active plan",
@@ -5975,7 +5972,6 @@
     "tiers": {
       "custom": "Custom",
       "free": "Free",
-      "limitedFree": "Limited free",
       "pro": "Pro",
       "team": "Team"
     },

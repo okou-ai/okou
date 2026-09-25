@@ -1,6 +1,6 @@
 {
-  "id": "7be12bc6-059f-40fb-ad00-69b9c3bcf0ba",
-  "prevId": "0d60a10d-2a1b-4fa3-87b0-d0bfddcccf0d",
+  "id": "0558ba1c-ccb4-4e7c-8d50-7d110db5e421",
+  "prevId": "7be12bc6-059f-40fb-ad00-69b9c3bcf0ba",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -29879,6 +29879,12 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
+        },
+        "provider_state": {
+          "name": "provider_state",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         },
         "external_id": {
           "name": "external_id",

@@ -101,7 +101,6 @@ export function mockFeishu(
   const contract =
     platform === "lark" ? larkConnectContract : feishuConnectContract;
   const defaults: FeishuConnectStatus = {
-    publicBrand: "vm0",
     isConnected: false,
     isInstalled: false,
     isAdmin: true,
