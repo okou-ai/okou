@@ -2,7 +2,7 @@ import {
   barrierQueryText,
   withDatabaseTransactionBarrierFixture,
   type TransactionBarrier,
-} from "./account-erasure-subject";
+} from "./database-transaction-barrier";
 
 /**
  * Infrastructure exception: no API can pause its own transaction between its
