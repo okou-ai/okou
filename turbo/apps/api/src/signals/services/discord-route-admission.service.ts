@@ -32,7 +32,10 @@ import {
   resolveIntegrationModelRouteForUser$,
   type IntegrationModelRoutePin,
 } from "./integration-model-route.service";
-import { enqueueDiscordIngressFailure } from "./internal-discord-chat-run-callback.service";
+import {
+  dispatchDiscordChatDeliveryOnce,
+  enqueueDiscordIngressFailure,
+} from "./internal-discord-chat-run-callback.service";
 
 function requireDiscordResult<T>(result: DiscordApiResult<T>): T {
   if (result.kind === "ok") {
@@ -134,8 +137,8 @@ async function terminalIngress(
       readonly content: string;
     };
   },
-): Promise<void> {
-  await db.transaction(async (tx) => {
+): Promise<string | null> {
+  return await db.transaction(async (tx) => {
     const [updated] = await tx
       .update(discordChatIngress)
       .set({
@@ -156,11 +159,12 @@ async function terminalIngress(
       )
       .returning({ id: discordChatIngress.id });
     if (updated && args.notice) {
-      await enqueueDiscordIngressFailure(tx, {
+      return await enqueueDiscordIngressFailure(tx, {
         ingressId: args.ingressId,
         ...args.notice,
       });
     }
+    return null;
   });
 }
 
@@ -300,6 +304,69 @@ async function terminalAgentUnavailable(
   });
 }
 
+/**
+ * A new guild-channel route always starts a public thread. Check that both
+ * parties may create one before a route or canonical chat exists, so a denied
+ * mention leaves no empty chat and gets an actionable notice.
+ */
+const requirePublicThreadCreation$ = command(
+  async (
+    { set },
+    { claim, message, source }: DiscordAdmissionContext,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const { binding, channel } = source;
+    const access = await set(
+      requireDiscordConversationAccess$,
+      {
+        orgId: binding.orgId,
+        userId: binding.userId,
+        guildId: binding.guildId,
+        channelId: channel.id,
+        mode: "write",
+        createPublicThread: true,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (access.kind === "allowed") {
+      if (access.binding.connectionId === binding.connectionId) {
+        return true;
+      }
+      await terminalIngress(set(writeDb$), {
+        ...claim,
+        reason: "binding_changed",
+      });
+      signal.throwIfAborted();
+      return false;
+    }
+    if (access.response.status >= 429) {
+      throw new DiscordIngressFailure(
+        "thread_creation_unavailable",
+        true,
+        (access.response.body.error.retryAfterSeconds ?? 0) * 1000,
+        "Discord thread creation could not be verified",
+      );
+    }
+    const db = set(writeDb$);
+    const deliveryId = await terminalIngress(db, {
+      ...claim,
+      reason: "thread_creation_denied",
+      notice: {
+        connectionId: binding.connectionId,
+        channelId: message.channel_id,
+        content:
+          "I can't start a thread for this request here. You and Okou both need the Create Public Threads permission in this channel.",
+      },
+    });
+    signal.throwIfAborted();
+    if (deliveryId) {
+      await dispatchDiscordChatDeliveryOnce(db, deliveryId, signal);
+    }
+    return false;
+  },
+);
+
 type DiscordRouteKey = Pick<
   DiscordChatThreadRouteBinding,
   "connectionId" | "userId" | "channelId" | "sessionKey"
@@ -317,7 +384,14 @@ const createDiscordAdmissionRoute$ = command(
     signal: AbortSignal,
   ): Promise<DiscordChatThreadRouteBinding | undefined> => {
     const db = set(writeDb$);
-    const { binding } = context.source;
+    const { binding, isDm, isThread } = context.source;
+    if (
+      !isDm &&
+      !isThread &&
+      !(await set(requirePublicThreadCreation$, context, signal))
+    ) {
+      return undefined;
+    }
     const { effectiveAgent, modelRoute } = preferences;
     const agent = effectiveAgent ?? (await get(discordEffectiveAgent(binding)));
     signal.throwIfAborted();

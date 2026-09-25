@@ -176,7 +176,10 @@ version-1 envelope containing `applicationId`, `eventType` (`MESSAGE_CREATE` or
 allows at most 300 seconds of past or future timestamp skew. Retry signatures
 may change, but event identity must remain stable. Success means durable
 acceptance or an explicitly classified intentional ignore. An unavailable guild (`GUILD_DELETE` with
-`unavailable: true`) is not an uninstall.
+`unavailable: true`) is not an uninstall. `GUILD_DELETE` carries no event time,
+so the API uninstalls only after Discord confirms the bot has left the guild. A
+late removal therefore cannot delete a newer installation, and an unverifiable
+membership check returns 503 so the relay retries.
 
 Before a separately authorized test rollout, use compatible A-G revisions,
 apply A's schema through the repository's normal migration path, and deploy the

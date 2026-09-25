@@ -6,6 +6,7 @@ import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installat
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 
 import { writeDb$, type Db } from "../external/db";
+import { discordClient } from "../external/discord-client";
 import { nowDate } from "../../lib/time";
 import {
   discordOrgChangedUserIds,
@@ -14,18 +15,62 @@ import {
 
 interface DiscordGuildRemoval {
   readonly applicationId: string;
+  readonly botToken: string;
   readonly guildId: string;
   readonly eventId: string;
+}
+
+type DiscordGuildRemovalOutcome =
+  | "accepted"
+  | "duplicate"
+  | "still-member"
+  | "provider-unavailable";
+
+/**
+ * GUILD_DELETE carries no event time, and a relay can deliver it late with a
+ * fresh eventId (for example after a halt spanning a reinstall). Discord owns
+ * guild membership, so a removal applies only while Discord confirms the bot
+ * is no longer in the guild.
+ */
+async function discordGuildMembershipEnded(
+  args: DiscordGuildRemoval,
+  signal: AbortSignal,
+): Promise<"ended" | "still-member" | "provider-unavailable"> {
+  const guild = await discordClient.fetchDiscordGuild(
+    { botToken: args.botToken, guildId: args.guildId },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (guild.kind === "unavailable") {
+    return "ended";
+  }
+  if (guild.kind === "ok" && guild.data.id === args.guildId) {
+    return "still-member";
+  }
+  return "provider-unavailable";
 }
 
 async function uninstallDiscordGuild(
   db: Db,
   args: DiscordGuildRemoval,
   signal: AbortSignal,
-): Promise<"accepted" | "duplicate"> {
+): Promise<DiscordGuildRemovalOutcome> {
   const eventDigest = createHash("sha256")
     .update(JSON.stringify([args.applicationId, args.eventId]))
     .digest("hex");
+  const [seen] = await db
+    .select({ eventDigest: discordGatewayReceipts.eventDigest })
+    .from(discordGatewayReceipts)
+    .where(eq(discordGatewayReceipts.eventDigest, eventDigest))
+    .limit(1);
+  signal.throwIfAborted();
+  if (seen) {
+    return "duplicate";
+  }
+  const membership = await discordGuildMembershipEnded(args, signal);
+  if (membership !== "ended") {
+    return membership;
+  }
   const result = await db.transaction(async (tx) => {
     const [receipt] = await tx
       .insert(discordGatewayReceipts)
