@@ -41,6 +41,7 @@ import {
 } from "../external/agentphone-client";
 import { bestEffort, safeUrlParse } from "../utils";
 import {
+  agentPhoneChannelForLinkedHandle,
   agentPhoneReplyDestination,
   describeAgentPhoneHandleShape,
   isAgentPhoneChannel,
@@ -102,6 +103,7 @@ const agentPhoneQueueEventRevoker = alias(
 const AGENTPHONE_DM_ROOT_MESSAGE_ID = "dm";
 
 export {
+  agentPhoneChannelForLinkedHandle,
   describeAgentPhoneHandleShape,
   isAgentPhoneChannel,
   isValidAgentPhoneHandle,
@@ -465,38 +467,30 @@ export async function resolveAgentPhoneUserLinkForEvent(
   return resolveAgentPhoneConversationUserLink(db, event.conversationId);
 }
 
-export async function resolveAgentPhoneUserLinkForOwner(
-  db: Db,
+/**
+ * The member's own phone link. A member has at most one link per organization,
+ * so proactive sends address it directly instead of trusting a caller-supplied
+ * handle.
+ */
+export async function resolveAgentPhoneUserLinkForMember(
+  db: ReadonlyDb,
   params: {
-    readonly phoneHandle: string;
-    readonly channel: AgentPhoneChannel;
     readonly userId: string;
     readonly orgId: string;
   },
 ): Promise<AgentPhoneUserLink | null> {
-  const normalized = normalizeAgentPhoneHandle(
-    params.phoneHandle,
-    params.channel,
-  );
-  if (!normalized) {
-    return null;
-  }
   const [userLink] = await db
     .select()
     .from(agentphoneUserLinks)
     .where(
       and(
-        eq(agentphoneUserLinks.phoneHandle, normalized),
         eq(agentphoneUserLinks.userId, params.userId),
         eq(agentphoneUserLinks.orgId, params.orgId),
       ),
     )
     .limit(1);
 
-  if (!userLink) {
-    return null;
-  }
-  return touchAgentPhoneUserLink(db, userLink, normalized, params.channel);
+  return userLink ?? null;
 }
 
 export async function resolveAgentPhoneAgentIdForUserLink(

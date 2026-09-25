@@ -5,7 +5,9 @@ import { uploadFileCommand } from "./upload-file";
 
 export const phoneCommand = new Command()
   .name("phone")
-  .description("Send phone messages, upload files, and download media")
+  .description(
+    "Send messages and files to your connected phone, and download media",
+  )
   .addCommand(messageCommand)
   .addCommand(downloadFileCommand)
   .addCommand(uploadFileCommand)
@@ -13,7 +15,7 @@ export const phoneCommand = new Command()
     "after",
     `
 Examples:
-  Send a message:   okou phone message --to +15551234567 -t "Hello!"
-  Upload a file:    okou phone upload-file -f /tmp/report.pdf --to +15551234567
+  Send a message:   okou phone message -t "Hello!"
+  Upload a file:    okou phone upload-file -f /tmp/report.pdf
   Download a file:  okou phone download-file <file-id> -o /tmp/out.jpg`,
   );

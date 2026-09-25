@@ -1,5 +1,23 @@
 # Deployment Compatibility
 
+## Phone proactive sends target the caller's own link (2026-09-25)
+
+`POST /api/integrations/phone/message` and
+`POST /api/integrations/phone/upload-file/complete` now always deliver to the
+caller's own AgentPhone link, resolved by user and organization (a member has at
+most one link per organization). The request `toNumber` is optional and ignored.
+Previously the routes normalized `toNumber` as an SMS number, so email-shaped
+iMessage handles normalized to an empty string and every proactive send from
+an email-linked member failed with 404.
+
+CLIs released before this change still send `toNumber`; the API accepts and
+ignores it. The new CLI keeps `--to` as a hidden, ignored option and no longer
+sends `toNumber`. A new CLI talking to an older API (rollout overlap or API
+rollback) is rejected with 400 because the older contract requires
+`toNumber`; the send can be retried after the new API is live. Remove the
+contract field and the hidden `--to` option once CLI versions from before this
+change are no longer in use.
+
 ## Teams and Telegram public brand retirement (2026-09-25)
 
 Teams and Telegram are Okou-only (#36766, slice C). The API no longer reads or
