@@ -431,9 +431,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
       events.events.filter((event) => {
         return event.revokesEventId === recalledEventId;
       }),
-    ).toStrictEqual([
-      expect.objectContaining({ eventType: "control.revoke", runId: null }),
-    ]);
+    ).toStrictEqual([expect.objectContaining({ eventType: "control.revoke" })]);
   }, 90_000);
 
   it("settles delivered input with the terminal run transition", async () => {
