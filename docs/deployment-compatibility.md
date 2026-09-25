@@ -23,11 +23,10 @@ Persisted callback payloads:
   field, so the writer still emits the literal `publicBrand: "okou"`. Remove
   that write once no API rollback target predates this change.
 - `chat` callback `discordDelivery`: the target no longer declares
-  `publicBrand`; stored targets that carry it keep parsing. The writer stops
-  emitting it. An older API rejects a Discord target without it, so an API
-  rollback below this change fails delivery for Discord runs started on the new
-  API. Discord is off by default (`_discordIntegration`, no enabled orgs) and
-  only reachable through user overrides, so no compatibility write is kept.
+  `publicBrand`; stored targets that carry it keep parsing. Older APIs require
+  `publicBrand: "okou"` on the stored target, so the persisted `chat` callback
+  still writes that literal through `storedDiscordDeliveryTarget`. Remove it
+  once no API rollback target predates this change.
 
 Slack OAuth state no longer carries `publicBrand`. The new API accepts states
 issued before this change, because it ignores the key. An older API rejects

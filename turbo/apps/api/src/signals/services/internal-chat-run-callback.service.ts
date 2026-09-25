@@ -129,6 +129,7 @@ import {
 } from "./teams-chat-callback-payload";
 import {
   discordDeliveryTargetSchema,
+  storedDiscordDeliveryTarget,
   type DiscordDeliveryTarget,
 } from "./discord-chat-callback-payload";
 import {
@@ -992,7 +993,7 @@ function buildQueuedCreateAgentRunArgs(
           slackDelivery: input.slackDelivery,
           feishuDelivery: input.feishuDelivery,
           teamsDelivery: input.teamsDelivery,
-          discordDelivery: input.discordDelivery,
+          discordDelivery: storedDiscordDeliveryTarget(input.discordDelivery),
           telegramDelivery: input.telegramDelivery,
           agentphoneDelivery: input.agentphoneDelivery,
           githubDelivery: input.githubDelivery,
