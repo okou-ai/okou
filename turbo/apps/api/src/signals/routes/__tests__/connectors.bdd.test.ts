@@ -3789,6 +3789,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
   it.each([
     { issuedUnit: "seconds", expiresUnit: "seconds" },
     { issuedUnit: "milliseconds", expiresUnit: "milliseconds" },
+    { issuedUnit: "milliseconds", expiresUnit: "absent" },
     { issuedUnit: "milliseconds", expiresUnit: "seconds" },
     { issuedUnit: "seconds", expiresUnit: "milliseconds" },
   ] as const)(
@@ -3805,10 +3806,14 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
           issuedUnit === "milliseconds"
             ? issuedAt
             : Math.floor(issuedAt / 1000),
-        dcrClientSecretExpiresAt:
-          expiresUnit === "milliseconds"
-            ? expiresAt
-            : Math.floor(expiresAt / 1000),
+        ...(expiresUnit === "absent"
+          ? {}
+          : {
+              dcrClientSecretExpiresAt:
+                expiresUnit === "milliseconds"
+                  ? expiresAt
+                  : Math.floor(expiresAt / 1000),
+            }),
       });
       const admin = createBddApi(context).user({ orgRole: "org:admin" });
       const connector = await connectorsApi.createCustomConnector(admin, {
