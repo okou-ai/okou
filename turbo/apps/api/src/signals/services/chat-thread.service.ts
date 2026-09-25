@@ -33,6 +33,7 @@ import {
   chatEventSearchMessageWatermarks,
 } from "@okouai/db/schema/chat-event-search";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import {
   CANONICAL_ASSET_VERSION,
@@ -58,6 +59,7 @@ import {
 import type { Tx } from "../../lib/db-types";
 import { now, nowDate } from "../../lib/time";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { settle } from "../utils";
 import { inferMimetype } from "./chat-event-shared.service";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
@@ -66,8 +68,7 @@ import {
   appendChatThreadEvent,
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
-import { withChatThreadContentWrite } from "./chat-thread-content-erasure-admission.service";
-import { persistChatThreadDraftRow } from "./chat-thread-draft-write.service";
+import { persistChatThreadDraft } from "./chat-thread-draft-write.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import { cancelRun$, type CancelRunResult } from "./run-cancel.service";
 import { runOwnedChatEventForRunCondition } from "./chat-event-type.service";
@@ -90,8 +91,6 @@ type ChatThreadRow = {
   readonly id: string;
   readonly title: string | null;
   readonly agentId: string;
-  readonly draftUserMessage: UserMessageInputDocument | null;
-  readonly draftAttachments: readonly PersistedAttachment[] | null;
   readonly modelProviderId: string | null;
   readonly modelProviderType: ModelProviderType | null;
   readonly modelProviderCredentialScope: ModelProviderCredentialScope | null;
@@ -173,8 +172,6 @@ function ownedChatThread(
         id: chatThreads.id,
         title: chatThreads.title,
         agentId: agents.id,
-        draftUserMessage: chatThreads.draftUserMessage,
-        draftAttachments: chatThreads.draftAttachments,
         computerUseHostId: chatThreads.computerUseHostId,
         cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
         modelProviderId: chatThreads.modelProviderId,
@@ -202,11 +199,6 @@ function ownedChatThread(
       id: thread.id,
       title: thread.title,
       agentId: thread.agentId,
-      draftUserMessage: thread.draftUserMessage ?? null,
-      draftAttachments: persistedAttachmentSchema
-        .array()
-        .nullable()
-        .parse(thread.draftAttachments ?? null),
       computerUseHostId: thread.computerUseHostId,
       cloudBrowserEnabled: thread.cloudBrowserEnabled,
       modelProviderId: thread.modelProviderId,
@@ -239,11 +231,21 @@ export function chatThreadDraft(args: {
       return null;
     }
 
+    const db = get(db$);
+    const [draft] = await db
+      .select({
+        draftUserMessage: chatThreadDrafts.draftUserMessage,
+        draftAttachments: chatThreadDrafts.draftAttachments,
+      })
+      .from(chatThreadDrafts)
+      .where(eq(chatThreadDrafts.chatThreadId, thread.id))
+      .limit(1);
     return {
-      draftUserMessage: thread.draftUserMessage,
-      draftAttachments: thread.draftAttachments
-        ? [...thread.draftAttachments]
-        : null,
+      draftUserMessage: draft?.draftUserMessage ?? null,
+      draftAttachments: persistedAttachmentSchema
+        .array()
+        .nullable()
+        .parse(draft?.draftAttachments ?? null),
     };
   });
 }
@@ -520,12 +522,12 @@ export function chatThreadDraftIds(args: {
   return computed(async (get): Promise<readonly string[]> => {
     const db = get(db$);
     const rows = await db
-      .select({ id: chatThreads.id })
-      .from(chatThreads)
+      .select({ id: chatThreadDrafts.chatThreadId })
+      .from(chatThreadDrafts)
       .where(
         and(
-          eq(chatThreads.userId, args.userId),
-          isNotNull(chatThreads.draftUserMessage),
+          eq(chatThreadDrafts.userId, args.userId),
+          isNotNull(chatThreadDrafts.draftUserMessage),
         ),
       );
     return rows.map((row) => {
@@ -1126,45 +1128,19 @@ export const deleteChatThread$ = command(
 );
 
 /**
- * The legacy draft `UPDATE` matched no owned thread.
- *
- * The canonical ownership key retains `user_id` under `FOR KEY SHARE` after
- * admission. Keep the final owned-row predicate as a defense: if it ever
- * matches nothing, the child row staged earlier must not survive independently.
- * Roll back the whole write and preserve the route's existing 404.
- */
-class ChatThreadDraftNotWritten extends Error {
-  constructor() {
-    super("Chat thread draft write matched no owned thread");
-    this.name = "ChatThreadDraftNotWritten";
-  }
-}
-
-/**
  * Update a chat thread's draft content + attachments.
  *
- * Ownership check via the WHERE clause; missing or cross-user thread → returns
- * `{ updated: false }` so the route handler emits the correct 404. Draft
- * changes do not publish `threadListChanged`: the editing client updates its
- * own sidebar locally, and other clients pick the dot up from the drafts
- * endpoint on their next list reload.
+ * Missing or cross-user thread → returns `{ updated: false }` so the route
+ * handler emits the correct 404. Draft changes do not publish
+ * `threadListChanged`: the editing client updates its own sidebar locally, and
+ * other clients pick the dot up from the drafts endpoint on their next list
+ * reload. The route requires no organization and accepts a thread without an
+ * Agent.
  *
- * A draft and its attachment descriptors are account content, so the write now
- * runs under the shared B1 admission and the canonical Agent/thread locks in
- * {@link withChatThreadContentWrite}. B1 closure reuses the same
- * `{ updated: false }` 404 disposition, which keeps the endpoint non-oracular.
- * This route deliberately requires no organization and accepts a thread without
- * an Agent, so a legal null-Agent thread keeps its thread-user-only subject.
- *
- * The draft is written to `chat_thread_drafts` and to the legacy `chat_threads`
- * columns in this one transaction, so the two can never disagree about an
- * accepted or a rejected write. Every reader still serves the legacy columns;
- * moving them onto the child row is the next, separately released slice of
- * #36173. The child upsert deliberately runs first: the legacy `UPDATE` is what
- * upgrades the hot parent row to `FOR NO KEY UPDATE`, and running it last keeps
- * that exclusive lock held for the shortest part of the transaction. It does
- * not remove the wait — this path still contends for the same thread row that
- * event projection and the read cursor write.
+ * The owner is read by primary key outside any transaction, then the draft is
+ * written with one statement to `chat_thread_drafts`. Nothing here writes or
+ * locks the hot `chat_threads` row, so a draft save never waits on event
+ * projection, the run queue or the read cursor (#36173).
  */
 export const updateChatThreadDraft$ = command(
   async (
@@ -1178,55 +1154,34 @@ export const updateChatThreadDraft$ = command(
     signal: AbortSignal,
   ): Promise<{ readonly updated: boolean }> => {
     const writeDb = set(writeDb$);
-    const draftAttachments = args.draftAttachments
-      ? [...args.draftAttachments]
-      : null;
-    const result = await settle(
-      withChatThreadContentWrite(
-        writeDb,
-        {
-          chatThreadId: args.threadId,
-          authorize: (identity) => {
-            return identity.userId === args.userId;
-          },
-        },
-        async (tx) => {
-          await persistChatThreadDraftRow(tx, {
-            chatThreadId: args.threadId,
-            draftUserMessage: args.draftUserMessage,
-            draftAttachments,
-          });
-          const updated = await tx
-            .update(chatThreads)
-            .set({
-              draftUserMessage: args.draftUserMessage,
-              draftAttachments,
-            })
-            .where(
-              and(
-                eq(chatThreads.id, args.threadId),
-                eq(chatThreads.userId, args.userId),
-              ),
-            )
-            .returning({ id: chatThreads.id });
-          if (updated.length === 0) {
-            throw new ChatThreadDraftNotWritten();
-          }
-        },
-        signal,
-      ),
-    );
+    const [thread] = await writeDb
+      .select({ userId: chatThreads.userId })
+      .from(chatThreads)
+      .where(eq(chatThreads.id, args.threadId))
+      .limit(1);
     signal.throwIfAborted();
-    if (!result.ok) {
-      // The legacy statement matched no owned thread, so the transaction rolled
-      // back with the child row it had already staged and the route keeps its
-      // existing 404. Every other failure propagates unchanged.
-      if (result.error instanceof ChatThreadDraftNotWritten) {
-        return { updated: false };
-      }
-      throw result.error;
+    if (thread?.userId !== args.userId) {
+      return { updated: false };
     }
 
-    return { updated: result.value.outcome === "written" };
+    const written = await settle(
+      persistChatThreadDraft(writeDb, {
+        chatThreadId: args.threadId,
+        userId: args.userId,
+        draftUserMessage: args.draftUserMessage,
+        draftAttachments: args.draftAttachments
+          ? [...args.draftAttachments]
+          : null,
+      }),
+    );
+    signal.throwIfAborted();
+    if (!written.ok) {
+      // The thread was deleted between the owner read and the upsert.
+      if (isForeignKeyViolation(written.error)) {
+        return { updated: false };
+      }
+      throw written.error;
+    }
+    return { updated: true };
   },
 );

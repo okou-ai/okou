@@ -1,9 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import type {
-  ChatThreadDraftAttachments,
-  ChatThreadDraftUserMessage,
-} from "@okouai/db/jsonb-contracts/chat-thread";
 import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -163,69 +159,6 @@ export async function readStoredChatThreadMetadataFixture(
   };
 }
 
-/** One thread's `chat_thread_drafts` row, or `null` when the table has never
- * been written for that thread.
- *
- * A cleared draft is a retained row whose two draft values are null, which is
- * a different state from an absent row and the whole reason the writer does not
- * delete on clear. Both states must therefore be distinguishable here.
- */
-export interface StoredChatThreadDraftRow {
-  readonly draftUserMessage: ChatThreadDraftUserMessage | null;
-  readonly draftAttachments: ChatThreadDraftAttachments | null;
-  readonly createdAt: string;
-  readonly updatedAt: string;
-}
-
-/**
- * The persisted child draft row for one test-owned thread.
- *
- * Read-only fixture exception: during this compatibility phase every draft
- * reader still serves `chat_threads`, so no API returns the child row and no
- * API can distinguish a cleared row from a missing one. The dual write's whole
- * contract is about that table, so it cannot be asserted through HTTP at all
- * until the read cutover ships. This writes nothing and deletes nothing.
- */
-export async function readStoredChatThreadDraftRowFixture(
-  chatThreadId: string,
-): Promise<StoredChatThreadDraftRow | null> {
-  const [draft] = await db()
-    .select({
-      draftUserMessage: chatThreadDrafts.draftUserMessage,
-      draftAttachments: chatThreadDrafts.draftAttachments,
-      createdAt: chatThreadDrafts.createdAt,
-      updatedAt: chatThreadDrafts.updatedAt,
-    })
-    .from(chatThreadDrafts)
-    .where(eq(chatThreadDrafts.chatThreadId, chatThreadId))
-    .limit(1);
-  if (!draft) {
-    return null;
-  }
-  return {
-    draftUserMessage: draft.draftUserMessage ?? null,
-    draftAttachments: draft.draftAttachments ?? null,
-    createdAt: draft.createdAt.toISOString(),
-    updatedAt: draft.updatedAt.toISOString(),
-  };
-}
-
-/** Simulate a pre-bridge API writer, which can leave legacy draft content but
- * no child row. Only test-owned threads may be passed. */
-export async function setLegacyChatThreadDraftFixture(args: {
-  readonly chatThreadId: string;
-  readonly draftUserMessage: ChatThreadDraftUserMessage | null;
-}): Promise<void> {
-  const updated = await db()
-    .update(chatThreads)
-    .set({ draftUserMessage: args.draftUserMessage, draftAttachments: null })
-    .where(eq(chatThreads.id, args.chatThreadId))
-    .returning({ id: chatThreads.id });
-  if (updated.length !== 1) {
-    throw new Error("Expected one test-owned chat thread to update");
-  }
-}
-
 /**
  * Holds one uncommitted `chat_thread_events` row carrying a key the next
  * sidebar append will supply: either the event id a route accepts from its
@@ -366,21 +299,6 @@ function isTitleContextRead(
   );
 }
 
-/** The draft writer's child upsert, which it issues after the retained identity
- * locks and **before** the legacy `chat_threads` statement. It is the only
- * `chat_thread_drafts` write in the transaction, so its table name identifies
- * it. */
-function isDraftChildUpsert(
-  queryArgs: unknown[],
-  chatThreadId: string,
-): boolean {
-  const text = barrierQueryText(queryArgs);
-  return (
-    text.startsWith('insert into "chat_thread_drafts"') &&
-    barrierQueryBinds(queryArgs, chatThreadId)
-  );
-}
-
 /** The read-cursor `UPDATE` both mark-read and mark-unread issue as the last
  * statement of their write, after the retained identity locks. */
 function isReadCursorUpdate(
@@ -437,7 +355,7 @@ function revalidatedIdentity(transaction: SelectedTransaction): boolean {
  * of which the read-only initiation gate and the writer reach. `title-context`
  * is the generated-title gate's own prior-round read. `agent-lock` and
  * `thread-lock` sit between the unlocked identity read and the matching
- * identity lock, and `commit` retains every barrier with the title, draft or
+ * identity lock, and `commit` retains every barrier with the title or
  * read cursor already written. A thread without an Agent issues no
  * `agent-lock`.
  *
@@ -445,14 +363,8 @@ function revalidatedIdentity(transaction: SelectedTransaction): boolean {
  * lock. The read-only gate commits first and never locks, so without that the
  * barrier would pause the gate's commit instead of the writer's.
  *
- * `draft-child-upsert` pauses the draft writer between its two writes: the
- * `chat_thread_drafts` upsert has run and the legacy `chat_threads` statement
- * has not, which is the only point at which a test can observe that ordering or
- * make the second write fail against an already staged child row.
- *
- * `metadata-read`, `cursor-update`, `image-model-update`,
- * `video-model-update` and `draft-child-upsert` are the stops that pause
- * **after** their statement. For
+ * `metadata-read`, `cursor-update`, `image-model-update` and
+ * `video-model-update` are the stops that pause **after** their statement. For
  * metadata this retains the projected result before the helper's final abort
  * check. For writers, the mutation has run and is still uncommitted, which is
  * the boundary between the real mutation and the writer's own post-write
@@ -472,7 +384,6 @@ type ChatThreadContentBarrierStop =
   | "cursor-update"
   | "image-model-update"
   | "video-model-update"
-  | "draft-child-upsert"
   | "commit";
 
 function pausesAfterStatement(stop: ChatThreadContentBarrierStop): boolean {
@@ -480,8 +391,7 @@ function pausesAfterStatement(stop: ChatThreadContentBarrierStop): boolean {
     stop === "metadata-read" ||
     stop === "cursor-update" ||
     stop === "image-model-update" ||
-    stop === "video-model-update" ||
-    stop === "draft-child-upsert"
+    stop === "video-model-update"
   );
 }
 
@@ -533,9 +443,6 @@ function reachedBarrierStop(
       chatThreadId,
     );
   }
-  if (stop === "draft-child-upsert") {
-    return isDraftChildUpsert(queryArgs, chatThreadId);
-  }
   if (barrierQueryText(queryArgs) !== "commit") {
     return false;
   }
@@ -547,7 +454,7 @@ function reachedBarrierStop(
     : tookIdentityLock(transaction);
 }
 
-/** Pauses the draft or rename transaction opened for one thread. See
+/** Pauses the content-write transaction opened for one thread. See
  * {@link withDatabaseTransactionBarrierFixture} for the mechanism and the
  * infrastructure exception it documents.
  */
@@ -584,8 +491,8 @@ export async function withChatThreadContentBarrierFixture<T>(
 }
 
 /**
- * Holds an existing child draft row without touching the parent, so a send's
- * weak draft clear blocks on it and can be cancelled after the event commit.
+ * Holds an existing draft row without touching the thread, so a send's weak
+ * draft clear blocks on it and can be cancelled after the event commit.
  */
 export async function withHeldChatThreadDraftRowFixture<T>(
   args: {

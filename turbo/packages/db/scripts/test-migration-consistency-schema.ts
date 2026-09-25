@@ -408,17 +408,21 @@ async function validateCanonicalDraftStorage(
     parts: [{ type: "text", text: "canonical API draft" }],
   };
   const canonicalDraft = await client.query<{
+    userId: string | null;
     draftUserMessage: unknown;
   }>(
     `
-      UPDATE "chat_threads"
-      SET "draft_user_message" = $2::jsonb
-      WHERE "id" = $1
+      INSERT INTO "chat_thread_drafts" (
+        "chat_thread_id", "user_id", "draft_user_message"
+      )
+      VALUES ($1, 'append-only-test-user', $2::jsonb)
       RETURNING
+        "user_id" AS "userId",
         "draft_user_message" AS "draftUserMessage"
     `,
     [threadId, JSON.stringify(draftUserMessage)],
   );
+  assert.equal(canonicalDraft.rows[0]?.userId, "append-only-test-user");
   assert.deepEqual(canonicalDraft.rows[0]?.draftUserMessage, draftUserMessage);
 }
 

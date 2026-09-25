@@ -66,12 +66,10 @@ async function fixture() {
   await db
     .insert(agents)
     .values({ id: agentId, name: agentId, owner: userId, orgId });
-  await db
-    .insert(chatThreads)
-    .values({ id: threadId, userId, agentId, draftUserMessage: document });
+  await db.insert(chatThreads).values({ id: threadId, userId, agentId });
   await db
     .insert(chatThreadDrafts)
-    .values({ chatThreadId: threadId, draftUserMessage: document });
+    .values({ chatThreadId: threadId, userId, draftUserMessage: document });
   const append = async () => {
     return await insertChatEvent(db, {
       chatThreadId: threadId,
@@ -95,9 +93,9 @@ try {
   await test("draft failures preserve the committed message and do not suppress later writes", async () => {
     const f = await fixture();
     await pool.query(`CREATE FUNCTION fail_draft_clear() RETURNS trigger LANGUAGE plpgsql AS $$
-      BEGIN IF NEW.id = '${f.threadId}' AND NEW.draft_user_message IS NULL AND OLD.draft_user_message IS NOT NULL
-        THEN RAISE EXCEPTION 'synthetic draft clear fault'; END IF; RETURN NEW; END $$;
-      CREATE TRIGGER fail_draft_clear BEFORE UPDATE ON chat_threads FOR EACH ROW EXECUTE FUNCTION fail_draft_clear()`);
+      BEGIN IF OLD.chat_thread_id = '${f.threadId}'
+        THEN RAISE EXCEPTION 'synthetic draft clear fault'; END IF; RETURN OLD; END $$;
+      CREATE TRIGGER fail_draft_clear BEFORE DELETE ON chat_thread_drafts FOR EACH ROW EXECUTE FUNCTION fail_draft_clear()`);
     const event = await f.append();
     assert.ok(event);
     await clearThreadDraftIndependently(db, f);
@@ -114,20 +112,16 @@ try {
         .length,
       1,
     );
-    const [legacy] = await db
-      .select({
-        draft: chatThreads.draftUserMessage,
-        at: chatThreads.lastMessageAt,
-      })
+    const [thread] = await db
+      .select({ at: chatThreads.lastMessageAt })
       .from(chatThreads)
       .where(eq(chatThreads.id, f.threadId));
-    const [child] = await db
+    const [draft] = await db
       .select()
       .from(chatThreadDrafts)
       .where(eq(chatThreadDrafts.chatThreadId, f.threadId));
-    assert.deepEqual(legacy?.draft, document);
-    assert.equal(child?.draftUserMessage, null);
-    assert.equal(legacy?.at?.toISOString(), touchedAt.toISOString());
+    assert.deepEqual(draft?.draftUserMessage, document);
+    assert.equal(thread?.at?.toISOString(), touchedAt.toISOString());
     assert.equal(
       (
         await db
@@ -138,7 +132,7 @@ try {
       1,
     );
     await pool.query(
-      "DROP TRIGGER fail_draft_clear ON chat_threads; DROP FUNCTION fail_draft_clear()",
+      "DROP TRIGGER fail_draft_clear ON chat_thread_drafts; DROP FUNCTION fail_draft_clear()",
     );
   });
 

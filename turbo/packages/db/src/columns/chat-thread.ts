@@ -63,13 +63,13 @@ export function chatThreadColumns() {
       },
       { onDelete: "set null" },
     ),
-    /** Canonical rich document for the thread composer's saved draft. */
+    /**
+     * Retired: the composer draft lives in `chat_thread_drafts`. Nothing reads
+     * or writes this column; the contract release drops it.
+     */
     draftUserMessage:
       jsonb("draft_user_message").$type<ChatThreadDraftUserMessage>(),
-    /**
-     * Draft attachment metadata for the thread's composer. Only completed uploads.
-     * Null when no draft attachments are saved.
-     */
+    /** Retired with `draftUserMessage`; see `chat_thread_drafts`. */
     draftAttachments:
       jsonb("draft_attachments").$type<ChatThreadDraftAttachments>(),
     /**

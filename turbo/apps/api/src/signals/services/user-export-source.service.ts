@@ -17,6 +17,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { workflows } from "@okouai/db/schema/workflow";
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
@@ -210,8 +211,6 @@ async function collectThread(
           agentId: chatThreads.agentId,
           orgId: agents.orgId,
           sourceScheduleRunId: chatThreads.sourceScheduleRunId,
-          draftUserMessage: chatThreads.draftUserMessage,
-          draftAttachments: chatThreads.draftAttachments,
           createdAt: chatThreads.createdAt,
           updatedAt: chatThreads.updatedAt,
           lastMessageAt: chatThreads.lastMessageAt,
@@ -243,6 +242,15 @@ async function collectThread(
       if (!thread) {
         return nextPhase(checkpoint, "agents");
       }
+      const [draft] = await tx
+        .select({
+          draftUserMessage: chatThreadDrafts.draftUserMessage,
+          draftAttachments: chatThreadDrafts.draftAttachments,
+        })
+        .from(chatThreadDrafts)
+        .where(eq(chatThreadDrafts.chatThreadId, thread.id))
+        .limit(1);
+      signal.throwIfAborted();
       const head = await snapshotHead(tx, thread.id, signal);
       const [lastEvent] = await tx
         .select({ seqId: chatEvents.seqId })
@@ -256,13 +264,21 @@ async function collectThread(
       const snapshot = head ? snapshotEntries(thread.id, head) : undefined;
       const physicalCoverage = head?.lastSeqId ?? 0;
       const entries = [
-        jsonEntry(`chat-threads/${thread.id}.json`, thread, {
-          sourceKind: "chat-thread",
-          threadId: thread.id,
-          upperSeqId,
-          snapshotPath: snapshot?.path ?? null,
-          physicalCoverage,
-        }),
+        jsonEntry(
+          `chat-threads/${thread.id}.json`,
+          {
+            ...thread,
+            draftUserMessage: draft?.draftUserMessage ?? null,
+            draftAttachments: draft?.draftAttachments ?? null,
+          },
+          {
+            sourceKind: "chat-thread",
+            threadId: thread.id,
+            upperSeqId,
+            snapshotPath: snapshot?.path ?? null,
+            physicalCoverage,
+          },
+        ),
         ...(snapshot?.entries ?? []),
       ];
       // A snapshot that already covers the bound leaves no tail to page. Paging

@@ -553,11 +553,12 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
     coverage: "user_descendant",
     parents: ["chat_threads"],
   },
-  // The composer draft moved off the thread row into its own child. It carries
-  // no account identity of its own and `chat_thread_id` is both its primary key
-  // and a cascading foreign key, so the thread's own deletion removes it.
+  // The composer draft lives off the thread row in its own child. `user_id` is
+  // copied on every write; rows an older API inserted without it are still
+  // removed by the cascading `chat_thread_id` foreign key with their thread.
   chat_thread_drafts: {
-    coverage: "user_descendant",
+    coverage: "user_root",
+    ownership: ["user_id"],
     parents: ["chat_threads"],
   },
   chat_thread_event_sequences: {
