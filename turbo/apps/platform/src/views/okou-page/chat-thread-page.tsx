@@ -7009,25 +7009,29 @@ function SourceMessageAnnotation({
         ? t(($) => {
             return $.chat.origins.openSlackMessage;
           })
-        : sourceKind === "feishu" || sourceKind === "lark"
+        : sourceKind === "discord"
           ? t(($) => {
-              return $.chat.origins[
-                sourceKind === "lark" ? "openLarkChat" : "openFeishuChat"
-              ];
+              return $.chat.origins.openDiscordMessage;
             })
-          : sourceKind === "teams"
+          : sourceKind === "feishu" || sourceKind === "lark"
             ? t(($) => {
-                return $.chat.origins.openTeamsMessage;
+                return $.chat.origins[
+                  sourceKind === "lark" ? "openLarkChat" : "openFeishuChat"
+                ];
               })
-            : sourceKind === "telegram"
+            : sourceKind === "teams"
               ? t(($) => {
-                  return $.chat.origins.openTelegramMessage;
+                  return $.chat.origins.openTeamsMessage;
                 })
-              : sourceKind === "github"
+              : sourceKind === "telegram"
                 ? t(($) => {
-                    return $.chat.origins.openGithubMessage;
+                    return $.chat.origins.openTelegramMessage;
                   })
-                : openLabel;
+                : sourceKind === "github"
+                  ? t(($) => {
+                      return $.chat.origins.openGithubMessage;
+                    })
+                  : openLabel;
   const content = (
     <>
       {sourceKind === "slack" ? (
