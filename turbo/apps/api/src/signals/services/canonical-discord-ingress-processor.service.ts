@@ -1081,7 +1081,9 @@ function recordIngressFailure(
       args.failure.errorClass.startsWith("binding:") ||
       args.failure.errorClass === "access:403" ||
       args.failure.errorClass === "access:404" ||
-      args.failure.errorClass === "discord:unavailable"
+      args.failure.errorClass === "discord:unavailable" ||
+      // A notice cannot be delivered without app configuration either.
+      args.failure.errorClass === "discord:config_unavailable"
     ) {
       return null;
     }

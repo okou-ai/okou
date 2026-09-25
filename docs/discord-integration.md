@@ -229,7 +229,8 @@ the interface announcement alone is not execution evidence.
    both orgs. Include revoked membership, inaccessible agents/models, and stale
    selections. Keep fixtures isolated from production identities.
 3. With the feature off, verify the settings entry and status subscription are
-   absent and server/native operations are denied. With only the fixture cohort
+   absent and server/native operations are denied, except that personal
+   disconnect and admin uninstall still remove existing data. With only the fixture cohort
    enabled, exercise unconfigured, uninstalled, installed/unconnected, and
    connected settings for admin/member roles. Exercise each exact `contextMode`
    (`full`, `mentions_only`, and `unavailable`) with `onboarding: "oauth_deferred"`.
@@ -314,6 +315,8 @@ permission to activate production.
    channel access, and archive/lock a thread in separate cases. Verify safe
    terminal handling. Remove one guild and confirm another configured guild
    still functions; distinguish temporary guild unavailability from removal.
+   With app configuration removed, accepted ingress stays retryable without
+   consuming attempts or sending a notice, and is admitted once it returns.
 8. Stop the test Gateway, remove temporary fixtures and test-only overrides using
    their owning cleanup paths, and record cleanup. Leave production flags,
    credentials, command registration, and activation unchanged.
