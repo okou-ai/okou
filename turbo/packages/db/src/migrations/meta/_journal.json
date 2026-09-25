@@ -1051,6 +1051,13 @@
       "when": 1790273304246,
       "tag": "1227_validate_discord_chat_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 1228,
+      "version": "7",
+      "when": 1790294466981,
+      "tag": "1228_drop_agentphone_public_brand",
+      "breakpoints": true
     }
   ]
 }
