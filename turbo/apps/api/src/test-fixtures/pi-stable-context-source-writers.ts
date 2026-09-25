@@ -1,10 +1,6 @@
 import { onTestFinished } from "vitest";
 
 import {
-  clearWorkflowCreationHooksForTest,
-  setWorkflowCreationHooksForTest,
-} from "../signals/routes/workflows";
-import {
   clearAgentDeletionHooksForTest,
   setAgentDeletionHooksForTest,
 } from "../signals/services/agent-deletion.service";
@@ -13,44 +9,9 @@ import {
   setChatThreadConnectorSelectionMutationHooksForTest,
 } from "../signals/services/chat-thread-connector-selection.service";
 import {
-  clearOfficialWorkflowInstallationHooksForTest,
-  setOfficialWorkflowInstallationHooksForTest,
-} from "../signals/services/official-workflow-installation.service";
-import {
-  clearWorkflowDeleteHooksForTest,
-  setWorkflowDeleteHooksForTest,
-} from "../signals/services/workflow-delete.service";
-import {
   clearWorkflowUpdateHooksForTest,
   setWorkflowUpdateHooksForTest,
 } from "../signals/services/workflow-update.service";
-
-export function holdWorkflowCreationBeforeErasureAdmissionFixture(
-  hold: () => Promise<void>,
-): void {
-  setWorkflowCreationHooksForTest({ beforeAdmission: hold });
-  onTestFinished(() => {
-    clearWorkflowCreationHooksForTest();
-  });
-}
-
-export function holdWorkflowCopyBeforeErasureAdmissionFixture(
-  hold: () => Promise<void>,
-): void {
-  setWorkflowCreationHooksForTest({ beforeCopyAdmission: hold });
-  onTestFinished(() => {
-    clearWorkflowCreationHooksForTest();
-  });
-}
-
-export function holdWorkflowUpdateBeforeErasureAdmissionFixture(
-  hold: () => Promise<void>,
-): void {
-  setWorkflowUpdateHooksForTest({ beforeAdmission: hold });
-  onTestFinished(() => {
-    clearWorkflowUpdateHooksForTest();
-  });
-}
 
 export function holdWorkflowUpdateAfterMetadataMutationFixture(
   hold: NonNullable<
@@ -60,15 +21,6 @@ export function holdWorkflowUpdateAfterMetadataMutationFixture(
   setWorkflowUpdateHooksForTest({ afterMetadataMutation: hold });
   onTestFinished(() => {
     clearWorkflowUpdateHooksForTest();
-  });
-}
-
-export function holdWorkflowDeleteBeforeErasureAdmissionFixture(
-  hold: () => Promise<void>,
-): void {
-  setWorkflowDeleteHooksForTest({ beforeAdmission: hold });
-  onTestFinished(() => {
-    clearWorkflowDeleteHooksForTest();
   });
 }
 
@@ -88,17 +40,6 @@ export function holdAgentDeletionAfterStableContextCleanupFixture(
   });
 }
 
-export function holdChatThreadConnectorSelectionBeforeErasureAdmissionFixture(
-  hold: () => Promise<void>,
-): void {
-  setChatThreadConnectorSelectionMutationHooksForTest({
-    beforeAdmission: hold,
-  });
-  onTestFinished(() => {
-    clearChatThreadConnectorSelectionMutationHooksForTest();
-  });
-}
-
 export function holdChatThreadConnectorSelectionBeforeAgentLockFixture(
   hold: () => Promise<void>,
 ): void {
@@ -107,25 +48,5 @@ export function holdChatThreadConnectorSelectionBeforeAgentLockFixture(
   });
   onTestFinished(() => {
     clearChatThreadConnectorSelectionMutationHooksForTest();
-  });
-}
-
-export function holdOfficialWorkflowInstallationBeforeErasureAdmissionFixture(
-  hold: () => Promise<void>,
-): void {
-  setOfficialWorkflowInstallationHooksForTest({ beforeInsertAdmission: hold });
-  onTestFinished(() => {
-    clearOfficialWorkflowInstallationHooksForTest();
-  });
-}
-
-export function holdOfficialWorkflowActivationBeforeErasureAdmissionFixture(
-  hold: () => Promise<void>,
-): void {
-  setOfficialWorkflowInstallationHooksForTest({
-    beforeActivationAdmission: hold,
-  });
-  onTestFinished(() => {
-    clearOfficialWorkflowInstallationHooksForTest();
   });
 }

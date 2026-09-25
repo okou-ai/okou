@@ -9,7 +9,6 @@ import { agents } from "@okouai/db/schema/agent";
 import {
   piStableContextArtifactResources,
   piStableContextArtifacts,
-  piStableContextErasureFences,
   piStableContextGenerations,
   piStableContextHeads,
   piStableContextPublications,
@@ -58,7 +57,6 @@ import {
 } from "../agent-lifecycle.service";
 import { deleteExpiredPiStableContextArtifacts } from "../pi-api-first-turn-cleanup.service";
 import { enqueuePiResourceVersionIndexes } from "../pi-resource-version-index.service";
-import { piStableContextErasureSubjectDigest } from "../pi-stable-context-erasure.service";
 import { lockCanonicalAgentMutation } from "../agent-mutation-lock.service";
 import {
   executePiStableContextWork,
@@ -85,7 +83,6 @@ describe("Pi stable context generation fences", () => {
   const agentIds: string[] = [];
   const storageIds: string[] = [];
   const userIds: string[] = [];
-  const orgIds: string[] = [];
 
   afterEach(async () => {
     clearWorkflowDeleteHooksForTest();
@@ -125,27 +122,6 @@ describe("Pi stable context generation fences", () => {
         .delete(orgMembersCache)
         .where(inArray(orgMembersCache.userId, userIds));
     }
-    const erasureDigests = [
-      ...userIds.map((subjectId) => {
-        return piStableContextErasureSubjectDigest({
-          subjectKind: "user",
-          subjectId,
-        });
-      }),
-      ...orgIds.map((subjectId) => {
-        return piStableContextErasureSubjectDigest({
-          subjectKind: "organization",
-          subjectId,
-        });
-      }),
-    ];
-    if (erasureDigests.length > 0) {
-      await db
-        .delete(piStableContextErasureFences)
-        .where(
-          inArray(piStableContextErasureFences.subjectDigest, erasureDigests),
-        );
-    }
     await pool.end();
   });
 
@@ -156,7 +132,6 @@ describe("Pi stable context generation fences", () => {
     const agentOwnerId = options?.ownedByOtherUser ? otherUserId : userId;
     const agentId = randomUUID();
     agentIds.push(agentId);
-    orgIds.push(orgId);
     userIds.push(userId, otherUserId);
     await db.insert(orgMembersCache).values([
       { orgId, userId, role: "member" },
@@ -2851,164 +2826,6 @@ describe("Pi stable context generation fences", () => {
         .select({ id: storages.id })
         .from(storages)
         .where(eq(storages.id, storageId)),
-    ).resolves.toHaveLength(0);
-  });
-
-  it("does not initialize generations after completed user erasure", async () => {
-    const fixture = await seed({ ownedByOtherUser: true });
-    const barrierSignal = AbortSignal.timeout(5000);
-    const initializationEntered = createDeferredPromise<void>(barrierSignal);
-    const initializationReleased = createDeferredPromise<void>(barrierSignal);
-    const preparation = createStore().get(
-      preparePiStableContext(
-        {
-          db,
-          owner: {
-            orgId: fixture.orgId,
-            userId: fixture.userId,
-            agentId: fixture.agentId,
-            resourceOwner: {
-              orgId: fixture.orgId,
-              userId: fixture.otherUserId,
-            },
-          },
-          variantDigest: "6".repeat(64),
-          buildPrompt: () => {
-            return {
-              agentIdentity: "erased identity",
-              executionLimit: "erased limit",
-              tools: "erased tools",
-            };
-          },
-          source: {
-            catalogIdentity: null,
-            catalogSourceId: null,
-            agentIdentityDigest: "agent-identity",
-            featurePromptDigest: "erased-feature",
-            permissionDigest: "erased-permission",
-            connectorScopeDigest: "erased-connector",
-            validityHorizon: null,
-            promptSchemaVersion: 1,
-            runtimeSchemaVersion: 1,
-          },
-          mounts: [],
-          persistedStorageMounts: [],
-          eligible: true,
-          checkedAt: new Date("2026-09-17T00:00:00.000Z"),
-          beforeSourceGenerationInitialization: async () => {
-            initializationEntered.resolve();
-            await initializationReleased.promise;
-          },
-        },
-        barrierSignal,
-      ),
-    );
-    await initializationEntered.promise;
-    await deleteClerkAgentLifecycleData(db, {
-      kind: "user",
-      userId: fixture.userId,
-    });
-    await db
-      .delete(orgMembersCache)
-      .where(eq(orgMembersCache.userId, fixture.userId));
-    // Model a stale Clerk read that refills the disposable cache after the
-    // lifecycle deletion. The durable erasure fence, not cache absence, must
-    // reject generation initialization.
-    await db.insert(orgMembersCache).values({
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-      role: "member",
-    });
-    initializationReleased.resolve();
-
-    await expect(preparation).resolves.toMatchObject({ kind: "missing" });
-    await expect(
-      db
-        .select({ subject: piStableContextGenerations.subject })
-        .from(piStableContextGenerations)
-        .where(eq(piStableContextGenerations.subject, fixture.userId)),
-    ).resolves.toHaveLength(0);
-    await expect(
-      db
-        .select({ id: piStableContextHeads.id })
-        .from(piStableContextHeads)
-        .where(eq(piStableContextHeads.userId, fixture.userId)),
-    ).resolves.toHaveLength(0);
-    await expect(
-      db
-        .select({ id: agents.id })
-        .from(agents)
-        .where(eq(agents.id, fixture.agentId)),
-    ).resolves.toHaveLength(1);
-  });
-
-  it("does not register first demand after user erasure removed its authority", async () => {
-    const fixture = await seed({ ownedByOtherUser: true });
-    const barrierSignal = AbortSignal.timeout(5000);
-    const registrationEntered = createDeferredPromise<void>(barrierSignal);
-    const registrationReleased = createDeferredPromise<void>(barrierSignal);
-    const preparation = createStore().get(
-      preparePiStableContext(
-        {
-          db,
-          owner: {
-            orgId: fixture.orgId,
-            userId: fixture.userId,
-            agentId: fixture.agentId,
-            resourceOwner: {
-              orgId: fixture.orgId,
-              userId: fixture.otherUserId,
-            },
-          },
-          variantDigest: "8".repeat(64),
-          buildPrompt: () => {
-            return {
-              agentIdentity: "erased identity",
-              executionLimit: "erased limit",
-              tools: "erased tools",
-            };
-          },
-          source: {
-            catalogIdentity: null,
-            catalogSourceId: null,
-            agentIdentityDigest: "agent-identity",
-            featurePromptDigest: "erased-feature",
-            permissionDigest: "erased-permission",
-            connectorScopeDigest: "erased-connector",
-            validityHorizon: null,
-            promptSchemaVersion: 1,
-            runtimeSchemaVersion: 1,
-          },
-          mounts: [],
-          persistedStorageMounts: [],
-          eligible: true,
-          checkedAt: new Date("2026-09-17T00:00:00.000Z"),
-          beforeDemandRegistration: async () => {
-            registrationEntered.resolve();
-            await registrationReleased.promise;
-          },
-        },
-        barrierSignal,
-      ),
-    );
-    await registrationEntered.promise;
-    await deleteClerkAgentLifecycleData(db, {
-      kind: "user",
-      userId: fixture.userId,
-    });
-    registrationReleased.resolve();
-    await expect(preparation).resolves.toMatchObject({ kind: "missing" });
-    await expect(
-      db
-        .select({ id: piStableContextHeads.id })
-        .from(piStableContextHeads)
-        .where(eq(piStableContextHeads.userId, fixture.userId)),
-    ).resolves.toHaveLength(0);
-    await expect(
-      db
-        .select({ digest: piStableContextArtifacts.digest })
-        .from(piStableContextArtifacts)
-        .where(eq(piStableContextArtifacts.userId, fixture.userId)),
     ).resolves.toHaveLength(0);
   });
 

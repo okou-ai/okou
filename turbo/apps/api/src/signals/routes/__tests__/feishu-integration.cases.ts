@@ -13,7 +13,6 @@ import {
 import { Buffer } from "node:buffer";
 
 import { HttpResponse, http } from "msw";
-import { Webhook } from "svix";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -42,7 +41,6 @@ import {
   larkConnectContract,
 } from "@okouai/api-contracts/contracts/feishu-connect";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
-import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { getCustomConnectorSkillStorageName } from "@okouai/core/storage-names";
 
@@ -62,13 +60,11 @@ import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { seedLegacyPrivateDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { now, nowDate } from "../../../lib/time";
+import { now } from "../../../lib/time";
 import { createDeferredPromise } from "../../utils";
-import { holdFeishuOAuthBeforeErasureAdmissionFixture } from "../../../test-fixtures/feishu-oauth";
 import { feishuBrowserConnectRoutes } from "../feishu-browser-connect";
 import { feishuEventsRoutes } from "../feishu-events";
 import { feishuOauthRoutes } from "../feishu-oauth";
-import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { integrationsFeishuFileRoutes } from "../integrations-feishu-files";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import type { ApiTestUser } from "./helpers/api-bdd";
@@ -2322,100 +2318,6 @@ export function registerFeishuIntegrationTests(
 
     // oxlint-disable-next-line vitest/no-conditional-tests -- The entrypoint selects this group before collection.
     if (group === "oauth-and-events") {
-      it("admits a Feishu OAuth callback before Agent locks during signed user erasure", async () => {
-        const fixture = await setupFeishuRunFixture();
-        const connectUrl = await requestFeishuConnectUrl(fixture);
-        const connectApp = createAppWithRoutes({
-          signal: context.signal,
-          routes: feishuBrowserConnectRoutes,
-        });
-        const connectResponse = await connectApp.request(
-          "/api/feishu/connect",
-          {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              cookie: "__session=opaque",
-              origin: new URL(connectUrl).origin,
-            },
-            body: JSON.stringify(feishuConnectBody(connectUrl)),
-          },
-        );
-        const authorizationUrl =
-          await feishuAuthorizationUrlFromResponse(connectResponse);
-        const state = requireValue(
-          authorizationUrl.searchParams.get("state"),
-          "Expected Feishu OAuth state",
-        );
-        fixtureState.oauthUserOpenId = "ou_feishu_user";
-
-        const entered = createDeferredPromise<void>(context.signal);
-        const release = createDeferredPromise<void>(context.signal);
-        holdFeishuOAuthBeforeErasureAdmissionFixture(async () => {
-          entered.resolve();
-          await release.promise;
-        });
-        const callback = Promise.resolve(
-          createAppWithRoutes({
-            signal: context.signal,
-            routes: feishuOauthRoutes,
-          }).request(
-            `${feishuOauthContract.callback.path}?${new URLSearchParams({
-              code: `feishu-oauth-${randomUUID()}`,
-              responseMode: "json",
-              state,
-            })}`,
-          ),
-        );
-        await Promise.race([
-          entered.promise,
-          callback.then(async (response) => {
-            throw new Error(
-              `Feishu OAuth callback completed before admission: ${response.status} ${await response.text()}`,
-            );
-          }),
-        ]);
-
-        const sdk = await vi.importActual<
-          typeof import("@clerk/backend/webhooks")
-        >("@clerk/backend/webhooks");
-        const secret = `whsec_${Buffer.from("feishu-oauth-erasure").toString("base64")}`;
-        mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", secret);
-        context.mocks.clerk.verifyWebhook.mockImplementation(
-          async (request: unknown) => {
-            if (!(request instanceof Request)) {
-              throw new Error("expected raw Request");
-            }
-            return await sdk.verifyWebhook(request, { signingSecret: secret });
-          },
-        );
-        const body = JSON.stringify({
-          type: "user.deleted",
-          data: { id: fixture.actor.userId, deleted: true },
-        });
-        const id = randomUUID();
-        const timestamp = nowDate();
-        const signature = new Webhook(secret).sign(id, timestamp, body);
-        await accept(
-          setupApp({ context, routes: webhooksClerkRoutes })(
-            webhookClerkContract,
-          ).post({
-            body,
-            extraHeaders: {
-              "svix-id": id,
-              "svix-timestamp": String(Math.floor(timestamp.getTime() / 1000)),
-              "svix-signature": signature,
-            },
-          }),
-          [200],
-        );
-        await flushWaitUntilForTest();
-
-        release.resolve();
-        const callbackResponse = await callback;
-        expect(callbackResponse.status).not.toBe(200);
-      }, 30_000);
-
       it("connects the current Feishu user through signed OAuth state", async () => {
         const appId = `cli_${randomUUID()}`;
         const admin = authOrgApi.user({

@@ -20,7 +20,6 @@ import {
 } from "./workflow-volume.service";
 import type { WorkflowRow } from "./workflow-data.service";
 import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
-import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
 import {
   beginPiStableContextPublication,
   piStableContextWorkflowInvalidationOptions,
@@ -28,7 +27,6 @@ import {
 } from "./pi-stable-context-generation.service";
 
 interface WorkflowUpdateHooks {
-  readonly beforeAdmission?: () => Promise<void>;
   readonly afterMetadataMutation?: (tx: Tx) => Promise<void>;
 }
 
@@ -52,16 +50,6 @@ interface UpdateWorkflowInput {
   readonly updatedByUserId: string;
 }
 
-async function admitWorkflowUpdate(
-  tx: Tx,
-  workflow: Pick<WorkflowRow, "orgId" | "ownerUserId">,
-): Promise<boolean> {
-  return await admitPiStableContextSubjects(tx, [
-    { subjectKind: "organization", subjectId: workflow.orgId },
-    { subjectKind: "user", subjectId: workflow.ownerUserId },
-  ]);
-}
-
 async function commitWorkflowMetadata(
   db: Db,
   args: UpdateWorkflowInput,
@@ -69,9 +57,6 @@ async function commitWorkflowMetadata(
 ) {
   const { workflow, body } = args;
   return await db.transaction(async (tx) => {
-    if (!(await admitWorkflowUpdate(tx, workflow))) {
-      return { updated: false as const };
-    }
     await lockCanonicalAgentMutation(tx, workflow.agentId);
     const [updated] = await tx
       .update(workflows)
@@ -154,8 +139,6 @@ export const updateWorkflow$ = command(
     const volumeChanged = body.files !== undefined || skillChanged;
     // Metadata and its pending generation commit together. The later volume
     // transaction may make only this exact generation ready.
-    await workflowUpdateHooks.get().beforeAdmission?.();
-    signal.throwIfAborted();
     const metadata = await commitWorkflowMetadata(writeDb, args, {
       volumeChanged,
       nextName,
