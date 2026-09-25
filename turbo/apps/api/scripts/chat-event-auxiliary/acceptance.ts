@@ -6,7 +6,6 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { eq } from "drizzle-orm";
-import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { chatContentErasureSubjects } from "@okouai/db/schema/chat-content-erasure-subject";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client, Pool } from "pg";
@@ -280,21 +279,15 @@ try {
       assert.equal(await cleanupLateChatContent(db, subject, signal), 0);
     }
   });
-  await test("periodic sweep reconciles completed old jobs and revisits late writes after retirement", async () => {
+  await test("periodic sweep revisits late writes for a completed subject", async () => {
     const erased = await fixture();
     const survivor = await fixture();
     await erased.append();
     await survivor.append();
-    const jobId = randomUUID();
-    await db.insert(backgroundJobs).values({
-      id: jobId,
-      kind: "clerk-user-deletion",
-      handlerVersion: 1,
-      userId: erased.userId,
-      orgId: "",
-      input: {},
-      status: "completed",
-      completedAt: new Date(),
+    await completeChatContentDeletion(db, {
+      subjectKind: "user",
+      subjectId: erased.userId,
+      sourceReference: randomUUID(),
     });
     const first = await sweepLateChatContent(db, signal);
     assert.ok(first.deleted >= 2);
@@ -303,7 +296,6 @@ try {
       .from(chatContentErasureSubjects)
       .where(eq(chatContentErasureSubjects.subjectId, erased.userId));
     assert.ok(receipt?.completedAt);
-    await db.delete(backgroundJobs).where(eq(backgroundJobs.id, jobId));
     await erased.append();
     await db
       .update(chatContentErasureSubjects)

@@ -1609,13 +1609,6 @@ export async function retireErasureProjectionPage(
       await tx.delete(work).where(inArray(work.id, ids));
       return "pending";
     }
-    // Older completed projections can retire during the reader-first rollout.
-    // Retain their confirmed subject before removing the last local locator.
-    await completeChatContentDeletion(tx, {
-      subjectKind: covering.subjectKind,
-      subjectId: covering.subjectId,
-      sourceReference: covering.decisionRef,
-    });
     await tx.delete(sinks).where(eq(sinks.jobId, jobId));
     await tx.delete(jobs).where(eq(jobs.id, jobId));
     return "retired";

@@ -176,43 +176,6 @@ export async function cleanupLateChatContent(
 }
 
 export async function sweepLateChatContent(db: Db, signal: AbortSignal) {
-  // An older API may finish deletion after the schema backfill. Copy only
-  // terminal, confirmed decisions before their normal local-job retention.
-  signal.throwIfAborted();
-  await db.execute(sql`
-      INSERT INTO chat_content_erasure_subjects
-        (subject_kind, subject_id, source_reference, confirmed_at, completed_at)
-      SELECT 'user', job.user_id, job.id::text, job.created_at, job.completed_at
-      FROM background_jobs AS job
-      WHERE job.kind = 'clerk-user-deletion' AND job.status = 'completed'
-        AND job.completed_at IS NOT NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM chat_content_erasure_subjects AS receipt
-          WHERE receipt.subject_kind = 'user' AND receipt.subject_id = job.user_id
-            AND receipt.completed_at IS NOT NULL
-        )
-      ORDER BY job.id LIMIT 100
-      ON CONFLICT (subject_kind, subject_id) DO UPDATE
-        SET completed_at = COALESCE(chat_content_erasure_subjects.completed_at, EXCLUDED.completed_at)
-    `);
-  signal.throwIfAborted();
-  await db.execute(sql`
-      INSERT INTO chat_content_erasure_subjects
-        (subject_kind, subject_id, source_reference, confirmed_at, completed_at)
-      SELECT DISTINCT ON (job.subject_kind, job.subject_id)
-        job.subject_kind, job.subject_id, job.decision_ref,
-        job.requested_at, clock_timestamp()
-      FROM account_erasure_jobs AS job
-      WHERE job.state IN ('verified_erased', 'verified_no_applicable_data')
-        AND NOT EXISTS (
-          SELECT 1 FROM chat_content_erasure_subjects AS receipt
-          WHERE receipt.subject_kind = job.subject_kind AND receipt.subject_id = job.subject_id
-            AND receipt.completed_at IS NOT NULL
-        )
-      ORDER BY job.subject_kind, job.subject_id, job.generation DESC LIMIT 100
-      ON CONFLICT (subject_kind, subject_id) DO UPDATE
-        SET completed_at = COALESCE(chat_content_erasure_subjects.completed_at, EXCLUDED.completed_at)
-    `);
   signal.throwIfAborted();
   const subjects = await db
     .select()
