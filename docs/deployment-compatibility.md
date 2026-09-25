@@ -1,5 +1,24 @@
 # Deployment Compatibility
 
+## Computer Use audit approval column: reader cutover (2026-09-25)
+
+`computer_use_command_audit_events.approval_outcome` belongs to the retired
+approval flow. No current writer sets it or response exposes it; a masked
+production census on 2026-09-25 found 0 non-null values across 11,258 audit
+rows. The audit-list API now selects only the fields it returns instead of the
+full table row; other audit reads already select individual columns. The
+physical Drizzle schema and database still declare `approval_outcome`, so this
+release does **not** drop or migrate the column. The HTTP response is unchanged.
+
+Drop the column in a follow-up release **after** this reader cutover has shipped
+to production, outgoing API instances have drained, and the enforced production
+API rollback floor is at or above this reader-cutover commit. Otherwise an
+older API's unqualified Drizzle `SELECT` would name the dropped column and fail
+with `42703` between database migration and API promotion (or after rollback).
+Reconfirm zero non-null rows before the DROP, remove the physical schema
+mapping in that same follow-up, and validate the old/new API/DB combinations.
+The column drop is not authorized by this preparatory release alone.
+
 ## Discord file deliveries become fire and forget (2026-09-25)
 
 `POST /api/integrations/discord/files/complete` sends each upload operation to
@@ -10,9 +29,12 @@ recorded outcome and never sends again. To retry, start a new upload operation.
 The enforced-nonce replay, its window and the stored retry deadline are
 removed, and new delivery rows no longer store a nonce.
 
-The response contract is unchanged, so existing CLIs keep parsing it and simply
-see non-retryable failures. Discord has no production users, so rows written by
-the previous replay flow need no migration; their extra JSONB keys are ignored.
+The delivery response no longer declares the unused optional
+`retryAfterSeconds` field, and the CLI no longer suggests retrying a failed or
+pending delivery. `pending` remains a valid response during concurrent
+completion; a repeated completion reports the recorded state without resending.
+Discord has no production users, so rows written by the previous replay flow
+need no migration; their extra JSONB keys are ignored.
 
 ## Agent-run context ownership becomes required (2026-09-25)
 
@@ -124,7 +146,7 @@ ineligible, so none of these states needs a runtime fallback.
 ## Active run state: readers and old storage retired (step 2 of 3)
 
 **Release gate:** #36900 / `c0a46af5` must be in a completed production
-release before this PR enters the merge queue. Migration `1253` backfills
+release before this PR enters the merge queue. Migration `1254` backfills
 missing active rows created by pre-#36900 API instances; it includes started
 terminal runs still within the 120-second recovery window or still heartbeating
 (except cancelled runs with completed recovery). It removes terminal rows only
@@ -137,7 +159,7 @@ Timeout cleanup now checks the active row's heartbeat (including its locked-run
 recheck); capacity excludes queued runs and expired pending runs but counts
 started terminal runs while their active row still exists. Launch, promotion,
 claim and sandbox heartbeats no longer write `agent_runs.last_heartbeat_at`.
-Activity and summary already use `active_agent_runs`; migration `1253` drops
+Activity and summary already use `active_agent_runs`; migration `1254` drops
 `run_activity_snapshots` and its ORM declaration. Once this release deploys,
 **do not roll back to #36900**: its timeout cleanup reads the now-stale
 `agent_runs.last_heartbeat_at`, and older APIs write the dropped snapshot

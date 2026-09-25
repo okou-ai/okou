@@ -16,6 +16,7 @@ mod proof;
 mod reading;
 mod sessions;
 mod telemetry;
+mod vnc_classic_password;
 mod vnc_forwarding;
 mod vnc_interoperability;
 

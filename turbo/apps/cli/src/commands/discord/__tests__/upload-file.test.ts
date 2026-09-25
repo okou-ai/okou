@@ -185,7 +185,7 @@ describe("okou discord upload-file", () => {
       JSON.stringify({ ...PUBLISHED, delivery: { status: "pending" } }),
     );
     expect(warnings.mock.calls.flat().join("\n")).toContain(
-      `--operation-id ${OPERATION_ID}`,
+      `check delivery status, reuse the same file and destination with --operation-id ${OPERATION_ID}; delivery will not be resent`,
     );
 
     await upload();
@@ -198,8 +198,7 @@ describe("okou discord upload-file", () => {
       delivery: {
         status: "failed",
         message: "Discord rate limited delivery",
-        retryable: true,
-        retryAfterSeconds: 60,
+        retryable: false,
       },
     };
     server.use(
@@ -220,44 +219,31 @@ describe("okou discord upload-file", () => {
     await upload();
 
     expect(output).toHaveBeenCalledWith(JSON.stringify(failed));
-    expect(warnings.mock.calls.flat().join("\n")).toContain(
-      "Discord rate limited delivery",
-    );
-    expect(warnings).toHaveBeenCalledWith(
-      `Retry after 60 seconds with --operation-id ${OPERATION_ID}`,
-    );
-    expect(warnings.mock.calls.flat().join("\n")).toContain(
-      `--operation-id ${OPERATION_ID}`,
+    expect(warnings).toHaveBeenLastCalledWith(
+      "Discord delivery failed: Discord rate limited delivery",
     );
   });
 
-  it("asks the server to reconcile a persisted uncertain delivery on retry", async () => {
+  it("reports a pending concurrent delivery without suggesting a resend", async () => {
+    const pending = { ...PUBLISHED, delivery: { status: "pending" } };
     server.use(
       http.post(`${API}/init`, () => {
         return HttpResponse.json(PUBLISHED);
       }),
       http.post(`${API}/materialize`, () => {
-        return HttpResponse.json({
-          ...PUBLISHED,
-          delivery: {
-            status: "failed",
-            message: "Delivery outcome is uncertain; retry to reconcile it",
-            retryable: false,
-          },
-        });
+        return HttpResponse.json(pending);
       }),
-      http.post(`${API}/complete`, async ({ request }) => {
-        expect(await request.json()).toEqual({
-          assetId: ASSET_ID,
-          operationId: OPERATION_ID,
-        });
-        return HttpResponse.json(DELIVERED);
+      http.post(`${API}/complete`, () => {
+        return HttpResponse.json(pending);
       }),
     );
 
     await upload();
 
-    expect(output).toHaveBeenCalledWith(JSON.stringify(DELIVERED));
+    expect(output).toHaveBeenCalledWith(JSON.stringify(pending));
+    expect(warnings).toHaveBeenLastCalledWith(
+      `Upload operation: ${OPERATION_ID}`,
+    );
   });
 
   it("reports its generated operation ID when initialization fails", async () => {

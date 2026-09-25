@@ -624,6 +624,167 @@ describe("private Runner VNC authority", () => {
     ).toStrictEqual({ outcome: "unavailable" });
   });
 
+  it("admits Mac classic password only for an exact authorized SSH loopback profile", async () => {
+    const f = await api.fixture();
+    const ssh = await accept(
+      setupApp({ context, routes: sshConnectionsRoutes })(
+        sshConnectionsContract,
+      ).create({
+        headers: vncSessionHeaders,
+        body: {
+          id: randomUUID(),
+          displayName: "Mac SSH",
+          host: "mac.example.com",
+          credential: inlineSshKey("operator", "private-key"),
+        },
+      }),
+      [201],
+    );
+    const body = {
+      id: randomUUID(),
+      displayName: "Mac classic VNC password",
+      host: "127.0.0.1",
+      credential: {
+        create: {
+          name: "Mac classic password",
+          authentication: {
+            method: "vnc_password" as const,
+            password: "secret",
+          },
+        },
+      },
+      security: { type: "apple_vnc_password" as const },
+      transport: { type: "ssh" as const, connectionId: ssh.body.id },
+    };
+    const invalidRoute = await accept(
+      api.connections().create({
+        headers: vncSessionHeaders,
+        body: { ...body, host: "localhost" },
+      }),
+      [400],
+    );
+    expect(invalidRoute.body.error.code).toBe(
+      "VNC_INVALID_APPLE_VNC_PASSWORD_ROUTE",
+    );
+    const direct = await accept(
+      api.connections().create({
+        headers: vncSessionHeaders,
+        body: {
+          ...body,
+          host: "mac.example.com",
+          transport: { type: "direct" },
+        },
+      }),
+      [400],
+    );
+    expect(direct.body.error.code).toBe("VNC_INVALID_APPLE_VNC_PASSWORD_ROUTE");
+    const mismatch = await accept(
+      api.connections().create({
+        headers: vncSessionHeaders,
+        body: { ...body, security: { type: "apple_dh" } },
+      }),
+      [400],
+    );
+    expect(mismatch.body.error.code).toBe("VNC_PROFILE_MISMATCH");
+    const saved = await accept(
+      api.connections().create({ headers: vncSessionHeaders, body }),
+      [201],
+    );
+    expect(saved.body).toMatchObject({
+      host: "127.0.0.1",
+      security: { type: "apple_vnc_password" },
+      transport: { type: "ssh", connectionId: ssh.body.id },
+    });
+    expect(JSON.stringify(saved.body)).not.toContain("secret");
+    const target = { ...f, connectionId: saved.body.id };
+    const profile = [
+      {
+        authMethod: "vnc_password" as const,
+        securityType: "apple_vnc_password" as const,
+        transportType: "ssh" as const,
+      },
+    ];
+    const kms = useSecretKmsProbe();
+    await expect(api.resolve(target)).resolves.toStrictEqual({
+      outcome: "unsupported_profile",
+    });
+    await expect(
+      api.resolve(target, {
+        supportedProfiles: [
+          {
+            authMethod: "vnc_password",
+            securityType: "x509_vnc",
+            transportType: "ssh",
+          },
+        ],
+      }),
+    ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
+    expect(kms.decryptCalls).toBe(0);
+    await api.grantSsh(f, false);
+    await expect(
+      api.resolve(target, { supportedProfiles: profile }),
+    ).resolves.toStrictEqual({
+      outcome: "unavailable",
+    });
+    expect(kms.decryptCalls).toBe(0);
+    await api.grantSsh(f, true);
+    await expect(
+      api.resolve(target, { supportedProfiles: profile }),
+    ).resolves.toStrictEqual({
+      outcome: "resolved_apple_vnc_password",
+      host: "127.0.0.1",
+      port: 5900,
+      generation: 1,
+      transport: { type: "ssh", connectionId: ssh.body.id, generation: 1 },
+      authentication: { method: "vnc_password", password: "secret" },
+      security: { type: "apple_vnc_password" },
+    });
+    expect(kms.decryptCalls).toBe(1);
+    const expectedTransport = {
+      type: "ssh" as const,
+      connectionId: ssh.body.id,
+      generation: 1,
+    };
+    expect((await check(target, 1, { expectedTransport })).body).toStrictEqual({
+      outcome: "valid",
+    });
+    const rotated = await accept(
+      api.credentials().update({
+        headers: vncSessionHeaders,
+        params: { credentialId: saved.body.credentialId },
+        body: {
+          expectedRevision: 1,
+          authentication: { method: "vnc_password", password: "rotated" },
+        },
+      }),
+      [200],
+    );
+    expect(JSON.stringify(rotated.body)).not.toContain("rotated");
+    expect((await check(target, 1, { expectedTransport })).body).toStrictEqual({
+      outcome: "configuration_changed",
+    });
+    await expect(
+      api.resolve(target, { supportedProfiles: profile }),
+    ).resolves.toMatchObject({
+      outcome: "resolved_apple_vnc_password",
+      generation: 2,
+      authentication: { password: "rotated" },
+    });
+    const denied = await accept(
+      api.connections().update({
+        headers: vncSessionHeaders,
+        params: { connectionId: saved.body.id },
+        body: { expectedGeneration: 2, host: "localhost" },
+      }),
+      [400],
+    );
+    expect(denied.body.error.code).toBe("VNC_INVALID_APPLE_VNC_PASSWORD_ROUTE");
+    await api.grantSsh(f, false);
+    expect((await check(target, 2, { expectedTransport })).body).toStrictEqual({
+      outcome: "unavailable",
+    });
+  });
+
   it("admits Apple DH only for an authorized SSH-to-Mac-loopback profile", async () => {
     const f = await api.fixture();
     const ssh = await accept(

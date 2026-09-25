@@ -2066,7 +2066,18 @@ export async function projectComputerUseAuditEvents(
   }
 
   const rows = await args.db
-    .select()
+    .select({
+      id: computerUseCommandAuditEvents.id,
+      commandId: computerUseCommandAuditEvents.commandId,
+      runId: computerUseCommandAuditEvents.runId,
+      hostId: computerUseCommandAuditEvents.hostId,
+      kind: computerUseCommandAuditEvents.kind,
+      app: computerUseCommandAuditEvents.app,
+      event: computerUseCommandAuditEvents.event,
+      redactedResult: computerUseCommandAuditEvents.redactedResult,
+      error: computerUseCommandAuditEvents.error,
+      createdAt: computerUseCommandAuditEvents.createdAt,
+    })
     .from(computerUseCommandAuditEvents)
     .where(and(...filters))
     .orderBy(desc(computerUseCommandAuditEvents.createdAt))
