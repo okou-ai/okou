@@ -102,9 +102,12 @@ recorded outcome and never sends again. To retry, start a new upload operation.
 The enforced-nonce replay, its window and the stored retry deadline are
 removed, and new delivery rows no longer store a nonce.
 
-The response contract is unchanged, so existing CLIs keep parsing it and simply
-see non-retryable failures. Discord has no production users, so rows written by
-the previous replay flow need no migration; their extra JSONB keys are ignored.
+The delivery response no longer declares the unused optional
+`retryAfterSeconds` field, and the CLI no longer suggests retrying a failed or
+pending delivery. `pending` remains a valid response during concurrent
+completion; a repeated completion reports the recorded state without resending.
+Discord has no production users, so rows written by the previous replay flow
+need no migration; their extra JSONB keys are ignored.
 
 ## Agent-run context ownership becomes required (2026-09-25)
 
