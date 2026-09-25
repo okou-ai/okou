@@ -2,11 +2,6 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { command, computed, type Computed } from "ccstate";
 import {
-  assertErasureSubjectWritable,
-  setErasureFenceDeadlines,
-  type ErasureSubject,
-} from "@okouai/db/operations/account-erasure";
-import {
   and,
   asc,
   desc,
@@ -14,7 +9,6 @@ import {
   inArray,
   isNotNull,
   isNull,
-  or,
   sql,
 } from "drizzle-orm";
 import {
@@ -50,7 +44,6 @@ import {
   computerUseCommands,
   computerUseHosts,
 } from "@okouai/db/schema/computer-use-host";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { isUniqueViolation } from "../../lib/pg-errors";
@@ -58,17 +51,11 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
-import {
-  publishThreadListChanged,
-  publishUserSignal,
-} from "../external/realtime";
+import { publishUserSignal } from "../external/realtime";
 import { downloadS3Buffer, putS3Object } from "../external/s3";
 import { settle } from "../utils";
-import { appendChatThreadEvent } from "./chat-thread-event.service";
-import type { Tx } from "../../lib/db-types";
 
 const COMPUTER_USE_HOST_CLOSED_AFTER_MS = 90 * 1000;
-const COMPUTER_USE_RUNNING_COMMAND_DEFAULT_TIMEOUT_MS = 120 * 1000;
 const COMPUTER_USE_HOSTS_CHANGED_TOPIC = "computerUseHostsChanged";
 const L = logger("ComputerUse");
 
@@ -110,7 +97,6 @@ const DEFAULT_COMPUTER_USE_AUTOMATION_PERMISSIONS = {
   },
 } as const;
 
-type ComputerUseTx = Tx;
 type ComputerUseHostRow = typeof computerUseHosts.$inferSelect;
 type ComputerUseHostOwner = Pick<ComputerUseHostRow, "orgId" | "userId">;
 type ComputerUseCommandRow = typeof computerUseCommands.$inferSelect;
@@ -142,7 +128,6 @@ type CreateComputerUseCommandResult =
       readonly commandId: string;
       readonly commandStatus: "queued";
     }
-  | { readonly status: "subject_closed" }
   | { readonly status: "no_host" }
   | { readonly status: "host_ambiguous" }
   | { readonly status: "host_offline" }
@@ -158,13 +143,11 @@ type ResolveComputerUseCommandTargetsResult =
   | { readonly status: "host_offline" }
   | { readonly status: "host_unsupported" };
 
-type StartComputerUseHostResult =
-  | {
-      readonly status: "started";
-      readonly hostId: string;
-      readonly hostToken: string;
-    }
-  | { readonly status: "subject_closed" };
+interface StartComputerUseHostResult {
+  readonly status: "started";
+  readonly hostId: string;
+  readonly hostToken: string;
+}
 
 type HeartbeatComputerUseHostResult =
   | { readonly status: "ok"; readonly hostId: string }
@@ -303,44 +286,6 @@ export function computerUseHostIsOnline(
 
 async function publishComputerUseHostsChanged(userId: string): Promise<void> {
   await publishUserSignal([userId], COMPUTER_USE_HOSTS_CHANGED_TOPIC);
-}
-
-async function clearComputerUseHostThreadBindings(params: {
-  readonly tx: ComputerUseTx;
-  readonly userId: string;
-  readonly hostId: string;
-}): Promise<boolean> {
-  const now = nowDate();
-  const threads = await params.tx
-    .update(chatThreads)
-    .set({ computerUseHostId: null, updatedAt: now })
-    .where(
-      and(
-        eq(chatThreads.userId, params.userId),
-        eq(chatThreads.computerUseHostId, params.hostId),
-        isNotNull(chatThreads.agentId),
-      ),
-    )
-    .returning({
-      id: chatThreads.id,
-      agentId: chatThreads.agentId,
-      cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-    });
-  for (const thread of threads) {
-    if (!thread.agentId) {
-      continue;
-    }
-    await appendChatThreadEvent(params.tx, {
-      kind: "computer_use_host_updated",
-      userId: params.userId,
-      chatThreadId: thread.id,
-      agentId: thread.agentId,
-      computerUseHostId: null,
-      cloudBrowserEnabled: thread.cloudBrowserEnabled,
-      createdAt: now,
-    });
-  }
-  return threads.length > 0;
 }
 
 function isComputerUseWriteCommandKind(
@@ -958,19 +903,15 @@ function runningCommandHasTimedOut(
   if (!row.claimedAt) {
     return false;
   }
-  const timeoutMs =
-    row.timeoutMs ?? COMPUTER_USE_RUNNING_COMMAND_DEFAULT_TIMEOUT_MS;
-  return now.getTime() - row.claimedAt.getTime() > timeoutMs;
+  return now.getTime() - row.claimedAt.getTime() > row.timeoutMs;
 }
 
 function timeoutErrorForCommand(
   row: ComputerUseCommandRow,
 ): ComputerUseCommandError {
-  const timeoutMs =
-    row.timeoutMs ?? COMPUTER_USE_RUNNING_COMMAND_DEFAULT_TIMEOUT_MS;
   return {
     code: "timeout",
-    message: `Computer-use command timed out after ${timeoutMs}ms`,
+    message: `Computer-use command timed out after ${row.timeoutMs}ms`,
   };
 }
 
@@ -1144,28 +1085,18 @@ function resolveComputerUseCommandTargets(params: {
   };
 }
 
-const COMPUTER_USE_HOST_START_LOCK_TIMEOUT = "1s";
-const COMPUTER_USE_HOST_START_STATEMENT_TIMEOUT = "5s";
-
-/** The complete subject set every host-scoped route admits: the host's owner
- * and its organization. */
-function computerUseHostSubjects(params: {
-  readonly orgId: string;
-  readonly userId: string;
-}): readonly ErasureSubject[] {
-  return [
-    { subjectKind: "user", subjectId: params.userId },
-    { subjectKind: "organization", subjectId: params.orgId },
-  ];
-}
-
+/**
+ * Registers or reactivates the Desktop installation's host with one upsert:
+ * one active host per (org, user, installation), keeping its id and
+ * `created_at` and rotating its credential.
+ */
 export const startComputerUseHost$ = command(
   async (
     { set },
     params: {
       readonly orgId: string;
       readonly userId: string;
-      readonly installationId?: string;
+      readonly installationId: string;
       readonly hostName: string;
       readonly appVersion: string;
       readonly osVersion: string;
@@ -1182,35 +1113,37 @@ export const startComputerUseHost$ = command(
     const supportedCapabilities = normalizeCapabilities(
       params.supportedCapabilities,
     );
-    const result = await db.transaction(
-      async (tx) => {
-        await setErasureFenceDeadlines(tx, {
-          lockTimeout: COMPUTER_USE_HOST_START_LOCK_TIMEOUT,
-          statementTimeout: COMPUTER_USE_HOST_START_STATEMENT_TIMEOUT,
-        });
-        const admitted = await settle(
-          assertErasureSubjectWritable(tx, computerUseHostSubjects(params)),
-        );
-        signal.throwIfAborted();
-        if (!admitted.ok) {
-          if (
-            admitted.error instanceof Error &&
-            admitted.error.message === "account_erasure:subject_closed"
-          ) {
-            return { status: "subject_closed" as const };
-          }
-          throw admitted.error;
-        }
-
-        // Admission can wait behind an erasure mutation. This fresh clock and
-        // credential belong to the admitted write, not its pre-admission wait.
-        const now = nowDate();
-        const hostToken = generateOpaqueToken("vm0_computer_use_host");
-        const tokenHash = hashSecret(hostToken);
-        const values = {
-          orgId: params.orgId,
-          userId: params.userId,
-          installationId: params.installationId ?? null,
+    const now = nowDate();
+    const hostToken = generateOpaqueToken("vm0_computer_use_host");
+    const tokenHash = hashSecret(hostToken);
+    const [host] = await db
+      .insert(computerUseHosts)
+      .values({
+        orgId: params.orgId,
+        userId: params.userId,
+        installationId: params.installationId,
+        displayName,
+        tokenHash,
+        appVersion,
+        osVersion,
+        supportedCapabilities,
+        permissions: params.permissions,
+        status: "online",
+        lastSeenAt: now,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [
+          computerUseHosts.orgId,
+          computerUseHosts.userId,
+          computerUseHosts.installationId,
+        ],
+        targetWhere: and(
+          isNotNull(computerUseHosts.installationId),
+          isNull(computerUseHosts.revokedAt),
+        ),
+        set: {
           displayName,
           tokenHash,
           appVersion,
@@ -1219,62 +1152,17 @@ export const startComputerUseHost$ = command(
           permissions: params.permissions,
           status: "online",
           lastSeenAt: now,
-          createdAt: now,
           updatedAt: now,
-        };
-        const [host] = params.installationId
-          ? await tx
-              .insert(computerUseHosts)
-              .values(values)
-              .onConflictDoUpdate({
-                target: [
-                  computerUseHosts.orgId,
-                  computerUseHosts.userId,
-                  computerUseHosts.installationId,
-                ],
-                targetWhere: and(
-                  isNotNull(computerUseHosts.installationId),
-                  isNull(computerUseHosts.revokedAt),
-                ),
-                set: {
-                  displayName,
-                  tokenHash,
-                  appVersion,
-                  osVersion,
-                  supportedCapabilities,
-                  permissions: params.permissions,
-                  status: "online",
-                  lastSeenAt: now,
-                  updatedAt: now,
-                },
-              })
-              .returning({ id: computerUseHosts.id })
-          : await tx
-              .insert(computerUseHosts)
-              .values(values)
-              .returning({ id: computerUseHosts.id });
-        signal.throwIfAborted();
-
-        if (!host) {
-          throw new Error("Failed to start computer-use host");
-        }
-
-        const started = {
-          status: "started" as const,
-          hostId: host.id,
-          hostToken,
-        };
-        signal.throwIfAborted();
-        return started;
-      },
-      { isolationLevel: "read committed" },
-    );
+        },
+      })
+      .returning({ id: computerUseHosts.id });
     signal.throwIfAborted();
-    if (result.status === "started") {
-      await publishComputerUseHostsChanged(params.userId);
-      signal.throwIfAborted();
+    if (!host) {
+      throw new Error("Failed to start computer-use host");
     }
-    return result;
+    await publishComputerUseHostsChanged(params.userId);
+    signal.throwIfAborted();
+    return { status: "started", hostId: host.id, hostToken };
   },
 );
 
@@ -1403,9 +1291,8 @@ export const heartbeatComputerUseHost$ = command(
 
 /**
  * Stop authenticates by token and ends the host session with one conditional
- * UPDATE; a concurrent stop or rotation makes it match nothing. Legacy hosts
- * without an installation also unbind their chat threads, which commits the
- * thread updates together with their chat events.
+ * UPDATE that rotates the credential; a concurrent stop or rotation makes it
+ * match nothing.
  */
 export const stopComputerUseHost$ = command(
   async (
@@ -1417,74 +1304,31 @@ export const stopComputerUseHost$ = command(
   ): Promise<StopComputerUseHostResult> => {
     const db = set(writeDb$);
     const tokenHash = hashSecret(params.hostToken);
-    const [host] = await db
-      .select({
-        id: computerUseHosts.id,
-        orgId: computerUseHosts.orgId,
-        userId: computerUseHosts.userId,
-        installationId: computerUseHosts.installationId,
+    const now = nowDate();
+    const [stopped] = await db
+      .update(computerUseHosts)
+      .set({
+        status: "offline",
+        tokenHash: invalidatedHostTokenHash(),
+        updatedAt: now,
       })
-      .from(computerUseHosts)
       .where(
         and(
           eq(computerUseHosts.tokenHash, tokenHash),
           isNull(computerUseHosts.revokedAt),
         ),
       )
-      .limit(1);
+      .returning({
+        id: computerUseHosts.id,
+        userId: computerUseHosts.userId,
+      });
     signal.throwIfAborted();
-    if (!host) {
+    if (!stopped) {
       return { status: "invalid_token" };
     }
-
-    const now = nowDate();
-    const current = and(
-      eq(computerUseHosts.id, host.id),
-      eq(computerUseHosts.tokenHash, tokenHash),
-      isNull(computerUseHosts.revokedAt),
-    );
-    const stopped = host.installationId
-      ? await db
-          .update(computerUseHosts)
-          .set({
-            status: "offline",
-            tokenHash: invalidatedHostTokenHash(),
-            updatedAt: now,
-          })
-          .where(current)
-          .returning({ id: computerUseHosts.id })
-      : await db
-          .update(computerUseHosts)
-          .set({ status: "offline", revokedAt: now, updatedAt: now })
-          .where(current)
-          .returning({ id: computerUseHosts.id });
+    await publishComputerUseHostsChanged(stopped.userId);
     signal.throwIfAborted();
-    if (stopped.length === 0) {
-      return { status: "invalid_token" };
-    }
-
-    let threadBindingsCleared = false;
-    if (!host.installationId) {
-      threadBindingsCleared = await db.transaction(async (tx) => {
-        return await clearComputerUseHostThreadBindings({
-          tx,
-          userId: host.userId,
-          hostId: host.id,
-        });
-      });
-      signal.throwIfAborted();
-    }
-
-    await publishComputerUseHostsChanged(host.userId);
-    signal.throwIfAborted();
-    if (threadBindingsCleared) {
-      await publishThreadListChanged({
-        userId: host.userId,
-        orgId: host.orgId,
-      });
-      signal.throwIfAborted();
-    }
-    return { status: "stopped", hostId: host.id };
+    return { status: "stopped", hostId: stopped.id };
   },
 );
 
@@ -1533,27 +1377,25 @@ export const listComputerUseHosts$ = command(
   },
 );
 
-const COMPUTER_USE_COMMAND_LOCK_TIMEOUT = "1s";
-const COMPUTER_USE_COMMAND_STATEMENT_TIMEOUT = "5s";
-
-function computerUseCommandSubjects(params: {
-  readonly orgId: string;
-  readonly userId: string;
-}): readonly ErasureSubject[] {
-  return [
-    { subjectKind: "user", subjectId: params.userId },
-    { subjectKind: "organization", subjectId: params.orgId },
-  ];
-}
-
-async function setComputerUseCommandDeadlines(
-  tx: ComputerUseTx,
-): Promise<void> {
-  await setErasureFenceDeadlines(tx, {
-    lockTimeout: COMPUTER_USE_COMMAND_LOCK_TIMEOUT,
-    statementTimeout: COMPUTER_USE_COMMAND_STATEMENT_TIMEOUT,
-  });
-}
+export const listComputerUseAuditEvents$ = command(
+  async (
+    { set },
+    params: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly limit: number;
+      readonly commandId?: string;
+      readonly hostId?: string;
+      readonly runId?: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    return await projectComputerUseAuditEvents(
+      { db: set(writeDb$), ...params },
+      signal,
+    );
+  },
+);
 
 export const createComputerUseCommand$ = command(
   async (
@@ -1565,7 +1407,7 @@ export const createComputerUseCommand$ = command(
       readonly targetHostId?: string;
       readonly kind: ComputerUseCommandKind;
       readonly payload: ComputerUseCommandPayload;
-      readonly timeoutMs?: number;
+      readonly timeoutMs: number;
     },
     signal: AbortSignal,
   ): Promise<CreateComputerUseCommandResult> => {
@@ -1575,93 +1417,61 @@ export const createComputerUseCommand$ = command(
     }
 
     const db = set(writeDb$);
-    const result = await db.transaction(
-      async (tx): Promise<CreateComputerUseCommandResult> => {
-        await setComputerUseCommandDeadlines(tx);
-        const admitted = await settle(
-          assertErasureSubjectWritable(tx, computerUseCommandSubjects(params)),
-        );
-        if (!admitted.ok) {
-          if (
-            admitted.error instanceof Error &&
-            admitted.error.message === "account_erasure:subject_closed"
-          ) {
-            signal.throwIfAborted();
-            return { status: "subject_closed" };
-          }
-          throw admitted.error;
-        }
-        signal.throwIfAborted();
-
-        // Admission can wait behind an erasure mutation. One fresh clock after
-        // that wait owns host liveness and every persisted creation timestamp.
-        const now = nowDate();
-        const hosts = await tx
-          .select()
-          .from(computerUseHosts)
-          .where(
-            and(
-              eq(computerUseHosts.orgId, params.orgId),
-              eq(computerUseHosts.userId, params.userId),
-              isNull(computerUseHosts.revokedAt),
-            ),
-          )
-          .orderBy(desc(computerUseHosts.lastSeenAt));
-        signal.throwIfAborted();
-
-        if (hosts.length === 0) {
-          signal.throwIfAborted();
-          return { status: "no_host" };
-        }
-
-        const onlineHosts = hosts.filter((host) => {
-          return computerUseHostIsOnline(host, now);
-        });
-        const payload = commandPayload(params.payload);
-        const target = resolveComputerUseCommandTargets({
-          onlineHosts,
-          kind: params.kind,
-          payload,
-          targetHostId: params.targetHostId,
-        });
-        if (target.status !== "resolved") {
-          signal.throwIfAborted();
-          return target;
-        }
-
-        const [row] = await tx
-          .insert(computerUseCommands)
-          .values({
-            orgId: params.orgId,
-            userId: params.userId,
-            runId: params.runId ?? null,
-            hostId: target.targetHostId,
-            kind: params.kind,
-            status: "queued",
-            payload,
-            timeoutMs: params.timeoutMs,
-            createdAt: now,
-            updatedAt: now,
-          })
-          .returning();
-        signal.throwIfAborted();
-
-        if (!row) {
-          throw new Error("Failed to create computer-use command");
-        }
-
-        const created = {
-          status: "created" as const,
-          commandId: row.id,
-          commandStatus: "queued" as const,
-        };
-        signal.throwIfAborted();
-        return created;
-      },
-      { isolationLevel: "read committed" },
-    );
+    const now = nowDate();
+    const hosts = await db
+      .select()
+      .from(computerUseHosts)
+      .where(
+        and(
+          eq(computerUseHosts.orgId, params.orgId),
+          eq(computerUseHosts.userId, params.userId),
+          isNull(computerUseHosts.revokedAt),
+        ),
+      )
+      .orderBy(desc(computerUseHosts.lastSeenAt));
     signal.throwIfAborted();
-    return result;
+    if (hosts.length === 0) {
+      return { status: "no_host" };
+    }
+
+    const onlineHosts = hosts.filter((host) => {
+      return computerUseHostIsOnline(host, now);
+    });
+    const payload = commandPayload(params.payload);
+    const target = resolveComputerUseCommandTargets({
+      onlineHosts,
+      kind: params.kind,
+      payload,
+      targetHostId: params.targetHostId,
+    });
+    if (target.status !== "resolved") {
+      return target;
+    }
+
+    const [row] = await db
+      .insert(computerUseCommands)
+      .values({
+        orgId: params.orgId,
+        userId: params.userId,
+        runId: params.runId ?? null,
+        hostId: target.targetHostId,
+        kind: params.kind,
+        status: "queued",
+        payload,
+        timeoutMs: params.timeoutMs,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning({ id: computerUseCommands.id });
+    signal.throwIfAborted();
+    if (!row) {
+      throw new Error("Failed to create computer-use command");
+    }
+    return {
+      status: "created",
+      commandId: row.id,
+      commandStatus: "queued",
+    };
   },
 );
 
@@ -1740,17 +1550,13 @@ export const getComputerUseCommand$ = command(
         (await failTimedOutComputerUseCommand(db, row, now, signal)) ?? row;
     }
 
-    let hostName: string | null = null;
-    if (commandRow.hostId) {
-      const [host] = await db
-        .select({ displayName: computerUseHosts.displayName })
-        .from(computerUseHosts)
-        .where(eq(computerUseHosts.id, commandRow.hostId))
-        .limit(1);
-      signal.throwIfAborted();
-      hostName = host?.displayName ?? null;
-    }
-    return serializeCommand(commandRow, hostName);
+    const [host] = await db
+      .select({ displayName: computerUseHosts.displayName })
+      .from(computerUseHosts)
+      .where(eq(computerUseHosts.id, commandRow.hostId))
+      .limit(1);
+    signal.throwIfAborted();
+    return serializeCommand(commandRow, host?.displayName ?? null);
   },
 );
 
@@ -1937,10 +1743,7 @@ export const claimNextComputerUseHostCommand$ = command(
           eq(computerUseCommands.orgId, host.orgId),
           eq(computerUseCommands.userId, host.userId),
           eq(computerUseCommands.status, "queued"),
-          or(
-            eq(computerUseCommands.hostId, host.id),
-            isNull(computerUseCommands.hostId),
-          ),
+          eq(computerUseCommands.hostId, host.id),
           inArray(computerUseCommands.kind, COMPUTER_USE_COMMANDS),
         ),
       )

@@ -1,5 +1,24 @@
 # Deployment Compatibility
 
+## Computer Use erasure admission and legacy host retirement (2026-09-25)
+
+Host START, command creation, the host directory and the audit-event list no
+longer take account-erasure admission or open transactions; START is one
+upsert and creation is a bounded host read plus one INSERT. A closed erasure
+subject is no longer refused with `403` by these routes.
+
+`POST /api/computer-use/hosts/start` now requires `installationId`. Hosts
+registered without one (the last was seen in August 2026) are no longer
+accepted, and stop always keeps the host as an offline installation instead of
+revoking it and clearing chat-thread bindings. Every current Desktop build
+sends `installationId`.
+
+Migration `1243_computer_use_commands_required_host_timeout` deletes commands
+left by the retired approval flow (and their audit rows), revokes any active
+host without an installation, and makes `computer_use_commands.host_id` and
+`timeout_ms` `NOT NULL`. Older APIs always write both columns for new commands,
+so they remain compatible after the migration.
+
 ## Computer Use host sessions and command reads stop locking (2026-09-25)
 
 Computer Use heartbeat, command claim, command completion, host stop, command

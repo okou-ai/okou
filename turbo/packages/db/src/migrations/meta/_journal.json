@@ -1156,6 +1156,13 @@
       "when": 1790338676658,
       "tag": "1242_drop_chat_search_agent_created_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 1243,
+      "version": "7",
+      "when": 1790340394461,
+      "tag": "1243_computer_use_commands_required_host_timeout",
+      "breakpoints": true
     }
   ]
 }

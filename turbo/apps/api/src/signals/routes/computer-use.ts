@@ -27,11 +27,11 @@ import {
   getComputerUseCommandPluginContent$,
   getComputerUseCommandScreenshot$,
   heartbeatComputerUseHost$,
+  listComputerUseAuditEvents$,
+  listComputerUseHosts$,
   startComputerUseHost$,
   stopComputerUseHost$,
 } from "../services/computer-use.service";
-import { listAdmittedComputerUseAuditEvents$ } from "../services/computer-use-audit-events-erasure-admission.service";
-import { listAdmittedComputerUseHosts$ } from "../services/computer-use-host-directory-erasure-admission.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -61,16 +61,6 @@ const unauthorizedComputerUse = Object.freeze({
     error: Object.freeze({
       message: "Missing computer-use host token",
       code: "UNAUTHORIZED",
-    }),
-  }),
-});
-
-const computerUseCommandCreationUnavailable = Object.freeze({
-  status: 403 as const,
-  body: Object.freeze({
-    error: Object.freeze({
-      message: "Computer-use command creation is not available",
-      code: "FORBIDDEN",
     }),
   }),
 });
@@ -125,9 +115,6 @@ const hostStartInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
 
-  if (result.status === "subject_closed") {
-    return forbidden("Account unavailable");
-  }
   return {
     status: 200 as const,
     body: { hostId: result.hostId, hostToken: result.hostToken },
@@ -189,25 +176,26 @@ const hostStopInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const hostsListInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const result = await set(
-    listAdmittedComputerUseHosts$,
-    {
-      orgId: auth.orgId,
-      userId: auth.userId,
-      ...(auth.tokenType === "agent"
-        ? { boundHostId: auth.computerUseHostId ?? null }
-        : {}),
-    },
+  const boundHostId =
+    auth.tokenType === "agent" ? (auth.computerUseHostId ?? null) : undefined;
+  if (boundHostId === null) {
+    return computerUseHostNotAuthorized;
+  }
+  const listed = await set(
+    listComputerUseHosts$,
+    { orgId: auth.orgId, userId: auth.userId },
     signal,
   );
   signal.throwIfAborted();
-  if (result.outcome === "closed") {
-    return forbidden("Computer-use host directory is not available");
-  }
-  if (result.outcome === "unbound") {
-    return computerUseHostNotAuthorized;
-  }
-  return { status: 200 as const, body: result.value };
+  const body =
+    boundHostId === undefined
+      ? listed
+      : {
+          hosts: listed.hosts.filter((host) => {
+            return host.id === boundHostId;
+          }),
+        };
+  return { status: 200 as const, body };
 });
 
 const commandCreateBody$ = bodyResultOf(computerUseCommandContract.create);
@@ -242,9 +230,6 @@ const commandCreateInner$ = command(
     );
     signal.throwIfAborted();
 
-    if (result.status === "subject_closed") {
-      return computerUseCommandCreationUnavailable;
-    }
     if (result.status === "no_host") {
       return notFound("No linked computer-use host found");
     }
@@ -299,9 +284,6 @@ const writeCommandCreateInner$ = command(
     );
     signal.throwIfAborted();
 
-    if (result.status === "subject_closed") {
-      return computerUseCommandCreationUnavailable;
-    }
     if (result.status === "no_host") {
       return notFound("No linked computer-use host found");
     }
@@ -381,9 +363,6 @@ const pluginCommandCreateInner$ = command(
     );
     signal.throwIfAborted();
 
-    if (result.status === "subject_closed") {
-      return computerUseCommandCreationUnavailable;
-    }
     if (result.status === "no_host") {
       return notFound("No linked computer-use host found");
     }
@@ -611,8 +590,8 @@ const auditEventsListInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const query = get(auditEventsQuery$);
-    const result = await set(
-      listAdmittedComputerUseAuditEvents$,
+    const body = await set(
+      listComputerUseAuditEvents$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
@@ -624,10 +603,7 @@ const auditEventsListInner$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (result.outcome === "closed") {
-      return forbidden("Computer-use audit events are not available");
-    }
-    return { status: 200 as const, body: result.value };
+    return { status: 200 as const, body };
   },
 );
 

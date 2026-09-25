@@ -3,11 +3,7 @@ import { getAllFeatureStates } from "@okouai/core/feature-switch";
 import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 
-import {
-  resourceUnavailable,
-  providerUnavailable,
-  notFound,
-} from "../../lib/error";
+import { providerUnavailable, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf } from "../context/request";
@@ -24,7 +20,7 @@ import {
   isConnectorCatalogUnavailableError,
   listConnectedConnectorBriefs,
 } from "../services/connector-catalog-reader.service";
-import { listAdmittedComputerUseHosts$ } from "../services/computer-use-host-directory-erasure-admission.service";
+import { listComputerUseHosts$ } from "../services/computer-use.service";
 import { customConnectorList } from "../services/custom-connector-list.service";
 import { userFeatureSwitchOverrides } from "../services/feature-switches.service";
 import { userPreferences } from "../services/user-data.service";
@@ -39,13 +35,10 @@ const overview$ = command(async ({ get, set }, signal: AbortSignal) => {
       listConnectorAccountSummaries(db, owner),
       get(customConnectorList(owner)),
       get(userPreferences(owner)),
-      set(listAdmittedComputerUseHosts$, owner, signal),
+      set(listComputerUseHosts$, owner, signal),
       get(userFeatureSwitchOverrides(auth.orgId, auth.userId)),
     ]);
   signal.throwIfAborted();
-  if (hosts.outcome !== "listed") {
-    return resourceUnavailable("Computer-use host directory is unavailable");
-  }
 
   const connectedSlugs = summaries.flatMap((summary) => {
     return summary.target.kind === "builtin" && summary.accountCount > 0
@@ -119,7 +112,7 @@ const overview$ = command(async ({ get, set }, signal: AbortSignal) => {
               : null,
           };
         }),
-      computerUseHosts: hosts.value.hosts.map((host) => {
+      computerUseHosts: hosts.hosts.map((host) => {
         return {
           id: host.id,
           hostName: host.hostName ?? host.displayName,

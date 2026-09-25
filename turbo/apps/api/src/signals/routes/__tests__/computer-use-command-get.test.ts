@@ -5,7 +5,6 @@ import { aroundEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockNow, withMockNowForTest } from "../../../lib/time";
-import { createNullableComputerUseCommandFixture } from "../../../test-fixtures/computer-use-command-get-erasure";
 import {
   createBddApi,
   expectApiError,
@@ -179,31 +178,6 @@ describe("GET /api/computer-use/commands/:commandId", () => {
           },
         });
       }
-
-      const nullable = await createNullableComputerUseCommandFixture({
-        orgId: actor.orgId,
-        userId: actor.userId,
-        createdAt: new Date(STARTED_AT_MS),
-      });
-      const nullableResponse = await computerUse.readComputerUseCommand(
-        actor,
-        nullable.commandId,
-      );
-      expect(nullableResponse).toStrictEqual({
-        id: nullable.commandId,
-        kind: "apps.list",
-        status: "queued",
-        hostId: null,
-        hostName: null,
-        payload: { app: "Finder", text: "fixture 中文🙂" },
-        timeoutMs: null,
-        createdAt: new Date(STARTED_AT_MS).toISOString(),
-        claimedAt: null,
-        completedAt: null,
-      });
-      expect(Buffer.byteLength(JSON.stringify(nullableResponse), "utf8")).toBe(
-        259,
-      );
     },
   );
 

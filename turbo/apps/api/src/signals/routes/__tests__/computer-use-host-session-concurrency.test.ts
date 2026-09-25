@@ -183,11 +183,9 @@ describe("Computer Use host session concurrency", () => {
       );
       expect(afterStop.status).toBe(401);
       const listed = await computerUse.listComputerUseHosts(actor);
-      expect(
-        listed.hosts.some((item) => {
-          return item.id === host.hostId;
-        }),
-      ).toBeFalsy();
+      expect(listed.hosts).toMatchObject([
+        { id: host.hostId, status: "offline" },
+      ]);
     },
   );
 });

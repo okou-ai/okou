@@ -91,18 +91,6 @@ surface; the index does not replace their detailed rules.
 - [Single-thread chat metadata](./account-erasure-chat-thread-metadata.md):
   exact user authorization, canonical ownership admission, SQL counts, response
   measurement and failure-path lifecycle evidence.
-- [Standalone Computer Use host directory](./account-erasure-computer-use-host-directory.md):
-  exact host-owner admission, complete online/offline projection, Agent-bound
-  narrowing and unbounded host-cardinality evidence.
-- [Computer Use host START](./account-erasure-computer-use-host-start.md):
-  shared user/organization producer admission for legacy creation and stable
-  installation reactivation, including credential and cancellation boundaries.
-- [Standalone Computer Use audit events](./account-erasure-computer-use-audit-events.md):
-  exact owner admission, retained selector/redaction semantics and bounded output
-  with explicit physical-scan evidence.
-- [Computer Use command creation](./account-erasure-computer-use-command-creation.md):
-  canonical owner admission around complete host selection and insertion,
-  fixed closed response, fresh liveness clock and exact SQL sequences.
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
   validation reasons, cached rejection records, retained snapshots and recovered
   publication-order evidence.
