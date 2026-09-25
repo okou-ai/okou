@@ -1102,16 +1102,15 @@ test("An illustration template starts the chosen generation run", async () => {
   });
 });
 
-test("A video brief survives checkout cancellation and success", async () => {
+test("A video checkout return completes payment and reopens the video step", async () => {
   const template = firstItem(VIDEO_TEMPLATE_ITEMS);
   let successUrl: string | undefined;
   let cancelUrl: string | undefined;
   let runPrompt: string | undefined;
-  let generationType: string | undefined;
+  let completedSessionId: string | undefined;
   mockChatLifecycle(context, {
     onRunCreate: (body) => {
       runPrompt = body.prompt;
-      generationType = templateTypeFromUserMessage(body.userMessage);
     },
   });
   context.mocks.api(
@@ -1124,7 +1123,8 @@ test("A video brief survives checkout cancellation and success", async () => {
       });
     },
   );
-  context.mocks.api(billingCheckoutContract.complete, ({ respond }) => {
+  context.mocks.api(billingCheckoutContract.complete, ({ body, respond }) => {
+    completedSessionId = body.sessionId;
     return respond(200, { completed: true });
   });
 
@@ -1184,7 +1184,6 @@ test("A video brief survives checkout cancellation and success", async () => {
   await expect(
     screen.findByRole("heading", { name: "Customize your video" }),
   ).resolves.toBeInTheDocument();
-  expect(screen.getByLabelText("Custom video prompt")).toHaveValue(videoBrief);
 
   success.searchParams.set(
     "onboarding_billing_session_id",
@@ -1194,10 +1193,13 @@ test("A video brief survives checkout cancellation and success", async () => {
   pushState(null, "", success);
   window.dispatchEvent(new PopStateEvent("popstate"));
   await waitFor(() => {
-    expect(runPrompt).toContain(videoBrief);
-    expect(generationType).toBe("video");
-    expect(pathname()).toMatch(/^\/chats\//u);
+    expect(completedSessionId).toBe("cs_test_onboarding_stored");
   });
+  await expect(
+    screen.findByRole("heading", { name: "Customize your video" }),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe("/onboarding/video-run");
+  expect(runPrompt).toBeUndefined();
 });
 
 test("Video onboarding offers Pro with an initial usage pack", async () => {
