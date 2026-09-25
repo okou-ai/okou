@@ -1122,7 +1122,6 @@ export function createChatFilesBddApi(context: TestContext) {
       threadId: string,
     ): Promise<{
       readonly lastReadAt: string | null;
-      readonly unreads: readonly { threadId: string; unreadAt: string }[];
     }> {
       const response = await accept(
         threadMarkReadClient().markRead({
@@ -1186,7 +1185,6 @@ export function createChatFilesBddApi(context: TestContext) {
       threadId: string,
     ): Promise<{
       readonly lastReadAt: string | null;
-      readonly unreads: readonly { threadId: string; unreadAt: string }[];
     }> {
       const response = await accept(
         threadMarkUnreadClient().markUnread({

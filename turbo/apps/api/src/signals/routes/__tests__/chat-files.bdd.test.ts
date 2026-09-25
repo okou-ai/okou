@@ -114,7 +114,6 @@ describe("CHAT-01 chat thread lifecycle", () => {
     const markedRead = await api.markThreadRead(actor, created.id);
     expect(markedRead).toStrictEqual({
       lastReadAt: expect.any(String),
-      unreads: [],
     });
 
     context.mocks.ably.publish.mockClear();
@@ -122,7 +121,6 @@ describe("CHAT-01 chat thread lifecycle", () => {
     const markedUnread = await api.markThreadUnread(actor, created.id);
     expect(markedUnread).toStrictEqual({
       lastReadAt: null,
-      unreads: [],
     });
     expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
       [`user-org:${actor.userId}:${actor.orgId}`],
@@ -236,7 +234,6 @@ describe("CHAT-01 chat thread lifecycle", () => {
 
     expect(readEmpty).toStrictEqual({
       lastReadAt: expect.any(String),
-      unreads: [],
     });
 
     let detail = await api.readThread(owner, thread.id);

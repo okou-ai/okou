@@ -3,7 +3,7 @@
 ## Public brand retirement contraction (2026-09-25)
 
 Phase 2 of #36766 contracts the columns that Phase 1 stopped reading. Migration
-`1243_retire_public_brand` drops `public_brand` from `slack_org_installations`,
+`1244_retire_public_brand` drops `public_brand` from `slack_org_installations`,
 `slack_chat_ingress`, `chat_slack_context`, `discord_chat_ingress`,
 `chat_discord_context`, `feishu_org_installations`, `feishu_org_connections`,
 `feishu_chat_ingress`, `chat_feishu_context`, `teams_org_installations`,
@@ -69,9 +69,37 @@ unaffected; Phase 1 already removed the brand from them.
 
 Rollback promotes artifacts without restoring schema. The production rollback
 resolver therefore rejects API targets that predate the canonical main commit
-that added `1243_retire_public_brand.sql`. Recovering past that commit requires
+that added `1244_retire_public_brand.sql`. Recovering past that commit requires
 a forward-fix migration that restores the columns and the old layout column
 name, not an artifact rollback.
+
+## Morning Brief expired admission containment (2026-09-25)
+
+This is a partial, fail-closed incident slice, **not** the recovery of stalled
+Morning Brief schedules. With the global schedule-expiry switch off, API
+instances at this revision no longer select `daily-delivery` anchors older than
+30 minutes in the legacy due batch. A selected anchor that ages past that
+boundary before queue admission is also refused; the generic, unjournaled
+claim CAS applies the same cutoff to `daily-delivery` and checks that the row
+is still enabled. The cutoff is strict: exactly 30 minutes late remains due.
+The old anchors, historical claims, runs, queue events, native rows, enabled
+choice, Official installation and sent messages are not changed. Other due
+automations keep their existing expiry policy and are selected in stable
+next-run order instead of sharing an unordered batch with stalled briefs.
+
+This does not advance an old anchor to a future occurrence. The global expiry
+flag must **not** be enabled as a substitute: an earlier mismatched Native
+obligation still holds that path. The Native/Official decision fence and old
+callback settlement remain in place; the mixed-version disable/enable and
+reconciliation contract has not been proven under single-statement hot-path
+constraints. An older API poller can still select or claim an expired brief
+during rollout or after rollback. Therefore production release of this
+containment requires a separately approved deployment plan that prevents old
+pollers from admitting overdue briefs throughout the overlap and sets a
+rollback floor at this revision or later; absent that plan, do not promote it
+as a no-backfill guarantee. Already queued or running claims and email/Chat
+outcomes require separate evidence and handling, not age-based settlement.
+No database migration or client protocol change is included.
 
 ## Chat search agent recency index dropped (2026-09-25)
 
@@ -196,6 +224,22 @@ drop it while the new API is a rollback target. Stale/missed producer revocation
 can delay an individual cold claim by at most the successor-relative preference
 window, never by heartbeat freshness; measure that tail cost alongside reuse.
 
+## App floor 0.963.3 retires the mark-read `unreads` field (2026-09-25)
+
+`POST /api/chat-threads/:id/mark-read` and
+`POST /api/chat-threads/:id/mark-unread` no longer return `unreads`; both
+response contracts now carry only `lastReadAt`. The field was the rollout
+fallback kept by the unread-snapshot change below.
+
+`app-v0.963.3` (release commit `f53bf151eef29e6e21711850d6237719ab4ffdcd`) is
+the first App that contains #36877 and no longer reads the field. Production
+App serves `0.965.0` at `a4794200e232f46f6f64eb8102067c6a367667d7`, a
+descendant of that release. This change raises the identified-App minimum
+version from `0.958.0` to `0.963.3`; older bundles receive `426` on their next
+API request before any route is matched and refresh into the live App. Do not
+roll the App back below `0.963.3` without also rolling the API back below this
+change.
+
 ## Mark-read responses stop computing unread snapshots (2026-09-25)
 
 `POST /api/chat-threads/:id/mark-read` and
@@ -207,8 +251,8 @@ unread state from `/api/indicators`. The new App no longer reads the field.
 Older App bundles still pass `unreads` to their optimistic read-mark pruning;
 an empty list only skips pruning, and those bundles already hide a local mark
 when indicators report a newer `unreadAt`. A new App talking to an older API
-ignores the populated field. Remove `unreads` from both response contracts once
-App bundles from before this change are no longer in use.
+ignores the populated field. The field was removed together with the App floor
+raise to `0.963.3` above.
 
 ## Phone proactive sends target the caller's own link (2026-09-25)
 

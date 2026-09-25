@@ -1160,8 +1160,15 @@
     {
       "idx": 1243,
       "version": "7",
-      "when": 1790340039211,
-      "tag": "1243_retire_public_brand",
+      "when": 1790340233476,
+      "tag": "1243_drop_chat_thread_session_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 1244,
+      "version": "7",
+      "when": 1790343764770,
+      "tag": "1244_retire_public_brand",
       "breakpoints": true
     }
   ]

@@ -62,6 +62,7 @@ import {
   insertChatEvent,
   insertChatEvents,
   replaceChatEvent,
+  revokeChatEvent,
 } from "../signals/services/chat-event.service";
 import { createUserMessageDocument } from "../signals/services/chat-user-message.service";
 import { buildFeishuChatOpenUrl } from "../signals/services/feishu-config";
@@ -788,6 +789,27 @@ export async function insertQueuedSlackMissingContextFixture(args: {
     await tx.delete(chatSlackContext).where(eq(chatSlackContext.id, event.id));
     return event.id;
   });
+}
+
+/**
+ * Commit a recall of an input that an open active-input delivery already holds.
+ * Recall and reservation do not serialize, so a recall that passed its pending
+ * check before the reservation committed can land on a reserved source.
+ */
+export async function revokeReservedActiveInputFixture(args: {
+  readonly chatThreadId: string;
+  readonly eventId: string;
+}): Promise<void> {
+  const revoker = await db().transaction(async (tx) => {
+    return await revokeChatEvent(tx, args.eventId, {
+      chatThreadId: args.chatThreadId,
+      eventType: "control.revoke",
+      runId: null,
+    });
+  });
+  if (!revoker) {
+    throw new Error("Expected the reserved active input to be revoked");
+  }
 }
 
 export async function replayPendingChatInputQueueEventFixture(args: {

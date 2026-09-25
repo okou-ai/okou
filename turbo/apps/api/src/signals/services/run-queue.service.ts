@@ -5,8 +5,6 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agents } from "@okouai/db/schema/agent";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { chatEvents } from "@okouai/db/schema/chat-event";
 import {
   and,
   count,
@@ -89,41 +87,6 @@ async function effectiveOrgConcurrencyState(
 }
 
 type DbTransaction = Tx;
-
-async function lockQueuedRunThreads(
-  tx: DbTransaction,
-  runIds: readonly string[],
-): Promise<void> {
-  if (runIds.length === 0) {
-    return;
-  }
-  // Terminal cleanup takes the provider lock. Queue-marker revocation later
-  // writes thread sequence numbers, so own those threads before locking runs
-  // or providers, in the same order as completion and final launch admission.
-  // NO KEY UPDATE preserves that control exclusion while allowing an output
-  // writer holding the run to finish its event FK check before we obtain it.
-  // Include marker parents for historical runs without a thread binding.
-  await tx
-    .select({ id: chatThreads.id })
-    .from(chatThreads)
-    .where(
-      inArray(
-        chatThreads.id,
-        tx
-          .select({ id: agentRuns.chatThreadId })
-          .from(agentRuns)
-          .where(inArray(agentRuns.id, runIds))
-          .union(
-            tx
-              .select({ id: chatEvents.chatThreadId })
-              .from(chatEvents)
-              .where(inArray(chatEvents.runId, runIds)),
-          ),
-      ),
-    )
-    .orderBy(chatThreads.id)
-    .for("no key update");
-}
 
 type QueuedRunnerJobPayload = NonNullable<
   Awaited<ReturnType<typeof decryptQueuedRunnerJobPayload>>
@@ -559,7 +522,6 @@ async function promoteQueuedCandidateInTransaction(
   const complete = (result: PromotionResult) => {
     return { result, lockHeldAt };
   };
-  await lockQueuedRunThreads(tx, [args.row.runId]);
   if (!(await validateComputeRunAdmission(tx, admission))) {
     return complete({ status: "lost" });
   }
@@ -839,7 +801,6 @@ export const cleanupExpiredQueueEntries$ = command(
       const candidateRunIds = discovered.map((candidate) => {
         return candidate.runId;
       });
-      await lockQueuedRunThreads(tx, candidateRunIds);
       if (candidateRunIds.length > 0) {
         await tx
           .select({ id: agentRuns.id })
@@ -957,7 +918,6 @@ export const cleanupQueuedRunLaunchOrphans$ = command(
       const candidateRunIds = candidates.map((candidate) => {
         return candidate.runId;
       });
-      await lockQueuedRunThreads(tx, candidateRunIds);
       await tx
         .select({ id: agentRuns.id })
         .from(agentRuns)

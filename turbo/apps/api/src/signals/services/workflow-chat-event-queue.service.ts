@@ -21,7 +21,6 @@ import { alias } from "drizzle-orm/pg-core";
 import type { Db } from "../external/db";
 import {
   loadPendingChatQueueEvent,
-  lockChatQueueThread,
   pendingChatQueueEventCondition,
   staleChatEventQueueThreadIds,
 } from "./chat-event-queue.service";
@@ -453,9 +452,8 @@ export async function rejectWorkflowQueueEvent(
   },
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
-    if (!(await lockChatQueueThread(tx, args.chatThreadId))) {
-      return false;
-    }
+    // The rejected replacement is the atomic consume: it conflicts on the
+    // event's revoke edge with any concurrent claim, recall or rejection.
     // The event owned the runnable head before launch. A user message or run
     // may win the thread while launch is in flight, but a permanent conflict
     // must still consume this trigger instead of making it retry later.
