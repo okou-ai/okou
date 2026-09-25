@@ -1,5 +1,19 @@
 # Deployment Compatibility
 
+## Discord file deliveries become fire and forget (2026-09-25)
+
+`POST /api/integrations/discord/files/complete` sends each upload operation to
+Discord at most once, without a nonce. A send that Discord rejects,
+rate-limits or never answers is recorded as a failed delivery with
+`retryable: false` and no `retryAfterSeconds`; a repeated completion returns the
+recorded outcome and never sends again. To retry, start a new upload operation.
+The enforced-nonce replay, its window and the stored retry deadline are
+removed, and new delivery rows no longer store a nonce.
+
+The response contract is unchanged, so existing CLIs keep parsing it and simply
+see non-retryable failures. Discord has no production users, so rows written by
+the previous replay flow need no migration; their extra JSONB keys are ignored.
+
 ## Chat event write control retirement (2026-09-25)
 
 Migration `1245_drop_chat_event_write_control` drops `chat_event_write_control`
