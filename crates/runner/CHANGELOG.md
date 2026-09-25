@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.213.17](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.16...runner-rs-v0.213.17) (2026-09-25)
+
+
+### Refactoring
+
+* **runner:** move post-executor completion coordination into supervisor ([#36820](https://github.com/okou-ai/okou/issues/36820)) ([e1cda49](https://github.com/okou-ai/okou/commit/e1cda4991d15e49f3b02af9d4c4980dff5e89be4))
+
 ## [0.213.16](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.15...runner-rs-v0.213.16) (2026-09-25)
 
 
