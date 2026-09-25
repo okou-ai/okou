@@ -3614,7 +3614,9 @@ test("Restore a plan after hosted payment confirmation", async () => {
           },
     );
   });
-  context.mocks.api(billingRestoreContract.create, ({ respond }) => {
+  let restoreReturnUrl: string | undefined;
+  context.mocks.api(billingRestoreContract.create, ({ body, respond }) => {
+    restoreReturnUrl = body.returnUrl;
     return respond(200, {
       status: "payment_method_required",
       checkoutUrl: "https://checkout.stripe.com/confirm-restore-plan",
@@ -3639,6 +3641,9 @@ test("Restore a plan after hosted payment confirmation", async () => {
       "https://checkout.stripe.com/confirm-restore-plan",
     ]);
   });
+  expect(
+    new URL(restoreReturnUrl ?? "").searchParams.get("billing_pending"),
+  ).toBe("restore");
   expect(screen.queryByText("Restore Pro plan?")).not.toBeInTheDocument();
   expect(
     screen.queryByText("Plan restored. Your subscription will renew normally."),
@@ -3650,6 +3655,26 @@ test("Restore a plan after hosted payment confirmation", async () => {
   await expect(
     screen.findByText("Plan restored. Your subscription will renew normally."),
   ).resolves.toBeVisible();
+});
+
+test("Confirm a restored plan after returning from hosted payment", async () => {
+  context.mocks.data.org({
+    id: "org_1",
+    name: "Restore Return Org",
+    role: "admin",
+  });
+  context.mocks.api(billingStatusContract.get, ({ respond }) => {
+    return respond(200, activeProBillingStatus());
+  });
+
+  await openBillingTab("/?settings=billing&billing_pending=restore");
+
+  await expect(
+    screen.findByText("Plan restored. Your subscription will renew normally."),
+  ).resolves.toBeVisible();
+  const searchParams = new URLSearchParams(window.location.search);
+  expect(searchParams.get("settings")).toBe("billing");
+  expect(searchParams.has("billing_pending")).toBeFalsy();
 });
 
 test("Hide Restore when an ending plan cannot be restored", async () => {

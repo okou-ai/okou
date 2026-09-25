@@ -14,7 +14,6 @@ import { useOnboardingNavigation } from "./onboarding-navigation.ts";
 
 export function OnboardingRunAction({
   prompt,
-  note,
   template,
   templateSlug,
   requiresPaidPlan = false,
@@ -23,7 +22,6 @@ export function OnboardingRunAction({
   onBack,
 }: {
   readonly prompt: string;
-  readonly note?: string;
   readonly template?: string;
   readonly templateSlug?: string;
   readonly requiresPaidPlan?: boolean;
@@ -72,8 +70,6 @@ export function OnboardingRunAction({
   const prepareVideoAndRun = async (): Promise<void> => {
     const result = await prepareVideo(
       {
-        prompt,
-        note: note ?? "",
         templateId: template ?? "",
         templateSlug: templateSlug ?? "",
       },

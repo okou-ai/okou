@@ -2,7 +2,6 @@ import { command } from "ccstate";
 import { deleteDB } from "idb";
 
 import { clearSourcesFirstDraftForUser$ } from "../onboarding/onboarding-sources-first-state.ts";
-import { clearOnboardingCheckoutDraftForUser$ } from "../onboarding/onboarding-state.ts";
 import { deleteVoiceDraftRecordingsForUser } from "./voice-draft-store.ts";
 
 const VOICE_DRAFT_DB = "okou-voice-drafts";
@@ -40,6 +39,5 @@ export const deleteAccountLocalData$ = command(
       signal.throwIfAborted();
     }
     set(clearSourcesFirstDraftForUser$, userId);
-    set(clearOnboardingCheckoutDraftForUser$, userId);
   },
 );
