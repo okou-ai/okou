@@ -551,6 +551,80 @@ test("The standalone form selects a required native option by index, not its web
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
 
+test("A required multiple select cannot keep a disabled website choice and drops it on change", async () => {
+  const preflight = selectAction({
+    required: true,
+    multiple: true,
+    preflight: true,
+  });
+  const [field] = preflight.fields;
+  if (!field?.control.options) {
+    throw new Error("Expected select options in the preflight fixture");
+  }
+  const snapshot = {
+    ...preflight,
+    fields: [
+      {
+        ...field,
+        control: {
+          ...field.control,
+          options: field.control.options.map((option) => {
+            return option.index === 3 ? { ...option, selected: true } : option;
+          }),
+        },
+      },
+    ],
+  };
+  let state: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...selectAction({ required: true, multiple: true }),
+      state,
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, snapshot);
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      {
+        key: "region",
+        optionIndexes: [1, 2],
+        optionSetFingerprint: SELECT_FINGERPRINT,
+      },
+    ]);
+    state = "succeeded";
+    return respond(200, {
+      ...selectAction({ required: true, multiple: true }),
+      state,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const region = within(form).getByLabelText(/Region/u);
+  await waitFor(() => {
+    expect(region).toBeEnabled();
+  });
+  expect(button("Add to browser")).toBeDisabled();
+  expect(screen.queryByText("Leave website value unchanged")).toBeNull();
+  const user = userEvent.setup({ delay: null });
+  await user.selectOptions(region, "2");
+  expect(button("Add to browser")).toBeEnabled();
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
 test("An optional multiple select distinguishes untouched from an explicit clear", async () => {
   let state: BrowserUserActionResponse["state"] = "pending";
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {

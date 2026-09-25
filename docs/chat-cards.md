@@ -722,7 +722,9 @@ a required select must be chosen or explicitly confirmed even when the website
 already has a valid selection. Choice drafts are tied to the snapshot they
 were made against: after an option change during Retry, the user must choose
 again or explicitly keep the current website selection. Required selects reject
-empty placeholder choices. The API checks the
+empty placeholder choices. A required multi-select cannot confirm a website
+selection containing a disabled option; a new choice excludes disabled options
+that the website had already selected. The API checks the
 current options again before writing; option drift makes the action stale, and
 post-write mismatch yields an uncertain state instead of claiming success.
 Option values and submitted selections do not appear in the action URL or

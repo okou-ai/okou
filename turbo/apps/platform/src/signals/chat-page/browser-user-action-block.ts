@@ -546,10 +546,13 @@ function browserSelectSubmissionValue(
       : undefined;
   }
   if (
-    (field.required || field.control.siteRequired) &&
-    selection.every((index) => {
-      return options[index]?.empty;
-    })
+    selection.some((index) => {
+      return !options[index] || options[index].disabled;
+    }) ||
+    ((field.required || field.control.siteRequired) &&
+      selection.every((index) => {
+        return options[index]?.empty;
+      }))
   ) {
     return null;
   }

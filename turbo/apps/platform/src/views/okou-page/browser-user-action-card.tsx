@@ -506,10 +506,17 @@ function requiredSelectsSatisfied(
         .map((option) => {
           return option.index;
         });
-    return selected.some((index) => {
-      const option = options[index];
-      return option && !option.disabled && !option.empty;
-    });
+    return (
+      (choice === undefined ||
+        selected.every((index) => {
+          const option = options[index];
+          return option && !option.disabled;
+        })) &&
+      selected.some((index) => {
+        const option = options[index];
+        return option && !option.disabled && !option.empty;
+      })
+    );
   });
 }
 
@@ -541,10 +548,27 @@ function canKeepSiteSelectChoice(
   if (!field.required) {
     return choiceDraft.has(field.key);
   }
-  return selectedSelectIndices(field, undefined).some((index) => {
-    const option = field.control.options?.[index];
-    return option && !option.disabled && !option.empty;
-  });
+  const selected = selectedSelectIndices(field, undefined);
+  return (
+    selected.every((index) => {
+      const option = field.control.options?.[index];
+      return option && !option.disabled;
+    }) &&
+    selected.some((index) => {
+      const option = field.control.options?.[index];
+      return option && !option.empty;
+    })
+  );
+}
+
+function selectedEnabledOptionIndices(control: HTMLSelectElement): number[] {
+  return [...control.selectedOptions]
+    .filter((option) => {
+      return !option.disabled;
+    })
+    .map((option) => {
+      return Number(option.value);
+    });
 }
 
 function BrowserSelectControl({
@@ -600,9 +624,7 @@ function BrowserSelectControl({
           }
           onUpdate(
             field.key,
-            [...event.currentTarget.selectedOptions].map((option) => {
-              return Number(option.value);
-            }),
+            selectedEnabledOptionIndices(event.currentTarget),
             field.control.optionSetFingerprint,
           );
         }}
