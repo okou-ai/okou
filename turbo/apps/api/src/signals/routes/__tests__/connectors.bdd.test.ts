@@ -3883,10 +3883,23 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
   });
 
   it.each([
-    { field: "issued", millisecondsOffset: -30 * 24 * 60 * 60 * 1000 },
-    { field: "expires", millisecondsOffset: 200 * 366 * 24 * 60 * 60 * 1000 },
+    {
+      reason: "stale issuance",
+      field: "issued",
+      millisecondsOffset: -30 * 24 * 60 * 60 * 1000,
+    },
+    {
+      reason: "expired secret",
+      field: "expires",
+      millisecondsOffset: -60 * 1000,
+    },
+    {
+      reason: "unbounded secret lifetime",
+      field: "expires",
+      millisecondsOffset: 200 * 366 * 24 * 60 * 60 * 1000,
+    },
   ] as const)(
-    "rejects implausible Automatic DCR $field milliseconds before persistence",
+    "rejects $reason in Automatic DCR milliseconds before persistence",
     async ({ field, millisecondsOffset }) => {
       mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
       mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
