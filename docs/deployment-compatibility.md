@@ -179,8 +179,7 @@ and `chat_agentphone_context` (previously no default), matching
 `agentphone_connection_codes`. An old API therefore reads `okou` from rows the
 new API inserts, including the non-null brand that its queued-launch path
 requires, so old API/new DB and rollback remain compatible. The columns and
-their ORM declarations stay in place; drop them in a separate migration after
-older API deployments drain.
+their ORM declarations stayed in place until the separate drop below.
 
 The connect link no longer carries `publicBrand` / `brandSig`, and the connect
 request contract no longer declares `publicBrand` / `publicBrandSignature`.
@@ -196,6 +195,34 @@ that release also requires rolling back the API below this change, because the
 older connect page requires `brandSig`. An API rollback below the expand change
 (#36651) also requires rolling back the App, because the older API requires the
 brand fields.
+
+### Column drop (contract step, #36729)
+
+Migration `1228_drop_agentphone_public_brand` drops the four `public_brand`
+columns and removes their Drizzle declarations. Gate evidence: API release
+`api-v1.673.0` (release commit `11339e527110e22cc5c2e2a45a96464af283e0b3`)
+applied `1223` and promoted `api/production` at
+`c6495e1927c69bf5479300e841a9805df59d0a77` on 2026-09-24 23:49 UTC. Every
+earlier production API predates #36722; that deployment and its successors
+contain it.
+
+APIs after #36722 no longer read the value, but they still declare the columns.
+Drizzle names every declared column in `insert` column lists and in bare
+`select()`, so those APIs still reach `public_brand` on all four tables. As with
+`1107` and `1123`, `test:migration-consistency` requires the declaration and the
+physical schema to agree, so declaration removal and the drop ship in one
+release. Migrations run before API promotion. In the window before the previous
+API drains, its AgentPhone connect, inbound-message, user-link and chat-context
+statements receive `42703`. Release this change alone at low traffic; the
+`api-v1.673.0` promotion measured about 20 seconds from migration completion to
+deployment finish.
+
+Rollback promotes artifacts without restoring schema. The production rollback
+resolver therefore rejects API targets that predate the canonical main commit
+that added `1228_drop_agentphone_public_brand.sql`. Recovering past that commit
+requires a forward-fix migration that restores the columns, not an artifact
+rollback. The Slack, Feishu, Teams, Telegram and other `public_brand` columns are
+unaffected.
 
 ## Voice input model selection retirement (2026-09-24)
 

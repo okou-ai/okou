@@ -8,7 +8,6 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { sql } from "drizzle-orm";
 import { agentphoneUserLinks } from "./agentphone-user-link";
 
@@ -27,11 +26,6 @@ export const agentphoneMessages = pgTable(
     agentphoneAgentId: varchar("agentphone_agent_id", {
       length: 255,
     }).notNull(),
-    /**
-     * Retired: current APIs neither read nor write it and rely on the
-     * `okou` default; drop it after older API deployments drain.
-     */
-    publicBrand: text("public_brand").$type<PublicBrand>().default("okou"),
     agentphoneUserLinkId: uuid("agentphone_user_link_id").references(
       () => {
         return agentphoneUserLinks.id;
