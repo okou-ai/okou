@@ -8,6 +8,46 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.676.0](https://github.com/okou-ai/okou/compare/api-v1.675.0...api-v1.676.0) (2026-09-25)
+
+
+### Features
+
+* **discord:** add native files and canonical artifact delivery ([#36663](https://github.com/okou-ai/okou/issues/36663)) ([64383f4](https://github.com/okou-ai/okou/commit/64383f45a6c6bb261113b359b280d49dc4d41890))
+
+
+### Bug Fixes
+
+* **api:** accept bounded millisecond dcr registration timestamps ([#36815](https://github.com/okou-ai/okou/issues/36815)) ([4beffaa](https://github.com/okou-ai/okou/commit/4beffaa67ce7abd511c151d9c4064abfe5f1778f))
+* **api:** update discord pickers in place and preselect current values ([#36838](https://github.com/okou-ai/okou/issues/36838)) ([99de0fd](https://github.com/okou-ai/okou/commit/99de0fd34ef26557f4f70a6846d3fba41fcf9cdd))
+* **discord:** add discord integration note and file-tool guidance ([#36831](https://github.com/okou-ai/okou/issues/36831)) ([cb5da5f](https://github.com/okou-ai/okou/commit/cb5da5ff10f4024d6e2f20119d5f7d643b07128f))
+* **discord:** align native reads and cli help with actual access ([#36841](https://github.com/okou-ai/okou/issues/36841)) ([c48448a](https://github.com/okou-ai/okou/commit/c48448aece67aaa965767c1b990d1e3e349300a3))
+* **discord:** allow data removal while disabled, treat missing config as outage, export deliveries ([#36840](https://github.com/okou-ai/okou/issues/36840)) ([96a1761](https://github.com/okou-ai/okou/commit/96a1761315c530f3cc89adfcd2822363280679f4))
+* **discord:** bound retry deadlines for unusable rate limits ([#36833](https://github.com/okou-ai/okou/issues/36833)) ([5adae15](https://github.com/okou-ai/okou/commit/5adae15586d18cab55e400095d5df70ad3e03ddd))
+* **discord:** deliver into archived unlocked threads ([#36835](https://github.com/okou-ai/okou/issues/36835)) ([16d67c9](https://github.com/okou-ai/okou/commit/16d67c9cecb50d547b621dd489695faabe423ae7))
+* **discord:** keep shared bot direct messages out of other orgs and sessions ([#36839](https://github.com/okou-ai/okou/issues/36839)) ([c72e30e](https://github.com/okou-ai/okou/commit/c72e30eb8ea0c979476833d1b2281a3d49818bd4))
+* **discord:** reconcile uncertain reply sends by enforced-nonce replay ([#36828](https://github.com/okou-ai/okou/issues/36828)) ([e178677](https://github.com/okou-ai/okou/commit/e1786774efd4dadfdf0dcc18e226efb5d5828d64))
+* **discord:** relay only addressed messages and check mentions before identity ([#36837](https://github.com/okou-ai/okou/issues/36837)) ([9797460](https://github.com/okou-ai/okou/commit/9797460fa5241f6ecb3d92a5169b173a91a3fe68))
+* **discord:** stop steering runs into unreadable bot DM content ([#36846](https://github.com/okou-ai/okou/issues/36846)) ([33a330a](https://github.com/okou-ai/okou/commit/33a330ab90bc10793ca6a02c8beffd03329e0552))
+
+
+### Refactoring
+
+* **api:** remove legacy chat event write mode for release 2 ([#36703](https://github.com/okou-ai/okou/issues/36703)) ([15117da](https://github.com/okou-ai/okou/commit/15117da7815a192e2f08ca46a2084129cb7fc48f))
+* **api:** retire teams and telegram public brand ([#36772](https://github.com/okou-ai/okou/issues/36772)) ([afea0e6](https://github.com/okou-ai/okou/commit/afea0e6bd82d3deea0dbcb73a8c78005dbec0013))
+* express artifact and hosted links as a legacy link layout ([#36773](https://github.com/okou-ai/okou/issues/36773)) ([a0f4bbe](https://github.com/okou-ai/okou/commit/a0f4bbe35afad034d4342f03b658cb8b9300f6ec))
+* **slack,discord:** retire public brand reads and writes ([#36770](https://github.com/okou-ai/okou/issues/36770)) ([e518345](https://github.com/okou-ai/okou/commit/e5183453f52f3cec7eca002c14bfebf47e4cd4eb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.510.0
+    * @okouai/core bumped to 8.710.4
+    * @okouai/db bumped to 1.300.0
+    * @okouai/pi-agent-runtime bumped to 1.40.16
+
 ## [1.675.0](https://github.com/okou-ai/okou/compare/api-v1.674.0...api-v1.675.0) (2026-09-25)
 
 

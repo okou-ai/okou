@@ -1,5 +1,28 @@
 # Changelog
 
+## [9.363.0](https://github.com/okou-ai/okou/compare/cli-v9.362.0...cli-v9.363.0) (2026-09-25)
+
+
+### Features
+
+* **discord:** add native files and canonical artifact delivery ([#36663](https://github.com/okou-ai/okou/issues/36663)) ([64383f4](https://github.com/okou-ai/okou/commit/64383f45a6c6bb261113b359b280d49dc4d41890))
+
+
+### Bug Fixes
+
+* **discord:** align native reads and cli help with actual access ([#36841](https://github.com/okou-ai/okou/issues/36841)) ([c48448a](https://github.com/okou-ai/okou/commit/c48448aece67aaa965767c1b990d1e3e349300a3))
+* **discord:** bound retry deadlines for unusable rate limits ([#36833](https://github.com/okou-ai/okou/issues/36833)) ([5adae15](https://github.com/okou-ai/okou/commit/5adae15586d18cab55e400095d5df70ad3e03ddd))
+* **discord:** keep shared bot direct messages out of other orgs and sessions ([#36839](https://github.com/okou-ai/okou/issues/36839)) ([c72e30e](https://github.com/okou-ai/okou/commit/c72e30eb8ea0c979476833d1b2281a3d49818bd4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.510.0
+    * @okouai/core bumped to 8.710.4
+    * @okouai/pi-agent-runtime bumped to 1.40.16
+
 ## [9.362.0](https://github.com/okou-ai/okou/compare/cli-v9.361.0...cli-v9.362.0) (2026-09-25)
 
 

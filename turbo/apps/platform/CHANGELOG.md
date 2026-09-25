@@ -11,6 +11,23 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.963.1](https://github.com/okou-ai/okou/compare/app-v0.963.0...app-v0.963.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* **app:** clarify recipient of personal access conversion ([#36826](https://github.com/okou-ai/okou/issues/36826)) ([fccb037](https://github.com/okou-ai/okou/commit/fccb03790e2ce83aae0671501dcd2b654e47fd46))
+* **platform:** keep discord settings state consistent after changes ([#36834](https://github.com/okou-ai/okou/issues/36834)) ([e565471](https://github.com/okou-ai/okou/commit/e5654719bdf62df55a00c7e648e98249f8b93d12))
+* **platform:** link discord sources only to discord.com ([#36836](https://github.com/okou-ai/okou/issues/36836)) ([a280ae9](https://github.com/okou-ai/okou/commit/a280ae9fb07ee62ac6d1757fc20bf5e2762b2d9d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.510.0
+    * @okouai/core bumped to 8.710.4
+
 ## [0.963.0](https://github.com/okou-ai/okou/compare/app-v0.962.0...app-v0.963.0) (2026-09-25)
 
 
