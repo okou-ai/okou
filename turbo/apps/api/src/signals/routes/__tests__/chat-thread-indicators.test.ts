@@ -250,6 +250,36 @@ describe("GET /api/indicators", () => {
     });
   });
 
+  it("reports read-cursor changes through indicators while mark responses carry no unread snapshot", async () => {
+    prepareChatRuntime();
+    const actor = bdd.user();
+    const agentId = await createEntitledAgent(actor, "Read cursor agent");
+    const toggled = await createCancelledThread({
+      actor,
+      agentId,
+      prompt: "Toggled read cursor thread",
+    });
+    const untouched = await createCancelledThread({
+      actor,
+      agentId,
+      prompt: "Untouched unread thread",
+    });
+
+    await expect(
+      chat.markThreadRead(actor, toggled.threadId),
+    ).resolves.toStrictEqual({ lastReadAt: expect.any(String), unreads: [] });
+    await expect(chat.listThreadUnreads(actor, agentId)).resolves.toStrictEqual(
+      [untouched],
+    );
+
+    await expect(
+      chat.markThreadUnread(actor, toggled.threadId),
+    ).resolves.toStrictEqual({ lastReadAt: null, unreads: [] });
+    const unreads = await chat.listThreadUnreads(actor, agentId);
+    expect(unreads).toHaveLength(2);
+    expect(unreads).toStrictEqual(expect.arrayContaining([toggled, untouched]));
+  });
+
   it("reports a finished thread with a new active Run as active instead of unread", async () => {
     prepareChatRuntime();
     const actor = bdd.user();

@@ -922,7 +922,7 @@ async function setupReadUnreadSidebar() {
       });
       return respond(200, {
         lastReadAt: null,
-        unreads: serverUnreads(),
+        unreads: [],
       });
     },
   );
@@ -932,7 +932,7 @@ async function setupReadUnreadSidebar() {
       unreadThreadIds.delete(params.id);
       return respond(200, {
         lastReadAt: "2026-03-10T00:05:00Z",
-        unreads: serverUnreads(),
+        unreads: [],
       });
     },
   );

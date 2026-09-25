@@ -3,10 +3,7 @@ import { chatThreadMarkUnreadContract } from "@okouai/api-contracts/contracts/ch
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import {
-  applyUnreadSnapshot$,
-  clearOptimisticReadMark$,
-} from "./optimistic-chat-thread-read-marks.ts";
+import { clearOptimisticReadMark$ } from "./optimistic-chat-thread-read-marks.ts";
 
 interface MarkUnreadArgs {
   readonly threadId: string;
@@ -19,7 +16,7 @@ export const markChatThreadUnread$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const client = get(apiClient$)(chatThreadMarkUnreadContract);
-    const result = await accept(
+    await accept(
       client.markUnread({
         params: { id: threadId },
         fetchOptions: { signal },
@@ -28,6 +25,5 @@ export const markChatThreadUnread$ = command(
     );
     signal.throwIfAborted();
     set(clearOptimisticReadMark$, threadId);
-    set(applyUnreadSnapshot$, result.body.unreads);
   },
 );
