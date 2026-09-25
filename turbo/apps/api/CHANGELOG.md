@@ -8,6 +8,14 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.676.2](https://github.com/okou-ai/okou/compare/api-v1.676.1...api-v1.676.2) (2026-09-25)
+
+
+### Bug Fixes
+
+* **api:** hold user deletion before unsafe agent cascades ([#36842](https://github.com/okou-ai/okou/issues/36842)) ([58e4558](https://github.com/okou-ai/okou/commit/58e4558ad92fa53448d62f9012d27894a95c81c2))
+* **discord:** show typing while discord runs are processing ([#36853](https://github.com/okou-ai/okou/issues/36853)) ([ee3f152](https://github.com/okou-ai/okou/commit/ee3f15254bf716ba242b4d9221e927f69e369b1f))
+
 ## [1.676.1](https://github.com/okou-ai/okou/compare/api-v1.676.0...api-v1.676.1) (2026-09-25)
 
 
