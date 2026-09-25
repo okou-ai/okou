@@ -465,7 +465,7 @@ describe("X daily resource usage webhook", () => {
     await expect(chargedUnits(second, configuredPricing)).resolves.toBe(0);
   });
 
-  it("holds the user's ledger and Run while ongoing credit settlement completes", async () => {
+  it("waits for ongoing credit settlement before deleting a user's ledger and runs", async () => {
     const configuredPricing = await pricing();
     const deleted = await createRun();
     await runs.requestCancelRun(
@@ -518,10 +518,15 @@ describe("X daily resource usage webhook", () => {
       type: "user.deleted",
       data: { id: deleted.actor.userId },
     });
-    // The user-deletion hold does not acquire the ledger cleanup lock.
-    const deletion = callbacks.requestClerkWebhook("{}", {}, [200]);
+    await callbacks.requestClerkWebhook("{}", {}, [200]);
+    // Cleanup can queue multiple database participants behind the same
+    // settlement. Their exact count is an implementation detail; the contract
+    // here is that cleanup reached the verified blocking chain before release.
+    // The durable capture runs first, so allow it to finish before cleanup.
+    await expect
+      .poll(gate.cleanupWaiterCount, { timeout: 10_000 })
+      .toBeGreaterThanOrEqual(1);
     gate.release();
-    await deletion;
     const [released] = await completion;
     if (released.status === "rejected") {
       throw released.reason;
@@ -532,29 +537,11 @@ describe("X daily resource usage webhook", () => {
     }
     await flushWaitUntilForTest();
 
-    const deniedRun = await runs.requestReadRun(
-      deleted.actor,
-      deleted.runId,
-      [401],
-    );
-    expect(deniedRun.body).toMatchObject({
-      error: { code: "UNAUTHORIZED" },
-    });
+    await runs.requestReadRun(deleted.actor, deleted.runId, [404]);
     await accept(submit(deleted, [observation([resourceId()])]), [404]);
-    if (!deleted.actor.orgId) {
-      throw new Error("Expected the held user's organization");
-    }
-    // A valid new admin in the retained org can still reconcile this user's
-    // charge, without reauthorizing the deleted identity.
-    const replacement = bdd.user({ orgId: deleted.actor.orgId });
-    const usage = await billing.readUsageMembers(replacement, {
-      range: "24h",
-      tz: "UTC",
-    });
-    const chargedMember = usage.body.members.find((member) => {
-      return member.userId === deleted.actor.userId;
-    });
-    expect(chargedMember?.creditsCharged).toBeGreaterThan(0);
+    expect(
+      (await billing.readUsageRecord(deleted.actor)).body.totalCredits,
+    ).toBe(0);
   });
 
   it.each(["user", "organization"] as const)(
@@ -881,15 +868,9 @@ describe("X daily resource usage webhook", () => {
         type: subjectKind === "user" ? "user.deleted" : "organization.deleted",
         data: { id: subjectId },
       });
-      if (subjectKind === "user") {
-        const deletion = callbacks.requestClerkWebhook("{}", {}, [200]);
-        gate.release();
-        await deletion;
-      } else {
-        await callbacks.requestClerkWebhook("{}", {}, [200]);
-        await expect.poll(gate.blockedRunDeletionCount).toBe(1);
-        gate.release();
-      }
+      await callbacks.requestClerkWebhook("{}", {}, [200]);
+      await expect.poll(gate.blockedRunDeletionCount).toBe(1);
+      gate.release();
       const [released] = await completion;
       if (released.status === "rejected") {
         throw released.reason;
@@ -900,16 +881,7 @@ describe("X daily resource usage webhook", () => {
       }
       await flushWaitUntilForTest();
 
-      const readback = await runs.requestReadRun(
-        deleted.actor,
-        deleted.runId,
-        subjectKind === "user" ? [401] : [404],
-      );
-      if (subjectKind === "user") {
-        expect(readback.body).toMatchObject({
-          error: { code: "UNAUTHORIZED" },
-        });
-      }
+      await runs.requestReadRun(deleted.actor, deleted.runId, [404]);
       await accept(submit(deleted, [observation([freshId])]), [404]);
       await accept(submit(survivor, [observation([sharedId, freshId])]), [200]);
       await expect(chargedUnits(survivor, configuredPricing)).resolves.toBe(1);
@@ -964,36 +936,26 @@ describe("X daily resource usage webhook", () => {
         type: subjectKind === "user" ? "user.deleted" : "organization.deleted",
         data: { id: subjectId },
       });
-      if (subjectKind === "user") {
-        const deletion = callbacks.requestClerkWebhook("{}", {}, [200]);
-        gate.release();
-        await deletion;
-      } else {
-        await gate.withAcquisitionAttemptTracking(async () => {
-          await callbacks.requestClerkWebhook("{}", {}, [200]);
-        });
-        await gate.acquisitionAttempted;
-        await expect.poll(gate.waiterCount).toBeGreaterThanOrEqual(1);
-        // Organization cleanup must wait before owning the Run.
-        await runs.requestReadRun(deleted.actor, deleted.runId, [200]);
-        gate.release();
-      }
+      await gate.withAcquisitionAttemptTracking(async () => {
+        await callbacks.requestClerkWebhook("{}", {}, [200]);
+      });
+      // User deletion first captures its durable erasure inventory, which can
+      // finish after the webhook responds. Wait for this cleanup's own lock
+      // attempt before observing its blocked database participant.
+      await gate.acquisitionAttempted;
+      await expect.poll(gate.waiterCount).toBeGreaterThanOrEqual(1);
+
+      // Clerk must wait before owning the Run. Taking it first would make its
+      // SET NULL wait on the source row and block the compactor's FK check.
+      await runs.requestReadRun(deleted.actor, deleted.runId, [200]);
+      gate.release();
       const [completed] = await completion;
       if (completed.status === "rejected") {
         throw completed.reason;
       }
       await flushWaitUntilForTest();
 
-      const readback = await runs.requestReadRun(
-        deleted.actor,
-        deleted.runId,
-        subjectKind === "user" ? [401] : [404],
-      );
-      if (subjectKind === "user") {
-        expect(readback.body).toMatchObject({
-          error: { code: "UNAUTHORIZED" },
-        });
-      }
+      await runs.requestReadRun(deleted.actor, deleted.runId, [404]);
       await accept(submit(deleted, [observation([freshId])]), [404]);
       await accept(submit(survivor, [observation([sharedId, freshId])]), [200]);
       await expect(chargedUnits(survivor, configuredPricing)).resolves.toBe(1);

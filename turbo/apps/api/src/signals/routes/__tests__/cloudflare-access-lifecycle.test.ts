@@ -113,7 +113,7 @@ async function webhook(
   await flushWaitUntilForTest();
 }
 
-test("creator deletion holds personal Access and another member's SSH host", async () => {
+test("creator erasure preserves shared Access and another member's SSH host", async () => {
   useSecretKmsProbe();
   const creator = await owner();
   const shared = await createShared();
@@ -148,14 +148,14 @@ test("creator deletion holds personal Access and another member's SSH host", asy
   });
   await webhook("user.deleted", creator.userId);
 
-  // The user's encrypted personal state is retained for the pending
-  // user-scoped sweep; the shared Access and other member's host survive.
+  // The deleted user cannot authenticate to list their own resources. This
+  // narrow fixture verifies that encrypted personal state was actually erased.
   await expect(
     countUserSshAccessResourcesFixture(creator.userId),
   ).resolves.toStrictEqual({
-    configs: 1,
-    hosts: 1,
-    credentials: 1,
+    configs: 0,
+    hosts: 0,
+    credentials: 0,
   });
 
   mocks.clerk.session(member.userId, member.orgId, "org:member");

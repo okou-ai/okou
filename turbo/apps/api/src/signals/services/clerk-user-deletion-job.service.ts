@@ -3,9 +3,6 @@ import {
   completeChatContentDeletion,
 } from "@okouai/db/operations/chat-content-erasure";
 import { command } from "ccstate";
-import { cliTokens } from "@okouai/db/schema/cli-tokens";
-import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-import { eq } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
 import { z } from "zod";
 
@@ -28,28 +25,18 @@ import {
   verifyUserErasureWork,
 } from "./account-erasure-user-executor";
 import { markMorningBriefCollectionOwnershipRevoked } from "./morning-brief-collection-occurrence.service";
-import {
-  cancelDeletedUserRuns$,
-  cleanupClerkDeletedUser$,
-} from "./webhooks-clerk-cleanup.service";
+import { cleanupClerkDeletedUser$ } from "./webhooks-clerk-cleanup.service";
 
 const L = logger("ClerkUserDeletionJob");
 const JOB_KIND = "clerk-user-deletion";
 const JOB_HANDLER_VERSION = 1;
 const JOB_NAMESPACE = "ae6e3b21-a980-4e94-908b-795315ac47af";
 const RETRY_DELAY_MS = 60_000;
-// Stopgap: do not enter either the legacy cleanup or captured erasure work
-// while deleting an Agent can cascade into another member's data. The durable
-// job and its original phase stay resumable when a safe owner-scoped sweep is
-// implemented. This is deliberately not a runtime feature switch.
-const HOLD_USER_DELETION = true;
-const SAFETY_HOLD_DELAY_MS = 24 * 60 * 60 * 1000;
 const checkpointSchema = z.object({
   emptyOrgIds: z.array(z.string()).optional(),
   // Tasks enqueued before B1 have no phase. Their legacy cleanup is
   // idempotent, so capturing whatever remains first is safe.
   phase: z.enum(["capture", "verify"]).default("capture"),
-  safetyHold: z.literal("agent-cascade-risk").optional(),
 });
 
 type DeletionCheckpoint = z.infer<typeof checkpointSchema>;
@@ -128,11 +115,6 @@ export const enqueueClerkUserDeletion$ = command(
         sourceReference: jobId,
       });
       signal.throwIfAborted();
-      await tx
-        .delete(orgMembersCache)
-        .where(eq(orgMembersCache.userId, userId));
-      await tx.delete(cliTokens).where(eq(cliTokens.userId, userId));
-      signal.throwIfAborted();
       await enqueueBackgroundJob(
         tx,
         {
@@ -178,26 +160,6 @@ export const executeClerkUserDeletionWork$ = command(
     );
     if (!job) {
       return { processed: 0 };
-    }
-
-    if (HOLD_USER_DELETION) {
-      await set(cancelDeletedUserRuns$, job.userId, signal);
-      signal.throwIfAborted();
-      const checkpoint = checkpointSchema.parse(job.checkpoint);
-      const saved = await yieldBackgroundJob(
-        db,
-        {
-          job,
-          checkpoint: { ...checkpoint, safetyHold: "agent-cascade-risk" },
-          availableAt: new Date(nowDate().getTime() + SAFETY_HOLD_DELAY_MS),
-        },
-        AbortSignal.timeout(5000),
-      );
-      signal.throwIfAborted();
-      if (!saved) {
-        throw new Error("User deletion safety hold lost its job lease");
-      }
-      return { processed: 1 };
     }
 
     const work = (async (): Promise<DeletionCheckpoint | null> => {

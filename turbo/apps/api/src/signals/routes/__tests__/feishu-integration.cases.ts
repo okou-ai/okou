@@ -1545,7 +1545,7 @@ export function registerFeishuIntegrationTests(
 
     // oxlint-disable-next-line vitest/no-conditional-tests -- The entrypoint selects this group before collection.
     if (group === "user-deletion") {
-      it("fences deleted-user Feishu access while retaining each member's mapping", async () => {
+      it("removes only the deleted user's Feishu connection mapping", async () => {
         const fixture = await setupFeishuInstallationFixture();
         const survivor = fixture.actor;
         await connectFixtureUser(fixture, survivor, "ou_feishu_survivor");
@@ -1587,27 +1587,14 @@ export function registerFeishuIntegrationTests(
         expect(response.body).toBe("OK");
         await flushWaitUntilForTest();
 
-        // An old Clerk session can remain cryptographically valid after the
-        // webhook, but the durable deletion receipt denies its API access.
         mocks.clerk.session(doomed.userId, doomed.orgId, "org:member");
         const deletedUserStatus = await accept(
           client.getStatus({
             headers: { authorization: "Bearer clerk-session" },
           }),
-          [401],
+          [200],
         );
-        expect(deletedUserStatus.body).toMatchObject({
-          error: { code: "UNAUTHORIZED" },
-        });
-        await expect(
-          readFeishuMemberConnectorState(context, {
-            orgId: requireValue(survivor.orgId, "Expected an organization"),
-            userId: doomed.userId,
-            installationId: fixture.installationId,
-          }),
-        ).resolves.toMatchObject({
-          feishu_member_connection: { open_id: "ou_feishu_doomed" },
-        });
+        expect(deletedUserStatus.body.isConnected).toBeFalsy();
 
         mocks.clerk.session(survivor.userId, survivor.orgId, "org:admin");
         const survivorStatus = await accept(

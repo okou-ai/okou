@@ -70,7 +70,6 @@ import {
 } from "@okouai/connectors/auth-providers/model-provider-auth";
 import { isChatgptRefreshError } from "@okouai/connectors/auth-providers/model-providers/codex-oauth/oauth";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { connectors } from "@okouai/db/schema/connector";
 import {
   modelProviderAccounts,
@@ -79,15 +78,7 @@ import {
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { secrets as secretsTable } from "@okouai/db/schema/secret";
 import { variables as variablesTable } from "@okouai/db/schema/variable";
-import {
-  and,
-  eq,
-  inArray,
-  isNotNull,
-  isNull,
-  notExists,
-  sql,
-} from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { executeRawRows, pgInt8ToBigIntSchema } from "../../lib/db-raw-rows";
@@ -4929,18 +4920,6 @@ async function admitFirewallAuthResponse(
           eq(agentRuns.id, auth.runId),
           eq(agentRuns.userId, auth.userId),
           eq(agentRuns.orgId, auth.orgId),
-          // Deny credential access while a Clerk user deletion is queued.
-          notExists(
-            tx
-              .select({ id: backgroundJobs.id })
-              .from(backgroundJobs)
-              .where(
-                and(
-                  eq(backgroundJobs.kind, "clerk-user-deletion"),
-                  eq(backgroundJobs.userId, agentRuns.userId),
-                ),
-              ),
-          ),
         ),
       )
       .for("update")

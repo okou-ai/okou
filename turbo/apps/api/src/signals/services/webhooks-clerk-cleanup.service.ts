@@ -271,17 +271,6 @@ async function cancelUserRuns(
   );
 }
 
-// Stopgap user deletion must stop the departed user's active work without
-// following their Agents into another member's sessions and runs.
-export const cancelDeletedUserRuns$ = command(
-  async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
-    await cancelUserRuns(set(writeDb$), userId, {
-      revokeMorningBriefCollection: true,
-    });
-    signal.throwIfAborted();
-  },
-);
-
 async function cleanupWorkspaceInstallation(
   db: Db,
   workspaceId: string,
