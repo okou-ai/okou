@@ -141,7 +141,6 @@ const handleDiscordMessage$ = command(
       messageId: message.id,
       eventId: envelope.eventId,
       payload: body,
-      publicBrand: "okou",
       currentTime: nowDate(),
     });
     signal.throwIfAborted();

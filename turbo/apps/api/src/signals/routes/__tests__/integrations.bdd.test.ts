@@ -22,7 +22,10 @@ import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
-import { withSplitChatEventDatabase } from "../../../test-fixtures/chat-terminal-retry";
+import {
+  installLegacySlackChatCallbackBrandFixture,
+  withSplitChatEventDatabase,
+} from "../../../test-fixtures/chat-terminal-retry";
 import {
   readChatEventContextFixture,
   readRunUsageEventsFixture,
@@ -37,7 +40,7 @@ import { seededSystemSkillArchive } from "../../../test-fixtures/seeded-system-s
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
@@ -2674,7 +2677,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
       expect(state.chat_ingress[0]).toMatchObject({
         eventId,
         payload: eventBody,
-        publicBrand: "okou",
         routeId: state.chat_thread_routes[0]?.id,
         status: "processed",
         retryCount: 3,
@@ -2763,7 +2765,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
         readChatEventContextFixture(canonicalInputMessage.id),
       ).resolves.toMatchObject({
         slackBotUserId: botUserId,
-        slackPublicBrand: "okou",
         slackMessageText: originalMessageText,
         slackMessageAssets: [
           {
@@ -3182,23 +3183,35 @@ describe("INT-01: Slack app deep webhook flows", () => {
       await flushWaitUntilForTest();
 
       context.mocks.slack.chat.postMessage.mockClear();
-      await completeSlackTriggeredRun({
-        runId: run1Id,
-        sandboxToken: claim1.sandboxToken,
-        cliAgentType: claim1.cliAgentType,
-        assistantText: "Executing command...",
-        resultText: "Canonical Slack answer one",
-      });
-      await flushWaitUntilAndAssert(() => {
-        expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledOnce();
-        expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
-          expect.objectContaining({
-            channel: channelId,
-            thread_ts: threadTs,
-            text: "Canonical Slack answer one",
-          }),
-        );
-      });
+      // Store this delivery in the shape an older API wrote, with the retired
+      // `vm0` brand, to pin that current delivery ignores the field.
+      const removeLegacyBrand =
+        await installLegacySlackChatCallbackBrandFixture(run1Id);
+      const completion = await settleIncludingAbort(
+        (async () => {
+          await completeSlackTriggeredRun({
+            runId: run1Id,
+            sandboxToken: claim1.sandboxToken,
+            cliAgentType: claim1.cliAgentType,
+            assistantText: "Executing command...",
+            resultText: "Canonical Slack answer one",
+          });
+          await flushWaitUntilAndAssert(() => {
+            expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledOnce();
+            expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
+              expect.objectContaining({
+                channel: channelId,
+                thread_ts: threadTs,
+                text: "Canonical Slack answer one",
+              }),
+            );
+          });
+        })(),
+      );
+      await removeLegacyBrand();
+      if (!completion.ok) {
+        throw completion.error;
+      }
       await expect
         .poll(async () => {
           const callbacks = await callbackStore.set(
@@ -3236,6 +3249,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
           channelId,
           threadTs,
           chatEventId: expect.any(String),
+          publicBrand: "vm0",
         },
       });
       const run1 = await runs.readRun(actor, run1Id);

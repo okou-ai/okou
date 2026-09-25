@@ -40,7 +40,6 @@ import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-r
 import { validateOfficialAutomationResultEmailSchema } from "./test-official-automation-result-email-schema";
 import { validatePermanentBuiltInModelCooldownState } from "./test-built-in-model-cooldown-permanent";
 import { validatePermanentBuiltInModelKeyState } from "./test-built-in-model-keys-permanent";
-import { validatePermanentSlackPublicBrandState } from "./test-slack-public-brand-permanent";
 import { validatePermanentDiscordFoundation } from "./test-discord-foundation-permanent";
 import { validatePermanentDiscordChat } from "./test-discord-chat-permanent";
 import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitlement-permanent";
@@ -3251,7 +3250,6 @@ async function main(): Promise<void> {
     await validatePermanentAgentRunMetadataState(dbUrl1);
     await validatePermanentBuiltInModelCooldownState(dbUrl1);
     await validatePermanentBuiltInModelKeyState(dbUrl1);
-    await validatePermanentSlackPublicBrandState(dbUrl1);
     await validatePermanentDiscordFoundation(dbUrl1);
     await validatePermanentDiscordChat(dbUrl1);
     await validatePermanentOrgPlanEntitlementState(dbUrl1);
@@ -3282,7 +3280,6 @@ async function main(): Promise<void> {
     console.log("   ✅ Fresh migrations applied successfully\n");
     await validatePermanentBuiltInModelCooldownState(dbUrl2);
     await validatePermanentBuiltInModelKeyState(dbUrl2);
-    await validatePermanentSlackPublicBrandState(dbUrl2);
     await validatePermanentDiscordFoundation(dbUrl2);
     await validatePermanentDiscordChat(dbUrl2);
     await validatePermanentOrgPlanEntitlementState(dbUrl2);

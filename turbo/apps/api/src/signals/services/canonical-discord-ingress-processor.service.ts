@@ -1,3 +1,4 @@
+import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { randomUUID } from "node:crypto";
 import { command, createStore } from "ccstate";
 import { discordGatewayEnvelopeSchema } from "@okouai/api-contracts/contracts/discord-gateway";
@@ -524,7 +525,7 @@ const materializeIngressAttachment$ = command(
         userId: accessArgs.userId,
         orgId: accessArgs.orgId,
         chatThreadId,
-        publicBrand: "okou",
+        publicBrand: PUBLIC_BRAND,
         source: "discord",
         scope: "discord-input",
         key: `${accessArgs.connectionId}:${message.channel_id}:${message.id}:${attachment.id}`,
@@ -688,7 +689,6 @@ function createIngressContext(args: {
         : "channel"
       : "dm",
     threadId: message.guild_id ? destinationChannelId : null,
-    publicBrand: "okou",
     conversationContext,
     messageText: messageContent.displayContent,
     messageFiles: message.attachments,
@@ -996,7 +996,6 @@ async function recordTerminalIngressFailure(
           channelId: route.destinationChannelId,
           messageId: message.data.id,
           sessionKey: route.sessionKey,
-          publicBrand: "okou",
         },
       });
       signal.throwIfAborted();

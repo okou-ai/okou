@@ -154,8 +154,8 @@ export async function validatePermanentDiscordFoundation(
         [routes[i], connection, userId, threads[i]],
       );
       await client.query(
-        `INSERT INTO discord_chat_ingress (id, connection_id, route_id, event_id, message_id, payload, public_brand)
-         VALUES ($1, $2, $3, $4, $5, '{}', 'okou')`,
+        `INSERT INTO discord_chat_ingress (id, connection_id, route_id, event_id, message_id, payload)
+         VALUES ($1, $2, $3, $4, $5, '{}')`,
         [
           ingress[i],
           connection,
@@ -167,8 +167,8 @@ export async function validatePermanentDiscordFoundation(
       await client.query(
         `INSERT INTO chat_discord_context (
            id, connection_id, route_id, chat_thread_id, channel_id, message_id,
-           bot_user_id, public_brand, message_text, sender_user_id, channel_type, destination_channel_id
-         ) VALUES ($1, $2, $3, $4, 'channel', $5, 'bot', 'okou', 'hello', $6, 'thread', 'destination')`,
+           bot_user_id, message_text, sender_user_id, channel_type, destination_channel_id
+         ) VALUES ($1, $2, $3, $4, 'channel', $5, 'bot', 'hello', $6, 'thread', 'destination')`,
         [
           contexts[i],
           connection,
@@ -267,8 +267,8 @@ export async function validatePermanentDiscordFoundation(
       [ingress[0]],
     );
     await client.query(
-      `INSERT INTO discord_chat_ingress (id, connection_id, event_id, message_id, payload, public_brand)
-       VALUES ($1, $2, $3, $4, '{}', 'okou')`,
+      `INSERT INTO discord_chat_ingress (id, connection_id, event_id, message_id, payload)
+       VALUES ($1, $2, $3, $4, '{}')`,
       [
         unassignedIngress,
         connections[0],
