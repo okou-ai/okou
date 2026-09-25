@@ -50,7 +50,7 @@ async function seedDiscordHistory(
   const createdAt = nowDate();
   // The ingress endpoints are implemented in the following slice. Until
   // then this guarded preview fixture constructs retained delivery state
-  // for schema, export and erasure verification using an owned public chat.
+  // for schema, export and deletion verification using an owned public chat.
   const [route] = await tx
     .insert(discordChatThreadRoutes)
     .values({

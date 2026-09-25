@@ -216,7 +216,7 @@ export const piStableContextHeads = pgTable(
   },
 );
 
-/** Retention and erasure edges for every exact Storage dependency. */
+/** Retention and deletion edges for every exact Storage dependency. */
 export const piStableContextArtifactResources = pgTable(
   "pi_stable_context_artifact_resources",
   {

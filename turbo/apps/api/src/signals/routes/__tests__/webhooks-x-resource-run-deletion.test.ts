@@ -119,8 +119,6 @@ describe("X resource account cleanup and ordinary Run deletion", () => {
     });
 
     // The sweep owns its Run while its conversation deletion is blocked.
-    // User deletion first captures erasure work, which may itself wait for
-    // the sweep before it can reach the later ledger cleanup phase.
     const gate = await holdRunConversationDeletionForTest(
       run.runId,
       context.signal,

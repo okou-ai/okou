@@ -2829,7 +2829,7 @@ describe("Pi stable context generation fences", () => {
     ).resolves.toHaveLength(0);
   });
 
-  it("does not recreate an artifact after user erasure wins a claimed build", async () => {
+  it("does not recreate an artifact after user deletion wins a claimed build", async () => {
     const fixture = await seed({ ownedByOtherUser: true });
     await db
       .delete(piStableContextHeads)

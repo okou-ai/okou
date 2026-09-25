@@ -22,7 +22,7 @@ const context = testContext();
 // parameter, cannot create legacy NULL recovery or partial claims, and cannot
 // force rollback/closed-pool failures. This finite matrix verifies those actual
 // PostgreSQL transitions. runner-cancellation.test.ts and the existing cron/chat
-// route suites cover authentication, cancellation, cleanup, completion and erasure.
+// route suites cover authentication, cancellation, cleanup, completion and deletion.
 async function fixture(
   options: {
     status?: "running" | "cancelled";
