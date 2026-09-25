@@ -1062,8 +1062,15 @@
     {
       "idx": 1229,
       "version": "7",
-      "when": 1790297228404,
-      "tag": "1229_public_brand_okou_default_platform",
+      "when": 1790296208740,
+      "tag": "1229_peaceful_mathemanic",
+      "breakpoints": true
+    },
+    {
+      "idx": 1230,
+      "version": "7",
+      "when": 1790300287549,
+      "tag": "1230_public_brand_okou_default_platform",
       "breakpoints": true
     }
   ]

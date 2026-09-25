@@ -7085,6 +7085,8 @@
       "add": "자격 증명 추가",
       "appleDhFieldHelp": "각 항목은 UTF-8 기준 1~63바이트여야 합니다. NUL은 허용되지 않습니다.",
       "appleDhMethod": "Apple DH 사용자 이름과 비밀번호",
+      "appleRsaSrpMethod": "Apple RSA/SRP 사용자 이름과 비밀번호",
+      "appleRsaSrpUsernameHelp": "RSA/SRP 사용자 이름은 UTF-8 기준 1~234바이트여야 합니다. NUL은 허용되지 않습니다.",
       "appleSrpMethod": "Apple Direct SRP 사용자 이름과 비밀번호",
       "authentication": "인증 방식",
       "createNew": "새 자격 증명 만들기",
@@ -7154,6 +7156,8 @@
     "security": {
       "appleDh": "Mac 화면 공유 (Apple DH)",
       "appleDhHelp": "저장된 SSH 연결을 통해 macOS 화면 공유를 사용해야 합니다. RFB 대상은 해당 Mac의 127.0.0.1 또는 ::1이어야 합니다. SSH가 전체 VNC 세션을 보호합니다. 직접 관리하는 Mac SSH 호스트를 사용하세요. 호스트 키만으로 이후 프록시 전달이 없음을 보장할 수는 없습니다.",
+      "appleRsaSrp": "Mac 화면 공유 (Apple RSA/SRP)",
+      "appleRsaSrpHelp": "저장된 Mac SSH 연결과 RFB 대상 127.0.0.1 또는 ::1이 필요합니다. RFB에서 받은 RSA 키만으로는 호스트 신원을 증명할 수 없습니다. SRP는 계정과 서버 증명을 검증하고 SSH는 전체 VNC 세션을 보호합니다. SSH 호스트 키도 이후 프록시 전달 여부는 보장하지 않습니다.",
       "appleSrp": "Mac 화면 공유 (Apple Direct SRP)",
       "appleSrpHelp": "저장된 Mac SSH 연결과 RFB 대상 127.0.0.1 또는 ::1이 필요합니다. SRP는 계정과 서버 증명을 검증하고 SSH는 전체 VNC 세션을 보호합니다. SSH 호스트 키는 선택한 엔드포인트를 식별하지만 이후 프록시 전달이 없음을 보장하지는 않습니다.",
       "caBundle": "CA 인증서 (PEM)",
@@ -7175,6 +7179,7 @@
     "summary_other": "설정된 호스트 {{count}}개",
     "transport": {
       "appleDhDestinationHelp": "Apple DH에서는 127.0.0.1 또는 ::1을 입력하세요. 선택한 SSH 호스트를 통해 접근하는 Mac 자체의 루프백 주소입니다.",
+      "appleRsaSrpDestinationHelp": "Apple RSA/SRP에서는 선택한 SSH 호스트를 통해 Mac의 127.0.0.1 또는 ::1에 접속하세요.",
       "appleSrpDestinationHelp": "Apple Direct SRP에서는 127.0.0.1 또는 ::1을 입력하세요. 선택한 SSH 호스트를 통해 접근하는 Mac 자체의 루프백 주소입니다.",
       "destination": "RFB 대상",
       "destinationHelp": "SSH 경로에서는 Runner가 직접 연결하지 않고 선택한 SSH 서버에서 이 호스트와 포트에 연결합니다.",

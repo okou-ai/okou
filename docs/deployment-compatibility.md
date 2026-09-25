@@ -10,7 +10,7 @@ stored value still locates the shared-artifact layout of existing shares until
 the artifact-link slice replaces it with a neutral legacy layout. Reusing a
 pending usage-pack invitation checkout no longer filters by brand.
 
-Migration `1229_public_brand_okou_default_platform` sets the column default to
+Migration `1230_public_brand_okou_default_platform` sets the column default to
 `'okou'` on all seven tables (previously `'vm0'`, or no default on
 `browser_sessions` and `socialkit_download_jobs`). An old API reads `okou` from
 rows the new API inserts, and its own inserts still carry an explicit brand, so

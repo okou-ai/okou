@@ -26,6 +26,7 @@ export const vncCredentials = pgTable(
         "username_password",
         "apple_dh_username_password",
         "apple_srp_username_password",
+        "apple_rsa_srp_username_password",
       ],
     }).notNull(),
     encryptedPassword: text("encrypted_password").notNull(),
@@ -59,7 +60,7 @@ export const vncCredentials = pgTable(
       ),
       check(
         "chk_vnc_credentials_auth",
-        sql`(${table.authMethod} = 'vnc_password' AND ${table.username} IS NULL) OR (${table.authMethod} = 'username_password' AND ${table.username} IS NOT NULL AND octet_length(${table.username}) BETWEEN 1 AND 255) OR (${table.authMethod} = 'apple_dh_username_password' AND ${table.username} IS NOT NULL AND octet_length(${table.username}) BETWEEN 1 AND 63) OR (${table.authMethod} = 'apple_srp_username_password' AND ${table.username} IS NOT NULL AND octet_length(${table.username}) BETWEEN 1 AND 255)`,
+        sql`(${table.authMethod} = 'vnc_password' AND ${table.username} IS NULL) OR (${table.authMethod} = 'username_password' AND ${table.username} IS NOT NULL AND octet_length(${table.username}) BETWEEN 1 AND 255) OR (${table.authMethod} = 'apple_dh_username_password' AND ${table.username} IS NOT NULL AND octet_length(${table.username}) BETWEEN 1 AND 63) OR (${table.authMethod} = 'apple_srp_username_password' AND ${table.username} IS NOT NULL AND octet_length(${table.username}) BETWEEN 1 AND 255) OR (${table.authMethod} = 'apple_rsa_srp_username_password' AND ${table.username} IS NOT NULL AND octet_length(${table.username}) BETWEEN 1 AND 234)`,
       ),
       check(
         "chk_vnc_credentials_password",

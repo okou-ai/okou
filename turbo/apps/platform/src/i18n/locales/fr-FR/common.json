@@ -7178,6 +7178,8 @@
       "add": "Ajouter des identifiants",
       "appleDhFieldHelp": "Chaque champ doit contenir de 1 à 63 octets UTF-8. NUL est interdit.",
       "appleDhMethod": "Nom d’utilisateur et mot de passe Apple DH",
+      "appleRsaSrpMethod": "Nom d’utilisateur et mot de passe Apple RSA/SRP",
+      "appleRsaSrpUsernameHelp": "Nom d’utilisateur RSA/SRP : de 1 à 234 octets UTF-8. NUL est interdit.",
       "appleSrpMethod": "Nom d’utilisateur et mot de passe Apple Direct SRP",
       "authentication": "Méthode d’authentification",
       "createNew": "Créer des identifiants",
@@ -7250,6 +7252,8 @@
     "security": {
       "appleDh": "Partage d’écran Mac (Apple DH)",
       "appleDhHelp": "Nécessite le partage d’écran macOS via une connexion SSH enregistrée. La destination RFB doit être 127.0.0.1 ou ::1 sur ce Mac. SSH protège toute la session VNC. Utilisez un hôte SSH Mac que vous contrôlez ; sa clé d’hôte n’exclut pas un relais en aval.",
+      "appleRsaSrp": "Partage d’écran Mac (Apple RSA/SRP)",
+      "appleRsaSrpHelp": "Nécessite SSH enregistré vers le Mac et une destination RFB 127.0.0.1 ou ::1. La clé RSA fournie par RFB ne prouve pas l’identité de l’hôte. SRP vérifie le compte et la preuve du serveur ; SSH protège toute la session. La clé d’hôte SSH identifie le point choisi sans exclure un relais en aval.",
       "appleSrp": "Partage d’écran Mac (Apple Direct SRP)",
       "appleSrpHelp": "Nécessite une connexion SSH enregistrée vers le Mac et 127.0.0.1 ou ::1 comme destination RFB. SRP vérifie le compte et la preuve du serveur ; SSH protège toute la session VNC. La clé d’hôte SSH identifie le point choisi, mais n’exclut pas un relais en aval.",
       "caBundle": "Certificats d’AC (PEM)",
@@ -7272,6 +7276,7 @@
     "summary_other": "{{count}} hôtes configurés",
     "transport": {
       "appleDhDestinationHelp": "Pour Apple DH, saisissez 127.0.0.1 ou ::1. Il s’agit de l’adresse de bouclage du Mac, accessible via l’hôte SSH sélectionné.",
+      "appleRsaSrpDestinationHelp": "Pour Apple RSA/SRP, saisissez 127.0.0.1 ou ::1 sur le Mac accessible via l’hôte SSH sélectionné.",
       "appleSrpDestinationHelp": "Pour Apple Direct SRP, saisissez 127.0.0.1 ou ::1. Il s’agit de l’adresse de bouclage du Mac, accessible via l’hôte SSH sélectionné.",
       "destination": "Destination RFB",
       "destinationHelp": "Pour une route SSH, cet hôte et ce port sont joints depuis le serveur SSH sélectionné, et non directement depuis le Runner.",
