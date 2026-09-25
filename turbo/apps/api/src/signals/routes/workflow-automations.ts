@@ -36,7 +36,6 @@ import {
   type AutomationResult,
 } from "../services/workflow-automation.service";
 import type { RouteEntry, SignalRouteHandler } from "../route-entry";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const workflowAutomationReadAuth = {
   requireOrganization: true,
@@ -358,7 +357,6 @@ const runAutomationInner$ = command(
         member: memberFromAuth(auth),
         automationId: params.id,
         ...(auth.tokenType === "agent" ? { sourceRunId: auth.runId } : {}),
-        publicBrand: PUBLIC_BRAND,
       },
       signal,
     );

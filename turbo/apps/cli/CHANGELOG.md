@@ -1,5 +1,26 @@
 # Changelog
 
+## [9.361.0](https://github.com/okou-ai/okou/compare/cli-v9.360.1...cli-v9.361.0) (2026-09-25)
+
+
+### Features
+
+* **browser:** support native select input requests ([#36740](https://github.com/okou-ai/okou/issues/36740)) ([8193d4b](https://github.com/okou-ai/okou/commit/8193d4ba387201e4f495115773cc0d880415b7bd))
+
+
+### Bug Fixes
+
+* **vnc:** honor needs_rebind on ssh-backed hosts ([#36741](https://github.com/okou-ai/okou/issues/36741)) ([d258195](https://github.com/okou-ai/okou/commit/d258195c0d234d4bee5790b7be450af9289fc1aa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.508.0
+    * @okouai/core bumped to 8.710.2
+    * @okouai/pi-agent-runtime bumped to 1.40.14
+
 ## [9.360.1](https://github.com/okou-ai/okou/compare/cli-v9.360.0...cli-v9.360.1) (2026-09-24)
 
 

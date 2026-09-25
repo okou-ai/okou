@@ -1,5 +1,4 @@
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
@@ -153,7 +152,6 @@ interface WorkflowQueueAdmissionArgs {
   readonly workflowAutomationEventType?: WorkflowAutomationEventType;
   readonly workflowAutomationEventPayload?: WorkflowAutomationEventPayload;
   readonly connectorSourceId?: string;
-  readonly publicBrand?: PublicBrand;
   readonly chatThreadId: string;
   readonly triggerSource: TriggerSource;
   readonly triggerBrief: string | undefined;
@@ -231,7 +229,6 @@ async function attemptWorkflowQueueAdmission(
     workflowAutomationEventType: args.workflowAutomationEventType,
     workflowAutomationEventPayload: args.workflowAutomationEventPayload,
     connectorSourceId: args.connectorSourceId,
-    publicBrand: args.publicBrand,
     triggerBrief: args.triggerBrief ?? null,
   } as const;
   return await db.transaction(async (tx) => {
@@ -313,7 +310,6 @@ export interface PendingWorkflowQueueEvent {
   readonly workflowAutomationEventType: string | null;
   readonly workflowAutomationEventPayload: WorkflowAutomationEventPayload | null;
   readonly connectorSourceId: string | undefined;
-  readonly publicBrand: PublicBrand | null;
 }
 
 /**
@@ -345,7 +341,6 @@ export async function loadNextWorkflowQueueEvent(
         workflowAutomationEventType: chatAutomationContext.eventType,
         workflowAutomationEventPayload: chatAutomationContext.eventPayload,
         connectorSourceId: chatAutomationContext.connectorSourceId,
-        publicBrand: chatAutomationContext.publicBrand,
       })
       .from(chatEvents)
       .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
@@ -403,7 +398,6 @@ export async function loadNextWorkflowQueueEvent(
     return {
       ...event,
       connectorSourceId: event.connectorSourceId ?? undefined,
-      publicBrand: event.publicBrand,
       triggerSource:
         event.automationKind === null
           ? null

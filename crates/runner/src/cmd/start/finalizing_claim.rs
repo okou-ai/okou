@@ -61,8 +61,7 @@ use tracing::info;
 
 use super::factory_lifecycle::SharedFactory;
 use super::job_discovery::{
-    ReservedActivation, ReservedActivationRequest, activate_reserved_idle, build_spawn_job_request,
-    claimed_activation_resources,
+    activation_resources, build_spawn_job_request, claimed_activation_resources,
 };
 use super::job_spawn::{SpawnContext, run_job};
 #[cfg(test)]
@@ -79,6 +78,9 @@ use runner_provider::ClaimedJob;
 use runner_provider::RunCancellationRegistration;
 use runner_supervisor::claimed_activation::{
     ClaimedActivationGuard, ClaimedJobSetup, ReadyClaimedResource,
+};
+use runner_supervisor::claimed_resource_activation::{
+    ReservedActivation, ReservedActivationRequest, activate_reserved_idle,
 };
 #[cfg(not(test))]
 use runner_supervisor::finalizing_admission::select_finalizing_resource;
@@ -328,7 +330,7 @@ async fn run_finalizing_claim(
                     workspace_disk_mb,
                     context: claimed.context(),
                 },
-                &ctx,
+                &activation_resources(&ctx),
                 &mut pre_spawn_timing,
             )
             .await

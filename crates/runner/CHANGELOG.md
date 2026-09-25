@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.213.16](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.15...runner-rs-v0.213.16) (2026-09-25)
+
+
+### Refactoring
+
+* **runner:** move pre-claim admission into supervisor ([#36759](https://github.com/okou-ai/okou/issues/36759)) ([7e6034c](https://github.com/okou-ai/okou/commit/7e6034cebc78a7ae296aaf0bd387ffac760c7f48))
+
 ## [0.213.15](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.14...runner-rs-v0.213.15) (2026-09-24)
 
 

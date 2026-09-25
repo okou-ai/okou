@@ -1,7 +1,3 @@
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
-
-export const OFFICIAL_GITHUB_PUBLIC_BRAND = "okou" satisfies PublicBrand;
-
 function normalizedProviderValue(
   value: string | null | undefined,
 ): string | undefined {
