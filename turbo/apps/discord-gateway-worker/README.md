@@ -114,16 +114,19 @@ provider Retry-After can extend that to one hour. A durable alarm recovers
 isolate loss within 30 seconds. Pending events survive stop, restart, an invalid
 session and fatal configuration errors. A full 1,000-event outbox stops intake
 before advancing the next sequence and resumes once delivery makes space.
-An event exceeding the 120,000-byte durable-record budget stops the relay before
-checkpointing it. Discord's own resume retention is finite: prolonged outages
+An event exceeding the 120,000-byte durable-record budget is never queued:
+the relay advances the checkpoint past it and stores only a dead-letter
+reference (event type, ID and size) in the same transaction, so resuming cannot
+replay it and stall delivery. Discord's own resume retention is finite: prolonged outages
 or nonresumable sessions cannot recover events Discord no longer retains.
 
 An event the API rejects as malformed (`400`) or too large (`413`) cannot
 succeed on retry, so the relay moves it out of the outbox into a dead-letter
 record and continues with later events; one member's message never stops
-delivery for other guilds. The newest 100 rejected envelopes are retained for
-diagnosis and `/health` reports the cumulative `deadLettered` count. Because
-rejected events are not replayed, activation monitoring must alert when this
+delivery for other guilds. The newest 100 dead-letter records, rejected
+envelopes and oversized-event references alike, are retained for diagnosis and
+`/health` reports the cumulative `deadLettered` count. Because dead-lettered
+events are not replayed, activation monitoring must alert when this
 count rises; a systematic contract mismatch would otherwise discard traffic
 while the relay still reports `running`.
 
