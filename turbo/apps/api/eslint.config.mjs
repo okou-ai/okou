@@ -754,11 +754,6 @@ export default [
       // Bounded job ownership needs real row-lock competition, expired leases,
       // handler-version skew and publication rollback unavailable through HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
-      // Authentication necessarily observes an already-aborted HTTP request
-      // before command creation. This one direct production-command case is the
-      // only seam that mutation-tests its pre-BEGIN guard; route coverage owns
-      // the public request, durable outcome and healthy retry.
-      "src/signals/services/__tests__/computer-use-command-create-cancellation.service.test.ts",
       // Pi resource snapshots are a byte-identical discovery contract shared
       // with the sandbox runtime; route output cannot expose its full virtual
       // filesystem, ignore-rule, and precedence matrix.
@@ -1002,10 +997,6 @@ export default [
       // Bounded job ownership needs row locks, expired leases, handler-version
       // skew and transaction rollback that callers cannot construct via HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
-      // Authentication necessarily consumes a pre-aborted HTTP signal before
-      // command creation. The route suite retains every public assertion; this
-      // exception only proves the production command opens no transaction.
-      "src/signals/services/__tests__/computer-use-command-create-cancellation.service.test.ts",
       // A physical relation versus a compatibility view cannot be selected
       // through the production API. This focused PostgreSQL test proves the
       // exact Agent Draft writer through both rollout targets.
