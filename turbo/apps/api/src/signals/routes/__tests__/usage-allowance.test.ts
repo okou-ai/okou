@@ -1046,7 +1046,15 @@ describe("Usage Allowance", () => {
     await expect(readVisibleUsageCredits(actor)).resolves.toBe(80);
     await expect(
       createStore().set(readUsageEventState$, key, context.signal),
-    ).resolves.toMatchObject({ status: "processed", creditsCharged: 0 });
+    ).resolves.toMatchObject({
+      status: "processed",
+      creditsCharged: 0,
+      allowance: {
+        shortWindowId: expect.any(String),
+        weeklyWindowId: expect.any(String),
+        unitsApplied: 80,
+      },
+    });
   });
 
   it("reports late first settlement in the new period while retaining old-window allowance and old receipts", async () => {
@@ -1081,9 +1089,23 @@ describe("Usage Allowance", () => {
       end: addDays(startedAt, 365).toISOString(),
     });
     expect(oldPeriod.body.totalCredits).toBe(10);
-    await expect(
-      createStore().set(readUsageEventState$, priorKey, context.signal),
-    ).resolves.toMatchObject({ status: "processed", creditsCharged: 0 });
+    const priorEvent = await createStore().set(
+      readUsageEventState$,
+      priorKey,
+      context.signal,
+    );
+    expect(priorEvent).toMatchObject({
+      status: "processed",
+      creditsCharged: 0,
+      allowance: {
+        shortWindowId: expect.any(String),
+        weeklyWindowId: expect.any(String),
+        unitsApplied: 10,
+      },
+    });
+    if (!priorEvent.allowance) {
+      throw new Error("Expected old run's issued allowance windows");
+    }
 
     mockNow(addHours(startedAt, 1));
     const lateKey = await recordPendingUsage({
@@ -1113,9 +1135,17 @@ describe("Usage Allowance", () => {
     expect(newPeriod.body.period?.start).toBe(nextPeriod.toISOString());
     expect(newPeriod.body.totalCredits).toBe(20);
     await expect(readOrgCredits(actor)).resolves.toBe(100);
-    await expect(
-      createStore().set(readUsageEventState$, lateKey, context.signal),
-    ).resolves.toMatchObject({ status: "processed", creditsCharged: 0 });
+    const lateEvent = await createStore().set(
+      readUsageEventState$,
+      lateKey,
+      context.signal,
+    );
+    expect(lateEvent).toMatchObject({ status: "processed", creditsCharged: 0 });
+    expect(lateEvent.allowance).toStrictEqual({
+      shortWindowId: priorEvent.allowance.shortWindowId,
+      weeklyWindowId: priorEvent.allowance.weeklyWindowId,
+      unitsApplied: 20,
+    });
 
     // Reprocessing after the successful commit must neither move the old row
     // into the new period nor charge the already processed late event twice.
@@ -1160,9 +1190,13 @@ describe("Usage Allowance", () => {
 
     await expect(readOrgCredits(actor)).resolves.toBe(20);
     await expect(readVisibleUsageCredits(actor)).resolves.toBe(80);
-    await expect(
-      createStore().set(readUsageEventState$, key, context.signal),
-    ).resolves.toMatchObject({ status: "processed", creditsCharged: 80 });
+    const event = await createStore().set(
+      readUsageEventState$,
+      key,
+      context.signal,
+    );
+    expect(event).toMatchObject({ status: "processed", creditsCharged: 80 });
+    expect(event.allowance).toBeUndefined();
   });
 
   it("uses the original occurrence for runless legacy pending usage on late first settlement", async () => {

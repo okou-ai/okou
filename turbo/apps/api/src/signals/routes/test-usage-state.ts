@@ -931,6 +931,9 @@ async function readUsageEventState(
   readonly status: string;
   readonly creditsCharged: number | null;
   readonly billingError: string | null;
+  readonly shortWindowId: string | null;
+  readonly weeklyWindowId: string | null;
+  readonly allowanceUnits: number | null;
 }> {
   const [event] = await db
     .select({
@@ -938,8 +941,15 @@ async function readUsageEventState(
       status: usageEvent.status,
       creditsCharged: usageEvent.creditsCharged,
       billingError: usageEvent.billingError,
+      shortWindowId: usageAllowanceAllocations.shortWindowId,
+      weeklyWindowId: usageAllowanceAllocations.weeklyWindowId,
+      allowanceUnits: usageAllowanceAllocations.unitsApplied,
     })
     .from(usageEvent)
+    .leftJoin(
+      usageAllowanceAllocations,
+      eq(usageAllowanceAllocations.usageEventId, usageEvent.id),
+    )
     .where(eq(usageEvent.idempotencyKey, idempotencyKey))
     .limit(1);
   if (!event) {
@@ -1160,6 +1170,9 @@ async function mutateUsageStateEventWriteState(
           usage_event_status: event.status,
           usage_event_credits_charged: event.creditsCharged,
           usage_event_billing_error: event.billingError,
+          usage_event_short_window_id: event.shortWindowId,
+          usage_event_weekly_window_id: event.weeklyWindowId,
+          usage_event_allowance_units: event.allowanceUnits,
         },
       };
     }
