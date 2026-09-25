@@ -183,6 +183,10 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
     channelResponse?: (
       channelId: string,
     ) => Response | undefined | Promise<Response | undefined>;
+    /** Overrides a single-message fetch, e.g. Discord's 403 Missing Access. */
+    messageResponse?: (
+      messageId: string,
+    ) => Response | undefined | Promise<Response | undefined>;
     historyResponse?: () =>
       | Response
       | undefined
@@ -266,7 +270,13 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
     ),
     http.get(
       `${base}/channels/:channelId/messages/:messageId`,
-      ({ params }) => {
+      async ({ params }) => {
+        const overridden = await state.messageResponse?.(
+          String(params.messageId),
+        );
+        if (overridden) {
+          return overridden;
+        }
         const message = messages.get(String(params.messageId));
         return message?.channel_id === String(params.channelId)
           ? HttpResponse.json(message)
@@ -424,22 +434,27 @@ export function postDiscordGatewayEnvelope(
   context: TestContext,
   envelope: DiscordGatewayEnvelope,
 ) {
+  return accept(requestDiscordGatewayEnvelope(context, envelope), [200]);
+}
+
+/** Signs an envelope like the relay and returns any HTTP status. */
+export function requestDiscordGatewayEnvelope(
+  context: TestContext,
+  envelope: DiscordGatewayEnvelope,
+) {
   const timestamp = Math.floor(now() / 1000).toString();
   const signature = createHmac("sha256", DISCORD_TEST_GATEWAY_SECRET)
     .update(`${timestamp}.${JSON.stringify(envelope)}`)
     .digest("hex");
-  return accept(
-    setupApp({ context, routes: discordGatewayRoutes })(
-      discordGatewayContract,
-    ).post({
-      headers: {
-        "x-discord-gateway-timestamp": timestamp,
-        "x-discord-gateway-signature": signature,
-      },
-      body: envelope,
-    }),
-    [200],
-  );
+  return setupApp({ context, routes: discordGatewayRoutes })(
+    discordGatewayContract,
+  ).post({
+    headers: {
+      "x-discord-gateway-timestamp": timestamp,
+      "x-discord-gateway-signature": signature,
+    },
+    body: envelope,
+  });
 }
 
 export async function discordChatThreads(

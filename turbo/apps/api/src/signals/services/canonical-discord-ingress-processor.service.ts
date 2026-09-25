@@ -124,7 +124,9 @@ async function downloadInputAttachment(
       userId: args.userId,
       guildId: args.guildId,
       channelId: args.attachment.channelId,
-      mode: "read",
+      // This is the sender's own triggering message, re-identified by author
+      // below; Discord enforces the bot's history permission on the refetch.
+      mode: "view",
     },
     signal,
   );
@@ -514,6 +516,7 @@ const materializeIngressAttachment$ = command(
       readonly message: DiscordMessageCreate;
       readonly attachment: DiscordMessageCreate["attachments"][number];
       readonly chatThreadId: string;
+      readonly botCanReadMessage: boolean;
     },
     signal: AbortSignal,
   ): Promise<DiscordInputAsset> => {
@@ -545,6 +548,14 @@ const materializeIngressAttachment$ = command(
         size: attachment.size,
         maxBytes: MAX_DISCORD_FILE_SIZE_BYTES,
         download: async (downloadSignal) => {
+          if (!args.botCanReadMessage) {
+            // Record a failed asset instead of dropping the whole request.
+            throw new InputFileImportError(
+              "download-failed",
+              "Okou cannot read message history in this Discord channel",
+              403,
+            );
+          }
           const downloaded = await settle(
             downloadInputAttachment(
               {
@@ -588,6 +599,35 @@ const materializeIngressAttachment$ = command(
   },
 );
 
+/**
+ * Refresh expiring CDN URLs from the authorized message, never from callers.
+ * Discord enforces the bot's own READ_MESSAGE_HISTORY on this fetch; a 403
+ * means the bot cannot read it, and returns null so files degrade to failed
+ * assets while a deleted message (404) still ends the request.
+ */
+async function fetchCurrentAttachmentMessage(
+  botToken: string,
+  message: DiscordMessageCreate,
+  signal: AbortSignal,
+) {
+  const fetched = await discordClient.fetchDiscordMessage(
+    { botToken, channelId: message.channel_id, messageId: message.id },
+    signal,
+  );
+  if (fetched.kind === "unavailable" && fetched.status === 403) {
+    return null;
+  }
+  const currentMessage = discordResult(fetched);
+  if (
+    currentMessage.id !== message.id ||
+    currentMessage.channel_id !== message.channel_id ||
+    currentMessage.author.id !== message.author.id
+  ) {
+    throw new Error("Discord attachment message identity changed");
+  }
+  return currentMessage;
+}
+
 const materializeIngressAttachments$ = command(
   async (
     { set },
@@ -602,33 +642,24 @@ const materializeIngressAttachments$ = command(
     const { accessArgs, message, botToken, chatThreadId } = args;
     const assets: DiscordInputAsset[] = [];
     if (message.attachments.length > 0) {
+      // The sender authored this message, so viewing the channel is enough
+      // for them; READ_MESSAGE_HISTORY only gates other people's messages.
       await set(
         requireIngressAccess$,
-        { ...accessArgs, channelId: message.channel_id, mode: "read" },
+        { ...accessArgs, channelId: message.channel_id, mode: "view" },
         signal,
       );
-      // Refresh expiring CDN URLs from the authorized message, never from callers.
-      const currentMessage = discordResult(
-        await discordClient.fetchDiscordMessage(
-          {
-            botToken,
-            channelId: message.channel_id,
-            messageId: message.id,
-          },
-          signal,
-        ),
+      const currentMessage = await fetchCurrentAttachmentMessage(
+        botToken,
+        message,
+        signal,
       );
-      if (
-        currentMessage.id !== message.id ||
-        currentMessage.channel_id !== message.channel_id ||
-        currentMessage.author.id !== message.author.id
-      ) {
-        throw new Error("Discord attachment message identity changed");
-      }
       for (const originalAttachment of message.attachments) {
-        const attachment = currentMessage.attachments.find((candidate) => {
-          return candidate.id === originalAttachment.id;
-        });
+        const attachment = currentMessage
+          ? currentMessage.attachments.find((candidate) => {
+              return candidate.id === originalAttachment.id;
+            })
+          : originalAttachment;
         if (!attachment) {
           throw new DiscordIngressFailure(
             "attachment:unavailable",
@@ -639,12 +670,18 @@ const materializeIngressAttachments$ = command(
         }
         await set(
           requireIngressAccess$,
-          { ...accessArgs, channelId: message.channel_id, mode: "read" },
+          { ...accessArgs, channelId: message.channel_id, mode: "view" },
           signal,
         );
         const asset = await set(
           materializeIngressAttachment$,
-          { accessArgs, message, attachment, chatThreadId },
+          {
+            accessArgs,
+            message,
+            attachment,
+            chatThreadId,
+            botCanReadMessage: currentMessage !== null,
+          },
           signal,
         );
         assets.push(asset);

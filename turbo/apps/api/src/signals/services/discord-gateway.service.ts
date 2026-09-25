@@ -218,12 +218,23 @@ export const handleDiscordGateway$ = command(
         uninstallDiscordGuild$,
         {
           applicationId: config.applicationId,
+          botToken: config.botToken,
           guildId: guild.data.id,
           eventId: envelope.eventId,
         },
         signal,
       );
       signal.throwIfAborted();
+      if (outcome === "provider-unavailable") {
+        return gatewayError(
+          "PROVIDER_UNAVAILABLE",
+          "Discord guild membership could not be verified",
+        );
+      }
+      if (outcome === "still-member") {
+        // A late removal must not delete a newer installation of this guild.
+        return ignored("guild-membership-current");
+      }
       return Response.json({ ok: true, outcome });
     }
 

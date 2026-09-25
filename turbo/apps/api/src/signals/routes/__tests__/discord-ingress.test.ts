@@ -39,6 +39,7 @@ import {
   mockDiscordProvider,
   postDiscordGatewayEnvelope,
   postDiscordMessage,
+  requestDiscordGatewayEnvelope,
   setupConnectedDiscordActor,
   type ConnectedDiscordActor,
 } from "./helpers/discord-fixture";
@@ -284,14 +285,14 @@ describe("canonical Discord ingress", () => {
         provider.guildChannelId,
         provider.dmChannelId,
       ]);
-      for (const thread of await discordChatThreads(context, actor)) {
-        await expect(events(actor, thread.id)).resolves.toHaveLength(0);
-      }
+      // The denial is decided before any route exists, so no empty chat is
+      // left behind and the notice names the missing permission.
+      await expect(discordChatThreads(context, actor)).resolves.toHaveLength(0);
       expect(provider.sentMessages).toHaveLength(1);
       expect(provider.sentMessages[0]).toMatchObject({
         channel_id: provider.guildChannelId,
         content:
-          "I couldn't process this Discord message. Please send it again.",
+          "I can't start a thread for this request here. You and Okou both need the Create Public Threads permission in this channel.",
       });
       await postDiscordMessage(context, message, `denied-replay:${message.id}`);
       await flushWaitUntilForTest();
@@ -456,8 +457,10 @@ describe("canonical Discord ingress", () => {
     );
     await flushWaitUntilForTest();
     expect(provider.channels.has(message.id)).toBe(testCase.allowed);
+    const threads = await discordChatThreads(context, actor);
+    expect(threads).toHaveLength(testCase.allowed ? 1 : 0);
     const inputs = [];
-    for (const thread of await discordChatThreads(context, actor)) {
+    for (const thread of threads) {
       inputs.push(...currentInputs(await events(actor, thread.id)));
     }
     expect(inputs).toHaveLength(testCase.allowed ? 1 : 0);
@@ -585,6 +588,8 @@ describe("canonical Discord ingress", () => {
       eventId,
       payload: { id: actor.guildId },
     };
+    // Discord no longer lists the bot in a guild it was removed from.
+    provider.guildIds.delete(actor.guildId);
     expect(
       (await postDiscordGatewayEnvelope(context, removed)).body.outcome,
     ).toBe("accepted");
@@ -609,6 +614,7 @@ describe("canonical Discord ingress", () => {
       guildName: "Discord test guild",
     });
     expect(reinstalled.connectionId).not.toBe(actor.connectionId);
+    provider.guildIds.add(actor.guildId);
     await flushWaitUntilForTest();
     context.mocks.ably.publish.mockClear();
     context.mocks.ably.channelGet.mockClear();
@@ -632,6 +638,62 @@ describe("canonical Discord ingress", () => {
     const [thread] = await discordChatThreads(context, actor);
     if (!thread) {
       throw new Error("Expected reinstalled binding to accept messages");
+    }
+    expect(currentInputs(await events(actor, thread.id))).toHaveLength(1);
+  });
+
+  it("keeps a reinstalled guild when an earlier removal is delivered late", async () => {
+    const actor = await connected();
+    const provider = mockDiscordProvider(actor);
+    await flushWaitUntilForTest();
+    context.mocks.ably.publish.mockClear();
+    context.mocks.ably.channelGet.mockClear();
+    // The relay queued this removal before a halt, then the guild reinstalled
+    // the bot. Its sequence-based eventId is new to the API.
+    const late = {
+      version: 1 as const,
+      applicationId: DISCORD_TEST_APPLICATION_ID,
+      eventType: "GUILD_DELETE" as const,
+      eventId: `GUILD_DELETE:halted-session:${uniqueDiscordSnowflake()}`,
+      payload: { id: actor.guildId },
+    };
+    await expect(
+      postDiscordGatewayEnvelope(context, late),
+    ).resolves.toMatchObject({
+      body: { outcome: "ignored", reason: "guild-membership-current" },
+    });
+    let discordFailing = true;
+    server.use(
+      http.get(`https://discord.com/api/v10/guilds/${actor.guildId}`, () => {
+        return discordFailing
+          ? HttpResponse.json(
+              { message: "Internal Server Error" },
+              { status: 500 },
+            )
+          : undefined;
+      }),
+    );
+    // An unverifiable removal stays with the relay for retry.
+    await accept(requestDiscordGatewayEnvelope(context, late), [503]);
+    discordFailing = false;
+    await flushWaitUntilForTest();
+    expect(channelsPublishedTo(context.mocks, "discord:changed")).toStrictEqual(
+      [],
+    );
+    await expect(discordStatus(actor)).resolves.toMatchObject({
+      isInstalled: true,
+      isConnected: true,
+    });
+    const message = discordMessageForTest(actor, {
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> still installed`,
+    });
+    provider.messages.set(message.id, message);
+    await postDiscordMessage(context, message);
+    await flushWaitUntilForTest();
+    const [thread] = await discordChatThreads(context, actor);
+    if (!thread) {
+      throw new Error("Expected the retained installation to accept messages");
     }
     expect(currentInputs(await events(actor, thread.id))).toHaveLength(1);
   });
@@ -1012,6 +1074,172 @@ describe("canonical Discord ingress", () => {
     expect(claim.appendSystemPrompt).toContain("private-history-1:");
     expect(claim.appendSystemPrompt).not.toContain("private-history-25:");
     expect(claim.appendSystemPrompt).toContain("untrusted");
+  });
+
+  function textAttachment(
+    channelId: string,
+    filename: string,
+  ): ReturnType<typeof discordMessageForTest>["attachments"][number] {
+    const id = uniqueDiscordSnowflake();
+    return {
+      id,
+      filename,
+      size: 5,
+      content_type: "text/plain",
+      url: `https://cdn.discordapp.com/attachments/${channelId}/${id}/${filename}`,
+    };
+  }
+
+  it("imports a mention's own file when the sender cannot read message history", async () => {
+    const actor = await connected();
+    const provider = mockDiscordProvider(actor);
+    // Discord wire bits VIEW_CHANNEL | SEND_MESSAGES | CREATE_PUBLIC_THREADS |
+    // SEND_MESSAGES_IN_THREADS, without READ_MESSAGE_HISTORY.
+    provider.state.everyonePermissions = "309237648384";
+    const attachment = textAttachment(provider.guildChannelId, "own.txt");
+    const message = discordMessageForTest(actor, {
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> read my file`,
+      attachments: [attachment],
+    });
+    provider.messages.set(message.id, message);
+    server.use(
+      http.get(attachment.url, () => {
+        return new HttpResponse("notes", {
+          headers: { "content-type": "text/plain", "content-length": "5" },
+        });
+      }),
+    );
+    expect((await postDiscordMessage(context, message)).body.outcome).toBe(
+      "accepted",
+    );
+    await flushWaitUntilForTest();
+    const [thread] = await discordChatThreads(context, actor);
+    if (!thread) {
+      throw new Error("Expected the mention with a file to be admitted");
+    }
+    const [input] = currentInputs(await events(actor, thread.id));
+    expect(input?.userMessage.parts).toContainEqual(
+      expect.objectContaining({
+        type: "file",
+        filenameSnapshot: "own.txt",
+        contentType: "text/plain",
+      }),
+    );
+    if (!input?.runId) {
+      throw new Error("Expected a run for the admitted file mention");
+    }
+    await runsApi.heartbeatRunner(actor.runnerGroup);
+    const claim = await runsApi.claimRunnerJob(input.runId);
+    expect(claim.prompt).toContain("[Web file] own.txt");
+    // Only the admission notice path posts; this request was not dropped.
+    expect(provider.sentMessages).toHaveLength(0);
+  });
+
+  it("keeps a file mention with a failed file when Okou cannot read message history", async () => {
+    const actor = await connected();
+    const provider = mockDiscordProvider(actor);
+    const base = "https://discord.com/api/v10";
+    const botRoleId = uniqueDiscordSnowflake();
+    server.use(
+      http.get(`${base}/guilds/${actor.guildId}/roles`, () => {
+        return HttpResponse.json([
+          { id: actor.guildId, name: "@everyone", permissions: "8" },
+          // VIEW_CHANNEL | SEND_MESSAGES | CREATE_PUBLIC_THREADS |
+          // SEND_MESSAGES_IN_THREADS, without READ_MESSAGE_HISTORY.
+          { id: botRoleId, name: "Okou", permissions: "309237648384" },
+        ]);
+      }),
+      http.get(
+        `${base}/guilds/${actor.guildId}/members/:userId`,
+        ({ params }) => {
+          const userId = String(params.userId);
+          const isBot = userId === actor.botUserId;
+          return HttpResponse.json({
+            user: {
+              id: userId,
+              username: isBot ? "Okou" : "member",
+              bot: isBot,
+            },
+            roles: isBot ? [botRoleId] : [],
+          });
+        },
+      ),
+    );
+    const attachment = textAttachment(provider.guildChannelId, "hidden.txt");
+    const message = discordMessageForTest(actor, {
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> summarize this`,
+      attachments: [attachment],
+    });
+    provider.messages.set(message.id, message);
+    // Discord's answer when the bot may not read the channel's messages.
+    provider.state.messageResponse = (messageId) => {
+      return messageId === message.id
+        ? HttpResponse.json(
+            { message: "Missing Access", code: 50_001 },
+            { status: 403 },
+          )
+        : undefined;
+    };
+    let cdnRequests = 0;
+    server.use(
+      http.get(attachment.url, () => {
+        cdnRequests++;
+        return new HttpResponse("notes", {
+          headers: { "content-type": "text/plain", "content-length": "5" },
+        });
+      }),
+    );
+    await postDiscordMessage(context, message);
+    await flushWaitUntilForTest();
+    const [thread] = await discordChatThreads(context, actor);
+    if (!thread) {
+      throw new Error("Expected the mention to be admitted");
+    }
+    const [input] = currentInputs(await events(actor, thread.id));
+    expect(input?.runId).toStrictEqual(expect.any(String));
+    expect(JSON.stringify(input?.userMessage.parts)).toContain("hidden.txt");
+    // The unauthorized refresh never downloads the file bytes.
+    expect(cdnRequests).toBe(0);
+  });
+
+  it("admits a Nitro-length mention of more than 100 users that includes Okou", async () => {
+    const actor = await connected();
+    const provider = mockDiscordProvider(actor);
+    const others = Array.from({ length: 120 }, (_, index) => {
+      return { id: uniqueDiscordSnowflake(), username: `member${index}` };
+    });
+    const base = discordMessageForTest(actor, {
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> ${others
+        .map((user) => {
+          return `<@${user.id}>`;
+        })
+        .join(" ")} plan the offsite`,
+    });
+    const message = {
+      ...base,
+      mentions: [...base.mentions, ...others],
+    };
+    expect(message.mentions.length).toBeGreaterThan(100);
+    provider.messages.set(message.id, message);
+    expect((await postDiscordMessage(context, message)).body.outcome).toBe(
+      "accepted",
+    );
+    await flushWaitUntilForTest();
+    const [thread] = await discordChatThreads(context, actor);
+    if (!thread) {
+      throw new Error("Expected the many-mention message to be admitted");
+    }
+    const [input] = currentInputs(await events(actor, thread.id));
+    expect(input?.runId).toStrictEqual(expect.any(String));
+    expect(input?.userMessage.parts).toContainEqual(
+      expect.objectContaining({
+        type: "text",
+        text: expect.stringContaining("@member119 plan the offsite"),
+      }),
+    );
   });
 
   it("recovers a transient provider failure through the connection-scoped sweep", async () => {

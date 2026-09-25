@@ -5,13 +5,19 @@ import {
   discordUserSchema,
 } from "../signals/external/discord-client";
 
+/** Discord's message content limit, including Nitro-length messages. */
+const MAX_DISCORD_CONTENT_LENGTH = 4000;
+
 export const discordMessageCreateSchema = z.object({
   id: discordSnowflakeSchema,
   channel_id: discordSnowflakeSchema,
   guild_id: discordSnowflakeSchema.optional(),
   author: discordUserSchema,
-  content: z.string().max(4000),
-  mentions: z.array(discordUserSchema).max(100),
+  content: z.string().max(MAX_DISCORD_CONTENT_LENGTH),
+  // Discord does not cap user mentions separately. Each one, except a reply's
+  // author, needs a `<@id>` token in content, so the content limit is a safe
+  // bound; rejecting a legitimate message would dead-letter it silently.
+  mentions: z.array(discordUserSchema).max(MAX_DISCORD_CONTENT_LENGTH),
   attachments: z.array(discordAttachmentSchema).max(10),
   webhook_id: discordSnowflakeSchema.optional(),
   type: z.number().int(),
