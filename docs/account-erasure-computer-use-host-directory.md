@@ -78,8 +78,8 @@ The host predicate is exactly:
 - `ORDER BY computer_use_hosts.last_seen_at DESC`.
 
 `idx_computer_use_hosts_org_user (org_id, user_id)` supports the exact-owner
-scan. `idx_computer_use_hosts_last_seen (last_seen_at)` is separate, so the
-planner may sort the matching owner rows; no claim is made that ordering is free.
+scan. There is no `last_seen_at` index, so the planner sorts the matching owner
+rows; no claim is made that ordering is free.
 The closure lookup uses the `(subject_kind, subject_id)` prefix of the unique
 `account_erasure_subject_generation` index and returns at most one row. Its
 `LIMIT 1` does not bound historical index candidates across generations.

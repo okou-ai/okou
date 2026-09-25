@@ -30,7 +30,11 @@ import type { DesktopClientHeaderInjector } from "./desktop-client-headers";
 import type { ComputerUseCommandSession } from "./computer-use-driver";
 import type { DesktopAuthRequestOptions } from "./desktop-auth-session";
 
-const HEARTBEAT_POLL_MS = 2_000;
+// The first heartbeat follows registration quickly, before the first command
+// poll, so auth or host conflicts surface early. After that the API keeps a
+// host online for 90s and only refreshes liveness every 30s.
+const HEARTBEAT_FIRST_POLL_MS = 2_000;
+const HEARTBEAT_POLL_MS = 15_000;
 const COMMAND_COLD_POLL_MS = 5_000;
 const COMMAND_BURST_POLL_MS = 500;
 const COMMAND_BURST_WINDOW_MS = 10_000;
@@ -913,7 +917,7 @@ export class ComputerUseHostRuntime {
       lastError: null,
       recovery: null,
     });
-    return HEARTBEAT_POLL_MS;
+    return HEARTBEAT_FIRST_POLL_MS;
   }
 
   private async hasAuthenticatedSession(): Promise<boolean> {

@@ -2,7 +2,7 @@
 
 ## Chat event write control retirement (2026-09-25)
 
-Migration `1241_drop_chat_event_write_control` drops `chat_event_write_control`
+Migration `1242_drop_chat_event_write_control` drops `chat_event_write_control`
 together with its `preserve_chat_event_write_activation` trigger and function.
 APIs 1.674.0 and 1.675.0 read the control row on every chat event write, so the
 production rollback resolver now refuses targets before #36703 (`15117da781`,
