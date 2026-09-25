@@ -106,7 +106,9 @@ Discord authorization source. See C's
    contains no authoritative guild choice, so ambiguous org routing needs an
    explicit sender-owned selection.
 3. **Replies and threads.** A reply references a message; a thread is a separate
-   Discord conversation with permissions and archive/lock state. Task routing
+   Discord conversation with permissions and archive/lock state. Sending into
+   an archived thread reopens it, so only a moderator lock stops delivery
+   (unless both the sender and the bot hold `MANAGE_THREADS`). Task routing
    must use the actual channel/thread identity. Bot DMs have no Slack-style
    subthreads; standard bots cannot join Group DMs. Those are platform limits,
    not a reason to share DM ownership across users or orgs.

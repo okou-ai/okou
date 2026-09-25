@@ -12,8 +12,10 @@ import {
   isSupportedRunModel,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
+import { delay } from "signal-timers";
 
 import { env } from "../../lib/env";
+import { monotonicNow } from "../../lib/time";
 import {
   parseDiscordPickerCustomId,
   resolveDiscordInteractionActor,
@@ -29,7 +31,10 @@ import {
 } from "../../lib/discord-interaction-messages";
 import { request$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
-import { discordClient } from "../external/discord-client";
+import {
+  discordClient,
+  type DiscordApiResult,
+} from "../external/discord-client";
 import {
   discordGuildUserBinding,
   discordEffectiveAgent,
@@ -47,6 +52,7 @@ import {
 import type { DiscordCommandName } from "../../lib/discord-command-definition";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import { agentList } from "./agent-data.service";
+import { resolveIntegrationModelRouteForUser$ } from "./integration-model-route.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
 import { updateUserModelPreferenceInDb } from "./user-data.service";
 import { writeDb$ } from "../external/db";
@@ -59,6 +65,10 @@ import {
 
 const SETUP_GUIDANCE =
   "Discord account onboarding is not available yet. An administrator must configure a verified connection before you can use Okou. This command does not connect or verify an account.";
+const UNCONFIRMED_REQUEST =
+  "Discord could not confirm this request in time, so no changes were made. Run the command again.";
+// Discord's 3 s initial-response deadline plus a margin for in-flight delivery.
+const DISCORD_RESPONSE_WINDOW_MS = 3500;
 const STALE_CONTROL =
   "This control has expired or your access has changed. Run the command again.";
 const HELP = [
@@ -129,7 +139,7 @@ const discordOrgPicker$ = command(
     args: {
       readonly actor: DiscordInteractionActor;
       readonly botToken: string;
-      readonly page: number;
+      readonly page?: number;
       readonly selection?: string;
     },
     signal: AbortSignal,
@@ -174,6 +184,8 @@ const discordOrgPicker$ = command(
           : STALE_CONTROL,
       );
     }
+    const current = await get(discordDmBinding(args.actor.discordUserId));
+    signal.throwIfAborted();
     const options = [...bindings]
       .sort((left, right) => {
         return left.connectionId.localeCompare(right.connectionId);
@@ -190,6 +202,9 @@ const discordOrgPicker$ = command(
       action: "org",
       connectionId: "-",
       options,
+      ...(current.kind === "connected"
+        ? { selected: current.binding.connectionId }
+        : {}),
       content:
         "Choose your workspace for bot DMs. Only your verified connections are listed.",
     });
@@ -203,7 +218,7 @@ const discordAgentPicker$ = command(
       readonly actor: DiscordInteractionActor;
       readonly botToken: string;
       readonly binding: DiscordVerifiedBinding;
-      readonly page: number;
+      readonly page?: number;
       readonly selection?: string;
     },
     signal: AbortSignal,
@@ -264,11 +279,19 @@ const discordAgentPicker$ = command(
           : STALE_CONTROL,
       );
     }
+    const effective = await get(discordEffectiveAgent(args.binding));
+    signal.throwIfAborted();
     return discordAccountPicker({
       ...args,
       connectionId: args.binding.connectionId,
       action: "agent",
       options,
+      ...(effective
+        ? {
+            selected:
+              effective.id === defaultAgent?.agentId ? "default" : effective.id,
+          }
+        : {}),
       content:
         "Choose an agent for new Discord conversations. Existing server threads keep their agent.",
     });
@@ -334,7 +357,7 @@ const discordModelPicker$ = command(
       readonly actor: DiscordInteractionActor;
       readonly botToken: string;
       readonly binding: DiscordVerifiedBinding;
-      readonly page: number;
+      readonly page?: number;
       readonly selection?: string;
     },
     signal: AbortSignal,
@@ -391,11 +414,18 @@ const discordModelPicker$ = command(
           : STALE_CONTROL,
       );
     }
+    // Preselect the model a new Discord conversation would actually run.
+    const route = await set(
+      resolveIntegrationModelRouteForUser$,
+      args.binding,
+      signal,
+    );
     return discordAccountPicker({
       ...args,
       connectionId: args.binding.connectionId,
       action: "model",
       options,
+      ...(route ? { selected: route.selectedModel } : {}),
       content:
         "Choose an allowed model for new conversations. This is your shared workspace model preference.",
     });
@@ -413,7 +443,7 @@ const discordBoundAccountAction$ = command(
       readonly binding: DiscordVerifiedBinding;
       readonly actor: DiscordInteractionActor;
       readonly botToken: string;
-      readonly page: number;
+      readonly page?: number;
       readonly selection?: string;
     },
     signal: AbortSignal,
@@ -492,7 +522,7 @@ const discordAccountAction$ = command(
     if (action === "org") {
       return set(
         discordOrgPicker$,
-        { actor, botToken, page: control?.page ?? 0, selection },
+        { actor, botToken, page: control?.page, selection },
         signal,
       );
     }
@@ -501,7 +531,7 @@ const discordAccountAction$ = command(
       if (control) {
         return discordAccountMessage(STALE_CONTROL);
       }
-      return set(discordOrgPicker$, { actor, botToken, page: 0 }, signal);
+      return set(discordOrgPicker$, { actor, botToken }, signal);
     }
     if (current.kind !== "connected") {
       return discordAccountMessage(SETUP_GUIDANCE);
@@ -525,7 +555,7 @@ const discordAccountAction$ = command(
         binding: current.binding,
         actor,
         botToken,
-        page: control?.page ?? 0,
+        page: control?.page,
         selection,
       },
       signal,
@@ -567,8 +597,86 @@ const finishDiscordInteraction$ = command(
   },
 );
 
+function discordAcknowledgementOutcome(
+  /** Null when the callback request was aborted by its local deadline. */
+  result: DiscordApiResult<undefined> | null,
+): "acknowledged" | "duplicate" | "uncertain" | "rejected" {
+  if (!result) {
+    return "uncertain";
+  }
+  if (result.kind === "ok") {
+    return "acknowledged";
+  }
+  if (result.kind === "unavailable") {
+    return "rejected";
+  }
+  if (result.code === 40_060) {
+    return "duplicate";
+  }
+  // Timeouts, transport failures and server errors do not prove rejection.
+  return result.status >= 500 ? "uncertain" : "rejected";
+}
+
+/** Components defer an update so the result replaces the picker in place. */
+async function acknowledgeDiscordInteraction(
+  interaction: AccountInteraction,
+  signal: AbortSignal,
+): Promise<ReturnType<typeof discordAcknowledgementOutcome>> {
+  const deadline = AbortSignal.timeout(2000);
+  const acknowledgement = await settleIncludingAbort(
+    discordClient.createDiscordInteractionResponse(
+      {
+        interactionId: interaction.id,
+        interactionToken: interaction.token,
+        response:
+          interaction.type === 3
+            ? { type: 6 }
+            : { type: 5, data: { flags: 64 } },
+      },
+      AbortSignal.any([signal, deadline]),
+    ),
+  );
+  signal.throwIfAborted();
+  if (!acknowledgement.ok && !deadline.aborted) {
+    throw acknowledgement.error;
+  }
+  return discordAcknowledgementOutcome(
+    acknowledgement.ok ? acknowledgement.value : null,
+  );
+}
+
+/**
+ * A callback that timed out or failed in transit may still reach Discord within
+ * its 3-second window. Afterward the token is valid only if it did, so an edit
+ * then either replaces the loading state or is harmlessly rejected.
+ */
+const settleUncertainDiscordInteraction$ = command(
+  async (
+    _,
+    interaction: AccountInteraction,
+    receivedAt: number,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    // Discord's window opened before this request arrived, so a local
+    // monotonic deadline from receipt outlasts it regardless of clock skew.
+    await delay(
+      Math.max(receivedAt + DISCORD_RESPONSE_WINDOW_MS - monotonicNow(), 0),
+      { signal },
+    );
+    await discordClient.editDiscordOriginalInteractionResponse(
+      {
+        applicationId: interaction.application_id,
+        interactionToken: interaction.token,
+        ...discordAccountMessage(UNCONFIRMED_REQUEST),
+      },
+      signal,
+    );
+  },
+);
+
 export const handleDiscordInteractions$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<Response> => {
+    const receivedAt = monotonicNow();
     const request = get(request$).raw;
     const publicKey = env("DISCORD_PUBLIC_KEY");
     const applicationId = env("DISCORD_APPLICATION_ID");
@@ -652,32 +760,24 @@ export const handleDiscordInteractions$ = command(
     const { botToken } = config;
     // Discord accepts one callback per interaction ID. Consume it before work,
     // so concurrent delivery or a captured signed replay cannot apply changes.
-    const ackSignal = AbortSignal.any([signal, AbortSignal.timeout(2000)]);
-    const acknowledgement = await settleIncludingAbort(
-      discordClient.createDiscordInteractionResponse(
-        {
-          interactionId: interaction.id,
-          interactionToken: interaction.token,
-          response: { type: 5, data: { flags: 64 } },
-        },
-        ackSignal,
-      ),
-    );
-    signal.throwIfAborted();
-    if (!acknowledgement.ok) {
-      return Response.json(
-        { error: "Discord could not acknowledge the interaction" },
-        { status: 503 },
-      );
+    const outcome = await acknowledgeDiscordInteraction(interaction, signal);
+    if (outcome === "duplicate") {
+      return new Response(null, { status: 202 });
     }
-    const acknowledged = acknowledgement.value;
-    if (acknowledged.kind !== "ok") {
-      if (
-        acknowledged.kind === "discord-error" &&
-        acknowledged.code === 40_060
-      ) {
-        return new Response(null, { status: 202 });
-      }
+    if (outcome === "uncertain") {
+      // Discord may still have accepted the callback. Apply no change, and
+      // replace any loading state once its 3 s response window has closed.
+      waitUntil(
+        set(
+          settleUncertainDiscordInteraction$,
+          interaction,
+          receivedAt,
+          signal,
+        ),
+      );
+      return new Response(null, { status: 202 });
+    }
+    if (outcome === "rejected") {
       return Response.json(
         { error: "Discord could not acknowledge the interaction" },
         { status: 503 },

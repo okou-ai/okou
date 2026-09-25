@@ -158,6 +158,26 @@ function recoverReplies(actor: ConnectedDiscordActor) {
   );
 }
 
+// A non-moderator member: can view, send, read history and send in threads,
+// but lacks MANAGE_THREADS, so a moderator lock closes the thread.
+const MEMBER_PERMISSIONS = (
+  (1n << 10n) |
+  (1n << 11n) |
+  (1n << 16n) |
+  (1n << 38n)
+).toString();
+
+function setThreadState(
+  started: Awaited<ReturnType<typeof startDiscordRun>>,
+  state: { readonly archived: boolean; readonly locked: boolean },
+) {
+  const thread = started.provider.channels.get(started.channelId);
+  if (!thread?.thread_metadata) {
+    throw new Error("Discord ingress did not create a native thread");
+  }
+  thread.thread_metadata = { ...thread.thread_metadata, ...state };
+}
+
 describe("canonical Discord terminal replies", () => {
   it("delivers canonical output after a long task to the native thread exactly once", async () => {
     const started = await startDiscordRun();
@@ -327,6 +347,96 @@ describe("canonical Discord terminal replies", () => {
       );
     },
   );
+
+  it("delivers the final reply after the thread auto-archives during the run", async () => {
+    const started = await startDiscordRun();
+    const claim = await claimRun(started.actor, started.runId);
+    setThreadState(started, { archived: true, locked: false });
+    await completeRun({
+      runId: started.runId,
+      sandboxToken: claim.sandboxToken,
+      text: "The archived-thread task is complete.",
+    });
+    expect(started.provider.sentMessages).toHaveLength(1);
+    expect(started.provider.sentMessages[0]).toMatchObject({
+      channel_id: started.channelId,
+      content: expect.stringContaining("The archived-thread task is complete."),
+    });
+    await recoverReplies(started.actor);
+    expect(started.provider.sentMessages).toHaveLength(1);
+  });
+
+  it.each([
+    { sender: "member", delivered: 0 },
+    { sender: "moderator", delivered: 1 },
+  ] as const)(
+    "delivers into a thread locked during the run only for a MANAGE_THREADS $sender",
+    async ({ sender, delivered }) => {
+      const started = await startDiscordRun();
+      const claim = await claimRun(started.actor, started.runId);
+      // The sender's only authority comes from @everyone; the bot keeps its
+      // administrator role, which alone must not reopen the lock.
+      started.provider.state.everyonePermissions =
+        sender === "member"
+          ? MEMBER_PERMISSIONS
+          : (BigInt(MEMBER_PERMISSIONS) | (1n << 34n)).toString();
+      setThreadState(started, { archived: true, locked: true });
+      await completeRun({
+        runId: started.runId,
+        sandboxToken: claim.sandboxToken,
+        text: "The locked-thread task is complete.",
+      });
+      await recoverReplies(started.actor);
+      expect(started.provider.sentMessages).toHaveLength(delivered);
+      const events = await readProjectedChatEvents(context, {
+        threadId: started.threadId,
+        headers: { authorization: "Bearer clerk-session" },
+      });
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          eventType: "run.completed",
+          runId: started.runId,
+        }),
+      );
+    },
+  );
+
+  it("launches a queued follow-up after the thread auto-archives", async () => {
+    const started = await startDiscordRun();
+    const claim = await claimRun(started.actor, started.runId);
+    started.provider.state.everyonePermissions = MEMBER_PERMISSIONS;
+    const followup = discordMessageForTest(started.actor, {
+      channelId: started.channelId,
+      content: `<@${started.actor.botUserId}> Continue after the archive.`,
+    });
+    started.provider.messages.set(followup.id, followup);
+    await postDiscordMessage(context, followup);
+    await flushWaitUntilForTest();
+    setThreadState(started, { archived: true, locked: false });
+    await completeRun({
+      runId: started.runId,
+      sandboxToken: claim.sandboxToken,
+      text: "The first task is complete.",
+    });
+    expect(started.provider.sentMessages).toHaveLength(1);
+    const events = await readProjectedChatEvents(context, {
+      threadId: started.threadId,
+      headers: { authorization: "Bearer clerk-session" },
+    });
+    expect(
+      events.filter((event) => {
+        return event.eventType === "input.rejected";
+      }),
+    ).toHaveLength(0);
+    const launchedRunIds = events.flatMap((event) => {
+      return event.eventType === "input.prompt" && event.runId
+        ? [event.runId]
+        : [];
+    });
+    expect(launchedRunIds).toHaveLength(2);
+    expect(launchedRunIds[0]).toBe(started.runId);
+    expect(launchedRunIds[1]).not.toBe(started.runId);
+  });
 
   it.each(["pending", "reserved"] as const)(
     "rejects a revoked %s active input without retrying or delivering it",
