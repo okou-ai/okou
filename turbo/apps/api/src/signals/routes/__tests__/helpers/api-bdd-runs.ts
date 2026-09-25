@@ -289,9 +289,7 @@ function runnerHeartbeatBody(
     admittableProfiles: args.admittableProfiles ?? ["vm0/default"],
     heldSandboxStates: args.heldSandboxStates ?? [],
     heldWorkspaceStates: args.heldWorkspaceStates ?? [],
-    ...(args.activeReuseProducers
-      ? { activeReuseProducers: args.activeReuseProducers }
-      : {}),
+    activeReuseProducers: args.activeReuseProducers ?? [],
     mode: args.mode ?? "running",
   };
 }

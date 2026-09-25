@@ -19,6 +19,52 @@ window: an older API behind the current rollback floor still branches on that
 header. Keep the header in CORS and the shared inline response variant until
 the API rollback floor advances past that implementation.
 
+## Active run state moves to `active_agent_runs` (2026-09-25, step 1 of 3)
+
+Heartbeats rewrote the wide `agent_runs` row and two heartbeat indexes that no
+query used, and activity snapshots were written through the run-content lock
+chain. Migration `1249` builds `idx_agent_runs_status` concurrently and drops
+`idx_agent_runs_status_heartbeat` and `idx_agent_runs_running_heartbeat`; no
+API names either index. Migration `1250` adds `active_agent_runs`, one narrow
+row per active run with an immutable `chat_thread_id` (no foreign key, null for
+threadless runs), and seeds it from queued, pending and running runs.
+
+A row lives while a runner may still work on the run. The new API inserts it as
+the launch transaction's last statement and refreshes its heartbeat on
+promotion, claim and every sandbox heartbeat. A run that never reached `running`
+loses the row when it turns terminal; a run that did, including one cancelled
+while running, keeps it until the completion webhook, the running-heartbeat
+timeout, or a cleanup sweep that releases rows of runs terminal and silent for
+the 120-second cancellation-recovery grace. Every release is the last
+statement of its transaction, after the provider-account cleanup. The follow-up
+per-thread admission index relies on this ordering. It still writes `agent_runs.last_heartbeat_at`, and timeout cleanup and capacity
+checks still read that column. Activity capture and the activity summary read
+and write only the active row with single-row compare-and-set updates; they no
+longer touch `run_activity_snapshots`, `chat_threads` or `chat_events`, and no
+longer pass the account-erasure write fence.
+
+During rollout, and on any rollback to an older API, the older API keeps writing
+`run_activity_snapshots`, creates runs without an active row (the new API shows
+no activity for them), and ends seeded runs without deleting their active row.
+New API instances no longer expire `run_activity_snapshots` rows; they stay
+until step 2 drops the table and remain erasable through the `agent_runs`
+cascade. An older API's account-erasure worker rejects the uncatalogued
+`active_agent_runs` table (`catalogue_uncovered`), so account deletions wait for
+a new worker during the migration-to-promotion window and on rollback. A row an
+older API abandons is either still live, or terminal and released by the
+stale-terminal sweep once its heartbeat and completion age past the grace; no
+reader treats it as more than activity for a run the summary already reports as
+ineligible, so none of these states needs a runtime fallback.
+
+Step 2's migration seeds the missing rows for active runs, including runs
+cancelled while running whose recovery grace has not passed, and deletes only
+rows the stale-terminal sweep would release (terminal, completed and silent past
+the grace); it then switches
+heartbeat readers to `active_agent_runs`, stops writing
+`agent_runs.last_heartbeat_at` and drops `run_activity_snapshots`. After step 2,
+rolling back to this release is not supported because its timeout cleanup would
+read a stale heartbeat column. Step 3 drops `agent_runs.last_heartbeat_at`.
+
 ## Chat thread archived rollout fallbacks removed (2026-09-25)
 
 Issue #36551 removes the bounded rollout fallbacks added with #36480. The
@@ -334,24 +380,24 @@ older API is safe until that migration ships.
 
 ## Runner active-producer affinity for delayed finalization (2026-09-25)
 
-The Runner heartbeat may now include `activeReuseProducers`, bounded exact
-`runId/reuseKey/profile` capabilities for locally publishable active runs. The
-additive `runner_state.active_reuse_producers` JSONB column defaults to `[]`.
-An older Runner omits the field, which the new API reads as empty and writes as
-`[]`; its existing completion-relative 1.5s finalizing preference remains in
-place. An older API ignores the unknown heartbeat field from a new Runner and
-continues with its old timer. The new API only uses a capability for the exact
-completed predecessor on the same runner process generation and a fresh running
-heartbeat. Producer-qualified claim priority expires at successor creation
-plus 2s; it does not inherit the 30s heartbeat freshness interval. Runner-local
-pre-claim proof, running handoff, and global claim CAS remain unchanged.
+Every Runner heartbeat must include `activeReuseProducers`, even when empty.
+The API rejects a heartbeat that omits it; it no longer treats omission as an
+empty producer list. Each entry is a bounded exact `runId/reuseKey/profile`
+capability for a locally publishable active run. The additive
+`runner_state.active_reuse_producers` JSONB column retains its `[]` default for
+existing rows; the heartbeat handler always writes the supplied list.
 
-Deploy the additive DB migration before the API relies on the column. During
-mixed-version rollout, the old 1.5s bridge still covers short runs and older
-Runner instances. An API rollback can leave the unused column in place; do not
-drop it while the new API is a rollback target. Stale/missed producer revocation
-can delay an individual cold claim by at most the successor-relative preference
-window, never by heartbeat freshness; measure that tail cost alongside reuse.
+The API uses a producer capability only for the exact completed predecessor on
+the same Runner process generation and a fresh running heartbeat. Registration
+triggers an immediate but asynchronous producer heartbeat. A same-generation
+predecessor that completes before that snapshot reaches the API can still receive
+a completion-relative preference for at most 1.5s; this protects the current
+Runner's first-heartbeat race, not an omitted-field protocol. Producer-qualified
+claim priority instead expires at successor creation plus 2s and does not
+inherit the 30s heartbeat freshness interval. Runner-local pre-claim proof,
+running handoff, and global claim CAS remain unchanged. A stale or missed
+producer revocation can delay an individual cold claim only within the bounded
+successor-relative preference window; measure that tail cost alongside reuse.
 
 ## App floor 0.963.3 retires the mark-read `unreads` field (2026-09-25)
 

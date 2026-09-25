@@ -3944,6 +3944,35 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await api.requestCancelRun(actor, changedRuntime.runId, [200]);
   });
 
+  it("requires an active producer list even when the Runner has no producers", async () => {
+    const api = createRunsApi(context);
+    const runnerId = randomUUID();
+    const valid = await api.requestHeartbeatRunner(true, [200], {
+      runnerId,
+      activeReuseProducers: [],
+    });
+    expect(valid.body).toStrictEqual({ ok: true });
+
+    const missing = await api.requestRawHeartbeatRunner(true, [400], {
+      runnerId,
+      group: "vm0/test",
+      snapshotGeneration: 1,
+      snapshotSequence: 2,
+      totalVcpu: 8,
+      totalMemoryMb: 16_384,
+      maxConcurrent: 2,
+      allocatedVcpu: 0,
+      allocatedMemoryMb: 0,
+      runningCount: 0,
+      admittableProfiles: ["vm0/default"],
+      heldSandboxStates: [],
+      heldWorkspaceStates: [],
+      mode: "running",
+    });
+    expectApiError(missing.body);
+    expect(missing.body.error.code).toBe("BAD_REQUEST");
+  });
+
   it("validates same-thread reuse heartbeat inventory shapes", async () => {
     const {
       reuseRunnerId,
@@ -3970,6 +3999,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
         allocatedMemoryMb: 0,
         runningCount: 0,
         heldWorkspaceStates: [],
+        activeReuseProducers: [],
         mode: "running",
         ...extra,
       };
@@ -3989,18 +4019,15 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     );
     expectApiError(missingSandboxStatesHeartbeat.body);
 
-    const overlapHeartbeat = await api.requestRawHeartbeatRunner(
+    const validHeartbeat = await api.requestRawHeartbeatRunner(
       true,
       [200],
       rawHeartbeatBody({
-        runnerName: "v0.168.14",
         admittableProfiles: ["vm0/default"],
         heldSandboxStates: [],
       }),
     );
-    expect(overlapHeartbeat.body).toStrictEqual({
-      ok: true,
-    });
+    expect(validHeartbeat.body).toStrictEqual({ ok: true });
     const invalidWorkspaceVersionHeartbeat =
       await api.requestRawHeartbeatRunner(
         true,
@@ -4206,7 +4233,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     });
   });
 
-  it("prefers the live finalizing source before generic reuse without renewing its deadline", async () => {
+  it("prefers a recent same-generation predecessor before its producer heartbeat arrives", async () => {
     const sourceCompletedAt = now();
     mockNow(sourceCompletedAt);
     onTestFinished(() => {

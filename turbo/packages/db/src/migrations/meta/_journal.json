@@ -1198,6 +1198,20 @@
       "when": 1790347365037,
       "tag": "1248_contract_chat_thread_drafts",
       "breakpoints": true
+    },
+    {
+      "idx": 1249,
+      "version": "7",
+      "when": 1790349311981,
+      "tag": "1249_agent_runs_heartbeat_index_contraction",
+      "breakpoints": true
+    },
+    {
+      "idx": 1250,
+      "version": "7",
+      "when": 1790349327269,
+      "tag": "1250_active_agent_runs",
+      "breakpoints": true
     }
   ]
 }
