@@ -61,9 +61,10 @@ import { createUserMessageDocument } from "./chat-user-message.service";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import { prepareCanonicalDiscordIngressRoute$ } from "./discord-route-admission.service";
 import {
-  discordSenderBindings,
+  discordIngressSenderBindings,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
+import { getDiscordAppConfig } from "./discord-config";
 import { readDiscordHistoryPage$ } from "./discord-context.service";
 import {
   dispatchDiscordChatDeliveryOnce,
@@ -748,7 +749,7 @@ const persistClaimedIngress$ = command(
       throw new Error("Canonical Discord ingress destination is missing");
     }
     const message = claimedIngressMessage(ingress);
-    const bindings = await get(discordSenderBindings(message.author.id));
+    const bindings = await get(discordIngressSenderBindings(message.author.id));
     signal.throwIfAborted();
     const binding = bindings.find((candidate) => {
       return (
@@ -1078,7 +1079,9 @@ function recordIngressFailure(
       args.failure.errorClass.startsWith("binding:") ||
       args.failure.errorClass === "access:403" ||
       args.failure.errorClass === "access:404" ||
-      args.failure.errorClass === "discord:unavailable"
+      args.failure.errorClass === "discord:unavailable" ||
+      // A notice cannot be delivered without app configuration either.
+      args.failure.errorClass === "discord:config_unavailable"
     ) {
       return null;
     }
@@ -1112,6 +1115,10 @@ export const processCanonicalDiscordIngress$ = command(
     args: { readonly ingressId: string },
     signal: AbortSignal,
   ): Promise<boolean> => {
+    // Missing app configuration is an outage: leave ingress unclaimed.
+    if (!getDiscordAppConfig()) {
+      return false;
+    }
     const db = set(writeDb$);
     const claim = await claimIngress(db, args.ingressId);
     signal.throwIfAborted();
@@ -1173,6 +1180,10 @@ const drainCanonicalDiscordIngress$ = command(
     connectionIds: readonly string[] | undefined,
     signal: AbortSignal,
   ): Promise<number> => {
+    // Without app configuration, neither exhaust attempts nor send notices.
+    if (!getDiscordAppConfig()) {
+      return 0;
+    }
     const db = set(writeDb$);
     const currentTime = nowDate();
     const scope = connectionIds

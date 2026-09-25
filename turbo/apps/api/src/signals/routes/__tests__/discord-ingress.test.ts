@@ -1172,6 +1172,62 @@ describe("canonical Discord ingress", () => {
     expect(inputs[0]?.runId).toStrictEqual(expect.any(String));
   });
 
+  it("keeps accepted ingress retryable while app configuration is missing", async () => {
+    const actor = await connected();
+    const provider = mockDiscordProvider(actor);
+    const channel = provider.channels.get(provider.guildChannelId);
+    if (!channel) {
+      throw new Error("Expected the source guild channel fixture");
+    }
+    const message = discordMessageForTest(actor, {
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> survive a configuration outage`,
+    });
+    provider.messages.set(message.id, message);
+    let rateLimited = true;
+    server.use(
+      http.get(
+        `https://discord.com/api/v10/channels/${provider.guildChannelId}`,
+        () => {
+          return rateLimited
+            ? HttpResponse.json(
+                { message: "Rate limited", retry_after: 1, global: false },
+                { status: 429, headers: { "Retry-After": "1" } },
+              )
+            : HttpResponse.json(channel);
+        },
+      ),
+    );
+    mockNow(now());
+    expect((await postDiscordMessage(context, message)).body.outcome).toBe(
+      "accepted",
+    );
+    await flushWaitUntilForTest();
+    await expect(discordChatThreads(context, actor)).resolves.toHaveLength(0);
+
+    rateLimited = false;
+    mockEnv("DISCORD_BOT_TOKEN", undefined);
+    for (let sweep = 0; sweep < 6; sweep++) {
+      mockNow(now() + 3 * 60 * 60 * 1000);
+      await expect(recover(actor)).resolves.toMatchObject({
+        body: { processed: 0 },
+      });
+    }
+    await expect(discordChatThreads(context, actor)).resolves.toHaveLength(0);
+    expect(provider.sentMessages).toHaveLength(0);
+
+    mockEnv("DISCORD_BOT_TOKEN", "discord-test-bot-token");
+    mockNow(now() + 61_000);
+    await recover(actor);
+    const [thread] = await discordChatThreads(context, actor);
+    if (!thread) {
+      throw new Error("Expected the admitted Discord chat after recovery");
+    }
+    const inputs = currentInputs(await events(actor, thread.id));
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]?.runId).toStrictEqual(expect.any(String));
+  });
+
   it("retries a temporary CDN failure before admitting the canonical file input", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);

@@ -12,6 +12,7 @@ import { discordUserAgentPreferences } from "@okouai/db/schema/discord-user-agen
 import { discordUserDmPreferences } from "@okouai/db/schema/discord-user-dm-preference";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import type { ApiOrgRole } from "../../types/auth";
+import { DiscordIngressFailure } from "../../lib/discord-ingress-failure";
 import { nowDate } from "../../lib/time";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import { db$, writeDb$, type Db } from "../external/db";
@@ -185,6 +186,21 @@ export function discordSenderBindings(discordUserId: string) {
   return verifiedBindings(
     eq(discordOrgConnections.discordUserId, discordUserId),
   );
+}
+
+/** Ingress treats missing app configuration as an outage, never as revocation. */
+export function discordIngressSenderBindings(discordUserId: string) {
+  return computed(async (get) => {
+    if (!getDiscordAppConfig()) {
+      throw new DiscordIngressFailure(
+        "discord:config_unavailable",
+        true,
+        0,
+        "Discord is temporarily unavailable",
+      );
+    }
+    return await get(discordSenderBindings(discordUserId));
+  });
 }
 
 export type DiscordDmBindingResult =
