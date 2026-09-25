@@ -74,6 +74,9 @@ surface; the index does not replace their detailed rules.
 - [Account telemetry and recovery erasure](./account-erasure-evidence.md):
   dated sink/copy inventory, provider capability gaps, and the parent-worker
   design in [ADR 0004](./adr/0004-account-telemetry-recovery-erasure.md).
+- [Account erasure foundation](./account-erasure-foundation.md): job/work
+  persistence, the erasure-only subject lock, and why business writers are not
+  fenced (late rows are swept by collectors and the relational sweep).
 - [User data export](./user-data-export.md): ZIP v2 contents, readable instruction
   scope, canonical chat history, checksum semantics, and download compatibility.
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe

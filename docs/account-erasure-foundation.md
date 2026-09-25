@@ -89,25 +89,31 @@ cascade away the only locator. Empty new tables require no source scan or data
 backfill. Existing API SQL remains unchanged.
 
 All operations require PostgreSQL **READ COMMITTED** and reject another
-isolation level. This matters when a writer waits behind the very first closure:
-a pre-existing repeatable-read snapshot could otherwise miss the new job.
-The lock order is:
+isolation level. This matters when a job transition waits behind a new
+generation's first closure: a pre-existing repeatable-read snapshot could
+otherwise miss the new job. The lock order is:
 
 1. All resolved subject advisory locks, sorted by the serialized kind/ID tuple.
 2. The local job, then its work rows. One subject lock serializes job transitions.
-3. Business source rows, if the caller is a writer or source remover.
+3. Business source rows, if the caller is a source remover.
 
-`assertErasureSubjectWritable(tx, subjects)` holds the subject lock through the
-writer's transaction commit, including when no deletion job exists. B2 must
-resolve resource ownership before calling it, and acquire all relevant subject
-locks before any business-row lock. Preflight auth alone cannot substitute for
-this transaction boundary. Hash collisions only serialize unrelated subjects;
-they cannot merge identity or scope.
+Only erasure participants take the subject lock: first closure in
+`projectErasureDecision` (no job row exists yet) and every job transition, so a
+mutation of an older generation cannot commit past a newer one. Hash collisions
+only serialize unrelated subjects; they cannot merge identity or scope.
 
-`assertErasureSourceCaptured` is a different assertion: it requires the matching
-closed subject, current generation/revisions and sealed producer boundary, a
-nonempty explicit list of source-dependent items, and retained selectors. It
-does not assert billing readiness, actual domain erasure, or A2 authorization.
+**Business writers and readers are not fenced.** No API write or read checks
+whether its user or organization has been closed for erasure, and none takes
+the subject lock. A row written after closure (a late callback, a queued run, a
+membership refresh) is removed afterwards by the domain collectors, the
+relational sweep and the legacy Clerk cleanup, which re-run until they find no
+remaining rows. The former writer fence (shared subject locks, closure lookups
+and custom lock/statement timeouts on hot paths) was retired in 2026-09.
+
+`assertErasureSourceCaptured` requires the matching subject, current
+generation/revisions and sealed producer boundary, a nonempty explicit list of
+source-dependent items, and retained selectors. It does not assert billing
+readiness, actual domain erasure, or A2 authorization.
 
 ## Bounded capture, attempts, and proof
 
