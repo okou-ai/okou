@@ -43,7 +43,7 @@ import {
 type Db = NodePgDatabase<Record<string, never>>;
 type ShareRow = Pick<
   typeof artifactShares.$inferSelect,
-  "id" | "userId" | "orgId" | "publicBrand" | "targetKind" | "targetId"
+  "id" | "userId" | "orgId" | "linkLayoutSegment" | "targetKind" | "targetId"
 >;
 type Policy = z.infer<typeof artifactSharePolicySchema>;
 
@@ -103,7 +103,7 @@ async function leaseShare(lease: ErasureLease, bucket: string) {
 }
 
 function policyKey(row: ShareRow): string {
-  return `artifact-shares/${row.publicBrand}/${row.id}.json`;
+  return `artifact-shares/${row.linkLayoutSegment}/${row.id}.json`;
 }
 
 async function readPolicy(
@@ -137,7 +137,7 @@ async function readPolicy(
     policy.shareId !== row.id ||
     policy.ownerId !== row.userId ||
     policy.orgId !== row.orgId ||
-    policy.publicBrand !== row.publicBrand ||
+    policy.publicBrand !== row.linkLayoutSegment ||
     policy.target.kind !== row.targetKind ||
     targetId !== row.targetId
   ) {
@@ -259,7 +259,7 @@ async function shareItems(
         alias,
         {
           shareId: row.id,
-          publicBrand: storedLinkLayoutSegment(row.publicBrand),
+          publicBrand: storedLinkLayoutSegment(row.linkLayoutSegment),
           targetKind: row.targetKind,
         },
         signal,
@@ -303,7 +303,7 @@ async function shareItems(
         shareId: row.id,
         targetKind: row.targetKind,
         targetId: row.targetId,
-        publicBrand: storedLinkLayoutSegment(row.publicBrand),
+        publicBrand: storedLinkLayoutSegment(row.linkLayoutSegment),
         keys,
         ...(policy.target.kind === "file"
           ? { privateKey: policy.target.key }
@@ -360,7 +360,7 @@ async function inventoryPage(
       id: artifactShares.id,
       userId: artifactShares.userId,
       orgId: artifactShares.orgId,
-      publicBrand: artifactShares.publicBrand,
+      linkLayoutSegment: artifactShares.linkLayoutSegment,
       targetKind: artifactShares.targetKind,
       targetId: artifactShares.targetId,
     })

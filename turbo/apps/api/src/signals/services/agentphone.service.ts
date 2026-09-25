@@ -3,7 +3,7 @@ import { withNativeChatEventThreadTouch } from "./native-chat-event-write.servic
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { command } from "ccstate";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { v5 as uuidv5 } from "uuid";
 import {
   getCanonicalModelDisplayName,

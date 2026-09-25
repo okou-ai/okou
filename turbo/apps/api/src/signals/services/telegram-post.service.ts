@@ -6,7 +6,7 @@ import {
   DEFAULT_AGENT_DISPLAY_NAME,
   PUBLIC_BRAND_PRESENTATION,
   agentDisplayName,
-} from "@okouai/core/public-brand";
+} from "@okouai/core/brand-presentation";
 import { v5 as uuidv5 } from "uuid";
 import {
   getCanonicalModelDisplayName,

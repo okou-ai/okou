@@ -1142,6 +1142,13 @@
       "when": 1790334514029,
       "tag": "1240_retire_clerk_deletion_receipt_index",
       "breakpoints": true
+    },
+    {
+      "idx": 1241,
+      "version": "7",
+      "when": 1790336811778,
+      "tag": "1241_retire_public_brand",
+      "breakpoints": true
     }
   ]
 }

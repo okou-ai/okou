@@ -1051,7 +1051,7 @@ describe("dormant relational sweep", () => {
     `);
     await db.execute(sql`
       INSERT INTO hosted_sites
-        (id, org_id, user_id, slug, public_brand, public_slug)
+        (id, org_id, user_id, slug, link_layout_segment, public_slug)
       VALUES
         (${siteId}, ${orgId}, ${mine}, ${`s-${siteId.slice(0, 8)}`},
          'vm0', ${`p-${siteId}`}),

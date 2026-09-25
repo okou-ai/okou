@@ -1,7 +1,7 @@
 import webpush, { WebPushError } from "web-push";
 import { eq } from "drizzle-orm";
 import { pushSubscriptions } from "@okouai/db/schema/push-subscription";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";

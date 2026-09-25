@@ -60,9 +60,12 @@ const fixture = await mkdtemp(join(tmpdir(), "host-runtime-"));
 const originalDirectory = process.cwd();
 const migrations = join(fixture, "src/migrations");
 
-async function frontier(includeTransition: boolean) {
+async function frontier(stage: "before" | "transition" | "latest") {
   const entries = journal.entries.filter((entry) => {
-    return includeTransition
+    if (stage === "latest") {
+      return true;
+    }
+    return stage === "transition"
       ? entry.idx <= defaultsEntry.idx
       : entry.idx < transitionEntry.idx;
   });
@@ -189,6 +192,77 @@ async function assertUncommittedTransition() {
   assert.deepEqual(rows, [{ migrations: 0, mirror: null }]);
 }
 
+// Phase-A API writes at the 1172 frontier. The current ORM names the column
+// that 1241 renamed, so this spells out the phase-A statements in SQL.
+async function exercisePhaseARuntime() {
+  const ids = z.array(z.object({ id: z.string() }));
+  const insertSite = async (slug: string) => {
+    const [site] = ids.parse(
+      (
+        await client.query(
+          `INSERT INTO hosted_sites (org_id, user_id, public_brand, slug, public_slug)
+           VALUES ('host-runtime-org', 'host-runtime-owner', 'okou', $1, $1)
+           RETURNING id`,
+          [slug],
+        )
+      ).rows,
+    );
+    assert.ok(site);
+    return site.id;
+  };
+  const siteId = await insertSite(randomUUID());
+  const deploymentId = randomUUID();
+  await client.query(
+    `INSERT INTO hosted_deployments
+      (id, site_id, org_id, user_id, public_brand, manifest, manifest_hash,
+       content_hash, r2_prefix, file_count, size_bytes, url)
+     VALUES ($1, $2, 'host-runtime-org', 'host-runtime-owner', 'okou', $3,
+       $4, $5, $6, 1, 17, $7)`,
+    [
+      deploymentId,
+      siteId,
+      { ...manifest(siteId, deploymentId), deploymentVersion: 1 },
+      "d".repeat(64),
+      "e".repeat(64),
+      `retained-prefix/${deploymentId}`,
+      `https://dpl-${deploymentId}.okou.app`,
+    ],
+  );
+  const privateId = randomUUID();
+  const privateSiteId = await insertSite(privateId);
+  // A separate immutable publication may legitimately have the same number.
+  await client.query(
+    `INSERT INTO private_hosted_deployments
+      (id, site_id, org_id, user_id, public_brand, status, artifact_url, r2_prefix,
+       manifest, manifest_hash, content_hash, file_count, size_bytes, url)
+     SELECT $2, $3, org_id, user_id, public_brand, status, $4, r2_prefix,
+       $5, manifest_hash, content_hash, file_count, size_bytes, url
+     FROM hosted_deployments WHERE id = $1`,
+    [
+      deploymentId,
+      privateId,
+      privateSiteId,
+      `/artifacts/${privateId}/index.html`,
+      {
+        ...manifest(privateSiteId, privateId),
+        access: "owner-private-v1",
+        deploymentVersion: 1,
+      },
+    ],
+  );
+  const bound = z.array(z.object({ active_deployment_id: z.string() })).parse(
+    (
+      await client.query(
+        `UPDATE hosted_sites SET active_deployment_id = $2 WHERE id = $1
+           RETURNING active_deployment_id`,
+        [siteId, deploymentId],
+      )
+    ).rows,
+  );
+  assert.deepEqual(bound, [{ active_deployment_id: deploymentId }]);
+  return { siteId, deploymentId, privateId };
+}
+
 async function exerciseRuntime() {
   const db = drizzle(client);
   const id = randomUUID();
@@ -197,7 +271,7 @@ async function exerciseRuntime() {
     .values({
       orgId: "host-runtime-org",
       userId: "host-runtime-owner",
-      publicBrand: "okou",
+      linkLayoutSegment: "okou",
       slug: id,
       publicSlug: id,
     })
@@ -211,7 +285,7 @@ async function exerciseRuntime() {
       siteId: site.id,
       orgId: site.orgId,
       userId: site.userId,
-      publicBrand: "okou",
+      linkLayoutSegment: "okou",
       manifest: { ...manifest(site.id, deploymentId), deploymentVersion: 1 },
       manifestHash: "d".repeat(64),
       contentHash: "e".repeat(64),
@@ -228,7 +302,7 @@ async function exerciseRuntime() {
     .values({
       orgId: site.orgId,
       userId: site.userId,
-      publicBrand: "okou",
+      linkLayoutSegment: "okou",
       slug: privateId,
       publicSlug: privateId,
     })
@@ -267,7 +341,7 @@ async function exerciseRuntime() {
 await admin.connect();
 try {
   await admin.query(`CREATE DATABASE "${database}"`);
-  await frontier(false);
+  await frontier("before");
   await apply();
   await client.connect();
   const siteId = await insertSite();
@@ -314,7 +388,7 @@ try {
      VALUES ('host-runtime-org', 'host-runtime-owner', 'okou', 'html', $1)`,
     [siteId],
   );
-  await frontier(true);
+  await frontier("transition");
 
   // Refuse to guess which historical alias/version was authoritative.
   await client.query(
@@ -399,7 +473,7 @@ try {
   await apply();
   assert.deepEqual(await retainedState(true), normalized);
 
-  const current = await exerciseRuntime();
+  const current = await exercisePhaseARuntime();
   const compatibility = z
     .array(
       z.object({
@@ -434,10 +508,10 @@ try {
     version: 2,
     manifestVersion: 2,
   });
-  await drizzle(client)
-    .update(hostedSites)
-    .set({ activeDeploymentId: oldWriter.id })
-    .where(eq(hostedSites.id, current.siteId));
+  await client.query(
+    `UPDATE hosted_sites SET active_deployment_id = $2 WHERE id = $1`,
+    [current.siteId, oldWriter.id],
+  );
   assert.deepEqual(
     (
       await client.query(
@@ -475,23 +549,11 @@ try {
     [{ active_deployment_version: null }],
   );
 
-  // Repeat real INSERT/SELECT/RETURNING statements after the later contraction.
-  // This proves the new runtime no longer has a hidden ORM column dependency.
-  await client.query(
-    `DROP TRIGGER mirror_hosted_site_active_version ON hosted_sites`,
-  );
-  await client.query(
-    `DROP FUNCTION public.mirror_hosted_site_active_version()`,
-  );
-  await client.query(
-    `ALTER TABLE hosted_sites DROP COLUMN active_deployment_version, DROP COLUMN next_deployment_version`,
-  );
-  await client.query(
-    `ALTER TABLE hosted_deployments DROP COLUMN deployment_version`,
-  );
-  await client.query(
-    `ALTER TABLE private_hosted_deployments DROP COLUMN deployment_version`,
-  );
+  // Apply every later migration, including the phase-B contraction and the
+  // link-layout rename, then repeat real INSERT/SELECT/RETURNING statements.
+  // This proves the current runtime has no hidden ORM column dependency.
+  await frontier("latest");
+  await apply();
   await exerciseRuntime();
   console.log(
     "Hosted publication normalization, preserved history, mixed writers, rollback, and contracted-schema runtime passed",

@@ -55,8 +55,6 @@ import { server } from "../../../mocks/server";
 import {
   findPendingChatEventByPromptFixture,
   readChatEventContextFixture,
-  readFeishuCallbackPayloadsFixture,
-  setLegacyFeishuPublicBrandFixture,
 } from "../../../test-fixtures/chat-events";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
@@ -5912,90 +5910,6 @@ export function registerFeishuIntegrationTests(
           }),
           [200],
         );
-      });
-
-      it("launches and delivers a queued Feishu input stored without a public brand", async () => {
-        const fixture = await setupFeishuRunFixture();
-        const { actor, runnerGroup, appId, callbackUrl } = fixture;
-        await connectFixtureUser(fixture);
-        fixtureState.outboundMessages = [];
-        const firstMessageId = `om_${randomUUID()}`;
-        const firstPrompt = "first task before the legacy queued input";
-        const secondPrompt = "queued input stored without a public brand";
-        await postEvent(
-          callbackUrl,
-          groupMessage(appId, firstPrompt, { messageId: firstMessageId }),
-          { encrypted: true },
-        );
-        await flushWaitUntilForTest();
-        const firstRun = await findRun(actor, `@Nova ${firstPrompt}`);
-        await postEvent(
-          callbackUrl,
-          groupMessage(appId, secondPrompt, {
-            rootId: firstMessageId,
-            threadId: `omt_${randomUUID()}`,
-          }),
-          { encrypted: true },
-        );
-        await flushWaitUntilForTest();
-        const queued = requireValue(
-          await findPendingChatEventByPromptFixture({
-            userId: actor.userId,
-            prompt: `@Nova ${secondPrompt}`,
-          }),
-          "Expected the queued Feishu input",
-        );
-        await setLegacyFeishuPublicBrandFixture({
-          eventId: queued.eventId,
-          installationId: fixture.installationId,
-        });
-
-        await runsApi.heartbeatRunner(runnerGroup);
-        const firstClaim = await runsApi.claimRunnerJob(firstRun.id);
-        await completeRunSession({
-          runId: firstRun.id,
-          sandboxToken: firstClaim.sandboxToken,
-          sessionId: `bdd-feishu-legacy-brand-first-${firstRun.id}`,
-          history: `bdd feishu legacy brand first history ${firstRun.id}`,
-          assistantText: "First legacy brand answer",
-        });
-        const secondRun = await findRun(actor, `@Nova ${secondPrompt}`);
-        await runsApi.heartbeatRunner(runnerGroup);
-        const secondClaim = await runsApi.claimRunnerJob(secondRun.id);
-        expect(secondClaim.prompt).toBe(`@Nova ${secondPrompt}`);
-        await completeRunSession({
-          runId: secondRun.id,
-          sandboxToken: secondClaim.sandboxToken,
-          sessionId: `bdd-feishu-legacy-brand-second-${secondRun.id}`,
-          history: `bdd feishu legacy brand second history ${secondRun.id}`,
-          assistantText: "Queued legacy brand answer",
-        });
-        await flushWaitUntilForTest();
-
-        expect(
-          fixtureState.outboundMessages.some((message) => {
-            return messageContent(message).includes(
-              "Queued legacy brand answer",
-            );
-          }),
-        ).toBeTruthy();
-        // Older APIs still require the brand on stored Feishu callbacks, so a
-        // rollback can parse them.
-        // Older APIs still require the brand on stored Feishu callbacks, so
-        // a rollback can still parse them.
-        const callbacks = await readFeishuCallbackPayloadsFixture(secondRun.id);
-        expect(
-          new Set(
-            callbacks.map((callback) => {
-              return callback.internalKind;
-            }),
-          ),
-        ).toStrictEqual(new Set(["feishu:chat", "feishu:org"]));
-        for (const callback of callbacks) {
-          expect(callback.payload).toMatchObject({ publicBrand: "okou" });
-        }
-
-        await removeFeishuInstallation(fixture);
       });
 
       it("ignores unmentioned group messages, app messages and system notifications", async () => {

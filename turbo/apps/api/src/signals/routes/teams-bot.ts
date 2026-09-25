@@ -4,7 +4,7 @@ import {
   type TeamsInboundActivity,
 } from "@okouai/api-contracts/contracts/teams-bot";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import {
   normalizeTeamsActivity,

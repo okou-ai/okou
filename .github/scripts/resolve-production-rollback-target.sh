@@ -21,6 +21,7 @@ readonly ARTIFACT_CHAT_TRIGGER_WRITERS_COMMIT=065f970bbb8c21c10ef709495d5824d0a6
 readonly MARKETING_PRIVACY_CLEANUP_READER_PATH=turbo/apps/api/src/signals/services/marketing-privacy-cleanup.service.ts
 readonly CHAT_THREAD_SNAPSHOT_R2_READER_PATH=turbo/apps/api/src/signals/services/chat-thread-snapshot-object.ts
 readonly AGENTPHONE_PUBLIC_BRAND_DROP_PATH=turbo/packages/db/src/migrations/1228_drop_agentphone_public_brand.sql
+readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1241_retire_public_brand.sql
 readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6
 readonly PI_LAUNCH_CONFIG_VERSIONS_READER_COMMIT=8d8f3a3e14d23f7471e0773bd9acb988f59217af
 readonly PI_SESSION_CONSTRUCTION_READER_COMMIT=322efb6d72508e15b90dc788100a776da1485751
@@ -163,6 +164,21 @@ if [[ ! "$agentphone_public_brand_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$agentphone_public_brand_drop_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the AgentPhone public_brand drop: ${agentphone_public_brand_drop_commit}."
+fi
+
+# Migration 1241 drops the remaining non-link public_brand columns (including
+# github_installations.setup_public_brand) and renames the hosted/artifact/shared
+# link-layout column to link_layout_segment. Every earlier API, including those
+# with the Phase 1 okou defaults, still declares these columns and names them in
+# inserts and bare selects, so it fails with 42703. Resolve the migration's
+# canonical main introduction so squash merging cannot leave a branch-only SHA.
+public_brand_retirement_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$PUBLIC_BRAND_RETIREMENT_PATH" | sed -n '1p')
+if [[ ! "$public_brand_retirement_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged public_brand retirement on main."
+fi
+if ! git merge-base --is-ancestor "$public_brand_retirement_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the public_brand retirement: ${public_brand_retirement_commit}."
 fi
 
 # Terminal presentation trusts the stored cause without repairing old records.

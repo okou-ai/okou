@@ -251,8 +251,10 @@ function hostedR2Config(): HostedR2ConfigResult {
 }
 
 /** Stored layout of a site or deployment row; legacy rows keep their links. */
-function rowLinkLayout(row: { readonly publicBrand: string }): LinkLayout {
-  return linkLayoutFromSegment(row.publicBrand);
+function rowLinkLayout(row: {
+  readonly linkLayoutSegment: string;
+}): LinkLayout {
+  return linkLayoutFromSegment(row.linkLayoutSegment);
 }
 
 function deploymentUrl(layout: LinkLayout, deploymentId: string): string {
@@ -297,7 +299,10 @@ async function findScopedHostedSite(
         // New publications use only the current layout. A legacy-layout site
         // keeps serving its issued links and keeps its name reserved; it is
         // never redeployed.
-        eq(hostedSites.publicBrand, linkLayoutSegment(CURRENT_LINK_LAYOUT)),
+        eq(
+          hostedSites.linkLayoutSegment,
+          linkLayoutSegment(CURRENT_LINK_LAYOUT),
+        ),
         scopeCondition,
         isNull(hostedSites.deletedAt),
       ),
@@ -644,7 +649,10 @@ async function findScopedHostedSiteBySlug(
       and(
         eq(hostedSites.orgId, args.orgId),
         eq(hostedSites.slug, publicSlug),
-        eq(hostedSites.publicBrand, linkLayoutSegment(CURRENT_LINK_LAYOUT)),
+        eq(
+          hostedSites.linkLayoutSegment,
+          linkLayoutSegment(CURRENT_LINK_LAYOUT),
+        ),
         args.chatThreadId === null
           ? isNull(hostedSites.chatThreadId)
           : eq(hostedSites.chatThreadId, args.chatThreadId),
@@ -691,7 +699,7 @@ async function findOrCreateHostedSite(
         userId: args.userId,
         slug: publicSlug,
         ...scope,
-        publicBrand: linkLayoutSegment(CURRENT_LINK_LAYOUT),
+        linkLayoutSegment: linkLayoutSegment(CURRENT_LINK_LAYOUT),
         publicSlug,
         createdFromRunId: args.runId,
         updatedAt: now,
@@ -862,7 +870,7 @@ async function insertHostedDeployment(
       orgId: args.orgId,
       userId: args.userId,
       runId: args.runId,
-      publicBrand: linkLayoutSegment(layout),
+      linkLayoutSegment: linkLayoutSegment(layout),
       status: "uploading",
       artifactUrl,
       r2Prefix: prefix,
@@ -1120,7 +1128,7 @@ const bindHostedSiteDeployment$ = command(
       if (
         site.deletedAt !== null ||
         site.userId !== args.deployment.userId ||
-        site.publicBrand !== args.deployment.publicBrand ||
+        site.linkLayoutSegment !== args.deployment.linkLayoutSegment ||
         site.publicSlug !== args.deployment.manifest.publicSlug
       ) {
         throw new ArtifactDeliveryAliasConflict(

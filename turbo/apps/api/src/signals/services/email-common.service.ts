@@ -21,7 +21,7 @@ import { Resend } from "resend";
 import { delay } from "signal-timers";
 import { Webhook } from "svix";
 import { z } from "zod";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import { env, optionalEnv } from "../../lib/env";

@@ -1,6 +1,6 @@
 import type { UserLocale } from "@okouai/api-contracts/contracts/user-preferences";
 import { derivePlatformServiceOrigin } from "@okouai/core/platform-service-origin";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { WELCOME_THREAD_ASSETS } from "@okouai/core/welcome-thread-assets";
 
 import de from "./welcome-thread-content/de-DE.json";

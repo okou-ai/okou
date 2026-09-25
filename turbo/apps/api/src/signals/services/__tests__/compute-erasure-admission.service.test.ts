@@ -2765,7 +2765,6 @@ describe("actual compute transactions versus the B1 projector", () => {
             teamsUserPrincipalName: null,
             botId: null,
             botName: null,
-            publicBrand: "okou" as const,
           },
           telegramDelivery: {
             installationId: randomUUID(),
@@ -2821,7 +2820,6 @@ describe("actual compute transactions versus the B1 projector", () => {
           payload: {
             threadId: f.threadId,
             agentId: f.agentId,
-            publicBrand: "okou",
             ...options.payload,
           },
         };

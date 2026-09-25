@@ -136,7 +136,6 @@ async function fixture(status: "running" | "completed" = "completed") {
     teamsUserPrincipalName: null,
     botId: null,
     botName: null,
-    publicBrand: "okou" as const,
   };
   const input = {
     db,
@@ -147,7 +146,6 @@ async function fixture(status: "running" | "completed" = "completed") {
     event: "completed" as const,
     teamsDelivery: target,
     sourceCallbackId,
-    publicBrand: "okou" as const,
   };
   return {
     ...input,

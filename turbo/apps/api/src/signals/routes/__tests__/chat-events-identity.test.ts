@@ -63,12 +63,12 @@ async function entitledNativeChatActor(): Promise<
   return fixture;
 }
 
-async function expectRunAppContext(args: {
+function expectRunAppContext(args: {
   readonly actor: ApiTestUser;
   readonly runId: string;
   readonly claim: RunnerClaim;
   readonly appUrl: string;
-}): Promise<void> {
+}): void {
   if (!args.actor.orgId) {
     throw new Error("Expected an organization-scoped chat actor");
   }
@@ -79,23 +79,6 @@ async function expectRunAppContext(args: {
   }
   expect(verifyOkouToken(token)).toMatchObject({
     runId: args.runId,
-  });
-  const state = await runStateStore.set(
-    readAgentRunState$,
-    {
-      orgId: args.actor.orgId,
-      userId: args.actor.userId,
-      runId: args.runId,
-    },
-    context.signal,
-  );
-  // Older API instances default a missing callback brand to VM0.
-  expect(
-    state.callbacks.find((callback) => {
-      return callback.internalKind === "chat";
-    }),
-  ).toMatchObject({
-    payload: { publicBrand: "okou" },
   });
 }
 
@@ -125,7 +108,7 @@ describe("CHAT-02: default assistant identity", () => {
     expect(anchorRun.appendSystemPrompt).toContain("Your name is Okou.");
 
     const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
-    await expectRunAppContext({
+    expectRunAppContext({
       actor,
       runId: anchor.runId,
       claim: anchorClaim.claim,
@@ -184,7 +167,7 @@ describe("CHAT-02: default assistant identity", () => {
     const promotedRun = await api.readRun(actor, promoted.runId);
     expect(promotedRun.appendSystemPrompt).toContain("Your name is Okou.");
     const promotedClaim = await claimChatRun(runnerGroup, promoted.runId);
-    await expectRunAppContext({
+    expectRunAppContext({
       actor,
       runId: promoted.runId,
       claim: promotedClaim.claim,
@@ -206,7 +189,7 @@ describe("CHAT-02: default assistant identity", () => {
     expect(customPrompt).toContain("Your name is Nova.");
     expect(customPrompt).not.toContain("Your name is Okou.");
     const customClaim = await claimChatRun(runnerGroup, customRun.runId);
-    await expectRunAppContext({
+    expectRunAppContext({
       actor,
       runId: customRun.runId,
       claim: customClaim.claim,

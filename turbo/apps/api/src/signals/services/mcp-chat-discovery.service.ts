@@ -12,7 +12,7 @@ import {
   isBuiltInModelProviderType,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { agentDisplayName } from "@okouai/core/public-brand";
+import { agentDisplayName } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";

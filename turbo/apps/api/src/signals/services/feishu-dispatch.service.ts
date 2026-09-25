@@ -4,7 +4,7 @@ import {
 } from "@okouai/core/feishu-platform";
 import { command } from "ccstate";
 import { and, desc, eq, isNull, or } from "drizzle-orm";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import {
   getBuiltInVisibleModels,
   isSupportedRunModel,

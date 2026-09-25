@@ -121,7 +121,10 @@ async function loadHostedSiteDeployment(
         and(
           eq(hostedDeployments.id, deploymentId),
           eq(hostedDeployments.orgId, orgId),
-          eq(hostedDeployments.publicBrand, linkLayoutSegment(target.layout)),
+          eq(
+            hostedDeployments.linkLayoutSegment,
+            linkLayoutSegment(target.layout),
+          ),
           eq(hostedDeployments.status, "ready"),
         ),
       )
@@ -136,7 +139,7 @@ async function loadHostedSiteDeployment(
         and(
           eq(hostedSites.id, deployment.siteId),
           eq(hostedSites.orgId, orgId),
-          eq(hostedSites.publicBrand, linkLayoutSegment(target.layout)),
+          eq(hostedSites.linkLayoutSegment, linkLayoutSegment(target.layout)),
           isNull(hostedSites.deletedAt),
         ),
       )
@@ -154,7 +157,7 @@ async function loadHostedSiteDeployment(
       and(
         eq(hostedSites.publicSlug, target.publicSlug),
         eq(hostedSites.orgId, orgId),
-        eq(hostedSites.publicBrand, linkLayoutSegment(target.layout)),
+        eq(hostedSites.linkLayoutSegment, linkLayoutSegment(target.layout)),
         isNull(hostedSites.deletedAt),
       ),
     )
@@ -173,7 +176,10 @@ async function loadHostedSiteDeployment(
         eq(hostedDeployments.id, site.activeDeploymentId),
         eq(hostedDeployments.siteId, site.id),
         eq(hostedDeployments.orgId, orgId),
-        eq(hostedDeployments.publicBrand, linkLayoutSegment(target.layout)),
+        eq(
+          hostedDeployments.linkLayoutSegment,
+          linkLayoutSegment(target.layout),
+        ),
         eq(hostedDeployments.status, "ready"),
       ),
     )

@@ -1,13 +1,5 @@
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
-
 /** Canonical name of the organization default agent. */
 export const DEFAULT_AGENT_DISPLAY_NAME = "Okou";
-
-/**
- * The brand every new public-brand-scoped row is written with. Rows created
- * under the retired VM0 brand keep their stored value.
- */
-export const PUBLIC_BRAND: PublicBrand = "okou";
 
 export interface PublicBrandPresentation {
   readonly [key: string]: string;

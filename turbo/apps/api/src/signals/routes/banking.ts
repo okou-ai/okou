@@ -3,7 +3,7 @@ import {
   bankingPublicContract,
   bankingUserContract,
 } from "@okouai/api-contracts/contracts/banking";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { command } from "ccstate";

@@ -124,7 +124,7 @@ describe("dormant hosted-site object erasure", () => {
     const artifactUrl = `https://artifacts.example.com/${deploymentId}`;
     await db.execute(
       sql`INSERT INTO ${relation}
-            (id, site_id, org_id, user_id, public_brand, status, artifact_url,
+            (id, site_id, org_id, user_id, link_layout_segment, status, artifact_url,
              r2_prefix, manifest, manifest_hash, content_hash, file_count,
              size_bytes, url)
           VALUES (${deploymentId}, ${args.siteId}, ${args.orgId}, ${args.userId},
@@ -148,7 +148,7 @@ describe("dormant hosted-site object erasure", () => {
     const siteId = randomUUID();
     await db.execute(
       sql`INSERT INTO hosted_sites
-            (id, org_id, user_id, slug, public_brand, public_slug)
+            (id, org_id, user_id, slug, link_layout_segment, public_slug)
           VALUES (${siteId}, ${orgId}, ${userId}, ${`s-${siteId.slice(0, 8)}`},
                   ${"vm0"}, ${`p-${siteId}`})`,
     );

@@ -12,7 +12,7 @@ import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { and, asc, desc, eq, or } from "drizzle-orm";
 import { agentAvatarUrlForDefaultAgent } from "@okouai/core/agent-avatar";
-import { agentDisplayName } from "@okouai/core/public-brand";
+import { agentDisplayName } from "@okouai/core/brand-presentation";
 
 import { db$ } from "../external/db";
 

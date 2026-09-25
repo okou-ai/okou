@@ -1,6 +1,6 @@
 import { convert } from "html-to-text";
 import MarkdownIt from "markdown-it";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import { safeSync, safeUrlParse } from "../utils";
 import { renderEmailLayout } from "./email-layout";

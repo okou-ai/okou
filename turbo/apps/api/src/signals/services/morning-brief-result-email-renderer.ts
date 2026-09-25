@@ -1,4 +1,4 @@
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import { renderEmailLayout } from "./email-layout";
 import {

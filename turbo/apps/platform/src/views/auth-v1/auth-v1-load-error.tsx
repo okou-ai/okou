@@ -1,5 +1,5 @@
 import { Button, Card } from "@okouai/ui";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { hideAppSkeletonOnContentReadyRef$ } from "../../signals/app-skeleton.ts";

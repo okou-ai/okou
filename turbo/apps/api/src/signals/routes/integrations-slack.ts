@@ -5,7 +5,7 @@ import {
   integrationsSlackContract,
 } from "@okouai/api-contracts/contracts/integrations-slack";
 import { integrationsSlackDownloadFileContract } from "@okouai/api-contracts/contracts/integrations";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { and, eq } from "drizzle-orm";

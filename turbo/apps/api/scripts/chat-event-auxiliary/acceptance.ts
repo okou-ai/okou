@@ -220,7 +220,6 @@ try {
       await survivor.append();
       await db.insert(chatSlackContext).values({
         chatThreadId: erased.threadId,
-        publicBrand: "okou",
         conversationContext: "Synthetic late history",
       });
       await touchChatThreadLastMessageAtIndependently(

@@ -110,7 +110,7 @@ describe("artifact share policy, alias and snapshot erasure", () => {
   ) {
     const id = randomUUID();
     await pool.query(
-      "INSERT INTO artifact_shares (id, user_id, org_id, public_brand, target_kind, target_id) VALUES ($1, $2, $3, 'vm0', $4, $5)",
+      "INSERT INTO artifact_shares (id, user_id, org_id, link_layout_segment, target_kind, target_id) VALUES ($1, $2, $3, 'vm0', $4, $5)",
       [id, userId, "org_" + id, kind, targetId],
     );
     onTestFinished(async () => {

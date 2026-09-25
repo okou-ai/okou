@@ -31,7 +31,7 @@ import {
   AlertTitle,
 } from "@okouai/ui/components/ui/alert";
 import { type Tone, TONE_OPTIONS } from "./tone-constants.ts";
-import { DEFAULT_AGENT_DISPLAY_NAME } from "@okouai/core/public-brand";
+import { DEFAULT_AGENT_DISPLAY_NAME } from "@okouai/core/brand-presentation";
 import { detach, Reason } from "../../signals/utils.ts";
 import { UnsavedBar } from "./unsaved-bar.tsx";
 import type { Command } from "ccstate";

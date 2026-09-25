@@ -5,7 +5,7 @@ import type {
   OnboardingSubscriptionProvider,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { agentAvatarUrlForDefaultAgent } from "@okouai/core/agent-avatar";
-import { agentDisplayName } from "@okouai/core/public-brand";
+import { agentDisplayName } from "@okouai/core/brand-presentation";
 import { isValidTimeZone } from "@okouai/core/timezone";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";

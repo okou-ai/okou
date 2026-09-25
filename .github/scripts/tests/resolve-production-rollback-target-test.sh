@@ -56,6 +56,8 @@ case "${1:-}" in
       [ "${MOCK_SNAPSHOT_R2_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1111111111111111111111111111111111111111" ]; then
       [ "${MOCK_AGENTPHONE_BRAND_DROP_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "2222222222222222222222222222222222222222" ]; then
+      [ "${MOCK_PUBLIC_BRAND_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "6e1abbb785dc1613d0f5cd1b1dd80fae694abb46" ]; then
       [ "${MOCK_MORNING_BRIEF_ELIGIBILITY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "f205ec54fc463f43b1106a3659e5d6a8c979cab8" ]; then
@@ -89,6 +91,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_SNAPSHOT_R2_READER_COMMIT-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee}"
     elif [[ "$*" == *1228_drop_agentphone_public_brand.sql* ]]; then
       printf '%s\n' "${MOCK_AGENTPHONE_BRAND_DROP_COMMIT-1111111111111111111111111111111111111111}"
+    elif [[ "$*" == *1241_retire_public_brand.sql* ]]; then
+      printf '%s\n' "${MOCK_PUBLIC_BRAND_RETIREMENT_COMMIT-2222222222222222222222222222222222222222}"
     else
       printf '%s\n' "${MOCK_PRIVACY_READER_COMMIT-dddddddddddddddddddddddddddddddddddddddd}"
     fi
@@ -189,6 +193,7 @@ grep -Fxq "git merge-base --is-ancestor 32e48c76fea61c39d0962762e1bc2e0aa5a5cab0
 grep -Fxq "git merge-base --is-ancestor 065f970bbb8c21c10ef709495d5824d0a6183e50 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the artifact/chat explicit-writer floor"
 grep -Fxq "git merge-base --is-ancestor eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread snapshot R2 reader floor"
 grep -Fxq "git merge-base --is-ancestor 1111111111111111111111111111111111111111 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the AgentPhone public_brand drop floor"
+grep -Fxq "git merge-base --is-ancestor 2222222222222222222222222222222222222222 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the public_brand retirement floor"
 grep -Fxq "git merge-base --is-ancestor 8a5e1299b4d26bd114ccec017b84b7a83fb4a164 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible target must pass the accepted personal subscription floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
@@ -707,6 +712,23 @@ assert_failure "Rollback target predates the AgentPhone public_brand drop" \
 [ ! -s "${tmp_dir}/agentphone-brand-floor.output" ] || fail "pre-drop API target must not publish outputs"
 if grep -qE '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
   fail "AgentPhone public_brand drop floor must be checked before artifact resolution"
+fi
+
+for retirement_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged public_brand retirement" \
+    run_resolver "${tmp_dir}/public-brand-retirement-history.output" "MOCK_PUBLIC_BRAND_RETIREMENT_COMMIT=${retirement_commit}"
+  [ ! -s "${tmp_dir}/public-brand-retirement-history.output" ] || fail "missing public_brand retirement history must not publish outputs"
+  if grep -qE '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "missing public_brand retirement history must fail before artifact resolution"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the public_brand retirement" \
+  run_resolver "${tmp_dir}/public-brand-retirement-floor.output" MOCK_PUBLIC_BRAND_RETIREMENT_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/public-brand-retirement-floor.output" ] || fail "pre-retirement API target must not publish outputs"
+if grep -qE '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "public_brand retirement floor must be checked before artifact resolution"
 fi
 
 # Verify the real Git history boundary, including the cleanup file's later

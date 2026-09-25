@@ -21,7 +21,7 @@ import {
 } from "@okouai/db/schema/browser-session";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { command } from "ccstate";
 import {
   and,
@@ -129,10 +129,7 @@ const BROWSER_SESSION_SELECTION = {
   updatedAt: browserSessions.updatedAt,
 } as const;
 
-type BrowserSessionRow = Omit<
-  typeof browserSessions.$inferSelect,
-  "publicBrand"
->;
+type BrowserSessionRow = typeof browserSessions.$inferSelect;
 type BrowserInstanceRow = typeof browserSessionInstances.$inferSelect;
 type BrowserThreadProfileRow = typeof browserThreadProfiles.$inferSelect;
 type DbTransaction = Tx;
