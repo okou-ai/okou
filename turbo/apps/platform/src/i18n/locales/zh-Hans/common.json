@@ -2118,13 +2118,13 @@
         "wrappedUp": "{{time}}已收尾"
       },
       "duration": {
-        "hoursMinutesShort": "{{hours}}小时{{minutes}}分钟",
-        "hoursShort_one": "{{count}}小时",
-        "hoursShort_other": "{{count}}小时",
-        "minutesShort_one": "{{count}}分钟",
-        "minutesShort_other": "{{count}}分钟",
-        "secondsShort_one": "{{count}}秒",
-        "secondsShort_other": "{{count}}秒"
+        "hoursMinutesShort": "{{hours}} 小时 {{minutes}} 分钟",
+        "hoursShort_one": "{{count}} 小时",
+        "hoursShort_other": "{{count}} 小时",
+        "minutesShort_one": "{{count}} 分钟",
+        "minutesShort_other": "{{count}} 分钟",
+        "secondsShort_one": "{{count}} 秒",
+        "secondsShort_other": "{{count}} 秒"
       },
       "expandWorkHistory": "展开工作记录",
       "fastModelName": "{{model}}快速模式",
