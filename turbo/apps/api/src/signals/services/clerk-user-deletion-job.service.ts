@@ -3,6 +3,9 @@ import {
   completeChatContentDeletion,
 } from "@okouai/db/operations/chat-content-erasure";
 import { command } from "ccstate";
+import { cliTokens } from "@okouai/db/schema/cli-tokens";
+import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
+import { eq } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
 import { z } from "zod";
 
@@ -25,7 +28,11 @@ import {
   verifyUserErasureWork,
 } from "./account-erasure-user-executor";
 import { markMorningBriefCollectionOwnershipRevoked } from "./morning-brief-collection-occurrence.service";
-import { cleanupClerkDeletedUser$ } from "./webhooks-clerk-cleanup.service";
+import { closePiStableContextErasureSubject } from "./pi-stable-context-erasure.service";
+import {
+  cancelDeletedUserRuns$,
+  cleanupClerkDeletedUser$,
+} from "./webhooks-clerk-cleanup.service";
 
 const L = logger("ClerkUserDeletionJob");
 const JOB_KIND = "clerk-user-deletion";
@@ -116,11 +123,23 @@ export const enqueueClerkUserDeletion$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<string> => {
     const jobId = uuidv5(userId, JOB_NAMESPACE);
     await set(writeDb$).transaction(async (tx) => {
+      // The hold skips legacy identity cleanup. Close cached authority under
+      // the same lock as delayed membership refills before acknowledging the
+      // webhook; a late refresh cannot restore this deleted user's access.
+      await closePiStableContextErasureSubject(tx, {
+        subjectKind: "user",
+        subjectId: userId,
+      });
       await recordChatContentDeletion(tx, {
         subjectKind: "user",
         subjectId: userId,
         sourceReference: jobId,
       });
+      signal.throwIfAborted();
+      await tx
+        .delete(orgMembersCache)
+        .where(eq(orgMembersCache.userId, userId));
+      await tx.delete(cliTokens).where(eq(cliTokens.userId, userId));
       signal.throwIfAborted();
       await enqueueBackgroundJob(
         tx,
@@ -170,6 +189,8 @@ export const executeClerkUserDeletionWork$ = command(
     }
 
     if (HOLD_USER_DELETION) {
+      await set(cancelDeletedUserRuns$, job.userId, signal);
+      signal.throwIfAborted();
       const checkpoint = checkpointSchema.parse(job.checkpoint);
       const saved = await yieldBackgroundJob(
         db,

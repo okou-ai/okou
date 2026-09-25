@@ -669,7 +669,7 @@ describe("explicit VNC grants and current Agent inventory", () => {
   });
 
   it.each(["membership", "user"] as const)(
-    "%s cleanup removes grants even when the shared Agent has no VNC connections",
+    "%s deletion denies VNC access even when the shared Agent has no VNC connections",
     async (scope) => {
       const creator = await owner();
       const shared = await api.runtime(creator);
@@ -710,19 +710,32 @@ describe("explicit VNC grants and current Agent inventory", () => {
         [200],
       );
       await flushWaitUntilForTest();
-      // Retained external identity permits reading the post-cleanup boundary.
       await updateFeatureSwitchesForUser(context, consumer, {
         [FeatureSwitchKey.VncAccess]: true,
       });
       api.authenticate(consumer);
-      expect(
-        (
-          await accept(
-            api.access().get({ headers, params: { agentId: shared.agentId } }),
-            [200],
-          )
-        ).body,
-      ).toStrictEqual({ enabled: false });
+      if (scope === "user") {
+        // A deleted Clerk account has no current membership. Its stored grant
+        // is held, but must not authorize a VNC request during the hold.
+        context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+          { data: [], totalCount: 0 },
+        );
+        await accept(
+          api.access().get({ headers, params: { agentId: shared.agentId } }),
+          [404],
+        );
+      } else {
+        expect(
+          (
+            await accept(
+              api
+                .access()
+                .get({ headers, params: { agentId: shared.agentId } }),
+              [200],
+            )
+          ).body,
+        ).toStrictEqual({ enabled: false });
+      }
     },
   );
 });

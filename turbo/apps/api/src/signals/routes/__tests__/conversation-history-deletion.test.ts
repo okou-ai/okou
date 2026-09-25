@@ -67,7 +67,7 @@ test("releases history on Agent deletion and does not release twice on retry", a
 });
 
 test.each(["user", "organization"] as const)(
-  "releases history through a verified Clerk %s webhook",
+  "keeps or releases history according to a verified Clerk %s webhook",
   async (kind) => {
     const actor = bdd.user();
     const run = await checkpointedRun(actor);
@@ -78,9 +78,13 @@ test.each(["user", "organization"] as const)(
     });
     await webhooks.requestClerkWebhook("{}", {}, [200]);
     await flushWaitUntilForTest();
-    await runs.requestReadRun(actor, run.runId, [404]);
+    await runs.requestReadRun(
+      actor,
+      run.runId,
+      kind === "user" ? [200] : [404],
+    );
     await expect(readHistoryBlobReferenceCountFixture(run.hash)).resolves.toBe(
-      0,
+      kind === "user" ? 1 : 0,
     );
   },
 );

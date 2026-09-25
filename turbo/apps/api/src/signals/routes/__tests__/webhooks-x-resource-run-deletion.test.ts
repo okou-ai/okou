@@ -169,7 +169,9 @@ describe("X resource account cleanup and ordinary Run deletion", () => {
     });
     await flushWaitUntilForTest();
     await fixture.api.requestReadRun(actor, run.runId, [404]);
-    await fixture.bdd.requestReadAgent(actor, deletedAgent.agentId, [404]);
+    // Ordinary threadless Run cleanup can complete, but user deletion holds
+    // even the user's private Agent instead of cascading through it.
+    await fixture.bdd.requestReadAgent(actor, deletedAgent.agentId, [200]);
     await fixture.bdd.requestReadAgent(owner, agentId, [200]);
     expect((await billing.readUsageRecord(actor)).body.totalCredits).toBe(0);
   });

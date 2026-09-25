@@ -267,7 +267,7 @@ describe("Run cancellation reconciliation", () => {
   });
 
   it.each(["user.deleted", "organization.deleted"])(
-    "keeps authenticated absence readable after %s",
+    "reports held cancellation or physical absence after %s",
     async (type) => {
       const f = await fixture();
       const webhooks = createWebhookCallbackApi(context);
@@ -278,11 +278,20 @@ describe("Run cancellation reconciliation", () => {
       });
       await webhooks.requestClerkWebhook("{}", {}, [200]);
       await flushWaitUntilForTest();
-      expect((await read(f)).body).toStrictEqual({
-        protocolVersion: 1,
-        runId: f.runId,
-        state: "gone",
-      });
+      expect((await read(f)).body).toStrictEqual(
+        type === "user.deleted"
+          ? {
+              protocolVersion: 1,
+              runId: f.runId,
+              state: "present",
+              mode: "hard",
+            }
+          : {
+              protocolVersion: 1,
+              runId: f.runId,
+              state: "gone",
+            },
+      );
     },
   );
 });
