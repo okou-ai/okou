@@ -1,8 +1,3 @@
-import {
-  readRunContentOwnership,
-  validateRunContentIdentity,
-  type RunContentOwnership,
-} from "./run-content-erasure-admission.service";
 import { historicalRunGroupId } from "./run-event-provenance.service";
 import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
@@ -435,7 +430,6 @@ interface AssistantEventItem {
 }
 
 interface AssistantEventInsertArgs {
-  readonly ownership: RunContentOwnership;
   readonly runId: string;
   readonly threadId: string;
   readonly userId: string;
@@ -1442,7 +1436,6 @@ async function publishAssistantErrorEventSignals(args: {
 
 interface AssistantErrorEventArgs {
   readonly db: Db;
-  readonly ownership: RunContentOwnership;
   readonly runId: string;
   readonly threadId: string;
   readonly userId: string;
@@ -1581,19 +1574,6 @@ async function insertAssistantErrorEvent(
     undefined,
     signal,
   );
-  await validateRunContentIdentity(
-    args.db,
-    {
-      runId: args.runId,
-      ownership: args.ownership,
-      destination: {
-        threadId: args.threadId,
-        userId: args.userId,
-        orgId: args.orgId,
-      },
-    },
-    signal,
-  );
   const inserted = await insertAssistantErrorEventTransaction(
     args.db,
     args,
@@ -1723,7 +1703,6 @@ async function insertIntegrationCompletionFallback(args: {
 
 interface RunLifecycleMarkerArgs {
   readonly db: Db;
-  readonly ownership: RunContentOwnership;
   readonly runId: string;
   readonly threadId: string;
   readonly userId: string;
@@ -1750,7 +1729,7 @@ interface RunLifecycleDeliveryCallbacks {
 }
 
 function hasCanonicalIntegrationDelivery(
-  args: Omit<RunLifecycleMarkerArgs, "ownership">,
+  args: RunLifecycleMarkerArgs,
 ): boolean {
   return Boolean(
     args.slackDelivery ||
@@ -1764,7 +1743,7 @@ function hasCanonicalIntegrationDelivery(
 }
 
 function requiresIntegrationCompletionFallback(
-  args: Omit<RunLifecycleMarkerArgs, "ownership">,
+  args: RunLifecycleMarkerArgs,
 ): boolean {
   return (
     args.event === "completed" &&
@@ -1780,7 +1759,7 @@ function requiresIntegrationCompletionFallback(
 
 async function registerRunLifecycleDeliveryCallbacks(
   tx: ChatCallbackTransaction,
-  input: Omit<RunLifecycleMarkerArgs, "ownership">,
+  input: RunLifecycleMarkerArgs,
   deliveryEvent: { readonly id: string } | undefined,
   markerInserted: boolean,
 ): Promise<RunLifecycleDeliveryCallbacks> {
@@ -1866,7 +1845,7 @@ async function registerRunLifecycleDeliveryCallbacks(
 
 export async function insertRunLifecycleMarkerProjection(args: {
   readonly tx: ChatCallbackTransaction;
-  readonly input: Omit<RunLifecycleMarkerArgs, "ownership">;
+  readonly input: RunLifecycleMarkerArgs;
   readonly markerCreatedAt: Date;
   readonly goalId: string | undefined;
 }): Promise<
@@ -1935,19 +1914,6 @@ async function insertRunLifecycleMarker(
     args.db,
     args.runId,
     undefined,
-    signal,
-  );
-  await validateRunContentIdentity(
-    args.db,
-    {
-      runId: args.runId,
-      ownership: args.ownership,
-      destination: {
-        threadId: args.threadId,
-        userId: args.userId,
-        orgId: args.orgId,
-      },
-    },
     signal,
   );
   const inserted = await insertRunLifecycleMarkerProjection({
@@ -2066,12 +2032,10 @@ async function loadRecommendedFollowupContextForCompletedRun(args: {
 async function materializeCompletedChatResult(
   args: {
     readonly output: CompletedChatOutputLoad;
-    readonly ownership: RunContentOwnership;
     readonly preferResultFallback: boolean;
     readonly timing: ChatCallbackPreCreateTimingCollector;
     readonly insertAssistantItems: (
       items: readonly AssistantEventItem[],
-      ownership: RunContentOwnership,
     ) => Promise<void>;
   },
   signal: AbortSignal,
@@ -2084,10 +2048,7 @@ async function materializeCompletedChatResult(
       "api_dispatch_pre_create_agent_chat_callback_insert_assistant_items",
       "nested",
       () => {
-        return args.insertAssistantItems(
-          assistantItemsToInsert,
-          args.ownership,
-        );
+        return args.insertAssistantItems(assistantItemsToInsert);
       },
     );
     signal.throwIfAborted();
@@ -2108,7 +2069,7 @@ async function materializeCompletedChatResult(
       "api_dispatch_pre_create_agent_chat_callback_insert_assistant_items",
       "nested",
       () => {
-        return args.insertAssistantItems([resultFallback], args.ownership);
+        return args.insertAssistantItems([resultFallback]);
       },
     );
     signal.throwIfAborted();
@@ -2120,7 +2081,6 @@ async function materializeCompletedChatResult(
 async function handleCompletedChatCallback(
   args: {
     readonly db: Db;
-    readonly ownership: RunContentOwnership;
     readonly runId: string;
     readonly run: ChatRunInfo;
     readonly chatThread: ChatThreadForRunRow;
@@ -2135,7 +2095,6 @@ async function handleCompletedChatCallback(
     readonly sourceCallbackId: string;
     readonly insertAssistantItems: (
       items: readonly AssistantEventItem[],
-      ownership: RunContentOwnership,
     ) => Promise<void>;
   },
   signal: AbortSignal,
@@ -2154,7 +2113,6 @@ async function handleCompletedChatCallback(
   const lastResultText = await materializeCompletedChatResult(
     {
       output,
-      ownership: args.ownership,
       preferResultFallback:
         args.slackDelivery !== undefined ||
         args.teamsDelivery !== undefined ||
@@ -2185,7 +2143,6 @@ async function handleCompletedChatCallback(
     () => {
       return insertRunLifecycleMarker(
         {
-          ownership: args.ownership,
           db: args.db,
           runId: args.runId,
           threadId: args.chatThread.chatThreadId,
@@ -2322,7 +2279,6 @@ async function runCompletedChatCallbackSideEffects(
 async function handleFailedChatCallback(
   args: {
     readonly db: Db;
-    readonly ownership: RunContentOwnership;
     readonly runId: string;
     readonly chatThread: ChatThreadForRunRow;
     readonly errorMessage: string;
@@ -2346,7 +2302,6 @@ async function handleFailedChatCallback(
       : "failed";
   return await insertAssistantErrorEvent(
     {
-      ownership: args.ownership,
       db: args.db,
       runId: args.runId,
       threadId: args.chatThread.chatThreadId,
@@ -4204,14 +4159,9 @@ async function loadTerminalChatCallback(
   },
   signal: AbortSignal,
 ): Promise<{
-  readonly ownership: RunContentOwnership;
   readonly run: ChatRunInfo;
   readonly chatThread: ChatThreadForRunRow;
 } | null> {
-  // Pin before reading owner-bound metadata or preparing asynchronous content.
-  // This snapshot grants no write permission; each actual writer admits it.
-  const ownership = await readRunContentOwnership(args.db, args.runId);
-  signal.throwIfAborted();
   const [run] = await args.db
     .select({
       prompt: agentRuns.prompt,
@@ -4249,13 +4199,12 @@ async function loadTerminalChatCallback(
     });
   }
 
-  return { run, chatThread, ownership };
+  return { run, chatThread };
 }
 
 async function prepareCompletedTerminalChatCallbackWork(
   args: {
     readonly db: Db;
-    readonly ownership: RunContentOwnership;
     readonly runId: string;
     readonly run: ChatRunInfo;
     readonly chatThread: ChatThreadForRunRow;
@@ -4282,7 +4231,6 @@ async function prepareCompletedTerminalChatCallbackWork(
           db: args.db,
           runId: args.runId,
           run: args.run,
-          ownership: args.ownership,
           chatThread: args.chatThread,
           timing: args.timing,
           slackDelivery: args.slackDelivery,
@@ -4293,7 +4241,7 @@ async function prepareCompletedTerminalChatCallbackWork(
           agentphoneDelivery: args.agentphoneDelivery,
           githubDelivery: args.githubDelivery,
           sourceCallbackId: args.sourceCallbackId,
-          insertAssistantItems: async (items, ownership) => {
+          insertAssistantItems: async (items) => {
             await args.dependencies.insertAssistantItems(
               {
                 runId: args.runId,
@@ -4301,7 +4249,6 @@ async function prepareCompletedTerminalChatCallbackWork(
                 userId: args.chatThread.userId,
                 orgId: args.chatThread.orgId,
                 items,
-                ownership,
               },
               signal,
             );
@@ -4367,7 +4314,6 @@ async function prepareCompletedTerminalChatCallbackWork(
 async function prepareFailedTerminalChatCallbackWork(
   args: {
     readonly db: Db;
-    readonly ownership: RunContentOwnership;
     readonly runId: string;
     readonly run: ChatRunInfo;
     readonly chatThread: ChatThreadForRunRow;
@@ -4392,7 +4338,6 @@ async function prepareFailedTerminalChatCallbackWork(
     () => {
       return handleFailedChatCallback(
         {
-          ownership: args.ownership,
           db: args.db,
           runId: args.runId,
           chatThread: args.chatThread,
@@ -4989,14 +4934,13 @@ async function processTerminalChatCallback(
       if (!loaded) {
         return null;
       }
-      const { run, chatThread, ownership } = loaded;
+      const { run, chatThread } = loaded;
       const sourceCallbackId = await terminalChatCallbackSourceId(args);
       signal.throwIfAborted();
       const preparation = {
         db: args.db,
         runId,
         run,
-        ownership,
         chatThread,
         dependencies: args.dependencies,
         timing,
