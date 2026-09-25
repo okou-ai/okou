@@ -88,10 +88,6 @@ import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-p
 import { testChatEventRetentionRoutes } from "../test-chat-event-retention";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { modelPoliciesRoutes } from "../model-policies";
-import {
-  closeErasureSubjectFixture,
-  removeErasureSubjectsFixture,
-} from "../../../test-fixtures/account-erasure-subject";
 import { seedRetentionOutputEvent$ } from "../../../test-fixtures/chat-event-retention";
 import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import {

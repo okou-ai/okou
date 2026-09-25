@@ -6,10 +6,6 @@ import { and, inArray, type SQL } from "drizzle-orm";
 import { cleanupDisconnectedPersonalModelProviderAccounts } from "./model-provider-account.service";
 import type { Tx } from "../../lib/db-types";
 
-// Still imported by the Pi stable-context erasure admission; the final fence
-// cleanup removes it together with that module.
-export const COMPUTE_CLOSURE_ERROR = "account_erasure:subject_closed";
-
 type TerminalRunStatus = Extract<
   RunStatus,
   "completed" | "failed" | "timeout" | "cancelled"
