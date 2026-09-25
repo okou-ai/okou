@@ -463,12 +463,18 @@ const readIngressConversationContext$ = command(
       readonly messageContentEnabled: boolean;
     },
     signal: AbortSignal,
-  ): Promise<string> => {
+  ): Promise<string | null> => {
     const { accessArgs, message, messageContentEnabled } = args;
-    if (!messageContentEnabled && message.guild_id) {
+    if (!message.guild_id) {
+      // Discord gives the bot one DM channel per user, shared by every org and
+      // DM session that user starts. Like Slack DMs, read no channel history;
+      // the canonical DM session carries its own continuity.
+      return null;
+    }
+    if (!messageContentEnabled) {
       return "Ordinary guild history was not read because Discord MESSAGE_CONTENT is unavailable. Only the current message is included.\n[]";
     }
-    // READ_MESSAGE_HISTORY is optional for the current mention/DM. Final
+    // READ_MESSAGE_HISTORY is optional for the current mention. Final
     // source view and destination write checks still revalidate live access.
     const history = await set(
       readDiscordHistoryPage$,
@@ -659,7 +665,7 @@ function createIngressContext(args: {
   readonly destinationChannelId: string;
   readonly message: DiscordMessageCreate;
   readonly channelType: number;
-  readonly conversationContext: string;
+  readonly conversationContext: string | null;
   readonly assets: readonly DiscordInputAsset[];
 }): DiscordChatEventContext {
   const {

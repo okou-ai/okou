@@ -128,6 +128,34 @@ async function selectDmOrganization(actor: ConnectedDiscordActor) {
   );
 }
 
+function botReplyBefore(
+  actor: ConnectedDiscordActor,
+  provider: ReturnType<typeof mockDiscordProvider>,
+  next: ReturnType<typeof discordMessageForTest>,
+  content: string,
+) {
+  // Discord keeps a single bot DM channel per user, so an earlier reply stays
+  // in it no matter which organization or DM session produced it.
+  const reply = {
+    ...discordMessageForTest(actor, {
+      id: (BigInt(next.id) - 1n).toString(),
+      channelId: next.channel_id,
+      guild: false,
+      content,
+    }),
+    author: { id: actor.botUserId, username: "Okou", bot: true },
+  };
+  provider.messages.set(reply.id, reply);
+}
+
+async function launchedRun(actor: ConnectedDiscordActor, threadId: string) {
+  const [input] = currentInputs(await events(actor, threadId));
+  if (!input?.runId) {
+    throw new Error("Expected a launched Discord run");
+  }
+  return await runsApi.readRun(actor.actor, input.runId);
+}
+
 async function discordStatus(actor: ConnectedDiscordActor) {
   createRouteMocks(context).clerk.session(
     actor.userId,
@@ -763,7 +791,7 @@ describe("canonical Discord ingress", () => {
     );
   });
 
-  it("keeps native guild routes sticky while a changed DM model starts a new session", async () => {
+  it("keeps native guild routes sticky while a changed DM model starts a new session without earlier DM history", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
     const first = discordMessageForTest(actor, {
@@ -853,6 +881,12 @@ describe("canonical Discord ingress", () => {
       guild: false,
       content: "use the other DM session",
     });
+    botReplyBefore(
+      actor,
+      provider,
+      nextDm,
+      "Opus session answer: ship on Friday",
+    );
     provider.messages.set(nextDm.id, nextDm);
     await postDiscordMessage(context, nextDm);
     await flushWaitUntilForTest();
@@ -869,6 +903,70 @@ describe("canonical Discord ingress", () => {
         })
         .sort(),
     ).toStrictEqual(["claude-fable-5-1", "claude-opus-5"]);
+    const nextSession = dmThreads.find((thread) => {
+      return thread.selectedModel === "claude-fable-5-1";
+    });
+    if (!nextSession) {
+      throw new Error("Expected the changed DM session");
+    }
+    const run = await launchedRun(actor, nextSession.id);
+    expect(run.prompt).toBe(nextDm.content);
+    expect(run.appendSystemPrompt).not.toContain("ship on Friday");
+    expect(run.appendSystemPrompt).not.toContain(dm.content);
+    expect(run.appendSystemPrompt).not.toContain("Prior Discord Messages");
+  });
+
+  it("keeps another organization's DM replies out of a newly selected organization's run", async () => {
+    const first = await connected();
+    const provider = mockDiscordProvider(first);
+    const second = await track(
+      setupConnectedDiscordActor(context, {
+        userId: first.userId,
+        discordUserId: first.discordUserId,
+      }),
+    );
+    provider.guildIds.add(second.guildId);
+    mockDiscordMemberships(context, [
+      { userId: first.userId, orgId: first.orgId, orgRole: "org:admin" },
+      { userId: second.userId, orgId: second.orgId, orgRole: "org:admin" },
+    ]);
+    // DM content never depends on the guild MESSAGE_CONTENT intent.
+    mockEnv("DISCORD_MESSAGE_CONTENT_ENABLED", "true");
+    await selectDmOrganization(first);
+    const firstDm = discordMessageForTest(first, {
+      channelId: provider.dmChannelId,
+      guild: false,
+      content: "summarize the first organization's pipeline",
+    });
+    provider.messages.set(firstDm.id, firstDm);
+    await postDiscordMessage(context, firstDm);
+    await flushWaitUntilForTest();
+    await expect(discordChatThreads(context, first)).resolves.toHaveLength(1);
+
+    await selectDmOrganization(second);
+    const secondDm = discordMessageForTest(second, {
+      channelId: provider.dmChannelId,
+      guild: false,
+      content: "hi",
+    });
+    botReplyBefore(
+      first,
+      provider,
+      secondDm,
+      "First organization pipeline: 42 open deals",
+    );
+    provider.messages.set(secondDm.id, secondDm);
+    await postDiscordMessage(context, secondDm);
+    await flushWaitUntilForTest();
+    const [thread] = await discordChatThreads(context, second);
+    if (!thread) {
+      throw new Error("Expected the second organization's DM chat");
+    }
+    const run = await launchedRun(second, thread.id);
+    expect(run.prompt).toBe("hi");
+    expect(run.appendSystemPrompt).not.toContain("42 open deals");
+    expect(run.appendSystemPrompt).not.toContain(firstDm.content);
+    expect(run.appendSystemPrompt).not.toContain("Prior Discord Messages");
   });
 
   it("requires explicit DM org choice and keeps a replay bound to its original org", async () => {
@@ -1087,10 +1185,10 @@ describe("canonical Discord ingress", () => {
   it("recovers a transient provider failure through the connection-scoped sweep", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
+    mockEnv("DISCORD_MESSAGE_CONTENT_ENABLED", "true");
     const message = discordMessageForTest(actor, {
-      channelId: provider.dmChannelId,
-      guild: false,
-      content: "recover this admitted task",
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> recover this admitted task`,
     });
     provider.messages.set(message.id, message);
     mockNow(now());
@@ -1411,10 +1509,10 @@ describe("canonical Discord ingress", () => {
   it("records one canonical admission error when the finite retry budget is exhausted", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
+    mockEnv("DISCORD_MESSAGE_CONTENT_ENABLED", "true");
     const message = discordMessageForTest(actor, {
-      channelId: provider.dmChannelId,
-      guild: false,
-      content: "report this task if Discord never recovers",
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> report this task if Discord never recovers`,
     });
     provider.messages.set(message.id, message);
     provider.state.historyResponse = () => {
@@ -1453,10 +1551,10 @@ describe("canonical Discord ingress", () => {
   it("fences a stale processor when recovery commits the same input first", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
+    mockEnv("DISCORD_MESSAGE_CONTENT_ENABLED", "true");
     const message = discordMessageForTest(actor, {
-      channelId: provider.dmChannelId,
-      guild: false,
-      content: "one canonical input after a stale lease",
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> one canonical input after a stale lease`,
     });
     provider.messages.set(message.id, message);
     const reading = createDeferredPromise<void>(context.signal);
@@ -1527,10 +1625,10 @@ describe("canonical Discord ingress", () => {
       await release.promise;
       return undefined;
     };
+    mockEnv("DISCORD_MESSAGE_CONTENT_ENABLED", "true");
     const message = discordMessageForTest(actor, {
-      channelId: provider.dmChannelId,
-      guild: false,
-      content: "do not launch after disconnect",
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> do not launch after disconnect`,
     });
     provider.messages.set(message.id, message);
     let processing: Promise<void> | undefined;

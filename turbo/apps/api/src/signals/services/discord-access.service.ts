@@ -9,6 +9,7 @@ import {
 } from "./discord-data.service";
 import type { DiscordChannel } from "../external/discord-client";
 import {
+  discordDmReadDenied,
   discordUnavailable,
   type DiscordFailureResponse,
 } from "./discord-api-response";
@@ -126,5 +127,35 @@ export const requireDiscordConversationAccess$ = command(
       return access;
     }
     return { ...current, channel: access.channel };
+  },
+);
+
+/**
+ * Reads channel content on a run's behalf: history pages, native thread
+ * replies and attachment downloads. Discord gives the bot one DM channel per
+ * user, shared by every org that user is bound in, and its messages record no
+ * org, so no run token may read DM content. Sends to the sender's own DM use
+ * write access and stay available.
+ */
+export const requireDiscordRunReadAccess$ = command(
+  async (
+    { set },
+    args: {
+      orgId: string;
+      userId: string;
+      guildId?: string;
+      channelId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<DiscordConversationAccess> => {
+    const access = await set(
+      requireDiscordConversationAccess$,
+      { ...args, mode: "read" },
+      signal,
+    );
+    if (access.kind === "allowed" && access.channel.type === 1) {
+      return { kind: "denied", response: discordDmReadDenied() };
+    }
+    return access;
   },
 );
