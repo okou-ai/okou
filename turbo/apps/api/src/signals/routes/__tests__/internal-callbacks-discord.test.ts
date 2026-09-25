@@ -2,7 +2,6 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
-import { testDiscordDeliveriesContract } from "@okouai/api-contracts/contracts/test-discord-deliveries";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -12,7 +11,6 @@ import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { integrationsDiscordRoutes } from "../integrations-discord";
-import { testDiscordDeliveriesRoutes } from "../test-discord-deliveries";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
@@ -189,21 +187,6 @@ function sentContents(started: Awaited<ReturnType<typeof startDiscordRun>>) {
   });
 }
 
-function uncertainPartNotice(
-  started: Awaited<ReturnType<typeof startDiscordRun>>,
-) {
-  return `_I couldn't confirm that part of this reply reached Discord, so I didn't send it again to avoid a duplicate. Read the full reply in Okou: http://localhost:3002/chats/${started.threadId}_`;
-}
-
-function recoverReplies(actor: ConnectedDiscordActor) {
-  return accept(
-    setupApp({ context, routes: testDiscordDeliveriesRoutes })(
-      testDiscordDeliveriesContract,
-    ).drain({ body: { connectionIds: [actor.connectionId] } }),
-    [200],
-  );
-}
-
 // A non-moderator member: can view, send, read history and send in threads,
 // but lacks MANAGE_THREADS, so a moderator lock closes the thread.
 const MEMBER_PERMISSIONS = (
@@ -242,8 +225,6 @@ describe("canonical Discord terminal replies", () => {
     expect(started.provider.sentMessages[0]?.content).toContain(
       "Claude Fable 5.1",
     );
-    await recoverReplies(started.actor);
-    expect(started.provider.sentMessages).toHaveLength(1);
     const events = await readProjectedChatEvents(context, {
       threadId: started.threadId,
       headers: { authorization: "Bearer clerk-session" },
@@ -371,9 +352,6 @@ describe("canonical Discord terminal replies", () => {
       expect(notices).toHaveLength(1);
       // An admission failure has no run, so only the agent is named.
       expect(notices[0]?.content).toBe(`${errorText}${footer}`);
-      const messageCount = started.provider.sentMessages.length;
-      await recoverReplies(started.actor);
-      expect(started.provider.sentMessages).toHaveLength(messageCount);
     },
   );
 
@@ -421,8 +399,6 @@ describe("canonical Discord terminal replies", () => {
       channel_id: started.channelId,
       content: expect.stringContaining("The archived-thread task is complete."),
     });
-    await recoverReplies(started.actor);
-    expect(started.provider.sentMessages).toHaveLength(1);
   });
 
   it.each([
@@ -445,7 +421,6 @@ describe("canonical Discord terminal replies", () => {
         sandboxToken: claim.sandboxToken,
         text: "The locked-thread task is complete.",
       });
-      await recoverReplies(started.actor);
       expect(started.provider.sentMessages).toHaveLength(delivered);
       const events = await readProjectedChatEvents(context, {
         threadId: started.threadId,
@@ -608,230 +583,57 @@ describe("canonical Discord terminal replies", () => {
     });
   });
 
-  it("honors Discord Retry-After beyond the worker lease without uncertain-send receipts", async () => {
+  it("does not retry a reply that Discord rate-limits", async () => {
     const started = await startDiscordRun();
     const claim = await claimRun(started.actor, started.runId);
     let attempts = 0;
     started.provider.state.beforeMessageCreate = () => {
       attempts += 1;
       return HttpResponse.json(
-        { message: "Rate limited", retry_after: 300, global: false },
+        { message: "Rate limited", retry_after: 1, global: false },
         { status: 429 },
       );
     };
     await completeRun({
       runId: started.runId,
       sandboxToken: claim.sandboxToken,
-      text: "Reply after Discord's cooldown.",
+      text: "Reply that Discord rate-limits.",
     });
     expect(attempts).toBe(1);
     expect(started.provider.sentMessages).toHaveLength(0);
-    mockNow(now() + 121_000);
-    await recoverReplies(started.actor);
-    expect(attempts).toBe(1);
-    expect(started.provider.sentMessages).toHaveLength(0);
-    started.provider.state.beforeMessageCreate = () => {
-      attempts += 1;
-      return undefined;
-    };
-    mockNow(now() + 180_000);
-    await recoverReplies(started.actor);
-    expect(attempts).toBe(2);
-    expect(started.provider.sentMessages).toHaveLength(1);
-    expect(started.provider.sentMessages[0]?.content).toContain(
-      "Reply after Discord's cooldown.",
+    const events = await readProjectedChatEvents(context, {
+      threadId: started.threadId,
+      headers: { authorization: "Bearer clerk-session" },
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        eventType: "run.completed",
+        runId: started.runId,
+      }),
     );
   });
 
-  it("replays a lost Discord send with its enforced nonce and sends each chunk once", async () => {
-    const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
-    const answer = "A complete Discord answer. ".repeat(180);
-    let sendRequests = 0;
-    let historyReads = 0;
-    let responseLost = false;
-    started.provider.state.beforeMessageCreate = () => {
-      sendRequests += 1;
-      return undefined;
-    };
-    started.provider.state.historyResponse = () => {
-      historyReads += 1;
-      return undefined;
-    };
-    started.provider.state.afterMessageCreated = () => {
-      if (responseLost) {
-        return undefined;
-      }
-      responseLost = true;
-      return HttpResponse.error();
-    };
-    await completeRun({
-      runId: started.runId,
-      sandboxToken: claim.sandboxToken,
-      text: answer,
-    });
-    const delivered = started.provider.sentMessages;
-    expect(delivered.length).toBeGreaterThan(1);
-    // The lost first send was replayed once and returned the original message.
-    expect(sendRequests).toBe(delivered.length + 1);
-    expect(historyReads).toBe(0);
-    expect(
-      new Set(
-        delivered.map((message) => {
-          return message.nonce;
-        }),
-      ).size,
-    ).toBe(delivered.length);
-    expect(
-      delivered
-        .map((message) => {
-          return message.content;
-        })
-        .join(""),
-    ).toContain(answer);
-    mockNow(now() + 121_000);
-    await Promise.all([
-      recoverReplies(started.actor),
-      recoverReplies(started.actor),
-    ]);
-    expect(started.provider.sentMessages).toHaveLength(delivered.length);
-    expect(sendRequests).toBe(delivered.length + 1);
-  });
-
-  it("keeps a lost send uncertain outside the nonce window instead of sending it again", async () => {
-    const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
-    let sendRequests = 0;
-    started.provider.state.beforeMessageCreate = () => {
-      sendRequests += 1;
-      return undefined;
-    };
-    let lostNonce: string | undefined;
-    started.provider.state.afterMessageCreated = (message) => {
-      lostNonce ??= message.nonce;
-      return message.nonce === lostNonce
-        ? HttpResponse.json({ message: "Bad gateway" }, { status: 502 })
-        : undefined;
-    };
-    await completeRun({
-      runId: started.runId,
-      sandboxToken: claim.sandboxToken,
-      text: "A reply whose receipts keep getting lost.",
-    });
-    // One send plus two bounded enforced-nonce replays inside the claim, then
-    // one notice that the reply could not be confirmed.
-    expect(sendRequests).toBe(4);
-    expect(sentContents(started)).toStrictEqual([
-      expect.stringContaining("A reply whose receipts keep getting lost."),
-      uncertainPartNotice(started),
-    ]);
-    started.provider.state.afterMessageCreated = undefined;
-    // Discord still deduplicates this nonce, but the next claim starts after
-    // Okou's conservative replay window and must not risk a second message.
-    mockNow(now() + 121_000);
-    await recoverReplies(started.actor);
-    mockNow(now() + 121_000);
-    await recoverReplies(started.actor);
-    expect(sendRequests).toBe(4);
-    expect(started.provider.sentMessages).toHaveLength(2);
-  });
-
-  it("treats a rate-limited replay beyond the nonce window as uncertain", async () => {
+  it("sends each part once and stops at the first part Discord does not accept", async () => {
     const started = await startDiscordRun();
     const claim = await claimRun(started.actor, started.runId);
     let sendRequests = 0;
     started.provider.state.beforeMessageCreate = () => {
       sendRequests += 1;
       return sendRequests === 2
-        ? HttpResponse.json(
-            { message: "Rate limited", retry_after: 300, global: false },
-            { status: 429 },
-          )
+        ? HttpResponse.json({ message: "Bad gateway" }, { status: 502 })
         : undefined;
     };
-    let lostNonce: string | undefined;
-    started.provider.state.afterMessageCreated = (message) => {
-      lostNonce ??= message.nonce;
-      return message.nonce === lostNonce ? HttpResponse.error() : undefined;
-    };
     await completeRun({
       runId: started.runId,
       sandboxToken: claim.sandboxToken,
-      text: "A reply whose replay is rate limited.",
+      text: "A long Discord answer. ".repeat(180),
     });
-    expect(sendRequests).toBe(3);
-    expect(sentContents(started)).toStrictEqual([
-      expect.stringContaining("A reply whose replay is rate limited."),
-      uncertainPartNotice(started),
-    ]);
-    started.provider.state.afterMessageCreated = undefined;
-    mockNow(now() + 400_000);
-    await recoverReplies(started.actor);
-    expect(sendRequests).toBe(3);
-    expect(started.provider.sentMessages).toHaveLength(2);
+    expect(sendRequests).toBe(2);
+    expect(sentContents(started)).toHaveLength(1);
+    expect(sentContents(started)[0]).toContain("A long Discord answer.");
   });
 
-  it("waits out a short replay rate limit and returns the original message", async () => {
-    const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
-    let sendRequests = 0;
-    let responseLost = false;
-    started.provider.state.beforeMessageCreate = () => {
-      sendRequests += 1;
-      return sendRequests === 2
-        ? HttpResponse.json(
-            { message: "Rate limited", retry_after: 0.01, global: false },
-            { status: 429 },
-          )
-        : undefined;
-    };
-    started.provider.state.afterMessageCreated = () => {
-      if (responseLost) {
-        return undefined;
-      }
-      responseLost = true;
-      return HttpResponse.error();
-    };
-    await completeRun({
-      runId: started.runId,
-      sandboxToken: claim.sandboxToken,
-      text: "A reply replayed after a short cooldown.",
-    });
-    expect(sendRequests).toBe(3);
-    expect(started.provider.sentMessages).toHaveLength(1);
-    mockNow(now() + 121_000);
-    await recoverReplies(started.actor);
-    expect(sendRequests).toBe(3);
-  });
-
-  it("rechecks access before replaying a lost send and suppresses it after revocation", async () => {
-    const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
-    let sendRequests = 0;
-    started.provider.state.beforeMessageCreate = () => {
-      sendRequests += 1;
-      return undefined;
-    };
-    started.provider.state.afterMessageCreated = (message) => {
-      // Access is revoked while the first send's receipt is lost.
-      started.provider.deniedChannels.add(message.channel_id);
-      return HttpResponse.error();
-    };
-    await completeRun({
-      runId: started.runId,
-      sandboxToken: claim.sandboxToken,
-      text: "A reply whose destination is revoked mid-send.",
-    });
-    expect(sendRequests).toBe(1);
-    started.provider.deniedChannels.clear();
-    started.provider.state.afterMessageCreated = undefined;
-    mockNow(now() + 121_000);
-    await recoverReplies(started.actor);
-    expect(sendRequests).toBe(1);
-    expect(started.provider.sentMessages).toHaveLength(1);
-  });
-
-  it("never re-sends an unconfirmed part from a later claim", async () => {
+  it("does not repeat a lost send whose response never arrived", async () => {
     const started = await startDiscordRun();
     const claim = await claimRun(started.actor, started.runId);
     let sendRequests = 0;
@@ -840,165 +642,15 @@ describe("canonical Discord terminal replies", () => {
       return undefined;
     };
     started.provider.state.afterMessageCreated = () => {
-      // The replay's access check then fails transiently, ending this claim
-      // with the part still unconfirmed and the delivery retryable.
-      started.provider.state.channelResponse = () => {
-        return HttpResponse.json({ message: "Unavailable" }, { status: 500 });
-      };
       return HttpResponse.error();
     };
     await completeRun({
       runId: started.runId,
       sandboxToken: claim.sandboxToken,
-      text: "A reply whose replay could not be authorized.",
+      text: "A reply whose Discord response is lost.",
     });
     expect(sendRequests).toBe(1);
-    started.provider.state.afterMessageCreated = undefined;
-    let accessChecks = 0;
-    started.provider.state.channelResponse = () => {
-      accessChecks += 1;
-      return undefined;
-    };
-    mockNow(now() + 121_000);
-    await recoverReplies(started.actor);
-    // The later claim runs, but it is outside the replay window and must not
-    // send the part again, even though Discord would still deduplicate it.
-    // It tells the user instead.
-    expect(accessChecks).toBeGreaterThan(0);
-    expect(sendRequests).toBe(2);
-    expect(sentContents(started)).toStrictEqual([
-      expect.stringContaining("A reply whose replay could not be authorized."),
-      uncertainPartNotice(started),
-    ]);
-    mockNow(now() + 121_000);
-    const checksAfterTerminal = accessChecks;
-    await recoverReplies(started.actor);
-    expect(accessChecks).toBe(checksAfterTerminal);
-    expect(sendRequests).toBe(2);
-  });
-
-  it("sends the remaining parts and a notice after one part cannot be confirmed", async () => {
-    const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
-    const answer = "A long Discord answer that needs several parts. ".repeat(
-      120,
-    );
-    let sendRequests = 0;
-    started.provider.state.beforeMessageCreate = () => {
-      sendRequests += 1;
-      return undefined;
-    };
-    // Discord accepts the first part, but every receipt for it is lost.
-    let lostNonce: string | undefined;
-    started.provider.state.afterMessageCreated = (message) => {
-      lostNonce ??= message.nonce;
-      return message.nonce === lostNonce
-        ? HttpResponse.json({ message: "Bad gateway" }, { status: 502 })
-        : undefined;
-    };
-    await completeRun({
-      runId: started.runId,
-      sandboxToken: claim.sandboxToken,
-      text: answer,
-    });
-    const contents = sentContents(started);
-    expect(contents.length).toBeGreaterThan(3);
-    // Each reply part reaches Discord once, in order, and a notice follows.
-    expect(contents.at(-1)).toBe(uncertainPartNotice(started));
-    expect(contents.slice(0, -1).join("")).toContain(answer.trim());
-    expect(
-      new Set(
-        started.provider.sentMessages.map((message) => {
-          return message.nonce;
-        }),
-      ).size,
-    ).toBe(contents.length);
-    // The unconfirmed first part was replayed twice and never sent again.
-    expect(sendRequests).toBe(contents.length + 2);
-    started.provider.state.afterMessageCreated = undefined;
-    mockNow(now() + 121_000);
-    await recoverReplies(started.actor);
-    expect(sentContents(started)).toStrictEqual(contents);
-  });
-
-  it("sends one notice when several parts cannot be confirmed", async () => {
-    const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
-    let sendRequests = 0;
-    started.provider.state.beforeMessageCreate = () => {
-      sendRequests += 1;
-      return undefined;
-    };
-    // Discord accepts the first two parts, but every receipt for them is lost.
-    const lostNonces = new Set<string>();
-    started.provider.state.afterMessageCreated = (message) => {
-      if (message.nonce !== undefined && lostNonces.size < 2) {
-        lostNonces.add(message.nonce);
-      }
-      return message.nonce !== undefined && lostNonces.has(message.nonce)
-        ? HttpResponse.json({ message: "Bad gateway" }, { status: 502 })
-        : undefined;
-    };
-    await completeRun({
-      runId: started.runId,
-      sandboxToken: claim.sandboxToken,
-      text: "Several parts of this answer lose their receipts. ".repeat(120),
-    });
-    const contents = sentContents(started);
-    expect(
-      contents.filter((content) => {
-        return content === uncertainPartNotice(started);
-      }),
-    ).toHaveLength(1);
-    expect(contents.at(-1)).toBe(uncertainPartNotice(started));
-    // Each lost part: one send plus two replays; every other part: one send.
-    expect(sendRequests).toBe(contents.length + 4);
-  });
-
-  it("keeps one notice when a recovery claim finishes an interrupted reply", async () => {
-    const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
-    let sendRequests = 0;
-    started.provider.state.beforeMessageCreate = () => {
-      sendRequests += 1;
-      // The second part's first send is rate-limited, ending this claim after
-      // the first part became unconfirmed and its notice was recorded.
-      return sendRequests === 4
-        ? HttpResponse.json(
-            { message: "Rate limited", retry_after: 1, global: false },
-            { status: 429 },
-          )
-        : undefined;
-    };
-    let lostNonce: string | undefined;
-    started.provider.state.afterMessageCreated = (message) => {
-      lostNonce ??= message.nonce;
-      return message.nonce === lostNonce
-        ? HttpResponse.json({ message: "Bad gateway" }, { status: 502 })
-        : undefined;
-    };
-    await completeRun({
-      runId: started.runId,
-      sandboxToken: claim.sandboxToken,
-      text: "An interrupted answer that a later claim completes. ".repeat(120),
-    });
     expect(started.provider.sentMessages).toHaveLength(1);
-    expect(sendRequests).toBe(4);
-    mockNow(now() + 121_000);
-    await recoverReplies(started.actor);
-    const contents = sentContents(started);
-    expect(
-      contents.filter((content) => {
-        return content === uncertainPartNotice(started);
-      }),
-    ).toHaveLength(1);
-    expect(contents.at(-1)).toBe(uncertainPartNotice(started));
-    // The recovery claim sends each remaining part and the notice once and
-    // never repeats the unconfirmed first part.
-    expect(sendRequests).toBe(4 + contents.length - 1);
-    mockNow(now() + 121_000);
-    await recoverReplies(started.actor);
-    expect(sentContents(started)).toStrictEqual(contents);
   });
 });
 

@@ -70,8 +70,8 @@ Lock strength follows the actual constraints and writers:
   its user. `agent_id` remains non-key; no production writer transfers either
   identity field. KEY SHARE also conflicts with the `FOR UPDATE` taken by
   `deleteChatThread$` and with Agent cascade deletion, while leaving ordinary
-  non-key updates such as `lastMessageAt`/`lastChatEventSeqId` free. The projector
-  therefore still does not serialize against ordinary chat-event writes.
+  non-key updates such as `lastMessageAt` free. The projector therefore still
+  does not serialize against ordinary chat-event writes.
 - Because a non-key Agent rebind would not conflict, the ownership tuple is
   re-read under the retained locks. A transfer committed between selection and
   lock acquisition rolls the attempt back instead of relabelling prepared

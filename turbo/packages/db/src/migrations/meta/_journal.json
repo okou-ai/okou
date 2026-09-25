@@ -1135,6 +1135,13 @@
       "when": 1790331899988,
       "tag": "1239_drop_chat_search_tsv_gin",
       "breakpoints": true
+    },
+    {
+      "idx": 1240,
+      "version": "7",
+      "when": 1790334514029,
+      "tag": "1240_retire_clerk_deletion_receipt_index",
+      "breakpoints": true
     }
   ]
 }
