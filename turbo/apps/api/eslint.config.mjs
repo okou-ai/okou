@@ -681,9 +681,6 @@ export default [
     // exception to the service-directory ban is not an exception to the
     // diagnostics gate, so these files carry those selectors too.
     files: [
-      // The exact-hash PostgreSQL/S3 upload and erase interleaving cannot be
-      // selected through a product endpoint.
-      "src/signals/services/__tests__/shared-blob-erasure.service.test.ts",
       // Bounded job ownership needs real row-lock competition, expired leases,
       // handler-version skew and publication rollback unavailable through HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
@@ -910,8 +907,6 @@ export default [
       "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
       "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-job.test-fixture.ts",
-      // Upload intents and shared blob erasure race at the exact-hash row.
-      "src/signals/services/__tests__/shared-blob-erasure.service.test.ts",
       // Bounded job ownership needs row locks, expired leases, handler-version
       // skew and transaction rollback that callers cannot construct via HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
