@@ -195,10 +195,75 @@ describe("verified Discord integration settings", () => {
       dmBindings: [],
     });
     await accept(
-      client().disconnect({ headers: authenticate(owner), query: {} }),
+      client().setAgentPreference({
+        headers: authenticate(owner),
+        body: { agentId: null },
+      }),
       [404],
     );
     await expectDiscordChanges([]);
+  });
+
+  it("lets users remove Discord data after the feature is rolled back", async () => {
+    const { actor } = createActors();
+    const owner = actor();
+    const installed = await fixture(owner);
+    const peer = actor({ orgId: owner.orgId });
+    await fixture(peer, { guildId: installed.guildId });
+    await updateFeatureSwitchesForUser(context, owner, {
+      [FeatureSwitchKey.DiscordIntegration]: false,
+    });
+    await updateFeatureSwitchesForUser(context, peer, {
+      [FeatureSwitchKey.DiscordIntegration]: false,
+    });
+    await expect(status(owner)).resolves.toMatchObject({
+      isAvailable: false,
+      isInstalled: false,
+    });
+    await accept(
+      client().setDmSelection({
+        headers: authenticate(owner),
+        body: { connectionId: installed.connectionId },
+      }),
+      [404],
+    );
+
+    await accept(
+      client().disconnect({ headers: authenticate(owner), query: {} }),
+      [200],
+    );
+    await expectDiscordChanges([owner.userId]);
+    await accept(
+      client().disconnect({ headers: authenticate(owner), query: {} }),
+      [404],
+    );
+    await accept(
+      client().disconnect({
+        headers: authenticate(owner),
+        query: { action: "uninstall" },
+      }),
+      [200],
+    );
+    await expectDiscordChanges([owner.userId, owner.userId, peer.userId]);
+
+    await enable(owner);
+    await enable(peer);
+    await expect(status(owner)).resolves.toMatchObject({
+      isAvailable: true,
+      isInstalled: false,
+      isConnected: false,
+    });
+    await expect(status(peer)).resolves.toMatchObject({
+      isInstalled: false,
+      isConnected: false,
+    });
+    await accept(
+      client().disconnect({
+        headers: authenticate(owner),
+        query: { action: "uninstall" },
+      }),
+      [404],
+    );
   });
 
   it("reports existing bindings and unavailable context when app configuration is missing", async () => {

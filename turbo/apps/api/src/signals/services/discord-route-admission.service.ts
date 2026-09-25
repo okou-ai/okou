@@ -25,7 +25,7 @@ import {
 } from "./discord-chat-ingress.service";
 import {
   discordEffectiveAgent,
-  discordSenderBindings,
+  discordIngressSenderBindings,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
 import {
@@ -195,7 +195,7 @@ const resolveDiscordAdmissionSource$ = command(
     signal: AbortSignal,
   ): Promise<DiscordAdmissionSource | null> => {
     const db = set(writeDb$);
-    const bindings = await get(discordSenderBindings(message.author.id));
+    const bindings = await get(discordIngressSenderBindings(message.author.id));
     signal.throwIfAborted();
     const binding = bindings.find((candidate) => {
       return candidate.connectionId === ingress.connectionId;

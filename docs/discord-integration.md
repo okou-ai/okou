@@ -59,11 +59,11 @@ exports `integrationsDiscordContract`, `discordOrgStatusSchema`,
 `IntegrationsDiscordContract` from
 `@okouai/api-contracts/contracts/integrations-discord`.
 
-| Method           | Request                                                                                | Success and authority                                                                                                                                                            |
-| ---------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `getStatus`      | `GET /api/integrations/discord`                                                        | `200` with the current org/caller's status; `401`, `403`, and `404` are contract errors.                                                                                         |
-| `disconnect`     | `DELETE /api/integrations/discord`, optional `action=disconnect` or `action=uninstall` | `200 {ok:true}`. Omitted action disconnects the caller; uninstall is admin-only for this guild. `401`, `403`, and `404` remain visible failures.                                 |
-| `setDmSelection` | `PUT /api/integrations/discord/dm-selection`, strict body `{connectionId: UUID}`       | `200 {ok:true}`. The server resolves the caller and verified Discord sender; the payload supplies no user/guild identity proof. `401`, `403`, and `404` remain visible failures. |
+| Method           | Request                                                                                | Success and authority                                                                                                                                                                                                                         |
+| ---------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getStatus`      | `GET /api/integrations/discord`                                                        | `200` with the current org/caller's status; `401`, `403`, and `404` are contract errors.                                                                                                                                                      |
+| `disconnect`     | `DELETE /api/integrations/discord`, optional `action=disconnect` or `action=uninstall` | `200 {ok:true}`. Omitted action disconnects the caller; uninstall is admin-only for this guild. Both stay available while the feature switch is off so data can be removed after a rollback. `401`, `403`, and `404` remain visible failures. |
+| `setDmSelection` | `PUT /api/integrations/discord/dm-selection`, strict body `{connectionId: UUID}`       | `200 {ok:true}`. The server resolves the caller and verified Discord sender; the payload supplies no user/guild identity proof. `401`, `403`, and `404` remain visible failures.                                                              |
 
 The required status fields are:
 
@@ -203,8 +203,8 @@ the interface announcement alone is not execution evidence.
   authenticated user's current org/user; callers cannot supply Okou identity
   fields. Conflicting ownership returns `409` instead of rebinding.
 - Optional `history: {chatThreadId, channelId, messageId, messageText}` seeds
-  erasure/export descendants for an already-created owned canonical Chat
-  thread. Use C's real ingress entrypoint for admission tests.
+  erasure/export descendants, including a failed admission-notice delivery,
+  for an already-created owned canonical Chat thread. Use C's real ingress entrypoint for admission tests.
 - `DELETE /api/test/discord-state?guildId=...` uses the same admin context and
   deletes only that org's named guild.
 - Production returns `404`. Development is allowed; protected previews also
