@@ -374,9 +374,12 @@ describe("canonical Discord terminal replies", () => {
     async ({ sender, delivered }) => {
       const started = await startDiscordRun();
       const claim = await claimRun(started.actor, started.runId);
-      if (sender === "member") {
-        started.provider.state.everyonePermissions = MEMBER_PERMISSIONS;
-      }
+      // The sender's only authority comes from @everyone; the bot keeps its
+      // administrator role, which alone must not reopen the lock.
+      started.provider.state.everyonePermissions =
+        sender === "member"
+          ? MEMBER_PERMISSIONS
+          : (BigInt(MEMBER_PERMISSIONS) | (1n << 34n)).toString();
       setThreadState(started, { archived: true, locked: true });
       await completeRun({
         runId: started.runId,

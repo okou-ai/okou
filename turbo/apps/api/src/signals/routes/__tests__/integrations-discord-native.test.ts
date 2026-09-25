@@ -686,6 +686,7 @@ describe("Discord native sends and transport failures", () => {
     readonly user: "role" | "none" | "role-denied";
     readonly bot: "role" | "none";
     readonly allowed: boolean;
+    readonly private?: boolean;
   }>([
     { name: "neither principal", user: "none", bot: "none", allowed: false },
     { name: "only the bot", user: "none", bot: "role", allowed: false },
@@ -697,11 +698,29 @@ describe("Discord native sends and transport failures", () => {
       allowed: false,
     },
     { name: "both principals", user: "role", bot: "role", allowed: true },
+    {
+      name: "only the bot in a private thread",
+      user: "none",
+      bot: "role",
+      allowed: false,
+      private: true,
+    },
+    {
+      name: "both principals in a private thread",
+      user: "role",
+      bot: "role",
+      allowed: true,
+      private: true,
+    },
   ])(
     "reads a locked thread and sends only when MANAGE_THREADS is held by $name",
-    async ({ user, bot, allowed }) => {
+    async ({ user, bot, allowed, private: isPrivate }) => {
       const f = await fixture();
-      const thread = addThread(f, { locked: true, archived: true });
+      const thread = addThread(f, {
+        private: isPrivate,
+        locked: true,
+        archived: true,
+      });
       const grant = String(MANAGE_THREADS);
       if (user !== "none") {
         f.roles.find((role) => {
