@@ -974,7 +974,7 @@ export default [
           ],
           patterns: [
             {
-              group: ["@okouai/db/schema/*"],
+              group: ["@okouai/db/schema/*", "@okouai/db/runtime/*"],
               message: apiTestExternalBehaviorMessage,
             },
             {
