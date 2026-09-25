@@ -89,7 +89,7 @@ ineligible, so none of these states needs a runtime fallback.
 ## Active run state: readers and old storage retired (step 2 of 3)
 
 **Release gate:** #36900 / `c0a46af5` must be in a completed production
-release before this PR enters the merge queue. Migration `1251` backfills
+release before this PR enters the merge queue. Migration `1252` backfills
 missing active rows created by pre-#36900 API instances; it includes started
 terminal runs still within the 120-second recovery window or still heartbeating
 (except cancelled runs with completed recovery). It removes terminal rows only
@@ -102,7 +102,7 @@ Timeout cleanup now checks the active row's heartbeat (including its locked-run
 recheck); capacity excludes queued runs and expired pending runs but counts
 started terminal runs while their active row still exists. Launch, promotion,
 claim and sandbox heartbeats no longer write `agent_runs.last_heartbeat_at`.
-Activity and summary already use `active_agent_runs`; migration `1251` drops
+Activity and summary already use `active_agent_runs`; migration `1252` drops
 `run_activity_snapshots` and its ORM declaration. Once this release deploys,
 **do not roll back to #36900**: its timeout cleanup reads the now-stale
 `agent_runs.last_heartbeat_at`, and older APIs write the dropped snapshot
