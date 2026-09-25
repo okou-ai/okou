@@ -5,6 +5,7 @@ import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { and, eq, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
+import type { ReadonlyDb } from "../external/db";
 import { singleton } from "../../lib/singleton";
 import { timestampWithoutTimeZone } from "../../lib/time";
 
@@ -47,10 +48,10 @@ export async function withXResourceClockForTest<T>(
 // projection. Reject new usage from its old sandbox tokens without deleting
 // the Run or following its Agent into another user's data.
 export async function hasHeldClerkUserDeletion(
-  tx: Tx,
+  db: Pick<ReadonlyDb, "select">,
   userId: string,
 ): Promise<boolean> {
-  const [job] = await tx
+  const [job] = await db
     .select({ id: backgroundJobs.id })
     .from(backgroundJobs)
     .where(
