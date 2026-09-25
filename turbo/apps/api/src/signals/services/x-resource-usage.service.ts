@@ -1,6 +1,5 @@
 import { webhookUsageEventContract } from "@okouai/api-contracts/contracts/webhooks";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
-import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { xResourceReads } from "@okouai/db/schema/x-resource-usage";
@@ -10,9 +9,7 @@ import type { z } from "zod";
 import type { Tx } from "../../lib/db-types";
 import type { SandboxAuth } from "../../types/auth";
 import type { Db } from "../external/db";
-import { settle } from "../utils";
 import {
-  hasHeldClerkUserDeletion,
   lockXResourceAdmission,
   readXResourceClock,
   setXResourceTransactionTimeouts,
@@ -247,26 +244,7 @@ export async function ingestXResourceUsage(
   await db.transaction(
     async (tx) => {
       await setXResourceTransactionTimeouts(tx);
-      const admission = await settle(
-        assertErasureSubjectWritable(tx, [
-          { subjectKind: "user", subjectId: auth.userId },
-          { subjectKind: "organization", subjectId: auth.orgId },
-        ]),
-      );
-      if (!admission.ok) {
-        if (
-          admission.error instanceof Error &&
-          admission.error.message === "account_erasure:subject_closed"
-        ) {
-          throw new XResourceUsageError(404, "Run not found");
-        }
-        throw admission.error;
-      }
       await lockXResourceAdmission(tx, "shared");
-      if (await hasHeldClerkUserDeletion(tx, auth.userId)) {
-        throw new XResourceUsageError(404, "Run not found");
-      }
-      // Admission precedes Run ownership, matching account cleanup's order.
       // SHARE prevents deletion/owner updates while source rows are created.
       const [run] = await tx
         .select({

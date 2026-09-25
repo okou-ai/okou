@@ -539,7 +539,7 @@ Persistence is two independent writes, in this order and with bounded retries of
 the _same_ observed values:
 
 1. **The receipt**, keyed by the opaque attempt id with a conflict-free insert.
-   It takes no erasure admission and no owner lock, so it still records a real
+   It takes no owner lock, so it still records a real
    charge when the owner is already gone, and a retry — including one that races
    an earlier attempt that actually committed — leaves exactly one cost record
    and never replaces a committed observation with a weaker one.

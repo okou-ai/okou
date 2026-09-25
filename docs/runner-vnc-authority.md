@@ -164,8 +164,8 @@ before activation. This API slice alone does not enforce a live Runner socket.
 Owner cleanup removes connections, credentials and grants, including grants
 without connections. It locks grant-owning Agent parents in stable order before
 business rows so concurrent Agent deletion cannot invert its Run-to-grant
-cascade order. Grant/configuration writes retain the existing erasure, cleanup
-and owner admission. KMS and Clerk calls never run under these locks.
+cascade order. Grant/configuration writes retain the existing cleanup and
+owner admission. KMS and Clerk calls never run under these locks.
 
 ## Deployment
 

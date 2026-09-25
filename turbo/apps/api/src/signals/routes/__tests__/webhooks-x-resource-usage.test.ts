@@ -9,10 +9,6 @@ import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now, nowDate } from "../../../lib/time";
 import {
-  closeErasureSubjectFixture,
-  removeErasureSubjectsFixture,
-} from "../../../test-fixtures/account-erasure-subject";
-import {
   usageEventCompactionDbFixture,
   xResourceAdmissionDbFixture,
 } from "../../../test-fixtures/db-fixture";
@@ -469,7 +465,7 @@ describe("X daily resource usage webhook", () => {
     await expect(chargedUnits(second, configuredPricing)).resolves.toBe(0);
   });
 
-  it("holds the user's ledger and Run while ongoing credit settlement completes", async () => {
+  it("waits for ongoing credit settlement before deleting a user's ledger and runs", async () => {
     const configuredPricing = await pricing();
     const deleted = await createRun();
     await runs.requestCancelRun(
@@ -522,10 +518,14 @@ describe("X daily resource usage webhook", () => {
       type: "user.deleted",
       data: { id: deleted.actor.userId },
     });
-    // The user-deletion hold does not acquire the ledger cleanup lock.
-    const deletion = callbacks.requestClerkWebhook("{}", {}, [200]);
+    await callbacks.requestClerkWebhook("{}", {}, [200]);
+    // Cleanup can queue multiple database participants behind the same
+    // settlement. Their exact count is an implementation detail; the contract
+    // here is that cleanup reached the verified blocking chain before release.
+    await expect
+      .poll(gate.cleanupWaiterCount, { timeout: 10_000 })
+      .toBeGreaterThanOrEqual(1);
     gate.release();
-    await deletion;
     const [released] = await completion;
     if (released.status === "rejected") {
       throw released.reason;
@@ -536,29 +536,11 @@ describe("X daily resource usage webhook", () => {
     }
     await flushWaitUntilForTest();
 
-    const deniedRun = await runs.requestReadRun(
-      deleted.actor,
-      deleted.runId,
-      [401],
-    );
-    expect(deniedRun.body).toMatchObject({
-      error: { code: "UNAUTHORIZED" },
-    });
+    await runs.requestReadRun(deleted.actor, deleted.runId, [404]);
     await accept(submit(deleted, [observation([resourceId()])]), [404]);
-    if (!deleted.actor.orgId) {
-      throw new Error("Expected the held user's organization");
-    }
-    // A valid new admin in the retained org can still reconcile this user's
-    // charge, without reauthorizing the deleted identity.
-    const replacement = bdd.user({ orgId: deleted.actor.orgId });
-    const usage = await billing.readUsageMembers(replacement, {
-      range: "24h",
-      tz: "UTC",
-    });
-    const chargedMember = usage.body.members.find((member) => {
-      return member.userId === deleted.actor.userId;
-    });
-    expect(chargedMember?.creditsCharged).toBeGreaterThan(0);
+    expect(
+      (await billing.readUsageRecord(deleted.actor)).body.totalCredits,
+    ).toBe(0);
   });
 
   it.each(["user", "organization"] as const)(
@@ -824,103 +806,6 @@ describe("X daily resource usage webhook", () => {
   });
 
   it.each(["user", "organization"] as const)(
-    "drains an admitted terminal-run upload before %s deletion removes its ledger",
-    async (subjectKind) => {
-      const configuredPricing = await pricing();
-      const deleted = await createRun();
-      const survivor = await createRun();
-      const sharedId = resourceId();
-      const freshId = resourceId();
-      const event = observation([sharedId]);
-      await runs.requestCancelRun(
-        deleted.actor,
-        deleted.runId,
-        [200],
-        configuredPricing.resolution,
-      );
-      await flushWaitUntilForTest();
-
-      const callbacks = createWebhookCallbackApi(context);
-      callbacks.configureClerkWebhookSecret();
-      context.mocks.s3.send.mockResolvedValue({});
-      context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-        { data: [] },
-      );
-      context.mocks.stripe.subscriptions.list.mockResolvedValue({
-        data: [],
-        has_more: false,
-      });
-      context.mocks.stripe.subscriptions.retrieve.mockRejectedValue({
-        code: "resource_missing",
-      });
-      const subjectId =
-        subjectKind === "user" ? deleted.actor.userId : deleted.actor.orgId;
-      if (!subjectId) {
-        throw new Error("Deletion fixture requires an organization");
-      }
-
-      // Infrastructure exception: pause only this owned resource INSERT, so
-      // the real HTTP upload holds its Run SHARE lock during Clerk deletion.
-      const gate = await holdXResourceClaimForTest(
-        {
-          utcDay: event.observedAt.slice(0, 10),
-          resourceType: "post",
-          resourceId: sharedId,
-        },
-        context.signal,
-      );
-      const completion = Promise.allSettled([gate.done]);
-      const upload = Promise.allSettled([
-        accept(submit(deleted, [event]), [200]),
-      ]);
-      onTestFinished(async () => {
-        gate.release();
-        await completion;
-        await upload;
-        await flushWaitUntilForTest();
-      });
-      await expect.poll(gate.blockedWaiterCount).toBe(1);
-
-      callbacks.verifyNextClerkWebhook({
-        type: subjectKind === "user" ? "user.deleted" : "organization.deleted",
-        data: { id: subjectId },
-      });
-      if (subjectKind === "user") {
-        const deletion = callbacks.requestClerkWebhook("{}", {}, [200]);
-        gate.release();
-        await deletion;
-      } else {
-        await callbacks.requestClerkWebhook("{}", {}, [200]);
-        await expect.poll(gate.blockedRunDeletionCount).toBe(1);
-        gate.release();
-      }
-      const [released] = await completion;
-      if (released.status === "rejected") {
-        throw released.reason;
-      }
-      const [uploaded] = await upload;
-      if (uploaded.status === "rejected") {
-        throw uploaded.reason;
-      }
-      await flushWaitUntilForTest();
-
-      const readback = await runs.requestReadRun(
-        deleted.actor,
-        deleted.runId,
-        subjectKind === "user" ? [401] : [404],
-      );
-      if (subjectKind === "user") {
-        expect(readback.body).toMatchObject({
-          error: { code: "UNAUTHORIZED" },
-        });
-      }
-      await accept(submit(deleted, [observation([freshId])]), [404]);
-      await accept(submit(survivor, [observation([sharedId, freshId])]), [200]);
-      await expect(chargedUnits(survivor, configuredPricing)).resolves.toBe(1);
-    },
-  );
-
-  it.each(["user", "organization"] as const)(
     "waits for compaction before %s Run deletion and then fences old uploads",
     async (subjectKind) => {
       const configuredPricing = await pricing();
@@ -968,68 +853,26 @@ describe("X daily resource usage webhook", () => {
         type: subjectKind === "user" ? "user.deleted" : "organization.deleted",
         data: { id: subjectId },
       });
-      if (subjectKind === "user") {
-        const deletion = callbacks.requestClerkWebhook("{}", {}, [200]);
-        gate.release();
-        await deletion;
-      } else {
-        await gate.withAcquisitionAttemptTracking(async () => {
-          await callbacks.requestClerkWebhook("{}", {}, [200]);
-        });
-        await gate.acquisitionAttempted;
-        await expect.poll(gate.waiterCount).toBeGreaterThanOrEqual(1);
-        // Organization cleanup must wait before owning the Run.
-        await runs.requestReadRun(deleted.actor, deleted.runId, [200]);
-        gate.release();
-      }
+      await gate.withAcquisitionAttemptTracking(async () => {
+        await callbacks.requestClerkWebhook("{}", {}, [200]);
+      });
+      // User cleanup can finish after the webhook responds. Wait for this
+      // cleanup's own lock attempt before observing its blocked participant.
+      await gate.acquisitionAttempted;
+      await expect.poll(gate.waiterCount).toBeGreaterThanOrEqual(1);
+
+      // Clerk must wait before owning the Run. Taking it first would make its
+      // SET NULL wait on the source row and block the compactor's FK check.
+      await runs.requestReadRun(deleted.actor, deleted.runId, [200]);
+      gate.release();
       const [completed] = await completion;
       if (completed.status === "rejected") {
         throw completed.reason;
       }
       await flushWaitUntilForTest();
 
-      const readback = await runs.requestReadRun(
-        deleted.actor,
-        deleted.runId,
-        subjectKind === "user" ? [401] : [404],
-      );
-      if (subjectKind === "user") {
-        expect(readback.body).toMatchObject({
-          error: { code: "UNAUTHORIZED" },
-        });
-      }
+      await runs.requestReadRun(deleted.actor, deleted.runId, [404]);
       await accept(submit(deleted, [observation([freshId])]), [404]);
-      await accept(submit(survivor, [observation([sharedId, freshId])]), [200]);
-      await expect(chargedUnits(survivor, configuredPricing)).resolves.toBe(1);
-    },
-  );
-
-  it.each(["user", "organization"] as const)(
-    "rejects a previously issued token after %s erasure admission closes",
-    async (subjectKind) => {
-      const configuredPricing = await pricing();
-      const closed = await createRun();
-      const survivor = await createRun();
-      const sharedId = resourceId();
-      const freshId = resourceId();
-      await accept(submit(closed, [observation([sharedId])]), [200]);
-      await expect(chargedUnits(closed, configuredPricing)).resolves.toBe(1);
-      const subjectId =
-        subjectKind === "user" ? closed.actor.userId : closed.actor.orgId;
-      if (!subjectId) {
-        throw new Error("Erasure fixture requires an organization");
-      }
-      // Infrastructure exception: erasure decision ingress is dormant and has
-      // no production API. Close only this test-owned subject, leaving the run
-      // present so the stale-token assertion specifically exercises admission.
-      const closure = await closeErasureSubjectFixture({
-        subjectKind,
-        subjectId,
-      });
-      onTestFinished(async () => {
-        await removeErasureSubjectsFixture([closure.jobId]);
-      });
-      await accept(submit(closed, [observation([freshId])]), [404]);
       await accept(submit(survivor, [observation([sharedId, freshId])]), [200]);
       await expect(chargedUnits(survivor, configuredPricing)).resolves.toBe(1);
     },

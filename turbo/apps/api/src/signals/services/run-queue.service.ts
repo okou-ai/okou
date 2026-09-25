@@ -3,8 +3,6 @@ import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/mode
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/schema/agent-session";
-import { agents } from "@okouai/db/schema/agent";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import {
   and,
@@ -52,18 +50,10 @@ import {
   isFreePlanForCreditAdmission,
 } from "./run-admission.service";
 import {
-  COMPUTE_CLOSURE_ERROR,
   neverStartedRunIds,
   releaseActiveAgentRuns,
   transitionAgentRunsToTerminal,
 } from "./agent-run-terminal-transition.service";
-import {
-  prepareComputeRunAdmission,
-  validateComputeRunAdmission,
-  stopClosedComputeCandidate,
-  withComputeOwnershipRetry,
-} from "./compute-erasure-admission.service";
-import { settle } from "../utils";
 
 const L = logger("RunQueue");
 
@@ -97,13 +87,7 @@ type QueuedRunnerJobPayload = NonNullable<
 
 interface QueueCandidate {
   readonly runId: string;
-  readonly agentId: string | null;
-  readonly resourceOwner: {
-    readonly userId: string;
-    readonly orgId: string;
-  } | null;
   readonly userId: string;
-  readonly runOwner: { readonly userId: string; readonly orgId: string } | null;
   readonly createdAt: Date;
   readonly encryptedParams: string | null;
   readonly runStatus: string | null;
@@ -124,7 +108,6 @@ interface PromoteQueuedCandidateArgs {
   readonly orgId: string;
   readonly row: QueueCandidate;
   readonly payload: QueuedRunnerJobPayload | null;
-  readonly payloadFailure?: { readonly error: unknown };
 }
 
 interface PromotedRunnerJob {
@@ -304,10 +287,7 @@ async function loadDrainCandidates(
   return await db
     .select({
       runId: agentRunQueue.runId,
-      agentId: agentSessions.agentId,
-      resourceOwner: { userId: agents.owner, orgId: agents.orgId },
       userId: agentRunQueue.userId,
-      runOwner: { userId: agentRuns.userId, orgId: agentRuns.orgId },
       createdAt: agentRunQueue.createdAt,
       encryptedParams: agentRunQueue.encryptedParams,
       runStatus: agentRuns.status,
@@ -317,12 +297,9 @@ async function loadDrainCandidates(
     })
     .from(agentRunQueue)
     .leftJoin(agentRuns, eq(agentRunQueue.runId, agentRuns.id))
-    .leftJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
-    .leftJoin(agents, eq(agents.id, agentSessions.agentId))
     .where(
       and(
         eq(agentRunQueue.orgId, orgId),
-        sql`${agentRuns.error} IS DISTINCT FROM ${COMPUTE_CLOSURE_ERROR}`,
         sql`${agentRuns.triggerSource} IS DISTINCT FROM 'goal'`,
       ),
     )
@@ -503,26 +480,6 @@ async function promoteQueuedCandidateInTransaction(
   args: PromoteQueuedCandidateArgs,
   timing: ApiDispatchTimingCollector,
 ): Promise<{ readonly result: PromotionResult; readonly lockHeldAt: number }> {
-  // A mismatch in the single discovery snapshot is persisted corruption, not
-  // a resource disappearing while admission waits. Preserve its existing error.
-  if (
-    args.row.runOwner &&
-    (args.row.runOwner.userId !== args.row.userId ||
-      args.row.runOwner.orgId !== args.orgId)
-  ) {
-    throw new Error(
-      `Queued run "${args.row.runId}" does not match its queue owner`,
-    );
-  }
-  const admission = await prepareComputeRunAdmission(tx, args.row.runId, {
-    userId: args.row.userId,
-    orgId: args.orgId,
-    agentId: args.row.agentId,
-    resourceOwner: args.row.resourceOwner ?? undefined,
-  });
-  if (!admission) {
-    return { result: { status: "lost" }, lockHeldAt: now() };
-  }
   const lockHeldAt = await acquirePromotionAdmissionLock(
     tx,
     args.orgId,
@@ -531,13 +488,6 @@ async function promoteQueuedCandidateInTransaction(
   const complete = (result: PromotionResult) => {
     return { result, lockHeldAt };
   };
-  if (!(await validateComputeRunAdmission(tx, admission))) {
-    return complete({ status: "lost" });
-  }
-  if (admission.closed) {
-    await stopClosedComputeCandidate(tx, admission);
-    return complete({ status: "lost" });
-  }
   // One observation instant for this locked admission.
   const admissionAt = nowDate();
   const concurrency = await effectiveOrgConcurrencyState(
@@ -588,9 +538,6 @@ async function promoteQueuedCandidateInTransaction(
     return complete({ status: "lost" });
   }
   if (args.payload === null) {
-    if (args.payloadFailure) {
-      throw args.payloadFailure.error;
-    }
     throw new Error(
       `Queued run "${args.row.runId}" is missing its runner job payload`,
     );
@@ -624,10 +571,8 @@ async function promoteQueuedCandidate(
 ): Promise<PromoteQueuedCandidateResult> {
   // Promotion may outlive the create-run collector, so buffer timing until commit.
   const timing = new ApiDispatchTimingCollector();
-  const committed = await withComputeOwnershipRetry(() => {
-    return db.transaction(async (tx) => {
-      return await promoteQueuedCandidateInTransaction(tx, args, timing);
-    });
+  const committed = await db.transaction(async (tx) => {
+    return await promoteQueuedCandidateInTransaction(tx, args, timing);
   });
   return finalizePromoteQueuedCandidate(timing, committed);
 }
@@ -655,7 +600,6 @@ async function promoteQueuedCandidateWithSideEffects(
     readonly orgId: string;
     readonly row: QueueCandidate;
     readonly payload: QueuedRunnerJobPayload | null;
-    readonly payloadFailure?: { readonly error: unknown };
   },
 ): Promise<PromoteQueuedCandidateSideEffectResult> {
   const result = await promoteQueuedCandidate(db, args);
@@ -736,18 +680,15 @@ export const promoteNextQueuedRun$ = command(
       );
     });
     for (const row of candidates) {
-      const payloadResult =
+      const payload =
         row.runStatus === "queued"
-          ? await settle(decryptQueuedRunnerJobPayload(row.encryptedParams))
-          : { ok: true as const, value: null };
+          ? await decryptQueuedRunnerJobPayload(row.encryptedParams)
+          : null;
       signal.throwIfAborted();
       const result = await promoteQueuedCandidateWithSideEffects(writeDb, {
         orgId: args.orgId,
         row,
-        payload: payloadResult.ok ? payloadResult.value : null,
-        ...(payloadResult.ok
-          ? {}
-          : { payloadFailure: { error: payloadResult.error } }),
+        payload,
       });
       // Promotion is durable now. Observe request cancellation for diagnostics,
       // but let the commit-owned activation finish independently.
@@ -849,7 +790,6 @@ export const cleanupExpiredQueueEntries$ = command(
             lt(agentRunQueue.expiresAt, currentTime),
             runIds === null ? undefined : inArray(agentRunQueue.runId, runIds),
             or(isNull(agentRuns.id), ne(agentRuns.status, "queued")),
-            sql`${agentRuns.error} IS DISTINCT FROM ${COMPUTE_CLOSURE_ERROR}`,
           ),
         );
 

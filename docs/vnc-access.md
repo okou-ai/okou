@@ -298,8 +298,8 @@ and rejoins before cleanup removes the configuration, it remains the same
 owner's data and is accessible again. Each saved connection retains its own
 identity across membership changes.
 
-Mutation transactions use the existing B1 erasure admission, shared cleanup-scope
-locks and an exclusive owner lock. Cleanup takes an exclusive scope lock and
+Mutation transactions use shared cleanup-scope locks and an exclusive owner
+lock. Cleanup takes an exclusive scope lock and
 deletes hosts before credentials. These locks serialize overlapping transactions
 without retaining a VNC authority ledger or creation receipts. They do not cancel
 a request that passed membership admission before cleanup and only enters its
@@ -422,7 +422,7 @@ two-hour maximum lifetime. A merge, green CI or preview success does not by
 itself prove that deployment-and-drain gate.
 After new-profile rows are permitted, rolling back to a pre-reader API is unsafe;
 disabling the feature does not erase saved credentials. Any later rollback below
-that floor requires a separately verified disablement, drain and VNC erasure.
+that floor requires a separately verified disablement, drain and VNC data deletion.
 Owner-facing X509Plain support does not activate the default-off feature. Any
 activation still requires separately reviewed deployment and acceptance
 evidence.

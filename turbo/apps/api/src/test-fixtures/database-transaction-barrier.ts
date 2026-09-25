@@ -1,19 +1,9 @@
-import { randomUUID } from "node:crypto";
-
-import {
-  projectErasureDecision,
-  type ErasureDecision,
-  type ErasureSubject,
-} from "@okouai/db/operations/account-erasure";
-import { accountErasureJobs } from "@okouai/db/schema/account-erasure";
-import { agents } from "@okouai/db/schema/agent";
-import { count, eq, inArray, sql } from "drizzle-orm";
+import { count, sql } from "drizzle-orm";
 import { Client } from "pg";
 import { z } from "zod";
 
 import { closeDbPool, db } from "../lib/db";
 import { executeRawRows } from "../lib/db-raw-rows";
-import { nowDate } from "../lib/time";
 import {
   acknowledgeDetachedForTest,
   createDeferredPromise,
@@ -38,89 +28,6 @@ async function blockedWaiterCount(holderPid: number): Promise<number> {
   return rows[0]?.waiterCount ?? 0;
 }
 
-function erasureDecision(subject: ErasureSubject): ErasureDecision {
-  return {
-    subjectKind: subject.subjectKind,
-    subjectId: subject.subjectId,
-    generation: 1,
-    authorityId: randomUUID(),
-    decisionRef: randomUUID(),
-    decisionSequence: 1n,
-    confirmationRef: randomUUID(),
-    previousDecisionRef: null,
-    dispositionVersion: 1,
-    requestedAt: nowDate(),
-    deadlineAt: new Date("2099-01-01T00:00:00Z"),
-  };
-}
-
-/**
- * Infrastructure exception: B1 registers no production closure ingress, so a
- * closed subject cannot be constructed through any API. This projects one
- * dormant decision for a subject this test owns. It activates no worker,
- * collector or authority, and removes nothing.
- */
-export async function closeErasureSubjectFixture(
-  subject: ErasureSubject,
-): Promise<{ readonly jobId: string }> {
-  const job = await projectErasureDecision(db(), erasureDecision(subject));
-  return { jobId: job.id };
-}
-
-/** Removes only the dormant jobs a test created, so later suites see no
- * closure. This is fixture teardown, not an erasure or recovery operation.
- */
-export async function removeErasureSubjectsFixture(
-  jobIds: readonly string[],
-): Promise<void> {
-  if (jobIds.length === 0) {
-    return;
-  }
-  await db()
-    .delete(accountErasureJobs)
-    .where(inArray(accountErasureJobs.id, [...jobIds]));
-}
-
-/** Whether one exact test-owned erasure job still exists. */
-/** Reassigns one Agent's owner, the change a future ownership transfer would
- * persist. No production writer updates this column today, and the unique
- * `(id, org_id, owner)` key makes it the key update a content writer's KEY
- * SHARE is meant to conflict with.
- */
-export async function transferAgentOwnerFixture(args: {
-  readonly agentId: string;
-  readonly owner: string;
-}): Promise<void> {
-  const updated = await db()
-    .update(agents)
-    .set({ owner: args.owner })
-    .where(eq(agents.id, args.agentId))
-    .returning({ id: agents.id });
-  if (updated.length !== 1) {
-    throw new Error("Expected one Agent owner to transfer");
-  }
-}
-
-/** Reassigns one Agent's organization, the other half of the same unique
- * `(id, org_id, owner)` key. No production writer updates this column today,
- * and it is the canonical parent a read-cursor publication targets, so moving
- * it is the change a writer's retained KEY SHARE must turn into a reselection
- * instead of a stale-organization notification.
- */
-export async function transferAgentOrganizationFixture(args: {
-  readonly agentId: string;
-  readonly orgId: string;
-}): Promise<void> {
-  const updated = await db()
-    .update(agents)
-    .set({ orgId: args.orgId })
-    .where(eq(agents.id, args.agentId))
-    .returning({ id: agents.id });
-  if (updated.length !== 1) {
-    throw new Error("Expected one Agent organization to transfer");
-  }
-}
-
 export function barrierQueryText(queryArgs: unknown[]): string {
   const parsed = z
     .union([z.string(), z.object({ text: z.string() })])
@@ -136,8 +43,8 @@ export function barrierQueryText(queryArgs: unknown[]): string {
 /**
  * Whether a statement binds one exact value.
  *
- * Subject admission binds every sorted lock key as one `text[]` parameter, so a
- * bound array is inspected as well as a scalar bind. Both forms are real driver
+ * A statement may bind a set of values as one array parameter, so a bound
+ * array is inspected as well as a scalar bind. Both forms are real driver
  * parameters; neither is matched against statement text.
  */
 export function barrierQueryBinds(
@@ -153,75 +60,6 @@ export function barrierQueryBinds(
   });
 }
 
-/** The ordered statement kinds the fence itself contributes to a transaction.
- *
- * Every fenced route used to restate this prefix in its own fixture, which is
- * why one change to admission broke every suite at once. The prefix lives here
- * instead: a route fixture contributes only the statements that are actually
- * its own.
- *
- * A writer is admitted by `assertErasureSubjectWritable`: one deadline
- * statement, one statement that locks every subject key, then the separate
- * closure lookup. A reader takes no advisory lock at all, so it contributes the
- * deadline statement and the closure lookup only. A reader whose own statement
- * carries `erasureSubjectOpenCondition` contributes no closure lookup either,
- * which is `"folded"`.
- */
-export type ErasureFenceAdmission = "write" | "read" | "folded";
-
-export const ERASURE_FENCE_DEADLINES = "FENCE DEADLINES";
-export const ERASURE_FENCE_SUBJECT_LOCKS = "B1 SUBJECT LOCKS";
-export const ERASURE_FENCE_CLOSED_LOOKUP = "B1 CLOSED LOOKUP";
-
-/** The exact ordered kinds {@link classifyErasureFenceStatement} yields for one
- * admission mode, so a route suite asserts the shared prefix by reference. */
-export function erasureFenceStatementKinds(
-  admission: ErasureFenceAdmission,
-): readonly string[] {
-  if (admission === "write") {
-    return [
-      ERASURE_FENCE_DEADLINES,
-      ERASURE_FENCE_SUBJECT_LOCKS,
-      ERASURE_FENCE_CLOSED_LOOKUP,
-    ];
-  }
-  if (admission === "read") {
-    return [ERASURE_FENCE_DEADLINES, ERASURE_FENCE_CLOSED_LOOKUP];
-  }
-  return [ERASURE_FENCE_DEADLINES];
-}
-
-/** The same shared prefix as exact statement patterns, for a suite that pins
- * complete SQL shapes rather than classified kinds. Both views are generated
- * from one place so admission cannot drift away from what suites assert. */
-/** Classifies the transaction controls and fence statements every fenced route
- * shares. Returns null for a statement the route itself owns, which its own
- * classifier must name. */
-export function classifyErasureFenceStatement(
-  statement: string,
-): string | null {
-  if (statement.startsWith("begin") || statement.startsWith("start ")) {
-    return "BEGIN READ COMMITTED";
-  }
-  if (statement === "commit") {
-    return "COMMIT";
-  }
-  if (statement === "rollback") {
-    return "ROLLBACK";
-  }
-  if (statement.includes("set_config('lock_timeout'")) {
-    return ERASURE_FENCE_DEADLINES;
-  }
-  if (statement.includes("erasure_isolation_probe")) {
-    return ERASURE_FENCE_SUBJECT_LOCKS;
-  }
-  if (statement.includes('from "account_erasure_jobs"')) {
-    return ERASURE_FENCE_CLOSED_LOOKUP;
-  }
-  return null;
-}
-
-/** The advisory lock key admission derives from one subject. */
 /**
  * The statements the currently selected transaction has already issued, in
  * order. A thread id alone cannot identify a transaction when several of them
@@ -229,7 +67,7 @@ export function classifyErasureFenceStatement(
  * for example a transaction that has already taken a `FOR KEY SHARE` lock is
  * the writer, not the read-only gate that precedes it.
  */
-export interface SelectedTransaction {
+interface SelectedTransaction {
   readonly statements: readonly string[];
 }
 
@@ -390,7 +228,7 @@ interface DatabaseTransactionBarrierFixtureArgs<T> {
 
 /**
  * Infrastructure exception: no API can suspend a real transaction between its
- * statements, and a fenced writer's own transaction is the only place its
+ * statements, and a writer's own transaction is the only place its
  * statement ordering and retained barriers can be observed from another
  * session. Every original query still executes unchanged and in order; only the
  * caller's `select` predicate identifies one backend and statement. Nothing is
@@ -417,7 +255,7 @@ interface DatabaseTransactionBarrierFixtureArgs<T> {
  * A candidate that reaches `COMMIT` or `ROLLBACK` without ever satisfying
  * `stopAt` was not the transaction the caller meant: the latch is released and
  * the next candidate is considered. Several transactions legitimately read the
- * same row — an admission gate commits before the writer it precedes — so
+ * same row — a read-only gate commits before the writer it precedes — so
  * latching the first one permanently either pauses the wrong transaction or
  * waits forever for a stop it will never reach.
  */
@@ -551,32 +389,4 @@ export async function withDatabaseTransactionBarrierFixture<T>(
     throw closed.error;
   }
   return result.value;
-}
-
-/**
- * Pauses a real first-closure transaction at COMMIT after its job INSERT and
- * exclusive subject advisory lock. B1 has no production closure ingress, so a
- * route test cannot otherwise prove that an ordinary writer waits, then starts
- * a new READ COMMITTED closure lookup after the decision becomes visible.
- */
-export async function withErasureSubjectClosureCommitBarrierFixture<T>(
-  work: (barrier: TransactionBarrier) => Promise<T>,
-  signal: AbortSignal,
-): Promise<T> {
-  return await withDatabaseTransactionBarrierFixture(
-    {
-      select: (queryArgs) => {
-        const text = barrierQueryText(queryArgs);
-        return (
-          text.startsWith("insert into") &&
-          text.includes('"account_erasure_jobs"')
-        );
-      },
-      stopAt: (queryArgs) => {
-        return barrierQueryText(queryArgs) === "commit";
-      },
-      work,
-    },
-    signal,
-  );
 }

@@ -143,7 +143,7 @@ succeed on retry, so the relay moves it out of the outbox into a dead-letter
 record and continues with later events; one member's message never stops
 delivery for other guilds. Each dead-letter record holds only the event type,
 event ID, reason (`api-rejected-<status>` or `exceeds-durable-record-limit`) and
-byte size: Durable Object storage is outside account erasure, so message
+byte size: Durable Object storage is outside account deletion, so message
 content is never retained. The 100 most recently set-aside records are kept,
 evicting the oldest first; `/dead-letters` lists them and `/health` reports the
 cumulative `deadLettered` count. Because dead-lettered

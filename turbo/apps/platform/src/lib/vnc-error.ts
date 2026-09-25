@@ -83,11 +83,6 @@ export function localizedVncError(code: string): string | undefined {
         return $.vnc.errors.revisionExhausted;
       });
     }
-    case VNC_ERROR_CODES.OWNER_CHANGED: {
-      return i18n.t(($) => {
-        return $.vnc.errors.ownerChanged;
-      });
-    }
     default: {
       return undefined;
     }

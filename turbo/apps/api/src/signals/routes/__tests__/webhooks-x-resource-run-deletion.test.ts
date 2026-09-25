@@ -43,10 +43,11 @@ describe("X resource account cleanup and ordinary Run deletion", () => {
     const orgId = requireOrgId(owner);
     await fixture.bdd.updateAgent(owner, agentId, { visibility: "public" });
     // The deleted user invokes another owner's Agent. Clerk retains that
-    // Agent and its Sessions, isolating the direct Run/ledger lock order.
+    // Agent, isolating the direct Run/ledger lock order.
     const actor = fixture.bdd.user({ orgId });
 
-    const deletedAgent = await fixture.bdd.createAgent(actor, {
+    // User deletion retains the deleted user's own Agent too.
+    const retainedAgent = await fixture.bdd.createAgent(actor, {
       displayName: "Account cleanup commit evidence",
       visibility: "private",
     });
@@ -119,8 +120,6 @@ describe("X resource account cleanup and ordinary Run deletion", () => {
     });
 
     // The sweep owns its Run while its conversation deletion is blocked.
-    // User deletion first captures erasure work, which may itself wait for
-    // the sweep before it can reach the later ledger cleanup phase.
     const gate = await holdRunConversationDeletionForTest(
       run.runId,
       context.signal,
@@ -168,29 +167,9 @@ describe("X resource account cleanup and ordinary Run deletion", () => {
       failed: 0,
     });
     await flushWaitUntilForTest();
-    const deniedRun = await fixture.api.requestReadRun(actor, run.runId, [401]);
-    expect(deniedRun.body).toMatchObject({
-      error: { code: "UNAUTHORIZED" },
-    });
-    // The private Agent remains pending (covered by the held-job regression),
-    // but the deleted user cannot inspect it with their old session.
-    const deniedAgent = await fixture.bdd.requestReadAgent(
-      actor,
-      deletedAgent.agentId,
-      [401],
-    );
-    expect(deniedAgent.body).toMatchObject({
-      error: { code: "UNAUTHORIZED" },
-    });
+    await fixture.api.requestReadRun(actor, run.runId, [404]);
+    await fixture.bdd.requestReadAgent(actor, retainedAgent.agentId, [200]);
     await fixture.bdd.requestReadAgent(owner, agentId, [200]);
-    // The unaffected org admin can still see the deleted user's charged
-    // usage; independent threadless cleanup did not erase that ledger.
-    const retainedUsage = await billing.readUsageMembers(owner, {
-      range: "24h",
-      tz: "UTC",
-    });
-    expect(retainedUsage.body.members).toContainEqual(
-      expect.objectContaining({ userId: actor.userId, creditsCharged: 1 }),
-    );
+    expect((await billing.readUsageRecord(actor)).body.totalCredits).toBe(0);
   });
 });

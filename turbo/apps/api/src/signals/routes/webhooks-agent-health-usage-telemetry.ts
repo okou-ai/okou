@@ -53,7 +53,6 @@ import {
   XResourceUsageError,
 } from "../services/x-resource-usage.service";
 import {
-  hasHeldClerkUserDeletion,
   lockXResourceAdmission,
   setXResourceTransactionTimeouts,
 } from "../services/x-resource-usage-lifecycle";
@@ -554,11 +553,8 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
       if (usageEventValues.length > 0) {
         await db.transaction(async (tx) => {
           await setXResourceTransactionTimeouts(tx);
-          // Count-event retries share the account-cleanup fence with resource batches.
+          // Count-event retries share retention admission with resource batches.
           await lockXResourceAdmission(tx, "shared");
-          if (await hasHeldClerkUserDeletion(tx, auth.userId)) {
-            throw new XResourceUsageError(404, "Run not found");
-          }
           await tx
             .insert(usageEvent)
             .values(usageEventValues)
@@ -570,12 +566,6 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
   if (!insertResult.ok) {
-    if (
-      insertResult.error instanceof XResourceUsageError &&
-      insertResult.error.status === 404
-    ) {
-      return notFound(insertResult.error.message);
-    }
     if (isForeignKeyViolation(insertResult.error)) {
       L.error("Run not found for usage event, dropping", {
         ...usageUnderbillingFields("run_not_found", "confirmed"),

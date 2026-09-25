@@ -26,7 +26,6 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { isUniqueViolation } from "../../lib/pg-errors";
-import { testOverride } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { onRejection, safeSync, settle } from "../utils";
@@ -45,30 +44,9 @@ import {
 } from "./workflow-automation.service";
 import type { WorkflowMember } from "./workflow-data.service";
 import { calculateNextRun } from "./time-automation";
-import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
 import { invalidatePiStableContext } from "./pi-stable-context-generation.service";
 
 const STALE_INSTALLATION_AGE_MS = 5 * 60 * 1000;
-
-interface OfficialWorkflowInstallationHooks {
-  readonly beforeInsertAdmission?: () => Promise<void>;
-  readonly beforeActivationAdmission?: () => Promise<void>;
-}
-
-const officialWorkflowInstallationHooks =
-  testOverride<OfficialWorkflowInstallationHooks>(() => {
-    return {};
-  });
-
-export function setOfficialWorkflowInstallationHooksForTest(
-  hooks: OfficialWorkflowInstallationHooks,
-): void {
-  officialWorkflowInstallationHooks.set(hooks);
-}
-
-export function clearOfficialWorkflowInstallationHooksForTest(): void {
-  officialWorkflowInstallationHooks.clear();
-}
 
 type OfficialWorkflowFailure =
   | { readonly kind: "bad-request"; readonly message: string }
@@ -840,44 +818,26 @@ async function insertInstallingWorkflow(
 ): Promise<
   { readonly kind: "ok"; readonly workflowId: string } | OfficialWorkflowFailure
 > {
-  await officialWorkflowInstallationHooks.get().beforeInsertAdmission?.();
   const inserted = await settle(
-    db.transaction(async (tx) => {
-      if (
-        !(await admitPiStableContextSubjects(tx, [
-          {
-            subjectKind: "organization",
-            subjectId: args.installation.orgId,
-          },
-          {
-            subjectKind: "user",
-            subjectId: args.installation.member.userId,
-          },
-        ]))
-      ) {
-        return { kind: "erased" as const };
-      }
-      const [workflow] = await tx
-        .insert(workflows)
-        .values({
-          orgId: args.installation.orgId,
-          agentId: args.agentId,
-          name: args.definition.name,
-          visibility: "private",
-          instruction: null,
-          ownerUserId: args.installation.member.userId,
-          displayName: null,
-          description: null,
-          officialDefinitionName: args.definition.name,
-          officialInstallationState: "installing",
-          createdBy: args.installation.member.userId,
-          updatedBy: args.installation.member.userId,
-          createdAt: args.currentTime,
-          updatedAt: args.currentTime,
-        })
-        .returning({ id: workflows.id });
-      return { kind: "inserted" as const, workflow };
-    }),
+    db
+      .insert(workflows)
+      .values({
+        orgId: args.installation.orgId,
+        agentId: args.agentId,
+        name: args.definition.name,
+        visibility: "private",
+        instruction: null,
+        ownerUserId: args.installation.member.userId,
+        displayName: null,
+        description: null,
+        officialDefinitionName: args.definition.name,
+        officialInstallationState: "installing",
+        createdBy: args.installation.member.userId,
+        updatedBy: args.installation.member.userId,
+        createdAt: args.currentTime,
+        updatedAt: args.currentTime,
+      })
+      .returning({ id: workflows.id }),
     signal,
   );
   if (!inserted.ok) {
@@ -889,16 +849,11 @@ async function insertInstallingWorkflow(
     }
     throw inserted.error;
   }
-  if (inserted.value.kind === "erased") {
-    return {
-      kind: "not-found",
-      message: "Official Workflow installation owner is unavailable",
-    };
-  }
-  if (!inserted.value.workflow) {
+  const workflow = inserted.value[0];
+  if (!workflow) {
     throw new Error("Failed to create Official Workflow installation");
   }
-  return { kind: "ok", workflowId: inserted.value.workflow.id };
+  return { kind: "ok", workflowId: workflow.id };
 }
 
 function automationFailure(
@@ -958,22 +913,7 @@ async function completeInstallation(
       return automationFailure(automation);
     }
   }
-  await officialWorkflowInstallationHooks.get().beforeActivationAdmission?.();
   const activation = await args.db.transaction(async (tx) => {
-    if (
-      !(await admitPiStableContextSubjects(tx, [
-        {
-          subjectKind: "organization",
-          subjectId: args.installation.orgId,
-        },
-        {
-          subjectKind: "user",
-          subjectId: args.installation.member.userId,
-        },
-      ]))
-    ) {
-      return "erased" as const;
-    }
     await tx.execute(
       sql`SELECT pg_advisory_xact_lock_shared(hashtext(${OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK}))`,
     );
@@ -1027,13 +967,6 @@ async function completeInstallation(
       message: "Official Workflow changed during installation; retry",
     };
   }
-  if (activation === "erased") {
-    await args.cleanup();
-    return {
-      kind: "not-found",
-      message: "Official Workflow installation owner is unavailable",
-    };
-  }
   if (activation === "lost") {
     await args.cleanup();
     return {
@@ -1061,7 +994,6 @@ export const installOfficialWorkflow$ = command(
           allowOfficialInstallationDeletion: true,
           requiredOfficialInstallationState: "installing",
           serializeOfficialLifecycle: true,
-          allowClosedOwnerCleanupWithoutInvalidation: true,
         },
         cleanupSignal,
       );

@@ -17,6 +17,7 @@ import {
   type BrowserUserActionPayload,
 } from "@okouai/db/jsonb-contracts/browser-user-action";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import {
   browserSessionInstances,
@@ -53,11 +54,6 @@ import {
   preflightBrowserUseUserAction,
   validateBrowserUseUserAction,
 } from "./browser-use.service";
-import {
-  type ChatThreadContentIdentity,
-  withChatThreadContentRead,
-  withChatThreadContentWrite,
-} from "./chat-thread-content-erasure-admission.service";
 
 const REQUEST_TOKEN_PREFIX = "vm0_browser_user_action";
 const APPLY_STUCK_AFTER_MS = 60_000;
@@ -228,17 +224,6 @@ function publicRequest(
       };
     }),
   };
-}
-
-function authorized(
-  row: RequestRow,
-  identity: ChatThreadContentIdentity,
-): boolean {
-  return (
-    identity.userId === row.userId &&
-    identity.agentId === row.agentId &&
-    identity.orgId === row.orgId
-  );
 }
 
 async function loadOwnedRequest(
@@ -811,94 +796,80 @@ async function persistBrowserUserAction(
     readonly requestToken: string;
     readonly payload: BrowserUserActionPayload;
   },
-  signal: AbortSignal,
 ): Promise<RequestRow | null> {
   const { args, payload, prepared, requestToken } = input;
-  const admitted = await withChatThreadContentWrite(
-    db,
-    {
+  return await db.transaction(async (tx): Promise<RequestRow | null> => {
+    const [currentRun] = await tx
+      .select({ agentId: chatThreads.agentId })
+      .from(agentRuns)
+      .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
+      .where(
+        and(
+          eq(agentRuns.id, args.runId),
+          eq(agentRuns.orgId, args.orgId),
+          eq(agentRuns.userId, args.userId),
+          eq(agentRuns.chatThreadId, prepared.chatThreadId),
+          inArray(agentRuns.status, ["pending", "running"]),
+          eq(chatThreads.userId, args.userId),
+        ),
+      )
+      .limit(1)
+      .for("share", { of: agentRuns });
+    if (!currentRun?.agentId) {
+      return null;
+    }
+    const currentLive = await loadLiveBrowser(tx as Db, {
       chatThreadId: prepared.chatThreadId,
-      authorize: (identity) => {
-        return (
-          identity.userId === args.userId &&
-          identity.agentId !== null &&
-          identity.orgId === args.orgId
-        );
-      },
-    },
-    async (tx, identity): Promise<RequestRow | null> => {
-      const [currentRun] = await tx
-        .select({ id: agentRuns.id })
-        .from(agentRuns)
-        .where(
-          and(
-            eq(agentRuns.id, args.runId),
-            eq(agentRuns.orgId, args.orgId),
-            eq(agentRuns.userId, args.userId),
-            eq(agentRuns.chatThreadId, prepared.chatThreadId),
-            inArray(agentRuns.status, ["pending", "running"]),
+      orgId: args.orgId,
+      userId: args.userId,
+    });
+    if (
+      currentLive?.runId !== args.runId ||
+      currentLive.providerSessionId !== prepared.providerSessionId
+    ) {
+      return null;
+    }
+    const now = nowDate();
+    const [leased] = await tx
+      .update(browserSessionInstances)
+      .set({
+        lastTouchedAt: now,
+        idleExpiresAt: new Date(now.getTime() + IDLE_LEASE_MS),
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(
+            browserSessionInstances.providerSessionId,
+            prepared.providerSessionId,
           ),
-        )
-        .limit(1)
-        .for("share");
-      if (!currentRun || !identity.agentId) {
-        return null;
-      }
-      const currentLive = await loadLiveBrowser(tx as Db, {
-        chatThreadId: prepared.chatThreadId,
+          eq(browserSessionInstances.chatThreadId, prepared.chatThreadId),
+          eq(browserSessionInstances.status, "active"),
+          gt(browserSessionInstances.timeoutAt, now),
+          gt(browserSessionInstances.idleExpiresAt, now),
+        ),
+      )
+      .returning({
+        providerSessionId: browserSessionInstances.providerSessionId,
+      });
+    if (!leased) {
+      return null;
+    }
+    const [created] = await tx
+      .insert(browserUserActionRequests)
+      .values({
+        requestTokenHash: hash(requestToken),
         orgId: args.orgId,
         userId: args.userId,
-      });
-      if (
-        currentLive?.runId !== args.runId ||
-        currentLive.providerSessionId !== prepared.providerSessionId
-      ) {
-        return null;
-      }
-      const now = nowDate();
-      const [leased] = await tx
-        .update(browserSessionInstances)
-        .set({
-          lastTouchedAt: now,
-          idleExpiresAt: new Date(now.getTime() + IDLE_LEASE_MS),
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(
-              browserSessionInstances.providerSessionId,
-              prepared.providerSessionId,
-            ),
-            eq(browserSessionInstances.chatThreadId, prepared.chatThreadId),
-            eq(browserSessionInstances.status, "active"),
-            gt(browserSessionInstances.timeoutAt, now),
-            gt(browserSessionInstances.idleExpiresAt, now),
-          ),
-        )
-        .returning({
-          providerSessionId: browserSessionInstances.providerSessionId,
-        });
-      if (!leased) {
-        return null;
-      }
-      const [created] = await tx
-        .insert(browserUserActionRequests)
-        .values({
-          requestTokenHash: hash(requestToken),
-          orgId: args.orgId,
-          userId: args.userId,
-          agentId: identity.agentId,
-          chatThreadId: prepared.chatThreadId,
-          status: "pending",
-          providerSessionId: prepared.providerSessionId,
-          payload,
-        })
-        .returning();
-      return created ?? null;
-    },
-    signal,
-  );
-  return admitted.outcome === "written" ? admitted.value : null;
+        agentId: currentRun.agentId,
+        chatThreadId: prepared.chatThreadId,
+        status: "pending",
+        providerSessionId: prepared.providerSessionId,
+        payload,
+      })
+      .returning();
+    return created ?? null;
+  });
 }
 
 export const createBrowserUserAction$ = command(
@@ -933,16 +904,13 @@ export const createBrowserUserAction$ = command(
       prepared.value.validation,
       callbackIds,
     );
-    const created = await persistBrowserUserAction(
-      db,
-      {
-        args,
-        prepared: prepared.value,
-        requestToken,
-        payload,
-      },
-      signal,
-    );
+    const created = await persistBrowserUserAction(db, {
+      args,
+      prepared: prepared.value,
+      requestToken,
+      payload,
+    });
+    signal.throwIfAborted();
     if (!created) {
       return notFound();
     }
@@ -971,7 +939,6 @@ export const createBrowserUserAction$ = command(
 async function normalizeStuckApplying(
   db: Db,
   row: RequestRow,
-  signal: AbortSignal,
 ): Promise<RequestRow | null> {
   if (
     row.status !== "applying" ||
@@ -980,43 +947,25 @@ async function normalizeStuckApplying(
   ) {
     return row;
   }
-  const admitted = await withChatThreadContentWrite(
-    db,
-    {
-      chatThreadId: row.chatThreadId,
-      authorize: (identity) => {
-        return authorized(row, identity);
-      },
-      threadLock: "update",
-    },
-    async (tx) => {
-      const operationDb = tx as Db;
-      const now = nowDate();
-      const [updated] = await operationDb
-        .update(browserUserActionRequests)
-        .set({
-          status: "uncertain",
-          completedAt: now,
-        })
-        .where(
-          and(
-            eq(
-              browserUserActionRequests.requestTokenHash,
-              row.requestTokenHash,
-            ),
-            eq(browserUserActionRequests.status, "applying"),
-            lt(
-              browserUserActionRequests.applyStartedAt,
-              new Date(now.getTime() - APPLY_STUCK_AFTER_MS),
-            ),
-          ),
-        )
-        .returning();
-      return updated ?? (await loadExactRequest(operationDb, row));
-    },
-    signal,
-  );
-  return admitted.outcome === "written" ? admitted.value : null;
+  const now = nowDate();
+  const [updated] = await db
+    .update(browserUserActionRequests)
+    .set({
+      status: "uncertain",
+      completedAt: now,
+    })
+    .where(
+      and(
+        eq(browserUserActionRequests.requestTokenHash, row.requestTokenHash),
+        eq(browserUserActionRequests.status, "applying"),
+        lt(
+          browserUserActionRequests.applyStartedAt,
+          new Date(now.getTime() - APPLY_STUCK_AFTER_MS),
+        ),
+      ),
+    )
+    .returning();
+  return updated ?? (await loadExactRequest(db, row));
 }
 
 export const readBrowserUserAction$ = command(
@@ -1035,53 +984,34 @@ export const readBrowserUserAction$ = command(
     if (!row) {
       return notFound();
     }
-    row = await normalizeStuckApplying(db, row, signal);
+    row = await normalizeStuckApplying(db, row);
+    signal.throwIfAborted();
     if (!row) {
       return notFound();
     }
-    const readRow = row;
-    const admitted = await withChatThreadContentRead(
-      db,
-      {
-        chatThreadId: readRow.chatThreadId,
-        authorize: (identity) => {
-          return authorized(readRow, identity);
-        },
-      },
-      async (tx) => {
-        const current = await loadExactRequest(tx as Db, readRow);
-        if (!current) {
-          return null;
-        }
-        const payload = decodePayload(current);
-        const callbackId =
-          current.status === "succeeded"
-            ? payload?.callbackIds.success.clientEventId
-            : current.status === "cancelled"
-              ? payload?.callbackIds.cancellation.clientEventId
-              : undefined;
-        if (!callbackId) {
-          return { row: current, callbackDelivered: false };
-        }
-        const [callbackEvent] = await tx
-          .select({ id: chatEvents.id })
-          .from(chatEvents)
-          .where(
-            and(
-              eq(chatEvents.id, callbackId),
-              eq(chatEvents.chatThreadId, current.chatThreadId),
-              eq(chatEvents.eventType, "input.prompt"),
-            ),
-          )
-          .limit(1);
-        return { row: current, callbackDelivered: callbackEvent !== undefined };
-      },
-      signal,
-    );
-    if (admitted.outcome !== "written" || !admitted.value) {
-      return notFound();
+    const payload = decodePayload(row);
+    const callbackId =
+      row.status === "succeeded"
+        ? payload?.callbackIds.success.clientEventId
+        : row.status === "cancelled"
+          ? payload?.callbackIds.cancellation.clientEventId
+          : undefined;
+    let callbackDelivered = false;
+    if (callbackId) {
+      const [callbackEvent] = await db
+        .select({ id: chatEvents.id })
+        .from(chatEvents)
+        .where(
+          and(
+            eq(chatEvents.id, callbackId),
+            eq(chatEvents.chatThreadId, row.chatThreadId),
+            eq(chatEvents.eventType, "input.prompt"),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      callbackDelivered = callbackEvent !== undefined;
     }
-    row = admitted.value.row;
     if (
       (row.status === "pending" || row.status === "applying") &&
       !(await requestHasLiveBrowser(db, row))
@@ -1089,13 +1019,12 @@ export const readBrowserUserAction$ = command(
       return expired();
     }
     signal.throwIfAborted();
-    const payload = decodePayload(row);
     return payload
       ? {
           kind: "ok",
           value: {
             ...publicRequest(row, args.requestToken, payload),
-            callbackDelivered: admitted.value.callbackDelivered,
+            callbackDelivered,
           },
         }
       : conflict(
@@ -1294,63 +1223,26 @@ export const preflightBrowserUserAction$ = command(
     if (!located) {
       return notFound();
     }
-    // Keep the admission and lease update short. The remote provider and CDP
-    // checks must not hold the thread lock while a user submits the form.
-    const admitted = await withChatThreadContentWrite(
-      db,
-      {
-        chatThreadId: located.chatThreadId,
-        authorize: (identity) => {
-          return authorized(located, identity);
-        },
-        threadLock: "update",
-      },
-      async (
-        tx,
-      ): Promise<
-        ServiceResult<{
-          readonly row: RequestRow;
-          readonly payload: Extract<
-            BrowserUserActionPayload,
-            { kind: "input" }
-          >;
-        }>
-      > => {
-        const operationDb = tx as Db;
-        const current = await loadExactRequest(operationDb, located);
-        if (!current) {
-          return notFound();
-        }
-        const payload = decodePayload(current);
-        if (!payload) {
-          return conflict(
-            "Browser user-action request payload is unavailable",
-            "BROWSER_USER_ACTION_UNAVAILABLE",
-          );
-        }
-        if (payload.kind !== "input") {
-          return conflict("This Browser request does not accept input values");
-        }
-        if (current.status !== "pending") {
-          return conflict("Browser input is no longer pending");
-        }
-        const leased = await touchExactProvider(operationDb, current);
-        if (!leased) {
-          return expired();
-        }
-        return { kind: "ok", value: { row: current, payload } };
-      },
-      signal,
-    );
-    if (admitted.outcome !== "written") {
-      return notFound();
+    const payload = decodePayload(located);
+    if (!payload) {
+      return conflict(
+        "Browser user-action request payload is unavailable",
+        "BROWSER_USER_ACTION_UNAVAILABLE",
+      );
     }
-    if (admitted.value.kind === "error") {
-      return admitted.value;
+    if (payload.kind !== "input") {
+      return conflict("This Browser request does not accept input values");
     }
-    const { row, payload } = admitted.value.value;
+    if (located.status !== "pending") {
+      return conflict("Browser input is no longer pending");
+    }
+    const leased = await touchExactProvider(db, located);
+    signal.throwIfAborted();
+    if (!leased) {
+      return expired();
+    }
     const inspected = await inspectPendingBrowserUserAction(
-      row,
+      located,
       payload,
       signal,
     );
@@ -1358,108 +1250,71 @@ export const preflightBrowserUserAction$ = command(
       return inspected;
     }
     const inspection = inspected.value;
-    // Re-enter admission after remote I/O: apply or cancellation may have
-    // consumed the request while the check was running.
-    const verified = await withChatThreadContentWrite(
-      db,
-      {
-        chatThreadId: row.chatThreadId,
-        authorize: (identity) => {
-          return authorized(row, identity);
-        },
-        threadLock: "update",
-      },
-      async (tx): Promise<ServiceResult<BrowserUserActionResponse>> => {
-        const operationDb = tx as Db;
-        const current = await loadExactRequest(operationDb, row);
-        if (!current) {
-          return notFound();
-        }
-        if (current.status !== "pending") {
-          return conflict("Browser input state changed during preflight");
-        }
-        if (!(await requestHasLiveBrowser(operationDb, current))) {
-          return expired();
-        }
-        if (inspection.kind === "stale") {
-          const stale = await markPendingBrowserUserActionStale(
-            operationDb,
-            current,
-          );
-          return stale
-            ? {
-                kind: "ok",
-                value: publicRequest(stale, args.requestToken, payload),
-              }
-            : conflict("Browser input state changed during preflight");
-        }
-        return {
-          kind: "ok",
-          value: publicRequest(
-            current,
-            args.requestToken,
-            payload,
-            inspection.controls,
-          ),
-        };
-      },
-      signal,
-    );
-    return verified.outcome === "written" ? verified.value : notFound();
+    // Apply or cancellation may have consumed the request while the check was
+    // running.
+    const current = await loadExactRequest(db, located);
+    signal.throwIfAborted();
+    if (!current) {
+      return notFound();
+    }
+    if (current.status !== "pending") {
+      return conflict("Browser input state changed during preflight");
+    }
+    if (!(await requestHasLiveBrowser(db, current))) {
+      return expired();
+    }
+    if (inspection.kind === "stale") {
+      const stale = await markPendingBrowserUserActionStale(db, current);
+      signal.throwIfAborted();
+      return stale
+        ? {
+            kind: "ok",
+            value: publicRequest(stale, args.requestToken, payload),
+          }
+        : conflict("Browser input state changed during preflight");
+    }
+    return {
+      kind: "ok",
+      value: publicRequest(
+        current,
+        args.requestToken,
+        payload,
+        inspection.controls,
+      ),
+    };
   },
 );
 
 async function claimBrowserUserAction(
   db: Db,
   located: RequestRow,
-  signal: AbortSignal,
 ): Promise<ServiceResult<RequestRow>> {
-  const admitted = await withChatThreadContentWrite(
-    db,
-    {
-      chatThreadId: located.chatThreadId,
-      authorize: (identity) => {
-        return authorized(located, identity);
-      },
-      threadLock: "update",
-    },
-    async (tx): Promise<ServiceResult<RequestRow>> => {
-      const operationDb = tx as Db;
-      const current = await loadExactRequest(operationDb, located);
-      if (!current) {
-        return notFound();
-      }
-      if (!(await requestHasLiveBrowser(operationDb, current))) {
-        return expired();
-      }
-      if (current.status !== "pending") {
-        return conflict("Browser input has already been claimed");
-      }
-      const startedAt = nowDate();
-      const [claimed] = await operationDb
-        .update(browserUserActionRequests)
-        .set({
-          status: "applying",
-          applyStartedAt: startedAt,
-        })
-        .where(
-          and(
-            eq(
-              browserUserActionRequests.requestTokenHash,
-              current.requestTokenHash,
-            ),
-            eq(browserUserActionRequests.status, "pending"),
-          ),
-        )
-        .returning();
-      if (!claimed) {
-        return conflict("Browser input has already been claimed");
-      }
-      return { kind: "ok", value: claimed };
-    },
-    signal,
-  );
-  return admitted.outcome === "written" ? admitted.value : notFound();
+  if (!(await requestHasLiveBrowser(db, located))) {
+    return expired();
+  }
+  if (located.status !== "pending") {
+    return conflict("Browser input has already been claimed");
+  }
+  const [claimed] = await db
+    .update(browserUserActionRequests)
+    .set({
+      status: "applying",
+      applyStartedAt: nowDate(),
+    })
+    .where(
+      and(
+        eq(
+          browserUserActionRequests.requestTokenHash,
+          located.requestTokenHash,
+        ),
+        eq(browserUserActionRequests.status, "pending"),
+      ),
+    )
+    .returning();
+  if (!claimed) {
+    return conflict("Browser input has already been claimed");
+  }
+  return { kind: "ok", value: claimed };
 }
 
 function browserApplyField(
@@ -1508,103 +1363,72 @@ async function applyClaimedBrowserUserAction(
   values: ReadonlyMap<string, SubmittedBrowserValue>,
   signal: AbortSignal,
 ): Promise<ServiceResult<RequestRow>> {
-  // The claim above is already visible. Re-enter canonical admission before
-  // the Browser effect so closure in the gap prevents mutation, while this
-  // transaction retains its barriers until the terminal state commits. The
-  // sequential transactions never reserve one pool connection while waiting
-  // to acquire a second one.
-  const commitSignal = new AbortController().signal;
-  const admitted = await withChatThreadContentWrite(
-    db,
-    {
-      chatThreadId: claimed.chatThreadId,
-      authorize: (identity) => {
-        return authorized(claimed, identity);
+  // Once claimed, every exit settles the request: a terminal state or a
+  // restored pending state, each conditional on the claim still applying.
+  const leased = await touchExactProvider(db, claimed);
+  if (!leased) {
+    const terminal = await finalize(db, claimed.requestTokenHash, "stale");
+    return terminal
+      ? { kind: "ok", value: terminal }
+      : conflict("Browser input state changed during application");
+  }
+  const target = exactInputTarget(payload);
+  const provider = await settleIncludingAbort(
+    getBrowserUseSession(claimed.providerSessionId, signal),
+  );
+  if (!provider.ok) {
+    await restorePending(db, claimed.requestTokenHash);
+    return providerFailure(provider.error);
+  }
+  if (provider.value.status !== "active" || !provider.value.cdpUrl) {
+    await restorePending(db, claimed.requestTokenHash);
+    return providerFailure(new Error("Browser provider is not active"));
+  }
+  const operation = await settle(
+    applyBrowserUseUserAction(
+      provider.value.cdpUrl,
+      {
+        ...target,
+        fields: payload.target.fields.map((field) => {
+          return browserApplyField(field, values.get(field.key));
+        }),
       },
-      threadLock: "update",
-    },
-    async (tx): Promise<ServiceResult<RequestRow>> => {
-      const operationDb = tx as Db;
-      const current = await loadExactRequest(operationDb, claimed);
-      if (
-        !current ||
-        current.status !== "applying" ||
-        current.applyStartedAt?.getTime() !== claimed.applyStartedAt?.getTime()
-      ) {
-        return conflict("Browser input state changed during application");
-      }
-      const leased = await touchExactProvider(operationDb, current);
-      if (!leased) {
-        const terminal = await finalize(
-          operationDb,
-          current.requestTokenHash,
-          "stale",
-        );
-        return terminal
-          ? { kind: "ok", value: terminal }
-          : conflict("Browser input state changed during application");
-      }
-      const target = exactInputTarget(payload);
-      const provider = await settleIncludingAbort(
-        getBrowserUseSession(current.providerSessionId, signal),
-      );
-      if (!provider.ok) {
-        await restorePending(operationDb, current.requestTokenHash);
-        return providerFailure(provider.error);
-      }
-      if (provider.value.status !== "active" || !provider.value.cdpUrl) {
-        await restorePending(operationDb, current.requestTokenHash);
-        return providerFailure(new Error("Browser provider is not active"));
-      }
-      const operation = await settle(
-        applyBrowserUseUserAction(
-          provider.value.cdpUrl,
-          {
-            ...target,
-            fields: payload.target.fields.map((field) => {
-              return browserApplyField(field, values.get(field.key));
-            }),
-          },
-          signal,
-        ),
-      );
-      if (!operation.ok) {
-        if (
-          operation.error instanceof BrowserUseUserActionMutationError &&
-          operation.error.writeStarted
-        ) {
-          const terminal = await finalize(
-            operationDb,
-            current.requestTokenHash,
-            "uncertain",
-          );
-          return terminal
-            ? { kind: "ok", value: terminal }
-            : conflict("Browser input state changed during application");
-        }
-        await restorePending(operationDb, current.requestTokenHash);
-        return providerFailure(operation.error);
-      }
-      if (operation.value === "invalid") {
-        await restorePending(operationDb, current.requestTokenHash);
-        return conflict(
-          "Browser input does not meet the website control constraints",
-          "BROWSER_USER_ACTION_INVALID_VALUE",
-        );
-      }
+      signal,
+    ),
+  );
+  if (!operation.ok) {
+    if (
+      operation.error instanceof BrowserUseUserActionMutationError &&
+      operation.error.writeStarted
+    ) {
       const terminal = await finalize(
-        operationDb,
-        current.requestTokenHash,
-        operation.value,
+        db,
+        claimed.requestTokenHash,
+        "uncertain",
       );
       return terminal
         ? { kind: "ok", value: terminal }
         : conflict("Browser input state changed during application");
-    },
-    commitSignal,
+    }
+    await restorePending(db, claimed.requestTokenHash);
+    return providerFailure(operation.error);
+  }
+  if (operation.value === "invalid") {
+    await restorePending(db, claimed.requestTokenHash);
+    return conflict(
+      "Browser input does not meet the website control constraints",
+      "BROWSER_USER_ACTION_INVALID_VALUE",
+    );
+  }
+  const terminal = await finalize(
+    db,
+    claimed.requestTokenHash,
+    operation.value,
   );
   signal.throwIfAborted();
-  return admitted.outcome === "written" ? admitted.value : notFound();
+  return terminal
+    ? { kind: "ok", value: terminal }
+    : conflict("Browser input state changed during application");
 }
 
 export const applyBrowserUserAction$ = command(
@@ -1639,7 +1463,8 @@ export const applyBrowserUserAction$ = command(
       return valuesResult;
     }
 
-    const claimed = await claimBrowserUserAction(db, located, signal);
+    const claimed = await claimBrowserUserAction(db, located);
+    signal.throwIfAborted();
     if (claimed.kind === "error") {
       return claimed;
     }
@@ -1676,64 +1501,42 @@ async function mutatePendingRequest(
       "BROWSER_USER_ACTION_UNAVAILABLE",
     );
   }
-  const admitted = await withChatThreadContentWrite(
-    db,
-    {
-      chatThreadId: args.row.chatThreadId,
-      authorize: (identity) => {
-        return authorized(args.row, identity);
-      },
-      threadLock: "update",
-    },
-    async (tx): Promise<ServiceResult<RequestRow>> => {
-      const operationDb = tx as Db;
-      const current = await loadExactRequest(operationDb, args.row);
-      if (!current) {
-        return notFound();
-      }
-      if (current.status === args.terminal) {
-        return { kind: "ok", value: current };
-      }
-      if (!(await requestHasLiveBrowser(operationDb, current))) {
-        return expired();
-      }
-      if (current.status !== "pending") {
-        return conflict(
-          "Browser user-action state no longer permits this action",
-        );
-      }
-      const now = nowDate();
-      const [updated] = await operationDb
-        .update(browserUserActionRequests)
-        .set({
-          status: args.terminal,
-          completedAt: now,
-        })
-        .where(
-          and(
-            eq(
-              browserUserActionRequests.requestTokenHash,
-              current.requestTokenHash,
-            ),
-            eq(browserUserActionRequests.status, "pending"),
-          ),
-        )
-        .returning();
-      return updated
-        ? { kind: "ok", value: updated }
-        : conflict("Browser user-action state changed");
-    },
-    signal,
-  );
-  if (admitted.outcome !== "written") {
-    return notFound();
+  const current = args.row;
+  if (current.status === args.terminal) {
+    return {
+      kind: "ok",
+      value: publicRequest(current, args.requestToken, payload),
+    };
   }
-  return admitted.value.kind === "error"
-    ? admitted.value
-    : {
+  if (!(await requestHasLiveBrowser(db, current))) {
+    return expired();
+  }
+  if (current.status !== "pending") {
+    return conflict("Browser user-action state no longer permits this action");
+  }
+  const [updated] = await db
+    .update(browserUserActionRequests)
+    .set({
+      status: args.terminal,
+      completedAt: nowDate(),
+    })
+    .where(
+      and(
+        eq(
+          browserUserActionRequests.requestTokenHash,
+          current.requestTokenHash,
+        ),
+        eq(browserUserActionRequests.status, "pending"),
+      ),
+    )
+    .returning();
+  signal.throwIfAborted();
+  return updated
+    ? {
         kind: "ok",
-        value: publicRequest(admitted.value.value, args.requestToken, payload),
-      };
+        value: publicRequest(updated, args.requestToken, payload),
+      }
+    : conflict("Browser user-action state changed");
 }
 
 export const cancelBrowserUserAction$ = command(

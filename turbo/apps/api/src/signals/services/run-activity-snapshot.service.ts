@@ -2,7 +2,16 @@ import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/cont
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { command } from "ccstate";
-import { and, desc, eq, inArray, lt, notInArray, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  lt,
+  notInArray,
+  sql,
+} from "drizzle-orm";
 import { eventConsumerPayload$ } from "../../lib/event-consumer/route";
 import { logger } from "../../lib/log";
 import { safeSqlStateCode } from "../../lib/pg-errors";
@@ -10,7 +19,6 @@ import { activityRevision, mergeActivity } from "../../lib/run-activity";
 import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { settleIncludingAbort } from "../utils";
-import type { RunContentOwnership } from "./run-content-erasure-admission.service";
 
 const log = logger("api:run-activity");
 
@@ -25,16 +33,17 @@ const STALE_RELEASE_LIMIT = 500;
  * a concurrent delivery is acceptable; the next delivery merges again.
  */
 export const captureRunActivity$ = command(
-  async ({ get, set }, ownership: RunContentOwnership, signal: AbortSignal) => {
+  async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     const payload = get(eventConsumerPayload$);
-    if (!ownership.thread || mergeActivity([], payload.events).length === 0) {
+    if (mergeActivity([], payload.events).length === 0) {
       return { status: 200 };
     }
     const db = set(writeDb$);
     const identity = and(
       eq(activeAgentRuns.runId, payload.runId),
       eq(activeAgentRuns.userId, payload.context.userId),
+      isNotNull(activeAgentRuns.chatThreadId),
     );
     const outcome = await settleIncludingAbort(
       (async () => {

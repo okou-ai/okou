@@ -223,8 +223,8 @@ function rejected(reason: string): NativeMorningBriefEmailAdmission {
  * What it re-checks, and why each one is not implied by the others:
  *
  * - the delivery row itself, which is the only native provenance there is;
- * - erasure admission and the durable member row, taken in the same order the
- *   delivery transaction took them;
+ * - the durable member row, taken the same way the delivery transaction took
+ *   it;
  * - the **frozen** membership generation recorded on the occurrence, because a
  *   member who left and rejoined is a different owner even though the
  *   organization and user identifiers match;

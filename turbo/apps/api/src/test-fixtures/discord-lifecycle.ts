@@ -6,13 +6,14 @@ import {
 } from "./database-transaction-barrier";
 
 /**
- * Infrastructure exception: HTTP cannot stop after an INSERT has executed but
- * before its transaction checks cancellation. Preserve the real PostgreSQL
- * statement and delay only its result, so the test can prove rollback.
+ * Infrastructure exception: HTTP cannot pause the Clerk cleanup transaction
+ * after removing a user's bindings while retaining its real PostgreSQL locks.
+ * This barrier changes no data and preserves the production statements. Its
+ * waiter observation proves a concurrent guild uninstall reached those locks.
  */
-export async function withDiscordDmPreferenceInsertBarrierFixture<T>(
+export async function withDiscordUserCleanupBarrierFixture<T>(
   args: {
-    readonly connectionId: string;
+    readonly userId: string;
     readonly work: (barrier: TransactionBarrier) => Promise<T>;
   },
   signal: AbortSignal,
@@ -22,8 +23,8 @@ export async function withDiscordDmPreferenceInsertBarrierFixture<T>(
       select: (queryArgs) => {
         return (
           barrierQueryText(queryArgs).startsWith(
-            'insert into "discord_user_dm_preferences"',
-          ) && barrierQueryBinds(queryArgs, args.connectionId)
+            'delete from "discord_org_connections"',
+          ) && barrierQueryBinds(queryArgs, args.userId)
         );
       },
       stopAt: (_queryArgs, selectingStatement) => {

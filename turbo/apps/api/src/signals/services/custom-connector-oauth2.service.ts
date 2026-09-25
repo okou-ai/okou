@@ -66,7 +66,6 @@ import {
   replaceConnectorConnection,
   resolveConnectorConnectionMutation,
 } from "./connector-connection-write.service";
-import { assertConnectorTokenWriteOpen } from "./connector-token-erasure-admission.service";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import { addUserCustomConnector } from "./user-connectors.service";
 import { commitConnectorRuntimeMutation } from "./connector-runtime-wakeup.service";
@@ -1492,7 +1491,6 @@ export async function storeCustomConnectorOAuth2Connection(
   const encrypted = await encryptTokenValues(args);
   signal.throwIfAborted();
   return await args.db.transaction(async (tx) => {
-    await assertConnectorTokenWriteOpen(tx, args.userId, signal);
     const contract = await lockCustomConnectorOAuth2CredentialContract({
       db: tx,
       orgId: args.orgId,

@@ -24,10 +24,6 @@ import {
   type SQLWrapper,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import {
-  assertErasureSubjectWritable,
-  erasureSubjectOpenCondition,
-} from "@okouai/db/operations/account-erasure";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { chatThreadSnapshots } from "@okouai/db/schema/chat-thread-snapshot";
 import { agents } from "@okouai/db/schema/agent";
@@ -179,7 +175,6 @@ function allScopesCte(staleCutoff: Date): SQL {
 }
 
 function candidateScopesCte(
-  db: SnapshotRootDb,
   staleCutoff: Date,
   batchSize: number,
   scope: SnapshotCompactionScope,
@@ -217,13 +212,6 @@ function candidateScopesCte(
           lt(snapshot.updatedAt, staleCutoff),
         ),
         snapshotScopePredicate(scope, sql`scope.user_id`, sql`scope.org_id`),
-        // Selection only: do not let a closed scope occupy a bounded cron
-        // batch forever. Admission inside the PUT transaction remains the
-        // authority when this unlocked candidate read races closure.
-        erasureSubjectOpenCondition(db, [
-          { subjectKind: "user", subjectId: sql`scope.user_id` },
-          { subjectKind: "organization", subjectId: sql`scope.org_id` },
-        ]),
       )}
       ORDER BY
         ${asc(snapshot.updatedAt)} NULLS FIRST,
@@ -325,14 +313,13 @@ function rebuiltCte(): SQL {
 }
 
 function chatThreadSnapshotCandidatesSql(args: {
-  readonly db: SnapshotRootDb;
   readonly staleCutoff: Date;
   readonly batchSize: number;
   readonly scope: SnapshotCompactionScope;
 }): SQL {
   return sql`
     WITH ${allScopesCte(args.staleCutoff)},
-    ${candidateScopesCte(args.db, args.staleCutoff, args.batchSize, args.scope)},
+    ${candidateScopesCte(args.staleCutoff, args.batchSize, args.scope)},
     ${rebuiltCte()}
     SELECT
       rebuilt.user_id AS "userId",
@@ -489,7 +476,7 @@ async function collectChatThreadSnapshotGarbage(
 }
 
 async function compactChatThreadSnapshotBatch(
-  db: Db,
+  db: SnapshotRootDb,
   batchSize: number,
   scope: SnapshotCompactionScope,
   storage: SnapshotStorage,
@@ -501,7 +488,6 @@ async function compactChatThreadSnapshotBatch(
   const candidates = await executeRawRows(
     db,
     chatThreadSnapshotCandidatesSql({
-      db,
       staleCutoff,
       batchSize,
       scope,
@@ -532,22 +518,11 @@ async function compactChatThreadSnapshotBatch(
         latestSeqId: candidate.latestSeqId,
         body: compressed,
       });
-      // A candidate can outlive its SELECT. Take the existing D1 shared
-      // admission before the external PUT, retain it through publication, and
-      // let subject closure wait for an already-admitted PUT to settle. A
-      // candidate resumed after closure must not put any bytes at all.
-      return await db.transaction(async (tx) => {
-        await assertErasureSubjectWritable(tx, [
-          { subjectKind: "user", subjectId: candidate.userId },
-          { subjectKind: "organization", subjectId: candidate.orgId },
-        ]);
-        signal?.throwIfAborted();
-        await storage.upload(objectKey, compressed);
-        signal?.throwIfAborted();
-        return (await publishChatThreadSnapshot(tx, candidate, objectKey))
-          ? candidate
-          : null;
-      });
+      await storage.upload(objectKey, compressed);
+      signal?.throwIfAborted();
+      return (await publishChatThreadSnapshot(db, candidate, objectKey))
+        ? candidate
+        : null;
     },
   );
   let scopes = 0;
@@ -562,8 +537,8 @@ async function compactChatThreadSnapshotBatch(
   return { scopes, eventsApplied };
 }
 
-export async function compactChatThreadSnapshotsForScope(
-  db: Db,
+async function compactChatThreadSnapshotsForScope(
+  db: SnapshotRootDb,
   scope: SnapshotCompactionScope,
   storage: SnapshotStorage,
   signal?: AbortSignal,

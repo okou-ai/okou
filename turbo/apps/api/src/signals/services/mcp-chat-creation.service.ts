@@ -6,10 +6,6 @@ import type {
 } from "@okouai/api-contracts/contracts/mcp-chat-creation";
 import type { McpChatMutationResult } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat-time";
-import {
-  assertErasureSubjectWritable,
-  setErasureFenceDeadlines,
-} from "@okouai/db/operations/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
@@ -53,7 +49,6 @@ import {
 } from "./model-selection.service";
 
 const CREATION_RETRY_MS = 24 * 60 * 60 * 1000;
-const CREATION_AGENT_ATTEMPTS = 3;
 const CREATION_NAMESPACE = "107f0e3c-b577-40c5-b2e8-0ebdcce13242";
 const COMBINED_INPUT_NAMESPACE = "c2559c1c-a5f8-4d43-88a6-9738ef189420";
 const L = logger("McpChatCreation");
@@ -70,13 +65,6 @@ class McpThreadCreationError extends Error {
     readonly retryable = false,
   ) {
     super(message);
-  }
-}
-
-class McpCreationAgentChangedError extends Error {
-  constructor() {
-    super("Creation Agent changed while acquiring locks");
-    this.name = "McpCreationAgentChangedError";
   }
 }
 
@@ -116,49 +104,24 @@ function combinedInputId(input: McpCreateChatWithMessageInput): string {
   return uuidv5(input.requestId, COMBINED_INPUT_NAMESPACE);
 }
 
-async function admitCreation(
+async function assertCreationAgentVisible(
   tx: Tx,
   principal: Principal,
   agentId: string,
-  signal: AbortSignal,
 ): Promise<void> {
-  const condition = and(
-    eq(agents.id, agentId),
-    eq(agents.orgId, principal.orgId),
-    visibleJoinedAgentCondition(principal.userId),
-  );
-  // Resolve the canonical owner before taking subject locks. A private or
-  // foreign Agent never grants authority to admit its owner's account.
   const [selected] = await tx
-    .select({ owner: agents.owner })
+    .select({ id: agents.id })
     .from(agents)
-    .where(condition)
+    .where(
+      and(
+        eq(agents.id, agentId),
+        eq(agents.orgId, principal.orgId),
+        visibleJoinedAgentCondition(principal.userId),
+      ),
+    )
     .limit(1);
-  signal.throwIfAborted();
   if (!selected) {
     throw new McpThreadCreationError("not_found", "Agent not found.");
-  }
-  await assertErasureSubjectWritable(tx, [
-    { subjectKind: "user", subjectId: principal.userId },
-    { subjectKind: "user", subjectId: selected.owner },
-    { subjectKind: "organization", subjectId: principal.orgId },
-  ]);
-  signal.throwIfAborted();
-  // SHARE also fences visibility updates, which do not change the ownership
-  // key and therefore do not conflict with KEY SHARE. Subjects stay first.
-  const [locked] = await tx
-    .select({ owner: agents.owner })
-    .from(agents)
-    .where(condition)
-    .for("share")
-    .limit(1);
-  signal.throwIfAborted();
-  if (!locked || locked.owner !== selected.owner) {
-    throw new McpThreadCreationError(
-      "unavailable",
-      "Agent availability changed. Refresh list_agents and retry the same creation request.",
-      true,
-    );
   }
 }
 
@@ -187,7 +150,7 @@ async function resolveDefaultAgent(
   return selected.agentId;
 }
 
-/** Resolve the candidate Agent without retaining a business-row lock. */
+/** Resolve the Agent an existing creation used, or the requested/default one. */
 async function resolveCreationAgent(
   tx: Tx,
   principal: Principal,
@@ -344,8 +307,8 @@ async function initializeThread(
   agentId: string,
   signal: AbortSignal,
 ): Promise<boolean> {
-  // Policy seeding/repair is a write. Resolve only after account admission,
-  // on this transaction so the resolver's nested transaction is a savepoint.
+  // Policy seeding/repair is a write. Resolve it on this transaction so the
+  // resolver's nested transaction is a savepoint.
   let pin: ModelFirstPin;
   if (input.model === undefined) {
     pin = {
@@ -429,15 +392,6 @@ async function createInTransaction(
   input: McpCreateChatThreadInput,
   signal: AbortSignal,
 ): Promise<McpCreateChatThreadOutput> {
-  await setErasureFenceDeadlines(tx, {
-    lockTimeout: "1s",
-    statementTimeout: "3s",
-  });
-  // Resolve identity without a row lock, then preserve the global subject ->
-  // Agent -> request -> thread lock order. If a concurrent default-based
-  // creation chose another Agent, the outer bounded retry re-resolves it.
-  const admittedAgentId = await resolveCreationAgent(tx, principal, input);
-  await admitCreation(tx, principal, admittedAgentId, signal);
   // Serialize only this idempotency identity, including requests that select
   // different Agents. PK/event validation still handles non-MCP collisions.
   const lockKey = `mcp:create_chat_thread:${input.requestId}`;
@@ -445,20 +399,13 @@ async function createInTransaction(
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
   );
   signal.throwIfAborted();
+  const agentId = await resolveCreationAgent(tx, principal, input);
+  await assertCreationAgentVisible(tx, principal, agentId);
+  signal.throwIfAborted();
   let creation = await readCreation(tx, principal, input);
   let replayed = true;
-  if (creation) {
-    if (creation.thread.agentId !== admittedAgentId) {
-      throw new McpCreationAgentChangedError();
-    }
-  } else {
-    replayed = !(await initializeThread(
-      tx,
-      principal,
-      input,
-      admittedAgentId,
-      signal,
-    ));
+  if (!creation) {
+    replayed = !(await initializeThread(tx, principal, input, agentId, signal));
     // appendChatThreadEvent tolerates event-ID duplicates. Never commit a
     // newly inserted thread unless its exact initial event and optional input
     // were also written.
@@ -469,8 +416,7 @@ async function createInTransaction(
   }
   signal.throwIfAborted();
   const { thread, acceptedAt } = creation;
-  const agentId = thread.agentId;
-  if (agentId === null) {
+  if (thread.agentId !== agentId) {
     creationConflict();
   }
   const models = await mcpChatThreadModels(tx, principal, [
@@ -532,7 +478,7 @@ async function createInTransaction(
   };
 }
 
-async function createWithAgentRetry(
+async function createChatThread(
   args: {
     readonly db: Db;
     readonly principal: Principal;
@@ -540,32 +486,10 @@ async function createWithAgentRetry(
   },
   signal: AbortSignal,
 ): Promise<McpCreateChatThreadOutput> {
-  for (let attempt = 1; ; attempt++) {
-    const result = await settle(
-      args.db.transaction(
-        async (tx) => {
-          signal.throwIfAborted();
-          return await createInTransaction(
-            tx,
-            args.principal,
-            args.input,
-            signal,
-          );
-        },
-        { isolationLevel: "read committed" },
-      ),
-      signal,
-    );
-    if (result.ok) {
-      return result.value;
-    }
-    if (
-      !(result.error instanceof McpCreationAgentChangedError) ||
-      attempt === CREATION_AGENT_ATTEMPTS
-    ) {
-      throw result.error;
-    }
-  }
+  signal.throwIfAborted();
+  return await args.db.transaction(async (tx) => {
+    return await createInTransaction(tx, args.principal, args.input, signal);
+  });
 }
 
 async function finishCombinedCreation(
@@ -668,9 +592,9 @@ export const createMcpChatThread$ = command(
     const db = set(writeDb$);
     const result = await settle(
       // The route's waitUntil owner retains the real transaction through
-      // commit/rollback. The deadline stops admission/work; it must not race
-      // away from a transaction that can still hold locks or finish a write.
-      createWithAgentRetry(
+      // commit/rollback. The deadline stops the work; it must not race away
+      // from a transaction that can still hold locks or finish a write.
+      createChatThread(
         {
           db,
           principal: args.principal,
@@ -687,17 +611,6 @@ export const createMcpChatThread$ = command(
           code: result.error.code,
           message: result.error.message,
           retryable: result.error.retryable,
-        };
-      }
-      if (
-        result.error instanceof Error &&
-        result.error.message === "account_erasure:subject_closed"
-      ) {
-        return {
-          kind: "error",
-          code: "account_closed",
-          message: "Account content is closed.",
-          retryable: false,
         };
       }
       throw result.error;

@@ -67,7 +67,7 @@ test("releases history on Agent deletion and does not release twice on retry", a
 });
 
 test.each(["user", "organization"] as const)(
-  "keeps or releases history according to a verified Clerk %s webhook",
+  "releases history through a verified Clerk %s webhook",
   async (kind) => {
     const actor = bdd.user();
     const run = await checkpointedRun(actor);
@@ -78,20 +78,9 @@ test.each(["user", "organization"] as const)(
     });
     await webhooks.requestClerkWebhook("{}", {}, [200]);
     await flushWaitUntilForTest();
-    const readback = await runs.requestReadRun(
-      actor,
-      run.runId,
-      kind === "user" ? [401] : [404],
-    );
-    if (kind === "user") {
-      expect(readback.body).toMatchObject({
-        error: { code: "UNAUTHORIZED" },
-      });
-    }
-    // The private blob itself remains held for owner-scoped deletion, whereas
-    // organization deletion releases the accounted reference immediately.
+    await runs.requestReadRun(actor, run.runId, [404]);
     await expect(readHistoryBlobReferenceCountFixture(run.hash)).resolves.toBe(
-      kind === "user" ? 1 : 0,
+      0,
     );
   },
 );

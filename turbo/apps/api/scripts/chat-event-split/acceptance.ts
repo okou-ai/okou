@@ -23,7 +23,7 @@ import { runOutputMemoryCitations } from "@okouai/db/schema/run-output-memory-ci
 import { insertChatEvent } from "../../src/signals/services/chat-event.service";
 import { insertRunLifecycleMarkerProjection } from "../../src/signals/services/internal-chat-run-callback.service";
 import { materializeRunOutputEvents } from "../../src/signals/services/agent-event-consumer-run-output.service";
-import { RunOutputDiagnostics } from "../../src/signals/services/run-content-erasure-admission.service";
+import { RunOutputDiagnostics } from "../../src/signals/services/run-content-ownership.service";
 import { settleIncludingAbort } from "../../src/signals/utils";
 import { deleteChatThreadContent } from "../../src/signals/services/chat-thread.service";
 import { deleteAgentInTransaction } from "../../src/signals/services/agent-deletion.service";

@@ -7135,7 +7135,6 @@
       "invalidHost": "Enter a valid hostname or IP address without a URL, username, or port.",
       "invalidInput": "Check the VNC configuration and try again.",
       "invalidTrust": "Enter a valid bundle of up to 8 public CA certificates, no larger than 64 KiB.",
-      "ownerChanged": "Your workspace access changed. Refresh before continuing.",
       "revisionExhausted": "This configuration can no longer be updated. Create a new one."
     },
     "host": "RFB destination host",
