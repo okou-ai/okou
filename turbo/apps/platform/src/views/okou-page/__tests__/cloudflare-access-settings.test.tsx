@@ -582,6 +582,11 @@ test("admin conversion requires an aggregate impact confirmation and sends the r
   await within(organization).findByText(shared.name);
   click(getAction("button", "Make personal", organization));
   const dialog = await screen.findByRole("dialog", { name: "Make personal" });
+  expect(
+    within(dialog).getByText(
+      /will become your own Personal configuration, even if someone else created it/u,
+    ),
+  ).toBeInTheDocument();
   const warning = await within(dialog).findByRole("alert");
   expect(warning).toHaveTextContent("Other users' SSH hosts affected: 2");
   expect(dialog.textContent).not.toContain("other-member-host");
@@ -631,6 +636,11 @@ test("zero-impact conversion needs no other-user warning", async () => {
   await within(organization).findByText(shared.name);
   click(getAction("button", "Make personal", organization));
   const dialog = await screen.findByRole("dialog", { name: "Make personal" });
+  expect(
+    within(dialog).getByText(
+      /will become your own Personal configuration, even if someone else created it/u,
+    ),
+  ).toBeInTheDocument();
   await waitFor(() => {
     expect(getAction("button", "Make personal", dialog)).toBeEnabled();
   });

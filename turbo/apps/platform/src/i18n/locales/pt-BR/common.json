@@ -3003,7 +3003,7 @@
     "configuration": "Cloudflare Access",
     "convert": "Tornar pessoal",
     "convertConfirm": "Entendo que esses hosts não poderão se conectar até que seus proprietários os vinculem novamente.",
-    "convertHelp": "Mantenha este Service Token para seu uso pessoal. Seus hosts podem continuar conectados.",
+    "convertHelp": "Este Cloudflare Access da organização se tornará uma configuração pessoal sua, mesmo que outra pessoa o tenha criado. O Service Token permanecerá o mesmo e seus hosts SSH poderão continuar conectados.",
     "convertUncertain": "Não foi possível confirmar a conversão. Revise a configuração atual antes de tentar novamente.",
     "convertWarning_one": "Host SSH de outro usuário afetado: {{count}}. Ele ficará indisponível até que seu proprietário o vincule novamente ou escolha Direct.",
     "convertWarning_many": "Hosts SSH de outros usuários afetados: {{count}}. Eles ficarão indisponíveis até que seus proprietários os vinculem novamente ou escolham Direct.",
