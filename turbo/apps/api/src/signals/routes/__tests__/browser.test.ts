@@ -1227,7 +1227,20 @@ describe("Browser user-action route", () => {
         .body.state,
     ).toBe("uncertain");
     expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
-      { value: { kind: "radio", verifyOnly: true } },
+      {
+        value: {
+          kind: "radio",
+          index: 1,
+          selectedIndex: 0,
+          memberCount: 3,
+          verifyOnly: true,
+        },
+      },
+      { value: 0 },
+      { objectId: "radio-0" },
+      { objectId: "radio-1" },
+      { objectId: "radio-2" },
+      { objectId: "radio-form" },
     ]);
     group.readbackMatches = true;
     const changed = await create();
