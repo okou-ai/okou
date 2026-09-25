@@ -791,6 +791,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
     if (!successor) {
       throw new Error("Expected the queued prompt to start a run");
     }
+    expect(successor).not.toBe(queued.runId);
     await cancelChatRun(queued.actor, successor);
   }, 90_000);
 
