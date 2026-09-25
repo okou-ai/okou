@@ -63,7 +63,13 @@ const messageComponentSchema = z.discriminatedUnion("type", [
     min_values: z.literal(1),
     max_values: z.literal(1),
     options: z
-      .array(z.object({ label: z.string(), value: z.string() }))
+      .array(
+        z.object({
+          label: z.string(),
+          value: z.string(),
+          default: z.literal(true).optional(),
+        }),
+      )
       .max(25),
   }),
 ]);
@@ -219,6 +225,16 @@ function selectMenu(message: PrivateMessage) {
   return component;
 }
 
+function preselected(message: PrivateMessage): string[] {
+  return selectMenu(message)
+    .options.filter((option) => {
+      return option.default;
+    })
+    .map((option) => {
+      return option.value;
+    });
+}
+
 function pageButton(message: PrivateMessage, label: string) {
   const component = message.components
     .flatMap((row) => {
@@ -251,6 +267,7 @@ function discordHttp(fixtures: readonly Fixture[], dm?: DiscordSender) {
       readonly resolve: (message: PrivateMessage) => void;
     }
   >();
+  const callbacks = new Map<string, unknown>();
   const guildOwnerId = uniqueDiscordSnowflake();
   server.use(
     http.get("https://discord.com/api/v10/users/@me", () => {
@@ -345,9 +362,11 @@ function discordHttp(fixtures: readonly Fixture[], dm?: DiscordSender) {
     ),
     http.post(
       "https://discord.com/api/v10/interactions/:id/:token/callback",
-      async ({ request }) => {
+      async ({ request, params }) => {
+        // Discord shows a private loading reply for a command, while a
+        // component update later edits the message holding that component.
         const callback: unknown = await request.json();
-        expect(callback).toMatchObject({ type: 5, data: { flags: 64 } });
+        expect(callback).toStrictEqual(callbacks.get(String(params.token)));
         return new HttpResponse(null, { status: 204 });
       },
     ),
@@ -383,6 +402,10 @@ function discordHttp(fixtures: readonly Fixture[], dm?: DiscordSender) {
         channelId: payload.channel_id,
         resolve: delivered.resolve,
       });
+      callbacks.set(
+        payload.token,
+        payload.type === 3 ? { type: 6 } : { type: 5, data: { flags: 64 } },
+      );
       const body = JSON.stringify(payload);
       const timestamp = String(Math.floor(now() / 1000));
       const signature = sign(
@@ -773,6 +796,61 @@ describe("Discord account preferences through private controls", () => {
     );
     const connected = await discord.send(commandPayload(sender, "connect"));
     expect(connected.content).toContain(`Current agent: ${option.label}.`);
+  });
+
+  it("updates the picker in place and preselects the saved agent", async () => {
+    const scope = await fixture();
+    const chosen = await createAgent(scope.owner, "Chosen agent");
+    await createAgent(scope.owner, "Other agent");
+    const discord = discordHttp([scope]);
+    const sender = guildSender(scope);
+    const picker = await discord.send(commandPayload(sender, "switch"));
+    expect(preselected(picker)).not.toContain(chosen.agentId);
+
+    const selected = await discord.send(
+      selectPayload(sender, selectMenu(picker).custom_id, chosen.agentId),
+    );
+
+    expect(selected.content).toContain("Agent selected");
+    expect(selected.components).toStrictEqual([]);
+    const reopened = await discord.send(commandPayload(sender, "switch"));
+    expect(preselected(reopened)).toStrictEqual([chosen.agentId]);
+  });
+
+  it("preselects the effective model and the selected DM workspace", async () => {
+    const first = await fixture();
+    const second = await fixture(
+      actor(undefined, first.owner.userId),
+      first.binding.discordUserId,
+    );
+    mockDiscordMemberships(context, [first.owner, second.owner]);
+    await configureModelPreferences(first);
+    const sender = {
+      discordUserId: first.binding.discordUserId,
+      channelId: uniqueDiscordSnowflake(),
+    };
+    const discord = discordHttp([first, second], sender);
+    const workspaces = await discord.send(commandPayload(sender, "org"));
+    expect(preselected(workspaces)).toStrictEqual([]);
+    await discord.send(
+      selectPayload(
+        sender,
+        selectMenu(workspaces).custom_id,
+        first.binding.connectionId,
+      ),
+    );
+    expect(
+      preselected(await discord.send(commandPayload(sender, "org"))),
+    ).toStrictEqual([first.binding.connectionId]);
+
+    const models = await discord.send(commandPayload(sender, "model"));
+    expect(preselected(models)).toStrictEqual(["claude-sonnet-5"]);
+    await discord.send(
+      selectPayload(sender, selectMenu(models).custom_id, "gpt-5.6-sol"),
+    );
+    expect(
+      preselected(await discord.send(commandPayload(sender, "model"))),
+    ).toStrictEqual(["gpt-5.6-sol"]);
   });
 
   it("rechecks model policy after a picker is issued and preserves the current allowed preference", async () => {

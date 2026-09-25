@@ -95,6 +95,7 @@ function client() {
 
 function privateResponses() {
   const acknowledged = new Set<string>();
+  const callbacks: unknown[] = [];
   const messages: z.infer<typeof privateMessageSchema>[] = [];
   const delivered = createDeferredPromise<z.infer<typeof privateMessageSchema>>(
     context.signal,
@@ -103,8 +104,7 @@ function privateResponses() {
     http.post(
       "https://discord.com/api/v10/interactions/:id/:token/callback",
       async ({ request, params }) => {
-        const callback: unknown = await request.json();
-        expect(callback).toMatchObject({ type: 5, data: { flags: 64 } });
+        callbacks.push(await request.json());
         const id = String(params.id);
         if (acknowledged.has(id)) {
           return HttpResponse.json(
@@ -136,7 +136,7 @@ function privateResponses() {
       },
     ),
   );
-  return { delivered: delivered.promise, messages };
+  return { delivered: delivered.promise, messages, callbacks };
 }
 
 beforeEach(() => {
@@ -154,6 +154,10 @@ describe("Discord private account interactions", () => {
     expect((await replies.delivered).content).toContain("/okou disconnect");
     await accept(client().post(request), [202]);
     expect(replies.messages).toHaveLength(1);
+    expect(replies.callbacks[0]).toStrictEqual({
+      type: 5,
+      data: { flags: 64 },
+    });
     expect(replies.messages[0]?.allowed_mentions.parse).toStrictEqual([]);
   });
 
@@ -178,12 +182,14 @@ describe("Discord private account interactions", () => {
       },
     };
     await accept(client().post(signedRequest(payload)), [202]);
-    expect((await replies.delivered).content).toContain(
-      "expired or your access has changed",
-    );
+    const message = await replies.delivered;
+    expect(message.content).toContain("expired or your access has changed");
+    // A deferred update edits the picker message rather than adding a reply.
+    expect(replies.callbacks).toStrictEqual([{ type: 6 }]);
+    expect(message.components).toStrictEqual([]);
   });
 
-  it("does not execute work after an uncertain or rejected callback acknowledgement", async () => {
+  it("does not execute work after a rejected callback acknowledgement", async () => {
     server.use(
       http.post(
         "https://discord.com/api/v10/interactions/:id/:token/callback",
@@ -203,4 +209,45 @@ describe("Discord private account interactions", () => {
       "Discord could not acknowledge the interaction",
     );
   });
+
+  it.each([
+    {
+      kind: "network failure",
+      response: () => {
+        return HttpResponse.error();
+      },
+    },
+    {
+      kind: "Discord server error",
+      response: () => {
+        return HttpResponse.json({ message: "Unavailable" }, { status: 503 });
+      },
+    },
+  ])(
+    "reports no change instead of failing after an uncertain $kind acknowledgement",
+    async ({ response }) => {
+      const replies = privateResponses();
+      server.use(
+        http.post(
+          "https://discord.com/api/v10/interactions/:id/:token/callback",
+          response,
+        ),
+      );
+      // Created 5 s ago, so Discord's 3-second response window has closed.
+      const createdAt = BigInt(now() - 5000 - 1_420_070_400_000);
+      const request = signedRequest({
+        ...command("help"),
+        id: String(createdAt << 22n),
+      });
+
+      const result = await client().post(request);
+
+      expect(result.status).toBe(202);
+      const message = await replies.delivered;
+      expect(message.content).toContain("no changes were made");
+      expect(message.content).not.toContain("/okou disconnect");
+      expect(message.components).toStrictEqual([]);
+      expect(replies.messages).toHaveLength(1);
+    },
+  );
 });

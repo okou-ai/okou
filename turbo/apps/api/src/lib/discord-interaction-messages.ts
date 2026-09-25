@@ -39,6 +39,8 @@ export function discordAccountPicker(args: {
   readonly botToken: string;
   readonly page: number;
   readonly options: readonly DiscordPickerOption[];
+  /** The value currently in effect, shown as the menu's default choice. */
+  readonly selected?: string;
 }): DiscordAccountMessage {
   const pageCount = Math.ceil(args.options.length / 25);
   if (args.options.length === 0) {
@@ -94,6 +96,7 @@ export function discordAccountPicker(args: {
                 return {
                   label: discordAccountLabel(option.label),
                   value: option.value,
+                  ...(option.value === args.selected ? { default: true } : {}),
                   ...(option.description
                     ? { description: discordAccountLabel(option.description) }
                     : {}),
