@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.49.12](https://github.com/okou-ai/okou/compare/desktop-v0.49.11...desktop-v0.49.12) (2026-09-25)
+
+
+### Performance Improvements
+
+* lock-free computer use heartbeat and command claim ([#36895](https://github.com/okou-ai/okou/issues/36895)) ([dce0cd6](https://github.com/okou-ai/okou/commit/dce0cd68e4567bafeab81dcf2a163eebeffefa83))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.512.0
+
 ## [0.49.11](https://github.com/okou-ai/okou/compare/desktop-v0.49.10...desktop-v0.49.11) (2026-09-25)
 
 

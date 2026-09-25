@@ -42,7 +42,6 @@ describe("chat event search projection schema", () => {
       }),
     ).toStrictEqual([
       "chat_event_search_messages_user_org_created_idx",
-      "chat_event_search_messages_user_org_agent_id_created_idx",
       "chat_event_search_messages_user_tsv_gin_idx",
     ]);
     expect(config.foreignKeys).toStrictEqual([]);
