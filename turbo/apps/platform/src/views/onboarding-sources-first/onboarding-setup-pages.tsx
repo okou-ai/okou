@@ -260,6 +260,9 @@ export function OnboardingTeamPage() {
   const pageSignal = useGet(pageSignal$);
   const address = ui.inviteEmail.trim();
   const sendable = sourcesFirstInviteSendable(flow.draft.invites, address);
+  const invited = flow.draft.invites.some((entry) => {
+    return entry.status === "invited";
+  });
 
   const invite = (): void => {
     if (!sendable) {
@@ -290,14 +293,17 @@ export function OnboardingTeamPage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.team.copy;
       })}
-      primaryLabel={t(($) => {
-        return $.onboarding.sourcesFirst.common.continue;
-      })}
-      onPrimary={flow.goNext}
-      secondaryLabel={t(($) => {
-        return $.onboarding.sourcesFirst.common.notNow;
-      })}
-      onSecondary={flow.goSkip}
+      primaryLabel={
+        invited
+          ? t(($) => {
+              return $.onboarding.sourcesFirst.common.continue;
+            })
+          : t(($) => {
+              return $.onboarding.sourcesFirst.common.skip;
+            })
+      }
+      onPrimary={invited ? flow.goNext : flow.goSkip}
+      primaryEmphasis={invited ? "strong" : "quiet"}
       onBack={flow.goBack}
     >
       <OnboardingPanel

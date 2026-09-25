@@ -84,10 +84,15 @@ test("An invited teammate is only marked invited once the API accepts the addres
   await expect(screen.findByText("Sending…")).resolves.toBeInTheDocument();
   expect(screen.getByText(TEAMMATE)).toBeInTheDocument();
   expect(screen.queryByText("Invited")).not.toBeInTheDocument();
+  // Until an invite lands, the only way on is to skip the step.
+  expect(getButtonByName("Skip for now")).toBeEnabled();
+  expect(screen.queryByText("Continue")).not.toBeInTheDocument();
 
   sent.resolve();
 
   await expect(screen.findByText("Invited")).resolves.toBeInTheDocument();
+  expect(getButtonByName("Continue")).toBeEnabled();
+  expect(screen.queryByText("Skip for now")).not.toBeInTheDocument();
   // The workspace invites a member, and no usage pack keeps onboarding clear
   // of the seat-purchase branch.
   expect(requested[0]).toStrictEqual({ email: TEAMMATE, role: "member" });
@@ -113,7 +118,8 @@ test("A refused address shows why, and the step continues anyway", async () => {
   expect(screen.getByText("Not sent")).toBeInTheDocument();
   expect(screen.queryByText("Invited")).not.toBeInTheDocument();
 
-  click(getButtonByName("Continue"));
+  // Nothing was sent, so the way on is still a skip.
+  click(getButtonByName("Skip for now"));
 
   await expect(
     screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
@@ -126,7 +132,7 @@ test("The step can be left without inviting anyone", async () => {
 
   expect(getButtonByName("Send invite")).toBeDisabled();
 
-  click(getButtonByName("Not now"));
+  click(getButtonByName("Skip for now"));
 
   await expect(
     screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),

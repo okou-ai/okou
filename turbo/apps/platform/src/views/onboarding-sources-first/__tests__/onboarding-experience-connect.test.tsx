@@ -124,7 +124,7 @@ async function openExperienceStep(fromStart = false): Promise<void> {
     await screen.findByRole("heading", {
       name: "Make Okou useful to your whole team",
     });
-    click(getButtonByName("Not now"));
+    click(getButtonByName("Skip for now"));
   }
 
   await expect(

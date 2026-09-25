@@ -232,7 +232,7 @@ async function openSkillsStep(
     await screen.findByRole("heading", {
       name: "Make Okou useful to your whole team",
     });
-    click(getButtonByName("Not now"));
+    click(getButtonByName("Skip for now"));
   }
 
   await expect(
@@ -432,7 +432,7 @@ test("Finishing onboarding sends the selected Codex model preference after a ful
   );
 
   await openSkillsStep(CODEX_CARD, true);
-  click(getButtonByName("Continue"));
+  click(getButtonByName("Skip for now"));
   await expect(
     screen.findByRole("heading", { name: SLACK_QUESTION }),
   ).resolves.toBeInTheDocument();
@@ -451,7 +451,7 @@ test("A resumed skills step without a work positioning continues to Slack", asyn
   mockAgentWorkflows();
   await openSkillsStep();
 
-  click(getButtonByName("Continue"));
+  click(getButtonByName("Skip for now"));
 
   await expect(
     screen.findByRole("heading", { name: SLACK_QUESTION }),
@@ -535,5 +535,5 @@ test("A session that cannot be opened leaves the step passable", async () => {
     screen.findByText("The import session could not be opened."),
   ).resolves.toBeInTheDocument();
   // Nothing on this step is required, so a failure never holds the run back.
-  expect(getButtonByName("Continue")).toBeEnabled();
+  expect(getButtonByName("Skip for now")).toBeEnabled();
 });

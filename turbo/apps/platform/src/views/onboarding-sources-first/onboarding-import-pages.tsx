@@ -291,13 +291,14 @@ export function OnboardingSkillsPage() {
   if (providerName === null) {
     return null;
   }
+  const imported = skillImport.imported.length > 0;
 
   return (
     <OnboardingStepLayout
       currentStep={flow.currentStep}
       totalSteps={flow.totalSteps}
       title={
-        skillImport.imported.length > 0
+        imported
           ? t(($) => {
               return $.onboarding.sourcesFirst.skills.importedTitle;
             })
@@ -311,16 +312,19 @@ export function OnboardingSkillsPage() {
         },
         { provider: providerName },
       )}
-      primaryLabel={t(($) => {
-        return $.onboarding.sourcesFirst.common.continue;
-      })}
-      // Nothing on this step is required: a run that imports no skill at all
-      // leaves it the same way as one that imports ten.
-      onPrimary={flow.goNext}
-      secondaryLabel={t(($) => {
-        return $.onboarding.sourcesFirst.common.skip;
-      })}
-      onSecondary={flow.goSkip}
+      // Nothing on this step is required: until a skill arrives, the way on is
+      // a skip, and it becomes Continue once one has.
+      primaryLabel={
+        imported
+          ? t(($) => {
+              return $.onboarding.sourcesFirst.common.continue;
+            })
+          : t(($) => {
+              return $.onboarding.sourcesFirst.common.skip;
+            })
+      }
+      onPrimary={imported ? flow.goNext : flow.goSkip}
+      primaryEmphasis={imported ? "strong" : "quiet"}
       onBack={flow.goBack}
     >
       <div className="mx-auto flex w-full max-w-[600px] flex-col gap-6">
@@ -966,14 +970,17 @@ export function OnboardingSlackPage() {
               return $.onboarding.sourcesFirst.slack.copy;
             })
       }
-      primaryLabel={t(($) => {
-        return $.onboarding.sourcesFirst.common.finish;
-      })}
-      onPrimary={flow.goNext}
-      secondaryLabel={t(($) => {
-        return $.onboarding.sourcesFirst.common.skip;
-      })}
-      onSecondary={flow.goSkip}
+      primaryLabel={
+        connected
+          ? t(($) => {
+              return $.onboarding.sourcesFirst.common.finish;
+            })
+          : t(($) => {
+              return $.onboarding.sourcesFirst.common.skip;
+            })
+      }
+      onPrimary={connected ? flow.goNext : flow.goSkip}
+      primaryEmphasis={connected ? "strong" : "quiet"}
       onBack={flow.goBack}
     >
       {/* One column on the step's own sheet: what it looks like in a channel,
