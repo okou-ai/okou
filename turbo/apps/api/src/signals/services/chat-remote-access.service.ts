@@ -152,12 +152,14 @@ async function notifyRemoteAccessChange(
   }
 }
 
-async function admitRemoteAccessWrite(
+async function enterRemoteAccessWrite(
   tx: Tx,
   owner: Owner,
   protocol: RemoteAccessProtocol,
-): Promise<boolean> {
-  return protocol !== "vnc" || (await enterVncWrite(tx, owner));
+): Promise<void> {
+  if (protocol === "vnc") {
+    await enterVncWrite(tx, owner);
+  }
 }
 
 function toHostDefault(row: {
@@ -256,9 +258,7 @@ export async function updateRemoteHostDefault(
   enabled: boolean,
 ): Promise<RemoteHostDefault | null> {
   const result = await db.transaction(async (tx) => {
-    if (!(await admitRemoteAccessWrite(tx, owner, protocol))) {
-      return null;
-    }
+    await enterRemoteAccessWrite(tx, owner, protocol);
     if (protocol === "ssh") {
       const [row] = await tx
         .update(sshConnections)
@@ -377,9 +377,7 @@ export async function setThreadRemoteAccessOverride(
   enabled: boolean,
 ): Promise<ThreadRemoteHostAccess | null> {
   const result = await db.transaction(async (tx) => {
-    if (!(await admitRemoteAccessWrite(tx, owner, protocol))) {
-      return null;
-    }
+    await enterRemoteAccessWrite(tx, owner, protocol);
     if (!(await ownedThreadExists(tx, owner))) {
       return null;
     }
@@ -464,9 +462,7 @@ export async function clearThreadRemoteAccessOverride(
   protocol: RemoteAccessProtocol,
 ): Promise<ThreadRemoteHostAccess | null> {
   const result = await db.transaction(async (tx) => {
-    if (!(await admitRemoteAccessWrite(tx, owner, protocol))) {
-      return null;
-    }
+    await enterRemoteAccessWrite(tx, owner, protocol);
     if (!(await ownedThreadExists(tx, owner))) {
       return null;
     }

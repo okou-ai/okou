@@ -125,7 +125,7 @@ async function deleteVncRows(
 }
 
 /** Shared cleanup scopes -> exclusive owner -> business rows. */
-export async function enterVncWrite(tx: Tx, owner: VncOwner): Promise<boolean> {
+export async function enterVncWrite(tx: Tx, owner: VncOwner): Promise<void> {
   const keys = ownerScopeKeys(owner);
   for (const key of keys) {
     await lockScope(tx, key, "shared");
@@ -134,9 +134,6 @@ export async function enterVncWrite(tx: Tx, owner: VncOwner): Promise<boolean> {
   await tx.execute(
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${ownerLock}, 0))`,
   );
-  // Always true; the boolean is kept only until the remaining caller in
-  // chat-remote-access drops its admission check.
-  return true;
 }
 
 /** Call before any other business-row lock in an enclosing cleanup transaction. */
