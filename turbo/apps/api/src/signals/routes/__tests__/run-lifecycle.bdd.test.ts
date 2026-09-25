@@ -862,6 +862,17 @@ function failIfChatCallbackRouteIsFetched(): void {
   );
 }
 
+async function finishCancelledRun(
+  runId: string,
+  sandboxToken: string,
+): Promise<void> {
+  await createWebhookCallbackApi(context).requestAgentComplete(
+    { runId, exitCode: 1, error: "Run cancelled" },
+    { authorization: `Bearer ${sandboxToken}` },
+    [200],
+  );
+}
+
 async function sendChatRunMessage(
   actor: ApiTestUser,
   body: {
@@ -5868,6 +5879,8 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
 
     await api.requestCancelRun(actor, second.runId, [200]);
     await api.requestCancelRun(actor, third.runId, [200]);
+    expect((await api.readRunQueue(actor)).body.concurrency.active).toBe(1);
+    await finishCancelledRun(third.runId, thirdClaim.sandboxToken);
     const emptied = await api.readRunQueue(actor);
     expect(emptied.body.concurrency.active).toBe(0);
   });
@@ -6236,6 +6249,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     expect(appendSystemPrompt).toContain("okou chat send");
     expect(appendSystemPrompt).toContain("okou chat cancel");
     await api.requestCancelRun(actor, run.runId, [200]);
+    await finishCancelledRun(run.runId, claim.sandboxToken);
 
     await upsertOrgPlanEntitlementFixture({
       orgId,
@@ -6335,6 +6349,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     });
     expect(claim.modelUsageProvider).toBe("gpt-6-luna");
     await api.requestCancelRun(actor, sent.body.runId, [200]);
+    await finishCancelledRun(sent.body.runId, claim.sandboxToken);
 
     // Model access follows the configured route. A seeded Built-in route the
     // plan does not cover reports the upgrade, while a model the workspace
@@ -7775,6 +7790,8 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
 
     await api.requestCancelRun(actor, withoutHost.runId, [200]);
     await api.requestCancelRun(actor, withHost.runId, [200]);
+    await finishCancelledRun(withoutHost.runId, bareClaim.sandboxToken);
+    await finishCancelledRun(withHost.runId, hostClaim.sandboxToken);
     const drained = await api.readRunQueue(actor);
     expect(drained.body.concurrency.active).toBe(0);
   });
@@ -13263,6 +13280,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       expect(claim.networkPolicies?.slack?.deny).toContain("chat:write");
       expect(claim).not.toHaveProperty("connectorPermissionBaseline");
       await api.requestCancelRun(actor, run.runId, [200]);
+      await finishCancelledRun(run.runId, claim.sandboxToken);
     }
   });
 
@@ -13300,6 +13318,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       });
       const claim = await api.claimRunnerJob(run.runId);
       await api.requestCancelRun(actor, run.runId, [200]);
+      await finishCancelledRun(run.runId, claim.sandboxToken);
       const policy = claim.networkPolicies?.slack;
       if (!policy) {
         throw new Error("Expected a slack network policy on the claim");
@@ -14325,6 +14344,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
     );
     await api.requestCancelRun(actor, queued.runId, [200]);
+    await finishCancelledRun(queued.runId, claim.sandboxToken);
 
     const enabled = await api.createRun(actor, {
       agentId,
@@ -14339,6 +14359,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
     );
     await api.requestCancelRun(actor, enabled.runId, [200]);
+    await finishCancelledRun(enabled.runId, enabledClaim.sandboxToken);
 
     await setPaidToolDisabled(context, actor, "web-search", true);
     await setPaidToolDisabled(context, actor, "video-generation", true);
@@ -14358,6 +14379,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       rolloutOffClaim.platformEnvironment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR],
     ).toBe("true");
     await api.requestCancelRun(actor, rolloutOff.runId, [200]);
+    await finishCancelledRun(rolloutOff.runId, rolloutOffClaim.sandboxToken);
 
     await api.createOrgModelProvider(actor, {
       type: "openai-api-key",
@@ -14374,6 +14396,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       codexByokClaim.platformEnvironment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR],
     ).toBe("true");
     await api.requestCancelRun(actor, codexByok.runId, [200]);
+    await finishCancelledRun(codexByok.runId, codexByokClaim.sandboxToken);
 
     const explicitKeyAgent = await api.createDirectAgent(actor, {
       version: "1",
@@ -14393,6 +14416,10 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       explicitKeyClaim.platformEnvironment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR],
     ).toBe("true");
     await api.requestCancelRun(actor, explicitKeyRun.runId, [200]);
+    await finishCancelledRun(
+      explicitKeyRun.runId,
+      explicitKeyClaim.sandboxToken,
+    );
 
     await seedBuiltInDefaultModelKey();
     const builtIn = await api.createRun(actor, {
@@ -14405,6 +14432,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
     );
     await api.requestCancelRun(actor, builtIn.runId, [200]);
+    await finishCancelledRun(builtIn.runId, builtInClaim.sandboxToken);
   });
 
   it("uses the executing member's paid tool preferences for a shared agent", async () => {
@@ -14803,6 +14831,8 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
 
     await api.requestCancelRun(actor, second.runId, [200]);
     await api.requestCancelRun(actor, queued.runId, [200]);
+    expect((await api.readRunQueue(actor)).body.concurrency.active).toBe(1);
+    await finishCancelledRun(queued.runId, claim.sandboxToken);
     const drained = await api.readRunQueue(actor);
     expect(drained.body.concurrency.active).toBe(0);
   });
@@ -15173,6 +15203,8 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
 
     await api.requestCancelRun(actor, first.runId, [200]);
     await api.requestCancelRun(actor, second.runId, [200]);
+    await finishCancelledRun(first.runId, claimed.body.sandboxToken);
+    await finishCancelledRun(second.runId, directClaimed.body.sandboxToken);
     const settled = await api.readRunQueue(actor);
     expect(settled.body.concurrency.active).toBe(0);
   });
@@ -15286,6 +15318,7 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
     const cancelled = await api.readRun(actor, run.runId);
     expect(cancelled.status).toBe("cancelled");
+    await finishCancelledRun(run.runId, claim.sandboxToken);
 
     const emptyRun = await api.createDirectRun(actor, {
       agentId: compose.agentId,
@@ -15298,6 +15331,7 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
     expect(emptyClaim).not.toHaveProperty("secretValueEnvironmentKeys");
     expect(kms.decryptCalls).toBe(decryptCountBeforeEmptyClaim);
     await api.requestCancelRun(actor, emptyRun.runId, [200]);
+    await finishCancelledRun(emptyRun.runId, emptyClaim.sandboxToken);
 
     // A compose pinned to a non-vm0 runner group fails dispatch at creation.
     const foreignName = `bdd-foreign-${randomUUID().slice(0, 8)}`;
@@ -16963,6 +16997,8 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
 
     await api.requestCancelRun(actor, actorRun.runId, [200]);
     await api.requestCancelRun(member, memberRun.runId, [200]);
+    await finishCancelledRun(actorRun.runId, actorClaim.sandboxToken);
+    await finishCancelledRun(memberRun.runId, memberClaim.sandboxToken);
     const settled = await api.readRunQueue(actor);
     expect(settled.body.concurrency.active).toBe(0);
   });
