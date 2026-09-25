@@ -147,7 +147,8 @@ Discord authorization source. See C's
    `/okou org` guidance, each about once an hour. The bot's own earlier notice
    among the DM's latest 50 messages is the rate-limit record, and a shared
    enforced nonce collapses concurrent notices, so Okou stores nothing about
-   unconnected senders. A sender whose connection exists but no longer
+   unconnected senders. That read is internal and compares only the bot's own
+   notices; no DM content reaches a run. A sender whose connection exists but no longer
    verifies (for example, while the feature is off for that org) gets no notice.
 
 OAuth deferral and disabled rollout are project scope limits, not unavoidable

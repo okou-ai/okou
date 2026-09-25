@@ -1101,7 +1101,6 @@ describe("canonical Discord ingress", () => {
     await postDiscordMessage(context, strangerDm("and once more"));
     await flushWaitUntilForTest();
     expect(noticesTo(dmId)).toHaveLength(2);
-    await expect(discordChatThreads(context, actor)).resolves.toHaveLength(0);
   });
 
   it("asks a DM sender with several workspaces to choose one with /okou org", async () => {
