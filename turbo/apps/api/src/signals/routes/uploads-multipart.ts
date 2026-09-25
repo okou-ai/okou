@@ -90,7 +90,7 @@ const completeMultipartInner$ = command(
           key: completed.key,
           filename: completed.filename,
           contentType: completed.contentType,
-          publicBrand: completed.publicBrand,
+          layout: completed.layout,
         },
         signal,
       );

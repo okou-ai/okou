@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { registerLegacyArtifactFile$ } from "./artifact-delivery.service";
 
 import { command, computed, type Computed } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import {
+  CURRENT_LINK_LAYOUT,
+  linkLayoutFromSegment,
+  linkLayoutSegment,
+  type LinkLayout,
+} from "@okouai/api-contracts/contracts/link-layout";
 
 import { env } from "../../lib/env";
 import {
@@ -14,7 +19,7 @@ import {
   isArtifactKeyV2,
   OKOU_CDN_ARTIFACTS_ORIGIN,
   OKOU_SHORT_ARTIFACTS_ORIGIN,
-  publicArtifactsBaseUrlForBrand,
+  publicArtifactsBaseUrl,
 } from "../../lib/file-url";
 import { inferMimetype } from "../../lib/mimetype";
 import {
@@ -34,7 +39,8 @@ const MAX_ARTIFACT_KEY_ATTEMPTS = 5;
 const ARTIFACT_ID_METADATA_KEY = "artifact-id";
 const ARTIFACT_FILENAME_METADATA_KEY = "filename";
 const ARTIFACT_USER_ID_METADATA_KEY = "user-id";
-const ARTIFACT_PUBLIC_BRAND_METADATA_KEY = "public-brand";
+// Stored link-layout segment; the metadata key name is a persisted format.
+const ARTIFACT_LINK_LAYOUT_METADATA_KEY = "public-brand";
 const CLOUDFLARE_IMAGE_RESIZE_PATH_PREFIX = "/cdn-cgi/image/";
 const PUBLIC_ARTIFACT_PATH_PREFIX = "/artifacts/";
 
@@ -42,7 +48,7 @@ export interface ArtifactObjectLocation {
   readonly id: string;
   readonly key: string;
   readonly url: string;
-  readonly publicBrand: PublicBrand;
+  readonly layout: LinkLayout;
   readonly metadata: Readonly<Record<string, string>>;
 }
 
@@ -58,7 +64,7 @@ type StoredGeneratedArtifactObject = Omit<
 export interface ResolvedArtifactObject {
   readonly key: string;
   readonly url: string;
-  readonly publicBrand: PublicBrand;
+  readonly layout: LinkLayout;
   readonly filename: string;
   readonly contentType: string;
   readonly size: number;
@@ -88,8 +94,8 @@ export function publicArtifactKeyFromUrl(value: string): string | null {
     return artifactKeyFromShortOkouUrl(url);
   }
   const allowedOrigins = new Set([
-    new URL(publicArtifactsBaseUrlForBrand("vm0")).origin,
-    new URL(publicArtifactsBaseUrlForBrand("okou")).origin,
+    new URL(publicArtifactsBaseUrl("legacy")).origin,
+    new URL(publicArtifactsBaseUrl("current")).origin,
     OKOU_CDN_ARTIFACTS_ORIGIN,
   ]);
   if (!allowedOrigins.has(url.origin)) {
@@ -151,30 +157,23 @@ export function artifactObjectMetadata(
   userId: string,
   id: string,
   filename: string,
-  publicBrand: PublicBrand,
+  layout: LinkLayout,
 ): Readonly<Record<string, string>> {
   return {
     [ARTIFACT_ID_METADATA_KEY]: id,
     [ARTIFACT_FILENAME_METADATA_KEY]: encodeURIComponent(filename),
     [ARTIFACT_USER_ID_METADATA_KEY]: encodeURIComponent(userId),
-    [ARTIFACT_PUBLIC_BRAND_METADATA_KEY]: publicBrand,
+    [ARTIFACT_LINK_LAYOUT_METADATA_KEY]: linkLayoutSegment(layout),
   };
 }
 
-function publicBrandFromMetadata(
+function layoutFromMetadata(
   metadata: Readonly<Record<string, string>>,
-): PublicBrand {
-  const publicBrand = metadata[ARTIFACT_PUBLIC_BRAND_METADATA_KEY];
-  if (publicBrand === undefined) {
-    // Pre-brand V2 objects remain reachable for their persisted-object
-    // lifetime. Remove after all reachable objects are migrated or deleted;
-    // tracked by #28449. Present invalid values must fail below.
-    return "vm0";
-  }
-  if (publicBrand === "vm0" || publicBrand === "okou") {
-    return publicBrand;
-  }
-  throw new Error(`Invalid artifact public brand: ${publicBrand}`);
+): LinkLayout {
+  const segment = metadata[ARTIFACT_LINK_LAYOUT_METADATA_KEY];
+  // V2 objects stored before the layout marker keep their legacy links for
+  // the object's lifetime. Present invalid values fail.
+  return segment === undefined ? "legacy" : linkLayoutFromSegment(segment);
 }
 
 function filenameFromMetadata(
@@ -201,7 +200,6 @@ export const allocateArtifactObject$ = command(
     args: {
       readonly userId: string;
       readonly filename: string;
-      readonly publicBrand: PublicBrand;
       readonly id?: string;
       readonly variant?: string;
     },
@@ -227,13 +225,13 @@ export const allocateArtifactObject$ = command(
         return {
           id,
           key,
-          url: buildFileUrlFromKey(key, args.publicBrand),
-          publicBrand: args.publicBrand,
+          url: buildFileUrlFromKey(key, CURRENT_LINK_LAYOUT),
+          layout: CURRENT_LINK_LAYOUT,
           metadata: artifactObjectMetadata(
             args.userId,
             id,
             args.filename,
-            args.publicBrand,
+            CURRENT_LINK_LAYOUT,
           ),
         };
       }
@@ -252,17 +250,17 @@ export const allocateArtifactObject$ = command(
               encodeURIComponent(args.userId) &&
             filenameFromMetadata(head.metadata) === args.filename
           ) {
-            const publicBrand = publicBrandFromMetadata(head.metadata);
+            const layout = layoutFromMetadata(head.metadata);
             return {
               id,
               key,
-              url: buildFileUrlFromKey(key, publicBrand),
-              publicBrand,
+              url: buildFileUrlFromKey(key, layout),
+              layout,
               metadata: artifactObjectMetadata(
                 args.userId,
                 id,
                 args.filename,
-                publicBrand,
+                layout,
               ),
             };
           }
@@ -286,7 +284,6 @@ export const storeGeneratedArtifactObject$ = command(
       readonly extension: string;
       readonly body: Buffer;
       readonly contentType: string;
-      readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
   ): Promise<StoredGeneratedArtifactObject> => {
@@ -305,7 +302,6 @@ export const storeGeneratedArtifactObject$ = command(
           filename: filenameFor(proposedId),
           contentType: args.contentType,
           size: args.body.byteLength,
-          publicBrand: args.publicBrand,
           // A generation is an artifact output even when no run produced it, so
           // its ownership record carries that purpose and stays in the catalog.
           purpose: "artifact",
@@ -345,7 +341,6 @@ export const storeGeneratedArtifactObject$ = command(
         id: proposedId,
         ...(args.identity ? { variant: args.identity.variant } : {}),
         filename: filenameFor(proposedId),
-        publicBrand: args.publicBrand,
       },
       signal,
     );
@@ -354,7 +349,7 @@ export const storeGeneratedArtifactObject$ = command(
       args.userId,
       artifact.id,
       filename,
-      args.publicBrand,
+      artifact.layout,
     );
     await get(
       putS3Object(
@@ -372,7 +367,7 @@ export const storeGeneratedArtifactObject$ = command(
         key: artifact.key,
         filename,
         contentType: args.contentType,
-        publicBrand: args.publicBrand,
+        layout: artifact.layout,
       },
       signal,
     );
@@ -405,11 +400,11 @@ function resolvedV2ArtifactObjectFromHead(args: {
   }
   const filename =
     filenameFromMetadata(args.head.metadata) ?? filenameFromLegacyKey(args.key);
-  const publicBrand = publicBrandFromMetadata(args.head.metadata);
+  const layout = layoutFromMetadata(args.head.metadata);
   return {
     key: args.key,
-    url: buildFileUrlFromKey(args.key, publicBrand),
-    publicBrand,
+    url: buildFileUrlFromKey(args.key, layout),
+    layout,
     filename,
     contentType: args.head.contentType ?? inferMimetype(filename),
     size,
@@ -460,9 +455,9 @@ function resolveV1ArtifactObject(
   userId: string,
   id: string,
 ): Computed<Promise<ResolvedArtifactObject | null>> {
-  // V1 objects predate publicBrand and remain VM0 for their persisted-object
-  // lifetime. Remove with V1 reads once no V1 object remains reachable;
-  // tracked by #28449.
+  // V1 objects predate the layout marker and keep their legacy links for the
+  // persisted object's lifetime. Remove with V1 reads once no V1 object
+  // remains reachable; tracked by #28449.
   return computed(async (get): Promise<ResolvedArtifactObject | null> => {
     const objects = await get(
       listS3Objects(bucket, buildArtifactPrefix(userId, id)),
@@ -474,8 +469,8 @@ function resolveV1ArtifactObject(
     const filename = filenameFromLegacyKey(object.key);
     return {
       key: object.key,
-      url: buildFileUrlFromKey(object.key, "vm0"),
-      publicBrand: "vm0",
+      url: buildFileUrlFromKey(object.key, "legacy"),
+      layout: "legacy",
       filename,
       contentType: inferMimetype(filename),
       size: object.size,

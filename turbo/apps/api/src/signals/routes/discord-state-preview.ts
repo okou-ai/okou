@@ -11,6 +11,7 @@ import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection"
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
+import { discordChatDeliveries } from "@okouai/db/schema/discord-chat-delivery";
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
 import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
 import { discordUserAgentPreferences } from "@okouai/db/schema/discord-user-agent-preference";
@@ -68,25 +69,47 @@ async function seedDiscordHistory(
   if (!route) {
     throw new Error("Discord preview route creation failed");
   }
-  await tx.insert(discordChatIngress).values([
-    {
-      connectionId: args.connectionId,
-      routeId: route.id,
-      eventId: args.history.messageId,
-      messageId: args.history.messageId,
-      payload: args.history.messageText,
-      createdAt,
-      updatedAt: createdAt,
-    },
-    {
-      connectionId: args.connectionId,
-      eventId: `${args.history.messageId}-pending`,
-      messageId: `${args.history.messageId}-pending`,
-      payload: "Accepted before route creation",
-      createdAt,
-      updatedAt: createdAt,
-    },
-  ]);
+  const ingress = await tx
+    .insert(discordChatIngress)
+    .values([
+      {
+        connectionId: args.connectionId,
+        routeId: route.id,
+        eventId: args.history.messageId,
+        messageId: args.history.messageId,
+        payload: args.history.messageText,
+        createdAt,
+        updatedAt: createdAt,
+      },
+      {
+        connectionId: args.connectionId,
+        eventId: `${args.history.messageId}-pending`,
+        messageId: `${args.history.messageId}-pending`,
+        payload: "Accepted before route creation",
+        createdAt,
+        updatedAt: createdAt,
+      },
+    ])
+    .returning({ id: discordChatIngress.id });
+  signal.throwIfAborted();
+  const pendingIngress = ingress[1];
+  if (!pendingIngress) {
+    throw new Error("Discord preview ingress creation failed");
+  }
+  // An admission notice that Discord refused keeps provider diagnostics.
+  await tx.insert(discordChatDeliveries).values({
+    connectionId: args.connectionId,
+    ingressId: pendingIngress.id,
+    orgId: args.orgId,
+    userId: args.userId,
+    channelId: args.history.channelId,
+    content: "Okou could not start this Discord task",
+    status: "failed",
+    attempts: 5,
+    lastAttemptAt: createdAt,
+    lastError: "Discord API 403: Missing Access",
+    createdAt,
+  });
   signal.throwIfAborted();
   await tx.insert(chatDiscordContext).values({
     connectionId: args.connectionId,

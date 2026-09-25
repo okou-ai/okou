@@ -1,9 +1,13 @@
 import { z } from "zod";
+import { linkLayoutSegmentSchema } from "@okouai/api-contracts/contracts/link-layout";
 
-/** Older public pointers predate the explicit brand and deployment version. */
+/**
+ * Older public pointers predate the layout marker (`publicBrand`, legacy when
+ * absent) and the deployment version.
+ */
 export const hostedSitePointerSchema = z.object({
   version: z.literal(1),
-  publicBrand: z.enum(["vm0", "okou"]).optional(),
+  publicBrand: linkLayoutSegmentSchema.optional(),
   publicSlug: z.string(),
   siteId: z.uuid(),
   deploymentId: z.uuid(),

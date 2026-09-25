@@ -11,7 +11,6 @@ import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installatio
 import { and, asc, eq, inArray, lt, or } from "drizzle-orm";
 import { z } from "zod";
 import type { FeishuPlatform } from "@okouai/api-contracts/contracts/feishu-platform";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { logger } from "../../lib/log";
 import { env } from "../../lib/env";
 import { buildFeishuNoticeMessage } from "../../lib/feishu-message-card";
@@ -430,7 +429,6 @@ const persistCanonicalFeishuIngress$ = command(
         userId: args.connection.userId,
         orgId: args.installation.orgId,
         chatThreadId: route.chatThreadId,
-        publicBrand: PUBLIC_BRAND,
         files: feishuInputFiles(args.db, args.message, args.ingress.platform),
       },
       signal,

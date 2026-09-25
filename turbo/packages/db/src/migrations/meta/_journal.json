@@ -1100,6 +1100,13 @@
       "when": 1790306049217,
       "tag": "1234_teams_telegram_public_brand_okou_default",
       "breakpoints": true
+    },
+    {
+      "idx": 1235,
+      "version": "7",
+      "when": 1790307760596,
+      "tag": "1235_hosted_artifact_link_layout_okou_default",
+      "breakpoints": true
     }
   ]
 }

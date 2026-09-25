@@ -1,13 +1,16 @@
 import { z } from "zod";
+import { linkLayoutSegmentSchema, type LinkLayoutSegment } from "./link-layout";
 
-const brandSchema = z.enum(["vm0", "okou"]);
+// `publicBrand` is the persisted link-layout marker. Deployed delivery Workers
+// compare it with the layout segment of the key they read, so its name and
+// values are part of the stored R2 format.
 export const artifactDeliveryRecordSchema = z.discriminatedUnion("kind", [
   // A separate discriminator makes older Workers reject this delivery instead
   // of ignoring the shared conversation's additional authorization boundary.
   z.object({
     version: z.literal(1),
     kind: z.literal("thread-resource"),
-    publicBrand: brandSchema,
+    publicBrand: linkLayoutSegmentSchema,
     threadId: z.uuid(),
     publicToken: z.string().regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u),
     targetKind: z.enum(["file", "html"]),
@@ -17,7 +20,7 @@ export const artifactDeliveryRecordSchema = z.discriminatedUnion("kind", [
   z.object({
     version: z.literal(1),
     kind: z.literal("publication"),
-    publicBrand: brandSchema,
+    publicBrand: linkLayoutSegmentSchema,
     shareId: z.uuid(),
     publicToken: z.string().regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u),
     targetKind: z.enum(["file", "html"]),
@@ -25,7 +28,7 @@ export const artifactDeliveryRecordSchema = z.discriminatedUnion("kind", [
   z.object({
     version: z.literal(1),
     kind: z.literal("legacy-file"),
-    publicBrand: brandSchema,
+    publicBrand: linkLayoutSegmentSchema,
     audience: z.literal("public"),
     key: z.string().startsWith("artifacts/"),
     filename: z.string().min(1),
@@ -34,7 +37,7 @@ export const artifactDeliveryRecordSchema = z.discriminatedUnion("kind", [
   z.object({
     version: z.literal(1),
     kind: z.literal("legacy-site"),
-    publicBrand: brandSchema,
+    publicBrand: linkLayoutSegmentSchema,
     audience: z.literal("public"),
     pointerKey: z.string().startsWith("sites/"),
   }),
@@ -44,16 +47,16 @@ export type ArtifactDeliveryRecord = z.infer<
 >;
 
 export function artifactDeliveryKey(
-  brand: "vm0" | "okou" | null,
+  segment: LinkLayoutSegment | null,
   kind: "file" | "html",
   alias: string,
 ): string {
-  // One file hostname spans both brands, so file aliases have one namespace.
+  // One file hostname spans both layouts, so file aliases have one namespace.
   if (kind === "file")
     return `artifact-delivery/files/${encodeURIComponent(alias)}.json`;
-  if (!brand)
-    throw new Error("A hosted artifact registry key requires a brand");
-  return `artifact-delivery/${brand}/html/${encodeURIComponent(alias)}.json`;
+  if (!segment)
+    throw new Error("A hosted artifact registry key requires a link layout");
+  return `artifact-delivery/${segment}/html/${encodeURIComponent(alias)}.json`;
 }
 
 export function artifactFilenameExtension(filename: string): string {
@@ -71,6 +74,8 @@ export function isArtifactDeliveryFilePath(pathname: string): boolean {
 }
 
 /** The marker certifies completed registration, not a feature rollout flag. */
-export function artifactDeliveryRegistrationKey(brand: "vm0" | "okou"): string {
-  return `artifact-delivery/${brand}/registration.json`;
+export function artifactDeliveryRegistrationKey(
+  segment: LinkLayoutSegment,
+): string {
+  return `artifact-delivery/${segment}/registration.json`;
 }

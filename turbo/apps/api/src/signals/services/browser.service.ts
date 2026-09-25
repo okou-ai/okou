@@ -967,7 +967,6 @@ const captureAndStoreBrowserScreenshot$ = command(
             filename: BROWSER_SCREENSHOT_FILENAME,
             contentType: BROWSER_SCREENSHOT_CONTENT_TYPE,
             size: image.byteLength,
-            publicBrand: browser.publicBrand,
           },
           signal,
         );

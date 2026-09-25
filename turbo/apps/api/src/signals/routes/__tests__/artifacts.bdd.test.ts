@@ -609,7 +609,7 @@ describe("video Artifact previews", () => {
       "reference-footage.mp4",
     );
     expect(previewedArtifact?.thumbnail?.url).toMatch(
-      /\/artifacts\/[0-9a-z]{10}\.jpg$/u,
+      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.jpg$/u,
     );
   }, 180_000);
 
@@ -747,7 +747,7 @@ describe("video Artifact previews", () => {
       }),
     ]);
     expect(previewedArtifact?.thumbnail?.url).toMatch(
-      /\/artifacts\/[0-9a-z]{10}\.jpg$/u,
+      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.jpg$/u,
     );
   }, 180_000);
 
@@ -980,7 +980,7 @@ describe("hosted Artifact previews", () => {
     );
   }, 120_000);
 
-  it("renders Okou deployments from their branded hosted-site domain", async () => {
+  it("renders current-layout deployments from their hosted-site domain", async () => {
     const owner = await artifactActor("Artifacts API Okou preview image agent");
     mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
     mockEnv("ARTIFACT_PREVIEW_WAF_SECRET", ARTIFACT_PREVIEW_WAF_SECRET);

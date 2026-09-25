@@ -13,6 +13,7 @@ import {
   type SocialKitErrorResponse,
 } from "@okouai/api-contracts/contracts/social";
 import { socialKitDownloadJobs } from "@okouai/db/schema/socialkit-download-job";
+import type { LinkLayout } from "@okouai/api-contracts/contracts/link-layout";
 import { command } from "ccstate";
 import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -1382,6 +1383,7 @@ const persistAndSettleSocialKitDownloadUsage$ = command(
 interface StoredArtifactObject {
   readonly key: string;
   readonly url: string;
+  readonly layout: LinkLayout;
   readonly sizeBytes: number;
 }
 
@@ -1405,7 +1407,6 @@ const allocateSocialKitArtifact$ = command(
       userId: args.job.userId,
       id: args.job.id,
       filename: args.filename,
-      publicBrand: args.job.publicBrand,
     };
     if (args.job.request.privateArtifacts === true) {
       return await set(
@@ -1473,6 +1474,7 @@ const materializeSocialKitArtifact$ = command(
           return {
             key: existing.key,
             url: existing.url,
+            layout: existing.layout,
             sizeBytes: existing.size,
           };
         }
@@ -1492,7 +1494,12 @@ const materializeSocialKitArtifact$ = command(
           },
           signal,
         );
-        return { key: location.key, url: location.url, sizeBytes };
+        return {
+          key: location.key,
+          url: location.url,
+          layout: location.layout,
+          sizeBytes,
+        };
       })(),
       () => {
         // `streamDownloadToArtifact$` cancels the reader on its own failures.
@@ -1534,7 +1541,7 @@ const materializeSocialKitArtifact$ = command(
         sizeBytes: artifact.sizeBytes,
         url: artifact.url,
         s3Key: stored.key,
-        publicBrand: args.job.publicBrand,
+        layout: stored.layout,
         metadata: {
           provider: "socialkit",
           providerJobId: args.job.providerJobId,

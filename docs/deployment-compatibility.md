@@ -125,6 +125,74 @@ skipped, so the old client simply stops purging. Its saved
 are not migrated. A new App against an older API makes no such calls. Rollback
 is safe; an older API resumes serving the routes with the same signing key.
 
+## Artifact and hosted-site link layouts (2026-09-25)
+
+The retired VM0 brand survives only as the read-only _legacy link layout_
+(#36766). `LinkLayout` (`packages/api-contracts/src/contracts/link-layout.ts`)
+is `current` or `legacy`; every new publication, upload, generated artifact,
+conversation snapshot and preview grant uses `current`. The layout is resolved
+only from stored data and is never a product identity. Records derived from
+legacy content, such as a share, owner preview or pointer update of a legacy
+site, inherit that content's layout so previously issued links keep resolving.
+
+The persisted layout marker keeps its historical spelling; renaming it would
+break stored objects and deployed Workers:
+
+| Layout    | Segment / marker | Hosted origin                                             | Artifact CDN                     | Pointer namespace    |
+| --------- | ---------------- | --------------------------------------------------------- | -------------------------------- | -------------------- |
+| `current` | `okou`           | `OKOU_HOST_SCHEME`://…`OKOU_PUBLIC_HOST_DOMAIN`           | `OKOU_PUBLIC_ARTIFACTS_BASE_URL` | `sites/brands/okou/` |
+| `legacy`  | `vm0`            | `ZERO_HOST_SCHEME`://…`ZERO_HOST_DOMAIN` (`sites.vm0.io`) | `PUBLIC_ARTIFACTS_BASE_URL`      | `sites/`             |
+
+The segment appears in R2 keys (`artifact-shares/<segment>/`,
+`artifact-delivery/<segment>/html/`, `shared-thread-artifacts/<segment>/`,
+`shared-artifacts/<segment>/`, `private-sites/<segment>/`,
+`private-previews/<segment>/`, `shared-previews/<segment>/`), in the
+`publicBrand` field of stored R2 policies, delivery records, preview grants,
+pointers and manifests, in the `public-brand` object metadata, in the
+`publicBrand` key of `run_uploaded_files.metadata` and chat attachment
+metadata, and in the `public_brand` column of `hosted_sites`,
+`hosted_deployments`, `private_hosted_deployments` and `artifact_shares`.
+Where a marker is absent — V1 artifact objects, V2 objects and canonical assets
+stored before the marker, pointers and manifests written before it, and
+historical public delivery writes — the layout is `legacy`. Present unknown
+values fail. The host Worker (#36766 slice G) uses the same segment names.
+Conversation snapshots are addressed through `shared_threads.public_brand`,
+which therefore remains readable as their layout marker until Phase 2.
+
+Writers therefore keep emitting the `okou` marker on every current-layout
+object: deployed Workers and an older API treat a missing marker as legacy.
+The API no longer accepts or passes a brand for uploads, generations, hosted
+deployments, integration input files or conversation attachment copies.
+Legacy-layout hosted sites keep serving and keep their names reserved; a new
+publication never redeploys a legacy site and, as before, receives a fallback
+name in the current layout when a legacy site holds the requested name. Artifact preview images are new objects and use `current`; the video
+poster transform still runs on the source artifact's CDN origin. The private
+video poster request always uses the current `files.` host, which the Worker
+accepts for both domains.
+
+Migration `1235_hosted_artifact_link_layout_okou_default` sets `DEFAULT 'okou'`
+on the four `public_brand` columns, so any writer that omits the column
+records the current layout. The API still writes the segment explicitly on
+hosted sites, deployments, shares and shared threads, using the same layout that
+selects their URLs and keys, so rows do not depend on the migration having run.
+Old API/new DB and rollback remain compatible. The columns, the
+`(site_id, public_brand)` foreign keys and their unique key stay: they are the
+per-row layout marker for roughly 13.4k sites and 22.5k deployments. Phase 2
+may replace the marker with a neutral column (for example a `legacy_link_layout`
+boolean backfilled from `public_brand = 'vm0'`) before dropping
+`public_brand`; that requires its own expand/contract release.
+
+Built-in generation jobs no longer read a brand. New job requests keep writing
+`__builtInGeneration.publicBrand = "okou"` so an older API that completes the
+job during rollout or rollback does not publish its result in the legacy
+layout. Stored requests that still carry any `publicBrand` value parse and the
+value is ignored.
+
+Environment names are unchanged because renaming deployed secrets is not safe
+in one release: `OKOU_*` configures the current layout and
+`PUBLIC_ARTIFACTS_BASE_URL` / `ZERO_HOST_*` configure only legacy-link
+reconstruction.
+
 ## Host-worker storage layouts replace public brand (2026-09-25)
 
 `apps/host-worker` no longer models a public brand (#36766). It resolves hosted

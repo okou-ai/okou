@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { EncryptedErasureSelector } from "@okouai/db/operations/account-erasure";
 import { z } from "zod";
+import { linkLayoutSegmentSchema } from "@okouai/api-contracts/contracts/link-layout";
 
 import { safeJsonParse } from "../utils";
 import {
@@ -45,7 +46,7 @@ const selectorSchema = z.discriminatedUnion("kind", [
     shareId: z.uuid(),
     targetKind: z.enum(["file", "html"]),
     targetId: z.uuid(),
-    publicBrand: z.enum(["vm0", "okou"]),
+    publicBrand: linkLayoutSegmentSchema,
     keys: z.array(z.string().min(1).max(2048)).min(1).max(4),
     privateKey: z.string().min(1).max(2048).optional(),
     snapshotPrefix: z.string().min(1).max(2048).optional(),

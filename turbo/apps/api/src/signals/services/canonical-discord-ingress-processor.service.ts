@@ -1,4 +1,3 @@
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { randomUUID } from "node:crypto";
 import { command, createStore } from "ccstate";
 import { discordGatewayEnvelopeSchema } from "@okouai/api-contracts/contracts/discord-gateway";
@@ -62,9 +61,10 @@ import { createUserMessageDocument } from "./chat-user-message.service";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import { prepareCanonicalDiscordIngressRoute$ } from "./discord-route-admission.service";
 import {
-  discordSenderBindings,
+  discordIngressSenderBindings,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
+import { getDiscordAppConfig } from "./discord-config";
 import { readDiscordHistoryPage$ } from "./discord-context.service";
 import {
   dispatchDiscordChatDeliveryOnce,
@@ -463,12 +463,18 @@ const readIngressConversationContext$ = command(
       readonly messageContentEnabled: boolean;
     },
     signal: AbortSignal,
-  ): Promise<string> => {
+  ): Promise<string | null> => {
     const { accessArgs, message, messageContentEnabled } = args;
-    if (!messageContentEnabled && message.guild_id) {
+    if (!message.guild_id) {
+      // Discord gives the bot one DM channel per user, shared by every org and
+      // DM session that user starts. Like Slack DMs, read no channel history;
+      // the canonical DM session carries its own continuity.
+      return null;
+    }
+    if (!messageContentEnabled) {
       return "Ordinary guild history was not read because Discord MESSAGE_CONTENT is unavailable. Only the current message is included.\n[]";
     }
-    // READ_MESSAGE_HISTORY is optional for the current mention/DM. Final
+    // READ_MESSAGE_HISTORY is optional for the current mention. Final
     // source view and destination write checks still revalidate live access.
     const history = await set(
       readDiscordHistoryPage$,
@@ -525,7 +531,6 @@ const materializeIngressAttachment$ = command(
         userId: accessArgs.userId,
         orgId: accessArgs.orgId,
         chatThreadId,
-        publicBrand: PUBLIC_BRAND,
         source: "discord",
         scope: "discord-input",
         key: `${accessArgs.connectionId}:${message.channel_id}:${message.id}:${attachment.id}`,
@@ -660,7 +665,7 @@ function createIngressContext(args: {
   readonly destinationChannelId: string;
   readonly message: DiscordMessageCreate;
   readonly channelType: number;
-  readonly conversationContext: string;
+  readonly conversationContext: string | null;
   readonly assets: readonly DiscordInputAsset[];
 }): DiscordChatEventContext {
   const {
@@ -750,7 +755,7 @@ const persistClaimedIngress$ = command(
       throw new Error("Canonical Discord ingress destination is missing");
     }
     const message = claimedIngressMessage(ingress);
-    const bindings = await get(discordSenderBindings(message.author.id));
+    const bindings = await get(discordIngressSenderBindings(message.author.id));
     signal.throwIfAborted();
     const binding = bindings.find((candidate) => {
       return (
@@ -1080,7 +1085,9 @@ function recordIngressFailure(
       args.failure.errorClass.startsWith("binding:") ||
       args.failure.errorClass === "access:403" ||
       args.failure.errorClass === "access:404" ||
-      args.failure.errorClass === "discord:unavailable"
+      args.failure.errorClass === "discord:unavailable" ||
+      // A notice cannot be delivered without app configuration either.
+      args.failure.errorClass === "discord:config_unavailable"
     ) {
       return null;
     }
@@ -1114,6 +1121,10 @@ export const processCanonicalDiscordIngress$ = command(
     args: { readonly ingressId: string },
     signal: AbortSignal,
   ): Promise<boolean> => {
+    // Missing app configuration is an outage: leave ingress unclaimed.
+    if (!getDiscordAppConfig()) {
+      return false;
+    }
     const db = set(writeDb$);
     const claim = await claimIngress(db, args.ingressId);
     signal.throwIfAborted();
@@ -1175,6 +1186,10 @@ const drainCanonicalDiscordIngress$ = command(
     connectionIds: readonly string[] | undefined,
     signal: AbortSignal,
   ): Promise<number> => {
+    // Without app configuration, neither exhaust attempts nor send notices.
+    if (!getDiscordAppConfig()) {
+      return 0;
+    }
     const db = set(writeDb$);
     const currentTime = nowDate();
     const scope = connectionIds
