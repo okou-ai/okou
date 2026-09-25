@@ -33,6 +33,7 @@ const VIEW = 1n << 10n;
 const SEND = 1n << 11n;
 const READ = 1n << 16n;
 const THREAD_SEND = 1n << 38n;
+const MANAGE_THREADS = 1n << 34n;
 const BASE_PERMISSIONS = String(VIEW | SEND | READ | THREAD_SEND | (1n << 15n));
 
 function snowflake() {
@@ -669,15 +670,64 @@ describe("Discord native sends and transport failures", () => {
     ).toBeTruthy();
   });
 
-  it.each(["archived", "locked"] as const)(
-    "reads but refuses sending into %s threads",
-    async (state) => {
+  it.each([false, true])(
+    "sends into an archived unlocked thread, which Discord reopens (private: %s)",
+    async (isPrivate) => {
       const f = await fixture();
-      addThread(f, { [state]: true });
+      addThread(f, { private: isPrivate, archived: true });
       await accept(history(f, f.threadId), [200]);
-      expect((await accept(send(f, f.threadId), [403])).body.error.code).toBe(
+      await accept(send(f, f.threadId), [200]);
+      expect(f.sentBodies).toHaveLength(1);
+    },
+  );
+
+  it.each<{
+    readonly name: string;
+    readonly user: "role" | "none" | "role-denied";
+    readonly bot: "role" | "none";
+    readonly allowed: boolean;
+  }>([
+    { name: "neither principal", user: "none", bot: "none", allowed: false },
+    { name: "only the bot", user: "none", bot: "role", allowed: false },
+    { name: "only the sender", user: "role", bot: "none", allowed: false },
+    {
+      name: "a sender whose member overwrite denies it",
+      user: "role-denied",
+      bot: "role",
+      allowed: false,
+    },
+    { name: "both principals", user: "role", bot: "role", allowed: true },
+  ])(
+    "reads a locked thread and sends only when MANAGE_THREADS is held by $name",
+    async ({ user, bot, allowed }) => {
+      const f = await fixture();
+      const thread = addThread(f, { locked: true, archived: true });
+      const grant = String(MANAGE_THREADS);
+      if (user !== "none") {
+        f.roles.find((role) => {
+          return role.id === f.userRoleId;
+        })!.permissions = grant;
+      }
+      if (user === "role-denied") {
+        f.channels.get(f.channelId)!.permission_overwrites = [
+          { id: f.discordUserId, type: 1, deny: grant, allow: "0" },
+        ];
+      }
+      if (bot === "role") {
+        f.roles.find((role) => {
+          return role.id === f.botRoleId;
+        })!.permissions = grant;
+      }
+      await accept(history(f, thread.id), [200]);
+      if (allowed) {
+        await accept(send(f, thread.id), [200]);
+        expect(f.sentBodies).toHaveLength(1);
+        return;
+      }
+      expect((await accept(send(f, thread.id), [403])).body.error.code).toBe(
         "DISCORD_THREAD_CLOSED",
       );
+      expect(f.sentBodies).toHaveLength(0);
     },
   );
 
