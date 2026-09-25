@@ -1,5 +1,35 @@
 # Deployment Compatibility
 
+## Computer Use host sessions and command reads stop locking (2026-09-25)
+
+Computer Use heartbeat, command claim, command completion, host stop, command
+status reads and screenshot/plugin-content reads no longer open multi-statement
+transactions, take account-erasure admission locks or lock host/command rows.
+Each reads with plain bounded queries and writes with single-row conditional
+UPDATEs; a request that loses a race skips its write (heartbeat), reports
+`idle` (claim), or reports the command as already completed (completion).
+Heartbeats and claim polls only rewrite the host row when its reported state
+changed or `last_seen_at` is at least 30s old, and Desktop sends steady-state
+heartbeats every 15s instead of 2s.
+
+Observable differences:
+
+- A closed erasure subject is no longer refused with `403` by these routes; late
+  writes are left to erasure cleanup.
+- Claim is no longer serialized with stop. A claim that read the host just
+  before a concurrent stop can still start one command, which then fails
+  through the normal running-command timeout.
+- A command status read times out only the command being read. Other running
+  commands time out when they are read or when their host polls again.
+- Migration `1241_computer_use_host_liveness_indexes` (#36895) drops
+  `idx_computer_use_hosts_last_seen` and adds the partial unique index
+  `idx_computer_use_commands_running_host (host_id) WHERE status = 'running'`,
+  which now enforces one running command per host. Older APIs serialized claims
+  per host and never create a second running row, so they remain compatible.
+  While old and new APIs overlap, an old claim racing a new one for the same
+  host can hit the index and return one `500`; the Desktop recovers on its next
+  poll.
+
 ## Discord replies become fire and forget (2026-09-25)
 
 Discord replies and ingress notices are now posted once, directly after the
