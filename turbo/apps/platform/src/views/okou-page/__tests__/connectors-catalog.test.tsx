@@ -31,6 +31,7 @@ import {
   publicStatusItem,
   queryConnectorAction,
   queryConnectorCard,
+  mockConnectorAgentAccess,
 } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
@@ -177,6 +178,9 @@ async function openConnectorFilterCatalog() {
       });
     },
   );
+  mockConnectorAgentAccess(context, (agentId) => {
+    return { enabledConnectorSlugs: agentId === researchId ? ["github"] : [] };
+  });
   await setupPage({ context, path: "/connectors" });
   await expectCards({ github: true, asana: true });
   return { researchId };
@@ -611,6 +615,12 @@ test("Find the connectors no agent is using", async () => {
       });
     },
   );
+  mockConnectorAgentAccess(context, (agentId) => {
+    return {
+      enabledConnectorSlugs:
+        agentId === researchId ? ["mail-0" as ConnectorSlug] : [],
+    };
+  });
   mockPublicConnectorStatus(
     context,
     connectedShelfCatalog(),

@@ -1,5 +1,54 @@
 # Changelog
 
+## [9.361.0](https://github.com/okou-ai/okou/compare/cli-v9.360.1...cli-v9.361.0) (2026-09-25)
+
+
+### Features
+
+* **browser:** support native select input requests ([#36740](https://github.com/okou-ai/okou/issues/36740)) ([8193d4b](https://github.com/okou-ai/okou/commit/8193d4ba387201e4f495115773cc0d880415b7bd))
+
+
+### Bug Fixes
+
+* **vnc:** honor needs_rebind on ssh-backed hosts ([#36741](https://github.com/okou-ai/okou/issues/36741)) ([d258195](https://github.com/okou-ai/okou/commit/d258195c0d234d4bee5790b7be450af9289fc1aa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.508.0
+    * @okouai/core bumped to 8.710.2
+    * @okouai/pi-agent-runtime bumped to 1.40.14
+
+## [9.360.1](https://github.com/okou-ai/okou/compare/cli-v9.360.0...cli-v9.360.1) (2026-09-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.507.1
+    * @okouai/core bumped to 8.710.1
+    * @okouai/pi-agent-runtime bumped to 1.40.13
+
+## [9.360.0](https://github.com/okou-ai/okou/compare/cli-v9.359.5...cli-v9.360.0) (2026-09-24)
+
+
+### Features
+
+* **discord:** add authorized native reads and message tools ([#36661](https://github.com/okou-ai/okou/issues/36661)) ([dafe827](https://github.com/okou-ai/okou/commit/dafe827d3ddc4fe391776c35e49a36022d4397c6))
+* **discord:** add canonical chat ingress and reply delivery ([#36685](https://github.com/okou-ai/okou/issues/36685)) ([99ddcab](https://github.com/okou-ai/okou/commit/99ddcab5538b064d842ad523f50579f3d14ebe1e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.507.0
+    * @okouai/core bumped to 8.710.0
+    * @okouai/pi-agent-runtime bumped to 1.40.12
+
 ## [9.359.5](https://github.com/okou-ai/okou/compare/cli-v9.359.4...cli-v9.359.5) (2026-09-24)
 
 

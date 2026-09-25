@@ -1,4 +1,3 @@
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   index,
   boolean,
@@ -40,11 +39,6 @@ export const chatAgentphoneContext = pgTable(
     toNumber: text("to_number"),
     userLinkId: uuid("user_link_id"),
     agentphoneAgentId: text("agentphone_agent_id"),
-    /**
-     * Retired: current APIs neither read nor write it and rely on the
-     * `okou` default; drop it after older API deployments drain.
-     */
-    publicBrand: text("public_brand").$type<PublicBrand>().default("okou"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => {

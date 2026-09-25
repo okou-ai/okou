@@ -184,6 +184,22 @@ function publicRequest(
             : {
                 siteRequired: observed.siteRequired,
                 multiple: observed.multiple,
+                ...(observed.optionSetFingerprint === undefined
+                  ? {}
+                  : { optionSetFingerprint: observed.optionSetFingerprint }),
+                ...(observed.options === undefined
+                  ? {}
+                  : {
+                      options: observed.options.map((option) => {
+                        return {
+                          index: option.index,
+                          label: option.label,
+                          disabled: option.disabled,
+                          selected: option.selected,
+                          empty: option.empty,
+                        };
+                      }),
+                    }),
                 ...(observed.minLength === undefined
                   ? {}
                   : { minLength: observed.minLength }),
@@ -586,7 +602,7 @@ function browserCreationValidationMessage(
       return `${field}the selected Browser control no longer exists; inspect the page and recapture it`;
     }
     case "unsupported_control": {
-      return `${field}the selected Browser control is not a writable top-level input or textarea`;
+      return `${field}the selected Browser control is not a writable top-level input, textarea, or select`;
     }
   }
 }
@@ -596,6 +612,11 @@ function browserCreationControlType(
 ): string {
   if (fingerprint.tagName === "TEXTAREA") {
     return "textarea";
+  }
+  if (fingerprint.tagName === "SELECT") {
+    return fingerprint.inputType === "select-multiple"
+      ? "multiple select"
+      : "single select";
   }
   const knownTypes = [
     "text",
@@ -1063,10 +1084,12 @@ export const readBrowserUserAction$ = command(
   },
 );
 
+type SubmittedBrowserValue = BrowserUserActionApplyRequest["values"][number];
+
 function submittedValues(
   payload: Extract<BrowserUserActionPayload, { kind: "input" }>,
   input: BrowserUserActionApplyRequest,
-): ServiceResult<Map<string, string>> {
+): ServiceResult<Map<string, SubmittedBrowserValue>> {
   const allowed = new Map(
     payload.target.fields.map((field) => {
       return [field.key, field];
@@ -1074,12 +1097,15 @@ function submittedValues(
   );
   const values = new Map(
     input.values.map((entry) => {
-      return [entry.key, entry.value];
+      return [entry.key, entry];
     }),
   );
   if (
     input.values.some((entry) => {
-      return !allowed.has(entry.key);
+      const field = allowed.get(entry.key);
+      return (
+        !field || (field.fieldKind === "select") !== "optionIndexes" in entry
+      );
     })
   ) {
     return failure(
@@ -1090,9 +1116,15 @@ function submittedValues(
   }
   if (
     payload.target.fields.some((field) => {
+      if (!field.required) {
+        return false;
+      }
+      const entry = values.get(field.key);
       return (
-        field.required &&
-        (!values.has(field.key) || values.get(field.key)?.length === 0)
+        !entry ||
+        ("optionIndexes" in entry
+          ? entry.optionIndexes.length === 0
+          : entry.value.length === 0)
       );
     })
   ) {
@@ -1106,10 +1138,11 @@ function submittedValues(
     kind: "ok",
     value: new Map(
       input.values.flatMap((entry) => {
-        return entry.value.length === 0 &&
+        return "value" in entry &&
+          entry.value.length === 0 &&
           allowed.get(entry.key)?.fieldKind !== "number"
           ? []
-          : [[entry.key, entry.value]];
+          : [[entry.key, entry]];
       }),
     ),
   };
@@ -1194,6 +1227,7 @@ async function inspectPendingBrowserUserAction(
           return {
             backendNodeId: field.backendNodeId,
             fingerprint: field.fingerprint,
+            required: field.required,
           };
         }),
       },
@@ -1395,7 +1429,7 @@ async function applyClaimedBrowserUserAction(
   db: Db,
   claimed: RequestRow,
   payload: Extract<BrowserUserActionPayload, { kind: "input" }>,
-  values: ReadonlyMap<string, string>,
+  values: ReadonlyMap<string, SubmittedBrowserValue>,
   signal: AbortSignal,
 ): Promise<ServiceResult<RequestRow>> {
   // The claim above is already visible. Re-enter canonical admission before
@@ -1452,11 +1486,21 @@ async function applyClaimedBrowserUserAction(
           {
             ...target,
             fields: payload.target.fields.map((field) => {
-              const value = values.get(field.key);
+              const entry = values.get(field.key);
               return {
                 backendNodeId: field.backendNodeId,
                 fingerprint: field.fingerprint,
-                ...(value === undefined ? {} : { value }),
+                required: field.required,
+                ...(entry === undefined
+                  ? {}
+                  : "value" in entry
+                    ? { value: entry.value }
+                    : {
+                        selection: {
+                          optionIndexes: entry.optionIndexes,
+                          optionSetFingerprint: entry.optionSetFingerprint,
+                        },
+                      }),
               };
             }),
           },

@@ -625,6 +625,11 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   },
   desktop_auth_handoff_codes: { coverage: "user_root", ownership: ["user_id"] },
   device_codes: { coverage: "user_root", ownership: ["user_id"] },
+  discord_chat_deliveries: { coverage: "user_root", ownership: ["user_id"] },
+  // One-way Gateway event digests carry no account identity or message body.
+  // Keep them across deletion so replay cannot launch the same task again
+  // or uninstall a later installation of the same guild.
+  discord_gateway_receipts: { coverage: "not_account_scoped" },
   discord_chat_ingress: {
     coverage: "user_descendant",
     parents: ["discord_org_connections"],

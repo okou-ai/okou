@@ -8,9 +8,8 @@ import {
 import userEvent from "@testing-library/user-event";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 
 import {
   click,
@@ -18,22 +17,13 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
-import {
-  chatEventRowsResponse,
-  testContext,
-} from "../../../signals/__tests__/test-helpers.ts";
-import {
-  mockChatEventRows,
-  normalizeMockChatEvents,
-  type MockChatEventInput,
-} from "./chat-event-test-helpers.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
 
 const THREAD_ID = "b0000000-0000-4000-a000-000000000801";
-const SPLIT_THREAD_ID = "b0000000-0000-4000-a000-000000000821";
-const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const PROMPT_EVENT_ID = "b0000000-0000-4000-a000-000000000802";
 const ANSWER_EVENT_ID = "b0000000-0000-4000-a000-000000000803";
 const SHARED_THREAD_ID = "b0000000-0000-4000-a000-000000000804";
@@ -47,8 +37,6 @@ const FOLLOW_UP_PROMPT_EVENT_ID = "b0000000-0000-4000-a000-000000000806";
 const PROMPT = "Summarize the launch plan";
 const FOLLOW_UP_PROMPT = "Keep it short";
 const ANSWER = "The launch plan has three phases.";
-const SPLIT_PROMPT = "Review the launch risks";
-const SPLIT_ANSWER = "The launch has two material risks.";
 
 function mockConversation(
   chatEvents: MockChatEventInput[] = standardConversation(),
@@ -79,84 +67,8 @@ function standardConversation() {
   ];
 }
 
-function splitConversation() {
-  return [
-    {
-      id: "b0000000-0000-4000-a000-000000000822",
-      role: "user" as const,
-      content: SPLIT_PROMPT,
-      runId: "split-launch-run",
-      createdAt: "2026-08-01T10:01:00Z",
-    },
-    {
-      id: "b0000000-0000-4000-a000-000000000823",
-      role: "assistant" as const,
-      content: SPLIT_ANSWER,
-      runId: "split-launch-run",
-      createdAt: "2026-08-01T10:01:01Z",
-    },
-  ];
-}
-
-function mockSplitConversation(): void {
-  const conversations = new Map<string, MockChatEventInput[]>([
-    [THREAD_ID, standardConversation()],
-    [SPLIT_THREAD_ID, splitConversation()],
-  ]);
-  const lifecycle = mockChatLifecycle(context, {
-    threadId: THREAD_ID,
-    threadTitle: "Launch planning",
-    chatEvents: standardConversation(),
-  });
-  lifecycle.setThreadList([
-    {
-      id: THREAD_ID,
-      title: "Launch planning",
-      agent: { id: AGENT_ID, avatarUrl: null },
-      createdAt: "2026-08-01T10:00:00Z",
-      updatedAt: "2026-08-01T10:02:00Z",
-      pinnedAt: null,
-    },
-    {
-      id: SPLIT_THREAD_ID,
-      title: "Launch risks",
-      agent: { id: AGENT_ID, avatarUrl: null },
-      createdAt: "2026-08-01T10:01:00Z",
-      updatedAt: "2026-08-01T10:01:00Z",
-      pinnedAt: null,
-    },
-  ]);
-  context.mocks.api(
-    chatThreadEventsContract.rows,
-    ({ params, query, respond }) => {
-      const events = conversations.get(params.threadId) ?? [];
-      const rows = mockChatEventRows(
-        normalizeMockChatEvents(events, params.threadId),
-      )
-        .filter((row) => {
-          return row.seqId > query.sinceSeqId;
-        })
-        .slice(0, query.limit ?? 50);
-      return respond(200, chatEventRowsResponse(rows, query));
-    },
-  );
-}
-
-function threadPane(threadId: string): HTMLElement {
-  const pane = document.querySelector<HTMLElement>(
-    `[data-chat-thread-container-id="${threadId}"]`,
-  );
-  if (!pane) {
-    throw new Error(`Chat thread pane not found: ${threadId}`);
-  }
-  return pane;
-}
-
-function buttonsNamed(
-  name: string,
-  container: ParentNode = document.body,
-): HTMLElement[] {
-  return queryAllByRoleFast("button", container).filter((button) => {
+function buttonsNamed(name: string): HTMLElement[] {
+  return queryAllByRoleFast("button").filter((button) => {
     return (
       button.getAttribute("aria-label") === name ||
       button.textContent?.trim() === name
@@ -164,11 +76,8 @@ function buttonsNamed(
   });
 }
 
-function requiredButtonNamed(
-  name: string,
-  container: ParentNode = document.body,
-): HTMLElement {
-  const button = buttonsNamed(name, container)[0];
+function requiredButtonNamed(name: string): HTMLElement {
+  const button = buttonsNamed(name)[0];
   if (!button) {
     throw new Error(`Button not found: ${name}`);
   }
@@ -285,16 +194,13 @@ async function setupMessageSharing(
   };
 }
 
-test("Select message groups through the row, checkbox, and keyboard without visible selection copy", async () => {
+test("Select message groups once through the row label, checkbox, and keyboard", async () => {
   const user = userEvent.setup();
   const { promptGroup } = await setupMessageSharing();
   const promptSelection = within(promptGroup).getByRole("checkbox", {
     name: "Select message group",
   });
-  expect(
-    within(promptGroup).queryByText("Select message group"),
-  ).not.toBeInTheDocument();
-  await user.click(screen.getByText(PROMPT));
+  click(within(promptGroup).getByText("Select message group"));
   await waitFor(() => {
     expect(promptSelection).toBeChecked();
     expect(promptSelection).toHaveAccessibleName("Deselect message group");
@@ -318,7 +224,7 @@ test("Select message groups through the row, checkbox, and keyboard without visi
   expect(requiredButtonNamed("Share")).toBeDisabled();
 });
 
-test("Code copying remains separate from group selection", async () => {
+test("Message text and code copying remain separate from group selection", async () => {
   const code = "const launch = true;";
   const conversation = standardConversation().map((event) => {
     return event.role === "assistant"
@@ -337,6 +243,7 @@ test("Code copying remains separate from group selection", async () => {
     throw new Error("Expected the launch reference link");
   }
   expect(link).toHaveAttribute("href", "https://example.com/launch");
+  click(screen.getByText(ANSWER));
   click(requiredButtonNamed("Copy to clipboard"));
   await waitFor(() => {
     expect(requiredButtonNamed("Copied")).toBeInTheDocument();
@@ -345,10 +252,11 @@ test("Code copying remains separate from group selection", async () => {
   expect(selection).not.toBeChecked();
   expect(requiredButtonNamed("Share")).toBeDisabled();
 
-  click(selection);
+  click(within(answerGroup).getByText("Select message group"));
   await waitFor(() => {
     expect(selection).toBeChecked();
   });
+  click(screen.getByText(ANSWER));
   expect(selection).toBeChecked();
   expect(requiredButtonNamed("Share").closest("footer")).toHaveTextContent(
     "1 selected",
@@ -375,8 +283,8 @@ test("A growing selected message group becomes partial and can select its new me
   });
   click(requiredButtonNamed("Share messages"));
   const group = selectableGroupForText(PROMPT);
+  click(within(group).getByText("Select message group"));
   const selection = within(group).getByRole("checkbox");
-  click(selection);
   await waitFor(() => {
     expect(selection).toBeChecked();
   });
@@ -393,7 +301,7 @@ test("A growing selected message group becomes partial and can select its new me
   });
   await screen.findByText(FOLLOW_UP_PROMPT);
   expect(selection).toBePartiallyChecked();
-  click(selection);
+  click(within(group).getByText("Select message group"));
   await waitFor(() => {
     expect(selection).toBeChecked();
   });
@@ -417,269 +325,11 @@ test("A growing selected message group becomes partial and can select its new me
   ]);
 });
 
-test("Select all includes messages outside the render window", async () => {
-  const events = Array.from({ length: 12 }, (_, index) => {
-    const runId = `selection-run-${String(index)}`;
-    const minute = String(index).padStart(2, "0");
-    return [
-      {
-        id: `selection-prompt-${String(index)}`,
-        role: "user" as const,
-        content: `Selection prompt ${String(index)}`,
-        runId,
-        createdAt: `2026-08-01T10:${minute}:00Z`,
-      },
-      {
-        id: `selection-answer-${String(index)}`,
-        role: "assistant" as const,
-        content: `Selection answer ${String(index)}`,
-        runId,
-        createdAt: `2026-08-01T10:${minute}:01Z`,
-      },
-    ];
-  }).flat();
-  const createRequests: string[][] = [];
-  mockConversation(events);
-  context.mocks.api(sharedThreadsContract.create, ({ body, respond }) => {
-    createRequests.push([...body.eventIds]);
-    return respond(201, { id: SHARED_THREAD_ID });
-  });
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-
-  await screen.findByText("Selection answer 11");
-  expect(screen.queryByText("Selection prompt 0")).not.toBeInTheDocument();
-  click(requiredButtonNamed("Share messages"));
-  await screen.findAllByText("0 selected");
-
-  const selectAll = requiredButtonNamed("Select all");
-  click(selectAll);
-  await waitFor(() => {
-    expect(requiredButtonNamed("Share").closest("footer")).toHaveTextContent(
-      "24 selected",
-    );
-  });
-  click(requiredButtonNamed("Share"));
-  await screen.findByRole("textbox", { name: "Shared conversation link" });
-  expect(createRequests).toStrictEqual([
-    events.map((event) => {
-      return event.id;
-    }),
-  ]);
-});
-
-test("Control+A selects message groups while sharing", async () => {
-  await setupMessageSharing();
-  const selectAllButton = requiredButtonNamed("Select all");
-  selectAllButton.focus();
-
-  fireEvent.keyDown(selectAllButton, { key: "a", ctrlKey: true });
-
-  await waitFor(() => {
-    expect(requiredButtonNamed("Share").closest("footer")).toHaveTextContent(
-      "2 selected",
-    );
-  });
-});
-
-test("Control+A selects only the focused conversation in split view", async () => {
-  mockSplitConversation();
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}?sidebar=${SPLIT_THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-
-  await screen.findByText(ANSWER);
-  await screen.findByText(SPLIT_ANSWER);
-  const mainPane = threadPane(THREAD_ID);
-  const splitPane = threadPane(SPLIT_THREAD_ID);
-
-  click(requiredButtonNamed("Share messages", mainPane));
-  await within(mainPane).findAllByText("0 selected");
-  click(requiredButtonNamed("Share messages", splitPane));
-  await within(splitPane).findAllByText("0 selected");
-
-  const splitSelectAll = requiredButtonNamed("Select all", splitPane);
-  splitSelectAll.focus();
-  fireEvent.keyDown(splitSelectAll, { key: "a", ctrlKey: true });
-
-  await waitFor(() => {
-    expect(within(splitPane).getAllByText("2 selected").length).toBeGreaterThan(
-      0,
-    );
-    expect(within(mainPane).getAllByText("0 selected").length).toBeGreaterThan(
-      0,
-    );
-  });
-});
-
-test("Drag selection expands as the conversation scrolls", async () => {
-  const events = [
-    ...standardConversation(),
-    {
-      id: FOLLOW_UP_PROMPT_EVENT_ID,
-      role: "user" as const,
-      content: FOLLOW_UP_PROMPT,
-      runId: "follow-up-run",
-      createdAt: "2026-08-01T10:00:02Z",
-    },
-    {
-      id: "selection-follow-up-answer",
-      role: "assistant" as const,
-      content: "A shorter plan follows.",
-      runId: "follow-up-run",
-      createdAt: "2026-08-01T10:00:03Z",
-    },
-  ];
-  mockConversation(events);
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-  await screen.findByText("A shorter plan follows.");
-  click(requiredButtonNamed("Share messages"));
-  await screen.findAllByText("0 selected");
-
-  const viewport = document.querySelector<HTMLElement>(
-    "[data-scroll-container]",
-  );
-  if (!viewport) {
-    throw new Error("Chat scroll viewport not found");
-  }
-  const groups = Array.from(
-    viewport.querySelectorAll<HTMLElement>(
-      "[data-chat-share-selectable-group]",
-    ),
-  );
-  expect(groups).toHaveLength(4);
-  let scrollTop = 0;
-  let highestScrollTop = 0;
-  Object.defineProperty(viewport, "scrollTop", {
-    configurable: true,
-    get: () => {
-      return scrollTop;
-    },
-    set: (value: number) => {
-      scrollTop = Math.max(0, value);
-      highestScrollTop = Math.max(highestScrollTop, scrollTop);
-    },
-  });
-  Object.defineProperty(viewport, "setPointerCapture", {
-    configurable: true,
-    value: () => {},
-  });
-  viewport.getBoundingClientRect = () => {
-    return { top: 0, bottom: 160, left: 0, right: 800 } as DOMRect;
-  };
-  for (const [index, group] of groups.entries()) {
-    group.getBoundingClientRect = () => {
-      return {
-        top: index * 80 - scrollTop,
-        bottom: index * 80 + 70 - scrollTop,
-        left: 0,
-        right: 800,
-      } as DOMRect;
-    };
-  }
-  const frames = new Map<number, FrameRequestCallback>();
-  let nextFrameId = 1;
-  vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
-    const id = nextFrameId++;
-    frames.set(id, callback);
-    return id;
-  });
-  vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => {
-    frames.delete(id);
-  });
-  const flushFramesUntil = (condition: () => boolean) => {
-    for (let attempt = 0; attempt < 40 && !condition(); attempt++) {
-      const next = frames.entries().next().value;
-      if (!next) {
-        return;
-      }
-      const [id, callback] = next;
-      frames.delete(id);
-      act(() => {
-        callback(performance.now());
-      });
-    }
-  };
-
-  fireEvent.pointerDown(groups[0]!, {
-    button: 0,
-    pointerId: 1,
-    pointerType: "mouse",
-    clientX: 100,
-    clientY: 35,
-  });
-  const textSelection = window.getSelection();
-  if (!textSelection) {
-    throw new Error("Text selection is unavailable");
-  }
-  const textRange = document.createRange();
-  textRange.selectNodeContents(screen.getByText(PROMPT));
-  textSelection.removeAllRanges();
-  textSelection.addRange(textRange);
-  expect(textSelection.toString()).toBe(PROMPT);
-  fireEvent.pointerMove(viewport, {
-    pointerId: 1,
-    pointerType: "mouse",
-    clientX: 180,
-    clientY: 151,
-  });
-  expect(textSelection.toString()).toBe("");
-  await waitFor(() => {
-    expect(
-      screen.getByText("2 selected", { selector: "p" }),
-    ).toBeInTheDocument();
-    expect(
-      document.querySelector("[data-chat-share-marquee]"),
-    ).toBeInTheDocument();
-  });
-
-  flushFramesUntil(() => {
-    return highestScrollTop > 0;
-  });
-  expect(highestScrollTop).toBeGreaterThan(0);
-  scrollTop = 24;
-  fireEvent.pointerMove(viewport, {
-    pointerId: 1,
-    pointerType: "mouse",
-    clientX: 180,
-    clientY: 151,
-  });
-  await waitFor(() => {
-    expect(
-      screen.getByText("3 selected", { selector: "p" }),
-    ).toBeInTheDocument();
-  });
-  flushFramesUntil(() => {
-    return highestScrollTop > 24;
-  });
-  expect(highestScrollTop).toBeGreaterThan(24);
-  scrollTop = 24;
-  fireEvent.pointerUp(viewport, {
-    pointerId: 1,
-    pointerType: "mouse",
-    clientX: 180,
-    clientY: 151,
-  });
-  expect(document.querySelector("[data-chat-share-marquee]")).toBeNull();
-  expect(within(groups[0]!).getByRole("checkbox")).toBeChecked();
-  expect(within(groups[2]!).getByRole("checkbox")).toBeChecked();
-  expect(within(groups[3]!).getByRole("checkbox")).not.toBeChecked();
-});
-
 test("Share selected message groups as a public conversation snapshot", async () => {
   const { answerGroup, promptGroup, clipboard, createRequests } =
     await setupMessageSharing();
-  click(within(promptGroup).getByRole("checkbox"));
-  click(within(answerGroup).getByRole("checkbox"));
+  click(within(promptGroup).getByText("Select message group"));
+  click(within(answerGroup).getByText("Select message group"));
   await waitFor(() => {
     expect(screen.getAllByText("2 selected").length).toBeGreaterThan(0);
     expect(requiredButtonNamed("Share")).toBeEnabled();
@@ -703,7 +353,7 @@ test("Share selected message groups as a public conversation snapshot", async ()
     "aria-disabled",
     "true",
   );
-  click(within(answerGroup).getByRole("checkbox"));
+  click(within(answerGroup).getByText("Deselect message group"));
   expect(within(answerGroup).getByRole("checkbox")).toBeChecked();
   expect(screen.queryByTestId("chat-event-actions")).toBeNull();
 });
@@ -737,7 +387,7 @@ test("Hide passage actions throughout sharing and restore them afterward", async
   expect(within(answerGroup).getByRole("checkbox")).not.toBeChecked();
   expect(requiredButtonNamed("Share")).toBeDisabled();
 
-  click(within(answerGroup).getByRole("checkbox"));
+  click(within(answerGroup).getByText("Select message group"));
   await screen.findAllByText("1 selected");
 
   click(requiredButtonNamed("Share"));
@@ -1169,17 +819,11 @@ test("An oversized message group cannot be added to a shared snapshot", async ()
     name: "Select message group",
   });
 
-  click(oversizedSelection);
+  click(within(oversizedGroup).getByText("Select message group"));
 
   await screen.findByText("Select fewer messages to share");
   expect(oversizedSelection).not.toBeChecked();
   expect(screen.getByText("A normal message remains available")).toBeVisible();
-
-  click(requiredButtonNamed("Select all"));
-  expect(requiredButtonNamed("Share")).toBeDisabled();
-  expect(requiredButtonNamed("Share").closest("footer")).toHaveTextContent(
-    "0 selected",
-  );
 });
 
 async function setupSingleMessageShare(conflict = false) {

@@ -14,7 +14,7 @@ export async function loadOptionalChatEnrichment<T>(
   db: Db,
   channel: string,
   load: () => Promise<T>,
-  fallback: () => T,
+  fallback: (error: unknown) => T,
   signal: AbortSignal,
 ): Promise<T> {
   const result = await settle(load(), signal);
@@ -26,10 +26,13 @@ export async function loadOptionalChatEnrichment<T>(
   if (!splitWrites) {
     throw result.error;
   }
+  // A channel fallback may rethrow failures that keep its ingress retry
+  // classification instead of omitting the enrichment.
+  const value = fallback(result.error);
   L.warn("Optional chat input enrichment could not be loaded", {
     channel,
     errorName:
       result.error instanceof Error ? result.error.name : "UnknownError",
   });
-  return fallback();
+  return value;
 }

@@ -1118,7 +1118,7 @@ const prefetchWorker = workerModule.createWorker(
       method: init?.method,
       url,
     });
-    if (observedApiRequests.length === 4) {
+    if (observedApiRequests.length === 7) {
       apiRequestsStarted.resolve();
     }
     if (url.pathname === "/api/agents") {
@@ -1153,7 +1153,10 @@ await apiRequestsStarted.promise;
 assert.deepEqual(observedApiRequests.map(({ url }) => url.pathname).sort(), [
   "/api/agents",
   "/api/feature-switches",
+  "/api/model-policies",
   "/api/onboarding/status",
+  "/api/org",
+  "/api/user-model-preference",
   "/api/user-preferences",
 ]);
 for (const { headers, method, url } of observedApiRequests) {

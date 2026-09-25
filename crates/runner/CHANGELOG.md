@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.213.16](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.15...runner-rs-v0.213.16) (2026-09-25)
+
+
+### Refactoring
+
+* **runner:** move pre-claim admission into supervisor ([#36759](https://github.com/okou-ai/okou/issues/36759)) ([7e6034c](https://github.com/okou-ai/okou/commit/7e6034cebc78a7ae296aaf0bd387ffac760c7f48))
+
+## [0.213.15](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.14...runner-rs-v0.213.15) (2026-09-24)
+
+
+### Refactoring
+
+* **runner:** move claimed activation recovery into supervisor ([#36749](https://github.com/okou-ai/okou/issues/36749)) ([79d7840](https://github.com/okou-ai/okou/commit/79d7840392ad9bea2b092c1f5b7b1efb4cfd4016))
+* **runner:** move claimed idle reservation into supervisor ([#36735](https://github.com/okou-ai/okou/issues/36735)) ([8e2e530](https://github.com/okou-ai/okou/commit/8e2e530700737a0439b36099d875c16c907ccbd1))
+* **runner:** move finalizing arbitration into supervisor ([#36744](https://github.com/okou-ai/okou/issues/36744)) ([759a2a0](https://github.com/okou-ai/okou/commit/759a2a0e73c611059630b8eb147b53cafc6d1d18))
+
 ## [0.213.14](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.13...runner-rs-v0.213.14) (2026-09-24)
 
 

@@ -11,6 +11,78 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.962.0](https://github.com/okou-ai/okou/compare/app-v0.961.2...app-v0.962.0) (2026-09-25)
+
+
+### Features
+
+* **browser:** support native select input requests ([#36740](https://github.com/okou-ai/okou/issues/36740)) ([8193d4b](https://github.com/okou-ai/okou/commit/8193d4ba387201e4f495115773cc0d880415b7bd))
+* **platform:** add discord settings and source presentation ([#36657](https://github.com/okou-ai/okou/issues/36657)) ([c33f8af](https://github.com/okou-ai/okou/commit/c33f8af753c4846d0991f2c27aa13005bcb95c33))
+* **vnc:** admit apple rsa/srp through verified mac ssh ([#36743](https://github.com/okou-ai/okou/issues/36743)) ([b6a626e](https://github.com/okou-ai/okou/commit/b6a626ef2bfb9e35bdec4eb351d5e1e229bfaaca))
+
+
+### Bug Fixes
+
+* **platform:** keep package configuration stable after saving ([#36765](https://github.com/okou-ai/okou/issues/36765)) ([10b9840](https://github.com/okou-ai/okou/commit/10b98402d704bd237553cf9a1f8365ecd9dd8392))
+* **vnc:** honor needs_rebind on ssh-backed hosts ([#36741](https://github.com/okou-ai/okou/issues/36741)) ([d258195](https://github.com/okou-ai/okou/commit/d258195c0d234d4bee5790b7be450af9289fc1aa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.508.0
+    * @okouai/core bumped to 8.710.2
+
+## [0.961.2](https://github.com/okou-ai/okou/compare/app-v0.961.1...app-v0.961.2) (2026-09-25)
+
+
+### Bug Fixes
+
+* **platform:** align remote connector card surfaces ([#36760](https://github.com/okou-ai/okou/issues/36760)) ([108e2e8](https://github.com/okou-ai/okou/commit/108e2e8634c847b751b82e9d21ff0c043b231d05))
+
+## [0.961.1](https://github.com/okou-ai/okou/compare/app-v0.961.0...app-v0.961.1) (2026-09-24)
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#36754](https://github.com/okou-ai/okou/issues/36754)) ([cc5147f](https://github.com/okou-ai/okou/commit/cc5147f9b25b62821d11daa489a0a96b7bdbf92e))
+
+
+### Performance Improvements
+
+* **app:** edge-prefetch org and model preferences, exchange ably token on the server ([#36731](https://github.com/okou-ai/okou/issues/36731)) ([c6495e1](https://github.com/okou-ai/okou/commit/c6495e1927c69bf5479300e841a9805df59d0a77))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.507.1
+    * @okouai/core bumped to 8.710.1
+
+## [0.961.0](https://github.com/okou-ai/okou/compare/app-v0.960.0...app-v0.961.0) (2026-09-24)
+
+
+### Features
+
+* **access:** promote personal configurations and review shared deletion ([#36715](https://github.com/okou-ai/okou/issues/36715)) ([aa20d6a](https://github.com/okou-ai/okou/commit/aa20d6a8609326008f5da853bd9db75d0ad1d204))
+* **discord:** add canonical chat ingress and reply delivery ([#36685](https://github.com/okou-ai/okou/issues/36685)) ([99ddcab](https://github.com/okou-ai/okou/commit/99ddcab5538b064d842ad523f50579f3d14ebe1e))
+
+
+### Refactoring
+
+* **agentphone:** retire public brand and connect link brand signature ([#36722](https://github.com/okou-ai/okou/issues/36722)) ([3c4cdb4](https://github.com/okou-ai/okou/commit/3c4cdb4a0d241eed624b878dcd7b4717513e3724))
+* **morning-brief:** remove settings status line, realtime refresh and collection account ([#36719](https://github.com/okou-ai/okou/issues/36719)) ([8d8de09](https://github.com/okou-ai/okou/commit/8d8de09466c1ef81d3d2017e75351b315aa40b0b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.507.0
+    * @okouai/core bumped to 8.710.0
+
 ## [0.960.0](https://github.com/okou-ai/okou/compare/app-v0.959.0...app-v0.960.0) (2026-09-24)
 
 

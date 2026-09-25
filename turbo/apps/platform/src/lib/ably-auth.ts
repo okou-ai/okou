@@ -21,14 +21,15 @@ type RealtimeTokenClient = InitClientReturn<
 type AuthCallback = NonNullable<AuthOptions["authCallback"]>;
 
 /**
- * Build an Ably `authCallback` that fetches a freshly-signed `TokenRequest`
- * from the platform token endpoint on every invocation.
+ * Build an Ably `authCallback` that fetches a fresh token from the platform
+ * token endpoint on every invocation.
  *
  * Ably invokes `authCallback` on the initial connect and again each time it
- * needs to renew the token (our endpoint issues requests with a 1 h ttl).
- * A `TokenRequest` is single-use — signed with a timestamp and ttl — so the
- * callback must hand Ably a fresh one every call; caching it causes renewal
- * to fail with "Client configured authentication provider request failed".
+ * needs to renew the token (our endpoint issues tokens with a 1 h ttl).
+ * The endpoint returns `TokenDetails` it already exchanged with Ably, or a
+ * single-use `TokenRequest` when that exchange failed. Either must be fresh
+ * on every call; caching it causes renewal to fail with "Client configured
+ * authentication provider request failed".
  *
  * The factory lives outside `signals/` so it can use `detach()` to track
  * the promise (Ably's API is node-style callback, not awaitable) and

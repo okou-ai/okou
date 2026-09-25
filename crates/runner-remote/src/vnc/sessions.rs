@@ -239,6 +239,10 @@ impl Run {
                         rfb_client::authenticate_apple_srp(stream, credentials, scope.deadline)
                             .await
                     }
+                    Authentication::AppleRsaSrp(credentials) => {
+                        rfb_client::authenticate_apple_rsa_srp(stream, credentials, scope.deadline)
+                            .await
+                    }
                 }
             })
             .await?

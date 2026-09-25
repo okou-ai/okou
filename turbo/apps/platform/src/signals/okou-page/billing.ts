@@ -160,13 +160,6 @@ function pendingDowngradeTargetTier(
   if (value === "pro" || value === "limited-free-1") {
     return value;
   }
-  if (value === "pro-suspend") {
-    // A previous App build stored the retired cancellation literal before
-    // redirecting to Stripe. Surface: old app state -> new app. Remove once
-    // every tab session started on that build has ended, which sessionStorage
-    // bounds to the tab lifetime. See docs/deployment-compatibility.md.
-    return "limited-free-1";
-  }
   return null;
 }
 

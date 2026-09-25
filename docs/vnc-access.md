@@ -5,7 +5,7 @@ VNC is an independent remote-access capability alongside SSH. The
 staff. Explicit owner/Agent grants, metadata inventory and private Runner
 authority are described in [Runner VNC authority](runner-vnc-authority.md).
 The Runner, owner configuration and Agent inventory support the exact X509Vnc,
-X509Plain, SSH-protected Apple DH, and SSH-protected Apple Direct SRP profiles.
+X509Plain, SSH-protected Apple DH, Apple Direct SRP and Apple RSA/SRP profiles.
 The feature remains unavailable until a separate activation decision.
 
 ## Supported profiles and rollout state
@@ -45,6 +45,20 @@ restriction applies. SRP usernames accept 1–255 UTF-8 bytes and passwords
 identifies the chosen endpoint but cannot rule out an onward proxy. This
 profile also remains behind the default-off `VncAccess` switch.
 
+Apple RSA/SRP adds a distinct `apple_rsa_srp_username_password` /
+`apple_rsa_srp` pair for Apple RFB security type 33. The Rust engine verifies
+SRP server proof and the security result, but the RFB-provided RSA key does
+not independently establish host identity or protect post-authentication
+frames. Owner configuration requires verified SSH ending on a Mac the owner
+controls, a saved SSH host with its host key verified, and the literal RFB
+loopback destination `127.0.0.1` or `::1`. No direct route, arbitrary SSH
+proxy, or downgrade to type 30 or 36 is admitted. RSA/SRP usernames accept
+1–234 UTF-8 bytes and passwords 1–1023 UTF-8 bytes, without NUL. The Runner
+requires the exact capability tuple before KMS decryption. This profile
+remains behind default-off `VncAccess`; engine or code delivery alone is not
+product activation. Other macOS versions and unobserved security modes remain
+unverified.
+
 ## Owner API
 
 Organization session authentication and a fresh Clerk membership check
@@ -65,8 +79,9 @@ A credential contains a display name and typed `authentication`. Classic
 `{ method: "username_password", username, password }` accepts a username of
 **1–255 UTF-8 bytes** and a password of **1–1023 UTF-8 bytes**. Embedded NUL is
 rejected and password spaces are preserved. Metadata exposes `authMethod` and
-exposes `username` only for `username_password` or
-`apple_dh_username_password` or `apple_srp_username_password`; it never exposes a password or
+exposes `username` only for `username_password`,
+`apple_dh_username_password`, `apple_srp_username_password` or
+`apple_rsa_srp_username_password`; it never exposes a password or
 ciphertext. Credentials can be shared by multiple saved connections belonging
 to the same user and organization.
 
@@ -79,9 +94,10 @@ DNS name or IP identity for future certificate verification. Omitting it means
 use the saved VNC host; it never replaces the socket destination.
 The exact stored pairs are `vnc_password` / `x509_vnc`,
 `username_password` / `x509_plain`, and
-`apple_dh_username_password` / `apple_dh`, and
-`apple_srp_username_password` / `apple_srp`. Neither Apple profile has an
-X.509 trust bundle or certificate identity; both routes are restricted as
+`apple_dh_username_password` / `apple_dh`,
+`apple_srp_username_password` / `apple_srp`, and
+`apple_rsa_srp_username_password` / `apple_rsa_srp`. None of the Apple profiles
+has an X.509 trust bundle or certificate identity; their routes are restricted as
 described above.
 A custom bundle is at most 64 KiB and contains at most eight public CA
 certificates. Private keys, non-CA certificates, malformed material and insecure
@@ -146,8 +162,9 @@ them.
 Select a saved VNC credential or create one. The certificate-verified choices are
 VeNCrypt X509Vnc (certificate-verified TLS plus a classic VNC password) or
 VeNCrypt X509Plain (certificate-verified TLS plus username/password
-authentication); Mac Screen Sharing is available as a separate SSH-only Apple
-DH choice. Classic passwords must contain 1–8 printable ASCII characters.
+authentication); Mac Screen Sharing has separate SSH-only Apple DH, Apple
+Direct SRP and Apple RSA/SRP choices. Classic passwords must contain 1–8
+printable ASCII characters.
 X509Plain usernames accept 1–255 UTF-8 bytes and passwords accept 1–1023 UTF-8
 bytes. Spaces are significant and embedded NUL is rejected. Changing profiles
 clears draft authentication material and only exact compatible credentials are
@@ -169,13 +186,15 @@ VNC route, switch it explicitly to Direct where that destination is valid, or
 delete it first. The app reports this dependency without cascading, clearing or
 silently converting the VNC route.
 
-For Mac Screen Sharing, choose the Apple DH or Apple Direct SRP profile and a saved SSH host for
-that same Mac, then enter `127.0.0.1` or `::1` as the RFB destination. The app
-hides direct transport and X.509 trust fields for this profile and only shows
-Apple-compatible credentials. The SSH route protects the full VNC session;
-Apple DH alone does not. Apple Direct SRP verifies the server proof, but does
-not replace SSH transport protection. Saving does not verify the Mac's Screen Sharing
-configuration or prove the SSH server has no downstream proxy.
+For Mac Screen Sharing, choose the exact Apple DH, Apple Direct SRP or Apple
+RSA/SRP profile and a saved, host-key-verified SSH connection terminating on
+that same controlled Mac. Enter `127.0.0.1` or `::1` as the RFB destination.
+The app hides direct transport and X.509 trust fields and offers only
+profile-matching credentials. SSH protects the entire VNC session; neither
+Apple DH nor SRP server proof replaces this transport protection. Saving does
+not verify Screen Sharing settings or prove the SSH server has no downstream
+proxy. A real product session must separately validate saved-host creation,
+Agent grant, screenshot and bounded input before activation.
 
 Adding the first VNC host automatically grants access to every Agent currently
 visible to the owner, including another workspace member's public Agents. The
@@ -190,9 +209,18 @@ Agent inventory with VNC access alone. An SSH-backed row appears only while that
 same Agent independently holds both VNC and SSH access; revoking SSH immediately
 removes only the SSH-backed rows from later inventory reads and authorization
 checks. The inventory remains secret-free and does not expose the route, SSH
-reference, trust material, certificate identity or generations. Agents select
-shared or exclusive mode when opening each session; the server decides admission
-and may override the requested mode. The settings page adds no controller lock.
+reference, trust material, certificate identity or generations. Like SSH, it
+includes `availability: { status: "ready" }` for configured hosts and
+`{ status: "blocked", reason: "needs_rebind" }` for authorized VNC hosts whose
+underlying SSH host needs Cloudflare Access rebinding. Blocked IDs are diagnostic
+only; their owners must rebind the SSH host or explicitly choose Direct, and
+fresh Runner admission remains unavailable until then. Only use a current ready
+ID for a new session; ready is not a connectivity test. The VNC inventory has
+one required `availability` field; this pre-GA feature does not retain a legacy
+response shape or CLI fallback. This repair does not activate `VncAccess`.
+Agents select shared or exclusive mode when opening each session; the server
+decides admission and may override the requested mode. The settings page adds
+no controller lock.
 
 The Credentials tab shows which hosts use each credential. Renaming does not
 rotate its authentication; explicitly replacing the password (and X509Plain
@@ -268,7 +296,7 @@ database locks.
 
 Credential methods describe the supplied authentication material; connection
 security profiles describe the owner's selected wire authentication and server
-trust policy. Owner persistence accepts exactly the four pairs listed above.
+trust policy. Owner persistence accepts exactly the five pairs listed above.
 The connection stores the selected
 authentication method explicitly; a same-row check and composite credential
 foreign key enforce both pair and reference compatibility. Unknown methods,
@@ -282,9 +310,9 @@ New credential requirements
 and length limits must not inherit classic VNC's eight-byte limit. Binding or
 changing a credential must remain compatible with every referencing connection;
 authentication changes invalidate those connection generations.
-Persisted discriminator meanings are immutable: Apple DH and Apple Direct SRP
-each use distinct methods and profiles and do not reinterpret X509Plain or each
-other. A later profile extends the
+Persisted discriminator meanings are immutable: Apple DH, Apple Direct SRP
+and Apple RSA/SRP each use distinct methods and profiles and do not reinterpret
+X509Plain or each other. A later profile extends the
 allowed values and adds its concrete typed fields or references, but cannot
 reinterpret an existing value or require clearing saved VNC state. Every schema
 extension must exercise its migration against populated credentials, connections
@@ -306,8 +334,8 @@ the exact server versions tested and distinguish client authentication, server
 identity verification and full-session encryption.
 
 The Rust protocol engine and private Runner contract support the policy-selected
-X509Vnc, X509Plain, SSH-only Apple DH and SSH-only Apple Direct SRP
-authentication flows. SSH authentication belongs to an
+X509Vnc, X509Plain, SSH-only Apple DH, SSH-only Apple Direct SRP and SSH-only
+Apple RSA/SRP authentication flows. SSH authentication belongs to an
 outer transport and does not become a VNC password method. Shared/exclusive mode
 is a per-session Agent choice, independent of authentication. The VNC server
 decides how to admit clients; shared sessions can interact with the same desktop.
@@ -344,6 +372,15 @@ before KMS; an older API is not a safe rollback target after SRP rows are
 stored. The rollback floor is therefore the first API revision that reads and
 preserves these distinct SRP discriminators. Merging this migration does not
 activate `VncAccess`.
+
+The Apple RSA/SRP generated migration extends only the exact credential,
+profile and trust constraints while retaining all X509 and Apple rows,
+generations, grants, SSH references and the direct default. Because `VncAccess`
+has never been activated, this change does not require mixed-version Runner
+support or a production-data rollback exercise. It still requires all serving
+API readers to understand the new discriminators before a type 33 row can be
+stored; a revision that cannot read these rows is not a safe rollback target
+once they exist. This migration does not activate `VncAccess`.
 
 The configuration API remains unavailable until the feature is explicitly
 enabled; merging this change does not enable it, authorize an out-of-band

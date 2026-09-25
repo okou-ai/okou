@@ -124,7 +124,7 @@ export const userPreferencesContract = c.router({
     headers: authHeadersSchema,
     body: z.object({
       timezone: z.string().min(1).optional(),
-      locale: userLocaleSchema.optional(),
+      locale: userLocaleSchema,
     }),
     responses: {
       200: userPreferencesResponseSchema,

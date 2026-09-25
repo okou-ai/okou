@@ -40,7 +40,6 @@ import {
   resolveGithubOauthOrgId,
   tryLinkGithubFromLocalRecord,
   tryLinkGithubFromRemoteInstallations,
-  updateGithubInstallationSetupPublicBrand,
   verifyGithubConnectSignature,
 } from "../services/github-oauth.service";
 import { encryptPersistentSecretValue } from "../services/crypto.utils";
@@ -48,7 +47,6 @@ import { upsertBuiltinConnectorTokenConnection$ } from "../services/connector-da
 import { settle } from "../utils";
 import type { RouteEntry } from "../route-entry";
 import { getOAuthApiOrigin } from "../../lib/oauth-origin";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const REDIRECT_STATUS = 307;
 const GITHUB_CONNECTOR_SLUG = "github";
@@ -397,11 +395,11 @@ async function githubAppUpdateCallbackResponse(
     readonly db: Db;
     readonly request: Request;
     readonly installationId: string | undefined;
-    readonly usePersistedBrand: boolean;
+    readonly replayPersistedSetup: boolean;
   },
   signal: AbortSignal,
 ): Promise<Response> {
-  if (!args.usePersistedBrand || !args.installationId) {
+  if (!args.replayPersistedSetup || !args.installationId) {
     return redirectResponse(appUrl("/workflows"));
   }
 
@@ -643,14 +641,6 @@ const connectExistingGithubInstallation$ = command(
     if (!existing) {
       return null;
     }
-    await updateGithubInstallationSetupPublicBrand(
-      {
-        db: args.db,
-        installRecordId: existing.id,
-        publicBrand: args.state.publicBrand,
-      },
-      signal,
-    );
     const connection = await set(
       connectGithubUserAfterSetup$,
       {
@@ -727,7 +717,6 @@ async function createActiveGithubInstallationFromCallback(
       ),
       adminGithubUserId,
       composeId: args.composeId,
-      setupPublicBrand: args.state.publicBrand,
     },
     signal,
   );
@@ -738,7 +727,6 @@ async function createActiveGithubInstallationFromCallback(
 const installGithubOauth$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const request = get(request$).raw;
-    const publicBrand = PUBLIC_BRAND;
     const callbackOrigin = githubApiOrigin(request);
     const providerCallbackOrigin = githubApiOrigin(request);
     const appSlug = optionalEnv("GITHUB_APP_SLUG");
@@ -790,7 +778,6 @@ const installGithubOauth$ = command(
           orgId: query.orgId ?? null,
           userId,
           composeId: query.composeId ?? null,
-          publicBrand,
         },
         signal,
       );
@@ -816,7 +803,6 @@ const installGithubOauth$ = command(
       composeId: query.composeId,
       callbackOrigin,
       providerCallbackOrigin,
-      publicBrand,
       oauthRequestedScopes,
       secretsEncryptionKey: env("SECRETS_ENCRYPTION_KEY"),
     });
@@ -1077,7 +1063,7 @@ const callbackGithubOauth$ = command(
           db: set(writeDb$),
           request,
           installationId: query.installation_id,
-          usePersistedBrand: !query.state || !stateResolution.ok,
+          replayPersistedSetup: !query.state || !stateResolution.ok,
         },
         signal,
       );

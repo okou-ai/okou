@@ -1,5 +1,159 @@
 # Deployment Compatibility
 
+## Account deletion local-data cleanup retirement (2026-09-25)
+
+Okou no longer deletes a deleted account's browser or Desktop local data. The
+API removes `POST /api/account-erasure/status-capability` and
+`GET /api/account-erasure/status`; the App no longer issues or stores status
+capabilities, polls deletion status, or purges account-scoped IndexedDB,
+voice-draft or onboarding bytes. Server-side account erasure is unchanged.
+
+An older App bundle or Desktop renderer keeps its detached lifecycle: its
+capability request and status polls now receive 404. Both calls already
+suppress error toasts; the capability failure is settled and a status 404 is
+skipped, so the old client simply stops purging. Its saved
+`account-erasure-status-capability:*` localStorage entries remain inert and
+are not migrated. A new App against an older API makes no such calls. Rollback
+is safe; an older API resumes serving the routes with the same signing key.
+
+## Host-worker storage layouts replace public brand (2026-09-25)
+
+`apps/host-worker` no longer models a public brand (#36766). It resolves hosted
+sites, previews and artifact shares through two read-only storage layouts: the
+**legacy** layout served on `HOST_DOMAIN` (`*.sites.vm0.io`) and the **current**
+layout served on `OKOU_HOST_DOMAIN` (`*.okou.app`). The persisted path segments
+`vm0` and `okou` remain layout constants, so every R2 key the Worker reads is
+unchanged: `sites/` and `sites/brands/okou/` pointers, `private-sites/`,
+`shared-artifacts/`, `private-previews/`, `shared-previews/`, `artifact-shares/`,
+`artifact-delivery/` and `shared-thread-artifacts/` prefixes, the
+`artifact-delivery/{segment}/registration.json` markers, and the
+`/__artifact-content/{segment}/` content-cache keys.
+
+Stored pointers, manifests, grants and registry records keep their historical
+`publicBrand` field. The Worker reads it only as the stored layout segment;
+pointers and manifests without it remain in the legacy layout permanently
+(#28449). Wrangler routes, domains and environment variable names are
+unchanged, and legacy `sh-` shares and the #32492 registration-marker fallback
+keep their existing behavior.
+
+This is a Worker-only refactor with identical request behavior, so it has no
+ordering requirement against the API, and a Worker rollback is safe in either
+direction. The API writers of these objects are retired separately; they must
+keep writing the same key layout and stored segment values until a planned
+storage migration replaces both sides.
+
+## GitHub and workflow automation public brand retirement (2026-09-25)
+
+Okou is the only product brand (#36766). The API no longer reads or writes
+`github_installations.public_brand`, `github_installations.setup_public_brand`,
+`chat_github_context.public_brand` or `chat_automation_context.public_brand`.
+Every value the API wrote there was already `okou`, and no reader changed
+behavior based on it: the setup brand selected by
+`findGithubInstallationByInstallationId` was unused, queued automation
+launches only required a non-null value, and queued GitHub launches now use
+the fixed `okou` run brand, as AgentPhone does. The GitHub webhook and manual
+"Run now" paths no longer pass a brand into workflow automation admission.
+
+Migration `1230_github_automation_public_brand_okou_default` sets the default
+to `'okou'` on `github_installations.setup_public_brand`,
+`chat_github_context.public_brand` and `chat_automation_context.public_brand`
+(previously `'vm0'`); `github_installations.public_brand` already defaulted to
+`'okou'`. An old API therefore reads `okou`, including the non-null automation
+brand its queue drain requires, from rows the new API inserts. Old API/new DB
+and rollback remain compatible. The columns and their Drizzle declarations
+stay until a separate Phase 2 drop.
+
+GitHub App install state no longer carries `publicBrand` / `publicBrandSig`.
+The callback-redirect and requested-scope HMACs no longer include a brand and
+use new `v2` payload tags; the identity signature is unchanged. States that
+omit a brand are no longer treated as a signed `vm0` brand, and brand keys in
+a state are ignored. A GitHub install started on one API version and
+completed on the other fails signature validation and shows the existing
+"Invalid OAuth state" error; the user restarts the install. These states only
+live for one GitHub install round trip, so no compatibility path is kept.
+State-less callbacks (`setup_action=update`, provider errors) are unchanged.
+
+The `workflow-automation:result-email` callback reader no longer declares
+`publicBrand` and strips it instead of rejecting it, so callbacks persisted by
+earlier APIs still parse. The `github:chat` reader ignores the field in the
+same way. Writers still emit `publicBrand: "okou"` in the result-email payload
+because earlier APIs require the key in their strict schema; the generic
+`chat` callback brand and the `github:chat` writer belong to the run-level
+brand cleanup. Remove these writes when the Phase 2 rollback floor excludes
+APIs that require them. No App, CLI or public contract changes.
+
+## Discord canonical Chat sources (2026-09-24)
+
+The default-off Discord integration adds `discord` to the canonical Chat context,
+public source annotation, Run trigger, input-asset provenance, and billing source
+contracts. The schema migration expands existing CHECK constraints and updates
+`billing_usage_source` without rewriting historical events or billing identities.
+Every existing source remains legal for an older API after migration. New
+Discord writers require the provider tables and these expanded constraints, so
+the normal migration-before-promotion order applies.
+
+The new `discord_chat_deliveries` and `discord_gateway_receipts` tables also
+require the C ownership inventory. Older erasure workers, including workers with
+only the Discord foundation inventory, reject these unknown catalogue tables
+even when the feature is disabled. During the migration-to-compatible-API window,
+affected deletion jobs remain durable and retry after 60 seconds. Promote workers
+with the complete C inventory after migration and keep them available to drain
+the backlog. An API rollback below that inventory stalls those jobs until
+compatible workers return; do not weaken the catalogue guard.
+
+The delivery outbox binds an event to its canonical thread with a composite
+foreign key. Build its supporting `chat_events` unique index concurrently in a
+separate nontransactional migration. Attach a `UNIQUE` constraint with
+`USING INDEX` to reuse that index, then add the outbox foreign key. Expand the
+existing context and billing checks with `NOT VALID`, then validate them in
+a later transaction so scans do not hold the expansion's exclusive table locks.
+
+Discord thread creation uses the preparation API runtime mapping, so its implicit
+INSERT remains legal after the separately authorized legacy allocator contraction.
+The physical table keeps the column for DDL and the existing bridge. Discord
+input claims, required per-message context, canonical events and durable ingress
+completion stay atomic; the active mode moves weak thread activity updates after
+commit. Terminal callback replay repairs missing Discord outbox registration.
+The existing bounded late-content sweep also includes Discord context through its
+retained thread ownership. These paths use the existing global write control and
+do not activate split writes or contract any production schema.
+
+Discord's private context snapshot is stored separately from the immutable
+user-message document. Public event and snapshot projections carry only
+`{type:"source",kind:"discord",href?}`; binding IDs, authorization material and
+captured channel history are not public source fields. Existing messages keep
+their existing source and attachment shapes. Opaque application/message receipts
+commit with admission and survive connection or Chat deletion, preventing a lost
+ACK from launching the same task after reconnect. Separately namespaced guild
+removal receipts prevent replay from deleting a newer installation. These
+receipts retain no raw event, account identity, channel history or credential.
+
+Older strict public ChatEvent readers in the API and App do not recognize the
+new source literal. The CLI raw-history sync already preserves opaque
+`userMessage` payloads and string context types without projecting them.
+`_discordIntegration` and the Gateway remain disabled by default; no production
+Discord records or activation are authorized by this implementation. Fixture
+validation uses matching current readers. Enabling the integration later requires
+compatible public ChatEvent readers and a reviewed activation/rollback plan; a
+rollback to an API that cannot parse Discord source annotations is not supported
+once such events exist. The new feature has no existing production users and
+adds no compatibility fallback or historical backfill.
+
+## Runner claim first-body-chunk timing (2026-09-24)
+
+The Runner records two optional, successful-claim-only operation durations: time after
+response headers until the first non-empty application-visible body chunk, and
+from that chunk until the full body is collected. Their sum is the existing
+`runner_claim_response_body_read` duration; they do not represent a server
+flush or physical wire-byte measurement. The claim request and response,
+including context and auth, remain unchanged. An older Runner emits neither
+operation; the new Runner uses the existing generic operation stream, which an
+older API accepts without a claim-contract change. Missing observations during
+a staggered rollout are not zero-valued timings. Compare deployed cohorts by
+Runner/API version, size, host and time before interpreting a shifted total
+read distribution, because the new observation reads an initial chunk before
+collecting the rest.
+
 ## Morning Brief settings status and collection account retirement (2026-09-24)
 
 `GET`/`PUT /api/preferences/morning-brief` no longer return `nextRunAt`,
@@ -107,8 +261,7 @@ and `chat_agentphone_context` (previously no default), matching
 `agentphone_connection_codes`. An old API therefore reads `okou` from rows the
 new API inserts, including the non-null brand that its queued-launch path
 requires, so old API/new DB and rollback remain compatible. The columns and
-their ORM declarations stay in place; drop them in a separate migration after
-older API deployments drain.
+their ORM declarations stayed in place until the separate drop below.
 
 The connect link no longer carries `publicBrand` / `brandSig`, and the connect
 request contract no longer declares `publicBrand` / `publicBrandSignature`.
@@ -124,6 +277,34 @@ that release also requires rolling back the API below this change, because the
 older connect page requires `brandSig`. An API rollback below the expand change
 (#36651) also requires rolling back the App, because the older API requires the
 brand fields.
+
+### Column drop (contract step, #36729)
+
+Migration `1228_drop_agentphone_public_brand` drops the four `public_brand`
+columns and removes their Drizzle declarations. Gate evidence: API release
+`api-v1.673.0` (release commit `11339e527110e22cc5c2e2a45a96464af283e0b3`)
+applied `1223` and promoted `api/production` at
+`c6495e1927c69bf5479300e841a9805df59d0a77` on 2026-09-24 23:49 UTC. Every
+earlier production API predates #36722; that deployment and its successors
+contain it.
+
+APIs after #36722 no longer read the value, but they still declare the columns.
+Drizzle names every declared column in `insert` column lists and in bare
+`select()`, so those APIs still reach `public_brand` on all four tables. As with
+`1107` and `1123`, `test:migration-consistency` requires the declaration and the
+physical schema to agree, so declaration removal and the drop ship in one
+release. Migrations run before API promotion. In the window before the previous
+API drains, its AgentPhone connect, inbound-message, user-link and chat-context
+statements receive `42703`. Release this change alone at low traffic; the
+`api-v1.673.0` promotion measured about 20 seconds from migration completion to
+deployment finish.
+
+Rollback promotes artifacts without restoring schema. The production rollback
+resolver therefore rejects API targets that predate the canonical main commit
+that added `1228_drop_agentphone_public_brand.sql`. Recovering past that commit
+requires a forward-fix migration that restores the columns, not an artifact
+rollback. The Slack, Feishu, Teams, Telegram and other `public_brand` columns are
+unaffected.
 
 ## Voice input model selection retirement (2026-09-24)
 

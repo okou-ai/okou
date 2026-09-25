@@ -57,6 +57,9 @@ export const vncTypeBindings = [
           apple_srp_username_password: [
             "Apple Direct SRP username/password authentication with bounded UTF-8 fields.",
           ],
+          apple_rsa_srp_username_password: [
+            "Apple RSA/SRP username/password authentication with a 234-byte username bound.",
+          ],
         },
       },
       {
@@ -68,6 +71,9 @@ export const vncTypeBindings = [
           apple_dh: ["Apple DH type 30, requiring SSH to Mac loopback."],
           apple_srp: [
             "Apple Direct SRP type 36, requiring SSH to Mac loopback.",
+          ],
+          apple_rsa_srp: [
+            "Apple RSA/SRP type 33, requiring SSH to Mac loopback.",
           ],
         },
       },
@@ -130,6 +136,9 @@ export const vncTypeBindings = [
           resolved_apple_srp: [
             "Apple Direct SRP credential and verified SSH-to-Mac-loopback transport only.",
           ],
+          resolved_apple_rsa_srp: [
+            "Apple RSA/SRP credential and verified SSH-to-Mac-loopback transport only.",
+          ],
         },
       },
       {
@@ -166,6 +175,9 @@ export const vncTypeBindings = [
           apple_srp_username_password: [
             "Apple Direct SRP username/password fields; the Runner validates 255/1023-byte bounds.",
           ],
+          apple_rsa_srp_username_password: [
+            "Apple RSA/SRP username/password fields; the Runner validates 234/1023-byte bounds.",
+          ],
         },
       },
       {
@@ -182,6 +194,9 @@ export const vncTypeBindings = [
           ],
           apple_srp: [
             "Apple Direct SRP type 36; only the separately verified SSH channel protects the RFB session.",
+          ],
+          apple_rsa_srp: [
+            "Apple RSA/SRP type 33; only the separately verified SSH channel protects the RFB session.",
           ],
         },
       },

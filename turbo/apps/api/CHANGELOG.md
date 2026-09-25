@@ -8,6 +8,79 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.674.0](https://github.com/okou-ai/okou/compare/api-v1.673.1...api-v1.674.0) (2026-09-25)
+
+
+### Features
+
+* **browser:** support native select input requests ([#36740](https://github.com/okou-ai/okou/issues/36740)) ([8193d4b](https://github.com/okou-ai/okou/commit/8193d4ba387201e4f495115773cc0d880415b7bd))
+* **vnc:** admit apple rsa/srp through verified mac ssh ([#36743](https://github.com/okou-ai/okou/issues/36743)) ([b6a626e](https://github.com/okou-ai/okou/commit/b6a626ef2bfb9e35bdec4eb351d5e1e229bfaaca))
+
+
+### Bug Fixes
+
+* **api:** restore split-mode queue wakeup and slack failure contracts ([#36762](https://github.com/okou-ai/okou/issues/36762)) ([a05a8f2](https://github.com/okou-ai/okou/commit/a05a8f2ab7e38494c25290d05bdd6df476e3af6d))
+* **vnc:** honor needs_rebind on ssh-backed hosts ([#36741](https://github.com/okou-ai/okou/issues/36741)) ([d258195](https://github.com/okou-ai/okou/commit/d258195c0d234d4bee5790b7be450af9289fc1aa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.508.0
+    * @okouai/core bumped to 8.710.2
+    * @okouai/db bumped to 1.298.0
+    * @okouai/pi-agent-runtime bumped to 1.40.14
+
+## [1.673.1](https://github.com/okou-ai/okou/compare/api-v1.673.0...api-v1.673.1) (2026-09-24)
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#36754](https://github.com/okou-ai/okou/issues/36754)) ([cc5147f](https://github.com/okou-ai/okou/commit/cc5147f9b25b62821d11daa489a0a96b7bdbf92e))
+
+
+### Performance Improvements
+
+* **app:** edge-prefetch org and model preferences, exchange ably token on the server ([#36731](https://github.com/okou-ai/okou/issues/36731)) ([c6495e1](https://github.com/okou-ai/okou/commit/c6495e1927c69bf5479300e841a9805df59d0a77))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.507.1
+    * @okouai/core bumped to 8.710.1
+    * @okouai/db bumped to 1.297.1
+    * @okouai/pi-agent-runtime bumped to 1.40.13
+
+## [1.673.0](https://github.com/okou-ai/okou/compare/api-v1.672.0...api-v1.673.0) (2026-09-24)
+
+
+### Features
+
+* **access:** promote personal configurations and review shared deletion ([#36715](https://github.com/okou-ai/okou/issues/36715)) ([aa20d6a](https://github.com/okou-ai/okou/commit/aa20d6a8609326008f5da853bd9db75d0ad1d204))
+* add verified discord integration foundation ([#36665](https://github.com/okou-ai/okou/issues/36665)) ([fdeb98f](https://github.com/okou-ai/okou/commit/fdeb98f05f1ef4d51eb44dfed1f4bd4244fe74be))
+* **api:** add discord commands and account interactions ([#36659](https://github.com/okou-ai/okou/issues/36659)) ([af9be5c](https://github.com/okou-ai/okou/commit/af9be5c5d0a04d2425c5187f7d7717ff2dbbf897))
+* **discord:** add authorized native reads and message tools ([#36661](https://github.com/okou-ai/okou/issues/36661)) ([dafe827](https://github.com/okou-ai/okou/commit/dafe827d3ddc4fe391776c35e49a36022d4397c6))
+* **discord:** add canonical chat ingress and reply delivery ([#36685](https://github.com/okou-ai/okou/issues/36685)) ([99ddcab](https://github.com/okou-ai/okou/commit/99ddcab5538b064d842ad523f50579f3d14ebe1e))
+
+
+### Refactoring
+
+* **agentphone:** retire public brand and connect link brand signature ([#36722](https://github.com/okou-ai/okou/issues/36722)) ([3c4cdb4](https://github.com/okou-ai/okou/commit/3c4cdb4a0d241eed624b878dcd7b4717513e3724))
+* **morning-brief:** remove settings status line, realtime refresh and collection account ([#36719](https://github.com/okou-ai/okou/issues/36719)) ([8d8de09](https://github.com/okou-ai/okou/commit/8d8de09466c1ef81d3d2017e75351b315aa40b0b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.507.0
+    * @okouai/core bumped to 8.710.0
+    * @okouai/db bumped to 1.297.0
+    * @okouai/pi-agent-runtime bumped to 1.40.12
+
 ## [1.672.0](https://github.com/okou-ai/okou/compare/api-v1.671.1...api-v1.672.0) (2026-09-24)
 
 

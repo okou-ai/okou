@@ -4,6 +4,7 @@ import type { PgTable } from "drizzle-orm/pg-core";
 import { chatContentErasureSubjects } from "@okouai/db/schema/chat-content-erasure-subject";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
+import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
 import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
@@ -101,6 +102,7 @@ export async function cleanupLateChatContent(
   let deleted = 0;
   for (const table of [
     chatEvents,
+    chatDiscordContext,
     chatSlackContext,
     chatFeishuContext,
     chatTeamsContext,

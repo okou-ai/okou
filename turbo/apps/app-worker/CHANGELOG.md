@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.8.119](https://github.com/okou-ai/okou/compare/app-worker-v1.8.118...app-worker-v1.8.119) (2026-09-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.710.2
+
+## [1.8.118](https://github.com/okou-ai/okou/compare/app-worker-v1.8.117...app-worker-v1.8.118) (2026-09-24)
+
+
+### Performance Improvements
+
+* **app:** edge-prefetch org and model preferences, exchange ably token on the server ([#36731](https://github.com/okou-ai/okou/issues/36731)) ([c6495e1](https://github.com/okou-ai/okou/commit/c6495e1927c69bf5479300e841a9805df59d0a77))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.710.1
+
+## [1.8.117](https://github.com/okou-ai/okou/compare/app-worker-v1.8.116...app-worker-v1.8.117) (2026-09-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.710.0
+
 ## [1.8.116](https://github.com/okou-ai/okou/compare/app-worker-v1.8.115...app-worker-v1.8.116) (2026-09-24)
 
 

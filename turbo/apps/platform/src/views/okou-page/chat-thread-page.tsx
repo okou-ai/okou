@@ -3,6 +3,7 @@ import type { ThinkingSummaries } from "../../signals/chat-page/thread-activity-
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ScrollArea } from "@base-ui/react/scroll-area";
 import { Toolbar } from "@base-ui/react/toolbar";
+import { Field } from "@base-ui/react/field";
 import type {
   FormEvent,
   MouseEvent as ReactMouseEvent,
@@ -164,6 +165,7 @@ import {
   PreviewableAudioAttachmentChip,
   PreviewableFileAttachmentChip,
 } from "./attachment-chips.tsx";
+import { DiscordMark } from "./components/discord-mark.tsx";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 import { classifyChatAttachment } from "../../signals/chat-page/parse-body-blocks.ts";
 import type {
@@ -187,14 +189,7 @@ import {
   type RunWorkFolding,
   type RunWorkSection,
 } from "../../signals/chat-page/run-work-folding.ts";
-import {
-  chatGroupForSharing,
-  shareableEventFromChatEvent,
-} from "../../signals/chat-page/chat-thread-sharing.ts";
-import {
-  ChatShareMarqueeViewport,
-  clickTargetsExistingInteraction,
-} from "./chat-share-marquee.tsx";
+import { chatGroupForSharing } from "../../signals/chat-page/chat-thread-sharing.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import { CustomConnectorConnectDialog } from "./components/settings/custom-connector-connect-dialog.tsx";
 import {
@@ -745,27 +740,21 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
             { count: selectedCount },
           )}
         </span>
-        <div className="flex shrink-0 items-center gap-0.5">
-          <SelectAllSharedMessagesButton
-            thread={thread}
-            disabled={sharingPhase !== "selecting"}
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              detach(
-                closeSharing(pageSignal),
-                Reason.DomCallback,
-                "close shared thread selection",
-              );
-            }}
-          >
-            {t(($) => {
-              return $.chat.sharing.cancel;
-            })}
-          </Button>
-        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            detach(
+              closeSharing(pageSignal),
+              Reason.DomCallback,
+              "close shared thread selection",
+            );
+          }}
+        >
+          {t(($) => {
+            return $.chat.sharing.cancel;
+          })}
+        </Button>
       </header>
     );
   }
@@ -3732,15 +3721,10 @@ function ChatThreadSkeletonOverlay({ thread }: { thread: ChatPanelSignals }) {
 }
 
 function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
-  const { t } = useTranslation();
   const scrollContainerOnRef = useSet(thread.scrollContainerOnRef$);
   const loadMoreRenderedChatGroups = useSet(thread.loadMoreRenderedChatGroups$);
   const pageSignal = useGet(pageSignal$);
   const standalonePwa = isStandalonePwa();
-  const phase = useGet(thread.sharing.phase$);
-  const selectRange = useSet(thread.sharing.selectRange$);
-  const selectAll = useSet(thread.sharing.selectAll$);
-  const clearSelection = useSet(thread.sharing.clear$);
 
   const handleScroll = (event: ReactUIEvent<HTMLDivElement>) => {
     if (
@@ -3752,18 +3736,14 @@ function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
   };
 
   return (
-    <ScrollArea.Root className="relative flex-1 min-h-0 isolate">
-      <ChatShareMarqueeViewport
-        phase={phase}
-        onViewportRef={scrollContainerOnRef}
+    <ScrollArea.Root className="flex-1 min-h-0 isolate">
+      <ScrollArea.Viewport
+        ref={scrollContainerOnRef}
+        data-slot="scroll-area-viewport"
+        data-scroll-container
+        tabIndex={-1}
         onScroll={handleScroll}
-        selectRange={selectRange}
-        selectAll={selectAll}
-        clearSelection={clearSelection}
-        tooLargeLabel={t(($) => {
-          return $.chat.sharing.tooLarge;
-        })}
-        viewportClassName={cn(
+        className={cn(
           "absolute inset-0 focus:outline-none [overflow-anchor:none]",
           SCROLL_FADE_Y_END,
           standalonePwa && "overscroll-contain",
@@ -3772,7 +3752,7 @@ function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
         <ScrollArea.Content>
           <ChatThreadEventsMain thread={thread} />
         </ScrollArea.Content>
-      </ChatShareMarqueeViewport>
+      </ScrollArea.Viewport>
       <ScrollBar data-testid="chat-message-scrollbar" />
       <ChatThreadSkeletonOverlay thread={thread} />
       <ScrollToBottomButton thread={thread} />
@@ -3832,64 +3812,12 @@ function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
   );
 }
 
-function SelectAllSharedMessagesButton({
-  thread,
-  disabled,
-}: {
-  thread: ChatPanelSignals;
-  disabled: boolean;
-}) {
-  const { t } = useTranslation();
-  const selectAll = useSet(thread.sharing.selectAll$);
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      disabled={disabled}
-      onClick={() => {
-        if (selectAll() === "too-large") {
-          toast.error(
-            t(($) => {
-              return $.chat.sharing.tooLarge;
-            }),
-          );
-        }
-      }}
-    >
-      {t(($) => {
-        return $.chat.sharing.selectAll;
-      })}
-    </Button>
-  );
-}
-
-function CloseSharedThreadButton({ thread }: { thread: ChatPanelSignals }) {
-  const { t } = useTranslation();
-  const close = useSet(thread.sharing.close$);
-  const pageSignal = useGet(pageSignal$);
-  return (
-    <Button
-      variant="outline"
-      onClick={() => {
-        detach(
-          close(pageSignal),
-          Reason.DomCallback,
-          "close shared thread selection",
-        );
-      }}
-    >
-      {t(($) => {
-        return $.chat.sharing.close;
-      })}
-    </Button>
-  );
-}
-
 function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const phase = useGet(thread.sharing.phase$);
   const selectedCount = useGet(thread.sharing.selectedCount$);
   const sharedThreadId = useGet(thread.sharing.createdSharedThreadId$);
+  const close = useSet(thread.sharing.close$);
   const pageSignal = useGet(pageSignal$);
   const [createLoadable, createSharedThread] = useLoadableSet(
     thread.sharing.create$,
@@ -3945,7 +3873,20 @@ function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
                   return $.chat.sharing.copyLink;
                 })}
               </Button>
-              <CloseSharedThreadButton thread={thread} />
+              <Button
+                variant="outline"
+                onClick={() => {
+                  detach(
+                    close(pageSignal),
+                    Reason.DomCallback,
+                    "close shared thread selection",
+                  );
+                }}
+              >
+                {t(($) => {
+                  return $.chat.sharing.close;
+                })}
+              </Button>
             </div>
           </div>
         ) : (
@@ -6290,6 +6231,38 @@ function PagedGroupRow({
   );
 }
 
+function shareableEventFromChatEvent(
+  event: EnrichedChatEvent,
+): { readonly id: string; readonly text: string } | null {
+  if (event.seqId === undefined) {
+    return null;
+  }
+  if (event.eventType === "output.message") {
+    return event.content && event.content.length > 0
+      ? { id: event.id, text: event.content }
+      : null;
+  }
+  if (
+    event.eventType !== "input.prompt" &&
+    event.eventType !== "input.automation"
+  ) {
+    return null;
+  }
+  const displayText = messageDocumentToDisplayText(event.userMessage)?.trim();
+  if (displayText) {
+    return { id: event.id, text: displayText };
+  }
+  const automation = eventNonContentPart(event);
+  if (automation?.type !== "automation") {
+    return null;
+  }
+  const automationText =
+    automation.automationBrief?.trim() || automation.workflowName.trim();
+  return automationText.length > 0
+    ? { id: event.id, text: automationText }
+    : null;
+}
+
 function SelectablePagedGroupRow({
   group,
   thread,
@@ -6326,15 +6299,14 @@ function SelectablePagedGroupRow({
   const selectedCount = events.filter((event) => {
     return selectedEventIds.has(event.id);
   }).length;
-  const selected = selectedCount > 0;
   const allSelected = selectedCount === events.length;
-  const indeterminate = selected && !allSelected;
+  const indeterminate = selectedCount > 0 && !allSelected;
 
   const toggleGroup = () => {
     if (phase !== "selecting") {
       return;
     }
-    const result = toggle(events[0]!.id, events);
+    const result = toggle(group.beginEventId, events);
     if (result === "too-large") {
       toast.error(
         t(($) => {
@@ -6347,7 +6319,6 @@ function SelectablePagedGroupRow({
   return (
     <div
       data-chat-share-selectable-group
-      data-chat-share-group-event-id={events[0]?.id}
       data-chat-scroll-anchor-alias-event-ids={
         group.role === "assistant"
           ? [
@@ -6367,48 +6338,38 @@ function SelectablePagedGroupRow({
               .join(" ")
           : undefined
       }
-      className={cn(
-        "relative -my-1 flex flex-col rounded-lg py-1 transition-colors",
-        CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
-        selected && "bg-state-selected",
-        phase === "selecting" &&
-          (!selected
-            ? "cursor-pointer hover:bg-state-hover"
-            : "cursor-pointer hover:bg-state-selected-hover"),
-      )}
-      onClick={(event) => {
-        const selection = window.getSelection();
-        const selectsTextInGroup =
-          selection !== null &&
-          !selection.isCollapsed &&
-          selection.rangeCount > 0 &&
-          event.currentTarget.contains(
-            selection.getRangeAt(0).commonAncestorContainer,
-          );
-        if (
-          !selectsTextInGroup &&
-          !clickTargetsExistingInteraction(event.target)
-        ) {
-          toggleGroup();
-        }
-      }}
+      className="relative -my-1 flex flex-col gap-2 rounded-lg py-1"
     >
-      {content}
-      <Checkbox
-        checked={allSelected}
-        indeterminate={indeterminate}
-        disabled={phase !== "selecting"}
-        aria-label={t(($) => {
-          return allSelected
-            ? $.chat.sharing.deselectGroup
-            : $.chat.sharing.selectGroup;
-        })}
-        className="absolute -right-9 top-1/2 -translate-y-1/2 lg:-right-10"
-        onClick={(event) => {
-          event.stopPropagation();
-        }}
-        onCheckedChange={toggleGroup}
-      />
+      {/* The full-width label owns selection. Message content stays outside
+          it so text selection, links, and message actions keep their owners. */}
+      <Field.Root className="relative" disabled={phase !== "selecting"}>
+        <Field.Label
+          className={cn(
+            buttonVariants({ variant: "quiet", size: "lg" }),
+            "w-full justify-start pr-10 pl-3 data-disabled:pointer-events-none data-disabled:opacity-50",
+          )}
+        >
+          {t(($) => {
+            return allSelected
+              ? $.chat.sharing.deselectGroup
+              : $.chat.sharing.selectGroup;
+          })}
+        </Field.Label>
+        <Checkbox
+          checked={allSelected}
+          indeterminate={indeterminate}
+          disabled={phase !== "selecting"}
+          className="absolute top-1/2 right-3 -translate-y-1/2"
+          onCheckedChange={toggleGroup}
+        />
+      </Field.Root>
+      <div
+        // Preserve the message list's rhythm inside this group, including
+        // the gaps that back-to-back user bubbles stack into.
+        className={cn("flex flex-col", CHAT_THREAD_MESSAGE_ROW_GAP_CLASS)}
+      >
+        {content}
+      </div>
     </div>
   );
 }
@@ -6966,6 +6927,11 @@ function sourceMessageLabel(
   >["part"]["kind"],
 ): string {
   switch (kind) {
+    case "discord": {
+      return t(($) => {
+        return $.chat.origins.discord;
+      });
+    }
     case "slack": {
       return t(($) => {
         return $.chat.origins.slack;
@@ -7043,29 +7009,35 @@ function SourceMessageAnnotation({
         ? t(($) => {
             return $.chat.origins.openSlackMessage;
           })
-        : sourceKind === "feishu" || sourceKind === "lark"
+        : sourceKind === "discord"
           ? t(($) => {
-              return $.chat.origins[
-                sourceKind === "lark" ? "openLarkChat" : "openFeishuChat"
-              ];
+              return $.chat.origins.openDiscordMessage;
             })
-          : sourceKind === "teams"
+          : sourceKind === "feishu" || sourceKind === "lark"
             ? t(($) => {
-                return $.chat.origins.openTeamsMessage;
+                return $.chat.origins[
+                  sourceKind === "lark" ? "openLarkChat" : "openFeishuChat"
+                ];
               })
-            : sourceKind === "telegram"
+            : sourceKind === "teams"
               ? t(($) => {
-                  return $.chat.origins.openTelegramMessage;
+                  return $.chat.origins.openTeamsMessage;
                 })
-              : sourceKind === "github"
+              : sourceKind === "telegram"
                 ? t(($) => {
-                    return $.chat.origins.openGithubMessage;
+                    return $.chat.origins.openTelegramMessage;
                   })
-                : openLabel;
+                : sourceKind === "github"
+                  ? t(($) => {
+                      return $.chat.origins.openGithubMessage;
+                    })
+                  : openLabel;
   const content = (
     <>
       {sourceKind === "slack" ? (
         <BrandSlack size={15} className="shrink-0" />
+      ) : sourceKind === "discord" ? (
+        <DiscordMark size={15} />
       ) : (
         <img
           src={annotationIconImgs[sourceKind]}
