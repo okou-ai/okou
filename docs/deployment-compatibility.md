@@ -8,7 +8,7 @@ Slack and Discord are Okou-only. The API no longer reads or writes
 Slack webhook handlers no longer overlay a request brand on the installation
 row (#36766, slice A).
 
-Migration `1229_slack_discord_public_brand_okou_default` sets the column default
+Migration `1230_slack_discord_public_brand_okou_default` sets the column default
 to `'okou'` on `slack_chat_ingress`, `chat_slack_context`,
 `discord_chat_ingress` and `chat_discord_context` (previously no default);
 `slack_org_installations` already defaulted to `'okou'`. An old API therefore
