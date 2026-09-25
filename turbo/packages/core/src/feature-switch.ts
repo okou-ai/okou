@@ -123,6 +123,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.BrowserNativeFileInput]: {
+    maintainer: "liangyou@okou.ai",
+    description:
+      "Allow bounded native file inputs after Platform and API rollout verification",
+    enabled: false,
+  },
   [FeatureSwitchKey.Dummy]: {
     maintainer: "ethan@okou.ai",
     description: "Test-only feature switch for flag system validation",

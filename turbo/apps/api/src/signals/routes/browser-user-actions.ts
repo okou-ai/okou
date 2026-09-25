@@ -56,6 +56,18 @@ const browserNativeInputEnabled$ = command(async ({ get }) => {
   });
 });
 
+const browserNativeFileInputEnabled$ = command(async ({ get }) => {
+  const auth = get(organizationAuthContext$);
+  const overrides = await get(
+    userFeatureSwitchOverrides(auth.orgId, auth.userId),
+  );
+  return isFeatureEnabled(FeatureSwitchKey.BrowserNativeFileInput, {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    overrides,
+  });
+});
+
 const createBody$ = bodyResultOf(browserUserActionsContract.create);
 const getParams$ = pathParamsOf(browserUserActionsContract.get);
 const preflightParams$ = pathParamsOf(browserUserActionsContract.preflight);
@@ -79,6 +91,16 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   if (!body.ok) {
     return body.response;
+  }
+  if (
+    body.data.kind === "input" &&
+    body.data.fields.some((field) => {return field.fieldKind === "file"})
+  ) {
+    const fileEnabled = await set(browserNativeFileInputEnabled$);
+    signal.throwIfAborted();
+    if (!fileEnabled) {
+      return disabled;
+    }
   }
   const result = await set(
     createBrowserUserAction$,

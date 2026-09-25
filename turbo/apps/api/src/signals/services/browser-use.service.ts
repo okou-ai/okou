@@ -6,6 +6,11 @@ import {
   BROWSER_SCREEN_WIDTH,
 } from "@okouai/api-contracts/contracts/browser";
 import {
+  BROWSER_USER_ACTION_MAX_ACCEPT_LENGTH,
+  BROWSER_USER_ACTION_MAX_FILES,
+  BROWSER_USER_ACTION_MAX_FILE_NAME_LENGTH,
+  BROWSER_USER_ACTION_MAX_FILE_TYPE_LENGTH,
+  BROWSER_USER_ACTION_MAX_OBSERVED_FILE_BYTES,
   BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH,
   BROWSER_USER_ACTION_MAX_OPTIONS,
   BROWSER_USER_ACTION_MAX_RADIO_MEMBERS,
@@ -723,6 +728,13 @@ export interface BrowserUseControlInspection {
   readonly siteRequired: boolean;
   readonly multiple: boolean;
   readonly checked?: boolean;
+  readonly accept?: string;
+  readonly files?: readonly {
+    readonly name: string;
+    readonly size: number;
+    readonly type: string;
+  }[];
+  readonly fileSetFingerprint?: string;
   readonly radioGroupFingerprint?: string;
   readonly radioOptions?: readonly {
     readonly index: number;
@@ -849,6 +861,67 @@ function optionalCheckboxMetadata(
     : { checked: candidate.checked as boolean };
 }
 
+function validObservedFile(entry: unknown): boolean {
+  if (typeof entry !== "object" || entry === null) {
+    return false;
+  }
+  const file = entry as Record<string, unknown>;
+  return (
+    typeof file.name === "string" &&
+    file.name.length > 0 &&
+    file.name.length <= BROWSER_USER_ACTION_MAX_FILE_NAME_LENGTH &&
+    typeof file.type === "string" &&
+    file.type.length <= BROWSER_USER_ACTION_MAX_FILE_TYPE_LENGTH &&
+    typeof file.size === "number" &&
+    Number.isSafeInteger(file.size) &&
+    file.size >= 0 &&
+    file.size <= BROWSER_USER_ACTION_MAX_OBSERVED_FILE_BYTES
+  );
+}
+
+function validFileInspection(
+  candidate: Readonly<Record<string, unknown>>,
+): boolean {
+  if (candidate.inputType !== "file" || !candidate.writable) {
+    return true;
+  }
+  return (
+    typeof candidate.accept === "string" &&
+    candidate.accept.length <= BROWSER_USER_ACTION_MAX_ACCEPT_LENGTH &&
+    Array.isArray(candidate.files) &&
+    candidate.files.length <= BROWSER_USER_ACTION_MAX_FILES &&
+    candidate.files.every(validObservedFile)
+  );
+}
+
+function validControlShape(
+  candidate: Readonly<Record<string, unknown>>,
+): candidate is Readonly<Record<string, unknown>> &
+  Pick<
+    BrowserUseControlInspection,
+    | "tagName"
+    | "inputType"
+    | "connected"
+    | "mainDocument"
+    | "writable"
+    | "siteRequired"
+    | "multiple"
+  > {
+  return (
+    typeof candidate.tagName === "string" &&
+    candidate.tagName.length <= 64 &&
+    typeof candidate.inputType === "string" &&
+    candidate.inputType.length <= 64 &&
+    typeof candidate.connected === "boolean" &&
+    typeof candidate.mainDocument === "boolean" &&
+    typeof candidate.writable === "boolean" &&
+    typeof candidate.siteRequired === "boolean" &&
+    typeof candidate.multiple === "boolean" &&
+    validCheckboxInspection(candidate) &&
+    boundedOptionalControlMetadata(candidate)
+  );
+}
+
 function safeControlInspection(
   value: unknown,
 ): BrowserUseControlInspection | null {
@@ -856,19 +929,7 @@ function safeControlInspection(
     return null;
   }
   const candidate = value as Record<string, unknown>;
-  if (
-    typeof candidate.tagName !== "string" ||
-    candidate.tagName.length > 64 ||
-    typeof candidate.inputType !== "string" ||
-    candidate.inputType.length > 64 ||
-    typeof candidate.connected !== "boolean" ||
-    typeof candidate.mainDocument !== "boolean" ||
-    typeof candidate.writable !== "boolean" ||
-    typeof candidate.siteRequired !== "boolean" ||
-    typeof candidate.multiple !== "boolean" ||
-    !validCheckboxInspection(candidate) ||
-    !boundedOptionalControlMetadata(candidate)
-  ) {
+  if (!validControlShape(candidate) || !validFileInspection(candidate)) {
     return null;
   }
   const options =
@@ -892,6 +953,22 @@ function safeControlInspection(
     multiple: candidate.multiple,
     ...optionalCheckboxMetadata(candidate),
     ...optionalControlMetadata(candidate),
+    ...(candidate.inputType === "file" && candidate.writable
+      ? {
+          accept: candidate.accept as string,
+          files: candidate.files as BrowserUseControlInspection["files"],
+          fileSetFingerprint: createHash("sha256")
+            .update(
+              JSON.stringify({
+                accept: candidate.accept,
+                multiple: candidate.multiple,
+                required: candidate.siteRequired,
+                files: candidate.files,
+              }),
+            )
+            .digest("hex"),
+        }
+      : {}),
     ...(options === undefined || options === null
       ? {}
       : {
@@ -914,7 +991,7 @@ function browserUseControlInspectionFunction(): string {
     const controls = [this, ...otherControls];
     const supportedInputTypes = new Set([
       "text", "password", "email", "tel", "url", "search", "number",
-      "date", "time", "datetime-local", "month", "week", "checkbox", "radio"
+      "date", "time", "datetime-local", "month", "week", "checkbox", "radio", "file"
     ]);
     const dateTimeTypes = new Set(["date", "time", "datetime-local", "month", "week"]);
     return controls.map((control) => {
@@ -927,8 +1004,15 @@ function browserUseControlInspectionFunction(): string {
           option.value.length <= ${BROWSER_USER_ACTION_MAX_OPTION_VALUE_LENGTH}));
       const supported =
         textarea || select || (input && supportedInputTypes.has(control.type));
-      const textual = supported && (textarea || !["number", "date", "time", "datetime-local", "month", "week", "checkbox", "radio"].includes(control.type));
+      const textual = supported && (textarea || !["number", "date", "time", "datetime-local", "month", "week", "checkbox", "radio", "file"].includes(control.type));
       const constrained = input && (control.type === "number" || dateTimeTypes.has(control.type));
+      const file = input && control.type === "file";
+      const boundedFiles = !file || (control.accept.length <= ${BROWSER_USER_ACTION_MAX_ACCEPT_LENGTH} &&
+        control.files.length <= ${BROWSER_USER_ACTION_MAX_FILES} &&
+        [...control.files].every((item) => item.name.length > 0 &&
+          item.name.length <= ${BROWSER_USER_ACTION_MAX_FILE_NAME_LENGTH} &&
+          item.type.length <= ${BROWSER_USER_ACTION_MAX_FILE_TYPE_LENGTH} &&
+          Number.isSafeInteger(item.size) && item.size <= ${BROWSER_USER_ACTION_MAX_OBSERVED_FILE_BYTES}));
       const boundedNumberConstraints = !constrained ||
         [control.min, control.max, control.step].every((value) =>
           value.length <= ${BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH});
@@ -937,10 +1021,13 @@ function browserUseControlInspectionFunction(): string {
         inputType: input ? control.type : textarea ? "textarea" : select ? (control.multiple ? "select-multiple" : "select-one") : "",
         connected: control.isConnected === true,
         mainDocument: control.ownerDocument === document,
-        writable: supported && boundedNumberConstraints && boundedOptions && !control.readOnly && !control.matches(":disabled") && !(input && control.type === "checkbox" && control.indeterminate),
+        writable: supported && boundedFiles && boundedNumberConstraints && boundedOptions && !control.readOnly && !control.matches(":disabled") && !(input && control.type === "checkbox" && control.indeterminate),
         siteRequired: supported && control.required === true,
         ...(input && control.type === "checkbox" ? { checked: control.checked } : {}),
-        multiple: select ? control.multiple : input && control.type === "email" && control.multiple === true,
+        multiple: select ? control.multiple : input && (control.type === "email" || file) && control.multiple === true,
+        ...(file && boundedFiles ? { accept: control.accept, files: [...control.files].map((item) => ({
+          name: item.name, size: item.size, type: item.type,
+        })) } : {}),
         ...(select && boundedOptions ? { options: options.map((option, index) => ({
           index, label: option.label, value: option.value,
           disabled: option.disabled || (option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled),
@@ -1699,6 +1786,16 @@ export interface BrowserUseUserActionApplyField {
     readonly optionIndexes: readonly number[];
     readonly optionSetFingerprint: string;
   };
+  readonly fileChoice?: {
+    readonly observedFingerprint: string;
+    readonly operation: "keep" | "replace" | "clear";
+    readonly files: readonly {
+      readonly name: string;
+      readonly type: string;
+      readonly size: number;
+      readonly contentBase64: string;
+    }[];
+  };
 }
 
 export interface BrowserUseUserActionExactTarget {
@@ -1747,7 +1844,7 @@ async function openBrowserUseApplyPage(
   socket: WebSocket,
   target: BrowserUseUserActionExactTarget,
   signal: AbortSignal,
-): Promise<AttachedBrowserUsePage | null> {
+): Promise<(AttachedBrowserUsePage & { readonly frameId: string }) | null> {
   const targets = browserUseCdpTargetsSchema.parse(
     await sendBrowserUseCdpCommand(
       socket,
@@ -1787,7 +1884,7 @@ async function openBrowserUseApplyPage(
   ) {
     return null;
   }
-  return attached;
+  return { ...attached, frameId: frameTree.frameTree.frame.id };
 }
 
 function checkboxObservationMatches(
@@ -2578,12 +2675,247 @@ async function writeBrowserUseMixedControlFields(
   }
 }
 
+async function resolveBrowserUseFileControl(
+  socket: WebSocket,
+  target: BrowserUseUserActionExactTarget,
+  field: BrowserUseUserActionApplyField,
+  signal: AbortSignal,
+): Promise<{
+  readonly page: AttachedBrowserUsePage;
+  readonly objectId: string;
+  readonly observed: BrowserUseControlInspection;
+} | null> {
+  const page = await openBrowserUseApplyPage(socket, target, signal);
+  if (!page) {
+    return null;
+  }
+  const world = z
+    .object({ executionContextId: z.number().int().positive() })
+    .parse(
+      await sendBrowserUseCdpCommand(
+        socket,
+        {
+          id: 4,
+          method: "Page.createIsolatedWorld",
+          params: {
+            frameId: page.frameId,
+            worldName: "okou-native-file-input",
+            grantUniveralAccess: false,
+          },
+          sessionId: page.sessionId,
+        },
+        signal,
+      ),
+    );
+  const remote = browserUseCdpRemoteObjectSchema.safeParse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: 5,
+        method: "DOM.resolveNode",
+        params: {
+          backendNodeId: field.backendNodeId,
+          executionContextId: world.executionContextId,
+        },
+        sessionId: page.sessionId,
+      },
+      signal,
+    ),
+  );
+  if (!remote.success) {
+    return null;
+  }
+  const objectId = remote.data.object.objectId;
+  const [observed] = await inspectBrowserUseControls(
+    socket,
+    page.sessionId,
+    [objectId],
+    6,
+    signal,
+  );
+  if (
+    !observed ||
+    !observed.writable ||
+    !observed.connected ||
+    !observed.mainDocument ||
+    observed.tagName !== "INPUT" ||
+    observed.inputType !== "file" ||
+    !observed.fileSetFingerprint ||
+    !observed.files
+  ) {
+    return null;
+  }
+  return { page, objectId, observed };
+}
+
+function assessBrowserUseFileChoice(
+  field: BrowserUseUserActionApplyField,
+  observed: BrowserUseControlInspection,
+): "succeeded" | "stale" | "invalid" | "write" {
+  const choice = field.fileChoice;
+  if (choice && choice.observedFingerprint !== observed.fileSetFingerprint) {
+    return "stale";
+  }
+  if (!choice || choice.operation === "keep") {
+    return (field.required || observed.siteRequired) &&
+      observed.files?.length === 0
+      ? "invalid"
+      : "succeeded";
+  }
+  if (
+    choice.operation === "clear" &&
+    (field.required || observed.siteRequired)
+  ) {
+    return "invalid";
+  }
+  if (
+    choice.operation === "replace" &&
+    (!choice.files.length || (!observed.multiple && choice.files.length > 1))
+  ) {
+    return "invalid";
+  }
+  return "write";
+}
+
+async function applyBrowserUseFileActionOnSocket(
+  socket: WebSocket,
+  target: BrowserUseUserActionExactTarget,
+  mutation: { writeStarted: boolean },
+  signal: AbortSignal,
+): Promise<"succeeded" | "stale" | "invalid"> {
+  const field = target.fields[0];
+  if (
+    !field ||
+    target.fields.length !== 1 ||
+    field.fingerprint.tagName !== "INPUT" ||
+    field.fingerprint.inputType !== "file"
+  ) {
+    return "invalid";
+  }
+  const resolved = await resolveBrowserUseFileControl(
+    socket,
+    target,
+    field,
+    signal,
+  );
+  if (!resolved) {
+    return "stale";
+  }
+  const { page, objectId, observed } = resolved;
+  const decision = assessBrowserUseFileChoice(field, observed);
+  if (decision !== "write") {
+    return decision;
+  }
+  const choice = field.fileChoice;
+  if (!choice) {
+    return "invalid";
+  }
+  const expected = choice.files.map(({ name, type, size }) => {
+    return {
+      name,
+      size,
+      type,
+    };
+  });
+  const snapshot = {
+    accept: observed.accept,
+    multiple: observed.multiple,
+    required: observed.siteRequired,
+    files: observed.files,
+  };
+  const writer = `function (original, operation, files) {
+    if (!(this instanceof HTMLInputElement) || this.type !== "file" ||
+      !this.isConnected || this.ownerDocument !== document || this.matches(":disabled") ||
+      this.accept !== original.accept || this.multiple !== original.multiple ||
+      this.required !== original.required ||
+      JSON.stringify([...this.files].map(f => ({ name: f.name, size: f.size, type: f.type }))) !==
+        JSON.stringify(original.files)) return false;
+    const transfer = new DataTransfer();
+    if (operation === "replace") for (const item of files) {
+      const raw = atob(item.contentBase64);
+      const bytes = Uint8Array.from(raw, c => c.charCodeAt(0));
+      transfer.items.add(new File([bytes], item.name, { type: item.type }));
+    }
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "files")?.set;
+    if (!setter) return false;
+    setter.call(this, transfer.files);
+    this.dispatchEvent(new Event("input", { bubbles: true }));
+    this.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  }`;
+  mutation.writeStarted = true;
+  const wrote = browserUseCdpValueSchema.parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: 7,
+        method: "Runtime.callFunctionOn",
+        sessionId: page.sessionId,
+        params: {
+          objectId,
+          functionDeclaration: writer,
+          arguments: [
+            { value: snapshot },
+            { value: choice.operation },
+            { value: choice.files },
+          ],
+          returnByValue: true,
+        },
+      },
+      signal,
+    ),
+  );
+  if (wrote.result.value !== true) {
+    throw new BrowserUseUserActionMutationError(true);
+  }
+  const verified = browserUseCdpValueSchema.parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: 8,
+        method: "Runtime.callFunctionOn",
+        sessionId: page.sessionId,
+        params: {
+          objectId,
+          functionDeclaration: `function (original, expected) {
+      return this instanceof HTMLInputElement && this.type === "file" &&
+        this.isConnected && this.ownerDocument === document && !this.matches(":disabled") &&
+        this.accept === original.accept && this.multiple === original.multiple &&
+        this.required === original.required &&
+        JSON.stringify([...this.files].map(f => ({ name: f.name, size: f.size, type: f.type }))) ===
+          JSON.stringify(expected);
+    }`,
+          arguments: [{ value: snapshot }, { value: expected }],
+          returnByValue: true,
+        },
+      },
+      signal,
+    ),
+  );
+  if (verified.result.value !== true) {
+    throw new BrowserUseUserActionMutationError(true);
+  }
+  return "succeeded";
+}
+
 async function applyBrowserUseUserActionOnSocket(
   socket: WebSocket,
   target: BrowserUseUserActionExactTarget,
   mutation: { writeStarted: boolean },
   signal: AbortSignal,
 ): Promise<"succeeded" | "stale" | "invalid"> {
+  if (
+    target.fields.some((field) => {
+      return field.fingerprint.inputType === "file";
+    })
+  ) {
+    return await applyBrowserUseFileActionOnSocket(
+      socket,
+      target,
+      mutation,
+      signal,
+    );
+  }
   const attached = await openBrowserUseApplyPage(socket, target, signal);
   if (!attached) {
     return "stale";

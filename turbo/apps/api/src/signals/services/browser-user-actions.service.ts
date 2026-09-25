@@ -1,6 +1,8 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import {
+  BROWSER_USER_ACTION_MAX_FILE_BYTES,
+  BROWSER_USER_ACTION_MAX_FILES,
   browserUserActionDisplayFieldSchema,
   browserUserActionFieldKindSchema,
   type BrowserUserActionApplyRequest,
@@ -182,6 +184,13 @@ function publicRequest(
             : {
                 siteRequired: observed.siteRequired,
                 multiple: observed.multiple,
+                ...(observed.fileSetFingerprint === undefined
+                  ? {}
+                  : {
+                      accept: observed.accept,
+                      files: observed.files,
+                      fileSetFingerprint: observed.fileSetFingerprint,
+                    }),
                 ...(observed.checked === undefined
                   ? {}
                   : { checked: observed.checked }),
@@ -629,10 +638,20 @@ function browserCreationControlType(
     "week",
     "checkbox",
     "radio",
+    "file",
   ];
   return knownTypes.includes(fingerprint.inputType)
     ? `input type '${fingerprint.inputType}'`
     : "input control";
+}
+
+function hasMixedFileFields(input: BrowserUserActionCreateRequest): boolean {
+  return (
+    input.fields.length !== 1 &&
+    input.fields.some((field) => {
+      return field.fieldKind === "file";
+    })
+  );
 }
 
 async function prepareBrowserUserAction(
@@ -713,6 +732,12 @@ async function prepareBrowserUserAction(
           `BROWSER_USER_ACTION_${validationResult.error.code.toUpperCase()}`,
         )
       : providerFailure(validationResult.error);
+  }
+  if (hasMixedFileFields(args.input)) {
+    return conflict(
+      "File input must be requested on its own",
+      "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL",
+    );
   }
   const mismatchedPosition = args.input.fields.findIndex((field, index) => {
     const target = validationResult.value.fields[index];
@@ -1036,6 +1061,36 @@ export const readBrowserUserAction$ = command(
 
 type SubmittedBrowserValue = BrowserUserActionApplyRequest["values"][number];
 
+function validBrowserFileName(name: string): boolean {
+  return ![...name].some((character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return (
+      code <= 31 || code === 127 || character === "/" || character === "\\"
+    );
+  });
+}
+
+function validSubmittedFiles(
+  entry: Extract<SubmittedBrowserValue, { files: unknown }>,
+): boolean {
+  let total = 0;
+  for (const file of entry.files) {
+    if (!validBrowserFileName(file.name) || /[^\x20-\x7e]/u.test(file.type)) {
+      return false;
+    }
+    const bytes = Buffer.from(file.contentBase64, "base64");
+    total += bytes.length;
+    if (
+      bytes.length !== file.size ||
+      bytes.toString("base64") !== file.contentBase64 ||
+      total > BROWSER_USER_ACTION_MAX_FILE_BYTES
+    ) {
+      return false;
+    }
+  }
+  return entry.files.length <= BROWSER_USER_ACTION_MAX_FILES;
+}
+
 function submittedValues(
   payload: Extract<BrowserUserActionPayload, { kind: "input" }>,
   input: BrowserUserActionApplyRequest,
@@ -1058,9 +1113,12 @@ function submittedValues(
         (field.fieldKind === "select" && !("optionIndexes" in entry)) ||
         (field.fieldKind === "checkbox" && !("checked" in entry)) ||
         (field.fieldKind === "radio" && !("memberIndex" in entry)) ||
+        (field.fieldKind === "file" &&
+          (!("files" in entry) || !validSubmittedFiles(entry))) ||
         (field.fieldKind !== "select" &&
           field.fieldKind !== "checkbox" &&
           field.fieldKind !== "radio" &&
+          field.fieldKind !== "file" &&
           !("value" in entry))
       );
     })
@@ -1085,7 +1143,9 @@ function submittedValues(
             ? entry.checked !== true
             : "memberIndex" in entry
               ? entry.memberIndex < 0
-              : entry.value.length === 0)
+              : "files" in entry
+                ? entry.operation === "clear"
+                : entry.value.length === 0)
       );
     })
   ) {
@@ -1339,20 +1399,22 @@ function browserApplyField(
                 observedChecked: entry.observedChecked,
               },
             }
-          : "memberIndex" in entry
-            ? {
-                radioChoice: {
-                  memberIndex: entry.memberIndex,
-                  observedSelectedIndex: entry.observedSelectedIndex,
-                  groupFingerprint: entry.groupFingerprint,
-                },
-              }
-            : {
-                selection: {
-                  optionIndexes: entry.optionIndexes,
-                  optionSetFingerprint: entry.optionSetFingerprint,
-                },
-              }),
+          : "files" in entry
+            ? { fileChoice: entry }
+            : "memberIndex" in entry
+              ? {
+                  radioChoice: {
+                    memberIndex: entry.memberIndex,
+                    observedSelectedIndex: entry.observedSelectedIndex,
+                    groupFingerprint: entry.groupFingerprint,
+                  },
+                }
+              : {
+                  selection: {
+                    optionIndexes: entry.optionIndexes,
+                    optionSetFingerprint: entry.optionSetFingerprint,
+                  },
+                }),
   };
 }
 

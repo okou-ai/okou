@@ -5089,6 +5089,26 @@ local behavior until updated. No callback receipt or submitted Browser value is
 written to the action row. Thread erasure removes the action and its Chat events
 together; ordinary action retention remains seven days for callback recovery.
 
+### Native file input rollout (#36935)
+
+`browserNativeFileInput` is disabled by default, even for staff. Deploy the API,
+CLI, and Platform implementation first, confirm the managed Browser's CDP file
+binding/readback and the actual authenticated inline and standalone forms, and
+only then explicitly enable this switch for an authorized cohort. Keep the
+switch disabled throughout mixed-version deployment: older Platform builds
+cannot render a file-input request, and the existing `browserNativeInput`
+switch alone must not expose the new kind. A previously opened old Platform tab
+cannot be upgraded in place; request a refresh of those tabs before enabling
+file input. Disable this separate switch to stop creating new file requests
+when rolling back; already-created requests require the new API/Platform until
+retention ends. This pre-GA capability does not silently convert a file control
+to text or assume takeover transfers a user's local file.
+
+The file bytes exist only in the user's explicit, bounded apply request and the
+managed Browser's selected `FileList`; there is no intermediate storage or
+provider-host filesystem path. A website can react to `input`/`change` and
+read/upload the selected bytes itself even though Okou does not submit its form.
+
 ## OOM containment proof chain removal (#36027)
 
 `OomEvidence.runtime_progress_at` is removed, together with the containment

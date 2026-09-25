@@ -48,6 +48,46 @@ describe("Browser user-action JSONB payload", () => {
     });
   });
 
+  it("persists only the exact native file target, never file bytes or local paths", () => {
+    const field = {
+      key: "document",
+      label: "Document",
+      fieldKind: "file",
+      required: false,
+      backendNodeId: 45,
+      fingerprint: { tagName: "INPUT", inputType: "file" },
+    };
+    const payload = {
+      version: 1,
+      kind: "input",
+      callbackIds,
+      target: { ...inputTarget, fields: [field] },
+    };
+    expect(
+      parseBrowserUserActionPayload(payload).target.fields[0],
+    ).toMatchObject(field);
+    expect(() =>
+      {return parseBrowserUserActionPayload({
+        ...payload,
+        target: {
+          ...inputTarget,
+          fields: [
+            { ...field, fingerprint: { tagName: "INPUT", inputType: "text" } },
+          ],
+        },
+      })},
+    ).toThrow("Invalid Browser user-action payload");
+    expect(() =>
+      {return parseBrowserUserActionPayload({
+        ...payload,
+        target: {
+          ...inputTarget,
+          fields: [{ ...field, contentBase64: "dGVzdA==" }],
+        },
+      })},
+    ).toThrow("Invalid Browser user-action payload");
+  });
+
   it("accepts genuine number targets but keeps semantic kinds distinct", () => {
     const field = {
       key: "quantity",

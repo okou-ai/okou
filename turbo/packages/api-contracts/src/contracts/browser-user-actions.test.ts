@@ -90,6 +90,57 @@ describe("Browser user-action contracts", () => {
     }
   });
 
+  it("bounds native file selections and keeps content out of the persisted creation request", () => {
+    const created = browserUserActionCreateRequestSchema.parse({
+      kind: "input",
+      callbackPrompt: "Continue after selecting a file",
+      pageTargetId: "page-target",
+      fields: [
+        {
+          key: "document",
+          label: "Document",
+          fieldKind: "file",
+          required: true,
+          backendNodeId: 42,
+        },
+      ],
+    });
+    expect(JSON.stringify(created)).not.toContain("contentBase64");
+    const base = { key: "document", observedFingerprint: "a".repeat(64) };
+    const file = {
+      name: "note.txt",
+      type: "text/plain",
+      size: 4,
+      contentBase64: "dGVzdA==",
+    };
+    for (const entry of [
+      { ...base, operation: "replace", files: [file] },
+      { ...base, operation: "keep", files: [] },
+      { ...base, operation: "clear", files: [] },
+    ]) {
+      expect(
+        browserUserActionApplyRequestSchema.safeParse({ values: [entry] })
+          .success,
+      ).toBe(true);
+    }
+    for (const entry of [
+      { ...base, operation: "replace", files: [] },
+      { ...base, operation: "keep", files: [file] },
+      { ...base, operation: "replace", files: Array(4).fill(file) },
+      {
+        ...base,
+        operation: "replace",
+        files: [{ ...file, contentBase64: "A".repeat(1_500_000) }],
+      },
+      { ...base, operation: "replace", files: [file], value: "fakepath" },
+    ]) {
+      expect(
+        browserUserActionApplyRequestSchema.safeParse({ values: [entry] })
+          .success,
+      ).toBe(false);
+    }
+  });
+
   it("accepts a bounded radio index including explicit clear and rejects ambiguous scalar values", () => {
     const value = {
       key: "delivery",

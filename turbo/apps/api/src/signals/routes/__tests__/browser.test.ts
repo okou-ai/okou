@@ -803,6 +803,102 @@ function mockNativeRadioTarget(state: NativeRadioMockState): void {
   });
 }
 
+function mockNativeFileTarget(state: {
+  readonly current: () => readonly {
+    name: string;
+    size: number;
+    type: string;
+  }[];
+  readonly writable: () => boolean;
+  readonly readback: () => boolean;
+  readonly accept: () => string;
+  readonly multiple: () => boolean;
+  readonly write: (
+    files: readonly { name: string; size: number; type: string }[],
+  ) => void;
+}): void {
+  context.mocks.browserUseCdp.command.mockImplementation((command) => {
+    switch (command.method) {
+      case "Target.getTargets": {
+        return {
+          targetInfos: [
+            {
+              targetId: "native-input-target",
+              type: "page",
+              url: "https://example.com/upload",
+            },
+          ],
+        };
+      }
+      case "Target.attachToTarget": {
+        return { sessionId: "native-file-session" };
+      }
+      case "Browser.getWindowForTarget": {
+        return { windowId: 7 };
+      }
+      case "Page.getFrameTree": {
+        return {
+          frameTree: {
+            frame: {
+              id: "main-frame",
+              loaderId: "native-file-loader",
+              url: "https://example.com/upload",
+            },
+          },
+        };
+      }
+      case "Page.createIsolatedWorld": {
+        return { executionContextId: 101 };
+      }
+      case "DOM.resolveNode": {
+        return { object: { objectId: "file-object" } };
+      }
+      case "Runtime.callFunctionOn": {
+        const declaration = String(command.params.functionDeclaration);
+        if (declaration.includes("const transfer = new DataTransfer")) {
+          const args = command.params.arguments as { value?: unknown }[];
+          const files = args[2]?.value as readonly {
+            name: string;
+            size: number;
+            type: string;
+          }[];
+          state.write(
+            args[1]?.value === "clear"
+              ? []
+              : files.map(({ name, size, type }) => {
+                  return { name, size, type };
+                }),
+          );
+          return { result: { value: true } };
+        }
+        if (declaration.includes("function (original, expected)")) {
+          return { result: { value: state.readback() } };
+        }
+        return {
+          result: {
+            value: [
+              {
+                tagName: "INPUT",
+                inputType: "file",
+                connected: true,
+                mainDocument: true,
+                writable: state.writable(),
+                siteRequired: false,
+                multiple: state.multiple(),
+                accept: state.accept(),
+                files: state.current(),
+              },
+            ],
+          },
+        };
+      }
+      default: {
+        return {};
+      }
+    }
+  });
+}
+
 function browserUserActionTokenHash(requestToken: string): string {
   return createHash("sha256").update(requestToken).digest("hex");
 }
@@ -812,6 +908,224 @@ aroundEach(async (runTest) => {
 });
 
 describe("Browser user-action route", () => {
+  it("accepts only exact native file targets, bounds transfer and independently verifies selection", async () => {
+    const { routeMocks, runs, chat, actor, agent } =
+      await setupBrowserScenario();
+    const current = await createClaimedChatRun(
+      chat,
+      runs,
+      actor,
+      agent.agentId,
+      "Choose a local file for the website",
+    );
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BrowserNativeInput]: true,
+      [FeatureSwitchKey.BrowserNativeFileInput]: true,
+    });
+    const providerId = randomUUID();
+    acceptBrowserUseCdpSessions([providerId]);
+    let files: readonly { name: string; size: number; type: string }[] = [];
+    let siteAccept = ".txt";
+    const multiple = true;
+    const writable = true;
+    let readback = true;
+    mockNativeFileTarget({
+      current: () => {
+        return files;
+      },
+      writable: () => {
+        return writable;
+      },
+      readback: () => {
+        return readback;
+      },
+      accept: () => {
+        return siteAccept;
+      },
+      multiple: () => {
+        return multiple;
+      },
+      write: (next) => {
+        files = next;
+      },
+    });
+    server.use(
+      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+        const body = z
+          .strictObject({ name: z.string() })
+          .parse(await request.json());
+        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+          status: 201,
+        });
+      }),
+      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+        return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+      }),
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        return HttpResponse.json(providerBrowser(String(params.id)));
+      }),
+    );
+    await accept(
+      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      [200],
+    );
+    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    const create = async (required = false) => {
+      return await accept(
+        userActionClient().create({
+          headers: current.claim.browserHeaders,
+          body: {
+            kind: "input",
+            callbackPrompt: "Continue after selecting the file",
+            pageTargetId: "native-input-target",
+            fields: [
+              {
+                key: "document",
+                label: "Document",
+                fieldKind: "file",
+                required,
+                backendNodeId: 45,
+              },
+            ],
+          },
+        }),
+        [201],
+      );
+    };
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BrowserNativeInput]: true,
+      [FeatureSwitchKey.BrowserNativeFileInput]: false,
+    });
+    const denied = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after selecting the file",
+          pageTargetId: "native-input-target",
+          fields: [
+            {
+              key: "document",
+              label: "Document",
+              fieldKind: "file",
+              required: false,
+              backendNodeId: 45,
+            },
+          ],
+        },
+      }),
+      [403],
+    );
+    expect(denied.body.error.code).toBe("FORBIDDEN");
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BrowserNativeInput]: true,
+      [FeatureSwitchKey.BrowserNativeFileInput]: true,
+    });
+    const created = await create();
+    const token = created.body.action.requestToken;
+    expect(created.body.action.fields[0]?.control).toMatchObject({
+      inputType: "file",
+    });
+    expect(JSON.stringify(created.body)).not.toContain("fileSetFingerprint");
+    const observed = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+        body: {},
+      }),
+      [200],
+    );
+    expect(observed.body.fields[0]?.control).toMatchObject({
+      inputType: "file",
+      accept: ".txt",
+      multiple: true,
+      files: [],
+    });
+    const fingerprint = observed.body.fields[0]?.control.fileSetFingerprint;
+    expect(fingerprint).toMatch(/^[0-9a-f]{64}$/u);
+    const value = {
+      key: "document",
+      observedFingerprint: fingerprint ?? "",
+      operation: "replace" as const,
+      files: [
+        {
+          name: "note.txt",
+          size: 4,
+          type: "text/plain",
+          contentBase64: "dGVzdA==",
+        },
+      ],
+    };
+    const invalid = await userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: token },
+      body: {
+        values: [
+          { ...value, files: [{ ...value.files[0]!, contentBase64: "bad=" }] },
+        ],
+      },
+    });
+    expect(invalid.status).toBe(400);
+    expect(files).toHaveLength(0);
+    siteAccept = ".pdf";
+    const drifted = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+        body: { values: [value] },
+      }),
+      [200],
+    );
+    expect(drifted.body.state).toBe("stale");
+    expect(files).toHaveLength(0);
+    siteAccept = ".txt";
+    files = [];
+    const next = await create();
+    const nextToken = next.body.action.requestToken;
+    const applied = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: nextToken },
+        body: { values: [value] },
+      }),
+      [200],
+    );
+    expect(applied.body.state).toBe("succeeded");
+    expect(files).toStrictEqual([
+      { name: "note.txt", size: 4, type: "text/plain" },
+    ]);
+    expect(JSON.stringify(applied.body)).not.toContain("note.txt");
+    expect(
+      context.mocks.browserUseCdp.command.mock.calls.some(([command]) => {
+        return command.method === "Page.createIsolatedWorld";
+      }),
+    ).toBeTruthy();
+    const noReadback = await create();
+    const changedFingerprint =
+      (
+        await accept(
+          userActionClient().preflight({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { requestToken: noReadback.body.action.requestToken },
+            body: {},
+          }),
+          [200],
+        )
+      ).body.fields[0]?.control.fileSetFingerprint ?? "";
+    readback = false;
+    const uncertain = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: noReadback.body.action.requestToken },
+        body: {
+          values: [{ ...value, observedFingerprint: changedFingerprint }],
+        },
+      }),
+      [200],
+    );
+    expect(uncertain.body.state).toBe("uncertain");
+  });
+
   it("lets apply finish while the preflight provider read is still pending", async () => {
     const { token } = await createNativePasswordActionForPreflightTest();
     const readStarted = createDeferredPromise<void>(context.signal);

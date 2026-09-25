@@ -1,5 +1,9 @@
 import {
   BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH,
+  BROWSER_USER_ACTION_MAX_FILE_BYTES,
+  BROWSER_USER_ACTION_MAX_FILES,
+  BROWSER_USER_ACTION_MAX_FILE_NAME_LENGTH,
+  BROWSER_USER_ACTION_MAX_FILE_TYPE_LENGTH,
   BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
   browserUserActionsContract,
   type BrowserUserActionApplyRequest,
@@ -73,6 +77,12 @@ export interface BrowserRadioDraft {
   readonly groupFingerprint: string;
 }
 
+export interface BrowserFileDraft {
+  readonly operation: "keep" | "replace" | "clear";
+  readonly files: readonly File[];
+  readonly observedFingerprint: string;
+}
+
 export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly request$: Computed<Promise<BrowserUserActionRequestState>>;
   readonly draft$: Computed<ReadonlyMap<string, string>>;
@@ -81,6 +91,9 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   >;
   readonly checkboxDraft$: Computed<ReadonlyMap<string, BrowserCheckboxDraft>>;
   readonly radioDraft$: Computed<ReadonlyMap<string, BrowserRadioDraft>>;
+  readonly fileDraft$: Computed<ReadonlyMap<string, BrowserFileDraft>>;
+  readonly updateFileDraft$: Command<void, [string, BrowserFileDraft]>;
+  readonly removeFileDraft$: Command<void, [string]>;
   readonly callbackDelivered$: Computed<boolean>;
   readonly callbackFailed$: Computed<boolean>;
   readonly busy$: Computed<boolean>;
@@ -493,12 +506,39 @@ function createSelectDraftSignals() {
   };
 }
 
+function createFileDraftSignals() {
+  const internalFileDraft$ = state<ReadonlyMap<string, BrowserFileDraft>>(
+    new Map(),
+  );
+  const fileDraft$ = computed((get) => {
+    return get(internalFileDraft$);
+  });
+  const updateFileDraft$ = command(
+    ({ set }, key: string, value: BrowserFileDraft) => {
+      set(internalFileDraft$, (current) => {
+        return new Map(current).set(key, value);
+      });
+    },
+  );
+  const removeFileDraft$ = command(({ set }, key: string) => {
+    set(internalFileDraft$, (current) => {
+      const next = new Map(current);
+      next.delete(key);
+      return next;
+    });
+  });
+  return { internalFileDraft$, fileDraft$, updateFileDraft$, removeFileDraft$ };
+}
+
 function createDraftSignals(): Pick<
   BrowserUserActionSignals,
   | "draft$"
   | "choiceDraft$"
   | "checkboxDraft$"
   | "radioDraft$"
+  | "fileDraft$"
+  | "updateFileDraft$"
+  | "removeFileDraft$"
   | "updateRadioDraft$"
   | "removeRadioDraft$"
   | "updateCheckboxDraft$"
@@ -515,6 +555,7 @@ function createDraftSignals(): Pick<
   const selectSignals = createSelectDraftSignals();
   const checkboxSignals = createCheckboxDraftSignals();
   const radioSignals = createRadioDraftSignals();
+  const fileSignals = createFileDraftSignals();
   const ownerCount$ = state(0);
   const draft$ = computed((get) => {
     return get(internalDraft$);
@@ -525,6 +566,7 @@ function createDraftSignals(): Pick<
     set(selectSignals.internalChoiceDraft$, new Map());
     set(checkboxSignals.internalCheckboxDraft$, new Map());
     set(radioSignals.internalRadioDraft$, new Map());
+    set(fileSignals.internalFileDraft$, new Map());
   });
   const removeDraft$ = command(({ set }, key: string): void => {
     set(internalDraft$, (current) => {
@@ -565,6 +607,7 @@ function createDraftSignals(): Pick<
             const next = Math.max(0, count - 1);
             if (next === 0) {
               set(clearDraftKeys$, passwordKeys);
+              set(fileSignals.internalFileDraft$, new Map());
             }
             return next;
           });
@@ -584,6 +627,9 @@ function createDraftSignals(): Pick<
     choiceDraft$: selectSignals.choiceDraft$,
     checkboxDraft$: checkboxSignals.checkboxDraft$,
     radioDraft$: radioSignals.radioDraft$,
+    fileDraft$: fileSignals.fileDraft$,
+    updateFileDraft$: fileSignals.updateFileDraft$,
+    removeFileDraft$: fileSignals.removeFileDraft$,
     updateRadioDraft$: radioSignals.updateRadioDraft$,
     removeRadioDraft$: radioSignals.removeRadioDraft$,
     updateCheckboxDraft$: checkboxSignals.updateCheckboxDraft$,
@@ -619,6 +665,7 @@ interface BrowserUserActionMutationContext {
   readonly choiceDraft$: BrowserUserActionSignals["choiceDraft$"];
   readonly checkboxDraft$: BrowserUserActionSignals["checkboxDraft$"];
   readonly radioDraft$: BrowserUserActionSignals["radioDraft$"];
+  readonly fileDraft$: BrowserUserActionSignals["fileDraft$"];
   readonly entryAction$: BrowserUserActionSignals["entryAction$"];
   readonly entryState$: BrowserUserActionSignals["entryState$"];
   readonly invalidateEntry$: BrowserUserActionSignals["invalidateEntry$"];
@@ -751,15 +798,133 @@ function browserRadioSubmissionValue(
   return { key: field.key, ...choice };
 }
 
-function browserInputSubmissionValues(
+function validBrowserFileName(name: string): boolean {
+  return ![...name].some((character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return (
+      code <= 31 || code === 127 || character === "/" || character === "\\"
+    );
+  });
+}
+
+export function fileDraftIsValid(
+  field: BrowserInputAction["fields"][number],
+  draft: BrowserFileDraft | undefined,
+): boolean {
+  const fingerprint = field.control.fileSetFingerprint;
+  if (
+    !fingerprint ||
+    !field.control.files ||
+    field.control.accept === undefined
+  ) {
+    return false;
+  }
+  if (!draft) {
+    return (
+      !field.required &&
+      (!field.control.siteRequired || field.control.files.length > 0)
+    );
+  }
+  if (draft.observedFingerprint !== fingerprint) {
+    return false;
+  }
+  if (draft.operation === "keep") {
+    return field.control.files.length > 0;
+  }
+  if (draft.operation === "clear") {
+    return !field.required && !field.control.siteRequired;
+  }
+  return (
+    draft.files.length > 0 &&
+    draft.files.length <=
+      (field.control.multiple ? BROWSER_USER_ACTION_MAX_FILES : 1) &&
+    draft.files.reduce((sum, file) => {
+      return sum + file.size;
+    }, 0) <= BROWSER_USER_ACTION_MAX_FILE_BYTES &&
+    draft.files.every((file) => {
+      return (
+        file.name.length > 0 &&
+        file.name.length <= BROWSER_USER_ACTION_MAX_FILE_NAME_LENGTH &&
+        validBrowserFileName(file.name) &&
+        file.type.length <= BROWSER_USER_ACTION_MAX_FILE_TYPE_LENGTH &&
+        !/[^\x20-\x7e]/u.test(file.type)
+      );
+    })
+  );
+}
+
+async function encodeBrowserFile(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (bytes.byteLength !== file.size) {
+    throw new Error("File changed while reading");
+  }
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 8192) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 8192));
+  }
+  return btoa(binary);
+}
+
+async function browserFileSubmissionValue(
+  field: BrowserInputAction["fields"][number],
+  draft: BrowserFileDraft | undefined,
+): Promise<
+  | Extract<BrowserUserActionApplyRequest["values"][number], { files: unknown }>
+  | null
+  | undefined
+> {
+  if (!fileDraftIsValid(field, draft)) {
+    return null;
+  }
+  if (!draft) {
+    return undefined;
+  }
+  return {
+    key: field.key,
+    operation: draft.operation,
+    observedFingerprint: draft.observedFingerprint,
+    files:
+      draft.operation === "replace"
+        ? await Promise.all(
+            draft.files.map(async (file) => {
+              return {
+                name: file.name,
+                type: file.type,
+                size: file.size,
+                contentBase64: await encodeBrowserFile(file),
+              };
+            }),
+          )
+        : [],
+  };
+}
+
+async function browserInputSubmissionValues(
   action: BrowserInputAction,
-  draft: ReadonlyMap<string, string>,
-  choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>,
-  checkboxDraft: ReadonlyMap<string, BrowserCheckboxDraft>,
-  radioDraft: ReadonlyMap<string, BrowserRadioDraft>,
-): BrowserUserActionApplyRequest["values"] | null {
+  drafts: {
+    readonly draft: ReadonlyMap<string, string>;
+    readonly choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>;
+    readonly checkboxDraft: ReadonlyMap<string, BrowserCheckboxDraft>;
+    readonly radioDraft: ReadonlyMap<string, BrowserRadioDraft>;
+    readonly fileDraft: ReadonlyMap<string, BrowserFileDraft>;
+  },
+): Promise<BrowserUserActionApplyRequest["values"] | null> {
+  const { draft, choiceDraft, checkboxDraft, radioDraft, fileDraft } = drafts;
   const values: BrowserUserActionApplyRequest["values"][number][] = [];
   for (const field of action.fields) {
+    if (field.fieldKind === "file") {
+      const file = await browserFileSubmissionValue(
+        field,
+        fileDraft.get(field.key),
+      );
+      if (file === null) {
+        return null;
+      }
+      if (file !== undefined) {
+        values.push(file);
+      }
+      continue;
+    }
     if (field.fieldKind === "radio") {
       const radio = browserRadioSubmissionValue(field, radioDraft);
       if (radio === null) {
@@ -828,6 +993,13 @@ function isInvalidBrowserInputValueResponse(result: {
   );
 }
 
+function entryActionMatches(
+  entryAction: BrowserInputAction | null,
+  descriptor: BrowserUserActionDescriptor,
+): boolean {
+  return !entryAction || actionMatches(entryAction, descriptor);
+}
+
 function createSubmitSignal({
   descriptor,
   request$,
@@ -836,6 +1008,7 @@ function createSubmitSignal({
   choiceDraft$,
   checkboxDraft$,
   radioDraft$,
+  fileDraft$,
   entryAction$,
   entryState$,
   invalidateEntry$,
@@ -864,25 +1037,36 @@ function createSubmitSignal({
       return;
     }
     const entryAction = get(entryAction$);
-    if (entryAction && !actionMatches(entryAction, descriptor)) {
+    if (!entryActionMatches(entryAction, descriptor)) {
       return;
     }
     const action = entryState === "ready" ? entryAction : request.action;
     if (!action || action.state !== "pending") {
       return;
     }
-    const values = browserInputSubmissionValues(
-      action,
-      get(draft$),
-      get(choiceDraft$),
-      get(checkboxDraft$),
-      get(radioDraft$),
+    set(activeMutation$, true);
+    signal.addEventListener(
+      "abort",
+      () => {
+        set(activeMutation$, false);
+      },
+      { once: true },
     );
+    const prepared = await settle(
+      browserInputSubmissionValues(action, {
+        draft: get(draft$),
+        choiceDraft: get(choiceDraft$),
+        checkboxDraft: get(checkboxDraft$),
+        radioDraft: get(radioDraft$),
+        fileDraft: get(fileDraft$),
+      }),
+    );
+    signal.throwIfAborted();
+    const values = prepared.ok ? prepared.value : null;
     if (!values) {
+      set(activeMutation$, false);
       return;
     }
-
-    set(activeMutation$, true);
     const result = await accept(
       get(apiClient$)(browserUserActionsContract).apply({
         params: { requestToken: descriptor.requestToken },
@@ -1046,6 +1230,7 @@ function createMutationSignals({
   choiceDraft$,
   checkboxDraft$,
   radioDraft$,
+  fileDraft$,
   clearDraft$,
   entryAction$,
   entryState$,
@@ -1059,6 +1244,7 @@ function createMutationSignals({
   | "choiceDraft$"
   | "checkboxDraft$"
   | "radioDraft$"
+  | "fileDraft$"
   | "clearDraft$"
   | "entryAction$"
   | "entryState$"
@@ -1105,6 +1291,7 @@ function createMutationSignals({
     choiceDraft$,
     checkboxDraft$,
     radioDraft$,
+    fileDraft$,
     entryAction$,
     entryState$,
     invalidateEntry$,
@@ -1191,6 +1378,7 @@ export function createBrowserUserActionSignals(
     choiceDraft$: draftSignals.choiceDraft$,
     checkboxDraft$: draftSignals.checkboxDraft$,
     radioDraft$: draftSignals.radioDraft$,
+    fileDraft$: draftSignals.fileDraft$,
     clearDraft$: draftSignals.clearDraft$,
     entryAction$: entrySignals.entryAction$,
     entryState$: entrySignals.entryState$,
