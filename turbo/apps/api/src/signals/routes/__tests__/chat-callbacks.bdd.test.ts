@@ -2075,7 +2075,9 @@ describe("CHAT-02: completed chat callback", () => {
     const whileHeld = await waitForThreadMessages(
       actor,
       run.threadId,
-      (events) => lifecycleMarkers(events, run.runId, "completed").length > 0,
+      (events) => {
+        return lifecycleMarkers(events, run.runId, "completed").length > 0;
+      },
     );
     expect(
       lifecycleMarkers(whileHeld.events, run.runId, "completed"),
