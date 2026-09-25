@@ -1427,6 +1427,10 @@ describe("Browser user-action route", () => {
             value: null,
           },
         },
+        { objectId: "radio-0" },
+        { objectId: "radio-1" },
+        { objectId: "radio-2" },
+        { objectId: "radio-form" },
       ]);
 
       // If the site's handler defers the constraint change to a microtask, the
@@ -1467,6 +1471,10 @@ describe("Browser user-action route", () => {
         { value: 1 },
         { objectId: "native-scalar-object" },
         { value: { kind: "scalar", required: false, value: null } },
+        { objectId: "radio-0" },
+        { objectId: "radio-1" },
+        { objectId: "radio-2" },
+        { objectId: "radio-form" },
       ]);
     };
     await verifyMixedConstraintDrift();
