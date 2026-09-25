@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.965.0](https://github.com/okou-ai/okou/compare/app-v0.964.0...app-v0.965.0) (2026-09-25)
+
+
+### Features
+
+* **browser:** support native date and time inputs ([#36889](https://github.com/okou-ai/okou/issues/36889)) ([db3145c](https://github.com/okou-ai/okou/commit/db3145cef2d62bb17ad8062279419a1a8cc96d83))
+
+
+### Bug Fixes
+
+* **platform:** fit remote access choices to localized labels ([#36874](https://github.com/okou-ai/okou/issues/36874)) ([d2aa280](https://github.com/okou-ai/okou/commit/d2aa2805929c54ce8b826bc17c0146575c3db609))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.512.0
+    * @okouai/core bumped to 8.710.8
+
 ## [0.964.0](https://github.com/okou-ai/okou/compare/app-v0.963.3...app-v0.964.0) (2026-09-25)
 
 
