@@ -1,6 +1,5 @@
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   feishuChatIngress,
   type FeishuChatIngressStatus,
@@ -167,7 +166,6 @@ export async function admitFeishuChatEvent(
     readonly installationId: string;
     readonly eventId: string;
     readonly payload: string;
-    readonly publicBrand: PublicBrand;
     readonly currentTime: Date;
   },
 ): Promise<FeishuChatIngressAdmission | null> {
@@ -191,7 +189,6 @@ export async function admitFeishuChatEvent(
           installationId: args.installationId,
           eventId: args.eventId,
           payload: args.payload,
-          publicBrand: args.publicBrand,
           status: "pending",
           createdAt: args.currentTime,
           updatedAt: args.currentTime,
