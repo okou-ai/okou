@@ -5095,23 +5095,23 @@
         "title": "Cattura conflitti di Google Calendar"
       },
       "catch-leads-gmail": {
-        "description": "Riassume il movimento di fasi, transazioni inattive, rischi e modifiche del previsione.",
-        "scenario": "I riassunti del pipeline sono più chiari quando le modifiche arrivano prima della riunione. {{assistantName}} confronta il pipeline attuale di HubSpot con lo snapshot precedente e restituisce un riassunto settimanale conciso.",
+        "description": "Riassume il movimento di fasi, transazioni inattive, rischi e modifiche del previsione.\\n",
+        "scenario": "I riassunti del pipeline sono più chiari quando le modifiche arrivano prima della riunione. {{assistantName}} confronta il pipeline attuale di HubSpot con lo snapshot precedente e restituisce un riassunto settimanale conciso.\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}} raccolgono transazioni, fasi, proprietari, date e attività.",
-            "title": "Il pipeline viene letto"
+            "description": "{{assistantName}} raccolgono transazioni, fasi, proprietari, date e attività.\\n",
+            "title": "Il pipeline viene letto\\n"
           },
           "three": {
-            "description": "{{assistantName}} restituisce azioni successive e opzionalmente aggiorna Google Sheets.",
-            "title": "Il riassunto viene creato"
+            "description": "{{assistantName}} restituisce azioni successive e opzionalmente aggiorna Google Sheets.\\n",
+            "title": "Il riassunto viene creato\\n"
           },
           "two": {
-            "description": "{{assistantName}} trova modifiche, transazioni inattive, ostacoli e drift della previsione.",
+            "description": "{{assistantName}} trova modifiche, transazioni inattive, ostacoli e drift della previsione.\\n",
             "title": "Si analizzano movimenti e rischi"
           }
         },
-        "title": "Crea un riassunto settimanale del pipeline HubSpot"
+        "title": "Crea un riassunto settimanale del pipeline HubSpot\\n"
       },
       "chase-overdue-asana-tasks": {
         "description": "Prepara ricordi specifici degli owner senza inviarli automaticamente.",
@@ -5380,23 +5380,23 @@
         "title": "Trasforma un'idea su GitHub in una specifica di Notion"
       },
       "gmail-followups-auto": {
-        "description": "Prepara seguire-up commerciali contestuali per la revisione umana.",
-        "scenario": "Buoni seguire-up richiedono il record della transazione e la conversazione. {{assistantName}} combina il contesto di HubSpot con il filo Gmail relativo e bozza una risposta concisa senza inviarla.",
+        "description": "Prepara seguire-up commerciali contestuali per la revisione umana.\\n",
+        "scenario": "Buoni seguire-up richiedono il record della transazione e la conversazione. {{assistantName}} combina il contesto di HubSpot con il filo Gmail relativo e bozza una risposta concisa senza inviarla.\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}} legge il record di HubSpot e l'attività recente.",
-            "title": "Si esamina il contesto della transazione"
+            "description": "{{assistantName}} legge il record di HubSpot e l'attività recente.\\n",
+            "title": "Si esamina il contesto della transazione\\n"
           },
           "three": {
-            "description": "{{assistantName}} prepara un bozza Gmail per la revisione umana.",
-            "title": "Si bozza un seguire-up"
+            "description": "{{assistantName}} prepara un bozza Gmail per la revisione umana.\\n",
+            "title": "Si bozza un seguire-up\\n"
           },
           "two": {
-            "description": "{{assistantName}} identifica domande aperte, impegni e tempi.",
-            "title": "Si controlla il filo delle email"
+            "description": "{{assistantName}} identifica domande aperte, impegni e tempi.\\n",
+            "title": "Si controlla il filo delle email\\n"
           }
         },
-        "title": "Bozza seguire-up Gmail da HubSpot"
+        "title": "Bozza seguire-up Gmail da HubSpot\\n"
       },
       "gmail-reconnect-reminders": {
         "description": "Trova contatti importanti che sono diventati silenziosi e redigere un approccio.",
@@ -5456,23 +5456,23 @@
         "title": "Redigere un aggiornamento per gli investitori"
       },
       "log-gong-calls-hubspot": {
-        "description": "Trasforma i trascripi delle riunioni in decisioni e azioni CRM.",
-        "scenario": "I dettagli importanti delle chiamate si perdono quando le note rimangono fuori dal CRM. {{assistantName}} trasforma i trascripi delle riunioni Google Meet in decisioni, obiezioni, impegni e azioni in HubSpot.",
+        "description": "Trasforma i trascripi delle riunioni in decisioni e azioni CRM.\\n",
+        "scenario": "I dettagli importanti delle chiamate si perdono quando le note rimangono fuori dal CRM. {{assistantName}} trasforma i trascripi delle riunioni Google Meet in decisioni, obiezioni, impegni e azioni in HubSpot.\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}} legge il trascripo più recente e il contesto della riunione.",
-            "title": "Un trascripo di Meet arriva"
+            "description": "{{assistantName}} legge il trascripo più recente e il contesto della riunione.\\n",
+            "title": "Un trascripo di Meet arriva\\n"
           },
           "three": {
-            "description": "{{assistantName}} registra il riassunto e può bozzare un seguire-up Gmail.",
-            "title": "HubSpot viene aggiornato"
+            "description": "{{assistantName}} registra il riassunto e può bozzare un seguire-up Gmail.\\n",
+            "title": "HubSpot viene aggiornato\\n"
           },
           "two": {
-            "description": "{{assistantName}} identifica decisioni, obiezioni, impegni e proprietari.",
-            "title": "Si estraggono segnali di vendita"
+            "description": "{{assistantName}} identifica decisioni, obiezioni, impegni e proprietari.\\n",
+            "title": "Si estraggono segnali di vendita\\n"
           }
         },
-        "title": "Registra azioni Google Meet in HubSpot"
+        "title": "Registra azioni Google Meet in HubSpot\\n"
       },
       "meeting-notes-asana-tasks": {
         "description": "Crea lavoro progettuale assegnato dalle trascrizioni delle riunioni.",
@@ -5532,23 +5532,23 @@
         "title": "Crea un riassunto del mattino"
       },
       "new-gmail-contacts-hubspot": {
-        "description": "Crea o raffina i contatti CRM da conversazioni email rilevanti.",
-        "scenario": "Nuove relazioni spesso rimangono intrappolate nell'inbox. {{assistantName}} identifica i corrispondenti rilevanti di Gmail, controlla HubSpot per duplicati e crea o raffina il record del contatto.",
+        "description": "Crea o raffina i contatti CRM da conversazioni email rilevanti.\\n",
+        "scenario": "Nuove relazioni spesso rimangono intrappolate nell'inbox. {{assistantName}} identifica i corrispondenti rilevanti di Gmail, controlla HubSpot per duplicati e crea o raffina il record del contatto.\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}} esamina le conversazioni email rilevanti di Gmail.",
-            "title": "Sono identificati nuovi corrispondenti"
+            "description": "{{assistantName}} esamina le conversazioni email rilevanti di Gmail.\\n",
+            "title": "Sono identificati nuovi corrispondenti\\n"
           },
           "three": {
-            "description": "{{assistantName}} crea o arricchisce il record di HubSpot.",
-            "title": "Il contatto viene aggiornato"
+            "description": "{{assistantName}} crea o arricchisce il record di HubSpot.\n",
+            "title": "Il contatto viene aggiornato\\n"
           },
           "two": {
-            "description": "{{assistantName}} trova record esistenti e dettagli mancanti.",
-            "title": "HubSpot viene controllato"
+            "description": "{{assistantName}} trova record esistenti e dettagli mancanti.\\n",
+            "title": "HubSpot viene controllato\\n"
           }
         },
-        "title": "Aggiungi nuovi contatti Gmail a HubSpot"
+        "title": "Aggiungi nuovi contatti Gmail a HubSpot\\n"
       },
       "onboard-new-hires-asana": {
         "description": "Trasforma le sottomissioni approvate di intake in un piano di onboarding di Asana.",
@@ -5627,23 +5627,23 @@
         "title": "Pubblica le note di rilascio in Notion"
       },
       "prep-google-calendar-meetings": {
-        "description": "Crea una breve riunione concentrata per incontri esterni imminenti.",
-        "scenario": "La preparazione degli incontri non dovrebbe iniziare cinque minuti prima della chiamata. {{assistantName}} controlla l'evento del calendario e aggiunge contesto di contatto e CRM quando disponibile.",
+        "description": "Crea una breve riunione concentrata per incontri esterni imminenti.\\n",
+        "scenario": "La preparazione degli incontri non dovrebbe iniziare cinque minuti prima della chiamata. {{assistantName}} controlla l'evento del calendario e aggiunge contesto di contatto e CRM quando disponibile.\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}} legge la finestra selezionata di Google Calendar.",
-            "title": "Sono trovati incontri imminenti"
+            "description": "{{assistantName}} legge la finestra selezionata di Google Calendar.\\n",
+            "title": "Sono trovati incontri imminenti\\n"
           },
           "three": {
-            "description": "{{assistantName}} restituisce obiettivi, contesto, rischi e domande suggerite.",
-            "title": "La riunione viene preparata"
+            "description": "{{assistantName}} restituisce obiettivi, contesto, rischi e domande suggerite.\\n",
+            "title": "La riunione viene preparata\\n"
           },
           "two": {
-            "description": "{{assistantName}} controlla HubSpot quando è collegato.",
-            "title": "Si raccolgono contesti degli attendee"
+            "description": "{{assistantName}} controlla HubSpot quando è collegato.\n",
+            "title": "Si raccolgono contesti degli attendee\\n"
           }
         },
-        "title": "Prepara incontri Google Calendar"
+        "title": "Prepara incontri Google Calendar\\n"
       },
       "publish-scheduled-posts-buffer": {
         "description": "Confronta il sito con i concorrenti e rileva le opportunità organiche.",

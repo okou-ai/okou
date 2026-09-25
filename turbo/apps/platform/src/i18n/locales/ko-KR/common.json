@@ -4941,23 +4941,23 @@
         "title": "자동 병합 GitHub PRs"
       },
       "blog-posts-to-x": {
-        "description": "퇴색한 페이지를 찾고 우선순위가 정해진 갱신 요약서를 생성합니다.",
-        "scenario": "기존 콘텐츠는 새로운 기사보다 더 큰 잠재력을 가지고 있습니다. {{assistantName}}은 내장된 Firecrawl과 DataForSEO를 사용하여 성과가 저하된 페이지를 찾고 현재 수요를 매핑하고 집중적인 갱신을 추천합니다.",
+        "description": "퇴색한 페이지를 찾고 우선순위가 정해진 갱신 요약서를 생성합니다.\\n",
+        "scenario": "기존 콘텐츠는 새로운 기사보다 더 큰 잠재력을 가지고 있습니다. {{assistantName}}은 내장된 Firecrawl과 DataForSEO를 사용하여 성과가 저하된 페이지를 찾고 현재 수요를 매핑하고 집중적인 갱신을 추천합니다.\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}}은 사이트를 크롤링하고 가능한 갱신 대상 페이지를 식별합니다.",
-            "title": "기존 페이지가 검토됩니다"
+            "description": "{{assistantName}}은 사이트를 크롤링하고 가능한 갱신 대상 페이지를 식별합니다.\\n",
+            "title": "기존 페이지가 검토됩니다\\n"
           },
           "three": {
-            "description": "{{assistantName}}은 페이지를 우선순위별로 정리하고 필요한 갱신을 지정합니다.",
-            "title": "갱신 요약서가 생성됩니다"
+            "description": "{{assistantName}}은 페이지를 우선순위별로 정리하고 필요한 갱신을 지정합니다.\\n",
+            "title": "갱신 요약서가 생성됩니다\\n"
           },
           "two": {
-            "description": "{{assistantName}}은 검색 결과, 키워드 및 경쟁 채택을 검사합니다.",
-            "title": "현재 수요가 매핑됩니다"
+            "description": "{{assistantName}}은 검색 결과, 키워드 및 경쟁 채택을 검사합니다.\\n",
+            "title": "현재 수요가 매핑됩니다\\n"
           }
         },
-        "title": "SEO 콘텐츠 갱신 계획 만들기"
+        "title": "SEO 콘텐츠 갱신 계획 만들기\\n"
       },
       "build-weekly-deck-gamma": {
         "description": "수익, 비용, 수신금, 현금 흐름을 시트에서 추적합니다.",
@@ -5074,23 +5074,23 @@
         "title": "유료 획득 채널 비교"
       },
       "compare-google-ads-last-month": {
-        "description": "지불 미디어 효율성, 진행 상황, 성과 변화를 추적합니다.",
-        "scenario": "예산은 캠페인 소유자가 알기 전에 변화할 수 있습니다. {{assistantName}}은 지정된 기간 동안 Google Ads와 Meta Ads의 지출, 변환, CPA, ROAS를 비교하고 필요한 조치를 강조합니다.",
+        "description": "지불 미디어 효율성, 진행 상황, 성과 변화를 추적합니다.\\n",
+        "scenario": "예산은 캠페인 소유자가 알기 전에 변화할 수 있습니다. {{assistantName}}은 지정된 기간 동안 Google Ads와 Meta Ads의 지출, 변환, CPA, ROAS를 비교하고 필요한 조치를 강조합니다.\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}}은 선택된 기간 동안 두 광고 플랫폼을 읽습니다.",
-            "title": "캠페인 데이터가 수집됩니다"
+            "description": "{{assistantName}}은 선택된 기간 동안 두 광고 플랫폼을 읽습니다.\\n",
+            "title": "캠페인 데이터가 수집됩니다\\n"
           },
           "three": {
-            "description": "{{assistantName}}은 비교 결과를 반환하고 Sheets를 업데이트할 수 있습니다.",
-            "title": "조치가 제안됩니다"
+            "description": "{{assistantName}}은 비교 결과를 반환하고 Sheets를 업데이트할 수 있습니다.\\n",
+            "title": "조치가 제안됩니다\\n"
           },
           "two": {
-            "description": "{{assistantName}}은 성과를 정규화하고 중요한 변화를 식별합니다.",
-            "title": "효율성이 비교됩니다"
+            "description": "{{assistantName}}은 성과를 정규화하고 중요한 변화를 식별합니다.\\n",
+            "title": "효율성이 비교됩니다\\n"
           }
         },
-        "title": "Google Ads와 Meta Ads 비교"
+        "title": "Google Ads와 Meta Ads 비교\\n"
       },
       "daily-company-brief-slack": {
         "description": "성장, 파이프라인, 그리고 선택적인 재무 맥락을 결합합니다.",
@@ -5150,23 +5150,23 @@
         "title": "Notion에서 GitHub 출시 노트 초안 작성"
       },
       "draft-newsletter-mailchimp": {
-        "description": "애널리틱스와 검색 콘솔을 하나의 유기 보고서로 결합합니다.",
-        "scenario": "유기 성장은 트래픽과 검색 데이터에 걸쳐 있습니다. {{assistantName}}은 Google 애널리틱스와 검색 콘솔을 결합하여 움직임과 기회를 설명하고 Notion에 따라 필요한 작업을 기록할 수 있습니다.",
+        "description": "애널리틱스와 검색 콘솔을 하나의 유기 보고서로 결합합니다.\\n",
+        "scenario": "유기 성장은 트래픽과 검색 데이터에 걸쳐 있습니다. {{assistantName}}은 Google 애널리틱스와 검색 콘솔을 결합하여 움직임과 기회를 설명하고 Notion에 따라 필요한 작업을 기록할 수 있습니다.\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}}은 사이트의 행동과 검색 성능을 읽습니다.",
-            "title": "유기 데이터가 수집됩니다"
+            "description": "{{assistantName}}은 사이트의 행동과 검색 성능을 읽습니다.\\n",
+            "title": "유기 데이터가 수집됩니다\\n"
           },
           "three": {
-            "description": "{{assistantName}}은 우선순위를 반환하고 Notion에 저장할 수 있습니다.",
-            "title": "요약서가 생성됩니다"
+            "description": "{{assistantName}}은 우선순위를 반환하고 Notion에 저장할 수 있습니다.\\n",
+            "title": "요약서가 생성됩니다\\n"
           },
           "two": {
-            "description": "{{assistantName}}은 착륙 페이지, 쿼리, 변환 및 추세를 연결합니다.",
-            "title": "성장이 분석됩니다"
+            "description": "{{assistantName}}은 착륙 페이지, 쿼리, 변환 및 추세를 연결합니다.\\n",
+            "title": "성장이 분석됩니다\\n"
           }
         },
-        "title": "유기 성장 요약서 만들기"
+        "title": "유기 성장 요약서 만들기\\n"
       },
       "draft-replies-notion-faq": {
         "description": "지원 이메일 답변 초안은 승인된 노션 자주 묻는 질문에 기반합니다.",
@@ -5264,23 +5264,23 @@
         "title": "Notion 사양을 Linear 프로젝트로 변환하기"
       },
       "flagged-gmail-todoist-tasks": {
-        "description": "선택된 라벨의 메시지에서 실행 가능한 작업 생성.",
-        "scenario": "중요한 이메일은 인박스에서 명확한 작업으로 완료하기 쉬워집니다. {{assistantName}}는 라벨된 Gmail 메시지를 Todoist 항목으로 변환하여 마감일과 원본 컨텍스트를 포함합니다.",
+        "description": "선택된 라벨의 메시지에서 실행 가능한 작업 생성.\\n",
+        "scenario": "중요한 이메일은 인박스에서 명확한 작업으로 완료하기 쉬워집니다. {{assistantName}}는 라벨된 Gmail 메시지를 Todoist 항목으로 변환하여 마감일과 원본 컨텍스트를 포함합니다.\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}}는 선택된 라벨을 감지하고 메시지를 읽습니다.",
-            "title": "Gmail 메시지 표시"
+            "description": "{{assistantName}}는 선택된 라벨을 감지하고 메시지를 읽습니다.\\n",
+            "title": "Gmail 메시지 표시\\n"
           },
           "three": {
-            "description": "{{assistantName}}는 소스 링크를 포함한 작업을 생성합니다.",
-            "title": "Todoist 작업 생성"
+            "description": "{{assistantName}}는 소스 링크를 포함한 작업을 생성합니다.\\n",
+            "title": "Todoist 작업 생성\\n"
           },
           "two": {
-            "description": "{{assistantName}}는 작업, 마감일, 지원 컨텍스트를 식별합니다.",
+            "description": "{{assistantName}}는 작업, 마감일, 지원 컨텍스트를 식별합니다.\\n",
             "title": "작업 추출"
           }
         },
-        "title": "표시된 Gmail을 Todoist 작업으로 변환"
+        "title": "표시된 Gmail을 Todoist 작업으로 변환\\n"
       },
       "github-idea-to-notion-spec": {
         "description": "레이블이 있는 GitHub 아이디어를 구조화된 제품 사양으로 확장합니다.",
@@ -5416,42 +5416,42 @@
         "title": "구글 미트 노트를 애타나 작업으로 변환합니다"
       },
       "meeting-recaps-slack": {
-        "description": "회의 텍스트를 간결한 요약과 행동 항목으로 변환.",
-        "scenario": "회의 결정은 텍스트가 처리되지 않을 때 사라집니다. {{assistantName}}는 Google Meet 텍스트를 읽고, 주요 결정, 행동 항목, 소유자를 Google Docs에 작성합니다.",
+        "description": "회의 텍스트를 간결한 요약과 행동 항목으로 변환.\\n",
+        "scenario": "회의 결정은 텍스트가 처리되지 않을 때 사라집니다. {{assistantName}}는 Google Meet 텍스트를 읽고, 주요 결정, 행동 항목, 소유자를 Google Docs에 작성합니다.\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}}는 텍스트와可用的会议上下文.",
-            "title": "회의 텍스트 도착"
+            "description": "{{assistantName}}는 텍스트와可用的会议上下文.\\n",
+            "title": "회의 텍스트 도착\\n"
           },
           "three": {
-            "description": "{{assistantName}}는 구조화된 요약을 Google Docs에 작성합니다.",
-            "title": "요약 저장"
+            "description": "{{assistantName}}는 구조화된 요약을 Google Docs에 작성합니다.\\n",
+            "title": "요약 저장\\n"
           },
           "two": {
-            "description": "{{assistantName}}는 결과, 소유자, 마감일, 개방 질문을 식별합니다.",
-            "title": "결정과 행동 추출"
+            "description": "{{assistantName}}는 결과, 소유자, 마감일, 개방 질문을 식별합니다.\\n",
+            "title": "결정과 행동 추출\\n"
           }
         },
-        "title": "Google Meet 회의 요약을 Google Docs에 저장"
+        "title": "Google Meet 회의 요약을 Google Docs에 저장\\n"
       },
       "morning-brief-slack": {
-        "description": "중요한 이메일, 오늘的日程和通知内容组合在一起.",
-        "scenario": "유용한 아침 계획에는 인박스와 캘린더가 필요합니다. {{assistantName}}는 Gmail과 Google 캘린더를 검토하고, Notion 컨텍스트가 제공되는 경우 추가하여 짧은 일일 요약을 반환합니다.",
+        "description": "중요한 이메일, 오늘的日程和通知内容组合在一起.\\n",
+        "scenario": "유용한 아침 계획에는 인박스와 캘린더가 필요합니다. {{assistantName}}는 Gmail과 Google 캘린더를 검토하고, Notion 컨텍스트가 제공되는 경우 추가하여 짧은 일일 요약을 반환합니다.\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}}는 선택된 Gmail 인박스 또는 라벨을 읽습니다.",
-            "title": "오늘의 입력 수집"
+            "description": "{{assistantName}}는 선택된 Gmail 인박스 또는 라벨을 읽습니다.\\n",
+            "title": "오늘의 입력 수집\\n"
           },
           "three": {
-            "description": "{{assistantName}}는 자동화 채널에서 집중적인 계획을 작성합니다.",
-            "title": "요약 반환"
+            "description": "{{assistantName}}는 자동화 채널에서 집중적인 계획을 작성합니다.\\n",
+            "title": "요약 반환\\n"
           },
           "two": {
-            "description": "{{assistantName}}는 약속, 준비, 추적을 식별합니다.",
-            "title": "우선 순위 연결"
+            "description": "{{assistantName}}는 약속, 준비, 추적을 식별합니다.\\n",
+            "title": "우선 순위 연결\\n"
           }
         },
-        "title": "아침 요약 작성"
+        "title": "아침 요약 작성\\n"
       },
       "new-gmail-contacts-hubspot": {
         "description": "관련 이메일 대화에서 CRM 연락처 생성 또는 풍부하게 하기.",
@@ -5568,23 +5568,23 @@
         "title": "Google 캘린더 미팅 준비하기"
       },
       "publish-scheduled-posts-buffer": {
-        "description": "경쟁사와 비교하여 유기 순위 기회를 분석합니다.",
-        "scenario": "실제 검색 빈도에서 시작할 때 콘텐츠 계획은 향상됩니다. {{assistantName}}은 내장된 Firecrawl과 DataForSEO를 사용하여 사용자의 사이트와 지정된 경쟁사 사이를 비교하고 의도와 가치에 따라 누락된 주제를 순위별로 정렬합니다.",
+        "description": "경쟁사와 비교하여 유기 순위 기회를 분석합니다.\\n",
+        "scenario": "실제 검색 빈도에서 시작할 때 콘텐츠 계획은 향상됩니다. {{assistantName}}은 내장된 Firecrawl과 DataForSEO를 사용하여 사용자의 사이트와 지정된 경쟁사 사이를 비교하고 의도와 가치에 따라 누락된 주제를 순위별로 정렬합니다.\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}}은 사용자의 사이트와 경쟁사 사이를 크롤링합니다.",
-            "title": "사이트가 비교됩니다"
+            "description": "{{assistantName}}은 사용자의 사이트와 경쟁사 사이를 크롤링합니다.\\n",
+            "title": "사이트가 비교됩니다\\n"
           },
           "three": {
-            "description": "{{assistantName}}은 우선순위가 정해진 콘텐츠 기회 목록을 반환합니다.",
-            "title": "기회는 순위별로 정렬됩니다"
+            "description": "{{assistantName}}은 우선순위가 정해진 콘텐츠 기회 목록을 반환합니다.\\n",
+            "title": "기회는 순위별로 정렬됩니다\\n"
           },
           "two": {
-            "description": "{{assistantName}}은 누락된 키워드, 주제 및 의도 커버리지를 찾습니다.",
-            "title": "검색 빈도가 식별됩니다"
+            "description": "{{assistantName}}은 누락된 키워드, 주제 및 의도 커버리지를 찾습니다.\\n",
+            "title": "검색 빈도가 식별됩니다\\n"
           }
         },
-        "title": "키워드와 콘텐츠 빈도 찾기"
+        "title": "키워드와 콘텐츠 빈도 찾기\\n"
       },
       "report-ai-model-costs-slack": {
         "description": "트래픽 또는 보안 사고와 다음 응답을 설명합니다.",
@@ -5606,23 +5606,23 @@
         "title": "클라우드플레어 사고 알림"
       },
       "research-calendar-meetings": {
-        "description": "캘린더와 이메일 컨텍스트에서 간결한 요약 작성.",
-        "scenario": "참석자와 대화 기록이 연결되어 있을 때 회의 준비는 더 빠릅니다. {{assistantName}}는 임박한 캘린더 이벤트를 검토하고, Gmail 컨텍스트가 제공되는 경우 추가합니다.",
+        "description": "캘린더와 이메일 컨텍스트에서 간결한 요약 작성.\n",
+        "scenario": "참석자와 대화 기록이 연결되어 있을 때 회의 준비는 더 빠릅니다. {{assistantName}}는 임박한 캘린더 이벤트를 검토하고, Gmail 컨텍스트가 제공되는 경우 추가합니다.\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}}는 선택된 Google 캘린더 창을 읽습니다.",
-            "title": "임박한 회의 찾기"
+            "description": "{{assistantName}}는 선택된 Google 캘린더 창을 읽습니다.\\n",
+            "title": "임박한 회의 찾기\\n"
           },
           "three": {
-            "description": "{{assistantName}}는 목표, 컨텍스트, 제안 질문을 반환합니다.",
-            "title": "요약 작성"
+            "description": "{{assistantName}}는 목표, 컨텍스트, 제안 질문을 반환합니다.\\n",
+            "title": "요약 작성\\n"
           },
           "two": {
-            "description": "{{assistantName}}는 관련 Gmail 쓰레드를 확인합니다.",
-            "title": "참석자 컨텍스트 수집"
+            "description": "{{assistantName}}는 관련 Gmail 쓰레드를 확인합니다.\n",
+            "title": "참석자 컨텍스트 수집\\n"
           }
         },
-        "title": "임박한 회의 준비"
+        "title": "임박한 회의 준비\\n"
       },
       "research-new-signups-apollo": {
         "description": "X에서 크리에이터 리드를 찾아 검증합니다.",
@@ -5682,23 +5682,23 @@
         "title": "지원 이메일을 깃허브 이슈로 변환하기"
       },
       "sort-gmail-draft-replies": {
-        "description": "새 이메일 분류하고 인류 검토를 위한 응답 준비.",
-        "scenario": "바쁜 인박스는 긴급 요청과 쉽게 답변할 수 있는 이메일을 숨기게 합니다. {{assistantName}}는 긴급도와 행동에 따라 새 Gmail 메시지를 그룹화하고, 보내지 않은 초안을 작성합니다.",
+        "description": "새 이메일 분류하고 인류 검토를 위한 응답 준비.\\n",
+        "scenario": "바쁜 인박스는 긴급 요청과 쉽게 답변할 수 있는 이메일을 숨기게 합니다. {{assistantName}}는 긴급도와 행동에 따라 새 Gmail 메시지를 그룹화하고, 보내지 않은 초안을 작성합니다.\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}}는 선택된 Gmail 인박스 또는 라벨을 읽습니다.",
-            "title": "새 이메일 검토"
+            "description": "{{assistantName}}는 선택된 Gmail 인박스 또는 라벨을 읽습니다.\\n",
+            "title": "새 이메일 검토\\n"
           },
           "three": {
-            "description": "{{assistantName}}는 응답을 인류 검토를 위해 준비합니다.",
-            "title": "답변 초안 작성"
+            "description": "{{assistantName}}는 응답을 인류 검토를 위해 준비합니다.\\n",
+            "title": "답변 초안 작성\\n"
           },
           "two": {
-            "description": "{{assistantName}}는 긴급도, 요청, 다음 행동에 따라 이메일을 그룹화합니다.",
-            "title": "이메일 분류"
+            "description": "{{assistantName}}는 긴급도, 요청, 다음 행동에 따라 이메일을 그룹화합니다.\\n",
+            "title": "이메일 분류\\n"
           }
         },
-        "title": "Gmail 정리와 초안 작성"
+        "title": "Gmail 정리와 초안 작성\\n"
       },
       "sort-route-zendesk-tickets": {
         "description": "지원 이메일 분류하고 라인에서 실행 가능한 문제 항목 생성하기.",
@@ -5739,23 +5739,23 @@
         "title": "일일 지원 요약 생성하기"
       },
       "summarize-gmail-newsletters": {
-        "description": "선택된 뉴스레터를 하나의 유용한 반복 요약으로 변환.",
-        "scenario": "뉴스레터 가치는 모든 이슈가 인박스 주의를 빼앗을 때 사라집니다. {{assistantName}}는 선택된 Gmail 뉴스레터를 주제, 유용한 링크, 추천 읽기로 요약합니다.",
+        "description": "선택된 뉴스레터를 하나의 유용한 반복 요약으로 변환.\\n",
+        "scenario": "뉴스레터 가치는 모든 이슈가 인박스 주의를 빼앗을 때 사라집니다. {{assistantName}}는 선택된 Gmail 뉴스레터를 주제, 유용한 링크, 추천 읽기로 요약합니다.\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}}는 선택된 보내는 사람 또는 라벨의 메시지를 읽습니다.",
-            "title": "뉴스레터 수집"
+            "description": "{{assistantName}}는 선택된 보내는 사람 또는 라벨의 메시지를 읽습니다.\\n",
+            "title": "뉴스레터 수집\\n"
           },
           "three": {
-            "description": "{{assistantName}}는 요약을 반환하고 Notion에 저장할 수 있습니다.",
-            "title": "요약 작성"
+            "description": "{{assistantName}}는 요약을 반환하고 Notion에 저장할 수 있습니다.\\n",
+            "title": "요약 작성\\n"
           },
           "two": {
-            "description": "{{assistantName}}는 주제를 그룹화하고 가장 강력한 링크를 식별합니다.",
-            "title": "유용한 내용 추출"
+            "description": "{{assistantName}}는 주제를 그룹화하고 가장 강력한 링크를 식별합니다.\\n",
+            "title": "유용한 내용 추출\\n"
           }
         },
-        "title": "Gmail 뉴스레터 요약"
+        "title": "Gmail 뉴스레터 요약\\n"
       },
       "summarize-user-feedback-notion": {
         "description": "새로운 설문조사 응답을 순위별로 제품 통찰력으로 클러스터링합니다.",
@@ -5853,23 +5853,23 @@
         "title": "Google Analytics를 통해 기능 채택 추적하기"
       },
       "track-keyword-ranks-ahrefs": {
-        "description": "사이트를 크롤링하고 우선순위가 정해진 기술 SEO 문제 목록을 반환합니다.",
-        "scenario": "기술 SEO 문제는 수백 개의 페이지에 숨어 있습니다. {{assistantName}}은 내장된 Firecrawl과 DataForSEO를 사용하여 크롤링 가능성, 인덱싱 가능성, 내부 링크 및 실시간 검색 시각화를 검사합니다. 연결자를 필요로 하지 않습니다.",
+        "description": "사이트를 크롤링하고 우선순위가 정해진 기술 SEO 문제 목록을 반환합니다.\\n",
+        "scenario": "기술 SEO 문제는 수백 개의 페이지에 숨어 있습니다. {{assistantName}}은 내장된 Firecrawl과 DataForSEO를 사용하여 크롤링 가능성, 인덱싱 가능성, 내부 링크 및 실시간 검색 시각화를 검사합니다. 연결자를 필요로 하지 않습니다.\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}}은 Firecrawl을 사용하여 페이지와 내부 링크를 검사합니다.",
-            "title": "사이트가 크롤링됩니다"
+            "description": "{{assistantName}}은 Firecrawl을 사용하여 페이지와 내부 링크를 검사합니다.\\n",
+            "title": "사이트가 크롤링됩니다\\n"
           },
           "three": {
-            "description": "{{assistantName}}은 가장 큰 영향을 미치는 수정 사항과 지원 증거를 반환합니다.",
-            "title": "문제는 우선순위가 정해집니다"
+            "description": "{{assistantName}}은 가장 큰 영향을 미치는 수정 사항과 지원 증거를 반환합니다.\\n",
+            "title": "문제는 우선순위가 정해집니다\\n"
           },
           "two": {
-            "description": "{{assistantName}}은 DataForSEO를 사용하여 검색 시각화 및 인덱싱 신호를 검증합니다.",
-            "title": "검색 증거가 검사됩니다"
+            "description": "{{assistantName}}은 DataForSEO를 사용하여 검색 시각화 및 인덱싱 신호를 검증합니다.\\n",
+            "title": "검색 증거가 검사됩니다\\n"
           }
         },
-        "title": "웹사이트의 기술 SEO 검토"
+        "title": "웹사이트의 기술 SEO 검토\\n"
       },
       "track-signup-sources-sheets": {
         "description": "Google Cloud 데이터를 쿼리하고 갱신 가능한 분석을 게시합니다.",
@@ -5891,23 +5891,23 @@
         "title": "BigQuery 데이터를 시트에서 분석"
       },
       "watch-brand-mentions": {
-        "description": "승인된 비디오를 플랫폼-native 포스트와 채팅으로 변환합니다.",
-        "scenario": "강력한 비디오는 한 채널 이상을 지원할 수 있습니다. {{assistantName}}은 선택된 YouTube 비디오를 검토하고 X 포스트와 채팅을 작성하며 승인된 계획을 Notion에 저장할 수 있습니다.",
+        "description": "승인된 비디오를 플랫폼-native 포스트와 채팅으로 변환합니다.\\n",
+        "scenario": "강력한 비디오는 한 채널 이상을 지원할 수 있습니다. {{assistantName}}은 선택된 YouTube 비디오를 검토하고 X 포스트와 채팅을 작성하며 승인된 계획을 Notion에 저장할 수 있습니다.\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}}은 YouTube 비디오, 자막 및 맥락을 읽습니다.",
-            "title": "비디오가 선택됩니다"
+            "description": "{{assistantName}}은 YouTube 비디오, 자막 및 맥락을 읽습니다.\\n",
+            "title": "비디오가 선택됩니다\\n"
           },
           "three": {
-            "description": "{{assistantName}}은 계획을 저장하고 승인 없이 게시하지 않습니다.",
-            "title": "콘텐츠가 승인을 위한 준비됩니다"
+            "description": "{{assistantName}}은 계획을 저장하고 승인 없이 게시하지 않습니다.\\n",
+            "title": "콘텐츠가 승인을 위한 준비됩니다\\n"
           },
           "two": {
-            "description": "{{assistantName}}은 간결한 X 포스트와 채팅 옵션을 생성합니다.",
+            "description": "{{assistantName}}은 간결한 X 포스트와 채팅 옵션을 생성합니다.\\n",
             "title": "소셜 변형이 작성됩니다"
           }
         },
-        "title": "YouTube 비디오 재사용"
+        "title": "YouTube 비디오 재사용\\n"
       },
       "watch-sentry-after-release": {
         "description": "배포 후 안정성과 이전 기준을 비교합니다.",

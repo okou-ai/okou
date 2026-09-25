@@ -4941,23 +4941,23 @@
         "title": "GitHub PRの自動マージ"
       },
       "blog-posts-to-x": {
-        "description": "衰退しているページを見つけて、優先順位付けされた更新要項を作成する。",
-        "scenario": "既存のコンテンツは新しい記事よりも多くの上昇余地があることが多い。{{assistantName}}はFirecrawlとDataForSEOを使用して、パフォーマンスが低下しているページを見つけ、現在の需要をマッピングし、焦点を絞った更新を推奨する。",
+        "description": "衰退しているページを見つけて、優先順位付けされた更新要項を作成する。\\n",
+        "scenario": "既存のコンテンツは新しい記事よりも多くの上昇余地があることが多い。{{assistantName}}はFirecrawlとDataForSEOを使用して、パフォーマンスが低下しているページを見つけ、現在の需要をマッピングし、焦点を絞った更新を推奨する。\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}}はサイトをクロールし、リフレッシュ候補を特定する。",
-            "title": "既存のページがレビューされる"
+            "description": "{{assistantName}}はサイトをクロールし、リフレッシュ候補を特定する。\\n",
+            "title": "既存のページがレビューされる\\n"
           },
           "three": {
-            "description": "{{assistantName}}はページを優先順位付けし、必要な更新を指定する。",
-            "title": "リフレッシュ要項が作成される"
+            "description": "{{assistantName}}はページを優先順位付けし、必要な更新を指定する。\\n",
+            "title": "リフレッシュ要項が作成される\\n"
           },
           "two": {
-            "description": "{{assistantName}}は検索結果、キーワード、競合他社のカバレッジを確認する。",
-            "title": "現在の需要がマッピングされる"
+            "description": "{{assistantName}}は検索結果、キーワード、競合他社のカバレッジを確認する。\\n",
+            "title": "現在の需要がマッピングされる\\n"
           }
         },
-        "title": "SEOコンテンツのリフレッシュ計画を作成する"
+        "title": "SEOコンテンツのリフレッシュ計画を作成する\\n"
       },
       "build-weekly-deck-gamma": {
         "description": "シートで収益、費用、受取払い、キャッシュフローを追跡する。",
@@ -5074,23 +5074,23 @@
         "title": "有料獲得チャネルを比較する"
       },
       "compare-google-ads-last-month": {
-        "description": "支出、変換、CPA、ROASなどの有料メディアの効率性、ペース、パフォーマンスの逸脱を追跡する。",
-        "scenario": "バジェットはキャンペーンオーナーが気づく前に逸脱する可能性がある。{{assistantName}}は選択された期間のGoogle AdsとMeta Adsの支出、変換、CPA、ROASを比較し、必要なアクションを指摘する。",
+        "description": "支出、変換、CPA、ROASなどの有料メディアの効率性、ペース、パフォーマンスの逸脱を追跡する。\\n",
+        "scenario": "バジェットはキャンペーンオーナーが気づく前に逸脱する可能性がある。{{assistantName}}は選択された期間のGoogle AdsとMeta Adsの支出、変換、CPA、ROASを比較し、必要なアクションを指摘する。\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}}は選択された期間の両方の広告プラットフォームを読み取る。",
-            "title": "キャンペーンデータが収集される"
+            "description": "{{assistantName}}は選択された期間の両方の広告プラットフォームを読み取る。\\n",
+            "title": "キャンペーンデータが収集される\\n"
           },
           "three": {
-            "description": "{{assistantName}}は比較を返し、オプションでSheetsを更新する。",
-            "title": "アクションが推奨される"
+            "description": "{{assistantName}}は比較を返し、オプションでSheetsを更新する。\\n",
+            "title": "アクションが推奨される\\n"
           },
           "two": {
-            "description": "{{assistantName}}はパフォーマンスを正規化し、重要な逸脱を特定する。",
-            "title": "效率が比較される"
+            "description": "{{assistantName}}はパフォーマンスを正規化し、重要な逸脱を特定する。\\n",
+            "title": "效率が比較される\\n"
           }
         },
-        "title": "Google AdsとMeta Adsを比較する"
+        "title": "Google AdsとMeta Adsを比較する\\n"
       },
       "daily-company-brief-slack": {
         "description": "創growth、パイプライン、およびオプションの財務コンテキストを組み合わせる。",
@@ -5150,23 +5150,23 @@
         "title": "NotionでGitHubリリースノートをドラフトする"
       },
       "draft-newsletter-mailchimp": {
-        "description": "アナリティクスとSearch Consoleを一つの有機レポートに組み込む。",
-        "scenario": "有機成長はトラフィックと検索データにわたる。{{assistantName}}はGoogle AnalyticsとSearch Consoleを組み合わせ、動きと機会を説明し、オプションでNotionに後続の作業を記録する。",
+        "description": "アナリティクスとSearch Consoleを一つの有機レポートに組み込む。\\n",
+        "scenario": "有機成長はトラフィックと検索データにわたる。{{assistantName}}はGoogle AnalyticsとSearch Consoleを組み合わせ、動きと機会を説明し、オプションでNotionに後続の作業を記録する。\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}}はサイトの行動と検索パフォーマンスを読み取る。",
-            "title": "有機データが収集される"
+            "description": "{{assistantName}}はサイトの行動と検索パフォーマンスを読み取る。\\n",
+            "title": "有機データが収集される\\n"
           },
           "three": {
-            "description": "{{assistantName}}は優先順位を返し、オプションでNotionに保存する。",
-            "title": "要項が作成される"
+            "description": "{{assistantName}}は優先順位を返し、オプションでNotionに保存する。\\n",
+            "title": "要項が作成される\\n"
           },
           "two": {
-            "description": "{{assistantName}}は着地点ページ、クエリ、変換、トレンドを接続する。",
-            "title": "成長が分析される"
+            "description": "{{assistantName}}は着地点ページ、クエリ、変換、トレンドを接続する。\\n",
+            "title": "成長が分析される\\n"
           }
         },
-        "title": "有機成長要項を作成する"
+        "title": "有機成長要項を作成する\\n"
       },
       "draft-replies-notion-faq": {
         "description": "サポートメールのドラフトは承認されたNotionのFAQに基づいて作成します。",
@@ -5568,23 +5568,23 @@
         "title": "グーグルカレンダーのミーティング準備"
       },
       "publish-scheduled-posts-buffer": {
-        "description": "競合他社と比較し、機会をランク付けする。",
-        "scenario": "コンテンツ計画は、実際の検索ギャップから始めるときが最も良い。{{assistantName}}はFirecrawlとDataForSEOを使用して、ユーザーのサイトと名付けられた競合他社をクロールし、意図と価値に基づいて欠けているトピックをランク付けする。",
+        "description": "競合他社と比較し、機会をランク付けする。\\n",
+        "scenario": "コンテンツ計画は、実際の検索ギャップから始めるときが最も良い。{{assistantName}}はFirecrawlとDataForSEOを使用して、ユーザーのサイトと名付けられた競合他社をクロールし、意図と価値に基づいて欠けているトピックをランク付けする。\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}}はユーザーのサイトと選択された競合他社をクロールする。",
-            "title": "サイトが比較される"
+            "description": "{{assistantName}}はユーザーのサイトと選択された競合他社をクロールする。\\n",
+            "title": "サイトが比較される\\n"
           },
           "three": {
-            "description": "{{assistantName}}は優先順位付けされたコンテンツ機会リストを返す。",
-            "title": "機会はランク付けされる"
+            "description": "{{assistantName}}は優先順位付けされたコンテンツ機会リストを返す。\\n",
+            "title": "機会はランク付けされる\\n"
           },
           "two": {
-            "description": "{{assistantName}}は欠けているキーワード、トピック、および意図を発見する。",
-            "title": "検索ギャップが特定される"
+            "description": "{{assistantName}}は欠けているキーワード、トピック、および意図を発見する。\\n",
+            "title": "検索ギャップが特定される\\n"
           }
         },
-        "title": "キーワードとコンテンツのギャップを見つける"
+        "title": "キーワードとコンテンツのギャップを見つける\\n"
       },
       "report-ai-model-costs-slack": {
         "description": "トラフィックまたはセキュリティ事象と次の対応を説明します。",
@@ -5853,23 +5853,23 @@
         "title": "ゴOGLEアナリティクスを使用して機能の採用を追跡する"
       },
       "track-keyword-ranks-ahrefs": {
-        "description": "サイトをクロールし、優先順位付けされた技術的なSEOの問題リストを返す。",
-        "scenario": "技術的なSEOの問題は数百のページに隠されている。{{assistantName}}はFirecrawlとDataForSEOを使用して、クロール可能性、インデックス可能性、内部リンク、およびライブ検索の可視性を検査し、コネクタを必要とせずに。",
+        "description": "サイトをクロールし、優先順位付けされた技術的なSEOの問題リストを返す。\\n",
+        "scenario": "技術的なSEOの問題は数百のページに隠されている。{{assistantName}}はFirecrawlとDataForSEOを使用して、クロール可能性、インデックス可能性、内部リンク、およびライブ検索の可視性を検査し、コネクタを必要とせずに。\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}}はFirecrawlを使用してページと内部リンクを検査する。",
-            "title": "サイトがクロールされる"
+            "description": "{{assistantName}}はFirecrawlを使用してページと内部リンクを検査する。\\n",
+            "title": "サイトがクロールされる\\n"
           },
           "three": {
-            "description": "{{assistantName}}は最高の影響を与える修正とその証拠を返す。",
-            "title": "問題は優先順位付けされる"
+            "description": "{{assistantName}}は最高の影響を与える修正とその証拠を返す。\\n",
+            "title": "問題は優先順位付けされる\\n"
           },
           "two": {
-            "description": "{{assistantName}}はDataForSEOを使用して可視性とインデックス化シグナルを検証する。",
-            "title": "検索の証拠がチェックされる"
+            "description": "{{assistantName}}はDataForSEOを使用して可視性とインデックス化シグナルを検証する。\\n",
+            "title": "検索の証拠がチェックされる\\n"
           }
         },
-        "title": "ウェブサイトの技術的なSEOを調査する"
+        "title": "ウェブサイトの技術的なSEOを調査する\\n"
       },
       "track-signup-sources-sheets": {
         "description": "Google Cloudのデータをクエリし、更新可能な分析を公開する。",
@@ -5891,23 +5891,23 @@
         "title": "BigQueryデータをシートで分析する"
       },
       "watch-brand-mentions": {
-        "description": "承認されたビデオをプラットフォムネイティブの投稿とスレッドに変換する。",
-        "scenario": "強いビデオは1つのチャンネル以上でサポートできる。{{assistantName}}は選択されたYouTubeビデオをレビューし、Xの投稿とスレッドのドラフトを作成し、承認された計画をオプションでNotionに保存する。",
+        "description": "承認されたビデオをプラットフォムネイティブの投稿とスレッドに変換する。\\n",
+        "scenario": "強いビデオは1つのチャンネル以上でサポートできる。{{assistantName}}は選択されたYouTubeビデオをレビューし、Xの投稿とスレッドのドラフトを作成し、承認された計画をオプションでNotionに保存する。\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}}はYouTubeビデオ、字幕、コンテキストを読み取る。",
-            "title": "ビデオが選択される"
+            "description": "{{assistantName}}はYouTubeビデオ、字幕、コンテキストを読み取る。\\n",
+            "title": "ビデオが選択される\\n"
           },
           "three": {
-            "description": "{{assistantName}}は計画を保存し、承認なしで公開しない。",
-            "title": "コンテンツが承認のために準備される"
+            "description": "{{assistantName}}は計画を保存し、承認なしで公開しない。\\n",
+            "title": "コンテンツが承認のために準備される\\n"
           },
           "two": {
-            "description": "{{assistantName}}は簡潔なXの投稿とスレッドオプションを作成する。",
+            "description": "{{assistantName}}は簡潔なXの投稿とスレッドオプションを作成する。\\n",
             "title": "ソーシャルのバリエーションがドラフトされる"
           }
         },
-        "title": "YouTubeビデオをXに再利用する"
+        "title": "YouTubeビデオをXに再利用する\\n"
       },
       "watch-sentry-after-release": {
         "description": "リリース後の安定性と前の基準を比較します。",

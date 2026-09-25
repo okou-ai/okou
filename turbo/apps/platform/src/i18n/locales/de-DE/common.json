@@ -5282,23 +5282,23 @@
         "title": "Wandeln einer Notion-Spezifikation in ein Linear-Projekt um"
       },
       "flagged-gmail-todoist-tasks": {
-        "description": "Erstellen Sie ausführbare Aufgaben aus Nachrichten mit ausgewähltem Label.",
-        "scenario": "Wichtige E-Mails werden einfacher zu beenden, wenn sie aus dem Posteingang als klare Aufgaben verschwinden. {{assistantName}} wandelt markierte Gmail-Nachrichten in Todoist-Elemente mit Fälligkeitsdaten und Quellkontext um.",
+        "description": "Erstellen Sie ausführbare Aufgaben aus Nachrichten mit ausgewähltem Label.\\n",
+        "scenario": "Wichtige E-Mails werden einfacher zu beenden, wenn sie aus dem Posteingang als klare Aufgaben verschwinden. {{assistantName}} wandelt markierte Gmail-Nachrichten in Todoist-Elemente mit Fälligkeitsdaten und Quellkontext um.\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}} erkennt das ausgewählte Label und liest die Nachricht.",
-            "title": "Eine Gmail-Nachricht wird markiert."
+            "description": "{{assistantName}} erkennt das ausgewählte Label und liest die Nachricht.\\n",
+            "title": "Eine Gmail-Nachricht wird markiert.\\n"
           },
           "three": {
-            "description": "{{assistantName}} erstellt die Aufgabe mit einer Quellverknüpfung.",
-            "title": "Eine Todoist-Aufgabe wird erstellt."
+            "description": "{{assistantName}} erstellt die Aufgabe mit einer Quellverknüpfung.\\n",
+            "title": "Eine Todoist-Aufgabe wird erstellt.\\n"
           },
           "two": {
-            "description": "{{assistantName}} identifiziert die Aufgabe, Fälligkeitsdatum und unterstützenden Kontext.",
+            "description": "{{assistantName}} identifiziert die Aufgabe, Fälligkeitsdatum und unterstützenden Kontext.\\n",
             "title": "Die Handlung wird extrahiert."
           }
         },
-        "title": "Wandeln Sie markierte Gmail-Nachrichten in Todoist-Aufgaben um."
+        "title": "Wandeln Sie markierte Gmail-Nachrichten in Todoist-Aufgaben um.\\n"
       },
       "github-idea-to-notion-spec": {
         "description": "Entwickle eine beschriftete GitHub-Idee in eine strukturierte Produkt-Spezifikation.",
@@ -5434,42 +5434,42 @@
         "title": "Wandele Google Meet-Notizen in Asana-Aufgaben um"
       },
       "meeting-recaps-slack": {
-        "description": "Wandeln Sie Meeting-Transkripte in knappe Zusammenfassungen und Aufgabenlisten um.",
-        "scenario": "Entscheidungen bei Meetings werden verloren, wenn das Transkript nie verarbeitet wird. {{assistantName}} liest Google-Meet-Transkripte und schreibt die entscheidenden Entscheidungen, Aufgaben und Verantwortliche in Google-Dokumente.",
+        "description": "Wandeln Sie Meeting-Transkripte in knappe Zusammenfassungen und Aufgabenlisten um.\\n",
+        "scenario": "Entscheidungen bei Meetings werden verloren, wenn das Transkript nie verarbeitet wird. {{assistantName}} liest Google-Meet-Transkripte und schreibt die entscheidenden Entscheidungen, Aufgaben und Verantwortliche in Google-Dokumente.\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}} liest das Transkript und verfügbaren Kalender-Kontext.",
-            "title": "Ein Meet-Transkript erreicht den Server."
+            "description": "{{assistantName}} liest das Transkript und verfügbaren Kalender-Kontext.\\n",
+            "title": "Ein Meet-Transkript erreicht den Server.\\n"
           },
           "three": {
-            "description": "{{assistantName}} schreibt die strukturierte Zusammenfassung in Google-Dokumente.",
-            "title": "Die Zusammenfassung wird gespeichert."
+            "description": "{{assistantName}} schreibt die strukturierte Zusammenfassung in Google-Dokumente.\\n",
+            "title": "Die Zusammenfassung wird gespeichert.\\n"
           },
           "two": {
-            "description": "{{assistantName}} identifiziert Ergebnisse, Verantwortliche, Fälligkeitsdaten und offene Fragen.",
-            "title": "Entscheidungen und Aufgaben werden extrahiert."
+            "description": "{{assistantName}} identifiziert Ergebnisse, Verantwortliche, Fälligkeitsdaten und offene Fragen.\\n",
+            "title": "Entscheidungen und Aufgaben werden extrahiert.\\n"
           }
         },
-        "title": "Speichern Sie Google-Meet-Transkripte in Google-Dokumente."
+        "title": "Speichern Sie Google-Meet-Transkripte in Google-Dokumente.\\n"
       },
       "morning-brief-slack": {
-        "description": "Kombinieren Sie wichtige E-Mails, den heutigen Terminplan und optional Notion-Kontext.",
-        "scenario": "Ein nützlicher Morgenplan erfordert sowohl den Posteingang als auch den Kalender. {{assistantName}} überprüft Gmail und Google-Kalender, fügt Notion-Kontext hinzu, wenn verfügbar, und liefert einen kurzen täglichen Bericht zurück.",
+        "description": "Kombinieren Sie wichtige E-Mails, den heutigen Terminplan und optional Notion-Kontext.\\n",
+        "scenario": "Ein nützlicher Morgenplan erfordert sowohl den Posteingang als auch den Kalender. {{assistantName}} überprüft Gmail und Google-Kalender, fügt Notion-Kontext hinzu, wenn verfügbar, und liefert einen kurzen täglichen Bericht zurück.\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}} liest wichtige E-Mails und den Kalender für den heutigen Tag.",
-            "title": "Heutige Eingaben werden gesammelt."
+            "description": "{{assistantName}} liest wichtige E-Mails und den Kalender für den heutigen Tag.\\n",
+            "title": "Heutige Eingaben werden gesammelt.\\n"
           },
           "three": {
-            "description": "{{assistantName}} erstellt einen konzentrierten Plan im Automatisierungs-Thread.",
-            "title": "Der Bericht wird zurückgegeben."
+            "description": "{{assistantName}} erstellt einen konzentrierten Plan im Automatisierungs-Thread.\\n",
+            "title": "Der Bericht wird zurückgegeben.\\n"
           },
           "two": {
-            "description": "{{assistantName}} identifiziert Verpflichtungen, Vorbereitung und Nachfolge.",
-            "title": "Prioritäten werden verbunden."
+            "description": "{{assistantName}} identifiziert Verpflichtungen, Vorbereitung und Nachfolge.\\n",
+            "title": "Prioritäten werden verbunden.\\n"
           }
         },
-        "title": "Erstellen Sie einen Morgenbericht."
+        "title": "Erstellen Sie einen Morgenbericht.\\n"
       },
       "new-gmail-contacts-hubspot": {
         "description": "Erstelle oder verfeinere CRM-Kontakte aus relevanten E-Mail-Korrespondenzen.",
@@ -5624,23 +5624,23 @@
         "title": "Warnung bei Cloudflare-Ausfällen"
       },
       "research-calendar-meetings": {
-        "description": "Erstellen Sie knappe Zusammenfassungen aus Kalender und E-Mail-Kontext.",
-        "scenario": "Die Vorbereitung auf Termine ist schneller, wenn die Teilnehmer und die Gesprächsgeschichte bereits verbunden sind. {{assistantName}} überprüft kommende Kalender-Einträge und fügt Gmail-Kontext hinzu, wenn verfügbar.",
+        "description": "Erstellen Sie knappe Zusammenfassungen aus Kalender und E-Mail-Kontext.\n",
+        "scenario": "Die Vorbereitung auf Termine ist schneller, wenn die Teilnehmer und die Gesprächsgeschichte bereits verbunden sind. {{assistantName}} überprüft kommende Kalender-Einträge und fügt Gmail-Kontext hinzu, wenn verfügbar.\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}} liest den ausgewählten Google-Kalenderfensterbereich.",
-            "title": "Kommende Termine werden gefunden."
+            "description": "{{assistantName}} liest den ausgewählten Google-Kalenderfensterbereich.\\n",
+            "title": "Kommende Termine werden gefunden.\\n"
           },
           "three": {
-            "description": "{{assistantName}} gibt Ziele, Kontext und vorgeschlagene Fragen zurück.",
-            "title": "Zusammenfassungen werden erstellt."
+            "description": "{{assistantName}} gibt Ziele, Kontext und vorgeschlagene Fragen zurück.\\n",
+            "title": "Zusammenfassungen werden erstellt.\\n"
           },
           "two": {
-            "description": "{{assistantName}} überprüft verwandte Gmail-Threads.",
-            "title": "Kontext für die Teilnehmer wird gesammelt."
+            "description": "{{assistantName}} überprüft verwandte Gmail-Threads.\n",
+            "title": "Kontext für die Teilnehmer wird gesammelt.\\n"
           }
         },
-        "title": "Bereiten Sie auf kommende Termine vor."
+        "title": "Bereiten Sie auf kommende Termine vor.\\n"
       },
       "research-new-signups-apollo": {
         "description": "Creator-Leads auf X finden und qualifizieren.",
@@ -5700,23 +5700,23 @@
         "title": "Wandeln Sie Support-E-Mails in GitHub-Aufgaben um"
       },
       "sort-gmail-draft-replies": {
-        "description": "Bearbeiten Sie neue E-Mails und bereiten Sie Antworten vor, die einem Menschen überlassen werden.",
-        "scenario": "Ein überlasteter Posteingang versteckt dringende Anfragen und einfache Antworten. {{assistantName}} gruppieren neue Gmail-Nachrichten nach Dringlichkeit und Aktion, dann fassen er Entgegnungen ohne deren Versand.",
+        "description": "Bearbeiten Sie neue E-Mails und bereiten Sie Antworten vor, die einem Menschen überlassen werden.\\n",
+        "scenario": "Ein überlasteter Posteingang versteckt dringende Anfragen und einfache Antworten. {{assistantName}} gruppieren neue Gmail-Nachrichten nach Dringlichkeit und Aktion, dann fassen er Entgegnungen ohne deren Versand.\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}} liest den ausgewählten Gmail-Posteingang oder -Label.",
-            "title": "Neue E-Mails werden überprüft."
+            "description": "{{assistantName}} liest den ausgewählten Gmail-Posteingang oder -Label.\\n",
+            "title": "Neue E-Mails werden überprüft.\\n"
           },
           "three": {
-            "description": "{{assistantName}} bereitet Antworten für menschliche Überprüfung vor.",
-            "title": "Entgegnungen werden gefasst."
+            "description": "{{assistantName}} bereitet Antworten für menschliche Überprüfung vor.\\n",
+            "title": "Entgegnungen werden gefasst.\\n"
           },
           "two": {
-            "description": "{{assistantName}} gruppieren E-Mails nach Dringlichkeit, Anfrage und nächste Aktion.",
-            "title": "Nachrichten werden bearbeitet."
+            "description": "{{assistantName}} gruppieren E-Mails nach Dringlichkeit, Anfrage und nächste Aktion.\\n",
+            "title": "Nachrichten werden bearbeitet.\\n"
           }
         },
-        "title": "Sortieren Sie Ihre Gmail-Nachrichten und fassen Sie Entgegnungen vorbereitet."
+        "title": "Sortieren Sie Ihre Gmail-Nachrichten und fassen Sie Entgegnungen vorbereitet.\\n"
       },
       "sort-route-zendesk-tickets": {
         "description": "Klassifizieren Sie Support-E-Mails und erstellen Sie in Linear handlungsfähige Aufgaben.",
@@ -5757,23 +5757,23 @@
         "title": "Erstellen Sie einen täglichen Support-Digest"
       },
       "summarize-gmail-newsletters": {
-        "description": "Wandeln Sie ausgewählte Newsbriefe in einen nützlichen regelmäßig erscheinenden Zusammenfassung ein.",
-        "scenario": "Der Wert von Newsbriefen verliert sich, wenn jede Ausgabe den Posteingang um die Aufmerksamkeit kämpft. {{assistantName}} fasst ausgewählte Gmail-Newsbriefe nach Themen, nützlichen Links und empfohlenen Lesestücken zusammen.",
+        "description": "Wandeln Sie ausgewählte Newsbriefe in einen nützlichen regelmäßig erscheinenden Zusammenfassung ein.\\n",
+        "scenario": "Der Wert von Newsbriefen verliert sich, wenn jede Ausgabe den Posteingang um die Aufmerksamkeit kämpft. {{assistantName}} fasst ausgewählte Gmail-Newsbriefe nach Themen, nützlichen Links und empfohlenen Lesestücken zusammen.\\n",
         "steps": {
           "one": {
-            "description": "{{assistantName}} liest Nachrichten von den ausgewählten Sendern oder dem Label.",
-            "title": "Newsbriefe werden gesammelt."
+            "description": "{{assistantName}} liest Nachrichten von den ausgewählten Sendern oder dem Label.\\n",
+            "title": "Newsbriefe werden gesammelt.\\n"
           },
           "three": {
-            "description": "{{assistantName}} gibt den Zusammenfassung zurück und kann ihn in Notion speichern.",
-            "title": "Der Zusammenfassung wird erstellt."
+            "description": "{{assistantName}} gibt den Zusammenfassung zurück und kann ihn in Notion speichern.\\n",
+            "title": "Der Zusammenfassung wird erstellt.\\n"
           },
           "two": {
-            "description": "{{assistantName}} gruppiert Themen und identifiziert die stärksten Links.",
-            "title": "Nützlicher Inhalt wird distilliert."
+            "description": "{{assistantName}} gruppiert Themen und identifiziert die stärksten Links.\\n",
+            "title": "Nützlicher Inhalt wird distilliert.\\n"
           }
         },
-        "title": "Zusammenfassen Sie Gmail-Newsbriefe."
+        "title": "Zusammenfassen Sie Gmail-Newsbriefe.\\n"
       },
       "summarize-user-feedback-notion": {
         "description": "Gruppieren neuer Formularantworten in rangierte Produkt-Erkenntnisse.",
