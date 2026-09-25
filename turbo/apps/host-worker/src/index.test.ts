@@ -13,12 +13,17 @@ interface TestFile {
   readonly contentType: string;
 }
 
-type PublicBrand = "vm0" | "okou";
+/**
+ * Stored layout segment of pointers and manifests. Omitted segments are the
+ * oldest legacy objects; "vm0" and "okou" are the persisted segment values.
+ */
+type StoredSegment = "vm0" | "okou" | undefined;
 
 interface TestEnvOptions {
   readonly files?: Record<string, TestFile>;
-  readonly publicBrand?: PublicBrand;
-  readonly manifestPublicBrand?: PublicBrand;
+  readonly layout?: "legacy" | "current";
+  readonly pointerSegment?: StoredSegment;
+  readonly manifestSegment?: StoredSegment;
   readonly hostDomain?: string;
   readonly okouHostDomain?: string;
   readonly immutableDeployment?: {
@@ -56,8 +61,22 @@ function byteLength(value: string): number {
 function env(options: TestEnvOptions = {}): WorkerEnv {
   const publicSlug = "demo";
   const deploymentId = "00000000-0000-4000-8000-000000000001";
-  const pointerRoot =
-    options.publicBrand === "okou" ? "sites/brands/okou" : "sites";
+  const current = options.layout === "current";
+  const pointerRoot = current ? "sites/brands/okou" : "sites";
+  const pointerSegment =
+    "pointerSegment" in options
+      ? options.pointerSegment
+      : current
+        ? "okou"
+        : undefined;
+  const manifestSegment =
+    "manifestSegment" in options ? options.manifestSegment : pointerSegment;
+  const pointerLayoutField = pointerSegment
+    ? { publicBrand: pointerSegment }
+    : {};
+  const manifestLayoutField = manifestSegment
+    ? { publicBrand: manifestSegment }
+    : {};
   const prefix = `sites/${publicSlug}/deployments/${deploymentId}`;
   const manifestKey = `${prefix}/manifest.json`;
   const files: Record<string, TestFile> = {
@@ -91,7 +110,7 @@ function env(options: TestEnvOptions = {}): WorkerEnv {
       objectBody(
         JSON.stringify({
           version: 1,
-          ...(options.publicBrand ? { publicBrand: options.publicBrand } : {}),
+          ...pointerLayoutField,
           publicSlug,
           siteId: "site_1",
           deploymentId,
@@ -107,11 +126,7 @@ function env(options: TestEnvOptions = {}): WorkerEnv {
       objectBody(
         JSON.stringify({
           version: 1,
-          ...((options.manifestPublicBrand ?? options.publicBrand)
-            ? {
-                publicBrand: options.manifestPublicBrand ?? options.publicBrand,
-              }
-            : {}),
+          ...manifestLayoutField,
           deploymentId,
           siteId: "site_1",
           publicSlug,
@@ -133,13 +148,13 @@ function env(options: TestEnvOptions = {}): WorkerEnv {
       objectBody(
         JSON.stringify({
           version: 1,
-          ...(options.publicBrand ? { publicBrand: options.publicBrand } : {}),
+          ...pointerLayoutField,
           publicSlug,
           siteId: "site_1",
           deploymentId: immutable.deploymentId,
           deploymentVersion: 1,
           artifactUrl: `https://dpl-${immutable.deploymentId}.${
-            options.publicBrand === "okou" ? "okou.app" : "sites.vm0.io"
+            current ? "okou.app" : "sites.vm0.io"
           }`,
           prefix: immutablePrefix,
           manifestKey: immutableManifestKey,
@@ -153,11 +168,7 @@ function env(options: TestEnvOptions = {}): WorkerEnv {
       objectBody(
         JSON.stringify({
           version: 1,
-          ...((options.manifestPublicBrand ?? options.publicBrand)
-            ? {
-                publicBrand: options.manifestPublicBrand ?? options.publicBrand,
-              }
-            : {}),
+          ...manifestLayoutField,
           deploymentId: immutable.deploymentId,
           deploymentVersion: 1,
           siteId: "site_1",
@@ -256,7 +267,17 @@ describe("hosted site worker", () => {
     expect(response.headers.get("X-Robots-Tag")).toBe("noindex");
   });
 
-  it("does not expose legacy unbranded sites on the Okou domain", async () => {
+  it("serves legacy objects that record the legacy layout segment", async () => {
+    const response = await fetchWorker(
+      new Request("https://demo.sites.vm0.io/"),
+      env({ pointerSegment: "vm0" }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("<!doctype html>ok");
+  });
+
+  it("does not expose legacy-layout sites on the current host", async () => {
     const response = await fetchWorker(
       new Request("https://demo.okou.app/"),
       env(),
@@ -265,37 +286,44 @@ describe("hosted site worker", () => {
     expect(response.status).toBe(404);
   });
 
-  it("serves Okou pointers only on the Okou domain", async () => {
-    const workerEnv = env({ publicBrand: "okou" });
+  it("serves current-layout pointers only on the current host", async () => {
+    const workerEnv = env({ layout: "current" });
 
-    const okouResponse = await fetchWorker(
+    const currentResponse = await fetchWorker(
       new Request("https://demo.okou.app/"),
       workerEnv,
     );
-    const vm0Response = await fetchWorker(
+    const legacyResponse = await fetchWorker(
       new Request("https://demo.sites.vm0.io/"),
       workerEnv,
     );
 
-    expect(okouResponse.status).toBe(200);
-    expect(await okouResponse.text()).toBe("<!doctype html>ok");
-    expect(vm0Response.status).toBe(404);
+    expect(currentResponse.status).toBe(200);
+    expect(await currentResponse.text()).toBe("<!doctype html>ok");
+    expect(legacyResponse.status).toBe(404);
   });
 
-  it("rejects a manifest whose brand disagrees with its pointer", async () => {
-    const response = await fetchWorker(
-      new Request("https://demo.okou.app/"),
-      env({ publicBrand: "okou", manifestPublicBrand: "vm0" }),
-    );
+  it.each([
+    { layout: "current", manifestSegment: "vm0", host: "demo.okou.app" },
+    { layout: "current", manifestSegment: undefined, host: "demo.okou.app" },
+    { layout: "legacy", manifestSegment: "okou", host: "demo.sites.vm0.io" },
+  ] as const)(
+    "rejects a manifest whose stored layout disagrees with its pointer: %j",
+    async ({ layout, manifestSegment, host }) => {
+      const response = await fetchWorker(
+        new Request(`https://${host}/`),
+        env({ layout, manifestSegment }),
+      );
 
-    expect(response.status).toBe(404);
-  });
+      expect(response.status).toBe(404);
+    },
+  );
 
-  it("allows branded pointers on the shared preview host", async () => {
+  it("resolves current-layout pointers when both layouts share one host domain", async () => {
     const response = await fetchWorker(
       new Request("https://demo.sites.vm7.io/"),
       env({
-        publicBrand: "okou",
+        layout: "current",
         hostDomain: "sites.vm7.io",
         okouHostDomain: "sites.vm7.io",
       }),
@@ -396,27 +424,27 @@ describe("hosted site worker", () => {
     expect(await aliasResponse.text()).toBe("<!doctype html>ok");
   });
 
-  it("serves immutable Okou deployments only on the Okou domain", async () => {
+  it("serves current-layout immutable deployments only on the current host", async () => {
     const immutableDeploymentId = "00000000-0000-4000-8000-000000000003";
     const workerEnv = env({
-      publicBrand: "okou",
+      layout: "current",
       immutableDeployment: {
         deploymentId: immutableDeploymentId,
-        body: "<!doctype html>okou version",
+        body: "<!doctype html>current version",
       },
     });
 
-    const okouResponse = await fetchWorker(
+    const currentResponse = await fetchWorker(
       new Request(`https://dpl-${immutableDeploymentId}.okou.app/`),
       workerEnv,
     );
-    const vm0Response = await fetchWorker(
+    const legacyResponse = await fetchWorker(
       new Request(`https://dpl-${immutableDeploymentId}.sites.vm0.io/`),
       workerEnv,
     );
 
-    expect(okouResponse.status).toBe(200);
-    expect(await okouResponse.text()).toBe("<!doctype html>okou version");
-    expect(vm0Response.status).toBe(404);
+    expect(currentResponse.status).toBe(200);
+    expect(await currentResponse.text()).toBe("<!doctype html>current version");
+    expect(legacyResponse.status).toBe(404);
   });
 });
