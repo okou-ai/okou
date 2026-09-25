@@ -518,6 +518,24 @@ async function recordDelivered(
   return await currentDeliveryResult(db, identity, signal);
 }
 
+/** A replay may wait for Discord's deadline only inside its nonce window. */
+function replayRetryFitsWindow(
+  row: DiscordDeliveryRow,
+  status: number,
+  retry: DiscordDeliveryRetry,
+): boolean {
+  if (status !== 429) {
+    return false;
+  }
+  if (retry.retryNotBeforeMs === undefined) {
+    return true;
+  }
+  return (
+    retry.retryNotBeforeMs <
+    now() - attemptAgeMs(row) + DISCORD_NONCE_REPLAY_WINDOW_MS
+  );
+}
+
 function attemptAgeMs(row: DiscordDeliveryRow): number {
   const attempt = row.providerState.attempt;
   if (!attempt) {
@@ -643,7 +661,7 @@ const sendDiscordFile$ = command(
     if (mode.replay && failure.retry.safeToRetrySend) {
       // A rejected replay cannot prove the original send failed. Rate limits
       // may be replayed again inside the nonce window; other rejections end it.
-      return sent.value.status === 429
+      return replayRetryFitsWindow(attemptRow, sent.value.status, failure.retry)
         ? await markFailed(
             db,
             operation,
