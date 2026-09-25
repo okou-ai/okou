@@ -123,6 +123,43 @@ export async function touchChatThreadLastMessageAtIndependently(
   eventId?: string,
   authorizedScope?: AuthorizedChatThreadTouchScope,
 ): Promise<void> {
+  await touchChatThreadIndependently(tx, threadId, {
+    touchedAt,
+    eventId,
+    authorizedScope,
+    unarchive: false,
+  });
+}
+
+/**
+ * Touch for a completed or failed run's terminal marker. That marker makes the
+ * thread unread, so an archived thread also returns to the default sidebar
+ * list. Cancellation is user-initiated and must not use this.
+ */
+export async function touchChatThreadForUnreadRunFinishIndependently(
+  tx: Db,
+  threadId: string,
+  touchedAt: Date = nowDate(),
+): Promise<void> {
+  await touchChatThreadIndependently(tx, threadId, {
+    touchedAt,
+    eventId: undefined,
+    authorizedScope: undefined,
+    unarchive: true,
+  });
+}
+
+async function touchChatThreadIndependently(
+  tx: Db,
+  threadId: string,
+  options: {
+    readonly touchedAt: Date;
+    readonly eventId: string | undefined;
+    readonly authorizedScope: AuthorizedChatThreadTouchScope | undefined;
+    readonly unarchive: boolean;
+  },
+): Promise<void> {
+  const { touchedAt, eventId, authorizedScope } = options;
   // Resolve identity before either independent write. Failure of the weak
   // timestamp update must not suppress the separate ordering event attempt.
   const [thread] = await tx
@@ -130,6 +167,7 @@ export async function touchChatThreadLastMessageAtIndependently(
       id: chatThreads.id,
       userId: chatThreads.userId,
       agentId: chatThreads.agentId,
+      archived: chatThreads.archived,
     })
     .from(chatThreads)
     .where(
@@ -149,18 +187,26 @@ export async function touchChatThreadLastMessageAtIndependently(
     return;
   }
   const agentId = thread.agentId;
+  // The flag rides on the same single-row UPDATE; `archived` is not indexed.
+  // A concurrent re-archive between the read and this write loses, which is
+  // acceptable for a best-effort sidebar state.
+  const unarchive = options.unarchive && thread.archived;
+  let unarchived = false;
   await attemptChatEventSideEffect("last_message_at", threadId, async () => {
-    await tx
+    const updated = await tx
       .update(chatThreads)
       .set({
         lastMessageAt: sql`GREATEST(${chatThreads.lastMessageAt}, ${touchedAt.toISOString()}::timestamp)`,
+        ...(unarchive ? { archived: false } : {}),
       })
       .where(
         and(
           eq(chatThreads.id, threadId),
           eq(chatThreads.userId, thread.userId),
         ),
-      );
+      )
+      .returning({ id: chatThreads.id });
+    unarchived = unarchive && updated.length > 0;
   });
   await attemptChatEventSideEffect("sort_touched", threadId, async () => {
     await appendChatThreadEvent(tx, {
@@ -171,6 +217,17 @@ export async function touchChatThreadLastMessageAtIndependently(
       agentId,
       eventId,
       createdAt: touchedAt,
+    });
+  });
+  if (!unarchived) {
+    return;
+  }
+  await attemptChatEventSideEffect("unarchived", threadId, async () => {
+    await appendChatThreadEvent(tx, {
+      kind: "unarchived",
+      userId: thread.userId,
+      chatThreadId: threadId,
+      agentId,
     });
   });
 }
