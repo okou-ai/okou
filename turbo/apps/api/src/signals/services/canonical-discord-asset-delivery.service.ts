@@ -416,17 +416,13 @@ const unconfirmedDeliveryError: CanonicalAssetDeliveryError = Object.freeze({
  */
 const DISCORD_NONCE_REPLAY_WINDOW_MS = 60_000;
 
-/** Used when Discord's 429 carries no usable delay, e.g. an invalid body. */
+/** Used when Discord's 429 body carries no valid delay, e.g. an HTML error page. */
 const DISCORD_FALLBACK_RETRY_DELAY_MS = 5000;
 /** Upper bound so an extreme delay cannot block a retryable operation forever. */
 const DISCORD_MAX_RETRY_DELAY_MS = 15 * 60_000;
 
 function discordRetryDelayMs(retryAfterMs: number | undefined): number {
-  if (
-    retryAfterMs === undefined ||
-    !Number.isFinite(retryAfterMs) ||
-    retryAfterMs < 0
-  ) {
+  if (retryAfterMs === undefined) {
     return DISCORD_FALLBACK_RETRY_DELAY_MS;
   }
   return Math.min(Math.ceil(retryAfterMs), DISCORD_MAX_RETRY_DELAY_MS);
