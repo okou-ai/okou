@@ -1035,7 +1035,7 @@ describe("canonical Discord ingress", () => {
     await expect(discordChatThreads(context, second)).resolves.toHaveLength(1);
   });
 
-  it("tells an unconnected DM sender how to connect at most once an hour", async () => {
+  it("tells an unconnected DM sender how to connect about once an hour", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
     const stranger = uniqueDiscordSnowflake();
@@ -1073,8 +1073,32 @@ describe("canonical Discord ingress", () => {
     await postDiscordMessage(context, strangerDm("are you there?"));
     await flushWaitUntilForTest();
     expect(noticesTo(dmId)).toHaveLength(1);
+    // Past Discord's nonce window, the notice already in the DM still counts.
+    mockNow(now() + 10 * 60 * 1000);
+    await postDiscordMessage(context, strangerDm("still nothing?"));
+    await flushWaitUntilForTest();
+    expect(noticesTo(dmId)).toHaveLength(1);
+    // An hour after that notice, two racing DMs both find none and still
+    // produce one new notice.
     mockNow(now() + 60 * 60 * 1000);
+    const secondRead = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      if (!secondRead.settled()) {
+        secondRead.resolve(undefined);
+      }
+    });
+    let historyReads = 0;
+    provider.state.historyResponse = async () => {
+      historyReads += 1;
+      if (historyReads === 1) {
+        await secondRead.promise;
+      } else {
+        secondRead.resolve(undefined);
+      }
+      return undefined;
+    };
     await postDiscordMessage(context, strangerDm("trying again later"));
+    await postDiscordMessage(context, strangerDm("and once more"));
     await flushWaitUntilForTest();
     expect(noticesTo(dmId)).toHaveLength(2);
     await expect(discordChatThreads(context, actor)).resolves.toHaveLength(0);

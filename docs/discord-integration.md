@@ -144,9 +144,10 @@ Discord authorization source. See C's
    blocked by privacy settings or read as spam. `/okou connect` gives the same
    guidance privately. A bot DM from an unconnected sender gets setup guidance,
    and a DM from a sender with several connections and no saved choice gets
-   `/okou org` guidance, each at most once per sender in any hour. The bot's own
-   earlier notice in that DM is the rate-limit record, so Okou stores nothing
-   about unconnected senders. A sender whose connection exists but no longer
+   `/okou org` guidance, each about once an hour. The bot's own earlier notice
+   among the DM's latest 50 messages is the rate-limit record, and a shared
+   enforced nonce collapses concurrent notices, so Okou stores nothing about
+   unconnected senders. A sender whose connection exists but no longer
    verifies (for example, while the feature is off for that org) gets no notice.
 
 OAuth deferral and disabled rollout are project scope limits, not unavoidable
