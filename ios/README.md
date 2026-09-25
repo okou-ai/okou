@@ -12,8 +12,8 @@ retrying uncertain sends, and stopping work. Its home screen follows the mobile
 web agent-chat structure with an agent avatar, greeting, and composer; focusing
 the compact composer animates it into a multiline field. The ChatGPT-style
 sliding sidebar contains pinned agents and recent chats scoped to the selected
-agent, with search and a bottom new-chat action. Its settings menu provides
-workspace switching and account actions. Native list actions support pinning,
+agent, with workspace switching at the top and a bottom new-chat action. Its
+settings menu provides account actions. Native list actions support pinning,
 archiving, and renaming chats; archive controls follow the existing
 `chatThreadArchiving` feature switch. Opening a new chat is local and immediate;
 the thread is created when the first message is sent. New chats use the selected

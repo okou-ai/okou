@@ -8,30 +8,16 @@ struct ChatSidebarView: View {
   let close: () -> Void
   let newChat: (String?) -> Void
 
-  @State private var isSearching = false
-  @State private var searchText = ""
   @State private var showArchived = false
   @State private var renamingThread: ChatThread?
   @State private var renameTitle = ""
-  @FocusState private var searchFocused: Bool
 
   private var workspaceName: String {
     authentication.workspaces.first(where: { $0.id == workspaceID })?.name ?? "Workspace"
   }
 
-  private var matchingThreads: [ChatThread] {
-    let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-    if !query.isEmpty {
-      return store.threads.filter { $0.displayTitle.localizedStandardContains(query) }
-    }
-    return store.threads.filter { $0.agentID == store.selectedAgentID }
-  }
-
   private var visibleThreads: [ChatThread] {
-    if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      return matchingThreads
-    }
-    return matchingThreads.filter { $0.isArchived == showArchived }
+    store.threads.filter { $0.agentID == store.selectedAgentID && $0.isArchived == showArchived }
   }
 
   var body: some View {
@@ -40,22 +26,6 @@ struct ChatSidebarView: View {
         .padding(.horizontal, 24)
         .padding(.top, 14)
         .padding(.bottom, 22)
-
-      if isSearching {
-        HStack(spacing: 10) {
-          Image(systemName: "magnifyingglass")
-            .foregroundStyle(.secondary)
-          TextField("Search chats", text: $searchText)
-            .focused($searchFocused)
-            .autocorrectionDisabled()
-            .textInputAutocapitalization(.never)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 42)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 13))
-        .padding(.horizontal, 16)
-        .padding(.bottom, 12)
-      }
 
       List {
         pinnedAgentsSection
@@ -76,11 +46,7 @@ struct ChatSidebarView: View {
             .frame(maxWidth: .infinity)
         } else {
           threadSection
-          if !searchText.isEmpty && visibleThreads.isEmpty {
-            Text("No matching chats")
-              .font(.subheadline)
-              .foregroundStyle(.secondary)
-          } else if visibleThreads.isEmpty && store.error == nil {
+          if visibleThreads.isEmpty && store.error == nil {
             Text("Your conversations will appear here.")
               .font(.subheadline)
               .foregroundStyle(.secondary)
@@ -93,8 +59,6 @@ struct ChatSidebarView: View {
       .environment(\.defaultMinListRowHeight, 0)
       .environment(\.defaultMinListHeaderHeight, 0)
       .scrollContentBackground(.hidden)
-      .scrollDismissesKeyboard(.interactively)
-
       footer
     }
     .background(Color(uiColor: .systemBackground))
@@ -118,21 +82,9 @@ struct ChatSidebarView: View {
   }
 
   private var header: some View {
-    HStack {
-      Text("Okou")
-        .font(.system(size: 24, weight: .semibold))
-      Spacer(minLength: 0)
-      Button {
-        withAnimation(.easeInOut(duration: 0.2)) { isSearching.toggle() }
-        if isSearching { searchFocused = true } else { searchText = "" }
-      } label: {
-        Image(systemName: isSearching ? "xmark" : "magnifyingglass")
-          .font(.system(size: 20, weight: .medium))
-          .frame(width: 32, height: 32)
-      }
-      .buttonStyle(.glass)
-      .accessibilityLabel(isSearching ? "Close search" : "Search chats")
-    }
+    workspaceSwitcher
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .frame(height: 44)
   }
 
   private var workspaceSwitcher: some View {
@@ -153,8 +105,18 @@ struct ChatSidebarView: View {
         }
       }
     } label: {
-      Label(workspaceName, systemImage: "building.2")
+      HStack(spacing: 9) {
+        Text(workspaceName)
+          .font(.system(size: 22, weight: .semibold))
+          .lineLimit(1)
+        Image(systemName: "chevron.down")
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundStyle(.secondary)
+      }
+      .contentShape(Rectangle())
     }
+    .buttonStyle(.plain)
+    .disabled(authentication.isSwitchingWorkspace || authentication.workspaces.isEmpty)
     .accessibilityLabel("Workspace: \(workspaceName)")
   }
 
@@ -262,13 +224,9 @@ struct ChatSidebarView: View {
         }
       }
     } header: {
-      Text(
-        searchText.isEmpty
-          ? (showArchived ? "Archived" : "Recent")
-          : "Search results"
-      )
-      .lineLimit(1)
-      .textCase(nil)
+      Text(showArchived ? "Archived" : "Recent")
+        .lineLimit(1)
+        .textCase(nil)
     }
   }
 
@@ -288,7 +246,6 @@ struct ChatSidebarView: View {
       .accessibilityIdentifier("new-chat")
       Spacer()
       Menu {
-        workspaceSwitcher
         if store.canArchiveChats {
           Button(
             showArchived ? "Show recent chats" : "Show archived chats", systemImage: "archivebox"
