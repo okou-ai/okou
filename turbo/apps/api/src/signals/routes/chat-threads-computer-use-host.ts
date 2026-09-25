@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { and, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { chatThreadComputerUseHostContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
@@ -10,8 +10,7 @@ import { writeDb$, type Db } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import { badRequestMessage, notFound } from "../../lib/error";
-import { appendChatThreadEvent } from "../services/chat-thread-event.service";
-import { chatThreadOrganizationCondition } from "../services/chat-thread-organization.service";
+import { updateOwnedChatThreadWithEvent } from "../services/chat-thread-owned-update.service";
 import type { RouteEntry } from "../route-entry";
 
 async function threadExists(params: {
@@ -102,49 +101,30 @@ const updateComputerUseHostInner$ = command(
       signal.throwIfAborted();
     }
 
-    const updated = await db.transaction(async (tx) => {
-      const updatedAt = nowDate();
-      const cloudBrowserEnabled =
-        hostId !== null ? false : body.data.cloudBrowserEnabled;
-      const [thread] = await tx
-        .update(chatThreads)
-        .set({
-          computerUseHostId: hostId,
-          ...(cloudBrowserEnabled === undefined ? {} : { cloudBrowserEnabled }),
-          updatedAt,
-        })
-        .where(
-          and(
-            eq(chatThreads.id, params.id),
-            eq(chatThreads.userId, auth.userId),
-            chatThreadOrganizationCondition(tx, auth.orgId),
-            isNotNull(chatThreads.agentId),
-          ),
-        )
-        .returning({
-          id: chatThreads.id,
-          agentId: chatThreads.agentId,
-          cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-        });
-      if (!thread?.agentId) {
-        return false;
-      }
-      await appendChatThreadEvent(tx, {
-        kind: "computer_use_host_updated",
-        userId: auth.userId,
-        orgId: auth.orgId,
-        chatThreadId: thread.id,
-        agentId: thread.agentId,
-        eventId: body.data.eventId,
+    const updatedAt = nowDate();
+    const cloudBrowserEnabled =
+      hostId !== null ? false : body.data.cloudBrowserEnabled;
+    const written = await updateOwnedChatThreadWithEvent(db, {
+      userId: auth.userId,
+      orgId: auth.orgId,
+      threadId: params.id,
+      set: {
         computerUseHostId: hostId,
-        cloudBrowserEnabled: thread.cloudBrowserEnabled,
-        createdAt: updatedAt,
-      });
-      return true;
+        ...(cloudBrowserEnabled === undefined ? {} : { cloudBrowserEnabled }),
+        updatedAt,
+      },
+      event: (thread) => {
+        return {
+          kind: "computer_use_host_updated",
+          eventId: body.data.eventId,
+          computerUseHostId: hostId,
+          cloudBrowserEnabled: thread.cloudBrowserEnabled,
+          createdAt: updatedAt,
+        };
+      },
     });
     signal.throwIfAborted();
-
-    if (!updated) {
+    if (!written) {
       return notFound("Chat thread not found");
     }
 

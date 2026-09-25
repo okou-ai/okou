@@ -1,9 +1,7 @@
 import { command } from "ccstate";
-import { and, eq, isNotNull } from "drizzle-orm";
 import { chatThreadArchiveContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -11,8 +9,7 @@ import { pathParamsOf, queryOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
 import { notFound } from "../../lib/error";
-import { appendChatThreadEvent } from "../services/chat-thread-event.service";
-import { chatThreadOrganizationCondition } from "../services/chat-thread-organization.service";
+import { updateOwnedChatThreadWithEvent } from "../services/chat-thread-owned-update.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -29,36 +26,17 @@ async function writeChatThreadArchived(
     readonly eventId: string | undefined;
   },
 ): Promise<boolean> {
-  // Repeating the request still appends an event so optimistic client events
-  // settle.
-  return await writeDb.transaction(async (tx) => {
-    const [thread] = await tx
-      .update(chatThreads)
-      .set({ archived: args.archived })
-      .where(
-        and(
-          eq(chatThreads.id, args.threadId),
-          eq(chatThreads.userId, args.userId),
-          chatThreadOrganizationCondition(tx, args.orgId),
-          isNotNull(chatThreads.agentId),
-        ),
-      )
-      .returning({
-        id: chatThreads.id,
-        agentId: chatThreads.agentId,
-      });
-    if (!thread?.agentId) {
-      return false;
-    }
-    await appendChatThreadEvent(tx, {
-      kind: args.archived ? "archived" : "unarchived",
-      userId: args.userId,
-      orgId: args.orgId,
-      chatThreadId: thread.id,
-      agentId: thread.agentId,
-      eventId: args.eventId,
-    });
-    return true;
+  return await updateOwnedChatThreadWithEvent(writeDb, {
+    userId: args.userId,
+    orgId: args.orgId,
+    threadId: args.threadId,
+    set: { archived: args.archived },
+    event: () => {
+      return {
+        kind: args.archived ? "archived" : "unarchived",
+        eventId: args.eventId,
+      };
+    },
   });
 }
 

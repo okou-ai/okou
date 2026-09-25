@@ -1,7 +1,5 @@
 import { command } from "ccstate";
-import { and, eq, isNotNull } from "drizzle-orm";
 import { chatThreadImageModelContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -10,8 +8,7 @@ import { writeDb$ } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import { notFound } from "../../lib/error";
-import { appendChatThreadEvent } from "../services/chat-thread-event.service";
-import { chatThreadOrganizationCondition } from "../services/chat-thread-organization.service";
+import { updateOwnedChatThreadWithEvent } from "../services/chat-thread-owned-update.service";
 import type { RouteEntry } from "../route-entry";
 
 const imageModelBody$ = bodyResultOf(chatThreadImageModelContract.update);
@@ -28,41 +25,23 @@ const updateImageModelInner$ = command(
 
     const writeDb = set(writeDb$);
     const selectedImageModel = body.data.model;
-    const updated = await writeDb.transaction(async (tx) => {
-      const updatedAt = nowDate();
-      const [thread] = await tx
-        .update(chatThreads)
-        .set({ selectedImageModel, updatedAt })
-        .where(
-          and(
-            eq(chatThreads.id, params.id),
-            eq(chatThreads.userId, auth.userId),
-            chatThreadOrganizationCondition(tx, auth.orgId),
-            isNotNull(chatThreads.agentId),
-          ),
-        )
-        .returning({
-          id: chatThreads.id,
-          agentId: chatThreads.agentId,
-        });
-      if (!thread?.agentId) {
-        return false;
-      }
-      await appendChatThreadEvent(tx, {
-        kind: "image_model_updated",
-        userId: auth.userId,
-        orgId: auth.orgId,
-        chatThreadId: thread.id,
-        agentId: thread.agentId,
-        eventId: body.data.eventId,
-        selectedImageModel,
-        createdAt: updatedAt,
-      });
-      return true;
+    const updatedAt = nowDate();
+    const written = await updateOwnedChatThreadWithEvent(writeDb, {
+      userId: auth.userId,
+      orgId: auth.orgId,
+      threadId: params.id,
+      set: { selectedImageModel, updatedAt },
+      event: () => {
+        return {
+          kind: "image_model_updated",
+          eventId: body.data.eventId,
+          selectedImageModel,
+          createdAt: updatedAt,
+        };
+      },
     });
     signal.throwIfAborted();
-
-    if (!updated) {
+    if (!written) {
       return notFound("Chat thread not found");
     }
 
