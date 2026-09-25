@@ -787,7 +787,15 @@ describe("thread activity summary", () => {
         status: "ineligible",
         messages: [],
       });
-      await accept(request(f.actor, f.run), [404]);
+      const fresh = await accept(
+        request(f.actor, f.run),
+        kind === "user" ? [401] : [404],
+      );
+      if (kind === "user") {
+        expect(fresh.body).toMatchObject({
+          error: { code: "UNAUTHORIZED" },
+        });
+      }
       await expect(
         readRunActivityBookkeepingFixture(f.run.runId),
       ).resolves.toBeUndefined();
