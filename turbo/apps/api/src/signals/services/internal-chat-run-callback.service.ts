@@ -5131,8 +5131,17 @@ async function finishTerminalChatCallbackAfterProjection(
   );
 
   if (!drainResult.ok) {
-    throw drainResult.error;
+    // Queue wakeups keep their established detached recovery owner: the stale
+    // queue sweep. A queued-input invariant failure repeats on every attempt,
+    // so rethrowing would fail the completion ACK and retry the callback
+    // forever while blocking automation admission below.
+    log.error("Failed to drain chat thread queue after terminal callback", {
+      runId: args.runId,
+      chatThreadId: args.chatThread.chatThreadId,
+      error: drainResult.error,
+    });
   }
+  signal.throwIfAborted();
 
   // A committed marker must not acknowledge an unfinished automation. Throw
   // back to the existing callback owner so its failed/pending row can retry.

@@ -22,6 +22,7 @@ import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
+import { withSplitChatEventDatabase } from "../../../test-fixtures/chat-terminal-retry";
 import {
   readChatEventContextFixture,
   readRunUsageEventsFixture,
@@ -2345,7 +2346,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(context.mocks.slack.conversations.replies).toHaveBeenCalledOnce();
   });
 
-  it("keeps permanent Slack failures terminal across provider retries", async () => {
+  async function expectPermanentSlackFailureTerminal(): Promise<void> {
     const scenario = await prepareCanonicalSlackContextFailureScenario();
     context.mocks.slack.conversations.replies.mockRejectedValue(
       slackPlatformError("invalid_auth"),
@@ -2365,7 +2366,21 @@ describe("INT-01: Slack app deep webhook flows", () => {
       lastError: "Slack platform error: invalid_auth",
     });
     expect(context.mocks.slack.conversations.replies).toHaveBeenCalledOnce();
+  }
+
+  it("keeps permanent Slack failures terminal across provider retries", async () => {
+    expect.hasAssertions();
+    await expectPermanentSlackFailureTerminal();
   });
+
+  it(
+    "keeps permanent Slack failures terminal after split write activation",
+    { timeout: 120_000 },
+    async () => {
+      expect.hasAssertions();
+      await withSplitChatEventDatabase(expectPermanentSlackFailureTerminal);
+    },
+  );
 
   it("bounds explicitly retryable Slack failures with backoff", async () => {
     const scenario = await prepareCanonicalSlackContextFailureScenario();
