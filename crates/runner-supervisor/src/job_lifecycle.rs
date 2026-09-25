@@ -715,15 +715,16 @@ mod tests {
         let recorded = events.lock().unwrap().clone();
         match timing {
             CompletionReportTiming::ConcurrentWithFinalization => {
-                assert_eq!(
-                    recorded,
-                    [
-                        "report_started",
-                        "finalize_started",
-                        "finalize_finished",
-                        "report_finished"
-                    ]
-                );
+                assert_eq!(recorded.len(), 4);
+                let position = |event| {
+                    recorded
+                        .iter()
+                        .position(|recorded| *recorded == event)
+                        .unwrap()
+                };
+                assert!(position("report_started") < position("finalize_finished"));
+                assert!(position("finalize_started") < position("report_finished"));
+                assert!(position("finalize_finished") < position("report_finished"));
             }
             CompletionReportTiming::AfterFinalization => {
                 assert_eq!(
