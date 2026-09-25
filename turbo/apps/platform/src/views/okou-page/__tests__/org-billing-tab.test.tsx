@@ -3560,7 +3560,9 @@ test("Confirm a plan cancellation in hosted checkout when required", async () =>
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, activeProBillingStatus());
   });
-  context.mocks.api(billingDowngradeContract.create, ({ respond }) => {
+  let downgradeReturnUrl: string | undefined;
+  context.mocks.api(billingDowngradeContract.create, ({ body, respond }) => {
+    downgradeReturnUrl = body.returnUrl;
     return respond(200, {
       status: "payment_method_required",
       checkoutUrl: "https://checkout.stripe.com/confirm-cancel-subscription",
@@ -3585,7 +3587,43 @@ test("Confirm a plan cancellation in hosted checkout when required", async () =>
       "https://checkout.stripe.com/confirm-cancel-subscription",
     ]);
   });
+  expect(
+    new URL(downgradeReturnUrl ?? "").searchParams.get("billing_pending"),
+  ).toBe("downgrade-limited-free-1");
   expect(screen.queryByText("Downgrade plan")).not.toBeInTheDocument();
+});
+
+test("Confirm a scheduled cancellation after returning from hosted payment", async () => {
+  context.mocks.data.org({
+    id: "org_1",
+    name: "Cancellation Return Org",
+    role: "admin",
+  });
+  context.mocks.api(billingStatusContract.get, ({ respond }) => {
+    return respond(200, {
+      ...activeProBillingStatus(),
+      cancelAtPeriodEnd: true,
+      canRestorePlan: true,
+      scheduledChange: {
+        type: "cancel",
+        targetTier: "limited-free-1",
+        effectiveDate: "2026-04-01T00:00:00Z",
+      },
+    });
+  });
+
+  await openBillingTab(
+    "/?settings=billing&billing_pending=downgrade-limited-free-1",
+  );
+
+  await expect(
+    screen.findByText(
+      /^Cancellation scheduled\. Your current plan stays active until/u,
+    ),
+  ).resolves.toBeInTheDocument();
+  const searchParams = new URLSearchParams(window.location.search);
+  expect(searchParams.get("settings")).toBe("billing");
+  expect(searchParams.has("billing_pending")).toBeFalsy();
 });
 
 test("Restore a plan after hosted payment confirmation", async () => {
