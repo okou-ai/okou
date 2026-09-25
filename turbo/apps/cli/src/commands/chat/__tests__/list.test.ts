@@ -50,6 +50,7 @@ function snapshotThread(options: {
   readonly archived?: boolean;
 }) {
   return {
+    archived: false,
     ...options,
     createdAt: options.sortAt,
     updatedAt: options.sortAt,

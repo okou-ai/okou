@@ -37,12 +37,12 @@ removal gates:
   #36320.
 
 The API no longer reads the legacy `chat_threads` JSONB. A row without an
-object key is now an error. The App SharedWorker and CLI accept only the R2
-URL response, plus the empty
-`{ chatThreads: [], latestEventId: null, latestSeqId: null }` shape. That
-empty shape is a permanent response for a scope that has no snapshot row. It is
-not a fallback: every deployed client and every API at or above the rollback
-floor uses the same shape. Both clients reject any non-empty inline body.
+object key is now an error. A scope without a snapshot row returns the
+permanent empty `{ chatThreads: [], latestEventId: null, latestSeqId: null }`
+shape. The App SharedWorker and CLI keep handling the inline contract variant,
+because the contract still carries it for iOS (below). They send the header,
+so current and rollback-window APIs return them an R2 URL whenever a row
+exists.
 
 One fallback remains. The native iOS TestFlight client (0.2.x) reads only
 inline `chatThreads`. It sends neither `X-Chat-Thread-Snapshot-R2` nor a client
