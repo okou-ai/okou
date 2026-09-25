@@ -32,10 +32,7 @@ import {
   resolveIntegrationModelRouteForUser$,
   type IntegrationModelRoutePin,
 } from "./integration-model-route.service";
-import {
-  dispatchDiscordChatDeliveryOnce,
-  enqueueDiscordIngressFailure,
-} from "./internal-discord-chat-run-callback.service";
+import { sendDiscordIngressNotice } from "./internal-discord-chat-run-callback.service";
 
 function requireDiscordResult<T>(result: DiscordApiResult<T>): T {
   if (result.kind === "ok") {
@@ -131,41 +128,28 @@ async function terminalIngress(
     readonly ingressId: string;
     readonly claimToken: string;
     readonly reason: string;
-    readonly notice?: {
-      readonly connectionId: string;
-      readonly channelId: string;
-      readonly content: string;
-    };
   },
-): Promise<string | null> {
-  return await db.transaction(async (tx) => {
-    const [updated] = await tx
-      .update(discordChatIngress)
-      .set({
-        status: "terminal",
-        claimToken: null,
-        claimedAt: null,
-        retryAt: null,
-        lastErrorClass: args.reason,
-        lastError: null,
-        updatedAt: nowDate(),
-      })
-      .where(
-        and(
-          eq(discordChatIngress.id, args.ingressId),
-          eq(discordChatIngress.claimToken, args.claimToken),
-          eq(discordChatIngress.status, "processing"),
-        ),
-      )
-      .returning({ id: discordChatIngress.id });
-    if (updated && args.notice) {
-      return await enqueueDiscordIngressFailure(tx, {
-        ingressId: args.ingressId,
-        ...args.notice,
-      });
-    }
-    return null;
-  });
+): Promise<boolean> {
+  const [updated] = await db
+    .update(discordChatIngress)
+    .set({
+      status: "terminal",
+      claimToken: null,
+      claimedAt: null,
+      retryAt: null,
+      lastErrorClass: args.reason,
+      lastError: null,
+      updatedAt: nowDate(),
+    })
+    .where(
+      and(
+        eq(discordChatIngress.id, args.ingressId),
+        eq(discordChatIngress.claimToken, args.claimToken),
+        eq(discordChatIngress.status, "processing"),
+      ),
+    )
+    .returning({ id: discordChatIngress.id });
+  return updated !== undefined;
 }
 
 interface DiscordIngressClaim {
@@ -293,20 +277,23 @@ async function terminalAgentUnavailable(
   { claim, message, source: { binding } }: DiscordAdmissionContext,
   signal: AbortSignal,
 ): Promise<void> {
-  const deliveryId = await terminalIngress(db, {
+  const terminal = await terminalIngress(db, {
     ...claim,
     reason: "agent_unavailable",
-    notice: {
-      connectionId: binding.connectionId,
-      channelId: message.channel_id,
-      content:
-        "No accessible agent is configured. Use /okou switch to choose an agent.",
-    },
   });
   signal.throwIfAborted();
-  // The sender is waiting for a reply; the recovery sweep is only a backstop.
-  if (deliveryId) {
-    await dispatchDiscordChatDeliveryOnce(db, deliveryId, signal);
+  if (terminal) {
+    await sendDiscordIngressNotice(
+      db,
+      {
+        ingressId: claim.ingressId,
+        connectionId: binding.connectionId,
+        channelId: message.channel_id,
+        content:
+          "No accessible agent is configured. Use /okou switch to choose an agent.",
+      },
+      signal,
+    );
   }
 }
 
