@@ -8,7 +8,7 @@ Slack and Discord are Okou-only. The API no longer reads or writes
 Slack webhook handlers no longer overlay a request brand on the installation
 row (#36766, slice A).
 
-Migration `1232_slack_discord_public_brand_okou_default` sets the column default
+Migration `1233_slack_discord_public_brand_okou_default` sets the column default
 to `'okou'` on `slack_chat_ingress`, `chat_slack_context`,
 `discord_chat_ingress` and `chat_discord_context` (previously no default);
 `slack_org_installations` already defaulted to `'okou'`. An old API therefore
@@ -4213,3 +4213,30 @@ before and after this change, and a record with no proven OOM evidence now
 carries an empty classification instead of `unproven_containment`. The
 `oom_unproven_reason` field is gone. Dashboards or saved queries that compare
 `oom_classification` across this boundary will be wrong.
+
+## Discord native file delivery (#36646)
+
+Discord file commands use additive upload-init, materialize, complete, and
+identity-based download endpoints behind the default-off `_discordIntegration`
+switch. Uploads retain one canonical asset and operation ID across provider
+retries. Native member uploads have no Run; Run-scoped uploads retain their actual
+Run source. The API validates the stored bytes before publication, then records
+Discord delivery independently from the canonical file URL.
+
+Migration `1232_discord_canonical_delivery_state` adds nullable `provider_state`
+to `canonical_asset_deliveries`. Existing Slack destinations keep their original
+JSON shape and have no Discord state. Outgoing API statements remain valid after
+the additive migration. The new API requires the migration before promotion;
+normal migration-before-promotion ordering provides this boundary. Discord
+reader/writer changes are non-GA and have no old-client compatibility branch.
+
+Deploy the capable API before using its matching CLI in an enabled test
+organization. Older CLIs lack these commands; a new CLI against an older API
+receives an unavailable endpoint. No Runner protocol or production activation is
+introduced. A revoked or rebound Discord connection cannot reuse the stored
+delivery destination. If a send might have succeeded but its receipt is missing,
+a prompt retry replays the persisted nonce with `enforce_nonce`, so Discord
+returns the original message instead of creating another. After the one-minute
+replay window the delivery stays uncertain and is never sent again. Explicit
+Discord rate-limit delays are persisted with the delivery attempt; subsequent
+completion requests return the remaining delay without sending early.

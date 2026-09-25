@@ -2,7 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type {
+  CanonicalAssetDeliveryDestination,
+  CanonicalAssetDiscordDeliveryDestination,
   CanonicalAssetProvenance,
+  CanonicalAssetSlackDeliveryDestination,
   RunUploadedFileMetadata,
 } from "@okouai/db/jsonb-contracts/run-uploaded-file";
 import {
@@ -13,8 +16,9 @@ import {
   type RunUploadedFileSource,
 } from "@okouai/db/schema/run-uploaded-file";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import type { ChatEventAttachFileMetadata } from "@okouai/db/schema/chat-event";
-import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
 
 import type { SlackFile } from "../../lib/slack-webhook-context";
 import { buildFileUrlFromKey, isArtifactKeyV2 } from "../../lib/file-url";
@@ -180,6 +184,8 @@ interface CanonicalSlackInputFileArgs {
 
 interface CanonicalAssetRow {
   readonly id: string;
+  readonly runId: string | null;
+  readonly orgId: string | null;
   readonly filename: string | null;
   readonly contentType: string | null;
   readonly sizeBytes: number | null;
@@ -323,6 +329,8 @@ async function readInputFileBuffer(
 function canonicalAssetSelection() {
   return {
     id: runUploadedFiles.id,
+    runId: runUploadedFiles.runId,
+    orgId: runUploadedFiles.orgId,
     filename: runUploadedFiles.filename,
     contentType: runUploadedFiles.contentType,
     sizeBytes: runUploadedFiles.sizeBytes,
@@ -336,7 +344,7 @@ function canonicalAssetSelection() {
 }
 
 async function canonicalAssetByIdentity(
-  db: Db,
+  db: Pick<Db, "select">,
   args: {
     readonly userId: string;
     readonly scope: string;
@@ -1093,8 +1101,7 @@ export async function registerCanonicalWebInputAssets(
   }
 }
 
-interface PrepareCanonicalPublishedAssetArgs {
-  readonly runId: string;
+interface CanonicalPublicationFileArgs {
   readonly userId: string;
   readonly orgId: string;
   readonly operationId: string;
@@ -1103,13 +1110,21 @@ interface PrepareCanonicalPublishedAssetArgs {
   readonly size: number;
   readonly checksumSha256: string;
   readonly publicBrand: PublicBrand;
-  readonly destination: {
-    readonly channelId: string;
-    readonly threadTs?: string;
-    readonly title?: string;
-    readonly initialComment?: string;
-  };
 }
+
+type PrepareCanonicalPublishedAssetArgs = CanonicalPublicationFileArgs &
+  (
+    | {
+        readonly provider: "slack";
+        readonly runId: string;
+        readonly destination: CanonicalAssetSlackDeliveryDestination;
+      }
+    | {
+        readonly provider: "discord";
+        readonly runId: string | null;
+        readonly destination: CanonicalAssetDiscordDeliveryDestination;
+      }
+  );
 
 interface PreparedCanonicalPublishedAsset {
   readonly assetId: string;
@@ -1117,6 +1132,13 @@ interface PreparedCanonicalPublishedAsset {
   readonly uploadUrl?: string;
   readonly uploadHeaders?: Readonly<Record<string, string>>;
   readonly url: string;
+}
+
+export class CanonicalPublicationConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CanonicalPublicationConflictError";
+  }
 }
 
 async function ensureCanonicalPublishedAsset(
@@ -1129,178 +1151,181 @@ async function ensureCanonicalPublishedAsset(
     readonly chatThreadId: string | null;
   },
 ): Promise<CanonicalAssetRow> {
-  const [inserted] = await db
-    .insert(runUploadedFiles)
-    .values({
-      id: artifact.id,
-      runId: args.runId,
-      chatThreadId: context.chatThreadId,
-      source: context.source,
-      externalId: args.operationId,
-      userId: args.userId,
-      orgId: args.orgId,
-      filename: args.filename,
-      contentType: args.contentType,
-      sizeBytes: args.size,
-      url: null,
-      metadata: artifact.storageMetadata,
-      assetVersion: CANONICAL_ASSET_VERSION,
-      classification: "published-output",
-      accessLevel: "published",
-      materializationStatus: "pending",
-      checksumSha256: args.checksumSha256,
-      storageKey: artifact.key,
-      provenance: { provider: "agent" },
-      materializationError: null,
-      idempotencyScope: context.scope,
-      idempotencyKey: args.operationId,
-    })
-    .onConflictDoNothing({
-      target: [
-        runUploadedFiles.userId,
-        runUploadedFiles.idempotencyScope,
-        runUploadedFiles.idempotencyKey,
-      ],
-      where: eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
-    })
-    .returning(canonicalAssetSelection());
-  const asset =
-    inserted ??
-    (await canonicalAssetByIdentity(db, {
-      userId: args.userId,
-      scope: context.scope,
-      key: args.operationId,
-    }));
-  if (!asset) {
-    throw new Error("Canonical publication asset conflict is missing");
-  }
-  return asset;
+  return await db.transaction(async (tx) => {
+    if (args.provider === "discord") {
+      // Retain writer admission through insertion: erasure either captures
+      // this asset after COMMIT or closes the owner before it can be created.
+      await assertErasureSubjectWritable(tx, [
+        { subjectKind: "organization", subjectId: args.orgId },
+        { subjectKind: "user", subjectId: args.userId },
+      ]);
+    }
+    const [inserted] = await tx
+      .insert(runUploadedFiles)
+      .values({
+        id: artifact.id,
+        runId: args.runId,
+        chatThreadId: context.chatThreadId,
+        source: context.source,
+        externalId: args.operationId,
+        userId: args.userId,
+        orgId: args.orgId,
+        filename: args.filename,
+        contentType: args.contentType,
+        sizeBytes: args.size,
+        url: null,
+        metadata:
+          args.runId === null
+            ? { ...artifact.storageMetadata, purpose: "artifact" }
+            : artifact.storageMetadata,
+        assetVersion: CANONICAL_ASSET_VERSION,
+        classification: "published-output",
+        accessLevel: "published",
+        materializationStatus: "pending",
+        checksumSha256: args.checksumSha256,
+        storageKey: artifact.key,
+        provenance: { provider: "agent" },
+        materializationError: null,
+        idempotencyScope: context.scope,
+        idempotencyKey: args.operationId,
+      })
+      .onConflictDoNothing({
+        target: [
+          runUploadedFiles.userId,
+          runUploadedFiles.idempotencyScope,
+          runUploadedFiles.idempotencyKey,
+        ],
+        where: eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
+      })
+      .returning(canonicalAssetSelection());
+    const asset =
+      inserted ??
+      (await canonicalAssetByIdentity(tx, {
+        userId: args.userId,
+        scope: context.scope,
+        key: args.operationId,
+      }));
+    if (!asset) {
+      throw new Error("Canonical publication asset conflict is missing");
+    }
+    return asset;
+  });
 }
 
-async function ensureCanonicalSlackDelivery(
+function sameCanonicalDeliveryDestination(
+  stored: CanonicalAssetDeliveryDestination,
+  requested: CanonicalAssetDeliveryDestination,
+): boolean {
+  if (stored.provider === "discord" || requested.provider === "discord") {
+    return (
+      stored.provider === "discord" &&
+      requested.provider === "discord" &&
+      stored.connectionId === requested.connectionId &&
+      stored.guildId === requested.guildId &&
+      stored.channelId === requested.channelId &&
+      stored.comment === requested.comment
+    );
+  }
+  return (
+    stored.channelId === requested.channelId &&
+    stored.threadTs === requested.threadTs &&
+    stored.title === requested.title &&
+    stored.initialComment === requested.initialComment
+  );
+}
+
+async function ensureCanonicalDelivery(
   db: Db,
   assetId: string,
   args: PrepareCanonicalPublishedAssetArgs,
 ): Promise<boolean> {
-  await db
-    .insert(canonicalAssetDeliveries)
-    .values({
+  return await db.transaction(async (tx) => {
+    if (args.provider === "discord") {
+      await assertErasureSubjectWritable(tx, [
+        { subjectKind: "organization", subjectId: args.orgId },
+        { subjectKind: "user", subjectId: args.userId },
+      ]);
+    }
+    const [asset] = await tx
+      .select({ id: runUploadedFiles.id })
+      .from(runUploadedFiles)
+      .where(eq(runUploadedFiles.id, assetId))
+      .for("update");
+    if (!asset) {
+      return false;
+    }
+    const [delivery] = await tx
+      .select({
+        provider: canonicalAssetDeliveries.provider,
+        destination: canonicalAssetDeliveries.destination,
+      })
+      .from(canonicalAssetDeliveries)
+      .where(
+        and(
+          eq(canonicalAssetDeliveries.assetId, assetId),
+          eq(canonicalAssetDeliveries.operationId, args.operationId),
+        ),
+      )
+      .limit(1);
+    if (delivery) {
+      if (
+        delivery.provider !== args.provider ||
+        !sameCanonicalDeliveryDestination(
+          delivery.destination,
+          args.destination,
+        )
+      ) {
+        throw new CanonicalPublicationConflictError(
+          "Upload operation identity was reused for another delivery destination",
+        );
+      }
+      return true;
+    }
+    await tx.insert(canonicalAssetDeliveries).values({
       assetId,
-      provider: "slack",
+      provider: args.provider,
       operationId: args.operationId,
       status: "pending",
       destination: args.destination,
-    })
-    .onConflictDoNothing({
-      target: [
-        canonicalAssetDeliveries.assetId,
-        canonicalAssetDeliveries.provider,
-        canonicalAssetDeliveries.operationId,
-      ],
+      ...(args.provider === "discord"
+        ? {
+            providerState: {
+              provider: "discord" as const,
+              nonce: createHash("sha256")
+                .update(`${assetId}:${args.operationId}`)
+                .digest("base64url")
+                .slice(0, 25),
+              attempt: null,
+            },
+          }
+        : {}),
     });
-  const [delivery] = await db
-    .select({ destination: canonicalAssetDeliveries.destination })
-    .from(canonicalAssetDeliveries)
-    .where(
-      and(
-        eq(canonicalAssetDeliveries.assetId, assetId),
-        eq(canonicalAssetDeliveries.provider, "slack"),
-        eq(canonicalAssetDeliveries.operationId, args.operationId),
-      ),
-    )
-    .limit(1);
-  if (!delivery) {
-    return false;
-  }
-  if (
-    delivery.destination.channelId !== args.destination.channelId ||
-    delivery.destination.threadTs !== args.destination.threadTs ||
-    delivery.destination.title !== args.destination.title ||
-    delivery.destination.initialComment !== args.destination.initialComment
-  ) {
-    throw new Error(
-      "Upload operation identity was reused for another Slack destination",
-    );
-  }
-  return true;
+    return true;
+  });
 }
 
-export const prepareCanonicalPublishedAsset$ = command(
+function isCanonicalPublicationOwnerUnavailable(error: unknown): boolean {
+  return (
+    isForeignKeyViolation(error) ||
+    (error instanceof Error &&
+      error.message === "account_erasure:subject_closed")
+  );
+}
+
+function canonicalPublicationScope(args: PrepareCanonicalPublishedAssetArgs) {
+  return args.provider === "discord" && args.runId === null
+    ? `discord:${args.destination.connectionId}`
+    : `run:${args.runId}`;
+}
+
+const prepareCanonicalUpload$ = command(
   async (
     { get, set },
+    asset: CanonicalAssetRow,
     args: PrepareCanonicalPublishedAssetArgs,
     signal: AbortSignal,
   ): Promise<PreparedCanonicalPublishedAsset | null> => {
     const db = set(writeDb$);
-    const scope = `run:${args.runId}`;
-    const source = await sourceForRun(db, args.runId, "slack", signal);
-    const [run] = await db
-      .select({ chatThreadId: agentRuns.chatThreadId })
-      .from(agentRuns)
-      .where(
-        and(eq(agentRuns.id, args.runId), isNotNull(agentRuns.triggerSource)),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!run) {
-      return null;
-    }
-
-    let asset = await canonicalAssetByIdentity(db, {
-      userId: args.userId,
-      scope,
-      key: args.operationId,
-    });
-    signal.throwIfAborted();
-    if (!asset) {
-      const artifact = await set(
-        allocateCanonicalArtifact$,
-        {
-          userId: args.userId,
-          orgId: args.orgId,
-          filename: args.filename,
-          publicBrand: args.publicBrand,
-        },
-        signal,
-      );
-      const assetResult = await settle(
-        ensureCanonicalPublishedAsset(db, args, artifact, {
-          scope,
-          source,
-          chatThreadId: run.chatThreadId,
-        }),
-        signal,
-      );
-      if (!assetResult.ok) {
-        if (isForeignKeyViolation(assetResult.error)) {
-          return null;
-        }
-        throw assetResult.error;
-      }
-      asset = assetResult.value;
-    }
-    signal.throwIfAborted();
-    if (
-      asset.filename !== args.filename ||
-      asset.contentType !== args.contentType ||
-      asset.sizeBytes !== args.size ||
-      asset.checksumSha256 !== args.checksumSha256
-    ) {
-      throw new Error("Upload operation identity was reused for another file");
-    }
-    const deliveryResult = await settle(
-      ensureCanonicalSlackDelivery(db, asset.id, args),
-      signal,
-    );
-    if (!deliveryResult.ok) {
-      if (isForeignKeyViolation(deliveryResult.error)) {
-        return null;
-      }
-      throw deliveryResult.error;
-    }
-    if (!deliveryResult.value) {
-      return null;
-    }
     const storageKey = asset.storageKey;
     if (!storageKey) {
       throw new Error("Canonical publication storage key is missing");
@@ -1327,15 +1352,36 @@ export const prepareCanonicalPublishedAsset$ = command(
       };
     }
 
-    await db
+    const [pending] = await db
       .update(runUploadedFiles)
       .set({
         materializationStatus: "pending",
         materializationError: null,
         updatedAt: sql`now()`,
       })
-      .where(eq(runUploadedFiles.id, asset.id));
+      .where(
+        and(
+          eq(runUploadedFiles.id, asset.id),
+          ne(runUploadedFiles.materializationStatus, "ready"),
+        ),
+      )
+      .returning({ id: runUploadedFiles.id });
     signal.throwIfAborted();
+    if (!pending) {
+      const current = await canonicalAssetByIdentity(db, {
+        userId: args.userId,
+        scope: canonicalPublicationScope(args),
+        key: args.operationId,
+      });
+      signal.throwIfAborted();
+      if (!current) {
+        return null;
+      }
+      if (current.materializationStatus !== "ready") {
+        throw new Error("Canonical publication lost its materialization state");
+      }
+      return { assetId: current.id, operationId: args.operationId, url };
+    }
     const uploadUrl = await get(
       generatePresignedPutUrl(
         artifactStorageBucket(asset.metadata),
@@ -1344,6 +1390,14 @@ export const prepareCanonicalPublishedAsset$ = command(
         {
           usePublicEndpoint: true,
           metadata,
+          ...(args.provider === "discord"
+            ? {
+                checksumSha256: Buffer.from(
+                  args.checksumSha256,
+                  "hex",
+                ).toString("base64"),
+              }
+            : {}),
         },
         signal,
       ),
@@ -1356,6 +1410,103 @@ export const prepareCanonicalPublishedAsset$ = command(
       ...(uploadHeaders ? { uploadHeaders } : {}),
       url,
     };
+  },
+);
+
+export const prepareCanonicalPublishedAsset$ = command(
+  async (
+    { set },
+    args: PrepareCanonicalPublishedAssetArgs,
+    signal: AbortSignal,
+  ): Promise<PreparedCanonicalPublishedAsset | null> => {
+    const db = set(writeDb$);
+    const scope = canonicalPublicationScope(args);
+    const source =
+      args.runId === null
+        ? "discord"
+        : await sourceForRun(db, args.runId, args.provider, signal);
+    let chatThreadId: string | null = null;
+    if (args.runId !== null) {
+      const [run] = await db
+        .select({ chatThreadId: agentRuns.chatThreadId })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.id, args.runId),
+            eq(agentRuns.userId, args.userId),
+            eq(agentRuns.orgId, args.orgId),
+            isNotNull(agentRuns.triggerSource),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (!run) {
+        return null;
+      }
+      chatThreadId = run.chatThreadId;
+    }
+
+    let asset = await canonicalAssetByIdentity(db, {
+      userId: args.userId,
+      scope,
+      key: args.operationId,
+    });
+    signal.throwIfAborted();
+    if (!asset) {
+      const artifact = await set(
+        allocateCanonicalArtifact$,
+        {
+          userId: args.userId,
+          orgId: args.orgId,
+          filename: args.filename,
+          publicBrand: args.publicBrand,
+        },
+        signal,
+      );
+      const assetResult = await settle(
+        ensureCanonicalPublishedAsset(db, args, artifact, {
+          scope,
+          source,
+          chatThreadId,
+        }),
+        signal,
+      );
+      if (!assetResult.ok) {
+        if (isCanonicalPublicationOwnerUnavailable(assetResult.error)) {
+          return null;
+        }
+        throw assetResult.error;
+      }
+      asset = assetResult.value;
+    }
+    signal.throwIfAborted();
+    if (asset.runId !== args.runId || asset.orgId !== args.orgId) {
+      return null;
+    }
+    if (
+      asset.filename !== args.filename ||
+      asset.contentType !== args.contentType ||
+      asset.sizeBytes !== args.size ||
+      asset.checksumSha256 !== args.checksumSha256
+    ) {
+      throw new CanonicalPublicationConflictError(
+        "Upload operation identity was reused for another file",
+      );
+    }
+    const deliveryResult = await settle(
+      ensureCanonicalDelivery(db, asset.id, args),
+      signal,
+    );
+    if (!deliveryResult.ok) {
+      if (isCanonicalPublicationOwnerUnavailable(deliveryResult.error)) {
+        return null;
+      }
+      throw deliveryResult.error;
+    }
+    if (!deliveryResult.value) {
+      return null;
+    }
+    return await set(prepareCanonicalUpload$, asset, args, signal);
   },
 );
 
@@ -1377,8 +1528,9 @@ export const materializeCanonicalPublishedAsset$ = command(
     args: {
       readonly assetId: string;
       readonly operationId: string;
-      readonly runId: string;
+      readonly runId: string | null;
       readonly userId: string;
+      readonly orgId: string;
     },
     signal: AbortSignal,
   ): Promise<MaterializeCanonicalPublishedAssetResult> => {
@@ -1390,7 +1542,10 @@ export const materializeCanonicalPublishedAsset$ = command(
         and(
           eq(runUploadedFiles.id, args.assetId),
           eq(runUploadedFiles.userId, args.userId),
-          eq(runUploadedFiles.runId, args.runId),
+          eq(runUploadedFiles.orgId, args.orgId),
+          args.runId === null
+            ? isNull(runUploadedFiles.runId)
+            : eq(runUploadedFiles.runId, args.runId),
           eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
           eq(runUploadedFiles.classification, "published-output"),
           eq(runUploadedFiles.idempotencyKey, args.operationId),
@@ -1456,7 +1611,9 @@ export const materializeCanonicalPublishedAsset$ = command(
     });
     signal.throwIfAborted();
     await set(syncArtifactCatalogForFile$, asset.id, signal);
-    await publishArtifactsChangedForRun(db, args.runId, signal);
+    if (args.runId !== null) {
+      await publishArtifactsChangedForRun(db, args.runId, signal);
+    }
     return { ok: true, assetId: asset.id, url };
   },
 );

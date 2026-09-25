@@ -8,6 +8,28 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.675.0](https://github.com/okou-ai/okou/compare/api-v1.674.0...api-v1.675.0) (2026-09-25)
+
+
+### Features
+
+* **browser:** support native checkbox input requests ([#36807](https://github.com/okou-ai/okou/issues/36807)) ([46b2f26](https://github.com/okou-ai/okou/commit/46b2f264ae9f2c7f49c403ea3e9318627e65684d))
+
+
+### Refactoring
+
+* **api:** retire github and workflow automation public brand ([#36774](https://github.com/okou-ai/okou/issues/36774)) ([34b0fdb](https://github.com/okou-ai/okou/commit/34b0fdb534e88469ba4335b34d344b9d13cc7b8e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.509.0
+    * @okouai/core bumped to 8.710.3
+    * @okouai/db bumped to 1.299.0
+    * @okouai/pi-agent-runtime bumped to 1.40.15
+
 ## [1.674.0](https://github.com/okou-ai/okou/compare/api-v1.673.1...api-v1.674.0) (2026-09-25)
 
 
