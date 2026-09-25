@@ -1,4 +1,4 @@
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
@@ -19,7 +19,8 @@ import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service"
 export interface SlackQueuedLaunchMaterial {
   readonly prompt: string;
   readonly appendSystemPrompt: string;
-  readonly publicBrand: PublicBrand;
+  /** Run-level brand is fixed; its plumbing is retired separately (#36766). */
+  readonly publicBrand: typeof PUBLIC_BRAND;
   readonly slackDelivery: {
     readonly channelId: string;
     readonly threadTs: string;
@@ -45,7 +46,7 @@ type SlackLaunchContextRow = Pick<
   | "channelType"
   | "threadTs"
   | "routeThreadTs"
-> & { readonly publicBrand: PublicBrand };
+>;
 
 function requiredSlackLaunchContext(row: SlackLaunchContextRow | undefined) {
   if (
@@ -99,7 +100,6 @@ async function loadSlackLaunchContext(
       channelType: chatSlackContext.channelType,
       threadTs: chatSlackContext.threadTs,
       routeThreadTs: chatSlackContext.routeThreadTs,
-      publicBrand: chatSlackContext.publicBrand,
     })
     .from(chatEvents)
     .innerJoin(
@@ -197,7 +197,7 @@ export async function loadSlackQueuedLaunchMaterial(
       }),
       executionContext: context.conversationContext,
     }),
-    publicBrand: context.publicBrand,
+    publicBrand: PUBLIC_BRAND,
     slackDelivery: {
       channelId: context.channelId,
       threadTs: context.threadTs,

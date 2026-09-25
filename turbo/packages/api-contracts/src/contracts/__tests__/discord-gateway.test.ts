@@ -48,7 +48,6 @@ describe("Discord Gateway wire contract", () => {
     for (const changes of [
       { orgId: "org_attacker" },
       { userId: "user_attacker" },
-      { publicBrand: "attacker" },
       { version: 2 },
       { eventType: "MESSAGE_UPDATE" },
     ]) {

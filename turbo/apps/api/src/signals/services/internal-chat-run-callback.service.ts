@@ -127,6 +127,7 @@ import {
 } from "./teams-chat-callback-payload";
 import {
   discordDeliveryTargetSchema,
+  storedDiscordDeliveryTarget,
   type DiscordDeliveryTarget,
 } from "./discord-chat-callback-payload";
 import {
@@ -971,7 +972,7 @@ function buildQueuedCreateAgentRunArgs(
           slackDelivery: input.slackDelivery,
           feishuDelivery: input.feishuDelivery,
           teamsDelivery: input.teamsDelivery,
-          discordDelivery: input.discordDelivery,
+          discordDelivery: storedDiscordDeliveryTarget(input.discordDelivery),
           telegramDelivery: input.telegramDelivery,
           agentphoneDelivery: input.agentphoneDelivery,
           githubDelivery: input.githubDelivery,
@@ -1302,7 +1303,9 @@ async function insertSlackChatDeliveryCallback(args: {
     payload: {
       ...args.target,
       chatEventId: args.chatEventId,
-      publicBrand: PUBLIC_BRAND,
+      // Older APIs require this field when they deliver the callback; remove
+      // it once no rollback target predates #36766 Phase 1.
+      publicBrand: "okou",
     },
   });
 }

@@ -1,10 +1,6 @@
 import { command, computed, type Computed } from "ccstate";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import {
-  PUBLIC_BRAND_PRESENTATION,
-  PUBLIC_BRAND,
-} from "@okouai/core/public-brand";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
 import {
   getBuiltInVisibleModels,
   isSupportedRunModel,
@@ -207,7 +203,6 @@ interface ConnectionContext {
 interface SlackEventCallbackArgs {
   readonly db: Db;
   readonly payload: SlackEventCallback;
-  readonly publicBrand: PublicBrand;
   readonly signal: AbortSignal;
 }
 
@@ -224,7 +219,6 @@ type SlackAgentRouteAdmission =
 
 interface SlackAgentRouteArgs {
   readonly db: Db;
-  readonly publicBrand: PublicBrand;
   readonly workspaceId: string;
   readonly channelId: string;
   readonly channelType: SlackChannelType;
@@ -414,15 +408,6 @@ async function installationForWorkspace(
   return installation;
 }
 
-async function installationForWebhook(
-  db: Db,
-  workspaceId: string,
-  publicBrand: PublicBrand,
-): Promise<SlackInstallation | undefined> {
-  const installation = await installationForWorkspace(db, workspaceId);
-  return installation ? { ...installation, publicBrand } : undefined;
-}
-
 function buildOfficialSlackHelpMessage(args: {
   readonly installation: SlackInstallation | undefined;
   readonly canSwitch: boolean;
@@ -456,17 +441,12 @@ async function connectionForSlackUser(
 async function slackCommandWorkspaceContext(
   db: Db,
   payload: SlackCommandPayload,
-  publicBrand: PublicBrand,
   signal: AbortSignal,
 ): Promise<{
   readonly installation: SlackInstallation | undefined;
   readonly connection: SlackConnection | undefined;
 }> {
-  const installation = await installationForWebhook(
-    db,
-    payload.team_id,
-    publicBrand,
-  );
+  const installation = await installationForWorkspace(db, payload.team_id);
   signal.throwIfAborted();
   const connection = installation
     ? await connectionForSlackUser(db, payload.team_id, payload.user_id)
@@ -479,13 +459,8 @@ async function resolveConnectionContext(
   db: Db,
   slackUserId: string,
   workspaceId: string,
-  publicBrand: PublicBrand,
 ): Promise<ConnectionContext | null> {
-  const installation = await installationForWebhook(
-    db,
-    workspaceId,
-    publicBrand,
-  );
+  const installation = await installationForWorkspace(db, workspaceId);
   if (!installation?.orgId) {
     return null;
   }
@@ -925,10 +900,9 @@ const resolveSlackAgentRouteAdmission$ = command(
     args: SlackAgentRouteArgs,
     signal: AbortSignal,
   ): Promise<SlackAgentRouteAdmission> => {
-    const installation = await installationForWebhook(
+    const installation = await installationForWorkspace(
       args.db,
       args.workspaceId,
-      args.publicBrand,
     );
     signal.throwIfAborted();
     const orgId = installation?.orgId;
@@ -1330,7 +1304,6 @@ const commandModelResponse$ = command(
 export const handleSlackCommands$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<Response> => {
     const request = get(request$);
-    const publicBrand = PUBLIC_BRAND;
     const verified = await verifiedSlackBody(request.raw);
     signal.throwIfAborted();
     if (!verified.ok) {
@@ -1350,7 +1323,6 @@ export const handleSlackCommands$ = command(
     const { installation, connection } = await slackCommandWorkspaceContext(
       db,
       payload,
-      publicBrand,
       signal,
     );
     const canSwitchAgents = Boolean(installation?.orgId);
@@ -1492,13 +1464,8 @@ const handleAppHomeOpened$ = command(
     db: Db,
     workspaceId: string,
     slackUserId: string,
-    publicBrand: PublicBrand,
   ): Promise<void> => {
-    const installation = await installationForWebhook(
-      db,
-      workspaceId,
-      publicBrand,
-    );
+    const installation = await installationForWorkspace(db, workspaceId);
     if (!installation) {
       return;
     }
@@ -1514,13 +1481,11 @@ const handleMessagesTabOpened$ = command(
       readonly workspaceId: string;
       readonly slackUserId: string;
       readonly channelId: string;
-      readonly publicBrand: PublicBrand;
     },
   ): Promise<void> => {
-    const installation = await installationForWebhook(
+    const installation = await installationForWorkspace(
       args.db,
       args.workspaceId,
-      args.publicBrand,
     );
     if (!installation) {
       return;
@@ -1637,7 +1602,6 @@ const scheduleSlackAppHomeEvent$ = command(
             args.callback.db,
             args.callback.payload.team_id,
             args.event.user,
-            args.callback.publicBrand,
           ),
           (error) => {
             L.error("Error handling org app_home_opened", { error });
@@ -1654,7 +1618,6 @@ const scheduleSlackAppHomeEvent$ = command(
             workspaceId: args.callback.payload.team_id,
             slackUserId: args.event.user,
             channelId: args.event.channel,
-            publicBrand: args.callback.publicBrand,
           }),
           (error) => {
             L.error("Error handling org messages_tab_opened", { error });
@@ -1718,7 +1681,6 @@ const handleEventCallback$ = command(
 export const handleSlackEvents$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<Response> => {
     const request = get(request$);
-    const publicBrand = PUBLIC_BRAND;
     const verified = await verifiedSlackBody(request.raw);
     signal.throwIfAborted();
     if (!verified.ok) {
@@ -1760,7 +1722,6 @@ export const handleSlackEvents$ = command(
           resolveSlackAgentRouteAdmission$,
           {
             db,
-            publicBrand,
             workspaceId: payload.team_id,
             channelId: agentEvent.channel,
             channelType,
@@ -1779,7 +1740,6 @@ export const handleSlackEvents$ = command(
               routeId: route.routeId,
               eventId: payload.event_id,
               payload: verified.body,
-              publicBrand,
               isRetry: Boolean(retryNum),
               currentTime: nowDate(),
             }),
@@ -1837,7 +1797,6 @@ export const handleSlackEvents$ = command(
       set(handleEventCallback$, {
         db: set(writeDb$),
         payload,
-        publicBrand,
         signal,
       });
       return textResponse("OK");
@@ -1884,7 +1843,6 @@ const handleAgentPickerSubmit$ = command(
     { get, set },
     db: Db,
     payload: SlackInteractivePayload,
-    publicBrand: PublicBrand,
   ): Promise<Response> => {
     const selected =
       payload.view?.state.values[AGENT_PICKER_BLOCK_ID]?.[
@@ -1900,7 +1858,6 @@ const handleAgentPickerSubmit$ = command(
       db,
       payload.user.id,
       payload.team.id,
-      publicBrand,
     );
     if (!ctx) {
       return emptyResponse();
@@ -1988,7 +1945,6 @@ const handleModelPickerSubmit$ = command(
     { get, set },
     db: Db,
     payload: SlackInteractivePayload,
-    publicBrand: PublicBrand,
     signal: AbortSignal,
   ): Promise<Response> => {
     const selected =
@@ -2005,7 +1961,6 @@ const handleModelPickerSubmit$ = command(
       db,
       payload.user.id,
       payload.team.id,
-      publicBrand,
     );
     signal.throwIfAborted();
     if (!ctx) {
@@ -2056,12 +2011,7 @@ const handleModelPickerSubmit$ = command(
 );
 
 const handleHomeSwitchAgent$ = command(
-  async (
-    { get },
-    db: Db,
-    payload: SlackInteractivePayload,
-    publicBrand: PublicBrand,
-  ): Promise<void> => {
+  async ({ get }, db: Db, payload: SlackInteractivePayload): Promise<void> => {
     if (!payload.trigger_id) {
       return;
     }
@@ -2070,7 +2020,6 @@ const handleHomeSwitchAgent$ = command(
       db,
       payload.user.id,
       payload.team.id,
-      publicBrand,
     );
     if (!ctx) {
       return;
@@ -2126,12 +2075,7 @@ const handleHomeSwitchAgent$ = command(
 );
 
 const handleHomeDisconnect$ = command(
-  async (
-    { set },
-    db: Db,
-    payload: SlackInteractivePayload,
-    publicBrand: PublicBrand,
-  ): Promise<void> => {
+  async ({ set }, db: Db, payload: SlackInteractivePayload): Promise<void> => {
     const connection = await connectionForSlackUser(
       db,
       payload.team.id,
@@ -2141,11 +2085,7 @@ const handleHomeDisconnect$ = command(
       return;
     }
     await disconnect(db, connection.id);
-    const installation = await installationForWebhook(
-      db,
-      payload.team.id,
-      publicBrand,
-    );
+    const installation = await installationForWorkspace(db, payload.team.id);
     if (!installation) {
       return;
     }
@@ -2156,7 +2096,6 @@ const handleHomeDisconnect$ = command(
 export const handleSlackInteractive$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<Response> => {
     const request = get(request$);
-    const publicBrand = PUBLIC_BRAND;
     const verified = await verifiedSlackBody(request.raw);
     signal.throwIfAborted();
     if (!verified.ok) {
@@ -2179,13 +2118,13 @@ export const handleSlackInteractive$ = command(
       payload.type === "view_submission" &&
       payload.view?.callback_id === AGENT_PICKER_CALLBACK_ID
     ) {
-      return set(handleAgentPickerSubmit$, db, payload, publicBrand);
+      return set(handleAgentPickerSubmit$, db, payload);
     }
     if (
       payload.type === "view_submission" &&
       payload.view?.callback_id === MODEL_PICKER_CALLBACK_ID
     ) {
-      return set(handleModelPickerSubmit$, db, payload, publicBrand, signal);
+      return set(handleModelPickerSubmit$, db, payload, signal);
     }
     if (payload.type === "block_actions") {
       const action = payload.actions?.[0];
@@ -2193,9 +2132,9 @@ export const handleSlackInteractive$ = command(
         return emptyResponse();
       }
       if (action.action_id === "home_disconnect") {
-        await set(handleHomeDisconnect$, db, payload, publicBrand);
+        await set(handleHomeDisconnect$, db, payload);
       } else if (action.action_id === "home_switch_agent") {
-        await set(handleHomeSwitchAgent$, db, payload, publicBrand);
+        await set(handleHomeSwitchAgent$, db, payload);
       }
     }
     return emptyResponse();

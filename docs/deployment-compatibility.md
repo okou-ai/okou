@@ -10,7 +10,7 @@ stored value still locates the shared-artifact layout of existing shares until
 the artifact-link slice replaces it with a neutral legacy layout. Reusing a
 pending usage-pack invitation checkout no longer filters by brand.
 
-Migration `1233_public_brand_okou_default_platform` sets the column default to
+Migration `1234_public_brand_okou_default_platform` sets the column default to
 `'okou'` on all seven tables (previously `'vm0'`, or no default on
 `browser_sessions` and `socialkit_download_jobs`). An old API reads `okou` from
 rows the new API inserts, and its own inserts still carry an explicit brand, so
@@ -43,6 +43,44 @@ The Platform runtime configuration no longer carries `publicBrand`, and the
 Platform no longer sends the PostHog `public_brand` property or the Sentry
 `public_brand` tag. Queries that filter on `public_brand = 'okou'` must drop
 that filter; historical events keep the property.
+
+## Slack and Discord public brand retirement (2026-09-25)
+
+Slack and Discord are Okou-only. The API no longer reads or writes
+`public_brand` on `slack_org_installations`, `slack_chat_ingress`,
+`chat_slack_context`, `discord_chat_ingress` or `chat_discord_context`, and the
+Slack webhook handlers no longer overlay a request brand on the installation
+row (#36766, slice A).
+
+Migration `1233_slack_discord_public_brand_okou_default` sets the column default
+to `'okou'` on `slack_chat_ingress`, `chat_slack_context`,
+`discord_chat_ingress` and `chat_discord_context` (previously no default);
+`slack_org_installations` already defaulted to `'okou'`. An old API therefore
+reads a non-null `okou` brand from rows the new API inserts, so old API/new DB
+and rollback remain compatible. The columns and their ORM declarations stay in
+place; drop them in a separate migration after older API deployments drain.
+
+Persisted callback payloads:
+
+- `slack:chat`: the reader no longer declares `publicBrand`, so stored payloads
+  that carry it keep parsing (the key is stripped). Older APIs require the
+  field, so the writer still emits the literal `publicBrand: "okou"`. Remove
+  that write once no API rollback target predates this change.
+- `chat` callback `discordDelivery`: the target no longer declares
+  `publicBrand`; stored targets that carry it keep parsing. Older APIs require
+  `publicBrand: "okou"` on the stored target, so the persisted `chat` callback
+  still writes that literal through `storedDiscordDeliveryTarget`. Remove it
+  once no API rollback target predates this change.
+
+Slack OAuth state no longer carries `publicBrand`. The new API accepts states
+issued before this change, because it ignores the key. An older API rejects
+states without it, so an install or connect started on the new API and
+completed on an older one (the rollout window or a rollback) fails with
+"Invalid OAuth state." States expire after 15 minutes; the user restarts the
+flow. The `?publicBrand=` install query parameter was already ignored.
+
+The test-only `/api/test/slack-state` contract no longer accepts
+`public_brand` or returns `publicBrand`; undeclared request keys are stripped.
 
 ## Feishu public brand retirement (2026-09-25)
 
