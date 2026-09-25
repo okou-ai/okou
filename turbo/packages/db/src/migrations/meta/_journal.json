@@ -1069,8 +1069,15 @@
     {
       "idx": 1230,
       "version": "7",
-      "when": 1790300929732,
-      "tag": "1230_contract_chat_event_sequence_bridge",
+      "when": 1790300181834,
+      "tag": "1230_github_automation_public_brand_okou_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 1231,
+      "version": "7",
+      "when": 1790302864804,
+      "tag": "1231_contract_chat_event_sequence_bridge",
       "breakpoints": true
     }
   ]

@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.1.94](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.1.93...guest-tool-exec-v0.1.94) (2026-09-25)
+
 ## [0.1.93](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.1.92...guest-tool-exec-v0.1.93) (2026-09-24)
 
 ## [0.1.92](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.1.91...guest-tool-exec-v0.1.92) (2026-09-23)

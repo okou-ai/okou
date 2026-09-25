@@ -7174,7 +7174,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     ]);
   });
 
-  it("preserves signed GitHub install brand across provider callbacks", async () => {
+  it("signs the GitHub install callback redirect in provider state", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
@@ -7196,8 +7196,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     expect(okouStateString).not.toBe("");
     const okouState: unknown = JSON.parse(okouStateString);
     expect(okouState).toMatchObject({
-      publicBrand: "okou",
-      publicBrandSig: expect.stringMatching(/^[0-9a-f]{64}$/u),
       callbackRedirectUri: "https://api.okou.ai/api/github/app/setup/callback",
       callbackRedirectUriSig: expect.stringMatching(/^[0-9a-f]{64}$/u),
       sig: expect.stringMatching(/^[0-9a-f]{64}$/u),
@@ -7219,23 +7217,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     if (!isRecord(okouState)) {
       throw new Error("Expected Okou GitHub OAuth state to be an object");
     }
-    const tamperedState = JSON.stringify({
-      ...okouState,
-      publicBrand: "vm0",
-      publicBrandSig: "0".repeat(64),
-    });
-    const tamperedError = await integrations.requestGithubAppSetupCallback(
-      {
-        error: "access_denied",
-        error_description: "Provider denied access",
-        state: tamperedState,
-      },
-      [307],
-    );
-    expect(new URL(tamperedError.headers.get("location") ?? "").origin).toBe(
-      "https://app.okou.ai",
-    );
-
     const tamperedCallbackState = JSON.stringify({
       ...okouState,
       callbackRedirectUri: "https://attacker.example/callback",

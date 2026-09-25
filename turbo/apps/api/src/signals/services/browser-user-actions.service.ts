@@ -184,6 +184,9 @@ function publicRequest(
             : {
                 siteRequired: observed.siteRequired,
                 multiple: observed.multiple,
+                ...(observed.checked === undefined
+                  ? {}
+                  : { checked: observed.checked }),
                 ...(observed.optionSetFingerprint === undefined
                   ? {}
                   : { optionSetFingerprint: observed.optionSetFingerprint }),
@@ -626,6 +629,7 @@ function browserCreationControlType(
     "url",
     "search",
     "number",
+    "checkbox",
   ];
   return knownTypes.includes(fingerprint.inputType)
     ? `input type '${fingerprint.inputType}'`
@@ -1104,7 +1108,12 @@ function submittedValues(
     input.values.some((entry) => {
       const field = allowed.get(entry.key);
       return (
-        !field || (field.fieldKind === "select") !== "optionIndexes" in entry
+        !field ||
+        (field.fieldKind === "select" && !("optionIndexes" in entry)) ||
+        (field.fieldKind === "checkbox" && !("checked" in entry)) ||
+        (field.fieldKind !== "select" &&
+          field.fieldKind !== "checkbox" &&
+          !("value" in entry))
       );
     })
   ) {
@@ -1124,7 +1133,9 @@ function submittedValues(
         !entry ||
         ("optionIndexes" in entry
           ? entry.optionIndexes.length === 0
-          : entry.value.length === 0)
+          : "checked" in entry
+            ? entry.checked !== true
+            : entry.value.length === 0)
       );
     })
   ) {
@@ -1495,12 +1506,19 @@ async function applyClaimedBrowserUserAction(
                   ? {}
                   : "value" in entry
                     ? { value: entry.value }
-                    : {
-                        selection: {
-                          optionIndexes: entry.optionIndexes,
-                          optionSetFingerprint: entry.optionSetFingerprint,
-                        },
-                      }),
+                    : "checked" in entry
+                      ? {
+                          checkbox: {
+                            checked: entry.checked,
+                            observedChecked: entry.observedChecked,
+                          },
+                        }
+                      : {
+                          selection: {
+                            optionIndexes: entry.optionIndexes,
+                            optionSetFingerprint: entry.optionSetFingerprint,
+                          },
+                        }),
               };
             }),
           },
