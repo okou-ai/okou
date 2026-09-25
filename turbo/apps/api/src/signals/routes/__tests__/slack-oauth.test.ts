@@ -9,7 +9,7 @@ import {
   readGetStartedStatus,
   setGetStartedEnabled,
 } from "./helpers/get-started";
-import { createHmac, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 import { createStore } from "ccstate";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -19,7 +19,7 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { slackOauthRoutes } from "../slack-oauth";
+import { createOAuthState, slackOauthRoutes } from "../slack-oauth";
 import {
   countSlackOrgConnections$,
   deleteSlackConnectOrg$,
@@ -111,7 +111,7 @@ function installStateFor(
   );
 }
 
-/** Re-sign a state as an API that still serialized the retired brand. */
+/** Sign a state shaped like one from an API that still serialized the brand. */
 function withRetiredPublicBrand(state: string): string {
   const [encodedPayload] = state.split(".");
   if (!encodedPayload) {
@@ -120,13 +120,15 @@ function withRetiredPublicBrand(state: string): string {
   const payload = JSON.parse(
     Buffer.from(encodedPayload, "base64url").toString(),
   ) as SignedOAuthStatePayload;
-  const legacyPayload = Buffer.from(
-    JSON.stringify({ ...payload, publicBrand: "vm0" }),
-  ).toString("base64url");
-  const signature = createHmac("sha256", OAUTH_STATE_SIGNING_KEY)
-    .update(`slack-oauth-state-v1:${legacyPayload}`)
-    .digest("base64url");
-  return `${legacyPayload}.${signature}`;
+  const legacyState = {
+    orgId: payload.orgId,
+    userId: payload.userId,
+    flow: payload.flow,
+    reinstall: payload.reinstall,
+    prompt: payload.prompt,
+    publicBrand: "vm0",
+  };
+  return createOAuthState(legacyState, payload.redirectUri);
 }
 
 function connectStateFor(

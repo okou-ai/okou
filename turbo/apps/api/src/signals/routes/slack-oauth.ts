@@ -154,7 +154,10 @@ function isSlackOAuthRedirectUri(value: string): boolean {
   return true;
 }
 
-function createOAuthState(state: OAuthState, redirectUri: string): string {
+export function createOAuthState(
+  state: OAuthState,
+  redirectUri: string,
+): string {
   const payload: SignedOAuthState = {
     ...state,
     issuedAt: Math.floor(now() / 1000),
