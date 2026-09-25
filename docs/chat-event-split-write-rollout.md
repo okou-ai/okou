@@ -57,8 +57,9 @@ After activation:
   Queue claim/revoke/discard and active-input settlement retain their necessary
   control transactions. Cancellation recovery still requires `run.cancelled`.
   Thread deletion preserves its strong FK attachment fence, orders run/sequence
-  locks first and uses bounded NOWAIT control retries; agent cascade deletion
-  uses its existing conflict response when a child sequence is busy.
+  locks first, then waits for the thread row under the ordinary lock timeout;
+  agent cascade deletion uses its existing conflict response when a child
+  sequence is busy.
 - Terminal-marker replay can repair missing channel callback registration.
   Delivery identity is derived from the original callback, channel and delivery
   event; historical random-ID registrations are recognized. The existing
