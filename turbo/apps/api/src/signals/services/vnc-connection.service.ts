@@ -69,13 +69,15 @@ function ownedConnection(owner: VncOwner, connectionId: string) {
 
 function validateStoredTrust(row: Metadata): void {
   if (
-    ((row.securityType === "apple_dh" ||
+    ((row.securityType === "apple_vnc_password" ||
+      row.securityType === "apple_dh" ||
       row.securityType === "apple_srp" ||
       row.securityType === "apple_rsa_srp") &&
       (row.trustMode !== "none" ||
         row.caBundle !== null ||
         row.x509ServerName !== null)) ||
-    (row.securityType !== "apple_dh" &&
+    (row.securityType !== "apple_vnc_password" &&
+      row.securityType !== "apple_dh" &&
       row.securityType !== "apple_srp" &&
       row.securityType !== "apple_rsa_srp" &&
       ((row.trustMode === "system" && row.caBundle !== null) ||
@@ -92,6 +94,7 @@ function responseSecurity(row: Metadata): VncConnectionResponse["security"] {
       ? ({ mode: "custom_ca", caBundle: row.caBundle } as const)
       : ({ mode: "system" } as const);
   if (
+    row.securityType === "apple_vnc_password" ||
     row.securityType === "apple_dh" ||
     row.securityType === "apple_srp" ||
     row.securityType === "apple_rsa_srp"

@@ -192,6 +192,42 @@ fn capable_handoff_requires_an_explicit_transport_and_server_identity() {
 }
 
 #[test]
+fn apple_classic_password_handoff_is_distinct_from_x509_and_keeps_secret_private() {
+    let response: ResolveResponse = serde_json::from_value(json!({
+        "outcome": "resolved_apple_vnc_password", "host": "127.0.0.1", "port": 5900,
+        "generation": 5,
+        "transport": {
+            "type": "ssh", "connectionId": "00000000-0000-4000-8000-000000000003",
+            "generation": 9
+        },
+        "authentication": { "method": "vnc_password", "password": "secret" },
+        "security": { "type": "apple_vnc_password" }
+    }))
+    .unwrap();
+    let ResolveResponse::ResolvedAppleVncPassword {
+        authentication,
+        security,
+        transport,
+        ..
+    } = response
+    else {
+        panic!("expected separate Apple classic-password handoff");
+    };
+    let ResolveResponseResolvedAuthentication::VncPassword { password } = authentication else {
+        panic!("expected bounded classic VNC password");
+    };
+    assert_eq!(password.expose(), "secret");
+    assert!(matches!(
+        security,
+        ResolveResponseResolvedSecurity::AppleVncPassword
+    ));
+    assert!(matches!(
+        transport,
+        ResolveResponseResolvedTransportTransport::Ssh { generation: 9, .. }
+    ));
+}
+
+#[test]
 fn apple_dh_handoff_keeps_secret_private_and_omits_x509_identity() {
     let response: ResolveResponse = serde_json::from_value(json!({
         "outcome": "resolved_apple_dh", "host": "127.0.0.1", "port": 5900,
@@ -339,7 +375,7 @@ fn malformed_credentials_and_duplicate_fields_do_not_expose_passwords() {
 }
 
 #[test]
-fn resolve_request_advertises_the_seven_exact_supported_tuples() {
+fn resolve_request_advertises_the_eight_exact_supported_tuples() {
     let request = ResolveRequest {
         connection_id: "00000000-0000-4000-8000-000000000001".to_owned(),
         runner_identity: ResolveRequestRunnerIdentity {
@@ -368,6 +404,11 @@ fn resolve_request_advertises_the_seven_exact_supported_tuples() {
                 transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
             },
             ResolveRequestSupportedProfile {
+                auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
+                security_type: ResolveRequestSupportedProfileSecurityType::AppleVncPassword,
+                transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
+            },
+            ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::AppleDhUsernamePassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::AppleDh,
                 transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
@@ -391,6 +432,7 @@ fn resolve_request_advertises_the_seven_exact_supported_tuples() {
             {"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"ssh"},
             {"authMethod":"username_password","securityType":"x509_plain","transportType":"direct"},
             {"authMethod":"username_password","securityType":"x509_plain","transportType":"ssh"},
+            {"authMethod":"vnc_password","securityType":"apple_vnc_password","transportType":"ssh"},
             {"authMethod":"apple_dh_username_password","securityType":"apple_dh","transportType":"ssh"},
             {"authMethod":"apple_srp_username_password","securityType":"apple_srp","transportType":"ssh"},
             {"authMethod":"apple_rsa_srp_username_password","securityType":"apple_rsa_srp","transportType":"ssh"}

@@ -66,7 +66,8 @@ function hasValidAppleRoute(
   transport: TransportSnapshot,
 ) {
   return (
-    (row.securityType !== "apple_dh" &&
+    (row.securityType !== "apple_vnc_password" &&
+      row.securityType !== "apple_dh" &&
       row.securityType !== "apple_srp" &&
       row.securityType !== "apple_rsa_srp") ||
     (row.trustMode === "none" &&
@@ -203,7 +204,8 @@ function storedRunnerSecurity(
 ) {
   if (
     !hasValidAppleRoute(row, transport) ||
-    (row.securityType !== "apple_dh" &&
+    (row.securityType !== "apple_vnc_password" &&
+      row.securityType !== "apple_dh" &&
       row.securityType !== "apple_srp" &&
       row.securityType !== "apple_rsa_srp" &&
       ((row.trustMode === "system" && row.caBundle !== null) ||
@@ -214,7 +216,8 @@ function storedRunnerSecurity(
   }
   const security = runnerVncSecuritySchema.safeParse({
     type: row.securityType,
-    ...(row.securityType === "apple_dh" ||
+    ...(row.securityType === "apple_vnc_password" ||
+    row.securityType === "apple_dh" ||
     row.securityType === "apple_srp" ||
     row.securityType === "apple_rsa_srp"
       ? {}
@@ -280,6 +283,24 @@ function resolvedRunnerResponse(
     security,
     authentication,
   };
+  if (row.securityType === "apple_vnc_password") {
+    if (
+      transport.type !== "ssh" ||
+      security.type !== "apple_vnc_password" ||
+      authentication.method !== "vnc_password"
+    ) {
+      throw new Error(
+        "VNC Apple classic-password handoff has an invalid stored profile",
+      );
+    }
+    return {
+      outcome: "resolved_apple_vnc_password",
+      ...resolved,
+      security,
+      authentication,
+      transport,
+    };
+  }
   if (row.securityType === "apple_dh") {
     if (
       transport.type !== "ssh" ||

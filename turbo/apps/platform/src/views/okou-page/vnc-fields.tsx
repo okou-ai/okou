@@ -78,6 +78,7 @@ export function VncEndpointFields({
           required
           maxLength={VNC_HOST_MAX_LENGTH}
           pattern={
+            editor.profile === "apple_vnc_password" ||
             editor.profile === "apple_dh" ||
             editor.profile === "apple_srp" ||
             editor.profile === "apple_rsa_srp"
@@ -108,21 +109,25 @@ export function VncEndpointFields({
         />
       </label>
       <p id="vnc-destination-help" className="text-sm text-muted-foreground">
-        {editor.profile === "apple_dh"
+        {editor.profile === "apple_vnc_password"
           ? t(($) => {
-              return $.vnc.transport.appleDhDestinationHelp;
+              return $.vnc.transport.appleVncPasswordDestinationHelp;
             })
-          : editor.profile === "apple_srp"
+          : editor.profile === "apple_dh"
             ? t(($) => {
-                return $.vnc.transport.appleSrpDestinationHelp;
+                return $.vnc.transport.appleDhDestinationHelp;
               })
-            : editor.profile === "apple_rsa_srp"
+            : editor.profile === "apple_srp"
               ? t(($) => {
-                  return $.vnc.transport.appleRsaSrpDestinationHelp;
+                  return $.vnc.transport.appleSrpDestinationHelp;
                 })
-              : t(($) => {
-                  return $.vnc.transport.destinationHelp;
-                })}
+              : editor.profile === "apple_rsa_srp"
+                ? t(($) => {
+                    return $.vnc.transport.appleRsaSrpDestinationHelp;
+                  })
+                : t(($) => {
+                    return $.vnc.transport.destinationHelp;
+                  })}
       </p>
     </div>
   );
@@ -148,6 +153,12 @@ function VncSecurityProfileField({
       value: "x509_plain",
       label: t(($) => {
         return $.vnc.security.x509Plain;
+      }),
+    },
+    {
+      value: "apple_vnc_password",
+      label: t(($) => {
+        return $.vnc.security.appleVncPassword;
       }),
     },
     {
@@ -183,6 +194,7 @@ function VncSecurityProfileField({
           if (
             value !== "x509_vnc" &&
             value !== "x509_plain" &&
+            value !== "apple_vnc_password" &&
             value !== "apple_dh" &&
             value !== "apple_srp" &&
             value !== "apple_rsa_srp"
@@ -208,25 +220,29 @@ function VncSecurityProfileField({
         </SelectContent>
       </Select>
       <p className="text-sm text-muted-foreground">
-        {profile === "apple_dh"
+        {profile === "apple_vnc_password"
           ? t(($) => {
-              return $.vnc.security.appleDhHelp;
+              return $.vnc.security.appleVncPasswordHelp;
             })
-          : profile === "apple_srp"
+          : profile === "apple_dh"
             ? t(($) => {
-                return $.vnc.security.appleSrpHelp;
+                return $.vnc.security.appleDhHelp;
               })
-            : profile === "apple_rsa_srp"
+            : profile === "apple_srp"
               ? t(($) => {
-                  return $.vnc.security.appleRsaSrpHelp;
+                  return $.vnc.security.appleSrpHelp;
                 })
-              : profile === "x509_vnc"
+              : profile === "apple_rsa_srp"
                 ? t(($) => {
-                    return $.vnc.security.x509VncHelp;
+                    return $.vnc.security.appleRsaSrpHelp;
                   })
-                : t(($) => {
-                    return $.vnc.security.x509PlainHelp;
-                  })}
+                : profile === "x509_vnc"
+                  ? t(($) => {
+                      return $.vnc.security.x509VncHelp;
+                    })
+                  : t(($) => {
+                      return $.vnc.security.x509PlainHelp;
+                    })}
       </p>
     </>
   );
@@ -382,7 +398,8 @@ export function VncTransportFields({
     },
   ].filter((item) => {
     return (
-      (editor.profile !== "apple_dh" &&
+      (editor.profile !== "apple_vnc_password" &&
+        editor.profile !== "apple_dh" &&
         editor.profile !== "apple_srp" &&
         editor.profile !== "apple_rsa_srp") ||
       item.value === "ssh"
@@ -401,7 +418,8 @@ export function VncTransportFields({
         onValueChange={(value, details) => {
           if (
             (value !== "direct" && value !== "ssh") ||
-            ((editor.profile === "apple_dh" ||
+            ((editor.profile === "apple_vnc_password" ||
+              editor.profile === "apple_dh" ||
               editor.profile === "apple_srp" ||
               editor.profile === "apple_rsa_srp") &&
               value !== "ssh")
@@ -440,6 +458,7 @@ export function VncTransportFields({
 
 function isAppleProfile(profile: VncProfile): boolean {
   return (
+    profile === "apple_vnc_password" ||
     profile === "apple_dh" ||
     profile === "apple_srp" ||
     profile === "apple_rsa_srp"
