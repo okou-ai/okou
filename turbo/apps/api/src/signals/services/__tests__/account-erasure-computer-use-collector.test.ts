@@ -21,9 +21,6 @@ import {
 } from "@okouai/db/schema/computer-use-host";
 
 import { testContext } from "../../../__tests__/test-context";
-import { createBddApi } from "../../routes/__tests__/helpers/api-bdd";
-import { createComputerUseBddApi } from "../../routes/__tests__/helpers/api-bdd-computer-use";
-import { createDeferredPromise } from "../../utils";
 import { env } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
 import { encryptErasureSelector } from "../account-erasure-selector";
@@ -36,8 +33,6 @@ describe("Computer Use remote/in-flight B1 capture", () => {
   const pool = new Pool({ connectionString: env("DATABASE_URL"), max: 4 });
   const db = drizzle(pool);
   const context = testContext();
-  const bdd = createBddApi(context);
-  const computerUse = createComputerUseBddApi(context);
   afterAll(async () => {
     return await pool.end();
   });
@@ -407,113 +402,6 @@ describe("Computer Use remote/in-flight B1 capture", () => {
       "account_erasure:work_unresolved",
     );
   });
-
-  it(
-    "holds D1 through an in-flight screenshot PUT so later B1 capture sees and removes it",
-    { timeout: 30_000 },
-    async () => {
-      const userId = `computer_erasure_${randomUUID()}`;
-      const orgId = `org_${randomUUID()}`;
-      const actor = bdd.user({ userId, orgId });
-      const host = await computerUse.startComputerUseHost(actor);
-      const command = await computerUse.createComputerUseReadCommand(actor, {
-        kind: "app.state",
-        app: "Safari",
-      });
-      expect(
-        (await computerUse.claimNextComputerUseCommand(host.hostToken)).status,
-      ).toBe("command");
-      onTestFinished(async () => {
-        await cleanup(userId);
-      });
-      const bytes = new Set<string>();
-      const uploading = createDeferredPromise<void>(context.signal);
-      const resume = createDeferredPromise<void>(context.signal);
-      onTestFinished(() => {
-        if (!resume.settled()) {
-          resume.resolve(undefined);
-        }
-      });
-      context.mocks.s3.send.mockImplementation(async (request: unknown) => {
-        const input =
-          request instanceof Object && "input" in request
-            ? (request.input as Record<string, unknown>)
-            : {};
-        const name = request instanceof Object ? request.constructor.name : "";
-        if (name === "PutObjectCommand") {
-          uploading.resolve(undefined);
-          await resume.promise;
-          bytes.add(String(input.Key));
-          return {};
-        }
-        if (name === "ListObjectsV2Command") {
-          const found = [...bytes].filter((key) => {
-            return key.startsWith(String(input.Prefix));
-          });
-          return {
-            Contents: found.map((key) => {
-              return {
-                Key: key,
-                Size: 1,
-                LastModified: nowDate(),
-              };
-            }),
-            IsTruncated: false,
-          };
-        }
-        if (name === "DeleteObjectsCommand") {
-          const keys =
-            input.Delete instanceof Object && "Objects" in input.Delete
-              ? (input.Delete as { Objects: { Key: string }[] }).Objects
-              : [];
-          for (const item of keys) {
-            bytes.delete(item.Key);
-          }
-          return { Deleted: keys };
-        }
-        return {};
-      });
-      const completing = computerUse.requestCompleteComputerUseCommand(
-        host.hostToken,
-        command.commandId,
-        {
-          status: "succeeded",
-          result: {
-            screenshot: `data:image/png;base64,${Buffer.from("race").toString("base64")}`,
-          },
-        },
-        [200, 403],
-      );
-      await uploading.promise;
-      const closing = setup(userId);
-      await expect
-        .poll(
-          async () => {
-            const observed = await pool.query(
-              "SELECT count(*)::int AS count FROM pg_stat_activity WHERE wait_event = 'advisory' AND query LIKE '%erasure_isolation_probe%'",
-            );
-            return Number(observed.rows[0]?.count ?? 0);
-          },
-          { timeout: 10_000 },
-        )
-        .toBeGreaterThan(0);
-      resume.resolve(undefined);
-      // The final SQL completion can lose to D1 closure even after its PUT.
-      // B1's captured command prefix must still erase the orphaned byte.
-      expect((await completing).status).toBe(403);
-      const { job, handler } = await closing;
-      const revision = await sealed(job);
-      expect(bytes.size).toBe(1);
-      const leases = await claimErasureWork(db, job.id, "verification", 3);
-      for (const lease of leases) {
-        await executeErasureWork(db, lease, handler, context.signal);
-      }
-      expect(bytes.size).toBe(0);
-      await expect(finalizeErasureJob(db, job.id, revision)).rejects.toThrow(
-        "account_erasure:work_unresolved",
-      );
-    },
-  );
 
   it("refuses a cross-account reference to a host before revoking its credential", async () => {
     const userId = `computer_erasure_${randomUUID()}`;

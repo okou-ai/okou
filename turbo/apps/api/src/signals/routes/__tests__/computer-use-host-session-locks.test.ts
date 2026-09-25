@@ -2,7 +2,7 @@ import { aroundEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockNow, withMockNowForTest } from "../../../lib/time";
-import { withComputerUseHostSessionBarrierFixture } from "../../../test-fixtures/computer-use-host-session-erasure";
+import { withComputerUseHostSessionBarrierFixture } from "../../../test-fixtures/computer-use-host-session-barrier";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 
@@ -56,29 +56,25 @@ describe("Computer Use host session row locks", () => {
       const host = await startHost(actor);
 
       const created = await withComputerUseHostSessionBarrierFixture(
-        {
-          orgId: actor.orgId,
-          stopAt: "locked-host",
-          work: async (barrier) => {
-            const stopping = computerUse.stopComputerUseHost(host.hostToken);
-            await barrier.entered;
+        async (barrier) => {
+          const stopping = computerUse.stopComputerUseHost(host.hostToken);
+          await barrier.entered;
 
-            // Stop keeps FOR UPDATE, which conflicts with the foreign-key
-            // KEY SHARE, so this is the contrast the non-stop routes avoid.
-            const creating = computerUse.createComputerUseReadCommand(actor, {
-              kind: "apps.list",
-            });
-            await expect
-              .poll(barrier.blockedWaiterCount, BLOCKED)
-              .toBeGreaterThanOrEqual(1);
+          // Stop keeps FOR UPDATE, which conflicts with the foreign-key
+          // KEY SHARE, so this is the contrast the non-stop routes avoid.
+          const creating = computerUse.createComputerUseReadCommand(actor, {
+            kind: "apps.list",
+          });
+          await expect
+            .poll(barrier.blockedWaiterCount, BLOCKED)
+            .toBeGreaterThanOrEqual(1);
 
-            barrier.release();
-            await expect(stopping).resolves.toMatchObject({
-              ok: true,
-              hostId: host.hostId,
-            });
-            return await creating;
-          },
+          barrier.release();
+          await expect(stopping).resolves.toMatchObject({
+            ok: true,
+            hostId: host.hostId,
+          });
+          return await creating;
         },
         context.signal,
       );
@@ -137,27 +133,23 @@ describe("Computer Use host session row locks", () => {
       await computerUse.claimNextComputerUseCommand(host.hostToken);
 
       const refused = await withComputerUseHostSessionBarrierFixture(
-        {
-          orgId: actor.orgId,
-          stopAt: "locked-host",
-          work: async (barrier) => {
-            const stopping = computerUse.stopComputerUseHost(host.hostToken);
-            await barrier.entered;
+        async (barrier) => {
+          const stopping = computerUse.stopComputerUseHost(host.hostToken);
+          await barrier.entered;
 
-            const completing = computerUse.requestCompleteComputerUseCommand(
-              host.hostToken,
-              created.commandId,
-              { status: "succeeded", result: { apps: [] } },
-              [401],
-            );
-            await expect
-              .poll(barrier.blockedWaiterCount, BLOCKED)
-              .toBeGreaterThanOrEqual(1);
+          const completing = computerUse.requestCompleteComputerUseCommand(
+            host.hostToken,
+            created.commandId,
+            { status: "succeeded", result: { apps: [] } },
+            [401],
+          );
+          await expect
+            .poll(barrier.blockedWaiterCount, BLOCKED)
+            .toBeGreaterThanOrEqual(1);
 
-            barrier.release();
-            await expect(stopping).resolves.toMatchObject({ ok: true });
-            return await completing;
-          },
+          barrier.release();
+          await expect(stopping).resolves.toMatchObject({ ok: true });
+          return await completing;
         },
         context.signal,
       );

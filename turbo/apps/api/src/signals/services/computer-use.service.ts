@@ -2,12 +2,6 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { command, computed, type Computed } from "ccstate";
 import {
-  assertErasureSubjectReadable,
-  assertErasureSubjectWritable,
-  setErasureFenceDeadlines,
-  type ErasureSubject,
-} from "@okouai/db/operations/account-erasure";
-import {
   and,
   asc,
   desc,
@@ -170,8 +164,7 @@ type HeartbeatComputerUseHostResult =
 
 type StopComputerUseHostResult =
   | { readonly status: "stopped"; readonly hostId: string }
-  | { readonly status: "invalid_token" }
-  | { readonly status: "subject_closed" };
+  | { readonly status: "invalid_token" };
 
 type ClaimNextComputerUseHostCommandResult =
   | { readonly status: "invalid_token" }
@@ -198,7 +191,6 @@ type CompleteComputerUseHostCommandParams =
 type CompleteComputerUseHostCommandResult =
   | { readonly status: "completed" }
   | { readonly status: "invalid_token" }
-  | { readonly status: "subject_closed" }
   | { readonly status: "not_found" }
   | { readonly status: "not_running" };
 type CompleteComputerUseHostCommandState =
@@ -617,9 +609,6 @@ function offloadScreenshotForResult(
       return params.result;
     }
 
-    // Offload is outside command completion's row lock. Hold only the
-    // existing D1 subject admission across PUT so B1 cannot inventory a
-    // prefix while a late completion is still writing its bytes.
     return await db.transaction(async (tx) => {
       const [identity] = await tx
         .select({
@@ -638,8 +627,6 @@ function offloadScreenshotForResult(
       if (!identity) {
         return params.result;
       }
-      await assertErasureSubjectWritable(tx, computerUseHostSubjects(identity));
-      signal.throwIfAborted();
       const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
       const key = `computer-use/${identity.orgId}/${identity.userId}/${params.commandId}/screenshot.${extensionForScreenshotMime(parsed.mimeType)}`;
       await get(putS3Object(bucket, key, parsed.buffer, parsed.mimeType));
@@ -741,8 +728,6 @@ function offloadPluginContentForResult(
       if (!identity) {
         return params.result;
       }
-      await assertErasureSubjectWritable(tx, computerUseHostSubjects(identity));
-      signal.throwIfAborted();
       const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
       const key = `computer-use/${identity.orgId}/${identity.userId}/${params.commandId}/plugin-content.${extensionForPluginMime(pluginContent.mimeType)}`;
       await get(putS3Object(bucket, key, buffer, pluginContent.mimeType));
@@ -1245,126 +1230,6 @@ async function hostFromToken(
   return host ?? null;
 }
 
-const COMPUTER_USE_HOST_SESSION_LOCK_TIMEOUT = "1s";
-const COMPUTER_USE_HOST_SESSION_STATEMENT_TIMEOUT = "5s";
-
-/** The host row moved between the unlocked resolution and the lock. */
-class ComputerUseHostOwnershipChangedError extends Error {
-  constructor() {
-    super("Computer Use host ownership changed while acquiring admission");
-    this.name = "ComputerUseHostOwnershipChangedError";
-  }
-}
-
-/**
- * The host's content-free identity, read without a row lock.
- *
- * These endpoints authenticate by token, so the subjects admission needs are
- * only known once the host row has been read. Reading it under a row lock
- * first and taking the shared subject lock afterwards would invert the fence's
- * lock order — a business row before the subject lock — against a closure that
- * takes its exclusive subject lock first and business rows after. That is a
- * deadlock, not a style preference, so the resolution that feeds admission
- * takes no lock and the locked read happens after admission instead.
- */
-async function hostIdentityFromToken(
-  tx: ComputerUseTx,
-  hostToken: string,
-  signal: AbortSignal,
-): Promise<Pick<ComputerUseHostRow, "id" | "orgId" | "userId"> | null> {
-  const [identity] = await tx
-    .select({
-      id: computerUseHosts.id,
-      orgId: computerUseHosts.orgId,
-      userId: computerUseHosts.userId,
-    })
-    .from(computerUseHosts)
-    .where(
-      and(
-        eq(computerUseHosts.tokenHash, hashSecret(hostToken)),
-        isNull(computerUseHosts.revokedAt),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  return identity ?? null;
-}
-
-type AdmittedComputerUseHostSession =
-  | { readonly outcome: "admitted"; readonly host: ComputerUseHostRow }
-  | { readonly outcome: "invalid_token" }
-  | { readonly outcome: "subject_closed" };
-
-/**
- * Admission for the high-frequency host session endpoints: deadlines ->
- * unlocked host identity -> shared B1 admission -> the host row locked in the
- * route's `lock` mode, revalidated against the identity that was admitted.
- *
- * These are the most frequent Computer Use calls, so the fence pays only what
- * the write template costs — one deadline statement, one statement for every
- * subject key, and the separate closure lookup — plus the one unlocked
- * resolution the lock order forces. The old per-subject template would have
- * cost two more round trips on every heartbeat and every claim poll.
- *
- * A host that disappears between the two reads was revoked, deleted or had its
- * token rotated, which is exactly the state these routes already report as
- * `invalid_token`. An owner that changes is not a state any writer produces
- * today, so it raises rather than silently admitting one account's subjects
- * and then writing another's row.
- */
-async function admitComputerUseHostSession(
-  tx: ComputerUseTx,
-  hostToken: string,
-  lock: ComputerUseHostSessionLock,
-  signal: AbortSignal,
-): Promise<AdmittedComputerUseHostSession> {
-  await setErasureFenceDeadlines(tx, {
-    lockTimeout: COMPUTER_USE_HOST_SESSION_LOCK_TIMEOUT,
-    statementTimeout: COMPUTER_USE_HOST_SESSION_STATEMENT_TIMEOUT,
-  });
-  const identity = await hostIdentityFromToken(tx, hostToken, signal);
-  if (!identity) {
-    return { outcome: "invalid_token" };
-  }
-  const admitted = await settle(
-    assertErasureSubjectWritable(tx, computerUseHostSubjects(identity)),
-  );
-  if (!admitted.ok) {
-    if (
-      admitted.error instanceof Error &&
-      admitted.error.message === "account_erasure:subject_closed"
-    ) {
-      return { outcome: "subject_closed" };
-    }
-    throw admitted.error;
-  }
-  signal.throwIfAborted();
-  const host = await hostFromToken(tx, hostToken, lock, signal);
-  if (!host) {
-    return { outcome: "invalid_token" };
-  }
-  if (
-    host.id !== identity.id ||
-    host.orgId !== identity.orgId ||
-    host.userId !== identity.userId
-  ) {
-    throw new ComputerUseHostOwnershipChangedError();
-  }
-  return { outcome: "admitted", host };
-}
-
-/** The complete subject set every host-scoped route admits: the host's owner
- * and its organization. */
-function computerUseHostSubjects(params: {
-  readonly orgId: string;
-  readonly userId: string;
-}): readonly ErasureSubject[] {
-  return [
-    { subjectKind: "user", subjectId: params.userId },
-    { subjectKind: "organization", subjectId: params.orgId },
-  ];
-}
-
 export const startComputerUseHost$ = command(
   async (
     { set },
@@ -1583,24 +1448,21 @@ export const stopComputerUseHost$ = command(
     const db = set(writeDb$);
     const { result, userId, orgId, threadBindingsCleared } =
       await db.transaction(async (tx) => {
-        const admitted = await admitComputerUseHostSession(
+        const host = await hostFromToken(
           tx,
           params.hostToken,
           "update",
           signal,
         );
-        if (admitted.outcome !== "admitted") {
+        if (!host) {
           return {
-            result: { status: admitted.outcome },
+            result: { status: "invalid_token" as const },
             userId: null,
             orgId: null,
             threadBindingsCleared: false,
           };
         }
-        // Admission can wait behind an erasure mutation. One fresh clock after
-        // that wait owns host liveness and every persisted timestamp here.
         const now = nowDate();
-        const host = admitted.host;
 
         let threadBindingsCleared = false;
         if (host.installationId) {
@@ -1688,28 +1550,6 @@ export const listComputerUseHosts$ = command(
     );
   },
 );
-
-const COMPUTER_USE_COMMAND_LOCK_TIMEOUT = "1s";
-const COMPUTER_USE_COMMAND_STATEMENT_TIMEOUT = "5s";
-
-function computerUseCommandSubjects(params: {
-  readonly orgId: string;
-  readonly userId: string;
-}): readonly ErasureSubject[] {
-  return [
-    { subjectKind: "user", subjectId: params.userId },
-    { subjectKind: "organization", subjectId: params.orgId },
-  ];
-}
-
-async function setComputerUseCommandDeadlines(
-  tx: ComputerUseTx,
-): Promise<void> {
-  await setErasureFenceDeadlines(tx, {
-    lockTimeout: COMPUTER_USE_COMMAND_LOCK_TIMEOUT,
-    statementTimeout: COMPUTER_USE_COMMAND_STATEMENT_TIMEOUT,
-  });
-}
 
 export const createComputerUseCommand$ = command(
   async (
@@ -1835,23 +1675,6 @@ export const getComputerUseCommand$ = command(
     const db = set(writeDb$);
     const value = await db.transaction(
       async (tx) => {
-        await setComputerUseCommandDeadlines(tx);
-        const admitted = await settle(
-          assertErasureSubjectWritable(tx, computerUseCommandSubjects(params)),
-        );
-        if (!admitted.ok) {
-          if (
-            admitted.error instanceof Error &&
-            admitted.error.message === "account_erasure:subject_closed"
-          ) {
-            return null;
-          }
-          throw admitted.error;
-        }
-        signal.throwIfAborted();
-
-        // Admission can wait behind an erasure mutation. One fresh clock after
-        // that wait owns every timeout comparison and timestamp in this sweep.
         const now = nowDate();
         await failStaleRunningComputerUseCommands(
           tx,
@@ -1910,21 +1733,6 @@ export const getComputerUseCommandScreenshot$ = command(
     const db = set(writeDb$);
     const value = await db.transaction(
       async (tx) => {
-        await setComputerUseCommandDeadlines(tx);
-        const admitted = await settle(
-          assertErasureSubjectReadable(tx, computerUseCommandSubjects(params)),
-        );
-        if (!admitted.ok) {
-          if (
-            admitted.error instanceof Error &&
-            admitted.error.message === "account_erasure:subject_closed"
-          ) {
-            return null;
-          }
-          throw admitted.error;
-        }
-        signal.throwIfAborted();
-
         const row = await selectComputerUseCommandContent(tx, params);
         signal.throwIfAborted();
         let result: {
@@ -1977,21 +1785,6 @@ export const getComputerUseCommandPluginContent$ = command(
     const db = set(writeDb$);
     const value = await db.transaction(
       async (tx) => {
-        await setComputerUseCommandDeadlines(tx);
-        const admitted = await settle(
-          assertErasureSubjectReadable(tx, computerUseCommandSubjects(params)),
-        );
-        if (!admitted.ok) {
-          if (
-            admitted.error instanceof Error &&
-            admitted.error.message === "account_erasure:subject_closed"
-          ) {
-            return null;
-          }
-          throw admitted.error;
-        }
-        signal.throwIfAborted();
-
         const row = await selectComputerUseCommandContent(tx, params);
         signal.throwIfAborted();
         let result: {
@@ -2223,19 +2016,16 @@ async function computerUseHostCommandCompletionState(
   },
   signal: AbortSignal,
 ): Promise<CompleteComputerUseHostCommandState> {
-  const admitted = await admitComputerUseHostSession(
+  const host = await hostFromToken(
     tx,
     params.hostToken,
     "no key update",
     signal,
   );
-  if (admitted.outcome !== "admitted") {
-    return { status: admitted.outcome };
+  if (!host) {
+    return { status: "invalid_token" };
   }
-  // Admission can wait behind an erasure mutation. One fresh clock after that
-  // wait owns the host liveness stamp this completion writes.
   const now = nowDate();
-  const host = admitted.host;
 
   const [commandRow] = await tx
     .select()
