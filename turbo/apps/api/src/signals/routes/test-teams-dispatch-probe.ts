@@ -11,7 +11,6 @@ import type { RouteEntry } from "../route-entry";
 import { safeJsonParse, settle } from "../utils";
 import { ApiDispatchTimingCollector } from "../services/api-dispatch-timing.service";
 import { dispatchTeamsMessageToAgent$ } from "../services/teams-dispatch.service";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -177,7 +176,6 @@ const postTestTeamsDispatchProbe$ = command(
         dispatchTeamsMessageToAgent$,
         {
           activity,
-          publicBrand: PUBLIC_BRAND,
           apiStartTime,
           timing: new ApiDispatchTimingCollector(),
         },

@@ -1,4 +1,3 @@
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   index,
   integer,
@@ -35,8 +34,11 @@ export const chatTelegramContext = pgTable(
     threadContext: text("thread_context"),
     rootMessageId: text("root_message_id"),
     thinkingMessageId: text("thinking_message_id"),
-    /** Product brand derived from the Telegram webhook hostname at ingress. */
-    publicBrand: text("public_brand").$type<PublicBrand>(),
+    /**
+     * Retired: current APIs neither read nor write it and rely on the
+     * `okou` default; drop it after older API deployments drain.
+     */
+    publicBrand: text("public_brand").default("okou"),
     userLinkId: uuid("user_link_id"),
     userLinkKind: text("user_link_kind").$type<"custom" | "official">(),
     chatType: text("chat_type").notNull(),

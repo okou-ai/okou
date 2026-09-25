@@ -1395,7 +1395,9 @@ async function insertTelegramChatDeliveryCallback(args: {
     payload: {
       ...args.target,
       chatEventId: args.chatEventId,
-      publicBrand: PUBLIC_BRAND,
+      // Rollback shim (#36766): API builds before brand retirement require
+      // this key. Remove after older API deployments drain.
+      publicBrand: "okou",
     },
   });
 }
