@@ -277,7 +277,7 @@ function HostChoiceSelect({
           );
         }}
       >
-        <div className="relative grid min-w-0 max-w-[min(12rem,calc(100%-1.5rem))] shrink-0">
+        <div className="relative grid min-w-0 max-w-[min(12rem,calc(100%-1.5rem))] shrink-0 grid-cols-[minmax(0,1fr)]">
           {sizingLabels.map((label) => {
             return (
               <span
