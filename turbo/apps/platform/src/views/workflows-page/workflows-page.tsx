@@ -1289,7 +1289,7 @@ function WorkflowsHeaderActions({
   const openCreateWorkflowDialog = useSet(openCreateWorkflowDialog$);
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex shrink-0 items-center gap-2">
       {officialWorkflowsEnabled ? (
         <Link
           pathname={ROUTES.officialWorkflows}
@@ -1387,7 +1387,7 @@ export function WorkflowsPage() {
       })} | ${brandName}`}</title>
       <header className="shrink-0 bg-transparent px-4 pb-0 pt-3 sm:px-6 md:pb-3 md:pt-10">
         <div className="mx-auto flex max-w-[900px] flex-wrap items-end justify-between gap-4">
-          <div className="hidden min-w-0 md:block">
+          <div className="hidden min-w-0 md:block md:flex-1">
             <h1 className="text-lg font-semibold tracking-tight text-foreground">
               {t(($) => {
                 return $.workflows.list.title;
