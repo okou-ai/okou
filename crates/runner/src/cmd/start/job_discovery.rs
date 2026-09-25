@@ -144,10 +144,9 @@ use runner_supervisor::idle_lifecycle::{
     rollback_reserved_idle_for_spawn, spawn_idle_destroy_job,
 };
 use runner_supervisor::pre_claim_admission::{
-    AdmittedClaim, AdmittedResource, ClaimAdmissionRequest, ExactSpeculation,
-    ExactSpeculationOutcome, PreClaimResources, PreferencePreparation, SandboxAdmittedResource,
-    claim_with_local_admission, prepare_preference_candidate, rollback_exact_speculation_outcome,
-    rollback_sandbox_admitted_resource,
+    AdmittedClaim, AdmittedResource, ExactSpeculation, ExactSpeculationOutcome, PreClaimOutcome,
+    PreClaimRequest, PreClaimResources, SandboxAdmittedResource, admit_and_claim,
+    rollback_exact_speculation_outcome, rollback_sandbox_admitted_resource,
 };
 use runner_types::ids::RunId;
 use runner_types::types::{CompleteRequest, ExecutionContext, SandboxReuseResult, reuse_key_kind};
@@ -256,26 +255,9 @@ pub(super) async fn handle_discovered_job(
     };
 
     let resources = pre_claim_resources(&ctx);
-    let prepared = match prepare_preference_candidate(
-        candidate,
-        &profile_name,
-        job_vcpu,
-        job_memory,
-        &device_rate_limits,
-        &resources,
-    )
-    .await
-    {
-        PreferencePreparation::Ready(prepared) => prepared,
-        PreferencePreparation::Pending(candidate) => {
-            return DiscoveredJobResult::pending(candidate);
-        }
-        PreferencePreparation::Deferred => return DiscoveredJobResult::completed(false),
-    };
-    let Some(admission) = claim_with_local_admission(
-        ClaimAdmissionRequest {
-            prepared,
-            run_id,
+    let admission = match admit_and_claim(
+        PreClaimRequest {
+            candidate,
             profile_name: &profile_name,
             job_vcpu,
             job_memory,
@@ -285,8 +267,10 @@ pub(super) async fn handle_discovered_job(
         &resources,
     )
     .await
-    else {
-        return DiscoveredJobResult::completed(false);
+    {
+        PreClaimOutcome::Claimed(admission) => *admission,
+        PreClaimOutcome::Pending(candidate) => return DiscoveredJobResult::pending(*candidate),
+        PreClaimOutcome::Deferred => return DiscoveredJobResult::completed(false),
     };
     let AdmittedClaim {
         claimed,

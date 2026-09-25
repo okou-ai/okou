@@ -127,27 +127,43 @@ pub struct AdmittedClaim {
     pub blank_pool_selection: Option<BlankPoolSelection>,
 }
 
-/// An opaque prepared candidate whose local reservation must pass through claim or rollback.
-pub struct PreparedCandidate {
-    candidate: JobCandidate,
-    resource: Option<LocalAdmissionResource>,
-    blank_pool_selection: Option<BlankPoolSelection>,
-}
-
-pub enum PreferencePreparation {
-    Ready(PreparedCandidate),
-    Pending(JobCandidate),
-    Deferred,
-}
-
-pub struct ClaimAdmissionRequest<'a> {
-    pub prepared: PreparedCandidate,
-    pub run_id: RunId,
+/// Concrete profile facts supplied by Runner, without exposing a pre-claim reservation.
+pub struct PreClaimRequest<'a> {
+    pub candidate: JobCandidate,
     pub profile_name: &'a str,
     pub job_vcpu: u32,
     pub job_memory: u32,
     pub workspace_disk_mb: u32,
     pub device_rate_limits: &'a Option<sandbox::DeviceRateLimits>,
+}
+
+/// Only a successful claim transfers local resource ownership to Runner.
+pub enum PreClaimOutcome {
+    Claimed(Box<AdmittedClaim>),
+    Pending(Box<JobCandidate>),
+    Deferred,
+}
+
+struct PreparedCandidate {
+    candidate: JobCandidate,
+    resource: Option<LocalAdmissionResource>,
+    blank_pool_selection: Option<BlankPoolSelection>,
+}
+
+enum PreferencePreparation {
+    Ready(PreparedCandidate),
+    Pending(JobCandidate),
+    Deferred,
+}
+
+struct ClaimAdmissionRequest<'a> {
+    prepared: PreparedCandidate,
+    run_id: RunId,
+    profile_name: &'a str,
+    job_vcpu: u32,
+    job_memory: u32,
+    workspace_disk_mb: u32,
+    device_rate_limits: &'a Option<sandbox::DeviceRateLimits>,
 }
 
 struct PreferenceCandidateRequest<'a> {
@@ -173,7 +189,57 @@ impl LocalAdmission {
     }
 }
 
-pub async fn claim_with_local_admission(
+/// Prepare a candidate and complete its admission-to-claim transaction in one owner.
+/// The caller must await this operation in a non-interruptible discovery branch.
+pub async fn admit_and_claim(
+    request: PreClaimRequest<'_>,
+    ctx: &PreClaimResources<'_>,
+) -> PreClaimOutcome {
+    let PreClaimRequest {
+        candidate,
+        profile_name,
+        job_vcpu,
+        job_memory,
+        workspace_disk_mb,
+        device_rate_limits,
+    } = request;
+    let run_id = candidate.run_id();
+    let prepared = match prepare_preference_candidate(
+        candidate,
+        profile_name,
+        job_vcpu,
+        job_memory,
+        device_rate_limits,
+        ctx,
+    )
+    .await
+    {
+        PreferencePreparation::Ready(prepared) => prepared,
+        PreferencePreparation::Pending(candidate) => {
+            return PreClaimOutcome::Pending(Box::new(candidate));
+        }
+        PreferencePreparation::Deferred => return PreClaimOutcome::Deferred,
+    };
+    match claim_with_local_admission(
+        ClaimAdmissionRequest {
+            prepared,
+            run_id,
+            profile_name,
+            job_vcpu,
+            job_memory,
+            workspace_disk_mb,
+            device_rate_limits,
+        },
+        ctx,
+    )
+    .await
+    {
+        Some(claimed) => PreClaimOutcome::Claimed(Box::new(claimed)),
+        None => PreClaimOutcome::Deferred,
+    }
+}
+
+async fn claim_with_local_admission(
     request: ClaimAdmissionRequest<'_>,
     ctx: &PreClaimResources<'_>,
 ) -> Option<AdmittedClaim> {
@@ -414,7 +480,7 @@ async fn prepare_exact_speculation(
     }
 }
 
-pub async fn prepare_preference_candidate(
+async fn prepare_preference_candidate(
     candidate: JobCandidate,
     profile_name: &str,
     job_vcpu: u32,
