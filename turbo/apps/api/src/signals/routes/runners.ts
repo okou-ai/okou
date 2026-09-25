@@ -1136,7 +1136,6 @@ function buildClaimTransitionSql(
               ${agentRuns.status} AS "status"
             FROM ${agentRuns}
             WHERE ${eq(agentRuns.id, runId)}
-              AND ${agentRuns.triggerSource} IS DISTINCT FROM 'goal'
             FOR UPDATE
           ),
           locked_job AS MATERIALIZED (

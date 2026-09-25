@@ -297,12 +297,7 @@ async function loadDrainCandidates(
     })
     .from(agentRunQueue)
     .leftJoin(agentRuns, eq(agentRunQueue.runId, agentRuns.id))
-    .where(
-      and(
-        eq(agentRunQueue.orgId, orgId),
-        sql`${agentRuns.triggerSource} IS DISTINCT FROM 'goal'`,
-      ),
-    )
+    .where(eq(agentRunQueue.orgId, orgId))
     .orderBy(agentRunQueue.createdAt);
 }
 
@@ -516,9 +511,6 @@ async function promoteQueuedCandidateInTransaction(
       .delete(agentRunQueue)
       .where(eq(agentRunQueue.runId, args.row.runId));
     return complete({ status: "removed-stale" });
-  }
-  if (lockedRun.triggerSource === "goal") {
-    return complete({ status: "lost" });
   }
   if (args.row.runStatus !== "queued") {
     return complete({ status: "lost" });

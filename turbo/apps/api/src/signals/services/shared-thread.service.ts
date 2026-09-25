@@ -38,10 +38,8 @@ import { projectUserMessageForPublicShare } from "./chat-user-message.service";
 import {
   canonicalArchivedChatEventContent,
   canonicalArchivedChatEventError,
-  canonicalArchivedChatEventGoalId,
   canonicalArchivedChatEventUserMessage,
   canonicalChatEventVisibleContent,
-  canonicalChatEventGoalId,
   canonicalChatEventUserMessage,
 } from "./canonical-chat-event-read.service";
 import { readCurrentChatEventHistory } from "./chat-event-history.service";
@@ -88,7 +86,6 @@ interface SharedThreadSourceRow {
     typeof canonicalArchivedChatEventUserMessage
   >;
   readonly runId: string | null;
-  readonly runGroupId: string | null;
 }
 
 function isShareableEventType(row: ChatEventRow): row is ChatEventRow & {
@@ -143,7 +140,6 @@ function archivedSharedThreadRows(
         content: canonicalArchivedChatEventContent(row),
         userMessage: canonicalArchivedChatEventUserMessage(row),
         runId: row.runId,
-        runGroupId: canonicalArchivedChatEventGoalId(row),
       },
     ];
   });
@@ -182,7 +178,6 @@ function loadSharedThreadSourceRows(
         content: canonicalChatEventVisibleContent(),
         userMessage: canonicalChatEventUserMessage(),
         runId: chatEvents.runId,
-        runGroupId: canonicalChatEventGoalId(),
         isVisible: sql`COALESCE(
         ${visibleChatEventCondition(database)},
         false
@@ -227,7 +222,6 @@ function loadSharedThreadSourceRows(
           content: row.content,
           userMessage: row.userMessage,
           runId: row.runId,
-          runGroupId: row.runGroupId,
         },
       ];
     });
@@ -302,7 +296,6 @@ const prepareSharedThreadMessages$ = command(
     signal: AbortSignal,
   ): Promise<PreparedSharedThreadMessages> => {
     const runIndices = new Map<string, number>();
-    const runGroupIndices = new Map<string, number>();
     const attachmentCopies = new Map<string, SharedThreadAttachmentCopy>();
     const messages: SharedMessage[] = [];
     for (const row of rows) {
@@ -338,14 +331,12 @@ const prepareSharedThreadMessages$ = command(
         continue;
       }
       const runIndex = localIndex(row.runId, runIndices);
-      const runGroupIndex = localIndex(row.runGroupId, runGroupIndices);
       messages.push({
         messageIndex: messages.length,
         role: row.eventType === "output.message" ? "assistant" : "user",
         content,
         ...(attachments.length === 0 ? {} : { attachments }),
         ...(runIndex === undefined ? {} : { runIndex }),
-        ...(runGroupIndex === undefined ? {} : { runGroupIndex }),
       });
     }
     return { kind: "prepared", messages, attachmentCopies };
