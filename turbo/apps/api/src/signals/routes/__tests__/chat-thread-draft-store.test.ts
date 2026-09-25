@@ -144,6 +144,19 @@ describe("thread drafts", () => {
     await expect(chat.listThreadDrafts(foreign)).resolves.not.toContain(
       fixture.threadId,
     );
+    // Another user's thread and a missing thread read as the empty draft.
+    await expect(
+      chat.readThreadDraft(foreign, fixture.threadId),
+    ).resolves.toStrictEqual({
+      draftUserMessage: null,
+      draftAttachments: null,
+    });
+    await expect(
+      chat.readThreadDraft(fixture.actor, randomUUID()),
+    ).resolves.toStrictEqual({
+      draftUserMessage: null,
+      draftAttachments: null,
+    });
   });
 
   it("returns 404 for a foreign or missing thread and leaves the owner's draft", async () => {

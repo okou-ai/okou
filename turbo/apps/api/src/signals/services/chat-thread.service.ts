@@ -222,29 +222,30 @@ function ownedChatThread(
   });
 }
 
+/**
+ * The caller's saved draft for one thread, read from `chat_thread_drafts` alone
+ * by thread id and owner. A thread the caller does not own, a missing thread
+ * and a thread without a draft all read as the empty draft; clients already
+ * treat that the same as the former 404.
+ */
 export function chatThreadDraft(args: {
   readonly threadId: string;
   readonly userId: string;
-}): Computed<Promise<ChatThreadDraft | null>> {
-  return computed(async (get): Promise<ChatThreadDraft | null> => {
-    // Two bounded primary-key reads, no join: the owner, then the draft row.
+}): Computed<Promise<ChatThreadDraft>> {
+  return computed(async (get): Promise<ChatThreadDraft> => {
     const db = get(db$);
-    const [thread] = await db
-      .select({ userId: chatThreads.userId })
-      .from(chatThreads)
-      .where(eq(chatThreads.id, args.threadId))
-      .limit(1);
-    if (thread?.userId !== args.userId) {
-      return null;
-    }
-
     const [draft] = await db
       .select({
         draftUserMessage: chatThreadDrafts.draftUserMessage,
         draftAttachments: chatThreadDrafts.draftAttachments,
       })
       .from(chatThreadDrafts)
-      .where(eq(chatThreadDrafts.chatThreadId, args.threadId))
+      .where(
+        and(
+          eq(chatThreadDrafts.chatThreadId, args.threadId),
+          eq(chatThreadDrafts.userId, args.userId),
+        ),
+      )
       .limit(1);
     return {
       draftUserMessage: draft?.draftUserMessage ?? null,

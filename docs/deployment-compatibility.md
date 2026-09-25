@@ -10,6 +10,15 @@ the account-erasure admission. `GET /api/chat-threads/:id/draft`, the drafts
 listing and the user export read the child table. Request and response
 contracts are unchanged.
 
+`GET /api/chat-threads/:id/draft` reads only `chat_thread_drafts`, by thread id
+and the caller's `user_id`. A thread the caller does not own, a missing thread
+and a thread without a draft all return `200` with the empty draft instead of
+`404`; every App bundle maps a `404` to "no draft" and parses the empty draft to
+the same state, so the composer behaves identically. A draft row an older API
+inserted without `user_id` during the rollout reads as empty until the user's
+next save fills it. `PATCH` still reads the thread owner until the contract
+release keys drafts by `(chat_thread_id, user_id)`.
+
 Sending a message no longer touches the draft. The web client already clears
 its draft with its own `PATCH` alongside every send (since #24657, so every App
 bundle in use does), which made the server-side delete a duplicate write on
