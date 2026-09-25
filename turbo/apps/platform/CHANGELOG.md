@@ -11,6 +11,13 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.961.2](https://github.com/okou-ai/okou/compare/app-v0.961.1...app-v0.961.2) (2026-09-25)
+
+
+### Bug Fixes
+
+* **platform:** align remote connector card surfaces ([#36760](https://github.com/okou-ai/okou/issues/36760)) ([108e2e8](https://github.com/okou-ai/okou/commit/108e2e8634c847b751b82e9d21ff0c043b231d05))
+
 ## [0.961.1](https://github.com/okou-ai/okou/compare/app-v0.961.0...app-v0.961.1) (2026-09-24)
 
 
