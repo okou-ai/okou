@@ -340,7 +340,7 @@ async fn cancellation_drops_stream_without_a_password_response() {
 }
 
 #[tokio::test]
-#[ignore = "requires authorized macOS classic-password fixture and verified SSH-to-loopback with PF rollback"]
+#[ignore = "requires authorized macOS classic-password fixture and verified SSH-to-loopback with Mac configuration rollback"]
 async fn authorized_mac_loopback_accepts_and_rejects_synthetic_password() {
     use tokio::net::TcpStream;
     let raw = Zeroizing::new(std::env::var("OKOU_VNC_TEST_PASSWORD").unwrap());
