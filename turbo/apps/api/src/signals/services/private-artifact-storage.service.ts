@@ -7,7 +7,12 @@ import {
 import { command, computed } from "ccstate";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import {
+  CURRENT_LINK_LAYOUT,
+  linkLayoutFromSegment,
+  linkLayoutSegment,
+  linkLayoutSegmentSchema,
+} from "@okouai/api-contracts/contracts/link-layout";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import type { RunUploadedFileMetadata } from "@okouai/db/jsonb-contracts/run-uploaded-file";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
@@ -33,7 +38,8 @@ const PRIVATE_STORAGE = "private-artifact-v1";
 const privateMetadataSchema = z.object({
   storage: z.literal(PRIVATE_STORAGE),
   bucket: z.string().min(1),
-  publicBrand: z.enum(["vm0", "okou"]),
+  // Link-layout marker of the file's shares; the key name is persisted.
+  publicBrand: linkLayoutSegmentSchema,
   artifactReference: z
     .string()
     .regex(/^[a-z0-9]{10}$/u)
@@ -134,14 +140,13 @@ export const allocatePrivateArtifactLocation$ = command(
     args: {
       readonly id: string;
       readonly filename: string;
-      readonly publicBrand: PublicBrand;
       // Declared by the uploader. Only an artifact output belongs in the
       // catalog; ordinary attachments and processing inputs omit it.
       readonly purpose?: "artifact";
     },
     signal: AbortSignal,
   ) => {
-    const { id, filename, publicBrand } = args;
+    const { id, filename } = args;
     const bucket = privateArtifactsBucket();
     const artifactReference = await set(
       allocateArtifactReference$,
@@ -151,7 +156,7 @@ export const allocatePrivateArtifactLocation$ = command(
     const storageMetadata = {
       storage: PRIVATE_STORAGE,
       bucket,
-      publicBrand,
+      publicBrand: linkLayoutSegment(CURRENT_LINK_LAYOUT),
       artifactReference,
       ...(args.purpose ? { purpose: args.purpose } : {}),
     };
@@ -160,7 +165,7 @@ export const allocatePrivateArtifactLocation$ = command(
       key: `private-artifacts/${id}/${sanitizeArtifactFilename(filename)}`,
       bucket,
       url: privateArtifactUrl(id, filename, storageMetadata),
-      publicBrand,
+      layout: CURRENT_LINK_LAYOUT,
       metadata: { "artifact-id": id },
       storageMetadata,
     };
@@ -201,7 +206,6 @@ export const allocatePrivateArtifact$ = command(
       readonly filename: string;
       readonly contentType: string;
       readonly size: number;
-      readonly publicBrand: PublicBrand;
       readonly id?: string;
       readonly purpose?: "artifact";
     },
@@ -213,7 +217,6 @@ export const allocatePrivateArtifact$ = command(
       {
         id,
         filename: args.filename,
-        publicBrand: args.publicBrand,
         ...(args.purpose ? { purpose: args.purpose } : {}),
       },
       signal,
@@ -257,7 +260,8 @@ export const allocatePrivateArtifact$ = command(
         existing.orgId !== args.orgId ||
         existing.metadata.storage !== PRIVATE_STORAGE ||
         existing.metadata.bucket !== bucket ||
-        existing.metadata.publicBrand !== args.publicBrand ||
+        existing.metadata.publicBrand !==
+          location.storageMetadata.publicBrand ||
         existing.storageKey !== key ||
         existing.filename !== args.filename ||
         existing.contentType !== args.contentType
@@ -283,7 +287,9 @@ export function privateArtifactRecord(id: string) {
     if (!row || row.metadata.storage === undefined) {
       return null;
     }
-    const metadata = privateMetadataSchema.parse(row.metadata);
+    const { publicBrand, ...metadata } = privateMetadataSchema.parse(
+      row.metadata,
+    );
     if (!row.orgId || !row.storageKey || !row.filename || !row.contentType) {
       throw new Error(`Private artifact ${id} has incomplete storage metadata`);
     }
@@ -299,6 +305,7 @@ export function privateArtifactRecord(id: string) {
       filename: row.filename,
       contentType: row.contentType,
       ...metadata,
+      layout: linkLayoutFromSegment(publicBrand),
     };
   });
 }

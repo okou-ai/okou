@@ -7961,6 +7961,7 @@
       "moreOptions": "Discord के और विकल्प",
       "retry": "फिर से कोशिश करें",
       "server": "सर्वर: {{name}}",
+      "suspended": "Discord अस्थायी रूप से उपलब्ध नहीं है। मौजूदा कनेक्शन बने रहते हैं।",
       "title": "Discord",
       "unconfigured": "इस संगठन के लिए Discord अभी उपलब्ध नहीं है।",
       "uninstall": "Discord हटाएँ",

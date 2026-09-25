@@ -290,7 +290,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     expect(history.deployments).toHaveLength(8);
   });
 
-  it("reserves historical hosted-site identities and creates new sites on Okou [HOST-A]", async () => {
+  it("reserves legacy-layout hosted-site identities and creates new sites in the current layout [HOST-A]", async () => {
     mockEnv("OKOU_PUBLIC_HOST_DOMAIN", "okou.app");
     mockEnv("ZERO_HOST_DOMAIN", "sites.vm0.io");
     mockEnv("OKOU_HOST_SCHEME", "https");

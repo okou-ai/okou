@@ -1,4 +1,3 @@
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { randomUUID } from "node:crypto";
 import { command, createStore } from "ccstate";
 import { discordGatewayEnvelopeSchema } from "@okouai/api-contracts/contracts/discord-gateway";
@@ -511,7 +510,6 @@ const materializeIngressAttachment$ = command(
         userId: accessArgs.userId,
         orgId: accessArgs.orgId,
         chatThreadId,
-        publicBrand: PUBLIC_BRAND,
         source: "discord",
         scope: "discord-input",
         key: `${accessArgs.connectionId}:${message.channel_id}:${message.id}:${attachment.id}`,

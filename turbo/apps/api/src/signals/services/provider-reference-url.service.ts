@@ -1,11 +1,15 @@
 import type { HostedSiteManifest } from "@okouai/db/jsonb-contracts/hosted-site";
 import { command } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import {
+  linkLayoutSegment,
+  type LinkLayout,
+} from "@okouai/api-contracts/contracts/link-layout";
 import { hostedDeployments, hostedSites } from "@okouai/db/runtime/hosted-site";
 import { and, eq, isNull } from "drizzle-orm";
 
 import { badRequestMessage } from "../../lib/error";
 import { env } from "../../lib/env";
+import { hostedLinkDomain, hostedLinkScheme } from "../../lib/link-layout";
 import { nowDate } from "../../lib/time";
 import { db$, type ReadonlyDb } from "../external/db";
 import {
@@ -29,7 +33,8 @@ interface ProviderReferenceUrlsArgs {
 }
 
 interface HostedSiteUrlTarget {
-  readonly publicBrand: PublicBrand;
+  // A hosted link's host selects the layout it was issued in.
+  readonly layout: LinkLayout;
   readonly publicSlug: string;
   readonly path: string;
 }
@@ -37,18 +42,6 @@ interface HostedSiteUrlTarget {
 interface HostedSiteDeploymentTarget {
   readonly manifest: HostedSiteManifest;
   readonly r2Prefix: string;
-}
-
-function hostDomain(publicBrand: PublicBrand): string {
-  return publicBrand === "okou"
-    ? env("OKOU_PUBLIC_HOST_DOMAIN")
-    : env("ZERO_HOST_DOMAIN");
-}
-
-function hostScheme(publicBrand: PublicBrand): string {
-  return publicBrand === "okou"
-    ? env("OKOU_HOST_SCHEME")
-    : env("ZERO_HOST_SCHEME");
 }
 
 function publicSlugFromHostname(
@@ -95,15 +88,15 @@ function hostedSiteUrlTarget(value: string): HostedSiteUrlTarget | null {
     return null;
   }
   const hostname = url.hostname.toLowerCase();
-  const matches = (["vm0", "okou"] as const).flatMap((publicBrand) => {
-    if (url.protocol !== `${hostScheme(publicBrand)}:`) {
+  const matches = (["legacy", "current"] as const).flatMap((layout) => {
+    if (url.protocol !== `${hostedLinkScheme(layout)}:`) {
       return [];
     }
     const publicSlug = publicSlugFromHostname(
       hostname,
-      hostDomain(publicBrand),
+      hostedLinkDomain(layout),
     );
-    return publicSlug ? [{ publicBrand, publicSlug, path }] : [];
+    return publicSlug ? [{ layout, publicSlug, path }] : [];
   });
   return matches.length === 1 ? (matches[0] ?? null) : null;
 }
@@ -128,7 +121,7 @@ async function loadHostedSiteDeployment(
         and(
           eq(hostedDeployments.id, deploymentId),
           eq(hostedDeployments.orgId, orgId),
-          eq(hostedDeployments.publicBrand, target.publicBrand),
+          eq(hostedDeployments.publicBrand, linkLayoutSegment(target.layout)),
           eq(hostedDeployments.status, "ready"),
         ),
       )
@@ -143,7 +136,7 @@ async function loadHostedSiteDeployment(
         and(
           eq(hostedSites.id, deployment.siteId),
           eq(hostedSites.orgId, orgId),
-          eq(hostedSites.publicBrand, target.publicBrand),
+          eq(hostedSites.publicBrand, linkLayoutSegment(target.layout)),
           isNull(hostedSites.deletedAt),
         ),
       )
@@ -161,7 +154,7 @@ async function loadHostedSiteDeployment(
       and(
         eq(hostedSites.publicSlug, target.publicSlug),
         eq(hostedSites.orgId, orgId),
-        eq(hostedSites.publicBrand, target.publicBrand),
+        eq(hostedSites.publicBrand, linkLayoutSegment(target.layout)),
         isNull(hostedSites.deletedAt),
       ),
     )
@@ -180,7 +173,7 @@ async function loadHostedSiteDeployment(
         eq(hostedDeployments.id, site.activeDeploymentId),
         eq(hostedDeployments.siteId, site.id),
         eq(hostedDeployments.orgId, orgId),
-        eq(hostedDeployments.publicBrand, target.publicBrand),
+        eq(hostedDeployments.publicBrand, linkLayoutSegment(target.layout)),
         eq(hostedDeployments.status, "ready"),
       ),
     )

@@ -1,7 +1,6 @@
 import { Buffer } from "node:buffer";
 
 import { command, computed, type Computed } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import {
@@ -2013,7 +2012,6 @@ interface RecordGeneratedVideoArgs {
   readonly runId: string | undefined;
   readonly billingRunId: string | null;
   readonly billingContext: string;
-  readonly publicBrand: PublicBrand;
   readonly privateArtifacts: boolean;
   readonly pricing: VideoPricing;
   readonly generation: ParsedVideoGeneration;
@@ -2037,7 +2035,6 @@ export const recordGeneratedVideo$ = command(
         extension: extensionForContentType(params.generation.contentType),
         body: params.generation.videoBytes,
         contentType: params.generation.contentType,
-        publicBrand: params.publicBrand,
       },
       signal,
     );
@@ -2054,7 +2051,7 @@ export const recordGeneratedVideo$ = command(
         sizeBytes: params.generation.videoBytes.byteLength,
         url,
         s3Key,
-        publicBrand: params.publicBrand,
+        layout: artifact.layout,
         metadata: compactObject({
           generatedBy: "zero-official-video",
           model: params.generation.model,

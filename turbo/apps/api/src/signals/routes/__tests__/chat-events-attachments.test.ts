@@ -2073,7 +2073,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     await cancelChatRun(actor, run.runId);
   }, 60_000);
 
-  it("keeps a legacy VM0 attachment on the VM0 CDN for an Okou send", async () => {
+  it("keeps a legacy-layout attachment on the legacy CDN for a new send", async () => {
     const { actor, agentId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const fileId = randomUUID();

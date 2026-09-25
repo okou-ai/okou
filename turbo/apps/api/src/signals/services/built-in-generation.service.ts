@@ -7,7 +7,10 @@ import {
   type BuiltInGenerationType,
 } from "@okouai/db/schema/built-in-generation-job";
 import type { BuiltInGenerationResponse } from "@okouai/api-contracts/contracts/built-in-generation";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import {
+  CURRENT_LINK_LAYOUT,
+  linkLayoutSegment,
+} from "@okouai/api-contracts/contracts/link-layout";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -46,7 +49,6 @@ interface CreateBuiltInGenerationJobArgs {
 interface BuiltInGenerationRequestInternal {
   readonly privateArtifacts?: boolean;
   readonly admissionId?: string;
-  readonly publicBrand?: PublicBrand;
   readonly provider?: "openai" | "fal" | "byteplus" | "minimax" | "joggai";
   readonly providerJobId?: string;
   readonly providerSessionId?: string;
@@ -112,7 +114,10 @@ export function builtInGenerationRequestWithInternal(
     [BUILT_IN_GENERATION_INTERNAL_REQUEST_KEY]: compactObject({
       admissionId: internal.admissionId,
       privateArtifacts: internal.privateArtifacts,
-      publicBrand: internal.publicBrand,
+      // Rollback compatibility: an older API completing this job reads a
+      // missing marker as the legacy artifact layout. Remove after that API
+      // is no longer a rollback target (#36766).
+      publicBrand: linkLayoutSegment(CURRENT_LINK_LAYOUT),
       provider: internal.provider,
       providerJobId: internal.providerJobId,
       providerSessionId: internal.providerSessionId,
@@ -147,22 +152,10 @@ export function readBuiltInGenerationRequestInternal(
   if (!isRecord(value)) {
     return {};
   }
-  const publicBrand = value.publicBrand;
-  if (
-    Object.hasOwn(value, "publicBrand") &&
-    publicBrand !== "vm0" &&
-    publicBrand !== "okou"
-  ) {
-    throw new Error(
-      `Invalid built-in generation public brand: ${String(publicBrand)}`,
-    );
-  }
   return {
     privateArtifacts: parsePrivateArtifactsPolicy(value.privateArtifacts),
     admissionId:
       typeof value.admissionId === "string" ? value.admissionId : undefined,
-    publicBrand:
-      publicBrand === "vm0" || publicBrand === "okou" ? publicBrand : undefined,
     provider:
       value.provider === "openai" ||
       value.provider === "fal" ||
@@ -188,13 +181,6 @@ export function readBuiltInGenerationRequestInternal(
       typeof value.providerTask === "string" ? value.providerTask : undefined,
     presentation: value.presentation,
   };
-}
-
-export function builtInGenerationPublicBrand(request: unknown): PublicBrand {
-  // Historical pre-brand requests retain their VM0 artifact identity. This
-  // is permanent read compatibility per #28449; current writers set publicBrand.
-  // Invalid present values throw above.
-  return readBuiltInGenerationRequestInternal(request).publicBrand ?? "vm0";
 }
 
 export function builtInGenerationIsPrivate(request: unknown): boolean {

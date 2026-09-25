@@ -7,7 +7,6 @@ import {
   type DiscordDownloadFileQuery,
 } from "@okouai/api-contracts/contracts/integrations-discord-files";
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { isAllowedUploadType } from "../../lib/uploads-constants";
@@ -81,7 +80,6 @@ const init$ = command(async ({ get, set }, signal: AbortSignal) => {
         contentType,
         size: body.length,
         checksumSha256: body.checksumSha256,
-        publicBrand: PUBLIC_BRAND,
         destination: {
           provider: "discord",
           connectionId: access.binding.connectionId,

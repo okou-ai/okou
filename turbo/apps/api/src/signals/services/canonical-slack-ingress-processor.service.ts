@@ -1,7 +1,6 @@
 import { withNativeChatEventThreadTouch } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { command } from "ccstate";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import type { ChatSlackMessageAssets } from "@okouai/db/jsonb-contracts/chat-slack-context";
 import { slackChatIngress } from "@okouai/db/schema/slack-chat-ingress";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
@@ -670,7 +669,6 @@ const persistClaimedCanonicalSlackIngress$ = command(
         workspaceId: ingress.workspaceId,
         channelId: ingress.channelId,
         messageTs: event.ts,
-        publicBrand: PUBLIC_BRAND,
         botToken,
         files: event.files ?? [],
       },

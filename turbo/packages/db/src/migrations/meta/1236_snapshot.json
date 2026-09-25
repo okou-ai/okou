@@ -1,6 +1,6 @@
 {
-  "id": "6ec40ee1-f8af-43a2-82b9-7e7d08efc99b",
-  "prevId": "a7632ee5-d236-4624-9513-ff6ba006e410",
+  "id": "a5041f37-05d4-4362-8491-1f92ed7e2458",
+  "prevId": "6ec40ee1-f8af-43a2-82b9-7e7d08efc99b",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -10383,13 +10383,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "last_chat_event_seq_id": {
-          "name": "last_chat_event_seq_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
         }
       },
       "indexes": {

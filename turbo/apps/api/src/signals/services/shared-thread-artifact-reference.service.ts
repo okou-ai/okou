@@ -14,6 +14,7 @@ import { settle } from "../utils";
 import { sharedThreadHostedSnapshotFile } from "../../lib/shared-thread-artifact";
 import type { SharedThreadArtifactReference } from "./artifact-reference.service";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
+import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layout";
 import { createHostedPreviewGrant$ } from "./private-hosted-preview.service";
 import { privateArtifactsBucket } from "./private-artifact-storage.service";
 import { sharedThreadArtifactsBucket } from "./shared-thread-artifact-snapshot.service";
@@ -146,7 +147,7 @@ export const resolveSharedThreadArtifactReference$ = command(
       createHostedPreviewGrant$,
       {
         deploymentId: target.id,
-        publicBrand: reference.publicBrand,
+        layout: linkLayoutFromSegment(reference.publicBrand),
         snapshotId: target.snapshotId,
       },
       signal,

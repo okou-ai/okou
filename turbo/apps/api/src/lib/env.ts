@@ -98,6 +98,9 @@ const SCHEMA = {
   R2_USER_ARTIFACTS_BUCKET_NAME: z.string().min(1),
   R2_USER_ARTIFACTS_ACCESS_KEY_ID: z.string().min(1),
   R2_USER_ARTIFACTS_SECRET_ACCESS_KEY: z.string().min(1),
+  // Link layouts (lib/link-layout.ts): OKOU_* origins serve the current
+  // layout; PUBLIC_ARTIFACTS_BASE_URL and ZERO_HOST_* only rebuild links for
+  // content stored in the read-only legacy layout.
   PUBLIC_ARTIFACTS_BASE_URL: z.url(),
   OKOU_PUBLIC_ARTIFACTS_BASE_URL: z.url(),
   PUBLIC_ARTIFACT_SHARES_BASE_URL: z.url().optional(),
@@ -108,7 +111,7 @@ const SCHEMA = {
   ARTIFACT_PREVIEW_WAF_SECRET: z.string().min(32).optional(),
   OKOU_PUBLIC_HOST_DOMAIN: z.string().min(1),
   OKOU_HOST_SCHEME: z.enum(["http", "https"]),
-  // Historical sites.vm0.io URLs retain their own domain and scheme.
+  // Legacy-layout sites.vm0.io URLs retain their own domain and scheme.
   ZERO_HOST_DOMAIN: z.string().min(1).default("sites.vm0.io"),
   ZERO_HOST_SCHEME: z.enum(["http", "https"]).default("https"),
   S3_ENDPOINT: z.url().optional(),

@@ -6,7 +6,6 @@ import {
   DEFAULT_AGENT_DISPLAY_NAME,
   PUBLIC_BRAND_PRESENTATION,
   agentDisplayName,
-  PUBLIC_BRAND,
 } from "@okouai/core/public-brand";
 import { v5 as uuidv5 } from "uuid";
 import {
@@ -1941,7 +1940,6 @@ const persistTelegramChatMessage$ = command(
         userId: args.source.userLink.userId,
         orgId: args.source.orgId,
         chatThreadId: binding.chatThreadId,
-        publicBrand: PUBLIC_BRAND,
         files: telegramInputFiles(args.source, args.chatId, file),
       },
       signal,

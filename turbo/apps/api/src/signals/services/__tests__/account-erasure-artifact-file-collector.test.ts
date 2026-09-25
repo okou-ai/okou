@@ -361,7 +361,7 @@ describe("dormant artifact-file byte erasure", () => {
       "/" +
       randomUUID() +
       "/legacy.txt";
-    await fileFor(userId, null, buildFileUrlFromKey(key, "vm0"));
+    await fileFor(userId, null, buildFileUrlFromKey(key, "legacy"));
     const bucket = bucketWithObjects([key]);
     const captured = await capture(userId);
     await verify(captured.job.id, captured.handler);
@@ -377,7 +377,7 @@ describe("dormant artifact-file byte erasure", () => {
       "/" +
       randomUUID() +
       "/lost.txt";
-    await fileFor(userId, null, buildFileUrlFromKey(key, "vm0"));
+    await fileFor(userId, null, buildFileUrlFromKey(key, "legacy"));
     const bucket = bucketWithObjects([]);
     const captured = await capture(userId);
     await verify(captured.job.id, captured.handler);

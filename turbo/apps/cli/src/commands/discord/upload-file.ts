@@ -166,6 +166,11 @@ Output:
 Notes:
   - Canonical publication completes before Discord delivery begins.
   - Retry with the same file, destination and --operation-id to avoid duplicate publication.
-  - Uses server-side bot credentials; no Discord token is needed locally.`,
+  - Uses server-side bot credentials; no Discord token is needed locally.
+  - Like okou slack upload-file, the command exits 0 whenever the server reports a
+    delivery status, even if Discord delivery failed or is pending. Check
+    delivery.status in the JSON output and follow the printed retry guidance.
+    A non-zero exit after publication means the delivery request itself failed;
+    retry with the same --operation-id.`,
   )
   .action(withErrorHandler(uploadFile));

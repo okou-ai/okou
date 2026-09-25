@@ -3,10 +3,7 @@ import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHash, randomBytes } from "node:crypto";
 
 import { command } from "ccstate";
-import {
-  PUBLIC_BRAND,
-  PUBLIC_BRAND_PRESENTATION,
-} from "@okouai/core/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
 import { v5 as uuidv5 } from "uuid";
 import {
   getBuiltInVisibleModels,
@@ -1765,7 +1762,6 @@ const persistTeamsChatMessage$ = command(
         userId: args.connection.userId,
         orgId: args.installation.orgId,
         chatThreadId: route.chatThreadId,
-        publicBrand: PUBLIC_BRAND,
         files: teamsInputFiles(
           args.activity,
           args.installation,

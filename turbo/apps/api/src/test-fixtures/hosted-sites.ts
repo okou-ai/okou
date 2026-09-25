@@ -1,10 +1,13 @@
 /**
- * Current APIs cannot reproduce historical VM0 identities or rolling
- * deployments left by historical and rollback writers.
+ * Current APIs cannot reproduce legacy-layout links or rolling deployments
+ * left by historical and rollback writers.
  */
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { HostedSitePrepareRequest } from "@okouai/api-contracts/contracts/host";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import {
+  linkLayoutSegment,
+  type LinkLayout,
+} from "@okouai/api-contracts/contracts/link-layout";
 import type { ArtifactSharePolicy } from "@okouai/api-contracts/contracts/artifact-shares";
 import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import type { HostedSiteManifest } from "@okouai/db/jsonb-contracts/hosted-site";
@@ -23,7 +26,7 @@ export async function insertLegacyHostedSiteFixture(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly site: string;
-  readonly publicBrand?: PublicBrand;
+  readonly layout?: LinkLayout;
 }): Promise<string> {
   const db = createStore().set(writeDb$);
   const [site] = await db
@@ -34,7 +37,7 @@ export async function insertLegacyHostedSiteFixture(args: {
       slug: args.site,
       requestedSlug: args.site,
       publicSlug: args.site,
-      publicBrand: args.publicBrand ?? "vm0",
+      publicBrand: linkLayoutSegment(args.layout ?? "legacy"),
     })
     .returning({ id: hostedSites.id });
   if (!site) {
@@ -53,7 +56,7 @@ export async function insertLegacyHostedSiteHistoryFixture(args: {
 }) {
   const siteId = await insertLegacyHostedSiteFixture({
     ...args,
-    publicBrand: "okou",
+    layout: "current",
   });
   const db = createStore().set(writeDb$);
   const deployments = [];
@@ -116,10 +119,11 @@ export async function insertLegacyHostedSitePublicationFixture(args: {
   readonly userId: string;
   readonly site: string;
   readonly files: HostedSitePrepareRequest["files"];
-  readonly publicBrand?: PublicBrand;
+  readonly layout?: LinkLayout;
 }) {
-  const publicBrand = args.publicBrand ?? "okou";
-  const siteId = await insertLegacyHostedSiteFixture({ ...args, publicBrand });
+  const layout = args.layout ?? "current";
+  const publicBrand = linkLayoutSegment(layout);
+  const siteId = await insertLegacyHostedSiteFixture({ ...args, layout });
   const deploymentId = randomUUID();
   const shareId = randomUUID();
   const snapshotId = randomUUID();

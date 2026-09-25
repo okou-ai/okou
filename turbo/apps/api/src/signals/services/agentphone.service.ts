@@ -3,10 +3,7 @@ import { withNativeChatEventThreadTouch } from "./native-chat-event-write.servic
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { command } from "ccstate";
-import {
-  PUBLIC_BRAND,
-  PUBLIC_BRAND_PRESENTATION,
-} from "@okouai/core/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
 import { v5 as uuidv5 } from "uuid";
 import {
   getCanonicalModelDisplayName,
@@ -1581,7 +1578,6 @@ const persistAgentPhoneChatMessage$ = command(
         userId: args.userLink.userId,
         orgId: args.userLink.orgId,
         chatThreadId: route.chatThreadId,
-        publicBrand: PUBLIC_BRAND,
         files: agentPhoneInputFiles(args.event, args.userLink.id),
       },
       signal,
