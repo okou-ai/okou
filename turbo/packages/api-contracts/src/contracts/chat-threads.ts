@@ -306,20 +306,6 @@ const persistedAttachmentSchema = z.object({
   size: z.number(),
 });
 
-/**
- * Retired per-agent unread snapshot. The API always returns an empty list;
- * unread state comes from `/api/indicators`. Remove the field once App
- * bundles that read it have drained.
- */
-const chatThreadReadStateUnreadsSchema = z.object({
-  unreads: z.array(
-    z.object({
-      threadId: z.string(),
-      unreadAt: z.string(),
-    }),
-  ),
-});
-
 export const indicatorSchema = z.enum(["active", "unread"]);
 
 export const indicatorsSchema = z.object({
@@ -1477,12 +1463,6 @@ export const chatThreadDraftContract = c.router({
 
 const chatThreadReadStateResponseSchema = z.object({
   lastReadAt: z.string().nullable(),
-  /**
-   * Fresh unread snapshot for the thread's agent. Clients should treat
-   * `chatThreadReadCursorUpdated` as
-   * read-state invalidation.
-   */
-  unreads: chatThreadReadStateUnreadsSchema.shape.unreads,
 });
 
 /**
