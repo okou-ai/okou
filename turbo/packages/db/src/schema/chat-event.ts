@@ -10,7 +10,6 @@ import {
   index,
   integer,
   bigint,
-  unique,
   uniqueIndex,
   jsonb,
 } from "drizzle-orm/pg-core";
@@ -124,7 +123,6 @@ export const chatEvents = pgTable(
   },
   (table) => {
     return [
-      unique("chat_events_id_thread_unique").on(table.id, table.chatThreadId),
       index("idx_chat_events_created_at_id").on(table.createdAt, table.id),
       index("idx_chat_events_thread_created").on(
         table.chatThreadId,
@@ -133,7 +131,6 @@ export const chatEvents = pgTable(
       index("idx_chat_events_thread_run_terminal_created")
         .on(table.chatThreadId, table.createdAt.desc())
         .where(chatEventTerminalPredicate(table.eventType)),
-      index("idx_chat_events_run_id").on(table.runId),
       uniqueIndex("chat_events_revokes_event_id_not_null_unique")
         .on(table.revokesEventId)
         .where(sql`${table.revokesEventId} IS NOT NULL`),

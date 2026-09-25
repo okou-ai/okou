@@ -1,6 +1,6 @@
 {
-  "id": "b283629c-0b8b-4a7c-81b7-7de90521f5dc",
-  "prevId": "5083e5a7-053d-4b6b-80b4-fecf93b4abbb",
+  "id": "23a53794-34f8-4ff7-8bea-74754331da49",
+  "prevId": "b283629c-0b8b-4a7c-81b7-7de90521f5dc",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -40959,6 +40959,43 @@
           "value": "\"x_resource_reads\".\"resource_id\" ~ '^[0-9]{1,32}$'"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.chat_event_retention_cursors": {
+      "name": "chat_event_retention_cursors",
+      "schema": "",
+      "columns": {
+        "scope_key": {
+          "name": "scope_key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "last_created_at": {
+          "name": "last_created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_event_id": {
+          "name": "last_event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sweep_started_at": {
+          "name": "sweep_started_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },

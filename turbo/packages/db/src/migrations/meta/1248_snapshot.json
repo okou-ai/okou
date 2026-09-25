@@ -1,6 +1,6 @@
 {
-  "id": "b283629c-0b8b-4a7c-81b7-7de90521f5dc",
-  "prevId": "5083e5a7-053d-4b6b-80b4-fecf93b4abbb",
+  "id": "c14c425c-6e53-4dd9-bb98-e521949a2b1b",
+  "prevId": "23a53794-34f8-4ff7-8bea-74754331da49",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3615,8 +3615,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "public_brand": {
-          "name": "public_brand",
+        "link_layout_segment": {
+          "name": "link_layout_segment",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -6408,13 +6408,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'okou'"
-        },
         "name": {
           "name": "name",
           "type": "varchar(64)",
@@ -7462,13 +7455,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'okou'"
-        },
         "event_payload": {
           "name": "event_payload",
           "type": "jsonb",
@@ -7682,13 +7668,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'okou'"
-        },
         "conversation_context": {
           "name": "conversation_context",
           "type": "text",
@@ -7811,6 +7790,43 @@
           "onUpdate": "no action"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.chat_event_retention_cursors": {
+      "name": "chat_event_retention_cursors",
+      "schema": "",
+      "columns": {
+        "scope_key": {
+          "name": "scope_key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "last_created_at": {
+          "name": "last_created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_event_id": {
+          "name": "last_event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sweep_started_at": {
+          "name": "sweep_started_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -8588,13 +8604,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "'okou'"
-        },
         "message_text": {
           "name": "message_text",
           "type": "text",
@@ -8772,13 +8781,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'okou'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -8864,13 +8866,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'okou'"
         },
         "conversation_context": {
           "name": "conversation_context",
@@ -9079,13 +9074,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'okou'"
-        },
         "sender_user_id": {
           "name": "sender_user_id",
           "type": "text",
@@ -9214,13 +9202,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "'okou'"
         },
         "user_link_id": {
           "name": "user_link_id",
@@ -14137,13 +14118,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'okou'"
-        },
         "status": {
           "name": "status",
           "type": "varchar(16)",
@@ -14965,13 +14939,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'okou'"
-        },
         "template": {
           "name": "template",
           "type": "jsonb",
@@ -15218,13 +15185,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'okou'"
-        },
         "status": {
           "name": "status",
           "type": "varchar(20)",
@@ -15364,13 +15324,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "'okou'"
         },
         "status": {
           "name": "status",
@@ -15625,13 +15578,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "'okou'"
-        },
         "dm_welcome_sent": {
           "name": "dm_welcome_sent",
           "type": "boolean",
@@ -15876,13 +15822,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'okou'"
         },
         "encrypted_app_secret": {
           "name": "encrypted_app_secret",
@@ -16803,20 +16742,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'okou'"
-        },
-        "setup_public_brand": {
-          "name": "setup_public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'okou'"
         },
         "target_type": {
           "name": "target_type",
@@ -18759,8 +18684,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "public_brand": {
-          "name": "public_brand",
+        "link_layout_segment": {
+          "name": "link_layout_segment",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -18944,17 +18869,17 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "fk_hosted_deployments_site_public_brand": {
-          "name": "fk_hosted_deployments_site_public_brand",
+        "fk_hosted_deployments_site_link_layout_segment": {
+          "name": "fk_hosted_deployments_site_link_layout_segment",
           "tableFrom": "hosted_deployments",
           "tableTo": "hosted_sites",
           "columnsFrom": [
             "site_id",
-            "public_brand"
+            "link_layout_segment"
           ],
           "columnsTo": [
             "id",
-            "public_brand"
+            "link_layout_segment"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -19001,8 +18926,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "public_brand": {
-          "name": "public_brand",
+        "link_layout_segment": {
+          "name": "link_layout_segment",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -19159,12 +19084,12 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "idx_hosted_sites_id_public_brand": {
-          "name": "idx_hosted_sites_id_public_brand",
+        "idx_hosted_sites_id_link_layout_segment": {
+          "name": "idx_hosted_sites_id_link_layout_segment",
           "nullsNotDistinct": false,
           "columns": [
             "id",
-            "public_brand"
+            "link_layout_segment"
           ]
         }
       },
@@ -19207,8 +19132,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "public_brand": {
-          "name": "public_brand",
+        "link_layout_segment": {
+          "name": "link_layout_segment",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -19392,17 +19317,17 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "fk_private_hosted_deployments_site_public_brand": {
-          "name": "fk_private_hosted_deployments_site_public_brand",
+        "fk_private_hosted_deployments_site_link_layout_segment": {
+          "name": "fk_private_hosted_deployments_site_link_layout_segment",
           "tableFrom": "private_hosted_deployments",
           "tableTo": "hosted_sites",
           "columnsFrom": [
             "site_id",
-            "public_brand"
+            "link_layout_segment"
           ],
           "columnsTo": [
             "id",
-            "public_brand"
+            "link_layout_segment"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -28755,13 +28680,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'okou'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -30389,8 +30307,8 @@
           "notNull": true,
           "default": "'{}'::jsonb"
         },
-        "public_brand": {
-          "name": "public_brand",
+        "link_layout_segment": {
+          "name": "link_layout_segment",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -30679,13 +30597,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'okou'"
         },
         "status": {
           "name": "status",
@@ -31106,13 +31017,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'okou'"
         },
         "created_at": {
           "name": "created_at",
@@ -31573,13 +31477,6 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
-        },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "varchar(8)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'okou'"
         },
         "request": {
           "name": "request",
@@ -33469,13 +33366,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'okou'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -33849,13 +33739,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'okou'"
         },
         "created_at": {
           "name": "created_at",
@@ -34255,13 +34138,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'okou'"
         },
         "dm_welcome_sent": {
           "name": "dm_welcome_sent",
@@ -36192,13 +36068,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "public_brand": {
-          "name": "public_brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'okou'"
         },
         "normalized_email": {
           "name": "normalized_email",
