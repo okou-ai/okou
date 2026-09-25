@@ -156,7 +156,6 @@ async function fixture(status: "running" | "completed" = "completed") {
         tx: db,
         input,
         markerCreatedAt: new Date(),
-        goalId: undefined,
       });
     },
   };
