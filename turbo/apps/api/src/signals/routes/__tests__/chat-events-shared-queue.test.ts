@@ -1583,33 +1583,34 @@ describe("CHAT-02: shared user message queue", () => {
     admissionLock.release();
     await admissionLock.done;
     await expect.poll(eventQueueLock.directBlockedWaiterCount).toBe(1);
-
-    const recall = Promise.allSettled([
-      chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          threadId: anchor.threadId,
-          revokesEventId: messageId,
-          clientEventId: randomUUID(),
-        },
-        [400],
-      ),
-    ]);
-    await expect.poll(eventQueueLock.blockedWaiterCount).toBe(2);
+    // Recall no longer serializes with the claim on a shared lock; the unique
+    // revoke edge decides the winner. Let the claim append first.
     eventQueueLock.release();
+    await eventQueueLock.done;
+    await flushWaitUntilForTest();
+    await waitForThreadMessages(actor, anchor.threadId, (items) => {
+      return userMessages(items).some((message) => {
+        return (
+          message.revokesEventId === messageId &&
+          typeof message.runId === "string"
+        );
+      });
+    });
 
-    const [recallResult] = await recall;
-    if (recallResult.status === "rejected") {
-      throw recallResult.reason;
-    }
-    const recalled = recallResult.value;
+    const recalled = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: anchor.threadId,
+        revokesEventId: messageId,
+        clientEventId: randomUUID(),
+      },
+      [400],
+    );
     expectApiError(recalled.body);
     expect(recalled.body.error.message).toBe(
       "Only queued user messages can be recalled",
     );
-    await eventQueueLock.done;
-    await flushWaitUntilForTest();
 
     const messages = await waitForThreadMessages(
       actor,
