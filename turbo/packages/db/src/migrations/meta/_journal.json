@@ -1202,8 +1202,22 @@
     {
       "idx": 1249,
       "version": "7",
-      "when": 1790349274782,
-      "tag": "1249_computer_use_commands_required_host_timeout",
+      "when": 1790349311981,
+      "tag": "1249_agent_runs_heartbeat_index_contraction",
+      "breakpoints": true
+    },
+    {
+      "idx": 1250,
+      "version": "7",
+      "when": 1790349327269,
+      "tag": "1250_active_agent_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 1251,
+      "version": "7",
+      "when": 1790352293834,
+      "tag": "1251_computer_use_commands_required_host_timeout",
       "breakpoints": true
     }
   ]
