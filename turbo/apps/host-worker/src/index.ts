@@ -69,16 +69,22 @@ type StorageLayout = "legacy" | "current";
 
 const LAYOUT_SEGMENT = { legacy: "vm0", current: "okou" } as const;
 
-function layoutOfSegment(
-  segment: (typeof LAYOUT_SEGMENT)[StorageLayout],
-): StorageLayout {
-  return segment === LAYOUT_SEGMENT.current ? "current" : "legacy";
+type LayoutSegment = (typeof LAYOUT_SEGMENT)[StorageLayout];
+
+function layoutOfSegment(segment: LayoutSegment): StorageLayout {
+  switch (segment) {
+    case LAYOUT_SEGMENT.legacy:
+      return "legacy";
+    case LAYOUT_SEGMENT.current:
+      return "current";
+  }
+  throw new Error("Unknown storage layout segment");
 }
 
 interface ActiveSitePointer {
   readonly version: 1;
   /** Stored layout segment; objects written before it existed omit it. */
-  readonly publicBrand?: string;
+  readonly publicBrand?: LayoutSegment;
   readonly publicSlug: string;
   readonly siteId: string;
   readonly deploymentId: string;
@@ -110,7 +116,7 @@ interface HostedSiteManifest {
   readonly immutableContent?: true;
   readonly access?: "owner-private-v1";
   /** Stored layout segment; objects written before it existed omit it. */
-  readonly publicBrand?: string;
+  readonly publicBrand?: LayoutSegment;
   readonly deploymentId: string;
   readonly siteId: string;
   readonly publicSlug: string;
@@ -948,7 +954,7 @@ interface PrivatePreviewGrant {
   readonly immutableContent?: true;
   readonly version: 1;
   /** Stored layout segment; must match the layout the grant was read from. */
-  readonly publicBrand: string;
+  readonly publicBrand: LayoutSegment;
   readonly deploymentId: string;
   readonly expiresAt: string;
 }
