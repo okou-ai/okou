@@ -11,8 +11,7 @@ export interface ChatThreadSnapshotProjection {
   readonly pinnedAt: string | null;
   /** Absent in snapshots compacted before manual pin ordering. */
   readonly pinOrder?: string | null;
-  /** Absent in snapshots compacted before archiving. */
-  readonly archived?: boolean;
+  readonly archived: boolean;
   readonly renamedAt: string | null;
   /** Absent in snapshots created before effort selection. */
   readonly reasoningEffort?: ReasoningEffort | null;

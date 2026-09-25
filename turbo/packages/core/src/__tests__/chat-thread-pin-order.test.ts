@@ -166,6 +166,7 @@ it("replays rank events without touching activity, pin time, or an unpinned thre
     createdAt: "2026-09-01T00:00:00Z",
     updatedAt: "2026-09-01T00:00:00Z",
     pinnedAt: "2026-09-01T00:00:00Z",
+    archived: false,
     renamedAt: null,
     selectedModel: null,
     serviceTier: null,

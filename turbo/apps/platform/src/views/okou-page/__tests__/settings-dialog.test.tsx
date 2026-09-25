@@ -457,6 +457,7 @@ async function setupSnapshotMeasurement() {
             createdAt: "2026-09-05T00:00:00Z",
             updatedAt: "2026-09-05T00:00:00Z",
             pinnedAt: null,
+            archived: false,
             renamedAt: null,
             selectedModel: null,
             serviceTier: null,
