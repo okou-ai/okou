@@ -591,6 +591,9 @@ test("admin conversion requires an aggregate impact confirmation and sends the r
   expect(warning).toHaveTextContent("Other users' SSH hosts affected: 2");
   expect(dialog.textContent).not.toContain("other-member-host");
   const confirm = getAction("button", "Make personal", dialog);
+  const cancel = getAction("button", "Cancel", dialog);
+  expect(cancel.nextElementSibling).toBe(confirm);
+  expect(cancel).toBeEnabled();
   expect(confirm).toBeDisabled();
   await userEvent.click(
     within(dialog).getByRole("checkbox", {
@@ -644,6 +647,9 @@ test("zero-impact conversion needs no other-user warning", async () => {
   await waitFor(() => {
     expect(getAction("button", "Make personal", dialog)).toBeEnabled();
   });
+  expect(getAction("button", "Cancel", dialog).nextElementSibling).toBe(
+    getAction("button", "Make personal", dialog),
+  );
   expect(within(dialog).queryByRole("alert")).toBeNull();
   expect(within(dialog).queryByRole("checkbox")).toBeNull();
 });
