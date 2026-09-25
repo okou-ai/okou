@@ -33,11 +33,6 @@ import {
 import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 
-import {
-  assertPreparedRunContentIdentity,
-  type RunContentOwnership,
-} from "./run-content-erasure-admission.service";
-
 const EXT_MIMETYPE_MAP: Readonly<Record<string, string>> = {
   png: "image/png",
   jpg: "image/jpeg",
@@ -90,7 +85,6 @@ type InsertAssistantEventItem =
     };
 
 export interface InsertAssistantEventsInput {
-  readonly ownership: RunContentOwnership;
   readonly runId: string;
   readonly threadId: string;
   readonly userId: string;
@@ -341,7 +335,7 @@ interface AppendAssistantEventRowsResult {
 
 export async function appendAssistantEventRows(
   tx: Db | ChatThreadEventTransaction,
-  args: Omit<InsertAssistantEventsInput, "ownership"> & {
+  args: InsertAssistantEventsInput & {
     readonly runGroupId: string | undefined;
   },
   signal: AbortSignal,
@@ -413,11 +407,6 @@ export async function insertAssistantEvents(
     undefined,
     signal,
   );
-  assertPreparedRunContentIdentity({
-    runId: args.runId,
-    destination: args,
-    ownership: args.ownership,
-  });
   const result = await appendAssistantEventRows(
     writeDb,
     { ...args, runGroupId },
@@ -429,7 +418,6 @@ export async function insertAssistantEvents(
     if (result.shouldAttemptFirstAssistantEventClaim) {
       await publishFirstAssistantEventCreatedSafely({
         db: writeDb,
-        ownership: args.ownership,
         orgId: args.orgId,
         userId: args.userId,
         threadId: args.threadId,

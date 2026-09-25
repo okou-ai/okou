@@ -98,8 +98,8 @@ across retries. Keep the existing success
 acknowledgement; there is no separate receipt table, payload digest or replay
 result API.
 
-Authenticate the run and its org/user ownership, and acquire existing erasure
-admission before source lookup or writes. Lock the live owned run against
+Authenticate the run and its org/user ownership before source lookup or
+writes. Lock the live owned run against
 deletion and ownership changes. On a source UUID conflict, verify the same
 run/org/user and billing category, then acknowledge the owned source without
 new claims or obligations. Foreign or conflicting source identities return
@@ -107,7 +107,7 @@ new claims or obligations. Foreign or conflicting source identities return
 Do not return foreign source records or winning attribution. Reusing a UUID
 with changed content is not checked against a stored digest.
 
-Lock order is sorted account-erasure subjects, shared X admission, the live run,
+Lock order is shared X admission, the live run,
 the entire normalized/sorted source UUID set, then the entire sorted
 date/type/ID set. Reserve source rows at quantity zero before inserting any
 resource; uncommitted placeholders are invisible to settlement. Insert resources
@@ -159,17 +159,12 @@ The existing ledger retains healthy processed rows for at least four days,
 which exceeds the two-date retry horizon. There is no source replay guarantee
 after expiry or compaction; expired requests fail instead of recreating
 consumption. Run/thread/account deletion has no cascade into shared resources.
-Missing runs and closed account-erasure subjects return 404 before source
-lookup, so old tokens cannot recreate erased billing records. Ordinary thread
+Missing runs return 404 before source lookup. Usage accepted after an account
+closes is removed by the erasure executor like any other leftover. Ordinary thread
 deletion retains run/billing history under the existing lifecycle; cancelling
 that run does not reset the shared resource set.
 
-Clerk user/organization cleanup always takes the scoped account-erasure subject
-lock exclusively. This drains Run
-creation and queue promotion before retaining allowance locks; those compute
-transactions lock Agent rows before accessing allowances. It only borrows the
-existing admission lock and does not create an erasure job or close the account.
-Cleanup then takes exclusive X admission and exclusive compaction admission
+Clerk user/organization cleanup takes exclusive X admission and exclusive compaction admission
 before deleting the scoped ledger and organization allowance entitlements.
 It then deletes the live runs in the same transaction. The existing usage helper
 uses a savepoint on that connection, so no second pooled connection is needed.
