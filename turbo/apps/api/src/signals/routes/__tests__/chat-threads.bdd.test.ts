@@ -1960,7 +1960,11 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         title: "Old event above only the isolated scope watermark",
         createdAt: retainedAtBoundary,
       });
-    const compactionBlocker = bdd.user({ userId: actor.userId });
+    // The one-candidate page must visit this scope first; sharing a random
+    // user id with the other scopes left their org-id order nondeterministic.
+    const compactionBlocker = bdd.user({
+      userId: "user_00000000-0000-0000-0000-000000000000",
+    });
     await api.ensureOrgModelProvider(compactionBlocker);
     const blockerAgent = await bdd.createAgent(compactionBlocker, {
       displayName: "Above-watermark compaction blocker",
