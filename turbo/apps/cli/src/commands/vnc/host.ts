@@ -28,7 +28,7 @@ export function createVncHostCommand(): Command {
     .addCommand(
       new Command("list")
         .description(
-          "List live hosts authorized for this Agent (not a connectivity check)",
+          "List hosts visible to this Run with configuration availability (not a connectivity check)",
         )
         .option("--json", "Print JSON")
         .action(
@@ -78,17 +78,21 @@ export function createVncHostCommand(): Command {
             }
             if (result.body.hosts.length === 0) {
               console.log(
-                "No VNC hosts configured. Ask the owner to configure a host and enable this Agent's VNC access.",
+                "No VNC hosts available to this Run. Ask the owner to check host setup and chat access in Connectors.",
               );
               return;
             }
             for (const host of result.body.hosts) {
+              const availability =
+                host.availability.status === "blocked"
+                  ? "blocked: needs_rebind (ask the owner to rebind the underlying SSH host to Cloudflare Access or explicitly choose Direct in SSH settings)"
+                  : "ready to attempt (connectivity not checked)";
               console.log(
-                `${host.id}  ${host.displayName}  ${host.host}:${host.port}  ${host.authMethod} / ${host.securityType}`,
+                `${host.id}  ${host.displayName}  ${host.host}:${host.port}  ${host.authMethod} / ${host.securityType}  ${availability}`,
               );
             }
             console.log(
-              "Use an exact connection ID with okou vnc session start --help; choose shared or exclusive mode explicitly.",
+              "Use an exact ID with availability.status=ready from okou vnc host list --json; read okou vnc session start --help and choose shared or exclusive mode explicitly.",
             );
           }),
         ),

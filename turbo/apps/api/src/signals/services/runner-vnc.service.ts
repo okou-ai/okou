@@ -56,7 +56,8 @@ function hasTransportAuthority(
 ) {
   return (
     transport.type === "direct" ||
-    (row.threadMode ? row.sshAllowed : row.sshGrantAgentId !== null)
+    (row.sshNeedsRebind === false &&
+      (row.threadMode ? row.sshAllowed : row.sshGrantAgentId !== null))
   );
 }
 
