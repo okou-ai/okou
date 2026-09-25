@@ -163,6 +163,10 @@ mod tests {
         ManagedMitmdump::unmanaged(child.spawn().unwrap())
     }
 
+    async fn panicking_restart() -> Result<ManagedMitmdump, MitmRestartError> {
+        panic!("old child cleanup panicked");
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn single_flight_drains_duplicate_crashes_and_retries_startup_failure() {
         let (mut mitm, _) = MitmProxy::noop();
@@ -329,11 +333,7 @@ mod tests {
         assert!(error.to_string().contains("old mitmdump cleanup failed"));
         recovery.stop_retries(&mut crash_rx);
         assert!(recovery.retry_deadline().is_none());
-        recovery.task = Some(tokio::spawn(async {
-            panic!("old child cleanup panicked");
-            #[allow(unreachable_code)]
-            Ok(unmanaged_child("true", None))
-        }));
+        recovery.task = Some(tokio::spawn(panicking_restart()));
         let error = recovery.wait(&mut mitm).await.unwrap_err();
         assert!(error.to_string().contains("mitmproxy recovery task failed"));
     }
