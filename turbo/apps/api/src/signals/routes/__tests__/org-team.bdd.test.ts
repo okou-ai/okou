@@ -1101,8 +1101,9 @@ describe("ORG-02: member cleanup detaches Slack connections", () => {
 describe("ORG-01/AGENT-02: agent listing and default-agent recovery", () => {
   it("lists org-visible agents only and restores a deleted default agent [TEAM-E]", async () => {
     const unauthenticated = await api.requestListAgents(null, [401]);
-    expectApiError(unauthenticated.body);
-    expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
+    expect(unauthenticated.body).toStrictEqual({
+      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
+    });
 
     const noOrg = api.user({ orgId: null });
     const noOrgAgents = await api.requestListAgents(noOrg, [401]);

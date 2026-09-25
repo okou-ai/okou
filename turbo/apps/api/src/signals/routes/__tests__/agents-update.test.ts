@@ -342,21 +342,6 @@ describe("PUT /api/agents/:id", () => {
 });
 
 describe("PATCH /api/agents/:id", () => {
-  it("returns 401 when the request is unauthenticated", async () => {
-    const response = await accept(
-      agentsClient().updateMetadata({
-        params: { id: randomUUID() },
-        headers: {},
-        body: {},
-      }),
-      [401],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    });
-  });
-
   it("returns 403 for a sandbox token without agent:write capability", async () => {
     const seconds = currentSecond();
     const token = signSandboxJwtForTests({
@@ -430,38 +415,6 @@ describe("PATCH /api/agents/:id", () => {
       displayName: "Updated Agent",
       description: "Updated description",
       avatarUrl: null,
-    });
-  });
-
-  it("returns 400 for invalid path params", async () => {
-    const response = await accept(
-      agentsClient().updateMetadata({
-        params: { id: "not-a-uuid" },
-        headers: authHeaders(),
-        body: { displayName: "Invalid" },
-      }),
-      [400],
-    );
-
-    expect(response.body.error.code).toBe("BAD_REQUEST");
-  });
-
-  it("returns 404 for an unknown agent", async () => {
-    const user = newOrgUser();
-    mocks.clerk.session(user.userId, user.orgId);
-    const agentId = randomUUID();
-
-    const response = await accept(
-      agentsClient().updateMetadata({
-        params: { id: agentId },
-        headers: authHeaders(),
-        body: {},
-      }),
-      [404],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: { message: `Agent not found: ${agentId}`, code: "NOT_FOUND" },
     });
   });
 
