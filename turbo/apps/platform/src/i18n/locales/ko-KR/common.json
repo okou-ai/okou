@@ -7121,7 +7121,6 @@
       "invalidHost": "URL, 사용자 이름, 포트를 제외한 유효한 호스트 이름 또는 IP 주소를 입력하세요.",
       "invalidInput": "VNC 설정을 확인하고 다시 시도하세요.",
       "invalidTrust": "최대 8개, 64 KiB 이하의 유효한 공개 CA 인증서를 입력하세요.",
-      "ownerChanged": "워크스페이스 액세스가 변경되었습니다. 새로고침 후 계속하세요.",
       "revisionExhausted": "더 이상 업데이트할 수 없습니다. 새로 만드세요."
     },
     "host": "호스트 이름 또는 IP 주소",
