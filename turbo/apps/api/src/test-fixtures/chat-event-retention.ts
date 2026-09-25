@@ -15,17 +15,14 @@ import { chatEventSearchMessageWatermarks } from "@okouai/db/schema/chat-event-s
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
-import { db } from "../lib/db";
 import { nowDate } from "../lib/time";
 import { writeDb$ } from "../signals/external/db";
-import { lockChatEventRetention } from "../signals/services/chat-event-retention-lock.service";
 import {
   insertChatEvent,
   insertChatEvents,
   replaceChatEvent,
   revokeChatEvent,
 } from "../signals/services/chat-event.service";
-import { createDeferredPromise } from "../signals/utils";
 
 const RETENTION_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -457,25 +454,3 @@ export const setRetentionRunStatus$ = command(
     signal.throwIfAborted();
   },
 );
-
-/** Hold the same production advisory lock so a route test can prove try-lock. */
-export async function holdChatEventRetentionLockFixture(
-  signal: AbortSignal,
-): Promise<{ readonly release: () => void; readonly done: Promise<void> }> {
-  const started = createDeferredPromise<void>(signal);
-  const released = createDeferredPromise<void>(signal);
-  const done = db().transaction(async (tx) => {
-    await lockChatEventRetention(tx);
-    started.resolve(undefined);
-    await released.promise;
-  });
-  await started.promise;
-  return {
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-    done,
-  };
-}
