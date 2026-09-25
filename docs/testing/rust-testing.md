@@ -26,6 +26,10 @@ cargo test --manifest-path crates/Cargo.toml --profile local
 cargo test --manifest-path crates/Cargo.toml --profile local -p guest-agent
 
 # Extracted Runner host primitives and their owner tests
+# Nine process-identity persistence tests moved from runner/src/cmd/start/identity.rs
+# into runner-host/src/runner_process_identity/persistence.rs, plus a partial
+# failure test (10 persistence tests total); none removed. Runner's start
+# integration test checks identity allocation precedes later setup failure.
 cargo test --manifest-path crates/Cargo.toml --profile local \
   -j 1 -p runner-host -- --test-threads=1
 

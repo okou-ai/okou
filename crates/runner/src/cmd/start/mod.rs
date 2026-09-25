@@ -80,7 +80,7 @@ use crate::workspace_image_cache::{
 use runner_host::host;
 use runner_host::lock;
 use runner_host::paths::{HomePaths, LogPaths, RunnerPaths, touch_mtime};
-use runner_host::runner_process_identity::RunnerProcessIdentity;
+use runner_host::runner_process_identity::{RunnerProcessIdentity, load_runner_process_identity};
 #[cfg(test)]
 use runner_provider::JobCandidate;
 use runner_provider::{
@@ -92,7 +92,6 @@ use runner_provider::{RunCancellationRegistration, RunCancellationRegistry};
 mod factory_lifecycle;
 mod finalizing_claim;
 mod heartbeat;
-mod identity;
 mod job_discovery;
 mod job_spawn;
 mod job_terminal_log;
@@ -101,7 +100,6 @@ mod signals;
 
 use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime, start_factories};
 use heartbeat::heartbeat_profiles;
-use identity::load_runner_process_identity;
 use job_discovery::{DiscoveredJob, DiscoveredJobContext, handle_discovered_job};
 use job_spawn::{SpawnContext, handle_job_result};
 use runner_lifecycle::active_runs::ActiveRuns;
