@@ -11,7 +11,6 @@ import { alias, unionAll } from "drizzle-orm/pg-core";
 import type {
   ChatThreadEvent,
   ChatThreadServiceTier,
-  ChatThreadSnapshotProjection,
   CodexServiceTier,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
@@ -26,7 +25,6 @@ import { chatThreadSnapshots } from "@okouai/db/schema/chat-thread-snapshot";
 import type { Db, ReadonlyDb } from "../external/db";
 import { executeRawRows } from "../../lib/db-raw-rows";
 import type { Tx } from "../../lib/db-types";
-import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 
 // Control operations still own transactions; ordinary appends own one statement.
 export type ChatThreadEventTransaction = Tx;
@@ -136,36 +134,26 @@ export async function appendChatThreadEventStrict(
   await insertChatThreadEvent(db, args, true);
 }
 
+/**
+ * Returns the caller's R2 snapshot pointer, or null when the scope has no
+ * snapshot row yet (compaction only publishes scopes that own chat threads).
+ */
 export async function getChatThreadSnapshot(
   db: ReadonlyDb,
   args: {
     readonly userId: string;
     readonly orgId: string;
   },
-): Promise<
-  | {
-      readonly objectKey: string;
-      readonly latestEventId: string | null;
-      readonly latestSeqId: number | null;
-    }
-  | {
-      readonly chatThreads: readonly ChatThreadSnapshotProjection[];
-      readonly latestEventId: string | null;
-      readonly latestSeqId: number | null;
-    }
-> {
+): Promise<{
+  readonly objectKey: string;
+  readonly latestEventId: string | null;
+  readonly latestSeqId: number | null;
+} | null> {
   const [snapshot] = await db
     .select({
       objectKey: chatThreadSnapshots.objectKey,
       latestEventId: chatThreadSnapshots.latestEventId,
       latestSeqId: chatThreadSnapshots.latestEventSeqId,
-      // DB -> new API: old rows retain JSONB until backfill. Remove this
-      // branch after a zero-row census and old writers/rollback targets are
-      // excluded (follow-up #36375). R2 rows must not detoast the JSONB.
-      chatThreads:
-        sql`CASE WHEN ${chatThreadSnapshots.objectKey} IS NULL THEN ${chatThreadSnapshots.chatThreads} ELSE NULL END`
-          .mapWith(nullableDriverValueDecoder(chatThreadSnapshots.chatThreads))
-          .as("chat_threads_legacy"),
     })
     .from(chatThreadSnapshots)
     .where(
@@ -175,34 +163,18 @@ export async function getChatThreadSnapshot(
       ),
     )
     .limit(1);
-  if (snapshot?.objectKey) {
-    return {
-      objectKey: snapshot.objectKey,
-      latestEventId: snapshot.latestEventId,
-      latestSeqId: snapshot.latestSeqId,
-    };
+  if (!snapshot) {
+    return null;
   }
-
+  if (!snapshot.objectKey) {
+    // The R2 backfill drained every legacy JSONB row (#36375) and compaction
+    // only publishes rows with an object key.
+    throw new Error("Chat thread snapshot row has no R2 object key");
+  }
   return {
-    chatThreads:
-      snapshot?.chatThreads?.map((thread) => {
-        return {
-          ...thread,
-          selectedModel: thread.selectedModel ?? null,
-          modelSettings: modelSettingsSchema.parse(thread.modelSettings ?? {}),
-          serviceTier: thread.serviceTier ?? null,
-          computerUseHostId: thread.computerUseHostId ?? null,
-          cloudBrowserEnabled: thread.cloudBrowserEnabled ?? false,
-          selectedVideoModel: thread.selectedVideoModel,
-          // Snapshot rows compacted before image-model persistence have no key.
-          // Keep hydration compatible until those rows and older browser caches
-          // have been replaced. Follow-up:
-          // https://github.com/vm0-ai/vm0/issues/27688
-          selectedImageModel: thread.selectedImageModel ?? null,
-        };
-      }) ?? [],
-    latestEventId: snapshot?.latestEventId ?? null,
-    latestSeqId: snapshot?.latestSeqId ?? null,
+    objectKey: snapshot.objectKey,
+    latestEventId: snapshot.latestEventId,
+    latestSeqId: snapshot.latestSeqId,
   };
 }
 

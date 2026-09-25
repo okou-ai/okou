@@ -104,63 +104,60 @@ const getChatThreadSnapshotInner$ = computed(async (get) => {
     orgId: auth.orgId,
   });
 
-  if ("objectKey" in snapshot) {
-    if (
-      !isOwnedChatThreadSnapshotObjectKey(
-        snapshot.objectKey,
-        auth.userId,
-        auth.orgId,
-        snapshot.latestSeqId,
-      )
-    ) {
-      throw new Error("Invalid chat thread snapshot object key");
-    }
-    const supportsR2Url =
-      get(request$).header(CHAT_THREAD_SNAPSHOT_R2_HEADER) === "1";
-    if (!supportsR2Url) {
-      // Old App/CLI -> new API: loaded clients without this capability still
-      // require inline data. Remove after distinct replacement versions are
-      // deployed and client floors exclude the old builds (follow-up #36375).
-      // Read R2 without detoasting the retired JSONB column meanwhile.
-      const body = await get(
-        downloadS3Buffer(
-          env("R2_USER_STORAGES_BUCKET_NAME"),
-          snapshot.objectKey,
-        ),
-      );
-      const archive = chatThreadSnapshotArchiveSchema.parse(
-        JSON.parse((await gunzipAsync(body)).toString("utf8")) as unknown,
-      );
-      return {
-        status: 200 as const,
-        body: {
-          chatThreads: archive.chatThreads,
-          latestEventId: snapshot.latestEventId,
-          latestSeqId: snapshot.latestSeqId,
-        },
-      };
-    }
-    const url = await get(
-      generatePresignedGetUrl(
-        env("R2_USER_STORAGES_BUCKET_NAME"),
-        snapshot.objectKey,
-      ),
+  if (!snapshot) {
+    // No snapshot row is a permanent state, not a rollout fallback: every App,
+    // CLI, iOS, and rollback-window API agrees on this empty shape.
+    return {
+      status: 200 as const,
+      body: { chatThreads: [], latestEventId: null, latestSeqId: null },
+    };
+  }
+
+  if (
+    !isOwnedChatThreadSnapshotObjectKey(
+      snapshot.objectKey,
+      auth.userId,
+      auth.orgId,
+      snapshot.latestSeqId,
+    )
+  ) {
+    throw new Error("Invalid chat thread snapshot object key");
+  }
+
+  if (get(request$).header(CHAT_THREAD_SNAPSHOT_R2_HEADER) !== "1") {
+    // Native iOS -> API: the TestFlight iOS client (ios/Okou/Services/
+    // ChatService.swift) decodes only inline `chatThreads`, never sends this
+    // header, and sends no client version, so no floor can exclude it. Web App
+    // and CLI always send the header. Remove after the iOS client downloads
+    // the R2 URL and builds without that support are no longer installed
+    // (follow-up to #36375).
+    const body = await get(
+      downloadS3Buffer(env("R2_USER_STORAGES_BUCKET_NAME"), snapshot.objectKey),
+    );
+    const archive = chatThreadSnapshotArchiveSchema.parse(
+      JSON.parse((await gunzipAsync(body)).toString("utf8")) as unknown,
     );
     return {
       status: 200 as const,
       body: {
-        url,
-        expiresInSeconds: PRESIGNED_URL_TTL_SECONDS,
+        chatThreads: archive.chatThreads,
         latestEventId: snapshot.latestEventId,
         latestSeqId: snapshot.latestSeqId,
       },
     };
   }
 
+  const url = await get(
+    generatePresignedGetUrl(
+      env("R2_USER_STORAGES_BUCKET_NAME"),
+      snapshot.objectKey,
+    ),
+  );
   return {
     status: 200 as const,
     body: {
-      chatThreads: [...snapshot.chatThreads],
+      url,
+      expiresInSeconds: PRESIGNED_URL_TTL_SECONDS,
       latestEventId: snapshot.latestEventId,
       latestSeqId: snapshot.latestSeqId,
     },

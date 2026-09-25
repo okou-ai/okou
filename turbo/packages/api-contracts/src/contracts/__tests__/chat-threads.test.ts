@@ -227,6 +227,7 @@ describe("chat thread event sequence contract", () => {
       createdAt,
       updatedAt: createdAt,
       pinnedAt: null,
+      archived: false,
       renamedAt: null,
       selectedVideoModel: null,
     };
