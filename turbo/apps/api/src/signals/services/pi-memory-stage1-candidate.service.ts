@@ -46,7 +46,7 @@ async function retainCandidateReference(tx: Tx, hash: string): Promise<void> {
   const [retained] = await tx
     .update(blobs)
     .set({ refCount: sql`${blobs.refCount} + 1` })
-    .where(and(eq(blobs.hash, hash), eq(blobs.erasurePending, false)))
+    .where(eq(blobs.hash, hash))
     .returning({ hash: blobs.hash });
   if (!retained) {
     throw new Error("Pi memory candidate source blob does not exist");
