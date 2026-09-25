@@ -8042,7 +8042,7 @@
       "moreOptions": "Altre opzioni di Discord",
       "retry": "Riprova",
       "server": "Server: {{name}}",
-      "suspended": "Discord è temporaneamente non disponibile. Le connessioni esistenti vengono mantenute e puoi comunque disconnettere o rimuovere Discord.",
+      "suspended": "Discord è temporaneamente non disponibile. Le connessioni esistenti vengono mantenute.",
       "title": "Discord",
       "unconfigured": "Discord non è ancora disponibile per questa organizzazione.",
       "uninstall": "Rimuovi Discord",

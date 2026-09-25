@@ -68,8 +68,8 @@ export const uninstallDiscordOrg$ = command(
       [200],
     );
     signal.throwIfAborted();
-    set(setShowDiscordUninstallDialog$, false);
     await set(refreshDiscordOrg$, signal);
+    set(setShowDiscordUninstallDialog$, false);
   },
 );
 

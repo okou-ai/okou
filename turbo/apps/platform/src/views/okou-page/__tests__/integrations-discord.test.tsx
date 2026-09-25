@@ -490,33 +490,64 @@ test.each([
   },
 );
 
-test("A missing bot configuration keeps one unavailable state while cleanup stays possible", async () => {
-  context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
-    return respond(
-      200,
-      status({ isAvailable: false, isAdmin: true, contextMode: "unavailable" }),
-    );
-  });
-  await setupDiscordPage();
+test.each([
+  {
+    name: "admin",
+    data: { isAdmin: true },
+    connected: true,
+    actions: ["Disconnect Discord", "Remove Discord"],
+  },
+  {
+    name: "connected member",
+    data: { isAdmin: false },
+    connected: true,
+    actions: ["Disconnect Discord"],
+  },
+  {
+    name: "member without a connection",
+    data: { isAdmin: false, isConnected: false, discordUserId: null },
+    connected: false,
+    actions: [] as string[],
+  },
+])(
+  "A missing bot configuration shows one unavailable state to an installed $name",
+  async ({ data, connected, actions }) => {
+    context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
+      return respond(
+        200,
+        status({ isAvailable: false, contextMode: "unavailable", ...data }),
+      );
+    });
+    await setupDiscordPage();
 
-  await expect(
-    screen.findByText(
-      "Discord is temporarily unavailable. Existing connections are kept, and you can still disconnect or remove Discord.",
-    ),
-  ).resolves.toBeInTheDocument();
-  const card = getIntegrationCard("Discord");
-  expect(
-    within(card).queryByText(
-      "Discord is not available yet for this organization.",
-    ),
-  ).toBeNull();
-  expect(within(card).getByText("Connected")).toBeInTheDocument();
-  expect(within(card).getByText("Server: Design team")).toBeInTheDocument();
-  expect(within(card).queryByText(/Limited context:/u)).toBeNull();
-  click(getAction("button", "More Discord options", card));
-  expect(getAction("button", "Disconnect Discord")).toBeEnabled();
-  expect(getAction("button", "Remove Discord")).toBeEnabled();
-});
+    await expect(
+      screen.findByText(
+        "Discord is temporarily unavailable. Existing connections are kept.",
+      ),
+    ).resolves.toBeInTheDocument();
+    const card = getIntegrationCard("Discord");
+    expect(
+      within(card).queryByText(
+        "Discord is not available yet for this organization.",
+      ),
+    ).toBeNull();
+    expect(within(card).getByText("Server: Design team")).toBeInTheDocument();
+    expect(within(card).queryByText(/Limited context:/u)).toBeNull();
+    expect(within(card).queryAllByText("Connected")).toHaveLength(
+      connected ? 1 : 0,
+    );
+    const menu = queryAction("button", "More Discord options", card);
+    expect(menu === null).toBe(actions.length === 0);
+    if (menu) {
+      click(menu);
+    }
+    for (const action of ["Disconnect Discord", "Remove Discord"]) {
+      expect(queryAction("button", action) !== null).toBe(
+        actions.includes(action),
+      );
+    }
+  },
+);
 
 test("Saving a DM server stays pending until the refreshed choice arrives", async () => {
   const first = "e0000000-0000-4000-a000-000000000001";
