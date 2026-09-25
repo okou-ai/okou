@@ -161,6 +161,7 @@ async function seedResultCallback(args: {
   readonly automationId: string;
   readonly workflowName?: string;
   readonly status?: "pending" | "failed";
+  readonly storedPublicBrand?: "vm0";
 }): Promise<string> {
   const seeded = await store.set(
     seedAgentRunCallback$,
@@ -170,6 +171,9 @@ async function seedResultCallback(args: {
       payload: {
         automationId: args.automationId,
         workflowName: args.workflowName ?? WORKFLOW_NAME,
+        ...(args.storedPublicBrand === undefined
+          ? {}
+          : { publicBrand: args.storedPublicBrand }),
       },
       status: args.status,
     },
@@ -318,6 +322,33 @@ describe("Official Automation result email callbacks", () => {
         sourceWorkflowAutomationId: scenario.automationId,
       }),
     ).resolves.toStrictEqual({ items: [], claim: null });
+  });
+
+  it("delivers a stored callback payload that still carries a public brand", async () => {
+    const scenario = await setupScenario();
+    const runId = await startRun(scenario, "https://app.okou.ai");
+    await seedResultCallback({
+      runId,
+      automationId: scenario.automationId,
+      storedPublicBrand: "vm0",
+    });
+    await completeResultEmailRunWithoutCallbacksFixture(runId);
+    await accept(
+      executionClient().interruptResultEmailCallback({
+        body: { run_id: runId },
+      }),
+      [200],
+    );
+    const source = await outbox.findSourceState({
+      sourceRunId: runId,
+      sourceWorkflowAutomationId: scenario.automationId,
+    });
+    expect(source.items).toHaveLength(1);
+    expect(source.items[0]).toMatchObject({
+      status: "pending",
+      source_run_id: runId,
+      template: { template: "official-automation-result" },
+    });
   });
 
   it("links Morning Brief management to Preferences without changing account unsubscribe", async () => {
