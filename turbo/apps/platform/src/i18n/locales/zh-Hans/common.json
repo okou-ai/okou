@@ -1192,9 +1192,6 @@
         "webhookAutomations": "一个webhook就能从任何系统发起运行"
       },
       "legacy": "旧版",
-      "limitedFree": {
-        "name": "受限免费版"
-      },
       "loadError": "无法加载账单状态。",
       "namedPlan": "{{plan}}套餐",
       "noActivePlan": "没有生效的套餐",
@@ -5966,7 +5963,6 @@
     "tiers": {
       "custom": "自定义",
       "free": "免费",
-      "limitedFree": "限量免费",
       "pro": "Pro",
       "team": "Team"
     },

@@ -409,14 +409,12 @@ function billingTierLabel(tier: string | null | undefined): string {
     case "pro": {
       return "Pro";
     }
-    case "free": {
+    case "free":
+    case "limited-free-1": {
       return "Free";
     }
-    case "limited-free-1": {
-      return "Limited free";
-    }
     default: {
-      return tier ?? "Limited free";
+      return tier ?? "Free";
     }
   }
 }

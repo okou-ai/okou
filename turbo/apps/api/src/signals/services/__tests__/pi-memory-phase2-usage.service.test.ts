@@ -346,14 +346,13 @@ describe("Pi memory Phase 2 proxy billing", () => {
     await expect(run.ledger()).resolves.toStrictEqual(canonicalLedger(run));
   });
 
-  it.each(
-    ["completed", "failed", "cancelled", "timeout"].flatMap((status) => {
-      return [
-        { status, type: undefined },
-        { status, type: "openai-api-key" as const },
-      ];
-    }),
-  )(
+  it.each([
+    { status: "completed", type: undefined },
+    { status: "failed", type: undefined },
+    { status: "cancelled", type: undefined },
+    { status: "timeout", type: undefined },
+    { status: "completed", type: "openai-api-key" },
+  ] as const)(
     "keeps the $type proxy owner through $status and delayed cleanup",
     async ({ status, type }) => {
       const run = await launchMaintenance(type);

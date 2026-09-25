@@ -93,6 +93,35 @@ function numberAction(
   };
 }
 
+function checkboxAction(args: {
+  readonly required: boolean;
+  readonly checked: boolean;
+  readonly preflight?: boolean;
+  readonly siteRequired?: boolean;
+}): Extract<BrowserUserActionResponse, { kind: "input" }> {
+  return {
+    ...action("pending"),
+    fields: [
+      {
+        key: "consent",
+        label: "Consent",
+        fieldKind: "checkbox",
+        required: args.required,
+        control: {
+          tagName: "INPUT",
+          inputType: "checkbox",
+          ...(args.preflight
+            ? {
+                checked: args.checked,
+                siteRequired: args.siteRequired ?? false,
+              }
+            : {}),
+        },
+      },
+    ],
+  };
+}
+
 const SELECT_FINGERPRINT = "a".repeat(64);
 
 function selectAction(args: {
@@ -497,6 +526,230 @@ test.each([
     await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   },
 );
+
+test.each([
+  { siteChecked: true, expected: false },
+  { siteChecked: false, expected: true },
+])(
+  "An optional checkbox submits an explicit $expected rather than the website's $siteChecked",
+  async ({ siteChecked, expected }) => {
+    let state: BrowserUserActionResponse["state"] = "pending";
+    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+      return respond(200, {
+        ...checkboxAction({ required: false, checked: siteChecked }),
+        state,
+      });
+    });
+    context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+      return respond(
+        200,
+        checkboxAction({
+          required: false,
+          checked: siteChecked,
+          preflight: true,
+        }),
+      );
+    });
+    context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+      expect(body.values).toStrictEqual([
+        { key: "consent", checked: expected, observedChecked: siteChecked },
+      ]);
+      state = "succeeded";
+      return respond(200, {
+        ...checkboxAction({ required: false, checked: siteChecked }),
+        state,
+      });
+    });
+    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+      expect(body.prompt).toBe(CALLBACK_PROMPT);
+      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    });
+    await setupPage({
+      context,
+      path: route(),
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+    });
+    const form = await screen.findByRole("form", {
+      name: "Enter information in browser",
+    });
+    const checkbox = within(form).getByRole("checkbox", { name: /Consent/u });
+    await waitFor(() => {
+      expect(checkbox).toBeEnabled();
+    });
+    expect(checkbox).toHaveProperty("checked", siteChecked);
+    const user = userEvent.setup({ delay: null });
+    await user.click(checkbox);
+    click(button("Add to browser"));
+    await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  },
+);
+
+test("An untouched optional checkbox preserves a checked website value", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...checkboxAction({ required: false, checked: true }),
+      state,
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(
+      200,
+      checkboxAction({ required: false, checked: true, preflight: true }),
+    );
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([]);
+    state = "succeeded";
+    return respond(200, {
+      ...checkboxAction({ required: false, checked: true }),
+      state,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const checkbox = within(form).getByRole("checkbox", { name: /Consent/u });
+  await waitFor(() => {
+    expect(checkbox).toBeEnabled();
+  });
+  expect(checkbox).toBeChecked();
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
+test("A required checked checkbox needs explicit confirmation", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...checkboxAction({ required: true, checked: true }),
+      state,
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(
+      200,
+      checkboxAction({ required: true, checked: true, preflight: true }),
+    );
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      { key: "consent", checked: true, observedChecked: true },
+    ]);
+    state = "succeeded";
+    return respond(200, {
+      ...checkboxAction({ required: true, checked: true }),
+      state,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const checkbox = within(form).getByRole("checkbox", { name: /Consent/u });
+  await waitFor(() => {
+    expect(checkbox).toBeEnabled();
+  });
+  expect(checkbox).toBeChecked();
+  expect(button("Add to browser")).toBeDisabled();
+  click(button("Leave website value unchanged"));
+  expect(button("Add to browser")).toBeEnabled();
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
+test("A changed checkbox state on Retry requires a fresh confirmation", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  let checks = 0;
+  let applies = 0;
+  const submissions: unknown[] = [];
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...checkboxAction({ required: true, checked: false }),
+      state,
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    checks += 1;
+    return respond(
+      200,
+      checkboxAction({
+        required: true,
+        checked: checks === 2,
+        preflight: true,
+      }),
+    );
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    applies += 1;
+    submissions.push(body.values);
+    if (applies === 1) {
+      return respond(409, {
+        error: {
+          code: "BROWSER_USER_ACTION_INVALID_VALUE",
+          message: "Changed website state",
+        },
+      });
+    }
+    state = "succeeded";
+    return respond(200, {
+      ...checkboxAction({ required: true, checked: true }),
+      state,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const checkbox = within(form).getByRole("checkbox", { name: /Consent/u });
+  await waitFor(() => {
+    expect(checkbox).toBeEnabled();
+  });
+  const user = userEvent.setup({ delay: null });
+  await user.click(checkbox);
+  click(button("Add to browser"));
+  await screen.findByRole("alert");
+  click(button("Retry"));
+  await waitFor(() => {
+    expect(checks).toBe(2);
+  });
+  expect(checkbox).toBeChecked();
+  expect(button("Add to browser")).toBeDisabled();
+  click(button("Leave website value unchanged"));
+  expect(button("Add to browser")).toBeEnabled();
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  expect(submissions).toStrictEqual([
+    [{ key: "consent", checked: true, observedChecked: false }],
+    [{ key: "consent", checked: true, observedChecked: true }],
+  ]);
+});
 
 test("The standalone form selects a required native option by index, not its website value", async () => {
   let state: BrowserUserActionResponse["state"] = "pending";

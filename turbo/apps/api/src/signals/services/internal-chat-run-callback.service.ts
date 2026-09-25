@@ -84,6 +84,7 @@ import {
   feishuDeliveryTargetSchema,
   type FeishuDeliveryTarget,
 } from "./feishu-chat-callback-payload";
+import { FEISHU_CALLBACK_ROLLBACK_PUBLIC_BRAND } from "./feishu-org-callback-payload";
 import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
 import {
   deliverAgentPhoneChatAdmissionFailure,
@@ -945,15 +946,6 @@ function generateCallbackSecret(): string {
   return randomBytes(32).toString("hex");
 }
 
-function requiredQueuedFeishuPublicBrand(
-  input: Pick<CreateQueuedChatRunInput, "publicBrand" | "feishuDelivery">,
-): PublicBrand {
-  if (!input.feishuDelivery || !input.publicBrand) {
-    throw new Error("Queued Feishu delivery is missing its public brand");
-  }
-  return input.publicBrand;
-}
-
 function buildQueuedCreateAgentRunArgs(
   input: CreateQueuedChatRunInput,
   admissionTime: number,
@@ -1014,7 +1006,7 @@ function buildQueuedCreateAgentRunArgs(
                 replyInThread: input.feishuDelivery.replyInThread,
                 files: input.feishuDelivery.files,
                 canonicalChatDelivery: true,
-                publicBrand: requiredQueuedFeishuPublicBrand(input),
+                publicBrand: FEISHU_CALLBACK_ROLLBACK_PUBLIC_BRAND,
               },
             },
           ]
@@ -1335,7 +1327,6 @@ async function insertFeishuChatDeliveryCallback(args: {
   readonly sourceCallbackId?: string;
   readonly target: FeishuDeliveryTarget;
   readonly chatEventId: string;
-  readonly publicBrand: PublicBrand;
 }): Promise<string> {
   return await insertChatDeliveryCallback({
     db: args.db,
@@ -1346,7 +1337,7 @@ async function insertFeishuChatDeliveryCallback(args: {
     payload: {
       ...args.target,
       chatEventId: args.chatEventId,
-      publicBrand: args.publicBrand,
+      publicBrand: FEISHU_CALLBACK_ROLLBACK_PUBLIC_BRAND,
     },
   });
 }
@@ -1567,7 +1558,6 @@ async function insertAssistantErrorEventTransaction(
         sourceCallbackId: input.sourceCallbackId,
         target: input.feishuDelivery,
         chatEventId: event.id,
-        publicBrand: input.publicBrand,
       })
     : undefined;
   const teamsDeliveryCallbackId = input.teamsDelivery
@@ -1901,7 +1891,6 @@ async function registerRunLifecycleDeliveryCallbacks(
           sourceCallbackId: input.sourceCallbackId,
           target: input.feishuDelivery,
           chatEventId: deliveryEvent.id,
-          publicBrand: input.publicBrand,
         })
       : undefined;
   const teamsDeliveryCallbackId =
@@ -5391,9 +5380,7 @@ function buildQueuedChatDispatchFailedCallbacks(
     const payload = {
       threadId: args.runInput.threadId,
       agentId: args.runInput.agentId,
-      publicBrand: args.runInput.feishuDelivery
-        ? requiredQueuedFeishuPublicBrand(args.runInput)
-        : (args.runInput.publicBrand ?? "vm0"),
+      publicBrand: args.runInput.publicBrand ?? "vm0",
       slackDelivery: args.runInput.slackDelivery,
       feishuDelivery: args.runInput.feishuDelivery,
       teamsDelivery: args.runInput.teamsDelivery,

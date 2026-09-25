@@ -32,6 +32,7 @@ export const browserUserActionFieldKindSchema = z.enum([
   "one_time_code",
   "number",
   "select",
+  "checkbox",
 ]);
 
 const boundedNonblank = (maximum: number) => {
@@ -119,9 +120,17 @@ const browserUserActionSelectValueSchema = z
       });
     }
   });
+const browserUserActionCheckboxValueSchema = z
+  .object({
+    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+    checked: z.boolean(),
+    observedChecked: z.boolean(),
+  })
+  .strict();
 export const browserUserActionSubmittedValueSchema = z.union([
   browserUserActionScalarValueSchema,
   browserUserActionSelectValueSchema,
+  browserUserActionCheckboxValueSchema,
 ]);
 
 export const browserUserActionApplyRequestSchema = z
@@ -169,8 +178,10 @@ export const browserUserActionDisplayFieldSchema = z
           "number",
           "select-one",
           "select-multiple",
+          "checkbox",
         ]),
         siteRequired: z.boolean().optional(),
+        checked: z.boolean().optional(),
         multiple: z.boolean().optional(),
         optionSetFingerprint: z
           .string()

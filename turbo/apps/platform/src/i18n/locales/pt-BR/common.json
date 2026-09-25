@@ -1216,9 +1216,6 @@
         "webhookAutomations": "Inicie uma execução de qualquer sistema com um webhook"
       },
       "legacy": "Legado",
-      "limitedFree": {
-        "name": "Grátis limitado"
-      },
       "loadError": "Não foi possível carregar o status de cobrança.",
       "namedPlan": "Plano {{plan}}",
       "noActivePlan": "Nenhum plano ativo",
@@ -6045,7 +6042,6 @@
     "tiers": {
       "custom": "Personalizado",
       "free": "Grátis",
-      "limitedFree": "Grátis limitado",
       "pro": "Pro",
       "team": "Team"
     },

@@ -1193,9 +1193,6 @@
         "webhookAutomations": "Einen Run aus jedem System per Webhook starten"
       },
       "legacy": "Legacy",
-      "limitedFree": {
-        "name": "Begrenzt kostenlos"
-      },
       "loadError": "Der Abrechnungsstatus konnte nicht geladen werden.",
       "namedPlan": "{{plan}} Plan",
       "noActivePlan": "Kein aktiver Plan",
@@ -5983,7 +5980,6 @@
     "tiers": {
       "custom": "Benutzerdefiniert",
       "free": "Frei",
-      "limitedFree": "Begrenzt kostenlos",
       "pro": "Pro",
       "team": "Team"
     },
