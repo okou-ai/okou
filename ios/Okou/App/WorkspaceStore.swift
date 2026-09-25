@@ -20,17 +20,24 @@ final class WorkspaceStore {
   private let client: APIClient
   let webURL: URL
   private(set) var threads: [ChatThread] = []
+  private(set) var agents: [AgentRecord] = []
+  private(set) var pinnedAgentIDs: [String] = []
+  private(set) var canArchiveChats = false
+  private(set) var navigationError: String?
   private(set) var histories: [String: ChatHistory] = [:]
   private(set) var pending: [String: [PendingMessage]] = [:]
   private(set) var loadingThreads: Set<String> = []
   private(set) var sendingThreads: Set<String> = []
   private(set) var stoppingThreads: Set<String> = []
+  private(set) var updatingThreads: Set<String> = []
   private(set) var isLoading = false
   private(set) var isCreating = false
   private(set) var needsUpgrade = false
   var error: String?
   var threadErrors: [String: String] = [:]
-  var path: [String] = []
+  var selectedThreadID: String?
+  var selectedAgentID: String?
+  var newChatDraft = ""
   var drafts: [String: String] = [:]
   var connectionStatus = "Connecting"
   private var realtime: RealtimeService?
@@ -59,7 +66,40 @@ final class WorkspaceStore {
     )
     self.realtime = realtime
     realtime.start()
+    await refreshNavigation()
     await refresh()
+  }
+
+  func refreshNavigation() async {
+    guard !closed, !needsUpgrade else { return }
+    do {
+      let result: [AgentRecord] = try await client.request("/api/agents")
+      guard !closed else { return }
+      agents = result
+      if selectedAgentID == nil { selectedAgentID = result.first(where: \.isDefaultAgent)?.agentId }
+      let preferences: SidebarPreferences = try await client.request("/api/user-preferences")
+      guard !closed else { return }
+      pinnedAgentIDs = preferences.pinnedAgentIds
+      navigationError = nil
+    } catch let error as APIClientError where error.statusCode == 409 {
+      pinnedAgentIDs = []
+      navigationError = nil
+    } catch {
+      navigationError = error.localizedDescription
+    }
+    let switches: SidebarFeatureSwitches? = try? await client.request("/api/feature-switches")
+    guard !closed else { return }
+    canArchiveChats = switches?.effectiveSwitches["chatThreadArchiving"] == true
+  }
+
+  var visiblePinnedAgents: [AgentRecord] {
+    let defaultID = agents.first(where: \.isDefaultAgent)?.agentId
+    let ids = [defaultID].compactMap { $0 } + pinnedAgentIDs.filter { $0 != defaultID }
+    return ids.compactMap { id in agents.first(where: { $0.agentId == id }) }
+  }
+
+  var currentAgentName: String {
+    agents.first(where: { $0.agentId == selectedAgentID })?.displayName ?? "Okou"
   }
 
   func close() {
@@ -102,6 +142,9 @@ final class WorkspaceStore {
           try Task.checkCancellation()
           guard !closed else { return }
           threads = result
+          if let selectedThreadID, !result.contains(where: { $0.id == selectedThreadID }) {
+            self.selectedThreadID = nil
+          }
           error = nil
         } catch is CancellationError {
         } catch { show(error) }
@@ -109,7 +152,7 @@ final class WorkspaceStore {
     } else {
       listRefreshAgain = true
     }
-    if let id = path.last { await loadHistory(id) }
+    if let id = selectedThreadID { await loadHistory(id) }
   }
 
   func loadHistory(_ id: String) async {
@@ -130,7 +173,7 @@ final class WorkspaceStore {
         let persisted = history.persistedEventIDs
         pending[id]?.removeAll { persisted.contains($0.id) }
         if pending[id]?.contains(where: \.needsRetry) != true { threadErrors[id] = nil }
-        if isForeground, path.last == id,
+        if isForeground, selectedThreadID == id,
           threads.first(where: { $0.id == id })?.indicator == .unread
         {
           try await service.markRead(threadID: id)
@@ -146,21 +189,50 @@ final class WorkspaceStore {
     } while historyRefreshAgain.contains(id) && !closed && !Task.isCancelled && !needsUpgrade
   }
 
-  func createChat() async {
+  func createChat(agentID: String? = nil) async {
     guard !isCreating, !needsUpgrade, !closed else { return }
     isCreating = true
     defer { isCreating = false }
     do {
-      let thread = try await service.createThread()
+      let thread = try await service.createThread(agentID: agentID)
       try Task.checkCancellation()
       guard !closed else { return }
       // Realtime may publish the committed thread before its POST response arrives.
       if !threads.contains(where: { $0.id == thread.id }) { threads.insert(thread, at: 0) }
       if histories[thread.id] == nil { histories[thread.id] = .empty }
-      path.append(thread.id)
+      selectedThreadID = thread.id
+      selectedAgentID = thread.agentID
       error = nil
     } catch is CancellationError {
     } catch { show(error) }
+  }
+
+  func selectChat(_ id: String) {
+    guard let thread = threads.first(where: { $0.id == id }) else { return }
+    selectedThreadID = thread.id
+    selectedAgentID = thread.agentID
+  }
+
+  func startNewChat(agentID: String? = nil) {
+    guard !isCreating, !needsUpgrade, !closed else { return }
+    selectedThreadID = nil
+    selectedAgentID = agentID ?? selectedAgentID ?? agents.first(where: \.isDefaultAgent)?.agentId
+    newChatDraft = ""
+    error = nil
+  }
+
+  func sendNewChat() async {
+    let text = newChatDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty, selectedThreadID == nil, !isCreating, !needsUpgrade, !closed else {
+      return
+    }
+    await createChat(agentID: selectedAgentID)
+    guard let id = selectedThreadID, let thread = threads.first(where: { $0.id == id }) else {
+      return
+    }
+    drafts[id] = text
+    newChatDraft = ""
+    await send(in: thread)
   }
 
   func send(in thread: ChatThread) async {
@@ -208,6 +280,34 @@ final class WorkspaceStore {
       try await service.stop(thread: thread)
       await loadHistory(thread.id)
     } catch { show(error, threadID: thread.id) }
+  }
+
+  func setPinned(_ thread: ChatThread, pinned: Bool) async {
+    await updateThread(thread.id) {
+      try await service.setPinned(threadID: thread.id, pinned: pinned)
+    }
+  }
+
+  func setArchived(_ thread: ChatThread, archived: Bool) async {
+    await updateThread(thread.id) {
+      try await service.setArchived(threadID: thread.id, archived: archived)
+    }
+  }
+
+  func rename(_ thread: ChatThread, title: String) async {
+    let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return }
+    await updateThread(thread.id) { try await service.rename(threadID: thread.id, title: trimmed) }
+  }
+
+  private func updateThread(_ id: String, command: () async throws -> Void) async {
+    guard !updatingThreads.contains(id), !needsUpgrade, !closed else { return }
+    updatingThreads.insert(id)
+    defer { updatingThreads.remove(id) }
+    do {
+      try await command()
+      await refresh()
+    } catch { show(error) }
   }
 
   func messages(for threadID: String) -> [ChatMessage] {

@@ -13,19 +13,52 @@ private let fixtureDate = "2026-09-17T10:00:00.000Z"
 
 @MainActor
 final class ChatServiceTests: XCTestCase {
-  func testCreateUsesDefaultAgentAndSavedModelWithoutOnboardingBootstrap() async throws {
+  func testNativeThreadActionsUseCanonicalEndpoints() async throws {
+    let requests = Mutex<[(String, String, String)]>([])
+    let fixture = ChatHTTPFixture { request in
+      requests.withLock {
+        $0.append(
+          (
+            request.httpMethod ?? "", request.url?.path ?? "",
+            String(decoding: chatRequestBody(request), as: UTF8.self)
+          ))
+      }
+      return ChatHTTPResponse(status: 204, body: "")
+    }
+    let service = ChatService(client: fixture.client)
+    try await service.setPinned(threadID: fixtureThread, pinned: true)
+    try await service.setPinned(threadID: fixtureThread, pinned: false)
+    try await service.setArchived(threadID: fixtureThread, archived: true)
+    try await service.setArchived(threadID: fixtureThread, archived: false)
+    try await service.rename(threadID: fixtureThread, title: "Renamed")
+
+    XCTAssertEqual(requests.withLock { $0.map(\.0) }, Array(repeating: "POST", count: 5))
+    XCTAssertEqual(
+      requests.withLock { $0.map(\.1) },
+      [
+        "/api/chat-threads/\(fixtureThread)/pin",
+        "/api/chat-threads/\(fixtureThread)/unpin",
+        "/api/chat-threads/\(fixtureThread)/archive",
+        "/api/chat-threads/\(fixtureThread)/unarchive",
+        "/api/chat-threads/\(fixtureThread)/rename",
+      ])
+    XCTAssertEqual(requests.withLock { $0.last?.2 }, "{\"title\":\"Renamed\"}")
+  }
+
+  func testCreateUsesSelectedAgentAndSavedModelWithoutOnboardingBootstrap() async throws {
     struct CreatedRequest: Decodable, Sendable {
       let agentId: String
       let model: String
       let reasoningEffort: String?
     }
-    let createdRequest = Mutex<CreatedRequest?>(nil)
+    let secondaryAgent = "10000000-0000-4000-8000-000000000006"
+    let createdRequests = Mutex<[CreatedRequest]>([])
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
       case "/api/agents":
         return ChatHTTPResponse(
           body:
-            "[{\"agentId\":\"\(fixtureAgent)\",\"isDefaultAgent\":true,\"ownerId\":\"test-user\",\"description\":null,\"displayName\":\"Okou\",\"sound\":null,\"avatarUrl\":null,\"visibility\":\"private\"}]"
+            "[{\"agentId\":\"\(fixtureAgent)\",\"isDefaultAgent\":true,\"displayName\":\"Okou\"},{\"agentId\":\"\(secondaryAgent)\",\"isDefaultAgent\":false,\"displayName\":\"Second\"}]"
         )
       case "/api/user-model-preference":
         return ChatHTTPResponse(
@@ -39,7 +72,7 @@ final class ChatServiceTests: XCTestCase {
         )
       case "/api/chat-threads":
         let body = try JSONDecoder().decode(CreatedRequest.self, from: chatRequestBody(request))
-        createdRequest.withLock { $0 = body }
+        createdRequests.withLock { $0.append(body) }
         return ChatHTTPResponse(
           status: 201,
           body:
@@ -51,9 +84,12 @@ final class ChatServiceTests: XCTestCase {
     let created = try await ChatService(client: fixture.client).createThread()
     XCTAssertEqual(created.agentID, fixtureAgent)
     XCTAssertEqual(created.selectedModel, "gpt-5.6-sol")
-    XCTAssertEqual(createdRequest.withLock { $0?.agentId }, fixtureAgent)
-    XCTAssertEqual(createdRequest.withLock { $0?.model }, "gpt-5.6-sol")
-    XCTAssertEqual(createdRequest.withLock { $0?.reasoningEffort }, "high")
+    let selected = try await ChatService(client: fixture.client).createThread(
+      agentID: secondaryAgent)
+    XCTAssertEqual(selected.agentID, secondaryAgent)
+    XCTAssertEqual(createdRequests.withLock { $0.map(\.agentId) }, [fixtureAgent, secondaryAgent])
+    XCTAssertEqual(createdRequests.withLock { $0.map(\.model) }, ["gpt-5.6-sol", "gpt-5.6-sol"])
+    XCTAssertEqual(createdRequests.withLock { $0.map(\.reasoningEffort) }, ["high", "high"])
   }
 
   func testUnsupportedEventSchemaRequiresAnUpdate() async throws {
@@ -96,6 +132,43 @@ final class ChatServiceTests: XCTestCase {
     let snapshotThread = try XCTUnwrap(threads.first(where: { $0.id == fixtureThread }))
     XCTAssertEqual(
       snapshotThread.createdAt.timeIntervalSince1970, 1_789_639_200.123456, accuracy: 0.000001)
+  }
+
+  func testListKeepsArchivedSnapshotAndReplaysUnarchive() async throws {
+    let archivedThread = threadJSON(id: fixtureThread)
+      .replacingOccurrences(of: "\"renamedAt\":null", with: "\"archived\":true,\"renamedAt\":null")
+    let snapshotOnly = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/chat-threads/snapshot":
+        return ChatHTTPResponse(
+          body: "{\"chatThreads\":[\(archivedThread)],\"latestSeqId\":null}")
+      case "/api/chat-threads/events":
+        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{}}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let archived = try await ChatService(client: snapshotOnly.client).threads()
+    XCTAssertEqual(archived.first?.isArchived, true)
+
+    let unarchivedEvent = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/chat-threads/snapshot":
+        return ChatHTTPResponse(
+          body: "{\"chatThreads\":[\(archivedThread)],\"latestSeqId\":10}")
+      case "/api/chat-threads/events":
+        return ChatHTTPResponse(
+          body:
+            "{\"events\":[\(threadEventJSON(seq: 11, kind: "unarchived", thread: fixtureThread))],\"hasMore\":false}"
+        )
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{}}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let unarchived = try await ChatService(client: unarchivedEvent.client).threads()
+    XCTAssertEqual(unarchived.first?.isArchived, false)
   }
 
   func testHistoryRecoversExpiredCursorAndNeverSendsBearerToSnapshot() async throws {
