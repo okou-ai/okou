@@ -1385,14 +1385,13 @@ wire readers are unchanged.
 
 Legacy Clerk user and organization deletion closes a one-way subject digest in
 `pi_stable_context_erasure_fences` under the existing account-erasure advisory
-lock, in the same transaction that removes stable-context lifecycle rows. The
-real Clerk membership-cache refresh shares that admission and refuses a closed
-subject; generation initialization, demand registration, and publication make
-the same check. A refresh admitted before closure either finishes first and is
-subsequently cleaned up, or waits and observes the fence. The table is
-feature-local deletion finality: it does not register the dormant account-
-erasure bridge, retain the raw Clerk identifier, or authorize deletion of any
-other product data. Keep stable-context activation on hold until migration 1168
+lock, in the same transaction that removes stable-context lifecycle rows. No
+writer or reader consults that closure any more: membership-cache refresh,
+generation initialization, demand registration, publication, and connector,
+permission and Workflow writes proceed after deletion, and later erasure
+cleanup removes such late rows. The table is scheduled for removal; it does
+not retain the raw Clerk identifier or authorize deletion of any other product
+data. Keep stable-context activation on hold until migration 1168
 and this API writer are present on every serving API instance.
 
 Mixed-version API operation is safe by construction. A new reader with no

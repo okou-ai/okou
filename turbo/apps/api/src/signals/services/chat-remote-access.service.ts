@@ -17,7 +17,6 @@ import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
-import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
 import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
 import { publishSshRunnerInvalidation } from "./ssh-runtime-wakeup.service";
 import { enterVncWrite } from "./vnc-owner-lifecycle.service";
@@ -158,13 +157,7 @@ async function admitRemoteAccessWrite(
   owner: Owner,
   protocol: RemoteAccessProtocol,
 ): Promise<boolean> {
-  if (protocol === "vnc" && !(await enterVncWrite(tx, owner))) {
-    return false;
-  }
-  return await admitPiStableContextSubjects(tx, [
-    { subjectKind: "organization", subjectId: owner.orgId },
-    { subjectKind: "user", subjectId: owner.userId },
-  ]);
+  return protocol !== "vnc" || (await enterVncWrite(tx, owner));
 }
 
 function toHostDefault(row: {
