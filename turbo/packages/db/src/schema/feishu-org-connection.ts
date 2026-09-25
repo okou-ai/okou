@@ -9,7 +9,6 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 
 import { connectors } from "./connector";
 import { feishuOrgInstallations } from "./feishu-org-installation";
@@ -36,11 +35,10 @@ export const feishuOrgConnections = pgTable(
     ),
     feishuUserName: varchar("feishu_user_name", { length: 255 }),
     /**
-     * Product brand selected by the connect flow that created the binding.
-     * Null is limited to bindings created by the previous API or retained from
-     * before the additive #28935 rollout; current OAuth writers always set it.
+     * Retired (#36766): current APIs neither read nor write it and rely on the
+     * `okou` default; drop it after older API deployments drain.
      */
-    publicBrand: text("public_brand").$type<PublicBrand>(),
+    publicBrand: text("public_brand").default("okou"),
     dmWelcomeSent: boolean("dm_welcome_sent").default(false).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

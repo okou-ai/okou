@@ -11,6 +11,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   billingStatus,
@@ -176,6 +177,29 @@ test("Queue billing actions appear only for authorized administrators and suppor
   expect(within(drawer).queryByText("Additional concurrency")).toBeNull();
   expect(queryButton(drawer, /^Buy /u)).toBeUndefined();
   expect(queryButton(drawer, /^Upgrade to /u)).toBeUndefined();
+});
+
+test("The queue labels the limited-free tier as Free", async () => {
+  installQueuePageFixture(context, {
+    billing: billingStatus({
+      tier: "limited-free-1",
+      ...billingPlanCapabilities("limited-free-1"),
+      concurrencyLimit: 1,
+    }),
+    queue: queueResponse({
+      tier: "limited-free-1",
+      limit: 1,
+      active: 1,
+      available: 0,
+      memberUsage: [],
+    }),
+    role: "member",
+  });
+
+  await setupPage({ context, path: openQueuePath() });
+
+  const drawer = await visibleQueueDrawer();
+  expect(within(drawer).getByText("Free")).toBeInTheDocument();
 });
 
 test("A Team administrator reviews and pays for an existing concurrency change", async () => {

@@ -63,6 +63,7 @@
 3 cleanup-pr-runner-test.sh
 3 crates-detect-workflow-test.sh
 3 deploy-okou-app-worker-workflow-test.sh
+3 deploy-discord-gateway-test.sh
 3 download-verified-test.sh
 3 kms-production-backup-test.sh
 3 native-only-gates-test.sh

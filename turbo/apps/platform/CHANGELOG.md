@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.963.0](https://github.com/okou-ai/okou/compare/app-v0.962.0...app-v0.963.0) (2026-09-25)
+
+
+### Features
+
+* **browser:** support native checkbox input requests ([#36807](https://github.com/okou-ai/okou/issues/36807)) ([46b2f26](https://github.com/okou-ai/okou/commit/46b2f264ae9f2c7f49c403ea3e9318627e65684d))
+
+
+### Refactoring
+
+* **platform:** remove session storage usage ([#36779](https://github.com/okou-ai/okou/issues/36779)) ([bdce150](https://github.com/okou-ai/okou/commit/bdce1505d5e6a80b97498679ed6bbb4ae7733e66))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.509.0
+    * @okouai/core bumped to 8.710.3
+
 ## [0.962.0](https://github.com/okou-ai/okou/compare/app-v0.961.2...app-v0.962.0) (2026-09-25)
 
 

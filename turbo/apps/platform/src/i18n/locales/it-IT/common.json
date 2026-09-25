@@ -1216,9 +1216,6 @@
         "webhookAutomations": "Avvia un run da qualsiasi sistema con un webhook"
       },
       "legacy": "Precedente",
-      "limitedFree": {
-        "name": "Gratuito limitato"
-      },
       "loadError": "Impossibile caricare lo stato di fatturazione.",
       "namedPlan": "Piano {{plan}}",
       "noActivePlan": "Nessun piano attivo",
@@ -6045,7 +6042,6 @@
     "tiers": {
       "custom": "Personalizzato",
       "free": "Gratuito",
-      "limitedFree": "Gratuito limitato",
       "pro": "Pro",
       "team": "Team"
     },

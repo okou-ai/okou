@@ -1,5 +1,5 @@
 {
-  "id": "d448ac62-9390-4261-9356-44fea3fbee41",
+  "id": "7be12bc6-059f-40fb-ad00-69b9c3bcf0ba",
   "prevId": "0d60a10d-2a1b-4fa3-87b0-d0bfddcccf0d",
   "version": "7",
   "dialect": "postgresql",
@@ -8708,7 +8708,8 @@
           "name": "public_brand",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": false,
+          "default": "'okou'"
         },
         "message_text": {
           "name": "message_text",
@@ -10377,6 +10378,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "last_chat_event_seq_id": {
+          "name": "last_chat_event_seq_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         }
       },
       "indexes": {
@@ -15877,7 +15885,8 @@
           "name": "public_brand",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": false,
+          "default": "'okou'"
         },
         "status": {
           "name": "status",
@@ -16136,7 +16145,8 @@
           "name": "public_brand",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": false,
+          "default": "'okou'"
         },
         "dm_welcome_sent": {
           "name": "dm_welcome_sent",
@@ -16388,7 +16398,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'vm0'"
+          "default": "'okou'"
         },
         "encrypted_app_secret": {
           "name": "encrypted_app_secret",

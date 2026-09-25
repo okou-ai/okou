@@ -1,5 +1,4 @@
 import type { ChatFeishuMessageFiles } from "@okouai/db/jsonb-contracts/chat-feishu-context";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   index,
   boolean,
@@ -31,11 +30,10 @@ export const chatFeishuContext = pgTable(
      */
     conversationHistory: text("conversation_history"),
     /**
-     * Product brand snapshotted from the webhook ingress. Null is limited to
-     * rows written by the previous API during the additive #28935 rollout or
-     * retained from before this column existed; new writers always set it.
+     * Retired (#36766): current APIs neither read nor write it and rely on the
+     * `okou` default; drop it after older API deployments drain.
      */
-    publicBrand: text("public_brand").$type<PublicBrand>(),
+    publicBrand: text("public_brand").default("okou"),
     messageText: text("message_text"),
     messageFiles: jsonb("message_files").$type<ChatFeishuMessageFiles>(),
     chatType: text("chat_type").$type<"group" | "p2p" | "topic_group">(),

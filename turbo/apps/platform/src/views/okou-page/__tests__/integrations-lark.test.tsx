@@ -92,7 +92,6 @@ test("the Lark settings page reads only Lark installations", async () => {
   context.mocks.api(larkConnectContract.getStatus, ({ respond }) => {
     requestedLark = true;
     return respond(200, {
-      publicBrand: "okou",
       platform: "lark",
       isAdmin: true,
       isInstalled: false,

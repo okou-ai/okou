@@ -804,6 +804,8 @@ export function generatePresignedPutUrl(
   options: {
     readonly usePublicEndpoint?: boolean;
     readonly metadata?: Readonly<Record<string, string>>;
+    /** Base64 SHA-256 digest bound into the storage authorization. */
+    readonly checksumSha256?: string;
   },
   signal?: AbortSignal,
 ): Computed<Promise<string>> {
