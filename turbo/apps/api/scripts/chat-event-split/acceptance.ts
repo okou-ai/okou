@@ -17,7 +17,6 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatEventWriteControl } from "@okouai/db/schema/chat-event-write-control";
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { runOutputMemoryCitations } from "@okouai/db/schema/run-output-memory-citation";
@@ -191,10 +190,6 @@ try {
     env: { ...process.env, DATABASE_URL: databaseUrl.toString() },
     maxBuffer: 20 * 1024 * 1024,
   });
-  // A fresh migrated database has no legacy history and is activated.
-  const [control] = await db.select().from(chatEventWriteControl);
-  assert.notEqual(control?.activatedAt ?? null, null);
-
   await test("a committed terminal marker retries missing registration and concurrent replays share one delivery", async () => {
     const f = await fixture();
     await assert.rejects(f.project(), /missing its chat callback/u);

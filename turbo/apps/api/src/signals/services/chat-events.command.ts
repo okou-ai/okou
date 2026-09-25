@@ -2326,13 +2326,11 @@ async function appendUnassociatedUserMessage(
       "thread_touch",
       params.threadId,
       async () => {
-        await touchChatThreadLastMessageAtIndependently(
-          db,
-          params.threadId,
-          inserted.createdAt,
-          params.chatThreadSortEventId,
-          { userId: params.userId, orgId: params.orgId },
-        );
+        await touchChatThreadLastMessageAtIndependently(db, params.threadId, {
+          touchedAt: inserted.createdAt,
+          eventId: params.chatThreadSortEventId,
+          authorizedScope: { userId: params.userId, orgId: params.orgId },
+        });
       },
     );
   }
@@ -2382,9 +2380,11 @@ async function appendAssociatedUserMessage(params: {
       return touchChatThreadLastMessageAtIndependently(
         params.db,
         params.threadId,
-        inserted.createdAt,
-        params.chatThreadSortEventId,
-        { userId: params.userId, orgId: params.orgId },
+        {
+          touchedAt: inserted.createdAt,
+          eventId: params.chatThreadSortEventId,
+          authorizedScope: { userId: params.userId, orgId: params.orgId },
+        },
       );
     });
   }

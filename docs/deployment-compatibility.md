@@ -6,7 +6,7 @@ Release 2 of the thread-draft move off `chat_threads` (#36173). Release 1
 (#36897, merge commit `4558c9fa`) made `chat_thread_drafts` the only draft
 store and writes `user_id` on every row.
 
-Migration `1245_contract_chat_thread_drafts` fills any missing `user_id` from
+Migration `1246_contract_chat_thread_drafts` fills any missing `user_id` from
 the thread. It then deletes cleared tombstones (both draft values null) and rows
 whose thread no longer exists, makes `user_id` and `draft_user_message`
 `NOT NULL`, drops `chat_thread_drafts_draft_user_message_check`, and adds the
@@ -33,6 +33,24 @@ rollback floor. It drops the two `chat_threads` draft columns and their check
 constraint, which Release 1 would still name in thread inserts. It also makes
 `(chat_thread_id, user_id)` the primary key and lets the draft `PATCH` skip the
 owner read, so a missing or foreign thread returns `204` instead of `404`.
+
+## Chat event write control retirement (2026-09-25)
+
+Migration `1245_drop_chat_event_write_control` drops `chat_event_write_control`
+together with its `preserve_chat_event_write_activation` trigger and function.
+APIs 1.674.0 and 1.675.0 read the control row on every chat event write, so the
+production rollback resolver now refuses targets before #36703 (`15117da781`,
+API 1.676.0), the release that removed that reader. The owner approved the new
+floor on 2026-09-25 while production served API 1.676.1. Migration precedes API
+promotion, and no API from 1.676.0 on reads or writes the table.
+
+APIs before this change still list the table in their account-erasure ownership
+inventory. While one of them serves after the migration (the release overlap or
+a rollback), its Clerk deletion jobs fail with
+`account_erasure_relational:catalogue_absent:chat_event_write_control` and retry
+every 60 seconds without losing their checkpoint, until an API with this change
+serves. The table was not account-scoped and had no foreign keys, so the
+relational sweep plan and its collector version are unchanged.
 
 ## Thread drafts served only from `chat_thread_drafts` (2026-09-25)
 

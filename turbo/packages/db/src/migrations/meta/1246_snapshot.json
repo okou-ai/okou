@@ -1,6 +1,6 @@
 {
-  "id": "5083e5a7-053d-4b6b-80b4-fecf93b4abbb",
-  "prevId": "dc39fdb2-7df8-414c-ac1b-ae21b5cf1f92",
+  "id": "9ce99eba-392c-45b8-b4b5-cf07b86c3833",
+  "prevId": "5083e5a7-053d-4b6b-80b4-fecf93b4abbb",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -9517,13 +9517,13 @@
           "name": "user_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "draft_user_message": {
           "name": "draft_user_message",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "draft_attachments": {
           "name": "draft_attachments",
@@ -9561,6 +9561,27 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "uq_chat_thread_drafts_thread_user": {
+          "name": "uq_chat_thread_drafts_thread_user",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -9574,12 +9595,7 @@
       },
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "chat_thread_drafts_draft_user_message_check": {
-          "name": "chat_thread_drafts_draft_user_message_check",
-          "value": "\"chat_thread_drafts\".\"draft_user_message\" IS NOT NULL\n          OR COALESCE(\"chat_thread_drafts\".\"draft_attachments\", '[]'::jsonb) = '[]'::jsonb"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.chat_thread_event_sequences": {
@@ -10160,18 +10176,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "draft_user_message": {
-          "name": "draft_user_message",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "draft_attachments": {
-          "name": "draft_attachments",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "last_read_at": {
           "name": "last_read_at",
           "type": "timestamp",
@@ -10297,6 +10301,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "draft_user_message": {
+          "name": "draft_user_message",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "draft_attachments": {
+          "name": "draft_attachments",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
