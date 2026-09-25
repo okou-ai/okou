@@ -1,14 +1,10 @@
 import { command } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   teamsBotContract,
   type TeamsInboundActivity,
 } from "@okouai/api-contracts/contracts/teams-bot";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
-import {
-  PUBLIC_BRAND_PRESENTATION,
-  PUBLIC_BRAND,
-} from "@okouai/core/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
 
 import {
   normalizeTeamsActivity,
@@ -276,7 +272,6 @@ const dispatchTeamsMessageAndReply$ = command(
     args: {
       readonly activity: TeamsMessageActivity;
       readonly installation: TeamsInstallation | null;
-      readonly publicBrand: PublicBrand;
       readonly apiStartTime: number;
       readonly timing: ApiDispatchTimingCollector;
     },
@@ -286,7 +281,6 @@ const dispatchTeamsMessageAndReply$ = command(
       dispatchTeamsMessageToAgent$,
       {
         activity: args.activity,
-        publicBrand: args.publicBrand,
         installation: args.installation,
         apiStartTime: args.apiStartTime,
         timing: args.timing,
@@ -327,7 +321,6 @@ const dispatchTeamsMessageAndReply$ = command(
 
 const handleTeamsBot$ = command(async ({ get, set }, signal: AbortSignal) => {
   const request = get(request$);
-  const publicBrand = PUBLIC_BRAND;
   const apiStartTime = now();
   const bodyText = await request.text();
   signal.throwIfAborted();
@@ -404,7 +397,6 @@ const handleTeamsBot$ = command(async ({ get, set }, signal: AbortSignal) => {
           {
             activity: normalized.activity,
             installation,
-            publicBrand,
             apiStartTime,
             timing,
           },

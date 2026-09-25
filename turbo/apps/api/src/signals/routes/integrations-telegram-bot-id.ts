@@ -4,7 +4,6 @@ import {
   OFFICIAL_TELEGRAM_BOT_ID,
   integrationsTelegramContract,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { agents } from "@okouai/db/schema/agent";
 import { telegramInstallations } from "@okouai/db/schema/telegram-installation";
 import { telegramUserAgentPreferences } from "@okouai/db/schema/telegram-user-agent-preference";
@@ -22,7 +21,6 @@ import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { bestEffort, tapError } from "../utils";
 import type { RouteEntry } from "../route-entry";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const log = logger("api:telegram:integration-bot");
 
@@ -62,7 +60,6 @@ const updateOfficialBot$ = command(
       readonly auth: TelegramRouteAuth;
       readonly botId: string;
       readonly selectedAgentId: string | null;
-      readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
   ) => {
@@ -113,7 +110,6 @@ const updateOfficialBot$ = command(
         orgId: args.auth.orgId,
         userId: args.auth.userId,
         botId: args.botId,
-        publicBrand: args.publicBrand,
       }),
     );
     signal.throwIfAborted();
@@ -131,7 +127,6 @@ const updateCustomBot$ = command(
       readonly auth: TelegramRouteAuth;
       readonly botId: string;
       readonly defaultAgentId: string;
-      readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
   ) => {
@@ -192,7 +187,6 @@ const updateCustomBot$ = command(
         orgId: args.auth.orgId,
         userId: args.auth.userId,
         botId: args.botId,
-        publicBrand: args.publicBrand,
       }),
     );
     signal.throwIfAborted();
@@ -205,7 +199,6 @@ const updateCustomBot$ = command(
 
 const updateBotInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const publicBrand = PUBLIC_BRAND;
   const { botId } = get(pathParamsOf(integrationsTelegramContract.updateBot));
   const bodyResult = await get(
     bodyResultOf(integrationsTelegramContract.updateBot),
@@ -227,7 +220,6 @@ const updateBotInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         auth,
         botId,
         selectedAgentId: bodyResult.data.selectedAgentId ?? null,
-        publicBrand,
       },
       signal,
     );
@@ -243,7 +235,6 @@ const updateBotInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       auth,
       botId,
       defaultAgentId: bodyResult.data.defaultAgentId,
-      publicBrand,
     },
     signal,
   );

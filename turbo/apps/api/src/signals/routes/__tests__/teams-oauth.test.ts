@@ -168,13 +168,11 @@ describe("Teams OAuth API routes", () => {
     );
     const state = JSON.parse(redirectUrl.searchParams.get("state")!) as {
       readonly orgId: string;
-      readonly publicBrand: string;
       readonly redirectUri: string;
       readonly userId: string;
     };
     expect(state).toStrictEqual({
       orgId: "org_1",
-      publicBrand: "okou",
       redirectUri: `${API_ORIGIN}/api/integrations/teams/oauth/callback`,
       userId: "user_1",
     });
@@ -209,24 +207,15 @@ describe("Teams OAuth API routes", () => {
     ["missing", ""],
     ["malformed", `&state=${encodeURIComponent("not-json")}`],
     [
-      "omitted-brand",
+      "org-less",
       `&state=${encodeURIComponent(
         JSON.stringify({
-          redirectUri: `${API_ORIGIN}/api/integrations/teams/oauth/callback`,
-        }),
-      )}`,
-    ],
-    [
-      "invalid-brand",
-      `&state=${encodeURIComponent(
-        JSON.stringify({
-          publicBrand: "other",
           redirectUri: `${API_ORIGIN}/api/integrations/teams/oauth/callback`,
         }),
       )}`,
     ],
   ])(
-    "rejects %s callback state using the trusted request brand",
+    "rejects %s callback state using the configured app",
     async (_caseName, stateQuery) => {
       mockEnv("APP_URL", "https://app.okou.ai");
 
@@ -273,7 +262,6 @@ describe("Teams OAuth API routes", () => {
         code: "valid-code",
         state: {
           orgId: fixture.orgId,
-          publicBrand: "okou",
           userId: fixture.userId,
           redirectUri: CALLBACK_REDIRECT_URI,
         },
@@ -326,7 +314,6 @@ describe("Teams OAuth API routes", () => {
         code: "valid-code",
         state: {
           orgId: fixture.orgId,
-          publicBrand: "okou",
           userId: fixture.userId,
           redirectUri: recordedRedirectUri,
         },
@@ -373,7 +360,6 @@ describe("Teams OAuth API routes", () => {
         code: "valid-code",
         state: {
           orgId: fixture.orgId,
-          publicBrand: "okou",
           userId: fixture.userId,
           redirectUri: CALLBACK_REDIRECT_URI,
         },
@@ -400,7 +386,6 @@ describe("Teams OAuth API routes", () => {
         code: "valid-code",
         state: {
           orgId: fixture.orgId,
-          publicBrand: "okou",
           userId: fixture.userId,
           redirectUri: CALLBACK_REDIRECT_URI,
         },
@@ -430,7 +415,6 @@ describe("Teams OAuth API routes", () => {
         code: "valid-code",
         state: {
           orgId: fixture.orgId,
-          publicBrand: "okou",
           userId: fixture.userId,
           redirectUri: CALLBACK_REDIRECT_URI,
         },

@@ -1,5 +1,41 @@
 # Deployment Compatibility
 
+## Teams and Telegram public brand retirement (2026-09-25)
+
+Teams and Telegram are Okou-only (#36766, slice C). The API no longer reads or
+writes `public_brand` on `teams_org_installations`, `chat_teams_context`,
+`telegram_installations`, `telegram_official_user_links` or
+`chat_telegram_context`. Queued Teams and Telegram launches and inbound-file
+materialization use the fixed `okou` brand. The official Telegram user-link
+lookup no longer copies a row's own brand back onto it, and
+`chat_telegram_context` rows with a null or `vm0` brand now launch normally
+instead of being dropped at claim time.
+
+Migration `1234_teams_telegram_public_brand_okou_default` sets the column
+default to `'okou'` on `chat_teams_context` (previously `NOT NULL` without a
+default), `chat_telegram_context` (previously no default),
+`telegram_installations` and `telegram_official_user_links` (both previously
+`'vm0'`), matching `teams_org_installations`. An old API therefore reads `okou`
+from rows the new API inserts, including the non-null brand its Telegram
+queued-launch path requires, so old API/new DB and rollback remain compatible.
+Existing rows keep their stored values; no current reader observes them. The
+columns and their ORM declarations stay in place; drop them in a separate
+migration after older API deployments drain.
+
+Teams and Telegram chat callback payloads, and the Teams delivery target inside
+persisted run payloads, still carry `publicBrand: "okou"`. APIs before this
+change require that key when they parse a pending callback or a claimed run, so
+removing it would break delivery during a rolling deploy or after an API
+rollback. The new readers ignore any stored value, including `vm0`. Stop
+writing the key when the column-drop follow-up lands.
+
+The Teams OAuth `state` no longer carries `publicBrand`, and the callback no
+longer requires it. A state issued by an older API still parses because the
+extra key is ignored. A state issued by the new API and returned to an older
+API instance during the rollout, or after an API rollback, is rejected as
+`Invalid connect state.`; the user restarts the Microsoft sign-in. States live
+only for one interactive sign-in, so no durable flow depends on the key.
+
 ## Slack and Discord public brand retirement (2026-09-25)
 
 Slack and Discord are Okou-only. The API no longer reads or writes
