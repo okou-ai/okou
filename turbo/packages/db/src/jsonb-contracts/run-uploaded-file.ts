@@ -60,13 +60,11 @@ export type CanonicalAssetDeliveryDestination =
 
 export interface CanonicalAssetDiscordDeliveryState {
   readonly provider: "discord";
-  readonly nonce: string;
   readonly attempt: {
     readonly id: string;
     readonly startedAt: string;
   } | null;
   readonly attachmentId?: string;
-  readonly retryNotBeforeMs?: number;
 }
 
 export interface CanonicalAssetDeliveryError {
