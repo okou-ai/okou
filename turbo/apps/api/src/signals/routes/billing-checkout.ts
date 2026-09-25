@@ -48,7 +48,6 @@ import {
   activeUsagePackBillingContext,
   loadUsagePackCatalog,
   startUsagePackPurchase$,
-  usagePackPurchaseSerializationSchemaAvailable,
   usagePackSubscriptionSchemaAvailable,
   type UsagePackCheckoutAllocation,
 } from "../services/usage-pack-subscription.service";
@@ -78,7 +77,6 @@ import {
   previewUsagePackSubscriptionMigrationRevision,
   type UsagePackMigrationOwner,
 } from "../services/usage-pack-subscription-migration.service";
-import { usagePackInvitationPurchaseSchemaAvailable } from "../services/usage-pack-invitation-purchase.service";
 import {
   loadBillingOrganizationDirectory,
   loadBillingOrganizationMemberships,
@@ -594,16 +592,7 @@ const checkoutConfirm$ = command(async ({ set }, signal: AbortSignal) => {
 });
 
 const confirmUsagePackPurchaseForOrg$ = command(
-  async (
-    { get, set },
-    orgId: string,
-    previewToken: string,
-    signal: AbortSignal,
-  ) => {
-    const db = get(db$);
-    if (!(await usagePackPurchaseSerializationSchemaAvailable(db))) {
-      return providerUnavailable("Usage pack billing is not ready");
-    }
+  async ({ set }, orgId: string, previewToken: string, signal: AbortSignal) => {
     signal.throwIfAborted();
     const result = await set(
       confirmUsagePackPurchase$,
@@ -665,9 +654,6 @@ const usagePackCheckoutAuthed$ = command(
     }
 
     const db = get(db$);
-    if (!(await usagePackPurchaseSerializationSchemaAvailable(db))) {
-      return providerUnavailable("Usage pack billing is not ready");
-    }
     signal.throwIfAborted();
 
     const previewEnabled = body.supportsInAppPreview === true;
@@ -1053,11 +1039,7 @@ const usagePackChangeConfirmAuthed$ = command(
 async function usagePackMigrationSchemasAvailable(
   db: Parameters<typeof usagePackSubscriptionSchemaAvailable>[0],
 ): Promise<boolean> {
-  const [subscriptionSchema, invitationSchema] = await Promise.all([
-    usagePackSubscriptionSchemaAvailable(db),
-    usagePackInvitationPurchaseSchemaAvailable(db),
-  ]);
-  return subscriptionSchema && invitationSchema;
+  return await usagePackSubscriptionSchemaAvailable(db);
 }
 
 const usagePackMigrationGetAuthed$ = command(
