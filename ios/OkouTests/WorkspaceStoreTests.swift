@@ -6,6 +6,68 @@ import XCTest
 
 @MainActor
 final class WorkspaceStoreTests: XCTestCase {
+  func testSidebarUsesPinnedAgentsAndScopesChatsToSelectedAgent() async {
+    let otherAgentID = "40000000-0000-4000-8000-000000000006"
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/agents":
+        return ChatHTTPResponse(
+          body: """
+            [{"agentId":"\(storeAgentID)","isDefaultAgent":true,"displayName":"Okou"},{"agentId":"\(otherAgentID)","isDefaultAgent":false,"displayName":"Second"}]
+            """)
+      case "/api/user-preferences":
+        return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[\"\(otherAgentID)\"]}")
+      case "/api/feature-switches":
+        return ChatHTTPResponse(body: "{\"effectiveSwitches\":{\"chatThreadArchiving\":true}}")
+      case "/api/chat-threads/snapshot": return threadSnapshot(title: "Existing chat")
+      case "/api/chat-threads/events":
+        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{}}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+    defer { store.close() }
+    await store.refreshNavigation()
+    await store.refresh()
+    XCTAssertEqual(store.visiblePinnedAgents.map(\.agentId), [storeAgentID, otherAgentID])
+    XCTAssertEqual(store.currentAgentName, "Okou")
+    XCTAssertTrue(store.canArchiveChats)
+
+    store.startNewChat(agentID: otherAgentID)
+    XCTAssertEqual(store.currentAgentName, "Second")
+    XCTAssertNil(store.selectedThreadID)
+
+    store.selectChat(storeThreadID)
+    XCTAssertEqual(store.selectedAgentID, storeAgentID)
+    XCTAssertEqual(store.selectedThreadID, storeThreadID)
+  }
+
+  func testNewChatDoesNotCreateUntilSendAndKeepsDraftIfCreationFails() async {
+    let requests = Mutex<[String]>([])
+    let fixture = ChatHTTPFixture { request in
+      requests.withLock { $0.append(request.url?.path ?? "") }
+      return ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Unavailable\"}}")
+    }
+    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+    defer { store.close() }
+    store.selectedThreadID = storeThreadID
+    store.newChatDraft = "Old draft"
+
+    store.startNewChat()
+    XCTAssertNil(store.selectedThreadID)
+    XCTAssertEqual(store.newChatDraft, "")
+    XCTAssertTrue(requests.withLock { $0.isEmpty })
+
+    store.newChatDraft = "First message"
+    await store.sendNewChat()
+    XCTAssertNil(store.selectedThreadID)
+    XCTAssertEqual(store.newChatDraft, "First message")
+    XCTAssertFalse(requests.withLock { $0.isEmpty })
+    XCTAssertNotNil(store.error)
+  }
+
   func testRefreshDuringOldHistoryReadRendersFinalAnswer() async throws {
     let oldReadStarted = expectation(description: "The old history response is in flight")
     let releaseOldResponse = HTTPResponseGate()
@@ -51,7 +113,7 @@ final class WorkspaceStoreTests: XCTestCase {
     }
     let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
     defer { store.close() }
-    store.path = [storeThreadID]
+    store.selectedThreadID = storeThreadID
     let initialRead = Task { await store.loadHistory(storeThreadID) }
     await fulfillment(of: [oldReadStarted], timeout: 2)
 
@@ -156,7 +218,7 @@ final class WorkspaceStoreTests: XCTestCase {
 
     XCTAssertEqual(store.threads.map(\.id), [storeThreadID])
     XCTAssertEqual(store.threads.map(\.title), ["Latest title"])
-    XCTAssertEqual(store.path, [storeThreadID])
+    XCTAssertEqual(store.selectedThreadID, storeThreadID)
     XCTAssertNil(store.error)
   }
 
@@ -196,7 +258,7 @@ final class WorkspaceStoreTests: XCTestCase {
     defer { store.close() }
     await store.refresh()
 
-    store.path = [storeThreadID]
+    store.selectedThreadID = storeThreadID
     store.setForeground(false)
     await store.loadHistory(storeThreadID)
     XCTAssertEqual(store.messages(for: storeThreadID).map(\.text), ["Unread answer"])
@@ -204,18 +266,18 @@ final class WorkspaceStoreTests: XCTestCase {
     XCTAssertTrue(unread.withLock { $0 })
 
     store.setForeground(true)
-    store.path = ["40000000-0000-4000-8000-000000000004"]
+    store.selectedThreadID = "40000000-0000-4000-8000-000000000004"
     await store.loadHistory(storeThreadID)
     XCTAssertEqual(store.threads.first?.indicator, .unread)
     XCTAssertTrue(unread.withLock { $0 })
 
-    store.path = [storeThreadID]
+    store.selectedThreadID = storeThreadID
     await store.loadHistory(storeThreadID)
     XCTAssertNil(store.threads.first?.indicator)
     XCTAssertNil(store.threadErrors[storeThreadID])
 
     // Reloading the list verifies the cleared badge reflects the HTTP mark-read result.
-    store.path = []
+    store.selectedThreadID = nil
     await store.refresh()
     XCTAssertNil(store.threads.first?.indicator)
     XCTAssertNil(store.error)
@@ -257,7 +319,7 @@ final class WorkspaceStoreTests: XCTestCase {
     defer { oldStore.close() }
     await oldStore.refresh()
     oldStore.setForeground(true)
-    oldStore.path = [storeThreadID]
+    oldStore.selectedThreadID = storeThreadID
     let oldRead = Task { await oldStore.loadHistory(storeThreadID) }
     await fulfillment(of: [oldReadStarted], timeout: 2)
     oldStore.close()
@@ -287,7 +349,7 @@ final class WorkspaceStoreTests: XCTestCase {
     let freshStore = WorkspaceStore(client: freshFixture.client, webURL: freshFixture.baseURL)
     defer { freshStore.close() }
     freshStore.setForeground(true)
-    freshStore.path = [storeThreadID]
+    freshStore.selectedThreadID = storeThreadID
     await freshStore.refresh()
     XCTAssertEqual(freshStore.messages(for: storeThreadID).map(\.text), ["Fresh workspace answer"])
 
