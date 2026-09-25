@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/okou-ai/okou/compare/ios-v0.2.1...ios-v0.3.0) (2026-09-25)
+
+
+### Features
+
+* **ios:** add native chat sidebar and composer ([#36930](https://github.com/okou-ai/okou/issues/36930)) ([4e7b024](https://github.com/okou-ai/okou/commit/4e7b024bc3cef22aa8b4bb8e10eefa90ce1c59bd))
+
 ## [0.2.1](https://github.com/okou-ai/okou/compare/ios-v0.2.0...ios-v0.2.1) (2026-09-25)
 
 
