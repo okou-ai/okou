@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-import { publicBrandSchema } from "@okouai/api-contracts/contracts/public-brand";
-
 export const githubDeliveryTargetSchema = z.object({
   installationId: z.string().uuid(),
   repo: z.string().min(1),
@@ -18,5 +16,4 @@ export type GitHubDeliveryTarget = z.infer<typeof githubDeliveryTargetSchema>;
 export const githubChatCallbackPayloadSchema =
   githubDeliveryTargetSchema.extend({
     chatEventId: z.string().uuid(),
-    publicBrand: publicBrandSchema,
   });
