@@ -9,7 +9,6 @@ import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { settleIncludingAbort } from "../../utils";
 import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
-import { withHeldChatThreadDraftRowFixture } from "../../../test-fixtures/chat-thread-content-erasure";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -220,8 +219,8 @@ describe("thread drafts", () => {
   });
 });
 
-describe("send-coupled draft clears", () => {
-  it("clears the saved draft when a message is sent", async () => {
+describe("sends and drafts", () => {
+  it("leaves the saved draft for the client to clear when a message is sent", async () => {
     const fixture = await createDraftFixture();
     await runs.ensureOrgModelProvider(fixture.actor);
     await chat.patchThread(fixture.actor, fixture.threadId, {
@@ -229,75 +228,18 @@ describe("send-coupled draft clears", () => {
       draftAttachments: [draftAttachment()],
     });
 
+    // The web client clears its draft with its own PATCH alongside the send;
+    // the send itself does not touch `chat_thread_drafts`.
     await sendWithoutCredits(fixture);
 
-    await expect(
-      chat.readThreadDraft(fixture.actor, fixture.threadId),
-    ).resolves.toStrictEqual({
+    await expect(servedDraftText(fixture)).resolves.toBe("saved before send");
+    await chat.patchThread(fixture.actor, fixture.threadId, {
       draftUserMessage: null,
       draftAttachments: null,
     });
+    await expect(servedDraftText(fixture)).resolves.toBeNull();
     await expect(listedDraftIds(fixture)).resolves.not.toContain(
       fixture.threadId,
     );
-  });
-
-  it("keeps the committed message when the draft clear fails", async () => {
-    const fixture = await createDraftFixture();
-    await runs.ensureOrgModelProvider(fixture.actor);
-    await chat.patchThread(
-      fixture.actor,
-      fixture.threadId,
-      draftBody("retained"),
-    );
-    const before = await chat.listThreadEvents(fixture.actor, fixture.threadId);
-
-    await withHeldChatThreadDraftRowFixture(
-      {
-        chatThreadId: fixture.threadId,
-        work: async (control) => {
-          const send = sendWithoutCredits(fixture);
-          await expect
-            .poll(control.blockedWaiterCount, { interval: 10, timeout: 750 })
-            .toBeGreaterThan(0);
-          await expect(control.cancelBlockedQueries()).resolves.toBe(1);
-          // The draft clear is a weak side effect after the event commit.
-          await send;
-        },
-      },
-      context.signal,
-    );
-
-    await expect(servedDraftText(fixture)).resolves.toBe("retained");
-    const after = await chat.listThreadEvents(fixture.actor, fixture.threadId);
-    expect(
-      after.events.filter((event) => {
-        return event.eventType === "input.prompt";
-      }),
-    ).toHaveLength(
-      before.events.filter((event) => {
-        return event.eventType === "input.prompt";
-      }).length + 1,
-    );
-  });
-
-  it("leaves the draft untouched when another user's send is rejected", async () => {
-    const fixture = await createDraftFixture();
-    await runs.ensureOrgModelProvider(fixture.actor);
-    await chat.patchThread(fixture.actor, fixture.threadId, draftBody("owned"));
-    const foreign = bdd.user({ orgId: fixture.actor.orgId });
-
-    const denied = await chat.requestSendEvent(
-      foreign,
-      {
-        agentId: fixture.agentId,
-        threadId: fixture.threadId,
-        prompt: "Not my thread",
-      },
-      [403],
-    );
-    expect(denied.status).toBe(403);
-
-    await expect(servedDraftText(fixture)).resolves.toBe("owned");
   });
 });

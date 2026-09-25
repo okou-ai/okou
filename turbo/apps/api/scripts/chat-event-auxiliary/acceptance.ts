@@ -15,7 +15,6 @@ import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
-import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
 import {
   chatThreadEvents,
   chatThreadEventSequences,
@@ -23,7 +22,6 @@ import {
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { completeChatContentDeletion } from "@okouai/db/operations/chat-content-erasure";
 import { insertChatEvent } from "../../src/signals/services/chat-event.service";
-import { clearThreadDraftIndependently } from "../../src/signals/services/chat-event-write-side-effects.service";
 import { touchChatThreadLastMessageAtIndependently } from "../../src/signals/services/chat-event-shared.service";
 import {
   cleanupLateChatContent,
@@ -67,9 +65,6 @@ async function fixture() {
     .insert(agents)
     .values({ id: agentId, name: agentId, owner: userId, orgId });
   await db.insert(chatThreads).values({ id: threadId, userId, agentId });
-  await db
-    .insert(chatThreadDrafts)
-    .values({ chatThreadId: threadId, userId, draftUserMessage: document });
   const append = async () => {
     return await insertChatEvent(db, {
       chatThreadId: threadId,
@@ -88,52 +83,6 @@ try {
     cwd: fileURLToPath(new URL("../../../../packages/db", import.meta.url)),
     env: { ...process.env, DATABASE_URL: url.toString() },
     maxBuffer: 20 * 1024 * 1024,
-  });
-
-  await test("draft failures preserve the committed message and do not suppress later writes", async () => {
-    const f = await fixture();
-    await pool.query(`CREATE FUNCTION fail_draft_clear() RETURNS trigger LANGUAGE plpgsql AS $$
-      BEGIN IF OLD.chat_thread_id = '${f.threadId}'
-        THEN RAISE EXCEPTION 'synthetic draft clear fault'; END IF; RETURN OLD; END $$;
-      CREATE TRIGGER fail_draft_clear BEFORE DELETE ON chat_thread_drafts FOR EACH ROW EXECUTE FUNCTION fail_draft_clear()`);
-    const event = await f.append();
-    assert.ok(event);
-    await clearThreadDraftIndependently(db, f);
-    const touchedAt = new Date("2030-01-01T00:00:00Z");
-    await touchChatThreadLastMessageAtIndependently(
-      db,
-      f.threadId,
-      touchedAt,
-      undefined,
-      f,
-    );
-    assert.equal(
-      (await db.select().from(chatEvents).where(eq(chatEvents.id, event.id)))
-        .length,
-      1,
-    );
-    const [thread] = await db
-      .select({ at: chatThreads.lastMessageAt })
-      .from(chatThreads)
-      .where(eq(chatThreads.id, f.threadId));
-    const [draft] = await db
-      .select()
-      .from(chatThreadDrafts)
-      .where(eq(chatThreadDrafts.chatThreadId, f.threadId));
-    assert.deepEqual(draft?.draftUserMessage, document);
-    assert.equal(thread?.at?.toISOString(), touchedAt.toISOString());
-    assert.equal(
-      (
-        await db
-          .select()
-          .from(chatThreadEvents)
-          .where(eq(chatThreadEvents.chatThreadId, f.threadId))
-      ).length,
-      1,
-    );
-    await pool.query(
-      "DROP TRIGGER fail_draft_clear ON chat_thread_drafts; DROP FUNCTION fail_draft_clear()",
-    );
   });
 
   await test("timestamp failure still attempts sort; sort failure keeps timestamp and committed input", async () => {

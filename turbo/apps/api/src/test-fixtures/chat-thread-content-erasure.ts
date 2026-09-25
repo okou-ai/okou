@@ -1,13 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { eq, sql } from "drizzle-orm";
-import { z } from "zod";
+import { eq } from "drizzle-orm";
 
 import { db } from "../lib/db";
-import { executeRawRows } from "../lib/db-raw-rows";
 import { createDeferredPromise, settleIncludingAbort } from "../signals/utils";
 import {
   barrierQueryBinds,
@@ -485,99 +482,6 @@ export async function withChatThreadContentBarrierFixture<T>(
       },
       pauseAfter: pausesAfterStatement(args.stopAt),
       work: args.work,
-    },
-    signal,
-  );
-}
-
-/**
- * Holds an existing draft row without touching the thread, so a send's weak
- * draft clear blocks on it and can be cancelled after the event commit.
- */
-export async function withHeldChatThreadDraftRowFixture<T>(
-  args: {
-    readonly chatThreadId: string;
-    readonly work: (control: {
-      readonly blockedWaiterCount: () => Promise<number>;
-      readonly cancelBlockedQueries: () => Promise<number>;
-    }) => Promise<T>;
-  },
-  signal: AbortSignal,
-): Promise<T> {
-  return await withDatabaseTransactionBarrierFixture(
-    {
-      select: (queryArgs) => {
-        const text = barrierQueryText(queryArgs);
-        return (
-          text.startsWith("select") &&
-          text.includes('from "chat_thread_drafts"') &&
-          text.includes("for update") &&
-          barrierQueryBinds(queryArgs, args.chatThreadId)
-        );
-      },
-      stopAt: (_queryArgs, selectingStatement) => {
-        return selectingStatement;
-      },
-      pauseAfter: true,
-      work: async (barrier) => {
-        const pidReady = createDeferredPromise<number>(signal);
-        const holding = db().transaction(async (tx) => {
-          const pidRows = await executeRawRows(
-            tx,
-            sql`SELECT pg_backend_pid() AS "pid"`,
-            z.object({ pid: z.number() }),
-          );
-          const pid = pidRows[0]?.pid;
-          if (!pid) {
-            throw new Error("Expected the draft row lock holder pid");
-          }
-          pidReady.resolve(pid);
-          const [row] = await tx
-            .select({ chatThreadId: chatThreadDrafts.chatThreadId })
-            .from(chatThreadDrafts)
-            .where(eq(chatThreadDrafts.chatThreadId, args.chatThreadId))
-            .for("update");
-          if (!row) {
-            throw new Error("Expected a child draft row to lock");
-          }
-        });
-        const holdingResult = settleIncludingAbort(holding);
-        const entry = await settleIncludingAbort(barrier.entered);
-        if (!entry.ok) {
-          barrier.release();
-          await holdingResult;
-          throw entry.error;
-        }
-        const holderPid = await pidReady.promise;
-        const result = await settleIncludingAbort(
-          args.work({
-            blockedWaiterCount: barrier.blockedWaiterCount,
-            cancelBlockedQueries: async () => {
-              const rows = await executeRawRows(
-                db(),
-                sql`
-                  SELECT pg_cancel_backend(activity.pid) AS "cancelled"
-                  FROM pg_stat_activity AS activity
-                  WHERE ${holderPid} = ANY(pg_blocking_pids(activity.pid))
-                `,
-                z.object({ cancelled: z.boolean() }),
-              );
-              return rows.filter((row) => {
-                return row.cancelled;
-              }).length;
-            },
-          }),
-        );
-        barrier.release();
-        const held = await holdingResult;
-        if (!result.ok) {
-          throw result.error;
-        }
-        if (!held.ok) {
-          throw held.error;
-        }
-        return result.value;
-      },
     },
     signal,
   );

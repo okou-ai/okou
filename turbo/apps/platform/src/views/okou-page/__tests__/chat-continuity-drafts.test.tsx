@@ -287,6 +287,48 @@ test("Save a typed draft and restore it after navigating away", async () => {
   });
 });
 
+test("Refresh the sidebar drafts only when a save adds or removes a draft", async () => {
+  const target = continuityThread(23, 1, "Draft listing target");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 23,
+    threads: [target],
+  });
+  await setupPage({
+    context,
+    path: `/chats/${target.id}`,
+    ...workspace.pageOptions,
+  });
+  const composer = await messageComposer();
+  await waitFor(() => {
+    expect(workspace.draftListRequests()).toBeGreaterThan(0);
+  });
+  const initialRequests = workspace.draftListRequests();
+
+  // The first save adds the draft, so the listing is fetched again.
+  await fill(composer, "Listing draft");
+  await waitFor(() => {
+    expect(workspace.draftListRequests()).toBe(initialRequests + 1);
+  });
+
+  // Editing an already listed draft saves again without refetching.
+  await userEvent.click(composer);
+  await userEvent.keyboard(" v2");
+  await waitFor(() => {
+    expect(
+      workspace.draftPatches.some((patch) => {
+        return draftPlainText(patch.draftUserMessage).includes("v2");
+      }),
+    ).toBeTruthy();
+  });
+
+  // Clearing removes the draft, which is the second and last refetch.
+  await userEvent.keyboard("{Control>}a{/Control}{Backspace}");
+  await waitFor(() => {
+    expect(workspace.draftPatches.at(-1)?.draftUserMessage).toBeNull();
+    expect(workspace.draftListRequests()).toBe(initialRequests + 2);
+  });
+});
+
 test("Clear a saved typed draft without restoring it on the next visit", async () => {
   const {
     target,

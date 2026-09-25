@@ -5,11 +5,20 @@
 Thread composer drafts are read and written only through `chat_thread_drafts`
 (#36173). `PATCH /api/chat-threads/:id` reads the thread owner by primary key
 outside any transaction, then saves the draft with one upsert, or clears it by
-deleting the row. A send clears the draft by deleting that row. None of these
-paths writes or locks the `chat_threads` row, and draft writes no longer take
+deleting the row. None of these paths writes or locks the `chat_threads` row, and draft writes no longer take
 the account-erasure admission. `GET /api/chat-threads/:id/draft`, the drafts
 listing and the user export read the child table. Request and response
 contracts are unchanged.
+
+Sending a message no longer touches the draft. The web client already clears
+its draft with its own `PATCH` alongside every send (since #24657, so every App
+bundle in use does), which made the server-side delete a duplicate write on
+the send path. Senders that do not clear the composer, such as MCP, agents and
+forwarded sends, now leave the user's draft in place. If the client's clearing
+`PATCH` fails, the sent text reappears as the draft.
+
+The web client now refetches the sidebar drafts listing only when a save adds
+or removes a thread's draft, instead of after every debounced save.
 
 Migration `1240_chat_thread_drafts_user_backfill` drops the
 `chat_thread_drafts` → `chat_threads` foreign key, so a draft write takes no

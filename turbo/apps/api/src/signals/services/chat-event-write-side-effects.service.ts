@@ -1,5 +1,3 @@
-import type { Db } from "../external/db";
-import { deleteChatThreadDraft } from "./chat-thread-draft-write.service";
 import { settleIncludingAbort } from "../utils";
 import { logger } from "../../lib/log";
 
@@ -29,15 +27,4 @@ export async function attemptChatEventSideEffect(
       error: result.error,
     });
   }
-}
-
-export async function clearThreadDraftIndependently(
-  db: Db,
-  params: { readonly threadId: string },
-): Promise<void> {
-  // The send already committed an event on this thread for its owner, so the
-  // thread id is authorized; the clear is one statement on the draft row alone.
-  await attemptChatEventSideEffect("clear_draft", params.threadId, () => {
-    return deleteChatThreadDraft(db, params.threadId);
-  });
 }
