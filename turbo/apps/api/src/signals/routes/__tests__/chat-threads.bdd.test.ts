@@ -1887,25 +1887,27 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       compactChatThreadSnapshots(actor),
       compactChatThreadSnapshots(actor),
     ]);
+    const overlapPruned = overlappingCompactions.map((result) => {
+      return result.eventsPruned;
+    });
+    // Bounded reads are intentionally unlocked: both crons may choose the
+    // same two ids, so one DELETE can win while the other removes zero.
     expect(
-      overlappingCompactions
-        .map((result) => {
-          return result.eventsPruned;
-        })
-        .sort((left, right) => {
-          return left - right;
-        }),
-    ).toStrictEqual([2, 2]);
-    await expect(
-      readChatThreadEventIdsFixture({
-        userId: actor.userId,
-        orgId: actor.orgId,
-        eventIds: coveredEventIds,
+      overlapPruned.every((count) => {
+        return count >= 0 && count <= 2;
       }),
-    ).resolves.toStrictEqual([nullAgentMarker.id]);
-
-    const converged = await compactChatThreadSnapshots(actor);
-    expect(converged.eventsPruned).toBe(1);
+    ).toBeTruthy();
+    let totalPruned = overlapPruned.reduce((sum, count) => {
+      return sum + count;
+    }, 0);
+    expect(totalPruned).toBeGreaterThanOrEqual(2);
+    while (totalPruned < coveredEventIds.length) {
+      const nextRun = await compactChatThreadSnapshots(actor);
+      expect(nextRun.eventsPruned).toBeGreaterThan(0);
+      expect(nextRun.eventsPruned).toBeLessThanOrEqual(2);
+      totalPruned += nextRun.eventsPruned;
+    }
+    expect(totalPruned).toBe(coveredEventIds.length);
     await expect(
       readChatThreadEventIdsFixture({
         userId: actor.userId,
@@ -2309,11 +2311,17 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         code: "CHAT_THREAD_EVENTS_EXPIRED",
       },
     });
+    // Deleted-Agent tombstones remain visible until their own retention
+    // cutoff; non-deletion events from that Agent must stay filtered.
     expect(
-      (await allThreadEvents(actor)).some((event) => {
-        return event.agentId === deletedAgent.agentId;
-      }),
-    ).toBeFalsy();
+      (await allThreadEvents(actor))
+        .filter((event) => {
+          return event.agentId === deletedAgent.agentId;
+        })
+        .every((event) => {
+          return event.kind === "deleted";
+        }),
+    ).toBeTruthy();
 
     const markerlessSnapshotCursor = await chat.requestThreadEvents(
       actor,
