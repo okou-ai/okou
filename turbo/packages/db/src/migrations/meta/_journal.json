@@ -1170,6 +1170,13 @@
       "when": 1790343033244,
       "tag": "1244_chat_thread_drafts_user_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 1245,
+      "version": "7",
+      "when": 1790345368432,
+      "tag": "1245_contract_chat_thread_drafts",
+      "breakpoints": true
     }
   ]
 }

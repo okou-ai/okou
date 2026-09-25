@@ -1,5 +1,39 @@
 # Deployment Compatibility
 
+## Thread draft contraction, release 2 (2026-09-25)
+
+Release 2 of the thread-draft move off `chat_threads` (#36173). Release 1
+(#36897, merge commit `4558c9fa`) made `chat_thread_drafts` the only draft
+store and writes `user_id` on every row.
+
+Migration `1245_contract_chat_thread_drafts` fills any missing `user_id` from
+the thread. It then deletes cleared tombstones (both draft values null) and rows
+whose thread no longer exists, makes `user_id` and `draft_user_message`
+`NOT NULL`, drops `chat_thread_drafts_draft_user_message_check`, and adds the
+unique index `uq_chat_thread_drafts_thread_user`. Release 1 always writes an
+owner and deletes on clear, so it stays compatible with the contracted table
+during rollout; its `ON CONFLICT (chat_thread_id)` upsert still matches the
+unchanged primary key.
+
+The API drops the two compatibility paths Release 1 declared. The drafts listing
+no longer filters null tombstones, and account erasure no longer reaches draft
+rows through the thread, because every row now has an owner. Draft upserts
+target `(chat_thread_id, user_id)`. `GET /api/chat-threads/:id/draft` no longer
+declares `404` (Release 1 already never returns it), and the App stops accepting
+it. The runtime `chat_threads` mapping no longer declares `draft_user_message`
+or `draft_attachments`, so no API from this release names them in an implicit
+`INSERT`, `SELECT` or `RETURNING`. The DDL schema still declares them.
+
+**API rollback floor: `4558c9fac46ce1a96a25745b477b32b70dab7ae6`** (#36897). An
+older API dual-writes a draft row without `user_id` and fails every draft save
+against this schema. The production rollback resolver enforces the floor.
+
+Release 3 is allowed only after this API is in production and becomes the
+rollback floor. It drops the two `chat_threads` draft columns and their check
+constraint, which Release 1 would still name in thread inserts. It also makes
+`(chat_thread_id, user_id)` the primary key and lets the draft `PATCH` skip the
+owner read, so a missing or foreign thread returns `204` instead of `404`.
+
 ## Thread drafts served only from `chat_thread_drafts` (2026-09-25)
 
 Thread composer drafts are read and written only through `chat_thread_drafts`

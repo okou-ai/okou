@@ -12,7 +12,7 @@ import {
 } from "@okouai/db/schema/account-erasure";
 import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agentRuns } from "@okouai/db/schema/agent-run";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";

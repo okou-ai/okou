@@ -531,12 +531,7 @@ export function chatThreadDraftIds(args: {
     const rows = await db
       .select({ id: chatThreadDrafts.chatThreadId })
       .from(chatThreadDrafts)
-      .where(
-        and(
-          eq(chatThreadDrafts.userId, args.userId),
-          isNotNull(chatThreadDrafts.draftUserMessage),
-        ),
-      );
+      .where(eq(chatThreadDrafts.userId, args.userId));
     return rows.map((row) => {
       return row.id;
     });

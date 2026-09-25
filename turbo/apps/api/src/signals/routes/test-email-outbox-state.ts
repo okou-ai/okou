@@ -4,7 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/test-email-outbox-state";
 import { randomUUID } from "node:crypto";
 import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import { morningBriefCollectionOccurrences } from "@okouai/db/schema/morning-brief-collection-occurrence";
 import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery";

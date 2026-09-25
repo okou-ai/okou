@@ -26,6 +26,10 @@ readonly PI_LAUNCH_CONFIG_VERSIONS_READER_COMMIT=8d8f3a3e14d23f7471e0773bd9acb98
 readonly PI_SESSION_CONSTRUCTION_READER_COMMIT=322efb6d72508e15b90dc788100a776da1485751
 # #36885 stopped GIN maintenance of the keyword-only chat search index that 1239 drops.
 readonly CHAT_SEARCH_TSV_GIN_MAINTENANCE_COMMIT=32e48c76fea61c39d0962762e1bc2e0aa5a5cab0
+# #36897 made chat_thread_drafts the only draft store and writes user_id on
+# every draft row. Migration contract_chat_thread_drafts makes user_id and
+# draft_user_message NOT NULL, so earlier APIs fail every draft save.
+readonly CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT=4558c9fac46ce1a96a25745b477b32b70dab7ae6
 
 fail() {
   echo "::error::$*" >&2
@@ -191,6 +195,12 @@ fi
 # in chat search GIN maintenance, so every projection tick fails with 42P01.
 if ! git merge-base --is-ancestor "$CHAT_SEARCH_TSV_GIN_MAINTENANCE_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the keyword-only chat search GIN index drop: ${CHAT_SEARCH_TSV_GIN_MAINTENANCE_COMMIT}."
+fi
+
+# The draft contraction requires every draft row to carry its owner and a
+# document. Only APIs with the child-only draft writer satisfy that.
+if ! git merge-base --is-ancestor "$CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the chat thread draft child-only writer: ${CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT}."
 fi
 
 # Production has activated split chat event writes, and the contraction
