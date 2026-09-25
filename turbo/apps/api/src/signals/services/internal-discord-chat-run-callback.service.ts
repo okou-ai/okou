@@ -567,9 +567,7 @@ async function settleFailedSend(
   }
   if (send.replays >= MAX_NONCE_REPLAYS) {
     // Later claims start after the lease and therefore outside the window.
-    throw new DiscordDeliveryFailure(
-      `Discord message delivery failed: ${send.status}`,
-    );
+    throw new DiscordDeliveryUncertain();
   }
   return retryAfterMs;
 }

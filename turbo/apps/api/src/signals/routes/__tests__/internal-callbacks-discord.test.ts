@@ -621,4 +621,31 @@ describe("canonical Discord terminal replies", () => {
     await recoverReplies(started.actor);
     expect(sendRequests).toBe(3);
   });
+
+  it("rechecks access before replaying a lost send and suppresses it after revocation", async () => {
+    const started = await startDiscordRun();
+    const claim = await claimRun(started.actor, started.runId);
+    let sendRequests = 0;
+    started.provider.state.beforeMessageCreate = () => {
+      sendRequests += 1;
+      return undefined;
+    };
+    started.provider.state.afterMessageCreated = (message) => {
+      // Access is revoked while the first send's receipt is lost.
+      started.provider.deniedChannels.add(message.channel_id);
+      return HttpResponse.error();
+    };
+    await completeRun({
+      runId: started.runId,
+      sandboxToken: claim.sandboxToken,
+      text: "A reply whose destination is revoked mid-send.",
+    });
+    expect(sendRequests).toBe(1);
+    started.provider.deniedChannels.clear();
+    started.provider.state.afterMessageCreated = undefined;
+    mockNow(now() + 121_000);
+    await recoverReplies(started.actor);
+    expect(sendRequests).toBe(1);
+    expect(started.provider.sentMessages).toHaveLength(1);
+  });
 });
