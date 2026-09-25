@@ -19,6 +19,7 @@ import {
   now,
 } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { discordInteractionsRoutes } from "../discord-interactions";
 
@@ -194,7 +195,18 @@ describe("Discord private account interactions", () => {
   });
 
   it("does not execute work after a rejected callback acknowledgement", async () => {
+    const edits: unknown[] = [];
     server.use(
+      http.patch(
+        "https://discord.com/api/v10/webhooks/:applicationId/:token/messages/@original",
+        async ({ request }) => {
+          edits.push(await request.json());
+          return HttpResponse.json(
+            { code: 10_015, message: "Unknown Webhook" },
+            { status: 404 },
+          );
+        },
+      ),
       http.post(
         "https://discord.com/api/v10/interactions/:id/:token/callback",
         () => {
@@ -212,6 +224,8 @@ describe("Discord private account interactions", () => {
     expect(result.body.error).toBe(
       "Discord could not acknowledge the interaction",
     );
+    await flushWaitUntilForTest();
+    expect(edits).toStrictEqual([]);
   });
 
   it.each([

@@ -368,10 +368,7 @@ function discordHttp(fixtures: readonly Fixture[], dm?: DiscordSender) {
     http.post(
       "https://discord.com/api/v10/interactions/:id/:token/callback",
       async ({ request, params }) => {
-        // Discord shows a private loading reply for a command, while a
-        // component update later edits the message holding that component.
-        const callback: unknown = await request.json();
-        expect(callback).toStrictEqual(callbacks.get(String(params.token)));
+        callbacks.set(String(params.token), await request.json());
         return new HttpResponse(null, { status: 204 });
       },
     ),
@@ -407,10 +404,6 @@ function discordHttp(fixtures: readonly Fixture[], dm?: DiscordSender) {
         channelId: payload.channel_id,
         resolve: delivered.resolve,
       });
-      callbacks.set(
-        payload.token,
-        payload.type === 3 ? { type: 6 } : { type: 5, data: { flags: 64 } },
-      );
       const body = JSON.stringify(payload);
       const timestamp = String(Math.floor(now() / 1000));
       const signature = sign(
@@ -433,8 +426,14 @@ function discordHttp(fixtures: readonly Fixture[], dm?: DiscordSender) {
       );
       const message = await delivered.promise;
       expect(message.allowed_mentions.parse).toStrictEqual([]);
+      // Discord shows a private loading reply for a command, while a
+      // component update later edits the message holding that component.
+      expect(callbacks.get(payload.token)).toStrictEqual(
+        payload.type === 3 ? { type: 6 } : { type: 5, data: { flags: 64 } },
+      );
       return message;
     },
+    callbacks,
   };
 }
 
@@ -801,6 +800,9 @@ describe("Discord account preferences through private controls", () => {
     );
     const connected = await discord.send(commandPayload(sender, "connect"));
     expect(connected.content).toContain(`Current agent: ${option.label}.`);
+    const reopened = await discord.send(commandPayload(sender, "switch"));
+    expect(reopened.content).toContain("Page 2 of 2");
+    expect(preselected(reopened)).toStrictEqual([option.value]);
   });
 
   it("updates the picker in place and preselects the saved agent", async () => {
@@ -851,7 +853,8 @@ describe("Discord account preferences through private controls", () => {
     server.use(
       http.post(
         "https://discord.com/api/v10/interactions/:id/:token/callback",
-        () => {
+        async ({ request, params }) => {
+          discord.callbacks.set(String(params.token), await request.json());
           // Discord's 3-second response window closes before the edit.
           mockMonotonicNow(10_000);
           return HttpResponse.json({ message: "Unavailable" }, { status: 503 });

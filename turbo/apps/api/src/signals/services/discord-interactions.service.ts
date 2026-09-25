@@ -139,7 +139,7 @@ const discordOrgPicker$ = command(
     args: {
       readonly actor: DiscordInteractionActor;
       readonly botToken: string;
-      readonly page: number;
+      readonly page?: number;
       readonly selection?: string;
     },
     signal: AbortSignal,
@@ -218,7 +218,7 @@ const discordAgentPicker$ = command(
       readonly actor: DiscordInteractionActor;
       readonly botToken: string;
       readonly binding: DiscordVerifiedBinding;
-      readonly page: number;
+      readonly page?: number;
       readonly selection?: string;
     },
     signal: AbortSignal,
@@ -357,7 +357,7 @@ const discordModelPicker$ = command(
       readonly actor: DiscordInteractionActor;
       readonly botToken: string;
       readonly binding: DiscordVerifiedBinding;
-      readonly page: number;
+      readonly page?: number;
       readonly selection?: string;
     },
     signal: AbortSignal,
@@ -443,7 +443,7 @@ const discordBoundAccountAction$ = command(
       readonly binding: DiscordVerifiedBinding;
       readonly actor: DiscordInteractionActor;
       readonly botToken: string;
-      readonly page: number;
+      readonly page?: number;
       readonly selection?: string;
     },
     signal: AbortSignal,
@@ -522,7 +522,7 @@ const discordAccountAction$ = command(
     if (action === "org") {
       return set(
         discordOrgPicker$,
-        { actor, botToken, page: control?.page ?? 0, selection },
+        { actor, botToken, page: control?.page, selection },
         signal,
       );
     }
@@ -531,7 +531,7 @@ const discordAccountAction$ = command(
       if (control) {
         return discordAccountMessage(STALE_CONTROL);
       }
-      return set(discordOrgPicker$, { actor, botToken, page: 0 }, signal);
+      return set(discordOrgPicker$, { actor, botToken }, signal);
     }
     if (current.kind !== "connected") {
       return discordAccountMessage(SETUP_GUIDANCE);
@@ -555,7 +555,7 @@ const discordAccountAction$ = command(
         binding: current.binding,
         actor,
         botToken,
-        page: control?.page ?? 0,
+        page: control?.page,
         selection,
       },
       signal,

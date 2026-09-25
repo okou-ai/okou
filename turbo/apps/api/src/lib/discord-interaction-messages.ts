@@ -37,18 +37,23 @@ export function discordAccountPicker(args: {
   readonly actor: DiscordInteractionActor;
   readonly connectionId: string;
   readonly botToken: string;
-  readonly page: number;
+  /** Omitted when a command opens the picker on the current value's page. */
+  readonly page?: number;
   readonly options: readonly DiscordPickerOption[];
   /** The value currently in effect, shown as the menu's default choice. */
   readonly selected?: string;
 }): DiscordAccountMessage {
   const pageCount = Math.ceil(args.options.length / 25);
+  const selectedIndex = args.options.findIndex((option) => {
+    return option.value === args.selected;
+  });
+  const page = args.page ?? Math.floor(Math.max(selectedIndex, 0) / 25);
   if (args.options.length === 0) {
     return discordAccountMessage(
       "No available choices. Ask your workspace admin to check your access.",
     );
   }
-  if (args.page >= pageCount) {
+  if (page >= pageCount) {
     return discordAccountMessage(
       "This list has changed. Run the command again to see the available choices.",
     );
@@ -57,41 +62,41 @@ export function discordAccountPicker(args: {
     return createDiscordPickerCustomId({ ...args, page });
   };
   const buttons = [
-    ...(args.page > 0
+    ...(page > 0
       ? [
           {
             type: 2 as const,
             style: 2 as const,
             label: "Previous",
-            custom_id: customId(args.page - 1),
+            custom_id: customId(page - 1),
           },
         ]
       : []),
-    ...(args.page + 1 < pageCount
+    ...(page + 1 < pageCount
       ? [
           {
             type: 2 as const,
             style: 2 as const,
             label: "Next",
-            custom_id: customId(args.page + 1),
+            custom_id: customId(page + 1),
           },
         ]
       : []),
   ];
   return {
-    content: `${args.content}\nPage ${args.page + 1} of ${pageCount}.`,
+    content: `${args.content}\nPage ${page + 1} of ${pageCount}.`,
     components: [
       {
         type: 1,
         components: [
           {
             type: 3,
-            custom_id: customId(args.page),
+            custom_id: customId(page),
             placeholder: "Choose an option",
             min_values: 1,
             max_values: 1,
             options: args.options
-              .slice(args.page * 25, (args.page + 1) * 25)
+              .slice(page * 25, (page + 1) * 25)
               .map((option) => {
                 return {
                   label: discordAccountLabel(option.label),
