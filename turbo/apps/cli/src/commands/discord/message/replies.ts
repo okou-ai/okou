@@ -15,7 +15,10 @@ export const repliesCommand = new Command()
     "--message-id <id>",
     "Root message with an existing native thread",
   )
-  .option("--guild-id <id>", "Select one of your verified guild bindings")
+  .option(
+    "--guild-id <id>",
+    "Optional; must match your organization's bound guild",
+  )
   .option(
     "--before <id>",
     "Read messages before this ID; use nextBefore to continue",
@@ -34,7 +37,7 @@ Notes:
   - A Discord reply reference is not a native thread. This command never creates a thread.
   - Results are newest first. Each call reads one page and does not include the parent channel's root message.
   - If you already know the native thread ID, use message history --channel-id <thread-id>.
-  - Pass --guild-id when multiple guild bindings are available.
+  - --guild-id is optional; when given, it must match your organization's bound guild.
   - On rate limits, wait for the returned retry duration before retrying.`,
   )
   .action(

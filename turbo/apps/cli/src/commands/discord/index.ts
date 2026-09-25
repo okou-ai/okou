@@ -24,6 +24,7 @@ Examples:
 
 Notes:
   - Uses an existing verified Discord binding; OAuth onboarding is not available.
-  - Pass --guild-id when you have bindings in multiple guilds.
+  - Your binding is resolved from the current organization. --guild-id is optional; when given, it must match that binding's guild.
+  - Attachment URLs are not returned; use download-file with the attachment ID.
   - All Discord IDs are decimal strings. Copy IDs from Discord with Developer Mode enabled.`,
   );

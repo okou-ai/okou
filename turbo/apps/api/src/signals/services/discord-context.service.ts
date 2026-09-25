@@ -9,6 +9,10 @@ import { discordMessageUrl } from "../../lib/discord-message";
 import { requireDiscordRunReadAccess$ } from "./discord-access.service";
 import { discordApiFailure } from "./discord-api-response";
 
+/**
+ * Attachment CDN URLs are signed bearer links, so native reads return only
+ * metadata; `download-file` re-authorizes each fetch by attachment ID.
+ */
 export function projectDiscordMessage(
   message: DiscordMessage,
   guildId: string | undefined,
@@ -29,7 +33,6 @@ export function projectDiscordMessage(
         id: attachment.id,
         filename: attachment.filename,
         size: attachment.size,
-        url: attachment.url,
         ...(attachment.content_type !== undefined && {
           contentType: attachment.content_type,
         }),
