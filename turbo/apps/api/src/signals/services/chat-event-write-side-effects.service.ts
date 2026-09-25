@@ -1,8 +1,3 @@
-import { and, eq } from "drizzle-orm";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import type { Db } from "../external/db";
-import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
-import { clearExistingChatThreadDraftRow } from "./chat-thread-draft-write.service";
 import { settleIncludingAbort } from "../utils";
 import { logger } from "../../lib/log";
 
@@ -32,50 +27,4 @@ export async function attemptChatEventSideEffect(
       error: result.error,
     });
   }
-}
-
-export async function clearThreadDraftIndependently(
-  db: Db,
-  params: {
-    readonly threadId: string;
-    readonly userId: string;
-    readonly orgId: string;
-  },
-): Promise<void> {
-  await attemptChatEventSideEffect(
-    "clear_legacy_draft",
-    params.threadId,
-    async () => {
-      await db
-        .update(chatThreads)
-        .set({ draftUserMessage: null, draftAttachments: null })
-        .where(
-          and(
-            eq(chatThreads.id, params.threadId),
-            eq(chatThreads.userId, params.userId),
-            chatThreadOrganizationCondition(db, params.orgId),
-          ),
-        );
-    },
-  );
-  await attemptChatEventSideEffect(
-    "clear_child_draft",
-    params.threadId,
-    async () => {
-      const [thread] = await db
-        .select({ id: chatThreads.id })
-        .from(chatThreads)
-        .where(
-          and(
-            eq(chatThreads.id, params.threadId),
-            eq(chatThreads.userId, params.userId),
-            chatThreadOrganizationCondition(db, params.orgId),
-          ),
-        )
-        .limit(1);
-      if (thread) {
-        await clearExistingChatThreadDraftRow(db, thread.id);
-      }
-    },
-  );
 }
