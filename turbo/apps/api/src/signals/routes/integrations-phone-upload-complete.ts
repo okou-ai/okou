@@ -18,11 +18,10 @@ import {
 } from "../services/uploaded-artifact.service";
 import { recordAgentPhoneUploadedFile$ } from "../services/run-uploaded-files.service";
 import {
-  normalizeAgentPhoneHandle,
+  agentPhoneChannelForLinkedHandle,
   resolveAgentPhoneAgentIdForUserLink,
-  resolveAgentPhoneUserLinkForOwner,
+  resolveAgentPhoneUserLinkForMember,
   storeOutboundAgentPhoneMessage,
-  type AgentPhoneChannel,
 } from "../services/agentphone.service";
 import type { RouteEntry } from "../route-entry";
 import { settle } from "../utils";
@@ -59,13 +58,14 @@ function agentPhoneRouteError(error: unknown) {
 
 function buildMetadata(params: {
   readonly body: PhoneUploadCompleteBody;
+  readonly toNumber: string;
   readonly uploadId: string;
   readonly s3Key: string;
   readonly sourceUrl: string;
   readonly agentphoneMessageId: string;
 }): Record<string, unknown> {
   return {
-    toNumber: normalizeAgentPhoneHandle(params.body.toNumber, "sms"),
+    toNumber: params.toNumber,
     uploadId: params.uploadId,
     s3Key: params.s3Key,
     sourceUrl: params.sourceUrl,
@@ -103,19 +103,21 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
     fileUrl: object.url,
   };
 
-  const userChannel: AgentPhoneChannel = "sms";
-  const phoneHandle = normalizeAgentPhoneHandle(body.toNumber, userChannel);
   const db = set(writeDb$);
-  const userLink = await resolveAgentPhoneUserLinkForOwner(db, {
-    phoneHandle,
-    channel: userChannel,
+  const userLink = await resolveAgentPhoneUserLinkForMember(db, {
     userId: auth.userId,
     orgId: auth.orgId,
   });
   signal.throwIfAborted();
   if (!userLink) {
-    return routeError(404, "Connected phone handle not found", "NOT_FOUND");
+    return routeError(
+      404,
+      "No phone is connected to this Okou account",
+      "NOT_FOUND",
+    );
   }
+  const phoneHandle = userLink.phoneHandle;
+  const userChannel = agentPhoneChannelForLinkedHandle(phoneHandle);
 
   const agentphoneAgentId = await resolveAgentPhoneAgentIdForUserLink(db, {
     userLinkId: userLink.id,
@@ -166,6 +168,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
       layout: object.layout,
       metadata: buildMetadata({
         body,
+        toNumber: phoneHandle,
         uploadId: body.uploadId,
         s3Key: uploadedFile.key,
         sourceUrl: uploadedFile.fileUrl,

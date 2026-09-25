@@ -7504,14 +7504,14 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
 
     const unlinkedSend = await integrations.requestSendPhoneMessage(
       actor,
-      {
-        toNumber: "+15555551212",
-        text: "not linked",
-      },
+      { text: "not linked" },
       [404],
     );
-    expect(unlinkedSend.body).toMatchObject({
-      error: { code: "NOT_FOUND" },
+    expect(unlinkedSend.body).toStrictEqual({
+      error: {
+        message: "No phone is connected to this Okou account",
+        code: "NOT_FOUND",
+      },
     });
 
     chat.mockEmptyObjectStorage();
@@ -7542,7 +7542,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       actor,
       {
         uploadId: phoneUploadId,
-        toNumber: "+15555551212",
         caption: "BDD AgentPhone upload",
       },
       [404],
@@ -7678,10 +7677,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
 
     const missingAgentMessage = await integrations.requestSendPhoneMessage(
       actor,
-      {
-        toNumber: phoneHandle,
-        text: "BDD AgentPhone missing agent",
-      },
+      { text: "BDD AgentPhone missing agent" },
       [404],
     );
     expect(missingAgentMessage.body).toStrictEqual({
@@ -7695,7 +7691,8 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       actor,
       {
         agentphoneAgentId: connectBody.agentphoneAgentId,
-        toNumber: phoneHandle,
+        // Deprecated and ignored: the linked handle is always the recipient.
+        toNumber: uniquePhoneHandle(),
         text: "BDD linked AgentPhone message",
       },
       [200],
@@ -7712,7 +7709,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       actor,
       {
         agentphoneAgentId: connectBody.agentphoneAgentId,
-        toNumber: phoneHandle,
         text: "BDD AgentPhone provider failure",
       },
       [502],

@@ -503,6 +503,75 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     ).resolves.toMatchObject({ linked: true, phoneHandle: phone });
   });
 
+  it("sends proactive messages and files to an email-linked iMessage handle", async () => {
+    const bdd = createBddApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    const actor = bdd.user();
+    const email = `bdd-${randomUUID().slice(0, 8)}@example.com`;
+    integrations.configureAgentPhoneProvider();
+    integrations.configureAgentPhoneWebhook();
+    const sends = ap.captureAgentPhoneSends();
+    const storage = ap.acceptAgentPhoneObjectStorage();
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+
+    const issued = await integrations.requestCreateAgentPhoneLinkCode(
+      actor,
+      [200],
+    );
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: email,
+      body: issued.body.code,
+      conversationId: uniqueConversationId(),
+      isGroup: false,
+    });
+    await expect(
+      integrations.getAgentPhoneLinkStatus(actor),
+    ).resolves.toMatchObject({ linked: true, phoneHandle: email });
+
+    const sent = await integrations.requestSendPhoneMessage(
+      actor,
+      { agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID, text: "proactive hello" },
+      [200],
+    );
+    expect(sent.body).toMatchObject({ ok: true, toNumber: email });
+    expect(lastSend(sends)).toMatchObject({
+      agentId: AGENTPHONE_BDD_AGENT_ID,
+      toNumber: email,
+      body: "proactive hello",
+    });
+
+    const init = await integrations.requestPhoneUploadInit(
+      actor,
+      { filename: "note.txt", contentType: "text/plain", length: 5 },
+      [200],
+    );
+    if (!("uploadId" in init.body)) {
+      throw new Error("Expected the phone upload to initialize");
+    }
+    storage.addArtifactObject({
+      userId: actor.userId,
+      uploadId: init.body.uploadId,
+      filename: "note.txt",
+      size: 5,
+    });
+    const completed = await integrations.requestPhoneUploadComplete(
+      actor,
+      {
+        uploadId: init.body.uploadId,
+        agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID,
+        caption: "proactive file",
+      },
+      [200],
+    );
+    expect(completed.body).toMatchObject({ toNumber: email });
+    expect(lastSend(sends)).toMatchObject({
+      toNumber: email,
+      body: "proactive file",
+    });
+  });
+
   it("invalidates a previous connection code when a new one is issued", async () => {
     const bdd = createBddApi(context);
     const integrations = createBddIntegrationApi(context);
@@ -2013,7 +2082,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       okouToken,
       {
         uploadId: init.body.uploadId,
-        toNumber: phone,
         agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID,
         caption: "see attached",
         contentType: "image/png",
