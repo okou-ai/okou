@@ -5,7 +5,6 @@ import {
   primaryKey,
   text,
   timestamp,
-  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -28,8 +27,8 @@ import type {
  * itself; a row left behind by another deletion path is unreachable and is
  * deletion cleanup's concern.
  *
- * `chat_threads.draft_user_message` and `chat_threads.draft_attachments` are
- * retired: nothing reads or writes them, and the contract release drops them.
+ * The primary key includes the owner, so a draft write addresses only the
+ * caller's own row without reading `chat_threads`.
  */
 export const chatThreadDrafts = pgTable(
   "chat_thread_drafts",
@@ -55,19 +54,13 @@ export const chatThreadDrafts = pgTable(
   },
   (table) => {
     return [
-      // A thread has one owner, so it can never hold two drafts. The next
-      // contract release replaces this key with the owner-qualified pair below.
+      // Keyed by the thread and its owner, so a write can only ever address
+      // the caller's own draft row and never needs to read the thread.
       primaryKey({
-        name: "chat_thread_drafts_chat_thread_id_pk",
-        columns: [table.chatThreadId],
+        name: "chat_thread_drafts_chat_thread_id_user_id_pk",
+        columns: [table.chatThreadId, table.userId],
       }),
       index("idx_chat_thread_drafts_user").on(table.userId),
-      // Draft writes target the owner-qualified key. The next contract
-      // release makes this pair the primary key.
-      uniqueIndex("uq_chat_thread_drafts_thread_user").on(
-        table.chatThreadId,
-        table.userId,
-      ),
     ];
   },
 );

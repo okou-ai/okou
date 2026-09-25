@@ -1408,7 +1408,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     );
   }, 90_000);
 
-  it("keeps markerless snapshot watermarks monotonic across stale projection refresh", async () => {
+  it("keeps markerless snapshot watermarks monotonic across an allocator gap", async () => {
     const snapshotAt = now();
     mockNow(snapshotAt);
     const scenario = await createSnapshotCursorScenario(
@@ -1436,9 +1436,8 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     }
 
     // Reusing an older retained event ID reserves a sequence but inserts no
-    // event. The live thread still changes, giving stale compaction a
-    // projection-only update to apply without treating the allocator gap as a
-    // cursor boundary.
+    // event. The live thread still changes; the allocator gap alone is not a
+    // cursor boundary and does not trigger a new snapshot.
     await chat.renameThread(
       actor,
       thread.id,
@@ -1475,9 +1474,8 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       title: "Unrelated event arriving before stale compaction",
     });
 
-    mockNow(snapshotAt + DAY_MS + 1);
-    const staleCompact = await compactChatThreadSnapshots(actor);
-    expect(staleCompact.eventsApplied).toBe(0);
+    const gapOnly = await compactChatThreadSnapshots(actor);
+    expect(gapOnly.scopes).toBe(0);
     await expect(chat.getThreadSnapshot(unrelatedActor)).resolves.toStrictEqual(
       {
         chatThreads: [],
@@ -1493,17 +1491,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       latestEventId: boundary.latestEventId,
       latestSeqId: boundary.latestSeqId,
     });
-    expect(preserved.chatThreads).toContainEqual(
-      expect.objectContaining({
-        id: thread.id,
-        title: "Projection refreshed without a lifecycle event",
-      }),
-    );
-    expect(
-      preserved.chatThreads.some((entry) => {
-        return entry.id === removedThread.id;
-      }),
-    ).toBeFalsy();
     await expect(
       readChatThreadEventIdsFixture({
         userId: actor.userId,
@@ -1545,6 +1532,19 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       latestEventId: laterEvent.id,
       latestSeqId: laterEvent.seqId,
     });
+    // The rebuild picks up the eventless changes too: the rename and the
+    // deleted Agent's thread.
+    expect(advanced.chatThreads).toContainEqual(
+      expect.objectContaining({
+        id: thread.id,
+        title: "Real lifecycle event after allocator gap",
+      }),
+    );
+    expect(
+      advanced.chatThreads.some((entry) => {
+        return entry.id === removedThread.id;
+      }),
+    ).toBeFalsy();
 
     await compactChatThreadSnapshots(actor);
     const repeated = await chat.getThreadSnapshot(actor);

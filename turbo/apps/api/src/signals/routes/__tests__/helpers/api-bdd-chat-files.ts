@@ -930,34 +930,6 @@ export function createChatFilesBddApi(context: TestContext) {
       );
     },
 
-    async requestPatchThread(
-      actor: ApiTestUser | null,
-      threadId: string,
-      body: {
-        readonly draftUserMessage: UserMessageInputDocument | null;
-        readonly draftAttachments?: readonly PersistedAttachment[] | null;
-      },
-      statuses: readonly (204 | 400 | 401 | 404)[],
-    ) {
-      return await accept(
-        threadByIdClient().patch({
-          headers: authenticate(context, actor),
-          params: { id: threadId },
-          body: {
-            draftUserMessage: body.draftUserMessage,
-            ...(body.draftAttachments === undefined
-              ? {}
-              : {
-                  draftAttachments: body.draftAttachments
-                    ? [...body.draftAttachments]
-                    : null,
-                }),
-          },
-        }),
-        statuses,
-      );
-    },
-
     async renameThread(
       actor: ApiTestUser,
       threadId: string,

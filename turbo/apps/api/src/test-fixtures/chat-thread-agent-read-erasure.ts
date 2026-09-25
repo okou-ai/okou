@@ -9,12 +9,6 @@ import { z } from "zod";
 import { db } from "../lib/db";
 import { executeRawRows } from "../lib/db-raw-rows";
 import { createDeferredPromise } from "../signals/utils";
-import {
-  barrierQueryBinds,
-  barrierQueryText,
-  withDatabaseTransactionBarrierFixture,
-  type TransactionBarrier,
-} from "./account-erasure-subject";
 
 const agentLockPidRowSchema = z.object({ pid: z.number() });
 const agentLockWaiterCountRowSchema = z.object({ waiterCount: z.number() });
@@ -60,10 +54,37 @@ export async function appendTerminalChatEventsFixture(args: {
         };
       }),
     )
-    .returning({ id: chatEvents.id });
+    .returning({ id: chatEvents.id, createdAt: chatEvents.createdAt });
   if (inserted.length !== threadIds.length) {
     throw new Error("Expected one terminal event per seeded chat thread");
   }
+  // A finished Run's output also moves the thread's sort time, which is what
+  // the unread candidate filter compares with the read cursor.
+  const latest = inserted.reduce(
+    (newest, row) => {
+      return row.createdAt > newest ? row.createdAt : newest;
+    },
+    inserted[0]?.createdAt ?? new Date(0),
+  );
+  await db()
+    .update(chatThreads)
+    .set({ lastMessageAt: latest })
+    .where(inArray(chatThreads.id, threadIds));
+}
+
+/**
+ * Moves seeded threads' sort time into the past. Infrastructure exception: no
+ * API sets `last_message_at` to an arbitrary time, and the bulk read cursor's
+ * seven-day window can only be exercised with a thread that old.
+ */
+export async function ageChatThreadsFixture(args: {
+  readonly threadIds: readonly string[];
+  readonly lastMessageAt: Date;
+}): Promise<void> {
+  await db()
+    .update(chatThreads)
+    .set({ lastMessageAt: args.lastMessageAt })
+    .where(inArray(chatThreads.id, [...args.threadIds]));
 }
 
 /** Every persisted read cursor of one thread set, as a size-independent
@@ -188,80 +209,4 @@ export async function holdAgentRowLockFixture(args: {
       return row.waiterCount;
     },
   };
-}
-
-/** The fenced transaction's first statement: the unlocked, content-free Agent
- * identity resolution. The later identity lock reads the same table by primary
- * key, so the selected columns are what tell them apart. */
-function isAgentIdentityRead(queryArgs: unknown[], agentId: string): boolean {
-  const text = barrierQueryText(queryArgs);
-  return (
-    text.startsWith('select "id", "owner", "org_id" from "agents"') &&
-    barrierQueryBinds(queryArgs, agentId)
-  );
-}
-
-/**
- * Where the paused transaction stops. `identity` precedes subject admission,
- * `agent-lock` sits between the unlocked identity read and the retained
- * identity lock, `update` precedes the single bulk statement, `update-result`
- * holds that statement's own result after PostgreSQL has executed it, and
- * `commit` retains every barrier with every matched cursor already written.
- *
- * `update-result` uses the shared barrier's `pauseAfter` mode, so it is the only
- * stop between the completed bulk write and the helper's last in-transaction
- * cancellation check: an operation cancelled there has every matched row
- * written and no `COMMIT` sent. A stop at `commit` is already past that check,
- * where cancelling loses a race rather than rolling anything back.
- */
-type ChatThreadAgentReadBarrierStop =
-  | "identity"
-  | "agent-lock"
-  | "update"
-  | "update-result"
-  | "commit";
-
-function reachedBarrierStop(
-  stop: ChatThreadAgentReadBarrierStop,
-  queryArgs: unknown[],
-  identityRead: boolean,
-): boolean {
-  const text = barrierQueryText(queryArgs);
-  if (stop === "identity") {
-    return identityRead;
-  }
-  if (stop === "agent-lock") {
-    return text.includes('from "agents"') && text.includes("for key share");
-  }
-  if (stop === "update" || stop === "update-result") {
-    return text.startsWith('with "updated_threads"');
-  }
-  return text === "commit";
-}
-
-/** Pauses the bulk read-cursor transaction opened for one Agent. See
- * {@link withDatabaseTransactionBarrierFixture} for the mechanism and the
- * infrastructure exception it documents.
- */
-export async function withChatThreadAgentReadBarrierFixture<T>(
-  args: {
-    readonly agentId: string;
-    readonly stopAt: ChatThreadAgentReadBarrierStop;
-    readonly work: (barrier: TransactionBarrier) => Promise<T>;
-  },
-  signal: AbortSignal,
-): Promise<T> {
-  return await withDatabaseTransactionBarrierFixture(
-    {
-      select: (queryArgs) => {
-        return isAgentIdentityRead(queryArgs, args.agentId);
-      },
-      stopAt: (queryArgs, selectingStatement) => {
-        return reachedBarrierStop(args.stopAt, queryArgs, selectingStatement);
-      },
-      pauseAfter: args.stopAt === "update-result",
-      work: args.work,
-    },
-    signal,
-  );
 }

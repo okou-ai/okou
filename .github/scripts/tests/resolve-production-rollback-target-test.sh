@@ -77,6 +77,8 @@ case "${1:-}" in
       [ "${MOCK_CHAT_SEARCH_TSV_GIN_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "4558c9fac46ce1a96a25745b477b32b70dab7ae6" ]; then
       [ "${MOCK_CHAT_THREAD_DRAFT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38" ]; then
+      [ "${MOCK_CHAT_THREAD_DRAFT_OWNER_KEY_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -187,6 +189,7 @@ grep -Fxq "git merge-base --is-ancestor 8d8f3a3e14d23f7471e0773bd9acb988f59217af
 grep -Fxq "git merge-base --is-ancestor 322efb6d72508e15b90dc788100a776da1485751 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Pi session-construction digest reader floor"
 grep -Fxq "git merge-base --is-ancestor 32e48c76fea61c39d0962762e1bc2e0aa5a5cab0 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat search keyword-only GIN drop floor"
 grep -Fxq "git merge-base --is-ancestor 4558c9fac46ce1a96a25745b477b32b70dab7ae6 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread draft child-only writer floor"
+grep -Fxq "git merge-base --is-ancestor 7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread draft owner key floor"
 grep -Fxq "git merge-base --is-ancestor 065f970bbb8c21c10ef709495d5824d0a6183e50 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the artifact/chat explicit-writer floor"
 grep -Fxq "git merge-base --is-ancestor eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread snapshot R2 reader floor"
 grep -Fxq "git merge-base --is-ancestor 1111111111111111111111111111111111111111 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the AgentPhone public_brand drop floor"
@@ -251,6 +254,15 @@ grep -Fq '4558c9fac46ce1a96a25745b477b32b70dab7ae6' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/chat-thread-draft-floor.output" ] || fail "pre-child-writer API target must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "pre-child-writer API target must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the chat thread draft owner key writer" \
+  run_resolver "${tmp_dir}/chat-thread-draft-owner-key-floor.output" MOCK_CHAT_THREAD_DRAFT_OWNER_KEY_FLOOR_VALID=0
+grep -Fq '7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38' "${tmp_dir}/failure.err" || fail "draft owner key rejection must identify the owner key commit"
+[ ! -s "${tmp_dir}/chat-thread-draft-owner-key-floor.output" ] || fail "pre-owner-key API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "pre-owner-key API target must fail before artifact or host access"
 fi
 
 : >"${tmp_dir}/boundaries.log"
