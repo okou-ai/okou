@@ -2,6 +2,7 @@ import type { AgentRunLaunchSnapshot } from "@okouai/db/jsonb-contracts/agent-ru
 import { command } from "ccstate";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import {
   COMPUTE_CLOSURE_ERROR,
   releaseActiveAgentRuns,
@@ -56,7 +57,7 @@ import {
   type ThreadlessRunCleanupResult,
 } from "./threadless-run-cleanup.service";
 import { cleanupExpiredPiApiFirstTurnData$ } from "./pi-api-first-turn-cleanup.service";
-import { releaseStaleTerminalActiveAgentRuns$ } from "./run-activity-snapshot.service";
+import { releaseStaleTerminalActiveAgentRuns$ } from "./run-activity.service";
 import { lockAgentRunCheckpointLifecycle } from "./agent-run-checkpoint-lifecycle-lock.service";
 import { lockChatQueueThread } from "./chat-event-queue.service";
 import {
@@ -115,8 +116,7 @@ interface StaleRun {
   readonly sandboxId: string | null;
   readonly runnerGroup: string | null;
   readonly chatThreadId: string | null;
-  readonly lastHeartbeatAt: Date | null;
-  readonly createdAt: Date;
+  readonly lastHeartbeatAt: Date;
   readonly composeName: string | null;
 }
 
@@ -146,8 +146,6 @@ interface LockedTimeoutRun {
   readonly sandboxId: string | null;
   readonly runnerGroup: string | null;
   readonly chatThreadId: string | null;
-  readonly lastHeartbeatAt: Date | null;
-  readonly createdAt: Date;
 }
 
 interface CommittedTimeout {
@@ -175,8 +173,7 @@ function staleRunCutoff(run: StaleRun, cutoffs: CleanupCutoffs): Date {
 }
 
 function isExpiredRun(run: StaleRun, cutoffs: CleanupCutoffs): boolean {
-  const referenceTime = run.lastHeartbeatAt ?? run.createdAt;
-  return referenceTime < staleRunCutoff(run, cutoffs);
+  return run.lastHeartbeatAt < staleRunCutoff(run, cutoffs);
 }
 
 async function publishQueueMarkerNotificationSafely(
@@ -204,8 +201,6 @@ async function lockTimeoutRun(
       sandboxId: agentRuns.sandboxId,
       runnerGroup: agentRuns.runnerGroup,
       chatThreadId: agentRuns.chatThreadId,
-      lastHeartbeatAt: agentRuns.lastHeartbeatAt,
-      createdAt: agentRuns.createdAt,
     })
     .from(agentRuns)
     .where(eq(agentRuns.id, runId))
@@ -378,8 +373,16 @@ async function commitStaleRunTimeout(
         ) {
           return { kind: "skipped" };
         }
-        const referenceTime = lockedRun.lastHeartbeatAt ?? lockedRun.createdAt;
-        if (referenceTime >= cutoff) {
+        // Heartbeats no longer lock agent_runs. Lock their narrow row for the
+        // timeout transaction so a heartbeat cannot commit after this check
+        // but before the final release of the active slot.
+        const [active] = await tx
+          .select({ lastHeartbeatAt: activeAgentRuns.lastHeartbeatAt })
+          .from(activeAgentRuns)
+          .where(eq(activeAgentRuns.runId, run.id))
+          .for("update", { of: activeAgentRuns });
+        signal.throwIfAborted();
+        if (!active || active.lastHeartbeatAt >= cutoff) {
           return { kind: "skipped" };
         }
 
@@ -507,14 +510,13 @@ const cleanupSingleRun$ = command(
     signal.throwIfAborted();
 
     const isDebug = run.composeName?.startsWith(DEBUG_COMPOSE_PREFIX) ?? false;
-    const referenceTime = run.lastHeartbeatAt ?? run.createdAt;
     L.debug("Cleaned up expired run", {
       runId: run.id,
       status: run.status,
       sandboxId: committed.sandboxId,
       composeName: run.composeName,
       isDebug,
-      referenceTime: referenceTime.toISOString(),
+      referenceTime: run.lastHeartbeatAt.toISOString(),
     });
 
     return {
@@ -808,11 +810,11 @@ export const cleanupSandboxes$ = command(
         sandboxId: agentRuns.sandboxId,
         runnerGroup: agentRuns.runnerGroup,
         chatThreadId: agentRuns.chatThreadId,
-        lastHeartbeatAt: agentRuns.lastHeartbeatAt,
-        createdAt: agentRuns.createdAt,
+        lastHeartbeatAt: activeAgentRuns.lastHeartbeatAt,
         composeName: agents.name,
       })
-      .from(agentRuns)
+      .from(activeAgentRuns)
+      .innerJoin(agentRuns, eq(agentRuns.id, activeAgentRuns.runId))
       .leftJoin(agentSessions, eq(agentRuns.sessionId, agentSessions.id))
       .leftJoin(agents, eq(agentSessions.agentId, agents.id))
       .where(

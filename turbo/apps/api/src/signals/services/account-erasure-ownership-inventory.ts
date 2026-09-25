@@ -906,10 +906,6 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   },
   private_hosted_deployments: { coverage: "user_root", ownership: ["user_id"] },
   push_subscriptions: { coverage: "user_root", ownership: ["user_id"] },
-  run_activity_snapshots: {
-    coverage: "user_descendant",
-    parents: ["agent_runs"],
-  },
   run_built_in_admissions: {
     coverage: "user_descendant",
     parents: ["agent_runs"],

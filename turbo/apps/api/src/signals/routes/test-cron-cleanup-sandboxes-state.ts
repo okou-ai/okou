@@ -16,6 +16,7 @@ import { builtInGenerationJobs } from "@okouai/db/schema/built-in-generation-job
 import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -222,6 +223,19 @@ async function seedRunForAction(
   signal.throwIfAborted();
   if (!run) {
     return actionBadRequest("failed to seed run");
+  }
+  if (["queued", "pending", "running"].includes(status)) {
+    await db.insert(activeAgentRuns).values({
+      runId: run.id,
+      orgId,
+      userId,
+      lastHeartbeatAt:
+        readDate(body, "active_last_heartbeat_at") ??
+        readDate(body, "last_heartbeat_at") ??
+        readDate(body, "created_at") ??
+        nowDate(),
+    });
+    signal.throwIfAborted();
   }
 
   return actionOk({

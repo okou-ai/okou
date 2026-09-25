@@ -16,6 +16,7 @@ import {
   advanceRunActivityClockFixture,
   deleteActiveAgentRunFixture,
   readActiveAgentRunFixture,
+  readRetainedRunHeartbeatFixture,
 } from "../../../test-fixtures/run-activity";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
@@ -1014,7 +1015,7 @@ describe("thread activity summary", () => {
   it("treats a run without an active row as having no activity", async () => {
     const f = await fixture();
     const inputs = provider();
-    // A run created by an older API during rollout has no active row.
+    // An already released run has no active row.
     await deleteActiveAgentRunFixture(f.run.runId);
     await deliver(f, [tool(0)]);
     await expect(
@@ -1028,12 +1029,36 @@ describe("thread activity summary", () => {
     expect(inputs).toHaveLength(0);
   });
 
+  it("heartbeats only the active row, not the retained run", async () => {
+    const f = await fixture();
+    await expect(
+      readRetainedRunHeartbeatFixture(f.run.runId),
+    ).resolves.toBeNull();
+    const heartbeatAt = now() + 30_000;
+    mockNow(heartbeatAt);
+
+    await webhooks.requestAgentHeartbeat(
+      { runId: f.run.runId },
+      f.headers,
+      [200],
+    );
+
+    await expect(readActiveAgentRunFixture(f.run.runId)).resolves.toMatchObject(
+      { lastHeartbeatAt: new Date(heartbeatAt) },
+    );
+    await expect(
+      readRetainedRunHeartbeatFixture(f.run.runId),
+    ).resolves.toBeNull();
+  });
+
   it("keeps a cancelled running run's active row until its runner reports completion", async () => {
     const f = await fixture();
     await expect(readActiveAgentRunFixture(f.run.runId)).resolves.toMatchObject(
       { chatThreadId: f.run.threadId },
     );
     await runs.requestCancelRun(f.actor, f.run.runId, [200]);
+    // A cancelled run still occupies compute until its runner reports back.
+    expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(1);
     // The runner is still recovering: its row, heartbeat and activity remain.
     await deliver(f, [tool(0)]);
     await expect(readActiveAgentRunFixture(f.run.runId)).resolves.toMatchObject(
@@ -1052,6 +1077,7 @@ describe("thread activity summary", () => {
     await expect(
       readActiveAgentRunFixture(f.run.runId),
     ).resolves.toBeUndefined();
+    expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
   });
 
   it("releases a queued run's active row when it is cancelled", async () => {
@@ -1070,6 +1096,7 @@ describe("thread activity summary", () => {
     await expect(readActiveAgentRunFixture(queuedRunId)).resolves.toMatchObject(
       { chatThreadId: queued.body.threadId },
     );
+    expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(1);
     await runs.requestCancelRun(f.actor, queuedRunId, [200]);
     await expect(
       readActiveAgentRunFixture(queuedRunId),

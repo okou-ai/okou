@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type {
   RunActivityEntries,
   RunActivityEntry,
-} from "@okouai/db/jsonb-contracts/run-activity-snapshot";
+} from "@okouai/db/jsonb-contracts/run-activity";
 import type { AgentEvent } from "./event-consumer/verify";
 
 const ACTIVITY_ENTRY_LIMIT = 16;

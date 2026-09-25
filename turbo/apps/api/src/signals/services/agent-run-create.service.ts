@@ -6614,7 +6614,6 @@ function launchRunValues(
     storageMounts: args.runStorageMounts ? [...args.runStorageMounts] : null,
     continuedFromSessionId: args.resolved.continuedFromAgentSessionId ?? null,
     sessionId: args.identity.sessionId,
-    lastHeartbeatAt: createdAt,
     runnerGroup: args.runnerGroup ?? null,
     launchSnapshot: args.launchSnapshot,
     langfuseTraceEnabled: args.langfuseTraceEnabled,

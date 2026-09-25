@@ -1,4 +1,4 @@
-import { captureRunActivity$ } from "./run-activity-snapshot.service";
+import { captureRunActivity$ } from "./run-activity.service";
 import { command, type Command } from "ccstate";
 
 import { eventConsumerPayloadState$ } from "../../lib/event-consumer/route";
