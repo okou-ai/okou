@@ -1,6 +1,6 @@
 {
-  "id": "085e8bd8-b78c-4dc2-886f-e31db6807bfc",
-  "prevId": "7015b06f-a782-4dc4-b87b-336760a3d15d",
+  "id": "0d60a10d-2a1b-4fa3-87b0-d0bfddcccf0d",
+  "prevId": "085e8bd8-b78c-4dc2-886f-e31db6807bfc",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -7481,7 +7481,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'vm0'"
+          "default": "'okou'"
         },
         "event_payload": {
           "name": "event_payload",
@@ -8892,7 +8892,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'vm0'"
+          "default": "'okou'"
         },
         "created_at": {
           "name": "created_at",
@@ -17329,7 +17329,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'vm0'"
+          "default": "'okou'"
         },
         "target_type": {
           "name": "target_type",

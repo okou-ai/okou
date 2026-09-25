@@ -38,7 +38,7 @@ launches only required a non-null value, and queued GitHub launches now use
 the fixed `okou` run brand, as AgentPhone does. The GitHub webhook and manual
 "Run now" paths no longer pass a brand into workflow automation admission.
 
-Migration `1229_github_automation_public_brand_okou_default` sets the default
+Migration `1230_github_automation_public_brand_okou_default` sets the default
 to `'okou'` on `github_installations.setup_public_brand`,
 `chat_github_context.public_brand` and `chat_automation_context.public_brand`
 (previously `'vm0'`); `github_installations.public_brand` already defaulted to

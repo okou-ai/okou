@@ -7,6 +7,7 @@ export const VNC_PASSWORD_MAX_LENGTH = 8;
 export const VNC_USERNAME_MAX_BYTES = 255;
 export const VNC_USERNAME_PASSWORD_MAX_BYTES = 1_023;
 export const APPLE_DH_FIELD_MAX_BYTES = 63;
+export const APPLE_RSA_SRP_USERNAME_MAX_BYTES = 234;
 
 const nameSchema = z.string().trim().min(1).max(VNC_DISPLAY_NAME_MAX_LENGTH);
 function boundedUtf8String(maxBytes: number, label: string) {
@@ -70,11 +71,26 @@ export const vncAppleSrpAuthenticationSchema = z
   })
   .strict();
 
+export const vncAppleRsaSrpAuthenticationSchema = z
+  .object({
+    method: z.literal("apple_rsa_srp_username_password"),
+    username: boundedUtf8String(
+      APPLE_RSA_SRP_USERNAME_MAX_BYTES,
+      "Apple RSA/SRP username",
+    ),
+    password: boundedUtf8String(
+      VNC_USERNAME_PASSWORD_MAX_BYTES,
+      "Apple RSA/SRP password",
+    ),
+  })
+  .strict();
+
 export const vncAuthenticationSchema = z.discriminatedUnion("method", [
   vncPasswordAuthenticationVariantSchema,
   vncUsernamePasswordAuthenticationSchema,
   vncAppleDhAuthenticationSchema,
   vncAppleSrpAuthenticationSchema,
+  vncAppleRsaSrpAuthenticationSchema,
 ]);
 const revisionSchema = z.int().positive().max(2_147_483_647);
 
@@ -139,6 +155,16 @@ export const vncCredentialResponseSchema = z.discriminatedUnion("authMethod", [
       ...vncCredentialResponseBase,
       authMethod: z.literal("apple_srp_username_password"),
       username: boundedUtf8String(VNC_USERNAME_MAX_BYTES, "Apple SRP username"),
+    })
+    .strict(),
+  z
+    .object({
+      ...vncCredentialResponseBase,
+      authMethod: z.literal("apple_rsa_srp_username_password"),
+      username: boundedUtf8String(
+        APPLE_RSA_SRP_USERNAME_MAX_BYTES,
+        "Apple RSA/SRP username",
+      ),
     })
     .strict(),
 ]);
