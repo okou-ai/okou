@@ -50,15 +50,6 @@ const markReadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         // the canonical publication target; it is not a second contract.
         return null;
       }
-      // The cursor this route preserves when nothing advances. It is read
-      // inside the admitted transaction rather than carried in from an
-      // unfenced pre-read, and it stays out of the canonical identity, which
-      // is deliberately content-free.
-      const [current] = await tx
-        .select({ lastReadAt: chatThreads.lastReadAt })
-        .from(chatThreads)
-        .where(eq(chatThreads.id, params.id))
-        .limit(1);
       const latestReadWatermark = latestReadWatermarkEventSubquery(
         tx,
         params.id,
@@ -79,7 +70,17 @@ const markReadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
           ),
         )
         .returning({ lastReadAt: chatThreads.lastReadAt });
-      const committed = updated ?? current;
+      // When nothing advances, report the cursor this route preserves. It is
+      // read inside the admitted transaction rather than carried in from an
+      // unfenced pre-read, and it stays out of the canonical identity, which
+      // is deliberately content-free.
+      const [committed] = updated
+        ? [updated]
+        : await tx
+            .select({ lastReadAt: chatThreads.lastReadAt })
+            .from(chatThreads)
+            .where(eq(chatThreads.id, params.id))
+            .limit(1);
       return {
         agentId: identity.agentId,
         orgId: identity.orgId,
