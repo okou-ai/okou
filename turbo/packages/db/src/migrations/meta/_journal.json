@@ -1160,8 +1160,15 @@
     {
       "idx": 1243,
       "version": "7",
-      "when": 1790340394461,
-      "tag": "1243_computer_use_commands_required_host_timeout",
+      "when": 1790340233476,
+      "tag": "1243_drop_chat_thread_session_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 1244,
+      "version": "7",
+      "when": 1790343517394,
+      "tag": "1244_computer_use_commands_required_host_timeout",
       "breakpoints": true
     }
   ]

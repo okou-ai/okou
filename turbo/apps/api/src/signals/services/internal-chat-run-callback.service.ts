@@ -142,6 +142,7 @@ import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
 import {
   insertAssistantEvents,
   insertAssistantEvents$,
+  touchChatThreadForUnreadRunFinishIndependently,
   touchChatThreadLastMessageAtIndependently,
   type InsertAssistantEventsInput,
   visibleChatEventCondition,
@@ -1606,7 +1607,14 @@ async function insertAssistantErrorEvent(
 
   // Replays repeat the monotonic touch and publishes because an earlier
   // attempt may have failed after its marker committed.
-  await touchChatThreadLastMessageAtIndependently(args.db, args.threadId);
+  if (args.lifecycleEvent === "failed") {
+    await touchChatThreadForUnreadRunFinishIndependently(
+      args.db,
+      args.threadId,
+    );
+  } else {
+    await touchChatThreadLastMessageAtIndependently(args.db, args.threadId);
+  }
   await publishAssistantErrorEventSignals(args);
   return {
     displayErrorMessage,
@@ -1960,11 +1968,19 @@ async function insertRunLifecycleMarker(
   // owns completion work until registration and automation admission succeed,
   // so a replay repeats the monotonic touch and publishes an earlier attempt
   // may have lost after the marker committed.
-  await touchChatThreadLastMessageAtIndependently(
-    args.db,
-    args.threadId,
-    markerCreatedAt,
-  );
+  if (args.event === "completed") {
+    await touchChatThreadForUnreadRunFinishIndependently(
+      args.db,
+      args.threadId,
+      markerCreatedAt,
+    );
+  } else {
+    await touchChatThreadLastMessageAtIndependently(
+      args.db,
+      args.threadId,
+      markerCreatedAt,
+    );
+  }
   await publishChatThreadMessageCreatedSafely({
     userId: args.userId,
     orgId: args.orgId,
