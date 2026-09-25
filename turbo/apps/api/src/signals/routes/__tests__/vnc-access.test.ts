@@ -425,7 +425,7 @@ describe("explicit VNC grants and current Agent inventory", () => {
               name: "Classic password",
               authentication: {
                 method: "vnc_password",
-                password: "synthetic-secret",
+                password: "testpass",
               },
             },
           },
@@ -455,7 +455,7 @@ describe("explicit VNC grants and current Agent inventory", () => {
         },
       ],
     });
-    expect(JSON.stringify(listed.body)).not.toContain("synthetic-secret");
+    expect(JSON.stringify(listed.body)).not.toContain("testpass");
     expect(kms.decryptCalls).toBe(0);
     await api.grantSsh(runtime, false);
     expect(
