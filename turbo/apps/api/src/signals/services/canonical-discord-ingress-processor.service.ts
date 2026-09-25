@@ -67,9 +67,10 @@ import {
 import { getDiscordAppConfig } from "./discord-config";
 import { readDiscordHistoryPage$ } from "./discord-context.service";
 import {
-  dispatchDiscordChatDeliveryOnce,
-  enqueueDiscordChatDelivery,
-  enqueueDiscordIngressFailure,
+  sendDiscordChatReply,
+  sendDiscordIngressNotice,
+  type DiscordIngressNotice,
+  type DiscordReplyRequest,
 } from "./internal-discord-chat-run-callback.service";
 
 const STALE_AFTER_MS = 5 * 60 * 1000;
@@ -893,7 +894,10 @@ function ingressFailure(error: unknown) {
 }
 
 interface RecordedIngressFailure {
-  readonly deliveryId: string | null;
+  readonly reply:
+    | { readonly kind: "chat"; readonly request: DiscordReplyRequest }
+    | { readonly kind: "notice"; readonly notice: DiscordIngressNotice }
+    | null;
   readonly notification: {
     readonly userId: string;
     readonly orgId: string;
@@ -981,24 +985,27 @@ async function recordTerminalIngressFailure(
         );
         signal.throwIfAborted();
       }
-      const deliveryId = await enqueueDiscordChatDelivery(tx, {
-        chatEventId: ingressId,
-        chatThreadId: route.chatThreadId,
-        userId: route.userId,
-        orgId: route.orgId,
-        target: {
-          routeId: route.id,
-          connectionId: claimed.connectionId,
-          guildId: route.guildId,
-          discordUserId: route.discordUserId,
-          channelId: route.destinationChannelId,
-          messageId: message.data.id,
-          sessionKey: route.sessionKey,
-        },
-      });
-      signal.throwIfAborted();
       return {
-        deliveryId,
+        reply: inserted
+          ? {
+              kind: "chat",
+              request: {
+                chatEventId: ingressId,
+                chatThreadId: route.chatThreadId,
+                userId: route.userId,
+                orgId: route.orgId,
+                target: {
+                  routeId: route.id,
+                  connectionId: claimed.connectionId,
+                  guildId: route.guildId,
+                  discordUserId: route.discordUserId,
+                  channelId: route.destinationChannelId,
+                  messageId: message.data.id,
+                  sessionKey: route.sessionKey,
+                },
+              },
+            }
+          : null,
         notification: {
           userId: route.userId,
           orgId: route.orgId,
@@ -1007,14 +1014,18 @@ async function recordTerminalIngressFailure(
       };
     }
   }
-  const deliveryId = await enqueueDiscordIngressFailure(tx, {
-    ingressId,
-    connectionId: claimed.connectionId,
-    channelId: message.data.channel_id,
-    content,
-  });
-  signal.throwIfAborted();
-  return { deliveryId, notification: null };
+  return {
+    reply: {
+      kind: "notice",
+      notice: {
+        ingressId,
+        connectionId: claimed.connectionId,
+        channelId: message.data.channel_id,
+        content,
+      },
+    },
+    notification: null,
+  };
 }
 
 function recordIngressFailure(
@@ -1103,8 +1114,10 @@ async function finishRecordedIngressFailure(
     await publishThreadListChanged(recorded.notification);
     signal.throwIfAborted();
   }
-  if (recorded?.deliveryId) {
-    await dispatchDiscordChatDeliveryOnce(db, recorded.deliveryId, signal);
+  if (recorded?.reply?.kind === "chat") {
+    await sendDiscordChatReply(db, recorded.reply.request, signal);
+  } else if (recorded?.reply?.kind === "notice") {
+    await sendDiscordIngressNotice(db, recorded.reply.notice, signal);
   }
 }
 

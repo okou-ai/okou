@@ -1,5 +1,24 @@
 # Deployment Compatibility
 
+## Discord replies become fire and forget (2026-09-25)
+
+Discord replies and ingress notices are now posted once, directly after the
+transaction that creates their event commits, and only by the attempt that
+created it. A part Discord rejects, rate-limits or never answers ends the send;
+there is no retry, nonce replay, uncertain-part notice or cron redelivery. A
+repeated runner callback or terminal-marker replay does not post again, and a
+process lost between commit and send loses that reply. The canonical event
+stays readable in the Okou chat. Access checks and suppression after binding
+or channel revocation are unchanged.
+
+The API no longer writes or reads `discord_chat_deliveries`, and the test-only
+Discord delivery drain endpoint is removed. The table, its erasure inventory
+entry, its user-export section and the preview seed that covers that export stay
+until every API that writes the table has left the rollback window; a later
+migration drops them together. During rollout overlap or after an API rollback,
+older instances still enqueue and dispatch their own rows; this API ignores
+them.
+
 ## Completed Clerk deletion receipt index retirement (2026-09-25)
 
 Migration `1239_retire_clerk_deletion_receipt_index` drops
