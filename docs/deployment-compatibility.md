@@ -1,5 +1,40 @@
 # Deployment Compatibility
 
+## Discord file deliveries become fire and forget (2026-09-25)
+
+`POST /api/integrations/discord/files/complete` sends each upload operation to
+Discord at most once, without a nonce. A send that Discord rejects,
+rate-limits or never answers is recorded as a failed delivery with
+`retryable: false` and no `retryAfterSeconds`; a repeated completion returns the
+recorded outcome and never sends again. To retry, start a new upload operation.
+The enforced-nonce replay, its window and the stored retry deadline are
+removed, and new delivery rows no longer store a nonce.
+
+The response contract is unchanged, so existing CLIs keep parsing it and simply
+see non-retryable failures. Discord has no production users, so rows written by
+the previous replay flow need no migration; their extra JSONB keys are ignored.
+
+## Agent-run context ownership becomes required (2026-09-25)
+
+Migration `1252_chat_agent_run_context_owner_not_null` deletes
+`chat_agent_run_context` rows whose `source_user_id` or `source_org_id` is null,
+then makes both columns `NOT NULL`. Every API from the split writer on (API
+1.672.0) inserts a row only after reading both owners from the source thread and
+agent, so no rollback target writes a null owner. The deleted rows were written
+by older APIs; on 2026-09-25 all 955 had lost their source thread, so no owner
+could be derived. No code reads these rows, and the `chat_events.context_id`
+values that referenced 70 of them carry no foreign key.
+
+Account erasure and Clerk cleanup now remove these rows by copied owner only;
+the source-thread reach and the Clerk cleanup's thread subqueries are removed.
+That changes the relational sweep plan, so `RELATIONAL_ERASURE_COLLECTOR_VERSION`
+changes. When it changed, no account erasure job was incomplete (production had
+two `verified_erased` jobs), so no captured sink carries the old version into
+replay. A job that an older API captures during the release overlap or after a
+rollback registers its relational sink under the old version, which this API
+refuses to execute. Check for such jobs after the release and after any rollback
+until the older APIs leave the rollback window.
+
 ## Computer Use erasure admission and legacy host retirement (2026-09-25)
 
 Host START, command creation, the host directory and the audit-event list no
