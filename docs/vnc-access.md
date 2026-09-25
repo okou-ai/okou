@@ -162,8 +162,9 @@ them.
 Select a saved VNC credential or create one. The certificate-verified choices are
 VeNCrypt X509Vnc (certificate-verified TLS plus a classic VNC password) or
 VeNCrypt X509Plain (certificate-verified TLS plus username/password
-authentication); Mac Screen Sharing is available as separate SSH-only Apple
-DH choice. Classic passwords must contain 1–8 printable ASCII characters.
+authentication); Mac Screen Sharing has separate SSH-only Apple DH, Apple
+Direct SRP and Apple RSA/SRP choices. Classic passwords must contain 1–8
+printable ASCII characters.
 X509Plain usernames accept 1–255 UTF-8 bytes and passwords accept 1–1023 UTF-8
 bytes. Spaces are significant and embedded NUL is rejected. Changing profiles
 clears draft authentication material and only exact compatible credentials are
