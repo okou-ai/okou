@@ -106,13 +106,34 @@ function revokedMemberWhere(
 }
 
 /**
- * Revoke collection authority without destroying pending occurrences. Durable
- * user deletion can use this at the enqueue boundary, retaining occurrences
- * for B1 capture before eventual cleanup. FOR UPDATE must precede the stamp:
- * a non-key UPDATE alone does not conflict with a claim's FOR KEY SHARE, and
- * could allow a stale claim to commit alongside revocation.
+ * Revoke this scope's collection ownership inside a cleanup transaction.
+ *
+ * This runs in the first transaction each membership, user and organization
+ * cleanup commits, so an owner loses collection ownership before the rest of
+ * their state is torn down — and the caller must pass that transaction, not a
+ * connection, because the decision has to become visible with the rest of that
+ * revocation and not a statement later.
+ *
+ * Deleting the occurrences is only half of it. Taking `FOR UPDATE` on the owner
+ * rows first serializes this against the `FOR KEY SHARE` a claim or
+ * finalization holds, and stamping those rows records the revocation durably.
+ * That explicit lock is load-bearing and must not be folded into the `UPDATE`:
+ * an `UPDATE` of a non-key column acquires `FOR NO KEY UPDATE`, which does not
+ * conflict with `FOR KEY SHARE`, so a single statement would let a claim read
+ * an unstamped row and commit its insert alongside this delete. No test would
+ * catch that, because the regressions depend on the blocking order rather than
+ * on the number of statements.
+ * A claim that commits first is therefore seen and deleted here; a claim that
+ * arrives later reads the stamp and refuses, even though this transaction found
+ * no occurrence to delete and even though the member row itself is removed only
+ * at the end of the cleanup. Other owners are untouched, and the member and
+ * Agent cascades remain the final guarantee.
+ *
+ * A running attempt is left with nothing to finalize. Its in-flight Slack
+ * requests cannot be retracted; what this guarantees is that no result of one
+ * is accepted, persisted or returned once this transaction commits.
  */
-export async function markMorningBriefCollectionOwnershipRevoked(
+export async function revokeMorningBriefCollectionOwnership(
   tx: Tx,
   scope: MorningBriefCollectionRevocationScope,
   at: Date,
@@ -126,20 +147,6 @@ export async function markMorningBriefCollectionOwnershipRevoked(
     .update(orgMembersMetadata)
     .set({ morningBriefCollectionRevokedAt: at, updatedAt: at })
     .where(revokedMemberWhere(scope));
-}
-
-/**
- * After capture, atomically revoke and remove occurrences in the first legacy
- * cleanup transaction. Claims that committed before this lock are deleted;
- * later claims observe the durable stamp. In-flight provider reads cannot be
- * cancelled, but their results can no longer be accepted or persisted.
- */
-export async function revokeMorningBriefCollectionOwnership(
-  tx: Tx,
-  scope: MorningBriefCollectionRevocationScope,
-  at: Date,
-): Promise<void> {
-  await markMorningBriefCollectionOwnershipRevoked(tx, scope, at);
   await tx
     .delete(morningBriefCollectionOccurrences)
     .where(revocationWhere(scope));

@@ -14,7 +14,6 @@ import { connectors } from "@okouai/db/schema/connector";
 import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
-import { testOverride } from "../../lib/singleton";
 import type { Db, ReadonlyDb } from "../external/db";
 import { connectorAccountTargetKey } from "./connector-account-resolution.service";
 import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
@@ -31,25 +30,6 @@ import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import { listConnectorAccountsByIds } from "./connector-account-lifecycle.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 import { invalidatePiStableContext } from "./pi-stable-context-generation.service";
-
-interface ChatThreadConnectorSelectionMutationHooks {
-  readonly afterThreadReadBeforeAgentLock?: () => Promise<void>;
-}
-
-const chatThreadConnectorSelectionMutationHooks =
-  testOverride<ChatThreadConnectorSelectionMutationHooks>(() => {
-    return {};
-  });
-
-export function setChatThreadConnectorSelectionMutationHooksForTest(
-  hooks: ChatThreadConnectorSelectionMutationHooks,
-): void {
-  chatThreadConnectorSelectionMutationHooks.set(hooks);
-}
-
-export function clearChatThreadConnectorSelectionMutationHooksForTest(): void {
-  chatThreadConnectorSelectionMutationHooks.clear();
-}
 
 interface OwnedChatThread {
   readonly agentId: string;
@@ -203,9 +183,6 @@ async function loadLockedOwnedChatThread(
   if (!observed) {
     return undefined;
   }
-  await chatThreadConnectorSelectionMutationHooks
-    .get()
-    .afterThreadReadBeforeAgentLock?.();
   await lockCanonicalAgentMutation(tx, observed.agentId);
   const current = await loadOwnedChatThread(tx, args);
   return current?.agentId === observed.agentId ? current : undefined;
