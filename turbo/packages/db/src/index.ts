@@ -1,6 +1,5 @@
 import * as chatContentErasureSubjectSchema from "./schema/chat-content-erasure-subject";
 import * as getStartedClaimSchema from "./schema/get-started-claim";
-import * as accountErasureBridgeSchema from "./schema/account-erasure-bridge";
 import * as accountErasureSchema from "./schema/account-erasure";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
 import * as runActivitySnapshotSchema from "./schema/run-activity-snapshot";
@@ -177,7 +176,6 @@ export const schema = {
   ...chatContentErasureSubjectSchema,
   ...getStartedClaimSchema,
   ...accountErasureSchema,
-  ...accountErasureBridgeSchema,
   ...runActivitySnapshotSchema,
   ...homeTaskRecommendationSchema,
   ...userSchema,
