@@ -473,43 +473,6 @@ export async function usagePackSubscriptionSchemaAvailable(
   return state?.available ?? false;
 }
 
-export async function usagePackPurchaseSerializationSchemaAvailable(
-  db: Pick<Db, "select">,
-): Promise<boolean> {
-  const [state] = await db
-    .select({
-      available: sql`to_regclass('usage_pack_subscriptions') IS NOT NULL
-          AND to_regclass('usage_pack_allocations') IS NOT NULL
-          AND to_regclass('usage_pack_invoice_fulfillments') IS NOT NULL
-          AND to_regclass('usage_pack_pending_snapshot_guards') IS NOT NULL
-          AND EXISTS (
-            SELECT 1 FROM pg_index i
-            JOIN pg_attribute a ON a.attrelid = i.indrelid
-              AND a.attnum = i.indkey[0]
-            WHERE i.indexrelid = to_regclass('uq_usage_pack_subscriptions_pending_org')
-              AND i.indrelid = to_regclass('usage_pack_pending_snapshot_guards')
-              AND i.indisunique AND i.indisvalid AND i.indisready
-              AND i.indnkeyatts = 1 AND i.indpred IS NULL
-              AND a.attname = 'org_id' AND a.attnotnull
-          )
-          AND EXISTS (
-            SELECT 1 FROM pg_attribute
-            WHERE attrelid = to_regclass('usage_pack_pending_snapshot_guards')
-              AND attname = 'pending_snapshot_count'
-              AND atttypid = 'integer'::regtype AND attnotnull AND NOT attisdropped
-          )
-          AND EXISTS (
-            SELECT 1 FROM pg_constraint
-            WHERE conrelid = to_regclass('usage_pack_pending_snapshot_guards')
-              AND conname = 'chk_usage_pack_pending_snapshot_guard_count'
-              AND contype = 'c' AND convalidated
-          )`.mapWith(pgBooleanDecoder),
-    })
-    .from(sql`(SELECT 1) AS schema_probe`)
-    .limit(1);
-  return state?.available ?? false;
-}
-
 export async function activeUsagePackBillingContext(
   db: Pick<Db, "select">,
   orgId: string,

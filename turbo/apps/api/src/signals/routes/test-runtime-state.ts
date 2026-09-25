@@ -38,7 +38,6 @@ import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { and, count, desc, eq, isNotNull, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
-import { closeDbPool } from "../../lib/db";
 import { executeRawRows } from "../../lib/db-raw-rows";
 import { bodyResultOf } from "../context/request";
 import { request$ } from "../context/hono";
@@ -55,9 +54,6 @@ import {
   resolveBuiltInModelRuntimeRoute,
   type BuiltInModelRuntimeRoute,
 } from "../services/built-in-model-runtime-route.service";
-import { browserScreenshotSchemaAvailable } from "../services/browser-screenshot-schema.service";
-import { usagePackInvitationPurchaseSchemaAvailable } from "../services/usage-pack-invitation-purchase.service";
-import { usagePackPurchaseSerializationSchemaAvailable } from "../services/usage-pack-subscription.service";
 import { encryptPersistentSecretValue } from "../services/crypto.utils";
 import { writeRunMetadata } from "../services/agent-run-metadata-write.service";
 import { saveRunSummary } from "../services/run-summary.service";
@@ -1241,32 +1237,12 @@ type ReadRunLaunchSnapshotAction = Extract<
   TestRuntimeStateActionBody,
   { action: "read-run-launch-snapshot" }
 >;
-type ReadBrowserScreenshotSchemaStateAction = Extract<
-  TestRuntimeStateActionBody,
-  { action: "read-browser-screenshot-schema-state" }
->;
-type ReadUsagePackInvitationSchemaStateAction = Extract<
-  TestRuntimeStateActionBody,
-  { action: "read-usage-pack-invitation-schema-state" }
->;
-type ReadUsagePackPurchaseSerializationSchemaStateAction = Extract<
-  TestRuntimeStateActionBody,
-  { action: "read-usage-pack-purchase-serialization-schema-state" }
->;
-type ResetDatabasePoolAction = Extract<
-  TestRuntimeStateActionBody,
-  { action: "reset-database-pool" }
->;
 type PersistenceStateAction =
   | StorageStateAction
   | ReadStorageStateAction
   | ReadRunnerJobStorageStateAction
   | ReadRunClaimOwnerAction
-  | ReadRunLaunchSnapshotAction
-  | ReadBrowserScreenshotSchemaStateAction
-  | ReadUsagePackInvitationSchemaStateAction
-  | ReadUsagePackPurchaseSerializationSchemaStateAction
-  | ResetDatabasePoolAction;
+  | ReadRunLaunchSnapshotAction;
 
 function isPersistenceStateAction(
   body: TestRuntimeStateActionBody,
@@ -1279,18 +1255,6 @@ function isPersistenceStateAction(
     case "read-runner-job-storage-state":
     case "read-run-claim-owner":
     case "read-run-launch-snapshot": {
-      return true;
-    }
-    case "read-browser-screenshot-schema-state": {
-      return true;
-    }
-    case "read-usage-pack-invitation-schema-state": {
-      return true;
-    }
-    case "read-usage-pack-purchase-serialization-schema-state": {
-      return true;
-    }
-    case "reset-database-pool": {
       return true;
     }
     default: {
@@ -1364,44 +1328,6 @@ async function persistenceStateActionResponse(
           },
         },
       };
-    }
-    case "read-browser-screenshot-schema-state": {
-      const available = await browserScreenshotSchemaAvailable(db);
-      signal.throwIfAborted();
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          browser_screenshot_schema_available: available,
-        },
-      };
-    }
-    case "read-usage-pack-invitation-schema-state": {
-      const available = await usagePackInvitationPurchaseSchemaAvailable(db);
-      signal.throwIfAborted();
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          usage_pack_invitation_schema_available: available,
-        },
-      };
-    }
-    case "read-usage-pack-purchase-serialization-schema-state": {
-      const available = await usagePackPurchaseSerializationSchemaAvailable(db);
-      signal.throwIfAborted();
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          usage_pack_purchase_serialization_schema_available: available,
-        },
-      };
-    }
-    case "reset-database-pool": {
-      await closeDbPool();
-      signal.throwIfAborted();
-      return { status: 200 as const, body: { ok: true as const } };
     }
     case "remove-run-canonical-storage-state": {
       await mutateStorageState(db, body, signal);

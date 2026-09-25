@@ -24,8 +24,6 @@ import {
   writeUsagePackPendingSnapshots,
 } from "../usage-pack-pending-snapshot.service";
 
-import { usagePackPurchaseSerializationSchemaAvailable } from "../usage-pack-subscription.service";
-
 const context = testContext();
 
 // HTTP callers cannot select installed triggers, grandfathered/corrupt guard
@@ -188,42 +186,6 @@ describe.each([true, false])(
     });
     afterEach(async () => {
       await harness.destroy();
-    });
-
-    it("keeps checkout available with its guard/index even when the trigger is absent", async () => {
-      await expect(
-        usagePackPurchaseSerializationSchemaAvailable(harness.db),
-      ).resolves.toBeTruthy();
-      await harness.db.execute(
-        sql`DROP INDEX uq_usage_pack_subscriptions_pending_org`,
-      );
-      await expect(
-        usagePackPurchaseSerializationSchemaAvailable(harness.db),
-      ).resolves.toBeFalsy();
-      await harness.db.execute(
-        sql`CREATE INDEX uq_usage_pack_subscriptions_pending_org ON usage_pack_pending_snapshot_guards (org_id)`,
-      );
-      await expect(
-        usagePackPurchaseSerializationSchemaAvailable(harness.db),
-      ).resolves.toBeFalsy();
-    });
-
-    it("requires the guard count constraint and non-null count column", async () => {
-      await harness.db.execute(
-        sql`ALTER TABLE usage_pack_pending_snapshot_guards DROP CONSTRAINT chk_usage_pack_pending_snapshot_guard_count`,
-      );
-      await expect(
-        usagePackPurchaseSerializationSchemaAvailable(harness.db),
-      ).resolves.toBeFalsy();
-      await harness.db.execute(
-        sql`ALTER TABLE usage_pack_pending_snapshot_guards ADD CONSTRAINT chk_usage_pack_pending_snapshot_guard_count CHECK (pending_snapshot_count >= 0)`,
-      );
-      await harness.db.execute(
-        sql`ALTER TABLE usage_pack_pending_snapshot_guards ALTER COLUMN pending_snapshot_count DROP NOT NULL`,
-      );
-      await expect(
-        usagePackPurchaseSerializationSchemaAvailable(harness.db),
-      ).resolves.toBeFalsy();
     });
 
     it("admits one concurrent purchase and rejects another without duplicating its count", async () => {

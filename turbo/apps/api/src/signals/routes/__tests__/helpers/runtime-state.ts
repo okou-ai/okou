@@ -203,50 +203,6 @@ export function registerBuiltInCandidateCooldownCleanup(
   });
 }
 
-export async function readBrowserScreenshotSchemaAvailable(
-  context: TestContext,
-): Promise<boolean> {
-  const response = await postAction(context, {
-    action: "read-browser-screenshot-schema-state",
-  });
-  if (response.browser_screenshot_schema_available === undefined) {
-    throw new Error(
-      "readBrowserScreenshotSchemaAvailable missing schema availability",
-    );
-  }
-  return response.browser_screenshot_schema_available;
-}
-
-export async function readUsagePackInvitationSchemaAvailable(
-  context: TestContext,
-): Promise<boolean> {
-  const response = await postAction(context, {
-    action: "read-usage-pack-invitation-schema-state",
-  });
-  if (response.usage_pack_invitation_schema_available === undefined) {
-    throw new Error(
-      "readUsagePackInvitationSchemaAvailable missing schema availability",
-    );
-  }
-  return response.usage_pack_invitation_schema_available;
-}
-
-export async function readUsagePackPurchaseSerializationSchemaAvailable(
-  context: TestContext,
-): Promise<boolean> {
-  const response = await postAction(context, {
-    action: "read-usage-pack-purchase-serialization-schema-state",
-  });
-  if (
-    response.usage_pack_purchase_serialization_schema_available === undefined
-  ) {
-    throw new Error(
-      "readUsagePackPurchaseSerializationSchemaAvailable missing schema availability",
-    );
-  }
-  return response.usage_pack_purchase_serialization_schema_available;
-}
-
 export async function setCustomConnectorAuthTemplateFixture(
   context: TestContext,
   args: {
@@ -592,10 +548,6 @@ export async function installOfficialWorkflowRunGateFixture(
   }
   await release();
   throw new Error("Official Workflow Run gate did not become active");
-}
-
-export async function resetDatabasePool(context: TestContext): Promise<void> {
-  await postAction(context, { action: "reset-database-pool" });
 }
 
 export async function setRunnerJobPiContextAsVersionedWriter(
