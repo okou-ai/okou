@@ -41,7 +41,6 @@ import {
 } from "./active-input-prompt.service";
 import { logTemplateUsage } from "../../lib/template-usage-log";
 import type { GenerationTemplateIdentity } from "@okouai/core/generation-template-identity";
-import { lockChatQueueThread } from "./chat-event-queue.service";
 import { insertChatEvent, replaceLoadedChatEvent } from "./chat-event.service";
 import { lockPiApiFirstTurnLifecycle } from "./pi-api-first-turn-lifecycle.service";
 
@@ -325,9 +324,9 @@ async function transitionReservation(
   prepared: PreparedReservation,
 ): Promise<ReserveTransitionResult> {
   await lockPiApiFirstTurnLifecycle(tx, scope.runId);
-  if (!(await lockChatQueueThread(tx, scope.chatThreadId))) {
-    return { outcome: "forbidden" };
-  }
+  // The run row lock serializes against completion and timeout. Admission
+  // cannot claim this thread while the run is running, and a concurrent recall
+  // or rejection of the source is tolerated when the delivery settles.
   const [run] = await tx
     .select({ status: agentRuns.status })
     .from(agentRuns)
@@ -631,9 +630,6 @@ async function lockActiveInputDeliveryReceipt(
   scope: ActiveInputDeliveryScope,
   deliveryId: string,
 ): Promise<LockedActiveInputDeliveryReceipt | null> {
-  if (!(await lockChatQueueThread(tx, scope.chatThreadId))) {
-    return null;
-  }
   const [run] = await tx
     .select({ id: agentRuns.id })
     .from(agentRuns)
@@ -821,25 +817,28 @@ async function settleOpenActiveInputDeliveryAsUndelivered(
   items: LockedActiveInputDeliveryReceipt["items"],
 ): Promise<FinalizeActiveInputDeliveryResult> {
   const state = await lockActiveInputDeliverySources(tx, scope, items);
-  if (
-    state.sources.some((source) => {
-      return (
-        state.revokerBySource.has(source.id) ||
-        !sourceIsPendingForRun(source, scope.runId)
-      );
-    })
-  ) {
-    throw new Error("Undelivered active input source is no longer pending");
-  }
   const promptEventIds: string[] = [];
   const budgetEventIds: string[] = [];
+  let chatEventsAppended = false;
   for (const source of state.sources) {
+    if (
+      source.eventType !== "input.prompt" &&
+      source.eventType !== "input.budget"
+    ) {
+      throw new Error("Active input delivery has an invalid source type");
+    }
+    // Recall and rejection do not serialize with reservation, so a source may
+    // already be consumed elsewhere. Settle its item without appending again.
+    const consumed =
+      state.revokerBySource.has(source.id) ||
+      !sourceIsPendingForRun(source, scope.runId);
     if (source.eventType === "input.prompt") {
       promptEventIds.push(source.id);
       continue;
     }
-    if (source.eventType !== "input.budget") {
-      throw new Error("Active input delivery has an invalid source type");
+    budgetEventIds.push(source.id);
+    if (consumed) {
+      continue;
     }
     const revoked = await replaceLoadedChatEvent(
       tx,
@@ -850,10 +849,9 @@ async function settleOpenActiveInputDeliveryAsUndelivered(
         runId: scope.runId,
       },
     );
-    if (!revoked) {
-      throw new Error("Active input budget expiry was not appended");
+    if (revoked) {
+      chatEventsAppended = true;
     }
-    budgetEventIds.push(source.id);
   }
   await settleActiveInputDeliveryItems(
     tx,
@@ -870,7 +868,7 @@ async function settleOpenActiveInputDeliveryAsUndelivered(
   await settleActiveInputDelivery(tx, deliveryId);
   return {
     finalized: true,
-    chatEventsAppended: budgetEventIds.length > 0,
+    chatEventsAppended,
   };
 }
 
@@ -883,9 +881,6 @@ async function rejectUnavailableDiscordActiveInput(
 ): Promise<void> {
   const rejected = await db.transaction(async (tx) => {
     await lockPiApiFirstTurnLifecycle(tx, scope.runId);
-    if (!(await lockChatQueueThread(tx, scope.chatThreadId))) {
-      return false;
-    }
     if (source.deliveryId !== undefined) {
       const delivery = await lockActiveInputDeliveryReceipt(
         tx,
@@ -1045,6 +1040,13 @@ async function recordActiveInputDeliveryReceiptTransition(
     delivery.items,
   );
   if (!settlement) {
+    // The source was consumed elsewhere, so settling appends no event.
+    await settleOpenActiveInputDeliveryAsUndelivered(
+      tx,
+      scope,
+      deliveryId,
+      delivery.items,
+    );
     return { outcome: "rejected", replacementsAppended: false };
   }
   return {
@@ -1091,7 +1093,16 @@ export async function finalizeActiveInputDelivery(
     delivery.items,
   );
   if (!settlement) {
-    throw new Error("Delivered active input source is no longer valid");
+    const released = await settleOpenActiveInputDeliveryAsUndelivered(
+      tx,
+      args,
+      delivery.deliveryId,
+      delivery.items,
+    );
+    return {
+      ...released,
+      chatEventsAppended: released.chatEventsAppended || pendingBudgetExpired,
+    };
   }
   return {
     finalized: true,
