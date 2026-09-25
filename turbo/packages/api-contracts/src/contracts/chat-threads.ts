@@ -307,8 +307,9 @@ const persistedAttachmentSchema = z.object({
 });
 
 /**
- * Per-agent unread snapshot. `unreadAt` is the creation time of the latest
- * run-finish marker — the one that made the thread unread.
+ * Retired per-agent unread snapshot. The API always returns an empty list;
+ * unread state comes from `/api/indicators`. Remove the field once App
+ * bundles that read it have drained.
  */
 const chatThreadReadStateUnreadsSchema = z.object({
   unreads: z.array(

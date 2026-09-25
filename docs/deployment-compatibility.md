@@ -1,5 +1,19 @@
 # Deployment Compatibility
 
+## Mark-read responses stop computing unread snapshots (2026-09-25)
+
+`POST /api/chat-threads/:id/mark-read` and
+`POST /api/chat-threads/:id/mark-unread` no longer compute the per-Agent unread
+snapshot and always return `unreads: []`. That snapshot used a correlated
+lateral query that dominated mark-read latency, and the App already derives
+unread state from `/api/indicators`. The new App no longer reads the field.
+
+Older App bundles still pass `unreads` to their optimistic read-mark pruning;
+an empty list only skips pruning, and those bundles already hide a local mark
+when indicators report a newer `unreadAt`. A new App talking to an older API
+ignores the populated field. Remove `unreads` from both response contracts once
+App bundles from before this change are no longer in use.
+
 ## Phone proactive sends target the caller's own link (2026-09-25)
 
 `POST /api/integrations/phone/message` and

@@ -11,7 +11,6 @@ import { publishChatThreadReadCursorUpdatedSafely } from "../external/realtime";
 import { notFound } from "../../lib/error";
 import { withChatThreadContentWrite } from "../services/chat-thread-content-erasure-admission.service";
 import { latestReadWatermarkEventSubquery } from "../services/chat-thread-read-state-query";
-import { chatThreadUnreads } from "../services/chat-thread.service";
 import type { RouteEntry } from "../route-entry";
 
 /** The committed cursor plus the canonical parents the publication needs. */
@@ -112,20 +111,13 @@ const markReadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
   }
 
-  const unreads = await get(
-    chatThreadUnreads({
-      userId: auth.userId,
-      orgId: marked.orgId,
-      agentId: marked.agentId,
-    }),
-  );
-  signal.throwIfAborted();
-
   return {
     status: 200 as const,
     body: {
       lastReadAt: marked.lastReadAt,
-      unreads: [...unreads],
+      // Kept for App bundles that still read it; unread state comes from
+      // `/api/indicators`.
+      unreads: [],
     },
   };
 });

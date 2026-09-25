@@ -10,10 +10,9 @@ import { writeDb$ } from "../external/db";
 import { publishChatThreadReadCursorUpdatedSafely } from "../external/realtime";
 import { notFound } from "../../lib/error";
 import { withChatThreadContentWrite } from "../services/chat-thread-content-erasure-admission.service";
-import { chatThreadUnreads } from "../services/chat-thread.service";
 import type { RouteEntry } from "../route-entry";
 
-/** The canonical parents the publication and unread snapshot need. */
+/** The canonical parents the publication needs. */
 interface MarkUnreadOutcome {
   readonly agentId: string;
   readonly orgId: string;
@@ -84,20 +83,13 @@ const markUnreadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
 
-  const unreads = await get(
-    chatThreadUnreads({
-      userId: auth.userId,
-      orgId: cleared.orgId,
-      agentId: cleared.agentId,
-    }),
-  );
-  signal.throwIfAborted();
-
   return {
     status: 200 as const,
     body: {
       lastReadAt: null,
-      unreads: [...unreads],
+      // Kept for App bundles that still read it; unread state comes from
+      // `/api/indicators`.
+      unreads: [],
     },
   };
 });
