@@ -50,9 +50,10 @@ cleanup, narrowed so that user deletion never deletes an Agent.
 Rows written for a deleted account after its legacy cleanup committed are no
 longer swept by anything. That is the accepted gap until the redesign.
 
-Migration `1253_drop_account_erasure` follows the required agent-run context
-owner migration `1252` (and Computer Use migration `1251`) and replaces the
-earlier, never-released `1248_drop_pi_stable_context_erasure_fences`. It drops the `account_erasure_*`
+Migration `1254_drop_account_erasure` follows the VNC migration `1253`, required
+agent-run context ownership migration `1252`, and Computer Use migration `1251`.
+It replaces the earlier, never-released
+`1248_drop_pi_stable_context_erasure_fences`. It drops the `account_erasure_*`
 tables (jobs, work, pages, sinks, selector dependencies, bridge ingress and
 replay), `chat_content_erasure_subjects`, `pi_stable_context_erasure_fences`,
 `blob_upload_intents`, and `blobs.erasure_pending`/`erasure_eligible_at` with
@@ -96,9 +97,12 @@ recorded outcome and never sends again. To retry, start a new upload operation.
 The enforced-nonce replay, its window and the stored retry deadline are
 removed, and new delivery rows no longer store a nonce.
 
-The response contract is unchanged, so existing CLIs keep parsing it and simply
-see non-retryable failures. Discord has no production users, so rows written by
-the previous replay flow need no migration; their extra JSONB keys are ignored.
+The delivery response no longer declares the unused optional
+`retryAfterSeconds` field, and the CLI no longer suggests retrying a failed or
+pending delivery. `pending` remains a valid response during concurrent
+completion; a repeated completion reports the recorded state without resending.
+Discord has no production users, so rows written by the previous replay flow
+need no migration; their extra JSONB keys are ignored.
 
 ## Agent-run context ownership becomes required (2026-09-25)
 
@@ -1674,7 +1678,7 @@ Legacy Clerk user and organization deletion no longer writes
 `pi_stable_context_erasure_fences`, and no writer or reader consults it:
 membership-cache refresh, generation initialization, demand registration,
 publication, and connector, permission and Workflow writes proceed after
-deletion. Migration `1253_drop_account_erasure` drops the table. Keep
+deletion. Migration `1254_drop_account_erasure` drops the table. Keep
 stable-context activation on hold until migration 1168 is present on every
 serving API instance.
 

@@ -18,6 +18,11 @@ export function localizedVncError(code: string): string | undefined {
         return $.vnc.errors.invalidInput;
       });
     }
+    case VNC_ERROR_CODES.INVALID_APPLE_VNC_PASSWORD_ROUTE: {
+      return i18n.t(($) => {
+        return $.vnc.transport.appleVncPasswordDestinationHelp;
+      });
+    }
     case VNC_ERROR_CODES.INVALID_APPLE_DH_ROUTE: {
       return i18n.t(($) => {
         return $.vnc.transport.appleDhDestinationHelp;

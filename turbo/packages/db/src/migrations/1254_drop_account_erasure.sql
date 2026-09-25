@@ -1,7 +1,7 @@
 -- Retire account erasure after active-run migrations 1249/1250,
--- Computer Use migration 1251, and required context ownership migration 1252.
--- Old APIs touching these tables during deployment fail; rollback below this
--- API revision is unsupported.
+-- Computer Use migration 1251, required context ownership migration 1252,
+-- and VNC migration 1253. Old APIs touching these tables during deployment
+-- fail; rollback below this API revision is unsupported.
 ALTER TABLE "account_erasure_ingress" DISABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "account_erasure_replay" DISABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "account_erasure_jobs" DISABLE ROW LEVEL SECURITY;--> statement-breakpoint
