@@ -1,5 +1,5 @@
 {
-  "id": "f1dedfb4-7350-482c-8b02-8f31c910a21c",
+  "id": "fe374c3f-7890-4d8a-bdda-e56487bce7ab",
   "prevId": "75818093-9fdf-4939-ada7-71ff616e381e",
   "version": "7",
   "dialect": "postgresql",
@@ -2062,17 +2062,39 @@
           "method": "btree",
           "with": {}
         },
-        "idx_agent_runs_status": {
-          "name": "idx_agent_runs_status",
+        "idx_agent_runs_status_heartbeat": {
+          "name": "idx_agent_runs_status_heartbeat",
           "columns": [
             {
               "expression": "status",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "last_heartbeat_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_agent_runs_running_heartbeat": {
+          "name": "idx_agent_runs_running_heartbeat",
+          "columns": [
+            {
+              "expression": "last_heartbeat_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "status = 'running'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -4408,22 +4430,6 @@
           ],
           "isUnique": false,
           "where": "\"background_jobs\".\"status\" = 'running'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_background_jobs_completed_clerk_deletion": {
-          "name": "idx_background_jobs_completed_clerk_deletion",
-          "columns": [
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"background_jobs\".\"kind\" = 'clerk-user-deletion' AND \"background_jobs\".\"status\" = 'completed'",
           "concurrently": false,
           "method": "btree",
           "with": {}

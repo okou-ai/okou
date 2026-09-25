@@ -49,7 +49,6 @@ import { drainStaleChatThreadQueues$ } from "./chat-thread-queue-drain.service";
 import type { QueueMarkerRevokeNotification } from "./chat-queue-marker.service";
 import { drainStaleCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
 import { drainStaleCanonicalDiscordIngress$ } from "./canonical-discord-ingress-processor.service";
-import { drainPendingDiscordChatDeliveries$ } from "./internal-discord-chat-run-callback.service";
 import { drainStaleCanonicalFeishuIngress$ } from "./canonical-feishu-ingress-processor.service";
 import { retryPendingFeishuConnectWelcomes$ } from "./feishu-welcome.service";
 import {
@@ -735,10 +734,6 @@ const cleanupGlobalMaintenance$ = command(
     signal.throwIfAborted();
     await tapError(set(drainStaleCanonicalDiscordIngress$, signal), (error) => {
       L.error("Failed to drain stale canonical Discord ingress", { error });
-    });
-    signal.throwIfAborted();
-    await tapError(set(drainPendingDiscordChatDeliveries$, signal), (error) => {
-      L.error("Failed to drain pending Discord deliveries", { error });
     });
     signal.throwIfAborted();
     await tapError(set(drainStaleCanonicalFeishuIngress$, signal), (error) => {

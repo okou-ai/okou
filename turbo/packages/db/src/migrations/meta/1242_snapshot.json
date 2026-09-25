@@ -1,6 +1,6 @@
 {
-  "id": "aaaa219e-76da-4e02-832e-00819be66ae1",
-  "prevId": "fe374c3f-7890-4d8a-bdda-e56487bce7ab",
+  "id": "5ede97a9-fe5f-4ff9-86ff-a8480ab517ef",
+  "prevId": "aaaa219e-76da-4e02-832e-00819be66ae1",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1035,6 +1035,137 @@
         "account_erasure_complete_enumeration": {
           "name": "account_erasure_complete_enumeration",
           "value": "NOT \"account_erasure_work\".\"capture_complete\" OR \"account_erasure_work\".\"enumeration_ref\" IS NOT NULL"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.active_agent_runs": {
+      "name": "active_agent_runs",
+      "schema": "",
+      "columns": {
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_heartbeat_at": {
+          "name": "last_heartbeat_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "activity_entries": {
+          "name": "activity_entries",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "activity_revision": {
+          "name": "activity_revision",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'empty'"
+        },
+        "summary": {
+          "name": "summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "summary_revision": {
+          "name": "summary_revision",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_attempt_at": {
+          "name": "next_attempt_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "claim_expires_at": {
+          "name": "claim_expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "active_agent_runs_org_idx": {
+          "name": "active_agent_runs_org_idx",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "active_agent_runs_user_idx": {
+          "name": "active_agent_runs_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "active_agent_runs_run_id_agent_runs_id_fk": {
+          "name": "active_agent_runs_run_id_agent_runs_id_fk",
+          "tableFrom": "active_agent_runs",
+          "tableTo": "agent_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "active_agent_runs_activity_entries_bound": {
+          "name": "active_agent_runs_activity_entries_bound",
+          "value": "jsonb_typeof(\"active_agent_runs\".\"activity_entries\") = 'array' AND jsonb_array_length(\"active_agent_runs\".\"activity_entries\") <= 16 AND octet_length(\"active_agent_runs\".\"activity_entries\"::text) <= 16384"
         }
       },
       "isRLSEnabled": false

@@ -53,11 +53,6 @@ export const backgroundJobs = pgTable(
       index("idx_background_jobs_expired_lease")
         .on(table.kind, table.handlerVersion, table.leaseExpiresAt, table.id)
         .where(sql`${table.status} = 'running'`),
-      index("idx_background_jobs_completed_clerk_deletion")
-        .on(table.id)
-        .where(
-          sql`${table.kind} = 'clerk-user-deletion' AND ${table.status} = 'completed'`,
-        ),
       index("idx_background_jobs_owner").on(table.userId, table.orgId),
       check(
         "background_jobs_status_check",

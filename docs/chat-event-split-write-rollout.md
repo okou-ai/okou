@@ -62,14 +62,13 @@ After activation:
   sequence is busy.
 - Terminal-marker replay can repair missing channel callback registration.
   Delivery identity is derived from the original callback, channel and delivery
-  event; historical random-ID registrations are recognized. The existing
-  callback retry mechanism owns delivery recovery and retryable
-  `chat-run-finished` automation admission; an already committed marker does not
-  acknowledge unfinished completion work. An admission receipt on the existing
-  source callback commits with each watched automation's queue event. This
-  receipt survives hot-event archival, so a lost final callback acknowledgement
-  cannot enqueue the automation again. Replay still attempts the guarded source
-  and automation queue wakeups.
+  event. The existing callback retry mechanism owns delivery recovery and
+  retryable `chat-run-finished` automation admission; an already committed
+  marker does not acknowledge unfinished completion work. An admission receipt
+  on the existing source callback commits with each watched automation's queue
+  event. This receipt survives hot-event archival, so a lost final callback
+  acknowledgement cannot enqueue the automation again. Replay still attempts the
+  guarded source and automation queue wakeups.
 - Ordinary identity checks remain. Event/context/output writes no longer hold
   the broad erasure fence. Confirmed deletion can race a late write; the existing
   background-job cron collects those rows as described below.
@@ -165,11 +164,15 @@ exempt from later scans.
 
 `chat_content_erasure_subjects` retains only a subject key, confirmed source
 reference and maintenance timestamps. It is a deletion receipt, not admission
-or access authority. Verified erasure completion and authenticated Clerk cleanup
-write it in the completing transaction, and the migration seeded jobs that were
-already terminal. The deployment-time reconciliation for older APIs is retired:
-on 2026-09-25 every completed deletion and verified erasure job had a receipt.
-Cleanup requires a completed receipt, not a missing user row.
+or access authority. Verified erasure completion and the Clerk user-deletion
+job write it in their completing transaction. Clerk organization cleanup records
+the subject before cleanup and marks it completed in a separate statement after
+`deleteOrgData` returns, outside any transaction. That cleanup runs after the
+webhook is acknowledged, so a failure before the completion write leaves the
+receipt without `completed_at` and nothing retries it. The migration seeded
+jobs that were already terminal. The deployment-time reconciliation for older
+APIs is retired: on 2026-09-25 every completed deletion and verified erasure
+job had a receipt. Cleanup requires a completed receipt, not a missing user row.
 It covers events, native/automation context, attributed agent-run context,
 sequence rows, thread-list events, materialization and memory citations. Existing
 foreign keys and ordinary user/organization ownership paths remain in use.
@@ -196,13 +199,14 @@ contains the split writer. Never reactivate the compatibility branch.
 
 ### Compatibility inventory
 
-| Behavior                                                                                                                                                                 | Release 2 outcome                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Legacy branch of every `isSplitChatEventWriteEnabled` caller, `loadOptionalChatEnrichment`'s preactivation path and the `chat_event_sequence_bridge` migration's trigger | Removed. Activation is enforced by the contraction migration.                                                                                                                                                                                                                                                                                                     |
-| Rollback resolver accepts an absent control table, then its activation read                                                                                              | Removed. Migration 1236 and the irreversible activation trigger guarantee the activated row.                                                                                                                                                                                                                                                                      |
-| `ensureUserErasureJob` / `createRelationalErasureCollector` replay of the preceding captured collector                                                                   | Removed. Merge requires zero incomplete preceding-version captures.                                                                                                                                                                                                                                                                                               |
-| `insertChatDeliveryCallback` recognizes historical random-ID registrations, and cancel recovery replays an acknowledged callback whose `run.cancelled` marker is missing | Removed together. Split writes commit the marker before the callback is acknowledged, so only undelivered source callbacks are replayed. On 2026-09-25 no historical delivery row had a pending or failed source callback, and every cancelled run missing a hot marker belonged to an archived thread.                                                           |
-| Source-thread reach for `chat_agent_run_context` rows with null `source_user_id`/`source_org_id`                                                                         | Retained for now. On 2026-09-25, 955 rows had a null owner and none of their source threads still exists, so the reach matches nothing. Removing it changes the relational collector contract, which needs a new collector version. That waits until no incomplete job is captured under the current version and the rollback floor excludes API 1.674.0/1.675.0. |
+| Behavior                                                                                                                                                                 | Release 2 outcome                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Legacy branch of every `isSplitChatEventWriteEnabled` caller, `loadOptionalChatEnrichment`'s preactivation path and the `chat_event_sequence_bridge` migration's trigger | Removed. Activation is enforced by the contraction migration.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Rollback resolver accepts an absent control table, then its activation read                                                                                              | Removed. Migration 1236 and the irreversible activation trigger guarantee the activated row.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `ensureUserErasureJob` / `createRelationalErasureCollector` replay of the preceding captured collector                                                                   | Removed. Merge requires zero incomplete preceding-version captures.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `insertChatDeliveryCallback` recognizes historical random-ID registrations, and cancel recovery replays an acknowledged callback whose `run.cancelled` marker is missing | Removed together. Split writes commit the marker before the callback is acknowledged, so only undelivered source callbacks are replayed. On 2026-09-25 no historical delivery row had a pending or failed source callback, and every cancelled run missing a hot marker belonged to an archived thread.                                                                                                                                                                                                                                                                           |
+| Source-thread reach for `chat_agent_run_context` rows with null `source_user_id`/`source_org_id`                                                                         | Retained for now. On 2026-09-25, 955 rows had a null owner and none of their source threads still exists, so the reach matches nothing. Removing it changes the relational collector contract, which needs a new collector version. That waits until no incomplete job is captured under the current version. On 2026-09-25 one pending user job still is. Its `catalogue_absent:discord_chat_deliveries` failure ([#36798](https://github.com/okou-ai/okou/issues/36798)) was fixed by applying migration 1226, and it now waits for an objects-domain erase verification retry. |
+| `chat_event_write_control`, its `preserve_chat_event_write_activation` trigger, and the rollback resolver floor at the split-writer commit                               | Retained for now. API 1.674.0 and 1.675.0 read the control row on every write, so dropping the table requires raising the rollback floor to Release 2 (`15117da781`, API 1.676.0), which excludes those two versions as rollback targets. That needs explicit approval.                                                                                                                                                                                                                                                                                                           |
 
 The following are permanent accepted data states:
 
