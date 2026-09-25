@@ -2303,8 +2303,8 @@ function createMarkThreadReadIfNeeded({
       set(locallyMarkedReadAt$, newLastReadAt);
     }
     // No sidebar reload needed: markRead$ records an optimistic read mark
-    // and applies the response's unread snapshot, so the unread dot clears
-    // without refetching the thread list.
+    // that hides the indicators' `unreadAt` until a newer one arrives, so the
+    // unread dot clears without refetching the thread list.
   });
 }
 

@@ -877,7 +877,7 @@ test("Mark all of an agent’s chats read", async () => {
 
 async function setupReadUnreadSidebar() {
   prepareDefaultAgent();
-  const unreadSnapshotRefreshed = context.mocks.deferred<void>();
+  const unreadIndicatorsRefreshed = context.mocks.deferred<void>();
   const unreadThreadIds = new Set<string>();
   const unreadAt = "2026-03-10T00:05:00Z";
   const serverUnreads = () => {
@@ -893,9 +893,9 @@ async function setupReadUnreadSidebar() {
     const unreads = serverUnreads();
     if (
       unreadThreadIds.has(EXISTING_THREAD_ID) &&
-      !unreadSnapshotRefreshed.settled()
+      !unreadIndicatorsRefreshed.settled()
     ) {
-      unreadSnapshotRefreshed.resolve();
+      unreadIndicatorsRefreshed.resolve();
     }
     return respond(200, {
       agents: unreads.length > 0 ? { [AGENT_ID]: "unread" } : {},
@@ -970,7 +970,7 @@ async function setupReadUnreadSidebar() {
     expect(within(sidebar()).getByText("Release plan")).toBeInTheDocument();
     expect(within(sidebar()).getByText("Incident notes")).toBeInTheDocument();
   });
-  return { unreadSnapshotRefreshed };
+  return { unreadIndicatorsRefreshed };
 }
 
 async function markReleasePlanUnread(
@@ -978,7 +978,7 @@ async function markReleasePlanUnread(
 ) {
   openThreadMenu("Release plan");
   click(menuItemByText("Mark unread"));
-  await scenario.unreadSnapshotRefreshed.promise;
+  await scenario.unreadIndicatorsRefreshed.promise;
   expect(threadLinkByTitle("Release plan")).toHaveAccessibleName(
     "Release plan",
   );
