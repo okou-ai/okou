@@ -1,5 +1,26 @@
 # Deployment Compatibility
 
+## Chat search stops maintaining the keyword-only GIN index (2026-09-25)
+
+Chat search and MCP chat search both filter by `user_id` before the keyword
+predicate, so the planner serves them from
+`chat_event_search_messages_user_tsv_gin_idx` (`1214`). After that index
+shipped, `SELECT chat_event_search_messages` on `/api/chat/search` fell from
+p90 3.5 s to 348 ms (Axiom, 2026-09-24T14:44Z to 2026-09-25T08:00Z).
+
+The search projector now drains only the `(user_id, tsv)` index from its
+30-second GIN maintenance budget. The keyword-only
+`chat_event_search_messages_tsv_idx` remains in the database for this release;
+its pending list is flushed by PostgreSQL in the foreground when it reaches the
+4 MiB `fastupdate` threshold, as for any unmaintained GIN index. No migration,
+query, or response change.
+
+Old API/new API remain compatible with the same database. This release must
+reach production before the follow-up migration drops
+`chat_event_search_messages_tsv_idx`: an API that still names the index in
+maintenance fails its projection tick once the index is gone. Rollback to an
+older API is safe until that migration ships.
+
 ## Runner active-producer affinity for delayed finalization (2026-09-25)
 
 The Runner heartbeat may now include `activeReuseProducers`, bounded exact
