@@ -93,20 +93,6 @@ export async function erasureSubjectJobExistsFixture(
   return job !== undefined;
 }
 
-/** Models a previously completed B1 job for a read-only status route test. */
-export async function markErasureSubjectVerifiedFixture(
-  jobId: string,
-): Promise<void> {
-  const updated = await db()
-    .update(accountErasureJobs)
-    .set({ state: "verified_erased" })
-    .where(eq(accountErasureJobs.id, jobId))
-    .returning({ id: accountErasureJobs.id });
-  if (updated.length !== 1) {
-    throw new Error("Expected one account erasure job");
-  }
-}
-
 /** Reassigns one Agent's owner, the change a future ownership transfer would
  * persist. No production writer updates this column today, and the unique
  * `(id, org_id, owner)` key makes it the key update a content writer's KEY

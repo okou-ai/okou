@@ -25,26 +25,3 @@ export function localStorageSignals<const Key extends string>(
     `${LOCAL_STORAGE_KEY_PREFIX}${key}`,
   );
 }
-
-/** Read the current shared storage bytes, including writes from other tabs. */
-export function listLocalStorageEntries(prefix: string): readonly {
-  readonly key: string;
-  readonly value: string;
-}[] {
-  const fullPrefix = `${LOCAL_STORAGE_KEY_PREFIX}${prefix}`;
-  const entries: { key: string; value: string }[] = [];
-  for (let index = 0; index < localStorage.length; index += 1) {
-    const fullKey = localStorage.key(index);
-    if (!fullKey?.startsWith(fullPrefix)) {
-      continue;
-    }
-    const value = localStorage.getItem(fullKey);
-    if (value !== null) {
-      entries.push({
-        key: fullKey.slice(LOCAL_STORAGE_KEY_PREFIX.length),
-        value,
-      });
-    }
-  }
-  return entries;
-}

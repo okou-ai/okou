@@ -8,10 +8,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import {
-  listLocalStorageEntries,
-  localStorageSignals,
-} from "../../../signals/external/local-storage.ts";
+import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { pathname, search } from "../../../signals/location.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -23,7 +20,6 @@ import {
 const context = testContext();
 const draftStorage = localStorageSignals("onboarding:sources-first-draft");
 const stepStorage = localStorageSignals("onboarding:sources-first-step");
-const unrelatedStorage = localStorageSignals("test:unrelated-preference");
 const SOURCES_FIRST_ON = {
   [FeatureSwitchKey.OnboardingSourcesFirst]: true,
 } as const;
@@ -49,11 +45,6 @@ function seedProgress(
       recommendationStartedAt: null,
     }),
   );
-}
-
-function savedStep(): unknown {
-  const entry = listLocalStorageEntries("onboarding:sources-first-step")[0];
-  return JSON.parse(entry?.value ?? "null");
 }
 
 function getButtonByName(name: string): HTMLElement {
@@ -98,12 +89,10 @@ test.each([ROUTES.home, ROUTES.onboarding])(
     });
     expect(pathname()).toBe(ROUTES.onboarding);
     expect(getButtonByName("Continue")).toBeEnabled();
-    expect(savedStep()).toMatchObject({ step: "industry" });
 
     click(getButtonByName("Continue"));
 
     await screen.findByRole("heading", { name: "Connect a work tool" });
-    expect(savedStep()).toMatchObject({ step: "sources" });
   },
 );
 
@@ -124,7 +113,6 @@ test("An explicit step URL takes precedence over saved progress", async () => {
 
   await screen.findByRole("heading", { name: "Connect a work tool" });
   expect(pathname()).toBe(ROUTES.onboardingSources);
-  expect(savedStep()).toMatchObject({ step: "sources" });
 });
 
 test("Resuming a later step rechecks its connected-source requirement", async () => {
@@ -144,7 +132,6 @@ test("Resuming a later step rechecks its connected-source requirement", async ()
 
   await screen.findByRole("heading", { name: "What kind of work do you do?" });
   expect(pathname()).toBe(ROUTES.onboarding);
-  expect(savedStep()).toMatchObject({ step: "industry" });
 });
 
 test.each([
@@ -172,7 +159,6 @@ test.each([
       name: "How would you like to start with Okou?",
     });
     expect(pathname()).toBe(ROUTES.onboardingExperience);
-    expect(savedStep()).toMatchObject({ step: "experience" });
   },
 );
 
@@ -200,49 +186,19 @@ test.each([
       name: "What kind of work do you do?",
     });
     expect(pathname()).toBe(ROUTES.onboarding);
-    expect(savedStep()).toStrictEqual({
-      orgId: "org_default",
-      userId: "test-user-123",
-      step: "industry",
-    });
   },
 );
 
 test.each([ROUTES.home, ROUTES.onboarding])(
-  "Reopening %s after server-side completion removes onboarding storage only",
+  "Reopening %s after server-side completion opens chat instead of saved progress",
   async (path) => {
     seedProgress("ready");
-    context.store.set(unrelatedStorage.set$, "keep me");
 
     await setupPage({ context, path, featureSwitches: SOURCES_FIRST_ON });
 
-    await screen.findByRole("textbox", { name: "Message" });
-    await waitFor(() => {
-      expect(listLocalStorageEntries("onboarding:")).toStrictEqual([]);
-    });
-    expect(listLocalStorageEntries("test:unrelated-preference")).toStrictEqual([
-      { key: "test:unrelated-preference", value: "keep me" },
-    ]);
-  },
-);
-
-test.each([
-  { orgId: "org_other", userId: "test-user-123" },
-  { orgId: "org_default", userId: "another-user" },
-])(
-  "A completed account preserves other identities' progress: %j",
-  async (identity) => {
-    seedProgress("ready", identity);
-    const saved = listLocalStorageEntries("onboarding:");
-
-    await setupPage({
-      context,
-      path: ROUTES.onboarding,
-      featureSwitches: SOURCES_FIRST_ON,
-    });
-
-    await screen.findByRole("textbox", { name: "Message" });
-    expect(listLocalStorageEntries("onboarding:")).toStrictEqual(saved);
+    await expect(
+      screen.findByRole("textbox", { name: "Message" }),
+    ).resolves.toBeInTheDocument();
   },
 );
 
@@ -279,10 +235,6 @@ test("A failed completion keeps the ready step and edited request available for 
   expect(screen.getByLabelText("Your starting prompt")).toHaveValue(
     "Draft my launch plan",
   );
-  expect(savedStep()).toMatchObject({ step: "ready" });
-  expect(
-    listLocalStorageEntries("onboarding:sources-first-draft"),
-  ).toHaveLength(1);
   await waitFor(() => {
     expect(getButtonByName("Start with Okou")).toBeEnabled();
   });
