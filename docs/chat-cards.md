@@ -735,6 +735,17 @@ Agent-required checkbox needs deliberate checking or confirmation when already
 checked, and a website-required checkbox must be checked. Changed checkedness
 before apply makes an explicit choice stale; after a possible write, failed
 readback is uncertain. Filling the checkbox does not submit the website form.
+Native radio groups use one server-discovered, bounded set of same-name and
+same-form controls in the main document. Each option has a verified member
+identity, label, disabled state and selectedness; duplicate website values do
+not identify a choice. The card preserves an untouched optional selection and
+can explicitly clear an optional group only when its selected member is
+writable. Agent-required groups require a deliberate selection or confirmation;
+website-required groups cannot be cleared. The API rechecks all member
+identities, grouping and state before applying an indexed choice; changed
+membership or selection makes a choice stale, and post-handler mismatch is
+uncertain. Empty-name, unlabeled, oversized or unsupported groups require
+Browser takeover. Radio input does not submit the website form.
 Option values and submitted selections do not appear in the action URL or
 chat callback. A confirmed page or control change makes the request
 stale; a temporary provider failure blocks submission, preserves the draft,

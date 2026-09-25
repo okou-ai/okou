@@ -13,6 +13,7 @@ import {
   browserUserActionFieldSupportsTarget,
   parseBrowserUserActionPayload,
   type BrowserUserActionCallbackIds,
+  type BrowserUserActionInputField,
   type BrowserUserActionPayload,
 } from "@okouai/db/jsonb-contracts/browser-user-action";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -44,6 +45,7 @@ import {
   applyBrowserUseUserAction,
   BrowserUseProviderError,
   type BrowserUseControlInspection,
+  type BrowserUseUserActionExactTarget,
   type BrowserUseUserActionValidation,
   BrowserUseUserActionValidationError,
   BrowserUseUserActionMutationError,
@@ -187,6 +189,12 @@ function publicRequest(
                 ...(observed.checked === undefined
                   ? {}
                   : { checked: observed.checked }),
+                ...(observed.radioGroupFingerprint === undefined
+                  ? {}
+                  : {
+                      radioGroupFingerprint: observed.radioGroupFingerprint,
+                      radioOptions: observed.radioOptions,
+                    }),
                 ...(observed.optionSetFingerprint === undefined
                   ? {}
                   : { optionSetFingerprint: observed.optionSetFingerprint }),
@@ -630,6 +638,7 @@ function browserCreationControlType(
     "search",
     "number",
     "checkbox",
+    "radio",
   ];
   return knownTypes.includes(fingerprint.inputType)
     ? `input type '${fingerprint.inputType}'`
@@ -779,6 +788,9 @@ function buildBrowserUserActionPayload(
           fieldKind: field.fieldKind,
           required: field.required,
           backendNodeId: target.backendNodeId,
+          ...(target.radioMemberNodeIds
+            ? { radioMemberNodeIds: target.radioMemberNodeIds }
+            : {}),
           fingerprint: target.fingerprint,
         };
       }),
@@ -1111,8 +1123,10 @@ function submittedValues(
         !field ||
         (field.fieldKind === "select" && !("optionIndexes" in entry)) ||
         (field.fieldKind === "checkbox" && !("checked" in entry)) ||
+        (field.fieldKind === "radio" && !("memberIndex" in entry)) ||
         (field.fieldKind !== "select" &&
           field.fieldKind !== "checkbox" &&
+          field.fieldKind !== "radio" &&
           !("value" in entry))
       );
     })
@@ -1135,7 +1149,9 @@ function submittedValues(
           ? entry.optionIndexes.length === 0
           : "checked" in entry
             ? entry.checked !== true
-            : entry.value.length === 0)
+            : "memberIndex" in entry
+              ? entry.memberIndex < 0
+              : entry.value.length === 0)
       );
     })
   ) {
@@ -1238,6 +1254,9 @@ async function inspectPendingBrowserUserAction(
           return {
             backendNodeId: field.backendNodeId,
             fingerprint: field.fingerprint,
+            ...(field.radioMemberNodeIds
+              ? { radioMemberNodeIds: field.radioMemberNodeIds }
+              : {}),
             required: field.required,
           };
         }),
@@ -1436,6 +1455,45 @@ async function claimBrowserUserAction(
   return admitted.outcome === "written" ? admitted.value : notFound();
 }
 
+function browserApplyField(
+  field: BrowserUserActionInputField,
+  entry: SubmittedBrowserValue | undefined,
+): BrowserUseUserActionExactTarget["fields"][number] {
+  return {
+    backendNodeId: field.backendNodeId,
+    fingerprint: field.fingerprint,
+    ...(field.radioMemberNodeIds
+      ? { radioMemberNodeIds: field.radioMemberNodeIds }
+      : {}),
+    required: field.required,
+    ...(entry === undefined
+      ? {}
+      : "value" in entry
+        ? { value: entry.value }
+        : "checked" in entry
+          ? {
+              checkbox: {
+                checked: entry.checked,
+                observedChecked: entry.observedChecked,
+              },
+            }
+          : "memberIndex" in entry
+            ? {
+                radioChoice: {
+                  memberIndex: entry.memberIndex,
+                  observedSelectedIndex: entry.observedSelectedIndex,
+                  groupFingerprint: entry.groupFingerprint,
+                },
+              }
+            : {
+                selection: {
+                  optionIndexes: entry.optionIndexes,
+                  optionSetFingerprint: entry.optionSetFingerprint,
+                },
+              }),
+  };
+}
+
 async function applyClaimedBrowserUserAction(
   db: Db,
   claimed: RequestRow,
@@ -1497,29 +1555,7 @@ async function applyClaimedBrowserUserAction(
           {
             ...target,
             fields: payload.target.fields.map((field) => {
-              const entry = values.get(field.key);
-              return {
-                backendNodeId: field.backendNodeId,
-                fingerprint: field.fingerprint,
-                required: field.required,
-                ...(entry === undefined
-                  ? {}
-                  : "value" in entry
-                    ? { value: entry.value }
-                    : "checked" in entry
-                      ? {
-                          checkbox: {
-                            checked: entry.checked,
-                            observedChecked: entry.observedChecked,
-                          },
-                        }
-                      : {
-                          selection: {
-                            optionIndexes: entry.optionIndexes,
-                            optionSetFingerprint: entry.optionSetFingerprint,
-                          },
-                        }),
-              };
+              return browserApplyField(field, values.get(field.key));
             }),
           },
           signal,

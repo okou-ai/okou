@@ -421,6 +421,36 @@ describe("okou browser user-action commands", () => {
     );
   });
 
+  it("captures one radio target for server-side group discovery without exposing its selector", async () => {
+    installCdp({ nodeName: "INPUT" });
+    let requestBody: unknown;
+    installCreateRoute((body) => {
+      requestBody = body;
+    });
+    await browserCommand.parseAsync([
+      "node",
+      "okou",
+      "input-request",
+      "--field",
+      JSON.stringify({
+        key: "delivery",
+        label: "Delivery",
+        fieldKind: "radio",
+        required: false,
+        target: "#private-radio",
+      }),
+      "--callback-prompt",
+      "Continue after radio choice",
+    ]);
+    expect(requestBody).toMatchObject({
+      fields: [{ key: "delivery", fieldKind: "radio", backendNodeId: 42 }],
+    });
+    expect(JSON.stringify(requestBody)).not.toContain("#private-radio");
+    expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(
+      "#private-radio",
+    );
+  });
+
   it("captures a native select by exact node identity without sending selector or option values", async () => {
     installCdp({ nodeName: "SELECT" });
     let requestBody: unknown;

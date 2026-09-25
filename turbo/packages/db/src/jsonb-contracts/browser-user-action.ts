@@ -3,6 +3,7 @@ import {
   BROWSER_USER_ACTION_MAX_FIELDS,
   BROWSER_USER_ACTION_MAX_KEY_LENGTH,
   BROWSER_USER_ACTION_MAX_LABEL_LENGTH,
+  BROWSER_USER_ACTION_MAX_RADIO_MEMBERS,
   BROWSER_USER_ACTION_MAX_TARGET_ID_LENGTH,
   type BrowserUserActionFieldKind,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
@@ -24,6 +25,7 @@ export interface BrowserUserActionInputField {
   readonly fieldKind: BrowserUserActionFieldKind;
   readonly required: boolean;
   readonly backendNodeId: number;
+  readonly radioMemberNodeIds?: readonly number[];
   readonly fingerprint: {
     readonly tagName: "INPUT" | "TEXTAREA" | "SELECT";
     readonly inputType: string;
@@ -73,6 +75,8 @@ export function browserUserActionFieldSupportsTarget(
       return fingerprint.inputType === "number";
     case "checkbox":
       return fingerprint.inputType === "checkbox";
+    case "radio":
+      return fingerprint.inputType === "radio";
     case "select":
       return false;
   }
@@ -178,6 +182,7 @@ function decodeField(value: unknown): BrowserUserActionInputField | null {
       "required",
       "backendNodeId",
       "fingerprint",
+      "radioMemberNodeIds",
     ]) ||
     !boundedString(field.key, 1, BROWSER_USER_ACTION_MAX_KEY_LENGTH) ||
     !boundedString(field.label, 1, BROWSER_USER_ACTION_MAX_LABEL_LENGTH) ||
@@ -195,11 +200,24 @@ function decodeField(value: unknown): BrowserUserActionInputField | null {
       "number",
       "select",
       "checkbox",
+      "radio",
     ].includes(String(field.fieldKind)) ||
     typeof field.required !== "boolean" ||
     !Number.isSafeInteger(field.backendNodeId) ||
     Number(field.backendNodeId) <= 0 ||
-    !safeFingerprint
+    !safeFingerprint ||
+    (field.fieldKind === "radio"
+      ? !Array.isArray(field.radioMemberNodeIds) ||
+        field.radioMemberNodeIds.length < 1 ||
+        field.radioMemberNodeIds.length >
+          BROWSER_USER_ACTION_MAX_RADIO_MEMBERS ||
+        !field.radioMemberNodeIds.includes(field.backendNodeId) ||
+        new Set(field.radioMemberNodeIds).size !==
+          field.radioMemberNodeIds.length ||
+        !field.radioMemberNodeIds.every(
+          (id: unknown) => Number.isSafeInteger(id) && Number(id) > 0,
+        )
+      : field.radioMemberNodeIds !== undefined)
   ) {
     return null;
   }
@@ -216,6 +234,9 @@ function decodeField(value: unknown): BrowserUserActionInputField | null {
     fieldKind,
     required: field.required,
     backendNodeId: Number(field.backendNodeId),
+    ...(fieldKind === "radio"
+      ? { radioMemberNodeIds: field.radioMemberNodeIds as number[] }
+      : {}),
     fingerprint: safeFingerprint,
   };
 }
