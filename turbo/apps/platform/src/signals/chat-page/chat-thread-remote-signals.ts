@@ -23,7 +23,10 @@ import {
   type RealtimeInvalidationCommands,
 } from "../realtime.ts";
 import { createDeferredPromise } from "../utils.ts";
-import { reloadSidebarDraftThreads$ } from "./sidebar-draft-threads.ts";
+import {
+  reloadSidebarDraftThreads$,
+  sidebarDraftThreadIds$,
+} from "./sidebar-draft-threads.ts";
 import {
   chatThreadMetaMap$,
   optimisticChatThreadCreateUnsettled,
@@ -134,7 +137,13 @@ export const patchChatThreadDraft$ = command(
       [200, 204],
     );
     signal.throwIfAborted();
-    set(reloadSidebarDraftThreads$);
+    // Most saves only change the text of a draft that is already listed.
+    // Refetch the sidebar draft ids only when this save adds or removes one.
+    const listed = await get(sidebarDraftThreadIds$);
+    signal.throwIfAborted();
+    if (listed.has(threadId) !== (userMessage !== null)) {
+      set(reloadSidebarDraftThreads$);
+    }
   },
 );
 

@@ -300,6 +300,19 @@ export const DESCENDANT_REACH: Readonly<
         "The durable search projection does not depend on a `chat_events` row and takes no foreign key, but its primary key is the thread's id.",
     },
   ],
+  chat_thread_drafts: [
+    {
+      path: [
+        {
+          childColumns: ["chat_thread_id"],
+          parent: "chat_threads",
+          parentColumns: ["id"],
+        },
+      ],
+      basis:
+        "A draft write must not lock the hot thread row, so the draft takes no thread foreign key. Its primary key is the thread's id. Nullable user_id owns new and backfilled rows; this thread reach covers rows an older API inserted without it while the thread exists.",
+    },
+  ],
   official_automation_result_email_claims: [
     {
       path: [
@@ -556,11 +569,12 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
     coverage: "user_descendant",
     parents: ["chat_threads"],
   },
-  // The composer draft moved off the thread row into its own child. It carries
-  // no account identity of its own and `chat_thread_id` is both its primary key
-  // and a cascading foreign key, so the thread's own deletion removes it.
+  // The composer draft lives off the thread row in its own table with no thread
+  // foreign key. `user_id` is copied on every write; rows an older API inserted
+  // without it are reached through the thread (see `DESCENDANT_REACH`).
   chat_thread_drafts: {
-    coverage: "user_descendant",
+    coverage: "user_root",
+    ownership: ["user_id"],
     parents: ["chat_threads"],
   },
   chat_thread_event_sequences: {
