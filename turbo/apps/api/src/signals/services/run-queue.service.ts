@@ -57,6 +57,7 @@ import {
 import {
   prepareComputeRunAdmission,
   validateComputeRunAdmission,
+  stopClosedComputeCandidate,
   withComputeOwnershipRetry,
 } from "./compute-erasure-admission.service";
 import { settle } from "../utils";
@@ -522,6 +523,10 @@ async function promoteQueuedCandidateInTransaction(
     return { result, lockHeldAt };
   };
   if (!(await validateComputeRunAdmission(tx, admission))) {
+    return complete({ status: "lost" });
+  }
+  if (admission.closed) {
+    await stopClosedComputeCandidate(tx, admission);
     return complete({ status: "lost" });
   }
   // One observation instant for this locked admission.
