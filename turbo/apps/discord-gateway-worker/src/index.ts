@@ -42,7 +42,7 @@ function addressesBot(data: unknown, botUserId: string): boolean {
   const message = messageRoutingSchema.safeParse(data);
   if (!message.success) return true;
   if (message.data.guild_id === undefined) return true;
-  return (message.data.mentions ?? []).some((mention) => {
+  return message.data.mentions.some((mention) => {
     return mention.id === botUserId;
   });
 }

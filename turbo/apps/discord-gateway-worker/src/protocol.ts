@@ -22,7 +22,7 @@ export const readySchema = z.object({
 /** Transport-only view of a message; the API revalidates the full event. */
 export const messageRoutingSchema = z.object({
   guild_id: z.string().optional(),
-  mentions: z.array(z.object({ id: z.string() })).optional(),
+  mentions: z.array(z.object({ id: z.string() })),
 });
 
 export const outboxEntrySchema = z.object({

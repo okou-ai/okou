@@ -145,14 +145,23 @@ describe("Discord Gateway relay", () => {
       s: 5,
       d: guildMessage("100000000000000014", []),
     });
+    // Without a mentions array the relay cannot decide, so the API validates
+    // (and rejects) the event instead of the relay silently dropping it.
+    const { mentions: _omitted, ...withoutMentions } = guildMessage(
+      "100000000000000015",
+      [],
+    );
+    gateway.send({ op: 0, t: "MESSAGE_CREATE", s: 6, d: withoutMentions });
 
     const relayed = [
+      JSON.parse((await relay.deliveries.next()).rawBody).eventId,
       JSON.parse((await relay.deliveries.next()).rawBody).eventId,
       JSON.parse((await relay.deliveries.next()).rawBody).eventId,
     ];
     expect(relayed).toEqual([
       "MESSAGE_CREATE:100000000000000012",
       "MESSAGE_CREATE:100000000000000013",
+      "MESSAGE_CREATE:100000000000000015",
     ]);
     await expect
       .poll(() => {
@@ -165,9 +174,9 @@ describe("Discord Gateway relay", () => {
     resumed.hello();
     expect(await resumed.next(6)).toEqual({
       op: 6,
-      d: { token: BOT_TOKEN, session_id: "filter-session", seq: 5 },
+      d: { token: BOT_TOKEN, session_id: "filter-session", seq: 6 },
     });
-    expect(relay.forwarded).toHaveLength(2);
+    expect(relay.forwarded).toHaveLength(3);
   });
 
   it("reports head-of-queue delivery failures and the oldest pending age", async () => {
