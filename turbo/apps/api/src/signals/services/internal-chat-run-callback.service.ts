@@ -962,7 +962,9 @@ function buildQueuedCreateAgentRunArgs(
         payload: {
           threadId: input.threadId,
           agentId: input.agentId,
-          // Older API instances still default a missing brand to VM0.
+          // Rollout fallback (new API -> old API): older API instances default a
+          // missing brand to VM0. Stop writing it once those APIs no longer serve
+          // and are not rollback targets (#36766 Phase 2).
           publicBrand: PUBLIC_BRAND,
           queuedMessageId: input.queuedMessage.id,
           slackDelivery: input.slackDelivery,
