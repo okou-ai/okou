@@ -32,6 +32,28 @@ describe("Browser user-action contracts", () => {
     ).toMatchObject({ kind: "input", fields: [{ key: "code" }] });
   });
 
+  it("accepts indexed select choices and rejects duplicate indices or values in place of choices", () => {
+    const choice = {
+      key: "region",
+      optionIndexes: [0, 2],
+      optionSetFingerprint: "a".repeat(64),
+    };
+    expect(
+      browserUserActionApplyRequestSchema.safeParse({ values: [choice] })
+        .success,
+    ).toBe(true);
+    expect(
+      browserUserActionApplyRequestSchema.safeParse({
+        values: [{ ...choice, optionIndexes: [2, 2] }],
+      }).success,
+    ).toBe(false);
+    expect(
+      browserUserActionApplyRequestSchema.safeParse({
+        values: [{ ...choice, value: "private-option-value" }],
+      }).success,
+    ).toBe(false);
+  });
+
   it("keeps number values as strings and bounds observed constraints", () => {
     const request = browserUserActionCreateRequestSchema.parse({
       kind: "input",
@@ -51,8 +73,8 @@ describe("Browser user-action contracts", () => {
     expect(
       browserUserActionApplyRequestSchema.parse({
         values: [{ key: "quantity", value: "9007199254740993" }],
-      }).values[0]?.value,
-    ).toBe("9007199254740993");
+      }).values[0],
+    ).toMatchObject({ value: "9007199254740993" });
     const field = {
       key: "quantity",
       label: "Quantity",
