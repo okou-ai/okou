@@ -1,5 +1,4 @@
 import { command, computed, state } from "ccstate";
-import { sessionStorageSignals } from "../external/session-storage.ts";
 
 export type OnboardingChoice =
   | "slack"
@@ -34,31 +33,6 @@ export interface OnboardingDraft {
   readonly videoNote: string;
   readonly prompt: string;
 }
-
-interface OnboardingCheckoutDraft {
-  readonly userId: string;
-  readonly prompt: string;
-  readonly note: string;
-}
-
-export const ONBOARDING_CHECKOUT_STATE_PARAM = "onboarding_checkout_state";
-
-const ONBOARDING_CHECKOUT_STATE_STORAGE_KEY = "vm0:onboarding:checkout-state";
-const ONBOARDING_CHECKOUT_PROMPT_STORAGE_KEY = "vm0:onboarding:checkout-prompt";
-const ONBOARDING_CHECKOUT_NOTE_STORAGE_KEY = "vm0:onboarding:checkout-note";
-const ONBOARDING_CHECKOUT_OWNER_STORAGE_KEY = "vm0:onboarding:checkout-owner";
-const onboardingCheckoutStateStorage = sessionStorageSignals(
-  ONBOARDING_CHECKOUT_STATE_STORAGE_KEY,
-);
-const onboardingCheckoutPromptStorage = sessionStorageSignals(
-  ONBOARDING_CHECKOUT_PROMPT_STORAGE_KEY,
-);
-const onboardingCheckoutNoteStorage = sessionStorageSignals(
-  ONBOARDING_CHECKOUT_NOTE_STORAGE_KEY,
-);
-const onboardingCheckoutOwnerStorage = sessionStorageSignals(
-  ONBOARDING_CHECKOUT_OWNER_STORAGE_KEY,
-);
 
 interface OnboardingUiState {
   readonly workflowPreviewId: string | null;
@@ -96,49 +70,6 @@ function emptyOnboardingUiState(): OnboardingUiState {
   };
 }
 
-export const storeOnboardingCheckoutDraft$ = command(
-  ({ set }, draft: OnboardingCheckoutDraft): string => {
-    const stateId = crypto.randomUUID();
-    set(onboardingCheckoutStateStorage.set$, stateId);
-    set(onboardingCheckoutPromptStorage.set$, draft.prompt);
-    set(onboardingCheckoutNoteStorage.set$, draft.note);
-    set(onboardingCheckoutOwnerStorage.set$, draft.userId);
-    return stateId;
-  },
-);
-
-export const readOnboardingCheckoutDraft$ = command(
-  (
-    { get },
-    searchParams: URLSearchParams,
-    userId: string,
-  ): OnboardingCheckoutDraft | null => {
-    const stateId = searchParams.get(ONBOARDING_CHECKOUT_STATE_PARAM);
-    if (
-      !stateId ||
-      get(onboardingCheckoutStateStorage.get$) !== stateId ||
-      get(onboardingCheckoutOwnerStorage.get$) !== userId
-    ) {
-      return null;
-    }
-
-    const prompt = get(onboardingCheckoutPromptStorage.get$);
-    const note = get(onboardingCheckoutNoteStorage.get$);
-    if (prompt === null || note === null) {
-      return null;
-    }
-
-    return { userId, prompt, note };
-  },
-);
-
-const clearOnboardingCheckoutDraft$ = command(({ set }) => {
-  set(onboardingCheckoutStateStorage.clear$);
-  set(onboardingCheckoutPromptStorage.clear$);
-  set(onboardingCheckoutNoteStorage.clear$);
-  set(onboardingCheckoutOwnerStorage.clear$);
-});
-
 const internalOnboardingDraft$ = state<OnboardingDraft>(emptyOnboardingDraft());
 const internalOnboardingUi$ = state<OnboardingUiState>(
   emptyOnboardingUiState(),
@@ -161,7 +92,6 @@ export const updateOnboardingDraft$ = command(
 );
 
 export const resetOnboardingDraft$ = command(({ set }) => {
-  set(clearOnboardingCheckoutDraft$);
   set(internalOnboardingDraft$, emptyOnboardingDraft());
 });
 
@@ -206,26 +136,18 @@ function onboardingChoice(value: string | null): OnboardingChoice | null {
   return null;
 }
 
-function onboardingRouteText(
-  searchParams: URLSearchParams,
-  checkoutDraft: OnboardingCheckoutDraft | null,
-): {
+function onboardingRouteText(searchParams: URLSearchParams): {
   readonly prompt: string | null;
   readonly note: string | null;
 } {
   return {
-    prompt: searchParams.get("prompt") ?? checkoutDraft?.prompt ?? null,
-    note: searchParams.get("onboarding_note") ?? checkoutDraft?.note ?? null,
+    prompt: searchParams.get("prompt"),
+    note: searchParams.get("onboarding_note"),
   };
 }
 
 export const hydrateOnboardingRoute$ = command(
-  (
-    { get, set },
-    step: OnboardingRouteStep,
-    searchParams: URLSearchParams,
-    userId: string,
-  ) => {
+  ({ get, set }, step: OnboardingRouteStep, searchParams: URLSearchParams) => {
     set(resetOnboardingUi$);
     const choice = onboardingChoice(searchParams.get("choice"));
     if (step === "make" && !choice) {
@@ -233,10 +155,7 @@ export const hydrateOnboardingRoute$ = command(
     }
 
     const current = get(internalOnboardingDraft$);
-    const routeText = onboardingRouteText(
-      searchParams,
-      set(readOnboardingCheckoutDraft$, searchParams, userId),
-    );
+    const routeText = onboardingRouteText(searchParams);
     const categoryId = searchParams.get("category");
     const workflowId = searchParams.get("workflow");
     const templateSlug =

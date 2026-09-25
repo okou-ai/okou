@@ -98,7 +98,6 @@ export const feishuInstallations$ = computed(
     return [
       {
         id: data.installationId ?? null,
-        publicBrand: data.publicBrand,
         isConnected: data.isConnected,
         connectedUserName: data.connectedUserName ?? null,
         appId: data.appId,

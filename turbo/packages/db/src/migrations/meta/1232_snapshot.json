@@ -1,6 +1,6 @@
 {
-  "id": "7be12bc6-059f-40fb-ad00-69b9c3bcf0ba",
-  "prevId": "0d60a10d-2a1b-4fa3-87b0-d0bfddcccf0d",
+  "id": "5851ba59-4b2d-485c-981d-a8d139108310",
+  "prevId": "7be12bc6-059f-40fb-ad00-69b9c3bcf0ba",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -7700,7 +7700,8 @@
           "name": "public_brand",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'okou'"
         },
         "conversation_context": {
           "name": "conversation_context",
@@ -8985,7 +8986,8 @@
           "name": "public_brand",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'okou'"
         },
         "conversation_context": {
           "name": "conversation_context",
@@ -14658,7 +14660,8 @@
           "name": "public_brand",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'okou'"
         },
         "status": {
           "name": "status",
@@ -31184,7 +31187,8 @@
           "name": "public_brand",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'okou'"
         },
         "status": {
           "name": "status",

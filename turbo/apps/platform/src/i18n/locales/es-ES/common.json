@@ -1216,9 +1216,6 @@
         "webhookAutomations": "Lanza una ejecución desde cualquier sistema con un webhook"
       },
       "legacy": "Heredado",
-      "limitedFree": {
-        "name": "Gratis limitado"
-      },
       "loadError": "No se pudo cargar el estado de facturación.",
       "namedPlan": "Plan {{plan}}",
       "noActivePlan": "No hay plan activo",
@@ -6045,7 +6042,6 @@
     "tiers": {
       "custom": "Personalizado",
       "free": "Gratis",
-      "limitedFree": "Gratis limitado",
       "pro": "Pro",
       "team": "Equipo"
     },

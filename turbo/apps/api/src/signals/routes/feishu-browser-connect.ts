@@ -87,7 +87,6 @@ const startFeishuAccountOAuth$ = command(
         platform: feishuOrgInstallations.platform,
         ownerUserId: feishuOrgInstallations.ownerUserId,
         botName: feishuOrgInstallations.botName,
-        publicBrand: feishuOrgInstallations.publicBrand,
         setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
       })
       .from(feishuOrgInstallations)
@@ -132,7 +131,6 @@ const startFeishuAccountOAuth$ = command(
         userId: args.userId,
         connectorId,
         redirectUri: feishuOAuthAppCallbackUrl(installation.platform),
-        publicBrand: installation.publicBrand,
         account,
         feishuContext: {
           installationId: args.installationId,

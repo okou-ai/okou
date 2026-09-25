@@ -26,6 +26,7 @@ import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { conversations } from "@okouai/db/schema/conversation";
+import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { githubChatThreadRoutes } from "@okouai/db/schema/github-chat-thread-route";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
@@ -116,7 +117,6 @@ interface ChatEventContextFixture {
   readonly slackThreadTs: string | null;
   readonly slackRouteThreadTs: string | null;
   readonly feishuConversationHistory: string | null;
-  readonly feishuPublicBrand: PublicBrand | null;
   readonly feishuMessageText: string | null;
   readonly feishuMessageFiles: ChatFeishuMessageFiles | null;
   readonly feishuChatType: "group" | "p2p" | "topic_group" | null;
@@ -215,7 +215,6 @@ export async function readChatEventContextFixture(
       slackThreadTs: chatSlackContext.threadTs,
       slackRouteThreadTs: chatSlackContext.routeThreadTs,
       feishuConversationHistory: chatFeishuContext.conversationHistory,
-      feishuPublicBrand: chatFeishuContext.publicBrand,
       feishuMessageText: chatFeishuContext.messageText,
       feishuMessageFiles: chatFeishuContext.messageFiles,
       feishuChatType: chatFeishuContext.chatType,
@@ -704,10 +703,6 @@ interface TelegramChatEventByPromptFixture {
   readonly eventId: string;
 }
 
-interface FeishuChatEventByPromptFixture {
-  readonly eventId: string;
-}
-
 /**
  * Chat events live in a database shared by every parallel test worker, so a
  * prompt lookup must be scoped to the caller's own user. Matching on prompt
@@ -744,20 +739,6 @@ export async function findTelegramChatEventByPromptFixture(args: {
     filter: and(
       eq(chatEvents.eventType, "input.prompt"),
       eq(chatEvents.contextType, "telegram"),
-    ),
-  });
-}
-
-export async function findFeishuChatEventByPromptFixture(args: {
-  readonly userId: string;
-  readonly prompt: string;
-}): Promise<FeishuChatEventByPromptFixture | null> {
-  return await findOwnedChatEventByPrompt({
-    userId: args.userId,
-    prompt: args.prompt,
-    filter: and(
-      eq(chatEvents.eventType, "input.prompt"),
-      eq(chatEvents.contextType, "feishu"),
     ),
   });
 }
@@ -1123,6 +1104,69 @@ export async function removeAcknowledgedCancellationLifecycleFixture(args: {
     if (removed.length !== 1) {
       throw new Error("Expected one cancelled lifecycle event");
     }
+  });
+}
+
+/**
+ * Reproduce a queued Feishu input persisted before the brand retirement: its
+ * context has no brand and its installation still carries `vm0`.
+ */
+export async function setLegacyFeishuPublicBrandFixture(args: {
+  readonly eventId: string;
+  readonly installationId: string;
+}): Promise<void> {
+  const [event] = await db()
+    .select({ contextId: chatEvents.contextId })
+    .from(chatEvents)
+    .where(
+      and(
+        eq(chatEvents.id, args.eventId),
+        eq(chatEvents.contextType, "feishu"),
+      ),
+    )
+    .limit(1);
+  if (!event?.contextId) {
+    throw new Error("Expected a Feishu chat event with context");
+  }
+  const contexts = await db()
+    .update(chatFeishuContext)
+    .set({ publicBrand: null })
+    .where(eq(chatFeishuContext.id, event.contextId))
+    .returning({ id: chatFeishuContext.id });
+  const installations = await db()
+    .update(feishuOrgInstallations)
+    .set({ publicBrand: "vm0" })
+    .where(eq(feishuOrgInstallations.id, args.installationId))
+    .returning({ id: feishuOrgInstallations.id });
+  if (contexts.length !== 1 || installations.length !== 1) {
+    throw new Error("Expected one Feishu context and installation");
+  }
+}
+
+/** Read the stored Feishu delivery callback payloads of a run. */
+export async function readFeishuCallbackPayloadsFixture(
+  runId: string,
+): Promise<
+  readonly { readonly internalKind: string; readonly payload: unknown }[]
+> {
+  const callbacks = await db()
+    .select({
+      internalKind: agentRunCallbacks.internalKind,
+      payload: agentRunCallbacks.payload,
+    })
+    .from(agentRunCallbacks)
+    .where(
+      and(
+        eq(agentRunCallbacks.runId, runId),
+        inArray(agentRunCallbacks.internalKind, ["feishu:chat", "feishu:org"]),
+      ),
+    )
+    .orderBy(asc(agentRunCallbacks.internalKind));
+  return callbacks.map((callback) => {
+    return {
+      internalKind: callback.internalKind ?? "",
+      payload: callback.payload,
+    };
   });
 }
 

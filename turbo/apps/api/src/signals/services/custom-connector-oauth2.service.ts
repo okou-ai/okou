@@ -6,7 +6,6 @@ import { createHash, randomBytes } from "node:crypto";
 import { command } from "ccstate";
 import { and, eq, exists } from "drizzle-orm";
 import { z } from "zod";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   mcpOAuthScopeListSchema,
   mcpOAuthScopeTokenSchema,
@@ -583,7 +582,6 @@ interface StartCustomConnectorOAuth2Args {
   readonly userId: string;
   readonly connectorId: string;
   readonly redirectUri: string;
-  readonly publicBrand: PublicBrand;
   readonly automaticOAuthClient?: AutomaticOAuthClientPresentation;
   readonly agentId?: string;
   readonly account: ConnectorAccountMutationIntent;
@@ -1208,7 +1206,6 @@ export const startCustomConnectorAutomaticOAuthReauthorization$ = command(
           userId: args.userId,
           connectorId: args.connectorId,
           redirectUri,
-          publicBrand: "okou",
           account: {
             intent: "reconnect",
             connectionId: args.connectionId,

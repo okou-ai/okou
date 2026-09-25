@@ -22,7 +22,6 @@ import {
   OnboardingVideoRunPage,
 } from "../../views/onboarding/onboarding-template-run-pages.tsx";
 import { hideAppSkeleton$, showAppSkeleton$ } from "../app-skeleton.ts";
-import { authenticatedIdentity$ } from "../auth.ts";
 import { brandName$, type BrandName } from "../branding.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
@@ -35,8 +34,6 @@ import {
 import {
   hydrateOnboardingRoute$,
   onboardingDraft$,
-  ONBOARDING_CHECKOUT_STATE_PARAM,
-  readOnboardingCheckoutDraft$,
   type OnboardingDraft,
   type OnboardingRouteStep,
 } from "./onboarding-state.ts";
@@ -62,7 +59,6 @@ const ONBOARDING_TRANSIENT_PARAMS = [
   "onboarding_billing_session_id",
   "onboarding_note",
   "onboarding_template",
-  ONBOARDING_CHECKOUT_STATE_PARAM,
   "redeemCode",
 ] as const;
 
@@ -115,35 +111,31 @@ function createOnboardingPageSetup(
   return command(async ({ get, set }, signal: AbortSignal) => {
     set(showAppSkeleton$);
     const searchParams = get(searchParams$);
-    const { userId } = await get(authenticatedIdentity$);
-    signal.throwIfAborted();
 
     if (config.step === "video-run") {
-      const checkoutDraft = set(
-        readOnboardingCheckoutDraft$,
-        searchParams,
-        userId,
-      );
       const checkoutSessionId = searchParams.get(
         "onboarding_billing_session_id",
       );
-      const checkoutPrompt =
-        searchParams.get("prompt") ?? checkoutDraft?.prompt ?? null;
-      if (checkoutSessionId && checkoutPrompt?.trim()) {
+      if (checkoutSessionId) {
         await set(completeOnboardingCheckoutReturn$, checkoutSessionId, signal);
-        await set(
-          completeOnboarding$,
-          searchParams.get("redeemCode")?.trim() || null,
-          signal,
-        );
-        const handoffParams = promptHandoffParams(searchParams);
-        handoffParams.set("prompt", checkoutPrompt);
-        set(capturePaidOnboardingAppHandoff$, checkoutPrompt);
-        set(detachedNavigateTo$, ROUTES.prompt, {
-          searchParams: handoffParams,
-          replace: true,
-        });
-        return;
+        // A returning checkout only resumes the run when the URL itself carries
+        // the prompt; otherwise the paid visitor lands back on the video step.
+        const checkoutPrompt = searchParams.get("prompt");
+        if (checkoutPrompt?.trim()) {
+          await set(
+            completeOnboarding$,
+            searchParams.get("redeemCode")?.trim() || null,
+            signal,
+          );
+          const handoffParams = promptHandoffParams(searchParams);
+          handoffParams.set("prompt", checkoutPrompt);
+          set(capturePaidOnboardingAppHandoff$, checkoutPrompt);
+          set(detachedNavigateTo$, ROUTES.prompt, {
+            searchParams: handoffParams,
+            replace: true,
+          });
+          return;
+        }
       }
     }
 
@@ -161,7 +153,7 @@ function createOnboardingPageSetup(
     }
 
     set(sendEvent$, "onboarding-start");
-    set(hydrateOnboardingRoute$, config.step, searchParams, userId);
+    set(hydrateOnboardingRoute$, config.step, searchParams);
     const draft = get(onboardingDraft$);
     if (config.fallbackPath && !hasRequiredSelection(config.step, draft)) {
       set(detachedNavigateTo$, config.fallbackPath, {
