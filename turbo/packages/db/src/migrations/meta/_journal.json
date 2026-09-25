@@ -1128,6 +1128,13 @@
       "when": 1790318127290,
       "tag": "1238_natural_annihilus",
       "breakpoints": true
+    },
+    {
+      "idx": 1239,
+      "version": "7",
+      "when": 1790332702305,
+      "tag": "1239_retire_clerk_deletion_receipt_index",
+      "breakpoints": true
     }
   ]
 }

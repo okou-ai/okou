@@ -1,5 +1,19 @@
 # Deployment Compatibility
 
+## Completed Clerk deletion receipt index retirement (2026-09-25)
+
+Migration `1239_retire_clerk_deletion_receipt_index` drops
+`idx_background_jobs_completed_clerk_deletion`. Its only reader was the
+late-content sweep's receipt reconciliation for older APIs
+(`kind = 'clerk-user-deletion' AND status = 'completed' ORDER BY id`), which
+#36862 removed. No current query filters on that predicate.
+
+API rollback targets from 1.672.0 through 1.676.1 still run that reconciliation
+every minute. Without the index it becomes a sequential scan of
+`background_jobs`, which held 23 rows on 2026-09-25, so their results and
+correctness are unchanged. The migration takes a brief `ACCESS EXCLUSIVE` lock
+on that small table under the default 1s lock timeout.
+
 ## Chat search stops maintaining the keyword-only GIN index (2026-09-25)
 
 Chat search and MCP chat search both filter by `user_id` before the keyword
