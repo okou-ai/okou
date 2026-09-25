@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { backgroundJobs } from "@okouai/db/schema/background-job";
 import type { RunnerCancellationMode } from "@okouai/api-contracts/contracts/runners";
 import { createStore } from "ccstate";
 import { eq, sql } from "drizzle-orm";
@@ -284,36 +283,6 @@ describe("authoritative Run lookup boundaries", () => {
         context.signal,
       ),
     ).resolves.toMatchObject({ state: "unavailable" });
-  });
-
-  it("hard-stops a deleted account's authenticated Runner before B1 can remove the Run", async () => {
-    const f = await fixture();
-    const peer = await fixture();
-    const jobId = randomUUID();
-    await db()
-      .insert(backgroundJobs)
-      .values({
-        id: jobId,
-        kind: "clerk-user-deletion",
-        handlerVersion: 1,
-        userId: f.auth.userId,
-        orgId: "",
-        input: {},
-        checkpoint: { phase: "capture" },
-      });
-    onTestFinished(async () => {
-      await db().delete(backgroundJobs).where(eq(backgroundJobs.id, jobId));
-    });
-    await expect(
-      readRunCancellationState(db(), f.auth, f.expected, context.signal),
-    ).resolves.toMatchObject({ state: "present", mode: "hard" });
-    await expect(
-      readRunCancellationState(db(), peer.auth, peer.expected, context.signal),
-    ).resolves.toMatchObject({ state: "present", mode: null });
-    await expect(stored(f)).resolves.toMatchObject({
-      status: "running",
-      mode: null,
-    });
   });
 
   it("propagates database-client failure instead of returning gone", async () => {

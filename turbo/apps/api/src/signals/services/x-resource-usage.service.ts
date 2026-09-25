@@ -10,7 +10,6 @@ import type { Tx } from "../../lib/db-types";
 import type { SandboxAuth } from "../../types/auth";
 import type { Db } from "../external/db";
 import {
-  hasHeldClerkUserDeletion,
   lockXResourceAdmission,
   readXResourceClock,
   setXResourceTransactionTimeouts,
@@ -246,9 +245,6 @@ export async function ingestXResourceUsage(
     async (tx) => {
       await setXResourceTransactionTimeouts(tx);
       await lockXResourceAdmission(tx, "shared");
-      if (await hasHeldClerkUserDeletion(tx, auth.userId)) {
-        throw new XResourceUsageError(404, "Run not found");
-      }
       // Admission precedes Run ownership, matching account cleanup's order.
       // SHARE prevents deletion/owner updates while source rows are created.
       const [run] = await tx

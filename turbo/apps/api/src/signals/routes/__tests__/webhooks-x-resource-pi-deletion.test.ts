@@ -65,8 +65,8 @@ async function completedPiRun() {
   return { actor, run };
 }
 
-describe("X resource usage during Pi account erasure", () => {
-  it("holds a terminal Pi Run while an admitted upload completes and fences new uploads", async () => {
+describe("X resource usage during Pi account deletion", () => {
+  it("drains an admitted terminal Pi upload before Clerk user deletion removes the Run", async () => {
     const { actor, run } = await completedPiRun();
     const at = nowDate().toISOString();
     const resourceId = BigInt(
@@ -118,11 +118,9 @@ describe("X resource usage during Pi account erasure", () => {
       type: "user.deleted",
       data: { id: actor.userId },
     });
-    const deletion = callbacks.requestClerkWebhook("{}", {}, [200]);
-    // Start deletion while upload is admitted, then release its database lock
-    // promptly; the user hold does not need to wait for Run deletion.
+    await callbacks.requestClerkWebhook("{}", {}, [200]);
+    await expect.poll(gate.blockedRunDeletionCount).toBe(1);
     gate.release();
-    await deletion;
     const [released] = await completion;
     if (released.status === "rejected") {
       throw released.reason;
@@ -132,10 +130,7 @@ describe("X resource usage during Pi account erasure", () => {
       throw uploaded.reason;
     }
     await flushWaitUntilForTest();
-    const deniedRun = await fixture.api.requestReadRun(actor, run.runId, [401]);
-    expect(deniedRun.body).toMatchObject({
-      error: { code: "UNAUTHORIZED" },
-    });
+    await fixture.api.requestReadRun(actor, run.runId, [404]);
     await callbacks.requestAgentUsageEvent(
       {
         runId: run.runId,
