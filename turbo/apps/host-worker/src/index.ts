@@ -59,11 +59,26 @@ interface ExecutionContext {
   waitUntil(promise: Promise<unknown>): void;
 }
 
-type PublicBrand = "vm0" | "okou";
+/**
+ * Hosted sites and artifacts live in one of two read-only storage layouts.
+ * Objects issued on the original sites domain keep the legacy layout forever
+ * (#28449); current writers use the current layout. The segments below are
+ * persisted in R2 keys, stored records and cache keys, so they never change.
+ */
+type StorageLayout = "legacy" | "current";
+
+const LAYOUT_SEGMENT = { legacy: "vm0", current: "okou" } as const;
+
+function layoutOfSegment(
+  segment: (typeof LAYOUT_SEGMENT)[StorageLayout],
+): StorageLayout {
+  return segment === LAYOUT_SEGMENT.current ? "current" : "legacy";
+}
 
 interface ActiveSitePointer {
   readonly version: 1;
-  readonly publicBrand?: PublicBrand;
+  /** Stored layout segment; objects written before it existed omit it. */
+  readonly publicBrand?: string;
   readonly publicSlug: string;
   readonly siteId: string;
   readonly deploymentId: string;
@@ -94,7 +109,8 @@ interface HostedSiteManifest {
   readonly version: 1;
   readonly immutableContent?: true;
   readonly access?: "owner-private-v1";
-  readonly publicBrand?: PublicBrand;
+  /** Stored layout segment; objects written before it existed omit it. */
+  readonly publicBrand?: string;
   readonly deploymentId: string;
   readonly siteId: string;
   readonly publicSlug: string;
@@ -214,24 +230,23 @@ function defaultRobotsResponse(request: Request): Response {
   });
 }
 
-function pointerNamespace(publicBrand: PublicBrand): string {
-  // Keep VM0 on its legacy keys. Okou uses a separate discovery namespace so
-  // rolling back to a brand-unaware Worker cannot expose Okou content on VM0.
-  return publicBrand === "okou" ? "sites/brands/okou" : "sites";
+function pointerNamespace(layout: StorageLayout): string {
+  // Legacy pointers keep their original keys. Current pointers use a separate
+  // namespace so the legacy host never discovers current content.
+  return layout === "current"
+    ? `sites/brands/${LAYOUT_SEGMENT.current}`
+    : "sites";
 }
 
-function activePointerKey(
-  publicBrand: PublicBrand,
-  publicSlug: string,
-): string {
-  return `${pointerNamespace(publicBrand)}/${publicSlug}/active.json`;
+function activePointerKey(layout: StorageLayout, publicSlug: string): string {
+  return `${pointerNamespace(layout)}/${publicSlug}/active.json`;
 }
 
 function immutableDeploymentPointerKey(
-  publicBrand: PublicBrand,
+  layout: StorageLayout,
   deploymentId: string,
 ): string {
-  return `${pointerNamespace(publicBrand)}/deployments/${deploymentId}.json`;
+  return `${pointerNamespace(layout)}/deployments/${deploymentId}.json`;
 }
 
 function siteSlugFromHost(hostname: string, hostDomain: string): string | null {
@@ -248,7 +263,7 @@ function siteSlugFromHost(hostname: string, hostDomain: string): string | null {
 
 interface HostedSiteRequestTarget {
   readonly publicSlug: string;
-  readonly publicBrands: readonly PublicBrand[];
+  readonly layouts: readonly StorageLayout[];
 }
 
 function hostedSiteRequestTarget(
@@ -257,12 +272,12 @@ function hostedSiteRequestTarget(
 ): HostedSiteRequestTarget | null {
   const normalizedHostname = hostname.toLowerCase();
   const candidates = [
-    { publicBrand: "vm0", hostDomain: env.HOST_DOMAIN },
-    { publicBrand: "okou", hostDomain: env.OKOU_HOST_DOMAIN },
+    { layout: "legacy", hostDomain: env.HOST_DOMAIN },
+    { layout: "current", hostDomain: env.OKOU_HOST_DOMAIN },
   ] as const;
-  const matches = candidates.flatMap(({ publicBrand, hostDomain }) => {
+  const matches = candidates.flatMap(({ layout, hostDomain }) => {
     const publicSlug = siteSlugFromHost(normalizedHostname, hostDomain);
-    return publicSlug ? [{ publicBrand, publicSlug }] : [];
+    return publicSlug ? [{ layout, publicSlug }] : [];
   });
   const publicSlug = matches[0]?.publicSlug;
   if (
@@ -275,29 +290,32 @@ function hostedSiteRequestTarget(
   }
   return {
     publicSlug,
-    publicBrands: matches.map((match) => {
-      return match.publicBrand;
+    layouts: matches.map((match) => {
+      return match.layout;
     }),
   };
 }
 
-function storedPublicBrand(
+function storedInLayout(
   value: ActiveSitePointer | HostedSiteManifest,
-): PublicBrand {
+  layout: StorageLayout,
+): boolean {
   // Persisted hosted-site R2 pointers and manifests have no drain window.
-  // Brandless objects retain their historical VM0 identity permanently;
+  // Objects without a layout segment belong to the legacy layout permanently;
   // see the retained-object decision in #28449.
-  return value.publicBrand ?? "vm0";
+  return (
+    (value.publicBrand ?? LAYOUT_SEGMENT.legacy) === LAYOUT_SEGMENT[layout]
+  );
 }
 
 interface ResolvedPointer {
-  readonly publicBrand: PublicBrand;
+  readonly layout: StorageLayout;
   readonly pointer: ActiveSitePointer;
 }
 
-async function resolvePointerForBrand(
+async function resolvePointerInLayout(
   bucket: R2Bucket,
-  publicBrand: PublicBrand,
+  layout: StorageLayout,
   publicSlug: string,
   deploymentId: string | undefined,
   registered = false,
@@ -305,13 +323,12 @@ async function resolvePointerForBrand(
   let pointer = deploymentId
     ? await readJson<ActiveSitePointer>(
         bucket,
-        immutableDeploymentPointerKey(publicBrand, deploymentId),
+        immutableDeploymentPointerKey(layout, deploymentId),
       )
     : null;
   if (
     pointer &&
-    (pointer.deploymentId !== deploymentId ||
-      storedPublicBrand(pointer) !== publicBrand)
+    (pointer.deploymentId !== deploymentId || !storedInLayout(pointer, layout))
   ) {
     return null;
   }
@@ -319,17 +336,17 @@ async function resolvePointerForBrand(
   if (!pointer) {
     pointer = await readJson<ActiveSitePointer>(
       bucket,
-      activePointerKey(publicBrand, publicSlug),
+      activePointerKey(layout, publicSlug),
     );
     if (
       !pointer ||
       pointer.publicSlug !== publicSlug ||
-      storedPublicBrand(pointer) !== publicBrand
+      !storedInLayout(pointer, layout)
     ) {
       return null;
     }
   }
-  return { publicBrand, pointer };
+  return { layout, pointer };
 }
 
 function safeDecodePath(pathname: string): string | null {
@@ -448,15 +465,16 @@ async function serveHostedSite(
   if (shared?.[1] && shared[2]) {
     const hash = shared[1];
     const id = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(12, 16)}-${hash.slice(16, 20)}-${hash.slice(20)}`;
-    const policy = await readPublicShare(
-      env,
-      target!.publicBrands,
-      id,
-      shared[2],
-    );
-    if (policy instanceof Response) return policy;
-    if (policy)
-      return serveAuthorizedArtifact(request, env, pathname, policy, execution);
+    const artifact = await readPublicShare(env, target!.layouts, id, shared[2]);
+    if (artifact instanceof Response) return artifact;
+    if (artifact)
+      return serveAuthorizedArtifact(
+        request,
+        env,
+        pathname,
+        artifact,
+        execution,
+      );
   }
   const previewToken =
     !fileHost && target
@@ -571,23 +589,23 @@ async function serveGrantedArtifactDelivery(
     )
   )
     return privateResponse(notFoundResponse());
-  const policy =
+  const artifact =
     record.kind === "thread-resource"
       ? await readSharedThreadResource(env, record)
       : await readPublicShare(
           env,
-          [record.publicBrand],
+          [layoutOfSegment(record.publicBrand)],
           record.shareId,
           record.publicToken,
         );
-  if (policy instanceof Response) return policy;
-  if (!policy || policy.target.kind !== record.targetKind)
+  if (artifact instanceof Response) return artifact;
+  if (!artifact || artifact.target.kind !== record.targetKind)
     return privateResponse(notFoundResponse());
   const response = await serveAuthorizedArtifact(
     request,
     env,
     fileHost ? "/" : pathname,
-    policy,
+    artifact,
     execution,
   );
   if (
@@ -610,22 +628,27 @@ async function serveArtifactDelivery(
   fileHost: boolean,
   execution: ExecutionContext,
 ): Promise<Response> {
-  const brands = fileHost ? [null] : target!.publicBrands;
+  // One file hostname serves every layout, so file aliases share a namespace.
+  const layouts = fileHost ? [null] : target!.layouts;
   const alias = fileHost
     ? artifactFileAlias(pathname, env.PUBLIC_ARTIFACT_HOST)
     : target!.publicSlug;
   const records = await Promise.all(
-    brands.map(async (brand) => {
+    layouts.map(async (layout) => {
       const record = await readDeliveryRecord(
         request,
         env.HOSTED_SITES_BUCKET,
-        artifactDeliveryKey(brand, fileHost ? "file" : "html", alias),
+        artifactDeliveryKey(
+          layout && LAYOUT_SEGMENT[layout],
+          fileHost ? "file" : "html",
+          alias,
+        ),
         fileHost ? "file" : "html",
         execution,
       );
       if (!record) return null;
-      if (brand !== null && record.publicBrand !== brand)
-        throw new Error("Artifact delivery brand mismatch");
+      if (layout !== null && layoutOfSegment(record.publicBrand) !== layout)
+        throw new Error("Artifact delivery layout mismatch");
       return record;
     }),
   );
@@ -701,9 +724,11 @@ async function serveLegacyArtifactFile(
 
 async function registrationComplete(
   bucket: R2Bucket,
-  brand: PublicBrand,
+  layout: StorageLayout,
 ): Promise<boolean> {
-  const object = await bucket.get(artifactDeliveryRegistrationKey(brand));
+  const object = await bucket.get(
+    artifactDeliveryRegistrationKey(LAYOUT_SEGMENT[layout]),
+  );
   if (!object) return false;
   const marker: unknown = await new Response(object.body).json();
   if (
@@ -729,35 +754,36 @@ async function serveLegacyHostedSite(
   const deploymentId = IMMUTABLE_DEPLOYMENT_HOST_PATTERN.exec(
     target.publicSlug,
   )?.[1];
-  let legacyBrands = target.publicBrands;
+  let pointerLayouts = target.layouts;
   if (!record) {
     // Existing public aliases predate the delivery registry. Remove this
-    // compatibility read after #32492 verifies registration for every brand
+    // compatibility read after #32492 verifies registration for every layout
     // and old API writers have drained; the completion marker closes it now.
     const completed = await Promise.all(
-      target.publicBrands.map((brand) => {
-        return registrationComplete(env.HOSTED_SITES_BUCKET, brand);
+      target.layouts.map((layout) => {
+        return registrationComplete(env.HOSTED_SITES_BUCKET, layout);
       }),
     );
-    legacyBrands = target.publicBrands.filter((_, index) => {
+    pointerLayouts = target.layouts.filter((_, index) => {
       return !completed[index];
     });
-    if (legacyBrands.length === 0) return privateResponse(notFoundResponse());
+    if (pointerLayouts.length === 0) return privateResponse(notFoundResponse());
   }
   const pointers = (
     await Promise.all(
-      legacyBrands.map((publicBrand) => {
+      pointerLayouts.map((layout) => {
         if (record?.kind === "legacy-site") {
-          if (record.publicBrand !== publicBrand) return Promise.resolve(null);
+          if (layoutOfSegment(record.publicBrand) !== layout)
+            return Promise.resolve(null);
           const expectedKey = deploymentId
-            ? immutableDeploymentPointerKey(publicBrand, deploymentId)
-            : activePointerKey(publicBrand, target.publicSlug);
+            ? immutableDeploymentPointerKey(layout, deploymentId)
+            : activePointerKey(layout, target.publicSlug);
           if (record.pointerKey !== expectedKey)
             throw new Error("Legacy artifact pointer mismatch");
         }
-        return resolvePointerForBrand(
+        return resolvePointerInLayout(
           env.HOSTED_SITES_BUCKET,
-          publicBrand,
+          layout,
           target.publicSlug,
           deploymentId,
           record?.kind === "legacy-site",
@@ -770,7 +796,7 @@ async function serveLegacyHostedSite(
   if (pointers.length !== 1) {
     return notFoundResponse();
   }
-  const { pointer, publicBrand } = pointers[0]!;
+  const { pointer, layout } = pointers[0]!;
   const manifest = await readJson<HostedSiteManifest>(
     env.HOSTED_SITES_BUCKET,
     pointer.manifestKey,
@@ -783,7 +809,7 @@ async function serveLegacyHostedSite(
     !pointer.prefix.startsWith("sites/") ||
     manifest.deploymentId !== pointer.deploymentId ||
     manifest.siteId !== pointer.siteId ||
-    storedPublicBrand(manifest) !== publicBrand
+    !storedInLayout(manifest, layout)
   ) {
     return notFoundResponse();
   }
@@ -921,7 +947,8 @@ interface PrivatePreviewGrant {
   // writers/grants leave serving. Uploadable manifests cannot assert this.
   readonly immutableContent?: true;
   readonly version: 1;
-  readonly publicBrand: PublicBrand;
+  /** Stored layout segment; must match the layout the grant was read from. */
+  readonly publicBrand: string;
   readonly deploymentId: string;
   readonly expiresAt: string;
 }
@@ -958,19 +985,19 @@ function privateResponse(
 function privatePreviewPrefix(
   deploymentId: string,
   snapshotId: string | undefined,
-  publicBrand: PublicBrand,
+  layout: StorageLayout,
   shared: boolean,
 ): string | null {
   if (!shared)
     return snapshotId === undefined
-      ? `private-sites/${publicBrand}/${deploymentId}`
+      ? `private-sites/${LAYOUT_SEGMENT[layout]}/${deploymentId}`
       : null;
   if (
     !snapshotId ||
     !IMMUTABLE_DEPLOYMENT_HOST_PATTERN.test(`dpl-${snapshotId}`)
   )
     return null;
-  return `shared-artifacts/${publicBrand}/${snapshotId}/${deploymentId}`;
+  return `shared-artifacts/${LAYOUT_SEGMENT[layout]}/${snapshotId}/${deploymentId}`;
 }
 
 async function servePrivatePreview(
@@ -983,9 +1010,9 @@ async function servePrivatePreview(
   const shared = target.publicSlug.startsWith("ps-");
   const grants = (
     await Promise.all(
-      target.publicBrands.map(async (publicBrand) => {
+      target.layouts.map(async (layout) => {
         const object = await env.HOSTED_SITES_BUCKET.get(
-          `${shared ? "shared-previews" : "private-previews"}/${publicBrand}/${token}.json`,
+          `${shared ? "shared-previews" : "private-previews"}/${LAYOUT_SEGMENT[layout]}/${token}.json`,
         );
         if (!object) {
           return null;
@@ -1000,7 +1027,7 @@ async function servePrivatePreview(
           }
           grant = null;
         }
-        return { grant, publicBrand };
+        return { grant, layout };
       }),
     )
   ).filter((entry) => {
@@ -1015,7 +1042,7 @@ async function servePrivatePreview(
   if (grants.length !== 1 || !entry) {
     return privateResponse(notFoundResponse());
   }
-  const { grant, publicBrand } = entry;
+  const { grant, layout } = entry;
   if (
     !grant ||
     typeof grant !== "object" ||
@@ -1026,7 +1053,7 @@ async function servePrivatePreview(
   const expiresAt = Date.parse(grant.expiresAt);
   if (
     grant.version !== 1 ||
-    grant.publicBrand !== publicBrand ||
+    grant.publicBrand !== LAYOUT_SEGMENT[layout] ||
     typeof grant.deploymentId !== "string" ||
     !IMMUTABLE_DEPLOYMENT_HOST_PATTERN.test(`dpl-${grant.deploymentId}`) ||
     !Number.isFinite(expiresAt) ||
@@ -1037,7 +1064,7 @@ async function servePrivatePreview(
   const prefix = privatePreviewPrefix(
     grant.deploymentId,
     grant.snapshotId,
-    publicBrand,
+    layout,
     shared,
   );
   if (!prefix) return privateResponse(notFoundResponse());
@@ -1049,7 +1076,7 @@ async function servePrivatePreview(
     !manifest ||
     manifest.access !== "owner-private-v1" ||
     manifest.deploymentId !== grant.deploymentId ||
-    manifest.publicBrand !== publicBrand
+    manifest.publicBrand !== LAYOUT_SEGMENT[layout]
   ) {
     return privateResponse(notFoundResponse());
   }
@@ -1068,20 +1095,27 @@ async function servePrivatePreview(
   return privateResponse(response, shared || grant.immutableContent === true);
 }
 
+/** An authorized artifact target and the storage layout of its content. */
+interface AuthorizedArtifact {
+  readonly layout: StorageLayout;
+  readonly target: ArtifactSharePolicy["target"];
+}
+
 async function readPublicShare(
   env: Env,
-  brands: readonly PublicBrand[],
+  layouts: readonly StorageLayout[],
   id: string,
   token: string,
-): Promise<ArtifactSharePolicy | Response | null> {
+): Promise<AuthorizedArtifact | Response | null> {
   const denied = () => {
     return privateResponse(notFoundResponse());
   };
-  const records: ArtifactSharePolicy[] = [];
+  const records: (ArtifactSharePolicy & { readonly layout: StorageLayout })[] =
+    [];
   try {
-    for (const brand of brands) {
+    for (const layout of layouts) {
       const object = await env.HOSTED_SITES_BUCKET.get(
-        `artifact-shares/${brand}/${id}.json`,
+        `artifact-shares/${LAYOUT_SEGMENT[layout]}/${id}.json`,
       );
       if (!object) continue;
       const parsed = artifactSharePolicySchema.safeParse(
@@ -1090,10 +1124,10 @@ async function readPublicShare(
       if (
         !parsed.success ||
         parsed.data.shareId !== id ||
-        parsed.data.publicBrand !== brand
+        parsed.data.publicBrand !== LAYOUT_SEGMENT[layout]
       )
         return denied();
-      records.push(parsed.data);
+      records.push({ ...parsed.data, layout });
     }
   } catch {
     // Unavailable authorization state never falls through to cached bytes.
@@ -1112,14 +1146,14 @@ async function readPublicShare(
     policy.publicToken !== token
   )
     return denied();
-  return policy;
+  return { layout: policy.layout, target: policy.target };
 }
 
 /** Callers must read current authorization before every content-cache hit. */
 async function readSharedThreadResource(
   env: Env,
   record: Extract<ArtifactDeliveryRecord, { kind: "thread-resource" }>,
-): Promise<Pick<ArtifactSharePolicy, "publicBrand" | "target"> | null> {
+): Promise<AuthorizedArtifact | null> {
   const object = await env.HOSTED_SITES_BUCKET.get(
     sharedThreadArtifactPolicyKey(record.publicBrand, record.threadId),
   );
@@ -1137,7 +1171,7 @@ async function readSharedThreadResource(
   const target = parsed.data.resources[record.publicToken];
   return target?.kind === record.targetKind &&
     (record.targetId === undefined || target.id === record.targetId)
-    ? { publicBrand: record.publicBrand, target }
+    ? { layout: layoutOfSegment(record.publicBrand), target }
     : null;
 }
 
@@ -1146,13 +1180,14 @@ async function serveAuthorizedArtifact(
   request: Request,
   env: Env,
   pathname: string,
-  policy: Pick<ArtifactSharePolicy, "publicBrand" | "target">,
+  artifact: AuthorizedArtifact,
   execution: ExecutionContext,
 ): Promise<Response> {
   const denied = () => {
     return privateResponse(notFoundResponse());
   };
-  const target = policy.target;
+  const { target } = artifact;
+  const segment = LAYOUT_SEGMENT[artifact.layout];
   // Image Resizing caches derivatives outside this Worker's policy checks.
   // Public files must re-enter authorization even when their bytes are warm.
   if (
@@ -1180,7 +1215,7 @@ async function serveAuthorizedArtifact(
     );
   }
   const cacheUrl = new URL(request.url);
-  cacheUrl.pathname = `/__artifact-content/${policy.publicBrand}/${target.kind === "html" ? `${target.snapshotId}/${target.id}` : encodeURIComponent(target.key)}${pathname}`;
+  cacheUrl.pathname = `/__artifact-content/${segment}/${target.kind === "html" ? `${target.snapshotId}/${target.id}` : encodeURIComponent(target.key)}${pathname}`;
   cacheUrl.search = `?html=${acceptsHtml(request)}`;
   const key = new Request(cacheUrl);
   // Cache bytes separately from authorization. Delivery applies its browser
@@ -1199,7 +1234,7 @@ async function serveAuthorizedArtifact(
       env,
       pathname,
       {
-        prefix: `shared-artifacts/${policy.publicBrand}/${target.snapshotId}/${target.id}`,
+        prefix: `shared-artifacts/${segment}/${target.snapshotId}/${target.id}`,
         spaFallback: target.manifest.spaFallback,
       },
       target.manifest,
