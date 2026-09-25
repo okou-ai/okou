@@ -526,7 +526,6 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
     coverage: "user_descendant",
     parents: ["chat_threads"],
   },
-  chat_event_write_control: { coverage: "not_account_scoped" },
   chat_event_snapshot_scan_state: { coverage: "not_account_scoped" },
   chat_event_snapshots: {
     coverage: "user_descendant",

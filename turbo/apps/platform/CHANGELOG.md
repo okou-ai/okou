@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.966.0](https://github.com/okou-ai/okou/compare/app-v0.965.0...app-v0.966.0) (2026-09-25)
+
+
+### Features
+
+* **api:** force app.vm0.ai clients to upgrade to v0.963.3 ([#36921](https://github.com/okou-ai/okou/issues/36921)) ([c6c9c1f](https://github.com/okou-ai/okou/commit/c6c9c1f93a3ee7fc1cef78e1da746e2c9f967f3e))
+
+
+### Refactoring
+
+* **api:** serve thread drafts only from chat_thread_drafts ([#36897](https://github.com/okou-ai/okou/issues/36897)) ([4558c9f](https://github.com/okou-ai/okou/commit/4558c9fac46ce1a96a25745b477b32b70dab7ae6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.513.0
+    * @okouai/core bumped to 8.710.9
+
 ## [0.965.0](https://github.com/okou-ai/okou/compare/app-v0.964.0...app-v0.965.0) (2026-09-25)
 
 

@@ -1174,8 +1174,15 @@
     {
       "idx": 1245,
       "version": "7",
-      "when": 1790344820680,
-      "tag": "1245_computer_use_commands_required_host_timeout",
+      "when": 1790344779759,
+      "tag": "1245_drop_chat_event_write_control",
+      "breakpoints": true
+    },
+    {
+      "idx": 1246,
+      "version": "7",
+      "when": 1790345996873,
+      "tag": "1246_computer_use_commands_required_host_timeout",
       "breakpoints": true
     }
   ]

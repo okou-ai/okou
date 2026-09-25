@@ -13,7 +13,7 @@ accepted, and stop always keeps the host as an offline installation instead of
 revoking it and clearing chat-thread bindings. Every current Desktop build
 sends `installationId`.
 
-Migration `1245_computer_use_commands_required_host_timeout` deletes commands
+Migration `1246_computer_use_commands_required_host_timeout` deletes commands
 left by the retired approval flow (and their audit rows), revokes any active
 host without an installation, and makes `computer_use_commands.host_id` and
 `timeout_ms` `NOT NULL`. Older APIs always write both columns for new commands,
@@ -48,6 +48,24 @@ Observable differences:
   While old and new APIs overlap, an old claim racing a new one for the same
   host can hit the index and return one `500`; the Desktop recovers on its next
   poll.
+
+## Chat event write control retirement (2026-09-25)
+
+Migration `1245_drop_chat_event_write_control` drops `chat_event_write_control`
+together with its `preserve_chat_event_write_activation` trigger and function.
+APIs 1.674.0 and 1.675.0 read the control row on every chat event write, so the
+production rollback resolver now refuses targets before #36703 (`15117da781`,
+API 1.676.0), the release that removed that reader. The owner approved the new
+floor on 2026-09-25 while production served API 1.676.1. Migration precedes API
+promotion, and no API from 1.676.0 on reads or writes the table.
+
+APIs before this change still list the table in their account-erasure ownership
+inventory. While one of them serves after the migration (the release overlap or
+a rollback), its Clerk deletion jobs fail with
+`account_erasure_relational:catalogue_absent:chat_event_write_control` and retry
+every 60 seconds without losing their checkpoint, until an API with this change
+serves. The table was not account-scoped and had no foreign keys, so the
+relational sweep plan and its collector version are unchanged.
 
 ## Thread drafts served only from `chat_thread_drafts` (2026-09-25)
 
