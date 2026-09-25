@@ -139,14 +139,6 @@ const clearOnboardingCheckoutDraft$ = command(({ set }) => {
   set(onboardingCheckoutOwnerStorage.clear$);
 });
 
-export const clearOnboardingCheckoutDraftForUser$ = command(
-  ({ get, set }, userId: string) => {
-    if (get(onboardingCheckoutOwnerStorage.get$) === userId) {
-      set(clearOnboardingCheckoutDraft$);
-    }
-  },
-);
-
 const internalOnboardingDraft$ = state<OnboardingDraft>(emptyOnboardingDraft());
 const internalOnboardingUi$ = state<OnboardingUiState>(
   emptyOnboardingUiState(),
