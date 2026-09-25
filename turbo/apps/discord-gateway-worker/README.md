@@ -122,7 +122,10 @@ An event the API rejects as malformed (`400`) or too large (`413`) cannot
 succeed on retry, so the relay moves it out of the outbox into a dead-letter
 record and continues with later events; one member's message never stops
 delivery for other guilds. The newest 100 rejected envelopes are retained for
-diagnosis and `/health` reports the cumulative `deadLettered` count.
+diagnosis and `/health` reports the cumulative `deadLettered` count. Because
+rejected events are not replayed, activation monitoring must alert when this
+count rises; a systematic contract mismatch would otherwise discard traffic
+while the relay still reports `running`.
 
 Fatal Gateway close codes, an application mismatch, an invalid receipt or any
 other permanent API rejection (such as `401`, `403` or `404`) require operator

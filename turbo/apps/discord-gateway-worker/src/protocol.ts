@@ -50,7 +50,7 @@ export const stateSchema = z.object({
   identifyResetAt: z.number(),
   deliveryAt: z.number(),
   deliveryFailures: z.number().int().nonnegative(),
-  deadLettered: z.number().int().nonnegative().default(0),
+  deadLettered: z.number().int().nonnegative(),
 });
 
 export type RelayState = z.infer<typeof stateSchema>;
