@@ -16,14 +16,17 @@ Business writers no longer take the shared account-erasure subject advisory
 lock, a closure lookup or custom `lock_timeout`/`statement_timeout`. The
 exclusive subject lock remains only between erasure participants (first
 closure and job transitions). Legacy Clerk deletion no longer writes
-`pi_stable_context_erasure_fences`.
+`pi_stable_context_erasure_fences`, and migration 1248 drops that table.
 
-No schema, migration or data change. During rollout overlap or after an API
-rollback, older instances still fence their own writes against the same
+Migration 1248 drops `pi_stable_context_erasure_fences` in the same release, by
+explicit decision rather than after a rollback window: an older API instance
+still serving during the overlap, or restored by a rollback, fails every path
+that reads or writes the dropped table: its membership-cache refresh, Pi
+stable-context, connector, permission and Workflow admissions, and its legacy
+Clerk deletion step. Such an
+instance still fences its own other writes against the same
 `account_erasure_jobs` rows and advisory keys, which new erasure code still
-takes exclusively, so each version stays internally consistent; an older
-instance may still insert into `pi_stable_context_erasure_fences`, which is why
-the table stays until every such API has left the rollback window.
+takes exclusively. Do not roll the API back below this revision.
 
 ## Chat thread archived rollout fallbacks removed (2026-09-25)
 
@@ -1468,9 +1471,8 @@ Legacy Clerk user and organization deletion no longer writes
 `pi_stable_context_erasure_fences`, and no writer or reader consults it:
 membership-cache refresh, generation initialization, demand registration,
 publication, and connector, permission and Workflow writes proceed after
-deletion, and later erasure cleanup removes such late rows. The table stays
-until every API that writes it has left the rollback window; a later migration
-drops it. Keep stable-context activation on hold until migration 1168 is present
+deletion, and later erasure cleanup removes such late rows. Migration 1248
+drops the table. Keep stable-context activation on hold until migration 1168 is present
 on every serving API instance.
 
 Mixed-version API operation is safe by construction. A new reader with no
