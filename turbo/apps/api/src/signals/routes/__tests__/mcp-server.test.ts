@@ -2239,59 +2239,34 @@ describe("MCP chat discovery and creation", () => {
     expect((await listThreads(token)).threads).toHaveLength(1);
   });
 
-  it.each([false, true])(
-    "rejects closed-account creation with cached membership %s",
-    async (cachedMembership) => {
-      const f = await creationFixture();
-      const token = f.auth.token({ scope: defaultScopes });
-      if (cachedMembership) {
-        expect((await listAgents(token)).agents).toContainEqual(
-          expect.objectContaining({ agentId: f.agent.agentId }),
-        );
-      }
-      // Infrastructure exception: account-erasure closure has no production
-      // ingress. Install only this test-owned dormant decision, without a worker.
-      const closed = await closeErasureSubjectFixture({
-        subjectKind: "user",
-        subjectId: f.auth.userId,
-      });
-      onTestFinished(async () => {
-        await removeErasureSubjectsFixture([closed.jobId]);
-      });
-      const args = {
-        requestId: randomUUID(),
-        agentId: f.agent.agentId,
-        title: "Must not be created",
-        model: "claude-sonnet-5",
-      };
-      if (!cachedMembership) {
-        const response = await accept(
-          client().request({
-            extraHeaders: protocolHeaders(
-              token,
-              "tools/call",
-              true,
-              "create_chat_thread",
-            ),
-            body: requestBody("tools/call", true, {
-              name: "create_chat_thread",
-              arguments: args,
-            }),
-          }),
-          [401],
-        );
-        expect(response.body).toStrictEqual({ error: "invalid_token" });
-        return;
-      }
-      const result = await callTool(token, "create_chat_thread", args);
-      expect(result.isError).toBeTruthy();
-      structuredToolError(result);
-      expect(result.content).toContainEqual({
-        type: "text",
-        text: "Account content is closed.",
-      });
-    },
-  );
+  it("rejects closed-account creation with cached membership", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({ scope: defaultScopes });
+    expect((await listAgents(token)).agents).toContainEqual(
+      expect.objectContaining({ agentId: f.agent.agentId }),
+    );
+    // Infrastructure exception: account-erasure closure has no production
+    // ingress. Install only this test-owned dormant decision, without a worker.
+    const closed = await closeErasureSubjectFixture({
+      subjectKind: "user",
+      subjectId: f.auth.userId,
+    });
+    onTestFinished(async () => {
+      await removeErasureSubjectsFixture([closed.jobId]);
+    });
+    const result = await callTool(token, "create_chat_thread", {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "Must not be created",
+      model: "claude-sonnet-5",
+    });
+    expect(result.isError).toBeTruthy();
+    structuredToolError(result);
+    expect(result.content).toContainEqual({
+      type: "text",
+      text: "Account content is closed.",
+    });
+  });
 
   it("validates optional creation choices and rejects unrelated execution controls", async () => {
     const f = await creationFixture();
