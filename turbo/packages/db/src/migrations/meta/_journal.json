@@ -1174,8 +1174,15 @@
     {
       "idx": 1245,
       "version": "7",
-      "when": 1790344973175,
-      "tag": "1245_retire_public_brand",
+      "when": 1790344779759,
+      "tag": "1245_drop_chat_event_write_control",
+      "breakpoints": true
+    },
+    {
+      "idx": 1246,
+      "version": "7",
+      "when": 1790346215422,
+      "tag": "1246_retire_public_brand",
       "breakpoints": true
     }
   ]
