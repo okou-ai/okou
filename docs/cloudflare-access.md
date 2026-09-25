@@ -73,4 +73,13 @@ confirm that those hosts will need to be rebound. A changed revision or impact
 requires another review. Conversion retains the Access ID and stored Service
 Token. The admin's own hosts remain bound, while other members' hosts remain
 saved in needs-rebind state until their owners explicitly choose a permitted
-configuration or Direct.
+configuration or Direct. A saved VNC connection using such an SSH host remains
+visible to its owner with a rebind warning; authorized fresh VNC Run inventories
+show it as `availability: { status: "blocked", reason: "needs_rebind" }` for
+diagnosis, matching SSH. Only ready VNC host IDs should be used for new sessions.
+Fresh VNC Runner checks return unavailable; a resolve advertising the saved
+SSH profile also returns unavailable before releasing VNC credentials. With
+Agent grants, a profile mismatch can still return unsupported; thread-scoped
+access rejects the blocked SSH transport as unavailable first. The VNC route
+is never switched to Direct automatically. Already-running Runs may retain
+previously cached SSH authority until completion as described above.

@@ -38,6 +38,9 @@ surface; the index does not replace their detailed rules.
 
 ## Specialized Guidance
 
+- [Discord integration](./discord-integration.md): default-off settings, shared
+  provider contracts, Slack parity, and fixture/real-guild acceptance evidence.
+
 - [Personal paid-tool controls](./paid-tool-controls.md): workspace-member
   preferences, run snapshots, CLI enforcement and the disabled rollout boundary.
 - [External MCP server](./mcp-server.md): OAuth resource setup, organization

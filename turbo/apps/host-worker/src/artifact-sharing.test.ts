@@ -411,6 +411,58 @@ test.each([false, true])(
   },
 );
 
+test("legacy-layout shares and hosted aliases resolve only on the legacy host", async () => {
+  const f = fixture(true);
+  if (f.policy.target.kind !== "html") throw new Error("Expected html fixture");
+  const legacyPolicy: ArtifactSharePolicy = {
+    ...f.policy,
+    publicBrand: "vm0",
+    target: {
+      ...f.policy.target,
+      manifest: { ...f.policy.target.manifest, publicBrand: "vm0" },
+    },
+  };
+  const currentPrefix = `shared-artifacts/okou/${snapshotId}/${fileId}`;
+  const legacyPrefix = `shared-artifacts/vm0/${snapshotId}/${fileId}`;
+  for (const [key, value] of Array.from(f.objects)) {
+    f.objects.delete(key);
+    if (key.startsWith(currentPrefix))
+      f.objects.set(key.replace(currentPrefix, legacyPrefix), value);
+  }
+  const legacyPolicyKey = `artifact-shares/vm0/${id}.json`;
+  const legacyAliasKey = artifactDeliveryKey("vm0", "html", publicToken);
+  f.objects.set(legacyPolicyKey, JSON.stringify(legacyPolicy));
+  f.objects.set(
+    legacyAliasKey,
+    JSON.stringify({
+      version: 1,
+      kind: "publication",
+      publicBrand: "vm0",
+      shareId: id,
+      publicToken,
+      targetKind: "html",
+    }),
+  );
+  for (const url of [
+    `https://${publicToken}.sites.vm0.io/style.css`,
+    `https://sh-${id.replaceAll("-", "")}-${publicToken}.sites.vm0.io/style.css`,
+  ]) {
+    const response = await fetchWorker(new Request(url), f.env);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("Content /style.css");
+  }
+  expect(f.reads).toContain(legacyPolicyKey);
+  expect(f.reads).toContain(legacyAliasKey);
+  expect(
+    f.cache.put.mock.calls.map(([key]) => {
+      return new URL(key.url).pathname;
+    }),
+  ).toContain(`/__artifact-content/vm0/${snapshotId}/${fileId}/style.css`);
+  expect(
+    (await fetchWorker(new Request(`${siteOrigin}/style.css`), f.env)).status,
+  ).toBe(404);
+});
+
 test("warm public bytes still require authoritative permission, and revocation defeats cache hits", async () => {
   const f = fixture();
   const request = () => {
