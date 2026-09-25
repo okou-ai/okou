@@ -6,11 +6,11 @@ import {
   findTranslationWhitespaceIssues,
 } from "./check-i18n-whitespace.node.mjs";
 
-test("all shipped locales and namespaces have no accidental whitespace artifacts", () => {
+await test("all shipped locales and namespaces have no accidental whitespace artifacts", () => {
   assert.deepEqual(checkTranslationResources(), []);
 });
 
-test("rejects trailing line breaks and literal newline artifacts", () => {
+await test("rejects trailing line breaks and literal newline artifacts", () => {
   assert.deepEqual(
     findTranslationWhitespaceIssues({
       onboarding: {
@@ -25,7 +25,7 @@ test("rejects trailing line breaks and literal newline artifacts", () => {
   );
 });
 
-test("rejects repeated spaces but preserves intentional rich-text boundaries", () => {
+await test("rejects repeated spaces but preserves intentional rich-text boundaries", () => {
   assert.deepEqual(
     findTranslationWhitespaceIssues({
       suffix: " link after",
