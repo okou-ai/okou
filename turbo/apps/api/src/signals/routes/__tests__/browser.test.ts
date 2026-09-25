@@ -575,6 +575,8 @@ function mockNativeCheckboxTarget(args: {
 
 function mockNativeRadioTarget(state: {
   memberIds: readonly number[];
+  name: string;
+  formOwnerId: number;
   selectedIndex: number;
   disabledIndex: number;
   writeMatches: boolean;
@@ -614,19 +616,28 @@ function mockNativeRadioTarget(state: {
         return { object: { objectId: "radio-object" } };
       }
       case "DOM.describeNode": {
-        const index = Number(String(command.params.objectId).split("-")[1]);
+        const objectId = String(command.params.objectId);
+        if (objectId === "radio-form") {
+          return {
+            node: { backendNodeId: state.formOwnerId, nodeName: "FORM" },
+          };
+        }
+        const index = Number(objectId.split("-")[1]);
         return {
           node: { backendNodeId: state.memberIds[index], nodeName: "INPUT" },
         };
       }
       case "Runtime.getProperties": {
         return {
-          result: state.memberIds.map((_, index) => {
-            return {
-              name: String(index),
-              value: { objectId: `radio-${index}` },
-            };
-          }),
+          result: [
+            ...state.memberIds.map((_, index) => {
+              return {
+                name: String(index),
+                value: { objectId: `radio-${index}` },
+              };
+            }),
+            { name: "formOwner", value: { objectId: "radio-form" } },
+          ],
         };
       }
       case "Runtime.callFunctionOn": {
@@ -637,19 +648,22 @@ function mockNativeRadioTarget(state: {
         if (declaration.includes("function(limit)")) {
           return { result: { objectId: "radio-array" } };
         }
-        if (declaration.includes("function(anchor)")) {
+        if (declaration.includes("function(anchor, owner)")) {
           return {
             result: {
-              value: state.memberIds.map((_, index) => {
-                return {
-                  label: "Same label",
-                  value: "same-private-value",
-                  disabled: index === state.disabledIndex,
-                  selected: index === state.selectedIndex,
-                  required: state.siteRequired && index === 0,
-                  writable: true,
-                };
-              }),
+              value: {
+                name: state.name,
+                options: state.memberIds.map((_, index) => {
+                  return {
+                    label: "Same label",
+                    value: "same-private-value",
+                    disabled: index === state.disabledIndex,
+                    selected: index === state.selectedIndex,
+                    required: state.siteRequired && index === 0,
+                    writable: true,
+                  };
+                }),
+              },
             },
           };
         }
@@ -1021,6 +1035,8 @@ describe("Browser user-action route", () => {
     acceptBrowserUseCdpSessions([providerId]);
     const group = {
       memberIds: [45, 46, 47] as readonly number[],
+      name: "delivery",
+      formOwnerId: 90,
       selectedIndex: 0,
       disabledIndex: 2,
       writeMatches: true,
@@ -1127,6 +1143,7 @@ describe("Browser user-action route", () => {
       { objectId: "radio-0" },
       { objectId: "radio-1" },
       { objectId: "radio-2" },
+      { objectId: "radio-form" },
     ]);
     const clear = await create();
     const clearToken = clear.body.action.requestToken;
@@ -1196,6 +1213,32 @@ describe("Browser user-action route", () => {
         .state,
     ).toBe("stale");
     group.selectedIndex = 0;
+    const fingerprintFor = async (requestToken: string) => {
+      const value = (await preflight(requestToken)).body.fields[0]?.control
+        .radioGroupFingerprint;
+      if (!value) {
+        throw new Error("Missing radio fingerprint");
+      }
+      return value;
+    };
+    const renamed = await create();
+    const renamedToken = renamed.body.action.requestToken;
+    const renamedFingerprint = await fingerprintFor(renamedToken);
+    group.name = "other-delivery";
+    expect(
+      (await accept(apply(renamedToken, 1, 0, renamedFingerprint), [200])).body
+        .state,
+    ).toBe("stale");
+    group.name = "delivery";
+    const moved = await create();
+    const movedToken = moved.body.action.requestToken;
+    const movedFingerprint = await fingerprintFor(movedToken);
+    group.formOwnerId = 91;
+    expect(
+      (await accept(apply(movedToken, 1, 0, movedFingerprint), [200])).body
+        .state,
+    ).toBe("stale");
+    group.formOwnerId = 90;
     const replaced = await create();
     const replacedToken = replaced.body.action.requestToken;
     const replacedFingerprint = (await preflight(replacedToken)).body.fields[0]

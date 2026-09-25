@@ -1022,6 +1022,8 @@ async function inspectBrowserUseControls(
 }
 
 interface BrowserUseRadioGroup {
+  readonly name: string;
+  readonly formOwnerObjectId: string | null;
   readonly memberNodeIds: readonly number[];
   readonly memberObjectIds: readonly string[];
   readonly options: readonly {
@@ -1054,11 +1056,13 @@ async function readBrowserUseRadioMembers(
     readonly sessionId: string;
     readonly arrayObjectId: string;
     readonly anchorObjectId: string;
+    readonly formOwnerObjectId: string | null;
     readonly memberObjectIds: readonly string[];
     readonly firstCommandId: number;
   },
   signal: AbortSignal,
 ): Promise<{
+  readonly name: string | null;
   readonly options:
     | readonly z.infer<typeof browserUseRadioOptionSchema>[]
     | null;
@@ -1078,9 +1082,10 @@ async function readBrowserUseRadioMembers(
           sessionId,
           params: {
             objectId: arrayObjectId,
-            functionDeclaration: `function(anchor) {
+            functionDeclaration: `function(anchor, owner) {
         if (!Array.isArray(this) || !(anchor instanceof HTMLInputElement) ||
             anchor.type !== "radio" || anchor.getRootNode() !== document || !anchor.name ||
+            anchor.form !== owner ||
             !this.includes(anchor)) return null;
         const members = [...document.querySelectorAll("input")].filter((node) =>
           node.type === "radio" && node.getRootNode() === document &&
@@ -1091,9 +1096,15 @@ async function readBrowserUseRadioMembers(
           value: node.value, disabled: node.matches(":disabled"), selected: node.checked,
           required: node.required, writable: !node.readOnly,
         }));
-        return options.filter((option) => option.selected).length <= 1 ? options : null;
+        return options.filter((option) => option.selected).length <= 1
+          ? { name: anchor.name, options } : null;
       }`,
-            arguments: [{ objectId: anchorObjectId }],
+            arguments: [
+              { objectId: anchorObjectId },
+              args.formOwnerObjectId
+                ? { objectId: args.formOwnerObjectId }
+                : { value: null },
+            ],
             returnByValue: true,
           },
         },
@@ -1101,17 +1112,20 @@ async function readBrowserUseRadioMembers(
       ),
       { reportInput: true },
     );
-  const options = z
-    .array(browserUseRadioOptionSchema)
-    .length(memberObjectIds.length)
-    .safeParse(metadata.result.value);
+  const metadataSchema = z.object({
+    name: z.string().min(1).max(128),
+    options: z
+      .array(browserUseRadioOptionSchema)
+      .length(memberObjectIds.length),
+  });
+  const parsed = metadataSchema.safeParse(metadata.result.value);
   if (
-    !options.success ||
-    options.data.some((option) => {
+    !parsed.success ||
+    parsed.data.options.some((option) => {
       return !option.writable;
     })
   ) {
-    return { options: null, memberNodeIds: [], commandId };
+    return { name: null, options: null, memberNodeIds: [], commandId };
   }
   const memberNodeIds: number[] = [];
   for (const objectId of memberObjectIds) {
@@ -1135,14 +1149,21 @@ async function readBrowserUseRadioMembers(
         ),
       );
     if (!description.success) {
-      return { options: null, memberNodeIds: [], commandId };
+      return { name: null, options: null, memberNodeIds: [], commandId };
     }
     memberNodeIds.push(description.data.node.backendNodeId);
   }
-  return { options: options.data, memberNodeIds, commandId };
+  return {
+    name: parsed.data.name,
+    options: parsed.data.options,
+    memberNodeIds,
+    commandId,
+  };
 }
 
 function browserUseRadioGroupFingerprint(
+  name: string,
+  formOwnerNodeId: number | null,
   memberNodeIds: readonly number[],
   options: readonly z.infer<typeof browserUseRadioOptionSchema>[],
   siteRequired: boolean,
@@ -1150,6 +1171,8 @@ function browserUseRadioGroupFingerprint(
   return createHash("sha256")
     .update(
       JSON.stringify({
+        name,
+        formOwnerNodeId,
         memberNodeIds,
         siteRequired,
         options: options.map(({ label, value, disabled }) => {
@@ -1175,49 +1198,21 @@ function browserUseRadioGroupOptions(
   });
 }
 
-/** Discover actual same-form/name radios without trusting their possibly duplicate values. */
-async function inspectBrowserUseRadioGroup(
+async function readBrowserUseRadioGroupHandles(
   socket: WebSocket,
   sessionId: string,
-  anchorObjectId: string,
+  arrayObjectId: string,
   firstCommandId: number,
   signal: AbortSignal,
 ): Promise<{
-  readonly group: BrowserUseRadioGroup | null;
+  readonly handles: {
+    readonly memberObjectIds: readonly string[];
+    readonly formOwnerObjectId: string | null;
+    readonly formOwnerNodeId: number | null;
+  } | null;
   readonly commandId: number;
 }> {
   let commandId = firstCommandId;
-  const arrayResult = z
-    .object({ result: z.object({ objectId: z.string().min(1).optional() }) })
-    .parse(
-      await sendBrowserUseCdpCommand(
-        socket,
-        {
-          id: commandId++,
-          method: "Runtime.callFunctionOn",
-          sessionId,
-          params: {
-            objectId: anchorObjectId,
-            functionDeclaration: `function(limit) {
-        if (!(this instanceof HTMLInputElement) || this.type !== "radio" ||
-            this.getRootNode() !== document || !this.name || this.name.length > 128) return null;
-        const members = [...document.querySelectorAll("input")].filter((node) =>
-          node.type === "radio" && node.getRootNode() === document &&
-          node.name === this.name && node.form === this.form);
-        return members.length > 0 && members.length <= limit ? members : null;
-      }`,
-            arguments: [{ value: BROWSER_USER_ACTION_MAX_RADIO_MEMBERS }],
-            returnByValue: false,
-          },
-        },
-        signal,
-      ),
-      { reportInput: true },
-    );
-  const arrayObjectId = arrayResult.result.objectId;
-  if (!arrayObjectId) {
-    return { group: null, commandId };
-  }
   const properties = z
     .object({
       result: z.array(
@@ -1225,7 +1220,11 @@ async function inspectBrowserUseRadioGroup(
           .object({
             name: z.string(),
             value: z
-              .object({ objectId: z.string().min(1).optional() })
+              .object({
+                objectId: z.string().min(1).optional(),
+                subtype: z.string().optional(),
+                value: z.unknown().optional(),
+              })
               .optional(),
           })
           .passthrough(),
@@ -1258,37 +1257,150 @@ async function inspectBrowserUseRadioGroup(
       return Number(property.name) !== index || !property.value?.objectId;
     })
   ) {
+    return { handles: null, commandId };
+  }
+  const formOwner = properties.result.find((property) => {
+    return property.name === "formOwner";
+  })?.value;
+  if (
+    !formOwner ||
+    (!formOwner.objectId &&
+      (formOwner.subtype !== "null" || formOwner.value !== null))
+  ) {
+    return { handles: null, commandId };
+  }
+  const formOwnerObjectId = formOwner.objectId ?? null;
+  let formOwnerNodeId: number | null = null;
+  if (formOwnerObjectId) {
+    const description = z
+      .object({
+        node: z.object({
+          backendNodeId: z.number().int().positive().safe(),
+          nodeName: z.literal("FORM"),
+        }),
+      })
+      .safeParse(
+        await sendBrowserUseCdpCommand(
+          socket,
+          {
+            id: commandId++,
+            method: "DOM.describeNode",
+            sessionId,
+            params: { objectId: formOwnerObjectId, depth: 0 },
+          },
+          signal,
+        ),
+      );
+    if (!description.success) {
+      return { handles: null, commandId };
+    }
+    formOwnerNodeId = description.data.node.backendNodeId;
+  }
+  return {
+    handles: {
+      memberObjectIds: indexed.map((property) => {
+        return property.value?.objectId ?? "";
+      }),
+      formOwnerObjectId,
+      formOwnerNodeId,
+    },
+    commandId,
+  };
+}
+
+/** Discover actual same-form/name radios without trusting their possibly duplicate values. */
+async function inspectBrowserUseRadioGroup(
+  socket: WebSocket,
+  sessionId: string,
+  anchorObjectId: string,
+  firstCommandId: number,
+  signal: AbortSignal,
+): Promise<{
+  readonly group: BrowserUseRadioGroup | null;
+  readonly commandId: number;
+}> {
+  let commandId = firstCommandId;
+  const arrayResult = z
+    .object({ result: z.object({ objectId: z.string().min(1).optional() }) })
+    .parse(
+      await sendBrowserUseCdpCommand(
+        socket,
+        {
+          id: commandId++,
+          method: "Runtime.callFunctionOn",
+          sessionId,
+          params: {
+            objectId: anchorObjectId,
+            functionDeclaration: `function(limit) {
+        if (!(this instanceof HTMLInputElement) || this.type !== "radio" ||
+            this.getRootNode() !== document || !this.name || this.name.length > 128) return null;
+        const members = [...document.querySelectorAll("input")].filter((node) =>
+          node.type === "radio" && node.getRootNode() === document &&
+          node.name === this.name && node.form === this.form);
+        if (members.length < 1 || members.length > limit) return null;
+        Object.defineProperty(members, "formOwner", { value: this.form });
+        return members;
+      }`,
+            arguments: [{ value: BROWSER_USER_ACTION_MAX_RADIO_MEMBERS }],
+            returnByValue: false,
+          },
+        },
+        signal,
+      ),
+      { reportInput: true },
+    );
+  const arrayObjectId = arrayResult.result.objectId;
+  if (!arrayObjectId) {
     return { group: null, commandId };
   }
-  const memberObjectIds = indexed.map((property) => {
-    return property.value?.objectId ?? "";
-  });
+  const resolved = await readBrowserUseRadioGroupHandles(
+    socket,
+    sessionId,
+    arrayObjectId,
+    commandId,
+    signal,
+  );
+  commandId = resolved.commandId;
+  if (!resolved.handles) {
+    return { group: null, commandId };
+  }
+  const { memberObjectIds, formOwnerObjectId, formOwnerNodeId } =
+    resolved.handles;
   const observed = await readBrowserUseRadioMembers(
     socket,
     {
       sessionId,
       arrayObjectId,
       anchorObjectId,
+      formOwnerObjectId,
       memberObjectIds,
       firstCommandId: commandId,
     },
     signal,
   );
   commandId = observed.commandId;
-  const { options, memberNodeIds } = observed;
-  if (!options || new Set(memberNodeIds).size !== memberNodeIds.length) {
+  const { name, options, memberNodeIds } = observed;
+  if (
+    !name ||
+    !options ||
+    new Set(memberNodeIds).size !== memberNodeIds.length
+  ) {
     return { group: null, commandId };
   }
   const siteRequired = options.some((option) => {
     return option.required;
   });
   const fingerprint = browserUseRadioGroupFingerprint(
+    name,
+    formOwnerNodeId,
     memberNodeIds,
     options,
     siteRequired,
   );
   return {
     group: {
+      name,
+      formOwnerObjectId,
       memberNodeIds,
       memberObjectIds,
       siteRequired,
@@ -2208,14 +2320,16 @@ function browserUseMixedControlWriterFunction(): string {
           for (const spec of specs) {
             if (spec.kind !== "radio") continue;
             spec.members = rest.slice(memberOffset, memberOffset + spec.memberCount);
-            memberOffset += spec.memberCount;
+            spec.owner = rest[memberOffset + spec.memberCount];
+            memberOffset += spec.memberCount + 1;
           }
           if (memberOffset !== rest.length) return false;
           const matches = (control, spec, final) => {
             if (!control.isConnected || control.ownerDocument !== document || control.matches(":disabled")) return false;
             if (spec.kind === "radio") {
               if (!(control instanceof HTMLInputElement) || control.type !== "radio" ||
-                  control.getRootNode() !== document || !control.name || !spec.members.includes(control) ||
+                  control.getRootNode() !== document || control.name !== spec.name ||
+                  control.form !== spec.owner || !spec.members.includes(control) ||
                   spec.members.length !== spec.options.length) return false;
               const current = [...document.querySelectorAll("input")].filter((node) =>
                 node.type === "radio" && node.getRootNode() === document &&
@@ -2315,6 +2429,7 @@ async function writeBrowserUseMixedControlFields(
       ? {
           kind: "radio",
           memberCount: field.radio.memberObjectIds.length,
+          name: field.radio.name,
           options: field.radio.options,
           required: field.radio.siteRequired,
           selectedIndex: field.radio.selectedIndex,
@@ -2362,13 +2477,17 @@ async function writeBrowserUseMixedControlFields(
               ];
             }),
             ...args.fields.flatMap((field) => {
-              return (
-                field.radio?.memberObjectIds.map((objectId) => {
-                  return {
-                    objectId,
-                  };
-                }) ?? []
-              );
+              if (!field.radio) {
+                return [];
+              }
+              return [
+                ...field.radio.memberObjectIds.map((objectId) => {
+                  return { objectId };
+                }),
+                field.radio.formOwnerObjectId
+                  ? { objectId: field.radio.formOwnerObjectId }
+                  : { value: null },
+              ];
             }),
           ],
           returnByValue: true,
