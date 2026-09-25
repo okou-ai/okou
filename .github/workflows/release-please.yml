@@ -403,6 +403,21 @@ jobs:
       IOS_VERSION: ${{ needs.release-please.outputs.ios_version }}
       IOS_INTERNAL_GROUP_NAME: ${{ vars.IOS_INTERNAL_GROUP_NAME }}
     steps:
+      - name: Notify Slack - Starting
+        id: slack-start
+        if: ${{ vars.SLACK_RELEASE_CHANNEL_ID != '' }}
+        uses: slackapi/slack-github-action@v4.0.0
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ vars.SLACK_RELEASE_CHANNEL_ID }}
+            text: "*iOS TestFlight* publishing internal release..."
+            blocks:
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: "*iOS TestFlight* publishing internal release...\n📦 Version: `${{ needs.release-please.outputs.ios_version }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.release-please.outputs.release_target }}
@@ -443,6 +458,36 @@ jobs:
           path: ${{ runner.temp }}/okou-ios-symbols
           if-no-files-found: ignore
           retention-days: 90
+      - name: Notify Slack - Success
+        if: ${{ success() && steps.slack-start.outputs.ts }}
+        uses: slackapi/slack-github-action@v4.0.0
+        with:
+          method: chat.update
+          token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ vars.SLACK_RELEASE_CHANNEL_ID }}
+            ts: "${{ steps.slack-start.outputs.ts }}"
+            text: "*iOS TestFlight* ✅ Available to internal testers"
+            blocks:
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: "*iOS TestFlight* ✅ Available to internal testers\n📦 Version: `${{ needs.release-please.outputs.ios_version }}` (build `${{ steps.prepare.outputs.build_number }}`)\n👥 Group: `${{ vars.IOS_INTERNAL_GROUP_NAME }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+      - name: Notify Slack - Failure
+        if: ${{ failure() && steps.slack-start.outputs.ts }}
+        uses: slackapi/slack-github-action@v4.0.0
+        with:
+          method: chat.update
+          token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ vars.SLACK_RELEASE_CHANNEL_ID }}
+            ts: "${{ steps.slack-start.outputs.ts }}"
+            text: "*iOS TestFlight* ❌ Internal release failed"
+            blocks:
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: "*iOS TestFlight* ❌ Internal release failed\n📦 Version: `${{ needs.release-please.outputs.ios_version }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
 
   promote-desktop-release:
     name: promote-desktop-release
