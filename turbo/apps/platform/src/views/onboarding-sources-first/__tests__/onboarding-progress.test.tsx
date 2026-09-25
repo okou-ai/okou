@@ -8,10 +8,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import {
-  listLocalStorageEntriesForTest,
-  localStorageSignals,
-} from "../../../signals/external/local-storage.ts";
+import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { pathname, search } from "../../../signals/location.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -52,10 +49,20 @@ function seedProgress(
 }
 
 function savedStep(): unknown {
-  const entry = listLocalStorageEntriesForTest(
-    "onboarding:sources-first-step",
-  )[0];
-  return JSON.parse(entry?.value ?? "null");
+  return JSON.parse(storedOnboarding()[1] ?? "null");
+}
+
+// A fresh signal reads the current bytes; a reused one may return its cached
+// read from before the app changed storage.
+function storedOnboarding(): readonly (string | null)[] {
+  return [
+    context.store.get(
+      localStorageSignals("onboarding:sources-first-draft").get$,
+    ),
+    context.store.get(
+      localStorageSignals("onboarding:sources-first-step").get$,
+    ),
+  ];
 }
 
 function getButtonByName(name: string): HTMLElement {
@@ -220,11 +227,11 @@ test.each([ROUTES.home, ROUTES.onboarding])(
 
     await screen.findByRole("textbox", { name: "Message" });
     await waitFor(() => {
-      expect(listLocalStorageEntriesForTest("onboarding:")).toStrictEqual([]);
+      expect(storedOnboarding()).toStrictEqual([null, null]);
     });
     expect(
-      listLocalStorageEntriesForTest("test:unrelated-preference"),
-    ).toStrictEqual([{ key: "test:unrelated-preference", value: "keep me" }]);
+      context.store.get(localStorageSignals("test:unrelated-preference").get$),
+    ).toBe("keep me");
   },
 );
 
@@ -235,7 +242,7 @@ test.each([
   "A completed account preserves other identities' progress: %j",
   async (identity) => {
     seedProgress("ready", identity);
-    const saved = listLocalStorageEntriesForTest("onboarding:");
+    const saved = storedOnboarding();
 
     await setupPage({
       context,
@@ -244,7 +251,7 @@ test.each([
     });
 
     await screen.findByRole("textbox", { name: "Message" });
-    expect(listLocalStorageEntriesForTest("onboarding:")).toStrictEqual(saved);
+    expect(storedOnboarding()).toStrictEqual(saved);
   },
 );
 
@@ -282,9 +289,7 @@ test("A failed completion keeps the ready step and edited request available for 
     "Draft my launch plan",
   );
   expect(savedStep()).toMatchObject({ step: "ready" });
-  expect(
-    listLocalStorageEntriesForTest("onboarding:sources-first-draft"),
-  ).toHaveLength(1);
+  expect(storedOnboarding()[0]).not.toBeNull();
   await waitFor(() => {
     expect(getButtonByName("Start with Okou")).toBeEnabled();
   });

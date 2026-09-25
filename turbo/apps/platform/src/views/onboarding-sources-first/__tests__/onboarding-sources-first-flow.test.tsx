@@ -14,10 +14,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { pathname, search } from "../../../signals/location.ts";
-import {
-  listLocalStorageEntriesForTest,
-  localStorageSignals,
-} from "../../../signals/external/local-storage.ts";
+import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
@@ -31,6 +28,19 @@ const draftStorage = localStorageSignals("onboarding:sources-first-draft");
 const completedDraftStorage = localStorageSignals(
   "onboarding:sources-first-draft",
 );
+
+// A fresh signal reads the current bytes; a reused one may return its cached
+// read from before the app changed storage.
+function storedOnboarding(): readonly (string | null)[] {
+  return [
+    context.store.get(
+      localStorageSignals("onboarding:sources-first-draft").get$,
+    ),
+    context.store.get(
+      localStorageSignals("onboarding:sources-first-step").get$,
+    ),
+  ];
+}
 
 const SOURCES_FIRST_ON = {
   [FeatureSwitchKey.OnboardingSourcesFirst]: true,
@@ -557,7 +567,7 @@ test("A refreshed ready step keeps the industry, model choice, and edited reques
   expect(sentIndustry).toBe("marketing");
   expect(sentProvider).toBe("claudeCode");
   expect(context.store.get(completedDraftStorage.get$)).toBeNull();
-  expect(listLocalStorageEntriesForTest("onboarding:")).toStrictEqual([]);
+  expect(storedOnboarding()).toStrictEqual([null, null]);
 });
 
 test("A member's run reaches the first request without the admin-only completion", async () => {
@@ -601,7 +611,7 @@ test("A member's run reaches the first request without the admin-only completion
   // `POST /api/onboarding/complete` is admin-only, so a member run would only
   // ever collect a 403 from it.
   expect(completions).toBe(0);
-  expect(listLocalStorageEntriesForTest("onboarding:")).toStrictEqual([]);
+  expect(storedOnboarding()).toStrictEqual([null, null]);
 });
 
 test("A step keeps the prompt handoff and redeem code it arrived with", async () => {
