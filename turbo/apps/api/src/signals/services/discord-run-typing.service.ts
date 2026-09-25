@@ -11,12 +11,14 @@ import { waitUntil } from "../context/wait-until";
 import type { Db, ReadonlyDb } from "../external/db";
 import { discordClient } from "../external/discord-client";
 import { tapError } from "../utils";
-import { requireDiscordConversationAccess$ } from "./discord-access.service";
+import { requireDiscordBinding$ } from "./discord-access.service";
+import type { DiscordFailureResponse } from "./discord-api-response";
 import {
   discordDeliveryTargetSchema,
   type DiscordDeliveryTarget,
 } from "./discord-chat-callback-payload";
 import { findDiscordChatRoute } from "./discord-chat-route-access.service";
+import { resolveDiscordProviderAccess } from "./discord-provider-access";
 import { internalRunCallbackKindForRecord } from "./internal-run-callback";
 
 const L = logger("DiscordRunTyping");
@@ -33,58 +35,92 @@ export const DISCORD_TYPING_REFRESH_INTERVAL_SECONDS = 8;
 const ACTIVE_RUN_STATUSES = ["queued", "pending", "running"] as const;
 /** Admission, launch and the first heartbeat all land within a few seconds. */
 const TYPING_REPEAT_HOLD_MS = 5000;
-const MAX_TYPING_HOLDS = 1000;
-const GLOBAL_TYPING_HOLD = "global";
+/**
+ * Typing reuses a destination's Discord permission reads for this long so an
+ * active run costs one typing request per refresh instead of the full
+ * multi-request check. Only typing reads it; delivery always rechecks.
+ */
+const TYPING_ACCESS_REUSE_MS = 45_000;
+const MAX_TYPING_ENTRIES = 1000;
 
 /**
- * Process-local suppression for repeated sends and Discord `retry_after`.
- * Entries expire at their deadline and the table has a hard capacity; another
- * API instance may still send once, which the Runner cadence bounds.
+ * Process-local suppression for repeated sends and Discord `retry_after`, and
+ * typing-only reuse of permission reads. Entries expire at their deadline and
+ * each table has a hard capacity; another API instance may still send once,
+ * which the Runner cadence bounds.
  */
 const typingHoldTable = singleton(() => {
   return new Map<string, number>();
 });
+const typingAccessTable = singleton(() => {
+  return new Map<string, number>();
+});
+/** Kept outside the bounded tables so eviction can never drop it. */
+const globalTypingHold = singleton(() => {
+  return { until: 0 };
+});
 
-function typingHeld(channelId: string): boolean {
-  const typingHolds = typingHoldTable();
-  const current = now();
-  return [channelId, GLOBAL_TYPING_HOLD].some((key) => {
-    const until = typingHolds.get(key);
-    if (until === undefined) {
-      return false;
-    }
-    if (until > current) {
-      return true;
-    }
-    typingHolds.delete(key);
+function liveEntry(table: Map<string, number>, key: string): boolean {
+  const until = table.get(key);
+  if (until === undefined) {
     return false;
-  });
+  }
+  if (until > now()) {
+    return true;
+  }
+  table.delete(key);
+  return false;
 }
 
-function holdTyping(key: string, durationMs: number): void {
-  const typingHolds = typingHoldTable();
-  const until = now() + durationMs;
-  if ((typingHolds.get(key) ?? 0) >= until) {
+function typingHeld(channelId: string): boolean {
+  const global = globalTypingHold();
+  if (global.until > now()) {
+    return true;
+  }
+  global.until = 0;
+  return liveEntry(typingHoldTable(), channelId);
+}
+
+function setBoundedEntry(
+  table: Map<string, number>,
+  key: string,
+  until: number,
+): void {
+  if ((table.get(key) ?? 0) >= until) {
     return;
   }
-  typingHolds.delete(key);
-  if (typingHolds.size >= MAX_TYPING_HOLDS) {
+  table.delete(key);
+  if (table.size >= MAX_TYPING_ENTRIES) {
     const current = now();
-    for (const [heldKey, heldUntil] of typingHolds) {
+    for (const [heldKey, heldUntil] of table) {
       if (heldUntil <= current) {
-        typingHolds.delete(heldKey);
+        table.delete(heldKey);
       }
     }
-    const oldest = typingHolds.keys().next();
-    if (typingHolds.size >= MAX_TYPING_HOLDS && !oldest.done) {
-      typingHolds.delete(oldest.value);
+    const oldest = table.keys().next();
+    if (table.size >= MAX_TYPING_ENTRIES && !oldest.done) {
+      table.delete(oldest.value);
     }
   }
-  typingHolds.set(key, until);
+  table.set(key, until);
+}
+
+function holdTyping(channelId: string, durationMs: number): void {
+  setBoundedEntry(typingHoldTable(), channelId, now() + durationMs);
+}
+
+/** Any rate limit typing sees pauses all typing; status must yield first. */
+function holdAllTyping(durationMs: number): void {
+  const global = globalTypingHold();
+  global.until = Math.max(global.until, now() + durationMs);
 }
 
 async function sendTypingOnce(
-  args: { readonly botToken: string; readonly channelId: string },
+  args: {
+    readonly botToken: string;
+    readonly channelId: string;
+    readonly accessKey?: string;
+  },
   signal: AbortSignal,
 ): Promise<void> {
   // Check and claim synchronously so concurrent callers send at most once.
@@ -92,15 +128,22 @@ async function sendTypingOnce(
     return;
   }
   holdTyping(args.channelId, TYPING_REPEAT_HOLD_MS);
-  const result = await discordClient.sendDiscordTyping(args, signal);
+  const result = await discordClient.sendDiscordTyping(
+    { botToken: args.botToken, channelId: args.channelId },
+    signal,
+  );
   if (result.kind === "ok") {
     return;
   }
   if (result.kind === "discord-error" && result.retryAfterMs !== undefined) {
-    holdTyping(
-      result.global ? GLOBAL_TYPING_HOLD : args.channelId,
-      result.retryAfterMs,
-    );
+    if (result.global) {
+      holdAllTyping(result.retryAfterMs);
+    } else {
+      holdTyping(args.channelId, result.retryAfterMs);
+    }
+  }
+  if (result.kind === "unavailable" && args.accessKey !== undefined) {
+    typingAccessTable().delete(args.accessKey);
   }
   L.warn("Discord typing indicator was not sent", {
     channelId: args.channelId,
@@ -156,6 +199,22 @@ async function activeRunOwner(
   return run;
 }
 
+/** Returns null when access is gone; throws when the failure is transient. */
+function typingAccessDenied(response: DiscordFailureResponse): null {
+  const retryAfterSeconds = response.body.error.retryAfterSeconds;
+  if (response.status === 429) {
+    holdAllTyping((retryAfterSeconds ?? 1) * 1000);
+  }
+  if (response.status === 403 || response.status === 404) {
+    return null;
+  }
+  throw new Error(`Discord typing access check failed: ${response.status}`);
+}
+
+/**
+ * The route, feature, binding and membership checks run on every refresh.
+ * Discord permission reads are reused for typing only, within a short window.
+ */
 async function currentTypingAccess(
   db: Db,
   args: {
@@ -165,18 +224,40 @@ async function currentTypingAccess(
     readonly target: DiscordDeliveryTarget;
   },
   signal: AbortSignal,
-) {
+): Promise<{ readonly botToken: string; readonly accessKey: string } | null> {
   const route = await findDiscordChatRoute(db, args);
   signal.throwIfAborted();
   if (!route) {
     return null;
   }
-  const access = await createStore().set(
-    requireDiscordConversationAccess$,
+  const current = await createStore().set(
+    requireDiscordBinding$,
+    { orgId: args.orgId, userId: args.userId, guildId: args.target.guildId },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (current.kind === "denied") {
+    return typingAccessDenied(current.response);
+  }
+  if (
+    current.binding.connectionId !== args.target.connectionId ||
+    current.binding.discordUserId !== args.target.discordUserId
+  ) {
+    return null;
+  }
+  const accessKey = [
+    current.binding.connectionId,
+    current.binding.discordUserId,
+    args.target.guildId,
+    args.target.channelId,
+  ].join(":");
+  if (liveEntry(typingAccessTable(), accessKey)) {
+    return { botToken: current.botToken, accessKey };
+  }
+  const access = await resolveDiscordProviderAccess(
     {
-      orgId: args.orgId,
-      userId: args.userId,
-      guildId: args.target.guildId,
+      ...current.binding,
+      botToken: current.botToken,
       channelId: args.target.channelId,
       mode: "write",
     },
@@ -184,24 +265,14 @@ async function currentTypingAccess(
   );
   signal.throwIfAborted();
   if (access.kind === "denied") {
-    const retryAfterSeconds = access.response.body.error.retryAfterSeconds;
-    if (retryAfterSeconds !== undefined) {
-      holdTyping(args.target.channelId, retryAfterSeconds * 1000);
-    }
-    if (access.response.status === 403 || access.response.status === 404) {
-      return null;
-    }
-    throw new Error(
-      `Discord typing access check failed: ${access.response.status}`,
-    );
+    return typingAccessDenied(access.response);
   }
-  if (
-    access.binding.connectionId !== args.target.connectionId ||
-    access.binding.discordUserId !== args.target.discordUserId
-  ) {
-    return null;
-  }
-  return access;
+  setBoundedEntry(
+    typingAccessTable(),
+    accessKey,
+    now() + TYPING_ACCESS_REUSE_MS,
+  );
+  return { botToken: current.botToken, accessKey };
 }
 
 async function refreshDiscordRunTyping(
@@ -236,14 +307,19 @@ async function refreshDiscordRunTyping(
     return;
   }
   await sendTypingOnce(
-    { botToken: access.botToken, channelId: args.target.channelId },
+    {
+      botToken: access.botToken,
+      channelId: args.target.channelId,
+      accessKey: access.accessKey,
+    },
     signal,
   );
 }
 
 /**
  * Detached typing for a Discord-triggered run that is still active. Every
- * attempt revalidates the route, binding, feature and destination access.
+ * attempt revalidates the route, binding and feature; destination permission
+ * reads are reused for typing within {@link TYPING_ACCESS_REUSE_MS}.
  */
 export function scheduleDiscordRunTyping(
   db: Db,
