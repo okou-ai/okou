@@ -12,6 +12,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import { delay } from "signal-timers";
 import { z } from "zod";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -21,12 +22,15 @@ import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
-import type { DiscordChatDeliveryParts } from "@okouai/db/jsonb-contracts/discord-chat-delivery";
+import type {
+  DiscordChatDeliveryPart,
+  DiscordChatDeliveryParts,
+} from "@okouai/db/jsonb-contracts/discord-chat-delivery";
 import { splitDiscordMessage } from "../../lib/discord-message";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
-import { discordClient } from "../external/discord-client";
+import { discordClient, type DiscordMessage } from "../external/discord-client";
 import { settleIncludingAbort } from "../utils";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
@@ -38,6 +42,12 @@ const L = logger("DiscordChatDelivery");
 const DELIVERY_LEASE_MS = 120_000;
 const DELIVERY_DEADLINE_MS = 60_000;
 const MAX_DELIVERY_ATTEMPTS = 5;
+/**
+ * Discord returns the original message for a repeated enforced nonce only for
+ * a few minutes; replays stay well inside that window.
+ */
+const DISCORD_NONCE_REPLAY_WINDOW_MS = 60_000;
+const MAX_NONCE_REPLAYS = 2;
 const deliveryPartsSchema = z.array(
   z.object({
     content: z.string(),
@@ -56,6 +66,16 @@ class DiscordDeliveryFailure extends Error {
   ) {
     super(message);
     this.name = "DiscordDeliveryFailure";
+  }
+}
+
+/** A send whose outcome can no longer be reconciled without a duplicate. */
+class DiscordDeliveryUncertain extends Error {
+  constructor() {
+    super(
+      "Discord delivery outcome is uncertain outside the nonce replay window; the send was not repeated",
+    );
+    this.name = "DiscordDeliveryUncertain";
   }
 }
 
@@ -417,57 +437,152 @@ async function persistParts(
   }
 }
 
-async function reconcileAttemptedPart(
+/**
+ * Sends one recorded part. Discord omits nonce from fetched history, so an
+ * uncertain send is reconciled by replaying the same enforced nonce: Discord
+ * returns the original message when the lost send was accepted and creates it
+ * once when it was not. Discord deduplicates only for a few minutes, so outside
+ * this window the outcome stays uncertain instead of risking a duplicate.
+ */
+async function sendDeliveryPart(
   db: Db,
   delivery: Delivery,
-  nonce: string,
+  parts: DiscordChatDeliveryPart[],
+  index: number,
   signal: AbortSignal,
-): Promise<string | null> {
-  let before: string | undefined;
-  for (let page = 0; page < 5; page += 1) {
-    const access = await currentDeliveryAccess(db, delivery, signal, "read");
-    if (!access) {
-      return null;
+): Promise<"sent" | "suppressed"> {
+  for (let replays = 0; ; replays += 1) {
+    const part = parts[index];
+    if (!part) {
+      throw new Error("Discord delivery part is unavailable");
     }
-    const result = await discordClient.fetchDiscordMessages(
+    const replay = part.attemptedAt !== null;
+    if (replay && replayWindowRemainingMs(part) <= 0) {
+      throw new DiscordDeliveryUncertain();
+    }
+    const access = await currentDeliveryAccess(db, delivery, signal, "write");
+    if (!access) {
+      return "suppressed";
+    }
+    const attempt = replay
+      ? part
+      : { ...part, attemptedAt: nowDate().toISOString() };
+    if (!replay) {
+      parts[index] = attempt;
+      await persistParts(db, delivery, parts);
+    }
+    signal.throwIfAborted();
+    const result = await discordClient.createDiscordMessage(
       {
         botToken: access.botToken,
         channelId: delivery.channelId,
-        before,
-        limit: 100,
+        content: part.content,
+        nonce: part.nonce,
       },
       signal,
     );
     signal.throwIfAborted();
     if (result.kind === "unavailable") {
-      return null;
+      return "suppressed";
     }
-    if (result.kind === "discord-error") {
-      throw new DiscordDeliveryFailure(
-        `Discord delivery reconciliation failed: ${result.status}`,
-        result.retryAfterMs,
-      );
+    if (result.kind === "ok") {
+      parts[index] = {
+        ...attempt,
+        messageId: verifiedMessageId(result.data, delivery, access, part.nonce),
+      };
+      await persistParts(db, delivery, parts);
+      return "sent";
     }
-    const found = result.data.find((message) => {
-      return (
-        message.nonce === nonce &&
-        message.channel_id === delivery.channelId &&
-        message.author.id === access.binding.botUserId
-      );
+    const retryAfterMs = await settleFailedSend(db, delivery, parts, index, {
+      replay,
+      replays,
+      status: result.status,
+      retryAfterMs: result.retryAfterMs,
     });
-    if (found) {
-      return found.id;
+    if (retryAfterMs > 0) {
+      await delay(retryAfterMs, { signal });
     }
-    if (result.data.length < 100) {
-      break;
-    }
-    const lastMessage = result.data.at(-1);
-    if (!lastMessage) {
-      throw new Error("Discord reconciliation page has no last message");
-    }
-    before = lastMessage.id;
   }
-  return null;
+}
+
+function verifiedMessageId(
+  message: DiscordMessage,
+  delivery: Delivery,
+  access: { readonly binding: { readonly botUserId: string } },
+  nonce: string,
+): string {
+  if (
+    message.channel_id !== delivery.channelId ||
+    message.author.id !== access.binding.botUserId ||
+    (message.nonce !== undefined && message.nonce !== nonce)
+  ) {
+    throw new Error("Discord delivery response does not match its destination");
+  }
+  return message.id;
+}
+
+/** Throws unless the failed send may be replayed; returns the replay delay. */
+async function settleFailedSend(
+  db: Db,
+  delivery: Delivery,
+  parts: DiscordChatDeliveryPart[],
+  index: number,
+  send: {
+    readonly replay: boolean;
+    readonly replays: number;
+    readonly status: number;
+    readonly retryAfterMs?: number;
+  },
+): Promise<number> {
+  const attempt = parts[index];
+  if (!attempt) {
+    throw new Error("Discord delivery part is unavailable");
+  }
+  const rejected =
+    send.status >= 400 && send.status < 500 && send.status !== 408;
+  if (rejected && !send.replay) {
+    // An explicit client rejection of the first send confirms that no
+    // message was accepted, so the part may be sent again later.
+    parts[index] = { ...attempt, attemptedAt: null };
+    await persistParts(
+      db,
+      delivery,
+      parts,
+      send.retryAfterMs === undefined
+        ? undefined
+        : new Date(nowDate().getTime() + send.retryAfterMs),
+    );
+    throw new DiscordDeliveryFailure(
+      `Discord message delivery failed: ${send.status}`,
+      send.retryAfterMs,
+    );
+  }
+  const retryAfterMs = send.retryAfterMs ?? 0;
+  if (
+    rejected &&
+    (send.status !== 429 || retryAfterMs >= replayWindowRemainingMs(attempt))
+  ) {
+    // A rejected replay cannot prove whether the lost send was accepted.
+    throw new DiscordDeliveryUncertain();
+  }
+  if (send.replays >= MAX_NONCE_REPLAYS) {
+    // Later claims start after the lease and therefore outside the window.
+    throw new DiscordDeliveryFailure(
+      `Discord message delivery failed: ${send.status}`,
+    );
+  }
+  return retryAfterMs;
+}
+
+function replayWindowRemainingMs(part: DiscordChatDeliveryPart): number {
+  if (part.attemptedAt === null) {
+    throw new Error("Discord delivery replay has no recorded attempt");
+  }
+  return (
+    Date.parse(part.attemptedAt) +
+    DISCORD_NONCE_REPLAY_WINDOW_MS -
+    nowDate().getTime()
+  );
 }
 
 async function deliverClaimedDiscordChat(
@@ -504,73 +619,12 @@ async function deliverClaimedDiscordChat(
     if (part.messageId !== null) {
       continue;
     }
-    if (part.attemptedAt !== null) {
-      const messageId = await reconcileAttemptedPart(
-        db,
-        delivery,
-        part.nonce,
-        signal,
-      );
-      if (messageId === null) {
-        throw new Error(
-          "Discord delivery outcome is unconfirmed; the previous send was not replayed",
-        );
-      }
-      parts[index] = { ...part, messageId };
-      await persistParts(db, delivery, parts);
-      continue;
-    }
-    const access = await currentDeliveryAccess(db, delivery, signal, "write");
-    if (!access) {
-      return "suppressed";
-    }
-    const attemptedPart = { ...part, attemptedAt: nowDate().toISOString() };
-    parts[index] = attemptedPart;
-    await persistParts(db, delivery, parts);
-    signal.throwIfAborted();
-    const result = await discordClient.createDiscordMessage(
-      {
-        botToken: access.botToken,
-        channelId: delivery.channelId,
-        content: part.content,
-        nonce: part.nonce,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (result.kind === "unavailable") {
-      return "suppressed";
-    }
-    if (result.kind === "discord-error") {
-      // An explicit client rejection confirms that no message was accepted.
-      // A timeout/network/5xx response stays uncertain and is reconciled by nonce.
-      if (result.status >= 400 && result.status < 500) {
-        parts[index] = { ...part, attemptedAt: null };
-        await persistParts(
-          db,
-          delivery,
-          parts,
-          result.retryAfterMs === undefined
-            ? undefined
-            : new Date(nowDate().getTime() + result.retryAfterMs),
-        );
-      }
-      throw new DiscordDeliveryFailure(
-        `Discord message delivery failed: ${result.status}`,
-        result.retryAfterMs,
-      );
-    }
     if (
-      result.data.channel_id !== delivery.channelId ||
-      result.data.author.id !== access.binding.botUserId ||
-      (result.data.nonce !== undefined && result.data.nonce !== part.nonce)
+      (await sendDeliveryPart(db, delivery, parts, index, signal)) ===
+      "suppressed"
     ) {
-      throw new Error(
-        "Discord delivery response does not match its destination",
-      );
+      return "suppressed";
     }
-    parts[index] = { ...attemptedPart, messageId: result.data.id };
-    await persistParts(db, delivery, parts);
   }
   return "delivered";
 }
@@ -618,6 +672,10 @@ export async function dispatchDiscordChatDeliveryOnce(
           }
         : {
             status: "failed",
+            // An uncertain send is terminal; retrying could duplicate it.
+            ...(outcome.error instanceof DiscordDeliveryUncertain
+              ? { attempts: MAX_DELIVERY_ATTEMPTS }
+              : {}),
             ...(outcome.error instanceof DiscordDeliveryFailure &&
             outcome.error.retryAfterMs !== undefined
               ? {

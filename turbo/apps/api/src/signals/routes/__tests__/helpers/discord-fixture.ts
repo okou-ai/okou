@@ -128,11 +128,15 @@ export async function setupConnectedDiscordActor(
 const sendBodySchema = z.object({
   content: z.string(),
   nonce: z.union([z.string(), z.number()]).optional(),
+  enforce_nonce: z.boolean().optional(),
   allowed_mentions: z.object({
     parse: z.array(z.string()),
     replied_user: z.boolean(),
   }),
 });
+
+/** Discord deduplicates an enforced nonce for "the past few minutes". */
+const DISCORD_NONCE_DEDUPE_MS = 5 * 60_000;
 
 export function mockDiscordProvider(actor: ConnectedDiscordActor) {
   const guildChannelId = uniqueDiscordSnowflake();
@@ -172,6 +176,7 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
       | Response
       | undefined
       | Promise<Response | undefined>;
+    /** Runs for every accepted send, including enforced-nonce replays. */
     afterMessageCreated?: (
       message: DiscordMessage,
     ) => Response | undefined | Promise<Response | undefined>;
@@ -283,7 +288,11 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
           .sort((left, right) => {
             return BigInt(left.id) > BigInt(right.id) ? -1 : 1;
           })
-          .slice(0, Number(query.get("limit") ?? 50));
+          .slice(0, Number(query.get("limit") ?? 50))
+          .map(({ nonce: _nonce, ...message }) => {
+            // Discord omits nonce from fetched history.
+            return message;
+          });
         return HttpResponse.json(result);
       },
     ),
@@ -317,6 +326,23 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
           return blocked;
         }
         const body = sendBodySchema.parse(await request.json());
+        const nonce = body.nonce === undefined ? undefined : String(body.nonce);
+        const original =
+          body.enforce_nonce === true && nonce !== undefined
+            ? [...messages.values()].find((message) => {
+                return (
+                  message.nonce === nonce &&
+                  message.author.id === actor.botUserId &&
+                  now() - Date.parse(message.timestamp) <
+                    DISCORD_NONCE_DEDUPE_MS
+                );
+              })
+            : undefined;
+        if (original) {
+          // Discord returns the original message for a repeated enforced nonce.
+          const overridden = await state.afterMessageCreated?.(original);
+          return overridden ?? HttpResponse.json(original);
+        }
         const message: DiscordMessage = {
           id: uniqueDiscordSnowflake(),
           channel_id: String(params.channelId),
@@ -324,7 +350,7 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
           content: body.content,
           attachments: [],
           timestamp: new Date(now()).toISOString(),
-          ...(body.nonce === undefined ? {} : { nonce: String(body.nonce) }),
+          ...(nonce === undefined ? {} : { nonce }),
         };
         messages.set(message.id, message);
         sentMessages.push(message);

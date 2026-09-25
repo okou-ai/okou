@@ -474,11 +474,21 @@ describe("canonical Discord terminal replies", () => {
     );
   });
 
-  it("reconciles a lost Discord response by nonce and sends only the remaining chunks", async () => {
+  it("replays a lost Discord send with its enforced nonce and sends each chunk once", async () => {
     const started = await startDiscordRun();
     const claim = await claimRun(started.actor, started.runId);
     const answer = "A complete Discord answer. ".repeat(180);
+    let sendRequests = 0;
+    let historyReads = 0;
     let responseLost = false;
+    started.provider.state.beforeMessageCreate = () => {
+      sendRequests += 1;
+      return undefined;
+    };
+    started.provider.state.historyResponse = () => {
+      historyReads += 1;
+      return undefined;
+    };
     started.provider.state.afterMessageCreated = () => {
       if (responseLost) {
         return undefined;
@@ -491,38 +501,124 @@ describe("canonical Discord terminal replies", () => {
       sandboxToken: claim.sandboxToken,
       text: answer,
     });
-    expect(started.provider.sentMessages).toHaveLength(1);
-    const firstMessage = started.provider.sentMessages[0];
-    mockNow(now() + 121_000);
-    await Promise.all([
-      recoverReplies(started.actor),
-      recoverReplies(started.actor),
-    ]);
-    expect(started.provider.sentMessages.length).toBeGreaterThan(1);
-    expect(started.provider.sentMessages[0]).toStrictEqual(firstMessage);
+    const delivered = started.provider.sentMessages;
+    expect(delivered.length).toBeGreaterThan(1);
+    // The lost first send was replayed once and returned the original message.
+    expect(sendRequests).toBe(delivered.length + 1);
+    expect(historyReads).toBe(0);
     expect(
       new Set(
-        started.provider.sentMessages.map((message) => {
+        delivered.map((message) => {
           return message.nonce;
         }),
       ).size,
-    ).toBe(started.provider.sentMessages.length);
+    ).toBe(delivered.length);
     expect(
-      started.provider.sentMessages
+      delivered
         .map((message) => {
           return message.content;
         })
         .join(""),
     ).toContain(answer);
-    const deliveredCount = started.provider.sentMessages.length;
+    mockNow(now() + 121_000);
+    await Promise.all([
+      recoverReplies(started.actor),
+      recoverReplies(started.actor),
+    ]);
+    expect(started.provider.sentMessages).toHaveLength(delivered.length);
+    expect(sendRequests).toBe(delivered.length + 1);
+  });
+
+  it("keeps a lost send uncertain outside the nonce window instead of sending it again", async () => {
+    const started = await startDiscordRun();
+    const claim = await claimRun(started.actor, started.runId);
+    let sendRequests = 0;
+    started.provider.state.beforeMessageCreate = () => {
+      sendRequests += 1;
+      return undefined;
+    };
+    started.provider.state.afterMessageCreated = () => {
+      return HttpResponse.json({ message: "Bad gateway" }, { status: 502 });
+    };
+    await completeRun({
+      runId: started.runId,
+      sandboxToken: claim.sandboxToken,
+      text: "A reply whose receipts keep getting lost.",
+    });
+    // One send plus two bounded enforced-nonce replays inside the claim.
+    expect(sendRequests).toBe(3);
+    expect(started.provider.sentMessages).toHaveLength(1);
+    started.provider.state.afterMessageCreated = undefined;
+    // Discord still deduplicates this nonce, but the next claim starts after
+    // Okou's conservative replay window and must not risk a second message.
+    mockNow(now() + 121_000);
     await recoverReplies(started.actor);
-    expect(started.provider.sentMessages).toHaveLength(deliveredCount);
-    expect(
-      new Set(
-        started.provider.sentMessages.map((message) => {
-          return message.nonce;
-        }),
-      ).size,
-    ).toBe(started.provider.sentMessages.length);
+    mockNow(now() + 121_000);
+    await recoverReplies(started.actor);
+    expect(sendRequests).toBe(3);
+    expect(started.provider.sentMessages).toHaveLength(1);
+  });
+
+  it("treats a rate-limited replay beyond the nonce window as uncertain", async () => {
+    const started = await startDiscordRun();
+    const claim = await claimRun(started.actor, started.runId);
+    let sendRequests = 0;
+    started.provider.state.beforeMessageCreate = () => {
+      sendRequests += 1;
+      return sendRequests === 2
+        ? HttpResponse.json(
+            { message: "Rate limited", retry_after: 300, global: false },
+            { status: 429 },
+          )
+        : undefined;
+    };
+    started.provider.state.afterMessageCreated = () => {
+      return HttpResponse.error();
+    };
+    await completeRun({
+      runId: started.runId,
+      sandboxToken: claim.sandboxToken,
+      text: "A reply whose replay is rate limited.",
+    });
+    expect(sendRequests).toBe(2);
+    expect(started.provider.sentMessages).toHaveLength(1);
+    started.provider.state.afterMessageCreated = undefined;
+    mockNow(now() + 400_000);
+    await recoverReplies(started.actor);
+    expect(sendRequests).toBe(2);
+    expect(started.provider.sentMessages).toHaveLength(1);
+  });
+
+  it("waits out a short replay rate limit and returns the original message", async () => {
+    const started = await startDiscordRun();
+    const claim = await claimRun(started.actor, started.runId);
+    let sendRequests = 0;
+    let responseLost = false;
+    started.provider.state.beforeMessageCreate = () => {
+      sendRequests += 1;
+      return sendRequests === 2
+        ? HttpResponse.json(
+            { message: "Rate limited", retry_after: 0.01, global: false },
+            { status: 429 },
+          )
+        : undefined;
+    };
+    started.provider.state.afterMessageCreated = () => {
+      if (responseLost) {
+        return undefined;
+      }
+      responseLost = true;
+      return HttpResponse.error();
+    };
+    await completeRun({
+      runId: started.runId,
+      sandboxToken: claim.sandboxToken,
+      text: "A reply replayed after a short cooldown.",
+    });
+    expect(sendRequests).toBe(3);
+    expect(started.provider.sentMessages).toHaveLength(1);
+    mockNow(now() + 121_000);
+    await recoverReplies(started.actor);
+    expect(sendRequests).toBe(3);
   });
 });
