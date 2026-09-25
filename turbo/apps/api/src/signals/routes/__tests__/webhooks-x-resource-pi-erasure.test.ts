@@ -132,7 +132,10 @@ describe("X resource usage during Pi account erasure", () => {
       throw uploaded.reason;
     }
     await flushWaitUntilForTest();
-    await fixture.api.requestReadRun(actor, run.runId, [200]);
+    const deniedRun = await fixture.api.requestReadRun(actor, run.runId, [401]);
+    expect(deniedRun.body).toMatchObject({
+      error: { code: "UNAUTHORIZED" },
+    });
     await callbacks.requestAgentUsageEvent(
       {
         runId: run.runId,
