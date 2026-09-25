@@ -1,5 +1,4 @@
 import { command } from "ccstate";
-import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { and, eq } from "drizzle-orm";
 import {
@@ -308,10 +307,6 @@ const saveDiscordModelPreference$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const saved = await set(writeDb$).transaction(async (tx) => {
-      await assertErasureSubjectWritable(tx, [
-        { subjectKind: "user", subjectId: args.binding.userId },
-        { subjectKind: "organization", subjectId: args.binding.orgId },
-      ]);
       const [connection] = await tx
         .select({ id: discordOrgConnections.id })
         .from(discordOrgConnections)

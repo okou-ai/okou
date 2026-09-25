@@ -10,7 +10,6 @@ import {
   type SshErrorCode,
 } from "@okouai/api-contracts/contracts/ssh-errors";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { and, asc, eq, sql } from "drizzle-orm";
@@ -60,16 +59,9 @@ export function sshCredentialFailure(reason: keyof typeof failures) {
   return { ok: false as const, ...failures[reason] };
 }
 export async function lockSshOwner(
-  tx: Transaction,
+  tx: Pick<Transaction, "execute">,
   owner: Owner,
 ): Promise<void> {
-  // All SSH/Cloudflare owner writes enter the existing scoped D1 fence before
-  // their owner or business-row locks. A late prepared credential cannot land
-  // after B1's capture begins.
-  await assertErasureSubjectWritable(tx, [
-    { subjectKind: "user", subjectId: owner.userId },
-    { subjectKind: "organization", subjectId: owner.orgId },
-  ]);
   await tx.execute(
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${`ssh_connection_owner:${owner.orgId}:${owner.userId}`}, 0))`,
   );

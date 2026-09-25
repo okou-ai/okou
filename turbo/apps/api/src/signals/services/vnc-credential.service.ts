@@ -216,9 +216,7 @@ export async function createVncCredential(args: {
   }
   const prepared = await prepareCredential(args.body, args.featureContext);
   return args.db.transaction(async (tx) => {
-    if (!(await enterVncWrite(tx, args.owner))) {
-      return vncFailure("ownerChanged");
-    }
+    await enterVncWrite(tx, args.owner);
     const owner = args.owner;
     const creation = await checkVncCreationId(
       tx,
@@ -269,9 +267,7 @@ export async function updateVncCredential(args: {
           args.featureContext,
         );
   return args.db.transaction(async (tx) => {
-    if (!(await enterVncWrite(tx, args.owner))) {
-      return vncFailure("ownerChanged");
-    }
+    await enterVncWrite(tx, args.owner);
     const owner = args.owner;
     // Connections precede credentials in the global row-lock order, including
     // rotation, owner cleanup, and the later runtime authority consumer.
@@ -355,9 +351,7 @@ export function deleteVncCredential(args: {
   readonly expectedRevision: number;
 }): Promise<VncResult<undefined>> {
   return args.db.transaction(async (tx) => {
-    if (!(await enterVncWrite(tx, args.owner))) {
-      return vncFailure("ownerChanged");
-    }
+    await enterVncWrite(tx, args.owner);
     const owner = args.owner;
     const current = await findVncCredential(tx, owner, args.credentialId);
     if (!current) {

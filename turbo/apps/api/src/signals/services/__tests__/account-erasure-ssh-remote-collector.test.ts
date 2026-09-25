@@ -36,7 +36,6 @@ import {
   SSH_REMOTE_ERASURE_COLLECTOR_VERSION,
   createSshRemoteErasureCollector,
 } from "../account-erasure-ssh-remote-collector";
-import { lockSshOwner } from "../ssh-credential.service";
 
 describe("SSH connection, encrypted credential and in-flight remote B1", () => {
   const pool = new Pool({ connectionString: env("DATABASE_URL"), max: 4 });
@@ -275,16 +274,6 @@ describe("SSH connection, encrypted credential and in-flight remote B1", () => {
         .where(eq(cloudflareAccessConfigs.id, sharedAccessId));
     });
     const { job, handler } = await setup(userId);
-    await expect(
-      db.transaction(async (tx) => {
-        await lockSshOwner(tx, { orgId, userId });
-      }),
-    ).rejects.toThrow("account_erasure:subject_closed");
-    await expect(
-      db.transaction(async (tx) => {
-        await lockSshOwner(tx, { orgId, userId: peerId });
-      }),
-    ).resolves.toBeUndefined();
     const items = await db
       .select()
       .from(accountErasureWork)
