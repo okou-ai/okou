@@ -2214,7 +2214,6 @@
       "linkCopied": "Enlace copiado",
       "messageShareFailed": "No se pudo crear el enlace compartido. Inténtalo de nuevo.",
       "publicDescription": "Los mensajes seleccionados y sus archivos adjuntos serán públicos.",
-      "selectAll": "Seleccionar todo",
       "selectedCount_one": "{{count}} seleccionado",
       "selectedCount_many": "{{count}} seleccionados",
       "selectedCount_other": "{{count}} seleccionados",
