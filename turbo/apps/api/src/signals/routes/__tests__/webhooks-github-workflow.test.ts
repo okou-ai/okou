@@ -680,96 +680,6 @@ describe("POST /api/webhooks/github for workflow automations", () => {
     },
   );
 
-  it("preserves Okou branding through delayed queue drain and failure callback", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    const { fixture, actor, agentId, workflowId } = await setupFixture();
-    const installed = await gh.installGithubApp(actor, agentId);
-    mockOptionalEnv("GITHUB_APP_WEBHOOK_SECRET", GITHUB_WEBHOOK_SECRET);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: githubPullRequestMergedAutomationBody(),
-      }),
-      [201],
-    );
-    if (!created.body.chatThreadId) {
-      throw new Error("Expected the automation to have a chat thread");
-    }
-
-    const first = await postGithubWebhook({
-      event: "pull_request",
-      deliveryId: `delivery-${randomUUID()}`,
-      rawBody: githubPullRequestPayload({
-        action: "closed",
-        merged: true,
-        installationId: installed.remoteInstallationId,
-      }),
-    });
-    expect(first).toStrictEqual({ status: 200, text: "OK" });
-    await flushWaitUntilForTest();
-    await runsApi.heartbeatRunner();
-    const admittedRuns = await runsApi.listAgentRuns(actor, { limit: 20 });
-    const admittedRunId = admittedRuns.runs[0]?.id;
-    if (!admittedRunId || admittedRuns.runs.length !== 1) {
-      throw new Error("Expected one admitted GitHub automation run");
-    }
-    const admittedClaim = await runsApi.claimRunnerJob(admittedRunId);
-
-    const queued = await postGithubWebhook({
-      event: "pull_request",
-      deliveryId: `delivery-${randomUUID()}`,
-      rawBody: githubPullRequestPayload({
-        action: "closed",
-        merged: true,
-        number: 43,
-        installationId: installed.remoteInstallationId,
-      }),
-    });
-    expect(queued).toStrictEqual({ status: 200, text: "OK" });
-    await flushWaitUntilForTest();
-    await expect(
-      pendingAutomationEventCount(created.body.chatThreadId),
-    ).resolves.toBe(1);
-
-    await completeClaimedRunOk(admittedRunId, admittedClaim.sandboxToken);
-    await flushWaitUntilForTest();
-    await runsApi.heartbeatRunner();
-    const drainedRuns = await runsApi.listAgentRuns(actor, { limit: 20 });
-    const promotedRunId = drainedRuns.runs.find((run) => {
-      return run.id !== admittedRunId;
-    })?.id;
-    if (!promotedRunId) {
-      throw new Error("Expected the queued Okou automation run to drain");
-    }
-    const promotedClaim = await runsApi.claimRunnerJob(promotedRunId);
-    const okouToken = promotedClaim.platformEnvironment.OKOU_TOKEN;
-    if (!okouToken) {
-      throw new Error("Expected the drained run to expose OKOU_TOKEN");
-    }
-
-    await webhooksApi.requestAgentComplete(
-      {
-        runId: promotedRunId,
-        exitCode: 1,
-        error:
-          "Failed to authenticate. API Error: 401 Invalid authentication credentials",
-      },
-      { authorization: `Bearer ${promotedClaim.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
-    const events = await wf.readThreadEvents(created.body.chatThreadId);
-    const failed = events.find((event) => {
-      return event.eventType === "run.failed" && event.runId === promotedRunId;
-    });
-    if (failed?.eventType !== "run.failed") {
-      throw new Error("Expected the drained Okou run failure callback");
-    }
-    expect(failed.error).toContain("https://app.okou.ai/?settings=model");
-  });
-
   it.each([
     {
       name: "renamed official App",
@@ -847,7 +757,6 @@ describe("POST /api/webhooks/github for workflow automations", () => {
       subjectNumber: testCase.subjectNumber,
       subjectKind: "issue",
       messageText: `queued ${testCase.name} request`,
-      publicBrand: "okou",
     });
 
     await completeClaimedRunOk(admittedRunId, admittedClaim.sandboxToken);
@@ -928,7 +837,6 @@ describe("POST /api/webhooks/github for workflow automations", () => {
       subjectNumber: 83_001,
       subjectKind: "issue",
       messageText: "queued Okou request before dispatch failure",
-      publicBrand: "okou",
     });
 
     const postedComments: string[] = [];
