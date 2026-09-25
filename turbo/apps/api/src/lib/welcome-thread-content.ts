@@ -1,6 +1,6 @@
 import type { UserLocale } from "@okouai/api-contracts/contracts/user-preferences";
 import { derivePlatformServiceOrigin } from "@okouai/core/platform-service-origin";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { WELCOME_THREAD_ASSETS } from "@okouai/core/welcome-thread-assets";
 
 import de from "./welcome-thread-content/de-DE.json";
@@ -54,7 +54,7 @@ export function welcomeThreadContent(args: {
   const values: Readonly<Record<string, string>> = {
     // The official examples and scene shots are shared by every recipient.
     ...WELCOME_THREAD_ASSETS,
-    assistantName: PUBLIC_BRAND_PRESENTATION.assistantName,
+    assistantName: BRAND_PRESENTATION.assistantName,
     origin,
     worksUrl: `${origin}/works`,
     inviteUrl: `${origin}/?settings=people`,

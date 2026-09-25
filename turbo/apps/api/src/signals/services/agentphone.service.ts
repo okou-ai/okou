@@ -3,7 +3,7 @@ import { withNativeChatEventThreadTouch } from "./native-chat-event-write.servic
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { command } from "ccstate";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { v5 as uuidv5 } from "uuid";
 import {
   getCanonicalModelDisplayName,
@@ -1000,7 +1000,7 @@ async function refreshTypingIfSupported(
 }
 
 function formatConnectPrompt(event: AgentPhoneMessageEvent): string {
-  const { brandName } = PUBLIC_BRAND_PRESENTATION;
+  const { brandName } = BRAND_PRESENTATION;
   const connectUrl = buildAgentPhoneConnectUrl({
     phoneHandle: event.fromNumber,
     agentphoneAgentId: event.agentphoneAgentId,
@@ -1020,7 +1020,7 @@ function formatConnectPrompt(event: AgentPhoneMessageEvent): string {
 }
 
 function formatHelpMessage(): string {
-  const { brandName } = PUBLIC_BRAND_PRESENTATION;
+  const { brandName } = BRAND_PRESENTATION;
   return [
     `${brandName} text message commands`,
     "",
@@ -1107,7 +1107,7 @@ async function handleConnectCommand(
   signal: AbortSignal,
 ): Promise<void> {
   if (args.userLink) {
-    const { brandName } = PUBLIC_BRAND_PRESENTATION;
+    const { brandName } = BRAND_PRESENTATION;
     await sendAgentPhoneSlashCommandText(
       args.event,
       `You are already connected. Send a message here to start using ${brandName}.`,
@@ -1142,7 +1142,7 @@ async function handleDisconnectCommand(
 
   await sendAgentPhoneSlashCommandText(
     args.event,
-    `This phone number has been disconnected from ${PUBLIC_BRAND_PRESENTATION.brandName}.`,
+    `This phone number has been disconnected from ${BRAND_PRESENTATION.brandName}.`,
     signal,
   );
 }
@@ -1807,7 +1807,7 @@ export const handleAgentPhoneMessage$ = command(
     if (!agent) {
       await sendAgentPhoneText(
         params.event,
-        `The workspace default agent is not configured. Please choose an agent in ${PUBLIC_BRAND_PRESENTATION.brandName} first.`,
+        `The workspace default agent is not configured. Please choose an agent in ${BRAND_PRESENTATION.brandName} first.`,
         signal,
       );
       return;

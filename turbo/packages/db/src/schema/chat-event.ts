@@ -88,7 +88,7 @@ export const chatEvents = pgTable(
      * Input source discriminator and optional polymorphic context pointer.
      *
      * `web` identifies a source without a context row; current rows use reserved
-     * UUID sentinels for public-brand launch identity, while legacy rows are null.
+     * UUID sentinels for web queue launch identity, while legacy rows are null.
      * Historical `goal` retains its original ID as inert provenance; the Goal
      * table no longer exists. For other values, contextId selects the row in the
      * table named by contextType. contextId is not unique: when a pending event

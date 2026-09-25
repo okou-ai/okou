@@ -1,6 +1,6 @@
 import { command, computed, type Computed } from "ccstate";
 import { guaranteedConnectorProvidedBindingNames } from "@okouai/api-contracts/contracts/connector-schemas";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -739,7 +739,7 @@ type BindTeamsInstallationResult =
 function buildTeamsWelcomeCard(
   installation: TeamsInstallation,
 ): TeamsAdaptiveCard {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   const mentionName = teamsBotDisplayName(installation.botName);
   return {
     type: "AdaptiveCard",
@@ -843,7 +843,7 @@ async function notifyTeamsConnect(
       serviceUrl: args.serviceUrl,
       conversationId,
       tenantId: args.tenantId,
-      text: `You're connected to ${PUBLIC_BRAND_PRESENTATION.assistantName}!`,
+      text: `You're connected to ${BRAND_PRESENTATION.assistantName}!`,
       card: buildTeamsWelcomeCard(args.installation),
     },
     signal,

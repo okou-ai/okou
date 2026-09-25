@@ -1,7 +1,7 @@
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { agentphoneVerificationSendCooldowns } from "@okouai/db/schema/agentphone-verification-send-cooldown";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { command, computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -349,7 +349,7 @@ const sendAgentPhoneVerificationText$ = command(
             {
               config: params.config,
               toNumber: params.phoneHandle,
-              body: `Confirm this phone number for ${PUBLIC_BRAND_PRESENTATION.brandName}: ${params.connectUrl}`,
+              body: `Confirm this phone number for ${BRAND_PRESENTATION.brandName}: ${params.connectUrl}`,
             },
             signal,
           ),
@@ -506,7 +506,7 @@ const unlink$ = command(async ({ get, set }, signal: AbortSignal) => {
 type LinkConflictReason = "phone-handle-linked" | "org-linked" | "conflict";
 
 function agentPhoneLinkConflictMessage(reason: LinkConflictReason): string {
-  const brandName = PUBLIC_BRAND_PRESENTATION.brandName;
+  const brandName = BRAND_PRESENTATION.brandName;
   return reason === "phone-handle-linked"
     ? `This phone number is already connected to another ${brandName} account or organization. Disconnect it first.`
     : reason === "org-linked"
@@ -527,7 +527,7 @@ interface AgentPhoneConnectedMessage {
 }
 
 function agentPhoneConnectedMessages(): readonly AgentPhoneConnectedMessage[] {
-  const { brandName } = PUBLIC_BRAND_PRESENTATION;
+  const { brandName } = BRAND_PRESENTATION;
   return [
     {
       body: `Your phone number is now connected to ${brandName}.

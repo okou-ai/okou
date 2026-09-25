@@ -21,7 +21,7 @@ import {
 } from "@okouai/db/schema/browser-session";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { command } from "ccstate";
 import {
   and,
@@ -246,13 +246,13 @@ function chatRunRequired(
   return serviceError(
     400,
     code,
-    `Managed browsers can only be started from an ${PUBLIC_BRAND_PRESENTATION.assistantName} chat run`,
+    `Managed browsers can only be started from an ${BRAND_PRESENTATION.assistantName} chat run`,
   );
 }
 
 function browserReclaiming() {
   return conflict(
-    `${PUBLIC_BRAND_PRESENTATION.assistantName} is still reclaiming this thread's previous managed browser; retry in a moment`,
+    `${BRAND_PRESENTATION.assistantName} is still reclaiming this thread's previous managed browser; retry in a moment`,
     "BROWSER_STOPPING",
   );
 }

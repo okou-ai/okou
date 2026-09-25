@@ -1,7 +1,7 @@
 import webpush, { WebPushError } from "web-push";
 import { eq } from "drizzle-orm";
 import { pushSubscriptions } from "@okouai/db/schema/push-subscription";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -52,8 +52,7 @@ export async function sendUserPushNotifications(args: {
     subscriptions.map(async (subscription) => {
       const payload = JSON.stringify({
         ...args.notification,
-        title:
-          args.notification.title ?? PUBLIC_BRAND_PRESENTATION.assistantName,
+        title: args.notification.title ?? BRAND_PRESENTATION.assistantName,
         url: notificationUrl(args.notification.url),
       });
       const result = await settle(
@@ -68,7 +67,7 @@ export async function sendUserPushNotifications(args: {
           payload,
           {
             vapidDetails: {
-              subject: `mailto:${PUBLIC_BRAND_PRESENTATION.contactEmail}`,
+              subject: `mailto:${BRAND_PRESENTATION.contactEmail}`,
               publicKey,
               privateKey,
             },

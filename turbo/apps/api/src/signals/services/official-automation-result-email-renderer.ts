@@ -1,6 +1,6 @@
 import { convert } from "html-to-text";
 import MarkdownIt from "markdown-it";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import { safeSync, safeUrlParse } from "../utils";
 import { renderEmailLayout } from "./email-layout";
@@ -214,7 +214,7 @@ function officialAutomationResultEmailHtml(
   resultBodyHtml: string,
   unsubscribeUrl: string,
 ): string {
-  const assistantName = PUBLIC_BRAND_PRESENTATION.assistantName;
+  const assistantName = BRAND_PRESENTATION.assistantName;
   return renderEmailLayout({
     title: props.title,
     heroUrl: MORNING_BRIEF_HERO_URL,

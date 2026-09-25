@@ -1,4 +1,4 @@
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import type {
   SlackAnyBlock,
@@ -52,7 +52,7 @@ function appUrl(): string {
 }
 
 function buildAppHomeHeaderBlocks(): SlackBlocks {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   return [
     {
       type: "header",
@@ -73,7 +73,7 @@ function buildAppHomeHeaderBlocks(): SlackBlocks {
 }
 
 function buildAppHomeNotInstalledBlocks(): SlackBlocks {
-  const { brandName } = PUBLIC_BRAND_PRESENTATION;
+  const { brandName } = BRAND_PRESENTATION;
   return [
     {
       type: "section",
@@ -123,7 +123,7 @@ function buildAppHomeDisconnectedBlocks(loginUrl?: string): SlackBlocks {
 }
 
 function buildAppHomeAccountBlock(options: AppHomeOptions): SlackBlocks {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   return [
     {
       type: "section",
@@ -195,7 +195,7 @@ function buildAppHomeAgentBlocks(options: AppHomeOptions): SlackBlocks {
 }
 
 function buildAppHomeUsageBlocks(options: AppHomeOptions): SlackBlocks {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   const botMention = officialSlackBotMention(options.botUserId);
   return [
     {
@@ -288,7 +288,7 @@ export function buildErrorMessage(error: string): SlackBlocks {
 }
 
 export function buildLoginPromptMessage(loginUrl: string): SlackBlocks {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   return [
     {
       type: "section",
@@ -317,7 +317,7 @@ export function buildHelpMessage(opts?: {
   readonly canModel?: boolean;
   readonly botUserId?: string;
 }): SlackBlocks {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   const botMention = opts?.botUserId
     ? officialSlackBotMention(opts.botUserId)
     : undefined;
@@ -547,7 +547,7 @@ export function buildModelPickerModal(args: {
 }
 
 export function buildLoginMessage(loginUrl: string): SlackBlocks {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   return [
     {
       type: "section",
