@@ -12,6 +12,7 @@
 mod apple_dh;
 mod apple_rsa_srp;
 mod apple_srp;
+mod apple_vnc_password;
 mod authentication;
 mod capture;
 mod framebuffer;
@@ -69,7 +70,7 @@ pub enum AuthenticationStage {
     TlsHandshake,
     /// Completing the X509None SecurityResult exchange.
     X509NoneAuthentication,
-    /// Completing the VNC password challenge and SecurityResult exchange.
+    /// Completing the X509Vnc or explicitly selected bare VNC password exchange.
     VncAuthentication,
     /// Sending X509Plain credentials and completing the SecurityResult exchange.
     X509PlainAuthentication,
@@ -342,6 +343,35 @@ where
     if deadline <= Instant::now() {
         return Err(Error::AuthenticationDeadlineExceeded {
             stage: AuthenticationStage::AppleDhAuthentication,
+        });
+    }
+    Ok(authenticated)
+}
+
+/// Authenticate exactly the optional classic VNC password (RFB security type 2)
+/// offered by the tested Apple Remote Management server on a caller-owned stream.
+/// The password authenticates the client, not the server, and does not encrypt
+/// post-authentication RFB data. Product callers must independently require a
+/// saved host-key-verified SSH connection terminating on the Mac and literal
+/// loopback RFB destination. This engine entry point admits no saved profile.
+pub async fn authenticate_apple_vnc_password<S>(
+    stream: S,
+    password: VncPassword,
+    deadline: Instant,
+) -> Result<Authenticated<S>, Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin + 'static,
+{
+    let deadline = deadline.min(Instant::now() + MAX_HANDSHAKE_DURATION);
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::RfbVersion,
+        });
+    }
+    let authenticated = apple_vnc_password::authenticate(stream, password, deadline).await?;
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::VncAuthentication,
         });
     }
     Ok(authenticated)

@@ -72,7 +72,6 @@ import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-p
 import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
 import { testUserExportWorkRoutes } from "../test-user-export-work";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
-import { withSplitChatEventDatabase } from "../../../test-fixtures/chat-terminal-retry";
 import { holdMorningBriefProjectionWrite } from "../../../test-fixtures/morning-brief-projection";
 import { holdMorningBriefReconfigurationAfterPersist } from "../../../test-fixtures/morning-brief-reconciliation";
 import {
@@ -11100,7 +11099,6 @@ describe("Official Workflow Run admission", () => {
 
   async function expectQueuedOfficialInputFailsClosed(
     queueCase: (typeof queuedOfficialInputFailureCases)[number],
-    options: { readonly disposableDatabase?: true } = {},
   ): Promise<void> {
     installCatalogStorageFixture();
     const definitionName = `api-test-queued-invalid-${randomUUID().slice(0, 8)}`;
@@ -11119,22 +11117,19 @@ describe("Official Workflow Run admission", () => {
       }),
       [201],
     );
-    // A disposable database is dropped before test-finished hooks run.
-    if (!options.disposableDatabase) {
-      onTestFinished(async () => {
-        installCatalogStorageFixture();
-        const createdRuns = await runs.listAgentRuns(actor, {
-          agent: agentId,
-          limit: 100,
-        });
-        for (const run of createdRuns.runs) {
-          await runs.requestCancelRun(actor, run.id, [200, 400]);
-        }
-        await flushWaitUntilForTest();
-        await bdd.deleteAgent(actor, agentId);
-        await cleanupCatalog();
+    onTestFinished(async () => {
+      installCatalogStorageFixture();
+      const createdRuns = await runs.listAgentRuns(actor, {
+        agent: agentId,
+        limit: 100,
       });
-    }
+      for (const run of createdRuns.runs) {
+        await runs.requestCancelRun(actor, run.id, [200, 400]);
+      }
+      await flushWaitUntilForTest();
+      await bdd.deleteAgent(actor, agentId);
+      await cleanupCatalog();
+    });
     runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     const first = await accept(
@@ -11264,25 +11259,6 @@ describe("Official Workflow Run admission", () => {
     async (queueCase) => {
       expect.hasAssertions();
       await expectQueuedOfficialInputFailsClosed(queueCase);
-    },
-  );
-
-  it(
-    "fails closed for queued Official input after split write activation",
-    { timeout: 120_000 },
-    async () => {
-      const duplicateClaim = queuedOfficialInputFailureCases.find((entry) => {
-        return entry.name === "duplicate claim";
-      });
-      if (!duplicateClaim) {
-        throw new Error("Expected the duplicate claim queue case");
-      }
-      expect.hasAssertions();
-      await withSplitChatEventDatabase(async () => {
-        await expectQueuedOfficialInputFailsClosed(duplicateClaim, {
-          disposableDatabase: true,
-        });
-      });
     },
   );
 

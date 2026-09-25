@@ -18,20 +18,24 @@ authorization before opening that stream. This crate never resolves a hostname
 or opens a second socket.
 
 `authenticate_apple_dh` is a separate entry point for Apple's legacy ARD
-security type 30. `authenticate_apple_srp` supports observed Apple Direct SRP
-security type 36. The separate `authenticate_apple_rsa_srp` engine supports the
-observed Apple RSA/SRP security type 33; no product caller or saved profile
-selects it. None of these raw-stream entry points supplies post-authentication
-encryption or an authorization decision. The Runner admits types 30 and 36 as
-distinct saved profiles only through an independently authorized SSH host and
-a literal Mac loopback VNC destination. `VncAccess` remains disabled by default.
+security type 30. `authenticate_apple_vnc_password` separately selects the
+optional classic password/type-2 branch observed on macOS 26.6.2 Remote
+Management; it is not the X509Vnc profile. `authenticate_apple_srp` supports
+Apple Direct SRP security type 36, and `authenticate_apple_rsa_srp` supports
+Apple RSA/SRP security type 33. None of these raw-stream entry points supplies
+post-authentication encryption or an authorization decision. The Runner admits
+types 30, 33 and 36 as distinct saved profiles only through an independently
+authorized SSH host and literal Mac loopback VNC destination. There is no saved
+type-2 profile. `VncAccess` remains disabled by default.
 
 RFB 3.8 / VeNCrypt 0.2 supports only the caller-selected X509None (subtype 260),
 X509Vnc (261), or X509Plain (262) policy. TLS 1.2 or 1.3 verifies the certificate
 chain, validity and saved DNS name or IP SAN before any reusable credential is
 sent. Other offered X509 variants and insecure alternatives are never selected.
-There is no verification bypass or fallback to bare None, VncAuth, Plain, or
-anonymous TLS. X509None verifies and encrypts the server channel but performs no
+The X509 entry point has no verification bypass or fallback to bare None,
+VncAuth, Plain, or anonymous TLS. The separate raw type-2 entry point requires
+explicit selection; it cannot be reached by downgrading an X509 or Apple profile.
+X509None verifies and encrypts the server channel but performs no
 inner VNC client authentication; engine support is not a decision to expose that
 profile in Runner or product configuration.
 
@@ -43,9 +47,12 @@ VNC's legacy password challenge uses only eight bytes. `VncPassword` requires
 1-8 printable ASCII bytes, preserves spaces and rejects longer or non-ASCII input
 instead of truncating it. Its owned bytes are erased on drop and its Debug output
 is redacted. Passwords, temporary keys and the DES key schedule are erased before
-waiting for SecurityResult. DES is used only inside verified TLS, never as the
-transport's security boundary. Callers remain responsible for their own copies
-of secrets; this is not a guarantee that a compiler or TLS library makes no copies.
+waiting for SecurityResult. X509Vnc uses DES inside verified TLS; the separate
+bare type-2 Mac engine has **no** TLS, native server identity or subsequent
+session encryption and needs an independently verified protective outer hop.
+DES is never the transport's security boundary. Callers remain responsible
+for their own copies of secrets; this is not a guarantee that a compiler or
+TLS library makes no copies.
 
 `PlainCredentials` requires 1-1023 UTF-8 bytes in each field, rejects embedded
 NUL, preserves spaces and performs no normalization or truncation. Both fields
@@ -57,8 +64,25 @@ Success returns `Authenticated::into_stream()`, positioned immediately after
 SecurityResult. The caller sends ClientInit next; ServerInit and framebuffer data
 are not consumed. The returned object retains no client credentials and starts no
 task. Its owned transport is fixed at authentication: verified TLS for X509 or
-the caller-supplied raw stream for Apple DH or either Apple SRP method. No
-fallback changes that variant.
+the caller-supplied raw stream for Apple DH, Apple password/type 2 or either
+Apple SRP method. No fallback changes that variant.
+
+## Optional classic password / type-2 engine boundary
+
+The Mac-scoped `authenticate_apple_vnc_password` entry point accepts exact
+`RFB 003.889`, replies as RFB 3.8, and selects type 2 only when it is offered.
+It reuses the 16-byte VNC DES challenge and bounded SecurityResult handling,
+then returns before ClientInit; absent type 2, wrong passwords, malformed
+results, timeouts and cancellation cannot yield a session. Only the observed
+macOS 26.6.2 Remote Management classic-password configuration is independently
+verified, not every Mac version or standalone Screen Sharing mode. The eight-byte
+password limit is a protocol weakness even when a random password is used.
+**The Mac password option itself may expose the RFB listener to other clients**;
+requiring Okou's SSH route alone cannot restrict that listener. A future
+product admission must separately review host-side ingress isolation, keep SSH
+host-key verification ending on the controlled Mac and literal RFB loopback,
+and retain exact grants/capabilities. This engine PR does not add a saved profile,
+change Mac settings, or activate the default-off `VncAccess` feature.
 
 ## Apple DH / ARD type 30 engine boundary
 

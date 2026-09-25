@@ -26,7 +26,6 @@ import {
   staleChatEventQueueThreadIds,
 } from "./chat-event-queue.service";
 import { insertChatEvent, replaceChatEvent } from "./chat-event.service";
-import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { recordOfficialWorkflowThreadProvenance } from "./morning-brief-thread-provenance.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import {
@@ -194,7 +193,6 @@ async function attemptWorkflowQueueAdmission(
   args: WorkflowQueueAdmissionArgs,
 ): Promise<WorkflowQueueAdmission> {
   const { automation } = args;
-  const splitWrites = await isSplitChatEventWriteEnabled(db);
   const [workflow] = await db
     .select({ displayName: workflows.displayName })
     .from(workflows)
@@ -261,9 +259,7 @@ async function attemptWorkflowQueueAdmission(
     const conflict = args.queueEventId === undefined ? "none" : "id";
     // Context commits with the admitted event; a coalesced or superseded tick
     // writes neither.
-    const inserted = await insertChatEvent(tx, event, conflict, {
-      splitWrites,
-    });
+    const inserted = await insertChatEvent(tx, event, conflict);
     if (!inserted) {
       if (args.queueEventId !== undefined) {
         return { kind: "coalesced" };

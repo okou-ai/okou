@@ -7,14 +7,19 @@ import {
 
 import { discordInteractionsContract } from "@okouai/api-contracts/contracts/discord-interactions";
 import { HttpResponse, http } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
+import {
+  clearMockMonotonicNow,
+  mockMonotonicNow,
+  now,
+} from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { discordInteractionsRoutes } from "../discord-interactions";
 
@@ -95,6 +100,7 @@ function client() {
 
 function privateResponses() {
   const acknowledged = new Set<string>();
+  const callbacks: unknown[] = [];
   const messages: z.infer<typeof privateMessageSchema>[] = [];
   const delivered = createDeferredPromise<z.infer<typeof privateMessageSchema>>(
     context.signal,
@@ -103,8 +109,7 @@ function privateResponses() {
     http.post(
       "https://discord.com/api/v10/interactions/:id/:token/callback",
       async ({ request, params }) => {
-        const callback: unknown = await request.json();
-        expect(callback).toMatchObject({ type: 5, data: { flags: 64 } });
+        callbacks.push(await request.json());
         const id = String(params.id);
         if (acknowledged.has(id)) {
           return HttpResponse.json(
@@ -136,7 +141,7 @@ function privateResponses() {
       },
     ),
   );
-  return { delivered: delivered.promise, messages };
+  return { delivered: delivered.promise, messages, callbacks };
 }
 
 beforeEach(() => {
@@ -154,6 +159,10 @@ describe("Discord private account interactions", () => {
     expect((await replies.delivered).content).toContain("/okou disconnect");
     await accept(client().post(request), [202]);
     expect(replies.messages).toHaveLength(1);
+    expect(replies.callbacks[0]).toStrictEqual({
+      type: 5,
+      data: { flags: 64 },
+    });
     expect(replies.messages[0]?.allowed_mentions.parse).toStrictEqual([]);
   });
 
@@ -178,13 +187,26 @@ describe("Discord private account interactions", () => {
       },
     };
     await accept(client().post(signedRequest(payload)), [202]);
-    expect((await replies.delivered).content).toContain(
-      "expired or your access has changed",
-    );
+    const message = await replies.delivered;
+    expect(message.content).toContain("expired or your access has changed");
+    // A deferred update edits the picker message rather than adding a reply.
+    expect(replies.callbacks).toStrictEqual([{ type: 6 }]);
+    expect(message.components).toStrictEqual([]);
   });
 
-  it("does not execute work after an uncertain or rejected callback acknowledgement", async () => {
+  it("does not execute work after a rejected callback acknowledgement", async () => {
+    const edits: unknown[] = [];
     server.use(
+      http.patch(
+        "https://discord.com/api/v10/webhooks/:applicationId/:token/messages/@original",
+        async ({ request }) => {
+          edits.push(await request.json());
+          return HttpResponse.json(
+            { code: 10_015, message: "Unknown Webhook" },
+            { status: 404 },
+          );
+        },
+      ),
       http.post(
         "https://discord.com/api/v10/interactions/:id/:token/callback",
         () => {
@@ -202,5 +224,90 @@ describe("Discord private account interactions", () => {
     expect(result.body.error).toBe(
       "Discord could not acknowledge the interaction",
     );
+    await flushWaitUntilForTest();
+    expect(edits).toStrictEqual([]);
+  });
+
+  it.each([
+    {
+      kind: "timed-out",
+      response: async (request: Request) => {
+        // Discord answers only after the 2 s local deadline aborted the request.
+        const aborted = createDeferredPromise<void>(context.signal);
+        request.signal.addEventListener("abort", () => {
+          aborted.resolve();
+        });
+        await aborted.promise;
+        return new HttpResponse(null, { status: 204 });
+      },
+    },
+    {
+      kind: "network failure",
+      response: () => {
+        return HttpResponse.error();
+      },
+    },
+    {
+      kind: "Discord server error",
+      response: () => {
+        return HttpResponse.json({ message: "Unavailable" }, { status: 503 });
+      },
+    },
+  ])(
+    "reports no change instead of failing after a $kind acknowledgement",
+    async ({ response }) => {
+      const replies = privateResponses();
+      mockMonotonicNow(0);
+      onTestFinished(clearMockMonotonicNow);
+      server.use(
+        http.post(
+          "https://discord.com/api/v10/interactions/:id/:token/callback",
+          async ({ request }) => {
+            // Let Discord's 3-second response window close before the edit.
+            mockMonotonicNow(10_000);
+            return await response(request);
+          },
+        ),
+      );
+
+      const result = await client().post(signedRequest(command("help")));
+
+      expect(result.status).toBe(202);
+      const message = await replies.delivered;
+      expect(message.content).toContain("no changes were made");
+      expect(message.content).not.toContain("/okou disconnect");
+      expect(message.components).toStrictEqual([]);
+      expect(replies.messages).toHaveLength(1);
+    },
+  );
+
+  it("accepts Discord rejecting the no-change edit when the acknowledgement never arrived", async () => {
+    const attempted = createDeferredPromise<void>(context.signal);
+    mockMonotonicNow(0);
+    onTestFinished(clearMockMonotonicNow);
+    server.use(
+      http.post(
+        "https://discord.com/api/v10/interactions/:id/:token/callback",
+        () => {
+          mockMonotonicNow(10_000);
+          return HttpResponse.error();
+        },
+      ),
+      http.patch(
+        "https://discord.com/api/v10/webhooks/:applicationId/:token/messages/@original",
+        () => {
+          attempted.resolve();
+          return HttpResponse.json(
+            { code: 10_015, message: "Unknown Webhook" },
+            { status: 404 },
+          );
+        },
+      ),
+    );
+
+    const result = await client().post(signedRequest(command("disconnect")));
+
+    expect(result.status).toBe(202);
+    await attempted.promise;
   });
 });

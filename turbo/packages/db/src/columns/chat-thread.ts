@@ -23,7 +23,7 @@ import {
 
 import type { ChatThreadProvenance } from "../schema/chat-thread";
 
-/** Shared canonical runtime columns; physical DDL keeps rollout-only columns. */
+/** Shared by the physical schema and the runtime application mapping. */
 export function chatThreadColumns() {
   return {
     id: uuid("id").defaultRandom().primaryKey(),

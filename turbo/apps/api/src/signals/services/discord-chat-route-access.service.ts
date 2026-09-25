@@ -79,8 +79,11 @@ export async function loadDiscordChatRouteAccess(
   if (!sourceAccess) {
     return null;
   }
+  // The bot DM channel is shared by every org and DM session of this Discord
+  // user, so its history never reaches a run, including context persisted
+  // before DM ingress stopped reading it.
   let conversationContextAllowed =
-    sourceAccess.channel.type === 1 || sourceAccess.messageContentEnabled;
+    sourceAccess.channel.type !== 1 && sourceAccess.messageContentEnabled;
   if (args.hasConversationContext && conversationContextAllowed) {
     conversationContextAllowed =
       (await loadCurrentConversationAccess(

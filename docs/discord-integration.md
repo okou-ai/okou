@@ -45,8 +45,8 @@ live acceptance in the evidence ledger below.
 | Agent/model choice           | Org default and per-user agent preferences respect accessible agents; the model picker uses shared policy and availability.                                                   | Use the same preferences and policy. Revalidate picker submissions, sender identity, current binding, and accessible options; do not replace an existing guild thread's agent/model.                                                                            | [A](https://github.com/okou-ai/okou/issues/36640), [E](https://github.com/okou-ai/okou/issues/36644)                                                                                                       |
 | Canonical execution          | Ingress persists canonical Chat input/assets and drains the shared queue; Run routing, billing, history, and callbacks remain shared.                                         | Use the same Chat/Run pipeline, permissions, queues, billing, and web history. Durable acceptance and replay must not produce duplicate runs.                                                                                                                   | [C](https://github.com/okou-ai/okou/issues/36642), [D](https://github.com/okou-ai/okou/issues/36643)                                                                                                       |
 | Results and status           | Canonical callbacks deliver terminal content with agent/model presentation and suppress delivery after binding revocation.                                                    | Deliver final/error/cancelled/admission-failure outcomes, attribution, and processing status through the bot. Recheck live binding, membership, feature availability, and destination access at delivery time.                                                  | [B](https://github.com/okou-ai/okou/issues/36641), [C](https://github.com/okou-ai/okou/issues/36642)                                                                                                       |
-| Context                      | Bounded channel/thread context renders sender names, mentions, and files alongside the triggering message.                                                                    | Preserve bounded context and sender attribution. Enforce user-and-bot access and disclose limited context when ordinary message content is unavailable.                                                                                                         | [B](https://github.com/okou-ai/okou/issues/36641), [C](https://github.com/okou-ai/okou/issues/36642), [F](https://github.com/okou-ai/okou/issues/36645)                                                    |
-| Native messages              | CLI channel listing, history, replies, and sending use the shared user/bot access boundary for reads.                                                                         | Provide `okou discord channel list`, `message history`, `message replies`, and `message send`; enforce channel overwrites and private-thread membership. Read only the connected sender's bot DM, never another user's DM.                                      | [B](https://github.com/okou-ai/okou/issues/36641)                                                                                                                                                          |
+| Context                      | Bounded channel/thread context renders sender names, mentions, and files alongside the triggering message.                                                                    | Preserve bounded context and sender attribution. Enforce user-and-bot access and disclose limited context when ordinary message content is unavailable. Bot DMs read no DM history.                                                                             | [B](https://github.com/okou-ai/okou/issues/36641), [C](https://github.com/okou-ai/okou/issues/36642), [F](https://github.com/okou-ai/okou/issues/36645)                                                    |
+| Native messages              | CLI channel listing, history, replies, and sending use the shared user/bot access boundary for reads.                                                                         | Provide `okou discord channel list`, `message history`, `message replies`, and `message send`; enforce channel overwrites and private-thread membership. Send only to the sender's own bot DM; never read bot DM content.                                       | [B](https://github.com/okou-ai/okou/issues/36641)                                                                                                                                                          |
 | Files and artifacts          | Inbound files become canonical inputs; upload/download and output delivery retain canonical ownership.                                                                        | Safely import expiring attachments, enforce file limits and MIME rules, preserve private artifact ownership, and deduplicate partial retries. Provide native upload/download with stable user-facing references.                                                | [C](https://github.com/okou-ai/okou/issues/36642), [G](https://github.com/okou-ai/okou/issues/36646)                                                                                                       |
 | Web source presentation      | Canonical Slack messages retain a source annotation and message permalink when available.                                                                                     | Render the canonical source-message permalink in history with an accessible Discord label/icon. Activity headers display the Discord trigger-source label/icon; the activity contract has no source-message permalink. Consume C's shared discriminators.       | [C](https://github.com/okou-ai/okou/issues/36642), [F](https://github.com/okou-ai/okou/issues/36645)                                                                                                       |
 | Disconnect, removal, erasure | Personal disconnect removes access; org-admin removal removes the installation and its connections.                                                                           | Keep personal disconnect and admin guild removal distinct. Revoke routes/preferences and delivery authority, preserve other guilds, and cover member removal, account export/erasure, and owned descendants.                                                    | [A](https://github.com/okou-ai/okou/issues/36640), [C](https://github.com/okou-ai/okou/issues/36642), [F](https://github.com/okou-ai/okou/issues/36645)                                                    |
@@ -59,11 +59,11 @@ exports `integrationsDiscordContract`, `discordOrgStatusSchema`,
 `IntegrationsDiscordContract` from
 `@okouai/api-contracts/contracts/integrations-discord`.
 
-| Method           | Request                                                                                | Success and authority                                                                                                                                                            |
-| ---------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `getStatus`      | `GET /api/integrations/discord`                                                        | `200` with the current org/caller's status; `401`, `403`, and `404` are contract errors.                                                                                         |
-| `disconnect`     | `DELETE /api/integrations/discord`, optional `action=disconnect` or `action=uninstall` | `200 {ok:true}`. Omitted action disconnects the caller; uninstall is admin-only for this guild. `401`, `403`, and `404` remain visible failures.                                 |
-| `setDmSelection` | `PUT /api/integrations/discord/dm-selection`, strict body `{connectionId: UUID}`       | `200 {ok:true}`. The server resolves the caller and verified Discord sender; the payload supplies no user/guild identity proof. `401`, `403`, and `404` remain visible failures. |
+| Method           | Request                                                                                | Success and authority                                                                                                                                                                                                                         |
+| ---------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getStatus`      | `GET /api/integrations/discord`                                                        | `200` with the current org/caller's status; `401`, `403`, and `404` are contract errors.                                                                                                                                                      |
+| `disconnect`     | `DELETE /api/integrations/discord`, optional `action=disconnect` or `action=uninstall` | `200 {ok:true}`. Omitted action disconnects the caller; uninstall is admin-only for this guild. Both stay available while the feature switch is off so data can be removed after a rollback. `401`, `403`, and `404` remain visible failures. |
+| `setDmSelection` | `PUT /api/integrations/discord/dm-selection`, strict body `{connectionId: UUID}`       | `200 {ok:true}`. The server resolves the caller and verified Discord sender; the payload supplies no user/guild identity proof. `401`, `403`, and `404` remain visible failures.                                                              |
 
 The required status fields are:
 
@@ -104,7 +104,9 @@ Discord authorization source. See C's
    contains no authoritative guild choice, so ambiguous org routing needs an
    explicit sender-owned selection.
 3. **Replies and threads.** A reply references a message; a thread is a separate
-   Discord conversation with permissions and archive/lock state. Task routing
+   Discord conversation with permissions and archive/lock state. Sending into
+   an archived thread reopens it, so only a moderator lock stops delivery
+   (unless both the sender and the bot hold `MANAGE_THREADS`). Task routing
    must use the actual channel/thread identity. Bot DMs have no Slack-style
    subthreads; standard bots cannot join Group DMs. Those are platform limits,
    not a reason to share DM ownership across users or orgs.
@@ -203,8 +205,8 @@ the interface announcement alone is not execution evidence.
   authenticated user's current org/user; callers cannot supply Okou identity
   fields. Conflicting ownership returns `409` instead of rebinding.
 - Optional `history: {chatThreadId, channelId, messageId, messageText}` seeds
-  erasure/export descendants for an already-created owned canonical Chat
-  thread. Use C's real ingress entrypoint for admission tests.
+  erasure/export descendants, including a failed admission-notice delivery,
+  for an already-created owned canonical Chat thread. Use C's real ingress entrypoint for admission tests.
 - `DELETE /api/test/discord-state?guildId=...` uses the same admin context and
   deletes only that org's named guild.
 - Production returns `404`. Development is allowed; protected previews also
@@ -229,7 +231,8 @@ the interface announcement alone is not execution evidence.
    both orgs. Include revoked membership, inaccessible agents/models, and stale
    selections. Keep fixtures isolated from production identities.
 3. With the feature off, verify the settings entry and status subscription are
-   absent and server/native operations are denied. With only the fixture cohort
+   absent and server/native operations are denied, except that personal
+   disconnect and admin uninstall still remove existing data. With only the fixture cohort
    enabled, exercise unconfigured, uninstalled, installed/unconnected, and
    connected settings for admin/member roles. Exercise each exact `contextMode`
    (`full`, `mentions_only`, and `unavailable`) with `onboarding: "oauth_deferred"`.
@@ -317,6 +320,8 @@ permission to activate production.
    channel access, and archive/lock a thread in separate cases. Verify safe
    terminal handling. Remove one guild and confirm another configured guild
    still functions; distinguish temporary guild unavailability from removal.
+   With app configuration removed, accepted ingress stays retryable without
+   consuming attempts or sending a notice, and is admitted once it returns.
 8. Stop the test Gateway, remove temporary fixtures and test-only overrides using
    their owning cleanup paths, and record cleanup. Leave production flags,
    credentials, command registration, and activation unchanged.

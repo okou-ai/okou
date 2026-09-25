@@ -73,7 +73,7 @@ async function exportWork(
   );
 }
 
-test("exports every owned Discord record, including pre-route ingress, without another member's data", async () => {
+test("exports every owned Discord record, including pre-route ingress and deliveries, without another member's data", async () => {
   configureDiscordApp();
   const owner = actor();
   const peer = actor({ orgId: owner.orgId });
@@ -161,6 +161,7 @@ test("exports every owned Discord record, including pre-route ingress, without a
       "routes",
       "ingress",
       "contexts",
+      "deliveries",
     ].map((kind) => {
       return [
         kind,
@@ -178,6 +179,7 @@ test("exports every owned Discord record, including pre-route ingress, without a
     routes: 1,
     ingress: 2,
     contexts: 1,
+    deliveries: 1,
   });
   const exported = entries
     .map((entry) => {
@@ -191,6 +193,9 @@ test("exports every owned Discord record, including pre-route ingress, without a
   expect(exported).not.toContain(unrelated.discordUserId);
   expect(exported).not.toContain("Another member's private Discord message");
   expect(exported).not.toContain("claimToken");
+  expect(exported).toContain("Okou could not start this Discord task");
+  expect(exported).not.toContain("Missing Access");
+  expect(exported).not.toContain("lastError");
 });
 
 test("removes a departed member's binding only in the affected organization", async () => {
