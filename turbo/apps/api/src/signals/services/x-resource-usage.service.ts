@@ -9,11 +9,7 @@ import type { z } from "zod";
 import type { Tx } from "../../lib/db-types";
 import type { SandboxAuth } from "../../types/auth";
 import type { Db } from "../external/db";
-import {
-  lockXResourceAdmission,
-  readXResourceClock,
-  setXResourceTransactionTimeouts,
-} from "./x-resource-usage-lifecycle";
+import { readXResourceClock } from "./x-resource-usage-lifecycle";
 
 type UsageBody = z.output<typeof webhookUsageEventContract.send.body>;
 type UsageObservation = UsageBody["events"][number];
@@ -243,9 +239,7 @@ export async function ingestXResourceUsage(
   }
   await db.transaction(
     async (tx) => {
-      await setXResourceTransactionTimeouts(tx);
-      await lockXResourceAdmission(tx, "shared");
-      // SHARE prevents deletion/owner updates while source rows are created.
+      // SHARE prevents Run deletion/owner updates while source rows are created.
       const [run] = await tx
         .select({
           createdAt: agentRuns.createdAt,
@@ -280,8 +274,9 @@ export async function ingestXResourceUsage(
       const owned = await reserveUsageSources(tx, billable, body.runId, auth);
       await checkObservationTimes(tx, events, run.createdAt, run.completedAt);
       const quantities = await claimResources(tx, billable, owned);
-      // Locks acquired by INSERT may have crossed midnight. Cleanup is still
-      // excluded; an expired batch rolls all sources and claims back together.
+      // INSERT may have waited across midnight. An expired batch rolls all
+      // sources and claims back together. Retention cleanup only deletes
+      // dates older than yesterday and never changes admission's date window.
       await checkObservationTimes(tx, events, run.createdAt, run.completedAt);
       const positive = [...quantities].filter(([, quantity]) => {
         return quantity > 0;

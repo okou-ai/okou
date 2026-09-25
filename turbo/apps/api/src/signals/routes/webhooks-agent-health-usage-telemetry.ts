@@ -52,10 +52,6 @@ import {
   ingestXResourceUsage,
   XResourceUsageError,
 } from "../services/x-resource-usage.service";
-import {
-  lockXResourceAdmission,
-  setXResourceTransactionTimeouts,
-} from "../services/x-resource-usage-lifecycle";
 
 const SANDBOX_TELEMETRY_SYSTEM_DATASET = "sandbox-telemetry-system";
 const SANDBOX_TELEMETRY_METRICS_DATASET = "sandbox-telemetry-metrics";
@@ -551,16 +547,10 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
   const insertResult = await settle(
     (async () => {
       if (usageEventValues.length > 0) {
-        await db.transaction(async (tx) => {
-          await setXResourceTransactionTimeouts(tx);
-          // Count-event retries share retention admission with resource batches.
-          await lockXResourceAdmission(tx, "shared");
-          await tx
-            .insert(usageEvent)
-            .values(usageEventValues)
-            .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
-          signal.throwIfAborted();
-        });
+        await db
+          .insert(usageEvent)
+          .values(usageEventValues)
+          .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
       }
     })(),
   );

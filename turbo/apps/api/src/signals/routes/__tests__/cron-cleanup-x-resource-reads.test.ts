@@ -1,27 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { afterEach, describe, expect, it, onTestFinished } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { stubTestTimezone } from "../../../__tests__/env-stub";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { xResourceAdmissionDbFixture } from "../../../test-fixtures/db-fixture";
-import {
-  holdProductionXResourceAdmissionForTest,
-  holdXResourceAdmissionForTest,
-  withXResourceAdmissionScopeFixture,
-  withXResourceClock,
-} from "../../../test-fixtures/x-resource-admission";
+import { withXResourceClock } from "../../../test-fixtures/x-resource-usage";
 import {
   testXResourceReadsContract,
   testXResourceReadsRoutes,
   type TestXResourceReadsAction,
 } from "../test-x-resource-reads";
-import { settleIncludingAbort } from "../../utils";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 
-const context = testContext({
-  dbFixtures: [xResourceAdmissionDbFixture],
-});
+const context = testContext();
 
 function resourceId(): string {
   // UUID-owned decimal identifiers fit the production resource-ID contract.
@@ -72,9 +63,8 @@ async function historicalFixture(
   };
 }
 
-// Infrastructure exception: production admission cannot create expired rows or
-// pause a transaction at midnight. The test route names only this test's IDs;
-// successful requests never mount or invoke the production-global cron sweep.
+// Infrastructure exception: production ingestion cannot create expired rows.
+// The test route names only these fixtures' IDs, never the production cron sweep.
 describe("X resource read retention", () => {
   afterEach(() => {
     stubTestTimezone("UTC");
@@ -114,6 +104,25 @@ describe("X resource read retention", () => {
     expect((await fixture.read()).rows).toStrictEqual(rows.slice(2));
   });
 
+  it("matches the complete day, type and resource key without deleting retained rows", async () => {
+    const id = resourceId();
+    const rows = [
+      { utcDay: "2026-09-15", resourceType: "post" as const, resourceId: id },
+      { utcDay: "2026-09-15", resourceType: "user" as const, resourceId: id },
+      { utcDay: "2026-09-16", resourceType: "post" as const, resourceId: id },
+      { utcDay: "2026-09-17", resourceType: "user" as const, resourceId: id },
+    ];
+    const fixture = await historicalFixture(rows);
+    expect(
+      (
+        await fixture.cleanup(() => {
+          return new Date("2026-09-17T12:00:00.000Z");
+        })
+      ).deleted,
+    ).toBe(2);
+    expect((await fixture.read()).rows).toStrictEqual(rows.slice(2));
+  });
+
   it("deletes at most 1000 rows and drains the remaining expired rows next tick", async () => {
     const id = resourceId();
     const rows = Array.from({ length: 1000 }, (_, index) => {
@@ -140,112 +149,6 @@ describe("X resource read retention", () => {
     ]);
     expect((await fixture.cleanup(clock)).deleted).toBe(1);
     expect((await fixture.cleanup(clock)).deleted).toBe(0);
-    expect((await fixture.read()).rows).toStrictEqual([]);
-  });
-
-  it("waits for admitted writers and samples the UTC clock after the wait", async () => {
-    const rows = ["2026-09-16", "2026-09-17"].map((utcDay) => {
-      return {
-        utcDay,
-        resourceType: "user" as const,
-        resourceId: resourceId(),
-      };
-    });
-    const fixture = await historicalFixture(rows);
-    const gate = await holdXResourceAdmissionForTest(context.signal);
-    onTestFinished(async () => {
-      gate.release();
-      await gate.done;
-    });
-
-    let now = new Date("2026-09-17T23:59:59.999Z");
-    const pending = Promise.allSettled([
-      fixture.cleanup(() => {
-        return now;
-      }),
-    ]);
-    const waiting = await settleIncludingAbort(
-      expect.poll(gate.waiterCount).toBe(1),
-    );
-    now = new Date("2026-09-18T00:00:00.000Z");
-    gate.release();
-    await gate.done;
-    const [completed] = await pending;
-    if (!waiting.ok) {
-      throw waiting.error;
-    }
-    if (completed.status === "rejected") {
-      throw completed.reason;
-    }
-    expect(completed.value.deleted).toBe(1);
-    expect((await fixture.read()).rows).toStrictEqual(rows.slice(1));
-  });
-
-  it("cleans owned reads while another test scope holds admission", async () => {
-    const fixture = await historicalFixture([
-      { utcDay: "2026-09-15", resourceType: "post", resourceId: resourceId() },
-    ]);
-    // Infrastructure exception: HTTP cannot hold another worker's admission
-    // open. Its real lock must not block this test's explicitly owned rows.
-    const gate = await withXResourceAdmissionScopeFixture(
-      randomUUID(),
-      async () => {
-        return await holdXResourceAdmissionForTest(context.signal);
-      },
-    );
-    const completion = Promise.allSettled([gate.done]);
-    onTestFinished(async () => {
-      gate.release();
-      await completion;
-    });
-
-    const result = await fixture.cleanup(() => {
-      return new Date("2026-09-18T00:00:00.000Z");
-    });
-    expect(result.deleted).toBe(1);
-    expect((await fixture.read()).rows).toStrictEqual([]);
-    gate.release();
-    await gate.done;
-  });
-
-  it("preserves production admission and restores the enclosing test scope", async () => {
-    const fixture = await historicalFixture([
-      { utcDay: "2026-09-15", resourceType: "post", resourceId: resourceId() },
-    ]);
-    const other = await historicalFixture([
-      { utcDay: "2026-09-15", resourceType: "post", resourceId: resourceId() },
-    ]);
-    const clock = () => {
-      return new Date("2026-09-18T00:00:00.000Z");
-    };
-    const gate = await holdProductionXResourceAdmissionForTest(context.signal);
-    const completion = Promise.allSettled([gate.done]);
-    const pending = Promise.allSettled([
-      gate.withAcquisitionAttemptTracking(async () => {
-        return await withXResourceAdmissionScopeFixture(undefined, async () => {
-          return await fixture.cleanup(clock);
-        });
-      }),
-    ]);
-    onTestFinished(async () => {
-      gate.release();
-      await completion;
-      await pending;
-    });
-    await Promise.race([gate.acquisitionAttempted, pending]);
-
-    // The production holder remains active after this operation reaches
-    // admission. Shared setup must have restored this test's scope for its
-    // second owned cleanup to finish.
-    expect((await other.cleanup(clock)).deleted).toBe(1);
-    expect((await other.read()).rows).toStrictEqual([]);
-    gate.release();
-    await gate.done;
-    const [result] = await pending;
-    if (result.status === "rejected") {
-      throw result.reason;
-    }
-    expect(result.value.deleted).toBe(1);
     expect((await fixture.read()).rows).toStrictEqual([]);
   });
 });
