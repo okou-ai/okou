@@ -710,7 +710,7 @@ export function createComputerUseBddApi(context: TestContext) {
 
     async requestComputerUseHeartbeat(
       hostToken: string | null,
-      statuses: readonly (200 | 401 | 403 | 409)[],
+      statuses: readonly (200 | 401 | 409)[],
     ) {
       return await accept(
         heartbeatClient().heartbeat({
@@ -986,7 +986,7 @@ export function createComputerUseBddApi(context: TestContext) {
 
     async requestClaimNextComputerUseCommand(
       hostToken: string | null,
-      statuses: readonly (200 | 401 | 403)[],
+      statuses: readonly (200 | 401)[],
     ) {
       return await accept(
         hostCommandsClient().next({

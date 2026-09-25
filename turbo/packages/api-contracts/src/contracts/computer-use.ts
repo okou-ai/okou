@@ -586,7 +586,6 @@ export const computerUseHeartbeatContract = c.router({
     responses: {
       200: computerUseHeartbeatResponseSchema,
       401: apiErrorSchema,
-      403: apiErrorSchema,
       409: apiErrorSchema,
     },
     summary: "Refresh a desktop computer-use host heartbeat",
@@ -756,7 +755,6 @@ export const computerUseHostCommandsContract = c.router({
     responses: {
       200: computerUseHostCommandNextResponseSchema,
       401: apiErrorSchema,
-      403: apiErrorSchema,
     },
     summary: "Claim the next approved desktop computer-use command",
   },
