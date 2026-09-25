@@ -37,6 +37,7 @@ import {
   discordGuildUserBinding,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
+import { sendDiscordDmAdmissionNotice$ } from "./discord-dm-admission-notice.service";
 import { uninstallDiscordGuild$ } from "./discord-gateway-lifecycle.service";
 
 const L = logger("DiscordGateway");
@@ -87,10 +88,14 @@ async function existingMessageResponse(
 const handleDiscordMessage$ = command(
   async (
     { get, set },
-    envelope: DiscordGatewayEnvelope,
-    body: string,
+    args: {
+      readonly envelope: DiscordGatewayEnvelope;
+      readonly body: string;
+      readonly botToken: string;
+    },
     signal: AbortSignal,
   ): Promise<Response> => {
+    const { envelope, body, botToken } = args;
     const parsedMessage = discordMessageCreateSchema.safeParse(
       envelope.payload,
     );
@@ -133,7 +138,30 @@ const handleDiscordMessage$ = command(
     } else {
       const result = await get(discordDmBinding(message.author.id));
       signal.throwIfAborted();
-      selection = result.kind === "connected" ? result.binding : null;
+      if (result.kind !== "connected") {
+        // Tell the sender what to do instead of dropping the DM silently.
+        // A guild mention gets no public reply; see the integration guide.
+        const noticeSignal = AbortSignal.timeout(30_000);
+        waitUntil(
+          tapError(
+            set(
+              sendDiscordDmAdmissionNotice$,
+              {
+                applicationId: envelope.applicationId,
+                botToken,
+                message,
+                kind: result.kind,
+              },
+              noticeSignal,
+            ),
+            (error) => {
+              L.warn("Discord DM admission notice failed", { error });
+            },
+          ),
+        );
+        return ignored("unbound-disabled-or-dm-selection-required");
+      }
+      selection = result.binding;
     }
     signal.throwIfAborted();
     if (!selection) {
@@ -234,6 +262,10 @@ export const handleDiscordGateway$ = command(
       return Response.json({ ok: true, outcome });
     }
 
-    return await set(handleDiscordMessage$, envelope, body, signal);
+    return await set(
+      handleDiscordMessage$,
+      { envelope, body, botToken: config.botToken },
+      signal,
+    );
   },
 );

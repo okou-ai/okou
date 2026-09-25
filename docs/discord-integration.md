@@ -133,6 +133,18 @@ Discord authorization source. See C's
    metadata only and `okou discord download-file` re-authorizes each fetch.
    Forum and media channels hold posts as threads with no channel history, so
    `channel list` omits them; a post is read by its thread ID.
+   When a reply part's delivery cannot be confirmed, it is not resent (that
+   could duplicate it); the remaining parts are still sent, followed by a notice
+   linking to the full reply in Okou.
+8. **Admission notices.** Slack answers an unconnected sender with an ephemeral
+   `not_connected` notice. Discord has no ephemeral messages outside
+   interactions, so a mention from an unconnected guild member gets no reply: a
+   public reply would expose that member's connection state to the channel.
+   `/okou connect` gives the same guidance privately. A bot DM from an
+   unconnected sender gets setup guidance, and a DM from a sender with several
+   connections and no saved choice gets `/okou org` guidance, each at most once
+   per sender and hour. A sender whose connection exists but no longer verifies
+   (for example, while the feature is off for that org) gets no notice.
 
 OAuth deferral and disabled rollout are project scope limits, not unavoidable
 Discord differences. The Gateway owner's initial single-shard scope is likewise

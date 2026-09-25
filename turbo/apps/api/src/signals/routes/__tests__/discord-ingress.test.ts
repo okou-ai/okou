@@ -24,6 +24,7 @@ import { integrationsDiscordRoutes } from "../integrations-discord";
 import { testDiscordIngressRoutes } from "../test-discord-ingress";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { webDownloadRoutes } from "../web-download";
+import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import {
@@ -1032,6 +1033,158 @@ describe("canonical Discord ingress", () => {
     await postDiscordMessage(context, newMessage);
     await flushWaitUntilForTest();
     await expect(discordChatThreads(context, second)).resolves.toHaveLength(1);
+  });
+
+  it("tells an unconnected DM sender how to connect at most once an hour", async () => {
+    const actor = await connected();
+    const provider = mockDiscordProvider(actor);
+    const stranger = uniqueDiscordSnowflake();
+    const dmId = uniqueDiscordSnowflake();
+    provider.channels.set(dmId, {
+      id: dmId,
+      type: 1,
+      recipients: [{ id: stranger, username: "stranger" }],
+    });
+    const strangerDm = (content: string) => {
+      return {
+        ...discordMessageForTest(actor, {
+          channelId: dmId,
+          guild: false,
+          content,
+        }),
+        author: { id: stranger, username: "stranger" },
+      };
+    };
+    const noticesTo = (channelId: string) => {
+      return provider.sentMessages.filter((message) => {
+        return message.channel_id === channelId;
+      });
+    };
+    mockNow(now());
+    const first = strangerDm("hello?");
+    expect((await postDiscordMessage(context, first)).body.outcome).toBe(
+      "ignored",
+    );
+    await flushWaitUntilForTest();
+    expect(noticesTo(dmId)).toHaveLength(1);
+    expect(noticesTo(dmId)[0]?.content).toContain("/okou connect");
+    // A relay retry of the same DM and a follow-up DM send nothing more.
+    await postDiscordMessage(context, first, `relay-retry:${first.id}`);
+    await postDiscordMessage(context, strangerDm("are you there?"));
+    await flushWaitUntilForTest();
+    expect(noticesTo(dmId)).toHaveLength(1);
+    mockNow(now() + 60 * 60 * 1000);
+    await postDiscordMessage(context, strangerDm("trying again later"));
+    await flushWaitUntilForTest();
+    expect(noticesTo(dmId)).toHaveLength(2);
+    await expect(discordChatThreads(context, actor)).resolves.toHaveLength(0);
+  });
+
+  it("asks a DM sender with several workspaces to choose one with /okou org", async () => {
+    const first = await connected();
+    const provider = mockDiscordProvider(first);
+    const second = await track(
+      setupConnectedDiscordActor(context, {
+        userId: first.userId,
+        discordUserId: first.discordUserId,
+      }),
+    );
+    provider.guildIds.add(second.guildId);
+    mockDiscordMemberships(context, [
+      { userId: first.userId, orgId: first.orgId, orgRole: "org:admin" },
+      { userId: second.userId, orgId: second.orgId, orgRole: "org:admin" },
+    ]);
+    for (const content of ["which workspace is this?", "hello again"]) {
+      const message = discordMessageForTest(first, {
+        channelId: provider.dmChannelId,
+        guild: false,
+        content,
+      });
+      expect((await postDiscordMessage(context, message)).body.outcome).toBe(
+        "ignored",
+      );
+      await flushWaitUntilForTest();
+    }
+    expect(provider.sentMessages).toHaveLength(1);
+    expect(provider.sentMessages[0]).toMatchObject({
+      channel_id: provider.dmChannelId,
+      content: expect.stringContaining("/okou org"),
+    });
+    await expect(discordChatThreads(context, first)).resolves.toHaveLength(0);
+    await expect(discordChatThreads(context, second)).resolves.toHaveLength(0);
+  });
+
+  it("sends no DM notice while the feature is off for the sender's workspace", async () => {
+    const actor = await connected();
+    const provider = mockDiscordProvider(actor);
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.DiscordIntegration]: false,
+    });
+    const message = discordMessageForTest(actor, {
+      channelId: provider.dmChannelId,
+      guild: false,
+      content: "is this available?",
+    });
+    expect((await postDiscordMessage(context, message)).body.outcome).toBe(
+      "ignored",
+    );
+    await flushWaitUntilForTest();
+    expect(provider.sentMessages).toHaveLength(0);
+  });
+
+  it("tells a member without an accessible agent immediately", async () => {
+    const owner = await connected();
+    const provider = mockDiscordProvider(owner);
+    const member = await track(
+      setupConnectedDiscordActor(context, {
+        orgId: owner.orgId,
+        guildId: owner.guildId,
+        reuseOrganization: true,
+      }),
+    );
+    mockDiscordMemberships(context, [
+      { userId: owner.userId, orgId: owner.orgId, orgRole: "org:admin" },
+      { userId: member.userId, orgId: member.orgId, orgRole: "org:admin" },
+    ]);
+    // The member chose a shared agent that its owner later makes private.
+    const agents = createAuthOrgAgentsBddApi(context);
+    const shared = await agents.createAgent(owner.actor, {
+      displayName: "Shared research agent",
+    });
+    createRouteMocks(context).clerk.session(
+      member.userId,
+      member.orgId,
+      "org:admin",
+    );
+    await accept(
+      setupApp({ context, routes: integrationsDiscordRoutes })(
+        integrationsDiscordContract,
+      ).setAgentPreference({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { agentId: shared.agentId },
+      }),
+      [200],
+    );
+    await agents.updateAgentMetadata(owner.actor, shared.agentId, {
+      visibility: "private",
+    });
+    const message = discordMessageForTest(member, {
+      channelId: provider.guildChannelId,
+      content: `<@${member.botUserId}> summarize this channel`,
+    });
+    provider.messages.set(message.id, message);
+    expect((await postDiscordMessage(context, message)).body.outcome).toBe(
+      "accepted",
+    );
+    // Delivered by the admission itself, not by the recovery sweep.
+    await flushWaitUntilForTest();
+    expect(provider.sentMessages).toHaveLength(1);
+    expect(provider.sentMessages[0]).toMatchObject({
+      channel_id: provider.guildChannelId,
+      content:
+        "No accessible agent is configured. Use /okou switch to choose an agent.",
+    });
+    await expect(discordChatThreads(context, member)).resolves.toHaveLength(0);
   });
 
   it("imports refreshed attachment metadata while keeping context and signed URLs private", async () => {
