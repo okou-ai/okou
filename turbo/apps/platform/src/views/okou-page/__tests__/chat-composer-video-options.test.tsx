@@ -283,6 +283,28 @@ test.each([false, true])(
   },
 );
 
+test.each([false, true])(
+  "A video template keeps its options after selecting a video model with the slash panel on: %s",
+  async (enabled) => {
+    installVideoSubmissionCapture();
+    await setupPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      featureSwitches: {
+        [FeatureSwitchKey.ComposerSlashTemplatePanel]: enabled,
+      },
+    });
+    await enterVideoMode("Claude Fable 5.1");
+    await selectVideoTemplate();
+    await selectPaneOption("16:9 · 8s · 720p", "9:16");
+    await waitFor(() => {
+      expect(
+        fastControl("button", "Video options 9:16 · 8s · 720p"),
+      ).toBeInTheDocument();
+    });
+  },
+);
+
 test("Selecting a video model alone keeps Creative Video settings hidden and unsent", async () => {
   const submissions = installVideoSubmissionCapture();
   await setupPage({
