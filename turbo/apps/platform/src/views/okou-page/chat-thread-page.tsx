@@ -6890,6 +6890,23 @@ function MessageAnnotation({
   );
 }
 
+// Discord permalinks always point at discord.com; any other destination is
+// shown as an unlinked source instead of an off-site link.
+const DISCORD_MESSAGE_URL =
+  /^https:\/\/discord\.com\/channels\/(?:\d+|@me)\/\d+\/\d+$/u;
+
+function sourceMessageHref(
+  part: Extract<
+    UserMessageAnnotationRenderPart,
+    { type: "source"; kind: "external" }
+  >["part"],
+): string | undefined {
+  if (part.kind === "discord" && !DISCORD_MESSAGE_URL.test(part.href ?? "")) {
+    return undefined;
+  }
+  return part.href;
+}
+
 function sourceMessageLinkText(
   t: TFunction<"common">,
   part: Extract<
@@ -6996,6 +7013,7 @@ function SourceMessageAnnotation({
       ? "lark"
       : part.kind;
   const sourceLabel = sourceMessageLabel(t, sourceKind);
+  const href = sourceMessageHref(part);
   const { opensChat, openLabel } = sourceMessageLinkText(t, part);
   const ariaLabel =
     opensChat && sourceKind !== "feishu" && sourceKind !== "lark"
@@ -7046,7 +7064,7 @@ function SourceMessageAnnotation({
         />
       )}
       <span className="shrink-0">{sourceLabel}</span>
-      {part.href ? (
+      {href ? (
         <>
           <span className="shrink-0">·</span>
           <span className="min-w-0 truncate">{openLabel}</span>
@@ -7055,12 +7073,12 @@ function SourceMessageAnnotation({
       ) : null}
     </>
   );
-  if (!part.href) {
+  if (!href) {
     return <div className={className}>{content}</div>;
   }
   return (
     <a
-      href={part.href}
+      href={href}
       target="_blank"
       rel="noreferrer"
       aria-label={ariaLabel}
