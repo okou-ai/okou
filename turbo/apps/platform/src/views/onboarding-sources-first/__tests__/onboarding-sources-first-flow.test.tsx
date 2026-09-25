@@ -15,7 +15,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { pathname, search } from "../../../signals/location.ts";
 import {
-  listLocalStorageEntries,
+  listLocalStorageEntriesForTest,
   localStorageSignals,
 } from "../../../signals/external/local-storage.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
@@ -557,7 +557,7 @@ test("A refreshed ready step keeps the industry, model choice, and edited reques
   expect(sentIndustry).toBe("marketing");
   expect(sentProvider).toBe("claudeCode");
   expect(context.store.get(completedDraftStorage.get$)).toBeNull();
-  expect(listLocalStorageEntries("onboarding:")).toStrictEqual([]);
+  expect(listLocalStorageEntriesForTest("onboarding:")).toStrictEqual([]);
 });
 
 test("A member's run reaches the first request without the admin-only completion", async () => {
@@ -601,7 +601,7 @@ test("A member's run reaches the first request without the admin-only completion
   // `POST /api/onboarding/complete` is admin-only, so a member run would only
   // ever collect a 403 from it.
   expect(completions).toBe(0);
-  expect(listLocalStorageEntries("onboarding:")).toStrictEqual([]);
+  expect(listLocalStorageEntriesForTest("onboarding:")).toStrictEqual([]);
 });
 
 test("A step keeps the prompt handoff and redeem code it arrived with", async () => {

@@ -9,7 +9,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
-  listLocalStorageEntries,
+  listLocalStorageEntriesForTest,
   localStorageSignals,
 } from "../../../signals/external/local-storage.ts";
 import { pathname, search } from "../../../signals/location.ts";
@@ -52,7 +52,9 @@ function seedProgress(
 }
 
 function savedStep(): unknown {
-  const entry = listLocalStorageEntries("onboarding:sources-first-step")[0];
+  const entry = listLocalStorageEntriesForTest(
+    "onboarding:sources-first-step",
+  )[0];
   return JSON.parse(entry?.value ?? "null");
 }
 
@@ -218,11 +220,11 @@ test.each([ROUTES.home, ROUTES.onboarding])(
 
     await screen.findByRole("textbox", { name: "Message" });
     await waitFor(() => {
-      expect(listLocalStorageEntries("onboarding:")).toStrictEqual([]);
+      expect(listLocalStorageEntriesForTest("onboarding:")).toStrictEqual([]);
     });
-    expect(listLocalStorageEntries("test:unrelated-preference")).toStrictEqual([
-      { key: "test:unrelated-preference", value: "keep me" },
-    ]);
+    expect(
+      listLocalStorageEntriesForTest("test:unrelated-preference"),
+    ).toStrictEqual([{ key: "test:unrelated-preference", value: "keep me" }]);
   },
 );
 
@@ -233,7 +235,7 @@ test.each([
   "A completed account preserves other identities' progress: %j",
   async (identity) => {
     seedProgress("ready", identity);
-    const saved = listLocalStorageEntries("onboarding:");
+    const saved = listLocalStorageEntriesForTest("onboarding:");
 
     await setupPage({
       context,
@@ -242,7 +244,7 @@ test.each([
     });
 
     await screen.findByRole("textbox", { name: "Message" });
-    expect(listLocalStorageEntries("onboarding:")).toStrictEqual(saved);
+    expect(listLocalStorageEntriesForTest("onboarding:")).toStrictEqual(saved);
   },
 );
 
@@ -281,7 +283,7 @@ test("A failed completion keeps the ready step and edited request available for 
   );
   expect(savedStep()).toMatchObject({ step: "ready" });
   expect(
-    listLocalStorageEntries("onboarding:sources-first-draft"),
+    listLocalStorageEntriesForTest("onboarding:sources-first-draft"),
   ).toHaveLength(1);
   await waitFor(() => {
     expect(getButtonByName("Start with Okou")).toBeEnabled();

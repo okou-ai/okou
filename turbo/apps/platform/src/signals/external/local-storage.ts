@@ -27,7 +27,7 @@ export function localStorageSignals<const Key extends string>(
 }
 
 /** Read the current shared storage bytes, including writes from other tabs. */
-export function listLocalStorageEntries(prefix: string): readonly {
+export function listLocalStorageEntriesForTest(prefix: string): readonly {
   readonly key: string;
   readonly value: string;
 }[] {
