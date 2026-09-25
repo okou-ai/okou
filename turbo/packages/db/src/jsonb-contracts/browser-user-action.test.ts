@@ -88,6 +88,47 @@ describe("Browser user-action JSONB payload", () => {
     ).toBe("one_time_code");
   });
 
+  it("accepts only exact native date/time subtypes for a semantic date/time request", () => {
+    const field = {
+      key: "arrival",
+      label: "Arrival",
+      fieldKind: "date_time",
+      required: false,
+      backendNodeId: 45,
+      fingerprint: { tagName: "INPUT", inputType: "date" },
+    };
+    const decode = (candidate: Record<string, unknown>) => {
+      return parseBrowserUserActionPayload({
+        version: 1,
+        kind: "input",
+        callbackIds,
+        target: { ...inputTarget, fields: [candidate] },
+      });
+    };
+    for (const inputType of [
+      "date",
+      "time",
+      "datetime-local",
+      "month",
+      "week",
+    ]) {
+      expect(
+        decode({ ...field, fingerprint: { tagName: "INPUT", inputType } })
+          .target.fields[0]?.fieldKind,
+      ).toBe("date_time");
+    }
+    for (const invalid of [
+      { ...field, fingerprint: { tagName: "INPUT", inputType: "text" } },
+      { ...field, fingerprint: { tagName: "INPUT", inputType: "color" } },
+      { ...field, fingerprint: { tagName: "TEXTAREA", inputType: "date" } },
+      { ...field, radioMemberNodeIds: [45] },
+    ]) {
+      expect(() => decode(invalid)).toThrow(
+        "Invalid Browser user-action payload",
+      );
+    }
+  });
+
   it("seals only bounded, unique radio group member identities around the anchor", () => {
     const field = {
       key: "delivery",

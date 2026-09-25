@@ -712,8 +712,8 @@ read, then run the token-only Browser preflight in the background. Reopening
 the dialog runs preflight again. Users can fill and submit while the check is
 pending for text/number controls. Preflight returns the observed textarea,
 input, or native select subtype and current site constraints, including
-multiple email addresses, number `min`, `max`, and `step` attributes, and a
-bounded snapshot of select option labels, disabled states, and selected states.
+multiple email addresses, number and native date/time `min`, `max`, and `step`
+attributes, and a bounded snapshot of select option labels, disabled states, and selected states.
 The form switches to those observed controls without clearing the draft.
 Select submission waits for preflight, identifies options by their position
 rather than their possibly duplicated value, and carries a snapshot fingerprint.
@@ -767,8 +767,16 @@ complete draft, and nothing is persisted across page reload.
 General number fields use the same form and Input styling as other controls,
 with a native number input and browser validity feedback. Their values remain
 strings throughout the handoff; optional number fields distinguish untouched
-from an explicit clear. One-time codes remain text inputs so leading zeroes
-survive. The inline transcript card remains a link to the standalone form.
+from an explicit clear. Native `date`, `time`, `datetime-local`, `month`, and
+`week` controls likewise keep canonical HTML strings without timezone conversion.
+The card passes the site's date/time bounds and step to matching native pickers;
+optional controls keep an untouched website value unless the user explicitly
+clears it. The API checks the actual browser's canonical value and validity
+before writing, then verifies type, constraints, validity and value after
+website handlers, including a separate check for queued microtasks. Failed
+readback after a possible write is uncertain, not an automatic retry. Okou
+does not explicitly submit the website form, but its event handlers may do so.
+One-time codes remain text inputs so leading zeroes survive. The inline transcript card remains a link to the standalone form.
 
 Apply or cancel completes before the form sends its normal chat callback.
 Request-owned event IDs make callback-only Continue retries idempotent without
