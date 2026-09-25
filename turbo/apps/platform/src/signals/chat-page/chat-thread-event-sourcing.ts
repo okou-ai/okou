@@ -373,8 +373,7 @@ function threadMetaFromMetadata(metadata: ChatThreadMetadata): ThreadMeta {
     agentId: metadata.agentId,
     title: metadata.title,
     pinnedAt: metadata.pinnedAt,
-    // An API from before archiving omits the flag (#36551).
-    archived: metadata.archived ?? false,
+    archived: metadata.archived,
     selectedModel: metadata.selectedModel,
     modelSettings: metadata.modelSettings,
     serviceTier: metadata.serviceTier,

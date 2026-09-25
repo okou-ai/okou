@@ -295,6 +295,7 @@ export function mockThread(options?: {
           createdAt: "2026-03-10T00:00:00Z",
           updatedAt: "2026-03-10T00:00:00Z",
           pinnedAt: null,
+          archived: false,
           renamedAt: null,
           selectedModel: options?.selectedModel ?? null,
           serviceTier: null,

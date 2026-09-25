@@ -5,6 +5,9 @@ export const CLIENT_TYPE_HEADER = "X-Client-Type";
 export const CLIENT_PRODUCT_HEADER = "X-Client-Product";
 export const CLIENT_SESSION_ID_HEADER = "X-Client-Session-Id";
 export const CLIENT_REQUEST_ID_HEADER = "X-Client-Request-Id";
+// Web App and CLI send this so the snapshot API returns an R2 URL. It stays in
+// CORS and in client requests while header-less clients (native iOS) still
+// receive inline snapshots; see getChatThreadSnapshotInner$.
 export const CHAT_THREAD_SNAPSHOT_R2_HEADER = "X-Chat-Thread-Snapshot-R2";
 export { CHAT_EVENT_SCHEMA_VERSION_HEADER } from "./chat-event-schema-version";
 export const CLIENT_FORCE_UPGRADE_STATUS = 426;
