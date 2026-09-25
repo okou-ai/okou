@@ -314,6 +314,19 @@ describe("canonical Discord ingress", () => {
       expect(claim.appendSystemPrompt).toContain(
         "- Discord files: when the task explicitly asks to share a file in Discord, use `okou discord upload-file --help`",
       );
+      // Native reads deny bot DMs, so the prompt must not steer runs there.
+      expect(claim.appendSystemPrompt).toContain(
+        "Bot DM content is not readable; you can only send or upload to your own bot DM.",
+      );
+      expect(claim.appendSystemPrompt).toContain(
+        "bot DM attachments cannot be downloaded",
+      );
+      expect(claim.appendSystemPrompt).toContain(
+        "bot DM content, including earlier DM messages and their attachments, is not readable",
+      );
+      expect(claim.appendSystemPrompt).not.toContain(
+        "Only your own bot DM is accessible",
+      );
       const privateArtifactRule =
         "A private `/artifacts/...` address is not openable from Discord, so a link alone shows the user nothing.";
       if (privateArtifacts) {
