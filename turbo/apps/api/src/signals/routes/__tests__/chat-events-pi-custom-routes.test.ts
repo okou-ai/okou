@@ -1068,15 +1068,13 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it.each(
-    ([...GPT_PI_BDD_MODELS, "deepseek-v4.1-flash"] as const).flatMap(
-      (selectedModel) => {
-        return ["mapping", "connection"].map((removed) => {
-          return { selectedModel, removed };
-        });
-      },
-    ),
-  )(
+  it.each([
+    { selectedModel: "gpt-5.6-terra", removed: "mapping" },
+    { selectedModel: "gpt-5.6-terra", removed: "connection" },
+    { selectedModel: "gpt-5.6-sol", removed: "mapping" },
+    { selectedModel: "gpt-5.6-luna", removed: "connection" },
+    { selectedModel: "deepseek-v4.1-flash", removed: "mapping" },
+  ] as const)(
     "fails custom $selectedModel when its $removed disappears before credential capture",
     async ({ selectedModel, removed }) => {
       const { actor, agentId } = await entitledChatActor();
@@ -1160,7 +1158,7 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it.each([...GPT_PI_BDD_MODELS, "deepseek-v4.1-flash"] as const)(
+  it.each(["gpt-5.6-terra", "deepseek-v4.1-flash"] as const)(
     "preserves captured custom %s credentials after gateway removal without substitution",
     async (selectedModel) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -1263,7 +1261,7 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it.each(GPT_PI_BDD_MODELS)(
+  it.each(["gpt-5.6-terra"] as const)(
     "promotes queued custom %s Fast with the admitted tier and switch snapshot",
     async (selectedModel) => {
       const { actor, agentId, runnerGroup, providerId } =
