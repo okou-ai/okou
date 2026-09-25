@@ -134,18 +134,34 @@ removal gates:
 The API no longer reads the legacy `chat_threads` JSONB. A row without an
 object key is now an error. A scope without a snapshot row returns the
 permanent empty `{ chatThreads: [], latestEventId: null, latestSeqId: null }`
-shape. The App SharedWorker and CLI keep handling the inline contract variant,
-because the contract still carries it for iOS (below). They send the header,
-so current and rollback-window APIs return them an R2 URL whenever a row
-exists.
+shape. The App SharedWorker and CLI keep handling the inline contract variant for
+the API rollback window. They send the header, so current and rollback-window
+APIs return them an R2 URL whenever a row exists.
 
-One fallback remains. The native iOS TestFlight client (0.2.x) reads only
-inline `chatThreads`. It sends neither `X-Chat-Thread-Snapshot-R2` nor a client
-version, so no version floor can exclude it. The API therefore still serves
-inline data materialized from R2 to requests that omit the header. The Web App
-and CLI keep sending the header, and it stays in the CORS allow-list. Remove
-that branch, the header, and the inline contract variant after iOS downloads
-the R2 URL and builds without that support are no longer installed.
+At the time of #36942, one fallback remained: the native iOS TestFlight
+client (0.2.x) read only inline `chatThreads`, so the API materialized the R2
+archive for requests without the capability header. That branch was retired
+later on 2026-09-25 with explicit acceptance of breaking the old TestFlight
+builds; see "iOS inline chat thread snapshot response retired" below.
+
+## iOS inline chat thread snapshot response retired (2026-09-25)
+
+The owner approved removing the remaining header-less inline response for
+#36375 despite breaking old internal iOS TestFlight builds. For a scope with a
+compacted snapshot, `GET /api/chat-threads/snapshot` now returns a scoped,
+short-lived R2 URL whether or not `X-Chat-Thread-Snapshot-R2: 1` is present.
+The API no longer downloads and decompresses the R2 archive on behalf of a
+header-less client. A scope without a snapshot row still returns
+`{ chatThreads: [], latestEventId: null, latestSeqId: null }`.
+
+The iOS TestFlight client currently decodes only inline `chatThreads`, so a
+header-less iOS build cannot load a non-empty compacted chat thread list from
+this API. Updating iOS to download the R2 URL remains separate work; this PR
+does not provide a minimum-version gate for iOS. Web App and CLI still send the
+capability header and accept inline responses for the existing API rollback
+window: an older API behind the current rollback floor still branches on that
+header. Keep the header in CORS and the shared inline response variant until
+the API rollback floor advances past that implementation.
 
 ## Thread draft contraction, release 2 (2026-09-25)
 
@@ -1138,6 +1154,9 @@ rollback of the API below this change leaves already appended archive events in
 the stream for those older readers; roll forward instead.
 
 ## Chat thread snapshot R2 handoff (2026-09-23)
+
+Historical rollout record; the current header-less inline branch has since
+been retired as described at the top of this document.
 
 Migration `1204_chat_thread_snapshot_r2_pointer` adds a nullable R2 object key to
 `chat_thread_snapshots`. Existing rows continue to carry the legacy
