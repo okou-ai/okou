@@ -1,5 +1,26 @@
 # Deployment Compatibility
 
+## Agent-run context ownership becomes required (2026-09-25)
+
+Migration `1242_chat_agent_run_context_owner_not_null` deletes
+`chat_agent_run_context` rows whose `source_user_id` or `source_org_id` is null,
+then makes both columns `NOT NULL`. Every API from the split writer on (API
+1.672.0) inserts a row only after reading both owners from the source thread and
+agent, so no rollback target writes a null owner. The deleted rows were written
+by older APIs; on 2026-09-25 all 955 had lost their source thread, so no owner
+could be derived. No code reads these rows, and the `chat_events.context_id`
+values that referenced 70 of them carry no foreign key.
+
+Account erasure and Clerk cleanup now remove these rows by copied owner only;
+the source-thread reach and the Clerk cleanup's thread subqueries are removed.
+That changes the relational sweep plan, so `RELATIONAL_ERASURE_COLLECTOR_VERSION`
+changes. When it changed, no account erasure job was incomplete (production had
+two `verified_erased` jobs), so no captured sink carries the old version into
+replay. A job that an older API captures during the release overlap or after a
+rollback registers its relational sink under the old version, which this API
+refuses to execute. Check for such jobs after the release and after any rollback
+until the older APIs leave the rollback window.
+
 ## Discord replies become fire and forget (2026-09-25)
 
 Discord replies and ingress notices are now posted once, directly after the
