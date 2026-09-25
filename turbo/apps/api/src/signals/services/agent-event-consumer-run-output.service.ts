@@ -18,15 +18,14 @@ import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import {
-  insertAssistantEventsInTransaction,
+  appendAssistantEventRows,
   type InsertAssistantEventsInput,
 } from "./chat-event-shared.service";
 import { recordFirstAssistantEventAcknowledgementMetric } from "./chat-first-assistant-event-metric.service";
 import { writeRunMetadataInTransaction } from "./agent-run-metadata-write.service";
 import { historicalRunGroupId } from "./run-event-provenance.service";
 import {
-  withRunOutputWrite,
-  RunContentOwnershipChangedError,
+  assertPreparedRunContentIdentity,
   prepareRunOutputOwnership,
   type RunOutputDiagnostics,
   type RunContentOwnership,
@@ -233,30 +232,6 @@ function assistantEventItems(args: {
 interface AssistantEventInsertion {
   readonly insertedRowCount: number;
   readonly shouldAttemptFirstAssistantEventClaim: boolean;
-}
-
-async function insertRunOutputChatEvents(
-  tx: Db | Tx,
-  payload: EventConsumerPayload,
-  thread: MaterializedChatProjection["thread"],
-  runContext: {
-    readonly runGroupId: string | undefined;
-    readonly items: InsertAssistantEventsInput["items"];
-  },
-  signal: AbortSignal,
-): Promise<AssistantEventInsertion> {
-  return await insertAssistantEventsInTransaction(
-    tx,
-    {
-      runId: payload.runId,
-      threadId: thread.chatThreadId,
-      userId: thread.userId,
-      orgId: thread.orgId,
-      items: runContext.items,
-      runGroupId: runContext.runGroupId,
-    },
-    signal,
-  );
 }
 
 async function insertMemoryCitations(
@@ -508,69 +483,53 @@ async function materializePreparedRunOutputEvents(
     events: prepared.payload.events,
     modelProvider: preparedOwnership.modelProvider,
   });
-  const projection = await withRunOutputWrite(
-    writeDb,
-    {
-      runId: payload.runId,
-      runOwner: payload.context,
-      ownership,
-      diagnostics,
-    },
-    async (tx, current) => {
-      if (current.status === "timeout") {
-        return null;
-      }
-      if (current.modelProvider !== preparedOwnership.modelProvider) {
-        throw new RunContentOwnershipChangedError(
-          "Run provider changed during output preparation",
-        );
-      }
-      const thread =
-        current.ownership.triggerSource !== null && current.ownership.thread
-          ? { ...current.ownership.thread, orgId: current.ownership.orgId }
-          : null;
-      diagnostics.enter("chat_event_append");
-      const insertion = thread
-        ? await insertRunOutputChatEvents(
-            tx,
-            prepared.payload,
-            thread,
-            {
-              runGroupId,
-              items,
-            },
-            signal,
-          )
-        : undefined;
-      return { ...current, thread, insertion };
-    },
-    signal,
-  );
-  if (!projection) {
-    return { outcome: "ignored-timeout" };
-  }
+  // No transaction or run lock: a timeout committed after preparation may admit
+  // this batch. The single reserve+insert statement is the only write here.
+  assertPreparedRunContentIdentity({
+    runId: payload.runId,
+    runOwner: payload.context,
+    ownership,
+  });
+  const thread =
+    ownership.triggerSource !== null && ownership.thread
+      ? { ...ownership.thread, orgId: ownership.orgId }
+      : null;
+  diagnostics.enter("chat_event_append");
+  const insertion = thread
+    ? await appendAssistantEventRows(
+        writeDb,
+        {
+          runId: payload.runId,
+          threadId: thread.chatThreadId,
+          userId: thread.userId,
+          orgId: thread.orgId,
+          items,
+          runGroupId,
+        },
+        signal,
+      )
+    : undefined;
+  signal.throwIfAborted();
   // Auxiliary failures must not hide a committed event from live clients.
   // Retried receipts dedupe the row and therefore cannot own this wakeup.
-  const eventPublished = Boolean(
-    projection.thread && projection.insertion?.insertedRowCount,
-  );
-  if (eventPublished && projection.thread) {
+  const eventPublished = Boolean(thread && insertion?.insertedRowCount);
+  if (eventPublished && thread) {
     await publishChatThreadMessageCreatedSafely({
-      userId: projection.thread.userId,
-      orgId: projection.thread.orgId,
-      threadId: projection.thread.chatThreadId,
+      userId: thread.userId,
+      orgId: thread.orgId,
+      threadId: thread.chatThreadId,
     });
   }
   return await materializeAdmittedRunOutputEvents(
     {
       db: writeDb,
-      ownership: projection.ownership,
+      ownership,
       payload: prepared.payload,
-      thread: projection.thread,
+      thread,
       latestResult: prepared.latestResult,
       latestOutput: prepared.latestOutput,
       citations: prepared.citations,
-      insertion: projection.insertion,
+      insertion,
       eventPublished,
       diagnostics,
     },

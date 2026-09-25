@@ -1153,8 +1153,15 @@
     {
       "idx": 1242,
       "version": "7",
-      "when": 1790338820619,
-      "tag": "1242_retire_public_brand",
+      "when": 1790338676658,
+      "tag": "1242_drop_chat_search_agent_created_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 1243,
+      "version": "7",
+      "when": 1790340039211,
+      "tag": "1243_retire_public_brand",
       "breakpoints": true
     }
   ]

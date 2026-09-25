@@ -3,7 +3,7 @@
 ## Public brand retirement contraction (2026-09-25)
 
 Phase 2 of #36766 contracts the columns that Phase 1 stopped reading. Migration
-`1242_retire_public_brand` drops `public_brand` from `slack_org_installations`,
+`1243_retire_public_brand` drops `public_brand` from `slack_org_installations`,
 `slack_chat_ingress`, `chat_slack_context`, `discord_chat_ingress`,
 `chat_discord_context`, `feishu_org_installations`, `feishu_org_connections`,
 `feishu_chat_ingress`, `chat_feishu_context`, `teams_org_installations`,
@@ -69,9 +69,32 @@ unaffected; Phase 1 already removed the brand from them.
 
 Rollback promotes artifacts without restoring schema. The production rollback
 resolver therefore rejects API targets that predate the canonical main commit
-that added `1242_retire_public_brand.sql`. Recovering past that commit requires
+that added `1243_retire_public_brand.sql`. Recovering past that commit requires
 a forward-fix migration that restores the columns and the old layout column
 name, not an artifact rollback.
+
+## Chat search agent recency index dropped (2026-09-25)
+
+Migration `1242_drop_chat_search_agent_created_idx` drops
+`chat_event_search_messages_user_org_agent_id_created_idx` with
+`DROP INDEX CONCURRENTLY`. It does not block chat search reads or projector
+writes; it waits for older transactions on the table, so it raises
+`lock_timeout` to 10 minutes and disables `statement_timeout` for its own
+session, then resets both.
+
+Since #36456 no query orders this table by `(user_id, org_id, agent_id,
+created_at)`. Chat search and MCP chat search take keyword candidates from
+`chat_event_search_messages_user_tsv_gin_idx` and sort them in the query;
+projection writes and thread deletion use the primary key; account erasure
+deletes by `user_id`, which `chat_event_search_messages_user_org_created_idx`
+serves.
+Production statistics from 2026-09-17 to 2026-09-25 show 164 scans reading
+about 157,000 index tuples each, consistent with agent-scoped searches that
+walked an agent's whole history and filtered each row by keyword.
+
+No code names the index, so old API/new DB and new API/old DB are both
+compatible and no API rollback floor is needed. Restoring the index means
+rebuilding it concurrently; no data is lost.
 
 ## Discord replies become fire and forget (2026-09-25)
 
