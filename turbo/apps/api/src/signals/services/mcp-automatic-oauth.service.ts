@@ -585,23 +585,71 @@ const dcrClientInformationSchema = z.object({
   scope: z.string().optional(),
 });
 
+const DCR_ISSUE_CLOCK_SKEW_MS = 5 * 60 * 1000;
+const DCR_MILLIS_ISSUE_AGE_MS = 24 * 60 * 60 * 1000;
+const DCR_MILLIS_MAX_SECRET_LIFETIME_MS = 100 * 366 * 24 * 60 * 60 * 1000;
+
+function persistableDcrTimestamp(value: Date): boolean {
+  return Number.isFinite(value.getTime()) && value.getUTCFullYear() <= 9999;
+}
+
+function dcrRegistrationTimestamp(
+  value: number,
+  kind: "issued" | "expires",
+  now: Date,
+): Date | null {
+  const seconds = new Date(value * 1000);
+  if (persistableDcrTimestamp(seconds)) {
+    return kind === "issued" &&
+      seconds.getTime() > now.getTime() + DCR_ISSUE_CLOCK_SKEW_MS
+      ? null
+      : seconds;
+  }
+
+  // Some DCR servers return Unix milliseconds instead of RFC 7591 seconds.
+  // Only reinterpret a value that cannot be persisted as seconds, and only
+  // when the millisecond date is credible for a new registration.
+  const milliseconds = new Date(value);
+  if (!persistableDcrTimestamp(milliseconds)) {
+    return null;
+  }
+  const time = milliseconds.getTime();
+  if (kind === "issued") {
+    return time >= now.getTime() - DCR_MILLIS_ISSUE_AGE_MS &&
+      time <= now.getTime() + DCR_ISSUE_CLOCK_SKEW_MS
+      ? milliseconds
+      : null;
+  }
+  return time > now.getTime() &&
+    time <= now.getTime() + DCR_MILLIS_MAX_SECRET_LIFETIME_MS
+    ? milliseconds
+    : null;
+}
+
 function dcrRegistrationTimes(client: {
   readonly client_id_issued_at?: number;
   readonly client_secret_expires_at?: number;
 }): { readonly issuedAt: Date; readonly expiresAt: Date | null } {
+  const now = nowDate();
   const issuedAt =
     client.client_id_issued_at === undefined
-      ? nowDate()
-      : new Date(client.client_id_issued_at * 1000);
+      ? now
+      : dcrRegistrationTimestamp(client.client_id_issued_at, "issued", now);
   const expiresAt =
     client.client_secret_expires_at === undefined ||
     client.client_secret_expires_at === 0
       ? null
-      : new Date(client.client_secret_expires_at * 1000);
+      : dcrRegistrationTimestamp(
+          client.client_secret_expires_at,
+          "expires",
+          now,
+        );
   if (
-    !Number.isFinite(issuedAt.getTime()) ||
-    (expiresAt !== null &&
-      (!Number.isFinite(expiresAt.getTime()) || expiresAt <= issuedAt))
+    issuedAt === null ||
+    (client.client_secret_expires_at !== undefined &&
+      client.client_secret_expires_at !== 0 &&
+      expiresAt === null) ||
+    (expiresAt !== null && expiresAt <= issuedAt)
   ) {
     throw new McpAutomaticOAuthError(
       { kind: "incompatible", reason: "invalid-registration" },

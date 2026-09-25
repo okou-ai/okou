@@ -400,6 +400,8 @@ interface AutomaticMcpOAuthProviderOptions {
   readonly synchronizeAuthorizationServerDiscovery?: boolean;
   readonly dcrFailureStatus?: number;
   readonly dcrFailureDescription?: string;
+  readonly dcrClientIdIssuedAt?: number | null;
+  readonly dcrClientSecretExpiresAt?: number;
   readonly invalidDcrResponse?: boolean;
   readonly authorizationCodeSupported?: boolean;
   readonly pkceS256Supported?: boolean;
@@ -730,7 +732,15 @@ export function mockAutomaticMcpOAuthProvider(
         ...(tokenEndpointAuthMethod === "none"
           ? {}
           : { client_secret: "automatic-dcr-secret" }),
-        client_id_issued_at: Math.floor(now() / 1000),
+        ...(options.dcrClientIdIssuedAt === null
+          ? {}
+          : {
+              client_id_issued_at:
+                options.dcrClientIdIssuedAt ?? Math.floor(now() / 1000),
+            }),
+        ...(options.dcrClientSecretExpiresAt === undefined
+          ? {}
+          : { client_secret_expires_at: options.dcrClientSecretExpiresAt }),
         token_endpoint_auth_method: tokenEndpointAuthMethod,
       });
     }),
