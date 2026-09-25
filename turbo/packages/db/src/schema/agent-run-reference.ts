@@ -29,10 +29,6 @@ function resolveAgentRunReferences(): AgentRunReferences {
   return references;
 }
 
-export function resolveAgentRunId(): AnyPgColumn {
-  return resolveAgentRunReferences().agentRunId;
-}
-
 export function resolveAgentSessionId(): AnyPgColumn {
   return resolveAgentRunReferences().agentSessionId;
 }

@@ -234,7 +234,7 @@ describe("account erasure fences direct chat-thread read-cursor writes", () => {
     const fixture = await createCursorFixture();
     await expect(
       chat.markThreadUnread(fixture.actor, fixture.threadId),
-    ).resolves.toStrictEqual({ lastReadAt: null, unreads: [] });
+    ).resolves.toStrictEqual({ lastReadAt: null });
 
     const closed = await closeSubject({
       subjectKind: "user",
@@ -249,10 +249,10 @@ describe("account erasure fences direct chat-thread read-cursor writes", () => {
     await removeErasureSubjectsFixture([closed.jobId]);
     await expect(
       chat.markThreadRead(fixture.actor, fixture.threadId),
-    ).resolves.toStrictEqual({ lastReadAt: null, unreads: [] });
+    ).resolves.toStrictEqual({ lastReadAt: null });
     await expect(
       chat.markThreadUnread(fixture.actor, fixture.threadId),
-    ).resolves.toStrictEqual({ lastReadAt: null, unreads: [] });
+    ).resolves.toStrictEqual({ lastReadAt: null });
   });
 
   it("denies both read-cursor writes on a thread whose Agent reference is cleared", async () => {

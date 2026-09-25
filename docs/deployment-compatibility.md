@@ -1,5 +1,92 @@
 # Deployment Compatibility
 
+## Thread drafts served only from `chat_thread_drafts` (2026-09-25)
+
+Thread composer drafts are read and written only through `chat_thread_drafts`
+(#36173). `PATCH /api/chat-threads/:id` reads the thread owner by primary key
+outside any transaction, then saves the draft with one upsert, or clears it by
+deleting the row. None of these paths writes or locks the `chat_threads` row, and draft writes no longer take
+the account-erasure admission. `GET /api/chat-threads/:id/draft`, the drafts
+listing and the user export read the child table. Request and response
+contracts are unchanged.
+
+`GET /api/chat-threads/:id/draft` reads only `chat_thread_drafts`, by thread id
+and the caller's `user_id`. A thread the caller does not own, a missing thread
+and a thread without a draft all return `200` with the empty draft instead of
+`404`; every App bundle maps a `404` to "no draft" and parses the empty draft to
+the same state, so the composer behaves identically. A draft row an older API
+inserted without `user_id` during the rollout reads as empty until the user's
+next save fills it. `PATCH` still reads the thread owner until the contract
+release keys drafts by `(chat_thread_id, user_id)`.
+
+Sending a message no longer touches the draft. The web client already clears
+its draft with its own `PATCH` alongside every send (since #24657, so every App
+bundle in use does), which made the server-side delete a duplicate write on
+the send path. Senders that do not clear the composer, such as MCP, agents and
+forwarded sends, now leave the user's draft in place. If the client's clearing
+`PATCH` fails, the sent text reappears as the draft.
+
+The web client now refetches the sidebar drafts listing only when a save adds
+or removes a thread's draft, instead of after every debounced save.
+
+Migration `1244_chat_thread_drafts_user_backfill` drops the
+`chat_thread_drafts` → `chat_threads` foreign key, so a draft write takes no
+lock on the thread row. It adds `chat_thread_drafts.user_id` with an index,
+copies drafts that exist only in the legacy `chat_threads.draft_user_message` /
+`draft_attachments` columns with `ON CONFLICT DO NOTHING`, and fills `user_id`
+from the thread. Every API since #36230 dual-writes both stores in one
+transaction, so an existing child row is already current. Production held 433
+legacy drafts (126 kB), 430 of them without a child row and none disagreeing
+with their child row (2026-09-25).
+
+Without the cascade, `DELETE /api/chat-threads/:id` removes the draft row with
+one statement after the thread deletion commits. Agent deletion, account
+deletion and other thread-deletion paths can leave an unreachable draft row
+behind; no API serves it, and cleaning it up belongs to deletion. Account
+erasure reaches draft rows by `user_id` and, for rows without one, through the
+thread while it exists.
+
+During the rollout an older API still dual-writes both stores and serves the
+legacy columns, so it keeps the child table current but does not see a draft
+the new API saved or cleared. An older API can also insert a child row without
+`user_id`; such a row is missing from the new drafts listing until the contract
+migration backfills it, and it is still read and cleared by thread id. Rolling
+the API back therefore only shows each thread's last draft from before this
+release; no draft is lost.
+
+The legacy columns and their check constraint stay in the schema, unused, for
+this release. The contract release drops them, backfills any `user_id` left null
+by the rollout and makes `user_id` `NOT NULL`; ship it only after this API is in
+production and set this release as the API rollback floor.
+
+## Morning Brief expired admission containment (2026-09-25)
+
+This is a partial, fail-closed incident slice, **not** the recovery of stalled
+Morning Brief schedules. With the global schedule-expiry switch off, API
+instances at this revision no longer select `daily-delivery` anchors older than
+30 minutes in the legacy due batch. A selected anchor that ages past that
+boundary before queue admission is also refused; the generic, unjournaled
+claim CAS applies the same cutoff to `daily-delivery` and checks that the row
+is still enabled. The cutoff is strict: exactly 30 minutes late remains due.
+The old anchors, historical claims, runs, queue events, native rows, enabled
+choice, Official installation and sent messages are not changed. Other due
+automations keep their existing expiry policy and are selected in stable
+next-run order instead of sharing an unordered batch with stalled briefs.
+
+This does not advance an old anchor to a future occurrence. The global expiry
+flag must **not** be enabled as a substitute: an earlier mismatched Native
+obligation still holds that path. The Native/Official decision fence and old
+callback settlement remain in place; the mixed-version disable/enable and
+reconciliation contract has not been proven under single-statement hot-path
+constraints. An older API poller can still select or claim an expired brief
+during rollout or after rollback. Therefore production release of this
+containment requires a separately approved deployment plan that prevents old
+pollers from admitting overdue briefs throughout the overlap and sets a
+rollback floor at this revision or later; absent that plan, do not promote it
+as a no-backfill guarantee. Already queued or running claims and email/Chat
+outcomes require separate evidence and handling, not age-based settlement.
+No database migration or client protocol change is included.
+
 ## Chat search agent recency index dropped (2026-09-25)
 
 Migration `1242_drop_chat_search_agent_created_idx` drops
@@ -123,6 +210,22 @@ drop it while the new API is a rollback target. Stale/missed producer revocation
 can delay an individual cold claim by at most the successor-relative preference
 window, never by heartbeat freshness; measure that tail cost alongside reuse.
 
+## App floor 0.963.3 retires the mark-read `unreads` field (2026-09-25)
+
+`POST /api/chat-threads/:id/mark-read` and
+`POST /api/chat-threads/:id/mark-unread` no longer return `unreads`; both
+response contracts now carry only `lastReadAt`. The field was the rollout
+fallback kept by the unread-snapshot change below.
+
+`app-v0.963.3` (release commit `f53bf151eef29e6e21711850d6237719ab4ffdcd`) is
+the first App that contains #36877 and no longer reads the field. Production
+App serves `0.965.0` at `a4794200e232f46f6f64eb8102067c6a367667d7`, a
+descendant of that release. This change raises the identified-App minimum
+version from `0.958.0` to `0.963.3`; older bundles receive `426` on their next
+API request before any route is matched and refresh into the live App. Do not
+roll the App back below `0.963.3` without also rolling the API back below this
+change.
+
 ## Mark-read responses stop computing unread snapshots (2026-09-25)
 
 `POST /api/chat-threads/:id/mark-read` and
@@ -134,8 +237,8 @@ unread state from `/api/indicators`. The new App no longer reads the field.
 Older App bundles still pass `unreads` to their optimistic read-mark pruning;
 an empty list only skips pruning, and those bundles already hide a local mark
 when indicators report a newer `unreadAt`. A new App talking to an older API
-ignores the populated field. Remove `unreads` from both response contracts once
-App bundles from before this change are no longer in use.
+ignores the populated field. The field was removed together with the App floor
+raise to `0.963.3` above.
 
 ## Phone proactive sends target the caller's own link (2026-09-25)
 

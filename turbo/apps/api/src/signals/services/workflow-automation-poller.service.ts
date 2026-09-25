@@ -7,7 +7,7 @@ import {
   workflows,
 } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, eq, gte, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { writeDb$, type Db } from "../external/db";
 import { now, nowDate } from "../../lib/time";
@@ -187,7 +187,24 @@ async function claimAutomation(
       and(
         eq(workflowAutomations.id, automation.id),
         eq(workflowAutomations.nextRunAt, automation.nextRunAt),
-        scheduleExpiryEnabled()
+        // A stale preflight must not claim a disabled row or turn a newly
+        // classified Morning Brief into an unjournaled legacy Run.
+        eq(workflowAutomations.enabled, true),
+        automation.officialBlueprintKey === MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY
+          ? eq(
+              workflowAutomations.officialBlueprintKey,
+              MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+            )
+          : or(
+              isNull(workflowAutomations.officialBlueprintKey),
+              ne(
+                workflowAutomations.officialBlueprintKey,
+                MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+              ),
+            ),
+        scheduleExpiryEnabled() ||
+          automation.officialBlueprintKey ===
+            MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY
           ? gte(
               workflowAutomations.nextRunAt,
               new Date(nowDate().getTime() - SCHEDULE_GRACE_MS),
@@ -582,7 +599,20 @@ interface DueSelection {
 
 function scheduleModeFilter(mode: DueMode, at: Date) {
   if (mode === "legacy") {
-    return undefined;
+    // While general expiry is off, old Morning Brief anchors must not occupy
+    // the entire due batch. They remain untouched until a safe skip contract
+    // can move them; other due automations still retain their legacy policy.
+    return or(
+      isNull(workflowAutomations.officialBlueprintKey),
+      ne(
+        workflowAutomations.officialBlueprintKey,
+        MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+      ),
+      gte(
+        workflowAutomations.nextRunAt,
+        new Date(at.getTime() - SCHEDULE_GRACE_MS),
+      ),
+    );
   }
   const cutoff = new Date(at.getTime() - SCHEDULE_GRACE_MS);
   const once = mode.startsWith("once");
@@ -671,15 +701,13 @@ async function dueWorkflowAutomationRows(
       ),
     )
     .orderBy(
-      ...(mode === "legacy"
-        ? []
-        : mode === "retry" || mode === "once-retry"
-          ? [
-              workflowAutomations.deferredUntil,
-              workflowAutomations.nextRunAt,
-              workflowAutomations.id,
-            ]
-          : [workflowAutomations.nextRunAt, workflowAutomations.id]),
+      ...(mode === "retry" || mode === "once-retry"
+        ? [
+            workflowAutomations.deferredUntil,
+            workflowAutomations.nextRunAt,
+            workflowAutomations.id,
+          ]
+        : [workflowAutomations.nextRunAt, workflowAutomations.id]),
     )
     .limit(DUE_MODE_LIMIT[mode]);
   signal.throwIfAborted();
