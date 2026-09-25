@@ -17,12 +17,13 @@ struct ThreadProjection: Decodable, Sendable {
   let sortAt: Date
   let pinnedAt: Date?
   let pinOrder: String?
+  let archived: Bool?
 
   var thread: ChatThread {
     ChatThread(
       id: id, agentID: agentId, title: title ?? "", selectedModel: selectedModel,
       createdAt: createdAt, updatedAt: updatedAt, sortAt: sortAt,
-      pinnedAt: pinnedAt, pinOrder: pinOrder, indicator: nil)
+      pinnedAt: pinnedAt, pinOrder: pinOrder, isArchived: archived ?? false, indicator: nil)
   }
 }
 
@@ -149,6 +150,15 @@ struct ChatEventRow: Decodable, Sendable {
 struct AgentRecord: Decodable, Sendable {
   let agentId: String
   let isDefaultAgent: Bool
+  let displayName: String?
+}
+
+struct SidebarPreferences: Decodable, Sendable {
+  let pinnedAgentIds: [String]
+}
+
+struct SidebarFeatureSwitches: Decodable, Sendable {
+  let effectiveSwitches: [String: Bool]
 }
 
 struct ModelPreference: Decodable, Sendable {

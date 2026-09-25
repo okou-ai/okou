@@ -1,6 +1,10 @@
 import { sql } from "drizzle-orm";
-import { check, index, pgTable, unique } from "drizzle-orm/pg-core";
+import { check, index, jsonb, pgTable, unique } from "drizzle-orm/pg-core";
 import { chatThreadColumns } from "../columns/chat-thread";
+import type {
+  ChatThreadDraftAttachments,
+  ChatThreadDraftUserMessage,
+} from "@okouai/db/jsonb-contracts/chat-thread";
 /**
  * Server-private origin classification for a whole chat thread.
  *
@@ -19,7 +23,19 @@ export type ChatThreadProvenance = "ordinary" | "morning_brief";
  */
 export const chatThreads = pgTable(
   "chat_threads",
-  chatThreadColumns(),
+  {
+    ...chatThreadColumns(),
+    /**
+     * Retired composer draft columns, declared here only so the schema matches
+     * the database until they are dropped. The runtime mapping omits them, so
+     * no API names them in an implicit INSERT, SELECT or RETURNING; the next
+     * contract release drops them. The draft lives in `chat_thread_drafts`.
+     */
+    draftUserMessage:
+      jsonb("draft_user_message").$type<ChatThreadDraftUserMessage>(),
+    draftAttachments:
+      jsonb("draft_attachments").$type<ChatThreadDraftAttachments>(),
+  },
   (table) => {
     return [
       unique("uq_chat_threads_id_user").on(table.id, table.userId),

@@ -61,6 +61,10 @@ final class AuthenticationService {
     clerk?.user?.id
   }
 
+  var firstName: String? {
+    clerk?.user?.firstName
+  }
+
   var activeWorkspaceID: String? {
     guard isAuthenticated,
       !isSwitchingWorkspace,

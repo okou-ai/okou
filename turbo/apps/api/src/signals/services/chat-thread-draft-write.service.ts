@@ -42,9 +42,8 @@ export async function persistChatThreadDraft(
       draftAttachments: draft.draftAttachments,
     })
     .onConflictDoUpdate({
-      target: chatThreadDrafts.chatThreadId,
+      target: [chatThreadDrafts.chatThreadId, chatThreadDrafts.userId],
       set: {
-        userId: draft.userId,
         draftUserMessage: draft.draftUserMessage,
         draftAttachments: draft.draftAttachments,
         updatedAt: sql`now()`,
