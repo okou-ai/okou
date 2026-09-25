@@ -4270,7 +4270,8 @@
     "sourcesFirst": {
       "common": {
         "back": "वापस",
-        "continue": "आगे बढ़ें"
+        "continue": "आगे बढ़ें",
+        "notNow": "अभी नहीं"
       },
       "compliance": {
         "frameworks": {

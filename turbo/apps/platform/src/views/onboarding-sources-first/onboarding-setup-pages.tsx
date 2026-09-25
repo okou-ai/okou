@@ -296,8 +296,13 @@ export function OnboardingTeamPage() {
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
       })}
-      // One way on; leaving without an accepted invite still counts as a skip.
-      onPrimary={invited ? flow.goNext : flow.goSkip}
+      // Continue waits for an accepted invite; Not now leaves without one.
+      onPrimary={flow.goNext}
+      primaryDisabled={!invited}
+      secondaryLabel={t(($) => {
+        return $.onboarding.sourcesFirst.common.notNow;
+      })}
+      onSecondary={flow.goSkip}
       onBack={flow.goBack}
     >
       <OnboardingPanel

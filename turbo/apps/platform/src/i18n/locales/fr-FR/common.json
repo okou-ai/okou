@@ -4329,7 +4329,8 @@
     "sourcesFirst": {
       "common": {
         "back": "Retour",
-        "continue": "Continuer"
+        "continue": "Continuer",
+        "notNow": "Pas maintenant"
       },
       "compliance": {
         "frameworks": {

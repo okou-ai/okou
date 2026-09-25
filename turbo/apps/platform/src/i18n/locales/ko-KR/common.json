@@ -4253,7 +4253,8 @@
     "sourcesFirst": {
       "common": {
         "back": "뒤로",
-        "continue": "계속"
+        "continue": "계속",
+        "notNow": "나중에"
       },
       "compliance": {
         "frameworks": {

@@ -4253,7 +4253,8 @@
     "sourcesFirst": {
       "common": {
         "back": "Kembali",
-        "continue": "Lanjutkan"
+        "continue": "Lanjutkan",
+        "notNow": "Nanti saja"
       },
       "compliance": {
         "frameworks": {

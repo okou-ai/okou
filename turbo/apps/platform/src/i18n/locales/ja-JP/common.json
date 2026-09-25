@@ -4253,7 +4253,8 @@
     "sourcesFirst": {
       "common": {
         "back": "戻る",
-        "continue": "次へ"
+        "continue": "次へ",
+        "notNow": "後で"
       },
       "compliance": {
         "frameworks": {

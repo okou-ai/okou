@@ -4253,7 +4253,8 @@
     "sourcesFirst": {
       "common": {
         "back": "返回",
-        "continue": "继续"
+        "continue": "继续",
+        "notNow": "暂不"
       },
       "compliance": {
         "frameworks": {
