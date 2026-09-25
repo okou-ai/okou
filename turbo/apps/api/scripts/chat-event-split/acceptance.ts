@@ -22,7 +22,6 @@ import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { runOutputMemoryCitations } from "@okouai/db/schema/run-output-memory-citation";
 import { insertChatEvent } from "../../src/signals/services/chat-event.service";
-import { isSplitChatEventWriteEnabled } from "../../src/signals/services/chat-event-write-mode.service";
 import { insertRunLifecycleMarkerProjection } from "../../src/signals/services/internal-chat-run-callback.service";
 import { materializeRunOutputEvents } from "../../src/signals/services/agent-event-consumer-run-output.service";
 import {
@@ -168,7 +167,6 @@ async function fixture(status: "running" | "completed" = "completed") {
         input,
         markerCreatedAt: new Date(),
         goalId: undefined,
-        splitWrites: await isSplitChatEventWriteEnabled(db),
       });
     },
   };
@@ -202,56 +200,9 @@ try {
     env: { ...process.env, DATABASE_URL: databaseUrl.toString() },
     maxBuffer: 20 * 1024 * 1024,
   });
-  assert.equal(await isSplitChatEventWriteEnabled(db), false);
-  await test("legacy deletion waits for the thread before taking child locks", async () => {
-    const f = await fixture("running");
-    const control = new Client({ connectionString: databaseUrl.toString() });
-    await control.connect();
-    await control.query("BEGIN");
-    await control.query(
-      "SELECT id FROM chat_threads WHERE id = $1 FOR NO KEY UPDATE",
-      [f.threadId],
-    );
-    let deletionSettled = false;
-    const deletion = settleIncludingAbort(
-      deleteChatThreadContent(
-        db,
-        {
-          threadId: f.threadId,
-          userId: f.userId,
-          orgId: f.orgId,
-        },
-        signal,
-      ),
-    ).then((result) => {
-      deletionSettled = true;
-      return result;
-    });
-    try {
-      await waitForBlockedQuery('from "chat_threads"', () => {
-        return deletionSettled;
-      });
-      // Legacy control can finish under its existing thread-first order.
-      await control.query(
-        "SELECT id FROM agent_runs WHERE id = $1 FOR NO KEY UPDATE NOWAIT",
-        [f.runId],
-      );
-    } finally {
-      await control.query("ROLLBACK");
-      await deletion;
-      await control.end();
-    }
-    const deleted = await deletion;
-    assert.ok(deleted.ok && deleted.value.deleted);
-    assert.deepEqual(deleted.value.activeRuns, [
-      { runId: f.runId, orgId: f.orgId },
-    ]);
-  });
-  await db
-    .update(chatEventWriteControl)
-    .set({ activatedAt: new Date() })
-    .where(eq(chatEventWriteControl.id, "global"));
-  assert.equal(await isSplitChatEventWriteEnabled(db), true);
+  // A fresh migrated database has no legacy history and is activated.
+  const [control] = await db.select().from(chatEventWriteControl);
+  assert.notEqual(control?.activatedAt ?? null, null);
 
   await test("a committed terminal marker retries missing registration and concurrent replays share one delivery", async () => {
     const f = await fixture();
@@ -311,57 +262,6 @@ try {
           )
       )[0]?.id,
     });
-  });
-
-  await test("replay reuses the delivered legacy callback instead of creating another delivery", async () => {
-    const f = await fixture();
-    await f.source();
-    const output = await insertChatEvent(
-      db,
-      {
-        chatThreadId: f.threadId,
-        runId: f.runId,
-        eventType: "output.message",
-        content: "Legacy completion",
-        runEventSequenceNumber: 0,
-        runEventId: "legacy:0",
-      },
-      "none",
-      { splitWrites: true },
-    );
-    assert.ok(output);
-    await insertChatEvent(
-      db,
-      {
-        chatThreadId: f.threadId,
-        runId: f.runId,
-        eventType: "run.completed",
-        content: null,
-      },
-      "run-lifecycle",
-      { splitWrites: true },
-    );
-    const legacyId = randomUUID();
-    await db.insert(agentRunCallbacks).values({
-      id: legacyId,
-      runId: f.runId,
-      internalKind: "teams:chat",
-      status: "delivered",
-      attempts: 1,
-      payload: { ...f.teamsDelivery, chatEventId: output.id },
-      deliveredAt: new Date(),
-    });
-    assert.equal((await f.project())?.teamsDeliveryCallbackId, legacyId);
-    const [delivery] = await db
-      .select({ count: count() })
-      .from(agentRunCallbacks)
-      .where(
-        and(
-          eq(agentRunCallbacks.runId, f.runId),
-          eq(agentRunCallbacks.internalKind, "teams:chat"),
-        ),
-      );
-    assert.equal(delivery?.count, 1);
   });
 
   await test("event commit and later projections survive a failed materialization, and retry stays monotonic", async () => {
@@ -506,7 +406,6 @@ try {
             runEventId: "activity_concurrency:0",
           },
           "none",
-          { splitWrites: true },
         );
       },
       signal,
@@ -599,7 +498,6 @@ try {
             runEventId: "deletion:seed",
           },
           "none",
-          { splitWrites: true },
         );
       }
       const ownership = await readRunContentOwnership(db, f.runId);
@@ -622,7 +520,6 @@ try {
                 runEventId: "deletion:output",
               },
               "none",
-              { splitWrites: true },
             );
           },
           signal,
@@ -685,7 +582,6 @@ try {
             content: "Existing direct sequence",
           },
           "none",
-          { splitWrites: true },
         );
       }
       const barrier = new Client({ connectionString: databaseUrl.toString() });
@@ -707,7 +603,6 @@ try {
               "Canonical direct append paused after its sequence allocation",
           },
           "none",
-          { splitWrites: true },
         ),
       ).then((result) => {
         writerSettled = true;
@@ -796,7 +691,6 @@ try {
         content: "Existing sequence before agent deletion",
       },
       "none",
-      { splitWrites: true },
     );
     const barrier = new Client({ connectionString: databaseUrl.toString() });
     await barrier.connect();
@@ -816,7 +710,6 @@ try {
           content: "Direct writer before agent cascade",
         },
         "none",
-        { splitWrites: true },
       ),
     ).then((result) => {
       writerSettled = true;
@@ -863,7 +756,7 @@ try {
     assert.equal(sequences.length, 0);
   });
 
-  await test("a retained control lock causes bounded deletion retries without blocking event FK checks", async () => {
+  await test("thread deletion waits for a retained control lock instead of failing", async () => {
     const f = await fixture("running");
     const control = new Client({ connectionString: databaseUrl.toString() });
     await control.connect();
@@ -874,30 +767,20 @@ try {
         [f.threadId],
       );
       const args = { threadId: f.threadId, userId: f.userId, orgId: f.orgId };
-      await assert.rejects(
+      let deletionSettled = false;
+      const deletion = settleIncludingAbort(
         deleteChatThreadContent(db, args, signal),
-        (error: unknown) => {
-          return safeSqlStateCode(error) === "55P03";
-        },
-      );
-      assert.ok(
-        await insertChatEvent(
-          db,
-          {
-            chatThreadId: f.threadId,
-            runId: f.runId,
-            eventType: "output.message",
-            content: "The failed deletion released its child locks",
-          },
-          "none",
-          { splitWrites: true },
-        ),
-      );
+      ).then((result) => {
+        deletionSettled = true;
+        return result;
+      });
+      await waitForBlockedQuery('from "chat_threads"', () => {
+        return deletionSettled;
+      });
+      assert.equal(deletionSettled, false);
       await control.query("COMMIT");
-      assert.equal(
-        (await deleteChatThreadContent(db, args, signal)).deleted,
-        true,
-      );
+      const deleted = await deletion;
+      assert.ok(deleted.ok && deleted.value.deleted);
     } finally {
       await control.query("ROLLBACK");
       await control.end();

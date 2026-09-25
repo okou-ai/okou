@@ -1,5 +1,8 @@
 import { command } from "ccstate";
 import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
+import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
+import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import {
   billingRedeemCodeContract,
   billingUsagePackCheckoutContract,
@@ -7,17 +10,15 @@ import {
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { reloadAgents$ } from "../agent.ts";
+import { discardApiBootstrapResponse } from "../api-client-base.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { invalidateOrgModelPolicies$ } from "../external/org-model-policies.ts";
+import { reloadUserModelPreference$ } from "../external/user-model-preference.ts";
+import { refreshOrg$ } from "../org.ts";
 import { ROUTES } from "../route-paths.ts";
 import { billingStatusAsync$ } from "../okou-page/billing.ts";
 import { reloadOnboardingStatus$ } from "../okou-page/onboarding.ts";
-import {
-  ONBOARDING_CHECKOUT_STATE_PARAM,
-  onboardingDraft$,
-  resetOnboardingDraft$,
-  storeOnboardingCheckoutDraft$,
-} from "./onboarding-state.ts";
+import { onboardingDraft$, resetOnboardingDraft$ } from "./onboarding-state.ts";
 import {
   clearSourcesFirstDraft$,
   sourcesFirstDraft$,
@@ -66,9 +67,18 @@ export const completeOnboarding$ = command(
       [200],
     );
     signal.throwIfAborted();
-    if (provider !== null) {
-      set(invalidateOrgModelPolicies$);
+    // Completion provisions org defaults such as model policies. Snapshots
+    // prefetched into the onboarding page's HTML predate them.
+    for (const route of [
+      orgContract.get,
+      modelPoliciesMainContract.list,
+      userModelPreferenceContract.get,
+    ]) {
+      discardApiBootstrapResponse(route.method, route.path);
     }
+    set(refreshOrg$);
+    set(invalidateOrgModelPolicies$);
+    set(reloadUserModelPreference$);
     set(clearSourcesFirstDraft$);
     if (role) {
       set(capturePaidOnboardingRoleConfirmed$, role);
@@ -84,8 +94,6 @@ export const completeOnboarding$ = command(
 type OnboardingVideoRunResult = "run" | "checkout";
 
 interface OnboardingVideoCheckoutInput {
-  readonly prompt: string;
-  readonly note: string;
   readonly templateId: string;
   readonly templateSlug: string;
 }
@@ -93,14 +101,12 @@ interface OnboardingVideoCheckoutInput {
 function checkoutReturnUrl(
   input: OnboardingVideoCheckoutInput,
   result: "pro" | "canceled",
-  checkoutState: string,
 ): string {
   const url = new URL(ROUTES.onboardingVideoRun, window.location.origin);
   const params = new URLSearchParams();
   params.set("choice", "video");
   params.set("template", input.templateId);
   params.set("onboarding_template", input.templateSlug);
-  params.set(ONBOARDING_CHECKOUT_STATE_PARAM, checkoutState);
   params.set("onboarding_billing", result);
   if (result === "pro") {
     params.set("onboarding_billing_session_id", "{CHECKOUT_SESSION_ID}");
@@ -130,13 +136,8 @@ export const prepareOnboardingVideoRun$ = command(
 
     const { userId } = await get(authenticatedIdentity$);
     signal.throwIfAborted();
-    const checkoutState = set(storeOnboardingCheckoutDraft$, {
-      userId,
-      prompt: input.prompt,
-      note: input.note,
-    });
-    const successUrl = checkoutReturnUrl(input, "pro", checkoutState);
-    const cancelUrl = checkoutReturnUrl(input, "canceled", checkoutState);
+    const successUrl = checkoutReturnUrl(input, "pro");
+    const cancelUrl = checkoutReturnUrl(input, "canceled");
     const client = get(apiClient$)(billingUsagePackCheckoutContract);
     const result = await accept(
       client.create({

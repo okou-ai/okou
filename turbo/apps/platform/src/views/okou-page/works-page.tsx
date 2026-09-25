@@ -23,6 +23,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@okouai/ui/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@okouai/ui/components/ui/select";
 import { currentChatAgentDisplayName$ } from "../../signals/agent-chat.ts";
 import { assistantName$, brandName$ } from "../../signals/branding.ts";
 import {
@@ -51,6 +58,17 @@ import { AgentPhoneCard } from "./agentphone-card.tsx";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 import { FeishuCard } from "./feishu-card.tsx";
+import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
+import { DiscordMark } from "./components/discord-mark.tsx";
+import {
+  discordOrgData$,
+  disconnectDiscordOrg$,
+  uninstallDiscordOrg$,
+  reloadDiscordOrg$,
+  selectDiscordDmBinding$,
+  showDiscordUninstallDialog$,
+  setShowDiscordUninstallDialog$,
+} from "../../signals/okou-page/discord.ts";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
 
@@ -430,6 +448,228 @@ function SlackCard({ displayName }: { displayName: string }) {
   );
 }
 
+function discordDescription(data: DiscordOrgStatus): string {
+  if (!data.isAvailable && data.isInstalled) {
+    return i18n.t(($) => {
+      return $.works.discord.suspended;
+    });
+  }
+  if (!data.isAvailable) {
+    return i18n.t(($) => {
+      return $.works.discord.unconfigured;
+    });
+  }
+  if (!data.isInstalled) {
+    return data.isAdmin
+      ? i18n.t(($) => {
+          return $.works.discord.adminSetup;
+        })
+      : i18n.t(($) => {
+          return $.works.discord.memberSetup;
+        });
+  }
+  if (!data.isConnected) {
+    return i18n.t(($) => {
+      return $.works.discord.accountSetup;
+    });
+  }
+  return i18n.t(($) => {
+    return $.works.discord.description;
+  });
+}
+
+function DiscordDmSelection({
+  data,
+  saving,
+  onSelect,
+}: {
+  data: DiscordOrgStatus;
+  saving: boolean;
+  onSelect: (connectionId: string) => void;
+}) {
+  const { t } = useTranslation();
+  const items = data.dmBindings.map((binding) => {
+    return {
+      value: binding.connectionId,
+      label: binding.guildName ?? binding.guildId,
+    };
+  });
+  return (
+    <div className="flex flex-col gap-2 border-t border-border p-4">
+      <label
+        htmlFor="discord-dm-server"
+        className="text-sm font-medium text-foreground"
+      >
+        {t(($) => {
+          return $.works.discord.dmServer;
+        })}
+      </label>
+      <Select
+        items={items}
+        value={data.dmSelectionConnectionId}
+        disabled={saving}
+        onValueChange={(connectionId, details) => {
+          if (
+            connectionId === null ||
+            !items.some((item) => {
+              return item.value === connectionId;
+            })
+          ) {
+            details.cancel();
+            return;
+          }
+          if (connectionId !== data.dmSelectionConnectionId) {
+            onSelect(connectionId);
+          }
+        }}
+      >
+        <SelectTrigger id="discord-dm-server" variant="neutral">
+          <SelectValue
+            placeholder={t(($) => {
+              return $.works.discord.chooseDmServer;
+            })}
+          />
+        </SelectTrigger>
+        <SelectContent>
+          {items.map((item) => {
+            return (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            );
+          })}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function DiscordCard() {
+  const { t } = useTranslation();
+  const title = t(($) => {
+    return $.works.discord.title;
+  });
+  const status = useLastLoadable(discordOrgData$);
+  const [disconnectState, disconnect] = useLoadableSet(disconnectDiscordOrg$);
+  const [uninstallState, uninstall] = useLoadableSet(uninstallDiscordOrg$);
+  const [selectionState, selectBinding] = useLoadableSet(
+    selectDiscordDmBinding$,
+  );
+  const reload = useSet(reloadDiscordOrg$);
+  const showUninstallDialog = useGet(showDiscordUninstallDialog$);
+  const setShowUninstallDialog = useSet(setShowDiscordUninstallDialog$);
+  const pageSignal = useGet(pageSignal$);
+  const data = status.state === "hasData" ? status.data : null;
+
+  return (
+    <>
+      <section
+        data-slot="integration-card"
+        aria-label={title}
+        className={surfaceVariants({ className: "flex flex-col" })}
+      >
+        <div className="flex flex-wrap items-center gap-4 p-4">
+          <div className="shrink-0 text-foreground">
+            <DiscordMark size={28} />
+          </div>
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <div className="text-sm font-medium text-foreground">{title}</div>
+            <p className="text-sm text-muted-foreground">
+              {status.state === "hasError"
+                ? t(($) => {
+                    return $.works.discord.loadError;
+                  })
+                : data
+                  ? discordDescription(data)
+                  : t(($) => {
+                      return $.works.discord.loading;
+                    })}
+            </p>
+            {data?.isInstalled && data.guildName ? (
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  ($) => {
+                    return $.works.discord.server;
+                  },
+                  { name: data.guildName },
+                )}
+              </p>
+            ) : null}
+          </div>
+          {status.state === "hasError" ? (
+            <Button variant="outline" size="sm" onClick={reload}>
+              {t(($) => {
+                return $.works.discord.retry;
+              })}
+            </Button>
+          ) : null}
+          {data ? (
+            <ProviderCardActions
+              isConnected={data.isConnected}
+              isInstalled={data.isInstalled}
+              isAdmin={data.isAdmin}
+              installUrl={null}
+              connectUrl={null}
+              connectedTestId="discord-connected-indicator"
+              installTestId="discord-install-button"
+              installLabel={title}
+              moreOptionsLabel={t(($) => {
+                return $.works.discord.moreOptions;
+              })}
+              disconnectLabel={t(($) => {
+                return $.works.discord.disconnect;
+              })}
+              uninstallLabel={t(($) => {
+                return $.works.discord.uninstall;
+              })}
+              disconnecting={disconnectState.state === "loading"}
+              onDisconnect={() => {
+                detach(disconnect(pageSignal), Reason.DomCallback);
+              }}
+              onUninstall={() => {
+                setShowUninstallDialog(true);
+              }}
+            />
+          ) : null}
+        </div>
+        {data?.isInstalled && data.contextMode === "mentions_only" ? (
+          <p className="border-t border-border px-4 py-3 text-sm text-muted-foreground">
+            {t(($) => {
+              return $.works.discord.limitedContext;
+            })}
+          </p>
+        ) : null}
+        {data?.isConnected && data.dmBindings.length > 1 ? (
+          <DiscordDmSelection
+            data={data}
+            saving={selectionState.state === "loading"}
+            onSelect={(connectionId) => {
+              detach(
+                selectBinding(connectionId, pageSignal),
+                Reason.DomCallback,
+              );
+            }}
+          />
+        ) : null}
+      </section>
+      <UninstallConfirmDialog
+        open={showUninstallDialog && data?.isInstalled === true && data.isAdmin}
+        setOpen={setShowUninstallDialog}
+        uninstalling={uninstallState.state === "loading"}
+        uninstall={() => {
+          return uninstall(pageSignal);
+        }}
+        title={t(($) => {
+          return $.works.discord.uninstallTitle;
+        })}
+        description={t(($) => {
+          return $.works.discord.uninstallDescription;
+        })}
+      />
+    </>
+  );
+}
+
 function teamsCardDescription(args: {
   isInstalled: boolean;
   isConnected: boolean;
@@ -733,6 +973,9 @@ export function WorksPage() {
         <div className="mx-auto max-w-[900px] flex flex-col gap-4">
           <SlackCard displayName={displayName} />
           <TeamsCard displayName={displayName} />
+          {features[FeatureSwitchKey.DiscordIntegration] ? (
+            <DiscordCard />
+          ) : null}
           <GithubCard />
           {feishuEnabled ? <FeishuCard /> : null}
           {features[FeatureSwitchKey.LarkIntegration] ? (

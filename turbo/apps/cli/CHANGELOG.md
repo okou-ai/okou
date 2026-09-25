@@ -1,5 +1,109 @@
 # Changelog
 
+## [9.363.1](https://github.com/okou-ai/okou/compare/cli-v9.363.0...cli-v9.363.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* **phone:** send proactive messages to the caller's linked handle ([#36849](https://github.com/okou-ai/okou/issues/36849)) ([7f1091d](https://github.com/okou-ai/okou/commit/7f1091d2967db0f2bc126262c548d21a62684e8f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.510.1
+    * @okouai/core bumped to 8.710.5
+    * @okouai/pi-agent-runtime bumped to 1.40.17
+
+## [9.363.0](https://github.com/okou-ai/okou/compare/cli-v9.362.0...cli-v9.363.0) (2026-09-25)
+
+
+### Features
+
+* **discord:** add native files and canonical artifact delivery ([#36663](https://github.com/okou-ai/okou/issues/36663)) ([64383f4](https://github.com/okou-ai/okou/commit/64383f45a6c6bb261113b359b280d49dc4d41890))
+
+
+### Bug Fixes
+
+* **discord:** align native reads and cli help with actual access ([#36841](https://github.com/okou-ai/okou/issues/36841)) ([c48448a](https://github.com/okou-ai/okou/commit/c48448aece67aaa965767c1b990d1e3e349300a3))
+* **discord:** bound retry deadlines for unusable rate limits ([#36833](https://github.com/okou-ai/okou/issues/36833)) ([5adae15](https://github.com/okou-ai/okou/commit/5adae15586d18cab55e400095d5df70ad3e03ddd))
+* **discord:** keep shared bot direct messages out of other orgs and sessions ([#36839](https://github.com/okou-ai/okou/issues/36839)) ([c72e30e](https://github.com/okou-ai/okou/commit/c72e30eb8ea0c979476833d1b2281a3d49818bd4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.510.0
+    * @okouai/core bumped to 8.710.4
+    * @okouai/pi-agent-runtime bumped to 1.40.16
+
+## [9.362.0](https://github.com/okou-ai/okou/compare/cli-v9.361.0...cli-v9.362.0) (2026-09-25)
+
+
+### Features
+
+* **browser:** support native checkbox input requests ([#36807](https://github.com/okou-ai/okou/issues/36807)) ([46b2f26](https://github.com/okou-ai/okou/commit/46b2f264ae9f2c7f49c403ea3e9318627e65684d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.509.0
+    * @okouai/core bumped to 8.710.3
+    * @okouai/pi-agent-runtime bumped to 1.40.15
+
+## [9.361.0](https://github.com/okou-ai/okou/compare/cli-v9.360.1...cli-v9.361.0) (2026-09-25)
+
+
+### Features
+
+* **browser:** support native select input requests ([#36740](https://github.com/okou-ai/okou/issues/36740)) ([8193d4b](https://github.com/okou-ai/okou/commit/8193d4ba387201e4f495115773cc0d880415b7bd))
+
+
+### Bug Fixes
+
+* **vnc:** honor needs_rebind on ssh-backed hosts ([#36741](https://github.com/okou-ai/okou/issues/36741)) ([d258195](https://github.com/okou-ai/okou/commit/d258195c0d234d4bee5790b7be450af9289fc1aa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.508.0
+    * @okouai/core bumped to 8.710.2
+    * @okouai/pi-agent-runtime bumped to 1.40.14
+
+## [9.360.1](https://github.com/okou-ai/okou/compare/cli-v9.360.0...cli-v9.360.1) (2026-09-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.507.1
+    * @okouai/core bumped to 8.710.1
+    * @okouai/pi-agent-runtime bumped to 1.40.13
+
+## [9.360.0](https://github.com/okou-ai/okou/compare/cli-v9.359.5...cli-v9.360.0) (2026-09-24)
+
+
+### Features
+
+* **discord:** add authorized native reads and message tools ([#36661](https://github.com/okou-ai/okou/issues/36661)) ([dafe827](https://github.com/okou-ai/okou/commit/dafe827d3ddc4fe391776c35e49a36022d4397c6))
+* **discord:** add canonical chat ingress and reply delivery ([#36685](https://github.com/okou-ai/okou/issues/36685)) ([99ddcab](https://github.com/okou-ai/okou/commit/99ddcab5538b064d842ad523f50579f3d14ebe1e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.507.0
+    * @okouai/core bumped to 8.710.0
+    * @okouai/pi-agent-runtime bumped to 1.40.12
+
 ## [9.359.5](https://github.com/okou-ai/okou/compare/cli-v9.359.4...cli-v9.359.5) (2026-09-24)
 
 

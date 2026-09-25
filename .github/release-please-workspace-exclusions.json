@@ -1,5 +1,6 @@
 {
   "crates/xtask": "Development-only Rust task runner",
+  "turbo/apps/discord-gateway-worker": "Default-disabled relay deployed only through the manual Discord Gateway workflow",
   "turbo/packages/eslint-config": "Development-only lint configuration",
   "turbo/packages/eslint-rules": "Development-only lint rules",
   "turbo/packages/mermaid-lite": "Private vendored Flowchart-only build consumed by the platform",

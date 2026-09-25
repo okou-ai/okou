@@ -772,6 +772,10 @@ describe("thread activity summary", () => {
       });
       const pending = request(f.actor, f.run);
       await entered.promise;
+      const prior = await readRunActivityBookkeepingFixture(f.run.runId);
+      if (!prior) {
+        throw new Error("Expected a claimed activity snapshot before deletion");
+      }
       webhooks.configureClerkWebhookSecret();
       webhooks.verifyNextClerkWebhook({
         type: kind === "user" ? "user.deleted" : "organization.deleted",
@@ -787,10 +791,27 @@ describe("thread activity summary", () => {
         status: "ineligible",
         messages: [],
       });
-      await accept(request(f.actor, f.run), [404]);
-      await expect(
-        readRunActivityBookkeepingFixture(f.run.runId),
-      ).resolves.toBeUndefined();
+      const fresh = await accept(
+        request(f.actor, f.run),
+        kind === "user" ? [401] : [404],
+      );
+      if (kind === "user") {
+        expect(fresh.body).toMatchObject({
+          error: { code: "UNAUTHORIZED" },
+        });
+      }
+      const after = await readRunActivityBookkeepingFixture(f.run.runId);
+      if (kind === "user") {
+        // The hold retains the pre-existing snapshot, not the stale provider
+        // output; organization deletion still removes the row outright.
+        expect(after).toMatchObject({
+          messageCursor: prior.messageCursor,
+          summary: null,
+          summaryRevision: null,
+        });
+      } else {
+        expect(after).toBeUndefined();
+      }
       expect(inputs).toHaveLength(1);
     },
   );

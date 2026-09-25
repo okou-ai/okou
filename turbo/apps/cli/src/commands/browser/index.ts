@@ -592,6 +592,8 @@ Examples:
   Share live view:            okou browser view
   Request native input:       okou browser input-request --field '{"key":"username","label":"Email","fieldKind":"username","required":true,"target":"@e1"}' --callback-prompt "Continue after the user enters their email"
   Request a number:           okou browser input-request --field '{"key":"quantity","label":"Quantity","fieldKind":"number","required":false,"target":"@e2"}' --callback-prompt "Continue after the user enters a quantity"
+  Request a native select:    okou browser input-request --field '{"key":"region","label":"Region","fieldKind":"select","required":true,"target":"@e3"}' --callback-prompt "Continue after the user chooses a region"
+  Request a checkbox:         okou browser input-request --field '{"key":"consent","label":"Consent","fieldKind":"checkbox","required":true,"target":"@e4"}' --callback-prompt "Continue after the user confirms the checkbox"
 
 Notes:
   - The browser outlives this run; the user can keep working in it from the viewer link

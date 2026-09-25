@@ -1,9 +1,11 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { sql } from "drizzle-orm";
+import { backgroundJobs } from "@okouai/db/schema/background-job";
+import { and, eq, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
+import type { ReadonlyDb } from "../external/db";
 import { singleton } from "../../lib/singleton";
 import { timestampWithoutTimeZone } from "../../lib/time";
 
@@ -40,6 +42,26 @@ export async function withXResourceClockForTest<T>(
   work: () => Promise<T>,
 ): Promise<T> {
   return await scopedClock().run(clock, work);
+}
+
+// A held Clerk deletion is a durable receipt, not a completed account-erasure
+// projection. Reject new usage from its old sandbox tokens without deleting
+// the Run or following its Agent into another user's data.
+export async function hasHeldClerkUserDeletion(
+  db: Pick<ReadonlyDb, "select">,
+  userId: string,
+): Promise<boolean> {
+  const [job] = await db
+    .select({ id: backgroundJobs.id })
+    .from(backgroundJobs)
+    .where(
+      and(
+        eq(backgroundJobs.kind, "clerk-user-deletion"),
+        eq(backgroundJobs.userId, userId),
+      ),
+    )
+    .limit(1);
+  return job !== undefined;
 }
 
 export async function setXResourceTransactionTimeouts(tx: Tx): Promise<void> {

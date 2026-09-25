@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.12](https://github.com/okou-ai/okou/compare/runner-executor-v0.1.11...runner-executor-v0.1.12) (2026-09-25)
+
+## [0.1.11](https://github.com/okou-ai/okou/compare/runner-executor-v0.1.10...runner-executor-v0.1.11) (2026-09-25)
+
+## [0.1.10](https://github.com/okou-ai/okou/compare/runner-executor-v0.1.9...runner-executor-v0.1.10) (2026-09-25)
+
+## [0.1.9](https://github.com/okou-ai/okou/compare/runner-executor-v0.1.8...runner-executor-v0.1.9) (2026-09-24)
+
+
+### Performance Improvements
+
+* **runner:** attribute first claim body chunk wait ([#36747](https://github.com/okou-ai/okou/issues/36747)) ([bb22f6a](https://github.com/okou-ai/okou/commit/bb22f6a8bf717c1b104567028a4d35e4648229b9))
+
 ## [0.1.8](https://github.com/okou-ai/okou/compare/runner-executor-v0.1.7...runner-executor-v0.1.8) (2026-09-24)
 
 

@@ -21,7 +21,6 @@ import { Resend } from "resend";
 import { delay } from "signal-timers";
 import { Webhook } from "svix";
 import { z } from "zod";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
 
 import { apiBackendUrl } from "../../lib/api-backend-url";
@@ -75,9 +74,6 @@ const PROVIDER_IDEMPOTENCY_KEY_PREFIX = "okou-email-outbox/v1/";
 // the provider request and its completion write leaves the row in `sending`;
 // after the lease, another drain replays the same committed request.
 const OUTBOX_SEND_LEASE_MS = 60_000;
-// Email is single-branded even while the rest of the product retains the
-// dual PublicBrand compatibility contract.
-export const EMAIL_PUBLIC_BRAND = "okou" satisfies PublicBrand;
 
 // Inter-send pacing for Resend rate limits. Overridable so environments
 // without a real provider (tests drain a shared outbox backlog) can disable

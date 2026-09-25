@@ -11,7 +11,6 @@ import { slackOrgInstallation } from "../services/slack-data.service";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { isAllowedUploadType } from "../../lib/uploads-constants";
 import type { RouteEntry } from "../route-entry";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const noInstallation = Object.freeze({
   status: 404 as const,
@@ -57,6 +56,7 @@ const initInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     const prepared = await set(
       prepareCanonicalPublishedAsset$,
       {
+        provider: "slack",
         runId,
         userId: auth.userId,
         orgId: auth.orgId,
@@ -65,7 +65,6 @@ const initInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         contentType,
         size: body.length,
         checksumSha256: body.canonical.checksumSha256,
-        publicBrand: PUBLIC_BRAND,
         destination: {
           channelId: body.canonical.channel,
           ...(body.canonical.threadTs

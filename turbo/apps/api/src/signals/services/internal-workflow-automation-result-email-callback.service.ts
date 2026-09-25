@@ -1,4 +1,3 @@
-import { publicBrandSchema } from "@okouai/api-contracts/contracts/public-brand";
 import {
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
   MORNING_BRIEF_PREFERENCES_PATH,
@@ -21,7 +20,6 @@ import {
   buildFromAddress,
   buildOneClickUnsubscribeUrl,
   buildUnsubscribeHeaders,
-  EMAIL_PUBLIC_BRAND,
   getUserEmail,
   OFFICIAL_AUTOMATION_RESULT_EMAIL_SUBJECT_MAX_CHARACTERS,
   OFFICIAL_AUTOMATION_RESULT_EMAIL_TEXT_MAX_CHARACTERS,
@@ -39,13 +37,11 @@ const log = logger("api:official-automation-result-email");
 const EMPTY_RESULT_FALLBACK = "This run completed without a text result.";
 const SHORT_TRUNCATION_MARKER = "…";
 
-const callbackPayloadSchema = z
-  .object({
-    automationId: z.string().uuid(),
-    workflowName: z.string().min(1).max(64),
-    publicBrand: publicBrandSchema,
-  })
-  .strict();
+// Callbacks persisted before #36766 also carry `publicBrand`; parsing strips it.
+const callbackPayloadSchema = z.object({
+  automationId: z.string().uuid(),
+  workflowName: z.string().min(1).max(64),
+});
 
 function truncateWithMarker(
   value: string,
@@ -276,7 +272,6 @@ export async function handleWorkflowAutomationResultEmailInternalCallback(
       toAddresses: userEmail,
       subject: resultEmailSubject(workflowLabel),
       headers: buildUnsubscribeHeaders(buildOneClickUnsubscribeUrl(run.userId)),
-      publicBrand: EMAIL_PUBLIC_BRAND,
       template: {
         template: "official-automation-result",
         props: {

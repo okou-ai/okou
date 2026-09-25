@@ -1,5 +1,4 @@
 import { command } from "ccstate";
-import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { historicalRunGroupId } from "./run-event-provenance.service";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -35,7 +34,6 @@ import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.serv
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 
 import {
-  withRunContentWrite,
   withRunOutputWrite,
   type RunContentOwnership,
 } from "./run-content-erasure-admission.service";
@@ -288,7 +286,6 @@ export async function insertAssistantEventsInTransaction(
   tx: Db | ChatThreadEventTransaction,
   args: Omit<InsertAssistantEventsInput, "ownership"> & {
     readonly runGroupId: string | undefined;
-    readonly splitWrites?: boolean;
   },
   signal: AbortSignal,
 ): Promise<InsertAssistantEventsTransactionResult> {
@@ -334,9 +331,6 @@ export async function insertAssistantEventsInTransaction(
         thinking: item.thinking,
       };
     }),
-    args.splitWrites === undefined
-      ? undefined
-      : { splitWrites: args.splitWrites },
   );
   signal.throwIfAborted();
 
@@ -362,39 +356,22 @@ export async function insertAssistantEvents(
     undefined,
     signal,
   );
-  const splitWrites = await isSplitChatEventWriteEnabled(writeDb);
-  const admitted = splitWrites
-    ? await withRunOutputWrite(
-        writeDb,
-        { runId: args.runId, destination: args, ownership: args.ownership },
-        async (tx, current) => {
-          return {
-            outcome: "written" as const,
-            ownership: current.ownership,
-            value: await insertAssistantEventsInTransaction(
-              tx,
-              { ...args, runGroupId, splitWrites },
-              signal,
-            ),
-          };
-        },
-        signal,
-      )
-    : await withRunContentWrite(
-        writeDb,
-        { runId: args.runId, destination: args, ownership: args.ownership },
-        async (tx) => {
-          return await insertAssistantEventsInTransaction(
-            tx,
-            { ...args, runGroupId, splitWrites },
-            signal,
-          );
-        },
-        signal,
-      );
-  if (admitted.outcome === "closed") {
-    return 0;
-  }
+  const admitted = await withRunOutputWrite(
+    writeDb,
+    { runId: args.runId, destination: args, ownership: args.ownership },
+    async (tx, current) => {
+      return {
+        outcome: "written" as const,
+        ownership: current.ownership,
+        value: await insertAssistantEventsInTransaction(
+          tx,
+          { ...args, runGroupId },
+          signal,
+        ),
+      };
+    },
+    signal,
+  );
   const result = admitted.value;
   signal.throwIfAborted();
 

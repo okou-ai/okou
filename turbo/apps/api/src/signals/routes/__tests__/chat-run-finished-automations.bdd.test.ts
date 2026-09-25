@@ -22,10 +22,7 @@ import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
-import {
-  installTerminalCallbackFailureFixture,
-  withSplitChatEventDatabase,
-} from "../../../test-fixtures/chat-terminal-retry";
+import { installTerminalCallbackFailureFixture } from "../../../test-fixtures/chat-terminal-retry";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -640,93 +637,91 @@ describe("chat-run-finished workflow automations", () => {
     "retries a split %s callback through delivery and watched automation admission once",
     { timeout: 120_000 },
     async (status) => {
-      await withSplitChatEventDatabase(async () => {
-        const run = await startSplitSlackWatchedRun(status);
-        const { fixture, runId, threadId, headers, automationId } = run;
-        const completion = await splitTerminalCompletion(run, status);
-        await withTerminalCallbackFault(
-          runId,
-          "delivery-registration",
-          async () => {
-            const failedCompletion = await webhooks.requestAgentComplete(
-              completion,
-              headers,
-              [200, 500],
-            );
-            expect(failedCompletion.status).toBe(500);
-            await expect(lifecycleMarkerCount(run, status)).resolves.toBe(1);
-            await expect(automationLastRunAt(automationId)).resolves.toBeNull();
-            await flushWaitUntilForTest();
-            expect(threadPushNotificationCount(run)).toBe(0);
-          },
-        );
-
-        // The next attempt replays the committed marker, admits the automation
-        // and finishes its deferred completion work, but loses its final
-        // callback acknowledgement. Retrying that source must not admit again.
-        await withTerminalCallbackFault(
-          runId,
-          "source-acknowledgement",
-          async () => {
-            const failedAcknowledgement = await webhooks.requestAgentComplete(
-              completion,
-              headers,
-              [200, 500],
-            );
-            expect(failedAcknowledgement.status).toBe(500);
-            await expectAutomationFired(automationId);
-            await flushWaitUntilForTest();
-            expect(threadPushNotificationCount(run)).toBe(1);
-          },
-        );
-        const admitted = await automationInputsForSourceRun(run);
-        expect(admitted.inputs).toHaveLength(1);
-        const [automationInput] = admitted.inputs;
-        const cursor = admitted.events.at(-1);
-        if (!automationInput?.runId || !cursor) {
-          throw new Error(
-            "Expected the triggered automation to own a run and cursor",
+      const run = await startSplitSlackWatchedRun(status);
+      const { fixture, runId, threadId, headers, automationId } = run;
+      const completion = await splitTerminalCompletion(run, status);
+      await withTerminalCallbackFault(
+        runId,
+        "delivery-registration",
+        async () => {
+          const failedCompletion = await webhooks.requestAgentComplete(
+            completion,
+            headers,
+            [200, 500],
           );
-        }
-        await archiveAutomationThreadForRetry(admitted.automationThreadId);
-        await webhooks.requestAgentComplete(completion, headers, [200]);
-        await webhooks.requestAgentComplete(completion, headers, [200]);
-        const afterRetry = await chat.listThreadEvents(
-          fixture.actor,
-          admitted.automationThreadId,
-          {
-            sinceSeqId: cursor.seqId,
-            sinceEventId: cursor.id,
-          },
+          expect(failedCompletion.status).toBe(500);
+          await expect(lifecycleMarkerCount(run, status)).resolves.toBe(1);
+          await expect(automationLastRunAt(automationId)).resolves.toBeNull();
+          await flushWaitUntilForTest();
+          expect(threadPushNotificationCount(run)).toBe(0);
+        },
+      );
+
+      // The next attempt replays the committed marker, admits the automation
+      // and finishes its deferred completion work, but loses its final
+      // callback acknowledgement. Retrying that source must not admit again.
+      await withTerminalCallbackFault(
+        runId,
+        "source-acknowledgement",
+        async () => {
+          const failedAcknowledgement = await webhooks.requestAgentComplete(
+            completion,
+            headers,
+            [200, 500],
+          );
+          expect(failedAcknowledgement.status).toBe(500);
+          await expectAutomationFired(automationId);
+          await flushWaitUntilForTest();
+          expect(threadPushNotificationCount(run)).toBe(1);
+        },
+      );
+      const admitted = await automationInputsForSourceRun(run);
+      expect(admitted.inputs).toHaveLength(1);
+      const [automationInput] = admitted.inputs;
+      const cursor = admitted.events.at(-1);
+      if (!automationInput?.runId || !cursor) {
+        throw new Error(
+          "Expected the triggered automation to own a run and cursor",
         );
-        expect(
-          afterRetry.events.filter((event) => {
-            return (
-              event.eventType === "input.prompt" ||
-              event.eventType === "input.automation"
-            );
-          }),
-        ).toHaveLength(0);
-        const triggered = await api.claimRunnerJob(automationInput.runId);
-        expect(triggered.prompt).toContain(status);
-        let nextRunId: string | undefined;
-        await expect
-          .poll(async () => {
-            const events = await chat.listThreadEvents(fixture.actor, threadId);
-            nextRunId =
-              events.events.find((event) => {
-                return (
-                  event.eventType === "input.prompt" &&
-                  event.revokesEventId === run.nextInputId
-                );
-              })?.runId ?? undefined;
-            return nextRunId;
-          })
-          .toBeTruthy();
-        expect(nextRunId).not.toBe(runId);
-        await expect(lifecycleMarkerCount(run, status)).resolves.toBe(1);
-        expect(slackThreadDeliveryCount(run)).toBe(1);
-      });
+      }
+      await archiveAutomationThreadForRetry(admitted.automationThreadId);
+      await webhooks.requestAgentComplete(completion, headers, [200]);
+      await webhooks.requestAgentComplete(completion, headers, [200]);
+      const afterRetry = await chat.listThreadEvents(
+        fixture.actor,
+        admitted.automationThreadId,
+        {
+          sinceSeqId: cursor.seqId,
+          sinceEventId: cursor.id,
+        },
+      );
+      expect(
+        afterRetry.events.filter((event) => {
+          return (
+            event.eventType === "input.prompt" ||
+            event.eventType === "input.automation"
+          );
+        }),
+      ).toHaveLength(0);
+      const triggered = await api.claimRunnerJob(automationInput.runId);
+      expect(triggered.prompt).toContain(status);
+      let nextRunId: string | undefined;
+      await expect
+        .poll(async () => {
+          const events = await chat.listThreadEvents(fixture.actor, threadId);
+          nextRunId =
+            events.events.find((event) => {
+              return (
+                event.eventType === "input.prompt" &&
+                event.revokesEventId === run.nextInputId
+              );
+            })?.runId ?? undefined;
+          return nextRunId;
+        })
+        .toBeTruthy();
+      expect(nextRunId).not.toBe(runId);
+      await expect(lifecycleMarkerCount(run, status)).resolves.toBe(1);
+      expect(slackThreadDeliveryCount(run)).toBe(1);
     },
   );
 
@@ -734,45 +729,41 @@ describe("chat-run-finished workflow automations", () => {
     "finishes deferred completion work when a split callback retries failed automation admission",
     { timeout: 120_000 },
     async () => {
-      await withSplitChatEventDatabase(async () => {
-        const run = await startSplitSlackWatchedRun("completed");
-        const completion = await splitTerminalCompletion(run, "completed");
-        await withTerminalCallbackFault(
-          run.runId,
-          "automation-admission",
-          async () => {
-            const failedAdmission = await webhooks.requestAgentComplete(
-              completion,
-              run.headers,
-              [200, 500],
-            );
-            expect(failedAdmission.status).toBe(500);
-            await flushWaitUntilForTest();
-            await expect(lifecycleMarkerCount(run, "completed")).resolves.toBe(
-              1,
-            );
-            await expect(
-              automationLastRunAt(run.automationId),
-            ).resolves.toBeNull();
-            expect(slackThreadDeliveryCount(run)).toBe(1);
-            expect(threadPushNotificationCount(run)).toBe(0);
-          },
-        );
+      const run = await startSplitSlackWatchedRun("completed");
+      const completion = await splitTerminalCompletion(run, "completed");
+      await withTerminalCallbackFault(
+        run.runId,
+        "automation-admission",
+        async () => {
+          const failedAdmission = await webhooks.requestAgentComplete(
+            completion,
+            run.headers,
+            [200, 500],
+          );
+          expect(failedAdmission.status).toBe(500);
+          await flushWaitUntilForTest();
+          await expect(lifecycleMarkerCount(run, "completed")).resolves.toBe(1);
+          await expect(
+            automationLastRunAt(run.automationId),
+          ).resolves.toBeNull();
+          expect(slackThreadDeliveryCount(run)).toBe(1);
+          expect(threadPushNotificationCount(run)).toBe(0);
+        },
+      );
 
-        await webhooks.requestAgentComplete(completion, run.headers, [200]);
-        await expectAutomationFired(run.automationId);
-        await flushWaitUntilForTest();
-        expect(threadPushNotificationCount(run)).toBe(1);
+      await webhooks.requestAgentComplete(completion, run.headers, [200]);
+      await expectAutomationFired(run.automationId);
+      await flushWaitUntilForTest();
+      expect(threadPushNotificationCount(run)).toBe(1);
 
-        await webhooks.requestAgentComplete(completion, run.headers, [200]);
-        await flushWaitUntilForTest();
-        await expect(automationInputsForSourceRun(run)).resolves.toMatchObject({
-          inputs: [expect.anything()],
-        });
-        await expect(lifecycleMarkerCount(run, "completed")).resolves.toBe(1);
-        expect(slackThreadDeliveryCount(run)).toBe(1);
-        expect(threadPushNotificationCount(run)).toBe(1);
+      await webhooks.requestAgentComplete(completion, run.headers, [200]);
+      await flushWaitUntilForTest();
+      await expect(automationInputsForSourceRun(run)).resolves.toMatchObject({
+        inputs: [expect.anything()],
       });
+      await expect(lifecycleMarkerCount(run, "completed")).resolves.toBe(1);
+      expect(slackThreadDeliveryCount(run)).toBe(1);
+      expect(threadPushNotificationCount(run)).toBe(1);
     },
   );
 
@@ -780,46 +771,42 @@ describe("chat-run-finished workflow automations", () => {
     "redrives an unfinished split cancellation callback from the cancel route once",
     { timeout: 120_000 },
     async () => {
-      await withSplitChatEventDatabase(async () => {
-        const run = await startSplitSlackWatchedRun("cancelled");
-        await withTerminalCallbackFault(
-          run.runId,
-          "delivery-registration",
-          async () => {
-            await api.requestCancelRun(run.fixture.actor, run.runId, [200]);
-            await flushWaitUntilForTest();
-            await expect(lifecycleMarkerCount(run, "cancelled")).resolves.toBe(
-              1,
-            );
-            await expect(
-              automationLastRunAt(run.automationId),
-            ).resolves.toBeNull();
-            expect(slackThreadDeliveryCount(run)).toBe(0);
-            expect(threadPushNotificationCount(run)).toBe(0);
-          },
-        );
-        const cancelledThread = await chat.readThread(
-          run.fixture.actor,
-          run.threadId,
-        );
-        expect(cancelledThread.cancellationRecoveryPending).toBeTruthy();
+      const run = await startSplitSlackWatchedRun("cancelled");
+      await withTerminalCallbackFault(
+        run.runId,
+        "delivery-registration",
+        async () => {
+          await api.requestCancelRun(run.fixture.actor, run.runId, [200]);
+          await flushWaitUntilForTest();
+          await expect(lifecycleMarkerCount(run, "cancelled")).resolves.toBe(1);
+          await expect(
+            automationLastRunAt(run.automationId),
+          ).resolves.toBeNull();
+          expect(slackThreadDeliveryCount(run)).toBe(0);
+          expect(threadPushNotificationCount(run)).toBe(0);
+        },
+      );
+      const cancelledThread = await chat.readThread(
+        run.fixture.actor,
+        run.threadId,
+      );
+      expect(cancelledThread.cancellationRecoveryPending).toBeTruthy();
 
-        // Repeating the cancel request is the recovery redrive owner. The
-        // marker already exists, but its source callback is still undelivered.
-        await api.requestCancelRun(run.fixture.actor, run.runId, [200]);
-        await flushWaitUntilForTest();
-        await expectAutomationFired(run.automationId);
-        expect(slackThreadDeliveryCount(run)).toBe(1);
-        expect(threadPushNotificationCount(run)).toBe(1);
+      // Repeating the cancel request is the recovery redrive owner. The
+      // marker already exists, but its source callback is still undelivered.
+      await api.requestCancelRun(run.fixture.actor, run.runId, [200]);
+      await flushWaitUntilForTest();
+      await expectAutomationFired(run.automationId);
+      expect(slackThreadDeliveryCount(run)).toBe(1);
+      expect(threadPushNotificationCount(run)).toBe(1);
 
-        await api.requestCancelRun(run.fixture.actor, run.runId, [200]);
-        await flushWaitUntilForTest();
-        const admitted = await automationInputsForSourceRun(run);
-        expect(admitted.inputs).toHaveLength(1);
-        await expect(lifecycleMarkerCount(run, "cancelled")).resolves.toBe(1);
-        expect(slackThreadDeliveryCount(run)).toBe(1);
-        expect(threadPushNotificationCount(run)).toBe(1);
-      });
+      await api.requestCancelRun(run.fixture.actor, run.runId, [200]);
+      await flushWaitUntilForTest();
+      const admitted = await automationInputsForSourceRun(run);
+      expect(admitted.inputs).toHaveLength(1);
+      await expect(lifecycleMarkerCount(run, "cancelled")).resolves.toBe(1);
+      expect(slackThreadDeliveryCount(run)).toBe(1);
+      expect(threadPushNotificationCount(run)).toBe(1);
     },
   );
 

@@ -1,6 +1,6 @@
 import { readFileSync, statSync } from "fs";
 import { basename, extname } from "path";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import {
   completePhoneFileUpload,
   initPhoneFileUpload,
@@ -31,9 +31,11 @@ function inferContentType(localPath: string): string {
 
 export const uploadFileCommand = new Command()
   .name("upload-file")
-  .description("Upload a local file to a phone conversation")
+  .description("Send a local file to your connected phone")
   .requiredOption("-f, --file <path>", "Local file path to upload")
-  .requiredOption("--to <phone>", "Connected phone handle to message")
+  // Deprecated: files always go to the phone linked to your Okou account.
+  // Kept hidden so existing scripts passing --to keep working.
+  .addOption(new Option("--to <phone>").hideHelp())
   .option("--agent-id <id>", "Phone agent ID (inferred when omitted)")
   .option("--caption <text>", "Caption to accompany the file")
   .option("--content-type <mime>", "Override inferred content type")
@@ -41,8 +43,8 @@ export const uploadFileCommand = new Command()
     "after",
     `
 Examples:
-  Upload a file:    okou phone upload-file -f /tmp/report.pdf --to +15551234567
-  With a caption:   okou phone upload-file -f /tmp/photo.jpg --to +15551234567 --caption "Here it is"
+  Upload a file:    okou phone upload-file -f /tmp/report.pdf
+  With a caption:   okou phone upload-file -f /tmp/photo.jpg --caption "Here it is"
 
 Output:
   Prints a JSON object to stdout on success:
@@ -52,7 +54,6 @@ Output:
     withErrorHandler(
       async (options: {
         file: string;
-        to: string;
         agentId?: string;
         caption?: string;
         contentType?: string;
@@ -103,7 +104,6 @@ Output:
 
         const result = await completePhoneFileUpload({
           uploadId: prepared.uploadId,
-          toNumber: options.to,
           agentphoneAgentId: options.agentId,
           contentType: prepared.contentType,
           caption: options.caption,

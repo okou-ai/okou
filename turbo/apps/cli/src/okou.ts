@@ -53,6 +53,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   resource: null,
   github: ["github:read", "github:write"],
   slack: ["slack:read", "slack:write"],
+  discord: ["discord:read", "discord:write"],
   feishu: "feishu:write",
   lark: "lark:write",
   teams: "teams:write",
@@ -206,6 +207,14 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     },
   },
   {
+    name: "discord",
+    description:
+      "List channels, read history, and send messages as the Discord bot",
+    load: async () => {
+      return (await import("./commands/discord")).discordCommand;
+    },
+  },
+  {
     name: "lark",
     description: "Send messages and transfer files through Lark",
     load: async () => {
@@ -237,7 +246,8 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   },
   {
     name: "phone",
-    description: "Send phone messages, upload files, and download media",
+    description:
+      "Send messages and files to your connected phone, and download media",
     load: async () => {
       return (await import("./commands/phone")).phoneCommand;
     },
@@ -552,6 +562,11 @@ export function buildHelpText(
       payload,
     ),
     "  Send a Slack message?  okou slack message send --help",
+    ...commandExampleIfVisible(
+      "discord",
+      "  Use Discord?          okou discord --help",
+      payload,
+    ),
     ...commandExampleIfVisible(
       "feishu",
       "  Send Feishu?          okou feishu message send --help",

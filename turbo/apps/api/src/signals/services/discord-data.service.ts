@@ -12,6 +12,7 @@ import { discordUserAgentPreferences } from "@okouai/db/schema/discord-user-agen
 import { discordUserDmPreferences } from "@okouai/db/schema/discord-user-dm-preference";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import type { ApiOrgRole } from "../../types/auth";
+import { DiscordIngressFailure } from "../../lib/discord-ingress-failure";
 import { nowDate } from "../../lib/time";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import { db$, writeDb$, type Db } from "../external/db";
@@ -150,6 +151,20 @@ export function discordUserBinding(args: {
   });
 }
 
+/** A cheap pre-filter before the per-sender identity checks below. */
+export function discordGuildBotUserId(
+  guildId: string,
+): Computed<Promise<string | null>> {
+  return computed(async (get) => {
+    const [row] = await get(db$)
+      .select({ botUserId: discordOrgInstallations.botUserId })
+      .from(discordOrgInstallations)
+      .where(eq(discordOrgInstallations.guildId, guildId))
+      .limit(1);
+    return row?.botUserId ?? null;
+  });
+}
+
 export function discordGuildUserBinding(args: {
   readonly guildId: string;
   readonly discordUserId: string;
@@ -171,6 +186,21 @@ export function discordSenderBindings(discordUserId: string) {
   return verifiedBindings(
     eq(discordOrgConnections.discordUserId, discordUserId),
   );
+}
+
+/** Ingress treats missing app configuration as an outage, never as revocation. */
+export function discordIngressSenderBindings(discordUserId: string) {
+  return computed(async (get) => {
+    if (!getDiscordAppConfig()) {
+      throw new DiscordIngressFailure(
+        "discord:config_unavailable",
+        true,
+        0,
+        "Discord is temporarily unavailable",
+      );
+    }
+    return await get(discordSenderBindings(discordUserId));
+  });
 }
 
 export type DiscordDmBindingResult =

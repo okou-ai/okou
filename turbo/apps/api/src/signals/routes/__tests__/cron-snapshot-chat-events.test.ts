@@ -31,7 +31,7 @@ import {
   type RecordedChatEventPut,
 } from "./helpers/fake-chat-event-r2";
 import {
-  advanceChatEventSequenceAsPreviousApi,
+  reserveChatEventSequenceGap,
   readChatEventSnapshotHead,
   updateChatEventSnapshotHead,
 } from "./helpers/runtime-state";
@@ -1006,7 +1006,7 @@ describe("cron snapshot chat events", () => {
       agentId: agent.agentId,
       title: "Sparse snapshot thread",
     });
-    await advanceChatEventSequenceAsPreviousApi(context, thread.id, 3);
+    await reserveChatEventSequenceGap(context, thread.id, 3);
     const threadId = await sendNoCreditMessage(owner, {
       agentId: agent.agentId,
       threadId: thread.id,
@@ -1021,7 +1021,7 @@ describe("cron snapshot chat events", () => {
     expect(firstPhysicalRow.seqId).toBeGreaterThan(1);
     const coveredSeqId = lastPhysicalRow.seqId + 1;
 
-    await advanceChatEventSequenceAsPreviousApi(context, threadId, 1);
+    await reserveChatEventSequenceGap(context, threadId, 1);
     await projectChatEventSearch(threadId);
     const result = await runSnapshotCron([threadId]);
     expect(result.success).toBeTruthy();

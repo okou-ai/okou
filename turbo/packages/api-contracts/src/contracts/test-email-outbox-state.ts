@@ -18,7 +18,6 @@ export const testEmailOutboxStateItemSchema = z.object({
   to_addresses: z.union([z.string(), z.array(z.string())]),
   subject: z.string(),
   headers: z.record(z.string(), z.string()).nullable(),
-  public_brand: z.enum(["vm0", "okou"]),
   template: z.unknown(),
   source_run_id: z.string().uuid().nullable(),
   source_workflow_automation_id: z.string().uuid().nullable(),

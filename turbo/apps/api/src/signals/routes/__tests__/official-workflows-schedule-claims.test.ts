@@ -532,7 +532,7 @@ async function initializeBriefMember(actor: ApiTestUser, timezone: string) {
       userPreferencesContract,
     ).initialize({
       headers: authHeaders(actor),
-      body: { timezone },
+      body: { timezone, locale: "en-US" },
     }),
     [200],
   );

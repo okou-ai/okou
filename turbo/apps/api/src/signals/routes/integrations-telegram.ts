@@ -41,7 +41,6 @@ import {
 } from "../services/telegram-post.service";
 import { tapError } from "../utils";
 import type { RouteEntry } from "../route-entry";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 function errorResponse(
   status: number,
@@ -167,14 +166,12 @@ const getIntegrationTelegramListInner$ = computed(async (get) => {
 const getIntegrationTelegramLinkStatusInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const query = get(queryOf(integrationsTelegramContract.getLinkStatus));
-  const publicBrand = PUBLIC_BRAND;
   return await get(
     telegramIntegrationLinkStatus({
       orgId: auth.orgId,
       userId: auth.userId,
       botId: query.botId,
       origin: query.origin,
-      publicBrand,
     }),
   );
 });
@@ -281,8 +278,7 @@ async function downloadTelegramFile(
 const registerTelegramBotInner$ = command(
   ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const publicBrand = PUBLIC_BRAND;
-    return set(registerTelegramBot$, { auth, publicBrand }, signal);
+    return set(registerTelegramBot$, { auth }, signal);
   },
 );
 

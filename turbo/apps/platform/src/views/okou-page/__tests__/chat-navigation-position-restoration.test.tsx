@@ -587,6 +587,52 @@ test("Restore the reading position after switching threads from the sidebar", as
   await expectReadingPosition(returnedGeometry, targetText);
 });
 
+test("Return to the latest message in a thread opened from the sidebar", async () => {
+  mockThreadStories(SIDEBAR_OTHER_THREAD_ID, [
+    {
+      id: SIDEBAR_OTHER_THREAD_ID,
+      title: "Planning notes",
+      events: conversationEvents("sidebar-other", "Planning", 1),
+    },
+    {
+      id: SIDEBAR_CURRENT_THREAD_ID,
+      title: "Research notes",
+      events: conversationEvents("sidebar-current", "Research", 3),
+    },
+  ]);
+
+  await setupPage({
+    context,
+    host: APP_HOST,
+    path: `/chats/${SIDEBAR_OTHER_THREAD_ID}`,
+  });
+  await waitForInteractiveThread(
+    SIDEBAR_OTHER_THREAD_ID,
+    "Planning notes",
+    "Planning message 1",
+  );
+
+  click(sidebarThreadLink(SIDEBAR_CURRENT_THREAD_ID, "Research notes"));
+  const targetText = "Research message 2";
+  await waitForInteractiveThread(
+    SIDEBAR_CURRENT_THREAD_ID,
+    "Research notes",
+    targetText,
+  );
+  const geometry = installChatScrollGeometry(
+    threadContainer(SIDEBAR_CURRENT_THREAD_ID),
+  );
+  fireEvent.resize(window);
+  await waitFor(() => {
+    expect(geometry.atBottom()).toBeTruthy();
+  });
+  await chooseReadingPosition(geometry, targetText);
+
+  click(buttonNamed("Scroll to bottom"));
+
+  await expectAtLatestActivity(geometry);
+});
+
 test("Open a conversation at a linked message", async () => {
   const events = conversationEvents("deep-link", "Linked");
   mockChatLifecycleWithoutBrowserSession({

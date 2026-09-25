@@ -1,4 +1,5 @@
 import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
+import { discordChatDeliveries } from "@okouai/db/schema/discord-chat-delivery";
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
@@ -18,6 +19,8 @@ export const discordExportKindSchema = z.enum([
   "routes",
   "ingress",
   "contexts",
+  // Appended so checkpoints written before this kind existed still resume.
+  "deliveries",
 ]);
 
 type DiscordExportKind = z.infer<typeof discordExportKindSchema>;
@@ -67,6 +70,41 @@ async function readDiscordAgentPreferencesPage(args: DiscordExportArgs) {
       ),
     )
     .orderBy(asc(discordUserAgentPreferences.orgId))
+    .limit(PAGE_SIZE);
+}
+
+async function readDiscordDeliveriesPage(args: DiscordExportArgs) {
+  const { db, userId, cursor, startedAt } = args;
+  return await db
+    .select({
+      key: discordChatDeliveries.id,
+      // Retry bookkeeping and provider errors are operational, not content.
+      row: {
+        id: discordChatDeliveries.id,
+        connectionId: discordChatDeliveries.connectionId,
+        ingressId: discordChatDeliveries.ingressId,
+        chatEventId: discordChatDeliveries.chatEventId,
+        chatThreadId: discordChatDeliveries.chatThreadId,
+        routeId: discordChatDeliveries.routeId,
+        orgId: discordChatDeliveries.orgId,
+        userId: discordChatDeliveries.userId,
+        channelId: discordChatDeliveries.channelId,
+        content: discordChatDeliveries.content,
+        parts: discordChatDeliveries.parts,
+        status: discordChatDeliveries.status,
+        deliveredAt: discordChatDeliveries.deliveredAt,
+        createdAt: discordChatDeliveries.createdAt,
+      },
+    })
+    .from(discordChatDeliveries)
+    .where(
+      and(
+        eq(discordChatDeliveries.userId, userId),
+        lte(discordChatDeliveries.createdAt, startedAt),
+        cursor ? gt(discordChatDeliveries.id, cursor) : undefined,
+      ),
+    )
+    .orderBy(asc(discordChatDeliveries.id))
     .limit(PAGE_SIZE);
 }
 
@@ -150,7 +188,6 @@ export async function readDiscordUserExportPage(args: DiscordExportArgs) {
             eventId: discordChatIngress.eventId,
             messageId: discordChatIngress.messageId,
             payload: discordChatIngress.payload,
-            publicBrand: discordChatIngress.publicBrand,
             status: discordChatIngress.status,
             createdAt: discordChatIngress.createdAt,
             updatedAt: discordChatIngress.updatedAt,
@@ -191,6 +228,9 @@ export async function readDiscordUserExportPage(args: DiscordExportArgs) {
         )
         .orderBy(asc(chatDiscordContext.id))
         .limit(PAGE_SIZE);
+    }
+    case "deliveries": {
+      return await readDiscordDeliveriesPage(args);
     }
   }
 }

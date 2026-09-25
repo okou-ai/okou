@@ -1,5 +1,4 @@
 import { sql } from "drizzle-orm";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type { UsagePackDeferredSchedule } from "../jsonb-contracts/usage-pack-deferred-schedule";
 import {
   bigint,
@@ -483,10 +482,11 @@ export const usagePackInvitationPurchases = pgTable(
       { onDelete: "set null" },
     ),
     orgId: text("org_id").notNull(),
-    publicBrand: text("public_brand")
-      .$type<PublicBrand>()
-      .default("vm0")
-      .notNull(),
+    /**
+     * Retired: current APIs neither read nor write it and rely on the
+     * `okou` default; drop it after older API deployments drain.
+     */
+    publicBrand: text("public_brand").default("okou").notNull(),
     normalizedEmail: text("normalized_email").notNull(),
     role: varchar("role", { length: 20 }).$type<"admin" | "member">().notNull(),
     inviterUserId: text("inviter_user_id").notNull(),

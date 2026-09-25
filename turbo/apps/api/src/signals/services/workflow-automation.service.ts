@@ -2,7 +2,6 @@ import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/cont
 import { isDeepStrictEqual } from "node:util";
 
 import type { OfficialWorkflowParameterBinding } from "@okouai/api-contracts/contracts/official-workflow-bindings";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   chatRunFinishedEventConfigSchema,
   githubDeploymentStatusCreatedEventConfigSchema,
@@ -4827,10 +4826,6 @@ interface AutomationActionInput {
   readonly allowReservedOfficialMaterialization?: boolean;
 }
 
-interface AutomationRunNowInput extends AutomationActionInput {
-  readonly publicBrand: PublicBrand;
-}
-
 /**
  * Repeated "Run now" clicks are otherwise indistinguishable, so the request time
  * is this run's unique identifier.
@@ -4860,7 +4855,7 @@ function manualTriggerContext(args: {
 export const runOwnedWorkflowAutomationNow$ = command(
   async (
     { set },
-    args: AutomationRunNowInput,
+    args: AutomationActionInput,
     signal: AbortSignal,
   ): Promise<WorkflowAutomationRunNowResult> => {
     const writeDb = set(writeDb$);
@@ -4931,7 +4926,6 @@ export const runOwnedWorkflowAutomationNow$ = command(
           chatThreadId,
         },
         automationContext: manualContext,
-        publicBrand: args.publicBrand,
         apiStartTime: currentTime.getTime(),
         triggerSource: manualTriggerSource(automation),
         triggerBrief:

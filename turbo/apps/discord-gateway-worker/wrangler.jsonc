@@ -1,0 +1,46 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "okou-discord-gateway-unconfigured",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-03",
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "DISCORD_GATEWAY_ENABLED": "false",
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["DiscordGateway"] }],
+  "env": {
+    "test": {
+      "name": "okou-discord-gateway-test",
+      "workers_dev": true,
+      "vars": {
+        "DISCORD_GATEWAY_ENABLED": "false",
+        "DISCORD_GATEWAY_ENVIRONMENT": "test",
+        "DISCORD_GATEWAY_SHARD_ID": "0",
+        "DISCORD_GATEWAY_SHARD_COUNT": "1",
+        "DISCORD_GATEWAY_MESSAGE_CONTENT": "false",
+      },
+      "durable_objects": {
+        "bindings": [
+          { "name": "DISCORD_GATEWAY", "class_name": "DiscordGateway" },
+        ],
+      },
+    },
+    "production": {
+      "name": "okou-discord-gateway-production",
+      "workers_dev": true,
+      "vars": {
+        "DISCORD_GATEWAY_ENABLED": "false",
+        "DISCORD_GATEWAY_ENVIRONMENT": "production",
+        "DISCORD_GATEWAY_SHARD_ID": "0",
+        "DISCORD_GATEWAY_SHARD_COUNT": "1",
+        "DISCORD_GATEWAY_MESSAGE_CONTENT": "false",
+      },
+      "durable_objects": {
+        "bindings": [
+          { "name": "DISCORD_GATEWAY", "class_name": "DiscordGateway" },
+        ],
+      },
+    },
+  },
+}

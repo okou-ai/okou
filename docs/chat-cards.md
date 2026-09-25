@@ -710,10 +710,33 @@ the original URL directly presents an authenticated full-page form. Both entry
 points show the persisted fields immediately after the authenticated request
 read, then run the token-only Browser preflight in the background. Reopening
 the dialog runs preflight again. Users can fill and submit while the check is
-pending. Preflight returns the observed textarea or input subtype and current
-site constraints, including multiple email addresses and number `min`, `max`,
-and `step` attributes. The form switches to those observed controls without
-clearing the draft. A confirmed page or control change makes the request
+pending for text/number controls. Preflight returns the observed textarea,
+input, or native select subtype and current site constraints, including
+multiple email addresses, number `min`, `max`, and `step` attributes, and a
+bounded snapshot of select option labels, disabled states, and selected states.
+The form switches to those observed controls without clearing the draft.
+Select submission waits for preflight, identifies options by their position
+rather than their possibly duplicated value, and carries a snapshot fingerprint.
+An untouched optional select stays unchanged and can be explicitly cleared;
+a required select must be chosen or explicitly confirmed even when the website
+already has a valid selection. Choice drafts are tied to the snapshot they
+were made against: after an option change during Retry, the user must choose
+again or explicitly keep the current website selection. Required selects reject
+empty placeholder choices. A required multi-select cannot confirm a website
+selection containing a disabled option; a new choice excludes disabled options
+that the website had already selected. The API checks the
+current options again before writing; option drift makes the action stale, and
+post-write mismatch yields an uncertain state instead of claiming success.
+Native checkboxes use the observed checkedness, not their `.value` attribute.
+An indeterminate checkbox cannot be represented as a Boolean and falls back to
+Browser takeover. An optional checkbox left untouched preserves the website's state; explicitly
+checking or unchecking it submits a Boolean bound to the preflight state. An
+Agent-required checkbox needs deliberate checking or confirmation when already
+checked, and a website-required checkbox must be checked. Changed checkedness
+before apply makes an explicit choice stale; after a possible write, failed
+readback is uncertain. Filling the checkbox does not submit the website form.
+Option values and submitted selections do not appear in the action URL or
+chat callback. A confirmed page or control change makes the request
 stale; a temporary provider failure blocks submission, preserves the draft,
 and offers Retry. The form does not poll while open. Preflight releases the
 thread write lock during remote Browser I/O, so it does not delay a submission.

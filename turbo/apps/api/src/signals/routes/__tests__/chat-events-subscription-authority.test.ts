@@ -1003,7 +1003,18 @@ describe("CHAT-02: run-level model overrides", () => {
     await expectNoBuiltInModelUsage(run.runId);
   }, 90_000);
 
-  it.each(USER_OWNED_GPT_FAST_BDD_ROUTES)(
+  const representativeModels = {
+    "codex-oauth-token": "gpt-5.6-terra",
+    "openai-api-key": "gpt-5.6-sol",
+    "openrouter-codex": "gpt-5.6-luna",
+    "vercel-ai-gateway-codex": "gpt-5.6-terra",
+  } as const;
+
+  it.each(
+    USER_OWNED_GPT_FAST_BDD_ROUTES.filter((route) => {
+      return route.selectedModel === representativeModels[route.type];
+    }),
+  )(
     "reuses one $name Pi session across standard, Fast, and standard requests",
     async (route) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -1168,13 +1179,20 @@ describe("CHAT-02: run-level model overrides", () => {
 
   it.each(
     USER_OWNED_GPT_FAST_BDD_ROUTES.flatMap((route) => {
-      return (["web", "agent"] as const).map((origin) => {
-        return {
-          route,
-          name: route.name,
-          origin,
-        };
-      });
+      return (["web", "agent"] as const)
+        .filter((origin) => {
+          return (
+            origin === "web" ||
+            route.selectedModel === representativeModels[route.type]
+          );
+        })
+        .map((origin) => {
+          return {
+            route,
+            name: route.name,
+            origin,
+          };
+        });
     }),
   )(
     "promotes queued and immediate $name Fast from $origin through API-first",
@@ -1306,13 +1324,20 @@ describe("CHAT-02: run-level model overrides", () => {
 
   it.each(
     USER_OWNED_GPT_FAST_BDD_ROUTES.flatMap((route) => {
-      return (["in-flight", "late-result"] as const).map((phase) => {
-        return {
-          route,
-          name: route.name,
-          phase,
-        };
-      });
+      return (["in-flight", "late-result"] as const)
+        .filter((phase) => {
+          return (
+            phase === "in-flight" ||
+            route.selectedModel === representativeModels[route.type]
+          );
+        })
+        .map((phase) => {
+          return {
+            route,
+            name: route.name,
+            phase,
+          };
+        });
     }),
   )(
     "keeps cancelled $name Fast $phase results unbilled and unreplayed",

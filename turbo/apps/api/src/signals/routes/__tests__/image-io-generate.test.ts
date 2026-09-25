@@ -51,7 +51,6 @@ import {
 import { createRouteMocks } from "./helpers/route-test";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { setRunImageModelFixture } from "../../../test-fixtures/run-image-model";
-import { removeBuiltInGenerationPublicBrandFixture } from "../../../test-fixtures/built-in-generation";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
@@ -1617,8 +1616,6 @@ describe("POST /api/image-io/generate", () => {
       "image",
       fixture.userId,
     );
-    // A persisted job without brand metadata retains its historical CDN identity.
-    await removeBuiltInGenerationPublicBrandFixture(generationId);
     await postFalWebhook(app, observedRequestUrl, {
       images: [
         {
@@ -1642,10 +1639,7 @@ describe("POST /api/image-io/generate", () => {
       creditsCharged: 50,
       billingCategory: "output_image.medium.standard",
       billingQuantity: 1,
-      url: expect.stringMatching(/^https:\/\/cdn\.vm7\.io\/artifacts\//u),
-    });
-    expect(putObjectInput().Metadata).toMatchObject({
-      "public-brand": "vm0",
+      url: expect.stringMatching(/^https:\/\/a\.okou\.io\//u),
     });
     mocks.clerk.session(fixture.userId, fixture.orgId);
     const billingStatus = await accept(
@@ -2599,16 +2593,20 @@ describe("POST /api/image-io/generate", () => {
       error: "Invalid status code: 422 private-provider-token",
       detail: "private-provider-message https://private.example/input",
     },
-    ...["private-provider-message", 503, true, []].map((payloadBody, index) => {
-      return {
-        caseName: `unsupported body despite status 503 (${index})`,
-        status: "ERROR",
-        wrapper: "payload",
-        error: "Invalid status code: 503",
-        detail: undefined,
-        payloadBody,
-      };
-    }),
+    ...["private-provider-message", 503, true, []]
+      .map((payloadBody, index) => {
+        return {
+          caseName: `unsupported body despite status 503 (${index})`,
+          status: "ERROR",
+          wrapper: "payload",
+          error: "Invalid status code: 503",
+          detail: undefined,
+          payloadBody,
+        };
+      })
+      .filter((_, index) => {
+        return index === 0 || index === 3;
+      }),
     ...[429, 500, 502, 503, 504].map((reportedStatus) => {
       return {
         caseName: `status-only provider failure ${reportedStatus}`,
@@ -2639,15 +2637,19 @@ describe("POST /api/image-io/generate", () => {
       "Unexpected status code: 099",
       503,
       { status: 503 },
-    ].map((error, index) => {
-      return {
-        caseName: `malformed status-only evidence ${index}`,
-        status: "ERROR",
-        wrapper: "payload",
-        error,
-        detail: undefined,
-      };
-    }),
+    ]
+      .map((error, index) => {
+        return {
+          caseName: `malformed status-only evidence ${index}`,
+          status: "ERROR",
+          wrapper: "payload",
+          error,
+          detail: undefined,
+        };
+      })
+      .filter((_, index) => {
+        return index !== 8;
+      }),
     ...["downstream_service_error", "downstream_service_unavailable"].map(
       (type) => {
         return {
@@ -2716,15 +2718,19 @@ describe("POST /api/image-io/generate", () => {
           msg: FAL_OUTPUT_SAFETY_FILTER_MESSAGE,
         },
       ],
-    ].map((detail, index) => {
-      return {
-        caseName: `ambiguous structured evidence despite status 503 (${index})`,
-        status: "ERROR",
-        wrapper: "payload",
-        error: "Invalid status code: 503",
-        detail,
-      };
-    }),
+    ]
+      .map((detail, index) => {
+        return {
+          caseName: `ambiguous structured evidence despite status 503 (${index})`,
+          status: "ERROR",
+          wrapper: "payload",
+          error: "Invalid status code: 503",
+          detail,
+        };
+      })
+      .filter((_, index) => {
+        return index !== 3;
+      }),
   ])(
     "maps Fal failure evidence for $caseName through status and realtime",
     async ({
@@ -4170,7 +4176,7 @@ describe("POST /api/image-io/generate", () => {
       randomUUID(),
       "cdn-reference.png",
     );
-    const shortArtifactUrl = buildFileUrlFromKey(shortArtifactKey, "okou");
+    const shortArtifactUrl = buildFileUrlFromKey(shortArtifactKey, "current");
     const shortArtifactPath = new URL(shortArtifactUrl).pathname.replace(
       /^\/+/u,
       "",

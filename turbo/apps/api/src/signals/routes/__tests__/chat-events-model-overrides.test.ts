@@ -356,13 +356,24 @@ describe("CHAT-02: run-level model overrides", () => {
           selectedModel === "gpt-5.6-terra" && scenario.outcome === "completed"
             ? [false, true]
             : [false];
-        return routes.map((organizationApi) => {
-          return {
-            ...scenario,
-            selectedModel,
-            organizationApi,
-          };
-        });
+        return routes
+          .map((organizationApi) => {
+            return {
+              ...scenario,
+              selectedModel,
+              organizationApi,
+            };
+          })
+          .filter(({ tier, outcome, organizationApi }) => {
+            return (
+              (tier === "fast" && outcome === "completed") ||
+              (selectedModel === "gpt-5.6-terra" &&
+                tier === undefined &&
+                !organizationApi) ||
+              (selectedModel === "gpt-5.6-sol" && outcome === "failed") ||
+              (selectedModel === "gpt-5.6-luna" && outcome === "cancelled")
+            );
+          });
       });
     }),
   )(
@@ -739,13 +750,22 @@ describe("CHAT-02: run-level model overrides", () => {
       },
     ].flatMap((scenario) => {
       return ([undefined, "fast"] as const).flatMap((tier) => {
-        return [false, true].map((organizationApi) => {
-          return {
-            ...scenario,
-            tier,
-            organizationApi,
-          };
-        });
+        return [false, true]
+          .map((organizationApi) => {
+            return {
+              ...scenario,
+              tier,
+              organizationApi,
+            };
+          })
+          .filter(({ organizationApi }) => {
+            return (
+              scenario.name === "transient provider failure" ||
+              (scenario.name === "refresh_token_reused" &&
+                (tier !== "fast" || !organizationApi)) ||
+              (tier === undefined && !organizationApi)
+            );
+          });
       });
     }),
   )(

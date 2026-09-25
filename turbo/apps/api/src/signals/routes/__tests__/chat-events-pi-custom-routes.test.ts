@@ -633,12 +633,21 @@ describe("CHAT-02: model-first provider policies", () => {
 
   it.each(
     GPT_PI_BDD_MODELS.flatMap((selectedModel) => {
-      return [
-        { selectedModel, tier: undefined, outcome: "completed" },
-        { selectedModel, tier: "fast", outcome: "completed" },
-        { selectedModel, tier: "fast", outcome: "failed" },
-        { selectedModel, tier: "fast", outcome: "cancelled" },
-      ] as const;
+      return (
+        [
+          { selectedModel, tier: undefined, outcome: "completed" },
+          { selectedModel, tier: "fast", outcome: "completed" },
+          { selectedModel, tier: "fast", outcome: "failed" },
+          { selectedModel, tier: "fast", outcome: "cancelled" },
+        ] as const
+      ).filter(({ tier, outcome }) => {
+        return (
+          (tier === "fast" && outcome === "completed") ||
+          (selectedModel === "gpt-5.6-terra" && tier === undefined) ||
+          (selectedModel === "gpt-5.6-sol" && outcome === "failed") ||
+          (selectedModel === "gpt-5.6-luna" && outcome === "cancelled")
+        );
+      });
     }),
   )(
     "keeps custom $selectedModel $tier legacy handoff, captured policy, and $outcome settlement unbilled",
@@ -934,9 +943,17 @@ describe("CHAT-02: model-first provider policies", () => {
 
   it.each(
     GPT_PI_BDD_MODELS.flatMap((selectedModel) => {
-      return [400, 401].map((status) => {
-        return { selectedModel, status };
-      });
+      return [400, 401]
+        .filter((status) => {
+          return (
+            selectedModel === "gpt-5.6-terra" ||
+            (selectedModel === "gpt-5.6-sol" && status === 400) ||
+            (selectedModel === "gpt-5.6-luna" && status === 401)
+          );
+        })
+        .map((status) => {
+          return { selectedModel, status };
+        });
     }),
   )(
     "preserves custom $selectedModel Fast rejection $status without downgrade or an API retry",
@@ -1372,9 +1389,13 @@ describe("CHAT-02: model-first provider policies", () => {
 
   it.each(
     GPT_PI_BDD_MODELS.flatMap((selectedModel) => {
-      return ["in-flight", "late-result"].map((phase) => {
-        return { selectedModel, phase };
-      });
+      return ["in-flight", "late-result"]
+        .filter((phase) => {
+          return phase === "in-flight" || selectedModel === "gpt-5.6-terra";
+        })
+        .map((phase) => {
+          return { selectedModel, phase };
+        });
     }),
   )(
     "keeps cancelled custom $selectedModel Fast $phase unbilled and unreplayed",

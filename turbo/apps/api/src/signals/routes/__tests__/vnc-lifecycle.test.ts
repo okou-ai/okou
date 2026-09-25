@@ -90,7 +90,7 @@ async function webhook(event: {
 }
 
 test.each(["user", "organization", "membership"] as const)(
-  "%s cleanup erases saved VNC hosts and credentials while preserving another owner",
+  "%s deletion fences or erases VNC access while preserving another owner",
   async (scope) => {
     useSecretKmsProbe();
     const current = await owner();
@@ -117,20 +117,38 @@ test.each(["user", "organization", "membership"] as const)(
           };
     await webhook(event);
 
-    // Retain the external test identity to inspect the public configuration
-    // boundary after cleanup. Re-enabling its cleared rollout override restores
-    // only visibility; it cannot recreate a removed host or encrypted password.
-    await updateFeatureSwitchesForUser(context, current, {
-      [FeatureSwitchKey.VncAccess]: true,
-    });
+    // After org/membership cleanup, restore only the test rollout override to
+    // inspect the empty configuration. A deleted user cannot call that API at
+    // all, even if an old Clerk session remains valid.
+    if (scope !== "user") {
+      await updateFeatureSwitchesForUser(context, current, {
+        [FeatureSwitchKey.VncAccess]: true,
+      });
+    }
     mocks.clerk.session(current.userId, current.orgId);
-    const removedHosts = await accept(connections().list({ headers }), [200]);
-    const removedCredentials = await accept(
-      credentials().list({ headers }),
-      [200],
-    );
-    expect(removedHosts.body.connections).toStrictEqual([]);
-    expect(removedCredentials.body.credentials).toStrictEqual([]);
+    if (scope === "user") {
+      // A still-valid Clerk session cannot read the retained private host or
+      // encrypted credential while owner-scoped account erasure is on hold.
+      const deniedHosts = await accept(connections().list({ headers }), [401]);
+      const deniedCredentials = await accept(
+        credentials().list({ headers }),
+        [401],
+      );
+      expect(deniedHosts.body).toMatchObject({
+        error: { code: "UNAUTHORIZED" },
+      });
+      expect(deniedCredentials.body).toMatchObject({
+        error: { code: "UNAUTHORIZED" },
+      });
+    } else {
+      const removedHosts = await accept(connections().list({ headers }), [200]);
+      const removedCredentials = await accept(
+        credentials().list({ headers }),
+        [200],
+      );
+      expect(removedHosts.body.connections).toStrictEqual([]);
+      expect(removedCredentials.body.credentials).toStrictEqual([]);
+    }
 
     mocks.clerk.session(survivor.userId, survivor.orgId);
     const survivingHosts = await accept(connections().list({ headers }), [200]);

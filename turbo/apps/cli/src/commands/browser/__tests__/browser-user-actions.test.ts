@@ -391,6 +391,66 @@ describe("okou browser user-action commands", () => {
     expect(JSON.stringify(requestBody)).not.toContain("#quantity");
   });
 
+  it("captures a native checkbox node without disclosing its selector or value", async () => {
+    installCdp({ nodeName: "INPUT" });
+    let requestBody: unknown;
+    installCreateRoute((body) => {
+      requestBody = body;
+    });
+    await browserCommand.parseAsync([
+      "node",
+      "okou",
+      "input-request",
+      "--field",
+      JSON.stringify({
+        key: "consent",
+        label: "Consent",
+        fieldKind: "checkbox",
+        required: false,
+        target: "#private-consent",
+      }),
+      "--callback-prompt",
+      "Continue after checkbox input",
+    ]);
+    expect(requestBody).toMatchObject({
+      fields: [{ key: "consent", fieldKind: "checkbox", backendNodeId: 42 }],
+    });
+    expect(JSON.stringify(requestBody)).not.toContain("#private-consent");
+    expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(
+      "#private-consent",
+    );
+  });
+
+  it("captures a native select by exact node identity without sending selector or option values", async () => {
+    installCdp({ nodeName: "SELECT" });
+    let requestBody: unknown;
+    installCreateRoute((body) => {
+      requestBody = body;
+    });
+    await browserCommand.parseAsync([
+      "node",
+      "okou",
+      "input-request",
+      "--field",
+      JSON.stringify({
+        key: "region",
+        label: "Region",
+        fieldKind: "select",
+        required: true,
+        target: "#private-region",
+      }),
+      "--callback-prompt",
+      "Continue after region selection",
+    ]);
+    expect(requestBody).toMatchObject({
+      fields: [{ key: "region", fieldKind: "select", backendNodeId: 42 }],
+    });
+    expect(JSON.stringify(requestBody)).not.toContain("#private-region");
+    expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(
+      "#private-region",
+    );
+  });
+
   it("resolves an XPath target locally without sending it to the API", async () => {
     const cdpCommands = installCdp();
     let requestBody: unknown;
@@ -772,7 +832,7 @@ describe("okou browser user-action commands", () => {
 
     expect(apiRequests).toBe(0);
     expect(consoleError.mock.calls.flat().join("\n")).toContain(
-      "top-level input and textarea",
+      "top-level input, textarea, and select controls",
     );
   });
 

@@ -65,12 +65,22 @@ A protected SSH host whose shared configuration is no longer permitted can be
 retained in a **needs rebind** state. It cannot connect and is never silently
 changed to Direct. Its owner must edit the host and explicitly select another
 permitted Cloudflare Access configuration or Direct. The host, credential, and
-learned host key remain intact. An organization admin can convert a shared
-configuration to Personal after reviewing its current impact. The preview
+learned host key remain intact. After reviewing its current impact, an
+organization admin can convert a shared configuration to their own Personal
+configuration, even if someone else originally created it. The preview
 reports only the count of other members' referencing SSH hosts; their names and
 owners are never shown. When that count is positive, the admin must explicitly
 confirm that those hosts will need to be rebound. A changed revision or impact
 requires another review. Conversion retains the Access ID and stored Service
 Token. The admin's own hosts remain bound, while other members' hosts remain
 saved in needs-rebind state until their owners explicitly choose a permitted
-configuration or Direct.
+configuration or Direct. A saved VNC connection using such an SSH host remains
+visible to its owner with a rebind warning; authorized fresh VNC Run inventories
+show it as `availability: { status: "blocked", reason: "needs_rebind" }` for
+diagnosis, matching SSH. Only ready VNC host IDs should be used for new sessions.
+Fresh VNC Runner checks return unavailable; a resolve advertising the saved
+SSH profile also returns unavailable before releasing VNC credentials. With
+Agent grants, a profile mismatch can still return unsupported; thread-scoped
+access rejects the blocked SSH transport as unavailable first. The VNC route
+is never switched to Direct automatically. Already-running Runs may retain
+previously cached SSH authority until completion as described above.

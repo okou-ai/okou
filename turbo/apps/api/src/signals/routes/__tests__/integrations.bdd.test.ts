@@ -22,6 +22,7 @@ import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
+import { installLegacySlackChatCallbackBrandFixture } from "../../../test-fixtures/chat-terminal-retry";
 import {
   readChatEventContextFixture,
   readRunUsageEventsFixture,
@@ -36,7 +37,7 @@ import { seededSystemSkillArchive } from "../../../test-fixtures/seeded-system-s
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
@@ -2345,7 +2346,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(context.mocks.slack.conversations.replies).toHaveBeenCalledOnce();
   });
 
-  it("keeps permanent Slack failures terminal across provider retries", async () => {
+  async function expectPermanentSlackFailureTerminal(): Promise<void> {
     const scenario = await prepareCanonicalSlackContextFailureScenario();
     context.mocks.slack.conversations.replies.mockRejectedValue(
       slackPlatformError("invalid_auth"),
@@ -2365,6 +2366,11 @@ describe("INT-01: Slack app deep webhook flows", () => {
       lastError: "Slack platform error: invalid_auth",
     });
     expect(context.mocks.slack.conversations.replies).toHaveBeenCalledOnce();
+  }
+
+  it("keeps permanent Slack failures terminal across provider retries", async () => {
+    expect.hasAssertions();
+    await expectPermanentSlackFailureTerminal();
   });
 
   it("bounds explicitly retryable Slack failures with backoff", async () => {
@@ -2659,7 +2665,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
       expect(state.chat_ingress[0]).toMatchObject({
         eventId,
         payload: eventBody,
-        publicBrand: "okou",
         routeId: state.chat_thread_routes[0]?.id,
         status: "processed",
         retryCount: 3,
@@ -2748,7 +2753,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
         readChatEventContextFixture(canonicalInputMessage.id),
       ).resolves.toMatchObject({
         slackBotUserId: botUserId,
-        slackPublicBrand: "okou",
         slackMessageText: originalMessageText,
         slackMessageAssets: [
           {
@@ -3167,23 +3171,35 @@ describe("INT-01: Slack app deep webhook flows", () => {
       await flushWaitUntilForTest();
 
       context.mocks.slack.chat.postMessage.mockClear();
-      await completeSlackTriggeredRun({
-        runId: run1Id,
-        sandboxToken: claim1.sandboxToken,
-        cliAgentType: claim1.cliAgentType,
-        assistantText: "Executing command...",
-        resultText: "Canonical Slack answer one",
-      });
-      await flushWaitUntilAndAssert(() => {
-        expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledOnce();
-        expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
-          expect.objectContaining({
-            channel: channelId,
-            thread_ts: threadTs,
-            text: "Canonical Slack answer one",
-          }),
-        );
-      });
+      // Store this delivery in the shape an older API wrote, with the retired
+      // `vm0` brand, to pin that current delivery ignores the field.
+      const removeLegacyBrand =
+        await installLegacySlackChatCallbackBrandFixture(run1Id);
+      const completion = await settleIncludingAbort(
+        (async () => {
+          await completeSlackTriggeredRun({
+            runId: run1Id,
+            sandboxToken: claim1.sandboxToken,
+            cliAgentType: claim1.cliAgentType,
+            assistantText: "Executing command...",
+            resultText: "Canonical Slack answer one",
+          });
+          await flushWaitUntilAndAssert(() => {
+            expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledOnce();
+            expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
+              expect.objectContaining({
+                channel: channelId,
+                thread_ts: threadTs,
+                text: "Canonical Slack answer one",
+              }),
+            );
+          });
+        })(),
+      );
+      await removeLegacyBrand();
+      if (!completion.ok) {
+        throw completion.error;
+      }
       await expect
         .poll(async () => {
           const callbacks = await callbackStore.set(
@@ -3221,6 +3237,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
           channelId,
           threadTs,
           chatEventId: expect.any(String),
+          publicBrand: "vm0",
         },
       });
       const run1 = await runs.readRun(actor, run1Id);
@@ -7169,7 +7186,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     ]);
   });
 
-  it("preserves signed GitHub install brand across provider callbacks", async () => {
+  it("signs the GitHub install callback redirect in provider state", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
@@ -7191,8 +7208,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     expect(okouStateString).not.toBe("");
     const okouState: unknown = JSON.parse(okouStateString);
     expect(okouState).toMatchObject({
-      publicBrand: "okou",
-      publicBrandSig: expect.stringMatching(/^[0-9a-f]{64}$/u),
       callbackRedirectUri: "https://api.okou.ai/api/github/app/setup/callback",
       callbackRedirectUriSig: expect.stringMatching(/^[0-9a-f]{64}$/u),
       sig: expect.stringMatching(/^[0-9a-f]{64}$/u),
@@ -7214,23 +7229,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     if (!isRecord(okouState)) {
       throw new Error("Expected Okou GitHub OAuth state to be an object");
     }
-    const tamperedState = JSON.stringify({
-      ...okouState,
-      publicBrand: "vm0",
-      publicBrandSig: "0".repeat(64),
-    });
-    const tamperedError = await integrations.requestGithubAppSetupCallback(
-      {
-        error: "access_denied",
-        error_description: "Provider denied access",
-        state: tamperedState,
-      },
-      [307],
-    );
-    expect(new URL(tamperedError.headers.get("location") ?? "").origin).toBe(
-      "https://app.okou.ai",
-    );
-
     const tamperedCallbackState = JSON.stringify({
       ...okouState,
       callbackRedirectUri: "https://attacker.example/callback",
@@ -7506,14 +7504,14 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
 
     const unlinkedSend = await integrations.requestSendPhoneMessage(
       actor,
-      {
-        toNumber: "+15555551212",
-        text: "not linked",
-      },
+      { text: "not linked" },
       [404],
     );
-    expect(unlinkedSend.body).toMatchObject({
-      error: { code: "NOT_FOUND" },
+    expect(unlinkedSend.body).toStrictEqual({
+      error: {
+        message: "No phone is connected to this Okou account",
+        code: "NOT_FOUND",
+      },
     });
 
     chat.mockEmptyObjectStorage();
@@ -7544,7 +7542,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       actor,
       {
         uploadId: phoneUploadId,
-        toNumber: "+15555551212",
         caption: "BDD AgentPhone upload",
       },
       [404],
@@ -7680,10 +7677,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
 
     const missingAgentMessage = await integrations.requestSendPhoneMessage(
       actor,
-      {
-        toNumber: phoneHandle,
-        text: "BDD AgentPhone missing agent",
-      },
+      { text: "BDD AgentPhone missing agent" },
       [404],
     );
     expect(missingAgentMessage.body).toStrictEqual({
@@ -7697,7 +7691,8 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       actor,
       {
         agentphoneAgentId: connectBody.agentphoneAgentId,
-        toNumber: phoneHandle,
+        // Deprecated and ignored: the linked handle is always the recipient.
+        toNumber: uniquePhoneHandle(),
         text: "BDD linked AgentPhone message",
       },
       [200],
@@ -7714,7 +7709,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       actor,
       {
         agentphoneAgentId: connectBody.agentphoneAgentId,
-        toNumber: phoneHandle,
         text: "BDD AgentPhone provider failure",
       },
       [502],

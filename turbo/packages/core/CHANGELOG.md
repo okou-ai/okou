@@ -1,5 +1,64 @@
 # Changelog
 
+## [8.710.5](https://github.com/okou-ai/okou/compare/core-v8.710.4...core-v8.710.5) (2026-09-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.510.1
+
+## [8.710.4](https://github.com/okou-ai/okou/compare/core-v8.710.3...core-v8.710.4) (2026-09-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.510.0
+
+## [8.710.3](https://github.com/okou-ai/okou/compare/core-v8.710.2...core-v8.710.3) (2026-09-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.509.0
+
+## [8.710.2](https://github.com/okou-ai/okou/compare/core-v8.710.1...core-v8.710.2) (2026-09-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.508.0
+
+## [8.710.1](https://github.com/okou-ai/okou/compare/core-v8.710.0...core-v8.710.1) (2026-09-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.507.1
+
+## [8.710.0](https://github.com/okou-ai/okou/compare/core-v8.709.0...core-v8.710.0) (2026-09-24)
+
+
+### Features
+
+* add verified discord integration foundation ([#36665](https://github.com/okou-ai/okou/issues/36665)) ([fdeb98f](https://github.com/okou-ai/okou/commit/fdeb98f05f1ef4d51eb44dfed1f4bd4244fe74be))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.507.0
+
 ## [8.709.0](https://github.com/okou-ai/okou/compare/core-v8.708.4...core-v8.709.0) (2026-09-24)
 
 

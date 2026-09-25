@@ -1,10 +1,9 @@
 import { command } from "ccstate";
 import type { RunnerCancellationMode } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatEvents } from "@okouai/db/schema/chat-event";
 import { and, eq } from "drizzle-orm";
 
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import {
   publishCancelToRunnerGroup,
   publishChatThreadDetailChangedSafely,
@@ -230,54 +229,6 @@ export function shouldDispatchCancelSideEffects(
   );
 }
 
-/**
- * An undelivered source callback still owns its post-marker work: split-mode
- * delivery registration and chat-run-finished automation admission commit
- * after the lifecycle marker. Its replay is idempotent, so the redrive is
- * restricted to that callback while it remains undelivered. An acknowledged
- * callback is replayed only while its lifecycle marker is missing, which
- * covers lost detached legacy processing.
- */
-async function recoveryChatCallbackRedrive(
-  db: Db,
-  runId: string,
-  chatCallbackId: string | undefined,
-): Promise<
-  { readonly callbackId: string; readonly undeliveredOnly: boolean } | undefined
-> {
-  const undeliveredCallbackId = await undeliveredChatCallbackIdForRun(
-    db,
-    runId,
-  );
-  if (undeliveredCallbackId !== undefined) {
-    return { callbackId: undeliveredCallbackId, undeliveredOnly: true };
-  }
-  if (
-    chatCallbackId === undefined ||
-    (await cancellationLifecyclePublished(db, runId))
-  ) {
-    return undefined;
-  }
-  return { callbackId: chatCallbackId, undeliveredOnly: false };
-}
-
-async function cancellationLifecyclePublished(
-  db: Db,
-  runId: string,
-): Promise<boolean> {
-  const [event] = await db
-    .select({ id: chatEvents.id })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.runId, runId),
-        eq(chatEvents.eventType, "run.cancelled"),
-      ),
-    )
-    .limit(1);
-  return event !== undefined;
-}
-
 async function publishCancellationRecoveryEntered(
   result: CancelRunResult,
   signal: AbortSignal,
@@ -370,12 +321,16 @@ export const dispatchCancelSideEffects$ = command(
 
     const chatCallbackId = await chatCallbackIdForRun(db, result.runId);
     signal.throwIfAborted();
-    const redrive = recoveryRedrive
-      ? await recoveryChatCallbackRedrive(db, result.runId, chatCallbackId)
+    // An undelivered source callback still owns its post-marker work: delivery
+    // registration and chat-run-finished automation admission commit after the
+    // lifecycle marker, and its replay is idempotent. An acknowledged callback
+    // already committed that work and is never replayed.
+    const redriveCallbackId = recoveryRedrive
+      ? await undeliveredChatCallbackIdForRun(db, result.runId)
       : undefined;
     signal.throwIfAborted();
     const callbackResults =
-      recoveryRedrive && redrive === undefined
+      recoveryRedrive && redriveCallbackId === undefined
         ? []
         : await tapError(
             set(
@@ -385,13 +340,8 @@ export const dispatchCancelSideEffects$ = command(
                 runId: result.runId,
                 status: "failed",
                 error: "Run cancelled",
-                ...(redrive !== undefined
-                  ? {
-                      redriveChatCallbackId: redrive.callbackId,
-                      ...(redrive.undeliveredOnly
-                        ? { redriveUndeliveredChatCallbackOnly: true as const }
-                        : {}),
-                    }
+                ...(redriveCallbackId !== undefined
+                  ? { redriveChatCallbackId: redriveCallbackId }
                   : {}),
               },
               signal,

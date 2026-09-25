@@ -42,7 +42,6 @@ import { completePaidCheckout$ } from "../bootstrap/paid-checkout.ts";
 import { currentLocale, i18n } from "../../i18n/index.ts";
 import { refreshOrgMembers$ } from "../external/org-members.ts";
 import { invalidateOrgModelPolicies$ } from "../external/org-model-policies.ts";
-import { sessionStorageSignals } from "../external/session-storage.ts";
 import {
   setUsagePackMigrationRevisionPreview$,
   setUsagePackMigrationPreview$,
@@ -65,14 +64,13 @@ type CreditPurchaseOrigin = "billing" | "chat";
 type ConcurrencyPurchaseOrigin = "billing" | "queue";
 export type ConcurrencyChangeMode = "quantity" | "cancel";
 
-const RESTORE_PAYMENT_PENDING_KEY = "vm0:billing:restore-payment-pending";
-const DOWNGRADE_PAYMENT_PENDING_KEY = "vm0:billing:downgrade-payment-pending";
-const restorePaymentPendingStorage = sessionStorageSignals(
-  RESTORE_PAYMENT_PENDING_KEY,
-);
-const downgradePaymentPendingStorage = sessionStorageSignals(
-  DOWNGRADE_PAYMENT_PENDING_KEY,
-);
+// Hosted payment return URLs name the pending plan change. The value moves
+// into memory on arrival so a later billing refresh can still confirm it.
+const BILLING_PENDING_PARAM = "billing_pending";
+const RESTORE_PENDING_VALUE = "restore";
+const DOWNGRADE_PENDING_PREFIX = "downgrade-";
+const restorePaymentPending$ = state(false);
+const downgradePaymentPendingTier$ = state<DowngradeTargetTier | null>(null);
 export const CONCURRENCY_SUBSCRIPTION_QUANTITY_MIN = 1;
 export const CONCURRENCY_SUBSCRIPTION_QUANTITY_MAX = 1000;
 
@@ -107,11 +105,11 @@ export function apiTierToBillingTier(tier: string | undefined): BillingTier {
 }
 
 const rememberPendingRestorePayment$ = command(({ set }) => {
-  set(restorePaymentPendingStorage.set$, "1");
+  set(restorePaymentPending$, true);
 });
 
 const clearPendingRestorePayment$ = command(({ set }) => {
-  set(restorePaymentPendingStorage.clear$);
+  set(restorePaymentPending$, false);
 });
 
 function downgradeSuccessToastMessage(
@@ -146,35 +144,24 @@ function downgradeSuccessToastMessage(
 
 const rememberPendingDowngradePayment$ = command(
   ({ set }, targetTier: DowngradeTargetTier) => {
-    set(downgradePaymentPendingStorage.set$, targetTier);
+    set(downgradePaymentPendingTier$, targetTier);
   },
 );
 
 const clearPendingDowngradePayment$ = command(({ set }) => {
-  set(downgradePaymentPendingStorage.clear$);
+  set(downgradePaymentPendingTier$, null);
 });
 
-function pendingDowngradeTargetTier(
-  value: string | null,
-): DowngradeTargetTier | null {
+function pendingDowngradeTargetTier(value: string): DowngradeTargetTier | null {
   if (value === "pro" || value === "limited-free-1") {
     return value;
-  }
-  if (value === "pro-suspend") {
-    // A previous App build stored the retired cancellation literal before
-    // redirecting to Stripe. Surface: old app state -> new app. Remove once
-    // every tab session started on that build has ended, which sessionStorage
-    // bounds to the tab lifetime. See docs/deployment-compatibility.md.
-    return "limited-free-1";
   }
   return null;
 }
 
 const maybeShowPendingDowngradeToast$ = command(
   ({ get, set }, status: BillingStatusResponse): void => {
-    const targetTier = pendingDowngradeTargetTier(
-      get(downgradePaymentPendingStorage.get$),
-    );
+    const targetTier = get(downgradePaymentPendingTier$);
     if (!targetTier) {
       return;
     }
@@ -189,7 +176,7 @@ const maybeShowPendingDowngradeToast$ = command(
       return;
     }
 
-    set(downgradePaymentPendingStorage.clear$);
+    set(downgradePaymentPendingTier$, null);
     toast.success(
       downgradeSuccessToastMessage(
         targetTier,
@@ -201,7 +188,7 @@ const maybeShowPendingDowngradeToast$ = command(
 
 const maybeShowPendingRestoreToast$ = command(
   ({ get, set }, status: BillingStatusResponse): void => {
-    if (get(restorePaymentPendingStorage.get$) !== "1") {
+    if (!get(restorePaymentPending$)) {
       return;
     }
 
@@ -215,7 +202,7 @@ const maybeShowPendingRestoreToast$ = command(
       return;
     }
 
-    set(restorePaymentPendingStorage.clear$);
+    set(restorePaymentPending$, false);
     toast.success(
       i18n.t(($) => {
         return $.billing.toasts.planRestored;
@@ -605,9 +592,7 @@ const reloadUsagePackMigration$ = command(({ set }) => {
 const reconcilePendingBillingPayment$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const hasPendingPayment =
-      get(restorePaymentPendingStorage.get$) === "1" ||
-      pendingDowngradeTargetTier(get(downgradePaymentPendingStorage.get$)) !==
-        null;
+      get(restorePaymentPending$) || get(downgradePaymentPendingTier$) !== null;
     if (!hasPendingPayment) {
       return;
     }
@@ -619,8 +604,36 @@ const reconcilePendingBillingPayment$ = command(
   },
 );
 
+function returnUrlWithPendingPayment(pending: string): string {
+  const url = new URL(window.location.href);
+  url.searchParams.set(BILLING_PENDING_PARAM, pending);
+  return url.toString();
+}
+
+const adoptPendingBillingPayment$ = command(({ get, set }) => {
+  const searchParams = new URLSearchParams(get(searchParams$));
+  const pending = searchParams.get(BILLING_PENDING_PARAM);
+  if (pending === null) {
+    return;
+  }
+
+  if (pending === RESTORE_PENDING_VALUE) {
+    set(restorePaymentPending$, true);
+  } else if (pending.startsWith(DOWNGRADE_PENDING_PREFIX)) {
+    const targetTier = pendingDowngradeTargetTier(
+      pending.slice(DOWNGRADE_PENDING_PREFIX.length),
+    );
+    if (targetTier) {
+      set(downgradePaymentPendingTier$, targetTier);
+    }
+  }
+  searchParams.delete(BILLING_PENDING_PARAM);
+  set(replaceSearchParams$, searchParams);
+});
+
 export const handleBillingRedirect$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    set(adoptPendingBillingPayment$);
     await set(reconcilePendingBillingPayment$, signal);
 
     const searchParams = new URLSearchParams(get(searchParams$));
@@ -1614,7 +1627,12 @@ export const confirmDowngrade$ = command(
     const client = createClient(billingDowngradeContract);
     const result = await accept(
       client.create({
-        body: { targetTier, returnUrl: window.location.href },
+        body: {
+          targetTier,
+          returnUrl: returnUrlWithPendingPayment(
+            `${DOWNGRADE_PENDING_PREFIX}${targetTier}`,
+          ),
+        },
         fetchOptions: { signal },
       }),
       [200],
@@ -1646,7 +1664,7 @@ export const restorePlan$ = command(
     const client = createClient(billingRestoreContract);
     const result = await accept(
       client.create({
-        body: { returnUrl: window.location.href },
+        body: { returnUrl: returnUrlWithPendingPayment(RESTORE_PENDING_VALUE) },
         fetchOptions: { signal },
       }),
       [200],

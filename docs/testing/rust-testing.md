@@ -33,7 +33,11 @@ cargo test --manifest-path crates/Cargo.toml --profile local \
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-provider -- --test-threads=1
 
-# Extracted Runner network behavior and its owner tests
+# Extracted Runner network behavior, mitmdump recovery, and owner tests
+# Seven focused mitmdump restart tests moved from runner/src/cmd/start/mitm_restart.rs
+# into runner-network/src/proxy/recovery.rs, plus fatal cleanup and cancelled
+# wait coverage (9 recovery tests total); none intentionally removed.
+# Runner's main-loop crash, panic, and shutdown tests remain in runner.
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-network -- --test-threads=1
 
@@ -53,7 +57,7 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-executor -- --test-threads=1
 
-# Extracted Runner idle, finalizing-successor arbitration, claimed activation recovery, sandbox finalization, heartbeat, claimed-run settlement, ownership, and orphan-recovery owner tests
+# Extracted Runner idle, pre-claim admission/rollback, finalizing-successor arbitration, claimed activation, post-executor finalizing/report ordering/sandbox finalization/settlement, heartbeat, and orphan-recovery owner tests
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-supervisor -- --test-threads=1
 

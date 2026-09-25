@@ -1,7 +1,6 @@
 import { reserveFixtureChatEventSequence } from "./chat-event-sequences";
 import { createHash, randomUUID } from "node:crypto";
 
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type { ChatEventPayload } from "@okouai/db/jsonb-contracts/chat-event";
 import type { ChatFeishuMessageFiles } from "@okouai/db/jsonb-contracts/chat-feishu-context";
 import type {
@@ -26,6 +25,7 @@ import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { conversations } from "@okouai/db/schema/conversation";
+import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { githubChatThreadRoutes } from "@okouai/db/schema/github-chat-thread-route";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
@@ -102,11 +102,9 @@ interface ChatEventContextFixture {
   readonly workflowName: string | null;
   readonly automationEventType: string | null;
   readonly automationEventPayload: JsonObject | null;
-  readonly automationPublicBrand: PublicBrand | null;
   readonly slackChannelId: string | null;
   readonly slackMessageTs: string | null;
   readonly slackBotUserId: string | null;
-  readonly slackPublicBrand: PublicBrand | null;
   readonly slackConversationContext: string | null;
   readonly slackMessageText: string | null;
   readonly slackMessageFiles: ChatSlackMessageFiles | null;
@@ -118,7 +116,6 @@ interface ChatEventContextFixture {
   readonly slackThreadTs: string | null;
   readonly slackRouteThreadTs: string | null;
   readonly feishuConversationHistory: string | null;
-  readonly feishuPublicBrand: PublicBrand | null;
   readonly feishuMessageText: string | null;
   readonly feishuMessageFiles: ChatFeishuMessageFiles | null;
   readonly feishuChatType: "group" | "p2p" | "topic_group" | null;
@@ -144,7 +141,6 @@ interface ChatEventContextFixture {
   readonly teamsThreadId: string | null;
   readonly teamsServiceUrl: string | null;
   readonly teamsAppId: string | null;
-  readonly teamsPublicBrand: PublicBrand | null;
   readonly teamsSenderUserId: string | null;
   readonly teamsSenderDisplayName: string | null;
   readonly teamsSenderPrincipalName: string | null;
@@ -170,7 +166,6 @@ interface ChatEventContextFixture {
   readonly telegramThreadContext: string | null;
   readonly telegramRootMessageId: string | null;
   readonly telegramThinkingMessageId: string | null;
-  readonly telegramPublicBrand: PublicBrand | null;
   readonly telegramUserLinkId: string | null;
   readonly telegramUserLinkKind: "custom" | "official" | null;
   readonly telegramChatType: string | null;
@@ -203,11 +198,9 @@ export async function readChatEventContextFixture(
       workflowName: chatAutomationContext.workflowName,
       automationEventType: chatAutomationContext.eventType,
       automationEventPayload: chatAutomationContext.eventPayload,
-      automationPublicBrand: chatAutomationContext.publicBrand,
       slackChannelId: chatSlackContext.channelId,
       slackMessageTs: chatSlackContext.messageTs,
       slackBotUserId: chatSlackContext.botUserId,
-      slackPublicBrand: chatSlackContext.publicBrand,
       slackConversationContext: chatSlackContext.conversationContext,
       slackMessageText: chatSlackContext.messageText,
       slackMessageFiles: chatSlackContext.messageFiles,
@@ -219,7 +212,6 @@ export async function readChatEventContextFixture(
       slackThreadTs: chatSlackContext.threadTs,
       slackRouteThreadTs: chatSlackContext.routeThreadTs,
       feishuConversationHistory: chatFeishuContext.conversationHistory,
-      feishuPublicBrand: chatFeishuContext.publicBrand,
       feishuMessageText: chatFeishuContext.messageText,
       feishuMessageFiles: chatFeishuContext.messageFiles,
       feishuChatType: chatFeishuContext.chatType,
@@ -245,7 +237,6 @@ export async function readChatEventContextFixture(
       teamsThreadId: chatTeamsContext.threadId,
       teamsServiceUrl: chatTeamsContext.serviceUrl,
       teamsAppId: chatTeamsContext.teamsAppId,
-      teamsPublicBrand: chatTeamsContext.publicBrand,
       teamsSenderUserId: chatTeamsContext.senderUserId,
       teamsSenderDisplayName: chatTeamsContext.senderDisplayName,
       teamsSenderPrincipalName: chatTeamsContext.senderPrincipalName,
@@ -271,7 +262,6 @@ export async function readChatEventContextFixture(
       telegramThreadContext: chatTelegramContext.threadContext,
       telegramRootMessageId: chatTelegramContext.rootMessageId,
       telegramThinkingMessageId: chatTelegramContext.thinkingMessageId,
-      telegramPublicBrand: chatTelegramContext.publicBrand,
       telegramUserLinkId: chatTelegramContext.userLinkId,
       telegramUserLinkKind: chatTelegramContext.userLinkKind,
       telegramChatType: chatTelegramContext.chatType,
@@ -310,7 +300,6 @@ const annotationProjectionInputs = [
         channelId: "C123",
         messageTs: "1753257600.000100",
         botUserId: "U_BOT123",
-        publicBrand: "vm0",
         conversationContext: "",
         messageText: "slack linked",
         messageFiles: [],
@@ -362,7 +351,6 @@ const annotationProjectionInputs = [
         threadId: "activity-1",
         serviceUrl: "https://smba.trafficmanager.net/amer/",
         teamsAppId: "teams-app-1",
-        publicBrand: "vm0",
         senderUserId: "29:user-1",
         senderDisplayName: "Ada Lovelace",
         senderPrincipalName: "ada@example.com",
@@ -388,7 +376,6 @@ const annotationProjectionInputs = [
         threadId: "direct-message:agent-1:default",
         serviceUrl: "https://smba.trafficmanager.net/amer/",
         teamsAppId: "teams-app-1",
-        publicBrand: "vm0",
         senderUserId: "29:user-1",
         senderDisplayName: null,
         senderPrincipalName: null,
@@ -407,7 +394,6 @@ const annotationProjectionInputs = [
         threadContext: "",
         rootMessageId: null,
         thinkingMessageId: null,
-        publicBrand: "vm0",
         userLinkId: "00000000-0000-4000-8000-000000000004",
         userLinkKind: "custom",
         chatType: "supergroup",
@@ -429,7 +415,6 @@ const annotationProjectionInputs = [
         threadContext: "",
         rootMessageId: "dm",
         thinkingMessageId: null,
-        publicBrand: "vm0",
         userLinkId: "00000000-0000-4000-8000-000000000005",
         userLinkKind: "official",
         chatType: "private",
@@ -451,7 +436,6 @@ const annotationProjectionInputs = [
         threadContext: "",
         rootMessageId: null,
         thinkingMessageId: null,
-        publicBrand: "vm0",
         userLinkId: "00000000-0000-4000-8000-000000000006",
         userLinkKind: "custom",
         chatType: "group",
@@ -474,7 +458,6 @@ const annotationProjectionInputs = [
         messageText: "github issue comment linked",
         triggerReactionId: null,
         triggerCommentBody: null,
-        publicBrand: "vm0",
       },
     },
   },
@@ -490,7 +473,6 @@ const annotationProjectionInputs = [
         messageText: "github pull request linked",
         triggerReactionId: null,
         triggerCommentBody: null,
-        publicBrand: "vm0",
       },
     },
   },
@@ -586,7 +568,6 @@ export async function seedChatEventAnnotationProjectionFixture(
         messageText: "claimed annotation",
         triggerReactionId: null,
         triggerCommentBody: null,
-        publicBrand: "vm0",
       },
     });
     await replaceChatEvent(tx, claimedPendingId, {
@@ -637,7 +618,6 @@ export async function seedChatEventAnnotationProjectionFixture(
         threadId: "activity-rejected",
         serviceUrl: "https://smba.trafficmanager.net/amer/",
         teamsAppId: "teams-app-2",
-        publicBrand: "vm0",
         senderUserId: "29:user-2",
         senderDisplayName: "Grace Hopper",
         senderPrincipalName: "grace@example.com",
@@ -704,15 +684,23 @@ export async function setTelegramThinkingMessageIdFixture(
     .where(eq(chatTelegramContext.id, event.contextId));
 }
 
+/** Reproduce a pending Telegram context stored with a retired brand value. */
+export async function setTelegramContextLegacyBrandFixture(
+  eventId: string,
+  publicBrand: string | null,
+): Promise<void> {
+  const event = await pendingTelegramEventContext(eventId);
+  await db()
+    .update(chatTelegramContext)
+    .set({ publicBrand })
+    .where(eq(chatTelegramContext.id, event.contextId));
+}
+
 interface AgentphoneChatEventByPromptFixture {
   readonly eventId: string;
 }
 
 interface TelegramChatEventByPromptFixture {
-  readonly eventId: string;
-}
-
-interface FeishuChatEventByPromptFixture {
   readonly eventId: string;
 }
 
@@ -752,20 +740,6 @@ export async function findTelegramChatEventByPromptFixture(args: {
     filter: and(
       eq(chatEvents.eventType, "input.prompt"),
       eq(chatEvents.contextType, "telegram"),
-    ),
-  });
-}
-
-export async function findFeishuChatEventByPromptFixture(args: {
-  readonly userId: string;
-  readonly prompt: string;
-}): Promise<FeishuChatEventByPromptFixture | null> {
-  return await findOwnedChatEventByPrompt({
-    userId: args.userId,
-    prompt: args.prompt,
-    filter: and(
-      eq(chatEvents.eventType, "input.prompt"),
-      eq(chatEvents.contextType, "feishu"),
     ),
   });
 }
@@ -810,7 +784,6 @@ export async function insertQueuedSlackMissingContextFixture(args: {
         channelId: "C_MONITOR_FAILURE",
         messageTs: "1.000001",
         botUserId: "U_MONITOR_FAILURE_BOT",
-        publicBrand: "vm0",
         conversationContext: "",
         messageText: args.content,
         messageFiles: [],
@@ -1096,83 +1069,66 @@ export async function withChatEventDeletedAfterReadFixture<T>(args: {
 }
 
 /**
- * Reproduces a crash after the canonical chat callback was acknowledged but
- * before its detached terminal processing became durable. Product APIs cannot
- * delete append-only events, so this fixture removes only the exact cancelled
- * lifecycle row after verifying that the chat callback is already delivered.
+ * Reproduce a queued Feishu input persisted before the brand retirement: its
+ * context has no brand and its installation still carries `vm0`.
  */
-export async function removeAcknowledgedCancellationLifecycleFixture(args: {
-  readonly runId: string;
+export async function setLegacyFeishuPublicBrandFixture(args: {
+  readonly eventId: string;
+  readonly installationId: string;
 }): Promise<void> {
-  await db().transaction(async (tx) => {
-    const [callback] = await tx
-      .select({ status: agentRunCallbacks.status })
-      .from(agentRunCallbacks)
-      .where(
-        and(
-          eq(agentRunCallbacks.runId, args.runId),
-          eq(agentRunCallbacks.internalKind, "chat"),
-        ),
-      )
-      .limit(1);
-    if (callback?.status !== "delivered") {
-      throw new Error("Expected an acknowledged canonical chat callback");
-    }
-
-    await tx.execute(sql`SET LOCAL session_replication_role = replica`);
-    const removed = await tx
-      .delete(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.runId, args.runId),
-          eq(chatEvents.eventType, "run.cancelled"),
-        ),
-      )
-      .returning({ id: chatEvents.id });
-    if (removed.length !== 1) {
-      throw new Error("Expected one cancelled lifecycle event");
-    }
-  });
+  const [event] = await db()
+    .select({ contextId: chatEvents.contextId })
+    .from(chatEvents)
+    .where(
+      and(
+        eq(chatEvents.id, args.eventId),
+        eq(chatEvents.contextType, "feishu"),
+      ),
+    )
+    .limit(1);
+  if (!event?.contextId) {
+    throw new Error("Expected a Feishu chat event with context");
+  }
+  const contexts = await db()
+    .update(chatFeishuContext)
+    .set({ publicBrand: null })
+    .where(eq(chatFeishuContext.id, event.contextId))
+    .returning({ id: chatFeishuContext.id });
+  const installations = await db()
+    .update(feishuOrgInstallations)
+    .set({ publicBrand: "vm0" })
+    .where(eq(feishuOrgInstallations.id, args.installationId))
+    .returning({ id: feishuOrgInstallations.id });
+  if (contexts.length !== 1 || installations.length !== 1) {
+    throw new Error("Expected one Feishu context and installation");
+  }
 }
 
-/** Reproduce a pending chat callback persisted before publicBrand existed. */
-export async function removeChatCallbackPublicBrandFixture(
+/** Read the stored Feishu delivery callback payloads of a run. */
+export async function readFeishuCallbackPayloadsFixture(
   runId: string,
-): Promise<void> {
-  const [callback] = await db()
+): Promise<
+  readonly { readonly internalKind: string; readonly payload: unknown }[]
+> {
+  const callbacks = await db()
     .select({
-      id: agentRunCallbacks.id,
+      internalKind: agentRunCallbacks.internalKind,
       payload: agentRunCallbacks.payload,
     })
     .from(agentRunCallbacks)
     .where(
       and(
         eq(agentRunCallbacks.runId, runId),
-        eq(agentRunCallbacks.internalKind, "chat"),
-        eq(agentRunCallbacks.status, "pending"),
+        inArray(agentRunCallbacks.internalKind, ["feishu:chat", "feishu:org"]),
       ),
     )
-    .limit(1);
-  if (
-    !callback ||
-    typeof callback.payload !== "object" ||
-    callback.payload === null ||
-    Array.isArray(callback.payload) ||
-    !Object.hasOwn(callback.payload, "publicBrand")
-  ) {
-    throw new Error("Expected one branded pending canonical chat callback");
-  }
-
-  const legacyPayload: Record<string, unknown> = { ...callback.payload };
-  delete legacyPayload.publicBrand;
-  const callbacks = await db()
-    .update(agentRunCallbacks)
-    .set({ payload: legacyPayload })
-    .where(eq(agentRunCallbacks.id, callback.id))
-    .returning({ id: agentRunCallbacks.id });
-  if (callbacks.length !== 1) {
-    throw new Error("Expected one pending canonical chat callback");
-  }
+    .orderBy(asc(agentRunCallbacks.internalKind));
+  return callbacks.map((callback) => {
+    return {
+      internalKind: callback.internalKind ?? "",
+      payload: callback.payload,
+    };
+  });
 }
 
 /** Attach GitHub delivery metadata that is normally persisted by GitHub ingress. */
@@ -1285,7 +1241,6 @@ export async function enqueueGitHubChatEventFixture(args: {
   readonly subjectKind: "issue" | "pull_request";
   readonly messageText: string;
   readonly issueContext?: string;
-  readonly publicBrand: PublicBrand;
 }): Promise<string> {
   return await db().transaction(async (tx) => {
     const [installation] = await tx
@@ -1332,7 +1287,6 @@ export async function enqueueGitHubChatEventFixture(args: {
         messageText: args.messageText,
         triggerReactionId: null,
         triggerCommentBody: null,
-        publicBrand: args.publicBrand,
       },
     });
     if (!event) {

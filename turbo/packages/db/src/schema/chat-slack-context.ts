@@ -3,7 +3,6 @@ import type {
   ChatSlackMessageAssets,
   ChatSlackMessageFiles,
 } from "@okouai/db/jsonb-contracts/chat-slack-context";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   index,
   jsonb,
@@ -40,9 +39,10 @@ export const chatSlackContext = pgTable(
     /** Bot user ID of the installation that received the message. */
     botUserId: text("bot_user_id"),
     /**
-     * Product brand derived from the Slack webhook hostname at ingress.
+     * Retired: current APIs neither read nor write it and rely on the
+     * `okou` default; drop it after older API deployments drain.
      */
-    publicBrand: text("public_brand").$type<PublicBrand>().notNull(),
+    publicBrand: text("public_brand").default("okou").notNull(),
     /**
      * Server-private Slack launch material retained with the trigger context.
      * Raw third-party content is intentionally retained permanently; read paths

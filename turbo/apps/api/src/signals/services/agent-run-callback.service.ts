@@ -73,9 +73,7 @@ interface DispatchRunCallbacksInput {
   readonly result?: Record<string, unknown>;
   readonly error?: string;
   readonly redriveChatCallbackId?: string;
-  readonly redriveUndeliveredChatCallbackOnly?: true;
   readonly skipChatCallback?: boolean;
-  readonly awaitTerminalChatProjection?: boolean;
 }
 
 interface DispatchSingleCallbackInput {
@@ -132,13 +130,11 @@ interface DispatchInternalRunCallbackInput {
   readonly result?: Record<string, unknown>;
   readonly error?: string;
   readonly kind: InternalRunCallbackKind;
-  readonly awaitTerminalChatProjection?: boolean;
 }
 
 interface DispatchInternalCallbackInput {
   readonly kind: InternalRunCallbackKind;
   readonly envelope: InternalRunCallbackEnvelope;
-  readonly awaitTerminalChatProjection?: boolean;
 }
 
 const dispatchInternalCallback$ = command(
@@ -159,7 +155,6 @@ const dispatchInternalCallback$ = command(
           handleChatInternalCallback$,
           {
             callback: input.envelope,
-            awaitTerminalProjection: input.awaitTerminalChatProjection,
             drainThreadQueue: async (chatThreadId, inputSignal, timing) => {
               await set(
                 drainChatThreadQueueForThread$,
@@ -258,7 +253,6 @@ const dispatchSingleInternalCallback$ = command(
         {
           kind: input.kind,
           envelope: callbackEnvelope(input),
-          awaitTerminalChatProjection: input.awaitTerminalChatProjection,
         },
         signal,
       ),
@@ -417,9 +411,7 @@ export const dispatchRunCallbacks$ = command(
       result,
       error,
       redriveChatCallbackId,
-      redriveUndeliveredChatCallbackOnly,
       skipChatCallback,
-      awaitTerminalChatProjection,
     } = input;
     const [run] = await db
       .select({
@@ -459,13 +451,10 @@ export const dispatchRunCallbacks$ = command(
                 eq(agentRunCallbacks.id, redriveChatCallbackId),
                 eq(agentRunCallbacks.internalKind, "chat"),
               ),
-          redriveChatCallbackId === undefined ||
-            redriveUndeliveredChatCallbackOnly === true
-            ? or(
-                eq(agentRunCallbacks.status, "pending"),
-                eq(agentRunCallbacks.status, "failed"),
-              )
-            : undefined,
+          or(
+            eq(agentRunCallbacks.status, "pending"),
+            eq(agentRunCallbacks.status, "failed"),
+          ),
           or(
             isNull(agentRunCallbacks.internalKind),
             notInArray(agentRunCallbacks.internalKind, [
@@ -491,7 +480,6 @@ export const dispatchRunCallbacks$ = command(
               result,
               error,
               kind: internalKind,
-              awaitTerminalChatProjection,
             },
             signal,
           )

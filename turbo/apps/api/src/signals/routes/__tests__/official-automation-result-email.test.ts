@@ -159,9 +159,9 @@ async function startRun(
 async function seedResultCallback(args: {
   readonly runId: string;
   readonly automationId: string;
-  readonly publicBrand: "vm0" | "okou";
   readonly workflowName?: string;
   readonly status?: "pending" | "failed";
+  readonly storedPublicBrand?: "vm0";
 }): Promise<string> {
   const seeded = await store.set(
     seedAgentRunCallback$,
@@ -171,7 +171,9 @@ async function seedResultCallback(args: {
       payload: {
         automationId: args.automationId,
         workflowName: args.workflowName ?? WORKFLOW_NAME,
-        publicBrand: args.publicBrand,
+        ...(args.storedPublicBrand === undefined
+          ? {}
+          : { publicBrand: args.storedPublicBrand }),
       },
       status: args.status,
     },
@@ -299,10 +301,7 @@ describe("Official Automation result email callbacks", () => {
     const sessionCallbacks = await runCallbackState(scenario, sessionRunId);
     expect(sessionCallbacks).toStrictEqual(
       expect.arrayContaining([
-        expect.objectContaining({
-          internalKind: "chat",
-          payload: expect.objectContaining({ publicBrand: "okou" }),
-        }),
+        expect.objectContaining({ internalKind: "chat" }),
       ]),
     );
     expect(
@@ -325,41 +324,31 @@ describe("Official Automation result email callbacks", () => {
     ).resolves.toStrictEqual({ items: [], claim: null });
   });
 
-  it("selects the Okou brand for an agent-token Automation run", async () => {
+  it("delivers a stored callback payload that still carries a public brand", async () => {
     const scenario = await setupScenario();
-    const sessionRunId = await startRun(scenario, "https://app.okou.ai");
-    await completeRun(scenario, sessionRunId, {
-      exitCode: 0,
-      output: "Agent-token source result",
+    const runId = await startRun(scenario, "https://app.okou.ai");
+    await seedResultCallback({
+      runId,
+      automationId: scenario.automationId,
+      storedPublicBrand: "vm0",
     });
-    const agentToken = runs.okouTokenForRunWithCapabilities(
-      scenario.actor,
-      sessionRunId,
-      ["agent:write"],
-    );
-    const agentRun = await accept(
-      automationsClient().run({
-        headers: { authorization: `Bearer ${agentToken}` },
-        extraHeaders: { origin: "https://app.okou.ai" },
-        params: { id: scenario.automationId },
+    await completeResultEmailRunWithoutCallbacksFixture(runId);
+    await accept(
+      executionClient().interruptResultEmailCallback({
+        body: { run_id: runId },
       }),
-      [201],
+      [200],
     );
-    if (!agentRun.body.runId) {
-      throw new Error("Expected the agent-token Automation run to start");
-    }
-    await expect(
-      runCallbackState(scenario, agentRun.body.runId),
-    ).resolves.toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          internalKind: "chat",
-          payload: expect.objectContaining({ publicBrand: "okou" }),
-        }),
-      ]),
-    );
-    await runs.requestCancelRun(scenario.actor, agentRun.body.runId, [200]);
-    await flushWaitUntilForTest();
+    const source = await outbox.findSourceState({
+      sourceRunId: runId,
+      sourceWorkflowAutomationId: scenario.automationId,
+    });
+    expect(source.items).toHaveLength(1);
+    expect(source.items[0]).toMatchObject({
+      status: "pending",
+      source_run_id: runId,
+      template: { template: "official-automation-result" },
+    });
   });
 
   it("links Morning Brief management to Preferences without changing account unsubscribe", async () => {
@@ -368,7 +357,6 @@ describe("Official Automation result email callbacks", () => {
     await seedResultCallback({
       runId,
       automationId: scenario.automationId,
-      publicBrand: "okou",
       workflowName: "Morning Brief",
     });
     await completeResultEmailRunWithoutCallbacksFixture(runId);
@@ -424,7 +412,7 @@ describe("Official Automation result email callbacks", () => {
     );
   });
 
-  it("retries independently of Run success and renders bounded Okou Markdown multipart output for a VM0 snapshot", async () => {
+  it("retries independently of Run success and renders bounded Okou Markdown multipart output", async () => {
     const scenario = await setupScenario();
     const runId = await startRun(scenario, "https://app.okou.ai");
     const longPlainText = `LONG_PLAIN_TEXT_${"x".repeat(160)}`;
@@ -477,7 +465,6 @@ describe("Official Automation result email callbacks", () => {
     const resultCallbackId = await seedResultCallback({
       runId,
       automationId: scenario.automationId,
-      publicBrand: "vm0",
       workflowName: 'Official <script> & " result',
     });
 
@@ -535,7 +522,6 @@ describe("Official Automation result email callbacks", () => {
     expect(item).toMatchObject({
       from_address: "Okou <okou@okou.io>",
       to_addresses: scenario.actor.email,
-      public_brand: "okou",
       status: "pending",
       source_run_id: runId,
       source_workflow_automation_id: scenario.automationId,
@@ -667,7 +653,6 @@ describe("Official Automation result email callbacks", () => {
     await seedResultCallback({
       runId,
       automationId: scenario.automationId,
-      publicBrand: "okou",
     });
     const pathologicalOutput = Array.from({ length: 2000 }, () => {
       return "- x";
@@ -763,7 +748,6 @@ describe("Official Automation result email callbacks", () => {
     await seedResultCallback({
       runId,
       automationId: scenario.automationId,
-      publicBrand: "vm0",
     });
     await completeRun(scenario, runId, { exitCode: 0 });
     const source = await outbox.findSourceState({
@@ -812,7 +796,6 @@ describe("Official Automation result email callbacks", () => {
       await seedResultCallback({
         runId: cancelledRunId,
         automationId: cancelledScenario.automationId,
-        publicBrand: "vm0",
       });
       return { cancelledScenario, cancelledRunId };
     }
@@ -834,7 +817,6 @@ describe("Official Automation result email callbacks", () => {
       const cancellationRetryCallbackId = await seedResultCallback({
         runId: cancelledRunId,
         automationId: cancelledScenario.automationId,
-        publicBrand: "vm0",
         status: "failed",
       });
       const cancellationRedrive = await accept(
@@ -875,7 +857,6 @@ describe("Official Automation result email callbacks", () => {
       await seedResultCallback({
         runId: failedRunId,
         automationId: failedScenario.automationId,
-        publicBrand: "vm0",
       });
       return { failedScenario, failedRunId };
     }
@@ -905,7 +886,6 @@ describe("Official Automation result email callbacks", () => {
       await seedResultCallback({
         runId: unsubscribedRunId,
         automationId: unsubscribedScenario.automationId,
-        publicBrand: "vm0",
       });
       return { unsubscribedScenario, unsubscribedRunId };
     }
@@ -938,7 +918,6 @@ describe("Official Automation result email callbacks", () => {
     await seedResultCallback({
       runId,
       automationId: scenario.automationId,
-      publicBrand: "vm0",
     });
     await clearResultEmailUserStateFixture(scenario.actor.userId);
     await expect(
@@ -988,7 +967,6 @@ describe("Official Automation result email callbacks", () => {
     await seedResultCallback({
       runId,
       automationId: scenario.automationId,
-      publicBrand: "vm0",
     });
     await clearResultEmailUserStateFixture(scenario.actor.userId);
     await expect(
@@ -1051,7 +1029,6 @@ describe("Official Automation result email callbacks", () => {
       const callbackId = await seedResultCallback({
         runId,
         automationId: scenario.automationId,
-        publicBrand: "vm0",
       });
       await claimAndReportOutput(scenario, runId, "Durable source result");
       await completeRunWithoutCallbacksFixture({ runId });

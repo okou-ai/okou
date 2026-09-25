@@ -1,7 +1,5 @@
 import { withNativeChatEventThreadTouch } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
-import type { Tx } from "../../lib/db-types";
-import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { command } from "ccstate";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -10,7 +8,6 @@ import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { and, asc, eq, inArray, lt, or } from "drizzle-orm";
 import { z } from "zod";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type { FeishuPlatform } from "@okouai/api-contracts/contracts/feishu-platform";
 import { logger } from "../../lib/log";
 import { env } from "../../lib/env";
@@ -36,7 +33,6 @@ import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
-  publishThreadListChanged,
   publishThreadListChangedSafely,
 } from "../external/realtime";
 import { settle } from "../utils";
@@ -167,7 +163,6 @@ async function loadClaimedIngress(db: Db, ingressId: string) {
       defaultAgentId: feishuOrgInstallations.defaultAgentId,
       botName: feishuOrgInstallations.botName,
       messageReceivedAt: feishuOrgInstallations.messageReceivedAt,
-      publicBrand: feishuChatIngress.publicBrand,
     })
     .from(feishuChatIngress)
     .innerJoin(
@@ -182,15 +177,6 @@ async function loadClaimedIngress(db: Db, ingressId: string) {
     )
     .limit(1);
   return row;
-}
-
-function resolveFeishuIngressPublicBrand(
-  ingress: NonNullable<Awaited<ReturnType<typeof loadClaimedIngress>>>,
-): PublicBrand {
-  if (ingress.publicBrand === null) {
-    throw new Error("Canonical Feishu ingress has no public brand");
-  }
-  return ingress.publicBrand;
 }
 
 function parseMatchingMessage(
@@ -277,13 +263,11 @@ async function markIngressFailed(
 }
 
 interface PersistedCanonicalFeishuIngress {
-  readonly splitWrites: boolean;
   readonly orgId: string;
   readonly userId: string;
   readonly chatThreadId: string;
   readonly message: CanonicalFeishuInboundMessage;
   readonly receivedAt: Date;
-  readonly publicBrand: PublicBrand;
 }
 
 interface CanonicalFeishuLaunchContext {
@@ -304,7 +288,6 @@ interface CanonicalFeishuLaunchContext {
   readonly senderOpenId: string;
   readonly connectionId: string;
   readonly installationId: string;
-  readonly publicBrand: PublicBrand;
 }
 
 function canonicalFeishuLaunchContext(args: {
@@ -313,7 +296,6 @@ function canonicalFeishuLaunchContext(args: {
   readonly reactionId: string | undefined;
   readonly conversationHistory: string;
   readonly files: readonly FeishuPromptFile[];
-  readonly publicBrand: PublicBrand;
 }): CanonicalFeishuLaunchContext {
   return {
     conversationHistory: args.conversationHistory,
@@ -339,7 +321,6 @@ function canonicalFeishuLaunchContext(args: {
     senderOpenId: args.message.openId,
     connectionId: args.connectionId,
     installationId: args.message.installationId,
-    publicBrand: args.publicBrand,
   };
 }
 
@@ -444,7 +425,6 @@ const persistCanonicalFeishuIngress$ = command(
         userId: args.connection.userId,
         orgId: args.installation.orgId,
         chatThreadId: route.chatThreadId,
-        publicBrand: args.installation.publicBrand,
         files: feishuInputFiles(args.db, args.message, args.ingress.platform),
       },
       signal,
@@ -464,14 +444,12 @@ const persistCanonicalFeishuIngress$ = command(
         : prompt;
     }, args.message.promptText);
 
-    const splitWrites = await isSplitChatEventWriteEnabled(args.db);
-    signal.throwIfAborted();
-    const persist = async (tx: Db | Tx, touchThread: () => Promise<void>) => {
+    const persist = async (tx: Db, touchThread: () => Promise<void>) => {
       const chatOpenUrl = buildFeishuChatOpenUrl(
         args.message.chatId,
         args.message.platform,
       );
-      const inserted = await insertChatEvent(
+      await insertChatEvent(
         tx,
         {
           id: args.ingress.ingressId,
@@ -490,12 +468,8 @@ const persistCanonicalFeishuIngress$ = command(
           createdAt: args.ingress.createdAt,
         },
         "id",
-        { splitWrites },
       );
       signal.throwIfAborted();
-      if (!inserted && !splitWrites) {
-        throw new Error("Canonical Feishu ingress message already exists");
-      }
       await touchThread();
       signal.throwIfAborted();
       await tx
@@ -511,7 +485,6 @@ const persistCanonicalFeishuIngress$ = command(
     await withNativeChatEventThreadTouch(
       args.db,
       {
-        splitWrites,
         chatThreadId: route.chatThreadId,
         createdAt: args.ingress.createdAt,
         eventId: args.ingress.ingressId,
@@ -520,13 +493,11 @@ const persistCanonicalFeishuIngress$ = command(
     );
     signal.throwIfAborted();
     return {
-      splitWrites,
       orgId: args.installation.orgId,
       userId: args.connection.userId,
       chatThreadId: route.chatThreadId,
       message: args.message,
       receivedAt: args.ingress.createdAt,
-      publicBrand: args.installation.publicBrand,
     };
   },
 );
@@ -572,7 +543,6 @@ async function finishUnconnectedFeishuIngress(
     readonly db: Db;
     readonly ingressId: string;
     readonly message: CanonicalFeishuInboundMessage;
-    readonly publicBrand: PublicBrand;
     readonly botName: string | null;
   },
   signal: AbortSignal,
@@ -581,7 +551,6 @@ async function finishUnconnectedFeishuIngress(
     {
       db: args.db,
       message: args.message,
-      publicBrand: args.publicBrand,
       botName: args.botName,
     },
     signal,
@@ -621,7 +590,6 @@ async function loadFeishuIngressDispatchContext(
     throw new Error("Lark integration is not enabled");
   }
   const message = parseMatchingMessage(ingress);
-  const publicBrand = resolveFeishuIngressPublicBrand(ingress);
   if (ingress.defaultAgentId === null) {
     return { ingress, message, installation: null, connection: null };
   }
@@ -632,7 +600,6 @@ async function loadFeishuIngressDispatchContext(
     defaultAgentId: ingress.defaultAgentId,
     botName: ingress.botName,
     messageReceivedAt: ingress.messageReceivedAt,
-    publicBrand,
   };
   await markFeishuMessageReceived({ db, installation, message }, signal);
   const connection = await loadConnection(db, ingress.orgId, message);
@@ -669,7 +636,6 @@ const processClaimedIngress$ = command(
           db: args.db,
           ingressId: ingress.ingressId,
           message,
-          publicBrand: installation.publicBrand,
           botName: installation.botName,
         },
         signal,
@@ -732,7 +698,6 @@ const processClaimedIngress$ = command(
         .where(eq(feishuChatIngress.id, ingress.ingressId));
     }
     const history = await loadOptionalChatEnrichment(
-      args.db,
       "feishu",
       () => {
         return loadFeishuConversationHistory({ db: args.db, message }, signal);
@@ -759,7 +724,6 @@ const processClaimedIngress$ = command(
         reactionId,
         conversationHistory: history.text,
         files: history.files,
-        publicBrand: installation.publicBrand,
       }),
     };
     return await set(persistCanonicalFeishuIngress$, persistInput, signal);
@@ -819,11 +783,7 @@ export const processCanonicalFeishuIngress$ = command(
       threadId: result.value.chatThreadId,
     });
     signal.throwIfAborted();
-    await (
-      result.value.splitWrites
-        ? publishThreadListChangedSafely
-        : publishThreadListChanged
-    )({
+    await publishThreadListChangedSafely({
       userId: result.value.userId,
       orgId: result.value.orgId,
     });

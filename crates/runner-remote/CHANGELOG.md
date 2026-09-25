@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.2](https://github.com/okou-ai/okou/compare/runner-remote-v0.4.1...runner-remote-v0.4.2) (2026-09-25)
+
+## [0.4.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.4.0...runner-remote-v0.4.1) (2026-09-25)
+
+## [0.4.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.3.1...runner-remote-v0.4.0) (2026-09-25)
+
+
+### Features
+
+* **vnc:** admit apple rsa/srp through verified mac ssh ([#36743](https://github.com/okou-ai/okou/issues/36743)) ([b6a626e](https://github.com/okou-ai/okou/commit/b6a626ef2bfb9e35bdec4eb351d5e1e229bfaaca))
+
+## [0.3.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.3.0...runner-remote-v0.3.1) (2026-09-24)
+
 ## [0.3.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.2.5...runner-remote-v0.3.0) (2026-09-24)
 
 

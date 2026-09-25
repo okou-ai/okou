@@ -1,9 +1,7 @@
 /** Typed append-only commands for the canonical ChatEvent stream. */
 import { randomUUID } from "node:crypto";
 import { isValidChatEventRevocation } from "@okouai/api-contracts/contracts/chat-events";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import type { ChatFeishuMessageFiles } from "@okouai/db/jsonb-contracts/chat-feishu-context";
 import type {
   ChatSlackMentionDisplayNames,
@@ -16,6 +14,7 @@ import { chatAgentRunContext } from "@okouai/db/schema/chat-agent-run-context";
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
+import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
 import { chatGithubContext } from "@okouai/db/schema/chat-github-context";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
@@ -35,10 +34,6 @@ import {
   appendCanonicalChatEvents,
   type PreparedChatEventRow,
 } from "./chat-event-append.service";
-import {
-  isSplitChatEventWriteEnabled,
-  type ChatEventWriteOptions,
-} from "./chat-event-write-mode.service";
 
 const log = logger("chat-event-context");
 
@@ -53,13 +48,30 @@ type ChatEventIdentity = {
   readonly createdAt?: Date;
 };
 
+/** Complete provider-owned snapshot; event identity and time belong to Chat. */
+export type DiscordChatEventContext = Readonly<
+  Omit<
+    typeof chatDiscordContext.$inferSelect,
+    "id" | "chatThreadId" | "publicBrand" | "createdAt"
+  >
+>;
+
 type ChatEventDisplayContext =
   | {
+      readonly discordContext: DiscordChatEventContext;
+      readonly slackContext?: never;
+      readonly feishuContext?: never;
+      readonly teamsContext?: never;
+      readonly telegramContext?: never;
+      readonly githubContext?: never;
+      readonly agentphoneContext?: never;
+    }
+  | {
+      readonly discordContext?: never;
       readonly slackContext: {
         readonly channelId: string;
         readonly messageTs: string;
         readonly botUserId: string;
-        readonly publicBrand: PublicBrand;
         readonly conversationContext: string;
         readonly messageText: string;
         readonly messageFiles: ChatSlackMessageFiles;
@@ -78,6 +90,7 @@ type ChatEventDisplayContext =
       readonly agentphoneContext?: never;
     }
   | {
+      readonly discordContext?: never;
       readonly slackContext?: never;
       readonly feishuContext: {
         readonly conversationHistory: string;
@@ -92,7 +105,6 @@ type ChatEventDisplayContext =
         readonly senderOpenId: string;
         readonly connectionId: string;
         readonly installationId: string;
-        readonly publicBrand: PublicBrand;
       };
       readonly teamsContext?: never;
       readonly telegramContext?: never;
@@ -100,6 +112,7 @@ type ChatEventDisplayContext =
       readonly agentphoneContext?: never;
     }
   | {
+      readonly discordContext?: never;
       readonly slackContext?: never;
       readonly feishuContext?: never;
       readonly teamsContext: {
@@ -117,7 +130,6 @@ type ChatEventDisplayContext =
         readonly threadId: string;
         readonly serviceUrl: string;
         readonly teamsAppId: string | null;
-        readonly publicBrand: PublicBrand;
         readonly senderUserId: string;
         readonly senderDisplayName: string | null;
         readonly senderPrincipalName: string | null;
@@ -128,6 +140,7 @@ type ChatEventDisplayContext =
       readonly agentphoneContext?: never;
     }
   | {
+      readonly discordContext?: never;
       readonly slackContext?: never;
       readonly feishuContext?: never;
       readonly teamsContext?: never;
@@ -139,7 +152,6 @@ type ChatEventDisplayContext =
         readonly threadContext: string;
         readonly rootMessageId: string | null;
         readonly thinkingMessageId: string | null;
-        readonly publicBrand: PublicBrand;
         readonly userLinkId: string;
         readonly userLinkKind: "custom" | "official";
         readonly chatType: string;
@@ -152,6 +164,7 @@ type ChatEventDisplayContext =
       readonly agentphoneContext?: never;
     }
   | {
+      readonly discordContext?: never;
       readonly slackContext?: never;
       readonly feishuContext?: never;
       readonly teamsContext?: never;
@@ -165,11 +178,11 @@ type ChatEventDisplayContext =
         readonly messageText: string;
         readonly triggerReactionId: string | null;
         readonly triggerCommentBody: string | null;
-        readonly publicBrand: PublicBrand;
       };
       readonly agentphoneContext?: never;
     }
   | {
+      readonly discordContext?: never;
       readonly slackContext?: never;
       readonly feishuContext?: never;
       readonly teamsContext?: never;
@@ -192,6 +205,7 @@ type ChatEventDisplayContext =
       };
     }
   | {
+      readonly discordContext?: never;
       readonly slackContext?: never;
       readonly feishuContext?: never;
       readonly teamsContext?: never;
@@ -237,7 +251,6 @@ type InputAutomationEvent = ChatEventIdentity &
     readonly workflowAutomationEventType?: WorkflowAutomationEventType;
     readonly workflowAutomationEventPayload?: WorkflowAutomationEventPayload;
     readonly connectorSourceId?: string;
-    readonly publicBrand?: PublicBrand;
     readonly triggerBrief: string | null;
   };
 
@@ -409,6 +422,12 @@ export interface LoadedChatEventReplacementTarget extends StoredChatEventContext
 
 type NewDisplayContext =
   | {
+      readonly type: "discord";
+      readonly id: string;
+      readonly chatThreadId: string;
+      readonly snapshot: DiscordChatEventContext;
+    }
+  | {
       readonly type: "agent_run";
       readonly id: string;
       readonly sourceChatThreadId: string;
@@ -421,7 +440,6 @@ type NewDisplayContext =
       readonly channelId: string;
       readonly messageTs: string;
       readonly botUserId: string;
-      readonly publicBrand: PublicBrand;
       readonly conversationContext: string;
       readonly messageText: string;
       readonly messageFiles: ChatSlackMessageFiles;
@@ -449,7 +467,6 @@ type NewDisplayContext =
       readonly senderOpenId: string;
       readonly connectionId: string;
       readonly installationId: string;
-      readonly publicBrand: PublicBrand;
     }
   | {
       readonly type: "teams";
@@ -469,7 +486,6 @@ type NewDisplayContext =
       readonly threadId: string;
       readonly serviceUrl: string;
       readonly teamsAppId: string | null;
-      readonly publicBrand: PublicBrand;
       readonly senderUserId: string;
       readonly senderDisplayName: string | null;
       readonly senderPrincipalName: string | null;
@@ -486,7 +502,6 @@ type NewDisplayContext =
       readonly threadContext: string;
       readonly rootMessageId: string | null;
       readonly thinkingMessageId: string | null;
-      readonly publicBrand: PublicBrand;
       readonly userLinkId: string;
       readonly userLinkKind: "custom" | "official";
       readonly chatType: string;
@@ -507,7 +522,6 @@ type NewDisplayContext =
       readonly messageText: string;
       readonly triggerReactionId: string | null;
       readonly triggerCommentBody: string | null;
-      readonly publicBrand: PublicBrand;
     }
   | {
       readonly type: "agentphone";
@@ -536,7 +550,6 @@ type NewDisplayContext =
       readonly workflowAutomationEventType: WorkflowAutomationEventType | null;
       readonly workflowAutomationEventPayload: WorkflowAutomationEventPayload | null;
       readonly connectorSourceId: string | null;
-      readonly publicBrand: PublicBrand;
       readonly triggerBrief: string | null;
     };
 
@@ -566,7 +579,6 @@ function newAutomationDisplayContext(
         : null,
     connectorSourceId:
       "connectorSourceId" in values ? (values.connectorSourceId ?? null) : null,
-    publicBrand: PUBLIC_BRAND,
     triggerBrief:
       "triggerBrief" in values ? (values.triggerBrief ?? null) : null,
   };
@@ -587,6 +599,17 @@ function newDisplayContext(
     };
   }
 
+  const discordContext =
+    "discordContext" in values ? values.discordContext : undefined;
+  if (discordContext !== undefined) {
+    return {
+      type: "discord",
+      id: eventId,
+      chatThreadId: values.chatThreadId,
+      snapshot: discordContext,
+    };
+  }
+
   const slackContext =
     "slackContext" in values ? values.slackContext : undefined;
   if (slackContext !== undefined) {
@@ -597,7 +620,6 @@ function newDisplayContext(
       channelId: slackContext.channelId,
       messageTs: slackContext.messageTs,
       botUserId: slackContext.botUserId,
-      publicBrand: PUBLIC_BRAND,
       conversationContext: slackContext.conversationContext,
       messageText: slackContext.messageText,
       messageFiles: slackContext.messageFiles,
@@ -619,7 +641,6 @@ function newDisplayContext(
       id: eventId,
       chatThreadId: values.chatThreadId,
       ...feishuContext,
-      publicBrand: PUBLIC_BRAND,
     };
   }
 
@@ -631,7 +652,6 @@ function newDisplayContext(
       id: eventId,
       chatThreadId: values.chatThreadId,
       ...teamsContext,
-      publicBrand: PUBLIC_BRAND,
     };
   }
 
@@ -643,7 +663,6 @@ function newDisplayContext(
       id: eventId,
       chatThreadId: values.chatThreadId,
       ...telegramContext,
-      publicBrand: PUBLIC_BRAND,
     };
   }
 
@@ -655,7 +674,6 @@ function newDisplayContext(
       id: eventId,
       chatThreadId: values.chatThreadId,
       ...githubContext,
-      publicBrand: PUBLIC_BRAND,
     };
   }
 
@@ -759,7 +777,6 @@ async function insertTelegramDisplayContext(
       threadContext: context.threadContext,
       rootMessageId: context.rootMessageId,
       thinkingMessageId: context.thinkingMessageId,
-      publicBrand: context.publicBrand,
       userLinkId: context.userLinkId,
       userLinkKind: context.userLinkKind,
       chatType: context.chatType,
@@ -820,12 +837,27 @@ async function insertAutomationDisplayContext(
       eventType: context.workflowAutomationEventType,
       eventPayload: context.workflowAutomationEventPayload,
       connectorSourceId: context.connectorSourceId,
-      publicBrand: context.publicBrand,
       triggerBrief: context.triggerBrief,
       createdAt,
     })
     .onConflictDoNothing();
   return;
+}
+
+async function insertDiscordDisplayContext(
+  tx: ChatEventWriteTransaction,
+  context: Extract<NewDisplayContext, { readonly type: "discord" }>,
+  createdAt: Date,
+): Promise<void> {
+  await tx
+    .insert(chatDiscordContext)
+    .values({
+      ...context.snapshot,
+      id: context.id,
+      chatThreadId: context.chatThreadId,
+      createdAt,
+    })
+    .onConflictDoNothing({ target: chatDiscordContext.id });
 }
 
 async function insertDisplayContext(
@@ -837,6 +869,10 @@ async function insertDisplayContext(
     await insertAgentRunDisplayContext(tx, context, createdAt);
     return;
   }
+  if (context.type === "discord") {
+    await insertDiscordDisplayContext(tx, context, createdAt);
+    return;
+  }
   if (context.type === "slack") {
     await tx
       .insert(chatSlackContext)
@@ -846,7 +882,6 @@ async function insertDisplayContext(
         channelId: context.channelId,
         messageTs: context.messageTs,
         botUserId: context.botUserId,
-        publicBrand: context.publicBrand,
         conversationContext: context.conversationContext,
         messageText: context.messageText,
         messageFiles: context.messageFiles,
@@ -880,7 +915,6 @@ async function insertDisplayContext(
         senderOpenId: context.senderOpenId,
         connectionId: context.connectionId,
         installationId: context.installationId,
-        publicBrand: context.publicBrand,
         createdAt,
       })
       .onConflictDoNothing();
@@ -906,7 +940,6 @@ async function insertDisplayContext(
         threadId: context.threadId,
         serviceUrl: context.serviceUrl,
         teamsAppId: context.teamsAppId,
-        publicBrand: context.publicBrand,
         senderUserId: context.senderUserId,
         senderDisplayName: context.senderDisplayName,
         senderPrincipalName: context.senderPrincipalName,
@@ -934,7 +967,6 @@ async function insertDisplayContext(
         messageText: context.messageText,
         triggerReactionId: context.triggerReactionId,
         triggerCommentBody: context.triggerCommentBody,
-        publicBrand: context.publicBrand,
         createdAt,
       })
       .onConflictDoNothing();
@@ -1048,11 +1080,7 @@ function prepareChatEvent(values: AppendChatEvent): PreparedChatEvent {
   };
 }
 
-/**
- * Context is required event data. Split mode writes it before the append so a
- * failure rejects the input; legacy mode writes it after the append inside the
- * caller's transaction.
- */
+/** Context is required event data, written before the append so a failure rejects the input. */
 async function persistPreparedChatEventContext(
   db: ChatEventWriteTransaction,
   prepared: PreparedChatEvent,
@@ -1066,7 +1094,6 @@ async function persistPreparedChatEventContext(
 
 /** Slow-path telemetry separates allocation/lock wait from event insertion. */
 function recordChatEventAppendTiming(timing: {
-  readonly mode: "legacy" | "split";
   readonly attemptedEvents?: number;
   readonly insertedEvents: number;
   readonly statementDurationMs: number;
@@ -1084,19 +1111,10 @@ async function appendPreparedChatEvent(
   db: ChatEventWriteTransaction,
   prepared: PreparedChatEvent,
   conflict: InsertChatEventConflict = "none",
-  options?: ChatEventWriteOptions,
 ): Promise<ChatEventCommandResult | null> {
-  const splitWrites =
-    options?.splitWrites ?? (await isSplitChatEventWriteEnabled(db));
   const startedAt = performance.now();
-  const rows = await appendCanonicalChatEvents(
-    db,
-    [prepared.row],
-    conflict,
-    splitWrites,
-  );
+  const rows = await appendCanonicalChatEvents(db, [prepared.row], conflict);
   recordChatEventAppendTiming({
-    mode: splitWrites ? "split" : "legacy",
     insertedEvents: rows.length,
     statementDurationMs: performance.now() - startedAt,
     allocationDurationMs: rows[0]?.allocationDurationMs,
@@ -1108,44 +1126,28 @@ async function appendPreparedChatEvent(
     : null;
 }
 
-/** Legacy callers keep their control transaction; ordinary split writes pass DB. */
+/** Control callers may pass their transaction; ordinary writes pass DB. */
 export async function insertChatEvent(
   db: ChatEventWriteTransaction,
   values: AppendChatEvent,
   conflict: InsertChatEventConflict = "none",
-  options?: ChatEventWriteOptions,
 ): Promise<ChatEventCommandResult | null> {
   const prepared = prepareChatEvent(values);
-  const splitWrites =
-    options?.splitWrites ?? (await isSplitChatEventWriteEnabled(db));
-  if (splitWrites) {
-    await persistPreparedChatEventContext(db, prepared);
-  }
-  const inserted = await appendPreparedChatEvent(db, prepared, conflict, {
-    splitWrites,
-  });
-  if (inserted && !splitWrites) {
-    await persistPreparedChatEventContext(db, prepared);
-  }
-  return inserted;
+  await persistPreparedChatEventContext(db, prepared);
+  return await appendPreparedChatEvent(db, prepared, conflict);
 }
 
 /** Reserve N and insert atomically, preserving every existing idempotency index. */
 export async function insertChatEvents(
   db: ChatEventWriteTransaction,
   values: readonly AppendChatEvent[],
-  options?: ChatEventWriteOptions,
 ): Promise<readonly ChatEventBatchCommandResult[]> {
   if (values.length === 0) {
     return [];
   }
   const prepared = values.map(prepareChatEvent);
-  const splitWrites =
-    options?.splitWrites ?? (await isSplitChatEventWriteEnabled(db));
-  if (splitWrites) {
-    for (const event of prepared) {
-      await persistPreparedChatEventContext(db, event);
-    }
+  for (const event of prepared) {
+    await persistPreparedChatEventContext(db, event);
   }
   const startedAt = performance.now();
   const rows = await appendCanonicalChatEvents(
@@ -1154,28 +1156,14 @@ export async function insertChatEvents(
       return event.row;
     }),
     "any",
-    splitWrites,
   );
   recordChatEventAppendTiming({
-    mode: splitWrites ? "split" : "legacy",
     attemptedEvents: values.length,
     insertedEvents: rows.length,
     statementDurationMs: performance.now() - startedAt,
     allocationDurationMs: rows[0]?.allocationDurationMs,
     insertDurationMs: rows[0]?.insertDurationMs,
   });
-  if (!splitWrites) {
-    const insertedIds = new Set(
-      rows.map((row) => {
-        return row.id;
-      }),
-    );
-    for (const event of prepared) {
-      if (insertedIds.has(event.row.id)) {
-        await persistPreparedChatEventContext(db, event);
-      }
-    }
-  }
   return rows.map(({ id, createdAt, seqId, sequenceNumber }) => {
     return { id, createdAt, seqId, sequenceNumber };
   });
@@ -1250,17 +1238,8 @@ export async function replaceLoadedChatEvent(
     },
     displayContext,
   };
-  const splitWrites = await isSplitChatEventWriteEnabled(tx);
-  if (splitWrites) {
-    await persistPreparedChatEventContext(tx, prepared);
-  }
-  const inserted = await appendPreparedChatEvent(tx, prepared, "any", {
-    splitWrites,
-  });
-  if (inserted && !splitWrites) {
-    await persistPreparedChatEventContext(tx, prepared);
-  }
-  return inserted;
+  await persistPreparedChatEventContext(tx, prepared);
+  return await appendPreparedChatEvent(tx, prepared, "any");
 }
 
 /** Append a payload-free revocation event for an existing chat event. */

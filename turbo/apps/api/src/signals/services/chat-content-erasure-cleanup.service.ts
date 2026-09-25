@@ -4,6 +4,7 @@ import type { PgTable } from "drizzle-orm/pg-core";
 import { chatContentErasureSubjects } from "@okouai/db/schema/chat-content-erasure-subject";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
+import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
 import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
@@ -21,7 +22,6 @@ import { runOutputMemoryCitations } from "@okouai/db/schema/run-output-memory-ci
 import { settle } from "../utils";
 import { logger } from "../../lib/log";
 import { writeDb$, type Db } from "../external/db";
-import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 
 const L = logger("ChatContentErasureCleanup");
 const SUBJECT_LIMIT = 5;
@@ -101,6 +101,7 @@ export async function cleanupLateChatContent(
   let deleted = 0;
   for (const table of [
     chatEvents,
+    chatDiscordContext,
     chatSlackContext,
     chatFeishuContext,
     chatTeamsContext,
@@ -175,47 +176,7 @@ export async function cleanupLateChatContent(
 }
 
 export async function sweepLateChatContent(db: Db, signal: AbortSignal) {
-  // An older API may finish deletion after the schema backfill. Copy only
-  // terminal, confirmed decisions before their normal local-job retention.
   signal.throwIfAborted();
-  await db.execute(sql`
-      INSERT INTO chat_content_erasure_subjects
-        (subject_kind, subject_id, source_reference, confirmed_at, completed_at)
-      SELECT 'user', job.user_id, job.id::text, job.created_at, job.completed_at
-      FROM background_jobs AS job
-      WHERE job.kind = 'clerk-user-deletion' AND job.status = 'completed'
-        AND job.completed_at IS NOT NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM chat_content_erasure_subjects AS receipt
-          WHERE receipt.subject_kind = 'user' AND receipt.subject_id = job.user_id
-            AND receipt.completed_at IS NOT NULL
-        )
-      ORDER BY job.id LIMIT 100
-      ON CONFLICT (subject_kind, subject_id) DO UPDATE
-        SET completed_at = COALESCE(chat_content_erasure_subjects.completed_at, EXCLUDED.completed_at)
-    `);
-  signal.throwIfAborted();
-  await db.execute(sql`
-      INSERT INTO chat_content_erasure_subjects
-        (subject_kind, subject_id, source_reference, confirmed_at, completed_at)
-      SELECT DISTINCT ON (job.subject_kind, job.subject_id)
-        job.subject_kind, job.subject_id, job.decision_ref,
-        job.requested_at, clock_timestamp()
-      FROM account_erasure_jobs AS job
-      WHERE job.state IN ('verified_erased', 'verified_no_applicable_data')
-        AND NOT EXISTS (
-          SELECT 1 FROM chat_content_erasure_subjects AS receipt
-          WHERE receipt.subject_kind = job.subject_kind AND receipt.subject_id = job.subject_id
-            AND receipt.completed_at IS NOT NULL
-        )
-      ORDER BY job.subject_kind, job.subject_id, job.generation DESC LIMIT 100
-      ON CONFLICT (subject_kind, subject_id) DO UPDATE
-        SET completed_at = COALESCE(chat_content_erasure_subjects.completed_at, EXCLUDED.completed_at)
-    `);
-  signal.throwIfAborted();
-  if (!(await isSplitChatEventWriteEnabled(db))) {
-    return { processed: 0, deleted: 0 };
-  }
   const subjects = await db
     .select()
     .from(chatContentErasureSubjects)

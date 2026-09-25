@@ -232,7 +232,7 @@ interface VideoFixture {
 
 function ownedArtifactReference(userId: string, filename: string) {
   const key = buildArtifactKey(userId, randomUUID(), filename);
-  return { key, url: buildFileUrlFromKey(key, "okou") };
+  return { key, url: buildFileUrlFromKey(key, "current") };
 }
 
 function expectPresignedArtifactReference(value: unknown, key: string): void {

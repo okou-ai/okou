@@ -5,7 +5,12 @@ import {
   BROWSER_INITIAL_SCREEN_HEIGHT,
   BROWSER_SCREEN_WIDTH,
 } from "@okouai/api-contracts/contracts/browser";
-import { BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH } from "@okouai/api-contracts/contracts/browser-user-actions";
+import {
+  BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH,
+  BROWSER_USER_ACTION_MAX_OPTIONS,
+  BROWSER_USER_ACTION_MAX_OPTION_LABEL_LENGTH,
+  BROWSER_USER_ACTION_MAX_OPTION_VALUE_LENGTH,
+} from "@okouai/api-contracts/contracts/browser-user-actions";
 import { z } from "zod";
 
 import { env } from "../../lib/env";
@@ -173,7 +178,7 @@ export class BrowserUseProviderError extends Error {
 }
 
 export interface BrowserUseUserActionFingerprint {
-  readonly tagName: "INPUT" | "TEXTAREA";
+  readonly tagName: "INPUT" | "TEXTAREA" | "SELECT";
   readonly inputType: string;
 }
 
@@ -698,6 +703,15 @@ function httpPageUrl(value: string): URL | null {
   return url.protocol === "http:" || url.protocol === "https:" ? url : null;
 }
 
+export interface BrowserUseSelectOption {
+  readonly index: number;
+  readonly label: string;
+  readonly value: string;
+  readonly disabled: boolean;
+  readonly selected: boolean;
+  readonly empty: boolean;
+}
+
 export interface BrowserUseControlInspection {
   readonly tagName: string;
   readonly inputType: string;
@@ -706,12 +720,15 @@ export interface BrowserUseControlInspection {
   readonly writable: boolean;
   readonly siteRequired: boolean;
   readonly multiple: boolean;
+  readonly checked?: boolean;
   readonly minLength?: number;
   readonly maxLength?: number;
   readonly pattern?: string;
   readonly min?: string;
   readonly max?: string;
   readonly step?: string;
+  readonly options?: readonly BrowserUseSelectOption[];
+  readonly optionSetFingerprint?: string;
 }
 
 function boundedOptionalControlLength(value: unknown): boolean {
@@ -751,6 +768,78 @@ function boundedOptionalControlMetadata(
   );
 }
 
+function safeSelectOptions(
+  value: unknown,
+): readonly BrowserUseSelectOption[] | null {
+  if (!Array.isArray(value) || value.length > BROWSER_USER_ACTION_MAX_OPTIONS) {
+    return null;
+  }
+  const options: BrowserUseSelectOption[] = [];
+  for (const [index, entry] of value.entries()) {
+    if (typeof entry !== "object" || entry === null) {
+      return null;
+    }
+    const option = entry as Record<string, unknown>;
+    if (
+      option.index !== index ||
+      typeof option.label !== "string" ||
+      option.label.length > BROWSER_USER_ACTION_MAX_OPTION_LABEL_LENGTH ||
+      typeof option.value !== "string" ||
+      option.value.length > BROWSER_USER_ACTION_MAX_OPTION_VALUE_LENGTH ||
+      typeof option.disabled !== "boolean" ||
+      typeof option.selected !== "boolean" ||
+      option.empty !== (option.value === "")
+    ) {
+      return null;
+    }
+    options.push({
+      index,
+      label: option.label,
+      value: option.value,
+      disabled: option.disabled,
+      selected: option.selected,
+      empty: option.empty,
+    });
+  }
+  return options;
+}
+
+function optionalControlMetadata(candidate: Record<string, unknown>) {
+  return {
+    ...(candidate.minLength === undefined
+      ? {}
+      : { minLength: candidate.minLength as number }),
+    ...(candidate.maxLength === undefined
+      ? {}
+      : { maxLength: candidate.maxLength as number }),
+    ...(candidate.pattern === undefined
+      ? {}
+      : { pattern: candidate.pattern as string }),
+    ...(candidate.min === undefined ? {} : { min: candidate.min as string }),
+    ...(candidate.max === undefined ? {} : { max: candidate.max as string }),
+    ...(candidate.step === undefined ? {} : { step: candidate.step as string }),
+  };
+}
+
+function validCheckboxInspection(
+  candidate: Readonly<Record<string, unknown>>,
+): boolean {
+  return (
+    (candidate.checked === undefined ||
+      typeof candidate.checked === "boolean") &&
+    (candidate.inputType !== "checkbox" ||
+      typeof candidate.checked === "boolean")
+  );
+}
+
+function optionalCheckboxMetadata(
+  candidate: Readonly<Record<string, unknown>>,
+) {
+  return candidate.checked === undefined
+    ? {}
+    : { checked: candidate.checked as boolean };
+}
+
 function safeControlInspection(
   value: unknown,
 ): BrowserUseControlInspection | null {
@@ -768,7 +857,19 @@ function safeControlInspection(
     typeof candidate.writable !== "boolean" ||
     typeof candidate.siteRequired !== "boolean" ||
     typeof candidate.multiple !== "boolean" ||
+    !validCheckboxInspection(candidate) ||
     !boundedOptionalControlMetadata(candidate)
+  ) {
+    return null;
+  }
+  const options =
+    candidate.tagName === "SELECT"
+      ? safeSelectOptions(candidate.options)
+      : undefined;
+  if (
+    candidate.tagName === "SELECT" &&
+    candidate.writable &&
+    options === null
   ) {
     return null;
   }
@@ -780,18 +881,22 @@ function safeControlInspection(
     writable: candidate.writable,
     siteRequired: candidate.siteRequired,
     multiple: candidate.multiple,
-    ...(candidate.minLength === undefined
+    ...optionalCheckboxMetadata(candidate),
+    ...optionalControlMetadata(candidate),
+    ...(options === undefined || options === null
       ? {}
-      : { minLength: candidate.minLength as number }),
-    ...(candidate.maxLength === undefined
-      ? {}
-      : { maxLength: candidate.maxLength as number }),
-    ...(candidate.pattern === undefined
-      ? {}
-      : { pattern: candidate.pattern as string }),
-    ...(candidate.min === undefined ? {} : { min: candidate.min as string }),
-    ...(candidate.max === undefined ? {} : { max: candidate.max as string }),
-    ...(candidate.step === undefined ? {} : { step: candidate.step as string }),
+      : {
+          options,
+          optionSetFingerprint: createHash("sha256")
+            .update(
+              JSON.stringify({
+                mode: candidate.inputType,
+                required: candidate.siteRequired,
+                options,
+              }),
+            )
+            .digest("hex"),
+        }),
   };
 }
 
@@ -799,26 +904,37 @@ function browserUseControlInspectionFunction(): string {
   return `function (...otherControls) {
     const controls = [this, ...otherControls];
     const supportedInputTypes = new Set([
-      "text", "password", "email", "tel", "url", "search", "number"
+      "text", "password", "email", "tel", "url", "search", "number", "checkbox"
     ]);
     return controls.map((control) => {
       const input = control instanceof HTMLInputElement;
       const textarea = control instanceof HTMLTextAreaElement;
+      const select = control instanceof HTMLSelectElement;
+      const options = select ? [...control.options] : [];
+      const boundedOptions = !select || (options.length > 0 && options.length <= ${BROWSER_USER_ACTION_MAX_OPTIONS} &&
+        options.every((option) => option.label.length <= ${BROWSER_USER_ACTION_MAX_OPTION_LABEL_LENGTH} &&
+          option.value.length <= ${BROWSER_USER_ACTION_MAX_OPTION_VALUE_LENGTH}));
       const supported =
-        textarea || (input && supportedInputTypes.has(control.type));
-      const textual = supported && (textarea || control.type !== "number");
+        textarea || select || (input && supportedInputTypes.has(control.type));
+      const textual = supported && (textarea || (control.type !== "number" && control.type !== "checkbox"));
       const number = input && control.type === "number";
       const boundedNumberConstraints = !number ||
         [control.min, control.max, control.step].every((value) =>
           value.length <= ${BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH});
       return {
         tagName: typeof control.tagName === "string" ? control.tagName : "",
-        inputType: input ? control.type : textarea ? "textarea" : "",
+        inputType: input ? control.type : textarea ? "textarea" : select ? (control.multiple ? "select-multiple" : "select-one") : "",
         connected: control.isConnected === true,
         mainDocument: control.ownerDocument === document,
-        writable: supported && boundedNumberConstraints && !control.readOnly && !control.disabled,
+        writable: supported && boundedNumberConstraints && boundedOptions && !control.readOnly && !control.matches(":disabled") && !(input && control.type === "checkbox" && control.indeterminate),
         siteRequired: supported && control.required === true,
-        multiple: input && control.type === "email" && control.multiple === true,
+        ...(input && control.type === "checkbox" ? { checked: control.checked } : {}),
+        multiple: select ? control.multiple : input && control.type === "email" && control.multiple === true,
+        ...(select && boundedOptions ? { options: options.map((option, index) => ({
+          index, label: option.label, value: option.value,
+          disabled: option.disabled || (option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled),
+          selected: option.selected, empty: option.value === "",
+        })) } : {}),
         ...(textual && control.minLength >= 0 && control.minLength <= 4096
           ? { minLength: control.minLength } : {}),
         ...(textual && control.maxLength >= 0 && control.maxLength <= 4096
@@ -1035,7 +1151,9 @@ async function validateBrowserUseUserActionOnSocket(
       !inspection.connected ||
       !inspection.mainDocument ||
       !inspection.writable ||
-      (inspection.tagName !== "INPUT" && inspection.tagName !== "TEXTAREA")
+      (inspection.tagName !== "INPUT" &&
+        inspection.tagName !== "TEXTAREA" &&
+        inspection.tagName !== "SELECT")
     );
   });
   if (unsupportedPosition !== -1) {
@@ -1048,7 +1166,9 @@ async function validateBrowserUseUserActionOnSocket(
     const inspection = inspections[index];
     if (
       !inspection ||
-      (inspection.tagName !== "INPUT" && inspection.tagName !== "TEXTAREA")
+      (inspection.tagName !== "INPUT" &&
+        inspection.tagName !== "TEXTAREA" &&
+        inspection.tagName !== "SELECT")
     ) {
       throw new BrowserUseUserActionValidationError(
         "unsupported_control",
@@ -1098,7 +1218,16 @@ export async function validateBrowserUseUserAction(
 export interface BrowserUseUserActionApplyField {
   readonly backendNodeId: number;
   readonly fingerprint: BrowserUseUserActionFingerprint;
+  readonly required?: boolean;
   readonly value?: string;
+  readonly checkbox?: {
+    readonly checked: boolean;
+    readonly observedChecked: boolean;
+  };
+  readonly selection?: {
+    readonly optionIndexes: readonly number[];
+    readonly optionSetFingerprint: string;
+  };
 }
 
 export interface BrowserUseUserActionExactTarget {
@@ -1119,7 +1248,16 @@ function isMissingBrowserUseNode(error: unknown): boolean {
 
 interface ResolvedBrowserUseUserActionField {
   readonly objectId: string;
+  readonly required?: boolean;
   readonly value?: string;
+  readonly checkbox?: {
+    readonly checked: boolean;
+    readonly observedChecked: boolean;
+  };
+  readonly selection?: {
+    readonly optionIndexes: readonly number[];
+    readonly optionSetFingerprint: string;
+  };
   readonly inspection: BrowserUseControlInspection;
 }
 
@@ -1173,6 +1311,16 @@ async function openBrowserUseApplyPage(
     return null;
   }
   return attached;
+}
+
+function checkboxObservationMatches(
+  field: BrowserUseUserActionApplyField,
+  inspection: BrowserUseControlInspection,
+): boolean {
+  return (
+    field.checkbox === undefined ||
+    inspection.checked === field.checkbox.observedChecked
+  );
 }
 
 async function resolveBrowserUseApplyFields(
@@ -1233,14 +1381,21 @@ async function resolveBrowserUseApplyFields(
       !inspection.mainDocument ||
       !inspection.writable ||
       inspection.tagName !== field.fingerprint.tagName ||
-      inspection.inputType !== field.fingerprint.inputType
+      inspection.inputType !== field.fingerprint.inputType ||
+      !checkboxObservationMatches(field, inspection) ||
+      (field.selection !== undefined &&
+        inspection.optionSetFingerprint !==
+          field.selection.optionSetFingerprint)
     ) {
       return null;
     }
     resolved.push({
       objectId,
       inspection,
+      required: field.required,
       ...(field.value === undefined ? {} : { value: field.value }),
+      ...(field.checkbox === undefined ? {} : { checkbox: field.checkbox }),
+      ...(field.selection === undefined ? {} : { selection: field.selection }),
     });
   }
   return { fields: resolved, commandId };
@@ -1341,6 +1496,49 @@ function browserUseAggregateValueArguments(
   });
 }
 
+function validSelectApplyFields(
+  fields: readonly ResolvedBrowserUseUserActionField[],
+): boolean {
+  for (const field of fields) {
+    if (field.inspection.tagName !== "SELECT") {
+      continue;
+    }
+    const options = field.inspection.options;
+    if (
+      !options ||
+      !field.inspection.optionSetFingerprint ||
+      field.value !== undefined
+    ) {
+      return false;
+    }
+    const selected = field.selection?.optionIndexes;
+    if (selected === undefined) {
+      if (
+        (field.inspection.siteRequired || field.required) &&
+        !options.some((option) => {
+          return option.selected && !option.disabled && !option.empty;
+        })
+      ) {
+        return false;
+      }
+      continue;
+    }
+    if (
+      (field.inspection.inputType === "select-one" && selected.length > 1) ||
+      selected.some((index) => {
+        return !options[index] || options[index].disabled;
+      }) ||
+      ((field.inspection.siteRequired || field.required) &&
+        selected.every((index) => {
+          return options[index]?.empty || options[index]?.disabled;
+        }))
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 async function validateBrowserUseApplyValues(
   socket: WebSocket,
   args: {
@@ -1350,7 +1548,27 @@ async function validateBrowserUseApplyValues(
   },
   signal: AbortSignal,
 ): Promise<boolean> {
-  const [firstField, ...otherFields] = args.fields;
+  if (
+    !validSelectApplyFields(args.fields) ||
+    args.fields.some((field) => {
+      return (
+        field.inspection.inputType === "checkbox" &&
+        (field.inspection.checked === undefined ||
+          (field.required === true && field.checkbox?.checked !== true) ||
+          (field.inspection.siteRequired &&
+            (field.checkbox?.checked ?? field.inspection.checked) !== true))
+      );
+    })
+  ) {
+    return false;
+  }
+  const scalarFields = args.fields.filter((field) => {
+    return (
+      field.inspection.tagName !== "SELECT" &&
+      field.inspection.inputType !== "checkbox"
+    );
+  });
+  const [firstField, ...otherFields] = scalarFields;
   if (!firstField) {
     return true;
   }
@@ -1495,6 +1713,135 @@ async function writeBrowserUseApplyFields(
   }
 }
 
+async function writeBrowserUseMixedControlFields(
+  socket: WebSocket,
+  args: {
+    readonly sessionId: string;
+    readonly fields: readonly ResolvedBrowserUseUserActionField[];
+    readonly commandId: number;
+  },
+  mutation: { writeStarted: boolean },
+  signal: AbortSignal,
+): Promise<void> {
+  const [first, ...others] = args.fields;
+  if (!first) {
+    return;
+  }
+  const descriptor = (field: ResolvedBrowserUseUserActionField) => {
+    return field.inspection.inputType === "checkbox"
+      ? {
+          kind: "checkbox",
+          checked: field.checkbox?.checked ?? null,
+          observedChecked: field.inspection.checked,
+          required: field.inspection.siteRequired,
+        }
+      : field.inspection.tagName === "SELECT"
+        ? {
+            kind: "select",
+            mode: field.inspection.inputType,
+            required: field.inspection.siteRequired,
+            options: field.inspection.options,
+            indices: field.selection?.optionIndexes ?? null,
+          }
+        : {
+            kind: "scalar",
+            tagName: field.inspection.tagName,
+            inputType: field.inspection.inputType,
+            value: field.value ?? null,
+          };
+  };
+  mutation.writeStarted = true;
+  const result = browserUseCdpValueSchema.parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: args.commandId,
+        method: "Runtime.callFunctionOn",
+        params: {
+          objectId: first.objectId,
+          functionDeclaration: `function (firstSpec, ...rest) {
+          const controls = [this];
+          const specs = [firstSpec];
+          for (let index = 0; index < rest.length; index += 2) {
+            controls.push(rest[index]);
+            specs.push(rest[index + 1]);
+          }
+          const matches = (control, spec, final) => {
+            if (!control.isConnected || control.ownerDocument !== document || control.matches(":disabled")) return false;
+            if (spec.kind === "checkbox") {
+              return control instanceof HTMLInputElement && control.type === "checkbox" &&
+                !control.indeterminate && control.required === spec.required &&
+                control.checked === (final && spec.checked !== null ? spec.checked : spec.observedChecked);
+            }
+            if (spec.kind === "scalar") {
+              const actualType = control instanceof HTMLInputElement ? control.type
+                : control instanceof HTMLTextAreaElement ? "textarea" : null;
+              if (control.tagName !== spec.tagName || actualType !== spec.inputType || control.readOnly) return false;
+              return !final || spec.value === null || control.value === spec.value;
+            }
+            if (!(control instanceof HTMLSelectElement) ||
+                (control.multiple ? "select-multiple" : "select-one") !== spec.mode ||
+                control.required !== spec.required || !spec.options ||
+                control.options.length !== spec.options.length) return false;
+            return spec.options.every((expected, index) => {
+              const option = control.options[index];
+              const disabled = option.disabled ||
+                (option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled);
+              const selected = final && spec.indices !== null
+                ? spec.indices.includes(index) : expected.selected;
+              return option.label === expected.label && option.value === expected.value &&
+                disabled === expected.disabled && option.selected === selected;
+            });
+          };
+          if (!controls.every((control, index) => matches(control, specs[index], false))) return false;
+          for (let index = 0; index < controls.length; index += 1) {
+            const control = controls[index];
+            const spec = specs[index];
+            if (!matches(control, spec, false)) return false;
+            if (spec.kind === "checkbox") {
+              if (spec.checked === null || spec.checked === control.checked) continue;
+              const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "checked")?.set;
+              if (!setter) return false;
+              setter.call(control, spec.checked);
+            } else if (spec.kind === "scalar" && spec.value !== null) {
+              const prototype = control instanceof HTMLTextAreaElement
+                ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+              const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+              if (!setter) return false;
+              setter.call(control, spec.value);
+            } else if (spec.kind === "select" && spec.indices !== null) {
+              if (spec.indices.length === 0) control.selectedIndex = -1;
+              else for (let optionIndex = 0; optionIndex < control.options.length; optionIndex += 1) {
+                control.options[optionIndex].selected = spec.indices.includes(optionIndex);
+              }
+            } else continue;
+            control.dispatchEvent(new Event("input", { bubbles: true }));
+            control.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+          return controls.every((control, index) => matches(control, specs[index], true));
+        }`,
+          arguments: [
+            { value: descriptor(first) },
+            ...others.flatMap((field) => {
+              return [
+                { objectId: field.objectId },
+                { value: descriptor(field) },
+              ];
+            }),
+          ],
+          returnByValue: true,
+        },
+        sessionId: args.sessionId,
+      },
+      signal,
+    ),
+    { reportInput: true },
+  );
+  if (result.result.value !== true) {
+    throw new BrowserUseUserActionMutationError(true);
+  }
+}
+
 async function applyBrowserUseUserActionOnSocket(
   socket: WebSocket,
   target: BrowserUseUserActionExactTarget,
@@ -1527,16 +1874,28 @@ async function applyBrowserUseUserActionOnSocket(
   ) {
     return "invalid";
   }
-  await writeBrowserUseApplyFields(
-    socket,
-    {
-      sessionId: attached.sessionId,
-      fields: resolved.fields,
-      commandId: resolved.commandId + (resolved.fields.length > 0 ? 1 : 0),
-    },
-    mutation,
-    signal,
-  );
+  const writeArgs = {
+    sessionId: attached.sessionId,
+    fields: resolved.fields,
+    commandId: resolved.commandId + (resolved.fields.length > 0 ? 1 : 0),
+  };
+  if (
+    resolved.fields.some((field) => {
+      return (
+        field.inspection.tagName === "SELECT" ||
+        field.inspection.inputType === "checkbox"
+      );
+    })
+  ) {
+    await writeBrowserUseMixedControlFields(
+      socket,
+      writeArgs,
+      mutation,
+      signal,
+    );
+  } else {
+    await writeBrowserUseApplyFields(socket, writeArgs, mutation, signal);
+  }
   return "succeeded";
 }
 

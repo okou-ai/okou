@@ -1,3 +1,7 @@
+import {
+  CURRENT_LINK_LAYOUT,
+  linkLayoutSegment,
+} from "@okouai/api-contracts/contracts/link-layout";
 import { command, computed } from "ccstate";
 import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { artifactFilenameExtension } from "@okouai/api-contracts/contracts/artifact-delivery";
@@ -14,6 +18,7 @@ import {
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import { env } from "../../lib/env";
+import { hostedLinkOrigin } from "../../lib/link-layout";
 import { artifactHash } from "../../lib/file-url";
 import { db$ } from "../external/db";
 import {
@@ -88,11 +93,7 @@ export function sharedThreadArtifactsBucket(): string {
   return bucket;
 }
 
-function resourceUrl(
-  publicBrand: SharedThreadArtifactPolicy["publicBrand"],
-  token: string,
-  target: SnapshotTarget,
-): string {
+function resourceUrl(token: string, target: SnapshotTarget): string {
   if (target.kind === "file") {
     const origin = env("PUBLIC_ARTIFACT_SHARES_BASE_URL");
     if (!origin) {
@@ -103,16 +104,7 @@ function resourceUrl(
       origin,
     ).href;
   }
-  const domain = env(
-    publicBrand === "okou" ? "OKOU_PUBLIC_HOST_DOMAIN" : "ZERO_HOST_DOMAIN",
-  );
-  const scheme = env(
-    publicBrand === "okou" ? "OKOU_HOST_SCHEME" : "ZERO_HOST_SCHEME",
-  );
-  if (!domain || !scheme) {
-    throw new Error("Public site delivery is not configured");
-  }
-  return `${scheme}://${token}.${domain}/`;
+  return `${hostedLinkOrigin(CURRENT_LINK_LAYOUT, token)}/`;
 }
 
 interface ResourceReference {
@@ -195,8 +187,15 @@ interface SnapshotOwner {
   readonly threadId: string;
   readonly userId: string;
   readonly orgId: string;
-  readonly publicBrand: SharedThreadArtifactPolicy["publicBrand"];
 }
+
+/**
+ * New shared conversations and their artifact snapshots are written only in
+ * the current layout. The shared thread row stores this same segment, which
+ * addresses the snapshot's policy and copies.
+ */
+export const SHARED_THREAD_LINK_LAYOUT_SEGMENT =
+  linkLayoutSegment(CURRENT_LINK_LAYOUT);
 
 const allocateSnapshotReference$ = command(
   async (
@@ -233,7 +232,7 @@ const allocateSnapshotReference$ = command(
             record: {
               version: 1,
               kind: "thread-resource",
-              publicBrand: args.publicBrand,
+              publicBrand: SHARED_THREAD_LINK_LAYOUT_SEGMENT,
               threadId: args.threadId,
               publicToken: token,
               targetKind: args.kind,
@@ -249,7 +248,7 @@ const allocateSnapshotReference$ = command(
           allocateSharedThreadArtifactReference$,
           {
             threadId: args.threadId,
-            publicBrand: args.publicBrand,
+            publicBrand: SHARED_THREAD_LINK_LAYOUT_SEGMENT,
             publicToken: token,
             target: { kind: args.kind, id: args.id },
           },
@@ -326,7 +325,7 @@ const privateFileSnapshot$ = command(
         previewImageUrl: await get(
           privateFileSnapshotPreviewImage(file, signal),
         ),
-        deliveryUrl: resourceUrl(args.publicBrand, token, target),
+        deliveryUrl: resourceUrl(token, target),
       };
       signal.throwIfAborted();
       const copy: SnapshotCopy = {
@@ -424,7 +423,7 @@ function snapshotPolicy(
     threadId: args.threadId,
     ownerId: args.userId,
     orgId: args.orgId,
-    publicBrand: args.publicBrand,
+    publicBrand: SHARED_THREAD_LINK_LAYOUT_SEGMENT,
     status: "preparing",
     resources: Object.fromEntries(
       [...resources.values()].map((resource) => {

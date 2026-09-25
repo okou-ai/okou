@@ -11,6 +11,9 @@ export const BROWSER_USER_ACTION_MAX_LABEL_LENGTH = 128;
 export const BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH = 512;
 export const BROWSER_USER_ACTION_MAX_TARGET_ID_LENGTH = 512;
 export const BROWSER_USER_ACTION_MAX_VALUE_LENGTH = 4096;
+export const BROWSER_USER_ACTION_MAX_OPTIONS = 32;
+export const BROWSER_USER_ACTION_MAX_OPTION_LABEL_LENGTH = 128;
+export const BROWSER_USER_ACTION_MAX_OPTION_VALUE_LENGTH = 256;
 export const BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH = 128;
 export const BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH = 200;
 
@@ -28,6 +31,8 @@ export const browserUserActionFieldKindSchema = z.enum([
   "password",
   "one_time_code",
   "number",
+  "select",
+  "checkbox",
 ]);
 
 const boundedNonblank = (maximum: number) => {
@@ -87,12 +92,46 @@ const inputCreateSchema = z
 
 export const browserUserActionCreateRequestSchema = inputCreateSchema;
 
-export const browserUserActionSubmittedValueSchema = z
+const browserUserActionScalarValueSchema = z
   .object({
     key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
     value: z.string().max(BROWSER_USER_ACTION_MAX_VALUE_LENGTH),
   })
   .strict();
+const selectOptionIndexSchema = z
+  .number()
+  .int()
+  .min(0)
+  .max(BROWSER_USER_ACTION_MAX_OPTIONS - 1);
+const browserUserActionSelectValueSchema = z
+  .object({
+    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+    optionIndexes: z
+      .array(selectOptionIndexSchema)
+      .max(BROWSER_USER_ACTION_MAX_OPTIONS),
+    optionSetFingerprint: z.string().regex(/^[0-9a-f]{64}$/u),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (new Set(value.optionIndexes).size !== value.optionIndexes.length) {
+      context.addIssue({
+        code: "custom",
+        message: "Selected option indices must be unique",
+      });
+    }
+  });
+const browserUserActionCheckboxValueSchema = z
+  .object({
+    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+    checked: z.boolean(),
+    observedChecked: z.boolean(),
+  })
+  .strict();
+export const browserUserActionSubmittedValueSchema = z.union([
+  browserUserActionScalarValueSchema,
+  browserUserActionSelectValueSchema,
+  browserUserActionCheckboxValueSchema,
+]);
 
 export const browserUserActionApplyRequestSchema = z
   .object({
@@ -127,7 +166,7 @@ export const browserUserActionDisplayFieldSchema = z
     required: z.boolean(),
     control: z
       .object({
-        tagName: z.enum(["INPUT", "TEXTAREA"]),
+        tagName: z.enum(["INPUT", "TEXTAREA", "SELECT"]),
         inputType: z.enum([
           "textarea",
           "text",
@@ -137,9 +176,33 @@ export const browserUserActionDisplayFieldSchema = z
           "url",
           "password",
           "number",
+          "select-one",
+          "select-multiple",
+          "checkbox",
         ]),
         siteRequired: z.boolean().optional(),
+        checked: z.boolean().optional(),
         multiple: z.boolean().optional(),
+        optionSetFingerprint: z
+          .string()
+          .regex(/^[0-9a-f]{64}$/u)
+          .optional(),
+        options: z
+          .array(
+            z
+              .object({
+                index: selectOptionIndexSchema,
+                label: z
+                  .string()
+                  .max(BROWSER_USER_ACTION_MAX_OPTION_LABEL_LENGTH),
+                disabled: z.boolean(),
+                selected: z.boolean(),
+                empty: z.boolean(),
+              })
+              .strict(),
+          )
+          .max(BROWSER_USER_ACTION_MAX_OPTIONS)
+          .optional(),
         minLength: z
           .number()
           .int()

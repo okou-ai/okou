@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createStore } from "ccstate";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { Pool } from "pg";
 import { expect, onTestFinished, test } from "vitest";
 
@@ -11,15 +11,19 @@ import {
   accountErasureWork,
 } from "@okouai/db/schema/account-erasure";
 import { backgroundJobs } from "@okouai/db/schema/background-job";
+import { agents } from "@okouai/db/schema/agent";
+import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentRuns } from "@okouai/db/schema/agent-run";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 
 import { testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
+import { nowDate } from "../../../lib/time";
 import {
   claimBackgroundJob,
   enqueueBackgroundJob,
 } from "../background-job.service";
-import { accountErasureStatus } from "../account-erasure-status.service";
 import { captureUserErasureWork } from "../account-erasure-user-executor";
 import {
   enqueueClerkUserDeletion$,
@@ -165,7 +169,152 @@ async function runDeletionTask(db: ReturnType<typeof drizzle>, jobId: string) {
   return task;
 }
 
-test("durable user.deleted worker cleans up after capture and finalizes on the next invocation", async () => {
+test("holds a new or replayed user deletion before removing agents or another member's history", async () => {
+  const pool = new Pool({ connectionString: env("DATABASE_URL"), max: 4 });
+  const db = drizzle(pool);
+  const userId = `synthetic_deleted_${randomUUID()}`;
+  const peerId = `synthetic_peer_${randomUUID()}`;
+  const orgId = `synthetic_org_${randomUUID()}`;
+  const publicId = randomUUID();
+  const privateId = randomUUID();
+  const peerThreadId = randomUUID();
+  const ownThreadId = randomUUID();
+  const peerSessionId = randomUUID();
+  const ownSessionId = randomUUID();
+  const peerRunId = randomUUID();
+  const ownRunId = randomUUID();
+  const jobId = randomUUID();
+  onTestFinished(async () => {
+    await db.delete(agentRuns).where(eq(agentRuns.id, peerRunId));
+    await db.delete(agentRuns).where(eq(agentRuns.id, ownRunId));
+    await db.delete(agentSessions).where(eq(agentSessions.id, peerSessionId));
+    await db.delete(agentSessions).where(eq(agentSessions.id, ownSessionId));
+    await db.delete(chatThreads).where(eq(chatThreads.id, peerThreadId));
+    await db.delete(chatThreads).where(eq(chatThreads.id, ownThreadId));
+    await db.delete(agents).where(eq(agents.id, publicId));
+    await db.delete(agents).where(eq(agents.id, privateId));
+    await db.delete(backgroundJobs).where(eq(backgroundJobs.id, jobId));
+    await pool.end();
+  });
+  await db.insert(agents).values([
+    {
+      id: publicId,
+      orgId,
+      owner: userId,
+      name: publicId,
+      visibility: "public",
+    },
+    {
+      id: privateId,
+      orgId,
+      owner: userId,
+      name: privateId,
+      visibility: "private",
+    },
+  ]);
+  // A private Agent may previously have been public. A peer's data can still
+  // reference it, so current visibility cannot justify a cascade.
+  await db.insert(chatThreads).values([
+    { id: peerThreadId, userId: peerId, agentId: privateId },
+    { id: ownThreadId, userId, agentId: publicId },
+  ]);
+  await db.insert(agentSessions).values([
+    { id: peerSessionId, userId: peerId, orgId, agentId: privateId },
+    { id: ownSessionId, userId, orgId, agentId: publicId },
+  ]);
+  await db.insert(agentRuns).values([
+    {
+      id: peerRunId,
+      userId: peerId,
+      orgId,
+      sessionId: peerSessionId,
+      chatThreadId: peerThreadId,
+      status: "running",
+      prompt: "peer-owned history",
+      triggerSource: "web",
+      autonomyBudget: 0,
+    },
+    {
+      id: ownRunId,
+      userId,
+      orgId,
+      sessionId: ownSessionId,
+      chatThreadId: ownThreadId,
+      status: "running",
+      prompt: "deleted user's work",
+      triggerSource: "web",
+      autonomyBudget: 0,
+    },
+  ]);
+  await enqueueBackgroundJob(
+    db,
+    {
+      id: jobId,
+      kind: "clerk-user-deletion",
+      handlerVersion: 1,
+      userId,
+      orgId: "",
+      input: {},
+      checkpoint: { phase: "capture" },
+    },
+    context.signal,
+  );
+
+  for (const phase of ["capture", "verify"] as const) {
+    await db
+      .update(backgroundJobs)
+      .set({
+        availableAt: sql`timezone('UTC', clock_timestamp())`,
+        checkpoint: { phase },
+      })
+      .where(eq(backgroundJobs.id, jobId));
+    const result = await createStore().set(
+      executeClerkUserDeletionWork$,
+      { jobId },
+      context.signal,
+    );
+    expect(result.processed).toBe(1);
+    const [pending] = await db
+      .select()
+      .from(backgroundJobs)
+      .where(eq(backgroundJobs.id, jobId));
+    expect(pending).toMatchObject({
+      status: "pending",
+      checkpoint: { phase, safetyHold: "agent-cascade-risk" },
+      lastError: null,
+    });
+    expect(pending?.availableAt.getTime()).toBeGreaterThan(nowDate().getTime());
+    await expect(
+      db.select().from(agents).where(eq(agents.owner, userId)),
+    ).resolves.toHaveLength(2);
+    await expect(
+      db.select().from(chatThreads).where(eq(chatThreads.id, peerThreadId)),
+    ).resolves.toHaveLength(1);
+    await expect(
+      db.select().from(chatThreads).where(eq(chatThreads.id, ownThreadId)),
+    ).resolves.toHaveLength(1);
+    await expect(
+      db
+        .select()
+        .from(agentSessions)
+        .where(eq(agentSessions.id, peerSessionId)),
+    ).resolves.toHaveLength(1);
+    await expect(
+      db.select().from(agentRuns).where(eq(agentRuns.id, peerRunId)),
+    ).resolves.toMatchObject([{ status: "running" }]);
+    await expect(
+      db.select().from(agentRuns).where(eq(agentRuns.id, ownRunId)),
+    ).resolves.toMatchObject([{ status: "cancelled" }]);
+    await expect(
+      db
+        .select()
+        .from(accountErasureJobs)
+        .where(eq(accountErasureJobs.subjectId, userId)),
+    ).resolves.toStrictEqual([]);
+  }
+});
+
+test("durable user.deleted worker keeps the deletion receipt and job pending across invocations", async () => {
   const pool = new Pool({ connectionString: env("DATABASE_URL"), max: 4 });
   onTestFinished(async () => {
     await pool.end();
@@ -177,32 +326,34 @@ test("durable user.deleted worker cleans up after capture and finalizes on the n
     userId,
     context.signal,
   );
-  const cleaned = await runDeletionTask(db, jobId);
-  expect(cleaned).toMatchObject({
+  const first = await runDeletionTask(db, jobId);
+  expect(first).toMatchObject({
     status: "pending",
     lastError: null,
-    checkpoint: { phase: "verify" },
+    checkpoint: { phase: "capture", safetyHold: "agent-cascade-risk" },
   });
-  const finished = await runDeletionTask(db, jobId);
-  expect(finished).toMatchObject({ status: "completed", lastError: null });
-  const [captured] = await db
-    .select()
-    .from(accountErasureJobs)
-    .where(eq(accountErasureJobs.subjectId, userId));
-  expect(captured?.sealedCaptureRevision).toBe(captured?.captureRevision);
-  expect(captured?.state).toBe("verified_no_applicable_data");
-  await expect(accountErasureStatus(db, userId)).resolves.toBe("complete");
+  const replay = await runDeletionTask(db, jobId);
+  expect(replay).toMatchObject({
+    status: "pending",
+    lastError: null,
+    checkpoint: { phase: "capture", safetyHold: "agent-cascade-risk" },
+  });
+  await expect(
+    db
+      .select()
+      .from(accountErasureJobs)
+      .where(eq(accountErasureJobs.subjectId, userId)),
+  ).resolves.toStrictEqual([]);
 });
 
-test("durable user.deleted worker completes with unresolved residuals still reported pending", async () => {
+test("durable user.deleted worker retains personal credentials as pending during the hold", async () => {
   const pool = new Pool({ connectionString: env("DATABASE_URL"), max: 4 });
-  onTestFinished(async () => {
-    await pool.end();
-  });
   const db = drizzle(pool);
   const userId = `synthetic_deleted_${randomUUID()}`;
-  // No direct VNC provider can prove a per-user disconnect, so this credential
-  // always leaves a capability residual after its row is removed.
+  onTestFinished(async () => {
+    await db.delete(vncCredentials).where(eq(vncCredentials.userId, userId));
+    await pool.end();
+  });
   await db.insert(vncCredentials).values({
     orgId: `org_${randomUUID()}`,
     userId,
@@ -215,39 +366,31 @@ test("durable user.deleted worker completes with unresolved residuals still repo
     userId,
     context.signal,
   );
-  let task = await runDeletionTask(db, jobId);
-  for (let attempt = 0; attempt < 5 && task?.status === "pending"; attempt++) {
-    task = await runDeletionTask(db, jobId);
-  }
-  expect(task).toMatchObject({ status: "completed", lastError: null });
+  const task = await runDeletionTask(db, jobId);
+  expect(task).toMatchObject({
+    status: "pending",
+    checkpoint: { phase: "capture", safetyHold: "agent-cascade-risk" },
+  });
   await expect(
     db.select().from(vncCredentials).where(eq(vncCredentials.userId, userId)),
+  ).resolves.toHaveLength(1);
+  await expect(
+    db
+      .select()
+      .from(accountErasureJobs)
+      .where(eq(accountErasureJobs.subjectId, userId)),
   ).resolves.toStrictEqual([]);
-  const [captured] = await db
-    .select()
-    .from(accountErasureJobs)
-    .where(eq(accountErasureJobs.subjectId, userId));
-  const residuals = await db
-    .select({ id: accountErasureWork.id })
-    .from(accountErasureWork)
-    .where(
-      and(
-        eq(accountErasureWork.jobId, captured?.id ?? ""),
-        eq(accountErasureWork.state, "capability_unresolved"),
-      ),
-    );
-  expect(residuals.length).toBeGreaterThan(0);
-  await expect(accountErasureStatus(db, userId)).resolves.toBe("pending");
 });
 
-test("durable user.deleted worker resumes the same capture after an external object failure", async () => {
+test("durable user.deleted worker does not touch uploaded objects while held", async () => {
   const pool = new Pool({ connectionString: env("DATABASE_URL"), max: 4 });
-  onTestFinished(async () => {
-    await pool.end();
-  });
   const db = drizzle(pool);
   const userId = `synthetic_deleted_${randomUUID()}`;
   const fileId = randomUUID();
+  onTestFinished(async () => {
+    await pool.query("DELETE FROM run_uploaded_files WHERE id = $1", [fileId]);
+    await pool.end();
+  });
   await pool.query(
     "INSERT INTO run_uploaded_files (id, source, external_id, user_id, storage_key, metadata) VALUES ($1, 'web', $2, $3, $4, '{}'::jsonb)",
     [fileId, fileId, userId, `artifacts/${fileId}`],
@@ -260,90 +403,23 @@ test("durable user.deleted worker resumes the same capture after an external obj
   context.mocks.s3.send.mockRejectedValue(
     new Error("transient object failure"),
   );
-  const first = await createStore().set(
-    executeClerkUserDeletionWork$,
-    { jobId },
-    context.signal,
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const task = await runDeletionTask(db, jobId);
+    expect(task).toMatchObject({
+      status: "pending",
+      lastError: null,
+      checkpoint: { phase: "capture", safetyHold: "agent-cascade-risk" },
+    });
+  }
+  const rows = await pool.query<{ id: string }>(
+    "SELECT id FROM run_uploaded_files WHERE id = $1",
+    [fileId],
   );
-  expect(first.processed).toBe(1);
-  const [retry] = await db
-    .select()
-    .from(backgroundJobs)
-    .where(eq(backgroundJobs.id, jobId));
-  expect(retry?.status).toBe("pending");
-  expect(retry?.lastError).toContain("transient object failure");
-  const [captured] = await db
-    .select()
-    .from(accountErasureJobs)
-    .where(eq(accountErasureJobs.subjectId, userId));
-  expect(captured?.sealedCaptureRevision).toBeNull();
-
-  context.mocks.s3.send.mockImplementation((command: unknown) => {
-    if (
-      command instanceof Object &&
-      command.constructor.name === "HeadObjectCommand"
-    ) {
-      return Promise.reject(
-        Object.assign(new Error("Object absent"), { name: "NoSuchKey" }),
-      );
-    }
-    return Promise.resolve({ Contents: [] });
-  });
-  await db
-    .update(backgroundJobs)
-    .set({ availableAt: sql`timezone('UTC', clock_timestamp())` })
-    .where(eq(backgroundJobs.id, jobId));
-  const replay = await createStore().set(
-    executeClerkUserDeletionWork$,
-    { jobId },
-    context.signal,
-  );
-  expect(replay.processed).toBe(1);
-  // The failed B1 item still owns its independent lease, so this replay
-  // cannot seal the capture yet.
-  const [waiting] = await db
-    .select()
-    .from(backgroundJobs)
-    .where(eq(backgroundJobs.id, jobId));
-  expect(waiting?.status).toBe("pending");
-  expect(waiting?.checkpoint).toMatchObject({ phase: "capture" });
-
-  // A restarted worker waits for that lease to expire, then resumes its
-  // durable cursor and continues past capture.
-  await db
-    .update(accountErasureWork)
-    .set({ leaseExpiresAt: sql`clock_timestamp() - interval '1 second'` })
-    .where(
-      and(
-        eq(accountErasureWork.jobId, captured?.id ?? ""),
-        isNotNull(accountErasureWork.leaseId),
-      ),
-    );
-  await db
-    .update(backgroundJobs)
-    .set({ availableAt: sql`timezone('UTC', clock_timestamp())` })
-    .where(eq(backgroundJobs.id, jobId));
-  const afterLeaseLoss = await createStore().set(
-    executeClerkUserDeletionWork$,
-    { jobId },
-    context.signal,
-  );
-  expect(afterLeaseLoss.processed).toBe(1);
-  const [finished] = await db
-    .select()
-    .from(backgroundJobs)
-    .where(eq(backgroundJobs.id, jobId));
-  // Capture sealed and the legacy cleanup ran; verification runs next.
-  expect(finished?.checkpoint).toMatchObject({ phase: "verify" });
-  const [sameCapture] = await db
-    .select()
-    .from(accountErasureJobs)
-    .where(eq(accountErasureJobs.subjectId, userId));
-  expect(sameCapture?.id).toBe(captured?.id);
-  expect(sameCapture?.sealedCaptureRevision).toBe(sameCapture?.captureRevision);
+  expect(rows.rows).toHaveLength(1);
+  expect(context.mocks.s3.send).not.toHaveBeenCalled();
 });
 
-test("pre-upgrade deletion tasks without a phase capture before cleanup", async () => {
+test("pre-upgrade deletion tasks without a phase remain pending before capture", async () => {
   const pool = new Pool({ connectionString: env("DATABASE_URL"), max: 4 });
   onTestFinished(async () => {
     await pool.end();
@@ -377,11 +453,12 @@ test("pre-upgrade deletion tasks without a phase capture before cleanup", async 
   expect(task).toMatchObject({
     status: "pending",
     lastError: null,
-    checkpoint: { phase: "verify" },
+    checkpoint: { phase: "capture", safetyHold: "agent-cascade-risk" },
   });
-  const [capture] = await db
-    .select()
-    .from(accountErasureJobs)
-    .where(eq(accountErasureJobs.subjectId, userId));
-  expect(capture?.sealedCaptureRevision).toBe(capture?.captureRevision);
+  await expect(
+    db
+      .select()
+      .from(accountErasureJobs)
+      .where(eq(accountErasureJobs.subjectId, userId)),
+  ).resolves.toStrictEqual([]);
 });

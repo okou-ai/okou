@@ -11,11 +11,11 @@ control and RPC services, shared contracts, and developer/test support.
 | runner-executor          | Claimed-run sandbox execution, session history, results, diagnostics and per-run telemetry             |
 | runner-host              | Runner host filesystem, live process registry, local control IPC, locks, paths and logging primitives |
 | runner-lifecycle         | Active-run handoff, idle sandbox, memory prefetch, status, workspace image and cache snapshot lifecycle |
-| runner-network           | Runner proxy, DNS, CA, network log capture and bounded upload                                         |
+| runner-network           | Runner proxy process/recovery, DNS, CA, network log capture and bounded upload                        |
 | runner-provider          | API/local job discovery, claiming, completion, active input, cancellation and queue coordination      |
 | runner-remote            | Guest RPC, remote usage, SSH authority/sessions/files, and VNC sessions                               |
 | runner-storage           | Storage planning, archive delivery, host archive cache and R2 template cache                         |
-| runner-supervisor        | Start-loop idle replenishment, claimed-idle reservation/rollback, finalizing-successor arbitration, claimed activation status and failure recovery, post-executor sandbox finalization, heartbeat, claimed-run completion settlement, ownership transitions, and orphan recovery above domain owners |
+| runner-supervisor        | Start-loop idle replenishment, pre-claim preference/admission/claim rollback, claimed-idle reservation/rollback, finalizing-successor arbitration, claimed resource selection/activation and status/failure recovery, post-executor finalizing and sandbox finalization, provider report ordering, active-run completion settlement, panic disposition recovery, heartbeat, ownership transitions, and orphan recovery above domain owners |
 | runner-types             | Shared Runner identifiers, API payloads, storage manifest types and validation                        |
 | sandbox                  | Provider-neutral sandbox interfaces and shared lifecycle/control types                                |
 | sandbox-firecracker      | Firecracker provider: VM lifecycle, networking, NBD COW and snapshot restore                          |

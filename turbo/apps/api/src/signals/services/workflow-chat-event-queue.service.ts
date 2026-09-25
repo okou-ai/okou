@@ -1,5 +1,4 @@
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
@@ -27,7 +26,6 @@ import {
   staleChatEventQueueThreadIds,
 } from "./chat-event-queue.service";
 import { insertChatEvent, replaceChatEvent } from "./chat-event.service";
-import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { recordOfficialWorkflowThreadProvenance } from "./morning-brief-thread-provenance.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import {
@@ -153,7 +151,6 @@ interface WorkflowQueueAdmissionArgs {
   readonly workflowAutomationEventType?: WorkflowAutomationEventType;
   readonly workflowAutomationEventPayload?: WorkflowAutomationEventPayload;
   readonly connectorSourceId?: string;
-  readonly publicBrand?: PublicBrand;
   readonly chatThreadId: string;
   readonly triggerSource: TriggerSource;
   readonly triggerBrief: string | undefined;
@@ -196,7 +193,6 @@ async function attemptWorkflowQueueAdmission(
   args: WorkflowQueueAdmissionArgs,
 ): Promise<WorkflowQueueAdmission> {
   const { automation } = args;
-  const splitWrites = await isSplitChatEventWriteEnabled(db);
   const [workflow] = await db
     .select({ displayName: workflows.displayName })
     .from(workflows)
@@ -231,7 +227,6 @@ async function attemptWorkflowQueueAdmission(
     workflowAutomationEventType: args.workflowAutomationEventType,
     workflowAutomationEventPayload: args.workflowAutomationEventPayload,
     connectorSourceId: args.connectorSourceId,
-    publicBrand: args.publicBrand,
     triggerBrief: args.triggerBrief ?? null,
   } as const;
   return await db.transaction(async (tx) => {
@@ -264,9 +259,7 @@ async function attemptWorkflowQueueAdmission(
     const conflict = args.queueEventId === undefined ? "none" : "id";
     // Context commits with the admitted event; a coalesced or superseded tick
     // writes neither.
-    const inserted = await insertChatEvent(tx, event, conflict, {
-      splitWrites,
-    });
+    const inserted = await insertChatEvent(tx, event, conflict);
     if (!inserted) {
       if (args.queueEventId !== undefined) {
         return { kind: "coalesced" };
@@ -313,7 +306,6 @@ export interface PendingWorkflowQueueEvent {
   readonly workflowAutomationEventType: string | null;
   readonly workflowAutomationEventPayload: WorkflowAutomationEventPayload | null;
   readonly connectorSourceId: string | undefined;
-  readonly publicBrand: PublicBrand | null;
 }
 
 /**
@@ -345,7 +337,6 @@ export async function loadNextWorkflowQueueEvent(
         workflowAutomationEventType: chatAutomationContext.eventType,
         workflowAutomationEventPayload: chatAutomationContext.eventPayload,
         connectorSourceId: chatAutomationContext.connectorSourceId,
-        publicBrand: chatAutomationContext.publicBrand,
       })
       .from(chatEvents)
       .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
@@ -403,7 +394,6 @@ export async function loadNextWorkflowQueueEvent(
     return {
       ...event,
       connectorSourceId: event.connectorSourceId ?? undefined,
-      publicBrand: event.publicBrand,
       triggerSource:
         event.automationKind === null
           ? null

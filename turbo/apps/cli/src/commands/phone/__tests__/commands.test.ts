@@ -102,22 +102,48 @@ describe("okou phone commands", () => {
     await messageCommand.parseAsync([
       "node",
       "cli",
-      "--to",
-      "+15551234567",
       "--agent-id",
       "agt_123",
       "--text",
       "hello",
     ]);
 
+    expect(capturedBody).not.toHaveProperty("toNumber");
     expect(capturedBody).toMatchObject({
-      toNumber: "+15551234567",
       agentphoneAgentId: "agt_123",
       text: "hello",
     });
     expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
       "Message sent",
     );
+  });
+
+  it("accepts the deprecated --to option without sending it", async () => {
+    let capturedBody: Record<string, unknown> | undefined;
+
+    server.use(
+      http.post(MESSAGE_URL, async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({
+          ok: true,
+          messageId: "apmsg_sent",
+          channel: "imessage",
+          toNumber: "someone@example.com",
+        });
+      }),
+    );
+
+    await messageCommand.parseAsync([
+      "node",
+      "cli",
+      "--to",
+      "+15551234567",
+      "--text",
+      "hello",
+    ]);
+
+    expect(capturedBody).not.toHaveProperty("toNumber");
+    expect(capturedBody).toMatchObject({ text: "hello" });
   });
 
   it.each([
@@ -178,15 +204,13 @@ describe("okou phone commands", () => {
       "cli",
       "-f",
       testFilePath,
-      "--to",
-      "+15551234567",
       "--caption",
       "report",
     ]);
 
+    expect(completeBody).not.toHaveProperty("toNumber");
     expect(completeBody).toMatchObject({
       uploadId: "00000000-0000-4000-8000-000000000001",
-      toNumber: "+15551234567",
       contentType: "application/pdf",
       caption: "report",
     });

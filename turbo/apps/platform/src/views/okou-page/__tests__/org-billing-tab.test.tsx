@@ -15,7 +15,14 @@ import {
   type CreditCheckoutRequest,
   type UsagePackMigrationStateResponse,
 } from "@okouai/api-contracts/contracts/billing";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { orgMembersContract } from "@okouai/api-contracts/contracts/org-member-routes";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi, type Mock } from "vitest";
 
@@ -1415,6 +1422,9 @@ test("Review and revise an already scheduled legacy Team conversion", async () =
 });
 
 test("Upgrade a current member package in the app", async () => {
+  const managementRefreshReady = createDeferredPromise<void>(context.signal);
+  const membersRefreshStarted = createDeferredPromise<void>(context.signal);
+  const membersRefreshReady = createDeferredPromise<void>(context.signal);
   let changeProcessing = false;
   let paymentApplied = false;
   let previewed = false;
@@ -1423,23 +1433,29 @@ test("Upgrade a current member package in the app", async () => {
     name: "Managed Usage Pack Org",
     role: "admin",
   });
-  context.mocks.data.orgMembers({
-    name: "Managed Usage Pack Org",
-    role: "admin",
-    members: [
-      {
-        userId: "user_1",
-        email: "alex@example.com",
-        firstName: "Alex",
-        lastName: "Chen",
-        imageUrl: "",
-        role: "admin",
-        joinedAt: "2026-01-01T00:00:00Z",
-      },
-    ],
-    pendingInvitations: [],
-    membershipRequests: [],
-    createdAt: "2026-01-01T00:00:00Z",
+  context.mocks.api(orgMembersContract.members, async ({ respond }) => {
+    if (paymentApplied) {
+      membersRefreshStarted.resolve();
+      await membersRefreshReady.promise;
+    }
+    return respond(200, {
+      name: "Managed Usage Pack Org",
+      role: "admin",
+      members: [
+        {
+          userId: "user_1",
+          email: "alex@example.com",
+          firstName: "Alex",
+          lastName: "Chen",
+          imageUrl: "",
+          role: "admin",
+          joinedAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+      pendingInvitations: [],
+      membershipRequests: [],
+      createdAt: "2026-01-01T00:00:00Z",
+    });
   });
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, activeProBillingStatus());
@@ -1447,39 +1463,45 @@ test("Upgrade a current member package in the app", async () => {
   context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
     return respond(200, usagePackCatalogResponse());
   });
-  context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
-    return respond(200, {
-      supportsFreeMembers: true,
-      tier: "pro",
-      currentPeriodEnd: "2026-04-01T00:00:00Z",
-      allocations: [
-        {
-          id: "b5235934-83df-4f16-bf41-f46890db7d40",
-          memberId: "user_1",
-          usagePackUsd: paymentApplied ? 50 : 20,
-          currentPeriodEnd: "2026-04-01T00:00:00Z",
-          pendingChange:
-            changeProcessing && !paymentApplied
-              ? {
-                  id: "ad3bd64c-7237-436d-a221-61b14ed719e7",
-                  kind: "upgrade",
-                  status: "applying",
-                  targetUsagePackUsd: 50,
-                  effectiveAt: "2026-03-16T00:00:00Z",
-                }
-              : previewed && !paymentApplied
+  context.mocks.api(
+    billingUsagePackManagementContract.get,
+    async ({ respond }) => {
+      if (changeProcessing) {
+        await managementRefreshReady.promise;
+      }
+      return respond(200, {
+        supportsFreeMembers: true,
+        tier: "pro",
+        currentPeriodEnd: "2026-04-01T00:00:00Z",
+        allocations: [
+          {
+            id: "b5235934-83df-4f16-bf41-f46890db7d40",
+            memberId: "user_1",
+            usagePackUsd: paymentApplied ? 50 : 20,
+            currentPeriodEnd: "2026-04-01T00:00:00Z",
+            pendingChange:
+              changeProcessing && !paymentApplied
                 ? {
                     id: "ad3bd64c-7237-436d-a221-61b14ed719e7",
                     kind: "upgrade",
-                    status: "previewed",
+                    status: "applying",
                     targetUsagePackUsd: 50,
                     effectiveAt: "2026-03-16T00:00:00Z",
                   }
-                : null,
-        },
-      ],
-    });
-  });
+                : previewed && !paymentApplied
+                  ? {
+                      id: "ad3bd64c-7237-436d-a221-61b14ed719e7",
+                      kind: "upgrade",
+                      status: "previewed",
+                      targetUsagePackUsd: 50,
+                      effectiveAt: "2026-03-16T00:00:00Z",
+                    }
+                  : null,
+          },
+        ],
+      });
+    },
+  );
   context.mocks.api(
     billingUsagePackManagementContract.previewSubscriptionChange,
     ({ body, respond }) => {
@@ -1669,9 +1691,22 @@ test("Upgrade a current member package in the app", async () => {
   ).not.toBeInTheDocument();
   expect(window.location.href).toBe(locationBeforeConfirmation);
   click(buttonByText("Confirm", confirmationDialog));
-  await screen.findByRole("heading", {
-    name: "Configure member packages",
-  });
+  await screen.findByText("Subscription change confirmed.");
+  // Keep the saved configuration visible while the server refresh is pending.
+  expect(
+    screen.getByRole("dialog", { name: "Configure member packages" }),
+  ).toBeInTheDocument();
+  expect(screen.getByText("Step 2 of 3")).toBeInTheDocument();
+  expect(
+    screen.getByRole("combobox", { name: "Usage for Alex Chen" }),
+  ).toHaveTextContent("54,321 credits · 8% off");
+  expect(
+    buttonByText(
+      "Confirm",
+      screen.getByRole("region", { name: "Order summary" }),
+    ),
+  ).toBeDisabled();
+  managementRefreshReady.resolve();
   await screen.findByText("Change is processing");
   expect(
     queryAllByRoleFast(
@@ -1691,7 +1726,18 @@ test("Upgrade a current member package in the app", async () => {
     expect(context.mocks.ably.hasSubscription("billing:changed")).toBeTruthy();
   });
   paymentApplied = true;
-  context.mocks.ably.trigger("billing:changed");
+  await act(async () => {
+    context.mocks.ably.trigger("billing:changed");
+    await membersRefreshStarted.promise;
+  });
+  // A later billing event also refreshes the roster without hiding its rows.
+  expect(
+    screen.getByRole("dialog", { name: "Configure member packages" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("combobox", { name: "Usage for Alex Chen" }),
+  ).toHaveTextContent("54,321 credits · 8% off");
+  membersRefreshReady.resolve();
 
   await waitFor(() => {
     expect(
@@ -3514,7 +3560,9 @@ test("Confirm a plan cancellation in hosted checkout when required", async () =>
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, activeProBillingStatus());
   });
-  context.mocks.api(billingDowngradeContract.create, ({ respond }) => {
+  let downgradeReturnUrl: string | undefined;
+  context.mocks.api(billingDowngradeContract.create, ({ body, respond }) => {
+    downgradeReturnUrl = body.returnUrl;
     return respond(200, {
       status: "payment_method_required",
       checkoutUrl: "https://checkout.stripe.com/confirm-cancel-subscription",
@@ -3539,7 +3587,43 @@ test("Confirm a plan cancellation in hosted checkout when required", async () =>
       "https://checkout.stripe.com/confirm-cancel-subscription",
     ]);
   });
+  expect(
+    new URL(downgradeReturnUrl ?? "").searchParams.get("billing_pending"),
+  ).toBe("downgrade-limited-free-1");
   expect(screen.queryByText("Downgrade plan")).not.toBeInTheDocument();
+});
+
+test("Confirm a scheduled cancellation after returning from hosted payment", async () => {
+  context.mocks.data.org({
+    id: "org_1",
+    name: "Cancellation Return Org",
+    role: "admin",
+  });
+  context.mocks.api(billingStatusContract.get, ({ respond }) => {
+    return respond(200, {
+      ...activeProBillingStatus(),
+      cancelAtPeriodEnd: true,
+      canRestorePlan: true,
+      scheduledChange: {
+        type: "cancel",
+        targetTier: "limited-free-1",
+        effectiveDate: "2026-04-01T00:00:00Z",
+      },
+    });
+  });
+
+  await openBillingTab(
+    "/?settings=billing&billing_pending=downgrade-limited-free-1",
+  );
+
+  await expect(
+    screen.findByText(
+      /^Cancellation scheduled\. Your current plan stays active until/u,
+    ),
+  ).resolves.toBeInTheDocument();
+  const searchParams = new URLSearchParams(window.location.search);
+  expect(searchParams.get("settings")).toBe("billing");
+  expect(searchParams.has("billing_pending")).toBeFalsy();
 });
 
 test("Restore a plan after hosted payment confirmation", async () => {
@@ -3568,7 +3652,9 @@ test("Restore a plan after hosted payment confirmation", async () => {
           },
     );
   });
-  context.mocks.api(billingRestoreContract.create, ({ respond }) => {
+  let restoreReturnUrl: string | undefined;
+  context.mocks.api(billingRestoreContract.create, ({ body, respond }) => {
+    restoreReturnUrl = body.returnUrl;
     return respond(200, {
       status: "payment_method_required",
       checkoutUrl: "https://checkout.stripe.com/confirm-restore-plan",
@@ -3593,6 +3679,9 @@ test("Restore a plan after hosted payment confirmation", async () => {
       "https://checkout.stripe.com/confirm-restore-plan",
     ]);
   });
+  expect(
+    new URL(restoreReturnUrl ?? "").searchParams.get("billing_pending"),
+  ).toBe("restore");
   expect(screen.queryByText("Restore Pro plan?")).not.toBeInTheDocument();
   expect(
     screen.queryByText("Plan restored. Your subscription will renew normally."),
@@ -3604,6 +3693,26 @@ test("Restore a plan after hosted payment confirmation", async () => {
   await expect(
     screen.findByText("Plan restored. Your subscription will renew normally."),
   ).resolves.toBeVisible();
+});
+
+test("Confirm a restored plan after returning from hosted payment", async () => {
+  context.mocks.data.org({
+    id: "org_1",
+    name: "Restore Return Org",
+    role: "admin",
+  });
+  context.mocks.api(billingStatusContract.get, ({ respond }) => {
+    return respond(200, activeProBillingStatus());
+  });
+
+  await openBillingTab("/?settings=billing&billing_pending=restore");
+
+  await expect(
+    screen.findByText("Plan restored. Your subscription will renew normally."),
+  ).resolves.toBeVisible();
+  const searchParams = new URLSearchParams(window.location.search);
+  expect(searchParams.get("settings")).toBe("billing");
+  expect(searchParams.has("billing_pending")).toBeFalsy();
 });
 
 test("Hide Restore when an ending plan cannot be restored", async () => {

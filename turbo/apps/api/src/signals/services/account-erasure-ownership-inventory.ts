@@ -95,8 +95,9 @@ const ACCOUNT_OWNERSHIP_COLUMNS = [
  *   declared ownership columns. Ownership is the account that owns the row,
  *   not the agent or organization it hangs under, so a thread the deleted
  *   account created inside somebody else's Agent is still a root here.
- *   A root may retain parent reaches while historical rows still have nullable
- *   copied ownership; those rows are swept before the parent roots disappear.
+ *   A root also keeps parent reaches when its copied ownership is nullable and
+ *   retained rows were never attributed; those rows are swept through the
+ *   parent before the parent roots disappear.
  * - `user_descendant`: rows carry no account identity and are removed with the
  *   named roots, by foreign-key cascade or by a root's own deletion. A
  *   collector owes a sweep from every declared parent, so the list is plural.
@@ -114,7 +115,7 @@ export type AccountOwnershipEntry =
   | {
       readonly coverage: "user_root";
       readonly ownership: readonly string[];
-      /** Transitional reach for rows written before nullable ownership existed. */
+      /** Permanent reach for retained rows whose nullable ownership was never copied. */
       readonly parents?: readonly string[];
     }
   | {
@@ -283,7 +284,7 @@ export const DESCENDANT_REACH: Readonly<
         },
       ],
       basis:
-        "The source ids intentionally carry no foreign keys because provenance outlives its source. Nullable source_user_id owns new and backfilled rows; this source-thread reach also removes historical rows whose ownership has not been copied yet.",
+        "The source ids intentionally carry no foreign keys because provenance outlives its source. Nullable source_user_id owns new and backfilled rows. Rows written by older APIs after the one-time backfill keep a null owner permanently, and this source-thread reach is their only erasure path while the source thread exists.",
     },
   ],
   chat_event_search_message_watermarks: [
@@ -625,6 +626,11 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   },
   desktop_auth_handoff_codes: { coverage: "user_root", ownership: ["user_id"] },
   device_codes: { coverage: "user_root", ownership: ["user_id"] },
+  discord_chat_deliveries: { coverage: "user_root", ownership: ["user_id"] },
+  // One-way Gateway event digests carry no account identity or message body.
+  // Keep them across deletion so replay cannot launch the same task again
+  // or uninstall a later installation of the same guild.
+  discord_gateway_receipts: { coverage: "not_account_scoped" },
   discord_chat_ingress: {
     coverage: "user_descendant",
     parents: ["discord_org_connections"],

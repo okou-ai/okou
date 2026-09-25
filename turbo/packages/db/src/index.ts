@@ -31,6 +31,8 @@ import * as chatDiscordContextSchema from "./schema/chat-discord-context";
 import * as chatFeishuContextSchema from "./schema/chat-feishu-context";
 import * as chatGithubContextSchema from "./schema/chat-github-context";
 import * as chatSlackContextSchema from "./schema/chat-slack-context";
+import * as discordChatDeliverySchema from "./schema/discord-chat-delivery";
+import * as discordGatewayReceiptSchema from "./schema/discord-gateway-receipt";
 import * as chatTeamsContextSchema from "./schema/chat-teams-context";
 import * as chatTelegramContextSchema from "./schema/chat-telegram-context";
 import * as secretSchema from "./schema/secret";
@@ -206,6 +208,8 @@ export const schema = {
   ...chatGithubContextSchema,
   ...chatSlackContextSchema,
   ...chatTeamsContextSchema,
+  ...discordChatDeliverySchema,
+  ...discordGatewayReceiptSchema,
   ...chatTelegramContextSchema,
   ...secretSchema,
   ...modelProviderSchema,

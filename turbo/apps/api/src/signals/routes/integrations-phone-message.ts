@@ -11,11 +11,10 @@ import {
   sendAgentPhoneMessage,
 } from "../external/agentphone-client";
 import {
-  normalizeAgentPhoneHandle,
+  agentPhoneChannelForLinkedHandle,
   resolveAgentPhoneAgentIdForUserLink,
-  resolveAgentPhoneUserLinkForOwner,
+  resolveAgentPhoneUserLinkForMember,
   storeOutboundAgentPhoneMessage,
-  type AgentPhoneChannel,
 } from "../services/agentphone.service";
 import { settle } from "../utils";
 
@@ -49,19 +48,21 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const body = bodyResult.data;
-  const userChannel: AgentPhoneChannel = "sms";
-  const phoneHandle = normalizeAgentPhoneHandle(body.toNumber, userChannel);
   const db = set(writeDb$);
-  const userLink = await resolveAgentPhoneUserLinkForOwner(db, {
-    phoneHandle,
-    channel: userChannel,
+  const userLink = await resolveAgentPhoneUserLinkForMember(db, {
     userId: auth.userId,
     orgId: auth.orgId,
   });
   signal.throwIfAborted();
   if (!userLink) {
-    return routeError(404, "Connected phone handle not found", "NOT_FOUND");
+    return routeError(
+      404,
+      "No phone is connected to this Okou account",
+      "NOT_FOUND",
+    );
   }
+  const phoneHandle = userLink.phoneHandle;
+  const userChannel = agentPhoneChannelForLinkedHandle(phoneHandle);
 
   const agentphoneAgentId = await resolveAgentPhoneAgentIdForUserLink(db, {
     userLinkId: userLink.id,

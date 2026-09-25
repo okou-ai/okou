@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { sshHostAvailabilitySchema } from "./ssh-access";
 import { vncConnectionMetadataSchema } from "./vnc-connections";
 
 const c = initContract();
@@ -15,12 +16,14 @@ const errors = {
   500: apiErrorSchema,
 };
 
-const vncHostBaseSchema = vncConnectionMetadataSchema.pick({
-  id: true,
-  displayName: true,
-  host: true,
-  port: true,
-});
+const vncHostBaseSchema = vncConnectionMetadataSchema
+  .pick({
+    id: true,
+    displayName: true,
+    host: true,
+    port: true,
+  })
+  .extend({ availability: sshHostAvailabilitySchema });
 
 export const vncHostSchema = z.discriminatedUnion("securityType", [
   vncHostBaseSchema
@@ -45,6 +48,12 @@ export const vncHostSchema = z.discriminatedUnion("securityType", [
     .extend({
       authMethod: z.literal("apple_srp_username_password"),
       securityType: z.literal("apple_srp"),
+    })
+    .strict(),
+  vncHostBaseSchema
+    .extend({
+      authMethod: z.literal("apple_rsa_srp_username_password"),
+      securityType: z.literal("apple_rsa_srp"),
     })
     .strict(),
 ]);

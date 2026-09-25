@@ -103,7 +103,13 @@ async function canonicalSlackDeliveryRow(
       ),
     )
     .limit(1);
-  return row;
+  if (!row) {
+    return undefined;
+  }
+  if (row.destination.provider === "discord") {
+    throw new Error("Slack delivery has a Discord destination");
+  }
+  return { ...row, destination: row.destination };
 }
 
 function deliveredResult(

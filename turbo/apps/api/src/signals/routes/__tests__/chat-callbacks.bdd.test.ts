@@ -43,8 +43,6 @@ import {
   holdChatThreadRowLockFixture,
   holdRunOutputMaterializationRowFixture,
   insertQueuedSlackMissingContextFixture,
-  removeAcknowledgedCancellationLifecycleFixture,
-  removeChatCallbackPublicBrandFixture,
 } from "../../../test-fixtures/chat-events";
 import { holdAgentRowLockFixture } from "../../../test-fixtures/chat-thread-agent-read-erasure";
 
@@ -2019,13 +2017,13 @@ describe("CHAT-02: completed chat callback", () => {
     await waitForRunStatus(actor, claimed.runId, "cancelled");
   }, 90_000);
 
-  it("redrives an undelivered terminal callback after lock contention", async () => {
+  it("persists the terminal marker while a control writer holds the thread row", async () => {
     const { actor, agentId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const run = await startChatRun(actor, {
       agentId,
-      prompt: "recover terminal projection after lock contention",
+      prompt: "complete terminal projection under thread lock contention",
     });
     // This test isolates /complete: the route cannot otherwise pause between
     // Runner claim and terminal callback delivery while retaining API auth.
@@ -2054,11 +2052,12 @@ describe("CHAT-02: completed chat callback", () => {
     });
 
     const blockedCompletion = settle(
-      webhooks.requestAgentComplete(completionBody, sandboxHeaders, [500]),
+      webhooks.requestAgentComplete(completionBody, sandboxHeaders, [200]),
     );
     await waitForRunStatus(actor, run.runId, "completed");
     const heldThread = await holdChatThreadRowLockFixture({
       threadId: run.threadId,
+      mode: "no key update",
       signal: context.signal,
     });
     onTestFinished(async () => {
@@ -2068,40 +2067,37 @@ describe("CHAT-02: completed chat callback", () => {
     held.release();
     await held.done;
 
-    const blockedResult = await blockedCompletion;
-    if (!blockedResult.ok) {
-      throw blockedResult.error;
-    }
-    expect(blockedResult.value.body).toMatchObject({
-      error: { code: "INTERNAL_SERVER_ERROR" },
-    });
-    const beforeRetry = await chat.listThreadEvents(actor, run.threadId);
+    // The terminal marker append takes only its FK KEY SHARE, which does not
+    // conflict with a control writer's NO KEY UPDATE on the thread row. Observe
+    // the committed marker before releasing the lock; the independent
+    // last_message_at update may need the row after the marker commits.
+    const whileHeld = await waitForThreadMessages(
+      actor,
+      run.threadId,
+      (events) => {
+        return lifecycleMarkers(events, run.runId, "completed").length > 0;
+      },
+    );
     expect(
-      lifecycleMarkers(beforeRetry.events, run.runId, "completed"),
-    ).toHaveLength(0);
-
+      lifecycleMarkers(whileHeld.events, run.runId, "completed"),
+    ).toHaveLength(1);
     heldThread.release();
     await heldThread.done;
-    const recovered = await webhooks.requestAgentComplete(
-      completionBody,
-      sandboxHeaders,
-      [200],
-    );
-    expect(recovered.body).toStrictEqual({
+
+    const completedResult = await blockedCompletion;
+    if (!completedResult.ok) {
+      throw completedResult.error;
+    }
+    expect(completedResult.value.body).toStrictEqual({
       success: true,
       status: "completed",
     });
-    const afterRetry = await chat.listThreadEvents(actor, run.threadId);
-    expect(
-      lifecycleMarkers(afterRetry.events, run.runId, "completed"),
-    ).toHaveLength(1);
-
     const duplicate = await webhooks.requestAgentComplete(
       completionBody,
       sandboxHeaders,
       [200],
     );
-    expect(duplicate.body).toStrictEqual(recovered.body);
+    expect(duplicate.body).toStrictEqual(completedResult.value.body);
     const afterDuplicate = await chat.listThreadEvents(actor, run.threadId);
     expect(
       lifecycleMarkers(afterDuplicate.events, run.runId, "completed"),
@@ -2447,63 +2443,6 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
         );
       }),
     ).toHaveLength(1);
-
-    await api.requestCancelRun(actor, replacementRunId, [200]);
-    await waitForRunStatus(actor, replacementRunId, "cancelled");
-    await flushWaitUntilForTest();
-  }, 90_000);
-
-  it("redrives an acknowledged chat callback after terminal processing is lost", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const run = await startChatRun(actor, {
-      agentId,
-      prompt: "cancel before losing detached terminal processing",
-    });
-    const sandboxHeaders = await claimChatRun(runnerGroup, run.runId);
-    const queuedEventId = await queueChatEvent(actor, {
-      agentId,
-      threadId: run.threadId,
-      prompt: "continue after acknowledged callback recovery",
-    });
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-    await flushWaitUntilForTest();
-    await removeAcknowledgedCancellationLifecycleFixture({
-      runId: run.runId,
-    });
-
-    await webhooks.requestAgentComplete(
-      { runId: run.runId, exitCode: 1, error: "Run cancelled" },
-      sandboxHeaders,
-      [200],
-    );
-    await flushWaitUntilForTest();
-    await expectCancellationRecoveryPending(actor, run.threadId, true);
-    const beforeRedrive = await chat.listThreadEvents(actor, run.threadId);
-    expect(
-      lifecycleMarkers(beforeRedrive.events, run.runId, "cancelled"),
-    ).toHaveLength(0);
-    expect(
-      userMessages(beforeRedrive.events).filter((event) => {
-        return (
-          event.revokesEventId === queuedEventId && event.runId !== undefined
-        );
-      }),
-    ).toHaveLength(0);
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-    await flushWaitUntilForTest();
-    const replacementRunId = await waitForQueuedEventReplacement(
-      actor,
-      run.threadId,
-      queuedEventId,
-    );
-    const afterRedrive = await chat.listThreadEvents(actor, run.threadId);
-    expect(
-      lifecycleMarkers(afterRedrive.events, run.runId, "cancelled"),
-    ).toHaveLength(1);
-    await expectCancellationRecoveryPending(actor, run.threadId, false);
 
     await api.requestCancelRun(actor, replacementRunId, [200]);
     await waitForRunStatus(actor, replacementRunId, "cancelled");
@@ -4913,7 +4852,6 @@ describe("CHAT-02: failed chat callbacks", () => {
       readonly failureReason?: RunFailureReasonToken;
       readonly selectedModel?: SupportedRunModel;
       readonly orgRole?: TestOrgRole;
-      readonly removeCallbackPublicBrand?: boolean;
       readonly configureProvider?: (
         fixture: EntitledChatActor,
       ) => Promise<void>;
@@ -4931,9 +4869,6 @@ describe("CHAT-02: failed chat callbacks", () => {
           : { selectedModel: params.selectedModel }),
       });
       const sandboxHeaders = await claimChatRun(fixture.runnerGroup, run.runId);
-      if (params.removeCallbackPublicBrand) {
-        await removeChatCallbackPublicBrandFixture(run.runId);
-      }
       if (params.orgRole !== undefined) {
         mockClerkMembership(
           context,
@@ -5081,9 +5016,8 @@ describe("CHAT-02: failed chat callbacks", () => {
     }
     await expect(
       failAndReadError({
-        prompt: "legacy callback without public brand failed for admin",
+        prompt: "org key failed for admin",
         orgRole: "admin",
-        removeCallbackPublicBrand: true,
       }),
     ).resolves.toBe(
       "Claude Code could not authenticate with the configured Anthropic API key. Update or replace the API key in Model Providers, then retry.\n\nOpen Model Providers: https://app.okou.ai/?settings=model",

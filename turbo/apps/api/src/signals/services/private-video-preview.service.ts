@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { CURRENT_LINK_LAYOUT } from "@okouai/api-contracts/contracts/link-layout";
 import { command } from "ccstate";
 import {
   PRIVATE_VIDEO_POSTER_MAX_BYTES,
@@ -7,6 +8,7 @@ import {
   privateVideoPosterGrantSchema,
 } from "@okouai/api-contracts/contracts/artifact-video-preview";
 import { env } from "../../lib/env";
+import { hostedLinkOrigin } from "../../lib/link-layout";
 import { nowDate } from "../../lib/time";
 import { deleteS3Objects, putS3Object } from "../external/s3";
 import { onRejection } from "../utils";
@@ -39,14 +41,6 @@ export const extractPrivateVideoPoster$ = command(
       sourceKey: video.key,
       expiresAt: new Date(nowDate().getTime() + 5 * 60_000).toISOString(),
     });
-    const hostDomain =
-      video.publicBrand === "okou"
-        ? env("OKOU_PUBLIC_HOST_DOMAIN")
-        : env("ZERO_HOST_DOMAIN");
-    const scheme =
-      video.publicBrand === "okou"
-        ? env("OKOU_HOST_SCHEME")
-        : env("ZERO_HOST_SCHEME");
     // One cleanup operation is shared by success and rejection, including
     // cancellation. An interrupted cleanup leaves an inert grant after its TTL.
     const cleanup = deleteS3Objects(video.bucket, [key]);
@@ -62,7 +56,7 @@ export const extractPrivateVideoPoster$ = command(
       );
       signal.throwIfAborted();
       const response = await fetch(
-        `${scheme}://files.${hostDomain}${PRIVATE_VIDEO_POSTER_PATH}`,
+        `${hostedLinkOrigin(CURRENT_LINK_LAYOUT, "files")}${PRIVATE_VIDEO_POSTER_PATH}`,
         {
           method: "POST",
           headers: {

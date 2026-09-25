@@ -75,17 +75,19 @@ invitation and App page suites retain normalized status, Free invitations,
 suspended direct/paid rejection, administrator authorization, reactivation and
 explicit `showUsagePack: false` behavior.
 
-### Active transition validators
+### Retired chat event sequence transition validators (2026-09-25)
 
-- `apps/api/scripts/chat-event-sequences/acceptance.ts` protects the chat-event
-  sequence bridge and bounded backfill. It exercises the actual PR1 append SQL
-  against mixed outgoing/direct writers, concurrent multi-thread batches,
-  idempotent conflicts and sequence gaps, SQL rollback, interrupted-batch retry,
-  retention, thread-FK lock compatibility, irreversible global activation and
-  the planned PR2 column contraction. The migration-consistency command runs
-  this isolated-schema validator before schema comparison. Retain the legacy
-  transition cases until the bridge/column contraction has shipped and the
-  rollback window has closed; retain canonical allocation and cleanup coverage.
+The chat event sequence bridge, backfill and routing-preparation validators are
+retired. Migration `1236_contract_chat_event_sequence_bridge` shipped in API
+1.676.0 (release #36823): the production migration job succeeded and
+`chat_threads.last_chat_event_seq_id` is absent. The expand and contract cycle is
+complete; no API that rollback can select writes the retired counter. The
+permanent tier of `apps/api/scripts/chat-event-sequences/acceptance.ts` keeps
+first-append initialization, concurrent and cross-thread batches, idempotent
+conflicts, gaps, statement rollback, retention, event FK lock compatibility and
+cascade cleanup against the current schema.
+
+### Active transition validators
 
 - `scripts/test-marketing-privacy-retirement.ts` protects migration
   `1139_retire_marketing_privacy_storage` (#33747): populated/empty storage,

@@ -1,42 +1,24 @@
-import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";
-import {
-  touchChatThreadLastMessageAt,
-  touchChatThreadLastMessageAtIndependently,
-} from "./chat-event-shared.service";
+import { touchChatThreadLastMessageAtIndependently } from "./chat-event-shared.service";
 import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
 
-/** Native ingress retains its legacy transaction until the fleet activates. */
+/**
+ * Native ingress appends its event without an enclosing transaction; the
+ * thread touch is a weakly consistent side effect attempted independently.
+ */
 export async function withNativeChatEventThreadTouch<T>(
   db: Db,
   args: {
-    readonly splitWrites: boolean;
     readonly chatThreadId: string;
     readonly createdAt: Date;
     readonly eventId: string;
   },
-  write: (writer: Db | Tx, touchThread: () => Promise<void>) => Promise<T>,
+  write: (writer: Db, touchThread: () => Promise<void>) => Promise<T>,
 ): Promise<T> {
-  if (args.splitWrites) {
-    return await write(db, () => {
-      return attemptChatEventSideEffect(
-        "thread_touch",
-        args.chatThreadId,
-        () => {
-          return touchChatThreadLastMessageAtIndependently(
-            db,
-            args.chatThreadId,
-            args.createdAt,
-            args.eventId,
-          );
-        },
-      );
-    });
-  }
-  return await db.transaction((tx) => {
-    return write(tx, () => {
-      return touchChatThreadLastMessageAt(
-        tx,
+  return await write(db, () => {
+    return attemptChatEventSideEffect("thread_touch", args.chatThreadId, () => {
+      return touchChatThreadLastMessageAtIndependently(
+        db,
         args.chatThreadId,
         args.createdAt,
         args.eventId,

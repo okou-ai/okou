@@ -53,7 +53,6 @@ function itemStateSelection() {
     to_addresses: emailOutbox.toAddresses,
     subject: emailOutbox.subject,
     headers: emailOutbox.headers,
-    public_brand: emailOutbox.publicBrand,
     template: emailOutbox.template,
     source_run_id: emailOutbox.sourceRunId,
     source_workflow_automation_id: emailOutbox.sourceWorkflowAutomationId,
