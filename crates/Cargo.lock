@@ -3461,7 +3461,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.213.18"
+version = "0.213.19"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3528,7 +3528,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3576,7 +3576,7 @@ dependencies = [
 
 [[package]]
 name = "runner-host"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "chrono",
  "futures-util",
@@ -3598,7 +3598,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3629,7 +3629,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3660,7 +3660,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.3.8"
+version = "0.3.9"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3695,7 +3695,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3769,7 +3769,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3809,7 +3809,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "api-contracts",
  "async-trait",

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.11](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.10...runner-supervisor-v0.1.11) (2026-09-25)
+
+
+### Refactoring
+
+* **runner:** move pending candidate state to supervisor ([#36868](https://github.com/okou-ai/okou/issues/36868)) ([6efbff4](https://github.com/okou-ai/okou/commit/6efbff4941ee52d9fc2018806968ddaf3578b7ae))
+
 ## [0.1.10](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.9...runner-supervisor-v0.1.10) (2026-09-25)
 
 ## [0.1.9](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.8...runner-supervisor-v0.1.9) (2026-09-25)
