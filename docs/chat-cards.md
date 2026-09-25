@@ -728,7 +728,8 @@ that the website had already selected. The API checks the
 current options again before writing; option drift makes the action stale, and
 post-write mismatch yields an uncertain state instead of claiming success.
 Native checkboxes use the observed checkedness, not their `.value` attribute.
-An optional checkbox left untouched preserves the website's state; explicitly
+An indeterminate checkbox cannot be represented as a Boolean and falls back to
+Browser takeover. An optional checkbox left untouched preserves the website's state; explicitly
 checking or unchecking it submits a Boolean bound to the preflight state. An
 Agent-required checkbox needs deliberate checking or confirmation when already
 checked, and a website-required checkbox must be checked. Changed checkedness

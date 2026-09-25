@@ -926,7 +926,7 @@ function browserUseControlInspectionFunction(): string {
         inputType: input ? control.type : textarea ? "textarea" : select ? (control.multiple ? "select-multiple" : "select-one") : "",
         connected: control.isConnected === true,
         mainDocument: control.ownerDocument === document,
-        writable: supported && boundedNumberConstraints && boundedOptions && !control.readOnly && !control.matches(":disabled"),
+        writable: supported && boundedNumberConstraints && boundedOptions && !control.readOnly && !control.matches(":disabled") && !(input && control.type === "checkbox" && control.indeterminate),
         siteRequired: supported && control.required === true,
         ...(input && control.type === "checkbox" ? { checked: control.checked } : {}),
         multiple: select ? control.multiple : input && control.type === "email" && control.multiple === true,
@@ -1713,7 +1713,7 @@ async function writeBrowserUseApplyFields(
   }
 }
 
-async function writeBrowserUseMixedSelectFields(
+async function writeBrowserUseMixedControlFields(
   socket: WebSocket,
   args: {
     readonly sessionId: string;
@@ -1770,7 +1770,7 @@ async function writeBrowserUseMixedSelectFields(
             if (!control.isConnected || control.ownerDocument !== document || control.matches(":disabled")) return false;
             if (spec.kind === "checkbox") {
               return control instanceof HTMLInputElement && control.type === "checkbox" &&
-                control.required === spec.required &&
+                !control.indeterminate && control.required === spec.required &&
                 control.checked === (final && spec.checked !== null ? spec.checked : spec.observedChecked);
             }
             if (spec.kind === "scalar") {
@@ -1887,7 +1887,12 @@ async function applyBrowserUseUserActionOnSocket(
       );
     })
   ) {
-    await writeBrowserUseMixedSelectFields(socket, writeArgs, mutation, signal);
+    await writeBrowserUseMixedControlFields(
+      socket,
+      writeArgs,
+      mutation,
+      signal,
+    );
   } else {
     await writeBrowserUseApplyFields(socket, writeArgs, mutation, signal);
   }
