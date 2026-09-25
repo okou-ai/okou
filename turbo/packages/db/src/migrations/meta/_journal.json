@@ -1104,8 +1104,15 @@
     {
       "idx": 1235,
       "version": "7",
-      "when": 1790307801847,
-      "tag": "1235_public_brand_okou_default_platform",
+      "when": 1790307760596,
+      "tag": "1235_hosted_artifact_link_layout_okou_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 1236,
+      "version": "7",
+      "when": 1790309081796,
+      "tag": "1236_public_brand_okou_default_platform",
       "breakpoints": true
     }
   ]

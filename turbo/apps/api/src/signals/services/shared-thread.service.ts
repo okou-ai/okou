@@ -4,7 +4,6 @@ import { joinAll, onRejection, settle } from "../utils";
 import { visiblePiMemoryCitationText } from "@okouai/api-contracts/contracts/pi-memory-citations";
 import { isRetiredGoalArchiveText } from "@okouai/api-contracts/contracts/retired-goal-archive";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { agents } from "@okouai/db/schema/agent";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -50,6 +49,7 @@ import { privateArtifactCreationEnabled } from "./private-artifact-storage.servi
 import {
   type SharedThreadArtifactPlan,
   prepareSharedThreadArtifacts$,
+  SHARED_THREAD_LINK_LAYOUT_SEGMENT,
   SharedThreadArtifactUnavailable,
 } from "./shared-thread-artifact-snapshot.service";
 import {
@@ -325,7 +325,6 @@ const prepareSharedThreadMessages$ = command(
         {
           userId: args.userId,
           orgId: args.orgId,
-          publicBrand: PUBLIC_BRAND,
           shareId,
           document: row.eventType === "output.message" ? null : row.userMessage,
           copies: attachmentCopies,
@@ -391,6 +390,7 @@ const persistSharedThread$ = command(
             sourceChatThreadId: args.threadId,
             title: initialTitle,
             ...sharedThreadMessageColumns(plan?.messages ?? messages),
+            publicBrand: SHARED_THREAD_LINK_LAYOUT_SEGMENT,
             createdAt,
           })
           .returning({ id: sharedThreads.id });
@@ -448,7 +448,7 @@ const persistSharedThread$ = command(
               id,
               userId: args.userId,
               orgId: args.orgId,
-              publicBrand: PUBLIC_BRAND,
+              publicBrand: SHARED_THREAD_LINK_LAYOUT_SEGMENT,
               hasArtifactSnapshot: true,
             },
             cleanupSignal,
@@ -510,7 +510,7 @@ const prepareAndPersistSharedThread$ = command(
         ? await settle(
             set(
               prepareSharedThreadArtifacts$,
-              { ...args, publicBrand: PUBLIC_BRAND, threadId: id, messages },
+              { ...args, threadId: id, messages },
               signal,
             ),
             signal,

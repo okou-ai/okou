@@ -1,5 +1,4 @@
 import { v5 as uuidv5 } from "uuid";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 import {
   MANAGED_SOCIALKIT_BILLING_CATEGORY,
@@ -14,6 +13,7 @@ import {
   type SocialKitErrorResponse,
 } from "@okouai/api-contracts/contracts/social";
 import { socialKitDownloadJobs } from "@okouai/db/schema/socialkit-download-job";
+import type { LinkLayout } from "@okouai/api-contracts/contracts/link-layout";
 import { command } from "ccstate";
 import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -1381,6 +1381,7 @@ const persistAndSettleSocialKitDownloadUsage$ = command(
 interface StoredArtifactObject {
   readonly key: string;
   readonly url: string;
+  readonly layout: LinkLayout;
   readonly sizeBytes: number;
 }
 
@@ -1404,7 +1405,6 @@ const allocateSocialKitArtifact$ = command(
       userId: args.job.userId,
       id: args.job.id,
       filename: args.filename,
-      publicBrand: PUBLIC_BRAND,
     };
     if (args.job.request.privateArtifacts === true) {
       return await set(
@@ -1472,6 +1472,7 @@ const materializeSocialKitArtifact$ = command(
           return {
             key: existing.key,
             url: existing.url,
+            layout: existing.layout,
             sizeBytes: existing.size,
           };
         }
@@ -1491,7 +1492,12 @@ const materializeSocialKitArtifact$ = command(
           },
           signal,
         );
-        return { key: location.key, url: location.url, sizeBytes };
+        return {
+          key: location.key,
+          url: location.url,
+          layout: location.layout,
+          sizeBytes,
+        };
       })(),
       () => {
         // `streamDownloadToArtifact$` cancels the reader on its own failures.
@@ -1533,7 +1539,7 @@ const materializeSocialKitArtifact$ = command(
         sizeBytes: artifact.sizeBytes,
         url: artifact.url,
         s3Key: stored.key,
-        publicBrand: PUBLIC_BRAND,
+        layout: stored.layout,
         metadata: {
           provider: "socialkit",
           providerJobId: args.job.providerJobId,

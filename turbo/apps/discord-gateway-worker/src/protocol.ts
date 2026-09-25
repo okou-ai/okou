@@ -16,6 +16,18 @@ export const readySchema = z.object({
   session_id: z.string().min(1),
   resume_gateway_url: z.string().url(),
   application: z.object({ id: z.string() }),
+  user: z.object({ id: z.string().regex(/^\d{17,20}$/u) }),
+});
+
+/** Transport-only view of a message; the API revalidates the full event. */
+export const messageRoutingSchema = z.object({
+  guild_id: z.string().optional(),
+  mentions: z.array(z.object({ id: z.string() })),
+});
+
+export const outboxEntrySchema = z.object({
+  body: z.string(),
+  queuedAt: z.number(),
 });
 
 export const gatewayBotSchema = z.object({
@@ -39,6 +51,7 @@ export const stateSchema = z.object({
       id: z.string(),
       url: z.string(),
       sequence: z.number().int().nonnegative(),
+      botUserId: z.string(),
     })
     .nullable(),
   nextOutbox: z.number().int().nonnegative(),

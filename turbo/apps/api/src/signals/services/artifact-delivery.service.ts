@@ -4,6 +4,12 @@ import {
   artifactDeliveryRecordSchema,
   type ArtifactDeliveryRecord,
 } from "@okouai/api-contracts/contracts/artifact-delivery";
+import {
+  hostedSitePointerNamespace,
+  linkLayoutFromSegment,
+  linkLayoutSegment,
+  type LinkLayout,
+} from "@okouai/api-contracts/contracts/link-layout";
 import { env } from "../../lib/env";
 import {
   isS3NotFoundError,
@@ -16,7 +22,7 @@ export class ArtifactDeliveryAliasConflict extends Error {}
 
 /** Registry entries identify an alias; publication access still requires its live policy. */
 export function artifactDeliveryRecord(
-  brand: "vm0" | "okou",
+  layout: LinkLayout,
   kind: "file" | "html",
   alias: string,
   signal: AbortSignal,
@@ -30,7 +36,7 @@ export function artifactDeliveryRecord(
       get(
         readArtifactSharePolicyObject(
           bucket,
-          artifactDeliveryKey(brand, kind, alias),
+          artifactDeliveryKey(linkLayoutSegment(layout), kind, alias),
           signal,
         ),
       ),
@@ -45,8 +51,8 @@ export function artifactDeliveryRecord(
     const record = artifactDeliveryRecordSchema.parse(
       JSON.parse(result.value.buffer.toString("utf8")),
     );
-    if (record.publicBrand !== brand) {
-      throw new Error("Artifact delivery alias has an inconsistent brand");
+    if (record.publicBrand !== linkLayoutSegment(layout)) {
+      throw new Error("Artifact delivery alias has an inconsistent layout");
     }
     return record;
   });
@@ -77,8 +83,9 @@ export const registerArtifactDelivery$ = command(
       (record.kind === "publication" || record.kind === "thread-resource") &&
       args.targetKind === "html"
     ) {
-      const namespace =
-        record.publicBrand === "okou" ? "sites/brands/okou" : "sites";
+      const namespace = hostedSitePointerNamespace(
+        linkLayoutFromSegment(record.publicBrand),
+      );
       const legacy = await settle(
         get(
           readArtifactSharePolicyObject(
@@ -137,7 +144,7 @@ export const registerLegacyArtifactFile$ = command(
       readonly key: string;
       readonly filename: string;
       readonly contentType: string;
-      readonly publicBrand: "vm0" | "okou";
+      readonly layout: LinkLayout;
     },
     signal: AbortSignal,
   ) => {
@@ -155,7 +162,10 @@ export const registerLegacyArtifactFile$ = command(
           version: 1,
           kind: "legacy-file",
           audience: "public",
-          ...args,
+          publicBrand: linkLayoutSegment(args.layout),
+          key: args.key,
+          filename: args.filename,
+          contentType: args.contentType,
         },
       },
       signal,
@@ -168,7 +178,7 @@ export const registerLegacyHostedSite$ = command(
     { set },
     args: {
       readonly alias: string;
-      readonly publicBrand: "vm0" | "okou";
+      readonly layout: LinkLayout;
       readonly pointerKey: string;
     },
     signal: AbortSignal,
@@ -182,7 +192,7 @@ export const registerLegacyHostedSite$ = command(
           version: 1,
           kind: "legacy-site",
           audience: "public",
-          publicBrand: args.publicBrand,
+          publicBrand: linkLayoutSegment(args.layout),
           pointerKey: args.pointerKey,
         },
       },

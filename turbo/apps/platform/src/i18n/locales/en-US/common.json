@@ -7953,6 +7953,7 @@
       "moreOptions": "More Discord options",
       "retry": "Retry",
       "server": "Server: {{name}}",
+      "suspended": "Discord is temporarily unavailable. Existing connections are kept.",
       "title": "Discord",
       "unconfigured": "Discord is not available yet for this organization.",
       "uninstall": "Remove Discord",

@@ -43,8 +43,8 @@ export const sharedThreads = pgTable(
       .default({})
       .notNull(),
     /**
-     * Current APIs rely on the `okou` default and read it only to locate the
-     * stored shared-artifact layout of existing shares.
+     * Stores the shared-artifact link layout segment. Current APIs write the
+     * current segment explicitly and read it to locate existing shares.
      */
     publicBrand: text("public_brand")
       .$type<PublicBrand>()

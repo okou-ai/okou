@@ -21,10 +21,7 @@ import {
 } from "@okouai/db/schema/browser-session";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import {
-  PUBLIC_BRAND,
-  PUBLIC_BRAND_PRESENTATION,
-} from "@okouai/core/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
 import { command } from "ccstate";
 import {
   and,
@@ -968,7 +965,6 @@ const captureAndStoreBrowserScreenshot$ = command(
             filename: BROWSER_SCREENSHOT_FILENAME,
             contentType: BROWSER_SCREENSHOT_CONTENT_TYPE,
             size: image.byteLength,
-            publicBrand: PUBLIC_BRAND,
           },
           signal,
         );
