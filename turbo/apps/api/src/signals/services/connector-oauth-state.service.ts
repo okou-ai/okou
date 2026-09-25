@@ -1,15 +1,6 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
-import {
-  and,
-  eq,
-  gt,
-  isNotNull,
-  isNull,
-  notExists,
-  type SQL,
-} from "drizzle-orm";
+import { and, eq, gt, isNotNull, isNull, type SQL } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
@@ -187,25 +178,6 @@ function requireStoredOAuthState(
   return narrowed;
 }
 
-async function hasCommittedUserDeletion(
-  db: Db | ReadonlyDb,
-  userId: string,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const [job] = await db
-    .select({ id: backgroundJobs.id })
-    .from(backgroundJobs)
-    .where(
-      and(
-        eq(backgroundJobs.kind, "clerk-user-deletion"),
-        eq(backgroundJobs.userId, userId),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  return job !== undefined;
-}
-
 export async function getConnectorOAuthStateStatus(
   db: Db,
   args: {
@@ -218,7 +190,6 @@ export async function getConnectorOAuthStateStatus(
     .select({
       connectorSlug: connectorOauthStates.connectorSlug,
       customConnectorId: connectorOauthStates.customConnectorId,
-      userId: connectorOauthStates.userId,
       consumedAt: connectorOauthStates.consumedAt,
       expiresAt: connectorOauthStates.expiresAt,
       redirectUri: connectorOauthStates.redirectUri,
@@ -235,8 +206,7 @@ export async function getConnectorOAuthStateStatus(
   if (
     !matchesOAuthStateTarget(storedState, args.target) ||
     storedState.consumedAt ||
-    storedState.expiresAt <= nowDate() ||
-    (await hasCommittedUserDeletion(db, storedState.userId, signal))
+    storedState.expiresAt <= nowDate()
   ) {
     return { kind: "invalid" };
   }
@@ -284,20 +254,6 @@ export async function claimConnectorOAuthState(
         ...oauthStateTargetConditions(args.target),
         isNull(connectorOauthStates.consumedAt),
         gt(connectorOauthStates.expiresAt, claimedAt),
-        // Reject tasks committed before this statement's snapshot at the
-        // claim write, not only at the earlier callback preview. Concurrent
-        // enqueue and later connection writes still need the shared D1 fence.
-        notExists(
-          db
-            .select({ id: backgroundJobs.id })
-            .from(backgroundJobs)
-            .where(
-              and(
-                eq(backgroundJobs.kind, "clerk-user-deletion"),
-                eq(backgroundJobs.userId, connectorOauthStates.userId),
-              ),
-            ),
-        ),
       ),
     )
     .returning(storedOAuthStateSelection);
@@ -340,8 +296,7 @@ export async function readCustomConnectorOAuthState(
   if (
     !narrowed ||
     storedState.consumedAt ||
-    storedState.expiresAt <= nowDate() ||
-    (await hasCommittedUserDeletion(db, storedState.userId, signal))
+    storedState.expiresAt <= nowDate()
   ) {
     return { kind: "invalid" };
   }
