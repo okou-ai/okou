@@ -1,32 +1,57 @@
 # Deployment Compatibility
 
-## Account erasure writer fence retirement (2026-09-25)
+## Account erasure retirement (2026-09-25)
 
-API writes and reads no longer check whether their user or organization has
-been closed for account erasure. Runs, compute, chat threads, Pi context,
-connectors, Workflows, Computer Use, Discord, Morning Brief, SSH and VNC all
-proceed for a closed subject; nothing returns `subject_closed`,
-`account_closed`, "Account unavailable" or a closure-only 404 any more. Rows
-written after closure are removed afterwards by the erasure collectors, the
-relational sweep and the legacy Clerk cleanup. The Computer Use host stop and
-command completion contracts drop their `403` response; the Desktop client only
-handles `401`/`409` there.
+The whole account-erasure mechanism from EPIC #33745 is removed. It will be
+redesigned from scratch; until then account deletion works as it did before the
+epic.
 
-Business writers no longer take the shared account-erasure subject advisory
-lock, a closure lookup or custom `lock_timeout`/`statement_timeout`. The
-exclusive subject lock remains only between erasure participants (first
-closure and job transitions). Legacy Clerk deletion no longer writes
-`pi_stable_context_erasure_fences`, and migration 1248 drops that table.
+- **Writer and reader fence.** API writes and reads no longer check whether
+  their user or organization was closed for erasure, take the shared subject
+  advisory lock, or set a custom `lock_timeout`/`statement_timeout` for it.
+  Nothing returns `subject_closed`, `account_closed`, "Account unavailable" or a
+  closure-only 404. The Computer Use host stop and command completion contracts
+  drop their `403` response; the Desktop client only handles `401`/`409` there.
+  `VNC_OWNER_CHANGED` leaves the VNC error contract and the App.
+- **Deletion hold (#36842).** The `clerk-user-deletion` job no longer yields for
+  24 hours before cleanup. Auth, firewall credential handoff, runner
+  cancellation state and X resource usage no longer look up a pending deletion
+  job; Clerk stops issuing tokens for a deleted user.
+- **Deletion job.** The Clerk `user.deleted` webhook still revokes shared-thread
+  artifacts, records one durable `clerk-user-deletion` job (#36236) and starts
+  it; the per-minute background-job cron reclaims unfinished work. The job now
+  runs only the legacy cleanup (`cleanupClerkDeletedUser$`, including the
+  empty-organization branch) and completes. There is no capture or verify
+  phase. Jobs queued by an older API with a `phase` or `safetyHold` checkpoint
+  simply run the idempotent cleanup. `organization.deleted` is unchanged: billing
+  cleanup in the webhook, then `cleanupClerkDeletedOrg$`.
+- **Executor and collectors.** The user executor, selector, ownership coverage
+  guard, relational sweep, every object/remote collector, shared blob erasure,
+  chat content deletion receipts and their late-content sweep, the dormant Clerk
+  bridge and the separate decision journal are deleted. Blob retention uses the
+  plain reference count again and upload intents are gone.
+- **X resource admission.** Clerk account cleanup no longer takes the global
+  `x_resource_reads` admission lock exclusively. The retention cron and
+  ingestion still use it; redesigning that lock is separate work.
 
-Migration 1248 drops `pi_stable_context_erasure_fences` in the same release, by
-explicit decision rather than after a rollback window: an older API instance
-still serving during the overlap, or restored by a rollback, fails every path
-that reads or writes the dropped table: its membership-cache refresh, Pi
-stable-context, connector, permission and Workflow admissions, and its legacy
-Clerk deletion step. Such an
-instance still fences its own other writes against the same
-`account_erasure_jobs` rows and advisory keys, which new erasure code still
-takes exclusively. Do not roll the API back below this revision.
+Rows written for a deleted account after its legacy cleanup committed are no
+longer swept by anything. That is the accepted gap until the redesign.
+
+Migration `1249_drop_account_erasure` replaces the earlier, never-released
+`1248_drop_pi_stable_context_erasure_fences`. It drops the `account_erasure_*`
+tables (jobs, work, pages, sinks, selector dependencies, bridge ingress and
+replay), `chat_content_erasure_subjects`, `pi_stable_context_erasure_fences`,
+`blob_upload_intents`, and `blobs.erasure_pending`/`erasure_eligible_at` with
+their check constraint, in the same release by explicit decision rather than
+after a rollback window. An older API still serving during the overlap fails
+every path that touches those relations: account-erasure fence admission on
+almost every write, membership-cache refresh, Pi stable-context, connector,
+permission and Workflow admission, session-history blob retention and Clerk
+deletion. **Rolling the API back below this revision is unsupported.**
+
+Older entries below that mention account erasure, erasure admission, the
+relational sweep, collectors, the Clerk erasure bridge or deletion-status
+capabilities describe the retired mechanism.
 
 ## Chat thread archived rollout fallbacks removed (2026-09-25)
 
@@ -1471,9 +1496,9 @@ Legacy Clerk user and organization deletion no longer writes
 `pi_stable_context_erasure_fences`, and no writer or reader consults it:
 membership-cache refresh, generation initialization, demand registration,
 publication, and connector, permission and Workflow writes proceed after
-deletion, and later erasure cleanup removes such late rows. Migration 1248
-drops the table. Keep stable-context activation on hold until migration 1168 is present
-on every serving API instance.
+deletion. Migration `1249_drop_account_erasure` drops the table. Keep
+stable-context activation on hold until migration 1168 is present on every
+serving API instance.
 
 Mixed-version API operation is safe by construction. A new reader with no
 generation/head treats the exact variant as missing and uses canonical

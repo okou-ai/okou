@@ -229,7 +229,7 @@ artifact simply never reads or writes the column. See
 
 This is explicit-invocation authority only. It certifies no autonomous scheduler
 recovery. Durable membership and materialization ownership, and global deletion
-readiness, remain S7 gates; the Clerk erasure bridge is still unregistered.
+readiness, remain S7 gates.
 
 ## The Slack source contract
 

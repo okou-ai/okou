@@ -90,18 +90,13 @@ before parent/Run locks, so their ledger FK updates cannot invert maintenance's
 ledger-before-Run order. Agent deletion then retains canonical mutation advisory
 -> agent -> sessions -> runs, with existing NOWAIT and 100 ms behavior; the
 shared admission wait also uses that 100 ms retry boundary.
-With X resource billing configured,
-Clerk first takes the scoped account-erasure subject lock exclusively to drain
-Run creation and queue promotion, which lock Agent rows before allowances.
-It then takes exclusive usage admission and the usage-compaction advisory lock,
-and deletes scoped ledger/entitlement rows before applying the 100 ms timeout
-or taking parent/run locks. Settlement takes shared compaction admission before
-its organization credit lock, so cleanup drains both compaction and settlement.
-Ledger and Run deletion commit together on one connection, excluding late
-uploads throughout. The Pi erasure preflight also takes usage admission before
-its 100 ms Run locks. See [activation prerequisites](x-resource-observations.md).
-While X billing is unset, ledger cleanup and lifecycle deletion retain separate
-commits for compatibility with older settlement APIs. Clerk revalidates agents
+Clerk cleanup takes the usage-compaction advisory lock and deletes scoped
+ledger/entitlement rows before applying the 100 ms timeout or taking
+parent/run locks. Settlement takes shared compaction admission before its
+organization credit lock, so cleanup drains both compaction and settlement.
+Ledger and Run deletion commit together on one connection. Cleanup does not
+take X resource admission; see [account cleanup](x-resource-observations.md).
+Clerk revalidates agents
 after canonical mutation ownership, then locks sessions and the deduplicated
 run set in ID order. Parent, Run and subsequent deletion locks retain 100 ms;
 blob locks still use NOWAIT. Threadless cleanup retains its run and Phase 2
@@ -126,8 +121,7 @@ claimed production GC job execution.
 
 ## Query bounds and measured cost
 
-After complete-set Pi erasure readiness and object-reference capture, the helper
-issues three child-deletion statements for a nonempty captured Run set: released
+For a captured Run set, the helper issues three child-deletion statements for a nonempty captured Run set: released
 Sandbox leases, inference rows, and the conversation `DELETE ... RETURNING` CTE.
 Each statement binds the complete Run set as one UUID-array parameter; the lease
 delete also binds its released-state predicate. Empty input issues no deletion.
@@ -157,7 +151,7 @@ for the batched case. The old diagnostic interleaved child kinds per batch;
 these numbers compare statement shapes, not complete production transactions.
 
 Those temporary tables reproduce production columns, defaults and indexes but
-omit FK triggers and check constraints. Migrated-schema erasure and accounting
+omit FK triggers and check constraints. Migrated-schema deletion and accounting
 tests separately verify integrity, rollback and reference release. These local
 plans are cost evidence, not production latency estimates. The measurements
 below predate this array rewrite and retain the old batched query shape.

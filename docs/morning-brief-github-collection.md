@@ -39,7 +39,7 @@ exact implementation and adds no second authorization engine:
 - `admitMorningBriefCollection({ db, clerk, orgId, userId, anchor }, signal)` is
   the preview gate: the default-off `FeatureSwitchKey.NativeMorningBrief` switch, a canonical
   installed and enabled Morning Brief, the member's current Clerk membership
-  generation, and erasure-subject admission. It returns the frozen
+  generation. It returns the frozen
   `MorningBriefCollectionScope` — owner, installation, exact automation,
   pinned Agent, nullable canonical thread, anchor, timezone and `membershipId`.
   None of it can be supplied by a caller; a removal and rejoin issues a new
@@ -52,7 +52,7 @@ exact implementation and adds no second authorization engine:
   every request:
   complete canonical ownership, membership, the pinned connector account, the
   Agent's grants, accepted catalog visibility and effective URL policy. The
-  external membership answer precedes the final local erasure/binding/Agent
+  external membership answer precedes the final local binding/Agent
   transaction; no network call runs under those locks. Holding a
   credential is not permission; every gate must produce an unambiguous `allow`.
 - An explicit account selection that no longer resolves fails closed

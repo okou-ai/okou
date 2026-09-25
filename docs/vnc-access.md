@@ -402,7 +402,7 @@ two-hour maximum lifetime. A merge, green CI or preview success does not by
 itself prove that deployment-and-drain gate.
 After new-profile rows are permitted, rolling back to a pre-reader API is unsafe;
 disabling the feature does not erase saved credentials. Any later rollback below
-that floor requires a separately verified disablement, drain and VNC erasure.
+that floor requires a separately verified disablement, drain and VNC data deletion.
 Owner-facing X509Plain support does not activate the default-off feature. Any
 activation still requires separately reviewed deployment and acceptance
 evidence.
