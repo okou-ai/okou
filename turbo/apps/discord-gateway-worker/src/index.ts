@@ -32,6 +32,12 @@ const MAX_DEAD_LETTERS = 100;
 const EVENT_REJECTIONS = new Set([400, 413]);
 const FATAL_CLOSES = new Set([4004, 4010, 4011, 4012, 4013, 4014]);
 const MAX_DURABLE_RECORD_BYTES = 120_000;
+interface DeadLetter {
+  readonly eventType: string;
+  readonly eventId: string;
+  readonly reason: string;
+  readonly bytes: number;
+}
 const outboxKey = (index: number) => {
   return `outbox:${index.toString().padStart(16, "0")}`;
 };
@@ -46,6 +52,7 @@ function addressesBot(data: unknown, botUserId: string): boolean {
     return mention.id === botUserId;
   });
 }
+// Keyed by the cumulative dead-letter count, so eviction is oldest-first.
 const deadKey = (index: number) => {
   return `dead:${index.toString().padStart(16, "0")}`;
 };
@@ -177,6 +184,15 @@ export class DiscordGateway {
       }
       if (path === "/health" && request.method === "GET")
         return await this.health();
+      if (path === "/dead-letters" && request.method === "GET") {
+        const records = await this.ctx.storage.list<DeadLetter>({
+          prefix: "dead:",
+        });
+        return Response.json(
+          { deadLetters: [...records.values()] },
+          { headers: { "Cache-Control": "no-store" } },
+        );
+      }
       if (path !== "/start" || request.method !== "POST")
         return new Response("Not found", { status: 404 });
       if (this.env.DISCORD_GATEWAY_ENABLED !== "true")
@@ -293,11 +309,9 @@ export class DiscordGateway {
       return null;
     }
     if (!response.ok) throw new Error("Gateway discovery failed");
+    // `shards` is only Discord's recommendation. When sharding is actually
+    // required, Discord closes the connection with fatal code 4011.
     const metadata = gatewayBotSchema.parse(await response.json());
-    if (metadata.shards !== 1) {
-      await this.halt("multiple-shards-require-identify-coordinator");
-      return null;
-    }
     const limit = metadata.session_start_limit;
     const activeBudget = Date.now() < this.state.identifyResetAt;
     const remaining = activeBudget
@@ -575,15 +589,15 @@ export class DiscordGateway {
         // every guild. Checkpoint past it and keep only a reference record.
         next.deadLettered++;
         const evicted = await this.deadLetterEviction();
-        const reference = JSON.stringify({
+        const record = {
           eventType: envelope.eventType,
           eventId: envelope.eventId,
           reason: "exceeds-durable-record-limit",
           bytes,
-        });
+        } satisfies DeadLetter;
         await this.ctx.storage.transaction(async (transaction) => {
           if (evicted !== undefined) await transaction.delete(evicted);
-          await transaction.put(deadKey(this.state.nextOutbox), reference);
+          await transaction.put(deadKey(this.state.deadLettered), record);
           await transaction.put("state", next);
         });
       } else {
@@ -705,7 +719,7 @@ export class DiscordGateway {
         } else if (invalidReceipt) {
           await this.halt("api-invalid-receipt");
         } else if (EVENT_REJECTIONS.has(status)) {
-          await this.deadLetter(key, body);
+          await this.deadLetter(key, body, status);
         } else if (
           status >= 400 &&
           status < 500 &&
@@ -728,7 +742,8 @@ export class DiscordGateway {
     }
   }
 
-  // Retains a bounded sample of rejected envelopes for operator diagnosis.
+  // Retains bounded, content-free references for operator diagnosis; Durable
+  // Object storage is outside account erasure, so message bodies stay out.
   // Returns the oldest record to drop so retention stays bounded.
   private async deadLetterEviction(): Promise<string | undefined> {
     if (this.state.deadLettered < MAX_DEAD_LETTERS) return undefined;
@@ -740,8 +755,19 @@ export class DiscordGateway {
     return evicted;
   }
 
-  private async deadLetter(key: string, body: string): Promise<void> {
+  private async deadLetter(
+    key: string,
+    body: string,
+    status: number,
+  ): Promise<void> {
     const evicted = await this.deadLetterEviction();
+    const envelope = discordGatewayEnvelopeSchema.parse(JSON.parse(body));
+    const record = {
+      eventType: envelope.eventType,
+      eventId: envelope.eventId,
+      reason: `api-rejected-${status}`,
+      bytes: new TextEncoder().encode(body).byteLength,
+    } satisfies DeadLetter;
     const next = {
       ...this.state,
       pending: this.state.pending - 1,
@@ -752,7 +778,7 @@ export class DiscordGateway {
     await this.ctx.storage.transaction(async (transaction) => {
       if (evicted !== undefined) await transaction.delete(evicted);
       await transaction.delete(key);
-      await transaction.put(`dead:${key.slice("outbox:".length)}`, body);
+      await transaction.put(deadKey(this.state.deadLettered), record);
       await transaction.put("state", next);
     });
     this.state = next;
@@ -766,7 +792,8 @@ export default {
     const path = new URL(request.url).pathname;
     if (
       !(
-        (path === "/health" && request.method === "GET") ||
+        (["/health", "/dead-letters"].includes(path) &&
+          request.method === "GET") ||
         (["/start", "/stop"].includes(path) && request.method === "POST")
       )
     )

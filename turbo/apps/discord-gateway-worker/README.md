@@ -23,6 +23,12 @@ Discord applications and bot tokens are required for test and production;
 sharing an application would also share Discord's session-start budget outside
 the namespace. Do not run another relay or local bot with the same application.
 
+The relay always connects as shard 0 of 1. The shard count from Discord's
+`/gateway/bot` is only a recommendation and does not stop the relay. When
+Discord actually requires sharding (at 2,500 guilds) it closes the connection
+with `4011`, a fatal close that stops the relay until a multi-shard Identify
+coordinator exists.
+
 | Variable                          | Checked-in value or role                                                                 |
 | --------------------------------- | ---------------------------------------------------------------------------------------- |
 | `DISCORD_GATEWAY_ENABLED`         | `false` in every environment; deployment also forces `false`                             |
@@ -88,11 +94,12 @@ deliveries. A deployed disabled relay can retain outbox data for later recovery.
 
 All operations require `Authorization: Bearer <DISCORD_GATEWAY_CONTROL_SECRET>`:
 
-| Method | Path      | Operation                                                           |
-| ------ | --------- | ------------------------------------------------------------------- |
-| `GET`  | `/health` | Read relay health without starting it                               |
-| `POST` | `/start`  | Explicit bootstrap; refuses when startup is disabled                |
-| `POST` | `/stop`   | Stop the socket and preserve resumable state and pending deliveries |
+| Method | Path            | Operation                                                           |
+| ------ | --------------- | ------------------------------------------------------------------- |
+| `GET`  | `/health`       | Read relay health without starting it                               |
+| `GET`  | `/dead-letters` | List retained dead-letter references, oldest first                  |
+| `POST` | `/start`        | Explicit bootstrap; refuses when startup is disabled                |
+| `POST` | `/stop`         | Stop the socket and preserve resumable state and pending deliveries |
 
 Use the Worker URL returned by the authorized deployment. Do not put the
 control secret into a URL or share health responses publicly. An outbound
@@ -134,9 +141,12 @@ monitoring must alert when either keeps rising.
 An event the API rejects as malformed (`400`) or too large (`413`) cannot
 succeed on retry, so the relay moves it out of the outbox into a dead-letter
 record and continues with later events; one member's message never stops
-delivery for other guilds. The newest 100 dead-letter records, rejected
-envelopes and oversized-event references alike, are retained for diagnosis and
-`/health` reports the cumulative `deadLettered` count. Because dead-lettered
+delivery for other guilds. Each dead-letter record holds only the event type,
+event ID, reason (`api-rejected-<status>` or `exceeds-durable-record-limit`) and
+byte size: Durable Object storage is outside account erasure, so message
+content is never retained. The 100 most recently set-aside records are kept,
+evicting the oldest first; `/dead-letters` lists them and `/health` reports the
+cumulative `deadLettered` count. Because dead-lettered
 events are not replayed, activation monitoring must alert when this
 count rises; a systematic contract mismatch would otherwise discard traffic
 while the relay still reports `running`.

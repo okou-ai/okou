@@ -139,6 +139,8 @@ export class RelayFixture {
   reply: (delivery: Delivery) => Response | Promise<Response> = () => {
     return Response.json({ ok: true, outcome: "accepted" });
   };
+  // Overrides Discord's /gateway/bot response when set.
+  gatewayReply: (() => Response) | null = null;
   gatewayMetadata = {
     url: "wss://gateway.discord.gg",
     shards: 1,
@@ -190,7 +192,7 @@ export class RelayFixture {
       this.discoveries.push({
         authorization: request.headers.get("Authorization"),
       });
-      return Response.json(this.gatewayMetadata);
+      return this.gatewayReply?.() ?? Response.json(this.gatewayMetadata);
     }
     if (request.url === "https://gateway.discord.gg/?v=10&encoding=json") {
       expect(request.headers.get("Upgrade")).toBe("websocket");
@@ -219,7 +221,7 @@ export class RelayFixture {
 
   request(path: string, token: string | null = CONTROL_SECRET) {
     return this.runtime.dispatchFetch(`https://relay.example.test${path}`, {
-      method: path === "/health" ? "GET" : "POST",
+      method: ["/health", "/dead-letters"].includes(path) ? "GET" : "POST",
       headers: token === null ? {} : { Authorization: `Bearer ${token}` },
     });
   }

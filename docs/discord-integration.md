@@ -139,7 +139,8 @@ Discord differences. The Gateway owner's initial single-shard scope is likewise
 an implementation limit: its
 [published contract](https://github.com/okou-ai/okou/issues/36643#issuecomment-5811353867)
 rejects applications requiring multiple shards until an application-wide
-Identify coordinator exists.
+Identify coordinator exists. Discord's recommended shard count alone does not
+stop the relay; its sharding-required close (`4011`) does.
 
 Provider references: [Gateway](https://docs.discord.com/developers/events/gateway),
 [interactions](https://docs.discord.com/developers/interactions/receiving-and-responding),
