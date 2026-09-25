@@ -86,6 +86,47 @@ async fn wrong_password_never_returns_an_authenticated_stream() {
 }
 
 #[tokio::test]
+async fn mac_classic_swapped_failure_result_is_authentication_failure() {
+    let (client, mut server) = duplex(512);
+    let peer = tokio::spawn(async move {
+        negotiate(&mut server, &[30, 33, 36, 2]).await;
+        assert_eq!(server.read_u8().await.unwrap(), 2);
+        server.write_all(CHALLENGE).await.unwrap();
+        let mut response = [0; 16];
+        server.read_exact(&mut response).await.unwrap();
+        assert_ne!(&response, RESPONSE);
+        // Observed on macOS 26.6.2: status 01 00 00 00, followed by a
+        // network-order, bounded failure-reason length. Never log its body.
+        server.write_all(&[1, 0, 0, 0]).await.unwrap();
+        server.write_u32(39).await.unwrap();
+        server.write_all(&[b'x'; 39]).await.unwrap();
+    });
+    let wrong = VncPassword::new("badpass!".to_owned()).unwrap();
+    let result = authenticate_apple_vnc_password(client, wrong, deadline()).await;
+    assert!(matches!(result, Err(Error::AuthenticationFailed)));
+    peer.await.unwrap();
+}
+
+#[tokio::test]
+async fn mac_classic_swapped_failure_reason_remains_bounded() {
+    let (client, mut server) = duplex(128);
+    let peer = tokio::spawn(async move {
+        negotiate(&mut server, &[2]).await;
+        assert_eq!(server.read_u8().await.unwrap(), 2);
+        server.write_all(CHALLENGE).await.unwrap();
+        let mut response = [0; 16];
+        server.read_exact(&mut response).await.unwrap();
+        server.write_all(&[1, 0, 0, 0]).await.unwrap();
+        server.write_u32(4097).await.unwrap();
+        let mut byte = [0; 1];
+        assert_eq!(server.read(&mut byte).await.unwrap(), 0);
+    });
+    let result = authenticate_apple_vnc_password(client, password(), deadline()).await;
+    assert!(matches!(result, Err(Error::RemoteDataTooLarge)));
+    peer.await.unwrap();
+}
+
+#[tokio::test]
 async fn absent_type_two_cannot_select_an_offered_fallback() {
     let (client, mut server) = duplex(128);
     let peer = tokio::spawn(async move {

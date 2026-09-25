@@ -9,7 +9,7 @@ use tokio::{
 
 use crate::{
     Authenticated, AuthenticatedStream, AuthenticationStage, Error, VncPassword,
-    authentication::{authenticate_vnc, discard_reason, phase},
+    authentication::{authenticate_apple_vnc, discard_reason, phase},
 };
 
 const APPLE_VERSION: &[u8; 12] = b"RFB 003.889\n";
@@ -39,7 +39,7 @@ where
     phase(
         AuthenticationStage::VncAuthentication,
         deadline,
-        authenticate_vnc(&mut stream, password),
+        authenticate_apple_vnc(&mut stream, password),
     )
     .await?;
     Ok(Authenticated {

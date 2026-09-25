@@ -163,6 +163,27 @@ pub(crate) async fn authenticate_vnc<S>(stream: &mut S, password: VncPassword) -
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
+    authenticate_vnc_with_result(stream, password, false).await
+}
+
+pub(crate) async fn authenticate_apple_vnc<S>(
+    stream: &mut S,
+    password: VncPassword,
+) -> Result<(), Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    authenticate_vnc_with_result(stream, password, true).await
+}
+
+async fn authenticate_vnc_with_result<S>(
+    stream: &mut S,
+    password: VncPassword,
+    apple_classic: bool,
+) -> Result<(), Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let mut challenge = [0; 16];
     stream.read_exact(&mut challenge).await?;
     // Erase password and DES key before awaiting the write or SecurityResult.
@@ -171,7 +192,7 @@ where
     stream.flush().await?;
     drop(response);
 
-    read_security_result(stream).await
+    read_security_result_with_apple_classic(stream, apple_classic).await
 }
 
 async fn authenticate_plain<S>(
@@ -199,9 +220,26 @@ pub(crate) async fn read_security_result<S>(stream: &mut S) -> Result<(), Error>
 where
     S: AsyncRead + Unpin,
 {
+    read_security_result_with_apple_classic(stream, false).await
+}
+
+async fn read_security_result_with_apple_classic<S>(
+    stream: &mut S,
+    apple_classic: bool,
+) -> Result<(), Error>
+where
+    S: AsyncRead + Unpin,
+{
     match stream.read_u32().await? {
         0 => Ok(()),
         1 => {
+            discard_reason(stream).await?;
+            Err(Error::AuthenticationFailed)
+        }
+        // Real macOS ARD classic type 2 sends failure 01 00 00 00, followed by
+        // a network-order reason length. This exception is rejection-only and
+        // must not change the standard/TLS profiles or accept a nonzero result.
+        0x0100_0000 if apple_classic => {
             discard_reason(stream).await?;
             Err(Error::AuthenticationFailed)
         }
@@ -218,6 +256,21 @@ pub(crate) async fn discard_reason<S: AsyncRead + Unpin>(stream: &mut S) -> Resu
     let mut bytes = Zeroizing::new(vec![0; length as usize]);
     stream.read_exact(&mut bytes).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn standard_result_never_reinterprets_apple_classic_failure() {
+        let (mut client, mut server) = tokio::io::duplex(16);
+        server.write_all(&[1, 0, 0, 0]).await.unwrap();
+        assert!(matches!(
+            read_security_result(&mut client).await,
+            Err(Error::InvalidAuthenticationResult)
+        ));
+    }
 }
 
 fn challenge_response(password: VncPassword, challenge: [u8; 16]) -> Zeroizing<[u8; 16]> {
