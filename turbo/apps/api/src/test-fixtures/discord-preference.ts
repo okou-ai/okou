@@ -3,7 +3,7 @@ import {
   barrierQueryText,
   withDatabaseTransactionBarrierFixture,
   type TransactionBarrier,
-} from "./account-erasure-subject";
+} from "./database-transaction-barrier";
 
 /**
  * Infrastructure exception: HTTP cannot stop after an INSERT has executed but

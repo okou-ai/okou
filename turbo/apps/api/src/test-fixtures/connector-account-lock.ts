@@ -6,7 +6,7 @@ import {
   barrierQueryText,
   withDatabaseTransactionBarrierFixture,
   type TransactionBarrier,
-} from "./account-erasure-subject";
+} from "./database-transaction-barrier";
 
 /** Pause the real account writer at COMMIT, after its final cancellation check. */
 export async function withConnectorAccountCommitBarrierFixture<T>(
