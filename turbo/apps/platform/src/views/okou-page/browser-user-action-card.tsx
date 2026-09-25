@@ -26,6 +26,7 @@ import type { FormEvent, ReactNode, Ref } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
+  BrowserCheckboxDraft,
   BrowserSelectChoiceDraft,
   BrowserUserActionRequestState,
   BrowserUserActionSignals,
@@ -520,6 +521,30 @@ function requiredSelectsSatisfied(
   });
 }
 
+function requiredCheckboxesSatisfied(
+  action: PendingBrowserInputAction,
+  checkboxDraft: ReadonlyMap<string, BrowserCheckboxDraft>,
+): boolean {
+  return action.fields.every((field) => {
+    if (field.fieldKind !== "checkbox") {
+      return true;
+    }
+    const observed = field.control.checked;
+    const choice = checkboxDraft.get(field.key);
+    if (
+      observed === undefined ||
+      (choice && choice.observedChecked !== observed) ||
+      (field.required && !choice)
+    ) {
+      return false;
+    }
+    return (
+      !(field.required || field.control.siteRequired) ||
+      (choice?.checked ?? observed)
+    );
+  });
+}
+
 function selectedSelectIndices(
   field: PendingBrowserInputField,
   choice: BrowserSelectChoiceDraft | undefined,
@@ -696,6 +721,93 @@ function BrowserSelectControl({
   );
 }
 
+function BrowserCheckboxControl({
+  field,
+  checkboxDraft,
+  busy,
+  inputId,
+  describedBy,
+  onUpdate,
+  onRemove,
+}: {
+  readonly field: PendingBrowserInputField;
+  readonly checkboxDraft: ReadonlyMap<string, BrowserCheckboxDraft>;
+  readonly busy: boolean;
+  readonly inputId: string;
+  readonly describedBy: string;
+  readonly onUpdate: (
+    key: string,
+    checked: boolean,
+    observedChecked: boolean,
+  ) => void;
+  readonly onRemove: (key: string) => void;
+}) {
+  const { t } = useTranslation();
+  const observed = field.control.checked;
+  const choice = checkboxDraft.get(field.key);
+  const checked =
+    choice && choice.observedChecked === observed
+      ? choice.checked
+      : observed === true;
+  const required = field.required || field.control.siteRequired;
+  return (
+    <div className="flex max-w-full flex-wrap items-center gap-2">
+      <input
+        id={inputId}
+        name={field.key}
+        type="checkbox"
+        aria-describedby={describedBy}
+        className="size-4 shrink-0 accent-primary"
+        checked={checked}
+        required={required}
+        disabled={busy || observed === undefined}
+        onChange={(event) => {
+          if (observed !== undefined) {
+            onUpdate(field.key, event.currentTarget.checked, observed);
+          }
+        }}
+      />
+      {observed !== undefined && !required && (
+        <Button
+          type="button"
+          variant="link"
+          size="xs"
+          className="h-auto min-h-7 max-w-full whitespace-normal py-1 text-left"
+          disabled={busy}
+          onClick={() => {
+            onUpdate(field.key, false, observed);
+          }}
+        >
+          {t(($) => {
+            return $.chat.browserInput.clearValue;
+          })}
+        </Button>
+      )}
+      {observed !== undefined &&
+        (field.required ? observed : choice !== undefined) && (
+          <Button
+            type="button"
+            variant="link"
+            size="xs"
+            className="h-auto min-h-7 max-w-full whitespace-normal py-1 text-left"
+            disabled={busy}
+            onClick={() => {
+              if (field.required) {
+                onUpdate(field.key, true, observed);
+              } else {
+                onRemove(field.key);
+              }
+            }}
+          >
+            {t(($) => {
+              return $.chat.browserInput.keepValue;
+            })}
+          </Button>
+        )}
+    </div>
+  );
+}
+
 function OptionalNumberClearAction({
   field,
   draft,
@@ -743,14 +855,24 @@ function BrowserInputField({
   index,
   draft,
   choiceDraft,
+  checkboxDraft,
   busy,
   onUpdate,
   onRemove,
   onUpdateChoice,
   onRemoveChoice,
+  onUpdateCheckbox,
+  onRemoveCheckbox,
 }: BrowserInputEditProps & {
   readonly index: number;
   readonly choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>;
+  readonly checkboxDraft: ReadonlyMap<string, BrowserCheckboxDraft>;
+  readonly onUpdateCheckbox: (
+    key: string,
+    checked: boolean,
+    observedChecked: boolean,
+  ) => void;
+  readonly onRemoveCheckbox: (key: string) => void;
   readonly onUpdateChoice: (
     key: string,
     indices: readonly number[],
@@ -791,7 +913,19 @@ function BrowserInputField({
           {field.description}
         </span>
       )}
-      {field.fieldKind === "select" ? (
+      {field.fieldKind === "checkbox" ? (
+        <BrowserCheckboxControl
+          field={field}
+          inputId={inputId}
+          describedBy={
+            descriptionId ? `${requirementId} ${descriptionId}` : requirementId
+          }
+          checkboxDraft={checkboxDraft}
+          busy={busy}
+          onUpdate={onUpdateCheckbox}
+          onRemove={onRemoveCheckbox}
+        />
+      ) : field.fieldKind === "select" ? (
         <BrowserSelectControl
           field={field}
           inputId={inputId}
@@ -831,14 +965,24 @@ function BrowserInputFields({
   action,
   draft,
   choiceDraft,
+  checkboxDraft,
   busy,
   onUpdate,
   onRemove,
   onUpdateChoice,
   onRemoveChoice,
+  onUpdateCheckbox,
+  onRemoveCheckbox,
 }: Omit<BrowserInputEditProps, "field"> & {
   readonly action: PendingBrowserInputAction;
   readonly choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>;
+  readonly checkboxDraft: ReadonlyMap<string, BrowserCheckboxDraft>;
+  readonly onUpdateCheckbox: (
+    key: string,
+    checked: boolean,
+    observedChecked: boolean,
+  ) => void;
+  readonly onRemoveCheckbox: (key: string) => void;
   readonly onUpdateChoice: (
     key: string,
     indices: readonly number[],
@@ -856,11 +1000,14 @@ function BrowserInputFields({
             index={index}
             draft={draft}
             choiceDraft={choiceDraft}
+            checkboxDraft={checkboxDraft}
             busy={busy}
             onUpdate={onUpdate}
             onRemove={onRemove}
             onUpdateChoice={onUpdateChoice}
             onRemoveChoice={onRemoveChoice}
+            onUpdateCheckbox={onUpdateCheckbox}
+            onRemoveCheckbox={onRemoveCheckbox}
           />
         );
       })}
@@ -912,6 +1059,62 @@ function PendingFormActions({
   );
 }
 
+function PendingFormPreflight({
+  signals,
+  entryState,
+}: {
+  readonly signals: BrowserUserActionSignals;
+  readonly entryState:
+    | "idle"
+    | "checking"
+    | "ready"
+    | "unavailable"
+    | "invalid";
+}) {
+  const { t } = useTranslation();
+  const beginEntry = useSet(signals.beginEntry$);
+  const pageSignal = useGet(pageSignal$);
+  if (entryState === "idle" || entryState === "checking") {
+    return (
+      <p
+        role="status"
+        className="flex items-center gap-2 text-sm text-muted-foreground"
+      >
+        <Loader2 size={16} className="animate-spin" />
+        {t(($) => {
+          return $.chat.browserInput.loadingDescription;
+        })}
+      </p>
+    );
+  }
+  if (entryState === "unavailable" || entryState === "invalid") {
+    return (
+      <div className="flex flex-wrap items-center gap-2" role="alert">
+        <p className="text-sm text-destructive">
+          {t(($) => {
+            return entryState === "invalid"
+              ? $.chat.browserInput.applyFailed
+              : $.chat.browserInput.checkFailed;
+          })}
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            detach(beginEntry(pageSignal), Reason.DomCallback);
+          }}
+        >
+          {t(($) => {
+            return $.chat.browserInput.retry;
+          })}
+        </Button>
+      </div>
+    );
+  }
+  return null;
+}
+
 function PendingForm({
   signals,
   request,
@@ -925,6 +1128,7 @@ function PendingForm({
   const pageSignal = useGet(pageSignal$);
   const draft = useGet(signals.draft$);
   const choiceDraft = useGet(signals.choiceDraft$);
+  const checkboxDraft = useGet(signals.checkboxDraft$);
   const sharedBusy = useGet(signals.busy$);
   const entryState = useGet(signals.entryState$);
   const entryAction = useGet(signals.entryAction$);
@@ -932,7 +1136,8 @@ function PendingForm({
   const removeDraft = useSet(signals.removeDraft$);
   const updateChoiceDraft = useSet(signals.updateChoiceDraft$);
   const removeChoiceDraft = useSet(signals.removeChoiceDraft$);
-  const beginEntry = useSet(signals.beginEntry$);
+  const updateCheckboxDraft = useSet(signals.updateCheckboxDraft$);
+  const removeCheckboxDraft = useSet(signals.removeCheckboxDraft$);
   const formRef = useSet(signals.formRef$);
   const [submitLoadable, submit] = useLoadableSet(signals.submit$);
   const [cancelLoadable, cancel] = useLoadableSet(signals.cancel$);
@@ -945,9 +1150,17 @@ function PendingForm({
   const activeAction =
     entryState === "ready" && entryAction ? entryAction : request.action;
   const selectValuesValid = requiredSelectsSatisfied(activeAction, choiceDraft);
+  const checkboxValuesValid = requiredCheckboxesSatisfied(
+    activeAction,
+    checkboxDraft,
+  );
   const submitForm = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!selectValuesValid || !event.currentTarget.reportValidity()) {
+    if (
+      !selectValuesValid ||
+      !checkboxValuesValid ||
+      !event.currentTarget.reportValidity()
+    ) {
       return;
     }
     detach(submit(pageSignal), Reason.DomCallback);
@@ -970,48 +1183,17 @@ function PendingForm({
         action={activeAction}
         draft={draft}
         choiceDraft={choiceDraft}
+        checkboxDraft={checkboxDraft}
         busy={busy}
         onUpdate={updateDraft}
         onRemove={removeDraft}
         onUpdateChoice={updateChoiceDraft}
         onRemoveChoice={removeChoiceDraft}
+        onUpdateCheckbox={updateCheckboxDraft}
+        onRemoveCheckbox={removeCheckboxDraft}
       />
 
-      {(entryState === "idle" || entryState === "checking") && (
-        <p
-          role="status"
-          className="flex items-center gap-2 text-sm text-muted-foreground"
-        >
-          <Loader2 size={16} className="animate-spin" />
-          {t(($) => {
-            return $.chat.browserInput.loadingDescription;
-          })}
-        </p>
-      )}
-
-      {(entryState === "unavailable" || entryState === "invalid") && (
-        <div className="flex flex-wrap items-center gap-2" role="alert">
-          <p className="text-sm text-destructive">
-            {t(($) => {
-              return entryState === "invalid"
-                ? $.chat.browserInput.applyFailed
-                : $.chat.browserInput.checkFailed;
-            })}
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              detach(beginEntry(pageSignal), Reason.DomCallback);
-            }}
-          >
-            {t(($) => {
-              return $.chat.browserInput.retry;
-            })}
-          </Button>
-        </div>
-      )}
+      <PendingFormPreflight signals={signals} entryState={entryState} />
 
       {failed && entryState !== "invalid" && (
         <p role="alert" className="text-sm text-destructive">
@@ -1030,8 +1212,11 @@ function PendingForm({
           entryState !== "unavailable" &&
           entryState !== "invalid" &&
           selectValuesValid &&
+          checkboxValuesValid &&
           (!request.action.fields.some((field) => {
-            return field.fieldKind === "select";
+            return (
+              field.fieldKind === "select" || field.fieldKind === "checkbox"
+            );
           }) ||
             entryState === "ready")
         }

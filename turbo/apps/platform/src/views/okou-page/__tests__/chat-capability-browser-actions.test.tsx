@@ -665,6 +665,84 @@ test("A Browser input card opens a preflighted dialog and completes without navi
   expect(buttonsByName("Enter information")).toHaveLength(0);
 });
 
+test("An inline Browser input dialog confirms a required native checkbox", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  const checkboxAction = (preflight: boolean) => {
+    return {
+      ...browserInputAction(state),
+      fields: [
+        {
+          key: "consent",
+          label: "Consent",
+          fieldKind: "checkbox" as const,
+          required: true,
+          control: {
+            tagName: "INPUT" as const,
+            inputType: "checkbox" as const,
+            ...(preflight ? { siteRequired: false, checked: true } : {}),
+          },
+        },
+      ],
+    };
+  };
+  installCapabilityChat({
+    events: completedConversation(`[Enter details](${browserInputUrl()})`),
+  });
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, checkboxAction(false));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, checkboxAction(true));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      { key: "consent", checked: true, observedChecked: true },
+    ]);
+    state = "succeeded";
+    return respond(200, checkboxAction(false));
+  });
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
+    return respond(201, {
+      runId: crypto.randomUUID(),
+      threadId: RUN_THREAD_ID,
+    });
+  });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await readyChat();
+  const currentUrl = window.location.href;
+  click(await findButton("Enter information"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
+  });
+  const checkbox = await within(dialog).findByRole("checkbox", {
+    name: /Consent/u,
+  });
+  await waitFor(() => {
+    expect(checkbox).toBeEnabled();
+  });
+  expect(checkbox).toBeChecked();
+  const submitButton = buttonsByName("Add to browser", dialog)[0];
+  if (!submitButton) {
+    throw new Error("Missing Browser submit button");
+  }
+  expect(submitButton).toBeDisabled();
+  const keepButton = buttonsByName("Leave website value unchanged", dialog)[0];
+  if (!keepButton) {
+    throw new Error("Missing checkbox confirmation button");
+  }
+  click(keepButton);
+  expect(submitButton).toBeEnabled();
+  click(submitButton);
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  expect(window.location.href).toBe(currentUrl);
+});
+
 test("A pending transcript card becomes consumed when the standalone form completes", async () => {
   let state: BrowserUserActionResponse["state"] = "pending";
   installCapabilityChat({
