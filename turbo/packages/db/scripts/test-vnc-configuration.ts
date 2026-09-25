@@ -88,7 +88,7 @@ try {
     "1207_smart_oracle.sql",
     "1211_daily_diamondback.sql",
     "1229_peaceful_mathemanic.sql",
-    "1238_thin_spot.sql",
+    "1253_unique_zarek.sql",
   ]) {
     await client.query(
       (await migration(name)).replaceAll('"public".', `"${schema}".`),

@@ -193,7 +193,7 @@ reader/writer; disabling `VncAccess` preserves data and does not make that
 rollback safe. Product exposure requires its own later rollout evidence.
 
 For the separately selected Mac classic-password profile, migration
-`1238_thin_spot` defines the exact persisted tuple. A Runner without
+`1253_unique_zarek` defines the exact persisted tuple. A Runner without
 `(vnc_password, apple_vnc_password, ssh)` support receives
 `unsupported_profile` before KMS; the API never reinterprets this row as
 X509Vnc. This is a profile and authorization boundary, not a requirement to
