@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::{future::Future, panic::AssertUnwindSafe};
 
 use futures_util::FutureExt;
+use futures_util::stream::{FuturesUnordered, StreamExt};
 use sandbox::{DeviceRateLimits, SandboxId};
 use tokio::sync::Notify;
 use tokio::task::JoinSet;
@@ -13,6 +14,7 @@ use tracing::{info, warn};
 
 use crate::blank_pool::BlankPoolDiagnostics;
 use runner_executor::executor::{BlankPoolSelection, BlankPoolSelectionReason};
+use runner_host::idle_prune_control::{PruneIdleReport, PruneIdleResponse};
 use runner_host::paths::short_digest;
 use runner_lifecycle::idle_pool::{
     BlankIdleReservationMiss, DestroyOutcome, ExactIdleReservationMiss, IdleDestroyJob,
@@ -81,6 +83,63 @@ impl IdleDestroyTracker {
         let _ = self.tasks.close();
         self.tasks.wait().await;
     }
+}
+
+/// Reclaim only pool-owned exact idle entries for a generation-fenced operator request.
+///
+/// All detached entries are transferred to independently running tasks before
+/// the first post-selection await. A caller cancellation or status-write failure
+/// therefore cannot drop a selected job before its physical cleanup finishes.
+pub async fn prune_exact_idle_pool(
+    idle_pool: &SharedIdlePool,
+    status: &StatusTracker,
+    tracker: &IdleDestroyTracker,
+) -> PruneIdleResponse {
+    let (jobs, snapshot) = {
+        let mut pool = idle_pool.lock().await;
+        let jobs = pool.drain_exact();
+        (jobs, pool.status_snapshot())
+    };
+    let mut report = PruneIdleReport {
+        selected: jobs.len(),
+        completed: 0,
+        uncertain: 0,
+    };
+    let mut tasks: FuturesUnordered<_> = jobs
+        .into_iter()
+        .map(|job| {
+            tokio::spawn(async move { job.run_retaining_lease("operator_prune_idle").await })
+        })
+        .collect();
+    tracker.notify_reuse_state();
+    let status_result = status.set_idle_snapshot(snapshot).await;
+    while let Some(result) = tasks.next().await {
+        match result {
+            Ok(result) => {
+                match result.outcome {
+                    DestroyOutcome::Completed => report.completed += 1,
+                    DestroyOutcome::Uncertain => report.uncertain += 1,
+                }
+                if result.workspace_cache_promoted {
+                    tracker.notify_reuse_state();
+                }
+                drop(result.budget_lease);
+            }
+            Err(error) => {
+                report.uncertain += 1;
+                warn!(%error, "idle prune destruction task failed");
+            }
+        }
+    }
+    info!(
+        selected = report.selected,
+        completed = report.completed,
+        uncertain = report.uncertain,
+        "exact idle pruning finished"
+    );
+    status_result
+        .map_err(|error| format!("idle pruning finished but status publication failed: {error}"))?;
+    Ok(report)
 }
 
 /// Drain the idle pool: destroy every entry captured at drain start in parallel
@@ -721,6 +780,119 @@ mod tests {
             serde_json::from_slice(&tokio::fs::read(path).await.unwrap()).unwrap();
         assert!(wire.get("idle_sandboxes").is_none());
         assert!(reuse_state_notify.notified().now_or_never().is_some());
+    }
+
+    #[tokio::test]
+    async fn exact_prune_keeps_reserved_entry_and_publishes_selected_snapshot() {
+        let budget = Arc::new(ResourceBudget::new(8, 8192, 1.0, 2));
+        let mut pool = IdlePool::new(IdlePoolConfig { max_idle: 2 });
+        for key in ["reserved", "pruned"] {
+            let lease = ResourceBudget::try_reserve_lease(&budget, 2, 2048).unwrap();
+            assert!(matches!(
+                pool.park(ParkedIdleCandidateBuilder::new(key, lease).build()),
+                ParkResult::Parked
+            ));
+        }
+        let reservation = pool.take_reserved("reserved").unwrap();
+        let idle_pool = Arc::new(tokio::sync::Mutex::new(pool));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("status.json");
+        let status = StatusTracker::new(path.clone(), 4, None, None);
+        status.write_initial().await.unwrap();
+        let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
+
+        let report = prune_exact_idle_pool(&idle_pool, &status, &tracker)
+            .await
+            .unwrap();
+        assert_eq!(
+            (report.selected, report.completed, report.uncertain),
+            (1, 1, 0)
+        );
+        assert_eq!(budget.allocated(), (2, 2048, 1));
+        assert_eq!(idle_pool.lock().await.len(), 0);
+        let wire: serde_json::Value =
+            serde_json::from_slice(&tokio::fs::read(path).await.unwrap()).unwrap();
+        assert!(wire.get("idle_sandboxes").is_none());
+        assert!(matches!(
+            idle_pool.lock().await.restore_reserved(reservation),
+            RestoreReservedIdleResult::Restored
+        ));
+        destroy_idle_jobs_and_wait(idle_pool.lock().await.drain(), "exact_prune_test").await;
+        assert_eq!(budget.allocated(), (0, 0, 0));
+    }
+
+    #[tokio::test]
+    async fn exact_prune_status_failure_or_cancellation_keeps_destroy_owned() {
+        for cancel_caller in [false, true] {
+            let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+            let gate = sandbox_mock::MockLifecycleGate::new();
+            overrides.set_destroy_lifecycle_gate(gate.clone());
+            let factory: Arc<Box<dyn SandboxFactory>> = Arc::new(Box::new(
+                MockSandboxFactory::with_overrides(Arc::clone(&overrides)),
+            ));
+            let sandbox = factory
+                .create(SandboxConfig {
+                    id: SandboxId::new_v4(),
+                    resources: ResourceLimits {
+                        cpu_count: 2,
+                        memory_mb: 2048,
+                    },
+                    device_rate_limits: None,
+                    workspace_drive: None,
+                })
+                .await
+                .unwrap();
+            let budget = Arc::new(ResourceBudget::new(2, 2048, 1.0, 0));
+            let lease = ResourceBudget::try_reserve_lease(&budget, 2, 2048).unwrap();
+            let mut pool = IdlePool::new(IdlePoolConfig { max_idle: 1 });
+            assert!(matches!(
+                pool.park(
+                    ParkedIdleCandidateBuilder::new("prune-with-gate", lease)
+                        .with_sandbox(sandbox)
+                        .with_factory(factory)
+                        .build()
+                ),
+                ParkResult::Parked
+            ));
+            let idle_pool = Arc::new(tokio::sync::Mutex::new(pool));
+            let dir = tempfile::tempdir().unwrap();
+            let path = if cancel_caller {
+                dir.path().join("status.json")
+            } else {
+                dir.path().join("missing/status.json")
+            };
+            let status = Arc::new(StatusTracker::new(path, 2, None, None));
+            if cancel_caller {
+                status.write_initial().await.unwrap();
+            }
+            let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
+            let pool_for_task = Arc::clone(&idle_pool);
+            let status_for_task = Arc::clone(&status);
+            let task = tokio::spawn(async move {
+                prune_exact_idle_pool(&pool_for_task, &status_for_task, &tracker).await
+            });
+            gate.wait_entered(1, std::time::Duration::from_secs(5))
+                .await
+                .unwrap();
+            assert_eq!(idle_pool.lock().await.len(), 0);
+            assert_eq!(budget.allocated(), (2, 2048, 1));
+            if cancel_caller {
+                task.abort();
+                assert!(task.await.unwrap_err().is_cancelled());
+                gate.release_one();
+            } else {
+                gate.release_one();
+                let error = task.await.unwrap().unwrap_err();
+                assert!(error.contains("status publication failed"), "{error}");
+            }
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                while budget.allocated().2 != 0 {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("detached destruction must complete after release");
+        }
     }
 
     #[tokio::test]

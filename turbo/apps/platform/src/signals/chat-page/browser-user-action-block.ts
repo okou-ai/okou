@@ -67,6 +67,12 @@ export interface BrowserCheckboxDraft {
   readonly observedChecked: boolean;
 }
 
+export interface BrowserRadioDraft {
+  readonly memberIndex: number;
+  readonly observedSelectedIndex: number;
+  readonly groupFingerprint: string;
+}
+
 export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly request$: Computed<Promise<BrowserUserActionRequestState>>;
   readonly draft$: Computed<ReadonlyMap<string, string>>;
@@ -74,6 +80,7 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
     ReadonlyMap<string, BrowserSelectChoiceDraft>
   >;
   readonly checkboxDraft$: Computed<ReadonlyMap<string, BrowserCheckboxDraft>>;
+  readonly radioDraft$: Computed<ReadonlyMap<string, BrowserRadioDraft>>;
   readonly callbackDelivered$: Computed<boolean>;
   readonly callbackFailed$: Computed<boolean>;
   readonly busy$: Computed<boolean>;
@@ -94,6 +101,8 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly removeChoiceDraft$: Command<void, [string]>;
   readonly updateCheckboxDraft$: Command<void, [string, boolean, boolean]>;
   readonly removeCheckboxDraft$: Command<void, [string]>;
+  readonly updateRadioDraft$: Command<void, [string, BrowserRadioDraft]>;
+  readonly removeRadioDraft$: Command<void, [string]>;
   readonly removeDraft$: Command<void, [string]>;
   readonly clearDraft$: Command<void, []>;
   readonly clearDraftRef$: Command<
@@ -405,6 +414,35 @@ function createCheckboxDraftSignals() {
   };
 }
 
+function createRadioDraftSignals() {
+  const internalRadioDraft$ = state<ReadonlyMap<string, BrowserRadioDraft>>(
+    new Map(),
+  );
+  const radioDraft$ = computed((get) => {
+    return get(internalRadioDraft$);
+  });
+  const updateRadioDraft$ = command(
+    ({ set }, key: string, choice: BrowserRadioDraft): void => {
+      set(internalRadioDraft$, (current) => {
+        return new Map(current).set(key, choice);
+      });
+    },
+  );
+  const removeRadioDraft$ = command(({ set }, key: string): void => {
+    set(internalRadioDraft$, (current) => {
+      const next = new Map(current);
+      next.delete(key);
+      return next;
+    });
+  });
+  return {
+    internalRadioDraft$,
+    radioDraft$,
+    updateRadioDraft$,
+    removeRadioDraft$,
+  };
+}
+
 function createScalarDraftUpdater(
   internalDraft$: State<ReadonlyMap<string, string>>,
 ) {
@@ -418,22 +456,7 @@ function createScalarDraftUpdater(
   });
 }
 
-function createDraftSignals(): Pick<
-  BrowserUserActionSignals,
-  | "draft$"
-  | "choiceDraft$"
-  | "checkboxDraft$"
-  | "updateCheckboxDraft$"
-  | "removeCheckboxDraft$"
-  | "updateDraft$"
-  | "updateChoiceDraft$"
-  | "removeChoiceDraft$"
-  | "removeDraft$"
-  | "clearDraft$"
-  | "clearDraftRef$"
-  | "formRef$"
-> {
-  const internalDraft$ = state<ReadonlyMap<string, string>>(new Map());
+function createSelectDraftSignals() {
   const internalChoiceDraft$ = state<
     ReadonlyMap<string, BrowserSelectChoiceDraft>
   >(new Map());
@@ -462,7 +485,36 @@ function createDraftSignals(): Pick<
       return next;
     });
   });
+  return {
+    internalChoiceDraft$,
+    choiceDraft$,
+    updateChoiceDraft$,
+    removeChoiceDraft$,
+  };
+}
+
+function createDraftSignals(): Pick<
+  BrowserUserActionSignals,
+  | "draft$"
+  | "choiceDraft$"
+  | "checkboxDraft$"
+  | "radioDraft$"
+  | "updateRadioDraft$"
+  | "removeRadioDraft$"
+  | "updateCheckboxDraft$"
+  | "removeCheckboxDraft$"
+  | "updateDraft$"
+  | "updateChoiceDraft$"
+  | "removeChoiceDraft$"
+  | "removeDraft$"
+  | "clearDraft$"
+  | "clearDraftRef$"
+  | "formRef$"
+> {
+  const internalDraft$ = state<ReadonlyMap<string, string>>(new Map());
+  const selectSignals = createSelectDraftSignals();
   const checkboxSignals = createCheckboxDraftSignals();
+  const radioSignals = createRadioDraftSignals();
   const ownerCount$ = state(0);
   const draft$ = computed((get) => {
     return get(internalDraft$);
@@ -470,8 +522,9 @@ function createDraftSignals(): Pick<
   const updateDraft$ = createScalarDraftUpdater(internalDraft$);
   const clearDraft$ = command(({ set }): void => {
     set(internalDraft$, new Map());
-    set(internalChoiceDraft$, new Map());
+    set(selectSignals.internalChoiceDraft$, new Map());
     set(checkboxSignals.internalCheckboxDraft$, new Map());
+    set(radioSignals.internalRadioDraft$, new Map());
   });
   const removeDraft$ = command(({ set }, key: string): void => {
     set(internalDraft$, (current) => {
@@ -528,13 +581,16 @@ function createDraftSignals(): Pick<
   );
   return {
     draft$,
-    choiceDraft$,
+    choiceDraft$: selectSignals.choiceDraft$,
     checkboxDraft$: checkboxSignals.checkboxDraft$,
+    radioDraft$: radioSignals.radioDraft$,
+    updateRadioDraft$: radioSignals.updateRadioDraft$,
+    removeRadioDraft$: radioSignals.removeRadioDraft$,
     updateCheckboxDraft$: checkboxSignals.updateCheckboxDraft$,
     removeCheckboxDraft$: checkboxSignals.removeCheckboxDraft$,
     updateDraft$,
-    updateChoiceDraft$,
-    removeChoiceDraft$,
+    updateChoiceDraft$: selectSignals.updateChoiceDraft$,
+    removeChoiceDraft$: selectSignals.removeChoiceDraft$,
     removeDraft$,
     clearDraft$,
     clearDraftRef$: onRef(clearDraftOnMount$),
@@ -562,6 +618,7 @@ interface BrowserUserActionMutationContext {
   readonly draft$: BrowserUserActionSignals["draft$"];
   readonly choiceDraft$: BrowserUserActionSignals["choiceDraft$"];
   readonly checkboxDraft$: BrowserUserActionSignals["checkboxDraft$"];
+  readonly radioDraft$: BrowserUserActionSignals["radioDraft$"];
   readonly entryAction$: BrowserUserActionSignals["entryAction$"];
   readonly entryState$: BrowserUserActionSignals["entryState$"];
   readonly invalidateEntry$: BrowserUserActionSignals["invalidateEntry$"];
@@ -649,14 +706,70 @@ function browserCheckboxSubmissionValue(
   return { key: field.key, checked: choice.checked, observedChecked };
 }
 
+function browserRadioSubmissionValue(
+  field: BrowserInputAction["fields"][number],
+  radioDraft: ReadonlyMap<string, BrowserRadioDraft>,
+):
+  | Extract<
+      BrowserUserActionApplyRequest["values"][number],
+      { memberIndex: number }
+    >
+  | null
+  | undefined {
+  const options = field.control.radioOptions;
+  const fingerprint = field.control.radioGroupFingerprint;
+  if (!options || !fingerprint) {
+    return null;
+  }
+  const selectedIndex = options.findIndex((option) => {
+    return option.selected;
+  });
+  const choice = radioDraft.get(field.key);
+  if (
+    choice &&
+    (choice.groupFingerprint !== fingerprint ||
+      choice.observedSelectedIndex !== selectedIndex)
+  ) {
+    return null;
+  }
+  if (!choice) {
+    return field.required ||
+      (field.control.siteRequired && selectedIndex === -1)
+      ? null
+      : undefined;
+  }
+  if (
+    choice.memberIndex >= options.length ||
+    (choice.memberIndex >= 0 && options[choice.memberIndex]?.disabled) ||
+    (choice.memberIndex === -1 &&
+      (field.required ||
+        field.control.siteRequired ||
+        (selectedIndex !== -1 && options[selectedIndex]?.disabled)))
+  ) {
+    return null;
+  }
+  return { key: field.key, ...choice };
+}
+
 function browserInputSubmissionValues(
   action: BrowserInputAction,
   draft: ReadonlyMap<string, string>,
   choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>,
   checkboxDraft: ReadonlyMap<string, BrowserCheckboxDraft>,
+  radioDraft: ReadonlyMap<string, BrowserRadioDraft>,
 ): BrowserUserActionApplyRequest["values"] | null {
   const values: BrowserUserActionApplyRequest["values"][number][] = [];
   for (const field of action.fields) {
+    if (field.fieldKind === "radio") {
+      const radio = browserRadioSubmissionValue(field, radioDraft);
+      if (radio === null) {
+        return null;
+      }
+      if (radio !== undefined) {
+        values.push(radio);
+      }
+      continue;
+    }
     if (field.fieldKind === "checkbox") {
       const checkbox = browserCheckboxSubmissionValue(field, checkboxDraft);
       if (checkbox === null) {
@@ -719,6 +832,7 @@ function createSubmitSignal({
   draft$,
   choiceDraft$,
   checkboxDraft$,
+  radioDraft$,
   entryAction$,
   entryState$,
   invalidateEntry$,
@@ -759,6 +873,7 @@ function createSubmitSignal({
       get(draft$),
       get(choiceDraft$),
       get(checkboxDraft$),
+      get(radioDraft$),
     );
     if (!values) {
       return;
@@ -927,6 +1042,7 @@ function createMutationSignals({
   draft$,
   choiceDraft$,
   checkboxDraft$,
+  radioDraft$,
   clearDraft$,
   entryAction$,
   entryState$,
@@ -939,6 +1055,7 @@ function createMutationSignals({
   | "draft$"
   | "choiceDraft$"
   | "checkboxDraft$"
+  | "radioDraft$"
   | "clearDraft$"
   | "entryAction$"
   | "entryState$"
@@ -984,6 +1101,7 @@ function createMutationSignals({
     draft$,
     choiceDraft$,
     checkboxDraft$,
+    radioDraft$,
     entryAction$,
     entryState$,
     invalidateEntry$,
@@ -1069,6 +1187,7 @@ export function createBrowserUserActionSignals(
     draft$: draftSignals.draft$,
     choiceDraft$: draftSignals.choiceDraft$,
     checkboxDraft$: draftSignals.checkboxDraft$,
+    radioDraft$: draftSignals.radioDraft$,
     clearDraft$: draftSignals.clearDraft$,
     entryAction$: entrySignals.entryAction$,
     entryState$: entrySignals.entryState$,

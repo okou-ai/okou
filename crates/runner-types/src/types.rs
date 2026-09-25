@@ -14,6 +14,7 @@ use crate::storage_manifest::StorageManifest;
 
 pub const MAX_HELD_SANDBOX_STATES: usize = 1024;
 pub const MAX_HELD_WORKSPACE_STATES: usize = 1024;
+pub const MAX_ACTIVE_REUSE_PRODUCERS: usize = 1024;
 pub const MAX_WORKSPACE_CACHES_PER_REUSE_KEY: usize = 8;
 pub const MAX_WORKSPACE_CACHES_PER_HEARTBEAT: usize = 1024;
 pub const WORKSPACE_AFFINITY_VERSION: u8 = 1;
@@ -1759,6 +1760,16 @@ pub struct HeldWorkspaceState {
     pub workspace_caches: Vec<WorkspaceCacheCapability>,
 }
 
+/// An active run that can still produce an exact reusable sandbox. This is not
+/// an idle sandbox: the claimant must verify the predecessor locally.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ActiveReuseProducer {
+    pub run_id: RunId,
+    pub reuse_key: String,
+    pub profile: String,
+}
+
 /// Runner state snapshot sent to the server via heartbeat.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1776,6 +1787,7 @@ pub struct HeartbeatState {
     pub admittable_profiles: Vec<String>,
     pub held_sandbox_states: Vec<HeldSandboxState>,
     pub held_workspace_states: Vec<HeldWorkspaceState>,
+    pub active_reuse_producers: Vec<ActiveReuseProducer>,
     pub mode: String,
 }
 
@@ -2831,6 +2843,11 @@ mod tests {
                     workspace_affinity_version: WORKSPACE_AFFINITY_VERSION,
                 }],
             }],
+            active_reuse_producers: vec![ActiveReuseProducer {
+                run_id: "22222222-2222-4222-8222-222222222222".parse().unwrap(),
+                reuse_key: "thread:thread-abc".into(),
+                profile: "vm0/default".into(),
+            }],
             mode: "running".into(),
         };
         let json: serde_json::Value = serde_json::to_value(&state).unwrap();
@@ -2863,6 +2880,11 @@ mod tests {
                         "profile": "vm0/large",
                         "workspaceAffinityVersion": 1
                     }]
+                }],
+                "activeReuseProducers": [{
+                    "runId": "22222222-2222-4222-8222-222222222222",
+                    "reuseKey": "thread:thread-abc",
+                    "profile": "vm0/default"
                 }],
                 "mode": "running"
             })
@@ -2904,11 +2926,13 @@ mod tests {
             admittable_profiles: vec!["vm0/default".into()],
             held_sandbox_states: Vec::new(),
             held_workspace_states: Vec::new(),
+            active_reuse_producers: Vec::new(),
             mode: "running".into(),
         };
 
         let serialized = serde_json::to_value(state).unwrap();
         assert_eq!(serialized["heldSandboxStates"], json!([]));
         assert_eq!(serialized["heldWorkspaceStates"], json!([]));
+        assert_eq!(serialized["activeReuseProducers"], json!([]));
     }
 }

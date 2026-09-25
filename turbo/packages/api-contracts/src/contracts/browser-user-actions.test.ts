@@ -90,6 +90,34 @@ describe("Browser user-action contracts", () => {
     }
   });
 
+  it("accepts a bounded radio index including explicit clear and rejects ambiguous scalar values", () => {
+    const value = {
+      key: "delivery",
+      memberIndex: 1,
+      observedSelectedIndex: 0,
+      groupFingerprint: "b".repeat(64),
+    };
+    expect(
+      browserUserActionApplyRequestSchema.parse({ values: [value] }).values[0],
+    ).toMatchObject(value);
+    expect(
+      browserUserActionApplyRequestSchema.safeParse({
+        values: [{ ...value, memberIndex: -1 }],
+      }).success,
+    ).toBe(true);
+    for (const bad of [
+      { ...value, memberIndex: 16 },
+      { ...value, observedSelectedIndex: -2 },
+      { ...value, value: "same" },
+      { key: "delivery", memberIndex: 1 },
+    ]) {
+      expect(
+        browserUserActionApplyRequestSchema.safeParse({ values: [bad] })
+          .success,
+      ).toBe(false);
+    }
+  });
+
   it("keeps number values as strings and bounds observed constraints", () => {
     const request = browserUserActionCreateRequestSchema.parse({
       kind: "input",

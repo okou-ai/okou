@@ -1,6 +1,6 @@
 [package]
 name = "runner-network"
-version = "0.1.7"
+version = "0.1.8"
 edition.workspace = true
 description = "Runner proxy, DNS, CA, and network log behavior"
 

@@ -3539,7 +3539,7 @@ async fn saturated_cache_only_holder_defers_before_reclaiming_unrelated_idle() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn ready_direct_drain_batches_reuse_state_heartbeat() {
+async fn ready_direct_drain_advertises_active_producers() {
     let wait_gate = sandbox_mock::MockLifecycleGate::new();
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     overrides.set_wait_process_lifecycle_gate(wait_gate.clone());
@@ -3603,17 +3603,40 @@ async fn ready_direct_drain_batches_reuse_state_heartbeat() {
         .wait_entered(3, Duration::from_secs(5))
         .await
         .expect("all reused jobs should block in wait_process");
-    assert!(
-        env.handle
-            .wait_heartbeat_past(heartbeat_count, Duration::from_secs(5))
-            .await,
-        "reusing direct-candidate sessions should trigger a prompt heartbeat"
-    );
-    assert_eq!(
-        env.handle.heartbeat_count(),
-        heartbeat_count + 1,
-        "direct-candidate drain should batch reuse-state refresh into one heartbeat"
-    );
+    // Registering each resumed run now triggers an active-producer refresh in
+    // addition to the pooled-sandbox refresh. Depending on the scheduler these
+    // notifications can coalesce or arrive as separate heartbeats; require a
+    // complete externally advertised snapshot instead of an exact send count.
+    let expected_producers =
+        std::collections::HashSet::from([trigger_run_id, ready_run_id_1, ready_run_id_2]);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let (observed, cursor) = {
+            let heartbeats = env
+                .handle
+                .heartbeats
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let observed = heartbeats[heartbeat_count..].iter().any(|state| {
+                state
+                    .active_reuse_producers
+                    .iter()
+                    .map(|producer| producer.run_id)
+                    .collect::<std::collections::HashSet<_>>()
+                    == expected_producers
+                    && state.held_sandbox_states.is_empty()
+            });
+            (observed, heartbeats.len())
+        };
+        if observed {
+            break;
+        }
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        assert!(
+            !remaining.is_zero() && env.handle.wait_heartbeat_past(cursor, remaining).await,
+            "direct-candidate drain should promptly advertise all active producers"
+        );
+    }
 
     let claimed_run_ids: std::collections::HashSet<RunId> = env
         .handle

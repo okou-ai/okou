@@ -1918,6 +1918,33 @@ describe("runner resume session contract", () => {
     });
     expect(parsed.heldSandboxStates).toHaveLength(1);
     expect(parsed.heldSandboxStates[0]?.reuseKey).toBe("thread:canonical");
+    expect(parsed).not.toHaveProperty("activeReuseProducers");
+
+    const producer = {
+      runId: "22222222-2222-4222-8222-222222222222",
+      reuseKey: "thread:canonical",
+      profile: "vm0/default",
+    };
+    expect(
+      heartbeatBodySchema.parse({
+        ...heartbeat,
+        activeReuseProducers: [producer],
+      }).activeReuseProducers,
+    ).toStrictEqual([producer]);
+    expect(
+      heartbeatBodySchema.safeParse({
+        ...heartbeat,
+        activeReuseProducers: [{ ...producer, runId: "not-a-run" }],
+      }).success,
+    ).toBe(false);
+    expect(
+      heartbeatBodySchema.safeParse({
+        ...heartbeat,
+        activeReuseProducers: Array.from({ length: 1025 }, () => {
+          return producer;
+        }),
+      }).success,
+    ).toBe(false);
   });
 
   it("bounds profile-qualified workspace cache heartbeat state", () => {

@@ -122,6 +122,45 @@ function checkboxAction(args: {
   };
 }
 
+const RADIO_FINGERPRINT = "b".repeat(64);
+function radioAction(args: {
+  required: boolean;
+  selected: number;
+  preflight?: boolean;
+  siteRequired?: boolean;
+  fingerprint?: string;
+}) {
+  return {
+    ...action("pending"),
+    fields: [
+      {
+        key: "delivery",
+        label: "Delivery",
+        fieldKind: "radio" as const,
+        required: args.required,
+        control: {
+          tagName: "INPUT" as const,
+          inputType: "radio" as const,
+          ...(args.preflight
+            ? {
+                siteRequired: args.siteRequired ?? false,
+                radioGroupFingerprint: args.fingerprint ?? RADIO_FINGERPRINT,
+                radioOptions: [0, 1, 2].map((index) => {
+                  return {
+                    index,
+                    label: "Same",
+                    disabled: index === 2,
+                    selected: index === args.selected,
+                  };
+                }),
+              }
+            : {}),
+        },
+      },
+    ],
+  };
+}
+
 const SELECT_FINGERPRINT = "a".repeat(64);
 
 function selectAction(args: {
@@ -749,6 +788,245 @@ test("A changed checkbox state on Retry requires a fresh confirmation", async ()
     [{ key: "consent", checked: true, observedChecked: false }],
     [{ key: "consent", checked: true, observedChecked: true }],
   ]);
+});
+
+test.each([
+  { memberIndex: 1, label: "2. Same" },
+  { memberIndex: -1, label: "Clear website value" },
+])(
+  "A radio group submits an indexed choice or explicit clear without its duplicate value ($memberIndex)",
+  async ({ memberIndex, label }) => {
+    let state: BrowserUserActionResponse["state"] = "pending";
+    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+      return respond(200, {
+        ...radioAction({ required: false, selected: 0 }),
+        state,
+      });
+    });
+    context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+      return respond(
+        200,
+        radioAction({ required: false, selected: 0, preflight: true }),
+      );
+    });
+    context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+      expect(body.values).toStrictEqual([
+        {
+          key: "delivery",
+          memberIndex,
+          observedSelectedIndex: 0,
+          groupFingerprint: RADIO_FINGERPRINT,
+        },
+      ]);
+      state = "succeeded";
+      return respond(200, {
+        ...radioAction({ required: false, selected: 0 }),
+        state,
+      });
+    });
+    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+      expect(body.prompt).toBe(CALLBACK_PROMPT);
+      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    });
+    await setupPage({
+      context,
+      path: route(),
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+    });
+    const form = await screen.findByRole("form", {
+      name: "Enter information in browser",
+    });
+    const radios = await within(form).findAllByRole("radio");
+    expect(radios).toHaveLength(3);
+    expect(radios[0]).toBeChecked();
+    expect(radios[2]).toBeDisabled();
+    if (memberIndex >= 0) {
+      await userEvent
+        .setup({ delay: null })
+        .click(within(form).getByRole("radio", { name: label }));
+    } else {
+      click(button(label));
+    }
+    click(button("Add to browser"));
+    await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  },
+);
+
+test("A radio choice from a changed website group cannot survive Retry without new confirmation", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  let checks = 0;
+  const submissions: unknown[] = [];
+  const changedFingerprint = "c".repeat(64);
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...radioAction({ required: true, selected: 0 }),
+      state,
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    checks += 1;
+    return respond(
+      200,
+      radioAction({
+        required: true,
+        selected: checks === 1 ? 0 : 1,
+        preflight: true,
+        fingerprint: checks === 1 ? RADIO_FINGERPRINT : changedFingerprint,
+      }),
+    );
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    submissions.push(body.values);
+    if (submissions.length === 1) {
+      return respond(409, {
+        error: {
+          code: "BROWSER_USER_ACTION_INVALID_VALUE",
+          message: "Changed website group",
+        },
+      });
+    }
+    state = "succeeded";
+    return respond(200, {
+      ...radioAction({ required: true, selected: 1 }),
+      state,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const radios = await within(form).findAllByRole("radio");
+  await waitFor(() => {
+    expect(radios[0]).toBeEnabled();
+  });
+  await userEvent.setup({ delay: null }).click(radios[1]);
+  click(button("Add to browser"));
+  await screen.findByRole("alert");
+  click(button("Retry"));
+  await waitFor(() => {
+    expect(checks).toBe(2);
+    expect(radios[1]).toBeChecked();
+  });
+  expect(button("Add to browser")).toBeDisabled();
+  click(button("Leave website value unchanged"));
+  expect(button("Add to browser")).toBeEnabled();
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  expect(submissions).toStrictEqual([
+    [
+      {
+        key: "delivery",
+        memberIndex: 1,
+        observedSelectedIndex: 0,
+        groupFingerprint: RADIO_FINGERPRINT,
+      },
+    ],
+    [
+      {
+        key: "delivery",
+        memberIndex: 1,
+        observedSelectedIndex: 1,
+        groupFingerprint: changedFingerprint,
+      },
+    ],
+  ]);
+});
+
+test("An untouched optional radio group preserves the existing selection", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...radioAction({ required: false, selected: 0 }),
+      state,
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(
+      200,
+      radioAction({ required: false, selected: 0, preflight: true }),
+    );
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([]);
+    state = "succeeded";
+    return respond(200, {
+      ...radioAction({ required: false, selected: 0 }),
+      state,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  await within(form).findAllByRole("radio");
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
+test("An Agent-required radio group needs a deliberate confirmation of the website choice", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...radioAction({ required: true, selected: 0 }),
+      state,
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(
+      200,
+      radioAction({ required: true, selected: 0, preflight: true }),
+    );
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      {
+        key: "delivery",
+        memberIndex: 0,
+        observedSelectedIndex: 0,
+        groupFingerprint: RADIO_FINGERPRINT,
+      },
+    ]);
+    state = "succeeded";
+    return respond(200, {
+      ...radioAction({ required: true, selected: 0 }),
+      state,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  await within(form).findAllByRole("radio");
+  expect(button("Add to browser")).toBeDisabled();
+  click(button("Leave website value unchanged"));
+  expect(button("Add to browser")).toBeEnabled();
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
 
 test("The standalone form selects a required native option by index, not its website value", async () => {

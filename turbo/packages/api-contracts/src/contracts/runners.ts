@@ -598,6 +598,12 @@ export const heldSandboxStateSchema = z.object({
   }),
 });
 
+export const activeReuseProducerSchema = z.object({
+  runId: z.uuid(),
+  reuseKey: z.string(),
+  profile: z.string(),
+});
+
 export const heldWorkspaceStateSchema = z.object({
   reuseKey: z.string(),
   lastCompletedAt: z.string().datetime({ offset: true }),
@@ -1903,6 +1909,12 @@ export const heartbeatBodySchema = z
     admittableProfiles: runnerProfileListSchema,
     heldSandboxStates: z.array(heldSandboxStateSchema).max(1024),
     heldWorkspaceStates: z.array(heldWorkspaceStateSchema).max(1024),
+    // Accept older Runner heartbeats until the fleet and rollback floor no
+    // longer include senders without this field (see #36867).
+    activeReuseProducers: z
+      .array(activeReuseProducerSchema)
+      .max(1024)
+      .optional(),
     mode: z.enum(["starting", "running", "draining", "stopping"]),
   })
   .superRefine((heartbeat, ctx) => {
@@ -1958,6 +1970,7 @@ export type RunnerPreference = z.infer<typeof runnerPreferenceSchema>;
 export type RunnerPreferenceClaimState = z.infer<
   typeof runnerPreferenceClaimStateSchema
 >;
+export type ActiveReuseProducer = z.infer<typeof activeReuseProducerSchema>;
 export type HeldSandboxState = z.infer<typeof heldSandboxStateSchema>;
 export type HeldWorkspaceState = z.infer<typeof heldWorkspaceStateSchema>;
 export type ExecutionContext = z.infer<typeof executionContextSchema>;

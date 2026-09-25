@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.710.6](https://github.com/okou-ai/okou/compare/core-v8.710.5...core-v8.710.6) (2026-09-25)
+
+
+### Refactoring
+
+* **morning-brief:** retire native execution entrypoints ([#36750](https://github.com/okou-ai/okou/issues/36750)) ([4dceb40](https://github.com/okou-ai/okou/commit/4dceb406026839f756c8313d5bfa0c4e139360fc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.510.2
+
 ## [8.710.5](https://github.com/okou-ai/okou/compare/core-v8.710.4...core-v8.710.5) (2026-09-25)
 
 

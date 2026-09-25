@@ -12,6 +12,7 @@ export const BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH = 512;
 export const BROWSER_USER_ACTION_MAX_TARGET_ID_LENGTH = 512;
 export const BROWSER_USER_ACTION_MAX_VALUE_LENGTH = 4096;
 export const BROWSER_USER_ACTION_MAX_OPTIONS = 32;
+export const BROWSER_USER_ACTION_MAX_RADIO_MEMBERS = 16;
 export const BROWSER_USER_ACTION_MAX_OPTION_LABEL_LENGTH = 128;
 export const BROWSER_USER_ACTION_MAX_OPTION_VALUE_LENGTH = 256;
 export const BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH = 128;
@@ -33,6 +34,7 @@ export const browserUserActionFieldKindSchema = z.enum([
   "number",
   "select",
   "checkbox",
+  "radio",
 ]);
 
 const boundedNonblank = (maximum: number) => {
@@ -127,10 +129,27 @@ const browserUserActionCheckboxValueSchema = z
     observedChecked: z.boolean(),
   })
   .strict();
+const browserUserActionRadioValueSchema = z
+  .object({
+    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+    memberIndex: z
+      .number()
+      .int()
+      .min(-1)
+      .max(BROWSER_USER_ACTION_MAX_RADIO_MEMBERS - 1),
+    observedSelectedIndex: z
+      .number()
+      .int()
+      .min(-1)
+      .max(BROWSER_USER_ACTION_MAX_RADIO_MEMBERS - 1),
+    groupFingerprint: z.string().regex(/^[0-9a-f]{64}$/u),
+  })
+  .strict();
 export const browserUserActionSubmittedValueSchema = z.union([
   browserUserActionScalarValueSchema,
   browserUserActionSelectValueSchema,
   browserUserActionCheckboxValueSchema,
+  browserUserActionRadioValueSchema,
 ]);
 
 export const browserUserActionApplyRequestSchema = z
@@ -179,9 +198,35 @@ export const browserUserActionDisplayFieldSchema = z
           "select-one",
           "select-multiple",
           "checkbox",
+          "radio",
         ]),
         siteRequired: z.boolean().optional(),
         checked: z.boolean().optional(),
+        radioGroupFingerprint: z
+          .string()
+          .regex(/^[0-9a-f]{64}$/u)
+          .optional(),
+        radioOptions: z
+          .array(
+            z
+              .object({
+                index: z
+                  .number()
+                  .int()
+                  .min(0)
+                  .max(BROWSER_USER_ACTION_MAX_RADIO_MEMBERS - 1),
+                label: z
+                  .string()
+                  .min(1)
+                  .max(BROWSER_USER_ACTION_MAX_OPTION_LABEL_LENGTH),
+                disabled: z.boolean(),
+                selected: z.boolean(),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(BROWSER_USER_ACTION_MAX_RADIO_MEMBERS)
+          .optional(),
         multiple: z.boolean().optional(),
         optionSetFingerprint: z
           .string()

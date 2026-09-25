@@ -1,6 +1,6 @@
 [package]
 name = "runner-host"
-version = "0.1.8"
+version = "0.1.9"
 edition.workspace = true
 description = "Runner host filesystem, process, registry, control IPC, lock, path, and logging primitives"
 

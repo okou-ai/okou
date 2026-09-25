@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.213.19](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.18...runner-rs-v0.213.19) (2026-09-25)
+
+
+### Refactoring
+
+* **runner:** move pending candidate state to supervisor ([#36868](https://github.com/okou-ai/okou/issues/36868)) ([6efbff4](https://github.com/okou-ai/okou/commit/6efbff4941ee52d9fc2018806968ddaf3578b7ae))
+* **runner:** move process identity persistence to host ([#36880](https://github.com/okou-ai/okou/issues/36880)) ([f09825f](https://github.com/okou-ai/okou/commit/f09825ff3d88416d1cfa11ca28ade29db3be5943))
+
 ## [0.213.18](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.17...runner-rs-v0.213.18) (2026-09-25)
 
 

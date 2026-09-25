@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.963.3](https://github.com/okou-ai/okou/compare/app-v0.963.2...app-v0.963.3) (2026-09-25)
+
+
+### Refactoring
+
+* **morning-brief:** retire native execution entrypoints ([#36750](https://github.com/okou-ai/okou/issues/36750)) ([4dceb40](https://github.com/okou-ai/okou/commit/4dceb406026839f756c8313d5bfa0c4e139360fc))
+
+
+### Performance Improvements
+
+* **api:** drop unread snapshot from mark-read and merge active indicator reads ([#36877](https://github.com/okou-ai/okou/issues/36877)) ([4d5d019](https://github.com/okou-ai/okou/commit/4d5d019f03dbd507ba9a0cb1be09149a368a521e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.510.2
+    * @okouai/core bumped to 8.710.6
+
 ## [0.963.2](https://github.com/okou-ai/okou/compare/app-v0.963.1...app-v0.963.2) (2026-09-25)
 
 

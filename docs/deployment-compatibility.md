@@ -21,6 +21,27 @@ reach production before the follow-up migration drops
 maintenance fails its projection tick once the index is gone. Rollback to an
 older API is safe until that migration ships.
 
+## Runner active-producer affinity for delayed finalization (2026-09-25)
+
+The Runner heartbeat may now include `activeReuseProducers`, bounded exact
+`runId/reuseKey/profile` capabilities for locally publishable active runs. The
+additive `runner_state.active_reuse_producers` JSONB column defaults to `[]`.
+An older Runner omits the field, which the new API reads as empty and writes as
+`[]`; its existing completion-relative 1.5s finalizing preference remains in
+place. An older API ignores the unknown heartbeat field from a new Runner and
+continues with its old timer. The new API only uses a capability for the exact
+completed predecessor on the same runner process generation and a fresh running
+heartbeat. Producer-qualified claim priority expires at successor creation
+plus 2s; it does not inherit the 30s heartbeat freshness interval. Runner-local
+pre-claim proof, running handoff, and global claim CAS remain unchanged.
+
+Deploy the additive DB migration before the API relies on the column. During
+mixed-version rollout, the old 1.5s bridge still covers short runs and older
+Runner instances. An API rollback can leave the unused column in place; do not
+drop it while the new API is a rollback target. Stale/missed producer revocation
+can delay an individual cold claim by at most the successor-relative preference
+window, never by heartbeat freshness; measure that tail cost alongside reuse.
+
 ## Mark-read responses stop computing unread snapshots (2026-09-25)
 
 `POST /api/chat-threads/:id/mark-read` and

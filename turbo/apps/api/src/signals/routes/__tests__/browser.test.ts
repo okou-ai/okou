@@ -573,6 +573,193 @@ function mockNativeCheckboxTarget(args: {
   });
 }
 
+type NativeRadioMockState = {
+  memberIds: readonly number[];
+  name: string;
+  formOwnerId: number;
+  selectedIndex: number;
+  disabledIndex: number;
+  writeMatches: boolean;
+  readbackMatches: boolean;
+  siteRequired: boolean;
+  scalar?: {
+    nodeId: number;
+    required: boolean;
+    requiredAfterWrite: "immediate" | "microtask";
+  } | null;
+};
+
+function mockNativeRadioCallFunctionOn(
+  state: NativeRadioMockState,
+  params: {
+    functionDeclaration?: unknown;
+    arguments?: unknown;
+    objectId?: unknown;
+  },
+) {
+  const declaration = String(params.functionDeclaration);
+  if (declaration.includes("firstSpec")) {
+    const args = params.arguments as {
+      value?: { kind?: string; required?: boolean; verifyOnly?: boolean };
+    }[];
+    if (
+      state.scalar &&
+      (state.scalar.requiredAfterWrite === "immediate" ||
+        (args[0]?.value?.verifyOnly &&
+          state.scalar.requiredAfterWrite === "microtask"))
+    ) {
+      state.scalar.required = true;
+    }
+    const scalarSpec = args.find((arg) => {
+      return arg.value?.kind === "scalar";
+    })?.value;
+    const constraintsMatch =
+      !state.scalar || scalarSpec?.required === state.scalar.required;
+    return {
+      result: {
+        value:
+          (args[0]?.value?.verifyOnly
+            ? state.readbackMatches
+            : state.writeMatches) && constraintsMatch,
+      },
+    };
+  }
+  if (declaration.includes("function (nextValue")) {
+    return { result: { value: true } };
+  }
+  if (declaration.includes("function(limit)")) {
+    return { result: { objectId: "radio-array" } };
+  }
+  if (declaration.includes("function(anchor, owner)")) {
+    return {
+      result: {
+        value: {
+          name: state.name,
+          options: state.memberIds.map((_, index) => {
+            return {
+              label: "Same label",
+              value: "same-private-value",
+              disabled: index === state.disabledIndex,
+              selected: index === state.selectedIndex,
+              required: state.siteRequired && index === 0,
+              writable: true,
+            };
+          }),
+        },
+      },
+    };
+  }
+  const objectIds = [
+    params.objectId,
+    ...((params.arguments as { objectId: string }[] | undefined) ?? []).map(
+      (arg) => {
+        return arg.objectId;
+      },
+    ),
+  ];
+  return {
+    result: {
+      value: objectIds.map((objectId) => {
+        return objectId === "native-scalar-object"
+          ? {
+              tagName: "INPUT",
+              inputType: "text",
+              connected: true,
+              mainDocument: true,
+              writable: true,
+              siteRequired: state.scalar?.required ?? false,
+              multiple: false,
+            }
+          : {
+              tagName: "INPUT",
+              inputType: "radio",
+              connected: true,
+              mainDocument: true,
+              writable: true,
+              siteRequired: state.siteRequired,
+              multiple: false,
+            };
+      }),
+    },
+  };
+}
+
+function mockNativeRadioTarget(state: NativeRadioMockState): void {
+  context.mocks.browserUseCdp.command.mockImplementation((command) => {
+    switch (command.method) {
+      case "Target.getTargets": {
+        return {
+          targetInfos: [
+            {
+              targetId: "native-input-target",
+              type: "page",
+              url: "https://example.com/radio",
+            },
+          ],
+        };
+      }
+      case "Target.attachToTarget": {
+        return { sessionId: "native-radio-session" };
+      }
+      case "Browser.getWindowForTarget": {
+        return { windowId: 7 };
+      }
+      case "Page.getFrameTree": {
+        return {
+          frameTree: {
+            frame: {
+              id: "main-frame",
+              loaderId: "native-radio-loader",
+              url: "https://example.com/radio",
+            },
+          },
+        };
+      }
+      case "DOM.resolveNode": {
+        return {
+          object: {
+            objectId:
+              state.scalar?.nodeId === command.params.backendNodeId
+                ? "native-scalar-object"
+                : "radio-object",
+          },
+        };
+      }
+      case "DOM.describeNode": {
+        const objectId = String(command.params.objectId);
+        if (objectId === "radio-form") {
+          return {
+            node: { backendNodeId: state.formOwnerId, nodeName: "FORM" },
+          };
+        }
+        const index = Number(objectId.split("-")[1]);
+        return {
+          node: { backendNodeId: state.memberIds[index], nodeName: "INPUT" },
+        };
+      }
+      case "Runtime.getProperties": {
+        return {
+          result: [
+            ...state.memberIds.map((_, index) => {
+              return {
+                name: String(index),
+                value: { objectId: `radio-${index}` },
+              };
+            }),
+            { name: "formOwner", value: { objectId: "radio-form" } },
+          ],
+        };
+      }
+      case "Runtime.callFunctionOn": {
+        return mockNativeRadioCallFunctionOn(state, command.params);
+      }
+      default: {
+        return {};
+      }
+    }
+  });
+}
+
 function browserUserActionTokenHash(requestToken: string): string {
   return createHash("sha256").update(requestToken).digest("hex");
 }
@@ -787,6 +974,7 @@ describe("Browser user-action route", () => {
     );
     expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
       { value: { kind: "checkbox", checked: false, observedChecked: true } },
+      { value: 0 },
     ]);
     expect(
       JSON.stringify(browserSelectWrites().at(-1)?.[0].params.arguments),
@@ -798,6 +986,7 @@ describe("Browser user-action route", () => {
     ).toBe("succeeded");
     expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
       { value: { kind: "checkbox", checked: null, observedChecked: true } },
+      { value: 0 },
     ]);
     const drifted = await createCheckbox();
     const driftedToken = drifted.body.action.requestToken;
@@ -897,6 +1086,398 @@ describe("Browser user-action route", () => {
         )
       ).body.state,
     ).toBe("uncertain");
+  });
+
+  it("discovers exact radio member identities, selects duplicate-valued option by index, and rejects group drift", async () => {
+    const { routeMocks, runs, chat, actor, agent } =
+      await setupBrowserScenario();
+    const current = await createClaimedChatRun(
+      chat,
+      runs,
+      actor,
+      agent.agentId,
+      "Choose radio option",
+    );
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BrowserNativeInput]: true,
+    });
+    const providerId = randomUUID();
+    acceptBrowserUseCdpSessions([providerId]);
+    const group = {
+      memberIds: [45, 46, 47] as readonly number[],
+      name: "delivery",
+      formOwnerId: 90,
+      selectedIndex: 0,
+      disabledIndex: 2,
+      writeMatches: true,
+      readbackMatches: true,
+      siteRequired: false,
+      scalar: null as {
+        nodeId: number;
+        required: boolean;
+        requiredAfterWrite: "immediate" | "microtask";
+      } | null,
+    };
+    mockNativeRadioTarget(group);
+    server.use(
+      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+        const body = z
+          .strictObject({ name: z.string() })
+          .parse(await request.json());
+        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+          status: 201,
+        });
+      }),
+      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+        return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+      }),
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        return HttpResponse.json(providerBrowser(String(params.id)));
+      }),
+    );
+    await accept(
+      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      [200],
+    );
+    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    const create = async () => {
+      return await accept(
+        userActionClient().create({
+          headers: current.claim.browserHeaders,
+          body: {
+            kind: "input",
+            callbackPrompt: "Continue after radio selection",
+            pageTargetId: "native-input-target",
+            fields: [
+              {
+                key: "delivery",
+                label: "Delivery",
+                fieldKind: "radio",
+                required: false,
+                backendNodeId: 45,
+              },
+            ],
+          },
+        }),
+        [201],
+      );
+    };
+    const preflight = async (token: string) => {
+      return await accept(
+        userActionClient().preflight({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken: token },
+          body: {},
+        }),
+        [200],
+      );
+    };
+    const apply = async (
+      token: string,
+      memberIndex: number,
+      observedSelectedIndex: number,
+      fingerprint: string,
+    ) => {
+      return await userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+        body: {
+          values: [
+            {
+              key: "delivery",
+              memberIndex,
+              observedSelectedIndex,
+              groupFingerprint: fingerprint,
+            },
+          ],
+        },
+      });
+    };
+    const fingerprintFor = async (requestToken: string) => {
+      const value = (await preflight(requestToken)).body.fields[0]?.control
+        .radioGroupFingerprint;
+      if (!value) {
+        throw new Error("Missing radio fingerprint");
+      }
+      return value;
+    };
+    const created = await create();
+    const token = created.body.action.requestToken;
+    expect(JSON.stringify(created.body)).not.toContain("radioMemberNodeIds");
+    const observed = await preflight(token);
+    const control = observed.body.fields[0]?.control;
+    expect(control?.radioOptions).toMatchObject([
+      { index: 0, label: "Same label", selected: true },
+      { index: 1, label: "Same label", disabled: false },
+      { index: 2, disabled: true },
+    ]);
+    expect(JSON.stringify(observed.body)).not.toContain("same-private-value");
+    expect(JSON.stringify(observed.body)).not.toContain("radioMemberNodeIds");
+    const fingerprint = control?.radioGroupFingerprint;
+    expect(fingerprint).toMatch(/^[0-9a-f]{64}$/u);
+    if (!fingerprint) {
+      throw new Error("Missing radio fingerprint");
+    }
+    expect(
+      (await accept(apply(token, 1, 0, fingerprint), [200])).body.state,
+    ).toBe("succeeded");
+    expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
+      { value: { kind: "radio", index: 1, selectedIndex: 0, memberCount: 3 } },
+      { value: 0 },
+      { objectId: "radio-0" },
+      { objectId: "radio-1" },
+      { objectId: "radio-2" },
+      { objectId: "radio-form" },
+    ]);
+    const clear = await create();
+    const clearToken = clear.body.action.requestToken;
+    const clearFingerprint = (await preflight(clearToken)).body.fields[0]
+      ?.control.radioGroupFingerprint;
+    if (!clearFingerprint) {
+      throw new Error("Missing radio fingerprint");
+    }
+    expect(
+      (await accept(apply(clearToken, -1, 0, clearFingerprint), [200])).body
+        .state,
+    ).toBe("succeeded");
+    const disabled = await create();
+    const disabledToken = disabled.body.action.requestToken;
+    const disabledFingerprint = (await preflight(disabledToken)).body.fields[0]
+      ?.control.radioGroupFingerprint;
+    if (!disabledFingerprint) {
+      throw new Error("Missing radio fingerprint");
+    }
+    await expect(
+      apply(disabledToken, 2, 0, disabledFingerprint),
+    ).resolves.toMatchObject({
+      status: 409,
+      body: { error: { code: "BROWSER_USER_ACTION_INVALID_VALUE" } },
+    });
+    group.siteRequired = true;
+    group.selectedIndex = -1;
+    const siteRequired = await create();
+    const siteRequiredToken = siteRequired.body.action.requestToken;
+    const siteFingerprint = (await preflight(siteRequiredToken)).body.fields[0]
+      ?.control.radioGroupFingerprint;
+    if (!siteFingerprint) {
+      throw new Error("Missing radio fingerprint");
+    }
+    await expect(
+      apply(siteRequiredToken, -1, -1, siteFingerprint),
+    ).resolves.toMatchObject({
+      status: 409,
+      body: { error: { code: "BROWSER_USER_ACTION_INVALID_VALUE" } },
+    });
+    group.siteRequired = false;
+    group.selectedIndex = 0;
+    group.writeMatches = false;
+    const uncertain = await create();
+    const uncertainToken = uncertain.body.action.requestToken;
+    const uncertainFingerprint = (await preflight(uncertainToken)).body
+      .fields[0]?.control.radioGroupFingerprint;
+    if (!uncertainFingerprint) {
+      throw new Error("Missing radio fingerprint");
+    }
+    expect(
+      (await accept(apply(uncertainToken, 1, 0, uncertainFingerprint), [200]))
+        .body.state,
+    ).toBe("uncertain");
+    group.writeMatches = true;
+    group.readbackMatches = false;
+    const reverted = await create();
+    const revertedToken = reverted.body.action.requestToken;
+    const revertedFingerprint = await fingerprintFor(revertedToken);
+    expect(
+      (await accept(apply(revertedToken, 1, 0, revertedFingerprint), [200]))
+        .body.state,
+    ).toBe("uncertain");
+    expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
+      {
+        value: {
+          kind: "radio",
+          index: 1,
+          selectedIndex: 0,
+          memberCount: 3,
+          verifyOnly: true,
+        },
+      },
+      { value: 0 },
+      { objectId: "radio-0" },
+      { objectId: "radio-1" },
+      { objectId: "radio-2" },
+      { objectId: "radio-form" },
+    ]);
+    group.readbackMatches = true;
+    const changed = await create();
+    const changedToken = changed.body.action.requestToken;
+    const checked = await preflight(changedToken);
+    const changedFingerprint =
+      checked.body.fields[0]?.control.radioGroupFingerprint;
+    if (!changedFingerprint) {
+      throw new Error("Missing radio fingerprint");
+    }
+    group.selectedIndex = 1;
+    expect(
+      (await accept(apply(changedToken, 0, 0, changedFingerprint), [200])).body
+        .state,
+    ).toBe("stale");
+    group.selectedIndex = 0;
+    const renamed = await create();
+    const renamedToken = renamed.body.action.requestToken;
+    const renamedFingerprint = await fingerprintFor(renamedToken);
+    group.name = "other-delivery";
+    expect(
+      (await accept(apply(renamedToken, 1, 0, renamedFingerprint), [200])).body
+        .state,
+    ).toBe("stale");
+    group.name = "delivery";
+    const moved = await create();
+    const movedToken = moved.body.action.requestToken;
+    const movedFingerprint = await fingerprintFor(movedToken);
+    group.formOwnerId = 91;
+    expect(
+      (await accept(apply(movedToken, 1, 0, movedFingerprint), [200])).body
+        .state,
+    ).toBe("stale");
+    group.formOwnerId = 90;
+    const replaced = await create();
+    const replacedToken = replaced.body.action.requestToken;
+    const replacedFingerprint = (await preflight(replacedToken)).body.fields[0]
+      ?.control.radioGroupFingerprint;
+    if (!replacedFingerprint) {
+      throw new Error("Missing radio fingerprint");
+    }
+    group.memberIds = [45, 46, 48];
+    expect(
+      (await accept(apply(replacedToken, 1, 0, replacedFingerprint), [200]))
+        .body.state,
+    ).toBe("stale");
+
+    // A radio change handler can make another, untouched field required after
+    // the initial scalar validation. This is a partial write, not success.
+    const verifyMixedConstraintDrift = async () => {
+      group.memberIds = [45, 46, 47];
+      group.scalar = {
+        nodeId: 50,
+        required: false,
+        requiredAfterWrite: "immediate",
+      };
+      const createMixed = async () => {
+        return await accept(
+          userActionClient().create({
+            headers: current.claim.browserHeaders,
+            body: {
+              kind: "input",
+              callbackPrompt: "Continue after the mixed form",
+              pageTargetId: "native-input-target",
+              fields: [
+                {
+                  key: "delivery",
+                  label: "Delivery",
+                  fieldKind: "radio",
+                  required: false,
+                  backendNodeId: 45,
+                },
+                {
+                  key: "note",
+                  label: "Note",
+                  fieldKind: "text",
+                  required: false,
+                  backendNodeId: 50,
+                },
+              ],
+            },
+          }),
+          [201],
+        );
+      };
+      const mixed = await createMixed();
+      const mixedToken = mixed.body.action.requestToken;
+      const mixedFingerprint = await fingerprintFor(mixedToken);
+      expect(
+        (
+          await accept(
+            userActionClient().apply({
+              headers: { authorization: "Bearer clerk-session" },
+              params: { requestToken: mixedToken },
+              body: {
+                values: [
+                  {
+                    key: "delivery",
+                    memberIndex: 1,
+                    observedSelectedIndex: 0,
+                    groupFingerprint: mixedFingerprint,
+                  },
+                ],
+              },
+            }),
+            [200],
+          )
+        ).body.state,
+      ).toBe("uncertain");
+      expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
+        { value: { kind: "radio", index: 1 } },
+        { value: 1 },
+        { objectId: "native-scalar-object" },
+        {
+          value: {
+            kind: "scalar",
+            required: false,
+            multiple: false,
+            value: null,
+          },
+        },
+        { objectId: "radio-0" },
+        { objectId: "radio-1" },
+        { objectId: "radio-2" },
+        { objectId: "radio-form" },
+      ]);
+
+      // If the site's handler defers the constraint change to a microtask, the
+      // first write can appear successful; the independent readback must reject it.
+      group.scalar = {
+        nodeId: 50,
+        required: false,
+        requiredAfterWrite: "microtask",
+      };
+      const delayed = await createMixed();
+      const delayedToken = delayed.body.action.requestToken;
+      const delayedFingerprint = await fingerprintFor(delayedToken);
+      const writesBeforeDelayed = browserSelectWrites().length;
+      expect(
+        (
+          await accept(
+            userActionClient().apply({
+              headers: { authorization: "Bearer clerk-session" },
+              params: { requestToken: delayedToken },
+              body: {
+                values: [
+                  {
+                    key: "delivery",
+                    memberIndex: 1,
+                    observedSelectedIndex: 0,
+                    groupFingerprint: delayedFingerprint,
+                  },
+                ],
+              },
+            }),
+            [200],
+          )
+        ).body.state,
+      ).toBe("uncertain");
+      expect(browserSelectWrites()).toHaveLength(writesBeforeDelayed + 2);
+      expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
+        { value: { kind: "radio", verifyOnly: true } },
+        { value: 1 },
+        { objectId: "native-scalar-object" },
+        { value: { kind: "scalar", required: false, value: null } },
+        { objectId: "radio-0" },
+        { objectId: "radio-1" },
+        { objectId: "radio-2" },
+        { objectId: "radio-form" },
+      ]);
+    };
+    await verifyMixedConstraintDrift();
   });
 
   it("selects by option index, rejects disabled and drifted options, and supports explicit clear", async () => {
@@ -1095,6 +1676,7 @@ describe("Browser user-action route", () => {
     const write = browserSelectWrites().at(-1)?.[0];
     expect(write?.params.arguments).toMatchObject([
       { value: { kind: "select", mode: "select-one", indices: [3] } },
+      { value: 0 },
     ]);
     expect(JSON.stringify(write?.params.arguments)).not.toContain(
       "native-select-object",
@@ -1115,6 +1697,7 @@ describe("Browser user-action route", () => {
     expect(chosenMulti.body.state).toBe("succeeded");
     expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
       { value: { mode: "select-multiple", indices: [2, 3] } },
+      { value: 0 },
     ]);
     const clear = await createSelect();
     const clearToken = clear.body.action.requestToken;
@@ -1128,6 +1711,7 @@ describe("Browser user-action route", () => {
     ).toBe("succeeded");
     expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
       { value: { indices: [] } },
+      { value: 0 },
     ]);
 
     const required = await createSelect(true);
@@ -1216,6 +1800,7 @@ describe("Browser user-action route", () => {
       expect(appliedMixed.body.state).toBe("succeeded");
       expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
         { value: { kind: "select", indices: [3] } },
+        { value: 1 },
         { objectId: "native-scalar-object" },
         { value: { kind: "scalar", value: "A short note" } },
       ]);
@@ -1236,6 +1821,7 @@ describe("Browser user-action route", () => {
       ).toBe("succeeded");
       expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
         { value: { kind: "select", indices: null } },
+        { value: 1 },
         { objectId: "native-scalar-object" },
         { value: { kind: "scalar", value: "Only the note" } },
       ]);
