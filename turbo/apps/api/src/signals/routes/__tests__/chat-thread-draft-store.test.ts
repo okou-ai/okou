@@ -170,12 +170,13 @@ describe("thread drafts", () => {
 
   it("saves while another writer holds the thread row", async () => {
     const fixture = await createDraftFixture();
-    // Event projection, the run queue and the read cursor update the thread
-    // row under FOR NO KEY UPDATE. The draft save writes only its own row, so
-    // it must not queue behind them (#36173).
+    // Event projection, the run queue and the read cursor all lock the thread
+    // row. The draft save reads the owner without a lock and writes only its
+    // own row, so it must not queue behind even the strongest row lock
+    // (#36173).
     const holder = await holdChatThreadRowLockFixture({
       threadId: fixture.threadId,
-      mode: "no key update",
+      mode: "update",
       signal: context.signal,
     });
     const saving = await settleIncludingAbort(

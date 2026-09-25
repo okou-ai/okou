@@ -350,9 +350,9 @@ describe("account erasure ownership coverage guard", () => {
         })
         .sort(),
     ).toStrictEqual(["email_outbox", "feishu_chat_ingress"]);
-    // The thread composer draft lives in its own child row. It is owned by its
-    // copied `user_id`, and rows an older API wrote without one are still
-    // reached through the thread.
+    // The thread composer draft lives in its own row with no thread foreign
+    // key. It is owned by its copied `user_id`, and rows an older API wrote
+    // without one are still reached through the thread.
     expect(ACCOUNT_OWNERSHIP_INVENTORY.chat_thread_drafts).toStrictEqual({
       coverage: "user_root",
       ownership: ["user_id"],

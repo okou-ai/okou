@@ -554,6 +554,9 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
     );
   } finally {
     await client.query(
+      `DELETE FROM "chat_thread_drafts" WHERE "user_id" = 'append-only-test-user'`,
+    );
+    await client.query(
       `
         DELETE FROM "chat_thread_snapshots"
         WHERE "user_id" = 'append-only-test-user'

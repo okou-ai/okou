@@ -1,7 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
   check,
-  foreignKey,
   index,
   jsonb,
   pgTable,
@@ -11,7 +10,6 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-import { chatThreads } from "./chat-thread";
 import type {
   ChatThreadDraftAttachments,
   ChatThreadDraftUserMessage,
@@ -26,7 +24,10 @@ import type {
  * reads and writes; see the parent issue #36173.
  *
  * A saved draft is one row and a cleared draft is no row, the same shape as
- * `agent_drafts`. A row whose values are both null is an older API's cleared
+ * `agent_drafts`. There is deliberately no foreign key to `chat_threads`: a
+ * draft write must not lock the thread row. Thread deletion removes the row
+ * itself; a row left behind by another deletion path is unreachable and is
+ * deletion cleanup's concern. A row whose values are both null is an older API's cleared
  * tombstone and reads the same as no row.
  *
  * `chat_threads.draft_user_message` and `chat_threads.draft_attachments` are
@@ -62,11 +63,6 @@ export const chatThreadDrafts = pgTable(
         name: "chat_thread_drafts_chat_thread_id_pk",
         columns: [table.chatThreadId],
       }),
-      foreignKey({
-        name: "chat_thread_drafts_chat_thread_id_chat_threads_id_fk",
-        columns: [table.chatThreadId],
-        foreignColumns: [chatThreads.id],
-      }).onDelete("cascade"),
       index("idx_chat_thread_drafts_user").on(table.userId),
       // The same invariant `chat_threads_draft_user_message_check` enforces on
       // the legacy columns: attachments cannot outlive the document they were

@@ -59,8 +59,6 @@ import {
 import type { Tx } from "../../lib/db-types";
 import { now, nowDate } from "../../lib/time";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
-import { isForeignKeyViolation } from "../../lib/pg-errors";
-import { settle } from "../utils";
 import { inferMimetype } from "./chat-event-shared.service";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 import { revokeMorningBriefNativeThreadAuthority } from "./morning-brief-native-schedule.service";
@@ -68,7 +66,10 @@ import {
   appendChatThreadEvent,
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
-import { persistChatThreadDraft } from "./chat-thread-draft-write.service";
+import {
+  deleteChatThreadDraft,
+  persistChatThreadDraft,
+} from "./chat-thread-draft-write.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import { cancelRun$, type CancelRunResult } from "./run-cancel.service";
 import { runOwnedChatEventForRunCondition } from "./chat-event-type.service";
@@ -1096,6 +1097,11 @@ export const deleteChatThread$ = command(
       return { deleted: false, cancelledRuns: [] };
     }
 
+    // `chat_thread_drafts` has no foreign key to the thread, so remove its row
+    // here with one statement after the deletion commits.
+    await deleteChatThreadDraft(writeDb, args.threadId);
+    signal.throwIfAborted();
+
     const cancelledRuns: CancelRunResult[] = [];
     for (const run of deletion.activeRuns) {
       const result = await set(
@@ -1140,7 +1146,9 @@ export const deleteChatThread$ = command(
  * The owner is read by primary key outside any transaction, then the draft is
  * written with one statement to `chat_thread_drafts`. Nothing here writes or
  * locks the hot `chat_threads` row, so a draft save never waits on event
- * projection, the run queue or the read cursor (#36173).
+ * projection, the run queue or the read cursor (#36173). A thread deleted after
+ * the owner read can leave an unreachable draft row behind; removing it belongs
+ * to deletion cleanup, not to this write.
  */
 export const updateChatThreadDraft$ = command(
   async (
@@ -1164,24 +1172,15 @@ export const updateChatThreadDraft$ = command(
       return { updated: false };
     }
 
-    const written = await settle(
-      persistChatThreadDraft(writeDb, {
-        chatThreadId: args.threadId,
-        userId: args.userId,
-        draftUserMessage: args.draftUserMessage,
-        draftAttachments: args.draftAttachments
-          ? [...args.draftAttachments]
-          : null,
-      }),
-    );
+    await persistChatThreadDraft(writeDb, {
+      chatThreadId: args.threadId,
+      userId: args.userId,
+      draftUserMessage: args.draftUserMessage,
+      draftAttachments: args.draftAttachments
+        ? [...args.draftAttachments]
+        : null,
+    });
     signal.throwIfAborted();
-    if (!written.ok) {
-      // The thread was deleted between the owner read and the upsert.
-      if (isForeignKeyViolation(written.error)) {
-        return { updated: false };
-      }
-      throw written.error;
-    }
     return { updated: true };
   },
 );

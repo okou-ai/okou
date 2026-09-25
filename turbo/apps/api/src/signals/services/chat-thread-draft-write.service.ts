@@ -18,10 +18,8 @@ interface ChatThreadDraftWrite {
  * Saves or clears one thread's composer draft in a single statement.
  *
  * The caller has already read the thread's owner outside any transaction. The
- * statement runs on its own: the only lock it takes on `chat_threads` is the
- * foreign key's `FOR KEY SHARE` check, held for this one statement. A thread
- * deleted after that read fails the foreign key, and the caller reports it as
- * missing.
+ * statement runs on its own and touches no other table: `chat_thread_drafts`
+ * has no foreign key to `chat_threads`, so it takes no lock on the thread row.
  *
  * A cleared draft deletes the row, the same shape as `agent_drafts`. No reader
  * falls back to the retired `chat_threads` columns, so absence means "no

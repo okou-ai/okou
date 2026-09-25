@@ -6,27 +6,35 @@ Thread composer drafts are read and written only through `chat_thread_drafts`
 (#36173). `PATCH /api/chat-threads/:id` reads the thread owner by primary key
 outside any transaction, then saves the draft with one upsert, or clears it by
 deleting the row. A send clears the draft by deleting that row. None of these
-paths writes or locks the `chat_threads` row, apart from the foreign key's
-single-statement `FOR KEY SHARE` check, and draft writes no longer take the
-account-erasure admission; the cascading foreign key still removes a draft with
-its thread. `GET /api/chat-threads/:id/draft`, the drafts listing and the user
-export read the child table. Request and response contracts are unchanged.
+paths writes or locks the `chat_threads` row, and draft writes no longer take
+the account-erasure admission. `GET /api/chat-threads/:id/draft`, the drafts
+listing and the user export read the child table. Request and response
+contracts are unchanged.
 
-Migration `1240_chat_thread_drafts_user_backfill` adds `chat_thread_drafts.user_id`
-with an index, copies drafts that exist only in the legacy
-`chat_threads.draft_user_message` / `draft_attachments` columns with
-`ON CONFLICT DO NOTHING`, and fills `user_id` from the thread. Every API since
-#36230 dual-writes both stores in one transaction, so an existing child row is
-already current. Production held 433 legacy drafts (126 kB), 430 of them without
-a child row and none disagreeing with their child row (2026-09-25).
+Migration `1240_chat_thread_drafts_user_backfill` drops the
+`chat_thread_drafts` → `chat_threads` foreign key, so a draft write takes no
+lock on the thread row. It adds `chat_thread_drafts.user_id` with an index,
+copies drafts that exist only in the legacy `chat_threads.draft_user_message` /
+`draft_attachments` columns with `ON CONFLICT DO NOTHING`, and fills `user_id`
+from the thread. Every API since #36230 dual-writes both stores in one
+transaction, so an existing child row is already current. Production held 433
+legacy drafts (126 kB), 430 of them without a child row and none disagreeing
+with their child row (2026-09-25).
+
+Without the cascade, `DELETE /api/chat-threads/:id` removes the draft row with
+one statement after the thread deletion commits. Agent deletion, account
+deletion and other thread-deletion paths can leave an unreachable draft row
+behind; no API serves it, and cleaning it up belongs to deletion. Account
+erasure reaches draft rows by `user_id` and, for rows without one, through the
+thread while it exists.
 
 During the rollout an older API still dual-writes both stores and serves the
 legacy columns, so it keeps the child table current but does not see a draft
 the new API saved or cleared. An older API can also insert a child row without
 `user_id`; such a row is missing from the new drafts listing until the contract
-migration backfills it, and it is still read, cleared and cascaded by thread id.
-Rolling the API back therefore only shows each thread's last draft from before
-this release; no draft is lost.
+migration backfills it, and it is still read and cleared by thread id. Rolling
+the API back therefore only shows each thread's last draft from before this
+release; no draft is lost.
 
 The legacy columns and their check constraint stay in the schema, unused, for
 this release. The contract release drops them, backfills any `user_id` left null

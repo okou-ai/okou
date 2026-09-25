@@ -1,3 +1,7 @@
+-- A draft write must not lock the hot thread row, so the draft keeps no
+-- foreign key to it. Thread deletion removes the draft row itself.
+ALTER TABLE "chat_thread_drafts" DROP CONSTRAINT "chat_thread_drafts_chat_thread_id_chat_threads_id_fk";
+--> statement-breakpoint
 ALTER TABLE "chat_thread_drafts" ADD COLUMN "user_id" text;--> statement-breakpoint
 CREATE INDEX "idx_chat_thread_drafts_user" ON "chat_thread_drafts" USING btree ("user_id");--> statement-breakpoint
 -- Every API since #36230 writes a thread's draft to both stores in one

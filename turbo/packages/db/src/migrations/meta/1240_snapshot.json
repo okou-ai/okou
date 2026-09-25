@@ -1,5 +1,5 @@
 {
-  "id": "b586d204-1ba8-4076-aa35-79d8e1ef09ab",
+  "id": "3b8c5c1b-f69e-4c68-8277-fe8e9041bfee",
   "prevId": "75818093-9fdf-4939-ada7-71ff616e381e",
   "version": "7",
   "dialect": "postgresql",
@@ -9643,21 +9643,7 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "chat_thread_drafts_chat_thread_id_chat_threads_id_fk": {
-          "name": "chat_thread_drafts_chat_thread_id_chat_threads_id_fk",
-          "tableFrom": "chat_thread_drafts",
-          "tableTo": "chat_threads",
-          "columnsFrom": [
-            "chat_thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {
         "chat_thread_drafts_chat_thread_id_pk": {
           "name": "chat_thread_drafts_chat_thread_id_pk",
