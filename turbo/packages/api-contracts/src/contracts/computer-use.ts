@@ -598,7 +598,6 @@ export const computerUseHeartbeatContract = c.router({
     responses: {
       200: computerUseHostStopResponseSchema,
       401: apiErrorSchema,
-      403: apiErrorSchema,
     },
     summary: "Stop a desktop computer-use host",
   },
@@ -768,7 +767,6 @@ export const computerUseHostCommandsContract = c.router({
       200: computerUseCommandCompleteResponseSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
-      403: apiErrorSchema,
       404: apiErrorSchema,
       409: apiErrorSchema,
     },

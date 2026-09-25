@@ -76,12 +76,6 @@ surface; the index does not replace their detailed rules.
   design in [ADR 0004](./adr/0004-account-telemetry-recovery-erasure.md).
 - [User data export](./user-data-export.md): ZIP v2 contents, readable instruction
   scope, canonical chat history, checksum semantics, and download compatibility.
-- [Computer Use command GET](./account-erasure-computer-use-command-get.md):
-  canonical owner admission around the complete timeout-maintenance sweep,
-  response/auth compatibility, abort boundaries and exact SQL sequences.
-- [Computer Use binary content reads](./account-erasure-computer-use-content-read.md):
-  canonical owner admission through complete screenshot/plugin byte acquisition,
-  provider cancellation ownership and the SQL-versus-S3 duration boundary.
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
   validation reasons, cached rejection records, retained snapshots and recovered
   publication-order evidence.
